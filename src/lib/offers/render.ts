@@ -16,7 +16,7 @@
  * returns a tiled data URI; drawing that same curve a second time in this folder is what produced
  * four drifting mastheads in the hiring pack the same week. Everything else here stays frozen.
  * ───────────────────────────────────────────────────────────────────────────────────────────── */
-import { houseEngineTurnedBand } from "@/lib/hiring-pack/house-identity";
+import { HOUSE_COLORS, houseBandBackground, houseEngineTurnedBand } from "@/lib/hiring-pack/house-identity";
 import { OFFER_DEFAULT_FONT, OFFER_DEFAULT_FONT_SIZE_PT, OFFER_DEFAULT_THEME } from "@/lib/offers/default-template";
 import { deriveOfferPay, formatOfferAmount } from "@/lib/offers/pay";
 import { systemLegalEntity } from "@/config/system-settings";
@@ -163,7 +163,7 @@ function signatureInk(prop: unknown, fallback: string | undefined): string {
 export function renderOfferBlock(
   block: OfferBlock,
   tokens: Record<string, string>,
-  options: { logoUrl?: string; sealUrl?: string; signatureUrl?: string } = {},
+  options: { logoReverseUrl?: string; logoUrl?: string; sealUrl?: string; signatureUrl?: string } = {},
 ): string {
   const p = block.props ?? {};
   const f = (value: unknown) => fillOfferTokens(value, tokens);
@@ -175,9 +175,18 @@ export function renderOfferBlock(
     case "letterhead": {
       const logo = letterheadLogo(p.logo, options.logoUrl);
       const img = logo ? `<img src="${escapeHtml(logo)}" alt="">` : '<span class="logo-gap"></span>';
+      // The reverse mark for a design that draws its masthead on navy (the Sato variant). Emitted
+      // only when the renderer is handed one — the classic and executive letters are never passed
+      // it, so their markup is byte-for-byte unchanged. It is hidden by the base stylesheet and
+      // revealed (with the ink mark hidden) only by the Sato skin, exactly as the welcome-band mark
+      // is revealed by the executive skin.
+      const reverse =
+        typeof options.logoReverseUrl === "string" && options.logoReverseUrl !== ""
+          ? `<img class="lh-reverse" src="${escapeHtml(options.logoReverseUrl)}" alt="">`
+          : "";
       const tagline = f(p.tagline);
       return (
-        `<header class="letterhead keep">${img}<div class="org">` +
+        `<header class="letterhead keep">${img}${reverse}<div class="org">` +
         `<div class="micro micro-wide name">${f(p.name)}</div>` +
         `<div class="micro unit">${f(p.unit)}</div>` +
         (tagline ? `<div class="micro tagline">${tagline}</div>` : "") +
@@ -358,12 +367,22 @@ export function renderOfferBlock(
     case "footer":
       return `<footer class="foot"><p>${f(p.text)}</p><div class="micro pg">${f(p.right)}</div></footer>`;
 
-    case "welcome":
+    case "welcome": {
+      // The reverse (white) mark for the Sato navy welcome band, threaded exactly as the
+      // letterhead's reverse mark is: emitted only when the renderer is handed one, so the classic
+      // and executive letters — never passed it — keep their tinted cap and ink mark byte-for-byte.
+      // Hidden by the base stylesheet; the Sato skin reveals it on the all-navy cap and hides the
+      // ink mark and the tint, so the closer wears the mark the way the masthead opens the letter.
+      const wcReverse =
+        typeof options.logoReverseUrl === "string" && options.logoReverseUrl !== ""
+          ? `<img class="wc-reverse" src="${escapeHtml(options.logoReverseUrl)}" alt="">`
+          : "";
       return (
         '<div class="welcome keep"><div class="welcome-b">' +
         `<div class="micro k">${f(p.k)}</div><div class="t">${f(p.text)}</div></div>` +
-        `<div class="welcome-cap">${markImg(options.logoUrl)}</div></div>`
+        `<div class="welcome-cap">${markImg(options.logoUrl)}${wcReverse}</div></div>`
       );
+    }
 
     case "pagebreak":
       return '<div class="page-break"></div>';
@@ -424,6 +443,7 @@ body{background:#fff;color:var(--ink);font-family:${fontFamily};
 .letterhead{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;padding:10px 0 9px}
 .letterhead img{height:40px;width:auto;display:block}
 .letterhead .logo-gap{display:block;height:40px}
+.letterhead .lh-reverse{display:none}
 .letterhead .org{text-align:right}
 .letterhead .org .name{color:var(--brand)}
 .letterhead .org .unit{color:var(--soft);margin-top:4px}
@@ -523,6 +543,7 @@ table{width:100%;border-collapse:collapse}
 /* The classic letter sets its identity in type and carries no mark here. The executive skin shows
    these two; leaving them out of the markup entirely would make the skin unable to reach them. */
 .welcome-cap .mark{display:none}
+.welcome-cap .wc-reverse{display:none}
 .welcome{display:flex;align-items:stretch;margin-top:12px;border:1px solid var(--frame)}
 .welcome-b{flex:1;padding:11px 16px;background:var(--chip)}
 .welcome .k{color:var(--brand)}
@@ -550,7 +571,18 @@ table{width:100%;border-collapse:collapse}
   background-repeat:no-repeat,repeat-x;
 }`;
 
-  return variant === "executive" ? `${base}\n${EXECUTIVE_SKIN}\n${executiveBand}` : base;
+  if (variant === "executive") return `${base}\n${EXECUTIVE_SKIN}\n${executiveBand}`;
+  // The Sato corporate skin is an override sheet appended to the base, exactly like the executive
+  // one — same block HTML, a different identity laid over it. It carries its own masthead band, so
+  // it is appended AFTER the base's engine-turned divider to win over it.
+  if (variant === "sato") return `${base}\n${SATO_SKIN}`;
+  // The HR-forms house skin, appended the same way. Unlike the other three it PAINTS NOTHING — it
+  // strips every filled area the base draws (the top rail, the tinted salary hero, the ink clause
+  // tiles and accept band) back to the house ink rule: lines and type in the three logo blues, with
+  // the one 6% zebra on the salary table. It carries the single engine-turned band under the mark,
+  // so the base's per-section bands are dropped to hairlines below.
+  if (variant === "house") return `${base}\n${HOUSE_SKIN}`;
+  return base;
 }
 
 /**
@@ -662,6 +694,146 @@ h1{font-size:26pt;letter-spacing:-.9px;margin-top:14pt;text-transform:uppercase}
 .welcome .t{color:#fff;font-size:11pt;margin-top:7pt}
 .welcome-cap{width:108pt;background:var(--tint);display:flex;align-items:center;justify-content:center}
 .welcome-cap .mark{display:block;height:26pt}
+`.trim();
+
+/**
+ * The Sato corporate skin — the "SHARP" identity from `skills/sato-pharma-identity`, laid over the
+ * shared base sheet exactly as the executive skin is.
+ *
+ * It is an OVERRIDE sheet: it changes the look, never the content, so the same block HTML the other
+ * two designs use renders here as a Sato-identity letter. What it adds is the identity's signatures —
+ * a navy masthead band carrying the REVERSE Sato mark and closed by a 3px brand-blue seam (the rail
+ * block), the one brand blue as the single accent over navy masses and hairline greys, uppercase
+ * tracked micro labels, brand section ticks, and 90-degree corners throughout. It stays A4, with the
+ * masthead in the flow (not repeated page furniture), so the on-screen preview shows it too — the
+ * executive design's masthead is print-only furniture and never appears in the designer preview.
+ *
+ * `*{border-radius:0}` in the base already keeps every corner square; nothing here rounds one.
+ */
+const SATO_SKIN = `
+/* The navy masthead band, full-bleed to the sheet edges, with the 3px brand seam (the rail block)
+   closing it directly below. */
+.letterhead{margin:0 -13mm;padding:12px 13mm 13px;background:var(--ink);align-items:center;gap:20px}
+.letterhead img{display:none}
+.letterhead .lh-reverse{display:block;height:30px}
+.letterhead .org .name{color:#ffffff}
+.letterhead .org .unit{color:#9aa6af;margin-top:3px}
+.letterhead .org .tagline{color:#5db7e8;margin-top:2px;font-size:7pt}
+.rail{height:3px}
+/* The meta strip: hairline cells, micro labels — the identity's field look. */
+.control{margin-top:14px;background:var(--line);border:1px solid var(--line)}
+.control .k{color:var(--faint)}
+.control .v.brandv{color:var(--brand)}
+/* Title set in capitals, the appointment chip a square navy tile. */
+h1{text-transform:uppercase;letter-spacing:-.4px;font-size:21pt}
+.role-line{color:var(--brand)}
+.appt{background:var(--ink);border:0;padding:8px 12px}
+.appt .k{color:#9aa6af}
+.appt .v{color:#ffffff}
+/* SHARP 1px rules — the engine-turned base divider is replaced by a measured brand-then-hairline. */
+.divider-micro{margin:12px 0 0;height:1px}
+.divider-micro::before{width:56px;height:1px;background:var(--brand)}
+.divider-micro::after{height:1px;background:var(--line)}
+/* Section heads: a 5px brand tick, navy micro label, brand sub. */
+.section-h{margin-top:16px;padding-left:11px;position:relative}
+.section-h::before{content:"";position:absolute;left:0;top:1px;width:5px;height:12px;background:var(--brand)}
+.section-h .micro{color:var(--ink);letter-spacing:2px}
+.section-h .sub{color:var(--brand);letter-spacing:1.4px}
+.section-h .divider-micro{display:none}
+/* The salutation tile as a square navy seal with white initials. */
+.lede-mark{background:var(--ink);color:#ffffff}
+/* Compensation: navy table header, brand total rule. */
+.comp{border:1px solid var(--line)}
+.comp th{background:var(--ink);color:#ffffff;border:0}
+.comp tr.total td{border-top:2px solid var(--brand)}
+.steps .h{text-transform:uppercase;letter-spacing:.3px}
+/* The closing welcome band: one continuous navy band closed by a 3px brand seam, the reverse
+   (white) mark drawn straight on the navy cap — no tinted tile — so the letter closes wearing the
+   mark the way the masthead opens it. The ink mark stays hidden here; only the reverse one shows. */
+.welcome{border:0;border-top:3px solid var(--brand)}
+.welcome-b{background:var(--ink)}
+.welcome .k{color:#5db7e8}
+.welcome .t{color:#ffffff}
+.welcome-cap{background:var(--ink);border-left:1px solid #35485f;display:flex;align-items:center;justify-content:center}
+.welcome-cap .mark{display:none}
+.welcome-cap .wc-reverse{display:block;height:22px}
+`.trim();
+
+/**
+ * The HR-forms house skin — the identity of SATO-DIS-2026-01 laid over the shared offer blocks.
+ *
+ * It is the one skin that ADDS no ink. Where the other three draw filled masses — a navy masthead, a
+ * tinted salary hero, ink clause tiles, a filled accept band — this strips each back to the house
+ * ink rule: a hairline or a line of type in one of the three logo blues. The identity is carried by
+ * the engine-turned band under the mark and by Brand Deep headings, not by area. The one deliberate
+ * fill is the 6% zebra on the salary table, which the owner asked for by name.
+ *
+ * The colours are interpolated from `HOUSE_COLORS` at load — a var() cannot be read from inside the
+ * band's data URI, so the band's colour is baked in the same way the house module bakes its own.
+ * `chip` is white in the house theme, which is what already turns the base sheet's tinted scope,
+ * steps, total and accept cells to plain hairline grids, so those need no rule of their own here.
+ */
+const HOUSE_SKIN = `
+/* The filled top brand bar is dropped — house papers carry no top-edge bar. The engine-turned band
+   under the mark is the identity instead. */
+.rail{display:none}
+
+/* Masthead: the on-light mark left, the legal name right in Brand Deep, closed by ONE engine-turned
+   band in Brand Deep along the bottom edge — the house letterhead exactly. */
+.letterhead{padding:6px 0 3mm;background:${houseBandBackground("left bottom")}}
+.letterhead .org .name{color:${HOUSE_COLORS.deep};letter-spacing:.4px}
+.letterhead .org .unit{color:${HOUSE_COLORS.muted}}
+
+/* Every per-section band drops to a plain hairline — the letterhead carries the only band, as on the
+   house forms — and the leading tick goes with it. */
+.divider-micro{margin:9px 0}
+.divider-micro::before{display:none}
+.divider-micro::after{height:.5pt;background:var(--hair)}
+
+/* The reference strip keeps its hairline grid; the valid-until value reads in Brand Deep. */
+.control .v.brandv{color:${HOUSE_COLORS.deep}}
+
+/* Title: centred, Brand Deep, at the house title size, the role line in Brand Blue under it. */
+.title-row{justify-content:center;text-align:center}
+h1{color:${HOUSE_COLORS.deep};font-size:17pt;letter-spacing:-.2px;margin-top:12px}
+.role-line{color:${HOUSE_COLORS.blue};font-weight:600}
+
+/* Section headings — Brand Deep micro labels, the house voice for a section. */
+.section-h .micro{color:${HOUSE_COLORS.deep}}
+.section-h .sub{color:${HOUSE_COLORS.muted}}
+
+/* Compensation — the ink rule's hardest case. The tinted hero becomes plain white ruled off with a
+   hairline, its figures Brand Deep; the header is Brand Deep type over a Brand Deep hairline; the
+   data rows carry the ONE allowed fill, a 6% zebra; the total is a Brand Deep top rule, not a bar. */
+.comp{border:.5pt solid var(--hair)}
+.comp-hero{background:#fff;border-bottom:.5pt solid var(--hair)}
+.comp-hero .k{color:${HOUSE_COLORS.blue}}
+.comp-hero .big{color:${HOUSE_COLORS.deep}}
+.comp-hero .aside .v{color:${HOUSE_COLORS.deep}}
+.comp th{color:${HOUSE_COLORS.deep};border-bottom:.7pt solid ${HOUSE_COLORS.deep};background:#fff}
+.comp td{border-bottom:.5pt solid var(--hair)}
+.comp tbody tr:not(.total):nth-child(odd) td{background:var(--tint)}
+.comp tr.total td{background:#fff;border-top:.8pt solid ${HOUSE_COLORS.deep};color:${HOUSE_COLORS.deep}}
+.comp-note{background:#fff;border-top:.5pt solid var(--hair)}
+
+/* Benefits: Brand Blue labels over the hairline grid. */
+.benefits .k{color:${HOUSE_COLORS.blue}}
+
+/* Clauses: the numeral is Brand Deep TYPE, never a filled ink tile; a Brand Deep rule opens the set. */
+.clause{border-bottom:.5pt solid var(--hair)}
+.clause.first{border-top:.5pt solid ${HOUSE_COLORS.deep}}
+.clause .no{background:#fff;color:${HOUSE_COLORS.deep};width:18px;height:auto;justify-content:flex-start;align-items:baseline;font-size:11pt}
+
+/* Steps: the Brand Blue index over the hairline grid. */
+.steps .n{color:${HOUSE_COLORS.blue}}
+
+/* The acceptance block: no filled ink header — a Brand Deep label ruled off with a hairline. */
+.accept{border:.5pt solid var(--hair)}
+.accept-h{background:#fff;border-bottom:.5pt solid var(--hair)}
+.accept-h .micro{color:${HOUSE_COLORS.deep}}
+
+/* Footer: a hairline over muted type. */
+.foot{border-top:.5pt solid var(--hair)}
 `.trim();
 
 export type RenderedOffer = {
@@ -778,9 +950,16 @@ export function renderOfferDocument(
     variant?: OfferTemplateVariant;
   },
   fields: OfferFields,
-  options: { logoUrl?: string; sealUrl?: string; signatureUrl?: string } = {},
+  options: { logoReverseUrl?: string; logoUrl?: string; sealUrl?: string; signatureUrl?: string } = {},
 ): RenderedOffer {
-  const variant: OfferTemplateVariant = template.variant === "executive" ? "executive" : "classic";
+  const variant: OfferTemplateVariant =
+    template.variant === "executive"
+      ? "executive"
+      : template.variant === "sato"
+        ? "sato"
+        : template.variant === "house"
+          ? "house"
+          : "classic";
   const tokens = buildOfferTokens(fields);
   const body = template.blocks.map((block) => renderOfferBlock(block, tokens, options)).join("");
   const css = offerDocumentCss(

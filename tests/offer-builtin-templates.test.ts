@@ -12,11 +12,12 @@ import { renderOfferEmail } from "../src/lib/offers/render-email.ts";
 import type { OfferBlockType, OfferFields } from "../src/lib/offers/types.ts";
 
 /**
- * The two designs that ship with the job-offer module.
+ * The designs that ship with the job-offer module.
  *
- * The owner uploaded two letters and asked for both, both editable, and switching between them.
- * That is implemented as ONE block list plus a skin — so the failures worth pinning are the ones
- * that would let a design ship looking right and behave wrongly:
+ * The owner uploaded two letters and asked for both, both editable, and switching between them, then
+ * asked for a third in Sato's own corporate identity and a fourth in the HR-forms house identity,
+ * each added beside the last. All four are implemented as ONE block list plus a skin — so the
+ * failures worth pinning are the ones that would let a design ship looking right and behave wrongly:
  *
  *   1. A BLOCK TYPE THE SANITIZER DOES NOT KNOW. `sanitizeTemplateBlocks` drops unknown types, so a
  *      design using one seeds fine, renders fine, previews fine — and loses that block the first
@@ -79,13 +80,18 @@ const ALL_BLOCK_TYPES = [
 
 export function runOfferBuiltinTemplateTests() {
   // ------------------------------------------------------------------ the registry --
-  assert.equal(OFFER_BUILTIN_TEMPLATES.length, 2, "two designs ship: the classic letter and the executive one");
+  assert.equal(
+    OFFER_BUILTIN_TEMPLATES.length,
+    4,
+    "four designs ship: the classic letter, the executive one, the Sato corporate one, and the HR-forms house one — each added beside the last, none changed",
+  );
 
   const keys = OFFER_BUILTIN_TEMPLATES.map((entry) => entry.key);
   assert.equal(new Set(keys).size, keys.length, "built-in keys must be unique — they are how Restore finds a row");
 
   const variants = OFFER_BUILTIN_TEMPLATES.map((entry) => entry.variant);
   assert.equal(new Set(variants).size, variants.length, "two built-ins that share a skin would look identical");
+  assert.equal(new Set(variants).size, 4, "each shipped design carries its own skin — classic, executive, sato, house");
 
   assert.equal(
     OFFER_BUILTIN_TEMPLATES.filter((entry) => entry.seedAsDefault).length,
@@ -95,9 +101,16 @@ export function runOfferBuiltinTemplateTests() {
 
   assert.equal(offerBuiltinTemplate("executive")?.key, "executive", "a built-in is found by key");
   assert.equal(offerBuiltinTemplate("nope"), null, "an unknown key must not resolve to a design");
-  assert.ok(isOfferBuiltinKey("classic") && isOfferBuiltinKey("executive"), "both keys are recognised");
+  assert.ok(
+    isOfferBuiltinKey("classic") && isOfferBuiltinKey("executive") && isOfferBuiltinKey("sato") && isOfferBuiltinKey("house"),
+    "all four keys are recognised",
+  );
+  assert.equal(offerBuiltinTemplate("sato")?.key, "sato", "the Sato corporate design is found by key");
+  assert.equal(offerBuiltinTemplate("house")?.key, "house", "the HR-forms house design is found by key");
   assert.ok(!isOfferBuiltinKey("default"), "a plausible-looking key that does not exist must be rejected");
   assert.ok(isOfferTemplateVariant("executive"), "the executive skin is a known variant");
+  assert.ok(isOfferTemplateVariant("sato"), "the Sato corporate skin is a known variant");
+  assert.ok(isOfferTemplateVariant("house"), "the HR-forms house skin is a known variant");
   assert.ok(!isOfferTemplateVariant("premium"), "an unknown skin must be rejected, not passed through");
 
   // --------------------------------------------------- every block type is editable --
@@ -129,10 +142,12 @@ export function runOfferBuiltinTemplateTests() {
     assert.equal(new Set(ids).size, ids.length, `${builtin.name}: block ids must be unique within a design`);
   }
 
-  // ------------------------------------------------------------------- the two skins --
+  // ----------------------------------------------------------------- the four skins --
   const classic = OFFER_BUILTIN_TEMPLATES.find((entry) => entry.key === "classic");
   const executive = OFFER_BUILTIN_TEMPLATES.find((entry) => entry.key === "executive");
-  assert.ok(classic && executive, "both designs must be in the registry");
+  const sato = OFFER_BUILTIN_TEMPLATES.find((entry) => entry.key === "sato");
+  const house = OFFER_BUILTIN_TEMPLATES.find((entry) => entry.key === "house");
+  assert.ok(classic && executive && sato && house, "all four designs must be in the registry");
 
   const classicDoc = renderOfferDocument(
     { blocks: classic.blocks(), fontFamily: classic.fontFamily, fontSizePt: classic.fontSizePt, theme: classic.theme, variant: classic.variant },
@@ -141,6 +156,16 @@ export function runOfferBuiltinTemplateTests() {
   const executiveDoc = renderOfferDocument(
     { blocks: executive.blocks(), fontFamily: executive.fontFamily, fontSizePt: executive.fontSizePt, theme: executive.theme, variant: executive.variant },
     SAMPLE,
+  );
+  const satoDoc = renderOfferDocument(
+    { blocks: sato.blocks(), fontFamily: sato.fontFamily, fontSizePt: sato.fontSizePt, theme: sato.theme, variant: sato.variant },
+    SAMPLE,
+    { logoReverseUrl: "data:image/png;base64,CCCC" },
+  );
+  const houseDoc = renderOfferDocument(
+    { blocks: house.blocks(), fontFamily: house.fontFamily, fontSizePt: house.fontSizePt, theme: house.theme, variant: house.variant },
+    SAMPLE,
+    { logoUrl: "data:image/png;base64,DDDD" },
   );
 
   assert.ok(executiveDoc.css.length > classicDoc.css.length, "the executive skin is an override sheet appended to the base");
@@ -157,7 +182,77 @@ export function runOfferBuiltinTemplateTests() {
   assert.ok(executiveDoc.css.includes("--brand:#0b86be"), "the executive blue must reach the stylesheet");
   assert.ok(classicDoc.css.includes("--brand:#0879b8"), "the classic design keeps the SATO brand blue");
 
-  for (const [name, doc] of [["classic", classicDoc], ["executive", executiveDoc]] as const) {
+  // ── The Sato corporate design ──────────────────────────────────────────────────────────────
+  // A third skin appended to the base, added beside the two frozen letters and changing neither.
+  assert.ok(satoDoc.css.length > classicDoc.css.length, "the Sato skin is an override sheet appended to the base");
+  assert.equal(satoDoc.pageSize, "A4", "the Sato letter prints A4 — its masthead is in the flow, not repeated furniture");
+  assert.ok(!satoDoc.css.includes("size:letter"), "the Sato design is A4 and must not carry the executive skin");
+  assert.ok(satoDoc.css.includes("--brand:#0879b8"), "the Sato design uses the one Sato brand blue");
+  assert.ok(satoDoc.css.includes("--ink:#17304d"), "the Sato navy must reach the stylesheet — it is every dark mass in the design");
+  // The identity signatures: the navy masthead band, the 3px brand seam, and the reverse mark.
+  assert.ok(/\.letterhead\{[^}]*background:var\(--ink\)/.test(satoDoc.css), "the Sato masthead is a navy band");
+  assert.ok(/\.rail\{height:3px\}/.test(satoDoc.css), "the navy band is closed by a 3px brand seam");
+  assert.ok(satoDoc.css.includes(".letterhead .lh-reverse{display:block"), "the Sato skin reveals the reverse mark");
+  assert.ok(satoDoc.css.includes(".letterhead img{display:none}"), "the on-light ink mark is hidden on the navy band");
+  assert.ok(
+    /<img class="lh-reverse" src="data:image\/png;base64,CCCC"/.test(satoDoc.body),
+    "the Sato masthead carries the reverse Sato mark the renderer was handed",
+  );
+  // The closing welcome band wears the SAME reverse mark on navy — no tinted tile — closed by its
+  // own brand seam, mirroring the masthead. The ink mark and the tint cap are hidden on the Sato skin.
+  assert.ok(
+    /<img class="wc-reverse" src="data:image\/png;base64,CCCC"/.test(satoDoc.body),
+    "the Sato welcome band carries the reverse Sato mark the renderer was handed",
+  );
+  assert.ok(satoDoc.css.includes(".welcome-cap .wc-reverse{display:block"), "the Sato skin reveals the reverse mark in the welcome band");
+  assert.ok(/\.welcome\{border:0;border-top:3px solid var\(--brand\)\}/.test(satoDoc.css), "the Sato welcome band is closed by a 3px brand seam");
+  assert.ok(/\.welcome-cap\{background:var\(--ink\)/.test(satoDoc.css), "the Sato welcome cap is navy, not a tinted tile");
+  // The reverse mark is drawn ONLY when the renderer is given one — classic and executive never are.
+  assert.ok(!classicDoc.body.includes("lh-reverse"), "the classic letterhead carries no reverse-mark element");
+  assert.ok(!executiveDoc.body.includes("lh-reverse"), "the executive letterhead carries no reverse-mark element");
+  assert.ok(!classicDoc.body.includes("wc-reverse"), "the classic welcome band carries no reverse-mark element");
+  assert.ok(!executiveDoc.body.includes("wc-reverse"), "the executive welcome band carries no reverse-mark element");
+  assert.ok(classicDoc.css.includes(".letterhead .lh-reverse{display:none}"), "the base hides the reverse mark by default");
+  assert.ok(classicDoc.css.includes(".welcome-cap .wc-reverse{display:none}"), "the base hides the welcome reverse mark by default");
+
+  // ── The HR-forms house design ──────────────────────────────────────────────────────────────
+  // A FOURTH skin, the SATO-DIS-2026-01 house identity, added beside the three others and changing
+  // none of them. It PAINTS NOTHING — its signature is the ink rule: lines and type in the three
+  // logo blues, one 6% zebra, and the engine-turned band under the mark.
+  assert.equal(houseDoc.pageSize, "A4", "the house letter prints A4");
+  assert.ok(!houseDoc.css.includes("size:letter"), "the house design is A4 and must not carry the executive skin");
+  // The variant reached the renderer and was not downgraded to classic: `.rail{display:none}` is a
+  // house-only rule, so its presence proves the house branch of offerDocumentCss ran.
+  assert.ok(houseDoc.css.includes(".rail{display:none}"), "the house skin drops the filled top brand bar");
+  assert.ok(!classicDoc.css.includes(".rail{display:none}"), "the house skin must not reach the classic design");
+  assert.ok(!satoDoc.css.includes(".rail{display:none}"), "the house skin must not reach the Sato design");
+  // The three logo blues, sampled from the mark — the identity's colour.
+  assert.ok(houseDoc.css.includes("--brand:#0A6BA6"), "Brand Blue (the one accent) must reach the stylesheet");
+  assert.ok(houseDoc.css.includes("--tint:#F2F6FA"), "the 6% zebra tint must reach the stylesheet");
+  assert.ok(houseDoc.css.includes("color:#0A527D"), "Brand Deep must ink the headings, table rules and clause numerals");
+  // THE INK RULE. None of the filled masses the other three draw survive: no navy masthead band, no
+  // tinted salary hero, no ink clause tile, no filled accept header.
+  assert.ok(!/\.letterhead\{[^}]*background:var\(--ink\)/.test(houseDoc.css), "the house masthead is not a filled band");
+  assert.ok(/\.comp-hero\{background:#fff/.test(houseDoc.css), "the salary hero is white, not a tinted panel");
+  assert.ok(/\.clause \.no\{background:#fff/.test(houseDoc.css), "the clause numeral is type, not a filled ink tile");
+  assert.ok(/\.accept-h\{background:#fff/.test(houseDoc.css), "the acceptance header is ruled, not a filled ink band");
+  // The one deliberate fill — the 6% zebra on the salary table.
+  assert.ok(
+    houseDoc.css.includes(".comp tbody tr:not(.total):nth-child(odd) td{background:var(--tint)}"),
+    "the salary table carries the one permitted fill — the 6% zebra",
+  );
+  // The engine-turned band under the mark, in Brand Deep, is the house letterhead's ornament.
+  assert.ok(
+    /\.letterhead\{padding:6px 0 3mm;background:url\(data:image\/svg\+xml/.test(houseDoc.css),
+    "the house masthead carries the engine-turned band on its lower edge",
+  );
+  // The on-light mark the renderer was handed is placed in the letterhead (house draws on white, so
+  // it needs no reverse mark and carries none).
+  assert.ok(houseDoc.body.includes('src="data:image/png;base64,DDDD"'), "the house letterhead carries the on-light mark");
+  assert.ok(!houseDoc.body.includes("lh-reverse"), "the house design draws on white and needs no reverse mark");
+  assert.ok(!/class="welcome/.test(houseDoc.body), "the house letter ends on the signature, like the HR forms — no welcome band");
+
+  for (const [name, doc] of [["classic", classicDoc], ["executive", executiveDoc], ["sato", satoDoc], ["house", houseDoc]] as const) {
     assert.ok(doc.html.startsWith("<!doctype html>"), `${name}: the document is standalone`);
     assert.ok(doc.html.includes("SAMAA SHALABY"), `${name}: the candidate is named`);
     assert.ok(doc.html.includes("@page"), `${name}: the print page size must be declared`);
