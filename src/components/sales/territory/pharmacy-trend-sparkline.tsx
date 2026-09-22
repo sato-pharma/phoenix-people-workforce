@@ -8,7 +8,7 @@ import type { TerritoryMonthPresence } from "@/lib/sales/territory/types";
 type TrendPoint = {
   label: string;
   period: string;
-  units: number;
+  value: number;
   products: TerritoryMonthPresence["products"];
 };
 
@@ -34,14 +34,16 @@ function TrendTooltip({ active, payload }: { active?: boolean; payload?: Array<{
   );
 }
 
-/** Shared 6-bar monthly trend, used by both the desktop and mobile pharmacy cards. Hovering
- *  a bar shows the per-product breakdown for that month (e.g. Saginko 100 units, Royafloxacin
- *  70 units), not just the summed total. */
+/** Shared 6-bar monthly trend, used by both the desktop and mobile pharmacy cards. Each bar's
+ *  height is the month's sales VALUE — never a units total, which is meaningless once two
+ *  different products are summed (owner golden rule). Hovering a bar shows the per-product
+ *  breakdown for that month in units (e.g. Saginko 100 units, Royafloxacin 70 units), where
+ *  each line is a single product and its units ARE valid. */
 export function PharmacyTrendSparkline({ months }: { months: TerritoryMonthPresence[] }) {
   const data: TrendPoint[] = months.map((month) => ({
     label: periodProseLabel(month.period).slice(0, 3),
     period: month.period,
-    units: month.units,
+    value: month.value,
     products: month.products,
   }));
 
@@ -58,7 +60,7 @@ export function PharmacyTrendSparkline({ months }: { months: TerritoryMonthPrese
             tickLine={false}
           />
           <Tooltip content={<TrendTooltip />} cursor={{ fill: "rgba(249,115,22,0.08)" }} />
-          <Bar dataKey="units" fill="#F97316" radius={[0, 0, 0, 0]} />
+          <Bar dataKey="value" fill="#F97316" radius={[0, 0, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
     </div>

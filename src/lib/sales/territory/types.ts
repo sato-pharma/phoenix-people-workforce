@@ -78,9 +78,14 @@ export type TerritoryProductBreakdown = {
 export type TerritoryMonthPresence = {
   period: string;
   hasSales: boolean;
-  units: number;
+  /** This pharmacy's sales VALUE for the month — the trend bar's height. Value, never a
+   *  units total: a units total is only meaningful for one product_code, so summing the
+   *  units of different products (Saginko + Royafloxacin) into one bar is forbidden (owner
+   *  golden rule). Value is additive across products and is the correct trend basis. */
+  value: number;
   /** Per-product units for this pharmacy in this month — drives the trend tooltip
-   *  (e.g. "Saginko 100 units, Royafloxacin 70 units"). Empty when hasSales is false. */
+   *  (e.g. "Saginko 100 units, Royafloxacin 70 units"). Each line is one product, so its
+   *  units ARE valid; only the summed-across-products total is not. Empty when hasSales is false. */
   products: TerritoryProductBreakdown[];
 };
 
