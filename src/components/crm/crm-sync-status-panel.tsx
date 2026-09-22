@@ -38,6 +38,7 @@ export function CrmSyncStatusPanel({
   dateTo,
   latestSyncRuns,
   retiredAt = null,
+  readOnly = false,
 }: {
   configured: boolean;
   dateFrom: string;
@@ -47,6 +48,10 @@ export function CrmSyncStatusPanel({
    * or backfill: the panel says so in one line, hides the backfill control, and keeps the run
    * history as the record of what was pulled before. */
   retiredAt?: string | null;
+  /** Read-only surfaces (the scoped employee-portal CRM) render the freshness/run history but MUST
+   * hide the backfill control: the backfill endpoint is Super-Admin-only, so a field manager clicking
+   * it would only ever get a 403. When true the footer is dropped, same as when the vendor is retired. */
+  readOnly?: boolean;
 }) {
   const [backfillFrom, setBackfillFrom] = useState(dateFrom);
   const [backfillTo, setBackfillTo] = useState(dateTo);
@@ -140,7 +145,7 @@ export function CrmSyncStatusPanel({
         )}
       </div>
 
-      {retiredAt ? null : (
+      {retiredAt || readOnly ? null : (
       <div className="flex flex-wrap items-end gap-3 border-t border-slate-100 bg-slate-50 px-5 py-3">
         <label className="flex flex-col gap-1 text-phx-2xs font-bold uppercase tracking-wider text-slate-500">
           Backfill from

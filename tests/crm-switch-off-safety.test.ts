@@ -158,7 +158,9 @@ export function runCrmSwitchOffSafetyTests() {
     const panel = read("src/components/crm/crm-sync-status-panel.tsx");
     assert.match(panel, /iReports360 was retired on \{formatCairoDay\(retiredAt\)\}\. Phoenix records visits directly\./, "F8: one retired line");
     assert.match(panel, /function formatCairoDay[\s\S]*?timeZone: "Africa\/Cairo"/, "F8: the retirement day is a Cairo day");
-    const hide = panel.indexOf("{retiredAt ? null : (");
+    // retiredAt leads the guard so a retired vendor hides the backfill; the read-only portal surface
+    // (crm-portal-scope.test.ts) shares the same guard via `|| readOnly`, which does not weaken F8.
+    const hide = panel.search(/\{retiredAt(?: \|\| readOnly)? \? null : \(/);
     const backfill = panel.indexOf("Run backfill");
     assert.ok(hide >= 0 && hide < backfill, "F8: the backfill control sits inside the retired guard");
 
