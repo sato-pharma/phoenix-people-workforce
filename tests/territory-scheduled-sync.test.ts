@@ -98,12 +98,18 @@ export function runTerritoryScheduledSyncTests() {
 
   // 8. The guard must be applied by the scheduled runner, not merely exported beside it. Without
   //    this, a future edit could call syncTerritoryData with the raw window and every unit test
-  //    above would still pass.
+  //    above would still pass. The runner reaches selectUnpublishedPeriods through
+  //    resolveSyncablePeriods — the one definition the Drilldown's Sync button shares (2026-09-22);
+  //    assertion 8b below pins that this wrapper is still the thing doing the filtering.
   assert.ok(
-    run.includes("selectUnpublishedPeriods("),
-    "runScheduledTerritorySync must filter the window through selectUnpublishedPeriods before syncing",
+    run.includes("resolveSyncablePeriods("),
+    "runScheduledTerritorySync must filter the window through resolveSyncablePeriods before syncing",
   );
-  const filterAt = run.indexOf("selectUnpublishedPeriods(");
+  assert.ok(
+    functionBody(source, "resolveSyncablePeriods").includes("selectUnpublishedPeriods("),
+    "resolveSyncablePeriods must withhold published periods with selectUnpublishedPeriods — 8b",
+  );
+  const filterAt = run.indexOf("resolveSyncablePeriods(");
   const syncAt = run.indexOf("syncTerritoryData(");
   assert.notEqual(syncAt, -1, "runScheduledTerritorySync must actually call syncTerritoryData");
   assert.ok(filterAt < syncAt, "the published-period filter must run BEFORE the re-stamp, not after it");

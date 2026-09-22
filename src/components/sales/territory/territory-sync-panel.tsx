@@ -78,6 +78,10 @@ export function TerritorySyncPanel({ canRun }: { canRun: boolean }) {
   const [report, setReport] = useState<TerritorySyncReport | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // What the run actually did, in the server's own words — including which months it withheld
+  // because their closing is published. Without this the guard is a silent no-op: the operator
+  // presses Sync, every month in the window is published, nothing runs, and the panel says nothing.
+  const [notice, setNotice] = useState<string | null>(null);
 
   const loadStatus = useCallback(async () => {
     try {
@@ -98,18 +102,31 @@ export function TerritorySyncPanel({ canRun }: { canRun: boolean }) {
   async function runSync() {
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
       const res = await fetch(SYNC_ENDPOINT, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({}),
       });
-      const data = (await res.json()) as { success?: boolean; message?: string; error?: string; report?: TerritorySyncReport };
+      const data = (await res.json()) as {
+        success?: boolean;
+        message?: string;
+        error?: string;
+        report?: TerritorySyncReport | null;
+        publishedPeriodsSkipped?: string[];
+      };
       if (!res.ok || !data.success) {
         setError(data.message ?? data.error ?? "Sync failed — try again.");
         return;
       }
+      // A run that withheld a published month, or that had nothing left to sync at all, returns no
+      // report — say so in words rather than leaving the panel unchanged.
       if (data.report) setReport(data.report);
+      else setReport(null);
+      if (!data.report || (data.publishedPeriodsSkipped?.length ?? 0) > 0) {
+        setNotice(data.message ?? null);
+      }
       await loadStatus();
     } catch {
       setError("Request failed — check your connection and try again.");
@@ -159,6 +176,13 @@ export function TerritorySyncPanel({ canRun }: { canRun: boolean }) {
         <p className="mt-3 flex items-center gap-1 text-xs text-red-500">
           <XCircle className="h-3.5 w-3.5 shrink-0" />
           {error}
+        </p>
+      )}
+
+      {notice && !error && (
+        <p className="mt-3 flex items-start gap-1 text-xs text-slate-600 dark:text-slate-300">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" />
+          <span>{notice}</span>
         </p>
       )}
 

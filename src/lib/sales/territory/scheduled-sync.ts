@@ -111,6 +111,41 @@ export function selectUnpublishedPeriods(
   return window.filter((period) => !published.has(String(period ?? "").trim()));
 }
 
+/** The trailing window, split into what a re-stamp may touch and what it must leave alone. */
+export type SyncablePeriodWindow = {
+  /** The full trailing window considered, oldest first. */
+  window: string[];
+  /** The periods a re-stamp may touch. NEVER pass an empty array on to the RPC — see below. */
+  syncablePeriods: string[];
+  /** Periods withheld because a closing has been published for them. */
+  publishedPeriodsSkipped: string[];
+};
+
+/**
+ * Resolve the window and withhold every published period. THE ONE DEFINITION OF THE GUARD.
+ *
+ * WHY IT IS SHARED, AND NOT A SECOND COPY. Until 2026-09-22 this guard lived only in
+ * `runScheduledTerritorySync`, and the Drilldown's own Sync button called `syncTerritoryData` with
+ * the raw window — so the button asked to re-stamp published months that the nightly job is
+ * forbidden to touch. Nothing was corrupted, because `trg_lock_guard_upd` on
+ * `source_of_sales_import_rows` raises on a locked closing and rolls the whole transaction back;
+ * the visible cost was the opposite one — since the 2026-09-14 locks the button simply FAILED for
+ * every drilldown user, and the open months in the same window never got their re-stamp either,
+ * because one RPC call carries every period in one transaction.
+ *
+ * The database lock and this guard are NOT the same rule and must not be mistaken for each other:
+ * `monthly_closing_locks` is a switch the owner toggles, `monthly_closing_publications` is a
+ * permanent record. A month that was published and later unlocked passes the trigger and still
+ * must not be re-stamped — which is exactly the gap this function closes.
+ */
+export async function resolveSyncablePeriods(monthsBack?: number, now?: Date): Promise<SyncablePeriodWindow> {
+  const window = computeSyncPeriods(monthsBack ?? TERRITORY_SYNC_DEFAULT_MONTHS, now);
+  const published = await listPublishedClosingPeriods();
+  const syncablePeriods = selectUnpublishedPeriods(window, published);
+  const publishedPeriodsSkipped = window.filter((period) => !syncablePeriods.includes(period));
+  return { window, syncablePeriods, publishedPeriodsSkipped };
+}
+
 /**
  * Re-stamp every OPEN period in the trailing window to today's geography.
  *
@@ -132,11 +167,11 @@ export async function runScheduledTerritorySync(
 ): Promise<ScheduledTerritorySyncResult> {
   const startedAt = Date.now();
   const now = options.now ?? new Date();
-  const window = computeSyncPeriods(options.monthsBack ?? TERRITORY_SYNC_DEFAULT_MONTHS, now);
-
-  const published = await listPublishedClosingPeriods();
-  const syncedPeriods = selectUnpublishedPeriods(window, published);
-  const publishedPeriodsSkipped = window.filter((period) => !syncedPeriods.includes(period));
+  const {
+    window,
+    syncablePeriods: syncedPeriods,
+    publishedPeriodsSkipped,
+  } = await resolveSyncablePeriods(options.monthsBack, now);
 
   // Manager geography is checked on EVERY run, including the skip path below. It has nothing to do
   // with whether a period was re-stamped: a manager drifts onto a rep area the moment somebody
