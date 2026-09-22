@@ -22,11 +22,23 @@ export const dynamic = "force-dynamic";
  * That redirect cannot loop. `resolveLandingPathForRole` returns THIS page only for the two roles
  * `hrBundleForRole` accepts, and they never reach the redirect.
  */
-export default async function HrCommandCenterPage() {
+export default async function HrCommandCenterPage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const access = await resolveAccessContextFromPage();
   if (!hrBundleForRole(access.role)) {
     redirect(resolveLandingPathForRole(access.role));
   }
+
+  // The Hired window travels in the URL, not in client state, because the count is made on the
+  // server over every application the seat can see — not over a subset already on the page. It
+  // also makes a chosen range shareable and survivable across a reload. Anything malformed is
+  // normalised back to the running Cairo month by `resolveHiredWindow`, never counted as zero.
+  const params = (await searchParams) ?? {};
+  const one = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value);
+  const hiredWindow = { from: one(params.hiredFrom) ?? null, to: one(params.hiredTo) ?? null };
 
   return (
     <Suspense
@@ -37,22 +49,24 @@ export default async function HrCommandCenterPage() {
         />
       }
     >
-      <HrCommandCenterContent access={access} />
+      <HrCommandCenterContent access={access} hiredWindow={hiredWindow} />
     </Suspense>
   );
 }
 
 async function HrCommandCenterContent({
   access,
+  hiredWindow,
 }: {
   access: Awaited<ReturnType<typeof resolveAccessContextFromPage>>;
+  hiredWindow: { from: string | null; to: string | null };
 }) {
   // Both in parallel: neither needs the other, and the identity is a Storage lookup for the
   // uploaded photo on top of one row read — serialising them would put that latency in front of
   // the page's own data for no reason. `resolveViewerIdentityFromPage` is `cache()`d per request,
   // so the topbar's own call in the shell costs nothing extra.
   const [data, viewer] = await Promise.all([
-    getHrCommandCenterData(access),
+    getHrCommandCenterData(access, { hiredWindow }),
     resolveViewerIdentityFromPage(access),
   ]);
 
