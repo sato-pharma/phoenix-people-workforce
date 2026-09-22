@@ -7,7 +7,7 @@ import {
 } from "../src/lib/automated-payroll/deductions-source.ts";
 import { resolvePublishedAppliedAmount } from "../src/lib/deductions/calculations.ts";
 import { resolveDeductionNotificationCc } from "../src/lib/deductions/notify-deduction.ts";
-import { pushDeduction, pushForEmployee, withdrawDeduction } from "../src/lib/deductions/push.ts";
+import { describePushConflict, pushDeduction, pushForEmployee, withdrawDeduction } from "../src/lib/deductions/push.ts";
 import type { DeductionsCandidateWithDecision, DeductionsCategory } from "../src/lib/deductions/types.ts";
 import { buildOrgIndex, personKey, type OrgSeat } from "../src/lib/phoenix-crm/scope.ts";
 
@@ -284,4 +284,40 @@ export async function runDeductionsPerLinePushTests() {
     /Forbidden: only Super Admin/,
     "withdrawDeduction refuses a non-Super-Admin",
   );
+
+  // ---------------------------------------------------------------------------
+  // 4. The 23505 mapping. phx_push_deduction raises unique_violation from TWO
+  // unrelated places, and they need opposite advice. The day-overlap TRIGGER is a
+  // real business conflict ("withdraw or clear the duplicate"); a duplicate-key
+  // INDEX collision only happens when two pushes race ("reload and retry"). The
+  // old handler labelled both as the day overlap, so a concurrent first push told
+  // the operator to clear a duplicate that does not exist.
+  const dayOverlap = describePushConflict(
+    {
+      code: "23505",
+      message:
+        'deductions_publication_lines: employee b1 is already being deducted for 2026-09-06 under category "crm" in this publication — one employee-day may only be deducted once (conflicting candidate x)',
+    },
+    "Test Employee",
+  );
+  assert.match(dayOverlap, /Withdraw or clear the duplicate first/, "the day-overlap trigger maps to the clear-the-duplicate conflict");
+  assert.doesNotMatch(dayOverlap, /Reload/, "a real day overlap is never the concurrency-retry message");
+
+  // The active-line index and the month's publication index both surface Postgres's
+  // standard duplicate-key text — a concurrency race, not a day overlap.
+  for (const constraint of [
+    "deductions_publication_lines_active_candidate_idx",
+    "deductions_publications_month_active_idx",
+  ]) {
+    const race = describePushConflict(
+      { code: "23505", message: `duplicate key value violates unique constraint "${constraint}"` },
+      "Test Employee",
+    );
+    assert.match(race, /Reload the month and push again/, `${constraint} maps to the concurrency-retry message, not a day overlap`);
+    assert.doesNotMatch(race, /clear the duplicate/, `${constraint} must never claim a day overlap`);
+  }
+
+  // A non-23505 error is surfaced verbatim as a validation failure, never a conflict.
+  const other = describePushConflict({ code: "P0001", message: "some other failure" }, "Test Employee");
+  assert.match(other, /^Validation: could not push this deduction: some other failure$/, "a non-23505 error maps to a validation failure");
 }
