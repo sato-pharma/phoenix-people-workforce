@@ -1883,6 +1883,7 @@ import { runWeeklyUnmappedListFailedRowsTests } from "./weekly-unmapped-list-fai
 import { runWhatsAppTemplateManageGateTests } from "./whatsapp-template-manage-gate.test.ts";
 import { runScreeningDecideGateTests } from "./screening-decide-gate.test.ts";
 import { runCandidateCommentLinksAndInAppTests } from "./candidate-comment-links-and-in-app.test.ts";
+import { runRecordConversationAnyStatusTests } from "./record-conversation-any-status.test.ts";
 import { runPortalCandidatesProxyRedirectTests } from "./portal-candidates-proxy-redirect.test.ts";
 import { runOpenVacancyManagerFollowsSeatTests } from "./open-vacancy-manager-follows-seat.test.ts";
 import { runDevPreviewRoleGuardTests } from "./dev-preview-role-guard.test.ts";
@@ -6653,6 +6654,11 @@ await runTest(
 await runTest(
   "a comment on a candidate: its link names the candidate (?candidate=), the portal My Candidates page forwards an admin-shell viewer to the candidate's admin page instead of /overview, and the Super Admin is told IN THE APP only (never added to the email's To or CC, and HR Advisory is not on the copy), except for a comment they wrote themselves",
   runCandidateCommentLinksAndInAppTests,
+);
+
+await runTest(
+  "the direct-order and marketing-request conversation is open at ANY status (no status gate on either loader), the store is append-only (BEFORE UPDATE trigger, no anon/authenticated grant, both modules only), an empty or >2000-char message is refused before any DB call, and every message is addressed To the requester and CCs the whole chain + prior authors through the one shared notifier with the comment id as its per-message key",
+  runRecordConversationAnyStatusTests,
 );
 
 await runTest(

@@ -12,6 +12,13 @@ import {
 } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 import { ApiError, conflictError, validationError } from "@/lib/http/api-errors";
+import { notifyConversationMessage } from "@/lib/conversations/notify";
+import {
+  insertRecordConversationComment,
+  listRecordConversation,
+  listRecordConversationAuthors,
+  type RecordConversationComment,
+} from "@/lib/conversations/comments";
 import { assertPharmacyRegistryAccess, canManagePharmacyRegistry } from "@/lib/direct-orders/registry-access";
 import {
   assertVenueContactInScope,
@@ -4977,6 +4984,109 @@ export async function getDirectOrderRequest(
   // id cannot be used to probe which request ids exist.
   if (!(await canViewDirectOrderRequest(access, request, steps))) return null;
   return { request, steps };
+}
+
+// ── Direct-order conversation (open at ANY status) ───────────────────────────
+//
+// Owner rule, 2026-09-22: the conversation must be available at any status, including rejected /
+// cancelled / expired, so a requester can ask why an order was turned down and an approver can
+// answer — and everyone on the order is emailed, cc'd, and pinged in-app / Telegram / push for
+// every message. Authorisation is `getDirectOrderRequest`, the same scope choke point every approval
+// surface already reads; there is deliberately NO status gate. The storage and the addressing are
+// the two shared helpers every conversation type in the system uses.
+
+async function loadDirectOrderForConversation(
+  access: AccessContext,
+  orderId: string,
+): Promise<{ request: DirectOrderRequest; steps: DirectOrderStepState[] }> {
+  const cleanId = String(orderId ?? "").trim();
+  if (!cleanId) throw validationError("Direct order ID is required.");
+  const loaded = await getDirectOrderRequest(access, cleanId);
+  // null is "absent OR out of scope", kept indistinguishable so an id cannot be probed — a 403
+  // either way, which is what the leading "Forbidden:" makes the route return.
+  if (!loaded) throw new Error("Forbidden: you cannot view this direct order.");
+  return loaded;
+}
+
+/** Every message on a direct order's conversation, oldest first. */
+export async function listDirectOrderConversation(
+  access: AccessContext,
+  orderId: string,
+): Promise<{ comments: RecordConversationComment[]; schemaReady: boolean }> {
+  const { request } = await loadDirectOrderForConversation(access, orderId);
+  return listRecordConversation("direct_orders", request.id);
+}
+
+/** Post one message to a direct order's conversation, then fan it out to everyone on the order. */
+export async function postDirectOrderConversationComment(
+  access: AccessContext,
+  orderId: string,
+  body: string,
+): Promise<RecordConversationComment> {
+  const { request, steps } = await loadDirectOrderForConversation(access, orderId);
+  if (!normalizeHrId(access.hrId)) throw new Error("Forbidden: no HR_ID on this session.");
+
+  const authorName = directoryLookup(await getEmployeeDirectory())(access.hrId)?.displayName ?? null;
+  const comment = await insertRecordConversationComment({
+    authorHrId: access.hrId ?? null,
+    authorName,
+    authorRole: access.role ?? null,
+    body,
+    module: "direct_orders",
+    recordId: request.id,
+  });
+
+  await notifyDirectOrderConversation({ comment, request, steps });
+  return comment;
+}
+
+/**
+ * Fan a direct-order conversation message out To the requester and CC everyone on the order.
+ *
+ * Participants: the requester (the thread's owner), every person rung in the chain (the requester's
+ * managers), everyone who has actually decided a rung — which is how a role rung such as the CEO
+ * joins once it has acted, rather than being pinged on every message before it — and everyone who
+ * has already posted in this thread. Best-effort: the message is stored and a delivery failure must
+ * not undo it.
+ */
+async function notifyDirectOrderConversation(input: {
+  comment: RecordConversationComment;
+  request: DirectOrderRequest;
+  steps: DirectOrderStepState[];
+}): Promise<void> {
+  try {
+    const { comment, request, steps } = input;
+    const priorAuthors = await listRecordConversationAuthors("direct_orders", request.id);
+    const pharmacy = (await loadPharmaciesByIds([request.pharmacyId])).get(request.pharmacyId) ?? null;
+    const participantHrIds = [
+      request.requesterHrId,
+      ...steps.map((step) => step.approverHrId),
+      ...steps.map((step) => step.decidedByHrId ?? null),
+      ...priorAuthors,
+    ];
+
+    await notifyConversationMessage({
+      // The live order route; the notification pipeline remaps it to each reader's own shell.
+      actionUrl: `/admin/direct-orders/${encodeURIComponent(request.id)}`,
+      authorHrId: comment.authorHrId,
+      authorName: comment.authorName,
+      body: comment.body,
+      eventType: "direct_order_comment",
+      messageKey: comment.id,
+      metadata: { directOrderId: request.id },
+      module: "direct_orders",
+      participantHrIds,
+      recordId: request.id,
+      submitterHrId: request.requesterHrId,
+      subjectLabel: pharmacy?.pharmacyName?.trim() || request.productName || request.id,
+      threadLabel: "direct order",
+    });
+  } catch (error) {
+    logError("Direct order conversation failed to notify the thread", {
+      labels: { event: "direct_order_conversation_notify_failed", directOrderId: input.request.id },
+      error,
+    });
+  }
 }
 
 // ── Approvals-hub reads (this hub surface is the SOLE approval gate) ──────────
