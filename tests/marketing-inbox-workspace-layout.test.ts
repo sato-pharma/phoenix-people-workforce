@@ -115,11 +115,24 @@ export function runMarketingInboxWorkspaceLayoutTests() {
   // ever decide anything. One renderer that carries no decision control is a stronger guarantee
   // than two that happen not to — and it is what lets the oversight suite read this module from
   // its heading to EOF and prove no decision link is reachable from the watch list.
-  const watchListUses = inbox.match(/<ChainWatchList rows=\{(upcomingRows|oversightRows)\}/g) ?? [];
-  assert.deepEqual(
-    watchListUses.sort(),
-    ["<ChainWatchList rows={oversightRows}", "<ChainWatchList rows={upcomingRows}"],
-    "both watch lists must render through the same read-only component",
+  // Exactly two usages of the one component, one per watch list. Matched without pinning attribute
+  // order: the oversight usage also passes `onCancelled` (its Cancel affordance), and lint sorts JSX
+  // props alphabetically, so `rows` is no longer guaranteed to be the first attribute.
+  const watchListUses = inbox.match(/<ChainWatchList\b/g) ?? [];
+  assert.equal(
+    watchListUses.length,
+    2,
+    "both watch lists must render through the same read-only component — no more, no fewer",
+  );
+  assert.match(
+    inbox,
+    /<ChainWatchList[^\n]*\brows=\{upcomingRows\}/,
+    '"Coming to me" must render through ChainWatchList',
+  );
+  assert.match(
+    inbox,
+    /<ChainWatchList[^\n]*\brows=\{oversightRows\}/,
+    '"Everything in approval" must render through the same ChainWatchList',
   );
   const watchList = componentBody("function ChainWatchList(");
   assert.doesNotMatch(
