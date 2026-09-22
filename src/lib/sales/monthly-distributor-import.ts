@@ -1829,6 +1829,64 @@ async function parseDistributorSalesWorkbookBuffer(input: {
     });
   }
 
+  // Reused-code cross-area flag (advisory, non-blocking). A single distributor customer code should
+  // belong to ONE territory. When a code's rows in this upload — together with the area it is already
+  // pinned to in the customer map — resolve to more than one REAL area, the code is being shared by
+  // pharmacies in different areas, and one side's sales are credited to the wrong territory. The audit
+  // that motivated this (2026-09-22) found the hazard rare (2 codes system-wide) but it only ever
+  // surfaces AFTER a month is published and locked, when it can no longer be corrected — so flag it at
+  // import, as a WARNING, so a human resolves it before the period locks. Non-territory buckets (e.g.
+  // "OTMS" Main Store) and blank areas are excluded: they are not places, so they cannot be a second
+  // territory to cross — the same exclusion the customer-map cross-area guard uses above.
+  {
+    const isRealArea = (area: string) => {
+      const code = normalizeCode(area);
+      return code !== "" && maps.areaCodesWithBricks.has(code);
+    };
+    const realAreasByCode = new Map<string, Set<string>>();
+    const addRealArea = (clientCode: string, area: string) => {
+      if (!clientCode || !isRealArea(area)) return;
+      let set = realAreasByCode.get(clientCode);
+      if (!set) {
+        set = new Set<string>();
+        realAreasByCode.set(clientCode, set);
+      }
+      set.add(normalizeCode(area));
+    };
+    for (const row of rows) {
+      const clientCode = normalizeCode(row.clientCode);
+      if (!clientCode) continue;
+      addRealArea(clientCode, row.areaCode);
+      // Fold in the area this code is already pinned to in the customer map, so a code that DRIFTS from
+      // its established territory across months is caught, not only one split within this single sheet.
+      const mappedBrickId = maps.customerBrickByKey.get(`${selectedDistributorCode} ${clientCode}`);
+      const mappedArea = mappedBrickId ? maps.brickById.get(mappedBrickId)?.areaCode : undefined;
+      if (mappedArea) addRealArea(clientCode, mappedArea);
+    }
+    const areaLabel = (code: string) => {
+      const name = maps.areaByCode.get(code)?.areaName;
+      return name ? `${name} (${code})` : code;
+    };
+    for (const row of rows) {
+      const clientCode = normalizeCode(row.clientCode);
+      if (!clientCode) continue;
+      if (!isRealArea(row.areaCode)) continue;
+      const areaSet = realAreasByCode.get(clientCode);
+      if (!areaSet || areaSet.size < 2) continue;
+      const areaList = [...areaSet].sort().map(areaLabel).join(", ");
+      const issue = addIssue(
+        row.validationIssues,
+        row.rowNumber,
+        "Customer Code",
+        row.clientCode,
+        `Customer code ${clientCode} is used across ${areaSet.size} areas (${areaList}). One code should belong to a single territory — check it is not shared by pharmacies in different areas before this month is published.`,
+        "warning",
+      );
+      issues.push(issue);
+      row.validationState = validationStateForIssues(row.validationIssues);
+    }
+  }
+
   if (rows.length === 0) {
     throw new SalesWorkflowError("empty_sales_sheet", "No sales rows were found in this workbook.", 400);
   }
