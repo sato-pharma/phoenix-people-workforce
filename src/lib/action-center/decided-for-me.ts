@@ -16,6 +16,7 @@
 // A marketing request is usually raised by a rep who does NOT report to the reviewer, so a
 // team-only rule would have missed three of that manager's four.
 
+import { fetchAllApprovalRows } from "@/lib/approvals-hub/page-rows";
 import { resolveNavigationMode, normalizeRole, type AccessContext } from "@/lib/auth/permissions";
 import { isSamePerson, sharedIdentityKeys } from "@/lib/auth/identity-aliases";
 import type { HistoricalApprovalItem } from "@/components/action-center/types";
@@ -37,11 +38,69 @@ export type DecidedForMeItem = HistoricalApprovalItem & {
   decidedNote: string | null;
 };
 
+// The shape of each read, one per table.
+//
+// Awaiting a PostgREST builder infers these; a paged read cannot, so they are written out. They are
+// `type` aliases rather than interfaces deliberately — only an alias carries the implicit index
+// signature that the `as Array<Record<string, unknown>>` casts below rely on. Values are `unknown`
+// because every one of them goes through `cleanText` before it is used, so a narrower type here
+// would be a claim about the database this module never actually depends on.
+type DecidedLeaveRow = {
+  id: unknown; employee_name: unknown; employee_hr_id: unknown; start_date: unknown;
+  manager_decision: unknown; manager_decision_at: unknown;
+  manager_decision_by_hr_id: unknown; manager_decision_comment: unknown;
+};
+type DecidedExcuseRow = {
+  id: unknown; employee_name: unknown; employee_hr_id: unknown; excuse_date: unknown;
+  excuse_type: unknown; manager_decision: unknown; manager_decision_at: unknown;
+  manager_decision_by_hr_id: unknown; manager_decision_comment: unknown;
+};
+type DecidedPlanRow = {
+  id: unknown; employee_name: unknown; employee_hr_id: unknown; period_key: unknown;
+  plan_kind: unknown; status: unknown; manager_decision_at: unknown;
+  manager_decision_by_hr_id: unknown; manager_decision_comment: unknown;
+};
+type MarketingRequestRow = {
+  id: unknown; request_code: unknown; line_id: unknown; requester_hr_id: unknown;
+};
+type MarketingStepRow = {
+  id: unknown; request_id: unknown; step_code: unknown; status: unknown;
+  decision_at: unknown; decision_by_hr_id: unknown; decision_note: unknown;
+};
+
 /** How far back to look. A returning manager cares about the trip, not his whole tenure. */
 export const DECIDED_FOR_ME_WINDOW_DAYS = 90;
 
-/** Per-module row cap. Mirrors the 200 used by getMyApprovalHistory. */
-const PER_MODULE_LIMIT = 200;
+// WHY THERE IS NO PER-MODULE ROW CAP ANY MORE.
+//
+// Until 2026-09-23 every read below ended in a `.limit()` — `PER_MODULE_LIMIT = 200` on the four
+// decision feeds, and `.limit(1000)` on the marketing request lookup. That is the same silent
+// truncation the Approvals Hub (#4273) and the Action Center's own decision history (#4274) were
+// cleared of, and it is worse HERE than on either of those surfaces: this list exists precisely so
+// that a manager coming back from leave learns what was decided for him. A short answer does not
+// read as "some rows are missing", it reads as "nothing else happened while you were away".
+//
+// Three things made the old caps sharper than they looked:
+//
+//  * They were applied PER 50-ID CHUNK, so the effective ceiling moved with team size — a number
+//    nobody could state from reading the call site.
+//  * `marketing_requests` was capped at 1000 with NO time window and NO ordering, so it grew
+//    without bound and truncated arbitrarily. Worse, its truncation dropped rows from a DIFFERENT
+//    query: a decided step whose request missed the map is discarded by `if (!request) continue`,
+//    silently and with no upper bound on how many.
+//  * Nothing ordered by a unique column, so any truncation was non-deterministic. Measured on
+//    production 2026-09-23: 116 leave rows share a single `manager_decision_at` value, so a cap
+//    landing inside that tie could return a different arbitrary subset on each load.
+//
+// HONEST MEASUREMENT (production, 2026-09-23): none of the five caps binds today. The largest team
+// is 11 direct reports; the busiest manager's 90-day window holds 66 leave rows against a cap of
+// 200, and all 47 marketing requests ever raised fit inside the 1000. This change removes a latent
+// defect and buys determinism — it does not recover rows that are being hidden right now.
+//
+// The pager is `fetchAllApprovalRows`, written for #4273 and reused by #4274 — one implementation,
+// not a third copy. It takes a query FACTORY because a PostgREST builder is single-use, it advances
+// by rows RECEIVED rather than by page size, and it requires a total sort, which is why every chain
+// below now ends in `.order("id", …)`.
 
 // A PostgREST `.in()` carrying several hundred ids returns ZERO rows and no error (AGENTS.md
 // 2.1, Migrations). An NSM has ~70 direct reports and the CEO far more, so every id list below
@@ -182,31 +241,45 @@ export async function getDecisionsMadeForMe(
   // ── leave, excuse, weekly plan: scoped to my direct reports ─────────────────
   for (const batch of chunk(teamHrIds)) {
     const [leaves, excuses, plans] = await Promise.all([
-      db
-        .from("v2_vacation_requests")
-        .select("id,employee_name,employee_hr_id,start_date,manager_decision,manager_decision_at,manager_decision_by_hr_id,manager_decision_comment")
-        .in("employee_hr_id", batch)
-        .not("manager_decision_at", "is", null)
-        .gte("manager_decision_at", since)
-        .order("manager_decision_at", { ascending: false })
-        .limit(PER_MODULE_LIMIT),
-      db
-        .from("v2_excuse_requests")
-        .select("id,employee_name,employee_hr_id,excuse_date,excuse_type,manager_decision,manager_decision_at,manager_decision_by_hr_id,manager_decision_comment")
-        .in("employee_hr_id", batch)
-        .not("manager_decision_at", "is", null)
-        .gte("manager_decision_at", since)
-        .order("manager_decision_at", { ascending: false })
-        .limit(PER_MODULE_LIMIT),
-      db
-        .from("employee_plan_headers")
-        .select("id,employee_name,employee_hr_id,period_key,plan_kind,status,manager_decision_at,manager_decision_by_hr_id,manager_decision_comment")
-        .in("employee_hr_id", batch)
-        .not("manager_decision_at", "is", null)
-        .gte("manager_decision_at", since)
-        .order("manager_decision_at", { ascending: false })
-        .limit(PER_MODULE_LIMIT),
+      fetchAllApprovalRows<DecidedLeaveRow>(() =>
+        db
+          .from("v2_vacation_requests")
+          .select("id,employee_name,employee_hr_id,start_date,manager_decision,manager_decision_at,manager_decision_by_hr_id,manager_decision_comment")
+          .in("employee_hr_id", batch)
+          .not("manager_decision_at", "is", null)
+          .gte("manager_decision_at", since)
+          .order("manager_decision_at", { ascending: false })
+          .order("id", { ascending: false })),
+      fetchAllApprovalRows<DecidedExcuseRow>(() =>
+        db
+          .from("v2_excuse_requests")
+          .select("id,employee_name,employee_hr_id,excuse_date,excuse_type,manager_decision,manager_decision_at,manager_decision_by_hr_id,manager_decision_comment")
+          .in("employee_hr_id", batch)
+          .not("manager_decision_at", "is", null)
+          .gte("manager_decision_at", since)
+          .order("manager_decision_at", { ascending: false })
+          .order("id", { ascending: false })),
+      fetchAllApprovalRows<DecidedPlanRow>(() =>
+        db
+          .from("employee_plan_headers")
+          .select("id,employee_name,employee_hr_id,period_key,plan_kind,status,manager_decision_at,manager_decision_by_hr_id,manager_decision_comment")
+          .in("employee_hr_id", batch)
+          .not("manager_decision_at", "is", null)
+          .gte("manager_decision_at", since)
+          .order("manager_decision_at", { ascending: false })
+          .order("id", { ascending: false })),
     ]);
+
+    // Surface a failed read instead of rendering it as a quiet empty stretch.
+    //
+    // This mirrors the decision taken three dozen lines above for the employee directory, and for
+    // the same reason: on THIS feature an empty list is a claim — "nothing was decided for you" —
+    // and a manager back from two weeks away has no way to tell that claim apart from a broken
+    // query. The pages already turn a throw into a visible "could not load". The old code read
+    // `.data ?? []`, so a failure here used to read as a quiet week.
+    for (const read of [leaves, excuses, plans]) {
+      if (read.error) throw read.error;
+    }
 
     for (const row of (leaves.data as Array<Record<string, unknown>> | null) ?? []) {
       if (isMe(row.manager_decision_by_hr_id)) continue;
@@ -261,11 +334,18 @@ export async function getDecisionsMadeForMe(
 
   // ── marketing: scoped to the lines I review ─────────────────────────────────
   if (myLineIds.length > 0) {
-    const { data: requestRows } = await db
-      .from("marketing_requests")
-      .select("id,request_code,line_id,requester_hr_id")
-      .in("line_id", myLineIds)
-      .limit(1000);
+    // Every request on my lines, not the first thousand in whatever order the server chose.
+    //
+    // This lookup feeds the `requests` map, and a decided step whose request is missing from that
+    // map is dropped by `if (!request) continue` below — so truncating HERE silently shortened a
+    // list built from a different table, with nothing on either query to show for it.
+    const { data: requestRows, error: requestError } = await fetchAllApprovalRows<MarketingRequestRow>(() =>
+      db
+        .from("marketing_requests")
+        .select("id,request_code,line_id,requester_hr_id")
+        .in("line_id", myLineIds)
+        .order("id", { ascending: true }));
+    if (requestError) throw requestError;
     const requests = new Map<string, { code: string; requester: string }>();
     for (const row of (requestRows as Array<Record<string, unknown>> | null) ?? []) {
       requests.set(String(row.id), {
@@ -275,15 +355,17 @@ export async function getDecisionsMadeForMe(
     }
 
     for (const batch of chunk(Array.from(requests.keys()))) {
-      const { data: stepRows } = await db
-        .from("marketing_request_approval_steps")
-        .select("id,request_id,step_code,status,decision_at,decision_by_hr_id,decision_note")
-        .eq("step_code", "marketing_review")
-        .in("request_id", batch)
-        .not("decision_at", "is", null)
-        .gte("decision_at", since)
-        .order("decision_at", { ascending: false })
-        .limit(PER_MODULE_LIMIT);
+      const { data: stepRows, error: stepError } = await fetchAllApprovalRows<MarketingStepRow>(() =>
+        db
+          .from("marketing_request_approval_steps")
+          .select("id,request_id,step_code,status,decision_at,decision_by_hr_id,decision_note")
+          .eq("step_code", "marketing_review")
+          .in("request_id", batch)
+          .not("decision_at", "is", null)
+          .gte("decision_at", since)
+          .order("decision_at", { ascending: false })
+          .order("id", { ascending: false }));
+      if (stepError) throw stepError;
 
       for (const row of (stepRows as Array<Record<string, unknown>> | null) ?? []) {
         if (isMe(row.decision_by_hr_id)) continue;
