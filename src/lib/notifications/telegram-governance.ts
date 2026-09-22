@@ -77,6 +77,14 @@ const defaultTelegramPolicies: TelegramModulePolicy[] = [
   // genericOnly: the customer, the proposed grade or drop reason and the week ARE what a manager
   // decides on; the notices carry no money and no personal data beyond the rep's name.
   { enabled: true, genericOnly: false, module: "phoenix_crm", notes: "Grade and drop requests and weekly plans waiting for the reviewing manager, and their decisions; in-app and Telegram only, email permanently blocked.", optional: false },
+  // Deductions per-line push (owner rule 2026-09-22): when the Super Admin pushes ONE employee's
+  // ONE deduction, the employee gets in-app + Telegram, cc'ing the manager chain — never email
+  // (deductions notices carry no email path; see notify-deduction.ts). Not genericOnly, but the
+  // notices deliberately carry NO amount and NO category, only "a payroll deduction was recorded
+  // for <month>" — so full content is safe on a lock screen. genericOnly would force the shared
+  // "Your payslip is available." literal, which is a payslip message, not a deduction one, and
+  // would mislead. Without this row the unknown-module fail-safe drops Telegram silently.
+  { enabled: true, genericOnly: false, module: "deductions", notes: "Per-line deduction push notice to the employee and their manager chain; in-app and Telegram only, and the message carries no amount and no category.", optional: false },
 ];
 
 function cleanModule(value: unknown) {

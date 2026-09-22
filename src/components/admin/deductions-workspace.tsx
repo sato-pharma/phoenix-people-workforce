@@ -40,6 +40,13 @@ type CandidateApiRow = {
     decidedBy: string | null;
     decidedAt: string | null;
   } | null;
+  /**
+   * The id of this candidate's ACTIVE pushed line, or null when it has not been
+   * pushed. A pushed candidate is released to the employee's portal and to
+   * payroll and is locked against edits; withdrawing its line (this id) frees it
+   * again. Loaded by the candidates route from the active publication lines.
+   */
+  pushedLineId?: string | null;
 };
 
 /**
@@ -650,6 +657,142 @@ function CandidateDecideRow({
   );
 }
 
+/**
+ * Would the server accept a PUSH for this row right now? Mirrors
+ * isEligibleForPublish (calculations.ts): a category that requires approval needs
+ * an explicit "Approved for Payroll"; a mandatory-unless-cleared category needs
+ * only that it was not marked "Do Not Take Action". The `dsm_no_record`
+ * source-system override is not represented on the client row — the server
+ * refuses those and PushControl surfaces the reason inline — so this stays a
+ * best-effort gate on when to OFFER the button, never the authority on the write.
+ */
+function eligibleForPush(row: CandidateApiRow): boolean {
+  const status = row.decision?.decisionStatus ?? "Pending";
+  if (DEDUCTIONS_CATEGORY_CONFIG[row.category].requiresApproval) {
+    return status === "Approved for Payroll";
+  }
+  return status !== "Do Not Take Action";
+}
+
+/**
+ * The per-line PUSH / WITHDRAW control — the owner's "push per one person, per
+ * one deduction, push two and leave one" (2026-09-22).
+ *
+ * A pushed line is the SINGLE gate for pay and for the employee's portal, and it
+ * fires the employee + manager-chain notification. So this is money: it shows a
+ * plain "Push" only where the row is eligible AND has a computable amount, and
+ * once pushed it shows a "Pushed" badge with a "Withdraw" that pulls the line
+ * back (freeing the candidate to be edited and re-pushed). No amount or category
+ * is ever spoken by the notification — that lives behind the self-only portal.
+ *
+ * It talks to the API directly (not fetchJson) so a no-op withdraw — the line was
+ * already gone — still lands on the desired end-state (not pushed) instead of
+ * reading as an error.
+ */
+function PushControl({
+  row,
+  onPushChange,
+}: {
+  row: CandidateApiRow;
+  onPushChange: (candidateId: string, pushedLineId: string | null) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function push() {
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/admin/deductions/push", {
+        method: "POST",
+        cache: "no-store",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ monthKey: row.monthKey, candidateId: row.id }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        success?: boolean;
+        error?: string;
+        message?: string;
+        line?: { lineId?: string };
+      };
+      const lineId = payload.line?.lineId;
+      if (!response.ok || payload.success === false || !lineId) {
+        throw new Error(payload.error || payload.message || `Push failed (${response.status})`);
+      }
+      onPushChange(row.id, String(lineId));
+    } catch (pushError) {
+      setError(pushError instanceof Error ? pushError.message : "Unable to push this deduction.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function withdraw() {
+    if (!row.pushedLineId) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/admin/deductions/push", {
+        method: "DELETE",
+        cache: "no-store",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lineId: row.pushedLineId }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as { error?: string; message?: string };
+      // A no-op withdraw (the line was already withdrawn elsewhere) returns 200
+      // with success:false, and the end-state is still "not pushed" — only a real
+      // HTTP error is a failure worth showing.
+      if (!response.ok) {
+        throw new Error(payload.error || payload.message || `Withdraw failed (${response.status})`);
+      }
+      onPushChange(row.id, null);
+    } catch (withdrawError) {
+      setError(withdrawError instanceof Error ? withdrawError.message : "Unable to withdraw this deduction.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (row.pushedLineId) {
+    return (
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-emerald-100 px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-emerald-700">
+          <CheckCircle2 className="h-3 w-3" />
+          Pushed
+        </span>
+        <button
+          className="whitespace-nowrap border border-red-300 px-2 py-1 text-phx-2xs font-black uppercase tracking-[0.08em] text-red-700 transition hover:border-red-500 hover:bg-red-50 disabled:opacity-50"
+          disabled={busy}
+          onClick={withdraw}
+          type="button"
+        >
+          {busy ? "Withdrawing…" : "Withdraw"}
+        </button>
+        {error ? <span className="text-phx-2xs font-semibold text-red-700">{error}</span> : null}
+      </div>
+    );
+  }
+
+  // Not pushed. Offer Push only where it would actually go through — otherwise the
+  // Decide / Edit-days controls beside this one are the way forward.
+  if (!eligibleForPush(row) || appliedAmountOf(row) == null) return null;
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <button
+        className="inline-flex items-center gap-1 whitespace-nowrap border border-emerald-600 bg-emerald-600 px-2.5 py-1 text-phx-2xs font-black uppercase tracking-[0.08em] text-white transition hover:bg-emerald-700 disabled:opacity-50"
+        disabled={busy}
+        onClick={push}
+        type="button"
+      >
+        <UserPlus className="h-3 w-3" />
+        {busy ? "Pushing…" : "Push"}
+      </button>
+      {error ? <span className="text-phx-2xs font-semibold text-red-700">{error}</span> : null}
+    </div>
+  );
+}
+
 type EmployeeMatch = {
   hrId: string;
   name: string;
@@ -980,6 +1123,12 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
     setRows((current) => current.map((row) => (row.id === candidateId ? { ...row, decision } : row)));
   }
 
+  // Push and withdraw flip one candidate's active-line id in place, so the row
+  // moves between "Push" and "Pushed ✓ · Withdraw" without a full refetch.
+  function handlePushChange(candidateId: string, pushedLineId: string | null) {
+    setRows((current) => current.map((row) => (row.id === candidateId ? { ...row, pushedLineId } : row)));
+  }
+
   const config = DEDUCTIONS_CATEGORY_CONFIG[category];
 
   return (
@@ -1113,14 +1262,22 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
                         {canDecide ? (
                           <td className="px-4 py-2.5">
                             <div className="flex flex-wrap items-center gap-1.5">
-                              <button
-                                className="mt-1.5 whitespace-nowrap border border-slate-300 px-2 py-1 text-phx-2xs font-black uppercase tracking-[0.08em] text-slate-700 transition hover:border-orange-400 hover:text-orange-600"
-                                onClick={() => setEditingId(editingId === row.id ? null : row.id)}
-                                type="button"
-                              >
-                                {editingId === row.id ? "Close days" : "Edit days"}
-                              </button>
-                              <CandidateDecideRow canDecide={canDecide} onDecided={handleDecided} row={row} />
+                              {/* A pushed line is LOCKED — editing days or changing the
+                                  decision would be refused server-side. Hide those and
+                                  offer only Withdraw until it is pulled back. */}
+                              {row.pushedLineId ? null : (
+                                <>
+                                  <button
+                                    className="mt-1.5 whitespace-nowrap border border-slate-300 px-2 py-1 text-phx-2xs font-black uppercase tracking-[0.08em] text-slate-700 transition hover:border-orange-400 hover:text-orange-600"
+                                    onClick={() => setEditingId(editingId === row.id ? null : row.id)}
+                                    type="button"
+                                  >
+                                    {editingId === row.id ? "Close days" : "Edit days"}
+                                  </button>
+                                  <CandidateDecideRow canDecide={canDecide} onDecided={handleDecided} row={row} />
+                                </>
+                              )}
+                              <PushControl onPushChange={handlePushChange} row={row} />
                             </div>
                           </td>
                         ) : null}
@@ -1163,7 +1320,9 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
                     </p>
                   ) : null}
                   {row.reason ? <p className="mt-1 text-xs text-slate-600">{row.reason}</p> : null}
-                  {canDecide ? (
+                  {/* A pushed line is LOCKED — hide Edit days + Decide, offer only
+                      Withdraw, until it is pulled back. */}
+                  {canDecide && !row.pushedLineId ? (
                     <button
                       className="mt-1.5 whitespace-nowrap border border-slate-300 px-2 py-1 text-phx-2xs font-black uppercase tracking-[0.08em] text-slate-700 transition hover:border-orange-400 hover:text-orange-600"
                       onClick={() => setEditingId(editingId === row.id ? null : row.id)}
@@ -1172,12 +1331,19 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
                       {editingId === row.id ? "Close days" : "Edit days"}
                     </button>
                   ) : null}
-                  {canDecide && editingId === row.id ? (
+                  {canDecide && !row.pushedLineId && editingId === row.id ? (
                     <div className="mt-2">
                       <DeductionDaysEditor onClose={() => setEditingId(null)} onSaved={handleDecided} row={row} />
                     </div>
                   ) : null}
-                  <CandidateDecideRow canDecide={canDecide} onDecided={handleDecided} row={row} />
+                  {canDecide && !row.pushedLineId ? (
+                    <CandidateDecideRow canDecide={canDecide} onDecided={handleDecided} row={row} />
+                  ) : null}
+                  {canDecide ? (
+                    <div className="mt-1.5">
+                      <PushControl onPushChange={handlePushChange} row={row} />
+                    </div>
+                  ) : null}
                 </div>
               );
             })}

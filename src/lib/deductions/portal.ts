@@ -95,6 +95,12 @@ async function loadNewModuleLines(monthKey: string | undefined): Promise<{
   // Paginated: a company-wide month can exceed PostgREST's 1000-row cap, which
   // previously meant arbitrary employees saw NO deductions in the portal while
   // payroll still deducted them.
+  //
+  // ACTIVE lines only. Per-line push withdraws a line (line_status='withdrawn')
+  // when the Super Admin pulls a deduction back or re-pushes an edited one; a
+  // withdrawn line is kept for the audit trail but deducts nothing, so it must
+  // never reach the employee's portal. Legacy wholesale publishes are all
+  // 'active' (the column defaults to 'active'), so this changes nothing for them.
   const rows = await fetchAllRows<PublicationLineRow>(
     () =>
       supabase
@@ -102,7 +108,8 @@ async function loadNewModuleLines(monthKey: string | undefined): Promise<{
         .select(
           "id, publication_id, candidate_id, decision_id, employee_hr_id, employee_hr_id_compact, employee_name, month_key, category, unit, original_value, applied_value, applied_amount, dates, reason, hr_note, created_at",
         )
-        .in("publication_id", publications.map((p) => p.id)),
+        .in("publication_id", publications.map((p) => p.id))
+        .eq("line_status", "active"),
     "id",
   );
 
