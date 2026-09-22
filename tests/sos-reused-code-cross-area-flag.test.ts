@@ -4,6 +4,7 @@ import ExcelJS from "exceljs";
 
 import {
   validateDistributorSalesWorkbookBuffer,
+  type DistributorSalesValidationIssue,
   type SalesReferenceData,
 } from "../src/lib/sales/monthly-distributor-import.ts";
 
@@ -49,7 +50,8 @@ async function buildPsBuffer(rows: unknown[][]) {
   return workbook.xlsx.writeBuffer();
 }
 
-const reusedCodeIssues = (issues: { field: string }[]) => issues.filter((i) => i.field === "Customer Code");
+const reusedCodeIssues = (issues: DistributorSalesValidationIssue[]) =>
+  issues.filter((i) => i.field === "Customer Code");
 
 export async function runSosReusedCodeCrossAreaFlagTests() {
   // ── Split within one upload: code C-DUP typed in A1 (brick B-1) on one row and A2 (brick B-2) on
