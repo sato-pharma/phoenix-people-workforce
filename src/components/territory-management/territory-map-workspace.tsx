@@ -127,11 +127,6 @@ export function TerritoryMapWorkspace({
     [lineFilters.areas, regionCode],
   );
 
-  const lineName = useMemo(
-    () => lineFilters.lines.find((line) => line.lineCode === lineCode)?.lineName ?? lineCode,
-    [lineCode, lineFilters.lines],
-  );
-
   const colourFor = useCallback(
     (areaCode: string) => AREA_COLOURS[Math.max(0, selectedAreas.indexOf(areaCode)) % AREA_COLOURS.length],
     [selectedAreas],
@@ -607,8 +602,7 @@ export function TerritoryMapWorkspace({
                       >
                         <span className="font-medium">{hit.brickName}</span>
                         <span className="text-muted-foreground text-xs">
-                          {hit.areaName} ·{" "}
-                          {hit.onSelectedLine ? hit.regionName : `not carried on ${lineName}`} · block {hit.blockCode}
+                          {hit.areaName} · {hit.regionName} · block {hit.blockCode}
                           {hit.lat == null ? " · no pin yet" : ""}
                         </span>
                       </button>
