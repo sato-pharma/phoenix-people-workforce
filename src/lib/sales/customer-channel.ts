@@ -245,6 +245,54 @@ export const STORE_OVERRIDE_CUSTOMER_KEYS: ReadonlySet<string> = new Set([
   "IS|402837",
   // عامر قطب - جمعيه احمد عرابى at Elgomhouria — the SAME shop, second distributor. Owner 2026-09-10.
   "EG|33995",
+  // ─── الفاتح, Delta 1 — owner ruling 2026-09-23 ────────────────────────────────────────────────
+  // The owner ruled that the Delta (1) "الفاتح" accounts are all one wholesaler mis-booked as
+  // pharmacies. Its Helwan branch «الفاتح لتجارة وتوزيع الادويه» (SF 1500017188) is already a store
+  // on the trade phrase, but these bare-name Delta accounts carry none of the six store words and no
+  // trade phrase, so both rules called each a pharmacy and credited its whole sell-in to the one
+  // brick it happened to book on. Keyed here so the city split spreads each across its own city's
+  // areas like every other مخزن.
+  //
+  // WHAT IT MOVES. Only 446433 has tracked sales at or after the August split gate. Its August 2026
+  // Anti Infective — 200 units / 17,190.00 EGP, whole on Mahalla (D15) — becomes 100 units /
+  // 8,595.00 on EACH of Gharbia's two areas, so D15 gives up 8,595.00 to Tanta (D14). Nothing leaves
+  // Anti Infective and nothing leaves Delta. August Anti Infective was UNLOCKED by the owner on
+  // 2026-09-22 expressly to take this restatement; its July AI (50 units) is before the split gate
+  // and does not move. The other two keys carry no split-eligible sales at or after August —
+  // 1552831's August is Head Office (excluded from the split) and 1520649 has no sales rows — so
+  // they move 0.00 today and only decide how each account is treated the first time it sells.
+  //
+  // KEYS ARE NORMALIZED. PS pads its codes with leading zeros in the data ("0001552831"), and
+  // isStoreOverride() looks up normalizeClientCode(code) which strips them, so the key MUST be the
+  // zero-stripped "1552831" — the padded form would never match. (The closing SQL ltrims both
+  // sides, so it matches either way; only the TS classifier needs the normalized key.)
+  "IS-S|446433",
+  "PS|1552831",
+  "PS|1520649",
+  // ─── بدر, Delta 1 (Menoufia) — owner ruling 2026-09-23 ─────────────────────────────────────────
+  // Another Delta (1) wholesaler mis-booked as a pharmacy, same as ابن خلدون / الفاتح above. It sits
+  // in Menoufia (areas D12 + D13), so the city split spreads each sale 50/50 across the two. Code
+  // 386724 sells through TWO distributors, so it needs a key for each: IS on CNS and IS-S on Anti
+  // Infective (both booked on D12).
+  //
+  // NOTE on الرساله فارم (code 1557996, PS): the owner listed it too, but its name already matches the
+  // «فارم» STORE_NAME_KEYWORD, so it is ALREADY a store and already city-splits — no override needed.
+  //
+  // WHAT بدر MOVES in August 2026 (the owner unlocked ALL of August — AI, CNS and Pedia — on
+  // 2026-09-22, so both lines below restate):
+  //   AI  20u / 2,223.00 whole on D12 → 10u / 1,111.50 on each of D12, D13  (D12→D13 1,111.50)
+  //   CNS 10u / 344.25   whole on D12 →  5u / 172.13 on each of D12, D13    (D12→D13 172.13)
+  //   Nothing leaves its own line and nothing leaves Delta. Its pre-August months are before the
+  //   split gate and do not move. Code carries no leading zeros, so the keys are the code as written.
+  "IS|386724",
+  "IS-S|386724",
+  // ─── دار الطب-الفاتح-طنطا, Gharbia — owner ruling 2026-09-23 ────────────────────────────────────
+  // Code 7010216, distributor RM, in Tanta (D14 → Gharbia, so the split spreads across D14 + D15 like
+  // الفاتح above). The name carries no store word, so it defaults to pharmacy and needs the override.
+  // Its only sales record on file is a single -1 / -60.75 CNS return in July 2026 (D14), which is
+  // before the split gate — so it MOVES 0.00 today and the key only decides how the account is
+  // treated the first time it sells on a tracked line from August on.
+  "RM|7010216",
 ]);
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────

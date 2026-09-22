@@ -94,8 +94,14 @@ export async function runSalesStoreOverrideTests() {
   assert.equal(isStoreCustomer("مخزن القادسية", "0001539521"), true);
 
   await runAmerQutbRulingTests();
+  await runAlFatehRulingTests();
+  await runBadrRulingTests();
 
-  assert.equal(STORE_OVERRIDE_CUSTOMER_KEYS.size, 3, "exactly the three the owner has ruled on so far");
+  assert.equal(
+    STORE_OVERRIDE_CUSTOMER_KEYS.size,
+    9,
+    "3 earlier rulings + 3 الفاتح Delta accounts + بدر at both distributors + دار الطب-الفاتح-طنطا (الرساله فارم needs no key — it already matches «فارم»)",
+  );
 
   const channelsByRepSource = readFileSync(
     new URL("../src/lib/sales/channels-by-rep.ts", import.meta.url),
@@ -276,5 +282,213 @@ async function runAmerQutbRulingTests(): Promise<void> {
     isSplitEligible(amerRow({ clientCode: "999999", clientName: "صيدلية الحى السادس" }), "2026-08"),
     false,
     "a neighbouring pharmacy in brick B12-12 is untouched",
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// الفاتح, Delta 1 — owner ruling 2026-09-23: one wholesaler mis-booked as pharmacies, split it.
+//
+// The bare-name Delta accounts carry none of the six store words and no trade phrase, so both rules
+// call each a pharmacy. Its Helwan branch «الفاتح لتجارة وتوزيع الادويه» is a store on the trade
+// phrase already; these three are keyed by (distributor, code). The load-bearing one is 446433, whose
+// money is AUGUST ANTI INFECTIVE — cutover 2026-09, so August asks legacyIsStoreCustomer, exactly like
+// عامر's August CNS. The owner UNLOCKED August Anti Infective on 2026-09-22 to take this restatement.
+const AL_FATEH = { code: "446433", distributorCode: "IS-S", name: "الفاتح" };
+const AL_FATEH_AUGUST_VALUE = 17190;
+const GHARBIA_AREAS = ["D14", "D15"];
+
+function alFatehRow(over: Partial<StoreSplitRow> = {}): StoreSplitRow {
+  return {
+    areaCode: "D15",
+    clientCode: AL_FATEH.code,
+    clientName: AL_FATEH.name,
+    distributorCode: AL_FATEH.distributorCode,
+    includedInClosing: true,
+    isDirect: false,
+    officialLine: "Anti Infective",
+    productCode: "SA001",
+    qty: 200,
+    salesValue: AL_FATEH_AUGUST_VALUE,
+    ...over,
+  };
+}
+
+async function runAlFatehRulingTests(): Promise<void> {
+  // ── the three keys are recognised, and only at their own distributor ────────────────────────
+  assert.ok(isStoreOverride(AL_FATEH.code, "is-s"), "the Mahalla account is recognised");
+  assert.ok(isStoreOverride("0000446433", " IS-S "), "padding and casing do not defeat the key");
+  assert.ok(!isStoreOverride(AL_FATEH.code, "PS"), "the same code number is not a licence at another distributor");
+  assert.ok(isStoreOverride("0001552831", "ps"), "the Tanta account is recognised");
+  assert.ok(isStoreOverride("1520649", "PS"), "the second Mahalla account is recognised");
+  assert.ok(!isStoreOverride("446434", "IS-S"), "a neighbouring code is not swept in");
+
+  // ── the name alone says pharmacy, so the override is provably what does the work ────────────
+  assert.equal(isStoreCustomer(AL_FATEH.name), false, "bare «الفاتح» carries no store word — without the code it is a pharmacy");
+  assert.equal(
+    classifyCustomerChannel(AL_FATEH.name, AL_FATEH.code, "PS"),
+    "pharmacy",
+    "the same code number at another distributor keeps the keyword-less default",
+  );
+  assert.equal(
+    classifyCustomerChannel(AL_FATEH.name, AL_FATEH.code, AL_FATEH.distributorCode),
+    "store",
+    "but at IS-S the owner ruling makes it a store",
+  );
+  assert.equal(storeOverrideReason(AL_FATEH.code, AL_FATEH.distributorCode), "Owner-approved store");
+
+  // ── THE LOAD-BEARING ONE: August Anti Infective runs the LEGACY rule, and the override reaches it ──
+  assert.equal(
+    legacyIsStoreCustomer(AL_FATEH.name, AL_FATEH.code, AL_FATEH.distributorCode),
+    true,
+    "the pre-2026-09-06 rule must honour the override — this is what August Anti Infective asks",
+  );
+  assert.equal(
+    isStoreCustomerForPeriod(AL_FATEH.name, AL_FATEH.code, AL_FATEH.distributorCode, "2026-08", "Anti Infective"),
+    true,
+    "August 2026 Anti Infective sees الفاتح as a warehouse",
+  );
+
+  // ── and its August money moves, evenly across Gharbia's two areas ───────────────────────────
+  assert.equal(
+    isSplitEligible(alFatehRow(), "2026-08"),
+    true,
+    "the August Anti Infective line must now split — it did not before this ruling",
+  );
+  const plan = splitTargetsFor(alFatehRow());
+  assert.ok(plan, "a Gharbia warehouse always has a split plan");
+  assert.deepEqual([...(plan?.homeAreas ?? [])].sort(), GHARBIA_AREAS, "both Gharbia areas take a share");
+  assert.deepEqual(plan?.awayAreas, [], "a Gharbia warehouse never reaches outside its own city");
+  assert.equal(plan?.homeFraction, 1, "nothing leaves Gharbia — this is the plain city rule, not El Qema");
+  assert.equal(
+    AL_FATEH_AUGUST_VALUE / GHARBIA_AREAS.length,
+    8595,
+    "each Gharbia area takes 8,595.00 of the 17,190.00, so Mahalla (D15) gives up 8,595.00 to Tanta (D14)",
+  );
+
+  // ── the control: July never splits, so its 50 units stay whole on Mahalla ───────────────────
+  assert.equal(isStoreCitySplitActive("2026-07"), false, "July 2026 never splits, so the July Anti Infective line cannot move");
+
+  // ── the two zero-move siblings are stores on every screen, and move nothing today ───────────
+  assert.equal(classifyCustomerChannel("الفاتح طنطا", "0001552831", "PS"), "store", "the Tanta account shows as a store");
+  assert.equal(classifyCustomerChannel("الفاتح المحلة", "1520649", "PS"), "store", "the second Mahalla account shows as a store");
+
+  // ── a neighbouring pharmacy in the same brick is untouched — the ruling is about these accounts ──
+  assert.equal(
+    isSplitEligible(alFatehRow({ clientCode: "888888", clientName: "صيدلية النصر" }), "2026-08"),
+    false,
+    "an un-overridden pharmacy in the same brick is never split",
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// بدر, Delta 1 (Menoufia) — owner ruling 2026-09-23: a wholesaler mis-booked as a pharmacy. Its bare
+// name «بدر» carries none of the six store words, so the override is provably what does the work. It
+// sells through TWO distributors (IS on CNS, IS-S on Anti Infective), so it is keyed at both. Menoufia
+// = D12 + D13, so each August sale splits 50/50. The owner unlocked ALL of August (AI, CNS, Pedia) on
+// 2026-09-22, so both August lines restate.
+//
+// الرساله فارم (code 1557996, PS) was listed by the owner in the same message, but it needs NO override:
+// «فارم» is a STORE_NAME_KEYWORD, so it is already a store and already splits. This test pins exactly
+// that — بدر needs the key, الرساله فارم does not — so a later "tidy" that keys الرساله (redundant) or
+// drops بدر (a real regression) fails here.
+const MENOUFIA_AREAS = ["D12", "D13"];
+const BADR = { code: "386724", name: "بدر" };
+const AL_RESALA = { code: "1557996", distributorCode: "PS", name: "الرساله فارم" };
+
+function menoufiaRow(over: Partial<StoreSplitRow> = {}): StoreSplitRow {
+  return {
+    areaCode: "D12",
+    clientCode: BADR.code,
+    clientName: BADR.name,
+    distributorCode: "IS-S",
+    includedInClosing: true,
+    isDirect: false,
+    officialLine: "Anti Infective",
+    productCode: "SA001",
+    qty: 20,
+    salesValue: 2223,
+    ...over,
+  };
+}
+
+async function runBadrRulingTests(): Promise<void> {
+  // ── بدر is recognised at both of its distributors, and only there ───────────────────────────────
+  assert.ok(isStoreOverride(BADR.code, "IS"), "بدر at IS (CNS) is recognised");
+  assert.ok(isStoreOverride(BADR.code, "IS-S"), "بدر at IS-S (Anti Infective) is recognised");
+  assert.ok(isStoreOverride("0000386724", " is-s "), "padding and casing do not defeat بدر's key");
+  assert.ok(!isStoreOverride(BADR.code, "PS"), "بدر is not swept in at a distributor it does not sell through");
+  assert.ok(!isStoreOverride("386725", "IS"), "a neighbouring code is not swept in");
+
+  // ── the bare name says pharmacy, so the override is provably what reclassifies بدر ──────────────
+  assert.equal(isStoreCustomer(BADR.name), false, "«بدر» carries no store word on its own");
+  assert.equal(classifyCustomerChannel(BADR.name, BADR.code, "IS"), "store");
+  assert.equal(classifyCustomerChannel(BADR.name, BADR.code, "IS-S"), "store");
+  assert.equal(classifyCustomerChannel(BADR.name, BADR.code, "PS"), "pharmacy", "بدر at an unruled distributor keeps the default");
+
+  // ── August 2026 runs the legacy rule for both AI and CNS (cutover 2026-09), and honours the override ──
+  for (const [distributor, line] of [["IS-S", "Anti Infective"], ["IS", "CNS"]] as const) {
+    assert.equal(
+      legacyIsStoreCustomer(BADR.name, BADR.code, distributor),
+      true,
+      `the pre-2026-09-06 rule honours the override for بدر at ${distributor}`,
+    );
+    assert.equal(
+      isStoreCustomerForPeriod(BADR.name, BADR.code, distributor, "2026-08", line),
+      true,
+      `August 2026 ${line} sees بدر as a warehouse`,
+    );
+  }
+
+  // ── بدر's money splits 50/50 across Menoufia (D12 + D13), even split, nothing leaves the city ───
+  const badrAi = menoufiaRow(); // بدر, D12, AI (IS-S), 2,223.00
+  const badrCns = menoufiaRow({ distributorCode: "IS", officialLine: "CNS", qty: 10, salesValue: 344.25 });
+  for (const row of [badrAi, badrCns]) {
+    assert.equal(isSplitEligible(row, "2026-08"), true, `بدر ${row.officialLine} must split in August — it did not before this ruling`);
+    const plan = splitTargetsFor(row);
+    assert.ok(plan, "a Menoufia warehouse always has a split plan");
+    assert.deepEqual([...(plan?.homeAreas ?? [])].sort(), MENOUFIA_AREAS, "both Menoufia areas take a share");
+    assert.deepEqual(plan?.awayAreas, [], "a Menoufia warehouse never reaches outside its own city");
+    assert.equal(plan?.homeFraction, 1, "nothing leaves Menoufia — the plain city rule");
+  }
+  assert.equal(badrAi.salesValue / MENOUFIA_AREAS.length, 1111.5, "بدر AI: 1,111.50 to each area (D12→D13 1,111.50)");
+  assert.equal(badrCns.salesValue / MENOUFIA_AREAS.length, 172.125, "بدر CNS: 172.125 to each area (D12→D13 172.13)");
+
+  // ── without the override بدر would NOT split — this is what the ruling changed ──────────────────
+  assert.equal(
+    legacyIsStoreCustomer(BADR.name, BADR.code, "OTHER"),
+    false,
+    "at a distributor with no ruling, بدر falls back to pharmacy and does not split",
+  );
+
+  // ── الرساله فارم needs NO override: «فارم» already makes it a store, and it already splits ──────
+  assert.equal(isStoreOverride(AL_RESALA.code, "PS"), false, "الرساله فارم is deliberately NOT keyed — the keyword does the work");
+  assert.equal(isStoreCustomer(AL_RESALA.name), true, "«الرساله فارم» matches «فارم», so it is already a store");
+  assert.equal(
+    isSplitEligible(
+      menoufiaRow({ clientCode: AL_RESALA.code, clientName: AL_RESALA.name, distributorCode: "PS", areaCode: "D13", qty: 30, salesValue: 1822.5 }),
+      "2026-08",
+    ),
+    true,
+    "الرساله فارم already splits in August on the keyword alone",
+  );
+
+  // ── the control: the city split itself is gated off before August, so no pre-August line moves ──
+  assert.equal(isStoreCitySplitActive("2026-07"), false, "July 2026 is before the city-split gate, so بدر's July lines cannot move");
+  assert.equal(isStoreCitySplitActive("2026-08"), true, "August 2026 is on, which is why بدر restates");
+
+  // ── دار الطب-الفاتح-طنطا (RM|7010216, Gharbia): keyed as a store, but moves 0.00 — its only row is a
+  //    July return, before the gate. The key just governs how it is treated the first time it sells. ──
+  assert.ok(isStoreOverride("7010216", "RM"), "دار الطب-الفاتح-طنطا at RM is recognised");
+  assert.ok(isStoreOverride("0007010216", " rm "), "padding and casing do not defeat its key");
+  assert.ok(!isStoreOverride("7010216", "IS"), "its code is not a licence at another distributor");
+  assert.equal(
+    classifyCustomerChannel("دار الطب-الفاتح-طنطا", "7010216", "RM"),
+    "store",
+    "the override makes the keyword-less name a store",
+  );
+  assert.equal(
+    classifyCustomerChannel("دار الطب-الفاتح-طنطا", "7010216", "PS"),
+    "pharmacy",
+    "without a ruling at that distributor it keeps the keyword-less default — proof the name carries no store word",
   );
 }
