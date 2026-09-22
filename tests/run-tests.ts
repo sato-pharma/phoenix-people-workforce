@@ -1251,6 +1251,7 @@ import { runAutomatedPayrollDataQualityTests } from "./automated-payroll-data-qu
 import { runTerritoryRootScopeTests } from "./territory-root-scope.test.ts";
 import { runTerritoryLineFilterTests } from "./territory-line-filter.test.ts";
 import { runTerritoryReconciliationTests } from "./territory-reconciliation.test.ts";
+import { runTerritoryRepRegionLabelTests } from "./territory-rep-region-label.test.ts";
 import { runTerritoryAreaFoldHardeningTests } from "./territory-area-fold-hardening.test.ts";
 import { runAntiInfectiveIsmailiaSuezOneAreaTests } from "./anti-infective-ismailia-suez-one-area.test.ts";
 import { runAuSeatOccupantResolverTests } from "./au-seat-occupant-resolver.test.ts";
@@ -4123,6 +4124,10 @@ await runTest("PostgREST or() search filters quote the term instead of stripping
 await runTest("territory drilldown root-scope line resolution (fail-closed)", runTerritoryRootScopeTests);
 await runTest("territory drilldown pharmacy line filter (defense in depth)", runTerritoryLineFilterTests);
 await runTest("territory drilldown internal self-reconciliation", runTerritoryReconciliationTests);
+await runTest(
+  "territory drilldown Medical Rep region label (the rep card reads the region of the rep's own line — Qalubeya Delta (3) on Anti Infective, Beni Suef Upper Egypt on Pedia — not the line-agnostic canonical region, and never drops an area the line map omits)",
+  runTerritoryRepRegionLabelTests,
+);
 await runTest("territory / coverage area-fold hardening (Pedia's merged option appears for either GZ6 or UE9 alone; bricks scope by REAL code so a partner-only viewer never sees the survivor's own bricks)", runTerritoryAreaFoldHardeningTests);
 await runTest("Anti Infective Delta (3): Ismailia and Suez are ONE area from 2026-09 (fold, closing sum, vacancy name); July and August keep two", runAntiInfectiveIsmailiaSuezOneAreaTests);
 await runTest("au seat-occupant resolution (period-aware, no newest-row wins)", runAuSeatOccupantResolverTests);

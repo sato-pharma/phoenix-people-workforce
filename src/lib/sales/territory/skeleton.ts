@@ -8,12 +8,14 @@ import type { TerritoryDiagnostic, TerritoryRootScope, TerritorySkeleton } from 
 export type CanonicalArea = { areaCode: string; areaName: string; regionCode: string };
 
 /**
- * Every canonical area, line-agnostic — used ONLY for the "area" root level (Medical Rep).
- * A rep's own area is already precisely resolved from their employee record (via the
- * sos_area_crosswalk RPC in root-scope.ts), so there is no ambiguity to disambiguate by line
- * here; this is a pure name/region lookup against au_v_canonical_areas, the same table the
- * People Organogram itself reads (au.canonical_areas). A canonical area's name never varies
- * by line, only its region/rep/DM/carries_target do (see loadLineAreas below).
+ * Every canonical area, line-agnostic — the NAME/MEMBERSHIP base for the "area" root level
+ * (Medical Rep). A rep's own area is already precisely resolved from their employee record (via the
+ * sos_area_crosswalk RPC in root-scope.ts), so there is no ambiguity to disambiguate by line here;
+ * this is a name lookup against au_v_canonical_areas, the same table the People Organogram itself
+ * reads (au.canonical_areas). A canonical area's NAME never varies by line — but its REGION does
+ * (Qalubeya is Delta (1) here yet Delta (3) on Anti Infective; Beni Suef is Giza here yet Upper
+ * Egypt on Pedia), so the region this returns is corrected per line by applyLineRegionOverride
+ * before it reaches the rep card. See loadLineAreas below for the per-line authority.
  */
 async function loadCanonicalAreas(): Promise<CanonicalArea[]> {
   const supabase = getSupabaseAdmin();
@@ -108,6 +110,39 @@ export async function loadLineAreas(auLineCode: string, regionCodes: Set<string>
 }
 
 /**
+ * Correct each area's line-agnostic canonical region to the region it sits in on THIS line.
+ *
+ * WHY. The Medical Rep card's region is built from loadCanonicalAreas (line-agnostic), but the
+ * region a canonical area belongs to VARIES BY LINE — Beni Suef is Giza canonically yet Upper Egypt
+ * on Pedia's seat tree; Qalubeya is Delta (1) canonically yet Delta (3) on Anti Infective. Measured
+ * on production 2026-09-22, that mismatch showed the wrong region on 13 of 66 seated reps' cards.
+ * `lineAreaRegions` is au_v_line_area_map.operational_region_code for the rep's own line — the SAME
+ * per-line authority the DM/RM/nationwide levels already read via loadLineAreas — so after this a
+ * rep and his manager name the same region for the same area.
+ *
+ * An OVERRIDE, not a source swap: an area the line map does not carry (none today, measured
+ * 0-of-66) keeps its canonical region and stays on the card rather than vanishing. Pure and
+ * exported so the fix is provable without a database; `lineAreaRegions` empty (every non-Medical-
+ * Rep level, which already reads the line-aware region directly) returns the base areas untouched.
+ */
+export function applyLineRegionOverride(
+  baseAreas: readonly CanonicalArea[],
+  lineAreaRegions: readonly CanonicalArea[],
+): CanonicalArea[] {
+  if (lineAreaRegions.length === 0) return baseAreas.map((area) => ({ ...area }));
+  const lineRegionByArea = new Map<string, string>();
+  for (const area of lineAreaRegions) {
+    const code = area.areaCode.trim().toUpperCase();
+    const region = area.regionCode.trim();
+    if (code && region) lineRegionByArea.set(code, region);
+  }
+  return baseAreas.map((area) => {
+    const lineRegion = lineRegionByArea.get(area.areaCode.trim().toUpperCase());
+    return lineRegion ? { ...area, regionCode: lineRegion } : { ...area };
+  });
+}
+
+/**
  * Build the Tier-1 geography skeleton (names + codes only, no sales figures) bounded to the
  * viewer's resolved root scope. This is cheap master data — low thousands of rows nationwide,
  * comparable to what every existing Source-of-Sales filter dropdown already loads in one
@@ -125,7 +160,7 @@ export async function buildTerritorySkeleton(
     rootScope.level === "region" ? new Set(rootScope.regionCodes.map((code) => code.toUpperCase())) : null;
   const auLineCode = resolveAuLineCode(rootScope.officialLine);
 
-  const [references, allAreas, auRegionNames] = await Promise.all([
+  const [references, baseAreas, auRegionNames, lineAreaRegions] = await Promise.all([
     loadSalesReferenceData({ includeCustomerBricks: false }),
     rootScope.level === "area"
       ? loadCanonicalAreas()
@@ -136,7 +171,17 @@ export async function buildTerritorySkeleton(
         // empty area list rather than falling back to an unfiltered/wrong-line listing.
         : Promise.resolve([] as CanonicalArea[]),
     loadAuRegionNames(),
+    // The rep's own line's region for each area, ONLY for the Medical Rep (area) level — the other
+    // levels already read the line-aware region directly through loadLineAreas above, so they pass
+    // an empty list and applyLineRegionOverride leaves their areas untouched. See that function.
+    rootScope.level === "area" && auLineCode
+      ? loadLineAreas(auLineCode, null)
+      : Promise.resolve([] as CanonicalArea[]),
   ]);
+
+  // Line-agnostic canonical region -> the rep's own line's region (a no-op for every level that
+  // already read the line-aware region). This is the whole of the 2026-09-22 rep-card region fix.
+  const allAreas = applyLineRegionOverride(baseAreas, lineAreaRegions);
 
   // areaCodesInScope: non-null ONLY for the "area" root (a Medical Rep locked to their own
   // area(s), and nothing else in the region — see resolveTerritoryRootScope). It must NOT be
