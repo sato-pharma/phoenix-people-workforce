@@ -8,6 +8,8 @@ import {
   type MasterKey,
   type MasterRowRecord,
 } from "./definitions";
+// The owner reads every stamp in Cairo local, never raw UTC (house rule).
+import { cairoDateTimeSortable } from "@/lib/format/cairo-datetime";
 
 // Phoenix visual language (mirrors src/lib/export/table-workbook.ts): black
 // header band with orange title, thin orange grid, zebra rows. Adds Excel cell
@@ -143,8 +145,8 @@ export async function buildMasterWorkbook(
   sheet.mergeCells(2, 1, 2, colCount);
   const subCell = sheet.getCell(2, 1);
   subCell.value = editableLabels.length > 0
-    ? `Editable: ${editableLabels.join(", ")}. Name columns auto-fill from codes; all other columns are locked. Exported ${new Date().toLocaleString("en-GB")}.`
-    : `All columns are locked (add new rows only). Exported ${new Date().toLocaleString("en-GB")}.`;
+    ? `Editable: ${editableLabels.join(", ")}. Name columns auto-fill from codes; all other columns are locked. Exported ${cairoDateTimeSortable(new Date().toISOString())} Cairo.`
+    : `All columns are locked (add new rows only). Exported ${cairoDateTimeSortable(new Date().toISOString())} Cairo.`;
   subCell.font = { name: "Calibri", size: 10, italic: true, color: { argb: WHITE } };
   subCell.alignment = { vertical: "middle", horizontal: "left", indent: 1, wrapText: true };
   subCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BLACK } };

@@ -252,7 +252,8 @@ export async function sendPasswordSetupLink(input: {
             metrics: [
               { label: "Login ID", value: loginId },
               { label: "HR_ID", value: user.hr_id ?? loginId },
-              { label: "Expires", value: new Date(expiresAt).toLocaleString("en-US") },
+              // Cairo local, never raw UTC (house rule) — the recipient reads this expiry time.
+              { label: "Expires", value: `${new Date(expiresAt).toLocaleString("en-US", { timeZone: "Africa/Cairo" })} (Cairo)` },
             ],
             notificationType: purpose === "setup" ? "user_created" : "password_reset",
             recipientMode: "candidate",

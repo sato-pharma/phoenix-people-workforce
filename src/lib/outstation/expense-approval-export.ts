@@ -21,6 +21,8 @@ import {
 } from "@/lib/outstation/expense-approval-filters";
 import type { ExpenseApprovalFilters } from "@/lib/outstation/expense-approval-filters";
 import { expenseApprovalState, EXPENSE_STATE_LABEL } from "@/lib/outstation/approval-state";
+// The owner reads every stamp in Cairo local, never raw UTC (house rule).
+import { cairoDateTimeSortable } from "@/lib/format/cairo-datetime";
 import {
   OFFICIAL_OUTSTATION_MINIMUM_DISTANCE_KM,
   TOLERANCE_OUTSTATION_MINIMUM_DISTANCE_KM,
@@ -186,5 +188,5 @@ export function expenseApprovalExportSubtitle(
   if (filters.month) scope.push(expenseTripMonthLabel(filters.month));
   if (employeeLabel) scope.push(employeeLabel);
   const scopeLabel = scope.length > 0 ? scope.join(" · ") : "All trips";
-  return `${scopeLabel} · ${rowCount.toLocaleString()} rows · exported ${new Date().toLocaleString("en-GB")}`;
+  return `${scopeLabel} · ${rowCount.toLocaleString()} rows · exported ${cairoDateTimeSortable(new Date().toISOString())} Cairo`;
 }

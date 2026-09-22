@@ -58,7 +58,8 @@ const COLUMNS: ExportColumn[] = [
 function formatTimestamp(value: string | null): string {
   if (!value) return "";
   const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString("en-GB");
+  // Cairo local, never raw UTC (house rule) — this stamps the Approved At column a reviewer reads.
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString("en-GB", { timeZone: "Africa/Cairo" });
 }
 
 export async function GET(request: Request) {

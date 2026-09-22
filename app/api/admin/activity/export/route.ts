@@ -8,6 +8,8 @@ import { buildPhoenixTableWorkbook, type ExportColumn, type ExportRow } from "@/
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+// The owner reads every stamp in Cairo local, never raw UTC (house rule).
+import { cairoDateTimeSortable } from "@/lib/format/cairo-datetime";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -53,12 +55,12 @@ export async function GET(request: NextRequest) {
       topModule: user.topModule ?? "—",
       engagementScore: user.engagement.score,
       engagementBand: user.engagement.band,
-      lastSeen: user.lastSeenAt ? new Date(user.lastSeenAt).toLocaleString("en-GB") : "—",
+      lastSeen: user.lastSeenAt ? new Date(user.lastSeenAt).toLocaleString("en-GB", { timeZone: "Africa/Cairo" }) : "—",
     }));
 
     const buffer = await buildPhoenixTableWorkbook({
       title: "Activity Control Center",
-      subtitle: `User activity · last ${range.days} days · exported ${new Date().toLocaleString("en-GB")}`,
+      subtitle: `User activity · last ${range.days} days · exported ${cairoDateTimeSortable(new Date().toISOString())} Cairo`,
       sheetName: "User Activity",
       columns: COLUMNS,
       rows,
