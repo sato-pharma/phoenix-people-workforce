@@ -177,5 +177,26 @@ export function runRecordConversationAnyStatusTests() {
       /\bstatus\b\s*[:=]/,
       "the component takes no status prop — nothing about the record's state may switch the thread off",
     );
+
+    // ── 6 · The portal keeps a REJECTED request open to conversation ──────────────────────────────
+    // A rejected request is a terminal card in the requester's portal — the one surface where the
+    // reason is written down. Without a thread there, the requester can read the "why" but cannot
+    // reply. The Rejected card must mount the shared thread against the marketing endpoint.
+    const draftsWorkspace = read("src/components/employee-portal/marketing-request-drafts.tsx");
+    assert.match(
+      draftsWorkspace,
+      /import \{ RecordConversationThread \} from "@\/components\/conversations\/record-conversation-thread";/,
+      "the portal workspace imports the shared conversation thread",
+    );
+    assert.match(
+      draftsWorkspace,
+      /openRejectedConversationId/,
+      "the Rejected card carries its own open-conversation state",
+    );
+    assert.match(
+      draftsWorkspace,
+      /<RecordConversationThread\s+base=\{`\/api\/marketing-requests\/\$\{request\.id\}\/conversation`\}/,
+      "the Rejected card mounts the thread against the marketing conversation endpoint",
+    );
   })();
 }
