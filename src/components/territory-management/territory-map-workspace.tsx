@@ -127,6 +127,11 @@ export function TerritoryMapWorkspace({
     [lineFilters.areas, regionCode],
   );
 
+  const lineName = useMemo(
+    () => lineFilters.lines.find((line) => line.lineCode === lineCode)?.lineName ?? lineCode,
+    [lineCode, lineFilters.lines],
+  );
+
   const colourFor = useCallback(
     (areaCode: string) => AREA_COLOURS[Math.max(0, selectedAreas.indexOf(areaCode)) % AREA_COLOURS.length],
     [selectedAreas],
@@ -159,10 +164,12 @@ export function TerritoryMapWorkspace({
   // ── brick search (debounced) ──────────────────────────────────────────────
   useEffect(() => {
     const term = searchTerm.trim();
-    if (term.length < 2) return;
+    if (term.length < 2 || !lineCode) return;
     let cancelled = false;
     const timer = setTimeout(() => {
-      void fetch(`/api/territory-management/search?q=${encodeURIComponent(term)}`)
+      // The line travels with the query: a brick's region is a per-line fact, so the same brick
+      // reads a different region on Anti Infective than on Pedia.
+      void fetch(`/api/territory-management/search?q=${encodeURIComponent(term)}&lineCode=${encodeURIComponent(lineCode)}`)
         .then((response) => (response.ok ? response.json() : Promise.reject(new Error("Search failed."))))
         .then((body: { results: BrickSearchHit[] }) => {
           if (!cancelled) setSearchHits(body.results ?? []);
@@ -175,7 +182,7 @@ export function TerritoryMapWorkspace({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [searchTerm]);
+  }, [lineCode, searchTerm]);
 
   const beginEditing = (hit: BrickSearchHit) => {
     setEditing(hit);
@@ -600,7 +607,8 @@ export function TerritoryMapWorkspace({
                       >
                         <span className="font-medium">{hit.brickName}</span>
                         <span className="text-muted-foreground text-xs">
-                          {hit.areaName} · {hit.regionName} · block {hit.blockCode}
+                          {hit.areaName} ·{" "}
+                          {hit.onSelectedLine ? hit.regionName : `not carried on ${lineName}`} · block {hit.blockCode}
                           {hit.lat == null ? " · no pin yet" : ""}
                         </span>
                       </button>
