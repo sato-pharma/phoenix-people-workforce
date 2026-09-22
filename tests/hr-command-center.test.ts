@@ -186,7 +186,9 @@ function emptySources(): HrCommandSources {
       requisitions: [],
       summary: {
         activeApplications: 0,
+        hiredWindow: { fromIso: "2026-09-01", toIso: "2026-09-30" },
         hires: 0,
+        hiresInWindow: 0,
         openRequisitions: 0,
         stageCounts: {},
         totalApplications: 0,

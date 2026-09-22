@@ -63,6 +63,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { HrCommandCharts } from "@/components/hr/hr-command-charts";
@@ -199,6 +200,87 @@ function UnavailableNotice({ sources }: { sources: string[] }) {
         <span className="font-black">{sources.join(", ")}</span>. Everything else on this page is
         current.
       </p>
+    </div>
+  );
+}
+
+
+/**
+ * The Hired tile's window, as a from/to pair.
+ *
+ * WHY IT IS IN THE URL and not in component state: the count is made on the SERVER over every
+ * application the seat can see, not over a subset already on the page, so changing the window has
+ * to reach the server. Putting it in the query string also makes a chosen range shareable and
+ * survivable across a reload, and "Reset" is then simply the absence of both params.
+ *
+ * Square edges and a wrapping row, per the house rules — the two date boxes and the buttons drop
+ * onto a second line at 375px rather than pushing the group into a horizontal scroll.
+ */
+function HiredWindowPicker({ window: current }: { window: { fromIso: string; toIso: string } }) {
+  // NOTE: the caller gives this component a `key` built from the resolved window, so a window the
+  // server normalised (a reversed or malformed range) REMOUNTS it and the boxes re-seed from what
+  // was actually counted. Syncing props into state with an effect would do the same job and is a
+  // lint ERROR in this repo (react-hooks/set-state-in-effect) as well as a cascading render.
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const [from, setFrom] = useState(current.fromIso);
+  const [to, setTo] = useState(current.toIso);
+
+  function apply(next: { from: string; to: string } | null) {
+    const params = new URLSearchParams(searchParams?.toString() ?? "");
+    if (next) {
+      params.set("hiredFrom", next.from);
+      params.set("hiredTo", next.to);
+    } else {
+      params.delete("hiredFrom");
+      params.delete("hiredTo");
+    }
+    const query = params.toString();
+    router.push(query ? `${pathname}?${query}` : pathname);
+  }
+
+  const isDefault = !searchParams?.get("hiredFrom") && !searchParams?.get("hiredTo");
+
+  return (
+    <div className="flex flex-wrap items-end gap-2 border-b border-slate-200/70 bg-slate-50/60 px-5 py-3">
+      <span className="w-full text-[9px] font-black uppercase tracking-[0.14em] text-slate-500 sm:w-auto sm:self-center">
+        Hired between
+      </span>
+      <label className="flex flex-col gap-1">
+        <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">From</span>
+        <input
+          className="border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-900 focus:border-orange-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
+          onChange={(event) => setFrom(event.target.value)}
+          type="date"
+          value={from}
+        />
+      </label>
+      <label className="flex flex-col gap-1">
+        <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">To</span>
+        <input
+          className="border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-900 focus:border-orange-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
+          onChange={(event) => setTo(event.target.value)}
+          type="date"
+          value={to}
+        />
+      </label>
+      <button
+        className="border border-orange-300 bg-orange-50 px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-orange-700 transition-colors hover:bg-orange-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
+        onClick={() => apply({ from, to })}
+        type="button"
+      >
+        Apply
+      </button>
+      {isDefault ? null : (
+        <button
+          className="border border-slate-200 bg-white px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-slate-600 transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
+          onClick={() => apply(null)}
+          type="button"
+        >
+          This month
+        </button>
+      )}
     </div>
   );
 }
@@ -554,6 +636,16 @@ export function HrCommandCenter({
                     Suppressed while a filter is active: the filter matches tile LABELS, so a
                     chart left standing beside two matched tiles would be showing a whole function
                     under a heading that says the page is showing two figures. */}
+                {/* Only the recruiting group carries a window, because only its Hired tile is a
+                    period figure — every other tile on this page is a count of how things stand
+                    right now. Hidden while a filter is active, for the same reason the chart is:
+                    a control over a figure the filter may have removed is a control over nothing. */}
+                {group.functionKey === "recruiting" && !isFiltering ? (
+                  <HiredWindowPicker
+                    key={`${data.hiredWindow.fromIso}|${data.hiredWindow.toIso}`}
+                    window={data.hiredWindow}
+                  />
+                ) : null}
                 {isFiltering ? null : <HrCommandCharts charts={group.charts} />}
                 <div className={`grid grid-cols-2 gap-2 p-5 ${grid}`}>
                   {group.tiles.map((tile) => (

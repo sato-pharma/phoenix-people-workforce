@@ -57,7 +57,11 @@ import { currentCairoDateOnlyIso, currentCairoDateParts } from "@/lib/i18n/forma
 import { toHrNamespacePath } from "@/lib/navigation/shell-headers";
 import { listOffers } from "@/lib/offers/service";
 import { getProbationRows, isProbationDecisionOutstanding } from "@/lib/probation/service";
-import { getRecruitmentDashboard } from "@/lib/recruitment/dashboard";
+import {
+  getRecruitmentDashboard,
+  resolveHiredWindow,
+  type HiredWindow,
+} from "@/lib/recruitment/dashboard";
 import type { ApplicationStage } from "@/lib/recruitment/types";
 import { getResignationsDashboardData } from "@/lib/resignations/service";
 import { getRetentionDashboardData } from "@/lib/retention/service";
@@ -206,6 +210,12 @@ export type HrPersonalRecord = {
 
 export type HrCommandCenterData = {
   groups: HrCommandGroup[];
+  /**
+   * The window the Hired tile was counted over — the running Cairo month unless the viewer picked
+   * a range. Carried on the data rather than re-derived in the component, so the picker's boxes,
+   * the tile's caption and the figure itself can never name three different periods.
+   */
+  hiredWindow: HiredWindow;
   /** The viewer's own record — the merged half of this page. Never another employee's. */
   personal: HrPersonalRecord;
   seat: HrBundleName;
@@ -303,6 +313,39 @@ export type HrCommandSources = Partial<{
   supportRequests: Awaited<ReturnType<typeof listAllSupportRequests>>;
 }>;
 
+/**
+ * The Hired tile's caption — the WINDOW, named.
+ *
+ * `HrCommandTile.sub` is a 10px uppercase caption and never a sentence, so this stays as short as
+ * it can while still being unambiguous: a window that is exactly one calendar month reads
+ * "hired in September", anything else reads "hired 11 Sep – 22 Sep". The point is that the figure
+ * can never be mistaken for a lifetime total again, which is what "converted to employees" left
+ * it open to.
+ */
+function hiredWindowCaption(window: HiredWindow): string {
+  const day = (iso: string) =>
+    new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", timeZone: "UTC" }).format(
+      new Date(`${iso}T00:00:00Z`),
+    );
+
+  const [fromYear, fromMonth, fromDay] = window.fromIso.split("-");
+  const [toYear, toMonth] = window.toIso.split("-");
+  const lastDayOfFromMonth = new Date(Date.UTC(Number(fromYear), Number(fromMonth), 0)).getUTCDate();
+  const isWholeMonth =
+    fromYear === toYear &&
+    fromMonth === toMonth &&
+    fromDay === "01" &&
+    window.toIso.endsWith(String(lastDayOfFromMonth).padStart(2, "0"));
+
+  if (isWholeMonth) {
+    const name = new Intl.DateTimeFormat("en-GB", { month: "long", timeZone: "UTC" }).format(
+      new Date(`${window.fromIso}T00:00:00Z`),
+    );
+    return `hired in ${name}`;
+  }
+  return `hired ${day(window.fromIso)} – ${day(window.toIso)}`;
+}
+
 /** `YYYY-MM` for the running month in Cairo — the owner reports every time in Cairo, never UTC. */
 function currentCairoMonthKey(): string {
   const { year, month } = currentCairoDateParts();
@@ -374,7 +417,13 @@ const TILES_BY_FUNCTION: Record<
       tile("in-screening", "In Screening", screening, "awaiting your review", "/hr/recruitment", screening > 0 ? "amber" : "slate"),
       tile("interviewing", "Interviewing", interviewing, "scheduled or in progress", "/hr/recruitment"),
       tile("active-applications", "Active Candidates", dashboard.summary.activeApplications, "still in the pipeline", "/hr/cv-database"),
-      tile("hired", "Hired", dashboard.summary.hires, "converted to employees", "/hr/recruitment", dashboard.summary.hires > 0 ? "emerald" : "slate"),
+      // A PERIOD, not a lifetime. `summary.hires` is every application that ever reached the
+      // hired stage, and printing that beside "In Screening", "Interviewing" and "Active
+      // Candidates" — all counts of the pipeline as it stands — reads as "we hired this many
+      // recently". It would still read 47 when the last hire was two years ago. The caption names
+      // the window so the figure cannot be read as anything else, and the picker above the group
+      // changes it. Default is the running Cairo month (owner, 2026-09-22).
+      tile("hired", "Hired", dashboard.summary.hiresInWindow, hiredWindowCaption(dashboard.summary.hiredWindow), "/hr/recruitment", dashboard.summary.hiresInWindow > 0 ? "emerald" : "slate"),
     ];
     // The seat side of the same question. Absent rather than zero when the directory did not
     // load: printing 0 there would say "every empty seat is being recruited", which is the exact
@@ -1184,9 +1233,15 @@ async function loadPersonalRecord(access: AccessContext): Promise<HrPersonalReco
 
 export async function getHrCommandCenterData(
   access: AccessContext,
+  options: { hiredWindow?: { from?: string | null; to?: string | null } } = {},
 ): Promise<HrCommandCenterData | null> {
   const seat = hrBundleForRole(access.role);
   if (!seat) return null;
+
+  // Resolved ONCE, here, and carried on the returned data. The tile, its caption and the picker
+  // that drives it then all read the same window — a second resolve somewhere else is how a
+  // caption ends up naming a month the figure was not counted over.
+  const hiredWindow = resolveHiredWindow(options.hiredWindow ?? {});
 
   const needed = new Set(sourcesFor(seat));
   const failures: SourceKey[] = [];
@@ -1201,7 +1256,7 @@ export async function getHrCommandCenterData(
   // slowest source, not the sum of them.
   await Promise.all([
     needed.has("recruitment")
-      ? safe("recruitment", () => getRecruitmentDashboard(access), failures).then((value) => {
+      ? safe("recruitment", () => getRecruitmentDashboard(access, { hiredWindow }), failures).then((value) => {
           loaded.recruitment = value;
         })
       : null,
@@ -1254,6 +1309,7 @@ export async function getHrCommandCenterData(
 
   return {
     groups: buildHrCommandGroups(seat, loaded),
+    hiredWindow,
     personal: await personalPromise,
     seat,
     tasks: buildHrTodayTasks(loaded, seat),
