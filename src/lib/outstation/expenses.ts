@@ -1,6 +1,6 @@
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { invalidateExecutiveDashboardCache } from "@/lib/dashboard/invalidation";
-import { currentCairoDateParts } from "@/lib/i18n/format";
+import { nextPayrollPeriod } from "@/lib/outstation/payroll-period";
 import {
   buildPayrollExpenseBreakdown,
   buildPayrollExpenseTrend,
@@ -439,25 +439,6 @@ async function getVisibleExpenseReportIds(
       .map((row) => String((row as { report_id?: unknown }).report_id))
       .filter(Boolean),
   );
-}
-
-function nextPayrollPeriod(dateValue: string) {
-  const date = new Date(dateValue);
-  // Anchor the payout month to Africa/Cairo's calendar day in EVERY case, never the server's UTC
-  // clock. A trip/expense date is stored at UTC-midnight today, so this is a no-op for it — but the
-  // upstream `created_at` fallback (used when trip_start_date is null) is a real instant. Read in
-  // UTC, one stamped in the first Cairo hours of the 1st would land in the previous month and pay
-  // out a month early; reading it in Cairo closes that gap. An unparseable value falls back to
-  // "now", exactly as before.
-  const cairo = currentCairoDateParts(Number.isNaN(date.getTime()) ? new Date() : date);
-  const base = new Date(Date.UTC(cairo.year, cairo.month - 1, cairo.day));
-  const month = base.getUTCMonth() + 2;
-
-  if (month > 12) {
-    return { month: 1, year: base.getUTCFullYear() + 1 };
-  }
-
-  return { month, year: base.getUTCFullYear() };
 }
 
 async function employeeCodeBySpecialist() {
