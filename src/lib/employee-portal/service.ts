@@ -3882,11 +3882,10 @@ export async function getMedicalRepPortalData(
   // Semester achievement is the authoritative basis for all incentive calculations.
   // Current-month achievement is never used here — incentives are semester-level.
   const allPeriodsAchievementPercent = Number.isFinite(overviewAchievementPercent) ? overviewAchievementPercent : achievementPercent;
+  // One calculation drives both the "incentive" and the "allPeriods" payload fields: the incentive
+  // is a single semester figure, so the two used to be computed from identical arguments. Compute
+  // it once and reuse it for both — the "allPeriods*" fields below are aliases of the same result.
   const incentiveCalc = calculateIncentive2026({
-    ...fixedIncentiveSalary,
-    achievementPercent: allPeriodsAchievementPercent,
-  });
-  const allPeriodsIncentiveCalc = calculateIncentive2026({
     ...fixedIncentiveSalary,
     achievementPercent: allPeriodsAchievementPercent,
   });
@@ -3955,8 +3954,8 @@ export async function getMedicalRepPortalData(
       bonus: latestRecord?.bonus ?? 0,
       incentive: incentiveCalc.payoutAmount,
       basicSalary: incentiveCalc.basicSalary,
-      allPeriodsIncentive: allPeriodsIncentiveCalc.payoutAmount,
-      allPeriodsIncentiveTarget: allPeriodsIncentiveCalc.semesterTargetIncentive,
+      allPeriodsIncentive: incentiveCalc.payoutAmount,
+      allPeriodsIncentiveTarget: incentiveCalc.semesterTargetIncentive,
       allPeriodsAchievementPercent: allPeriodsAchievementPercent,
       incentiveTarget: incentiveCalc.semesterTargetIncentive,
       loans: latestRecord?.loans ?? 0,
