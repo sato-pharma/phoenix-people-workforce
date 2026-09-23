@@ -203,6 +203,12 @@ export function SatoEmailComposer({
       /** Document mode: what the server actually read out of the file, named, in one line. */
       source: string | null;
       subject: string;
+      /**
+       * The file was loaded as it stands and nothing wrote anything — an HTML upload. The heading
+       * above the result has to say so: "what it wrote from your document" over a file the
+       * assistant never touched is the screen telling the sender the opposite of what happened.
+       */
+      verbatim: boolean;
     } | null
   >(null);
   // Lights the dashed frame while a document is dragged over the assistant. Separate from the
@@ -366,6 +372,7 @@ export function SatoEmailComposer({
         mode: payload.result.mode ?? assistMode,
         source: null,
         subject,
+        verbatim: false,
       });
       setSubject(payload.result.subject);
       setBodyHtml(payload.result.bodyHtml);
@@ -402,7 +409,7 @@ export function SatoEmailComposer({
       const payload = (await response.json()) as {
         message?: string;
         result?: { bodyHtml: string; changes: string[]; checks?: string[]; mode?: AssistMode; subject: string };
-        source?: { fileName: string; note: string };
+        source?: { fileName: string; note: string; route?: string };
       };
       if (!response.ok || !payload.result) {
         setError(payload.message ?? "The email could not be built from that document.");
@@ -415,6 +422,7 @@ export function SatoEmailComposer({
         mode: "document",
         source: payload.source?.note ?? null,
         subject,
+        verbatim: payload.source?.route === "verbatim",
       });
       setSubject(payload.result.subject);
       setBodyHtml(payload.result.bodyHtml);
@@ -843,9 +851,10 @@ export function SatoEmailComposer({
               <strong>Write it</strong> composes the whole email from what you asked for, even on an empty page, and
               uses every button in the toolbar above — including a table of the shape you name. <strong>Rewrite what
               I wrote</strong> keeps your draft and only changes how it reads. <strong>Build it from a document</strong>
-              reads a PDF, a Word file, a web page, a text file or a picture of one — click the button or drag it onto
+              reads a PDF, a Word file, a text file or a picture of one — click the button or drag it onto
               this row — and writes the email that carries what it says, in its own figures, in English and Arabic
-              together. The document is read and thrown away:
+              together. An <strong>HTML file is loaded exactly as it is</strong>, with its own wording, layout and
+              tables kept and nothing rewritten. The document is read and thrown away:
               if the reader should also receive it, attach it above. None of the three invents a fact: anything you did
               not give it comes back as a [square bracket] gap for you to fill, and a link it did not get from you is
               refused outright.
@@ -855,11 +864,13 @@ export function SatoEmailComposer({
               <div className="mt-3 border border-phx-line bg-white p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="text-phx-xs font-black uppercase tracking-wide text-phx-ink-2">
-                    {polished.mode === "document"
-                      ? "What it wrote from your document"
-                      : polished.mode === "write"
-                        ? "What it wrote"
-                        : "What changed"}
+                    {polished.verbatim
+                      ? "Loaded from your file, as it is"
+                      : polished.mode === "document"
+                        ? "What it wrote from your document"
+                          : polished.mode === "write"
+                          ? "What it wrote"
+                          : "What changed"}
                   </span>
                   <button className={PALE_BUTTON} onClick={undoPolish} type="button">
                     <Undo2 className="h-4 w-4" />

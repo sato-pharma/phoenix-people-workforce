@@ -288,17 +288,52 @@ function styleSenderTables(html: string): string {
       })
       .join(";");
 
+  /**
+   * One declaration per property, the LAST one kept — which is the one a client honours anyway.
+   *
+   * This runs so the pass is IDEMPOTENT. A body that has already been through it carries the house
+   * declarations itself, so the next pass writes them a second time: `color:#1A1A1A;color:#1A1A1A`.
+   * Nothing renders differently, and it would have gone unnoticed for ever — except that an email
+   * this composer produced is now uploaded straight back into it (the verbatim route), and without
+   * this the markup grows by about 1.8 KB every time he does that, compounding on each round trip.
+   *
+   * Only identical property NAMES are collapsed, so a shorthand and a longhand — `border` and
+   * `border-bottom` — both survive, in their own order.
+   */
+  const collapse = (style: string): string => {
+    const declarations = style.split(";").map((declaration) => declaration.trim()).filter(Boolean);
+    const property = (declaration: string) => (declaration.split(":")[0] ?? "").trim().toLowerCase();
+    // The LAST value, in the FIRST position. The last value is the one a client honours; the first
+    // position is the house's own order, so a body that goes round the loop a second time comes
+    // back byte for byte rather than merely looking the same.
+    const winner = new Map<string, string>();
+    for (const declaration of declarations) winner.set(property(declaration), declaration);
+    const written = new Set<string>();
+    return declarations
+      .map((declaration) => {
+        const name = property(declaration);
+        if (written.has(name)) return "";
+        written.add(name);
+        return winner.get(name) ?? declaration;
+      })
+      .filter(Boolean)
+      .join(";");
+  };
+
   const merge = (attributes: string, css: string): string => {
     const existing = /\sstyle\s*=\s*"([^"]*)"/i.exec(attributes);
     if (!existing) return `${attributes} style="${css}"`;
     const kept = senderOwn(existing[1]);
-    return attributes.replace(existing[0], ` style="${kept ? `${css};${kept}` : css}"`);
+    return attributes.replace(existing[0], ` style="${collapse(kept ? `${css};${kept}` : css)}"`);
   };
 
   // The one hook the responsive sheet needs. A phone gives a four-column table about 340px, and at
   // the desk padding every cell wraps its own contents — so the cells are tagged here and the media
   // query tightens them. THE FITS-THE-SCREEN RULE: the answer is never a sideways scroll.
   const tagCell = (attributes: string): string => {
+    // This tag never collects the class twice on a second pass, unlike the styles above: the
+    // sanitizer drops `class` from every cell before this runs, so what arrives here is always
+    // bare. The branch below is for a cell that was never sanitised — a caller's own markup.
     const existing = /\sclass\s*=\s*"([^"]*)"/i.exec(attributes);
     if (!existing) return `${attributes} class="sato-cell"`;
     return attributes.replace(existing[0], ` class="sato-cell ${existing[1]}"`);
@@ -508,8 +543,13 @@ export function renderSatoEmail(content: SatoEmailContent): { html: string; text
     masthead +
     brandRule +
     titleBlock +
-    `<tr><td style="padding:22px 0 0 0;font-size:16px;line-height:27px;${MSO_EXACT_LEADING};` +
-    `color:${HOUSE_COLORS.body}">${body}</td></tr>` +
+    // `sato-message` marks the sender's own words inside the house frame. Nothing styles it — it is
+    // a NAME, for the one job of finding this cell again: an email this composer produced is
+    // routinely uploaded back into it, and the frame around it has to be taken off before the
+    // renderer puts a fresh one on, or the reader gets two mastheads and two colophons nested one
+    // inside the other. `unwrapSatoEmailFrame` looks for this class first (source-document.ts).
+    `<tr><td class="sato-message" style="padding:22px 0 0 0;font-size:16px;line-height:27px;` +
+    `${MSO_EXACT_LEADING};color:${HOUSE_COLORS.body}">${body}</td></tr>` +
     signOffRow +
     footer +
     "</table></td></tr>";

@@ -21,7 +21,8 @@ import {
   capSourceText,
   chooseSourceRoute,
   detectSatoSourceKind,
-  htmlToSourceText,
+  htmlDocumentBody,
+  htmlDocumentSubject,
   SATO_EMAIL_DOCUMENT_MAX_BYTES,
   type SatoAssistSource,
   type SatoSourceKind,
@@ -101,17 +102,36 @@ export async function readSatoSourceDocument(input: {
     );
   }
 
+  // 🔴 HTML never joins the extraction below, and never meets `tidySourceText` or `capSourceText`.
+  // Both of those are written for WORDS: one collapses runs of whitespace and strips direction
+  // characters, the other cuts the text at a newline — and a cut inside a tag is a broken email.
+  // An HTML file goes into the editor as it stands (owner, 2026-09-23: "i want to make as as it is
+  // exactly"), so the file ceiling above is the only limit on it, and nothing here reads its words.
+  if (kind === "html") {
+    const raw = bytes.toString("utf8");
+    const body = htmlDocumentBody(raw);
+    if (!body.trim()) {
+      throw new SatoSourceDocumentError("document_unreadable", "There is nothing in that page.");
+    }
+    const subject = htmlDocumentSubject(raw);
+    return {
+      characters: body.length,
+      kind,
+      source: {
+        fileName: fileName.trim() || "document",
+        route: chooseSourceRoute({ kind, text: body }),
+        text: body,
+        ...(subject ? { subject } : {}),
+      },
+      truncated: false,
+    };
+  }
+
   let extracted = "";
-  if (kind === "pdf" || kind === "word" || kind === "html" || kind === "text") {
+  if (kind === "pdf" || kind === "word" || kind === "text") {
     try {
       extracted =
-        kind === "pdf"
-          ? await pdfText(bytes)
-          : kind === "word"
-            ? await wordText(bytes)
-            : kind === "html"
-              ? htmlToSourceText(bytes.toString("utf8"))
-              : bytes.toString("utf8");
+        kind === "pdf" ? await pdfText(bytes) : kind === "word" ? await wordText(bytes) : bytes.toString("utf8");
     } catch {
       // A PDF that will not parse still has a page to look at, so it falls through to the picture
       // route rather than being refused. A Word or text file that will not open has nothing left.

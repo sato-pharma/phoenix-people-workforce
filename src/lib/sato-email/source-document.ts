@@ -22,14 +22,22 @@ import { countReadableCharacters } from "@/lib/recruitment/cv-text-layer";
 export type SatoSourceKind = "pdf" | "word" | "html" | "text" | "picture" | "unsupported";
 
 /**
- * How the document reached the model: its words, or the file itself.
+ * How the document reached the email: its words, the file itself, or neither.
  *
  * `text` — pdf-parse, mammoth or a plain decode recovered the words, and every figure in the draft
  * can be checked against them. `picture` — a scan, a photograph or a PDF with no text layer: the
  * file goes to the model whole, and nothing in the draft can be checked against anything, which is
  * said out loud on screen instead of being quietly skipped.
+ *
+ * 🔴 `verbatim` — THE FILE IS ALREADY AN EMAIL, AND NOTHING REWRITES IT. Owner, 2026-09-23, after
+ * an HTML upload came back rewritten: "when i did with html its lost its design an became awful
+ * design", then "i donot whant ai to rewrite it i want to make as as it is exactly". A PDF has to
+ * be read and turned into an email because a PDF is not one. An HTML file already is: its
+ * headings, its bold, its tables and its order ARE the design, and putting it through a model that
+ * writes a fresh announcement out of its words throws every one of those away — which is the whole
+ * of what he saw. On this route the model call does not happen at all.
  */
-export type SatoSourceRoute = "text" | "picture";
+export type SatoSourceRoute = "text" | "picture" | "verbatim";
 
 /**
  * 10 MB, the same ceiling as an attachment. Not a model limit — a sender limit: a document bigger
@@ -69,8 +77,8 @@ export function detectSatoSourceKind(contentType: string, fileName: string): Sat
     return "word";
   }
   if (mime.startsWith("image/") || /\.(jpe?g|png|webp)$/.test(name)) return "picture";
-  // Before the text branch, because HTML IS text/* and a plain decode of it hands the model
-  // tag soup — every style rule, every table attribute, and the words buried inside them.
+  // Before the text branch, because HTML IS text/*, and an HTML file is not a document to be read
+  // and rewritten — it is already an email, and it takes the verbatim route below.
   if (mime.includes("html") || /\.x?html?$/.test(name)) return "html";
   // Deliberately last: a .csv can arrive as application/vnd.ms-excel, and a .md as text/markdown,
   // octet-stream or nothing at all. The extension decides when the label is useless.
@@ -95,7 +103,7 @@ export function tidySourceText(raw: string): string {
     .replace(PAGE_MARKER, "")
     // Zero-width and bidi-control characters. A Word or PDF export scatters them through Arabic,
     // where they are invisible on the page and pure noise in a prompt.
-    .replace(/[\u200b-\u200f\u202a-\u202e\ufeff]/g, "")
+    .replace(/[​-‏‪-‮﻿]/g, "")
     .replace(/[ \t]+/g, " ")
     .replace(/ *\n */g, "\n")
     .replace(/\n{3,}/g, "\n\n")
@@ -120,66 +128,101 @@ export function capSourceText(text: string): { text: string; truncated: boolean 
 }
 
 /**
- * A web page, or a saved email, read as the words a person would see on it.
+ * The inside of an uploaded HTML file, ready to go into the editor UNCHANGED.
  *
- * Owner 2026-09-23: "me able also to the system absorb uploaded html and write email from" — the
- * thing he uploads is most often an email this composer itself produced, or a page someone sent
- * him. A plain utf8 decode of one is tag soup: the whole house stylesheet arrives before the
- * first word, and a 6 KB announcement reads as 40 KB of attributes the model then has to ignore.
+ * 🔴 NOTHING HERE REWRITES, TRANSLATES, SUMMARISES OR RE-ORDERS — that is the entire point of this
+ * route. Owner, 2026-09-23: "i donot whant ai to rewrite it i want to make as as it is exactly",
+ * after the first build flattened his file to words and let the model write a fresh announcement
+ * out of them: "when i did with html its lost its design an became awful design". Every step below
+ * either drops what a mail client would refuse to run, or takes off a frame the renderer is about
+ * to put back on. Never add a step here that changes what a reader sees.
  *
- * Done here with string work rather than a parser on purpose. This module is imported by the
- * BROWSER for the composer's accept list, so it must stay free of dependencies, and the job is
- * narrower than parsing: the output is never rendered, never trusted as markup and never sent
- * anywhere — it is prompt text. Anything ambiguous therefore drops out rather than being guessed
- * at, and the tag stripper runs LAST, after the blocks that carry meaning have become newlines.
- *
- * 🔴 A TABLE HAS TO SURVIVE AS A GRID. The instructions tell the assistant that a table in the
- * document arrives as a table in the email, and it can only obey that if the rows still look like
- * rows: cells are joined with " | " and each row ends at a newline. Flatten a rate card into one
- * long sentence here and no prompt rule downstream can put it back.
+ * String work rather than a parser because this module is imported by the BROWSER for the accept
+ * list and has to stay dependency-free. The safety gate is downstream and unchanged:
+ * `prepareSatoEmailBody` runs `sanitizeEmailTemplateHtml` over whatever comes out of here, exactly
+ * as it does over anything the sender types, so an unknown tag or a stray attribute is dropped
+ * there rather than trusted here.
  */
-export function htmlToSourceText(raw: string): string {
-  return String(raw ?? "")
-    // Script, style and head hold no words a reader ever sees. They go first, contents and all,
-    // because stripping their tags alone would leave the CSS itself standing as body text.
-    .replace(/<(script|style|head|template|noscript)\b[^>]*>[\s\S]*?<\/\1>/gi, " ")
-    .replace(/<!--[\s\S]*?-->/g, " ")
-    // An image is a word the reader can see, and in a house email the alt text is the only
-    // description of it there is.
-    .replace(/<img\b[^>]*\balt\s*=\s*"([^"]+)"[^>]*>/gi, "$1")
-    // The cell separator goes on the CLOSING tag: an opening <td> may carry a style attribute
-    // longer than the cell's own contents, and the divider belongs between values, not before
-    // the first one.
-    .replace(/<\/(td|th)\s*>/gi, " | ")
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/(p|div|tr|li|h[1-6]|ul|ol|table|thead|tbody|section|blockquote)\s*>/gi, "\n")
-    .replace(/<(hr|tr)\b[^>]*>/gi, "\n")
-    .replace(/<[^>]+>/g, "")
-    // Entities last, so a &lt; that was text in the page cannot become a tag the stripper above
-    // would then eat along with everything after it.
-    .replace(/&(nbsp|amp|lt|gt|quot|#39|apos|middot|mdash|ndash|hellip|rsquo|lsquo|ldquo|rdquo);/gi, (entity) => {
-      const table: Record<string, string> = {
-        amp: "&", apos: "'", gt: ">", hellip: "…", lt: "<", ldquo: "\u201c", lsquo: "\u2018",
-        mdash: "—", middot: "·", nbsp: " ", ndash: "–", quot: '"', rdquo: "\u201d", rsquo: "\u2019",
-        "#39": "'",
-      };
-      return table[entity.slice(1, -1).toLowerCase()] ?? entity;
-    })
-    .replace(/&#(\d{1,6});/g, (whole, code) => {
-      const point = Number(code);
-      return point > 0 && point <= 0x10ffff ? String.fromCodePoint(point) : whole;
-    })
-    // A row that ended in a cell divider now reads "… | \n". The divider was between cells, and
-    // there is no next cell.
-    .replace(/\|\s*(?=\n|$)/g, "")
-    .replace(/[ \t]*\|[ \t]*/g, " | ");
+export function htmlDocumentBody(raw: string): string {
+  const whole = String(raw ?? "")
+    // A mail client runs neither, and Outlook prints an unrecognised <style> block as text. They
+    // go with their contents: stripping the tags alone would leave the stylesheet as a paragraph.
+    .replace(/<(script|style|head|template|noscript)\b[^>]*>[\s\S]*?<\/\1>/gi, "")
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/<!doctype[^>]*>/gi, "");
+  const body = /<body\b[^>]*>([\s\S]*)<\/body>/i.exec(whole);
+  return unwrapSatoEmailFrame((body ? body[1] : whole).trim());
 }
 
 /**
- * Words, or the file itself? A picture is a picture whatever it is wrapped in, and a PDF whose text
- * layer holds less than a paragraph is one of those in disguise.
+ * 🔴 THE FRAME IS PRINTED ONCE. What he uploads is most often an email this composer itself
+ * produced, and the masthead, the brand rule, the title, the sign-off and the colophon are already
+ * inside that file. Put it into the editor whole and the renderer wraps a second frame around the
+ * first — two mastheads, two logos, two colophons, one nested in the other. So an uploaded house
+ * email is cut back to its MESSAGE, and the frame around it is the one the renderer adds.
+ *
+ * Two anchors, both read off a real rendered email. `class="sato-message"` is the marker the
+ * renderer puts on that cell from 2026-09-23. The style signature is the SAME cell before the
+ * marker existed — which is every email sent before that date, including the one he was holding
+ * when he reported this.
+ *
+ * A file carrying neither anchor is not a house email and comes back untouched.
+ */
+export function unwrapSatoEmailFrame(html: string): string {
+  const value = String(html ?? "");
+  const opening =
+    /<td[^>]*class="[^"]*\bsato-message\b[^"]*"[^>]*>/i.exec(value) ??
+    /<td[^>]*style="padding:22px 0 0 0;font-size:16px;line-height:27px;[^"]*"[^>]*>/i.exec(value);
+  if (!opening) return value;
+
+  // Walk to the cell's OWN closing tag. A message holding a table holds nested <td>s, and the
+  // first </td> after the opening belongs to one of those, not to the message.
+  const start = opening.index + opening[0].length;
+  const boundary = /<(\/?)td\b[^>]*>/gi;
+  boundary.lastIndex = start;
+  let depth = 1;
+  let step = boundary.exec(value);
+  while (step) {
+    depth += step[1] ? -1 : 1;
+    if (depth === 0) return value.slice(start, step.index).trim();
+    step = boundary.exec(value);
+  }
+  // Unbalanced markup: better the whole file than a message cut off mid-sentence.
+  return value;
+}
+
+/**
+ * The subject an uploaded email already carries.
+ *
+ * `<title>` is where the renderer writes the subject, so a house email hands its own subject back
+ * unchanged. A page with no title falls to its first heading, and a file with neither gives an
+ * empty string — which leaves whatever the sender typed in the subject field alone.
+ */
+export function htmlDocumentSubject(raw: string): string {
+  const value = String(raw ?? "");
+  const title = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(value);
+  const heading = /<h1\b[^>]*>([\s\S]*?)<\/h1>/i.exec(value);
+  return (title?.[1] ?? heading?.[1] ?? "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Words, the file itself, or neither?
+ *
+ * A picture is a picture whatever it is wrapped in, and a PDF whose text layer holds less than a
+ * paragraph is one of those in disguise. HTML takes neither route: it is already an email, so it
+ * goes into the editor as it is and never reaches the model.
  */
 export function chooseSourceRoute(input: { kind: SatoSourceKind; text: string }): SatoSourceRoute {
+  if (input.kind === "html") return "verbatim";
   if (input.kind === "picture") return "picture";
   if (input.kind === "pdf" && countReadableCharacters(input.text) < MIN_SOURCE_TEXT_CHARS) return "picture";
   return "text";
@@ -201,6 +244,11 @@ export function describeSourceRead(input: {
   truncated: boolean;
 }): string {
   const name = input.fileName.trim() || "the file";
+  // 🔴 Say it plainly, because it is the opposite of what the other two routes do and the sender
+  // has been burnt by the difference: this file was NOT rewritten.
+  if (input.route === "verbatim") {
+    return `Loaded ${name} exactly as it is — its own wording, layout and tables, with nothing rewritten.`;
+  }
   if (input.route === "picture") {
     return `Read ${name} as a picture — there is no text in the file, so the page itself was used.`;
   }
@@ -222,6 +270,13 @@ export type SatoAssistSource = {
   file?: { contentType: string; data: string };
   fileName: string;
   route: SatoSourceRoute;
-  /** The words read out of the file. Empty on the picture route, and only there. */
+  /**
+   * The words read out of the file. Empty on the picture route, and only there.
+   *
+   * On the verbatim route this is the file's own MARKUP, not its words: it goes into the editor,
+   * not into a prompt.
+   */
   text: string;
+  /** Verbatim route only: the subject the uploaded email already carried, if it carried one. */
+  subject?: string;
 };
