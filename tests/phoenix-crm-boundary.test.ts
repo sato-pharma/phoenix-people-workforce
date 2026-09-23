@@ -115,6 +115,9 @@ const ROUTE_GATES: RouteGate[] = [
   get("doctors"),
   get("reports"),
   post("photos/upload-slot", "create"),
+  // The native app's live photo: the phone sends the stamped JPEG as a base64 data URL and the server
+  // does the PUT to the slot itself. Same create gate as upload-slot, which it calls to issue the slot.
+  post("photos/upload", "create"),
   // A read sent as a POST (a batch of photo paths does not belong in a URL), audited as a read.
   { route: "photos/sign", method: "POST", action: "read", audit: "access-read", auditRequired: true },
   // The place stamp burned into a live photo: same gate as taking the photo; it persists nothing.

@@ -11,8 +11,10 @@ import { usePalette } from "@/theme/use-palette";
  *
  * Four tabs only, and that is a ceiling rather than a starting point: the web portal's bottom nav
  * is capped and customisable for the same reason, because a rep uses two or three destinations all
- * day and a crowded bar makes all of them harder to hit. Everything else reaches the app through
- * the Home screen, not through another tab.
+ * day and a crowded bar makes all of them harder to hit. Phoenix CRM earns a tab because a rep lives
+ * in it all day (the web gave it its own portal row for the same reason); everything else reaches the
+ * app through the Home screen, not through another tab. A viewer with no CRM territory still sees the
+ * tab and opens a plain "not open for you yet" panel — the server, not this bar, decides access.
  *
  * Push starts here rather than at the root because it belongs to a signed-in session: this layout
  * exists only while someone is signed in, and a tapped notification needs the tabs mounted to open
@@ -41,6 +43,13 @@ export default function PortalTabsLayout() {
           options={{
             tabBarIcon: ({ color, size }) => <Ionicons color={color as string} name="home-outline" size={size} />,
             title: "Home",
+          }}
+        />
+        <Tabs.Screen
+          name="crm"
+          options={{
+            tabBarIcon: ({ color, size }) => <Ionicons color={color as string} name="briefcase-outline" size={size} />,
+            title: "CRM",
           }}
         />
         <Tabs.Screen
