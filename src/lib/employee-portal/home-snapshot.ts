@@ -295,6 +295,11 @@ export type MrFieldKpis = {
   missedDoctors: number;
   /** Doctors seen at exactly the planned frequency — the numerator under frequencyPct, NOT coverage. */
   onPlanDoctors: number;
+  /** Planned doctors visited MORE times than planned — a deviation on the owner's rule. Always 0
+   *  under the Phoenix rules, where an extra visit is not counted against the rep. */
+  overDoctors: number;
+  /** Planned doctors visited at least once but FEWER times than planned. */
+  underDoctors: number;
   coveragePct: number;
   frequencyPct: number;
   /** False when the rep has no planned doctors at all. He must not render as 0%. */
@@ -774,6 +779,8 @@ async function loadMrFieldKpis(access: AccessContext, hrId: string): Promise<MrF
     visitedDoctors: row.visitedDoctors,
     missedDoctors: row.missedDoctors,
     onPlanDoctors: row.onPlanDoctors,
+    overDoctors: row.overDoctors,
+    underDoctors: row.underDoctors,
     coveragePct: row.coveragePct,
     frequencyPct: row.frequencyPct,
     hasMeasurablePlan: row.hasMeasurablePlan,
