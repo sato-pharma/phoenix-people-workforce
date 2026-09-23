@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
 
+import {
+  deviceUserActivityKey,
+  planDeviceUserActivity,
+  type DeviceUserMapSnapshot,
+} from "@/lib/attendance/device-user-activity";
 import { routeAttendancePunch } from "@/lib/attendance/metrics";
 import { toApiError, unauthorizedError, validationError } from "@/lib/http/api-errors";
 import { requiredTokenAuthorized } from "@/lib/security/cron-auth";
@@ -102,14 +107,26 @@ function validatePunch(input: unknown, index: number): ValidatedPunch {
   };
 }
 
+// ONE key space. This used to be a second, byte-identical copy of the domain helper; the planner
+// and this route must agree on it exactly, or `unmappedKeys` silently matches nothing and every
+// discovered device user stops being recorded.
 function mapKey(input: Pick<ValidatedPunch, "device_id" | "device_user_id">) {
-  return `${input.device_id}\u0000${input.device_user_id}`;
+  return deviceUserActivityKey({ deviceId: input.device_id, deviceUserId: input.device_user_id });
 }
+
 
 type DeviceUserRow = {
   employeeHrId: string | null;
   isActive: boolean;
   nonEmployeeLabel: string | null;
+};
+
+/** The map row as `recordDeviceUserActivity` reads it — identity, plus the column it advances. */
+type DeviceUserMapRow = {
+  device_id: string;
+  device_user_id: string;
+  id: number;
+  last_seen_punch_at: string | null;
 };
 
 // A PostgREST `.in()` puts its whole list in the URL, so past a few hundred ids the
@@ -175,67 +192,94 @@ function attributedHrId(row: DeviceUserRow | undefined) {
   return routeAttendancePunch(row) === "attribute" ? row?.employeeHrId ?? null : null;
 }
 
-async function recordUnmappedDeviceUsers(
+/**
+ * Maintains `attendance_device_user_map` from a batch of punches.
+ *
+ * The DECISION — who gets a new row, whose `last_seen_punch_at` advances — lives in
+ * `planDeviceUserActivity`, where it can be tested without a database. This function is the I/O
+ * around it: read the map rows for the batch, ask for a plan, execute it.
+ *
+ * It used to be called `recordUnmappedDeviceUsers`, was handed only the unmapped punches, and
+ * carried a `row.is_active && row.employee_hr_id` guard on top — so the column froze the moment HR
+ * mapped a device user. That rule was inline in this route handler, which is why nothing caught it
+ * for months. See `device-user-activity.ts` for the production measurement.
+ */
+async function recordDeviceUserActivity(
   supabase: ReturnType<typeof getSupabaseAdmin>,
   punches: ValidatedPunch[],
+  unmappedKeys: ReadonlySet<string>,
 ) {
-  const latestByDeviceUser = new Map<string, ValidatedPunch>();
+  if (punches.length === 0) {
+    return;
+  }
 
-  punches.forEach((punch) => {
-    const key = mapKey(punch);
-    const current = latestByDeviceUser.get(key);
-    if (!current || punch.punch_time > current.punch_time) {
-      latestByDeviceUser.set(key, punch);
+  // One read for the whole batch instead of a SELECT per device user. The old shape issued a
+  // `maybeSingle()` per key, which was tolerable while it only ever saw the unmapped punches and
+  // is not now that it sees every one of them.
+  const deviceIds = Array.from(new Set(punches.map((punch) => punch.device_id)));
+  const deviceUserIds = Array.from(new Set(punches.map((punch) => punch.device_user_id)));
+  const existing: DeviceUserMapSnapshot[] = [];
+
+  for (let i = 0; i < deviceUserIds.length; i += lookupChunkSize) {
+    const chunk = deviceUserIds.slice(i, i + lookupChunkSize);
+    const { data, error } = await supabase
+      .from("attendance_device_user_map")
+      .select("id,device_id,device_user_id,last_seen_punch_at")
+      .in("device_id", deviceIds)
+      .in("device_user_id", chunk);
+
+    if (error) {
+      throw error;
     }
+
+    for (const row of (data ?? []) as DeviceUserMapRow[]) {
+      existing.push({
+        deviceId: row.device_id,
+        deviceUserId: row.device_user_id,
+        id: row.id,
+        lastSeenPunchAt: row.last_seen_punch_at,
+      });
+    }
+  }
+
+  const plan = planDeviceUserActivity({
+    existing,
+    punches: punches.map((punch) => ({
+      deviceId: punch.device_id,
+      deviceUserId: punch.device_user_id,
+      punchTime: punch.punch_time,
+    })),
+    unmappedKeys,
   });
 
-  for (const punch of latestByDeviceUser.values()) {
-    const { data: existing, error: existingError } = await supabase
+  for (const insert of plan.inserts) {
+    const { error } = await supabase
       .from("attendance_device_user_map")
-      .select("id,is_active,employee_hr_id,last_seen_punch_at")
-      .eq("device_id", punch.device_id)
-      .eq("device_user_id", punch.device_user_id)
-      .maybeSingle();
+      .insert({
+        device_id: insert.deviceId,
+        device_user_id: insert.deviceUserId,
+        employee_hr_id: null,
+        is_active: false,
+        last_seen_punch_at: insert.lastSeenPunchAt,
+        updated_at: new Date().toISOString(),
+      });
 
-    if (existingError) {
-      throw existingError;
+    if (error) {
+      throw error;
     }
+  }
 
-    const row = existing as { id: number; is_active: boolean; employee_hr_id: string | null; last_seen_punch_at: string | null } | null;
-    if (!row) {
-      const { error } = await supabase
-        .from("attendance_device_user_map")
-        .insert({
-          device_id: punch.device_id,
-          device_user_id: punch.device_user_id,
-          employee_hr_id: null,
-          is_active: false,
-          last_seen_punch_at: punch.punch_time,
-          updated_at: new Date().toISOString(),
-        });
+  for (const update of plan.updates) {
+    const { error } = await supabase
+      .from("attendance_device_user_map")
+      .update({
+        last_seen_punch_at: update.lastSeenPunchAt,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", update.id);
 
-      if (error) {
-        throw error;
-      }
-      continue;
-    }
-
-    if (row.is_active && row.employee_hr_id) {
-      continue;
-    }
-
-    if (!row.last_seen_punch_at || punch.punch_time > row.last_seen_punch_at) {
-      const { error } = await supabase
-        .from("attendance_device_user_map")
-        .update({
-          last_seen_punch_at: punch.punch_time,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", row.id);
-
-      if (error) {
-        throw error;
-      }
+    if (error) {
+      throw error;
     }
   }
 }
@@ -317,9 +361,11 @@ async function insertPunches(punches: ValidatedPunch[]) {
     }
   }
 
-  if (unmappedPunches.length > 0) {
-    await recordUnmappedDeviceUsers(supabase, unmappedPunches);
-  }
+  // EVERY punch, not just the unmapped ones. `last_seen_punch_at` is meant to say when this
+  // device user was last at the door; handing this only `unmappedPunches` is what froze the
+  // column for every employee HR had actually mapped. The unmapped keys still ride along,
+  // because only they may CREATE a row.
+  await recordDeviceUserActivity(supabase, punches, new Set(unmappedPunches.map(mapKey)));
 
   return {
     duplicate,

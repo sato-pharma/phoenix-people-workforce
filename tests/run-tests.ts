@@ -349,6 +349,7 @@ import { runAttendanceReconcileDayTests } from "./attendance-reconcile-day.test.
 import { runAttendanceEmployeeDayReportTests } from "./attendance-employee-day-report.test.ts";
 import { runAttendanceDeviceOutageFailsafeTests } from "./attendance-device-outage-failsafe.test.ts";
 import { runAttendanceDevicePunchCapTests } from "./attendance-device-punch-cap.test.ts";
+import { runAttendanceLastSeenPunchWriterTests } from "./attendance-last-seen-punch-writer.test.ts";
 import { runAttendanceSkippedPunchClassificationTests } from "./attendance-skipped-punch-classification.test.ts";
 import { runAttendanceHolidayOverridesTests } from "./attendance-holiday-overrides.test.ts";
 import { runDeductionsModuleFoundationTests } from "./deductions-module-foundation.test.ts";
@@ -2738,6 +2739,7 @@ await runTest("attendance reconcile-day gating", runAttendanceReconcileDayTests)
 await runTest("attendance employee day-by-day report (access/policy-range)", runAttendanceEmployeeDayReportTests);
 await runTest("attendance device-outage fail-safe", runAttendanceDeviceOutageFailsafeTests);
 await runTest("attendance device-user latest punch (no 5,000 cap, order on resolved punch)", runAttendanceDevicePunchCapTests);
+await runTest("attendance last_seen_punch_at is written for MAPPED device users too", runAttendanceLastSeenPunchWriterTests);
 await runTest("attendance skipped punches split unknown vs deliberately ignored", runAttendanceSkippedPunchClassificationTests);
 await runTest("attendance bulk holiday calendar", runAttendanceHolidayOverridesTests);
 await runTest("field workforce compliance", runFieldWorkforceComplianceTests);
