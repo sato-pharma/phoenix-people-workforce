@@ -56,7 +56,9 @@ const LAYOUTS: { value: SpotlightLayout; label: string; hint: string }[] = [
 function windowText(window: SpotlightWindow): string {
   if (window.kind === "year") return window.key;
   if (window.kind === "quarter") return `${window.key.slice(5)} ${window.key.slice(0, 4)}`;
-  if (window.kind === "semester") return `H${window.key.slice(6)} ${window.key.slice(0, 4)}`;
+  // Kept in step with windowLabel in src/lib/spotlight/period.ts — "Semester 2 2026", never "H2"
+  // (owner, 2026-09-23).
+  if (window.kind === "semester") return `Semester ${window.key.slice(6)} ${window.key.slice(0, 4)}`;
   const [year, month] = window.key.split("-");
   return new Date(Date.UTC(Number(year), Number(month) - 1, 1))
     .toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });

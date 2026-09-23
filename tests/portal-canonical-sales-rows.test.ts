@@ -49,6 +49,7 @@ function portalRow(overrides: Partial<CanonicalPortalSalesRow> = {}): CanonicalP
     month: 7,
     period: "2026-07",
     product: "Tebofortin 40mg",
+    productCode: "TB040",
     salesType: "",
     salesUnits: 10,
     salesValue: 1_000,

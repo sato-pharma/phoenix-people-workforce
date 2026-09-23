@@ -61,11 +61,25 @@ export function semesterPeriods(semester: SemesterKey): PeriodKey[] {
   });
 }
 
-/** Human label for a heading — "H1 2026". Never abbreviated with an ellipsis and short enough that
- * it cannot wrap in the portal's KPI cards. */
+/**
+ * Human label for a heading — "Semester 1 2026". Never abbreviated with an ellipsis and short
+ * enough that it cannot wrap in the portal's KPI cards.
+ *
+ * SPELLED OUT, NEVER "H1"/"H2" (owner, 2026-09-23, asked directly while the Pedia split rule was
+ * being specified: "call it semester 1 and 2 and s1 and s2 not h1 and h2"). The short form stays
+ * `S1`/`S2` — which is what `SemesterKey` has always carried — so the key needed no change; only
+ * the words a person reads did. Use `semesterShortLabel` where a heading has no room for the long
+ * one.
+ */
 export function semesterLabel(semester: SemesterKey): string {
   const [year, half] = semester.split("-S");
-  return `H${half} ${year}`;
+  return `Semester ${half} ${year}`;
+}
+
+/** The short form for a chip or a column header — "S1 2026". Same rule: never "H1". */
+export function semesterShortLabel(semester: SemesterKey): string {
+  const [year, half] = semester.split("-S");
+  return `S${half} ${year}`;
 }
 
 export type IncentiveWindow = {
@@ -85,20 +99,20 @@ export type IncentiveWindow = {
 /**
  * Which semester window applies, and how much of it this rep actually has.
  *
- * The semester is the CALENDAR one containing `todayPeriod`. Today (August 2026) that is H2, and
- * every rep is scored on H2 whether or not any of it has been uploaded for them yet.
+ * The semester is the CALENDAR one containing `todayPeriod`. Today (September 2026) that is
+ * Semester 2, and every rep is scored on it whether or not any of it has been uploaded for them yet.
  *
  * It used to be anchored on the rep's LATEST data period instead, and that was a live landmine: the
- * displayed payout would flip from H1 to H2 for every rep the instant a July batch was approved —
- * no deploy, nothing on screen having changed. It also made the window a per-rep fact, so a rep
- * whose July had landed was scored on H2 while the colleague beside him was still on H1. The owner's
- * decision on 2026-08-13 settles which is right: the incentive moves FORWARD to Semester 2 (Jul–Dec)
- * from canonical July achievement onward, and H1 payouts are closed and are not restated. The
- * calendar is therefore the anchor.
+ * displayed payout would flip from Semester 1 to Semester 2 for every rep the instant a July batch
+ * was approved — no deploy, nothing on screen having changed. It also made the window a per-rep
+ * fact, so a rep whose July had landed was scored on Semester 2 while the colleague beside him was
+ * still on Semester 1. The owner's decision on 2026-08-13 settles which is right: the incentive
+ * moves FORWARD to Semester 2 (Jul–Dec) from canonical July achievement onward, and Semester 1
+ * payouts are closed and are not restated. The calendar is therefore the anchor.
  *
  * A rep with NO data in the semester still gets a window — every month either missing or still to
- * come. "H2 has not started for you yet" is a fact worth stating, and returning null there would
- * leave the tab with no semester label and no notice at all.
+ * come. "Semester 2 has not started for you yet" is a fact worth stating, and returning null there
+ * would leave the tab with no semester label and no notice at all.
  *
  * `todayPeriod` also separates a gap from a month that has not happened yet, and is passed in rather
  * than read from a clock so the boundary is testable.

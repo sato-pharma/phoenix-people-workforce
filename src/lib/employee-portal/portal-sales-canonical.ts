@@ -56,6 +56,16 @@ export type CanonicalPortalSalesRow = {
   month: number | null;
   period: string;
   product: string;
+  /**
+   * The product's CODE, upper-cased — `GU001`, `LA002`, … — carried alongside the display name.
+   *
+   * Added for the Pedia split incentive, which has to tell two Sato products from two outsource
+   * ones (src/lib/incentives/pedia-split.ts). `product` above is a display NAME resolved through
+   * loadProductNameMap and is editable; matching money rules on it would move a payout the day
+   * somebody renames a label. The code is what the closing engine itself joins on, so it is the
+   * only safe key for a rule that decides what a rep is paid.
+   */
+  productCode: string;
   salesType: string;
   salesUnits: number;
   salesValue: number;
@@ -232,6 +242,7 @@ const loadAllCanonicalPortalSalesRows = cache(async (): Promise<CanonicalPortalS
         month: Number(monthPart) || null,
         period: aggregate.period,
         product: productNames.get(aggregate.productCode) ?? aggregate.productCode,
+        productCode: aggregate.productCode,
         salesType: CANONICAL_SALES_TYPE,
         salesUnits: aggregate.salesUnits,
         salesValue: aggregate.salesValue,

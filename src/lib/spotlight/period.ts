@@ -69,12 +69,16 @@ export function windowPeriods(window: SpotlightWindow): PeriodKey[] {
   return build(Number(yearText), halfText === "2" ? 7 : 1, 6);
 }
 
-/** "August 2026" / "Q3 2026" / "H2 2026" / "2026". */
+/** "August 2026" / "Q3 2026" / "Semester 2 2026" / "2026". */
 export function windowLabel(window: SpotlightWindow): string {
   if (!isValidWindow(window)) return "";
   if (window.kind === "year") return window.key;
   if (window.kind === "quarter") return `${window.key.slice(5)} ${window.key.slice(0, 4)}`;
-  if (window.kind === "semester") return `H${window.key.slice(6)} ${window.key.slice(0, 4)}`;
+  // "Semester 2 2026", never "H2 2026" (owner, 2026-09-23: "call it semester 1 and 2 and s1 and s2
+  // not h1 and h2"). The KEY keeps its `2026-S2` form — only the words a person reads changed.
+  // Mirrored in src/components/spotlight/spotlight-workspace.tsx, which carries its own copy for
+  // the client bundle; the two must say the same thing.
+  if (window.kind === "semester") return `Semester ${window.key.slice(6)} ${window.key.slice(0, 4)}`;
   const [, year, month] = PERIOD_PATTERN.exec(window.key)!;
   const name = new Date(Date.UTC(Number(year), Number(month) - 1, 1)).toLocaleDateString("en-GB", {
     month: "long",
