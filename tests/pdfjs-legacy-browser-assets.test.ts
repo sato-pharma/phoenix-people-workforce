@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 
 import {
   PDFJS_BROWSER_POLYFILL,
@@ -24,9 +24,17 @@ import {
  * These pin the EMITTED files — what the browser actually downloads, not the sync script's intent:
  *   1. each served file opens with exactly our polyfill,
  *   2. everything after it is the installed version's legacy build, byte for byte,
- *   3. and no built-in the vendor build CALLS is left defined by nobody.
+ *   3. no built-in the vendor build CALLS is left defined by nobody,
+ *   4. every wasm module the vendor build NAMES is actually served, byte for byte,
+ *   5. and every viewer that opens a PDF tells pdf.js where those modules are.
  * (3) is the one that generalises: it is what would have caught pdfjs 6 the morning it was
  * proposed, instead of a field outage.
+ *
+ * (4) and (5) are the same lesson applied to the 6.x bump. pdf.js 6 moved the JBIG2 and CCITTFax
+ * decoders out of the JS bundle into jbig2.wasm — CCITT Group 3/4 being how a scanned or faxed page
+ * is encoded, i.e. a large share of the CVs this app reads — and fetches them from the `wasmUrl` the
+ * caller passes, defaulting to null. A miss there is invisible in the ordinary case and blank in the
+ * scanned one, which is precisely the half-working shape that made 2026-09-14 take a day to see.
  */
 export function runPdfjsLegacyBrowserAssetsTests() {
   const require = createRequire(import.meta.url);
@@ -141,6 +149,90 @@ export function runPdfjsLegacyBrowserAssetsTests() {
     }
   }
 
+  // 4. THE WASM DECODERS ARE ACTUALLY SERVED.
+  //
+  //    pdf.js names each module it may load in its own source — `_filename="jbig2.wasm"` and a
+  //    `_noWasmFilename` beside it for the JS fallback. Reading the names out of the bundle rather
+  //    than listing them here is the point: when a future version adds a decoder, or renames one,
+  //    this check follows it instead of going quietly stale.
+  const vendorWasmDir = join(pkgRoot, "wasm");
+  const servedWasmDir = join(publicDir, "wasm");
+  const named = new Set<string>();
+  for (const file of ["pdf.min.mjs", "pdf.worker.min.mjs"]) {
+    const vendor = readFileSync(join(pkgRoot, "legacy", "build", file), "utf8");
+    for (const match of vendor.matchAll(/_(?:noWasm)?[Ff]ilename\s*=\s*"([^"]+\.(?:wasm|js))"/g)) {
+      named.add(match[1]);
+    }
+  }
+  assert.ok(
+    named.size > 0,
+    `Neither pdfjs-dist ${installedVersion} legacy build names a wasm module. Either the library stopped using them — in which case delete this check and public/pdfjs/wasm/ — or the pattern here has gone stale and is now proving nothing.`,
+  );
+  for (const name of [...named].sort()) {
+    assert.ok(
+      existsSync(join(servedWasmDir, name)),
+      `pdfjs-dist ${installedVersion} loads "${name}" at runtime but public/pdfjs/wasm/${name} is not served. It fetches wasmUrl + that name, so a PDF needing it renders BLANK while every other PDF looks perfect — scanned and faxed CVs are what this decodes. Run node scripts/sync-pdfjs-assets.mjs and commit the result.`,
+    );
+  }
+
+  //    The directory is then a MIRROR — same names, same bytes. Both halves are load-bearing, and
+  //    the NAMES half alone is not enough: qcms_bg.wasm is reached through QCMS.setOptions rather
+  //    than the `_filename=` shape read above, so it never appears in `named`. Checking only the
+  //    named modules' bytes let a deliberately corrupted qcms_bg.wasm pass this test — caught by
+  //    breaking it on purpose, which is the only way that gap was ever going to show up.
+  assert.deepEqual(
+    readdirSync(servedWasmDir).sort(),
+    readdirSync(vendorWasmDir).sort(),
+    `public/pdfjs/wasm/ is not a mirror of pdfjs-dist ${installedVersion}'s wasm/ directory (licence files included — we redistribute those binaries). Run node scripts/sync-pdfjs-assets.mjs`,
+  );
+  for (const name of readdirSync(vendorWasmDir).sort()) {
+    assert.deepEqual(
+      readFileSync(join(servedWasmDir, name)),
+      readFileSync(join(vendorWasmDir, name)),
+      `public/pdfjs/wasm/${name} is not byte-identical to pdfjs-dist ${installedVersion}'s own copy. A decoder that is present but altered fails at WebAssembly.instantiate, which reads as "this one CV is broken". Run node scripts/sync-pdfjs-assets.mjs`,
+    );
+  }
+
+  // 5. EVERY VIEWER POINTS AT THEM. A new call site that forgets `wasmUrl` is not a type error —
+  //    the option is optional and its default is null — so nothing but this would catch it.
+  const WASM_URL = `wasmUrl: "/pdfjs/wasm/"`;
+  const srcRoot = join(process.cwd(), "src");
+  const sources: string[] = [];
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir)) {
+      const full = join(dir, entry);
+      if (statSync(full).isDirectory()) walk(full);
+      else if (/\.tsx?$/.test(entry)) sources.push(full);
+    }
+  };
+  walk(srcRoot);
+  const callers = sources.filter((file) => readFileSync(file, "utf8").includes(".getDocument({"));
+  assert.ok(
+    callers.length > 0,
+    "No file under src/ calls pdfjsLib.getDocument({ — this check has gone stale and is proving nothing.",
+  );
+  for (const file of callers) {
+    const source = readFileSync(file, "utf8");
+    const where = relative(process.cwd(), file).replace(/\\/g, "/");
+    //    Read each CALL's own option object rather than the whole file: these files explain in
+    //    prose why isEvalSupported went away, and a plain text search fails on the explanation.
+    const options = [...source.matchAll(/\.getDocument\(\{([^}]*)\}/g)].map((match) => match[1]);
+    assert.ok(
+      options.length > 0,
+      `${where} matched the caller scan but no getDocument({ ... }) option object could be read out of it — the pattern here has gone stale.`,
+    );
+    for (const option of options) {
+      assert.ok(
+        option.includes(WASM_URL),
+        `${where} opens a PDF with pdf.js but that call never passes ${WASM_URL}. pdf.js ${installedVersion} fetches its JBIG2/CCITTFax, JPEG2000 and ICC decoders from that URL and defaults it to null, so scanned pages come up BLANK there while ordinary ones render perfectly.`,
+      );
+      assert.ok(
+        !option.includes("isEvalSupported"),
+        `${where} still passes isEvalSupported. pdf.js 6 removed both the option and the eval() it disabled, so it is now silently ignored — delete it rather than leaving a CSP guarantee that nothing enforces.`,
+      );
+    }
+  }
+
   const syncScript = readFileSync(join(process.cwd(), "scripts", "sync-pdfjs-assets.mjs"), "utf8");
   assert.match(
     syncScript,
@@ -151,5 +243,10 @@ export function runPdfjsLegacyBrowserAssetsTests() {
     syncScript,
     /PDFJS_BROWSER_POLYFILL \+ vendor/,
     "scripts/sync-pdfjs-assets.mjs must write the polyfill AHEAD of the vendor bytes, or the worker's global is left without it",
+  );
+  assert.match(
+    syncScript,
+    /cpSync\(wasmSrc, wasmOut, \{ recursive: true \}\)/,
+    "scripts/sync-pdfjs-assets.mjs must copy the vendor's wasm/ directory, or the next bump leaves the JBIG2/CCITTFax decoder unserved and scanned CVs blank",
   );
 }
