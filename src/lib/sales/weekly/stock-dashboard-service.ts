@@ -10,6 +10,7 @@
 import type { AccessContext, PhoenixRole } from "@/lib/auth/permissions";
 import { resolveWeeklyAccessScope, type WeeklyAccessScope } from "@/lib/sales/weekly/access";
 import { loadWeeklyAreaSplitIndex } from "@/lib/sales/weekly/branch-area-split";
+import { narrowStockRowsToGovernorate, viewerGovernorates } from "@/lib/sales/weekly/branch-governorate-scope";
 import {
   admitWeeklyStockRows,
   mayLiftWeeklyGeography,
@@ -211,10 +212,19 @@ export async function loadWeeklyStockDashboard(
     loadWeeklyScopeRegionNames(accessScope),
   ]);
 
-  const scopedStockRows =
+  const liftedStockRows =
     liftGrain && accessScope.tier === "territory"
       ? admitWeeklyStockRows(data.stockRows ?? [], { bound: accessScope, ownAreaKeys, areaSplit })
       : (data.stockRows ?? []);
+  // Governorate scope (owner, 2026-09-23): a territory viewer sees only the depots in his OWN
+  // governorate, not his whole region. Kibar Omala depots and depots whose name states no
+  // governorate stay visible. Visibility only — attribution is untouched. A viewer with no
+  // governorate bound (full/product/region-only) is not narrowed. See branch-governorate-scope.ts.
+  // Narrowed here so the product filter and the option lists below still read the scoped rows.
+  const scopedStockRows = narrowStockRowsToGovernorate(
+    liftedStockRows,
+    viewerGovernorates(accessScope, ownAreaKeys),
+  );
   const stockRows = productFilterInLoad ? scopedStockRows : scopedStockRows.filter(weeklyStockProductPredicate(filters));
 
   const view = buildWeeklyStockView(stockRows, areaNames, {
