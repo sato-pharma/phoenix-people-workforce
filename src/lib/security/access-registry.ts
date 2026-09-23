@@ -1431,6 +1431,13 @@ export const accessRegistry = [
   // bucket - the signature route holds the one mutation and checks the origin on PUT and DELETE.
   sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/spotlight/cheques", permission: { resource: "spotlight", action: "export" } }),
   sessionApi({ audit: { classification: "mutation", required: true }, csrfRequired: true, methods: ["GET", "PUT", "DELETE"], pattern: "/api/spotlight/cheques/signature", permission: { resource: "spotlight", action: "export" } }),
+  // ── Milestones ───────────────────────────────────────────────────────────────────────────────
+  // The service-anniversary keepsake. Super Admin and CEO only, for the same reason as Spotlight
+  // directly above: the due list reads every active employee's hire date with no scope narrowing,
+  // and the card pulls a named person's photograph out of the private `employee-photos` bucket
+  // onto a sheet built to be printed and handed around. That is a publishing right.
+  sessionApi({ methods: ["GET"], pattern: "/api/milestones/due", permission: { resource: "milestones", action: "read" } }),
+  sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/milestones/card", permission: { resource: "milestones", action: "export" } }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/sales/monthly-closing/performance-review", permission: { resource: "sales", action: "import" } }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/sales/monthly-closing/performance-review/export", permission: [{ resource: "sales", action: "import" }, { resource: "sales", action: "export" }], csrfExemptReason: "Read-only export, Super Admin and SFE Manager only: re-reads the closing for the requested line+period and serialises the rep ranking, family, by-product and by-area views to XLSX; performs no mutation." }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/sales/customer-directory/export", permission: { resource: "sales", action: "export" }, csrfExemptReason: "Read-only export: re-runs the directory query under the caller's filters and serialises it to a styled XLSX; performs no mutation." }),

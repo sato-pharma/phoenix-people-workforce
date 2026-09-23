@@ -82,6 +82,12 @@ export type PermissionResource =
   // narrowing of any kind, and it produces a shareable sheet with people's names and achievement
   // on it — so a narrower role holding it would be both a scope leak and a publishing right.
   | "spotlight"
+  // Milestones: the service-anniversary keepsake. Super Admin and CEO ONLY, for the same two
+  // reasons as spotlight directly above — it reads every active employee's hire date and pulls
+  // their photograph out of the private bucket with no scope narrowing, and what it emits is a
+  // printable sheet with a named person's face on it. Widening it to HR is a decision for the
+  // owner to make in words, not a tidy-up.
+  | "milestones"
   | "employees"
   | "employee_profile"
   | "employee_documents"
@@ -198,6 +204,7 @@ export type PermissionResource =
 export const permissionResources: PermissionResource[] = [
   "admin",
   "spotlight",
+  "milestones",
   "overview",
   "admin_access",
   "system_cleanup",
@@ -887,6 +894,8 @@ const defaultPermissionMatrix: PermissionMap = {
     user_activity: ["read", "export"],
     synthetic_journeys: ["read"],
     spotlight: ["read", "export"],
+    // Milestones: the service-anniversary keepsake — the due list and the printable card.
+    milestones: ["read", "export"],
     // Visual Aids: uploads, retires and replaces, and opens every line's. No `delete` for anyone —
     // a flyer is retired, never destroyed.
     visual_aids: ["read", "create", "update"],
@@ -894,6 +903,8 @@ const defaultPermissionMatrix: PermissionMap = {
   CEO: {
     // Spotlight: read and export. The owner named him and the Super Admin as the only two holders.
     spotlight: ["read", "export"],
+    // Milestones: read and export, the same two holders and the same reasoning.
+    milestones: ["read", "export"],
     // Market Awareness: he is the second and final approval on every activity — no cost
     // threshold skips him (owner answer 36). `approve` here is HIS action; nothing in this module
     // may ever write a decision row on his behalf.
