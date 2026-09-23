@@ -1,6 +1,6 @@
 "use client";
 
-import { Building2, Loader2, Lock, UserRound, X } from "lucide-react";
+import { Building2, Download, Loader2, Lock, UserRound, X } from "lucide-react";
 import * as React from "react";
 import { createPortal } from "react-dom";
 
@@ -179,14 +179,30 @@ export function OrganogramNodeDetailModal({ row, onClose }: Props) {
               ) : null}
             </div>
           </div>
-          <button
-            aria-label="Close"
-            className="shrink-0 rounded-md p-1 text-white/70 transition hover:bg-white/10 hover:text-white"
-            onClick={onClose}
-            type="button"
-          >
-            <X className="h-5 w-5" />
-          </button>
+          <div className="flex shrink-0 items-center gap-1">
+            {/* Employees only — a vacancy carries no record to file. The link goes to the PDF route,
+                which re-derives this viewer's exact sections server-side, so the download can never
+                reveal a field the popup itself withheld. `download` keeps the browser on this page. */}
+            {!isVacancy ? (
+              <a
+                aria-label={`Download ${heading}'s record as PDF`}
+                className="flex items-center gap-1.5 rounded-md px-2 py-1 text-phx-xs font-semibold text-white/80 transition hover:bg-white/10 hover:text-white"
+                download
+                href={`/api/reports/organogram/employee/${encodeURIComponent(row.hrId)}/pdf`}
+              >
+                <Download className="h-4 w-4" />
+                PDF
+              </a>
+            ) : null}
+            <button
+              aria-label="Close"
+              className="rounded-md p-1 text-white/70 transition hover:bg-white/10 hover:text-white"
+              onClick={onClose}
+              type="button"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
         </div>
 
         {/* Body */}
