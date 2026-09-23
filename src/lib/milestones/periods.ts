@@ -291,9 +291,14 @@ export function milestoneCitation(input: {
 /**
  * The file name a download lands under. Names, never codes (AGENTS.md §4) — the HR id is not in it.
  */
-export function milestoneFileName(fullName: string, spec: MilestoneSpec, on: PlainDate): string {
+export function milestoneFileName(
+  fullName: string,
+  spec: MilestoneSpec,
+  on: PlainDate,
+  extension: "pdf" | "png" = "pdf",
+): string {
   const name = fullName.trim().replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-+|-+$/g, "") || "employee";
-  return `${name}-${formatMilestoneSpec(spec)}-${formatPlainDateIso(on)}.pdf`;
+  return `${name}-${formatMilestoneSpec(spec)}-${formatPlainDateIso(on)}.${extension}`;
 }
 
 /**

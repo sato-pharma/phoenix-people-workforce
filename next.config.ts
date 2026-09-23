@@ -134,6 +134,25 @@ const managedPlayCsp = contentSecurityPolicy
   )
   .concat("; frame-src 'self' https://play.google.com https://apis.google.com");
 
+// A CSP for the Milestones workspace ONLY — /milestones and its /hr spelling. The card preview is
+// built by POSTing to /api/milestones/card and framing the HTML that comes back as a `blob:` URL,
+// which is the one thing the base policy refuses here: there is NO `frame-src` directive in it, so
+// framing falls back to `default-src 'self'` and `blob:` is not 'self'. Chrome does not report that
+// as a CSP error in the page; it paints its generic refusal inside the frame — "This content is
+// blocked. Contact the site owner to fix the issue." — which reads like a proxy or an ad blocker and
+// sends you looking anywhere but at a header. (The owner hit exactly that, 2026-09-23.)
+//
+// `img-src`, `media-src`, `worker-src` and `script-src` already allow `blob:` site-wide; this adds
+// the one place it was missing, for one page. `frame-ancestors` is deliberately NOT touched: this
+// widens what THIS page may embed, never who may embed Phoenix. And the blob document is same-origin
+// with its creator, so it inherits this very policy — the card's inline styles and its layout script
+// stay bound by it rather than escaping into a frame with no rules at all.
+//
+// DERIVED from the site-wide policy by concatenation, like the three above and for the same reason:
+// later hardening of the base carries through automatically, and tests/csp-headers.test.ts (which
+// fingerprints the base template literal) is unaffected.
+const milestonePreviewCsp = contentSecurityPolicy.concat("; frame-src 'self' blob:");
+
 const securityHeaders = [
   {
     key: "Content-Security-Policy",
@@ -429,6 +448,16 @@ const nextConfig: NextConfig = {
       {
         headers: [{ key: "Content-Security-Policy", value: managedPlayCsp }],
         source: "/hr/devices/managed-play",
+      },
+      // The Milestones workspace — see milestonePreviewCsp above for why the card preview is a blank
+      // refusal without it. BOTH spellings, for the same reason the managed Play console lists both.
+      {
+        headers: [{ key: "Content-Security-Policy", value: milestonePreviewCsp }],
+        source: "/milestones",
+      },
+      {
+        headers: [{ key: "Content-Security-Policy", value: milestonePreviewCsp }],
+        source: "/hr/milestones",
       },
       // CvPreviewModal renders a candidate's CV inline via <iframe src={ourOwnDownloadRoute}> —
       // the global X-Frame-Options: DENY / frame-ancestors 'none' above blocks that outright,

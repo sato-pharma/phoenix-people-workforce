@@ -321,4 +321,89 @@ export function runMilestoneCardTests() {
     "🔒 the square-edge rule: no rounded corners on the milestones screen",
   );
   assert.ok(!workspace.includes("truncate"), "🔴 no ellipsis — a long Egyptian name wraps");
+
+  // ── 9. The picker, and the fields that arrive filled in ─────────────────────────────────────
+
+  // 🔴 THE DUE LIST IS NOT THE ROSTER. The owner asked to "type a name and it appears to me", and
+  // a screen that can only make a card for somebody in the next thirty days cannot answer that.
+  // The name box therefore reads `candidates` — the whole active roster — and NOT `entries`.
+  assert.ok(
+    workspace.includes("SearchableSelect"),
+    "the person is chosen through the house searchable select, not a bare <select> — sibling pages' identity (AGENTS.md §4)",
+  );
+  assert.ok(
+    /candidates\.map\(/.test(workspace),
+    "the name box lists the active roster (`candidates`), so anybody can be chosen — not only the thirty-day due list",
+  );
+
+  // 🔴 NOTHING IS ASKED FOR THAT THE SYSTEM ALREADY KNOWS (owner, 2026-09-23: "it shows it and I
+  // have the option then to edit it but don't let me from scratch"). The screen computes the date
+  // and the sentence itself, which is only possible because it imports the arithmetic.
+  assert.ok(
+    workspace.includes("milestoneDate") && workspace.includes("milestoneCitation"),
+    "the screen works the date and the sentence out itself — a blank field is the bug this fixes",
+  );
+  assert.ok(
+    !/placeholder=\{selected \? selected\.displayName/.test(workspace),
+    "the name is a VALUE, not a placeholder — a placeholder is an empty field wearing a hint",
+  );
+  assert.ok(
+    /citationEdit !== null/.test(workspace),
+    "and a sentence he has typed in stops following the name and the date, so his own wording survives",
+  );
+  // The three fields hold the OVERRIDE, not the value — which is what lets them be derived during
+  // render instead of written into state by an effect. `react-hooks/set-state-in-effect` refuses
+  // the effect-shaped version, and it costs a wasted render and a ref that duplicates this state.
+  assert.ok(
+    !/useEffect\([^)]*setDateEdit|useEffect\([^)]*setNameEdit/.test(workspace),
+    "the worked-out values are derived during render, never written into state by an effect",
+  );
+
+  // ── 10. Both outputs, and the frame that shows them ─────────────────────────────────────────
+
+  // PDF and PNG, from ONE laid-out page. The picture's resolution comes from the viewport, so the
+  // viewport must be set BEFORE the screenshot — a screenshot taken without one is a thumbnail of
+  // the corner of the sheet, and it fails by merely looking disappointing.
+  const render = readFileSync(join(root, "src", "lib", "milestones", "render.ts"), "utf8");
+  assert.ok(
+    render.includes("renderMilestoneCardImage"),
+    "the card can be taken as a picture as well as as paper (owner, 2026-09-23)",
+  );
+  const viewportAt = render.indexOf("setViewport");
+  const shotAt = render.indexOf("page.screenshot");
+  assert.ok(viewportAt > 0 && shotAt > viewportAt, "the viewport is sized before the picture is taken, never after");
+  assert.ok(
+    /deviceScaleFactor: IMAGE_SCALE/.test(render) && /const IMAGE_SCALE = [4-9]/.test(render),
+    "and it is taken at 4× or better — 384 DPI, so the picture can be printed and not only sent",
+  );
+  assert.ok(
+    cardRoute.includes('"image/png"'),
+    "the route serves it as a PNG — flat colour, hairlines and type are what JPEG damages most",
+  );
+  const pngSpec = parseMilestoneSpec("1m");
+  const pngOn: PlainDate = { year: 2026, month: 9, day: 25 };
+  assert.equal(milestoneFileName("Yasmeen Khaled Elsafory", pngSpec, pngOn, "png"), "Yasmeen-Khaled-Elsafory-1m-2026-09-25.png");
+  assert.ok(
+    milestoneFileName("Yasmeen Khaled Elsafory", pngSpec, pngOn).endsWith(".pdf"),
+    "and the default is still the PDF — adding the picture must not rename every existing download",
+  );
+
+  // 🔴 THE PREVIEW IS FRAMED FROM A `blob:` URL, AND THE BASE CSP HAS NO `frame-src`. Framing then
+  // falls back to `default-src 'self'`, Chrome refuses the frame, and it paints "This content is
+  // blocked. Contact the site owner to fix the issue." — which reads like an ad blocker and sends
+  // you looking anywhere but at a header. The owner hit exactly that on 2026-09-23.
+  const nextConfig = readFileSync(join(root, "next.config.ts"), "utf8");
+  // To the end of the LINE, not to the first `;` — the directive being asserted on begins with a
+  // semicolon inside a string literal, so `[^;]*` stops just short of the thing it is looking for.
+  const milestoneCsp = /const milestonePreviewCsp =.*/.exec(nextConfig);
+  assert.ok(milestoneCsp, "next.config.ts must declare a CSP for the milestones page");
+  assert.match(
+    milestoneCsp[0],
+    /frame-src [^"]*blob:/,
+    "milestonePreviewCsp must allow blob: in frame-src, or the card preview is a blank refusal",
+  );
+  assert.ok(
+    nextConfig.includes('source: "/milestones"') && nextConfig.includes('source: "/hr/milestones"'),
+    "and it is applied to BOTH spellings — /hr is rewritten onto the admin page after headers match",
+  );
 }
