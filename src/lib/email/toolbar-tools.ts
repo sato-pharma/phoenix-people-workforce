@@ -179,8 +179,8 @@ export const EMAIL_TOOLBAR_TOOLS: readonly EmailToolbarTool[] = [
     label: "Insert table",
     markup:
       `<table style="border-collapse: collapse; width: 100%"><tbody>` +
-      `<tr><th style="border: 1px solid #cbd5e1; padding: 8px; text-align: left">Column</th></tr>` +
-      `<tr><td style="border: 1px solid #cbd5e1; padding: 8px">Cell</td></tr></tbody></table>`,
+      `<tr><th style="border: 1px solid #CFDCE7; padding: 8px 11px; text-align: left">Column</th></tr>` +
+      `<tr><td style="border: 1px solid #CFDCE7; padding: 8px 11px">Cell</td></tr></tbody></table>`,
     note: "every cell carries that border and padding, or it renders unruled",
     survivesAs: "<td",
   },
@@ -197,10 +197,10 @@ export const EMAIL_TOOLBAR_TOOLS: readonly EmailToolbarTool[] = [
     label: "Table shape",
     markup:
       `<table style="border-collapse: collapse; width: 100%"><tbody>` +
-      `<tr><th style="border: 1px solid #cbd5e1; padding: 8px; text-align: left">Item</th>` +
-      `<th style="border: 1px solid #cbd5e1; padding: 8px; text-align: left">Detail</th></tr>` +
-      `<tr><td style="border: 1px solid #cbd5e1; padding: 8px">Name</td>` +
-      `<td style="border: 1px solid #cbd5e1; padding: 8px">[value]</td></tr></tbody></table>`,
+      `<tr><th style="border: 1px solid #CFDCE7; padding: 8px 11px; text-align: left">Item</th>` +
+      `<th style="border: 1px solid #CFDCE7; padding: 8px 11px; text-align: left">Detail</th></tr>` +
+      `<tr><td style="border: 1px solid #CFDCE7; padding: 8px 11px">Name</td>` +
+      `<td style="border: 1px solid #CFDCE7; padding: 8px 11px">[value]</td></tr></tbody></table>`,
     note:
       "however many rows and columns the sender names — rewrite the whole table to the shape he " +
       "asked for, and put a [square bracket] gap in any cell whose value nobody has given you",

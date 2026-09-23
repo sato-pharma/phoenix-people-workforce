@@ -46,8 +46,13 @@ const tokenPattern = /\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g;
  * Declared once because a row or column added later has to look exactly like the ones the Insert
  * table button drew — an unstyled `<td>` renders with no rule around it, and email clients do not
  * apply a stylesheet, so a single bare cell is visible to every recipient.
+ *
+ * The values are the house grid and the house padding, `TABLE_GRID` and `CELL_BASE` in
+ * `src/lib/sato-email/render.ts`. A cell drawn here is a cell the reader sees, and the Sato
+ * renderer stamps exactly these onto it on the way out — writing anything else here would show the
+ * sender one table in the composer and send him another.
  */
-const TABLE_CELL_STYLE = "border: 1px solid #cbd5e1; padding: 8px";
+const TABLE_CELL_STYLE = "border: 1px solid #CFDCE7; padding: 8px 11px";
 const TABLE_HEADER_STYLE = `${TABLE_CELL_STYLE}; background-color: #f8fafc; text-align: left`;
 /** The size grid the Insert table button opens — Word and Gmail both stop around here. */
 const TABLE_PICK_MAX_COLUMNS = 8;
@@ -225,8 +230,8 @@ export function editorHtmlToStoredHtml(rootEl: HTMLElement): string {
   }
   for (const cell of Array.from(clone.querySelectorAll("td, th"))) {
     const style = cell.getAttribute("style") ?? "";
-    if (!/(^|;)\s*border\s*:/i.test(style)) appendStyle(cell, "border: 1px solid #cbd5e1");
-    if (!/(^|;)\s*padding\s*:/i.test(cell.getAttribute("style") ?? "")) appendStyle(cell, "padding: 8px");
+    if (!/(^|;)\s*border\s*:/i.test(style)) appendStyle(cell, "border: 1px solid #CFDCE7");
+    if (!/(^|;)\s*padding\s*:/i.test(cell.getAttribute("style") ?? "")) appendStyle(cell, "padding: 8px 11px");
   }
   for (const image of Array.from(clone.querySelectorAll("img"))) {
     // Outlook's Word renderer ignores max-width; a width attribute keeps large images
@@ -833,8 +838,38 @@ export const EmailBodyEditor = forwardRef<EmailBodyEditorHandle, Props>(function
         .phx-email-editor a { color: #C2410C; font-weight: 700; text-decoration: underline; }
         .phx-email-editor blockquote { border-left: 3px solid #FED7AA; color: #475569; margin: 0 0 14px; padding-left: 12px; }
         .phx-email-editor img { height: auto; max-width: 100%; }
+        /*
+          🔴 THE TABLE IS SHOWN THE WAY IT WILL BE SENT. Owner 2026-09-23, on an email built from an
+          uploaded policy: "it should be premium polished designed perfectly zebra tabled". The mail
+          itself already gets the house look stamped onto every cell inline by styleSenderTables()
+          in src/lib/sato-email/render.ts — Outlook has no stylesheet and no :nth-child — but the
+          composer showed a grey grid until this rule, so the sender could not see what he was
+          about to send. Same grid (#CFDCE7), same head rule, same Brand Blue at 6% (#F2F6FA), which
+          is the ONE fill the house identity allows.
+
+          The stripe lands on the same rows as the mail's: the renderer counts DATA rows and tints
+          every second one, so a table with a header row starts its count at the header's next
+          sibling. Hence :nth-child(odd) where a <th> exists and :nth-child(even) where none does —
+          both land on the second data row, then every second one after it.
+
+          🔴 THE !important AND THE EXTRA table IN THE SELECTOR ARE LOAD-BEARING, not style. The
+          admin shell paints a light-orange hairline on every cell it contains — RULE 2 in
+          app/globals.css puts border: 1px solid rgba(249,115,22,0.22) !important on
+          .admin-shell th and .admin-shell td — which is right for a data table and wrong for a
+          canvas showing an email. Measured in the running composer 2026-09-23: the cells came out
+          orange while the mail went out blue-grey. The !important answers theirs, and the extra
+          table makes this selector the more specific of the two, so the outcome does not depend on
+          which stylesheet the bundler happens to write last.
+        */
         .phx-email-editor table { border-collapse: collapse; margin: 0 0 14px; width: 100%; }
-        .phx-email-editor td, .phx-email-editor th { border: 1px solid #cbd5e1; min-width: 36px; padding: 8px; }
+        .phx-email-editor table td, .phx-email-editor table th {
+          border: 1px solid #CFDCE7 !important; min-width: 36px; padding: 8px 11px; vertical-align: top;
+        }
+        .phx-email-editor table th {
+          border-bottom: 2px solid #0A6BA6 !important; color: #0A527D; font-weight: 700; text-align: left;
+        }
+        .phx-email-editor table:has(th) tr:nth-child(odd) td { background: #F2F6FA; }
+        .phx-email-editor table:not(:has(th)) tr:nth-child(even) td { background: #F2F6FA; }
         .phx-email-editor .phx-var-chip {
           background: #FFF7ED; border: 1px solid #FED7AA; color: #C2410C; cursor: default;
           display: inline-block; font-size: 12px; font-weight: 700; line-height: 1.4;

@@ -259,10 +259,40 @@ const BODY_CELL = `${CELL_BASE};color:${HOUSE_COLORS.body}`;
 function styleSenderTables(html: string): string {
   const frames: { rowIndex: number; rowHasData: boolean }[] = [];
 
+  /**
+   * 🔴 THE HOUSE OWNS THE GRID AND THE PADDING; THE SENDER OWNS THE INK.
+   *
+   * The house CSS is written FIRST and the sender's own style after it, so the ink he chose from
+   * the toolbar — colour, weight, alignment — wins. (A fill never reaches here at all: the INK
+   * RULE strips every one of those upstream, and the zebra below is the only ground in the
+   * format.) That order is right for ink and wrong for the rule around a cell.
+   * The composer stamps a border and a padding on every cell it draws — it has to, because the
+   * Phoenix template manager shares that editor and nothing restamps ITS mail — and the assistant
+   * copies the same markup out of the toolbox. Until 2026-09-23 that was `1px solid #cbd5e1`, and
+   * being written last it quietly beat the house grid; being a SHORTHAND it also wiped the 2px blue
+   * head rule underneath. Measured on a draft built from the incentive policy: every cell came out
+   * slate and the head row lost its rule. Both stamps now carry the house values, so this filter
+   * has nothing to correct on a fresh draft — it is what keeps an older body, or a table pasted in
+   * from somewhere else, from overriding the format on its way out.
+   *
+   * Nothing in the toolbar sets a border or a padding, so dropping them here loses no choice
+   * anybody made. Everything else the sender wrote survives, and still wins.
+   */
+  const houseOwned = /^(border|padding)(-[a-z-]+)?$/i;
+  const senderOwn = (style: string): string =>
+    style
+      .split(";")
+      .filter((declaration) => {
+        const property = declaration.split(":")[0]?.trim() ?? "";
+        return property !== "" && !houseOwned.test(property);
+      })
+      .join(";");
+
   const merge = (attributes: string, css: string): string => {
     const existing = /\sstyle\s*=\s*"([^"]*)"/i.exec(attributes);
     if (!existing) return `${attributes} style="${css}"`;
-    return attributes.replace(existing[0], ` style="${css};${existing[1]}"`);
+    const kept = senderOwn(existing[1]);
+    return attributes.replace(existing[0], ` style="${kept ? `${css};${kept}` : css}"`);
   };
 
   // The one hook the responsive sheet needs. A phone gives a four-column table about 340px, and at

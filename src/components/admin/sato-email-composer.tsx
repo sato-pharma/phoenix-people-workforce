@@ -5,6 +5,7 @@ import {
   AtSign,
   Check,
   Eye,
+  FileUp,
   Loader2,
   Mail,
   Paperclip,
@@ -29,6 +30,7 @@ import {
   SATO_EMAIL_MEDIA_MAX_FILES,
   formatBytes,
 } from "@/lib/sato-email/media-limits";
+import { SATO_EMAIL_DOCUMENT_ACCEPT } from "@/lib/sato-email/source-document";
 import {
   SATO_EMAIL_MAX_TYPED_ADDRESSES,
   isOutsideCompanyAddress,
@@ -85,11 +87,15 @@ const SEARCH_MATCH_CAP = 25;
  * like this ... I wanted a real assistant, not a do-nothing." Write composes from his instruction
  * and works on an empty body; Rewrite is the older behaviour, which only ever touches wording.
  *
+ * Owner 2026-09-23: "upload pdf and the system absorb and extract the data from the pdf and make it
+ * as email." Document is that third one — the facts come from the file he uploaded, which is read
+ * on the server and never stored.
+ *
  * Declared here rather than imported from `@/lib/sato-email/polish`, which is a server module —
  * importing it would pull the OpenAI client into the browser bundle. `parseSatoAssistMode` on the
  * route is the authority; anything else it receives is read as a rewrite.
  */
-type AssistMode = "rewrite" | "write";
+type AssistMode = "rewrite" | "write" | "document";
 /** Mirrors SATO_ASSIST_MAX_INSTRUCTION_CHARS, which the route slices at. Pinned by the polish test. */
 const ASSIST_INSTRUCTION_MAX_CHARS = 4_000;
 
@@ -167,8 +173,20 @@ export function SatoEmailComposer({
   const [instruction, setInstruction] = useState("");
   const [polishing, setPolishing] = useState<AssistMode | null>(null);
   const [polished, setPolished] = useState<
-    { bodyHtml: string; changes: string[]; checks: string[]; mode: AssistMode; subject: string } | null
+    {
+      bodyHtml: string;
+      changes: string[];
+      checks: string[];
+      mode: AssistMode;
+      /** Document mode: what the server actually read out of the file, named, in one line. */
+      source: string | null;
+      subject: string;
+    } | null
   >(null);
+  // Lights the dashed frame while a document is dragged over the assistant. Separate from the
+  // attachments row's own flag on purpose: the two drops do opposite things, and one shared flag
+  // would light both frames and tell the sender the drop does either.
+  const [documentDrop, setDocumentDrop] = useState(false);
 
   const [clientRequestId, setClientRequestId] = useState(newRequestId);
   const [preview, setPreview] = useState<PreviewView | null>(null);
@@ -323,6 +341,7 @@ export function SatoEmailComposer({
         changes: payload.result.changes,
         checks: payload.result.checks ?? [],
         mode: payload.result.mode ?? assistMode,
+        source: null,
         subject,
       });
       setSubject(payload.result.subject);
@@ -330,6 +349,54 @@ export function SatoEmailComposer({
       invalidate();
     } catch {
       setError("The assistant could not answer.");
+    } finally {
+      setPolishing(null);
+    }
+  }
+
+  /**
+   * Writes the email out of a document the sender uploaded — the owner's "upload pdf and the system
+   * absorb and extract the data from the pdf and make it as email".
+   *
+   * The file goes up, the words come back inside the draft, and nothing is stored: this is not the
+   * attach button, and a document he wants the reader to HAVE still has to be attached on the row
+   * above. Undo puts his own words back exactly as the other two modes do.
+   */
+  async function buildFromDocument(file: File | null | undefined) {
+    if (!file) return;
+    setPolishing("document");
+    setError(null);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      // Everything he has already typed travels with it: a subject he wrote is kept, a body he
+      // started is built on, and an instruction shapes what the document becomes.
+      form.append("bodyHtml", bodyHtml);
+      form.append("instruction", instruction);
+      form.append("subject", subject);
+      const response = await fetch("/api/admin/sato-email/document", { body: form, method: "POST" });
+      const payload = (await response.json()) as {
+        message?: string;
+        result?: { bodyHtml: string; changes: string[]; checks?: string[]; mode?: AssistMode; subject: string };
+        source?: { fileName: string; note: string };
+      };
+      if (!response.ok || !payload.result) {
+        setError(payload.message ?? "The email could not be built from that document.");
+        return;
+      }
+      setPolished({
+        bodyHtml,
+        changes: payload.result.changes,
+        checks: payload.result.checks ?? [],
+        mode: "document",
+        source: payload.source?.note ?? null,
+        subject,
+      });
+      setSubject(payload.result.subject);
+      setBodyHtml(payload.result.bodyHtml);
+      invalidate();
+    } catch {
+      setError("The email could not be built from that document.");
     } finally {
       setPolishing(null);
     }
@@ -670,7 +737,36 @@ export function SatoEmailComposer({
               rows={3}
               value={instruction}
             />
-            <div className="mt-2 flex flex-wrap items-center gap-2">
+            {/*
+              Dropping a document here builds the email from it. The dashed frame appears only
+              while something is being dragged over it, exactly as on the attachments row — and it
+              is a different row from that one on purpose: dropping a file there attaches it to the
+              email, dropping it here turns it INTO the email, and one frame for both would say the
+              drop does either.
+            */}
+            <div
+              className={`mt-2 border border-dashed p-2 transition ${
+                documentDrop ? "border-[#FED7AA] bg-phx-accent-soft" : "border-transparent"
+              }`}
+              onDragLeave={() => setDocumentDrop(false)}
+              onDragOver={(event) => {
+                if (polishing !== null) return;
+                // Only a real file drag — without this the frame lights up when he drags a word
+                // out of his own draft, which is a move inside the editor and nothing to do here.
+                if (!Array.from(event.dataTransfer.types).includes("Files")) return;
+                event.preventDefault();
+                setDocumentDrop(true);
+              }}
+              onDrop={(event) => {
+                if (polishing !== null || event.dataTransfer.files.length === 0) return;
+                event.preventDefault();
+                setDocumentDrop(false);
+                // One document, one email. A second file dropped alongside it would be read into
+                // nothing, so only the first is taken and the rest are left where they were.
+                void buildFromDocument(event.dataTransfer.files[0]);
+              }}
+            >
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 className={DARK_BUTTON}
                 disabled={polishing !== null || !instruction.trim()}
@@ -697,26 +793,62 @@ export function SatoEmailComposer({
                 )}
                 {polishing === "rewrite" ? "Rewriting" : "Rewrite what I wrote"}
               </button>
+              <label className={`${PALE_BUTTON} cursor-pointer ${polishing !== null ? "pointer-events-none opacity-50" : ""}`}>
+                {polishing === "document" ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <FileUp className="h-4 w-4" />
+                )}
+                {polishing === "document" ? "Reading the document" : "Build it from a document"}
+                <input
+                  accept={SATO_EMAIL_DOCUMENT_ACCEPT}
+                  className="hidden"
+                  disabled={polishing !== null}
+                  onChange={(event) => {
+                    const chosen = event.target.files?.[0];
+                    // Cleared first, so the same document can be tried again after a failure.
+                    event.target.value = "";
+                    void buildFromDocument(chosen);
+                  }}
+                  type="file"
+                />
+              </label>
+            </div>
             </div>
             <p className="mt-2 text-xs font-semibold text-phx-ink-faint">
               <strong>Write it</strong> composes the whole email from what you asked for, even on an empty page, and
               uses every button in the toolbar above — including a table of the shape you name. <strong>Rewrite what
-              I wrote</strong> keeps your draft and only changes how it reads. Neither one invents a fact: anything you
-              did not give it comes back as a [square bracket] gap for you to fill, and a link it did not get from you
-              is refused outright.
+              I wrote</strong> keeps your draft and only changes how it reads. <strong>Build it from a document</strong>
+              reads a PDF, a Word file, a text file or a picture of one — click the button or drag it onto this row —
+              and writes the email that carries what it says, in its own figures. The document is read and thrown away:
+              if the reader should also receive it, attach it above. None of the three invents a fact: anything you did
+              not give it comes back as a [square bracket] gap for you to fill, and a link it did not get from you is
+              refused outright.
             </p>
 
             {polished ? (
               <div className="mt-3 border border-phx-line bg-white p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="text-phx-xs font-black uppercase tracking-wide text-phx-ink-2">
-                    {polished.mode === "write" ? "What it wrote" : "What changed"}
+                    {polished.mode === "document"
+                      ? "What it wrote from your document"
+                      : polished.mode === "write"
+                        ? "What it wrote"
+                        : "What changed"}
                   </span>
                   <button className={PALE_BUTTON} onClick={undoPolish} type="button">
                     <Undo2 className="h-4 w-4" />
                     Put my words back
                   </button>
                 </div>
+                {/*
+                  Which file this draft came from, and how much of it was read. A sender who picked
+                  the wrong document has no other way to see it: the words on screen look right
+                  either way.
+                */}
+                {polished.source ? (
+                  <p className="mt-2 text-sm font-semibold text-phx-ink-2">{polished.source}</p>
+                ) : null}
                 {polished.changes.length > 0 ? (
                   <ul className="mt-2 space-y-1">
                     {polished.changes.map((change) => (
@@ -727,7 +859,7 @@ export function SatoEmailComposer({
                   </ul>
                 ) : (
                   <p className="mt-2 text-sm font-semibold text-phx-ink">
-                    {polished.mode === "write" ? "The email is written." : "The wording was tightened."}
+                    {polished.mode === "rewrite" ? "The wording was tightened." : "The email is written."}
                   </p>
                 )}
                 {/*

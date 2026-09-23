@@ -909,6 +909,7 @@ import { runSatoEmailTypedRecipientsTests } from "./sato-email-typed-recipients.
 import { runSatoEmailPolishTests } from "./sato-email-polish.test.ts";
 import { runSatoEmailToolboxTests } from "./sato-email-toolbox.test.ts";
 import { runSatoEmailAttachmentTests } from "./sato-email-attachments.test.ts";
+import { runSatoEmailDocumentTests } from "./sato-email-document.test.ts";
 import { runEmailControlCenterTests } from "./email-control-center.test.ts";
 import { runWorkflowRegistryTests } from "./workflow-registry.test.ts";
 import { runWorkflowRegistryEnforcementTests } from "./workflow-registry-enforcement.test.ts";
@@ -6371,6 +6372,11 @@ await runTest(
 await runTest(
   "a Sato email carries files without leaking them - an over-budget attachment is REFUSED rather than silently dropped, only a picture can ever be served from the public token route, and a filename cannot smuggle a path or another extension",
   runSatoEmailAttachmentTests,
+);
+
+await runTest(
+  "an email built from an uploaded document states the document's own figures and nothing else - the policy's 21,000 is accepted because he uploaded the paper, a figure that is on no page is named as a check rather than refused, a scanned PDF goes to the model as a picture instead of as an empty document, and a minted link is still refused",
+  runSatoEmailDocumentTests,
 );
 
 await runTest(
