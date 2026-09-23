@@ -1515,7 +1515,7 @@ export async function replaceSalesBatch(
  *   delete from sales_import_batches  -> succeeded, and the child sales_records row went with it
  *
  * So deleting a batch is a back door around the freeze. Three batches hold all 11,267 rows — the
- * only record of what H1 2026 was actually paid on — and production runs without PITR (daily
+ * only record of what Semester 1 2026 was actually paid on — and production runs without PITR (daily
  * snapshots only), so a single delete here is not recoverable in place.
  *
  * Rejecting or replacing a batch still works; both leave the rows alone.
@@ -1534,7 +1534,7 @@ async function assertSalesBatchHoldsNoFrozenRecords(batchId: string) {
   if (frozenRowCount > 0) {
     throw new SalesWorkflowError(
       "sales_batch_holds_frozen_records",
-      `This closing sheet still holds ${frozenRowCount.toLocaleString("en-US")} imported records, and deleting the sheet would delete those records with it. They are the only record of what H1 2026 was actually paid on, so the sheet cannot be deleted. Reject or replace it instead.`,
+      `This closing sheet still holds ${frozenRowCount.toLocaleString("en-US")} imported records, and deleting the sheet would delete those records with it. They are the only record of what Semester 1 2026 was actually paid on, so the sheet cannot be deleted. Reject or replace it instead.`,
       409,
       { batchId, frozenRowCount },
     );
