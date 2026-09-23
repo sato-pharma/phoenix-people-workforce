@@ -55,6 +55,46 @@ export type MilestoneDueEntry = {
   hasPhoto: boolean;
 };
 
+/**
+ * One person the picker can choose, whether or not anything is due.
+ *
+ * 🔴 THE DUE LIST IS NOT THE ROSTER. A window of thirty days answers "who is coming up"; it does
+ * NOT answer "make a card for this person". The owner asked for the second — type a name, get the
+ * person — and every active employee is a legitimate answer, including somebody whose milestone
+ * passed last month and somebody whose next one is two years out.
+ *
+ * `hireDate` is null for a record HR has not dated. That person still appears here, deliberately:
+ * being absent from a picker with no explanation reads as a bug, while a row that says why it
+ * cannot be used tells the truth and points at the record to fix.
+ */
+export type MilestoneCandidate = {
+  hrId: string;
+  displayName: string;
+  fullName: string;
+  roleLine: string;
+  hireDate: string | null;
+  hasPhoto: boolean;
+};
+
+/** Every active employee, by name. The same `isActiveDirectoryEmployee` predicate as the sweep. */
+export async function listMilestoneCandidates(): Promise<MilestoneCandidate[]> {
+  const { employees } = await getEmployeeDirectory();
+  return employees
+    .filter((employee) => isActiveDirectoryEmployee(employee))
+    .map((employee) => {
+      const hire = parsePlainDate(employee.hireDate);
+      return {
+        hrId: employee.hrId,
+        displayName: cardDisplayName(employee.fullName, employee.nickname),
+        fullName: employee.fullName,
+        roleLine: roleLineFor(employee),
+        hireDate: hire ? formatPlainDateIso(hire) : null,
+        hasPhoto: employee.hasPhoto,
+      };
+    })
+    .sort((a, b) => a.displayName.localeCompare(b.displayName) || a.hrId.localeCompare(b.hrId));
+}
+
 export type MilestoneDueOptions = {
   /** Defaults to today in Cairo. */
   from?: PlainDate;

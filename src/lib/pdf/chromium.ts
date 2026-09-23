@@ -84,7 +84,20 @@ export type ChromiumPage = {
   emulateMediaType: (type: string) => Promise<void>;
   evaluate: (fn: string) => Promise<unknown>;
   pdf: (options: Record<string, unknown>) => Promise<Uint8Array>;
+  // A raster of the page, for the documents somebody needs as a PICTURE rather than as paper — a
+  // keepsake to send in a message, a card to put in a slide. The resolution comes from the
+  // viewport's `deviceScaleFactor`, never from the screenshot options, which is why `setViewport`
+  // is exposed beside it: a screenshot taken without setting one is a 800×600 thumbnail of the
+  // corner of a document, and it fails by looking merely disappointing rather than broken.
+  screenshot: (options: Record<string, unknown>) => Promise<Uint8Array>;
   setContent: (html: string, options: Record<string, unknown>) => Promise<void>;
+  // 🔴 THE ONE MEMBER THAT CANNOT BE A LOOSE RECORD. Every other option bag here is
+  // `Record<string, unknown>`, and that is safe because puppeteer's own option types are entirely
+  // OPTIONAL — a record satisfies them. `Viewport` is not: `width` and `height` are required, so a
+  // record is missing them, the real `Page` stops being comparable to this type, and the failure
+  // does not land here at all. It lands on the cast in `loadPuppeteer` as TS2352 "neither type
+  // sufficiently overlaps", which reads like a problem with the import. Name the two fields.
+  setViewport: (viewport: { width: number; height: number; deviceScaleFactor?: number }) => Promise<void>;
 };
 
 export type ChromiumBrowser = {

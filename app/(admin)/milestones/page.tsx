@@ -5,7 +5,7 @@ import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { assertPermission, canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { formatPlainDateIso, todayInCairo } from "@/lib/milestones/periods";
-import { listMilestonesDue } from "@/lib/milestones/service";
+import { listMilestoneCandidates, listMilestonesDue } from "@/lib/milestones/service";
 
 export const dynamic = "force-dynamic";
 
@@ -43,11 +43,18 @@ export default async function MilestonesPage() {
     day: toDate.getUTCDate(),
   };
 
-  const entries = await listMilestonesDue({ from, to });
+  // Both in one pass. The roster is what the name box searches, so it has to be there on the first
+  // paint — a picker that fills in a second read as broken for that second, and the owner types
+  // into it immediately.
+  const [entries, candidates] = await Promise.all([
+    listMilestonesDue({ from, to }),
+    listMilestoneCandidates(),
+  ]);
 
   return (
     <MilestonesWorkspace
       canExport={canExport}
+      candidates={candidates}
       initialEntries={entries}
       initialFrom={formatPlainDateIso(from)}
       initialTo={formatPlainDateIso(to)}

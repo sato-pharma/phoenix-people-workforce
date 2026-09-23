@@ -2,7 +2,17 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import type { MilestoneDueEntry } from "@/lib/milestones/service";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+import {
+  cardFirstName,
+  formatPlainDateIso,
+  milestoneCitation,
+  milestoneDate,
+  parseMilestoneSpec,
+  parsePlainDate,
+  type MilestoneSpec,
+} from "@/lib/milestones/periods";
+import type { MilestoneCandidate, MilestoneDueEntry } from "@/lib/milestones/service";
 
 /**
  * Milestones — the workspace.
@@ -11,6 +21,17 @@ import type { MilestoneDueEntry } from "@/lib/milestones/service";
  * TWO HALVES, IN THE ORDER THE WORK HAPPENS. Who is coming up, then the card for the one you
  * picked. The list is the reason to open the page at all: a first month is easy to miss, and by
  * the time somebody mentions it the day has gone.
+ *
+ * 🔴 THE LIST IS A SHORTCUT, NEVER THE ONLY WAY IN. A name box over the whole active roster sits
+ * at the top of the card panel, so a card can be made for anybody at any time — the thirty-day
+ * window answers "who is coming up", not "who am I allowed to print". Clicking a row in the list
+ * is the same act as typing the name.
+ *
+ * 🔴 NOTHING IS ASKED FOR THAT THE SYSTEM ALREADY KNOWS. The date, the name and the sentence
+ * arrive WORKED OUT — from the hire date, the HR record and the period — and are then editable.
+ * The owner's rule, in his own words: "it shows it and I have the option then to edit it, but
+ * don't let me [start] from scratch." They are re-worked whenever the person or the period
+ * changes; an edit he makes himself survives until one of those two changes underneath it.
  *
  * 🔒 NO HORIZONTAL SCROLL, desktop and mobile. The due list is `table-fixed` over a `<colgroup>`
  * on desktop and stacked cards below `sm`, the preview is an iframe SCALED to whatever width it
@@ -64,30 +85,48 @@ function whenText(daysAway: number): string {
 }
 
 type Props = {
+  candidates: MilestoneCandidate[];
   initialEntries: MilestoneDueEntry[];
   initialFrom: string;
   initialTo: string;
   canExport: boolean;
 };
 
-export function MilestonesWorkspace({ initialEntries, initialFrom, initialTo, canExport }: Props) {
+export function MilestonesWorkspace({
+  candidates,
+  initialEntries,
+  initialFrom,
+  initialTo,
+  canExport,
+}: Props) {
   const [from, setFrom] = useState(initialFrom);
   const [to, setTo] = useState(initialTo);
   const [entries, setEntries] = useState(initialEntries);
   const [loadingList, setLoadingList] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [selected, setSelected] = useState<MilestoneDueEntry | null>(initialEntries[0] ?? null);
+  const [selectedHrId, setSelectedHrId] = useState(initialEntries[0]?.hrId ?? "");
   const [preset, setPreset] = useState(initialEntries[0]?.spec ?? "1m");
   const [custom, setCustom] = useState("");
-  const [dateOverride, setDateOverride] = useState("");
-  const [nameOverride, setNameOverride] = useState("");
-  const [citation, setCitation] = useState("");
   const [variant, setVariant] = useState("trim");
   const [withoutPhoto, setWithoutPhoto] = useState(false);
 
+  // ── WHAT HE TYPED, NOT WHAT IS SHOWN ────────────────────────────────────────────────────────
+  // `null` means "he has not touched this one", and the field then shows the worked-out value.
+  // Holding the OVERRIDE rather than the value is what makes the whole rule one line each: a
+  // field follows the arithmetic until it is typed into, and the moment the person or the period
+  // changes these go back to null and the arithmetic takes over again.
+  //
+  // It is deliberately not an effect that writes the computed value into state. That is the
+  // shape this was first written in, and `react-hooks/set-state-in-effect` is right to refuse it:
+  // it costs a second render every time anything changes, and it needs a separate ref to remember
+  // whether he had typed — a second copy of a fact these three already hold.
+  const [dateEdit, setDateEdit] = useState<string | null>(null);
+  const [nameEdit, setNameEdit] = useState<string | null>(null);
+  const [citationEdit, setCitationEdit] = useState<string | null>(null);
+
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [busy, setBusy] = useState<"preview" | "download" | null>(null);
+  const [busy, setBusy] = useState<"preview" | "download" | "picture" | null>(null);
 
   const frameBox = useRef<HTMLDivElement | null>(null);
   const [scale, setScale] = useState(1);
@@ -107,17 +146,57 @@ export function MilestonesWorkspace({ initialEntries, initialFrom, initialTo, ca
 
   const period = preset === "custom" ? custom.trim() : preset;
 
+  const selected = useMemo(
+    () => candidates.find((row) => row.hrId === selectedHrId) ?? null,
+    [candidates, selectedHrId],
+  );
+
+  // The period as the arithmetic understands it, or null while a typed one is still half-written.
+  // A half-written period must not wipe a worked-out date, so every pass below stops at null.
+  const spec = useMemo<MilestoneSpec | null>(() => {
+    try {
+      return parseMilestoneSpec(period);
+    } catch {
+      return null;
+    }
+  }, [period]);
+
+  const hireDate = useMemo(() => parsePlainDate(selected?.hireDate), [selected]);
+
+  // Everything the card needs is in hand. A hire date is not optional: the service dates the
+  // milestone from it and refuses without one, so the buttons say so by being unavailable rather
+  // than by returning an error after the click.
+  const ready = Boolean(selected && hireDate && spec);
+
+  // ── The date and the name arrive worked out ───────────────────────────────────────────────
+  // Derived during the render that needs them, never written into state. `?? ` is the whole of
+  // "his edit wins": an untouched field shows the arithmetic, a touched one shows what he typed.
+  const dateValue = dateEdit ?? (hireDate && spec ? formatPlainDateIso(milestoneDate(hireDate, spec)) : "");
+  const nameValue = nameEdit ?? selected?.displayName ?? "";
+
+  // ── And the sentence follows both ─────────────────────────────────────────────────────────
+  // The citation names the person and the day, so correcting either has to reach it. HR-009's
+  // record reads "Yasmeena"; the card the owner approved says "Yasmeen". Without this the script
+  // name would be corrected and the sentence underneath would still say the other one.
+  const citationValue = useMemo(() => {
+    if (citationEdit !== null) return citationEdit;
+    const on = parsePlainDate(dateValue);
+    if (!spec || !on) return "";
+    const name = nameValue.trim() || selected?.displayName || "";
+    return milestoneCitation({ firstName: cardFirstName(name), spec, on });
+  }, [citationEdit, dateValue, nameValue, selected, spec]);
+
   const body = useMemo(
     () => ({
-      hrId: selected?.hrId ?? "",
+      hrId: selectedHrId,
       period,
-      on: dateOverride || undefined,
-      displayName: nameOverride.trim() || undefined,
-      citation: citation.trim() || undefined,
+      on: dateValue || undefined,
+      displayName: nameValue.trim() || undefined,
+      citation: citationValue.trim() || undefined,
       withoutPhoto,
       variant,
     }),
-    [selected, period, dateOverride, nameOverride, citation, withoutPhoto, variant],
+    [selectedHrId, period, dateValue, nameValue, citationValue, withoutPhoto, variant],
   );
 
   const refreshList = useCallback(async () => {
@@ -135,21 +214,47 @@ export function MilestonesWorkspace({ initialEntries, initialFrom, initialTo, ca
     }
   }, [from, to]);
 
-  const pick = useCallback((entry: MilestoneDueEntry) => {
-    setSelected(entry);
-    setPreset(PRESETS.some((p) => p.value === entry.spec) ? entry.spec : "custom");
-    setCustom(entry.spec);
-    setDateOverride(entry.on);
-    setNameOverride("");
-    setCitation("");
+  const clearPreview = useCallback(() => {
     setPreviewUrl((current) => {
       if (current) URL.revokeObjectURL(current);
       return null;
     });
   }, []);
 
+  /**
+   * A different person or a different period is a DIFFERENT CARD, so the three fields go back to
+   * what the system works out. This is the one place that happens, and it is an event handler
+   * rather than an effect: it is a consequence of the click, not of the render.
+   */
+  const resetFields = useCallback(() => {
+    setDateEdit(null);
+    setNameEdit(null);
+    setCitationEdit(null);
+    clearPreview();
+  }, [clearPreview]);
+
+  /** A row in the list carries a period as well as a person, so it sets both. */
+  const pick = useCallback(
+    (entry: MilestoneDueEntry) => {
+      setSelectedHrId(entry.hrId);
+      setPreset(PRESETS.some((p) => p.value === entry.spec) ? entry.spec : "custom");
+      setCustom(entry.spec);
+      resetFields();
+    },
+    [resetFields],
+  );
+
+  /** The name box carries only a person — whatever period is on screen stays. */
+  const pickPerson = useCallback(
+    (hrId: string) => {
+      setSelectedHrId(hrId);
+      resetFields();
+    },
+    [resetFields],
+  );
+
   const buildPreview = useCallback(async () => {
-    if (!selected) return;
+    if (!ready) return;
     setBusy("preview");
     setError(null);
     try {
@@ -173,17 +278,17 @@ export function MilestonesWorkspace({ initialEntries, initialFrom, initialTo, ca
     } finally {
       setBusy(null);
     }
-  }, [body, selected]);
+  }, [body, ready]);
 
-  const download = useCallback(async () => {
-    if (!selected) return;
-    setBusy("download");
+  const download = useCallback(async (format: "pdf" | "png") => {
+    if (!ready) return;
+    setBusy(format === "png" ? "picture" : "download");
     setError(null);
     try {
       const response = await fetch("/api/milestones/card", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...body, format: "pdf" }),
+        body: JSON.stringify({ ...body, format }),
       });
       if (!response.ok) {
         const payload = await response.json().catch(() => null);
@@ -195,7 +300,7 @@ export function MilestonesWorkspace({ initialEntries, initialFrom, initialTo, ca
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = match?.[1] ?? "milestone-card.pdf";
+      link.download = match?.[1] ?? `milestone-card.${format}`;
       link.click();
       URL.revokeObjectURL(url);
     } catch (cause) {
@@ -203,7 +308,7 @@ export function MilestonesWorkspace({ initialEntries, initialFrom, initialTo, ca
     } finally {
       setBusy(null);
     }
-  }, [body, selected]);
+  }, [body, ready]);
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-6">
@@ -277,7 +382,7 @@ export function MilestonesWorkspace({ initialEntries, initialFrom, initialTo, ca
                 {entries.map((entry) => (
                   <tr
                     className={`cursor-pointer border-b border-slate-100 align-top text-[13px] ${
-                      selected?.hrId === entry.hrId && selected?.spec === entry.spec ? "bg-sky-50" : ""
+                      selectedHrId === entry.hrId && period === entry.spec ? "bg-sky-50" : ""
                     }`}
                     key={`${entry.hrId}-${entry.spec}-${entry.on}`}
                     onClick={() => pick(entry)}
@@ -298,7 +403,7 @@ export function MilestonesWorkspace({ initialEntries, initialFrom, initialTo, ca
               {entries.map((entry) => (
                 <button
                   className={`rounded-none border p-3 text-left ${
-                    selected?.hrId === entry.hrId && selected?.spec === entry.spec
+                    selectedHrId === entry.hrId && period === entry.spec
                       ? "border-sky-800 bg-sky-50"
                       : "border-slate-200"
                   }`}
@@ -324,23 +429,53 @@ export function MilestonesWorkspace({ initialEntries, initialFrom, initialTo, ca
       <section className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <div className="rounded-none border border-slate-200 bg-white p-4">
           <h2 className="mb-3 text-[13px] font-bold text-slate-900">The card</h2>
-          {selected ? (
-            <p className="mb-3 break-words text-[13px] text-slate-700">
-              <span className="font-semibold text-slate-900">{selected.displayName}</span>
-              <span className="block text-[12px] text-slate-500">
-                Joined {longDate(selected.hireDate)}
-              </span>
-            </p>
-          ) : (
-            <p className="mb-3 text-[13px] text-slate-600">Pick somebody from the list above.</p>
-          )}
 
           <div className="grid gap-3">
+            <label className="block text-[12px] font-semibold text-slate-600" htmlFor="milestone-person">
+              Who it is for
+              <SearchableSelect
+                className="mt-1 h-auto rounded-none border-slate-300 py-2 text-[13px] text-slate-900"
+                id="milestone-person"
+                noResultsText="No active employee by that name."
+                onValueChange={pickPerson}
+                placeholder="Type a name"
+                value={selectedHrId}
+                wrapValue
+              >
+                {/*
+                  No empty option. An `<option value="">` would paint "Type a name" as a selectable
+                  ROW in the list, which reads as a person with no name; the placeholder above says
+                  the same thing in the right place. Nothing needs clearing — the screen is only
+                  ever used with somebody chosen.
+                */}
+                {candidates.map((person) => (
+                  <option key={person.hrId} value={person.hrId}>
+                    {person.roleLine ? `${person.displayName} · ${person.roleLine}` : person.displayName}
+                  </option>
+                ))}
+              </SearchableSelect>
+              <span className="mt-1 block text-[11px] font-normal leading-relaxed text-slate-500">
+                Anybody on the active roster, whether or not a milestone is due. The list above is a
+                shortcut, not the limit.
+              </span>
+            </label>
+
+            {selected ? (
+              <p className="break-words text-[12px] text-slate-500">
+                {selected.hireDate
+                  ? `Joined ${longDate(selected.hireDate)}`
+                  : "No hire date on record, so there is no milestone to date. Fix the employee record first."}
+              </p>
+            ) : null}
+
             <label className="block text-[12px] font-semibold text-slate-600">
               Period
               <select
                 className="mt-1 block w-full rounded-none border border-slate-300 px-3 py-2 text-[13px] text-slate-900"
-                onChange={(event) => setPreset(event.target.value)}
+                onChange={(event) => {
+                  setPreset(event.target.value);
+                  resetFields();
+                }}
                 value={preset}
               >
                 {PRESETS.map((option) => (
@@ -354,7 +489,10 @@ export function MilestonesWorkspace({ initialEntries, initialFrom, initialTo, ca
                 How long
                 <input
                   className="mt-1 block w-full rounded-none border border-slate-300 px-3 py-2 text-[13px] text-slate-900"
-                  onChange={(event) => setCustom(event.target.value)}
+                  onChange={(event) => {
+                    setCustom(event.target.value);
+                    resetFields();
+                  }}
                   placeholder="18 months, 100 days, 7 years"
                   value={custom}
                 />
@@ -365,13 +503,13 @@ export function MilestonesWorkspace({ initialEntries, initialFrom, initialTo, ca
               The date on the card
               <input
                 className="mt-1 block w-full rounded-none border border-slate-300 px-3 py-2 text-[13px] text-slate-900"
-                onChange={(event) => setDateOverride(event.target.value)}
+                onChange={(event) => setDateEdit(event.target.value)}
                 type="date"
-                value={dateOverride}
+                value={dateValue}
               />
               <span className="mt-1 block text-[11px] font-normal leading-relaxed text-slate-500">
-                Worked out from the hire date. Change it if the day the company is marking is a
-                different one.
+                Already worked out from the hire date and the period. Change it only if the day the
+                company is marking is a different one.
               </span>
             </label>
 
@@ -379,13 +517,12 @@ export function MilestonesWorkspace({ initialEntries, initialFrom, initialTo, ca
               The name on the card
               <input
                 className="mt-1 block w-full rounded-none border border-slate-300 px-3 py-2 text-[13px] text-slate-900"
-                onChange={(event) => setNameOverride(event.target.value)}
-                placeholder={selected ? selected.displayName : "Leave empty to use the HR record."}
-                value={nameOverride}
+                onChange={(event) => setNameEdit(event.target.value)}
+                value={nameValue}
               />
               <span className="mt-1 block text-[11px] font-normal leading-relaxed text-slate-500">
-                Taken from the HR record, which holds a legal name. Change it to whatever the person
-                is actually called — the sentence below the name follows it.
+                Filled from the HR record, which holds a legal name. Change it to whatever the
+                person is actually called — the sentence below follows it.
               </span>
             </label>
 
@@ -393,11 +530,14 @@ export function MilestonesWorkspace({ initialEntries, initialFrom, initialTo, ca
               The sentence under the name
               <textarea
                 className="mt-1 block w-full rounded-none border border-slate-300 px-3 py-2 text-[13px] text-slate-900"
-                onChange={(event) => setCitation(event.target.value)}
-                placeholder="Leave empty for the standard wording."
+                onChange={(event) => setCitationEdit(event.target.value)}
                 rows={3}
-                value={citation}
+                value={citationValue}
               />
+              <span className="mt-1 block text-[11px] font-normal leading-relaxed text-slate-500">
+                Written for you. It keeps following the name and the date until you type in it
+                yourself, and then it stays exactly as you left it.
+              </span>
             </label>
 
             <fieldset className="grid gap-2">
@@ -437,23 +577,39 @@ export function MilestonesWorkspace({ initialEntries, initialFrom, initialTo, ca
             <div className="flex flex-wrap items-center gap-3">
               <button
                 className="rounded-none border border-sky-800 px-5 py-2.5 text-[13px] font-semibold text-sky-800 disabled:opacity-50"
-                disabled={!selected || busy !== null}
+                disabled={!ready || busy !== null}
                 onClick={buildPreview}
                 type="button"
               >
                 {busy === "preview" ? "Building…" : "Preview"}
               </button>
               {canExport ? (
-                <button
-                  className="rounded-none bg-sky-800 px-5 py-2.5 text-[13px] font-semibold text-white disabled:opacity-50"
-                  disabled={!selected || busy !== null}
-                  onClick={download}
-                  type="button"
-                >
-                  {busy === "download" ? "Printing…" : "Download the card"}
-                </button>
+                <>
+                  <button
+                    className="rounded-none bg-sky-800 px-5 py-2.5 text-[13px] font-semibold text-white disabled:opacity-50"
+                    disabled={!ready || busy !== null}
+                    onClick={() => download("pdf")}
+                    type="button"
+                  >
+                    {busy === "download" ? "Printing…" : "Download the PDF"}
+                  </button>
+                  <button
+                    className="rounded-none border border-sky-800 px-5 py-2.5 text-[13px] font-semibold text-sky-800 disabled:opacity-50"
+                    disabled={!ready || busy !== null}
+                    onClick={() => download("png")}
+                    type="button"
+                  >
+                    {busy === "picture" ? "Drawing…" : "Download the picture"}
+                  </button>
+                </>
               ) : null}
             </div>
+            {canExport ? (
+              <p className="text-[11px] leading-relaxed text-slate-500">
+                The PDF is the one to send to a printer. The picture is a PNG at 384 dots per inch —
+                good enough to print, and the one to use when it has to go in a message or a slide.
+              </p>
+            ) : null}
           </div>
         </div>
 

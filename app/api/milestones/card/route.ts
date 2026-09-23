@@ -9,7 +9,7 @@ import {
   parsePlainDate,
   type PlainDate,
 } from "@/lib/milestones/periods";
-import { renderMilestoneCard } from "@/lib/milestones/render";
+import { renderMilestoneCard, renderMilestoneCardImage } from "@/lib/milestones/render";
 import {
   MilestoneEmployeeNotFoundError,
   MilestoneHireDateMissingError,
@@ -33,9 +33,11 @@ const VARIANTS = new Set<MilestoneCardVariant>(["trim", "safe", "bleed"]);
  * printed and handed around. That is a publishing right.
  *
  * A POST, so nothing about a person travels in a URL somebody can forward (and nothing lands in an
- * access log). Two shapes come back:
+ * access log). Three shapes come back:
  *
  *   `format: "pdf"`  — the sheet, ready to print. `variant` picks trim, safe or bleed.
+ *   `format: "png"`  — the same sheet as a picture, at print resolution, for sending rather than
+ *                      printing. Chromium renders it, so it is a print-path output like the PDF.
  *   `format: "html"` — the same artwork for an on-screen preview, laid out by the browser it is
  *                      shown in. It is NOT the print path: never save one and call it the card.
  */
@@ -55,7 +57,7 @@ export async function POST(request: Request) {
     const withoutPhoto = body.withoutPhoto === true;
     const requested = typeof body.variant === "string" ? (body.variant as MilestoneCardVariant) : "trim";
     const variant: MilestoneCardVariant = VARIANTS.has(requested) ? requested : "trim";
-    const format = body.format === "html" ? "html" : "pdf";
+    const format = body.format === "html" ? "html" : body.format === "png" ? "png" : "pdf";
 
     const built = await buildMilestoneCardInput({
       hrId: body.hrId,
@@ -75,12 +77,27 @@ export async function POST(request: Request) {
       });
     }
 
-    // Rate-limited only on the PDF path: a preview is cheap, and Chromium is not.
+    // Rate-limited on both rendered paths: a preview is cheap, and Chromium is not. The picture is
+    // the more expensive of the two, so it certainly does not get a cheaper allowance than the PDF.
     await assertExportRateLimit({
       actor: access.loginId ?? access.hrId,
       request,
       scope: "export:milestones:card",
     });
+
+    if (format === "png") {
+      const picture = await renderMilestoneCardImage(built.input, variant);
+      const pictureName = milestoneFileName(built.input.displayName, built.spec, built.on, "png");
+      return new Response(new Uint8Array(picture.png), {
+        headers: {
+          "Cache-Control": "no-store",
+          "Content-Disposition": `attachment; filename="${pictureName}"`,
+          "Content-Type": "image/png",
+          // Stated, not promised: the real pixel count of the file that was just sent.
+          "X-Milestone-Pixels": `${picture.pixels.width}x${picture.pixels.height}`,
+        },
+      });
+    }
 
     const rendered = await renderMilestoneCard(built.input, variant);
     const name = milestoneFileName(built.input.displayName, built.spec, built.on);
