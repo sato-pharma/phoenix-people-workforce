@@ -21,9 +21,16 @@
 
 import assert from "node:assert/strict";
 
+import {
+  EDITOR_IMAGE_ACCEPT,
+  attachablesFromTransfer,
+  looksLikePicture,
+  picturesFromTransfer,
+} from "@/lib/email/transfer-files";
 import { parseSatoEmailDraft } from "@/lib/sato-email/draft";
 import { loadSatoEmailAttachments, resolveSatoEmailAttachments } from "@/lib/sato-email/media";
 import {
+  SATO_EMAIL_INLINE_ACCEPT,
   SATO_EMAIL_MEDIA_MAX_FILE_BYTES,
   SATO_EMAIL_MEDIA_MAX_TOTAL_BYTES,
   isSatoEmailInlineContentType,
@@ -203,4 +210,62 @@ export async function runSatoEmailAttachmentTests() {
 
   const forged = parseSatoEmailDraft({ ...base, attachmentIds: ["../../secret"] });
   assert.ok("message" in forged, "an attachment id that is not a uuid must be refused at the parser");
+
+  // ── 7. A pasted or dragged picture reaches the upload at all ───────────────────────────────
+  //
+  // Owner 2026-09-23: "i want to be able to insert attachment and upload photo either in message
+  // body or as attachment". Both buttons already existed; what did nothing was the gesture — the
+  // editor's paste handler read `text/plain` only, so Ctrl+V on a screenshot was swallowed in
+  // silence. These assertions pin the one rule that makes the gesture honest.
+  //
+  // 🔴 THE FILTER IS WIDER THAN THE STORE'S ALLOWLIST, ON PURPOSE. A phone photo is HEIC, which
+  // `validateSatoEmailUpload` refuses and should. Refusing it in the browser instead would put the
+  // gesture back where it started: nothing happens, and nothing says why.
+  assert.equal(looksLikePicture({ name: "screenshot.png", type: "image/png" }), true);
+  assert.equal(
+    looksLikePicture({ name: "IMG_4821.HEIC", type: "image/heic" }),
+    true,
+    "a phone photo must reach the upload, so the server's refusal is what the sender reads",
+  );
+  assert.ok(
+    "message" in validateSatoEmailUpload({ byteSize: 2048, contentType: "image/heic", kind: "inline" }),
+    "and the store must still be the one that refuses it",
+  );
+  assert.equal(
+    looksLikePicture({ name: "photo.jpg", type: "" }),
+    true,
+    "a drag from some file managers carries no MIME type — the extension has to answer",
+  );
+  assert.equal(looksLikePicture({ name: "policy.pdf", type: "application/pdf" }), false);
+  assert.equal(
+    looksLikePicture({ name: "diagram.svg", type: "image/svg+xml" }),
+    true,
+    "an SVG may be handed to the upload — the store refuses it, and that refusal is the message",
+  );
+  assert.ok(
+    "message" in validateSatoEmailUpload({ byteSize: 2048, contentType: "image/svg+xml", kind: "inline" }),
+    "🔴 an SVG must never be storable as a body picture — it would be served as script from this origin",
+  );
+
+  const dropped = [
+    { name: "photo.png", type: "image/png" },
+    { name: "policy.pdf", type: "application/pdf" },
+    // A folder dragged in: no type, no extension. It is not a file and must not be uploaded.
+    { name: "Board pack", type: "" },
+  ];
+  assert.deepEqual(
+    picturesFromTransfer(dropped).map((file) => file.name),
+    ["photo.png"],
+    "only the pictures go into the message body",
+  );
+  assert.deepEqual(
+    attachablesFromTransfer(dropped).map((file) => file.name),
+    ["photo.png", "policy.pdf"],
+    "a dropped folder must not be uploaded as an attachment",
+  );
+  assert.equal(
+    EDITOR_IMAGE_ACCEPT.split(",").every((type) => SATO_EMAIL_INLINE_ACCEPT.includes(type)),
+    true,
+    "the editor's fallback picker must not offer a type the body-picture store would refuse",
+  );
 }
