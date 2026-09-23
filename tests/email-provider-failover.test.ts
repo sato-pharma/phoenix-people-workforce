@@ -182,4 +182,58 @@ export async function runEmailProviderFailoverTests() {
     assert.equal("replyTo" in (bodies.resend ?? {}), false, "never send replyTo to Resend's REST API");
     assert.deepEqual(bodies.brevo?.replyTo, { email: "reply@phoenix.example" }, "Brevo takes a replyTo object");
   }
+
+  // 9) A TWO-mailbox Reply-To (a job offer routes replies to HR and to the owner). Resend must
+  //    receive an ARRAY — a single comma-joined string it would treat as one malformed address and
+  //    drop, sending the offer with no Reply-To, which is the whole bounce. Brevo has no array shape,
+  //    so the backup honours the first mailbox (the HR inbox); Resend, which sends every offer in
+  //    practice, carries both.
+  {
+    const realFetch = globalThis.fetch;
+    const saved = {
+      brevo: process.env.BREVO_API_KEY,
+      brevoFrom: process.env.BREVO_EMAIL_FROM,
+      resend: process.env.RESEND_API_KEY,
+    };
+    const bodies: Record<string, Record<string, unknown>> = {};
+    const twoMailboxes: PreparedEmail = {
+      ...sampleEmail,
+      replyTo: "hr@satopharma.com, omar.anwar@satopharma.com",
+    };
+    try {
+      process.env.RESEND_API_KEY = "re_test";
+      process.env.BREVO_API_KEY = "brevo_test";
+      delete process.env.BREVO_EMAIL_FROM;
+      globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+        const provider = String(input).includes("resend") ? "resend" : "brevo";
+        bodies[provider] = JSON.parse(String(init?.body));
+        return new Response(JSON.stringify(provider === "resend" ? { id: "R2" } : { messageId: "<B2>" }), {
+          headers: { "Content-Type": "application/json" },
+          status: 200,
+        });
+      }) as typeof fetch;
+
+      await resendProvider.send(twoMailboxes);
+      await brevoProvider.send(twoMailboxes);
+    } finally {
+      globalThis.fetch = realFetch;
+      if (saved.brevo === undefined) delete process.env.BREVO_API_KEY;
+      else process.env.BREVO_API_KEY = saved.brevo;
+      if (saved.brevoFrom === undefined) delete process.env.BREVO_EMAIL_FROM;
+      else process.env.BREVO_EMAIL_FROM = saved.brevoFrom;
+      if (saved.resend === undefined) delete process.env.RESEND_API_KEY;
+      else process.env.RESEND_API_KEY = saved.resend;
+    }
+
+    assert.deepEqual(
+      bodies.resend?.reply_to,
+      ["hr@satopharma.com", "omar.anwar@satopharma.com"],
+      "Resend must receive both reply-to mailboxes as an array",
+    );
+    assert.deepEqual(
+      bodies.brevo?.replyTo,
+      { email: "hr@satopharma.com" },
+      "Brevo (backup only) honours the first reply-to mailbox",
+    );
+  }
 }

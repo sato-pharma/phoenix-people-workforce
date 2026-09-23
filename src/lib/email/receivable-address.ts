@@ -46,9 +46,32 @@ export function toReceivableHeader(value: string): string {
 }
 
 /**
+ * Split a Reply-To that may name SEVERAL mailboxes (comma- or semicolon-separated) into its
+ * individual addresses. A multi-address Reply-To is how a reply reaches more than one person: the
+ * replier's mail client fills every address into the To when they hit Reply. A single address
+ * comes back as a one-element list.
+ */
+export function splitAddressList(value: string): string[] {
+  return String(value ?? "")
+    .split(/[,;]/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+/**
+ * `toReceivableAddress` applied across a whole Reply-To list — every address mapped off the
+ * sending subdomain, the order and count preserved, rejoined with ", ". A single address is
+ * returned unchanged in shape, so this is a safe drop-in wherever one address used to be mapped.
+ */
+export function toReceivableList(value: string): string {
+  return splitAddressList(value).map(toReceivableAddress).join(", ");
+}
+
+/**
  * The Reply-To every outbound mail carries: the caller's own, else `NOTIFICATION_REPLY_TO`, else
- * the system default — and never an address that cannot receive.
+ * the system default — and never an address that cannot receive. The value may name more than one
+ * mailbox (a job offer routes replies to HR and to the owner); each is mapped independently.
  */
 export function resolveReplyToAddress(explicit?: string): string {
-  return toReceivableAddress(explicit || process.env.NOTIFICATION_REPLY_TO || systemEmail.defaultReplyTo);
+  return toReceivableList(explicit || process.env.NOTIFICATION_REPLY_TO || systemEmail.defaultReplyTo);
 }

@@ -67,7 +67,7 @@ other credentials in this file or in Git. Never assume a pasted preview URL is c
 | NOTIFICATION_EMAIL_FROM | Sender address | e.g. Phoenix HR <noreply@domain.com> |
 | NOTIFICATION_REPLY_TO | Reply-to address, and the visible To of fan-out sends | Unset in production, so `systemEmail.defaultReplyTo` (care.phx@satopharma.com) ships. Never set it to an address Resend has suppressed |
 | JOB_OFFER_EMAIL_FROM | Offer email sender | Speaks as Sato, never as Phoenix. Falls back to `hr@` on the sending domain — NOT to NOTIFICATION_EMAIL_FROM |
-| JOB_OFFER_REPLY_TO | Where a candidate's reply to an offer lands | Defaults to hr@satopharma.com. Must be a real, monitored mailbox. An address on the sending-only host `send.satopharma.com` (no mailboxes, SES bounce MX) is rewritten to the apex in code (`src/lib/email/receivable-address.ts`), as is the offer From |
+| JOB_OFFER_REPLY_TO | Where a candidate's reply to an offer lands | Unset in production, so the code default `hr@satopharma.com, omar.anwar@satopharma.com` ships (owner 2026-09-23 — a reply reaches HR and the owner). May name several mailboxes, comma-separated. Every one must be a real, monitored mailbox. An address on the sending-only host `send.satopharma.com` (no mailboxes, SES bounce MX) is rewritten to the apex in code (`src/lib/email/receivable-address.ts`), each address independently, as is the offer From |
 | INTERNAL_MESSAGE_EMAIL_FROM | Internal msg sender | Falls back to NOTIFICATION_EMAIL_FROM |
 | HR_NOTIFICATION_EMAILS | HR team emails for admin notifications | Comma-separated. Owner 2026-09-13: omar.anwar@satopharma.com (was the suppressed phoenix@satopharma.com, so HR copies reached nobody) |
 | NOTIFICATION_TEST_MODE | Force test mode | "true" to prevent real sends |

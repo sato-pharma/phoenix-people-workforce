@@ -5,8 +5,10 @@ import {
   receivingDomain,
   resolveReplyToAddress,
   sendingOnlyDomain,
+  splitAddressList,
   toReceivableAddress,
   toReceivableHeader,
+  toReceivableList,
 } from "../src/lib/email/receivable-address.ts";
 
 /**
@@ -15,7 +17,8 @@ import {
  * names it as From — or a Reply-To that a provider drops — sends the reply into a hole.
  *
  * These assertions pin the STRUCTURAL guarantee: whatever the environment holds, nothing a person
- * can answer ever points at the sending subdomain.
+ * can answer ever points at the sending subdomain. They also pin the owner's 2026-09-23 rule that
+ * an offer reply reaches BOTH the HR inbox and the owner's own mailbox — a two-address Reply-To.
  */
 function withEnv(values: Record<string, string | undefined>, run: () => void) {
   const saved: Record<string, string | undefined> = {};
@@ -54,16 +57,32 @@ export function runOfferReplyMailboxTests() {
   );
   assert.equal(toReceivableHeader("hr@send.satopharma.com"), "hr@satopharma.com");
 
+  // 2b) The list mapper: a Reply-To that names SEVERAL mailboxes is split, each mapped off the
+  //     sending subdomain independently, and rejoined — count and order preserved.
+  assert.deepEqual(splitAddressList("a@x.com, b@y.com ; c@z.com"), ["a@x.com", "b@y.com", "c@z.com"]);
+  assert.deepEqual(splitAddressList("  solo@x.com  "), ["solo@x.com"]);
+  assert.deepEqual(splitAddressList(""), []);
+  assert.equal(
+    toReceivableList("hr@send.satopharma.com, omar.anwar@satopharma.com"),
+    "hr@satopharma.com, omar.anwar@satopharma.com",
+  );
+  assert.equal(toReceivableList("hr@satopharma.com"), "hr@satopharma.com", "a lone address is unchanged in shape");
+
   // 3) THE HEADLINE: an offer's From and Reply-To never name the sending subdomain, for every way
-  //    the environment can be set — including the exact value production holds today.
-  const scenarios: Array<Record<string, string | undefined>> = [
-    { JOB_OFFER_EMAIL_FROM: undefined, JOB_OFFER_REPLY_TO: undefined },
-    { JOB_OFFER_EMAIL_FROM: "Sato Pharma HR <hr@send.satopharma.com>", JOB_OFFER_REPLY_TO: undefined },
-    { JOB_OFFER_EMAIL_FROM: "hr@send.satopharma.com", JOB_OFFER_REPLY_TO: undefined },
-    { JOB_OFFER_EMAIL_FROM: "Sato Pharma HR <hr@send.satopharma.com>", JOB_OFFER_REPLY_TO: "hr@send.satopharma.com" },
-    { JOB_OFFER_EMAIL_FROM: "Sato Pharma HR <hr@satopharma.com>", JOB_OFFER_REPLY_TO: "hr@satopharma.com" },
+  //    the environment can be set — including the exact value production holds today. The Reply-To
+  //    is the DEFAULT two-mailbox list unless the environment names its own.
+  const twoMailboxes = "hr@satopharma.com, omar.anwar@satopharma.com";
+  const scenarios: Array<{ env: Record<string, string | undefined>; replyTo: string }> = [
+    { env: { JOB_OFFER_EMAIL_FROM: undefined, JOB_OFFER_REPLY_TO: undefined }, replyTo: twoMailboxes },
+    { env: { JOB_OFFER_EMAIL_FROM: "Sato Pharma HR <hr@send.satopharma.com>", JOB_OFFER_REPLY_TO: undefined }, replyTo: twoMailboxes },
+    { env: { JOB_OFFER_EMAIL_FROM: "hr@send.satopharma.com", JOB_OFFER_REPLY_TO: undefined }, replyTo: twoMailboxes },
+    // Production's exact value today: From on the sending subdomain, Reply-To unset → the default list.
+    { env: { JOB_OFFER_EMAIL_FROM: "Sato Pharma HR <hr@send.satopharma.com>", JOB_OFFER_REPLY_TO: "hr@send.satopharma.com" }, replyTo: "hr@satopharma.com" },
+    { env: { JOB_OFFER_EMAIL_FROM: "Sato Pharma HR <hr@satopharma.com>", JOB_OFFER_REPLY_TO: twoMailboxes }, replyTo: twoMailboxes },
+    // A multi-address override on the sending subdomain maps EVERY address onto the apex.
+    { env: { JOB_OFFER_EMAIL_FROM: undefined, JOB_OFFER_REPLY_TO: "hr@send.satopharma.com, omar.anwar@send.satopharma.com" }, replyTo: twoMailboxes },
   ];
-  for (const env of scenarios) {
+  for (const { env, replyTo } of scenarios) {
     withEnv(env, () => {
       const sender = resolveOfferSender();
       assert.ok(
@@ -75,9 +94,17 @@ export function runOfferReplyMailboxTests() {
         `offer Reply-To must not name the sending subdomain (env ${JSON.stringify(env)}): ${sender.replyTo}`,
       );
       assert.match(sender.from, /^Sato Pharma[^<]*<hr@satopharma\.com>$/);
-      assert.equal(sender.replyTo, "hr@satopharma.com");
+      assert.equal(sender.replyTo, replyTo, `offer Reply-To (env ${JSON.stringify(env)})`);
     });
   }
+
+  // 3b) The owner's rule, stated directly: with no override, a candidate's reply reaches BOTH the
+  //     HR inbox and the owner's own mailbox.
+  withEnv({ JOB_OFFER_EMAIL_FROM: undefined, JOB_OFFER_REPLY_TO: undefined }, () => {
+    const addresses = splitAddressList(resolveOfferSender().replyTo);
+    assert.ok(addresses.includes("hr@satopharma.com"), "the HR inbox must be a reply target");
+    assert.ok(addresses.includes("omar.anwar@satopharma.com"), "the owner's mailbox must be a reply target too");
+  });
 
   // 4) `isConfigured` still means "the environment named an address", not "we rewrote it".
   withEnv({ JOB_OFFER_EMAIL_FROM: "Sato Pharma HR <hr@send.satopharma.com>", JOB_OFFER_REPLY_TO: undefined }, () => {
