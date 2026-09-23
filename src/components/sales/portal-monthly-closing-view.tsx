@@ -6,6 +6,7 @@ import { useMemo, useState, useTransition } from "react";
 
 import { ClosingDetailsPanel } from "@/components/sales/closing-details-panel";
 import { ClosingMatrixTable } from "@/components/sales/closing-matrix-table";
+import { PortalRepClosingList } from "@/components/sales/portal-rep-closing-list";
 import {
   MonthlyClosingFilters,
   emptyMonthlyClosingFilter,
@@ -45,6 +46,14 @@ type Props = {
   /** Published months for the line on show (newest first). */
   availablePeriods: string[];
   selectedPeriod: string | null;
+  /**
+   * A Medical Rep sees a stacked, single-area view instead of the wide matrix (owner, 2026-09-23):
+   * their matrix is already scoped to their own area, so the region subtotal and National Grand Total
+   * the matrix table draws are just that one area restated, and the columns force a horizontal scroll.
+   * Every other viewer keeps the shared ClosingMatrixTable. Presentation only — the Details tab and
+   * the Export XLSX route are identical for both.
+   */
+  isMedicalRep?: boolean;
 };
 
 const monthSelectClassName =
@@ -52,7 +61,7 @@ const monthSelectClassName =
 const lineSelectClassName =
   "h-11 w-52 rounded border border-phx-line bg-phx-paper px-3.5 text-sm font-semibold text-phx-ink outline-none transition focus:border-phx-accent-line focus:ring-4 focus:ring-phx-accent/10 disabled:opacity-60";
 
-export function PortalMonthlyClosingView({ matrix, office = null, line, availableLines, availablePeriods, selectedPeriod }: Props) {
+export function PortalMonthlyClosingView({ matrix, office = null, line, availableLines, availablePeriods, selectedPeriod, isMedicalRep = false }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const [isPending, startTransition] = useTransition();
@@ -272,13 +281,20 @@ export function PortalMonthlyClosingView({ matrix, office = null, line, availabl
         {tab === "matrix" ? (
           <>
             <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-4 md:flex-row md:items-center md:justify-between">
-              <MonthlyClosingFilters
-                areas={filterOptions.areas}
-                onChange={setFilter}
-                products={filterOptions.products}
-                regions={filterOptions.regions}
-                value={filter}
-              />
+              {/* A rep's view is a single area — the region/area filters would offer one option each
+                  (the region being exactly what the owner does not want surfaced), so hide the whole
+                  bar for them and leave only Export. Every other viewer keeps the filters. */}
+              {isMedicalRep ? (
+                <div />
+              ) : (
+                <MonthlyClosingFilters
+                  areas={filterOptions.areas}
+                  onChange={setFilter}
+                  products={filterOptions.products}
+                  regions={filterOptions.regions}
+                  value={filter}
+                />
+              )}
               <button
                 className="inline-flex h-10 shrink-0 items-center gap-2 border border-[#0B0B0B] bg-[#0B0B0B] px-4 text-sm font-bold text-white transition hover:bg-phx-accent disabled:opacity-50"
                 disabled={isExporting || !hasMatrix}
@@ -295,7 +311,11 @@ export function PortalMonthlyClosingView({ matrix, office = null, line, availabl
               </p>
             ) : null}
             {filteredMatrix && hasMatrix ? (
-              <ClosingMatrixTable matrix={filteredMatrix} office={filteredOffice} />
+              isMedicalRep ? (
+                <PortalRepClosingList matrix={filteredMatrix} />
+              ) : (
+                <ClosingMatrixTable matrix={filteredMatrix} office={filteredOffice} />
+              )
             ) : (
               <p className="px-4 py-8 text-center text-sm text-slate-500">
                 No closing rows match the current filters.

@@ -445,4 +445,50 @@ export function runMedicalRepMonthlyClosingTests() {
     readSource("../app/api/sales/monthly-closing/premium-export/pdf/route.ts").includes("if (!scope.canViewAllSales) return refusal(request, 403"),
     "and so does its PDF",
   );
+
+  // ── The rep's OWN-AREA, vertical front view (owner, 2026-09-23) ─────────────
+  // Their matrix is already scoped to their own area, so the shared ClosingMatrixTable draws them
+  // three rows for that one area (area / region subtotal / National Grand Total) with products laid
+  // across as columns — a horizontal scroll. The owner: show his area only, stacked down the page.
+  // This is presentation wiring the pure tests above cannot reach, so it is pinned at source.
+  const page = readSource("../app/employee-portals/monthly-closing/page.tsx");
+  assert.ok(
+    page.includes('const isMedicalRep = access.role === "Medical Rep";'),
+    "the page decides the rep view from the viewer's role",
+  );
+  assert.ok(
+    page.includes("isMedicalRep={isMedicalRep}"),
+    "and threads it to the view so the rep gets the vertical surface",
+  );
+
+  const view = readSource("../src/components/sales/portal-monthly-closing-view.tsx");
+  assert.ok(
+    view.includes('import { PortalRepClosingList } from "@/components/sales/portal-rep-closing-list";'),
+    "the view imports the rep's vertical list",
+  );
+  assert.ok(
+    view.includes("<PortalRepClosingList matrix={filteredMatrix} />"),
+    "🔴 a Medical Rep renders the stacked own-area list, never the wide ClosingMatrixTable",
+  );
+
+  const repList = readSource("../src/components/sales/portal-rep-closing-list.tsx");
+  assert.ok(repList.includes("export function PortalRepClosingList("), "the rep list component exists");
+  assert.ok(
+    repList.includes("region.areas"),
+    "it renders the rep's own AREAS",
+  );
+  assert.ok(
+    repList.includes("isSyntheticDirectArea"),
+    "and drops the synthetic company Direct pseudo-area",
+  );
+  assert.equal(
+    repList.includes("grandTotal"),
+    false,
+    "🔴 the rep view never draws the National Grand Total — it is their own area restated",
+  );
+  assert.equal(
+    repList.includes(".subtotal"),
+    false,
+    "🔴 nor the region subtotal — the one thing the owner asked to remove",
+  );
 }
