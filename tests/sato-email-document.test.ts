@@ -34,16 +34,18 @@ import {
   senderWriting,
   unverifiedFigures,
 } from "@/lib/sato-email/polish";
-import { prepareSatoEmailBody } from "@/lib/sato-email/render";
+import { prepareSatoEmailBody, renderSatoEmail } from "@/lib/sato-email/render";
 import {
   capSourceText,
   chooseSourceRoute,
   describeSourceRead,
   detectSatoSourceKind,
-  htmlToSourceText,
+  htmlDocumentBody,
+  htmlDocumentSubject,
   SATO_EMAIL_DOCUMENT_ACCEPT,
   SATO_EMAIL_SOURCE_MAX_CHARS,
   tidySourceText,
+  unwrapSatoEmailFrame,
 } from "@/lib/sato-email/source-document";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "..");
@@ -457,11 +459,16 @@ export function runSatoEmailDocumentTests() {
     "🔴 a second copy of a figure table doubles its width and pushes the email off the side of a phone",
   );
 
-  // -- 12. A web page is a document too -----------------------------------------------------------
+  // -- 12. AN HTML FILE IS LOADED EXACTLY AS IT IS ------------------------------------------------
   //
-  // Owner, same day: "me able also to the system absorb uploaded html and write email from". What
-  // he uploads is most often an email this composer itself produced. A plain utf8 decode of one is
-  // tag soup — the whole house stylesheet arrives before the first word — so HTML is its own kind.
+  // Owner, 2026-09-23, on the first build of this: "when i did with html its lost its design an
+  // became awful design", then "i donot whant ai to rewrite it i want to make as as it is exactly".
+  //
+  // 🔴 THE MODEL IS NOT CALLED ON THIS ROUTE. A PDF has to be read and turned into an email because
+  // a PDF is not one. An HTML file already is — its headings, its bold, its tables and the order it
+  // puts them in ARE the design — and a model asked to write an announcement out of its words
+  // throws every one of them away, which is exactly what he saw. Everything below either proves the
+  // file survives, or proves the frame around it is printed once.
 
   assert.equal(detectSatoSourceKind("text/html", "announcement.html"), "html");
   assert.equal(
@@ -472,47 +479,137 @@ export function runSatoEmailDocumentTests() {
   assert.equal(
     detectSatoSourceKind("text/html", "page.html") === "text",
     false,
-    "HTML must not fall through to the plain-text branch: text/* would match it first and hand over the markup",
+    "HTML must not fall through to the plain-text branch: text/* would match it first",
+  );
+  assert.equal(
+    chooseSourceRoute({ kind: "html", text: "<p>anything at all</p>" }),
+    "verbatim",
+    "🔴 HTML takes the verbatim route — the text route is what hands the file to the model to rewrite",
   );
 
   const page = [
-    "<!doctype html><html><head><style>.sato-title{color:#0A527D;font-size:22px}</style></head>",
+    "<!doctype html><html><head><style>.sato-title{color:#0A527D;font-size:22px}</style>",
+    "<title>Semester 2 2026 incentive policy</title></head>",
     "<body><h1>Semester 2 2026 incentive policy</h1>",
-    "<p>The semester incentive is 21,000 at 100% achievement.</p>",
+    "<p>The semester incentive is <strong>21,000</strong> at 100% achievement.</p>",
     "<table><thead><tr><th>Achievement</th><th>Payout</th></tr></thead>",
     "<tbody><tr><td>150%</td><td>46,200</td></tr><tr><td>90%</td><td>10,500</td></tr></tbody></table>",
-    "<p>Nothing is paid below 90&#37;.</p>",
     "<script>window.ping = 1;</script></body></html>",
   ].join("");
-  const read = tidySourceText(htmlToSourceText(page));
+  const loaded = htmlDocumentBody(page);
 
-  assert.equal(read.includes("Semester 2 2026 incentive policy"), true, "the words a reader sees must survive");
-  assert.equal(read.includes("21,000 at 100% achievement"), true, "and the figures with them, unchanged");
+  assert.equal(loaded.includes("<h1>Semester 2 2026 incentive policy</h1>"), true, "the heading arrives AS a heading");
   assert.equal(
-    read.includes("#0A527D") || read.includes("font-size") || read.includes("window.ping"),
-    false,
-    "🔴 the stylesheet and the script are not words on the page — they must not reach the prompt",
-  );
-  assert.equal(read.includes("<"), false, "no markup survives: what goes to the model is text, never HTML");
-  assert.equal(
-    read.includes("Nothing is paid below 90%."),
+    loaded.includes("<strong>21,000</strong>"),
     true,
-    "a numeric entity is a character the reader sees, so it is decoded rather than carried as &#37;",
+    "🔴 the sender's own emphasis survives — flatten it to words and the design he uploaded is gone",
+  );
+  assert.equal(
+    loaded.includes("<th>Achievement</th><th>Payout</th>") && loaded.includes("<td>150%</td><td>46,200</td>"),
+    true,
+    "🔴 a table arrives as a table, cell for cell, not as a sentence for a model to rebuild",
+  );
+  assert.equal(
+    loaded.includes("#0A527D") || loaded.includes("window.ping") || loaded.includes("<script"),
+    false,
+    "the stylesheet and the script are the two things that do come out: a mail client runs neither",
+  );
+  assert.equal(
+    loaded.includes("<body") || loaded.includes("<html") || loaded.includes("doctype"),
+    false,
+    "and the page's own wrapper goes, because what is wanted is the body, not the document around it",
+  );
+  assert.equal(
+    htmlDocumentSubject(page),
+    "Semester 2 2026 incentive policy",
+    "an uploaded email hands back its own subject, which is what the renderer wrote into its title",
   );
 
-  // 🔴 THE GRID HAS TO SURVIVE. The instructions promise that a table in the document arrives
-  // as a table in the email, and the model can only keep that promise if the rows still look like
-  // rows. Flatten a rate card into one sentence here and no rule downstream puts it back.
+  // 🔴 THE FRAME IS PRINTED ONCE. What he uploads is most often an email this composer produced, so
+  // the masthead, the title, the sign-off and the colophon are already inside it. Loaded whole, the
+  // renderer wraps a SECOND frame around the first: two mastheads, two colophons, one nested in the
+  // other. This is the round trip — render an email, upload it back, and check what comes out.
+  const rendered = renderSatoEmail({
+    bodyHtml: "<p>The semester incentive is 21,000 at 100% achievement.</p><table><tr><td>150%</td></tr></table>",
+    signOff: "Human Resources",
+    subject: "Semester 2 2026 incentive policy",
+  }).html;
+  const unwrapped = htmlDocumentBody(rendered);
+
   assert.equal(
-    read.includes("Achievement | Payout"),
+    /<td class="sato-message" style="padding:22px 0 0 0;/.test(rendered),
     true,
-    "🔴 a table's cells must arrive joined into rows, or the achievement curve reaches the model as prose",
+    "🔴 the renderer must NAME the message cell — the other anchor is the cell's exact style string, " +
+      "which is one restyle away from leaving every uploaded email unwrappable and silently doubled",
   );
-  assert.equal(read.includes("150% | 46,200"), true, "one line per row, cells in the order the page printed them");
   assert.equal(
-    /46,200\s*\|\s*$/m.test(read),
+    unwrapped.includes("The semester incentive is 21,000 at 100% achievement."),
+    true,
+    "the message itself comes back",
+  );
+  assert.equal(
+    unwrapped.includes("Company announcement") || unwrapped.includes("Human Resources"),
     false,
-    "and a row does not end in a divider — the separator sits between cells, and there is no next cell",
+    "🔴 but the house frame does not: an email uploaded back into the composer must not come out with two mastheads",
+  );
+  assert.equal(
+    unwrapped.includes("150%"),
+    true,
+    "and a table INSIDE the message survives the unwrap — the walker must not stop at the first nested </td>",
+  );
+
+  // Every email sent before 2026-09-23 has no marker class, only the cell's own style signature.
+  // That is the file he was actually holding when he reported this, so it is the one that matters.
+  const legacy = rendered.replace(/ class="sato-message"/g, "");
+  assert.equal(
+    htmlDocumentBody(legacy).includes("The semester incentive is 21,000 at 100% achievement.") &&
+      !htmlDocumentBody(legacy).includes("Human Resources"),
+    true,
+    "🔴 an email sent BEFORE the marker class existed must unwrap too, off the cell's own style signature",
+  );
+  assert.equal(
+    unwrapSatoEmailFrame("<p>Not a house email at all.</p>"),
+    "<p>Not a house email at all.</p>",
+    "a page carrying neither anchor is not a house email, and comes back untouched",
+  );
+
+  // 🔴 THE ROUND TRIP HAS TO SETTLE. He uploads an email, sends it, uploads it again — so the pass
+  // that styles a body must be idempotent, or the markup grows every time he does it: the house
+  // declarations were written a second time onto a body that already carried them
+  // (`color:#1A1A1A;color:#1A1A1A`), and the cell class a second time beside itself. Nothing
+  // rendered differently, which is exactly why it would have gone unnoticed.
+  const again = renderSatoEmail({
+    bodyHtml: unwrapped,
+    signOff: "Human Resources",
+    subject: "Semester 2 2026 incentive policy",
+  }).html;
+  assert.equal(again, rendered, "🔴 a second round trip must produce the same email, byte for byte");
+
+  // The line the sender reads has to say which of the two happened to his file.
+  const note = describeSourceRead({ characters: 0, fileName: "policy.html", route: "verbatim", truncated: false });
+  assert.equal(note.includes("policy.html"), true, "the file is named, as on every other route");
+  assert.equal(
+    /nothing (was )?rewritten/i.test(note),
+    true,
+    "🔴 and it says plainly that nothing was rewritten — the opposite of what the other two routes do",
+  );
+
+  // 🔴 THE WIRING, not just the parts: the route file must SKIP the assistant on a verbatim source.
+  // Every assertion above can pass while the API still hands the file to the model, which is the
+  // defect itself.
+  const documentRoute = readFileSync(
+    path.join(REPO_ROOT, "app/api/admin/sato-email/document/route.ts"),
+    "utf8",
+  );
+  assert.equal(
+    /read\.source\.route === "verbatim"\s*\?\s*\{/.test(documentRoute),
+    true,
+    "🔴 the verbatim source must take its own branch, before the assistant is reached",
+  );
+  assert.equal(
+    documentRoute.indexOf('read.source.route === "verbatim"') < documentRoute.indexOf("await polishSatoEmailDraft"),
+    true,
+    "🔴 and that branch must come FIRST — the model call is what rewrites his file",
   );
 
   // The picker has to offer it, or the feature exists only for someone who knows to drag the file.
@@ -520,5 +617,11 @@ export function runSatoEmailDocumentTests() {
     SATO_EMAIL_DOCUMENT_ACCEPT.includes(".html"),
     true,
     "the file picker must offer .html, or the sender never finds the capability",
+  );
+  const composerCopy = readFileSync(path.join(REPO_ROOT, "src/components/admin/sato-email-composer.tsx"), "utf8");
+  assert.equal(
+    /HTML file is loaded exactly as it is/.test(composerCopy),
+    true,
+    "and the help text has to say so, or the sender expects the rewrite he asked us to stop doing",
   );
 }
