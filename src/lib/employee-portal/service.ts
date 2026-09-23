@@ -3588,12 +3588,12 @@ export async function getMedicalRepPortalData(
         .filter((item) => item.period)
     : [];
 
-  // The payout window is the DECLARED CALENDAR semester — today that is H2 2026 (Jul–Dec) — not
-  // "the last six rows that happen to exist" and not the rep's own latest month. `slice(-6)` gave
-  // different-length semesters to different reps (June 2026 was half-loaded: 26 reps had five
-  // periods and one had four while 56 colleagues had six) and would silently straddle the H1/H2
-  // boundary the moment a July sheet landed, quietly changing everyone's payout. See
-  // src/lib/incentives/semester.ts. The 2026 payout curve itself is untouched.
+  // The payout window is the DECLARED CALENDAR semester — today that is Semester 2 2026 (Jul–Dec)
+  // — not "the last six rows that happen to exist" and not the rep's own latest month. `slice(-6)`
+  // gave different-length semesters to different reps (June 2026 was half-loaded: 26 reps had five
+  // periods and one had four while 56 colleagues had six) and would silently straddle the
+  // Semester 1 / Semester 2 boundary the moment a July sheet landed, quietly changing everyone's
+  // payout. See src/lib/incentives/semester.ts. The 2026 payout curve itself is untouched.
   const cairoNow = currentCairoDateParts();
   const todayPeriod = `${cairoNow.year}-${String(cairoNow.month).padStart(2, "0")}`;
   const incentiveWindow = resolveIncentiveWindow({

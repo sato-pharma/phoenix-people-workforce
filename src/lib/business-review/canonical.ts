@@ -9,13 +9,14 @@
 //
 // WHY THIS IS A REVIEW, NOT A PAYOUT RECORD
 //
-// This was written as a RESTATEMENT warning: H1 2026 payouts were settled against the legacy
-// `sales_records` engine and are closed (owner decision, 2026-08-13: the Incentive tab moves
-// forward to Semester 2 and does not restate H1), so rebuilding H1 from canonical landed some
-// areas in a different band than the one they were actually paid in.
+// This was written as a RESTATEMENT warning: Semester 1 2026 payouts were settled against the
+// legacy `sales_records` engine and are closed (owner decision, 2026-08-13: the Incentive tab moves
+// forward to Semester 2 and does not restate Semester 1), so rebuilding Semester 1 from canonical
+// landed some areas in a different band than the one they were actually paid in.
 //
 // That specific warning is now unreachable. REVIEW_FLOOR is "2026-07" (owner, 2026-08-23), so no
-// H1 month can be selected and the notice was describing months this module cannot render. What
+// Semester 1 month can be selected and the notice was describing months this module cannot render.
+// What
 // survives is the part that is still true for EVERY window: this is built from the canonical
 // closing engine, and a band shown here is a review figure, not the record anyone was paid on.
 // `REVIEW_SOURCE_NOTICE` is that label; do not render this dataset without it.
@@ -117,7 +118,7 @@ export type ReviewLine = "pedia" | "cns" | "anti";
  * The label every surface rendering this dataset must show. Not optional.
  *
  * It must stay true for ANY window the viewer picks. The previous wording did not: it warned that
- * H1 2026 bands here differ from what was actually paid, which stopped being reachable the moment
+ * Semester 1 2026 bands here differ from what was actually paid, which stopped being reachable the moment
  * REVIEW_FLOOR moved to July 2026 — it described months the picker no longer offers.
  */
 export const REVIEW_SOURCE_NOTICE =

@@ -182,7 +182,7 @@ export type SpotlightResult = {
   selection: SpotlightSelection;
   /** The months the window resolved to, ascending. */
   periods: PeriodKey[];
-  /** "August 2026", "Q3 2026", "H2 2026". */
+  /** "August 2026", "Q3 2026", "Semester 2 2026" — never "H2 2026" (owner, 2026-09-23). */
   windowLabel: string;
   headline: string;
   subheadline: string;
