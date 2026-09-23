@@ -1,0 +1,78 @@
+# Auto-publish an over-the-air (OTA) update to the mobile app whenever a change to
+# mobile/ lands on main. EAS Update ships the new JavaScript bundle to phones that
+# already have the app installed; they pick it up on next launch (app.json:
+# checkAutomatically ON_LOAD). A native-touching change bumps the fingerprint
+# runtimeVersion, so an OTA only lands on a matching build — a rebuild is still
+# needed for those, and that is intended, not a gap in this workflow.
+#
+# FAIL-SAFE: until the EXPO_TOKEN secret is set, the publish step is SKIPPED, not
+# failed — the "guard" step reads the secret into an output (a secret cannot be
+# tested directly in an `if:`), and every publish step is gated on that output. So
+# this workflow is safe to merge before the token exists: it simply no-ops until
+# the owner runs `gh secret set EXPO_TOKEN`.
+name: Mobile OTA
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "mobile/**"
+
+# Node version matches the mobile job in ci.yml. Keep them in step.
+env:
+  CI_NODE_VERSION: "24"
+
+# One publish per ref at a time; let an in-flight publish finish rather than
+# cancelling it (an interrupted `eas update` can leave a half-written branch).
+concurrency:
+  group: mobile-ota-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish OTA to the production channel
+    runs-on: ubuntu-latest
+    steps:
+      # A secret cannot be used in an `if:` expression, so surface its presence as
+      # a plain output that later steps CAN gate on.
+      - name: Check the EXPO_TOKEN secret is set
+        id: guard
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [ -n "$EXPO_TOKEN" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+            echo "EXPO_TOKEN is set — will publish the OTA update."
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "EXPO_TOKEN is not set — skipping the OTA publish."
+            echo "Set it with: gh secret set EXPO_TOKEN --repo ${{ github.repository }}"
+          fi
+
+      - name: Check out the repository
+        if: steps.guard.outputs.present == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Node.js
+        if: steps.guard.outputs.present == 'true'
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: ${{ env.CI_NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      # Same as ci.yml's mobile job: install from the lockfile exactly, no flags.
+      - name: Install mobile dependencies from the lockfile
+        if: steps.guard.outputs.present == 'true'
+        working-directory: mobile
+        run: npm ci
+
+      # The commit subject is passed through an env var, never inlined into the
+      # command, so a crafted commit message cannot inject shell.
+      - name: Publish the OTA update
+        if: steps.guard.outputs.present == 'true'
+        working-directory: mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          OTA_MESSAGE: ${{ github.event.head_commit.message }}
+        run: npx eas-cli@latest update --branch production --message "$OTA_MESSAGE" --non-interactive
