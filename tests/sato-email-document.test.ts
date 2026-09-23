@@ -40,6 +40,7 @@ import {
   chooseSourceRoute,
   describeSourceRead,
   detectSatoSourceKind,
+  htmlToSourceText,
   SATO_EMAIL_DOCUMENT_ACCEPT,
   SATO_EMAIL_SOURCE_MAX_CHARS,
   tidySourceText,
@@ -373,12 +374,12 @@ export function runSatoEmailDocumentTests() {
   assert.equal(
     /SATO_ASSIST_EFFORT\s*=\s*\{[^}]*document:\s*"low"/.test(polish),
     true,
-    "\ud83d\udd34 document mode must think at LOW effort \u2014 at medium it took 115s against a 60s budget and timed out every time",
+    "🔴 document mode must think at LOW effort — at medium it took 115s against a 60s budget and timed out every time",
   );
   assert.equal(
     /timeoutMs:\s*mode === "document" \? SATO_DOCUMENT_BUDGET_MS/.test(polish),
     true,
-    "\ud83d\udd34 and it must carry its own budget \u2014 a whole policy read and rewritten does not fit the 60s email budget",
+    "🔴 and it must carry its own budget — a whole policy read and rewritten does not fit the 60s email budget",
   );
   assert.equal(
     /const SATO_DOCUMENT_BUDGET_MS = 120_000;/.test(polish),
@@ -407,11 +408,117 @@ export function runSatoEmailDocumentTests() {
   assert.equal(
     composer.includes('counted("Reading the document")'),
     true,
-    "the document button must count the seconds while it works \u2014 a still spinner reads as a hang",
+    "the document button must count the seconds while it works — a still spinner reads as a hang",
   );
   assert.equal(
-    /const counted = \(label: string\) => \(elapsed > 0 \? `\$\{label\} \u00b7 \$\{elapsed\}s` : label\);/.test(composer),
+    /const counted = \(label: string\) => \(elapsed > 0 \? `\$\{label\} · \$\{elapsed\}s` : label\);/.test(composer),
     true,
     "and all three buttons share one counter, because the sender cannot know which mode is the slow one",
+  );
+
+  // -- 11. The email comes back in BOTH languages -------------------------------------------------
+  //
+  // Owner, 2026-09-23, on the English-only email this mode produced from his English incentive
+  // policy: "i want it to be bilingual as the html u opened not only english". The reader is an
+  // Egyptian colleague, and the language of the PAPER is not the language of the company.
+  //
+  // The instruction block is the only place this can live — nothing downstream can translate an
+  // email that came back in one language. These assertions read the block the model is actually
+  // handed, not a copy of it, which is why they go through the exported constant.
+
+  assert.equal(
+    /THE EMAIL IS BILINGUAL, WHATEVER LANGUAGE THE DOCUMENT IS IN/.test(SATO_DOCUMENT_INSTRUCTIONS),
+    true,
+    "🔴 an English document must still give an English AND an Arabic email — one language is half delivered",
+  );
+  assert.equal(
+    SATO_DOCUMENT_INSTRUCTIONS.includes("Each English paragraph is followed immediately by the same paragraph in Arabic"),
+    true,
+    "interleaved paragraph by paragraph, so a reader of either language meets the email in the same order",
+  );
+
+  // 🔴 The direction rule, which is the one that silently ruins a bilingual body. dir=\"auto\"
+  // reads only the FIRST strong character of a block and applies it to the whole of it, so an
+  // English paragraph inside an Arabic-led email renders backwards. Direction per paragraph, on
+  // BOTH languages, is the fix — and the English half needing it too is the half that gets left out.
+  assert.equal(
+    SATO_DOCUMENT_INSTRUCTIONS.includes('English paragraphs carry dir="ltr"'),
+    true,
+    "the English paragraphs need an explicit direction too, or the Arabic around them turns them backwards",
+  );
+  assert.equal(
+    /Arabic paragraphs carry dir="rtl"/.test(SATO_DOCUMENT_INSTRUCTIONS),
+    true,
+    "and the Arabic ones carry rtl, which right-aligns them without a text-align of their own",
+  );
+  assert.equal(
+    /A TABLE IS BUILT ONCE, NEVER TWICE/.test(SATO_DOCUMENT_INSTRUCTIONS),
+    true,
+    "🔴 a second copy of a figure table doubles its width and pushes the email off the side of a phone",
+  );
+
+  // -- 12. A web page is a document too -----------------------------------------------------------
+  //
+  // Owner, same day: "me able also to the system absorb uploaded html and write email from". What
+  // he uploads is most often an email this composer itself produced. A plain utf8 decode of one is
+  // tag soup — the whole house stylesheet arrives before the first word — so HTML is its own kind.
+
+  assert.equal(detectSatoSourceKind("text/html", "announcement.html"), "html");
+  assert.equal(
+    detectSatoSourceKind("", "incentive-policy-email.htm"),
+    "html",
+    "a page saved from a browser can arrive with no MIME type and the short extension",
+  );
+  assert.equal(
+    detectSatoSourceKind("text/html", "page.html") === "text",
+    false,
+    "HTML must not fall through to the plain-text branch: text/* would match it first and hand over the markup",
+  );
+
+  const page = [
+    "<!doctype html><html><head><style>.sato-title{color:#0A527D;font-size:22px}</style></head>",
+    "<body><h1>Semester 2 2026 incentive policy</h1>",
+    "<p>The semester incentive is 21,000 at 100% achievement.</p>",
+    "<table><thead><tr><th>Achievement</th><th>Payout</th></tr></thead>",
+    "<tbody><tr><td>150%</td><td>46,200</td></tr><tr><td>90%</td><td>10,500</td></tr></tbody></table>",
+    "<p>Nothing is paid below 90&#37;.</p>",
+    "<script>window.ping = 1;</script></body></html>",
+  ].join("");
+  const read = tidySourceText(htmlToSourceText(page));
+
+  assert.equal(read.includes("Semester 2 2026 incentive policy"), true, "the words a reader sees must survive");
+  assert.equal(read.includes("21,000 at 100% achievement"), true, "and the figures with them, unchanged");
+  assert.equal(
+    read.includes("#0A527D") || read.includes("font-size") || read.includes("window.ping"),
+    false,
+    "🔴 the stylesheet and the script are not words on the page — they must not reach the prompt",
+  );
+  assert.equal(read.includes("<"), false, "no markup survives: what goes to the model is text, never HTML");
+  assert.equal(
+    read.includes("Nothing is paid below 90%."),
+    true,
+    "a numeric entity is a character the reader sees, so it is decoded rather than carried as &#37;",
+  );
+
+  // 🔴 THE GRID HAS TO SURVIVE. The instructions promise that a table in the document arrives
+  // as a table in the email, and the model can only keep that promise if the rows still look like
+  // rows. Flatten a rate card into one sentence here and no rule downstream puts it back.
+  assert.equal(
+    read.includes("Achievement | Payout"),
+    true,
+    "🔴 a table's cells must arrive joined into rows, or the achievement curve reaches the model as prose",
+  );
+  assert.equal(read.includes("150% | 46,200"), true, "one line per row, cells in the order the page printed them");
+  assert.equal(
+    /46,200\s*\|\s*$/m.test(read),
+    false,
+    "and a row does not end in a divider — the separator sits between cells, and there is no next cell",
+  );
+
+  // The picker has to offer it, or the feature exists only for someone who knows to drag the file.
+  assert.equal(
+    SATO_EMAIL_DOCUMENT_ACCEPT.includes(".html"),
+    true,
+    "the file picker must offer .html, or the sender never finds the capability",
   );
 }

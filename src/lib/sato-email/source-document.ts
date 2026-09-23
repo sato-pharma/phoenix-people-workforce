@@ -19,7 +19,7 @@
 
 import { countReadableCharacters } from "@/lib/recruitment/cv-text-layer";
 
-export type SatoSourceKind = "pdf" | "word" | "text" | "picture" | "unsupported";
+export type SatoSourceKind = "pdf" | "word" | "html" | "text" | "picture" | "unsupported";
 
 /**
  * How the document reached the model: its words, or the file itself.
@@ -39,10 +39,10 @@ export const SATO_EMAIL_DOCUMENT_MAX_BYTES = 10 * 1024 * 1024;
 
 /** What the file picker offers. Wider than what can be READ is a refusal the sender never sees. */
 export const SATO_EMAIL_DOCUMENT_ACCEPT =
-  ".pdf,.doc,.docx,.txt,.csv,.md,.jpg,.jpeg,.png,.webp," +
+  ".pdf,.doc,.docx,.html,.htm,.txt,.csv,.md,.jpg,.jpeg,.png,.webp," +
   "application/pdf,application/msword," +
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document," +
-  "text/plain,text/csv,text/markdown,image/jpeg,image/png,image/webp";
+  "text/html,text/plain,text/csv,text/markdown,image/jpeg,image/png,image/webp";
 
 /**
  * How many characters of the document the assistant reads.
@@ -69,6 +69,9 @@ export function detectSatoSourceKind(contentType: string, fileName: string): Sat
     return "word";
   }
   if (mime.startsWith("image/") || /\.(jpe?g|png|webp)$/.test(name)) return "picture";
+  // Before the text branch, because HTML IS text/* and a plain decode of it hands the model
+  // tag soup — every style rule, every table attribute, and the words buried inside them.
+  if (mime.includes("html") || /\.x?html?$/.test(name)) return "html";
   // Deliberately last: a .csv can arrive as application/vnd.ms-excel, and a .md as text/markdown,
   // octet-stream or nothing at all. The extension decides when the label is useless.
   if (mime.startsWith("text/") || mime.includes("csv") || /\.(txt|csv|md|markdown|log)$/.test(name)) return "text";
@@ -114,6 +117,62 @@ export function capSourceText(text: string): { text: string; truncated: boolean 
     text: (paragraphEnd > SATO_EMAIL_SOURCE_MAX_CHARS / 2 ? head.slice(0, paragraphEnd) : head).trim(),
     truncated: true,
   };
+}
+
+/**
+ * A web page, or a saved email, read as the words a person would see on it.
+ *
+ * Owner 2026-09-23: "me able also to the system absorb uploaded html and write email from" — the
+ * thing he uploads is most often an email this composer itself produced, or a page someone sent
+ * him. A plain utf8 decode of one is tag soup: the whole house stylesheet arrives before the
+ * first word, and a 6 KB announcement reads as 40 KB of attributes the model then has to ignore.
+ *
+ * Done here with string work rather than a parser on purpose. This module is imported by the
+ * BROWSER for the composer's accept list, so it must stay free of dependencies, and the job is
+ * narrower than parsing: the output is never rendered, never trusted as markup and never sent
+ * anywhere — it is prompt text. Anything ambiguous therefore drops out rather than being guessed
+ * at, and the tag stripper runs LAST, after the blocks that carry meaning have become newlines.
+ *
+ * 🔴 A TABLE HAS TO SURVIVE AS A GRID. The instructions tell the assistant that a table in the
+ * document arrives as a table in the email, and it can only obey that if the rows still look like
+ * rows: cells are joined with " | " and each row ends at a newline. Flatten a rate card into one
+ * long sentence here and no prompt rule downstream can put it back.
+ */
+export function htmlToSourceText(raw: string): string {
+  return String(raw ?? "")
+    // Script, style and head hold no words a reader ever sees. They go first, contents and all,
+    // because stripping their tags alone would leave the CSS itself standing as body text.
+    .replace(/<(script|style|head|template|noscript)\b[^>]*>[\s\S]*?<\/\1>/gi, " ")
+    .replace(/<!--[\s\S]*?-->/g, " ")
+    // An image is a word the reader can see, and in a house email the alt text is the only
+    // description of it there is.
+    .replace(/<img\b[^>]*\balt\s*=\s*"([^"]+)"[^>]*>/gi, "$1")
+    // The cell separator goes on the CLOSING tag: an opening <td> may carry a style attribute
+    // longer than the cell's own contents, and the divider belongs between values, not before
+    // the first one.
+    .replace(/<\/(td|th)\s*>/gi, " | ")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|tr|li|h[1-6]|ul|ol|table|thead|tbody|section|blockquote)\s*>/gi, "\n")
+    .replace(/<(hr|tr)\b[^>]*>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    // Entities last, so a &lt; that was text in the page cannot become a tag the stripper above
+    // would then eat along with everything after it.
+    .replace(/&(nbsp|amp|lt|gt|quot|#39|apos|middot|mdash|ndash|hellip|rsquo|lsquo|ldquo|rdquo);/gi, (entity) => {
+      const table: Record<string, string> = {
+        amp: "&", apos: "'", gt: ">", hellip: "…", lt: "<", ldquo: "\u201c", lsquo: "\u2018",
+        mdash: "—", middot: "·", nbsp: " ", ndash: "–", quot: '"', rdquo: "\u201d", rsquo: "\u2019",
+        "#39": "'",
+      };
+      return table[entity.slice(1, -1).toLowerCase()] ?? entity;
+    })
+    .replace(/&#(\d{1,6});/g, (whole, code) => {
+      const point = Number(code);
+      return point > 0 && point <= 0x10ffff ? String.fromCodePoint(point) : whole;
+    })
+    // A row that ended in a cell divider now reads "… | \n". The divider was between cells, and
+    // there is no next cell.
+    .replace(/\|\s*(?=\n|$)/g, "")
+    .replace(/[ \t]*\|[ \t]*/g, " | ");
 }
 
 /**
