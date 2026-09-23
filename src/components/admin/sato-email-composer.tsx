@@ -22,6 +22,7 @@ import { type ReactNode, useCallback, useMemo, useState } from "react";
 import { AdminSectionHeader } from "@/components/admin/admin-design-system";
 import { EmailBodyEditor } from "@/components/admin/email-body-editor";
 import { SatoEmailListPicker } from "@/components/admin/sato-email-list-picker";
+import { attachablesFromTransfer } from "@/lib/email/transfer-files";
 import {
   SATO_EMAIL_ATTACHMENT_ACCEPT,
   SATO_EMAIL_INLINE_ACCEPT,
@@ -143,6 +144,8 @@ export function SatoEmailComposer({
   // is the whole difference between the two halves of what the owner asked for.
   const [attachments, setAttachments] = useState<Array<{ byteSize: number; filename: string; id: string }>>([]);
   const [uploading, setUploading] = useState(false);
+  // Whether a file is being dragged over the attachments row, so the frame can say "drop it here".
+  const [dropActive, setDropActive] = useState(false);
 
   const [listKeys, setListKeys] = useState<string[]>([]);
   const [people, setPeople] = useState<SatoPersonView[]>([]);
@@ -249,13 +252,23 @@ export function SatoEmailComposer({
     [uploadOne],
   );
 
-  async function attachFiles(files: FileList | null) {
-    if (!files || files.length === 0) return;
+  async function attachFiles(files: readonly File[] | FileList | null) {
+    const chosen = files ? Array.from(files) : [];
+    if (chosen.length === 0) return;
     setUploading(true);
     setError(null);
+    // Counted in a local, not read back from state: `setAttachments` does not land until the
+    // component re-renders, so a batch of twenty dropped files would every one of them read the
+    // same starting count and sail past the ceiling.
+    let carried = attachments.length;
     try {
-      for (const file of Array.from(files)) {
+      for (const file of chosen) {
+        if (carried >= SATO_EMAIL_MEDIA_MAX_FILES) {
+          setError(`An email may carry at most ${SATO_EMAIL_MEDIA_MAX_FILES} attachments — the rest were not attached.`);
+          break;
+        }
         const stored = await uploadOne(file, "attachment");
+        carried += 1;
         setAttachments((current) =>
           current.some((existing) => existing.id === stored.id)
             ? current
@@ -560,16 +573,41 @@ export function SatoEmailComposer({
               />
             </div>
             <p className="mt-2 text-xs font-semibold text-phx-ink-faint">
-              The picture button in the toolbar puts a picture from your computer straight into the message.
-              A picture in the body has to be fetched from the web when somebody opens the email, so anyone
-              who has the link can see it &mdash; put a company document in the attachments below instead.
+              Paste a photo or a screenshot straight into the message, drag one in from a folder, or use the
+              picture button in the toolbar. A picture in the body has to be fetched from the web when
+              somebody opens the email, so anyone who has the link can see it &mdash; put a company document
+              in the attachments below instead.
             </p>
           </div>
 
           {/* ------------------------------------------------------------------ attachments */}
           <div className="mt-4">
             <span className="text-phx-xs font-black uppercase tracking-wide text-phx-ink-2">Attachments</span>
-            <div className="mt-2 flex flex-wrap items-center gap-2">
+            {/*
+              Dropping a file here attaches it. The dashed frame only appears while something is
+              being dragged over it: an always-visible drop box beside the button would say the
+              same thing twice, and the button is what a sender reaches for first.
+            */}
+            <div
+              className={`mt-2 border border-dashed p-2 transition ${
+                dropActive ? "border-[#FED7AA] bg-phx-accent-soft" : "border-transparent"
+              }`}
+              onDragLeave={() => setDropActive(false)}
+              onDragOver={(event) => {
+                // Only a real file drag. Without this the frame lights up when the sender drags a
+                // word out of the body, which is a move inside the editor and nothing to do here.
+                if (!Array.from(event.dataTransfer.types).includes("Files")) return;
+                event.preventDefault();
+                setDropActive(true);
+              }}
+              onDrop={(event) => {
+                if (event.dataTransfer.files.length === 0) return;
+                event.preventDefault();
+                setDropActive(false);
+                void attachFiles(attachablesFromTransfer(Array.from(event.dataTransfer.files)));
+              }}
+            >
+            <div className="flex flex-wrap items-center gap-2">
               <label className={`${PALE_BUTTON} cursor-pointer`}>
                 {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
                 {uploading ? "Uploading" : "Attach a picture or file"}
@@ -607,10 +645,11 @@ export function SatoEmailComposer({
                 </span>
               ))}
             </div>
+            </div>
             <p className="mt-2 text-xs font-semibold text-phx-ink-faint">
-              Attachments travel inside the email, so only the people you send it to can open them. Up to
-              {" "}{SATO_EMAIL_MEDIA_MAX_FILES} files, and 10 MB in total &mdash; over that the send is refused
-              rather than quietly dropping a file.
+              Click the button or drag files onto this row. Attachments travel inside the email, so only the
+              people you send it to can open them. Up to {SATO_EMAIL_MEDIA_MAX_FILES} files, and 10 MB in
+              total &mdash; over that the send is refused rather than quietly dropping a file.
             </p>
           </div>
 

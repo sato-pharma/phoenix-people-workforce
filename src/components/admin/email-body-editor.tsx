@@ -24,6 +24,7 @@ import {
 import type { ClipboardEvent, DragEvent } from "react";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { EDITOR_IMAGE_ACCEPT, picturesFromTransfer } from "@/lib/email/transfer-files";
 
 
 export type EditorVariable = {
@@ -484,6 +485,22 @@ export const EmailBodyEditor = forwardRef<EmailBodyEditorHandle, Props>(function
     [insertHtmlAtCaret, uploadImage],
   );
 
+  /**
+   * Several pictures from one gesture, one after another rather than all at once.
+   *
+   * Sequential on purpose: each insert puts the caret after the picture it just placed, so the
+   * pictures land in the order they were dropped. Uploading them in parallel would race for that
+   * caret and scramble the order.
+   */
+  const insertUploadedImages = useCallback(
+    async (files: readonly File[]) => {
+      for (const file of files) {
+        await insertUploadedImage(file);
+      }
+    },
+    [insertUploadedImage],
+  );
+
   // Apply a change to every top-level block (paragraph/list/table) the selection touches —
   // used for line spacing, letter spacing, and Arabic RTL direction, which are
   // paragraph-level concepts in email HTML.
@@ -668,6 +685,16 @@ export const EmailBodyEditor = forwardRef<EmailBodyEditorHandle, Props>(function
 
   const handlePaste = useCallback(
     (event: ClipboardEvent<HTMLDivElement>) => {
+      // A screenshot or a copied photo arrives as a file on the clipboard, with no text beside it.
+      // Before this it fell through to the plain-text branch below, found nothing, and returned —
+      // so Ctrl+V on a picture did nothing at all, with nothing on screen to say why.
+      const pictures = uploadImage ? picturesFromTransfer(Array.from(event.clipboardData.files)) : [];
+      if (pictures.length > 0) {
+        event.preventDefault();
+        rememberSelection();
+        void insertUploadedImages(pictures);
+        return;
+      }
       // Word/Outlook/Gmail paste carries heavy markup the email sanitizer would strip
       // unpredictably - paste as plain text so what you see survives the save.
       event.preventDefault();
@@ -677,11 +704,31 @@ export const EmailBodyEditor = forwardRef<EmailBodyEditorHandle, Props>(function
       rememberSelection();
       emit();
     },
-    [emit, rememberSelection],
+    [emit, insertUploadedImages, rememberSelection, uploadImage],
   );
 
   const handleDrop = useCallback(
     (event: DragEvent<HTMLDivElement>) => {
+      // A picture dragged in from a folder, dropped where the pointer is rather than at the end of
+      // the body — the caret is taken from the drop point BEFORE the upload starts, because by the
+      // time the bytes come back the pointer is long gone.
+      const pictures = uploadImage ? picturesFromTransfer(Array.from(event.dataTransfer.files)) : [];
+      if (pictures.length > 0) {
+        event.preventDefault();
+        const dropRange = caretRangeAtPoint(event.clientX, event.clientY);
+        const dropEditor = editorRef.current;
+        if (dropRange && dropEditor && dropEditor.contains(dropRange.commonAncestorContainer)) {
+          savedRangeRef.current = dropRange;
+        }
+        void insertUploadedImages(pictures);
+        return;
+      }
+      // A file this editor cannot place — a PDF, a spreadsheet — must not be opened in the tab,
+      // which is what a browser does with an un-handled drop and would lose the whole draft.
+      if (event.dataTransfer.files.length > 0) {
+        event.preventDefault();
+        return;
+      }
       const token = event.dataTransfer.getData("text/plain").trim();
       const draggedHtml = event.dataTransfer.getData("text/html");
       // A chip dragged from the Variables panel carries only its token as plain text.
@@ -702,7 +749,7 @@ export const EmailBodyEditor = forwardRef<EmailBodyEditorHandle, Props>(function
         emit();
       }, 0);
     },
-    [emit, insertToken, rememberSelection, variables],
+    [emit, insertToken, insertUploadedImages, rememberSelection, uploadImage, variables],
   );
 
   const actions: ToolbarAction[] = [
@@ -973,7 +1020,7 @@ export const EmailBodyEditor = forwardRef<EmailBodyEditorHandle, Props>(function
         {afterTable.map(toolbarButton)}
         {uploadImage ? (
           <input
-            accept={imageAccept ?? "image/jpeg,image/png,image/gif,image/webp"}
+            accept={imageAccept ?? EDITOR_IMAGE_ACCEPT}
             className="hidden"
             onChange={(event) => {
               const file = event.target.files?.[0];
