@@ -1862,6 +1862,7 @@ import { runCvLinkedInAndSelectableTextTests } from "./cv-linkedin-and-selectabl
 import { runInterviewCalendarTests } from "./interview-calendar.test.ts";
 import { runInterviewCalendarApplicationTests } from "./interview-calendar-application.test.ts";
 import { runInterviewReminderTests } from "./interview-reminders.test.ts";
+import { runInterviewRequestTests } from "./interview-requests.test.ts";
 import { runInterviewInvitationTests } from "./interview-invitation.test.ts";
 import { runWhatsAppApplicationPrintTests } from "./whatsapp-application-print.test.ts";
 import { runCandidateRecordPrintTests } from "./candidate-record-print.test.ts";
@@ -6458,6 +6459,11 @@ await runTest(
 await runTest(
   "interview reminders go to the chosen interviewer only, District Manager and above, by in-app, email and Telegram: the evening before from 5:00 PM Cairo with the day's list and one hour before each interview, each sent once by its key",
   runInterviewReminderTests,
+);
+
+await runTest(
+  "the interview request flow: a District Manager and above (or HR) may request but a Medical Rep may not, a DM books only himself directly, a booking made from a request shows on both the requester's and the interviewer's calendar and nobody else's, and the service, notifications, routes and UI are wired to the request-then-book steps",
+  runInterviewRequestTests,
 );
 
 await runTest(

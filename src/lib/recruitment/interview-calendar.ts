@@ -163,9 +163,31 @@ async function isChosenInterviewer(access: AccessContext): Promise<boolean> {
 }
 
 /**
- * Their OWN level: the owner, a share he made, or — for a District Manager or above he chose to
- * conduct an interview — `interviewer`. A share outranks it (a Viewer sees the whole calendar). A
- * copy link is not this — see the caller below.
+ * Whether this seat may REQUEST interviews — and so is shown the calendar as a `requester` by their
+ * seat, before any booking names them. A District Manager or above, or HR (owner, 2026-09-23 —
+ * "district managers and up + HR"). A Medical Rep cannot: the same line that keeps candidates' CVs to
+ * District-Manager-and-above. HR is read from the app role; the ladder from role first, then job title.
+ */
+export function isInterviewRequesterSeat(access: AccessContext, person: InterviewCalendarPerson | null): boolean {
+  const role = (access.role ?? "").trim();
+  if (/^hr\b/i.test(role) || /human resources/i.test(role)) return true;
+  return isDistrictManagerOrAbove({ jobTitle: person?.jobTitle ?? null, role });
+}
+
+/** May this caller ask for an interview: an owner, or a requester-eligible seat. */
+export async function mayRequestInterviews(access: AccessContext): Promise<boolean> {
+  if (!isSignedInCaller(access)) return false;
+  if (isInterviewCalendarOwner(access)) return true;
+  if (!access.hrId) return false;
+  const person = (await loadPeople([access.hrId])).get(canonicalHrIdKey(access.hrId) ?? "") ?? null;
+  return isInterviewRequesterSeat(access, person);
+}
+
+/**
+ * Their OWN level: the owner, a share he made, `interviewer` for a District Manager or above he chose
+ * to conduct an interview, else `requester` for any District Manager / above / HR seat. A share
+ * outranks the two seat roles (a Viewer sees the whole calendar). A copy link is not this — see the
+ * caller below.
  */
 export async function resolveInterviewCalendarRole(access: AccessContext): Promise<InterviewCalendarRole | null> {
   if (access.source === "guest") return null;
@@ -174,7 +196,11 @@ export async function resolveInterviewCalendarRole(access: AccessContext): Promi
   if (!access.hrId) return null;
   const shared = resolveCalendarRole({ isOwner, shareLevel: shareLevelFor(await loadShareRows(), access.hrId) });
   if (shared) return shared;
-  return (await isChosenInterviewer(access)) ? "interviewer" : null;
+  if (await isChosenInterviewer(access)) return "interviewer";
+  // A District Manager or above, or HR, holds the calendar as a requester by their seat — so it shows
+  // in their sidebar and they can ask for an interview even before any booking names them.
+  const person = (await loadPeople([access.hrId])).get(canonicalHrIdKey(access.hrId) ?? "") ?? null;
+  return isInterviewRequesterSeat(access, person) ? "requester" : null;
 }
 
 /**
@@ -184,20 +210,43 @@ export async function resolveInterviewCalendarRole(access: AccessContext): Promi
  */
 export function mayReadBooking(
   caller: InterviewCalendarCaller,
-  row: { starts_at: string; interviewer_hr_id: string | null },
+  row: { starts_at: string; interviewer_hr_id: string | null; requested_by_hr_id?: string | null },
 ): boolean {
   const role = calendarRoleFor(caller, weekOfInstant(row.starts_at));
   if (!role) return false;
-  if (role !== "interviewer") return true;
+  // Everyone above the own-only tier (a Viewer and up) reads every booking.
+  if (role !== "interviewer" && role !== "requester") return true;
+  // The own-only tier — an interviewer or a requester — reads ONLY the interviews it is part of: the
+  // ones it was chosen to conduct, and the ones it requested. A District Manager who does both sees both.
   const viewer = canonicalHrIdKey(caller.access.hrId);
-  const chosen = canonicalHrIdKey(row.interviewer_hr_id);
-  return Boolean(viewer && chosen && viewer === chosen);
+  if (!viewer) return false;
+  return viewer === canonicalHrIdKey(row.interviewer_hr_id) || viewer === canonicalHrIdKey(row.requested_by_hr_id);
 }
 
-/** Sessions (group interviews) belong to the calendar's people, never to an interviewer-only caller. */
+/**
+ * May this caller read THIS request? The same lens as a booking: everyone above the own-only tier
+ * (a Viewer and up — HR, the owner) reads every request; the own-only tier reads only the requests it
+ * is part of — the ones it asked for, and the ones it was chosen to conduct.
+ */
+export function mayReadRequest(
+  caller: InterviewCalendarCaller,
+  row: { interviewer_hr_id: string | null; requested_by_hr_id?: string | null },
+): boolean {
+  const role = calendarRoleFor(caller, "any");
+  if (!role) return false;
+  if (role !== "interviewer" && role !== "requester") return true;
+  const viewer = canonicalHrIdKey(caller.access.hrId);
+  if (!viewer) return false;
+  return viewer === canonicalHrIdKey(row.interviewer_hr_id) || viewer === canonicalHrIdKey(row.requested_by_hr_id);
+}
+
+/**
+ * Sessions (group interviews) belong to the calendar's people (Viewer and up), never to the own-only
+ * tier — an interviewer or a requester, who each see only the interviews they are part of.
+ */
 function mayReadSessions(caller: InterviewCalendarCaller, weekStart: string): boolean {
   const role = calendarRoleFor(caller, weekStart);
-  return role !== null && role !== "interviewer";
+  return role !== null && role !== "interviewer" && role !== "requester";
 }
 
 const NOT_YOURS = "Forbidden: this interview is not one you were chosen to conduct.";
@@ -327,6 +376,23 @@ export function requireCalendarAccess(caller: InterviewCalendarCaller, need: Int
 }
 
 /**
+ * The book gate, plus the one exception the owner asked for (2026-09-23): a District Manager may
+ * "slot himself" — book a standalone interview where HE is the interviewer — even though a requester
+ * seat cannot otherwise book. It is only ever his OWN time: the chosen interviewer must be the caller.
+ * Everyone with real book rights (owner, editor, HR) passes straight through.
+ */
+export function assertMayBookInterview(caller: InterviewCalendarCaller, week: CalendarWeek, interviewerHrId: unknown): void {
+  const role = calendarRoleFor(caller, week);
+  if (roleMeets(role, "book")) return;
+  if ((role === "requester" || role === "interviewer") && isSignedInCaller(caller.access)) {
+    const me = canonicalHrIdKey(caller.access.hrId);
+    const chosen = canonicalHrIdKey(typeof interviewerHrId === "string" ? interviewerHrId : "");
+    if (me && chosen && me === chosen) return;
+  }
+  throw new Error(refusalFor(caller, "book", role, week));
+}
+
+/**
  * Whether a caller may reach into Recruitment from the calendar — find a candidate to book, or add an
  * outside person to Recruitment while booking. Recruitment's own grant, or being an OWNER of the
  * calendar: the owner gave HR Operations "full access and control" of it (2026-09-21), and she holds
@@ -405,6 +471,8 @@ type BookingRow = {
   outcome: string | null;
   outcome_set_by_hr_id: string | null;
   outcome_set_at: string | null;
+  request_id: string | null;
+  requested_by_hr_id: string | null;
   created_by_hr_id: string | null;
   updated_by_hr_id: string | null;
   created_at: string;
@@ -433,7 +501,7 @@ type CommentRow = { id: string; booking_id: string; author_hr_id: string; body: 
 type CandidateRow = { id: string; full_name: string | null; applied_for_job_title: string | null };
 
 const BOOKING_COLUMNS =
-  "id,candidate_id,session_id,starts_at,duration_minutes,platform,zoom_status,zoom_meeting_id,zoom_join_url,zoom_error,notes,external_name,external_phone,external_email,external_cv_file_id,external_cv_file_name,external_cv_mime_type,interviewer_hr_id,outcome,outcome_set_by_hr_id,outcome_set_at,created_by_hr_id,updated_by_hr_id,created_at,updated_at";
+  "id,candidate_id,session_id,starts_at,duration_minutes,platform,zoom_status,zoom_meeting_id,zoom_join_url,zoom_error,notes,external_name,external_phone,external_email,external_cv_file_id,external_cv_file_name,external_cv_mime_type,interviewer_hr_id,outcome,outcome_set_by_hr_id,outcome_set_at,request_id,requested_by_hr_id,created_by_hr_id,updated_by_hr_id,created_at,updated_at";
 
 const SESSION_COLUMNS =
   "id,title,starts_at,duration_minutes,slot_minutes,platform,zoom_status,zoom_meeting_id,zoom_join_url,zoom_error,notes,created_by_hr_id,updated_by_hr_id,created_at,updated_at";
@@ -1116,7 +1184,13 @@ async function resolveInterviewer(value: unknown, current: string | null = null)
 export async function createInterviewBooking(
   caller: InterviewCalendarCaller,
   raw: InterviewBookingRequest,
-  options: { cv?: InterviewCvUpload | null; zoomConfig?: ZoomConfig | null } = {},
+  options: {
+    cv?: InterviewCvUpload | null;
+    zoomConfig?: ZoomConfig | null;
+    requestLink?: { requestId: string; requestedByHrId: string } | null;
+    /** A CV already in storage (from an interview request), carried onto the booking without re-upload. */
+    externalCv?: { fileId: string; fileName: string; mimeType: string | null } | null;
+  } = {},
 ): Promise<InterviewBookingResult> {
   const zoomConfig = options.zoomConfig === undefined ? readZoomConfig() : options.zoomConfig;
   const inSession = typeof raw.sessionId === "string" && raw.sessionId.trim() !== "";
@@ -1143,7 +1217,7 @@ export async function createInterviewBooking(
     input = { ...person, dateKey, durationMinutes: Number(session.slot_minutes), platform: asPlatform(session.platform), startMinutes };
   } else {
     input = validateInterviewBookingInput(raw);
-    requireCalendarAccess(caller, "book", weekStartFor(input.dateKey));
+    assertMayBookInterview(caller, weekStartFor(input.dateKey), raw.interviewerHrId);
   }
   const interviewerHrId = await resolveInterviewer(raw.interviewerHrId);
   const cv = options.cv ? checkCvUpload(options.cv) : null;
@@ -1200,6 +1274,12 @@ export async function createInterviewBooking(
       externalColumns.external_cv_file_id = stored.driveFileId;
       externalColumns.external_cv_file_name = cv.fileName;
       externalColumns.external_cv_mime_type = cv.mimeType;
+    } else if (options.externalCv?.fileId) {
+      // A CV already in storage (from an interview request HR is now giving a time): carry it onto
+      // the booking as-is, without re-uploading — the request item already holds the stored file id.
+      externalColumns.external_cv_file_id = options.externalCv.fileId;
+      externalColumns.external_cv_file_name = options.externalCv.fileName;
+      externalColumns.external_cv_mime_type = options.externalCv.mimeType ?? null;
     }
   } else {
     throw new Error("Choose the candidate to interview.");
@@ -1217,6 +1297,8 @@ export async function createInterviewBooking(
       interviewer_hr_id: interviewerHrId ?? null,
       notes: input.notes,
       platform: input.platform,
+      request_id: options.requestLink?.requestId ?? null,
+      requested_by_hr_id: options.requestLink ? hrIdForStorage(options.requestLink.requestedByHrId) : null,
       session_id: session?.id ?? null,
       starts_at: cairoLocalToUtc(input.dateKey, input.startMinutes).toISOString(),
       updated_by_hr_id: actor,
@@ -1915,9 +1997,9 @@ function assertCvsOpenTo(caller: InterviewCalendarCaller) {
  */
 async function assertCandidateOnCalendar(caller: InterviewCalendarCaller, candidateId: string) {
   if (!isUuid(candidateId)) throw new Error("Candidate not found.");
-  const { data, error } = await recruitmentDb().from(BOOKINGS).select("starts_at,interviewer_hr_id").eq("candidate_id", candidateId).limit(200);
+  const { data, error } = await recruitmentDb().from(BOOKINGS).select("starts_at,interviewer_hr_id,requested_by_hr_id").eq("candidate_id", candidateId).limit(200);
   if (error) throw error;
-  const rows = (data ?? []) as Array<{ starts_at: string; interviewer_hr_id: string | null }>;
+  const rows = (data ?? []) as Array<{ starts_at: string; interviewer_hr_id: string | null; requested_by_hr_id: string | null }>;
   if (rows.length === 0) throw new Error("Forbidden: this candidate is not on the interview calendar.");
   if (!rows.some((row) => mayReadBooking(caller, row))) {
     throw new Error("Forbidden: this candidate is not on the part of the calendar open to you.");
