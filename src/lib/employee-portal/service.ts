@@ -4,6 +4,8 @@ import { canonicalHrIdForDisplay, hrIdsMatch } from "@/lib/hr-id";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import { currentCairoDateParts } from "@/lib/i18n/format";
 import { describeIncompleteWindow, resolveIncentiveWindow } from "@/lib/incentives/semester";
+import { measurePediaAchievement } from "@/lib/incentives/pedia-achievement";
+import { calculatePediaSplitIncentive, pediaSplitApplies } from "@/lib/incentives/pedia-split";
 import {
   canSeeEmployee,
   resolveEmployeeIdentityId,
@@ -288,6 +290,9 @@ type PortalSalesNormalized = {
   month: number | null;
   period: string;
   product: string;
+  /** The product CODE (`GU001`, `LA002`, …) beside the display name — see CanonicalPortalSalesRow
+   * in portal-sales-canonical.ts. The Pedia split incentive keys on it; nothing keys on the name. */
+  productCode: string;
   salesType: string;
   salesUnits: number;
   salesValue: number;
@@ -1405,10 +1410,23 @@ async function getEmployeePortalPayrollDashboard(hrId: string): Promise<Employee
   };
 }
 
+/**
+ * The portal's sales dashboard PLUS the rows it was built from.
+ *
+ * The rows come back because the Pedia split incentive needs a per-PRODUCT reading of the same
+ * data (src/lib/incentives/pedia-achievement.ts), and the dashboard has already folded products
+ * away by the time it is returned. Re-fetching them downstream would re-run the seat-continuity
+ * pass — a real query, not a cached one — for rows this call already holds.
+ */
+type ScopedPortalSales = {
+  dashboard: SalesDashboardData;
+  records: PortalSalesNormalized[];
+};
+
 async function getEmployeePortalSalesDashboard(
   hrId: string | string[] | null,
   filters: PortalSalesFilters = {},
-): Promise<SalesDashboardData> {
+): Promise<ScopedPortalSales> {
   const salesRecords = await fetchPortalSalesRecords(hrId, filters);
   const dashboard = buildPortalSalesDashboardMetrics(salesRecords);
 
@@ -1419,17 +1437,20 @@ async function getEmployeePortalSalesDashboard(
   const territories = Array.from(new Set(salesRecords.map((record) => record.territory).filter(Boolean))).sort();
 
   return {
-    ...dashboard,
-    summary: dashboard.summary ?? {},
-    filters: {
-      families,
-      lines: [],
-      periods,
-      products,
-      salesTypes,
-      territories,
-      managers: [],
+    dashboard: {
+      ...dashboard,
+      summary: dashboard.summary ?? {},
+      filters: {
+        families,
+        lines: [],
+        periods,
+        products,
+        salesTypes,
+        territories,
+        managers: [],
+      },
     },
+    records: salesRecords,
   };
 }
 
@@ -1454,12 +1475,12 @@ async function getScopedEmployeePortalSalesDashboard({
   line: string[];
   salesScope: BusinessScope;
   targetSalesHrIds: string[];
-}): Promise<SalesDashboardData> {
+}): Promise<ScopedPortalSales> {
   if (salesScope === "LINE") {
     const byLine = line.length > 0
       ? await getEmployeePortalSalesDashboard(null, { line })
       : null;
-    if (byLine && salesDashboardHasData(byLine)) return byLine;
+    if (byLine && salesDashboardHasData(byLine.dashboard)) return byLine;
 
     if (targetSalesHrIds.length > 0) {
       logPortalDebug("line sales query returned no rows; falling back to visible HR IDs", {
@@ -1746,11 +1767,17 @@ export async function getEmployeePortalData(
 
   const [payroll, sales, expenses, expenseReports, documents, notifications] = await devSafePromiseAll([
     () => prefetched?.payroll != null ? Promise.resolve(prefetched.payroll) : getEmployeePortalPayrollDashboard(currentHrId),
-    () => prefetched?.sales != null ? Promise.resolve(prefetched.sales) : getScopedEmployeePortalSalesDashboard({
-      line: salesLineFilter,
-      salesScope,
-      targetSalesHrIds,
-    }),
+    // This caller wants the dashboard alone — the per-product rows the scoped loader now also
+    // returns are only needed by the Pedia split, which is computed by the caller that prefetches.
+    async () => {
+      if (prefetched?.sales != null) return prefetched.sales;
+      const scoped = await getScopedEmployeePortalSalesDashboard({
+        line: salesLineFilter,
+        salesScope,
+        targetSalesHrIds,
+      });
+      return scoped.dashboard;
+    },
     async () => {
       if (prefetched?.expenses != null) return prefetched.expenses;
       // Awaited first, deliberately: passing withLivePortalExpenseNames bare to .then() lets
@@ -2054,8 +2081,31 @@ export type MedicalRepPortalData = {
     currentMonthLabel: string;
     currentMonthSales: number;
     currentMonthTarget: number;
-    /** The semester the incentive figures are computed over, e.g. "H2 2026". */
+    /** The semester the incentive figures are computed over, e.g. "Semester 2 2026". */
     incentiveSemesterLabel: string | null;
+    /**
+     * The Pedia split incentive, or NULL on every other line and before Semester 2 2026.
+     *
+     * Null means "this seat is paid on one figure", NOT "a split worth nothing" — a renderer that
+     * reads the amounts without checking for null first would put two EGP 0 halves on a CNS rep's
+     * tab. See src/lib/incentives/pedia-split.ts for the rule.
+     */
+    pediaSplit: {
+      /** Guamusin + Ivyronc over the semester. */
+      satoAchievementPercent: number;
+      satoSales: number;
+      /** 0 means no Sato target loaded for the window — read it before rendering the percentage,
+       * exactly as `incentiveSemesterTarget` is read for the total. */
+      satoTarget: number;
+      /** One month of basic at the Sato achievement. */
+      satoHalfAmount: number;
+      /** One month of basic at the total achievement. */
+      totalHalfAmount: number;
+      /** The two halves added — what the rep is paid, and the same number as `payroll.incentive`. */
+      payoutAmount: number;
+      payoutPercentage: number;
+      semesterTargetIncentive: number;
+    } | null;
     /** Sales and target summed over that semester alone. `incentiveSemesterTarget` is what tells a
      * 0% achievement apart from an absent one: it is 0 for every rep until their first month of the
      * semester is uploaded, and `overviewAchievementPercent` is 0 with it. Render "No target yet",
@@ -2451,6 +2501,8 @@ export async function getPayslipPortalData(access: AccessContext): Promise<Medic
       incentiveSemesterSales: 0,
       incentiveSemesterTarget: 0,
       incentiveWindowNotice: null,
+      // No sales at all, so no split either — null, never two zero halves.
+      pediaSplit: null,
       overviewAchievementPercent: 0,
       overviewSales: 0,
       overviewTarget: 0,
@@ -3421,7 +3473,7 @@ export async function getMedicalRepPortalData(
     }
 
     // Prefetch dashboards to avoid double fetching inside getEmployeePortalData
-    const [salesDashboard, payrollDashboard, historicalExpenses, liveOutstationExpenses, expenseReports] = await devSafePromiseAll([
+    const [scopedSales, payrollDashboard, historicalExpenses, liveOutstationExpenses, expenseReports] = await devSafePromiseAll([
       () => getScopedEmployeePortalSalesDashboard({
         line: salesLineFilter,
         salesScope,
@@ -3443,6 +3495,10 @@ export async function getMedicalRepPortalData(
           : [],
       () => listPayrollExpenseReports({ ...access, hrId: currentHrId }),
     ]);
+    // The dashboard and the rows it was folded from. The rows are what the Pedia split incentive
+    // reads per product; every other consumer wants the dashboard, as before.
+    const salesDashboard = scopedSales.dashboard;
+    const portalSalesRecords = scopedSales.records;
     const expenses = [
       ...dedupeHistoricalExpensesByTrip(historicalExpenses, liveOutstationExpenses),
       ...liveOutstationExpenses,
@@ -3889,6 +3945,42 @@ export async function getMedicalRepPortalData(
     ...fixedIncentiveSalary,
     achievementPercent: allPeriodsAchievementPercent,
   });
+
+  // ── The Pedia split (owner, 2026-09-23) ────────────────────────────────────────────────────────
+  // On the Pedia line, from Semester 2 2026, the semester incentive is paid as TWO halves: one
+  // month of basic scored on SATO achievement (Guamusin + Ivyronc) and one month scored on TOTAL.
+  // src/lib/incentives/pedia-split.ts has the rule and why it is a sum rather than a gate.
+  //
+  // Measured over the SAME window and from the SAME rows as `overviewAchievementPercent` above, so
+  // the total half cannot disagree with the semester achievement already on this payload. It is
+  // computed for every seat whose line and semester qualify — reps, DMs, RSMs and the NSM alike;
+  // there is no role test, because scoring a manager on one figure while his reps are scored on
+  // two would put two rules on one line.
+  //
+  // Everything below stays null for every other line and for a closed semester, and the payload
+  // keeps `incentive` as the single figure in that case — this is additive, not a replacement.
+  const pediaSplitEligible = pediaSplitApplies({
+    line: employee.lineName,
+    semester: incentiveWindow?.semester,
+  });
+  const pediaAchievement = pediaSplitEligible
+    ? measurePediaAchievement({
+        rows: portalSalesRecords,
+        windowPeriods: incentiveWindow?.present ?? [],
+      })
+    : null;
+  const pediaSplitCalc =
+    pediaSplitEligible && pediaAchievement
+      ? calculatePediaSplitIncentive({
+          ...fixedIncentiveSalary,
+          satoAchievementPercent: pediaAchievement.satoAchievementPercent,
+          // The line total this rep is already shown, not a second reading of it.
+          totalAchievementPercent: allPeriodsAchievementPercent,
+        })
+      : null;
+  // What the rep is actually paid. The split replaces the single figure where it applies, and
+  // reduces to exactly that figure whenever the two achievements agree.
+  const effectiveIncentiveAmount = pediaSplitCalc?.payoutAmount ?? incentiveCalc.payoutAmount;
   const workloadExpenseSummary = summarizePayrollExpenses(expenses);
   const activeExpenseEmployeeCount = new Set(expenses.map((expense) => expense.hrId).filter(Boolean)).size;
   const activeExpenseDays = new Set(expenses.map((expense) => expense.date?.slice(0, 10)).filter(Boolean)).size;
@@ -3952,9 +4044,9 @@ export async function getMedicalRepPortalData(
       grossVsLastMonth,
       deductionsVsLastMonth,
       bonus: latestRecord?.bonus ?? 0,
-      incentive: incentiveCalc.payoutAmount,
+      incentive: effectiveIncentiveAmount,
       basicSalary: incentiveCalc.basicSalary,
-      allPeriodsIncentive: incentiveCalc.payoutAmount,
+      allPeriodsIncentive: effectiveIncentiveAmount,
       allPeriodsIncentiveTarget: incentiveCalc.semesterTargetIncentive,
       allPeriodsAchievementPercent: allPeriodsAchievementPercent,
       incentiveTarget: incentiveCalc.semesterTargetIncentive,
@@ -3977,6 +4069,21 @@ export async function getMedicalRepPortalData(
       incentiveSemesterSales: semesterSales,
       incentiveSemesterTarget: semesterTarget,
       incentiveWindowNotice: describeIncompleteWindow(incentiveWindow),
+      // The Pedia split, or null on every other line and in a closed semester. Null is what tells
+      // the tab to render the single-figure presentation — it must never be read as "a split worth
+      // zero", which is why the whole object is absent rather than its numbers being 0.
+      pediaSplit: pediaSplitCalc && pediaAchievement
+        ? {
+            satoAchievementPercent: pediaAchievement.satoAchievementPercent,
+            satoSales: pediaAchievement.satoSales,
+            satoTarget: pediaAchievement.satoTarget,
+            satoHalfAmount: pediaSplitCalc.satoHalfAmount,
+            totalHalfAmount: pediaSplitCalc.totalHalfAmount,
+            payoutAmount: pediaSplitCalc.payoutAmount,
+            payoutPercentage: pediaSplitCalc.payoutPercentage,
+            semesterTargetIncentive: pediaSplitCalc.semesterTargetIncentive,
+          }
+        : null,
       overviewAchievementPercent: Number.isFinite(overviewAchievementPercent) ? overviewAchievementPercent : 0,
       overviewSales,
       overviewTarget,

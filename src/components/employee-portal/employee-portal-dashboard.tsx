@@ -1318,6 +1318,110 @@ function IncentiveSchemeDescriptionCard() {
   );
 }
 
+/**
+ * The Pedia split, shown only to the seats it applies to.
+ *
+ * `data.sales.pediaSplit` is null on every other line and before Semester 2 2026, and this card is
+ * not rendered at all then — the rest of the tab is unchanged for them. The two halves are stated
+ * as two rows that ADD to the figure underneath, because that is the whole point of the rule and a
+ * rep has to be able to check the arithmetic on his own screen.
+ *
+ * Product NAMES, never codes (owner rule). Square edges and the sibling policy card's exact frame.
+ * The rows are a grid that stacks on a phone rather than a table that scrolls sideways.
+ */
+function PediaSplitIncentiveCard({
+  data,
+  isSalaryVisible,
+}: {
+  data: MedicalRepPortalData;
+  isSalaryVisible: boolean;
+}) {
+  const split = data.sales.pediaSplit;
+  if (!split) return null;
+
+  const money = (value: number) => (isSalaryVisible ? egp(value) : maskedMoneyValue);
+  // Same rule the semester card uses: no target behind it means there is no achievement to state,
+  // not an achievement of zero.
+  const satoPercentText = split.satoTarget > 0 ? `${split.satoAchievementPercent.toFixed(1)}%` : "No target yet";
+  const totalPercentText =
+    data.sales.incentiveSemesterTarget > 0 ? `${data.sales.overviewAchievementPercent.toFixed(1)}%` : "No target yet";
+
+  const halves = [
+    {
+      key: "sato",
+      title: "Sato half",
+      products: "Guamusin · Ivyronc",
+      percentText: satoPercentText,
+      amount: split.satoHalfAmount,
+      accent: "border-l-orange-400 bg-orange-50/30",
+    },
+    {
+      key: "total",
+      title: "Total half",
+      products: "All four Pedia products",
+      percentText: totalPercentText,
+      amount: split.totalHalfAmount,
+      accent: "border-l-sky-400 bg-sky-50/30",
+    },
+  ];
+
+  return (
+    <Card className="rounded border border-slate-200 bg-white p-5 shadow-[0_8px_20px_rgba(15,23,42,0.04)]">
+      <div className="mb-4 flex items-center gap-2">
+        <span className="h-1.5 w-1.5 rounded-sm bg-orange-500" />
+        <p className="text-phx-lg font-bold tracking-tight text-slate-900">Your Pedia Incentive</p>
+      </div>
+
+      <div className="mb-4 rounded border border-slate-100 bg-slate-50/60 px-3 py-2.5">
+        <p className="text-phx-2xs font-bold uppercase tracking-[0.14em] text-slate-400">How it is paid</p>
+        <p className="mt-1 text-sm font-bold text-slate-800">Two halves, scored separately</p>
+        <p className="mt-0.5 text-phx-xs leading-relaxed text-slate-500">
+          One month of basic salary is paid on your Sato achievement and one month on your total
+          achievement. Each half is scored on the same policy below, then the two are added.
+        </p>
+      </div>
+
+      <div className="space-y-1">
+        <div className="grid grid-cols-[1fr_auto] gap-2 px-3 pb-1 sm:grid-cols-[1fr_96px_auto]">
+          <p className="text-phx-3xs font-bold uppercase tracking-[0.14em] text-slate-400">Half</p>
+          <p className="hidden text-phx-3xs font-bold uppercase tracking-[0.14em] text-slate-400 sm:block">
+            Achievement
+          </p>
+          <p className="text-right text-phx-3xs font-bold uppercase tracking-[0.14em] text-slate-400">Payout</p>
+        </div>
+        {halves.map((half) => (
+          <div
+            key={half.key}
+            className={`grid grid-cols-[1fr_auto] items-center gap-2 rounded border border-slate-100 border-l-[3px] px-3 py-2 sm:grid-cols-[1fr_96px_auto] ${half.accent}`}
+          >
+            <div className="min-w-0">
+              <p className="text-phx-sm font-bold text-slate-700">{half.title}</p>
+              <p className="text-phx-2xs font-medium leading-snug text-slate-500">{half.products}</p>
+              {/* On a phone the achievement column is folded in here rather than squeezed into a
+                  third column — merging beats shrinking, and beats a sideways scroll. */}
+              <p className="text-phx-2xs font-semibold text-slate-600 sm:hidden">{half.percentText}</p>
+            </div>
+            <p className="hidden text-phx-sm font-bold tabular-nums text-slate-700 sm:block">{half.percentText}</p>
+            <p className="text-right font-mono text-phx-sm font-black tabular-nums text-slate-900">
+              {money(half.amount)}
+            </p>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 rounded border border-slate-200 bg-slate-50 px-3 py-2.5">
+        <p className="text-phx-2xs font-bold uppercase tracking-[0.14em] text-slate-500">Semester incentive</p>
+        <p className="font-mono text-phx-lg font-black tabular-nums text-slate-900">{money(split.payoutAmount)}</p>
+      </div>
+
+      <p className="mt-3 text-phx-2xs font-medium leading-relaxed text-slate-400">
+        Lacto Advanced 1 and Lacto Advanced 2 are not scored on their own — they count toward your
+        total achievement.
+      </p>
+    </Card>
+  );
+}
+
 function IncentiveKpiCards({ data, isSalaryVisible }: { data: MedicalRepPortalData; isSalaryVisible: boolean }) {
   const achievementPercent = data.sales.overviewAchievementPercent;
   // The semester runs Jul-Dec and its first month is only uploaded partway through. Until then the
@@ -1405,6 +1509,11 @@ export function EmployeePortalIncentivePage({ data }: { data: MedicalRepPortalDa
 
       {/* KPI strip - Achievement + Base Salary + Basic Salary */}
       <IncentiveKpiCards data={data} isSalaryVisible={isIncentiveSalaryVisible} />
+
+      {/* Pedia only, from Semester 2 2026 — null everywhere else and the card is then absent. It
+          sits ABOVE the policy card because it is what the rep is actually paid; the policy below
+          is the curve both of its halves are read from. */}
+      <PediaSplitIncentiveCard data={data} isSalaryVisible={isIncentiveSalaryVisible} />
 
       {/* Policy + Simulator side by side */}
       <div className="grid gap-4 xl:grid-cols-[1.2fr_1fr]">

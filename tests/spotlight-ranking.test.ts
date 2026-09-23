@@ -283,7 +283,9 @@ export function runSpotlightRankingTests() {
     assert.deepEqual(windowPeriods({ kind: "quarter", key: "2026-Q3" }), ["2026-07", "2026-08", "2026-09"]);
     assert.deepEqual(windowPeriods({ kind: "semester", key: "2026-S2" }), ["2026-07", "2026-08", "2026-09", "2026-10", "2026-11", "2026-12"]);
     assert.equal(windowLabel({ kind: "quarter", key: "2026-Q3" }), "Q3 2026");
-    assert.equal(windowLabel({ kind: "semester", key: "2026-S2" }), "H2 2026");
+    // "Semester 2 2026", never "H2 2026" — owner rule, 2026-09-23 ("call it semester 1 and 2 and
+    // s1 and s2 not h1 and h2"). The KEY keeps its `2026-S2` form; only the words changed.
+    assert.equal(windowLabel({ kind: "semester", key: "2026-S2" }), "Semester 2 2026");
     assert.equal(windowLabel({ kind: "month", key: "2026-08" }), "August 2026");
 
     // August, judged from inside September: allowed.

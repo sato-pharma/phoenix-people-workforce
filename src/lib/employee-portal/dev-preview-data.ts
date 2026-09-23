@@ -260,12 +260,15 @@ export const employeePortalDevPreviewData = {
     currentMonthTarget: 1180000,
     // A complete semester, so the preview shows the settled presentation rather than the
     // provisional banner — flip incentiveWindowNotice to a string to preview that state.
-    incentiveSemesterLabel: "H1 2026",
+    incentiveSemesterLabel: "Semester 1 2026",
     // 6,380,000 / 5,975,000 = the 106.8% below. A target > 0 is what makes the tab render the
     // percentage at all — set it to 0 to preview the "No target yet" presentation.
     incentiveSemesterSales: 6380000,
     incentiveSemesterTarget: 5975000,
     incentiveWindowNotice: null,
+    // This fixture is a CNS-shaped rep, so no Pedia split. Set it to an object to preview the
+    // two-half presentation — see src/lib/incentives/pedia-split.ts.
+    pediaSplit: null,
     familyContribution: [
       { name: "Cardio", sales: 2380000, salesPercentage: 37, units: 11840, unitsPercentage: 35 },
       { name: "Metabolic", sales: 1960000, salesPercentage: 31, units: 10220, unitsPercentage: 30 },
