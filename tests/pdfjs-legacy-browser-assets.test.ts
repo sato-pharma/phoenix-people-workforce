@@ -29,9 +29,19 @@ export function runPdfjsLegacyBrowserAssetsTests() {
     // And it is exactly the installed version's legacy file, so the API types the viewer imports
     // (pdfjs-dist/legacy/build/pdf.mjs) describe the code that actually runs.
     const legacy = readFileSync(join(pkgRoot, "legacy", "build", file), "utf8");
+
+    // Say WHICH of the two failures this is. When the served copy is merely stale, re-syncing is
+    // the answer. When the INSTALLED build has dropped the polyfill — pdfjs-dist 6 did, calling
+    // Promise.withResolvers with nothing defining it — re-syncing would copy that file into
+    // public/ and break every older phone browser, so the bump itself is what must not land.
+    const installedVersion = String(
+      (require("pdfjs-dist/package.json") as { version?: string }).version ?? "unknown",
+    );
     assert.ok(
       served === legacy,
-      `public/pdfjs/${file} is not the installed pdfjs-dist legacy/build/${file}. Run node scripts/sync-pdfjs-assets.mjs`,
+      legacy.includes("withResolvers:function withResolvers()")
+        ? `public/pdfjs/${file} is not the installed pdfjs-dist legacy/build/${file}. Run node scripts/sync-pdfjs-assets.mjs`
+        : `pdfjs-dist ${installedVersion}'s legacy/build/${file} carries NO Promise.withResolvers polyfill — do NOT run the sync script and do NOT take this version. It reintroduces the 2026-09-14 outage where a CV would not open on any older phone browser. See the pdfjs-dist hold in .github/dependabot.yml`,
     );
   }
 
