@@ -14,6 +14,7 @@
 // behaves exactly as before — a 429 becomes a RetryableEmailError the outbox retries later.
 
 import { RetryableEmailError, parseRetryAfter } from "@/lib/email/email-errors";
+import { splitAddressList } from "@/lib/email/receivable-address";
 
 export type PreparedEmailAttachment = {
   content: string;
@@ -116,6 +117,18 @@ function parseSender(from: string): { email: string; name?: string } {
   return { email: from.trim() };
 }
 
+/**
+ * Resend's `reply_to` takes a STRING or an ARRAY of strings. A Reply-To that names two mailboxes
+ * (a job offer routes replies to HR and to the owner) MUST go as an array — Resend does not split a
+ * single comma-joined string, it would treat the whole value as one malformed address and drop it.
+ * One address still goes as a plain string, so existing single-recipient sends are byte-identical.
+ */
+function resendReplyTo(value: string): string | string[] | undefined {
+  const list = splitAddressList(value);
+  if (list.length === 0) return undefined;
+  return list.length === 1 ? list[0] : list;
+}
+
 export const resendProvider: EmailProvider = {
   name: "resend",
   isConfigured() {
@@ -139,7 +152,8 @@ export const resendProvider: EmailProvider = {
           // camelCase name across. Resend does not reject `replyTo` — it drops it, answers 200 and
           // sends the mail with NO Reply-To header, so every reply to any Phoenix email went to the
           // From address on the sending subdomain, which has no mailbox, and bounced.
-          reply_to: email.replyTo,
+          // An array carries the several mailboxes a job offer replies to; a lone address stays a string.
+          reply_to: resendReplyTo(email.replyTo),
           subject: email.subject,
           text: email.text,
           to: email.to,
@@ -193,6 +207,11 @@ export const brevoProvider: EmailProvider = {
     // Brevo cannot carry a Content-ID, so an inline image goes back to its public https copy here.
     const { attachments: brevoAttachments, html: brevoHtml } = brevoInlineFallback(email);
 
+    // Brevo's transactional API takes a SINGLE replyTo object. When an offer routes replies to more
+    // than one mailbox the primary (Resend, which sends every offer in practice) carries them all;
+    // the backup can honour only the first, which is the HR inbox.
+    const brevoReplyTo = splitAddressList(email.replyTo)[0];
+
     let response: Response;
     try {
       response = await fetch(brevoEndpoint, {
@@ -204,7 +223,7 @@ export const brevoProvider: EmailProvider = {
           subject: email.subject,
           htmlContent: brevoHtml,
           textContent: email.text,
-          replyTo: email.replyTo ? { email: email.replyTo } : undefined,
+          replyTo: brevoReplyTo ? { email: brevoReplyTo } : undefined,
           headers: email.headers,
           attachment:
             brevoAttachments && brevoAttachments.length > 0

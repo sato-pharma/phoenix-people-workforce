@@ -1,5 +1,5 @@
 import { systemLegalEntity } from "@/config/system-settings";
-import { receivingDomain, toReceivableAddress, toReceivableHeader } from "@/lib/email/receivable-address";
+import { receivingDomain, toReceivableHeader, toReceivableList } from "@/lib/email/receivable-address";
 
 /**
  * Who a job offer comes FROM.
@@ -36,14 +36,23 @@ export const OFFER_SENDER_NAME = systemLegalEntity.legalNameEn;
  */
 const fallbackOfferFromEmail = `hr@${receivingDomain}`;
 
-/** Where a candidate's reply lands. The apex domain, like every other Reply-To here. */
-const fallbackOfferReplyTo = "hr@satopharma.com";
+/**
+ * Where a candidate's reply lands. TWO apex mailboxes, comma-separated.
+ *
+ * Owner 2026-09-23, verbatim: "i want the reply to go hr@satopharma.com + omar.anwar@satopharma.com
+ * also". A multi-address Reply-To is what makes a reply reach both at once — the candidate's mail
+ * client fills every address into the To when they hit Reply. Both are live, deliverable mailboxes
+ * on the apex (`hr@` was fixed on the mail server; `omar.anwar@` is the standing admin inbox); the
+ * sending subdomain, which owns none, is mapped off structurally by `toReceivableList` below.
+ */
+const fallbackOfferReplyTo = "hr@satopharma.com, omar.anwar@satopharma.com";
 
 export type OfferSender = {
   /** Fully-formed From header: `Sato Pharma <hr@satopharma.com>`. */
   from: string;
   /** True when the address came from configuration rather than the placeholder default. */
   isConfigured: boolean;
+  /** Reply-To header — one or MORE apex mailboxes, comma-separated, none on the sending subdomain. */
   replyTo: string;
 };
 
@@ -58,7 +67,9 @@ export type OfferSender = {
  */
 export function resolveOfferSender(): OfferSender {
   const configured = (process.env.JOB_OFFER_EMAIL_FROM ?? "").trim();
-  const replyTo = toReceivableAddress((process.env.JOB_OFFER_REPLY_TO ?? "").trim() || fallbackOfferReplyTo);
+  // `JOB_OFFER_REPLY_TO` may name one mailbox or several (comma-separated) — each mapped off the
+  // sending subdomain independently, so a reply reaches every one of them and none bounces.
+  const replyTo = toReceivableList((process.env.JOB_OFFER_REPLY_TO ?? "").trim() || fallbackOfferReplyTo);
 
   if (!configured) {
     return {
