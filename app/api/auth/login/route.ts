@@ -502,6 +502,33 @@ export async function POST(request: Request) {
           warning: supabaseBridgeWarning,
         });
 
+    // A native caller authenticates by the bearer token in the body above — it has no cookie jar we
+    // control and must carry NO cookie. React Native's Android networking persists whatever the login
+    // response Set-Cookies and re-sends it on the next request, and a `phoenix_session` cookie then
+    // rides every mutation: the CSRF guard reads that as a browser session and refuses it, so a second
+    // login and every authenticated write returns `csrf_blocked` (measured against production
+    // 2026-09-23). So we do the opposite of the web path here — actively CLEAR all three cookies
+    // (Max-Age=0), which also removes any cookie a build before this fix left on the device. The token
+    // the app actually uses is already in the JSON body via `nativeSession`.
+    if (nativeSession) {
+      for (const name of [
+        phoenixSessionCookieName,
+        phoenixSupabaseAccessTokenCookieName,
+        phoenixSupabaseRefreshTokenCookieName,
+      ]) {
+        response.cookies.set({
+          httpOnly: true,
+          maxAge: 0,
+          name,
+          path: "/",
+          sameSite: "lax",
+          secure: process.env.NODE_ENV === "production",
+          value: "",
+        });
+      }
+      return response;
+    }
+
     if (supabaseSession) {
       response.cookies.set({
         httpOnly: true,

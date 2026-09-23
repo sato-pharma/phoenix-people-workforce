@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+import { isNativeClientRequest } from "@/lib/auth/native-session";
 import { resolveRootRedirectPath } from "@/lib/auth/root-landing";
 import { phoenixSessionCookieName } from "@/lib/auth/session-token";
 import { CANDIDATE_LINK_PARAM, PORTAL_CANDIDATES_PATH } from "@/lib/recruitment/candidate-page-link";
@@ -219,6 +220,19 @@ function securityProxy(request: NextRequest): NextResponse | null {
   }
 
   if (!requiresCsrfProtection(request)) {
+    return null;
+  }
+
+  // The login route is the one native mutation a stale cookie must not block. It authenticates from
+  // the request BODY (loginId + password), not a session cookie — `resolveAccessContext` never runs
+  // for it, so the ambient-authority risk that `isNativeClientMutationRequest`'s no-cookie clause
+  // guards against is simply absent here. That clause otherwise refuses every login after the first:
+  // React Native's Android networking persists the `phoenix_session` cookie the login response sets
+  // and re-sends it on the next login, and a login carrying that cookie fails the no-cookie clause
+  // (measured against production 2026-09-23 — a rep's second sign-in returned `csrf_blocked`). A
+  // cross-site browser cannot reach this branch: it cannot set `x-phoenix-client` (not CORS-safelisted,
+  // no preflight answered), and the login route runs its own `rejectUntrustedForwardedOrigin` check.
+  if (request.nextUrl.pathname === "/api/auth/login" && isNativeClientRequest(request.headers)) {
     return null;
   }
 

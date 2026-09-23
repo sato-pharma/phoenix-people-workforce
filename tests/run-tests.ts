@@ -1886,6 +1886,7 @@ import { runWeeklyScopeRegionNamesTests } from "./weekly-scope-region-names.test
 import { runNativeSessionBearerTests } from "./native-session-bearer.test.ts";
 import { runSosPhoenixTemplateTests } from "./sos-phoenix-template.test.ts";
 import { runNativeClientCsrfExemptionTests } from "./native-client-csrf-exemption.test.ts";
+import { runNativeLoginCsrfCookieTests } from "./native-login-csrf-cookie.test.ts";
 import { runMobileEvidenceStampParityTests } from "./mobile-evidence-stamp-parity.test.ts";
 import { runMobilePushLinkTests } from "./mobile-push-link.test.ts";
 import { runForceLogoutStopsPhoneAppPushTests } from "./force-logout-stops-phone-app-push.test.ts";
@@ -6600,6 +6601,11 @@ await runTest(
 await runTest(
   "the native app may write, and nothing else gained anything: a request declaring x-phoenix-client with NO session cookie skips the origin check at BOTH refusal sites, while the same header alongside a session cookie is still refused 403 — the cookie clause is what keeps the exemption from becoming 'any request that sets a header skips CSRF'",
   runNativeClientCsrfExemptionTests,
+);
+
+await runTest(
+  "the native app can sign in more than once: a login carrying the session cookie React Native persists is let through (the proxy exempts the login path for a native-declared request), while a cookie-bearing native mutation on any OTHER route stays refused, and the login route clears the cookie for a native caller so the device goes cookie-free",
+  runNativeLoginCsrfCookieTests,
 );
 
 await runTest(
