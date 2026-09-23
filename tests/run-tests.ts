@@ -1855,6 +1855,7 @@ import { runDataBackupWorkbookTests } from "./data-backup-workbook.test.ts";
 import { runBackgroundFolderFilingGateTests } from "./background-folder-filing-gate.test.ts";
 import { runPhoenixOfficialLogoTests } from "./phoenix-official-logo.test.ts";
 import { runPdfjsLegacyBrowserAssetsTests } from "./pdfjs-legacy-browser-assets.test.ts";
+import { runPdfjsBrowserPolyfillTests } from "./pdfjs-browser-polyfill.test.ts";
 import { runCvPreviewFailureReportTests } from "./cv-preview-failure-report.test.ts";
 import { runCvLinkedInAndSelectableTextTests } from "./cv-linkedin-and-selectable-text.test.ts";
 import { runInterviewCalendarTests } from "./interview-calendar.test.ts";
@@ -6423,8 +6424,13 @@ await runTest(
 );
 
 await runTest(
-  "the CV viewer serves pdf.js's legacy build, library and worker both carrying the Promise.withResolvers polyfill, so a CV opens on older phone browsers",
+  "the CV viewer serves pdf.js's legacy build, library and worker both opening with our own Promise.withResolvers polyfill, so a CV opens on older phone browsers whatever the vendor stops polyfilling",
   runPdfjsLegacyBrowserAssetsTests,
+);
+
+await runTest(
+  "that polyfill, run in a realm with the built-ins deleted, really does give an older phone browser a working Promise.withResolvers and Array.prototype.findLast — and leaves a modern browser's own alone",
+  runPdfjsBrowserPolyfillTests,
 );
 
 await runTest(
