@@ -355,4 +355,63 @@ export function runSatoEmailDocumentTests() {
     true,
     "and the extra `table` is what makes this selector outrank .admin-shell td, whichever stylesheet lands last",
   );
+
+  // -- 9. It has to come back before the sender gives up ------------------------------------------
+  //
+  // Shipped on 2026-09-23 with the other two modes' settings, and it did not work once: the owner's
+  // own 410 KB incentive policy took 115 seconds at "medium" effort against a 60-second budget, so
+  // every attempt died on the timeout. What he saw was a spinner for a minute and then a message
+  // about a rewrite he had not asked for.
+  //
+  // At "low" the same document came back in 28.9 s, 37.7 s and 38.6 s across three runs, each time
+  // with all three tables, all eight achievement-curve figures and an empty check list. These two
+  // assertions are what stops a later tidy-up from putting document mode back on the shared
+  // settings, which would return it to failing every single time.
+
+  const polish = readFileSync(path.join(REPO_ROOT, "src/lib/sato-email/polish.ts"), "utf8");
+
+  assert.equal(
+    /SATO_ASSIST_EFFORT\s*=\s*\{[^}]*document:\s*"low"/.test(polish),
+    true,
+    "\ud83d\udd34 document mode must think at LOW effort \u2014 at medium it took 115s against a 60s budget and timed out every time",
+  );
+  assert.equal(
+    /timeoutMs:\s*mode === "document" \? SATO_DOCUMENT_BUDGET_MS/.test(polish),
+    true,
+    "\ud83d\udd34 and it must carry its own budget \u2014 a whole policy read and rewritten does not fit the 60s email budget",
+  );
+  assert.equal(
+    /const SATO_DOCUMENT_BUDGET_MS = 120_000;/.test(polish),
+    true,
+    "120s is three times the slowest run measured; a smaller number puts the timeout back in the normal path",
+  );
+
+  // The message the sender actually reads. "The rewrite took too long" on a document he uploaded
+  // names something he never pressed, which is how a slow answer reads as a broken feature.
+  assert.equal(
+    polish.includes('const what = mode === "document" ? "The document" : mode === "write" ? "The draft" : "The rewrite";'),
+    true,
+    "every assistant failure must name what the sender pressed, not always the rewrite",
+  );
+  assert.equal(
+    /\$\{what\} took too long\. Try again\./.test(polish),
+    true,
+    "including the timeout, which is the one he has actually seen",
+  );
+
+  // -- 10. And the wait has to look like progress -------------------------------------------------
+  //
+  // Half a minute of a still spinner reads as broken. The seconds counter is the whole of the
+  // answer to "its taking hilarious long time" that speed alone could not give.
+  const composer = readFileSync(path.join(REPO_ROOT, "src/components/admin/sato-email-composer.tsx"), "utf8");
+  assert.equal(
+    composer.includes('counted("Reading the document")'),
+    true,
+    "the document button must count the seconds while it works \u2014 a still spinner reads as a hang",
+  );
+  assert.equal(
+    /const counted = \(label: string\) => \(elapsed > 0 \? `\$\{label\} \u00b7 \$\{elapsed\}s` : label\);/.test(composer),
+    true,
+    "and all three buttons share one counter, because the sender cannot know which mode is the slow one",
+  );
 }

@@ -566,7 +566,36 @@ const polishTextFormat = {
   },
 } as const;
 
-function polishErrorFromOpenAi(error: PhoenixOpenAiError) {
+/**
+ * 🔴 HOW HARD THE MODEL THINKS, AND HOW LONG IT IS GIVEN — both measured, not guessed.
+ *
+ * Document mode was shipped on the same "medium" effort as the other two and it did not work: on
+ * the owner's own 410 KB incentive policy the call took **115 seconds** against a 60-second budget,
+ * so every attempt died on the timeout and he was shown "The rewrite took too long" after a minute
+ * of watching a spinner (his words, 2026-09-23: "its taking hilarious long time").
+ *
+ * The same document at **low** effort, measured three times: 28.9 s, 37.7 s, 38.6 s — and the
+ * output is not worse. Each run rebuilt all three tables, carried every one of the eight
+ * achievement-curve figures (46,200 · 36,750 · 27,300 · 24,150 · 21,000 · 15,750 · 12,600 · 10,500)
+ * and returned an EMPTY check list, meaning nothing in the draft was unverifiable against the
+ * paper. That is the whole quality bar for this mode, and low effort clears it three times faster.
+ *
+ * Why low is the right effort HERE and not for the other two: the facts are already on the page.
+ * Document mode transcribes and arranges what it was handed. Write mode invents the letter from one
+ * line of instruction, and rewrite mode has to hold an existing email's meaning steady — those are
+ * judgement, and they keep medium.
+ *
+ * The budget is raised anyway, because a longer or denser document is slower than this one and a
+ * timeout must remain a real ceiling rather than the normal outcome. 120 s against a measured 39 s
+ * is three times the worst run seen.
+ */
+const SATO_ASSIST_EFFORT = { document: "low", rewrite: "medium", write: "medium" } as const;
+const SATO_DOCUMENT_BUDGET_MS = 120_000;
+
+function polishErrorFromOpenAi(error: PhoenixOpenAiError, mode: SatoAssistMode) {
+  // Every one of these reaches the sender verbatim, so it has to name what HE pressed. "The rewrite
+  // took too long" on a document he uploaded reads as a bug in something he never touched.
+  const what = mode === "document" ? "The document" : mode === "write" ? "The draft" : "The rewrite";
   switch (error.code) {
     case "not_configured":
       return new SatoPolishError("polish_not_configured", "Rewriting is not configured on this server yet.");
@@ -578,10 +607,10 @@ function polishErrorFromOpenAi(error: PhoenixOpenAiError) {
     case "rate_limited":
       return new SatoPolishError("polish_rate_limited", "The writing service is busy. Wait a moment and try again.");
     case "timeout":
-      return new SatoPolishError("polish_failed", "The rewrite took too long. Try again.");
+      return new SatoPolishError("polish_failed", `${what} took too long. Try again.`);
     case "auth_failed":
     case "failed":
-      return new SatoPolishError("polish_failed", "The rewrite could not be produced. Try again.");
+      return new SatoPolishError("polish_failed", `${what} could not be produced. Try again.`);
   }
 }
 
@@ -713,14 +742,15 @@ export async function polishSatoEmailDraft(input: SatoPolishRequest): Promise<Sa
       maxOutputTokens: mode === "rewrite" ? 6_000 : 9_000,
       model: resolveOpenAiCopilotModel(),
       purpose: mode === "document" ? "sato-email-document" : mode === "write" ? "sato-email-write" : "sato-email-polish",
-      reasoning: { effort: "medium" },
+      reasoning: { effort: SATO_ASSIST_EFFORT[mode] },
       text: polishTextFormat,
-      // The copilot model at medium effort routinely outruns the 25s nano-tier default.
-      timeoutMs: OPENAI_ROUTE_BUDGET_MS,
+      // The copilot model outruns the 25s nano-tier default in every mode; document mode outruns
+      // the 60s route budget too, which is why it has its own. See SATO_ASSIST_EFFORT above.
+      timeoutMs: mode === "document" ? SATO_DOCUMENT_BUDGET_MS : OPENAI_ROUTE_BUDGET_MS,
     });
     outputText = response.outputText;
   } catch (error) {
-    if (error instanceof PhoenixOpenAiError) throw polishErrorFromOpenAi(error);
+    if (error instanceof PhoenixOpenAiError) throw polishErrorFromOpenAi(error, mode);
     throw new SatoPolishError("polish_failed", "The draft could not be produced. Try again.");
   }
 
