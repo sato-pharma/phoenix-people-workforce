@@ -289,6 +289,11 @@ export const accessRegistry = [
   // read because it changes nothing. It calls a model to rewrite the sender's own wording and
   // hands it straight back to his screen — no row is written, no mail leaves.
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/admin/sato-email/polish", permission: null, guard: "domain-helper", csrfRequired: true }),
+  // `document` is `polish` with the facts coming out of a file the sender uploaded — he attaches a
+  // paper and it writes the email that carries it. A read for the same reason: the file is read in
+  // memory, nothing is stored, no row is written and no mail leaves. It is a multipart POST, so the
+  // same-origin check matters more here than anywhere else on this domain.
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/admin/sato-email/document", permission: null, guard: "domain-helper", csrfRequired: true }),
   // `media` is the upload behind the attach button and the toolbar Insert image, classified as a
   // mutation because it writes an object and a row — and because an `inline` upload mints a
   // PERMANENT PUBLIC ADDRESS for that picture (served by the token route above), which is a thing

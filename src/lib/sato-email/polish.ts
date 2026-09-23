@@ -1,5 +1,5 @@
 /**
- * The Sato composer's assistant. It has TWO modes, and what separates them is where the facts are
+ * The Sato composer's assistant. It has THREE modes, and what separates them is where the facts are
  * allowed to come from.
  *
  * **Rewrite** — owner 2026-09-12: "i write what i want and it enhance rephrase more to the point
@@ -16,10 +16,19 @@
  * is handed back to him as a CHECK, listed on screen beside the draft — a refusal there would make
  * the feature useless, and silence would make it dangerous.
  *
- * 🔴 WHAT NEITHER MODE MAY DO. This is the one screen that mails a whole distribution list at once,
- * so a minted URL — href or img src alike — is refused outright in both modes: it reaches the reader
- * without a click and is the one fabrication shaped like an attack. And in neither mode may the
- * reader learn a model was involved (owner rule 2026-08-04).
+ * **Document** — owner 2026-09-23: "i want to have an option to for example upload pdf and the
+ * system absorb and extract the data from the pdf and make it as email", attaching the Semester 2
+ * 2026 incentive policy. He uploads a paper; this writes the email that carries it. The document is
+ * HIS — he chose it and uploaded it seconds ago — so its words, figures and addresses are his to
+ * use, and that is the whole of what this mode may say. A figure that is in neither the document
+ * nor his instruction is reported as a CHECK exactly as in write mode. When the file turns out to be
+ * a picture with no text in it, the page itself goes to the model and the check list says so in one
+ * line, because nothing in the draft can be compared with anything.
+ *
+ * 🔴 WHAT NO MODE MAY DO. This is the one screen that mails a whole distribution list at once,
+ * so a minted URL — href or img src alike — is refused outright in all three: it reaches the reader
+ * without a click and is the one fabrication shaped like an attack. And in no mode may the reader
+ * learn a model was involved (owner rule 2026-08-04).
  *
  * Both modes FORMAT freely within the composer's own toolbox (`src/lib/email/toolbar-tools.ts`) —
  * bold, a list, an Arabic paragraph's direction, and a table of whatever shape the sender asked for.
@@ -39,6 +48,7 @@ import {
   resolveOpenAiCopilotModel,
 } from "@/lib/ai/openai-client";
 import { sanitizeEmailTemplateHtml } from "@/lib/email/email-safety";
+import type { SatoAssistSource } from "@/lib/sato-email/source-document";
 import { toolboxPromptLines } from "@/lib/email/toolbar-tools";
 
 /** The composer's own subject cap, so a rewrite can never produce a draft the send route rejects. */
@@ -54,11 +64,16 @@ export const SATO_POLISH_MAX_BODY_CHARS = 40_000;
  */
 export const SATO_ASSIST_MAX_INSTRUCTION_CHARS = 4_000;
 
-/** Where the facts come from: the sender's draft (rewrite) or the sender's instruction (write). */
-export type SatoAssistMode = "rewrite" | "write";
+/**
+ * Where the facts come from: the sender's draft (rewrite), his instruction (write), or the document
+ * he uploaded (document).
+ */
+export type SatoAssistMode = "rewrite" | "write" | "document";
 
 export function parseSatoAssistMode(value: unknown): SatoAssistMode {
-  return value === "write" ? "write" : "rewrite";
+  if (value === "write") return "write";
+  if (value === "document") return "document";
+  return "rewrite";
 }
 
 export type SatoPolishRequest = {
@@ -69,6 +84,11 @@ export type SatoPolishRequest = {
    */
   instruction?: string;
   mode?: SatoAssistMode;
+  /**
+   * Document mode: the file the sender uploaded, already read by `read-source-document.ts`. Its
+   * words join his own writing, so every figure in it is a figure he is allowed to state.
+   */
+  source?: SatoAssistSource;
   subject: string;
 };
 
@@ -207,7 +227,13 @@ const VOICE_RULES: ReadonlyArray<{ label: string; pattern: RegExp }> = [
   },
 ];
 
-export type SatoAssistSender = { bodyHtml: string; instruction?: string; subject: string };
+export type SatoAssistSender = {
+  bodyHtml: string;
+  instruction?: string;
+  /** Document mode: the words read out of the file he uploaded. His document, so his facts. */
+  sourceText?: string;
+  subject: string;
+};
 
 /**
  * Everything the sender himself wrote, as words.
@@ -217,7 +243,14 @@ export type SatoAssistSender = { bodyHtml: string; instruction?: string; subject
  * typed into the box came back refused as a figure nobody wrote.
  */
 export function senderWriting(sender: SatoAssistSender): string {
-  return [sender.subject, emailPlainText(sender.bodyHtml), String(sender.instruction ?? "")]
+  return [
+    sender.subject,
+    emailPlainText(sender.bodyHtml),
+    String(sender.instruction ?? ""),
+    // 🔴 AND SO DOES THE DOCUMENT. He chose the file and uploaded it on this screen; refusing the
+    // policy's own 21,000 as "a figure nobody wrote" would refuse every draft this mode produces.
+    String(sender.sourceText ?? ""),
+  ]
     .map((part) => String(part ?? "").trim())
     .filter(Boolean)
     .join("\n");
@@ -268,7 +301,12 @@ export function findPolishViolations(
     if (lost.length > 0) violations.push(`gaps it filled in by itself (${lost.join(", ")})`);
   }
 
-  const allowedLinks = new Set([...linkTargets(sender.bodyHtml), ...writtenUrls(String(sender.instruction ?? ""))]);
+  const allowedLinks = new Set([
+    ...linkTargets(sender.bodyHtml),
+    ...writtenUrls(String(sender.instruction ?? "")),
+    // An address printed in his document is an address he handed over, exactly like one he typed.
+    ...writtenUrls(String(sender.sourceText ?? "")),
+  ]);
   const mintedLinks = Array.from(new Set(linkTargets(candidate.bodyHtml).filter((href) => !allowedLinks.has(href))));
   if (mintedLinks.length > 0) violations.push(`links nobody wrote (${mintedLinks.join(", ")})`);
 
@@ -308,6 +346,26 @@ export function buildPolishPrompt(input: SatoPolishRequest): string {
       : String(input.instruction ?? "").replace(/\s+/g, " ").trim().slice(0, SATO_ASSIST_MAX_INSTRUCTION_CHARS);
   const subject = String(input.subject ?? "").trim();
   const body = String(input.bodyHtml ?? "").slice(0, SATO_POLISH_MAX_BODY_CHARS);
+
+  if (mode === "document") {
+    const source = input.source;
+    const sourceText = String(source?.text ?? "").trim();
+    return [
+      `The document the sender uploaded: ${source?.fileName ?? "the file"}`,
+      sourceText
+        ? `What the document says — this, and his request below, are the ONLY facts you may state:\n${sourceText}`
+        : "The document carries no text of its own — it is attached to this request as a file. Read it, and state nothing it does not say.",
+      instruction
+        ? `What he asked you to do with it:\n${instruction}`
+        : "He did not say what to do with it — write the email that tells colleagues what this document says.",
+      subject
+        ? `Subject he has already typed (keep it unless it no longer fits):\n${subject}`
+        : "Subject: he has not typed one — write it.",
+      emailPlainText(body) ? `What is already in the body (build on it, do not throw it away):\n${body}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+  }
 
   if (mode === "write") {
     return [
@@ -438,6 +496,50 @@ export const SATO_WRITE_INSTRUCTIONS = [
   ].join("\n"),
 ].join("\n\n");
 
+/**
+ * Document mode's prompt — the assistant the owner asked for on 2026-09-23.
+ *
+ * The contract is write mode's with the source moved: the facts come from the PAPER, and the email
+ * is what carries it to people who have not read it. Two rules do the work here — the one about not
+ * reproducing the document (an email that is the document retyped is worth nothing to the reader)
+ * and the one about figures, which must arrive exactly as the document prints them. This is a
+ * pharmaceutical company's incentive policy: a rounded percentage is a wrong percentage.
+ */
+export const SATO_DOCUMENT_INSTRUCTIONS = [
+  "You write an internal email for Sato Pharma, an Egyptian pharmaceutical company, inside its HR system. A named colleague has uploaded a document and wants the email that carries it to colleagues who have not read it. It will be emailed under the company's own identity, after he has read it.",
+  [
+    "WHAT YOU PRODUCE:",
+    "- The complete email — subject and body — that says what this document decides and what it means for the reader.",
+    "- Not the document retyped. Lead with what it decides or announces, then what the reader must do, then the detail that matters. A long document still gives a short email: the document itself is the place for everything. The one thing brevity never removes is a table of figures — see the rule below.",
+    "- The figures that matter, exactly as the document states them. Never round one, never convert one into other units, never recalculate one, and never state a total the document does not state.",
+    "🔴 - A TABLE IN THE DOCUMENT ARRIVES AS A TABLE. A rate card, an achievement curve, a band, a schedule, a grid of outcomes — anything the paper sets out in rows and columns is rebuilt as a table with a header row, one row per line, figure for figure, using the toolbox table markup below. Never flatten one into a list or a paragraph: the rows ARE the rule, and a reader who has to reassemble them from prose will get it wrong. Keep the document's own column headings, and leave out only a column the reader genuinely does not need.",
+    "- Where the document has no table, do not invent one. Prose stays prose.",
+    "- A subject taken from what the document is, in a few words. Sentence case, never Title Case, never a teaser.",
+    "- Formal corporate register: measured, impersonal, confident. No slang, no exclamation marks, no emoji, no hype.",
+    "- Write in the document's language. An Arabic document gives an Arabic email; a bilingual document gives each language its own paragraph. If he asked for a different language, follow his request.",
+  ].join("\n"),
+  [
+    "🔴 THE ONE RULE THAT MATTERS — EVERYTHING YOU SAY COMES FROM THE DOCUMENT:",
+    "- Every fact, figure, date, name, percentage and condition must be in the document he uploaded or in his own request. Nothing else exists.",
+    "- Something the document leaves open — who it applies to, when it starts, who to ask — is written as a [square bracket] gap in the place it belongs, never as a guess.",
+    "- Never say the document is attached, enclosed or linked. He decides separately whether to attach it, and an email promising an attachment he did not add is wrong.",
+    "- Never mint a link or an image address. Use a URL only if it is printed in the document or he wrote it himself.",
+    "- Never add a greeting or a sign-off. The email design prints the company's own frame around your text, and he signs it in a separate field.",
+    "- Never carry over the document's header, footer, page numbers or the note saying who published it. Those belong to the paper, not to the email.",
+    "- Never mention that this text was written, generated or assisted by anything, and never refer to yourself.",
+  ].join("\n"),
+  TOOLBOX_BLOCK,
+  TOOLBOX_USE_BLOCK,
+  [
+    "Also return a short list of what you did, in plain words, at most five items. Examples of the right register:",
+    "- Led with the change to the incentive, which is what the paper decides.",
+    "- Kept the achievement table as it is printed, figure for figure.",
+    "- Left out the worked example, which is in the document itself.",
+    "- Left [who this applies to] as a gap for you to fill.",
+    "Name anything important you left out, and every gap you left.",
+  ].join("\n"),
+].join("\n\n");
+
 const polishTextFormat = {
   format: {
     name: "sato_email_polish",
@@ -511,6 +613,26 @@ function parsePolish(text: string): { bodyHtml: string; changes: string[]; subje
   throw new SatoPolishError("polish_failed", "The rewrite came back in an unreadable format.");
 }
 
+function checkList(
+  mode: SatoAssistMode,
+  source: SatoAssistSource | undefined,
+  candidate: { bodyHtml: string; subject: string },
+  sender: SatoAssistSender,
+): string[] {
+  if (mode === "rewrite") return [];
+  if (mode === "document" && source?.route === "picture") {
+    return [
+      "There are no words in that file, so the figures in this draft could not be checked against it. Read every number against the document before you send.",
+    ];
+  }
+  return unverifiedFigures(candidate, sender).map(
+    (figure) =>
+      mode === "document"
+        ? `${figure} — this figure is not in the document. Confirm it, or replace it with a [gap] to fill.`
+        : `${figure} — you did not write this figure. Confirm it, or replace it with a [gap] to fill.`,
+  );
+}
+
 /**
  * Writes or rewrites one draft and hands it straight back to the sender to look at. Writes nothing,
  * sends nothing, and decides nothing.
@@ -522,8 +644,14 @@ export async function polishSatoEmailDraft(input: SatoPolishRequest): Promise<Sa
   const instruction = String(input.instruction ?? "").trim();
 
   // Each mode has exactly one thing it cannot start without: rewrite needs an email, write needs a
-  // request. An empty body is NORMAL in write mode — that is the whole point of it.
-  if (mode === "write") {
+  // request, document needs the document. An empty body is NORMAL in the other two — that is the
+  // whole point of them.
+  const source = mode === "document" ? input.source : undefined;
+  if (mode === "document") {
+    if (!source || (!String(source.text ?? "").trim() && !source.file)) {
+      throw new SatoPolishError("polish_failed", "Upload the document first.");
+    }
+  } else if (mode === "write") {
     if (!instruction) throw new SatoPolishError("polish_failed", "Tell it what to write first.");
   } else if (!emailPlainText(bodyHtml)) {
     throw new SatoPolishError("polish_failed", "Write the email in your own words first, or use Write it.");
@@ -532,7 +660,38 @@ export async function polishSatoEmailDraft(input: SatoPolishRequest): Promise<Sa
     throw new SatoPolishError("polish_not_configured", "The assistant is not configured on this server yet.");
   }
 
-  const prompt = buildPolishPrompt({ ...input, bodyHtml, instruction, mode, subject });
+  const prompt = buildPolishPrompt({ ...input, bodyHtml, instruction, mode, source, subject });
+
+  // A document that turned out to be a picture goes to the model whole, exactly as the CV intake
+  // sends a scanned CV: `input_file` for a PDF so the model renders the pages itself, `input_image`
+  // for a photograph. The prompt above still travels with it — it carries his request, his subject
+  // and whatever is already in the body.
+  const modelInput =
+    source?.file && source.route === "picture"
+      ? [
+          {
+            content: [
+              { text: prompt, type: "input_text" as const },
+              source.file.contentType === "application/pdf"
+                ? {
+                    // A filename is required alongside inline file_data, and the model picks its
+                    // reader from the extension — never the empty string a typeless upload carries.
+                    file_data: `data:application/pdf;base64,${source.file.data}`,
+                    filename: source.fileName || "document.pdf",
+                    type: "input_file" as const,
+                  }
+                : {
+                    // "high" detail for the same reason as the scanned CV path: this is a text-dense
+                    // page, and downsampling is what turns 90% into 80%.
+                    detail: "high" as const,
+                    image_url: `data:${source.file.contentType};base64,${source.file.data}`,
+                    type: "input_image" as const,
+                  },
+            ],
+            role: "user" as const,
+          },
+        ]
+      : prompt;
 
   let outputText: string;
   try {
@@ -542,13 +701,18 @@ export async function polishSatoEmailDraft(input: SatoPolishRequest): Promise<Sa
     // the right fit for holding a multi-paragraph announcement's meaning steady while rewriting it,
     // nor for writing a job offer that has to leave the unknowns as gaps rather than fill them.
     const response = await createOpenAiResponseText({
-      input: prompt,
-      instructions: mode === "write" ? SATO_WRITE_INSTRUCTIONS : SATO_POLISH_INSTRUCTIONS,
-      // Write mode composes a whole letter, sometimes bilingual, sometimes with a table — the
-      // rewrite budget is measured against an email that already exists.
-      maxOutputTokens: mode === "write" ? 9_000 : 6_000,
+      input: modelInput,
+      instructions:
+        mode === "document"
+          ? SATO_DOCUMENT_INSTRUCTIONS
+          : mode === "write"
+            ? SATO_WRITE_INSTRUCTIONS
+            : SATO_POLISH_INSTRUCTIONS,
+      // Write and document modes compose a whole letter, sometimes bilingual, sometimes with a
+      // table — the rewrite budget is measured against an email that already exists.
+      maxOutputTokens: mode === "rewrite" ? 6_000 : 9_000,
       model: resolveOpenAiCopilotModel(),
-      purpose: mode === "write" ? "sato-email-write" : "sato-email-polish",
+      purpose: mode === "document" ? "sato-email-document" : mode === "write" ? "sato-email-write" : "sato-email-polish",
       reasoning: { effort: "medium" },
       text: polishTextFormat,
       // The copilot model at medium effort routinely outruns the 25s nano-tier default.
@@ -568,29 +732,28 @@ export async function polishSatoEmailDraft(input: SatoPolishRequest): Promise<Sa
     subject: cleanPolishedSubject(parsed.subject),
   };
 
-  const sender = { bodyHtml, instruction, subject };
+  const sender = { bodyHtml, instruction, sourceText: source?.text ?? "", subject };
   const violations = findPolishViolations(candidate, sender, mode);
   if (violations.length > 0) {
     throw new SatoPolishError(
       "polish_failed",
-      mode === "write"
-        ? `The draft was rejected (${violations.join("; ")}). Try again, or write it yourself.`
-        : `The rewrite was rejected because it changed the facts, not just the wording (${violations.join("; ")}). Try again, or send your own words.`,
+      mode === "rewrite"
+        ? `The rewrite was rejected because it changed the facts, not just the wording (${violations.join("; ")}). Try again, or send your own words.`
+        : `The draft was rejected (${violations.join("; ")}). Try again, or write it yourself.`,
     );
   }
 
   return {
     bodyHtml: candidate.bodyHtml,
     changes: parsed.changes.map((line) => line.replace(/\s+/g, " ").trim()).filter(Boolean),
-    // Rewrite mode refuses an invented figure outright, so by here it has none to report. Write
-    // mode names them instead — a bare list of digits would tell the sender nothing, so each one
+    // Rewrite mode refuses an invented figure outright, so by here it has none to report. The other
+    // two name them instead — a bare list of digits would tell the sender nothing, so each one
     // arrives as the sentence he needs to act on.
-    checks:
-      mode === "write"
-        ? unverifiedFigures(candidate, sender).map(
-            (figure) => `${figure} — you did not write this figure. Confirm it, or replace it with a [gap] to fill.`,
-          )
-        : [],
+    //
+    // 🔴 A DOCUMENT WITH NO TEXT IN IT CANNOT BE CHECKED AT ALL. Nothing was read out of the file,
+    // so every figure in the draft is unverifiable and listing them one by one would say the same
+    // thing eight times. One honest line replaces the list.
+    checks: checkList(mode, source, candidate, sender),
     mode,
     subject: candidate.subject,
   };
