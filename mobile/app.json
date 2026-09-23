@@ -8,6 +8,15 @@
     "scheme": "phoenix",
     "userInterfaceStyle": "automatic",
     "backgroundColor": "#f7f6f3",
+    "runtimeVersion": {
+      "policy": "fingerprint"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/59942570-1f74-4f9c-8ff0-949f28d747cd",
+      "enabled": true,
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0
+    },
     "android": {
       "package": "com.satopharma.phoenixworkforce",
       "versionCode": 1,
