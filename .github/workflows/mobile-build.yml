@@ -1,0 +1,126 @@
+# Build a fresh native Android app on EAS, on demand.
+#
+# WHY THIS EXISTS, SEPARATE FROM Mobile OTA: an OTA (`eas update`) only reaches a
+# phone that ALREADY runs a matching native build — same fingerprint runtimeVersion,
+# and an app that actually carries the expo-updates client. A phone on an older build
+# (for example one from before expo-updates was added) can NEVER receive an OTA, and a
+# native-dependency change bumps the fingerprint so old builds stop matching. Those
+# cases need a real rebuild, which is what this workflow produces.
+#
+# It is MANUAL (workflow_dispatch) on purpose: a native build is slow and costs EAS
+# build minutes, and most day-to-day JavaScript changes ship over OTA for free. Run
+# this only when a fresh install is needed — a new tester's phone, a fingerprint bump,
+# or a device that has fallen off the OTA path.
+#
+# DEFAULT PROFILE `preview`: eas.json's `preview` profile builds an installable .apk
+# with internal distribution (channel `preview`) — EAS returns a link the owner opens
+# on his phone to sideload it directly, no Play Store. The `production` profile builds
+# a store .aab instead, which is NOT directly installable; pick it only for a Play
+# Store submission.
+#
+# FAIL-SAFE: like Mobile OTA, every real step is gated on the EXPO_TOKEN secret being
+# present, so a run without the token no-ops with a clear message instead of failing.
+name: Mobile build
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: "EAS build profile (preview = installable APK, production = store AAB)"
+        type: choice
+        default: preview
+        options:
+          - preview
+          - production
+
+# Node version matches the mobile job in ci.yml and Mobile OTA. Keep them in step.
+env:
+  CI_NODE_VERSION: "24"
+
+# One native build per ref at a time; let an in-flight build finish.
+concurrency:
+  group: mobile-build-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build the Android app on EAS
+    runs-on: ubuntu-latest
+    steps:
+      # A secret cannot be used in an `if:` expression, so surface its presence as
+      # a plain output that later steps CAN gate on.
+      - name: Check the EXPO_TOKEN secret is set
+        id: guard
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [ -n "$EXPO_TOKEN" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+            echo "EXPO_TOKEN is set — will start the EAS build."
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "EXPO_TOKEN is not set — skipping the build."
+            echo "Set it with: gh secret set EXPO_TOKEN --repo ${{ github.repository }}"
+          fi
+
+      - name: Check out the repository
+        if: steps.guard.outputs.present == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Node.js
+        if: steps.guard.outputs.present == 'true'
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: ${{ env.CI_NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      # Same as ci.yml's mobile job: install from the lockfile exactly, no flags.
+      - name: Install mobile dependencies from the lockfile
+        if: steps.guard.outputs.present == 'true'
+        working-directory: mobile
+        run: npm ci
+
+      # `eas build` waits for the EAS build to finish, then --json prints the build
+      # record (including the downloadable artifact URL) to stdout. The profile comes
+      # from the dispatch input through an env var, never inlined, so it cannot inject
+      # shell; it is also constrained to the two choices above.
+      - name: Build on EAS
+        if: steps.guard.outputs.present == 'true'
+        working-directory: mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          BUILD_PROFILE: ${{ inputs.profile }}
+        run: |
+          npx eas-cli@latest build \
+            --platform android \
+            --profile "$BUILD_PROFILE" \
+            --non-interactive \
+            --json > build-result.json
+          cat build-result.json
+
+      # Surface the install/download link in the job summary so the owner can open it
+      # straight from the run without digging through the log or the EAS dashboard.
+      - name: Publish the build link to the job summary
+        if: steps.guard.outputs.present == 'true'
+        working-directory: mobile
+        run: |
+          APK_URL="$(jq -r '.[0].artifacts.applicationArchiveUrl // .[0].artifacts.buildUrl // empty' build-result.json)"
+          BUILD_ID="$(jq -r '.[0].id // empty' build-result.json)"
+          {
+            echo "## Mobile build ready"
+            echo ""
+            echo "- Profile: \`${BUILD_PROFILE:-preview}\`"
+            if [ -n "$BUILD_ID" ]; then
+              echo "- EAS build page: https://expo.dev/accounts/phoenix-sato-crm/projects/phoenix-workforce/builds/$BUILD_ID"
+            fi
+            if [ -n "$APK_URL" ]; then
+              echo "- Direct download: $APK_URL"
+              echo ""
+              echo "Open the link above on the Android phone, download, and install it."
+            else
+              echo "- No artifact URL found in the build result — check the EAS build page above."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          BUILD_PROFILE: ${{ inputs.profile }}

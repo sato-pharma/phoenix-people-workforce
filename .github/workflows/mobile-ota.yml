@@ -30,7 +30,7 @@ concurrency:
 
 jobs:
   publish:
-    name: Publish OTA to the production channel
+    name: Publish OTA to the preview and production channels
     runs-on: ubuntu-latest
     steps:
       # A secret cannot be used in an `if:` expression, so surface its presence as
@@ -67,12 +67,24 @@ jobs:
         working-directory: mobile
         run: npm ci
 
-      # The commit subject is passed through an env var, never inlined into the
-      # command, so a crafted commit message cannot inject shell.
-      - name: Publish the OTA update
+      # Publish to BOTH update branches so every installed build is served: the
+      # sideloaded internal APK (preview profile → channel `preview`, the build the
+      # owner tests on his own phone) AND a future Play Store build (production
+      # profile → channel `production`). A channel and a branch of the same name are
+      # auto-linked by EAS, so one `eas update --branch <name>` reaches that channel.
+      # Publishing only to `production` — as this workflow did before — never reached
+      # the internal test build, so a mobile change looked shipped while his phone
+      # stayed stale until a full rebuild. The commit subject is passed through an
+      # env var, never inlined into the command, so a crafted commit message cannot
+      # inject shell.
+      - name: Publish the OTA update to both channels
         if: steps.guard.outputs.present == 'true'
         working-directory: mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           OTA_MESSAGE: ${{ github.event.head_commit.message }}
-        run: npx eas-cli@latest update --branch production --message "$OTA_MESSAGE" --non-interactive
+        run: |
+          for branch in preview production; do
+            echo "Publishing OTA update to branch: $branch"
+            npx eas-cli@latest update --branch "$branch" --message "$OTA_MESSAGE" --non-interactive
+          done
