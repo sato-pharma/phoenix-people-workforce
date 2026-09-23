@@ -1,6 +1,7 @@
 import {
   Activity,
   Archive,
+  Award,
   Banknote,
   BellRing,
   BookUser,
@@ -1336,6 +1337,19 @@ export const adminNavigationSectionSeeds = [
       { href: "/spotlight/cheques", icon: Banknote, label: "Award cheques", permissions: [{ action: "export", resource: "spotlight" }], roles: ["Super Admin", "CEO"] },
     ],
     label: "Spotlight",
+  },
+  // Milestones: the service-anniversary keepsake. Same two holders as Spotlight above, for the same
+  // reason — it reads every active employee's hire date with no scope narrowing and prints a sheet
+  // carrying a named person's photograph, which is a publishing right rather than a reading one.
+  //
+  // ⚠ THIS ENTRY IS UX, NOT THE GATE. `/api/milestones/{due,card}` each assert `milestones`
+  // themselves; hiding the link here protects nothing on its own.
+  {
+    id: "people-milestones-module",
+    items: [
+      { href: "/milestones", icon: Award, label: "Milestones", permissions: [{ action: "read", resource: "milestones" }], roles: ["Super Admin", "CEO"] },
+    ],
+    label: "Milestones",
   },
   // Ruling 1 (owner): Sales is five blocks, with Monthly Closing alone and Targets alone. This is
   // the "Monthly Closing alone" block. It was `finance-monthly-closing`, filed under the finance

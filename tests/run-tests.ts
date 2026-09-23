@@ -1923,6 +1923,7 @@ import { runMasterWorkbookCountErrorTests } from "./master-workbook-count-error.
 import { runTerritorySharedPinGuardTests } from "./territory-shared-pin-guard.test.ts";
 import { runTerritorySearchRegionLabelTests } from "./territory-search-region-label.test.ts";
 import { runTerritorySearchScopeTests } from "./territory-search-scope.test.ts";
+import { runMilestoneCardTests } from "./milestone-card.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -6812,6 +6813,10 @@ await runTest(
 await runTest(
   "territory brick search scope: the search is bounded by the caller's OWN areas on the line — a DM reaches his two, not the sibling DM's, not another region's and never the Others bucket; the picker and the search share one definition",
   runTerritorySearchScopeTests,
+);
+await runTest(
+  "milestone card: calendar dates never shift a day and month arithmetic clamps (31 Jan + 1m = 28/29 Feb), the Arabic mark's right edge stays inside the trim, the browser layout pass compiles and reaches ids the card actually emits, orange appears exactly three times, and milestones is in permissionResources with both routes asserting it",
+  runMilestoneCardTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

@@ -123,13 +123,16 @@ export const adminSidebarDomains: readonly SidebarDomain[] = [
     // Hiring and Time & Leave used to live here too, which is how this domain reached 48 rows.
     // What is left is the employee record itself, the reports about it, and probation.
     name: "People",
-    desc: "Employee records, the reports about them, and probation.",
+    desc: "Employee records, the reports about them, probation, and service milestones.",
     icon: UsersRound,
     groups: [
       { heading: "Employee Records", sectionIds: ["hub-people-management", "finance-resignations"] },
       { heading: "HR Reports", sectionIds: ["hub-people-reports", "people-management"] },
       { heading: "Plans & Support", sectionIds: ["hub-people-plans"] },
       { heading: "Probation Tools", sectionIds: ["hub-probation-tools", "ceo-probation"] },
+      // Milestones is about the person rather than the sales line, which is why it sits here and
+      // not beside Spotlight under Sales. It is its own heading because a keepsake is not a report.
+      { heading: "Recognition", sectionIds: ["people-milestones-module"] },
     ],
   },
   {
