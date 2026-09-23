@@ -51,6 +51,13 @@ updates:
       # tests/pdfjs-browser-polyfill.test.ts.
       - dependency-name: pdfjs-dist
         update-types: ["version-update:semver-major"]
+      # NOT ignored, and worth actually reading when one arrives: pdf-parse is the ONLY reason a
+      # second pdfjs-dist (5.4.296) is in the tree, because 2.4.5 pins that version exactly. If a
+      # future pdf-parse moves to pdfjs-dist 6.x, that PR is what collapses the two copies into
+      # one — say so in the review rather than merging it as routine. Do NOT try to force the same
+      # result with a pnpm override: pdfjs 6 removed PDFDocumentProxy.destroy(), pdf-parse calls it
+      # in a finally, and a throw there discards the extracted text. Measured 2026-09-23; the full
+      # reading is in scripts/verify-standalone-canvas.mjs.
 
   - package-ecosystem: github-actions
     directory: /
