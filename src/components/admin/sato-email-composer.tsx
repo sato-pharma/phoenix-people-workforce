@@ -18,7 +18,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { type ReactNode, useCallback, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 
 import { AdminSectionHeader } from "@/components/admin/admin-design-system";
 import { EmailBodyEditor } from "@/components/admin/email-body-editor";
@@ -172,6 +172,28 @@ export function SatoEmailComposer({
   // of Undo: his own words are never sent anywhere to be fetched back, they are simply still here.
   const [instruction, setInstruction] = useState("");
   const [polishing, setPolishing] = useState<AssistMode | null>(null);
+  /**
+   * Seconds on the button while the assistant works, and nothing else — no bar, no percentage,
+   * because neither would be true.
+   *
+   * Reading a document is the slow one: measured 29–39 seconds on the owner's own incentive policy.
+   * A spinner that sits still for half a minute reads as broken rather than busy, which is exactly
+   * what happened (owner, 2026-09-23: "its taking hilarious long time"). A number that keeps moving
+   * says the same wait is progress. It counts for all three modes because the sender cannot know
+   * which of them is the slow one.
+   */
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    // Nothing is set synchronously here on purpose: zeroing the counter in the effect cascades a
+    // render every time `polishing` changes, which is what CI's react-hooks/set-state-in-effect
+    // caught. The zero belongs to the click that starts the run, below; the interval is the only
+    // part that genuinely needs an effect, because only an effect can clean it up.
+    if (polishing === null) return;
+    const startedAt = Date.now();
+    const tick = window.setInterval(() => setElapsed(Math.round((Date.now() - startedAt) / 1000)), 1000);
+    return () => window.clearInterval(tick);
+  }, [polishing]);
+  const counted = (label: string) => (elapsed > 0 ? `${label} · ${elapsed}s` : label);
   const [polished, setPolished] = useState<
     {
       bodyHtml: string;
@@ -319,6 +341,7 @@ export function SatoEmailComposer({
    * belong to the older draft.
    */
   async function polish(assistMode: AssistMode) {
+    setElapsed(0);
     setPolishing(assistMode);
     setError(null);
     try {
@@ -364,6 +387,7 @@ export function SatoEmailComposer({
    */
   async function buildFromDocument(file: File | null | undefined) {
     if (!file) return;
+    setElapsed(0);
     setPolishing("document");
     setError(null);
     try {
@@ -778,7 +802,7 @@ export function SatoEmailComposer({
                 ) : (
                   <Sparkles className="h-4 w-4" />
                 )}
-                {polishing === "write" ? "Writing" : "Write it"}
+                {polishing === "write" ? counted("Writing") : "Write it"}
               </button>
               <button
                 className={PALE_BUTTON}
@@ -791,7 +815,7 @@ export function SatoEmailComposer({
                 ) : (
                   <Sparkles className="h-4 w-4" />
                 )}
-                {polishing === "rewrite" ? "Rewriting" : "Rewrite what I wrote"}
+                {polishing === "rewrite" ? counted("Rewriting") : "Rewrite what I wrote"}
               </button>
               <label className={`${PALE_BUTTON} cursor-pointer ${polishing !== null ? "pointer-events-none opacity-50" : ""}`}>
                 {polishing === "document" ? (
@@ -799,7 +823,7 @@ export function SatoEmailComposer({
                 ) : (
                   <FileUp className="h-4 w-4" />
                 )}
-                {polishing === "document" ? "Reading the document" : "Build it from a document"}
+                {polishing === "document" ? counted("Reading the document") : "Build it from a document"}
                 <input
                   accept={SATO_EMAIL_DOCUMENT_ACCEPT}
                   className="hidden"
