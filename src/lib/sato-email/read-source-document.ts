@@ -21,6 +21,7 @@ import {
   capSourceText,
   chooseSourceRoute,
   detectSatoSourceKind,
+  htmlToSourceText,
   SATO_EMAIL_DOCUMENT_MAX_BYTES,
   type SatoAssistSource,
   type SatoSourceKind,
@@ -96,15 +97,21 @@ export async function readSatoSourceDocument(input: {
   if (kind === "unsupported") {
     throw new SatoSourceDocumentError(
       "document_unsupported",
-      "That file cannot be read. Upload a PDF, a Word file, a text or CSV file, or a picture of the document.",
+      "That file cannot be read. Upload a PDF, a Word file, a web page, a text or CSV file, or a picture of the document.",
     );
   }
 
   let extracted = "";
-  if (kind === "pdf" || kind === "word" || kind === "text") {
+  if (kind === "pdf" || kind === "word" || kind === "html" || kind === "text") {
     try {
       extracted =
-        kind === "pdf" ? await pdfText(bytes) : kind === "word" ? await wordText(bytes) : bytes.toString("utf8");
+        kind === "pdf"
+          ? await pdfText(bytes)
+          : kind === "word"
+            ? await wordText(bytes)
+            : kind === "html"
+              ? htmlToSourceText(bytes.toString("utf8"))
+              : bytes.toString("utf8");
     } catch {
       // A PDF that will not parse still has a page to look at, so it falls through to the picture
       // route rather than being refused. A Word or text file that will not open has nothing left.

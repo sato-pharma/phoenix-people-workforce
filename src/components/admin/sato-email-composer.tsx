@@ -843,8 +843,9 @@ export function SatoEmailComposer({
               <strong>Write it</strong> composes the whole email from what you asked for, even on an empty page, and
               uses every button in the toolbar above — including a table of the shape you name. <strong>Rewrite what
               I wrote</strong> keeps your draft and only changes how it reads. <strong>Build it from a document</strong>
-              reads a PDF, a Word file, a text file or a picture of one — click the button or drag it onto this row —
-              and writes the email that carries what it says, in its own figures. The document is read and thrown away:
+              reads a PDF, a Word file, a web page, a text file or a picture of one — click the button or drag it onto
+              this row — and writes the email that carries what it says, in its own figures, in English and Arabic
+              together. The document is read and thrown away:
               if the reader should also receive it, attach it above. None of the three invents a fact: anything you did
               not give it comes back as a [square bracket] gap for you to fill, and a link it did not get from you is
               refused outright.
