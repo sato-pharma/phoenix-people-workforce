@@ -376,6 +376,19 @@ export function requireCalendarAccess(caller: InterviewCalendarCaller, need: Int
 }
 
 /**
+ * Who may search for the person to conduct an interview. Booking rights (owner, editor, HR) pass, and
+ * so does a requester or a chosen interviewer: the request flow's whole point is that a District
+ * Manager who cannot book still names who will conduct the interview (owner, 2026-09-23). Requiring
+ * "book" here was the bug that made the picker read "Nobody matches that" for every requester. A plain
+ * viewer or commenter has no reason to pick an interviewer, so they get the ordinary book refusal.
+ */
+export function assertMayPickInterviewer(caller: InterviewCalendarCaller): void {
+  const role = calendarRoleFor(caller, "any");
+  if (roleMeets(role, "book") || role === "requester" || role === "interviewer") return;
+  requireCalendarAccess(caller, "book", "any");
+}
+
+/**
  * The book gate, plus the one exception the owner asked for (2026-09-23): a District Manager may
  * "slot himself" — book a standalone interview where HE is the interviewer — even though a requester
  * seat cannot otherwise book. It is only ever his OWN time: the chosen interviewer must be the caller.
@@ -1847,7 +1860,7 @@ export async function searchInterviewCalendarPeople(
   query: unknown,
   purpose: "share" | "interviewer" = "share",
 ): Promise<InterviewCalendarPerson[]> {
-  if (purpose === "interviewer") requireCalendarAccess(caller, "book", "any");
+  if (purpose === "interviewer") assertMayPickInterviewer(caller);
   else requireCalendarAccess(caller, "share", null);
   const text = filterText(query);
   if (text.length < 2) return [];

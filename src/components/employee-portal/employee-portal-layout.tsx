@@ -281,6 +281,10 @@ function buildEmployeePortalSections({
       title: "My Workspace",
       items: [
         ...(showDashboardTab ? [{ href: "/employee-portals", label: "Command Center", icon: Home }] : []),
+        // Interview Calendar sits right under Command Center in My Workspace (owner, 2026-09-23). Shown
+        // by the interview-calendar access flag — a DM/NSM/HR seat by role, or anyone the owner shared it
+        // with; requesters ask HR to book, interviewers conduct, HR/owner run the whole calendar.
+        ...(showInterviewCalendarTab ? [{ href: "/employee-portals/interview-calendar", label: "Interview Calendar", icon: CalendarClock }] : []),
         // Open to every role, self-scoped (see src/lib/employee-360/access.ts) — same
         // employee_profile:read gate as the rest of "My Workspace", no visibility flag needed.
         { href: "/employee-portals/employee-360", label: "Employee 360", icon: IdCard },
@@ -356,9 +360,6 @@ function buildEmployeePortalSections({
         ...(showMyCandidatesTab ? [{ href: "/employee-portals/recruitment-candidates", label: "My Candidates", icon: UsersRound }] : []),
         // NSM-only, scoped to his line server-side. Silent — the managers it measures never see it.
         ...(showManagerEngagementTab ? [{ href: "/employee-portals/recruitment-engagement", label: "Manager CV Engagement", icon: ClipboardList }] : []),
-        // Only for someone the owner shared his interview calendar with — a data flag, never a role.
-        // Beside My Candidates: the same people, the CVs they will sit across the table from.
-        ...(showInterviewCalendarTab ? [{ href: "/employee-portals/interview-calendar", label: "Interview Calendar", icon: CalendarClock }] : []),
         ...(showProbationTab ? [{ href: "/employee-portals/probation", label: "Probation Tracker", icon: ClipboardCheck }] : []),
         ...(showOrganogramTab ? [{ href: "/employee-portals/organogram", label: "Organogram", icon: Building2 }] : []),
         ...(showTeamExpensesTab ? [{ href: "/employee-portals/team-expenses", label: "Team Expenses", icon: WalletCards }] : []),
