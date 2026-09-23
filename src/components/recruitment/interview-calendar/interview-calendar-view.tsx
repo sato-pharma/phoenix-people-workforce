@@ -36,6 +36,7 @@ import {
   Phone,
   Plus,
   RefreshCw,
+  Send,
   Share2,
   Trash2,
   UserRound,
@@ -94,6 +95,8 @@ import { CalendarDialog, ErrorLine } from "./calendar-dialog";
 import { CellDialog } from "./cell-dialog";
 import { MonthPicker, cursorFor, type MonthCursor } from "./month-picker";
 import { InterviewShareDialog } from "./interview-share-dialog";
+import { RequestInterviewDialog } from "./request-interview-dialog";
+import { InterviewRequestPanels } from "./requests-inbox";
 import { ScheduleInterviewDialog } from "./schedule-interview-dialog";
 import { SessionDialog } from "./session-dialog";
 import { InvitationPanel } from "./invitation-panel";
@@ -170,6 +173,7 @@ type CellContent = {
 
 export function InterviewCalendarView({
   abilities,
+  canRequest,
   initialOpen,
   initialWeek,
   link = null,
@@ -179,6 +183,8 @@ export function InterviewCalendarView({
   zoomConnected,
 }: {
   abilities?: InterviewCalendarAbilities;
+  /** May this viewer ask for an interview (a District Manager and above, or HR). Server-decided. */
+  canRequest?: boolean;
   initialOpen: string | null;
   initialWeek: string;
   /** Set when the calendar was opened from a copy link. */
@@ -193,6 +199,9 @@ export function InterviewCalendarView({
   const api = useMemo(() => calendarApi(linkToken), [linkToken]);
   const hydrated = useHydrated();
   const canBook = canBookInterviews(role);
+  // A requester sees the Request button and their own requests; the server is the authority, so a
+  // link view (no seat) never requests. Falls back to the requester seat role when no flag is passed.
+  const mayRequest = !link && (canRequest ?? role === "requester");
   const canSearch = abilities?.canSearchCandidates === true;
   const canAdd = abilities?.canAddToRecruitment === true;
 
@@ -214,6 +223,10 @@ export function InterviewCalendarView({
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerCursor, setPickerCursor] = useState<MonthCursor>(() => cursorFor(weekStartFor(lockedWeek ?? initialWeek)));
   const pickerRef = useRef<HTMLDivElement>(null);
+  // The request flow (owner, 2026-09-23): ask for a day, HR books the times. The signal makes the
+  // inbox and "your requests" panels re-read after a new request is sent.
+  const [requesting, setRequesting] = useState(false);
+  const [requestReload, setRequestReload] = useState(0);
 
   // The clock the "is this time already past?" answers read, moved on each minute.
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -530,8 +543,14 @@ export function InterviewCalendarView({
               {exporting === "xlsx" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
               Export Excel
             </Action>
+            {mayRequest ? (
+              <Action onClick={() => setRequesting(true)} size="md" tone="primary">
+                <Send className="h-4 w-4" />
+                Request an interview
+              </Action>
+            ) : null}
             {canShareInterviewCalendar(role) ? (
-              <Action onClick={() => setSharing(true)} size="md" tone="primary">
+              <Action onClick={() => setSharing(true)} size="md" tone={mayRequest ? "quiet" : "primary"}>
                 <Share2 className="h-4 w-4" />
                 Share
               </Action>
@@ -576,6 +595,19 @@ export function InterviewCalendarView({
           </p>
         ) : null}
       </section>
+
+      {mayRequest || canBook ? (
+        <InterviewRequestPanels
+          api={api}
+          canBook={canBook}
+          canRequest={mayRequest}
+          onBookingCreated={replaceBooking}
+          onOpenBooking={openInterview}
+          reloadSignal={requestReload}
+          todayKey={todayKey}
+          zoomConnected={zoomConnected}
+        />
+      ) : null}
 
       {/* ── Desktop: the grid ──────────────────────────────────────────────────────────────── */}
       <section aria-busy={loading} aria-label="Week grid" className="relative hidden border border-slate-200 bg-white md:block">
@@ -853,6 +885,17 @@ export function InterviewCalendarView({
       ) : null}
 
       {sharing ? <InterviewShareDialog onClose={() => setSharing(false)} weekStart={weekStart} /> : null}
+
+      {requesting ? (
+        <RequestInterviewDialog
+          api={api}
+          canSearch={canSearch}
+          defaultDay={days[0] ?? null}
+          onClose={() => setRequesting(false)}
+          onCreated={() => setRequestReload((value) => value + 1)}
+          todayKey={todayKey}
+        />
+      ) : null}
     </div>
   );
 }

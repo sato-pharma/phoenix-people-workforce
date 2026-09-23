@@ -19,8 +19,15 @@ export type InterviewCalendarAccessLevel = "viewer" | "commenter" | "editor";
  * ONLY their own interviews in it — opens the CV, starts Zoom, records how it went — and meets no
  * need above "view", so it can never book, move, cancel, comment or share. Every place that serves
  * a booking to a `view` caller must also ask `mayReadBooking` (interview-calendar.ts).
+ *
+ * `requester` is likewise NOT a level the owner grants: it is what any District Manager or above —
+ * and HR — holds by their seat (owner, 2026-09-23). It lets them open the calendar and ASK for an
+ * interview (choose a day, attach CVs, choose the interviewer) without seeing the whole calendar:
+ * like `interviewer`, it sees ONLY the interviews they are part of — the ones they requested, plus
+ * any they were chosen to conduct — and it can never comment or share. A District Manager may also
+ * book his own time as the interviewer (interview-calendar.ts, `canSelfBook`).
  */
-export type InterviewCalendarRole = "owner" | InterviewCalendarAccessLevel | "interviewer";
+export type InterviewCalendarRole = "owner" | InterviewCalendarAccessLevel | "interviewer" | "requester";
 
 export const INTERVIEW_CALENDAR_ACCESS_LEVELS: readonly InterviewCalendarAccessLevel[] = ["viewer", "commenter", "editor"];
 
@@ -29,6 +36,7 @@ export const ACCESS_LEVEL_LABEL: Record<InterviewCalendarRole, string> = {
   editor: "Editor",
   interviewer: "Interviewer",
   owner: "Owner",
+  requester: "Requester",
   viewer: "Viewer",
 };
 
@@ -125,7 +133,7 @@ export function resolveCalendarRole(input: {
   return input.shareLevel;
 }
 
-const RANK: Record<InterviewCalendarRole, number> = { commenter: 2, editor: 3, interviewer: 0, owner: 4, viewer: 1 };
+const RANK: Record<InterviewCalendarRole, number> = { commenter: 2, editor: 3, interviewer: 0, owner: 4, requester: 0, viewer: 1 };
 
 /** The higher of two levels; null is no access. */
 export function higherCalendarRole(
@@ -428,6 +436,67 @@ export type InterviewCalendarMe = {
   canSearchCandidates?: boolean;
   /** May add an outside person to Recruitment while booking them (needs to create candidates). */
   canAddToRecruitment?: boolean;
+  /** May ask for an interview (a District Manager and above, or HR) — draws the Request button. */
+  canRequest?: boolean;
+  /** May give a request's CVs their times (HR and the calendar's owners) — draws the HR inbox. */
+  canBook?: boolean;
+};
+
+// ── Interview requests (the two-step "ask for a day, HR books the time" flow) ─────────────────────
+//
+// The owner, 2026-09-23: a District Manager (and above) or HR asks for an interview by choosing a
+// DAY (no time) and attaching CVs — uploaded, or picked from Recruitment — and the interviewer (the
+// line's NSM, or the HR head). HR then phones the candidates and gives each CV a real time, which
+// turns the request into booked slots that show on BOTH the requester's and the interviewer's
+// calendar. This is added BESIDE the existing direct booking; nothing about direct booking changes.
+
+export type InterviewRequestStatus = "pending" | "scheduled" | "cancelled";
+
+export const INTERVIEW_REQUEST_STATUS_LABEL: Record<InterviewRequestStatus, string> = {
+  cancelled: "Cancelled",
+  pending: "Waiting for HR",
+  scheduled: "Times booked",
+};
+
+export function isInterviewRequestStatus(value: unknown): value is InterviewRequestStatus {
+  return value === "pending" || value === "scheduled" || value === "cancelled";
+}
+
+/** One CV on a request: a Recruitment candidate, or an outside person kept on the request only. */
+export type InterviewRequestItem = {
+  id: string;
+  candidateId: string | null;
+  candidateName: string;
+  /** The job the CV applied for, when it names one. */
+  candidateJobTitle: string | null;
+  /** An outside person the requester did NOT add to Recruitment. */
+  external: boolean;
+  externalPhone: string | null;
+  externalEmail: string | null;
+  externalHasCv: boolean;
+  externalCvFileName: string | null;
+  externalCvMimeType: string | null;
+  /** The booking this CV became once HR gave it a time, or null while it waits. */
+  bookingId: string | null;
+  booked: boolean;
+};
+
+export type InterviewRequest = {
+  id: string;
+  requestedByHrId: string;
+  requestedByName: string;
+  interviewerHrId: string;
+  interviewerName: string;
+  /** The Cairo day asked for, YYYY-MM-DD. No time — HR sets that per CV. */
+  requestedDay: string;
+  line: string | null;
+  note: string | null;
+  status: InterviewRequestStatus;
+  items: InterviewRequestItem[];
+  /** How many of its CVs still have no time booked. */
+  pendingItemCount: number;
+  createdAt: string;
+  updatedAt: string;
 };
 
 // ── Sessions ────────────────────────────────────────────────────────────────────────────────────

@@ -1197,6 +1197,13 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/recruitment/interview-calendar/links", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["PATCH", "DELETE"], pattern: "/api/recruitment/interview-calendar/links/*", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ methods: readOnly, pattern: "/api/recruitment/interview-calendar/candidates/search", permission: null, guard: "domain-helper" }),
+  // The two-step interview request flow (owner, 2026-09-23): a District Manager and above, or HR,
+  // asks for a day and attaches CVs; HR gives each CV a time. Self-gated exactly like the rest of the
+  // calendar — the route resolves the caller's calendar role (mayRequestInterviews / book rights) in
+  // interview-requests.ts, so no permission grant is declared here.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/recruitment/interview-calendar/requests", permission: null, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "DELETE"], pattern: "/api/recruitment/interview-calendar/requests/*", permission: null, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/recruitment/interview-calendar/requests/*/schedule", permission: null, guard: "domain-helper", csrfRequired: true }),
   // A district manager hands a CV back to the administrator ("area not match — or any other
   // situation"), and the administrator later clears it from the Returned CVs queue. TWO DIFFERENT
   // GRANTS on purpose: returning is `hiring_interviews:update` — the same folder grant every district

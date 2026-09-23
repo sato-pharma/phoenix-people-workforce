@@ -2,8 +2,13 @@ import { NextResponse } from "next/server";
 
 import { recruitmentApiError } from "@/app/api/recruitment/_lib/http";
 import { resolveAccessContext } from "@/lib/auth/server";
-import { calendarRoleFor, interviewCalendarAbilities, interviewCalendarCaller } from "@/lib/recruitment/interview-calendar";
-import type { InterviewCalendarMe } from "@/lib/recruitment/interview-calendar-types";
+import {
+  calendarRoleFor,
+  interviewCalendarAbilities,
+  interviewCalendarCaller,
+  mayRequestInterviews,
+} from "@/lib/recruitment/interview-calendar";
+import { canBookInterviews, type InterviewCalendarMe } from "@/lib/recruitment/interview-calendar-types";
 import { isZoomConfigured } from "@/lib/zoom/meetings";
 
 export const runtime = "nodejs";
@@ -18,9 +23,12 @@ export async function GET(request: Request) {
     const access = await resolveAccessContext(request);
     const caller = await interviewCalendarCaller(access, request).catch(() => null);
     const abilities = await interviewCalendarAbilities(access);
+    const role = caller ? calendarRoleFor(caller, "any") : null;
     const body: InterviewCalendarMe = {
       ...abilities,
-      role: caller ? calendarRoleFor(caller, "any") : null,
+      canBook: canBookInterviews(role),
+      canRequest: await mayRequestInterviews(access),
+      role,
       zoomConnected: isZoomConfigured(),
     };
     return NextResponse.json({ success: true, ...body }, { headers: { "Cache-Control": "no-store" } });

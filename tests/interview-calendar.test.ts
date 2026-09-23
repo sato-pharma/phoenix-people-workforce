@@ -908,6 +908,14 @@ function runWiringTests() {
     "recordInterviewWhatsAppOpened(caller",
     "listDueZoomInterviews(caller",
     "setInterviewOutcome(caller",
+    // The two-step request flow (interview-requests.ts). Each entry point resolves the caller and
+    // checks a right before it touches a row — pinned in tests/interview-requests.test.ts.
+    "listMyInterviewRequests(caller",
+    "listInterviewRequestsInbox(caller",
+    "createInterviewRequest(caller",
+    "getInterviewRequest(caller",
+    "scheduleInterviewRequestItem(caller",
+    "cancelInterviewRequest(caller",
   ];
   const routes = routeFiles("app/api/recruitment/interview-calendar");
   assert.ok(routes.length >= 28, `the calendar's routes were found (${routes.length})`);

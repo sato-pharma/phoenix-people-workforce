@@ -350,6 +350,12 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   // grant. The calendar holds no salary, no personnel record and no payroll figure, so it crosses
   // none of her named boundaries.
   "src/lib/recruitment/interview-calendar-types.ts",
+  // Names "Super Admin" and "HR Operations" in resolveHrIdsForRole, added 2026-09-23 with the
+  // interview-request flow. Reviewed verdict: it names the two seats only to pick who is TOLD a new
+  // interview request has landed (the inbox notice) — it grants nothing and gates nothing, exactly
+  // like role-recipients.ts. The recipients receive an in-app + Telegram message and a link to the
+  // calendar they already reach; the notice carries no salary, personnel or payroll figure.
+  "src/lib/recruitment/interview-request-notifications.ts",
   "src/lib/reports/organogram.ts",
   "src/lib/resignations/service.ts",
   // Names HR Advisory in canUseSatoEmail, added 2026-09-12 for the Sato Email Composer. Owner
