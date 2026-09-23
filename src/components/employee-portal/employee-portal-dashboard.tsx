@@ -1127,8 +1127,13 @@ function IncentiveSimulatorCard({
 }
 
 function IncentivePayoutCurveChart({ data }: { data: MedicalRepPortalData }) {
+  // Sample every 1% so the axis carries every integer achievement: the payout curve is piecewise
+  // LINEAR (a straight ramp inside each band, with a step up at the 90% threshold), so a linear area
+  // over dense samples draws it truthfully. A 2% step used to draw it with `stepAfter`, which turned
+  // the smooth ramps into a staircase and left odd-valued reference lines (e.g. "You: 107%") with no
+  // matching sample to sit on. The X axis is numeric (below) so every mark lands at its real value.
   const curveData: Array<{ achievement: number; payout: number }> = [];
-  for (let a = 0; a <= 150; a += 2) {
+  for (let a = 0; a <= 150; a += 1) {
     const c = calculateIncentive2026({ ...data.payroll, achievementPercent: a, taxes: data.payroll.incomeTax });
     curveData.push({ achievement: a, payout: c.payoutPercentage });
   }
@@ -1161,11 +1166,14 @@ function IncentivePayoutCurveChart({ data }: { data: MedicalRepPortalData }) {
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
                 <XAxis
                   dataKey="achievement"
+                  type="number"
+                  domain={[0, 150]}
+                  ticks={[0, 30, 60, 90, 120, 150]}
+                  allowDecimals={false}
                   tick={{ fontSize: 10, fontWeight: 600, fill: "#94a3b8" }}
                   tickLine={false}
                   axisLine={{ stroke: "#e2e8f0" }}
                   tickFormatter={(v: number) => `${v}%`}
-                  interval={9}
                 />
                 <YAxis
                   tick={{ fontSize: 10, fontWeight: 600, fill: "#94a3b8" }}
@@ -1192,7 +1200,7 @@ function IncentivePayoutCurveChart({ data }: { data: MedicalRepPortalData }) {
                   }}
                 />
                 <Area
-                  type="stepAfter"
+                  type="linear"
                   dataKey="payout"
                   name="Payout %"
                   stroke="#f97316"
