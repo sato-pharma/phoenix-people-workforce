@@ -143,7 +143,7 @@ function offeredMonths(today: string): string[] {
 
 // ── Words ───────────────────────────────────────────────────────────────────────────────────────
 
-/** "3 AM · 41 PM" — accounts and doctors side by side, never added together. */
+/** "3 AM · 41 PM" — AM and PM side by side, never added together. */
 function amPmText(am: number, pm: number): string {
   return `${countText(am)} AM · ${countText(pm)} PM`;
 }
@@ -487,8 +487,8 @@ function VisitsSection({
       ) : null}
       <CrmBlock>
         <CrmStatGrid>
-          <CrmStat label="Doctor visits · PM" note={kindsNote(pm, "No doctor visited")} value={countText(pm.visits)} />
-          <CrmStat label="Account visits · AM" note={kindsNote(am, "No account visited")} value={countText(am.visits)} />
+          <CrmStat label="PM visits" note={kindsNote(pm, "No PM visited")} value={countText(pm.visits)} />
+          <CrmStat label="AM visits" note={kindsNote(am, "No AM visited")} value={countText(am.visits)} />
           <CrmStat label="Reps who visited" note={periodText(report.period)} value={countText(reps)} />
           <CrmStat label="Rep days with visits" note="Each rep's days with a visit, added up" value={countText(repDays)} />
         </CrmStatGrid>
@@ -499,12 +499,12 @@ function VisitsSection({
         hasData={(line) => line.row !== null}
         headers={
           oneDay
-            ? ["Territory and rep", "Doctors · PM", "Accounts · AM"]
+            ? ["Territory and rep", "PM", "AM"]
             : [
                 "Territory and rep",
                 "Days with visits",
-                "Doctors · PM",
-                "Accounts · AM",
+                "PM",
+                "AM",
                 <span className="sr-only" key="days">
                   Days
                 </span>,
@@ -517,8 +517,8 @@ function VisitsSection({
           <CrmCard meta={line.repName} title={line.territoryName}>
             <CrmFacts
               facts={[
-                { label: "Doctors · PM", value: visitCountsText(line.row?.pm ?? null, report.includeTest) },
-                { label: "Accounts · AM", value: visitCountsText(line.row?.am ?? null, report.includeTest) },
+                { label: "PM", value: visitCountsText(line.row?.pm ?? null, report.includeTest) },
+                { label: "AM", value: visitCountsText(line.row?.am ?? null, report.includeTest) },
               ]}
             />
             {oneDay ? null : (
@@ -653,10 +653,10 @@ function PlanSection({
 
   const { AM: am, PM: pm } = report.totals;
   const oneDay = report.period.from === report.period.to;
-  const keptStat = (cell: PlanCell, listType: "AM" | "PM", customers: string, noneLabel: string) => (
+  const keptStat = (cell: PlanCell, listType: "AM" | "PM", noneLabel: string) => (
     <CrmStat
-      label={`Planned ${customers} visited · ${listType}`}
-      note={cell.planned > 0 ? `${percentText(cell.keptPct)} of the planned ${customers}, on their day` : noneLabel}
+      label={`Planned ${listType} visited`}
+      note={cell.planned > 0 ? `${percentText(cell.keptPct)} of the planned ${listType}, on their day` : noneLabel}
       value={cell.planned > 0 ? `${countText(cell.visitedPlanned)} of ${countText(cell.planned)}` : "—"}
     />
   );
@@ -673,8 +673,8 @@ function PlanSection({
       ) : null}
       <CrmBlock>
         <CrmStatGrid>
-          {keptStat(pm, "PM", "doctors", "No doctor planned")}
-          {keptStat(am, "AM", "accounts", "No account planned")}
+          {keptStat(pm, "PM", "No PM planned")}
+          {keptStat(am, "AM", "No AM planned")}
           <CrmStat label="Missed" note="Planned, and not visited on the day" value={amPmText(am.missed, pm.missed)} />
           <CrmStat label="Off the plan" note="Visited, and not planned for that day" value={amPmText(am.unplanned, pm.unplanned)} />
         </CrmStatGrid>
@@ -685,11 +685,11 @@ function PlanSection({
         hasData={(line) => hasPlan(line.row)}
         headers={
           oneDay
-            ? ["Territory and rep", "Doctors · PM", "Accounts · AM"]
+            ? ["Territory and rep", "PM", "AM"]
             : [
                 "Territory and rep",
-                "Doctors · PM",
-                "Accounts · AM",
+                "PM",
+                "AM",
                 <span className="sr-only" key="days">
                   Days
                 </span>,
@@ -702,8 +702,8 @@ function PlanSection({
           <CrmCard meta={repText(line.repName)} title={line.territoryName}>
             <CrmFacts
               facts={[
-                { label: "Doctors · PM", value: planFact(line.row?.pm ?? NO_PLAN) },
-                { label: "Accounts · AM", value: planFact(line.row?.am ?? NO_PLAN) },
+                { label: "PM", value: planFact(line.row?.pm ?? NO_PLAN) },
+                { label: "AM", value: planFact(line.row?.am ?? NO_PLAN) },
               ]}
             />
             {!oneDay && line.row ? (
@@ -793,17 +793,17 @@ function CoverageSection({
       ) : null}
       <CrmBlock>
         <CrmStatGrid>
-          <CrmStat label="Doctor coverage · PM" note={coverageNote(pm, "doctors")} value={percentText(pm.coveragePct)} />
-          <CrmStat label="Account coverage · AM" note={coverageNote(am, "accounts")} value={percentText(am.coveragePct)} />
-          <CrmStat label="Doctor frequency · PM" note={frequencyNote(pm, "doctors")} value={percentText(pm.frequencyPct)} />
-          <CrmStat label="Account frequency · AM" note={frequencyNote(am, "accounts")} value={percentText(am.frequencyPct)} />
+          <CrmStat label="PM coverage" note={coverageNote(pm, "PM")} value={percentText(pm.coveragePct)} />
+          <CrmStat label="AM coverage" note={coverageNote(am, "AM")} value={percentText(am.coveragePct)} />
+          <CrmStat label="PM frequency" note={frequencyNote(pm, "PM")} value={percentText(pm.frequencyPct)} />
+          <CrmStat label="AM frequency" note={frequencyNote(am, "AM")} value={percentText(am.frequencyPct)} />
         </CrmStatGrid>
       </CrmBlock>
       <ReportList
         columns={["28%", null, null, null, null]}
         explain="Coverage is the share of the validated list visited at least once in the month. Frequency is the share of graded customers visited exactly their grade's number of times; under and over show beside it."
         hasData={hasCustomers}
-        headers={["Territory and rep", "Doctor coverage · PM", "Account coverage · AM", "Doctor frequency · PM", "Account frequency · AM"]}
+        headers={["Territory and rep", "PM coverage", "AM coverage", "PM frequency", "AM frequency"]}
         idPrefix={`${idPrefix}-coverage`}
         items={report.rows}
         keyOf={(row) => row.seatId}
@@ -811,10 +811,10 @@ function CoverageSection({
           <CrmCard meta={repText(row.repName)} title={row.territoryName}>
             <CrmFacts
               facts={[
-                { label: "Doctor coverage · PM", value: coverageFact(row.pm.coveragePct, coverageNote(row.pm, "doctors")) },
-                { label: "Account coverage · AM", value: coverageFact(row.am.coveragePct, coverageNote(row.am, "accounts")) },
-                { label: "Doctor frequency · PM", value: coverageFact(row.pm.frequencyPct, frequencyNote(row.pm, "doctors")) },
-                { label: "Account frequency · AM", value: coverageFact(row.am.frequencyPct, frequencyNote(row.am, "accounts")) },
+                { label: "PM coverage", value: coverageFact(row.pm.coveragePct, coverageNote(row.pm, "PM")) },
+                { label: "AM coverage", value: coverageFact(row.am.coveragePct, coverageNote(row.am, "AM")) },
+                { label: "PM frequency", value: coverageFact(row.pm.frequencyPct, frequencyNote(row.pm, "PM")) },
+                { label: "AM frequency", value: coverageFact(row.am.frequencyPct, frequencyNote(row.am, "AM")) },
               ]}
             />
           </CrmCard>
@@ -825,10 +825,10 @@ function CoverageSection({
               <p className="font-black text-slate-950">{row.territoryName}</p>
               <p className="mt-0.5 text-xs text-slate-500">{repText(row.repName)}</p>
             </td>
-            {coverageCellMarkup(row.pm.coveragePct, coverageNote(row.pm, "doctors"), row.pm.customers > 0)}
-            {coverageCellMarkup(row.am.coveragePct, coverageNote(row.am, "accounts"), row.am.customers > 0)}
-            {coverageCellMarkup(row.pm.frequencyPct, frequencyNote(row.pm, "doctors"), row.pm.withTarget > 0)}
-            {coverageCellMarkup(row.am.frequencyPct, frequencyNote(row.am, "accounts"), row.am.withTarget > 0)}
+            {coverageCellMarkup(row.pm.coveragePct, coverageNote(row.pm, "PM"), row.pm.customers > 0)}
+            {coverageCellMarkup(row.am.coveragePct, coverageNote(row.am, "AM"), row.am.customers > 0)}
+            {coverageCellMarkup(row.pm.frequencyPct, frequencyNote(row.pm, "PM"), row.pm.withTarget > 0)}
+            {coverageCellMarkup(row.am.frequencyPct, frequencyNote(row.am, "AM"), row.am.withTarget > 0)}
           </>
         )}
         searchWords={(row) => [row.territoryName, row.repName]}
@@ -1006,7 +1006,7 @@ const SECTION_TITLES: Record<ReportSection, string> = {
   managers: "Double and chain visits",
 };
 
-const REPORTS_DESCRIPTION = "Counted from what the field force enters in Phoenix CRM. Doctors (PM) and accounts (AM) are always counted apart.";
+const REPORTS_DESCRIPTION = "Counted from what the field force enters in Phoenix CRM. AM and PM are always counted apart.";
 
 /** "Tue 1 Sept – Thu 17 Sept", for a quick pick's note. */
 function shortPeriodText(period: Period): string {
@@ -1083,7 +1083,7 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
   }
 
   const sectionOptions: Array<CrmChoiceOption<ReportSection>> = [
-    { value: "visits", label: SECTION_TITLES.visits, note: "Doctors and accounts apart" },
+    { value: "visits", label: SECTION_TITLES.visits, note: "AM and PM apart" },
     { value: "plan", label: SECTION_TITLES.plan, note: "Visited or missed, day by day" },
     { value: "coverage", label: SECTION_TITLES.coverage, note: "The list, month by month" },
     ...(view.hasManagers ? [{ value: "managers" as const, label: SECTION_TITLES.managers, note: "Per manager" }] : []),

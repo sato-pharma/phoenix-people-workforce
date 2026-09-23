@@ -335,8 +335,8 @@ function runPlanRuleTests() {
   );
   assert.equal(
     refusalOf(resolvePlan([item("2026-10-08", DOCTOR, DOCTOR_PLACE, "another_place")])),
-    "Thursday 8 Oct is a morning: it holds accounts only, so Dr Mona Adel cannot go there.",
-    "no exception reason puts a doctor on Thursday",
+    "Thursday 8 Oct is a morning: it holds AM only, so Dr Mona Adel cannot go there.",
+    "no exception reason puts a PM customer on Thursday",
   );
   assert.equal(
     refusalOf(resolvePlan([item("2026-10-04", DOCTOR, DOCTOR_PLACE)])),
@@ -378,8 +378,8 @@ function runPlanRuleTests() {
     crowd.set(customerId, { customerId, name: `Account ${n}`, listType: "AM", pending: false, places: [{ placeId, timings: timings(timing(6, "10:00")) }] });
     accounts.push(item(WEEK, customerId, placeId));
   }
-  assert.equal(refusalOf(resolvePlan(doctors, crowd)), "Saturday 3 Oct has 16 doctors. A day holds 15 doctors at most.", "a plan day cannot take a 16th doctor");
-  assert.equal(refusalOf(resolvePlan(accounts, crowd)), "Saturday 3 Oct has 6 accounts. A day holds 5 accounts at most.", "a plan day cannot take a 6th account");
+  assert.equal(refusalOf(resolvePlan(doctors, crowd)), "Saturday 3 Oct has 16 PM. A day holds 15 PM at most.", "a plan day cannot take a 16th PM customer");
+  assert.equal(refusalOf(resolvePlan(accounts, crowd)), "Saturday 3 Oct has 6 AM. A day holds 5 AM at most.", "a plan day cannot take a 6th AM customer");
   assert.equal(
     valueOf(resolvePlan([...doctors.slice(0, 15), ...accounts.slice(0, 5)], crowd)).length,
     20,
@@ -387,7 +387,7 @@ function runPlanRuleTests() {
   );
   assert.equal(
     refusalOf(resolvePlan(doctors.slice(0, 3), crowd, { pmDailyCap: 2 })),
-    "Saturday 3 Oct has 3 doctors. A day holds 2 doctors at most.",
+    "Saturday 3 Oct has 3 PM. A day holds 2 PM at most.",
     "the maximum is the Super Admin's setting, not a number in the code",
   );
   const monday = doctors.slice(0, 15).map((entry) => ({ ...entry, planDate: "2026-10-05", exceptionType: "by_appointment" as const }));
@@ -542,7 +542,7 @@ function runEntryRuleTests() {
     },
   );
 
-  assert.equal(refusalOf(parseNewCustomer({})), "Choose whether this is a doctor (PM) or an account (AM).");
+  assert.equal(refusalOf(parseNewCustomer({})), "Choose AM or PM.");
   assert.equal(refusalOf(parseNewCustomer({ listType: "pm", name: " Al " })), "Write the customer's full name.");
   assert.equal(
     refusalOf(parseNewCustomer({ listType: "pm", name: "Dr Mona Adel" })),

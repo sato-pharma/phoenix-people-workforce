@@ -1512,6 +1512,7 @@ import { runPhoenixCrmPendingCustomerTests } from "./phoenix-crm-pending-custome
 import { runPhoenixCrmDoctorsDirectoryTests } from "./phoenix-crm-doctors-directory.test.ts";
 import { runPhoenixCrmPlaceLocationFrozenTests } from "./phoenix-crm-place-location-frozen.test.ts";
 import { runPhoenixCrmPortalSidebarTests } from "./phoenix-crm-portal-sidebar.test.ts";
+import { runPhoenixCrmAmPmWordTests } from "./phoenix-crm-am-pm-words.test.ts";
 import { runCrmCutoverTests } from "./crm-cutover.test.ts";
 import { runCrmUnifyVendorReadsTests } from "./crm-unify-vendor-reads.test.ts";
 import { runPhoenixKpiRulesTests } from "./phoenix-kpi-rules.test.ts";
@@ -4986,6 +4987,11 @@ await runTest(
 await runTest(
   "Phoenix CRM has a door in the portal sidebar (owner, 2026-09-23: \"put it in the sidebar\" — until then the module's only door was a button inside My Visits, and 71 of the 73 rep seats with a reference list waiting had never opened it; the row is driven by the module's own gate, never by a role list, it is destructured by the rail builder, every page that builds its own portal chrome asks the same gate, and it points at the portal address under its own name)",
   runPhoenixCrmPortalSidebarTests,
+);
+
+await runTest(
+  "Phoenix CRM says AM and PM, never Doctors or Accounts (owner, 2026-09-23: \"make it ALL AM PM not doctors and accounts\" — the two label maps that turned the codes into words are deleted so nothing can restore them, no screen string in the module carries either word, no label names a list type twice as \"Doctors · PM\", and the directory tab is called Directory because it holds AM customers too)",
+  runPhoenixCrmAmPmWordTests,
 );
 
 await runTest(

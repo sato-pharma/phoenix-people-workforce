@@ -41,7 +41,6 @@ import {
 import { isIsoDay } from "@/lib/phoenix-crm/calendar";
 import {
   PHOENIX_CRM_DEFAULT_SETTINGS,
-  PHOENIX_CRM_LIST_LABEL,
   type PhoenixCrmGrade,
   type PhoenixCrmListType,
   type PhoenixCrmSettings,
@@ -51,7 +50,7 @@ import { cn } from "@/lib/utils";
 
 const SETTINGS_PATH = "/api/phoenix-crm/settings";
 
-/** Doctors before accounts, as on every other tab. */
+/** PM before AM, as on every other tab. */
 const LIST_TYPES: PhoenixCrmListType[] = ["PM", "AM"];
 const GRADES: PhoenixCrmGrade[] = ["A", "B", "C"];
 
@@ -80,8 +79,8 @@ type FieldSpec = {
 };
 
 const CAP_FIELDS: FieldSpec[] = [
-  { key: "pmDailyCap", label: "Doctors · PM", ariaLabel: "Doctors a plan day holds at most", hint: null, unit: null, min: 1, max: 60, decimal: false, blankAllowed: false },
-  { key: "amDailyCap", label: "Accounts · AM", ariaLabel: "Accounts a plan day holds at most", hint: null, unit: null, min: 1, max: 60, decimal: false, blankAllowed: false },
+  { key: "pmDailyCap", label: "PM", ariaLabel: "PM a plan day holds at most", hint: null, unit: null, min: 1, max: 60, decimal: false, blankAllowed: false },
+  { key: "amDailyCap", label: "AM", ariaLabel: "AM a plan day holds at most", hint: null, unit: null, min: 1, max: 60, decimal: false, blankAllowed: false },
 ];
 
 const DISTANCE_FIELDS: FieldSpec[] = [
@@ -128,7 +127,7 @@ function targetSpec(listType: PhoenixCrmListType, grade: PhoenixCrmGrade): Field
   return {
     key: targetKey(listType, grade),
     label: `Grade ${grade}`,
-    ariaLabel: `${PHOENIX_CRM_LIST_LABEL[listType]}, grade ${grade}: visits a month`,
+    ariaLabel: `${listType}, grade ${grade}: visits a month`,
     hint: null,
     unit: null,
     min: 0,
@@ -879,7 +878,7 @@ export function SettingsTab({
               {LIST_TYPES.map((listType) => (
                 <div className="min-w-0" key={listType}>
                   <p className="text-xs font-black text-slate-700">
-                    {PHOENIX_CRM_LIST_LABEL[listType]} · {listType}
+                    {listType}
                   </p>
                   <div className="mt-1.5 grid min-w-0 grid-cols-3 gap-2 md:max-w-lg">{TARGET_FIELDS[listType].map(numberField)}</div>
                 </div>

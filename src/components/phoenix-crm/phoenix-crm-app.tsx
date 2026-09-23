@@ -56,7 +56,7 @@ const TAB_LABELS: Record<TabKey, string> = {
   list: "List",
   plan: "Plan",
   team: "Team",
-  doctors: "Doctors",
+  doctors: "Directory",
   reports: "Reports",
   settings: "Settings",
 };

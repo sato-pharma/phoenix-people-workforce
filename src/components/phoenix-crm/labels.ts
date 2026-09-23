@@ -5,7 +5,7 @@
 
 import { dayLabelWithYear, plural } from "@/components/phoenix-crm/format";
 import type { PillTone } from "@/components/phoenix-crm/ui";
-import { PHOENIX_CRM_LIST_SINGULAR, type PhoenixCrmGrade, type PhoenixCrmListType } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmGrade, PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 import type { TerritorySummary } from "@/lib/phoenix-crm/view-types";
 
 /** A search over what a row shows: every word typed must appear somewhere in it, in any order. */
@@ -16,9 +16,13 @@ export function matchesWords(query: string, parts: ReadonlyArray<string | null |
   return words.every((word) => text.includes(word));
 }
 
-/** "Doctor · PM", "Account · AM". */
+/**
+ * "AM", "PM" — and nothing else. The owner's rule of 2026-09-23: Phoenix CRM calls a list type by its
+ * own name on every screen, never "Doctors" or "Accounts". This function stays even though it returns
+ * its argument unchanged, so there is exactly one place the wording is decided.
+ */
 export function listText(listType: PhoenixCrmListType): string {
-  return `${PHOENIX_CRM_LIST_SINGULAR[listType]} · ${listType}`;
+  return listType;
 }
 
 /** "Faisal · Pedia · Mona Adel" — the territory by its place, line and rep, never its seat code. */
@@ -26,7 +30,7 @@ export function territoryLine(territory: TerritorySummary): string {
   return `${territory.name} · ${territory.repName ?? "No rep in this territory"}`;
 }
 
-/** "Doctor · PM · Grade B · Internal Medicine". */
+/** "PM · Grade B · Internal Medicine". */
 export function customerMetaText(customer: { listType: PhoenixCrmListType; grade: PhoenixCrmGrade | null; speciality: string | null }): string {
   return [listText(customer.listType), customer.grade ? `Grade ${customer.grade}` : "No grade", customer.speciality]
     .filter((part): part is string => Boolean(part))

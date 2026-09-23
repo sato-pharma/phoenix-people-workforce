@@ -23,7 +23,7 @@ import { logError } from "@/lib/observability/log";
 import { dropReasonLabel } from "@/lib/phoenix-crm/entry-rules";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { territoryName, territoryReviewer, type OrgIndex, type OrgSeat } from "@/lib/phoenix-crm/scope";
-import { PHOENIX_CRM_LIST_SINGULAR, type PhoenixCrmListType } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmListType } from "@/lib/phoenix-crm/types";
 
 export const PHOENIX_CRM_NOTIFICATION_MODULE = "phoenix_crm";
 export const PHOENIX_CRM_NOTIFICATION_CATEGORY = "phoenix_crm";
@@ -96,7 +96,7 @@ async function describe(notice: PhoenixCrmNotice): Promise<Delivery | null> {
     if (!reviewer) return null;
     const names = await loadPeopleNames([notice.requesterHrId]);
     const rep = nameOf(names, notice.requesterHrId, "A rep");
-    const customer = `${notice.customerName} (${PHOENIX_CRM_LIST_SINGULAR[notice.listType].toLowerCase()})`;
+    const customer = `${notice.customerName} (${notice.listType})`;
     const grade = notice.requestKind === "grade";
     return {
       recipients: [reviewer.hrId],

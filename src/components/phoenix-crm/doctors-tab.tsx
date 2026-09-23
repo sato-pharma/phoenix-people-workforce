@@ -100,7 +100,7 @@ export function DoctorsTab({
   }
 
   if (directory.error) return <CrmLoadError message={directory.error} onRetry={directory.reload} />;
-  if (!directory.data) return <CrmLoading label="Reading the doctors" />;
+  if (!directory.data) return <CrmLoading label="Reading the directory" />;
 
   const view = directory.data;
   const counts = {
@@ -111,8 +111,8 @@ export function DoctorsTab({
   const searchable = all.length > SEARCH_FROM;
   const typeOptions: ReadonlyArray<CrmChoiceOption<TypeFilter>> = [
     { value: "all", label: "All", note: `${countText(all.length)} validated` },
-    { value: "PM", label: "Doctors", note: `${countText(counts.PM)} PM` },
-    { value: "AM", label: "Accounts", note: `${countText(counts.AM)} AM` },
+    { value: "PM", label: "PM", note: `${countText(counts.PM)} validated` },
+    { value: "AM", label: "AM", note: `${countText(counts.AM)} validated` },
   ];
 
   /** A row offers the list only where this viewer's own page really has that territory. */
@@ -136,14 +136,14 @@ export function DoctorsTab({
           ? "Every validated customer in the company, across all open lines."
           : `Every validated customer in ${plural(view.territoryCount, "territory", "territories")} beneath you.`
       }
-      eyebrow="Doctors"
+      eyebrow="Directory"
       title="Validated customers"
     >
       <CrmBlock>
-        {/* Accounts and doctors side by side, never added together (the AM · PM golden rule). */}
+        {/* AM and PM side by side, never added together (the AM · PM golden rule). */}
         <CrmStatGrid>
-          <CrmStat label="Doctors · PM" value={countText(counts.PM)} />
-          <CrmStat label="Accounts · AM" value={countText(counts.AM)} />
+          <CrmStat label="PM" value={countText(counts.PM)} />
+          <CrmStat label="AM" value={countText(counts.AM)} />
           <CrmStat label="Territories" note="Open lines only" value={countText(view.territoryCount)} />
         </CrmStatGrid>
         <p className="mt-3 break-words text-sm font-medium leading-6 text-slate-600">

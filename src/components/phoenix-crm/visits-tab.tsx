@@ -59,7 +59,7 @@ import {
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 import { isIsoDay } from "@/lib/phoenix-crm/calendar";
 import { VISIT_COMMENT_MAX, VISIT_PRODUCTS_MAX } from "@/lib/phoenix-crm/entry-rules";
-import { PHOENIX_CRM_LIST_LABEL, type PhoenixCrmListType, type PhoenixCrmVisitKind } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmListType, PhoenixCrmVisitKind } from "@/lib/phoenix-crm/types";
 import type {
   SavedVisit,
   VisitCustomerOption,
@@ -468,16 +468,16 @@ export function VisitsTab({
           {day.error ? <CrmLoadError message={day.error} onRetry={day.reload} /> : null}
           <CrmBlock>
             <CrmStatGrid>
-              <CrmStat label="Doctors visited · PM" note={plural(figures.pairedPm, "double or chain visit", "double or chain visits")} value={figures.pm} />
-              <CrmStat label="Accounts visited · AM" note={plural(figures.pairedAm, "double or chain visit", "double or chain visits")} value={figures.am} />
+              <CrmStat label="PM visited" note={plural(figures.pairedPm, "double or chain visit", "double or chain visits")} value={figures.pm} />
+              <CrmStat label="AM visited" note={plural(figures.pairedAm, "double or chain visit", "double or chain visits")} value={figures.am} />
               <CrmStat
-                label="Doctors flagged · PM"
+                label="PM flagged"
                 note="Far from the place or weak location"
                 tone={figures.flaggedPm > 0 ? "warn" : "neutral"}
                 value={figures.flaggedPm}
               />
               <CrmStat
-                label="Accounts flagged · AM"
+                label="AM flagged"
                 note="Far from the place or weak location"
                 tone={figures.flaggedAm > 0 ? "warn" : "neutral"}
                 value={figures.flaggedAm}
@@ -566,8 +566,8 @@ function CustomerPicker({
         onChange={setListType}
         options={[
           { value: "all", label: "All" },
-          { value: "PM", label: PHOENIX_CRM_LIST_LABEL.PM },
-          { value: "AM", label: PHOENIX_CRM_LIST_LABEL.AM },
+          { value: "PM", label: "PM" },
+          { value: "AM", label: "AM" },
         ]}
         value={listType}
       />
