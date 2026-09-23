@@ -898,6 +898,35 @@ function RepPercent({ pct, note }: { pct: number; note?: React.ReactNode }) {
   );
 }
 
+/**
+ * The frequency split, shown under the big percentage on the Frequency keycard (owner, 2026-09-23).
+ *
+ * Three COUNTS of planned doctors — never percentages, the percentage stays whole above:
+ *   - Exact  (green)  — seen exactly as many times as the plan asked (`onPlanDoctors`).
+ *   - Above  (red)    — seen MORE than planned, a deviation on the owner's rule (`overDoctors`;
+ *                       always 0 under the Phoenix rules, where an extra visit is not counted).
+ *   - Below  (yellow) — seen at least once but FEWER times than planned (`underDoctors`).
+ * The colours are the house emerald / rose / amber, the same scale every other tone on this page
+ * uses, so a red here means the same as a red anywhere else.
+ */
+function RepFrequencyBreakdown({ exact, above, below }: { exact: number; above: number; below: number }) {
+  const rows: { label: string; value: number; tone: string }[] = [
+    { label: "Exact", value: exact, tone: "text-emerald-700" },
+    { label: "Above", value: above, tone: "text-rose-600" },
+    { label: "Below", value: below, tone: "text-amber-600" },
+  ];
+  return (
+    <dl className="mt-2.5 space-y-1 border-t border-slate-100 pt-2">
+      {rows.map((r) => (
+        <div className="flex items-baseline justify-between gap-2" key={r.label}>
+          <dt className={`text-[11px] font-bold uppercase tracking-[0.08em] ${r.tone}`}>{r.label}</dt>
+          <dd className={`text-[14px] font-bold tabular-nums ${r.tone}`}>{r.value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 /** One half-day of the call rate: its own number, its own target, its own bar. Never merged. */
 /**
  * `target` is nullable so this same component serves Pharmacy, which has no owner-set standard yet
@@ -1170,7 +1199,14 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
           rail={kpis?.hasMeasurablePlan ? repTone(kpis.frequencyPct).rail : undefined}
         >
           {kpis?.hasMeasurablePlan ? (
-            <RepPercent pct={kpis.frequencyPct} />
+            <>
+              <RepPercent pct={kpis.frequencyPct} />
+              <RepFrequencyBreakdown
+                above={kpis.overDoctors}
+                below={kpis.underDoctors}
+                exact={kpis.onPlanDoctors}
+              />
+            </>
           ) : (
             <p className="text-[13px] font-semibold text-slate-400">No plan to score</p>
           )}
