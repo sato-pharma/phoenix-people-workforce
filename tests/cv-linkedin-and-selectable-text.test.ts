@@ -181,18 +181,31 @@ export function runCvLinkedInAndSelectableTextTests() {
     "and stays invisible when selected, beating the app's ink-coloured ::selection",
   );
 
-  // pdf.js's measuring canvas. TextLayer appends an opaque (`alpha: false`) canvas to <body> per
-  // language and leaves hiding it to its own stylesheet. Unhidden, preflight stacks them as 300x150
-  // black blocks under the app shell on every page the tab visits after a CV — the black band in
-  // the bottom-left of Direct Orders, 2026-09-19. The class is pdf.js's, so it is checked in the
-  // copy the viewer actually loads: an upgrade that renames it fails here, not on a page.
+  // pdf.js's measuring canvas. TextLayer appends an opaque (`alpha: false`) canvas to <body>, one
+  // per language. Unhidden, preflight stacks them as 300x150 black blocks under the app shell on
+  // every page the tab visits after a CV — the black band in the bottom-left of Direct Orders,
+  // 2026-09-19.
+  //
+  // WHAT IS REQUIRED IS THAT IT IS HIDDEN, not how. pdf.js 5 gave it the class
+  // `hiddenCanvasElement` and left the hiding to a stylesheet — ours, since we serve the build
+  // ourselves — so the class name was load-bearing and this checked for it. pdf.js 6 stopped
+  // relying on anyone else and sets `display:none` inline on the element it creates, which is the
+  // stronger fix: there is no longer a name to get wrong. Pinning the 5.x mechanism would now fail
+  // on a build that fixed the bug outright, so this asks the build actually served which of the two
+  // it does, and holds it to that one. A build that does NEITHER is the 2026-09-19 regression
+  // returning, and fails here rather than on a page.
+  const servedViewer = read("public/pdfjs/pdf.min.mjs");
+  const hidesItself = /style\.cssText\s*=\s*"[^"]*display:\s*none[^"]*"/.test(servedViewer);
+  const usesTheClass = servedViewer.includes('"hiddenCanvasElement"');
   assert.ok(
-    read("public/pdfjs/pdf.min.mjs").includes('"hiddenCanvasElement"'),
-    "the pdf.js build the viewer loads still names its measuring canvas hiddenCanvasElement",
+    hidesItself || usesTheClass,
+    "the pdf.js build the viewer loads neither hides its measuring canvas inline nor names it hiddenCanvasElement for our stylesheet to hide — unhidden it paints 300x150 black blocks under the app shell on every page visited after a CV, which is the 2026-09-19 regression",
   );
-  assert.match(
-    css,
-    /(?:^|\n)\.hiddenCanvasElement \{[^}]*display: none;[^}]*\}/,
-    "and that canvas is hidden, never painted as a black block under the page",
-  );
+  if (usesTheClass) {
+    assert.match(
+      css,
+      /(?:^|\n)\.hiddenCanvasElement \{[^}]*display: none;[^}]*\}/,
+      "this pdf.js build hides its measuring canvas by class, so app/globals.css must still hide that class",
+    );
+  }
 }

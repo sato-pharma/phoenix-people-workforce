@@ -26,24 +26,28 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "@supabase/*"
         update-types: ["version-update:semver-major"]
-      # pdfjs-dist 6 is held deliberately (#4221, 2026-09-23). Its legacy/ build no longer
-      # polyfills Promise.withResolvers — it calls it 27 times in pdf.min.mjs and 14 in
-      # pdf.worker.min.mjs with nothing defining it, where 5.4.296's legacy build ships the
-      # core-js polyfill in both files. Taking the bump as it stood reintroduced the
-      # 2026-09-14 outage, when managers across the field opened a CV on an older phone
-      # browser and got "Promise.withResolvers is not a function" instead of the page.
+      # pdfjs-dist majors stay MANUAL, and the 6.x migration is why this entry earns its
+      # place rather than being caution by habit. #4221 held the dependabot PR on
+      # 2026-09-23 and the migration shipped as its own piece of work. A single major moved
+      # two things, neither of which a green dependabot PR could have shown:
       #
-      # The RUNTIME half of that is now solved and the hold no longer rests on it: we ship
-      # our own polyfill, prepended by scripts/sync-pdfjs-assets.mjs into BOTH served files
-      # (the worker has its own global, so one copy would not cover it). 6.3.289 was put
-      # through tests/pdfjs-legacy-browser-assets.test.ts as a candidate, via
-      # PHX_PDFJS_DIST_ROOT, and passes.
+      #   1. It WITHDREW a polyfill. 6.x's legacy build still bundles core-js but dropped
+      #      Promise.withResolvers, which it calls 27 times in pdf.min.mjs and 14 in the
+      #      worker. Merged as it stood, that reintroduced the 2026-09-14 outage, when
+      #      managers across the field opened a CV on an older phone browser and got
+      #      "Promise.withResolvers is not a function" instead of the page. We now carry
+      #      that fallback ourselves, prepended into BOTH served files by
+      #      scripts/sync-pdfjs-assets.mjs (the worker has its own global).
+      #   2. It MOVED DECODERS OUT OF THE BUNDLE. JBIG2 and CCITTFax — how a scanned or
+      #      faxed page is encoded, i.e. a large share of the CVs this app reads — became
+      #      jbig2.wasm, fetched from a `wasmUrl` that defaults to null. Left unserved, an
+      #      ordinary CV renders perfectly and a scanned one comes up blank.
       #
-      # What the hold is still for: v6 changes the API surface, which red-lines typecheck
-      # and the unit suite, and that migration is a deliberate piece of work rather than a
-      # dependabot PR. Keep this entry until someone does it; when they do, take the bump,
-      # re-run the sync script, and let the guard confirm nothing else went unpolyfilled.
-      # Pinned by tests/pdfjs-legacy-browser-assets.test.ts and
+      # Both are invisible to typecheck, to lint, and to a reviewer reading the diff. A
+      # major here means putting the candidate through
+      # tests/pdfjs-legacy-browser-assets.test.ts first via PHX_PDFJS_DIST_ROOT, then
+      # re-running the sync script and committing what it writes. Minors and patches flow
+      # normally. Pinned by tests/pdfjs-legacy-browser-assets.test.ts and
       # tests/pdfjs-browser-polyfill.test.ts.
       - dependency-name: pdfjs-dist
         update-types: ["version-update:semver-major"]

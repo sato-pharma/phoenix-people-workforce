@@ -68,8 +68,10 @@ export function WhatsAppApplicationPrint({ sessionId }: { sessionId: string }) {
         if (!active || !container) return;
         container.innerHTML = "";
 
-        // isEvalSupported: false — the production CSP forbids eval, and pdf.js would only fall back anyway.
-        const doc = await pdfjsLib.getDocument({ data: application.bytes.slice(), isEvalSupported: false }).promise;
+        // wasmUrl — pdf.js 6 decodes JBIG2/CCITTFax (scanned pages), JPEG2000 and ICC in wasm it
+        // fetches from here; unset, a scanned application prints blank (cv-preview-modal.tsx).
+        // `isEvalSupported` is gone in 6: the eval it disabled for the CSP no longer exists.
+        const doc = await pdfjsLib.getDocument({ data: application.bytes.slice(), wasmUrl: "/pdfjs/wasm/" }).promise;
         for (let pageNumber = 1; pageNumber <= doc.numPages; pageNumber += 1) {
           if (!active) return;
           const page = await doc.getPage(pageNumber);

@@ -13,7 +13,7 @@
  * Run after `next build` (see the validate job in .github/workflows/ci.yml).
  */
 import { createRequire } from "node:module";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 const root = process.cwd();
@@ -65,22 +65,77 @@ if (binaries.length === 0) {
 // 3. THE REAL QUESTION. Resolve exactly as production does — from pdfjs-dist's own module, which is
 //    where the runtime createRequire actually runs. Existence proved nothing last time; reachability
 //    is the whole bug.
-const pdfjsDir = readdirSync(pnpmDir).find((name) => name.startsWith("pdfjs-dist@"));
-if (!pdfjsDir) fail("pdfjs-dist is not in .next/standalone at all — CV extraction cannot work; investigate the build.");
-const pdfjsEntry = path.join(pnpmDir, pdfjsDir, "node_modules", "pdfjs-dist", "legacy", "build", "pdf.mjs");
-if (!existsSync(pdfjsEntry)) fail(`${pdfjsEntry} is missing — pdfjs-dist's legacy build did not survive tracing.`);
-
-let resolved;
-try {
-  resolved = createRequire(pdfjsEntry).resolve("@napi-rs/canvas");
-} catch (error) {
-  fail(
-    `pdfjs-dist CANNOT resolve @napi-rs/canvas inside .next/standalone (${error.code ?? "error"}).\n` +
-      `        This is the exact production failure: Cannot load "@napi-rs/canvas" package.\n` +
-      `        The files may well be present — being present is not the same as being reachable.`,
-  );
+//    EVERY copy of pdfjs-dist that Node can actually reach, not the first one found. Since the
+//    browser viewer moved to pdfjs-dist 6 there are two in the lockfile: our own direct 6.x, and
+//    the 5.x that pdf-parse pins for itself. A `.find()` here would have picked whichever the
+//    directory listing happened to return first, so the gate's verdict would have depended on
+//    filesystem ordering.
+//
+//    A copy whose legacy build was NOT traced is skipped, not failed, and that is the normal state
+//    for the 6.x one: nothing under src/ imports pdfjs-dist in Node. The viewer loads it in the
+//    BROWSER, by URL, from the committed bytes in public/pdfjs/ — which is why they are committed —
+//    so Next's tracer is correct to leave it out of the server bundle, and demanding it here would
+//    fail a perfectly good build. What this gate protects is the Node OCR path, and that runs on
+//    pdf-parse's copy. At least one must be present and must resolve canvas; a tree where NONE is
+//    means CV extraction cannot work at all.
+const pdfjsDirs = readdirSync(pnpmDir).filter((name) => name.startsWith("pdfjs-dist@"));
+if (pdfjsDirs.length === 0) {
+  fail("pdfjs-dist is not in .next/standalone at all — CV extraction cannot work; investigate the build.");
 }
 
-console.log(`  OK  @napi-rs/canvas resolves from pdfjs-dist inside .next/standalone`);
-console.log(`      -> ${path.relative(standalone, resolved)}`);
+//    WHICH copy is the one that matters is read from pdf-parse itself, never assumed. pdf-parse
+//    pins pdfjs-dist exactly, so its own package.json in the traced tree names the copy the Node
+//    path will load; that one MUST be present. Without this, "skip what was not traced" is too
+//    generous by half — a tree where pdf-parse's copy vanished and only the browser-only one
+//    survived would pass while CV extraction was dead, which is precisely the silent production
+//    failure this gate exists to prevent.
+const pdfParseDir = readdirSync(pnpmDir).find((name) => name.startsWith("pdf-parse@"));
+let requiredCopy = null;
+if (pdfParseDir) {
+  const manifest = path.join(pnpmDir, pdfParseDir, "node_modules", "pdf-parse", "package.json");
+  if (existsSync(manifest)) {
+    const pinned = JSON.parse(readFileSync(manifest, "utf8")).dependencies?.["pdfjs-dist"];
+    // Only an EXACT pin identifies a directory. A range would need real semver resolution, and
+    // guessing wrong would be worse than the weaker check, so we fall back rather than guess.
+    if (pinned && /^\d+\.\d+\.\d+$/.test(pinned)) requiredCopy = `pdfjs-dist@${pinned}`;
+  }
+}
+
+let checked = 0;
+for (const pdfjsDir of pdfjsDirs.sort()) {
+  const pdfjsEntry = path.join(pnpmDir, pdfjsDir, "node_modules", "pdfjs-dist", "legacy", "build", "pdf.mjs");
+  if (!existsSync(pdfjsEntry)) {
+    if (pdfjsDir === requiredCopy) {
+      fail(
+        `${pdfjsDir} did not survive tracing into .next/standalone, and it is the copy ${pdfParseDir} pins.\n` +
+          `        pdf-parse has no other Node code path, so CV text extraction and scanned-CV OCR are both dead.\n` +
+          `        Check the pdfjs-dist@* entry in next.config.ts's outputFileTracingIncludes.`,
+      );
+    }
+    console.log(`  --  ${pdfjsDir} was not traced into .next/standalone — no Node code path imports it (browser-only)`);
+    continue;
+  }
+
+  let resolved;
+  try {
+    resolved = createRequire(pdfjsEntry).resolve("@napi-rs/canvas");
+  } catch (error) {
+    fail(
+      `${pdfjsDir} CANNOT resolve @napi-rs/canvas inside .next/standalone (${error.code ?? "error"}).\n` +
+        `        This is the exact production failure: Cannot load "@napi-rs/canvas" package.\n` +
+        `        The files may well be present — being present is not the same as being reachable.`,
+    );
+  }
+
+  checked += 1;
+  console.log(`  OK  @napi-rs/canvas resolves from ${pdfjsDir} inside .next/standalone`);
+  console.log(`      -> ${path.relative(standalone, resolved)}`);
+}
+
+if (checked === 0) {
+  fail(
+    `${pdfjsDirs.length} pdfjs-dist copies are in .next/standalone and NONE kept its legacy build.\n` +
+      `        pdf-parse has no other Node code path, so CV text extraction and scanned-CV OCR are both dead; investigate the build.`,
+  );
+}
 console.log(`      native binary: ${binaries.join(", ")}`);

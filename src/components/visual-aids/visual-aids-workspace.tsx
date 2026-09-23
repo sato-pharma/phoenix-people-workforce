@@ -170,22 +170,27 @@ function Field({ children, label, hint }: { children: React.ReactNode; label: st
 
 /* ─────────────────────────────── pdf.js loading ─────────────────────────────── */
 
+// Hand-written rather than pdfjs-dist's own types, so nothing here is checked against the real
+// library — a stale option would have type-checked green forever. That is exactly what happened to
+// `isEvalSupported`, which pdf.js 6 removed: the other three call sites went red on the bump and
+// this one did not. Keep this shape honest by hand when the pinned version moves.
 type PdfJs = {
   GlobalWorkerOptions: { workerSrc: string };
-  getDocument: (o: { data: Uint8Array; isEvalSupported: boolean }) => { promise: Promise<PdfDocument> };
+  getDocument: (o: { data: Uint8Array; wasmUrl: string }) => { promise: Promise<PdfDocument> };
 };
 
 /**
  * pdf.js, library AND worker, as the static same-origin assets under public/pdfjs/ — the exact
  * loading the CV preview uses (src/components/recruitment/cv-preview-modal.tsx says why: the bundler
- * must not touch them, and the CSP allows only same-origin scripts). `isEvalSupported: false`
- * because production's CSP forbids eval.
+ * must not touch them, and the CSP allows only same-origin scripts). `wasmUrl` points at the
+ * decoders pdf.js 6 keeps outside its JS bundle — JBIG2/CCITTFax, JPEG2000, ICC — so a scanned
+ * visual aid draws instead of coming up blank.
  */
 async function loadPdf(bytes: Uint8Array): Promise<PdfDocument> {
   const pdfjsUrl = "/pdfjs/pdf.min.mjs";
   const pdfjsLib = (await import(/* webpackIgnore: true */ pdfjsUrl)) as PdfJs;
   pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdfjs/pdf.worker.min.mjs";
-  return pdfjsLib.getDocument({ data: bytes, isEvalSupported: false }).promise;
+  return pdfjsLib.getDocument({ data: bytes, wasmUrl: "/pdfjs/wasm/" }).promise;
 }
 
 /* ─────────────────────────────── the viewer ─────────────────────────────── */

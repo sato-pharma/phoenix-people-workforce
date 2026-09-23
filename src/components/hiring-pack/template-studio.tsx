@@ -116,9 +116,10 @@ function describePageSize(widthPt: number, heightPt: number): string {
  * through a NATIVE dynamic import, with `webpackIgnore` stopping the bundler from touching it. That
  * is not incidental: `pdfjs-dist` ships as a prebuilt ESM bundle with its own internal module
  * system, and letting this app's webpack re-bundle it throws `TypeError: Object.defineProperty
- * called on non-object` during evaluation. `isEvalSupported: false` keeps it inside this app's CSP,
- * which has no `unsafe-eval`. All of this is the CV preview's hard-won configuration, reused
- * verbatim — see `cv-preview-modal.tsx` for the full account.
+ * called on non-object` during evaluation. `wasmUrl` points at the decoders pdf.js 6 keeps outside
+ * its JS bundle — JBIG2/CCITTFax, JPEG2000, ICC — without which a scanned page rasterises blank.
+ * All of this is the CV preview's hard-won configuration, reused verbatim — see
+ * `cv-preview-modal.tsx` for the full account, including why `isEvalSupported` is gone.
  */
 async function rasterisePdf(
   file: File,
@@ -129,7 +130,7 @@ async function rasterisePdf(
   pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdfjs/pdf.worker.min.mjs";
 
   const bytes = new Uint8Array(await file.arrayBuffer());
-  const doc = await pdfjsLib.getDocument({ data: bytes, isEvalSupported: false }).promise;
+  const doc = await pdfjsLib.getDocument({ data: bytes, wasmUrl: "/pdfjs/wasm/" }).promise;
 
   if (doc.numPages > CUSTOM_TEMPLATE_MAX_PAGES) {
     throw new Error(

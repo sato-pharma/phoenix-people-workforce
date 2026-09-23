@@ -1453,7 +1453,18 @@ html:has(.admin-shell):not(:has(.employee-portal-shell)) {
    CV left a black band in the bottom-left of every page the tab visited next,
    since pdf.js reuses the canvases and never removes them. Seen on Direct
    Orders, 2026-09-19: three languages, a 300x450 black block, and a page 450px
-   taller than its content. pdf.js's own rule, verbatim. */
+   taller than its content. pdf.js's own rule, verbatim.
+
+   DORMANT SINCE THE pdf.js 6 BUMP, and kept deliberately. 6.3.289 stopped
+   depending on anyone else's stylesheet and sets these same declarations inline
+   on the canvas it creates, so there is no longer a class name to get wrong —
+   the better fix, and the reason this rule currently matches nothing. It stays
+   because it costs four lines and the failure it prevents is silent, showing up
+   only on a page visited AFTER a CV: were the served build ever to go back to
+   the class, on a rollback or a vendor change, deleting this now would bring
+   the black band back with nothing left to catch it.
+   tests/cv-linkedin-and-selectable-text.test.ts asks the served build which of
+   the two mechanisms it uses and holds it to that one. */
 .hiddenCanvasElement {
   position: absolute;
   top: 0;
