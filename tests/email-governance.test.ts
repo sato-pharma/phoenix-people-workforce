@@ -155,6 +155,48 @@ export async function runEmailGovernanceTests() {
     globalThis.fetch = originalFetch;
   }
 
+  // A reserved documentation host (what the stub loaders point the signature at) is never
+  // fetched when the caller opts in, so a stubbed run cannot report a 404 for an image the mail
+  // never carried. Without the opt-in it is still fetched and still fails loudly — the composer
+  // paths, which validate a request-derived URL, keep exactly that behaviour.
+  const originalReservedFetch = globalThis.fetch;
+  try {
+    let reservedFetchCalls = 0;
+    globalThis.fetch = (async () => {
+      reservedFetchCalls += 1;
+      return new Response(null, { status: 404 });
+    }) as typeof fetch;
+
+    const stubbed = await assertReachableEmailImage("https://example.com/phoenix-email-signature.png", {
+      blockLocalAssets: true,
+      skipReservedTestHosts: true,
+    });
+    assert.equal(reservedFetchCalls, 0);
+    assert.equal(stubbed.skipped, true);
+    assert.equal(stubbed.verified, false);
+
+    const stubbedInvalidTld = await assertReachableEmailImage("https://example.invalid/phase15-email-signature.png", {
+      skipReservedTestHosts: true,
+    });
+    assert.equal(reservedFetchCalls, 0);
+    assert.equal(stubbedInvalidTld.skipped, true);
+
+    await assert.rejects(
+      () => assertReachableEmailImage("https://example.com/phoenix-email-signature.png"),
+      /not reachable as an image/,
+    );
+    assert.equal(reservedFetchCalls, 2); // HEAD then GET — the opt-in is what silences it, nothing else
+  } finally {
+    globalThis.fetch = originalReservedFetch;
+  }
+
+  // The send path must keep the opt-in: it is the only reason a stubbed run stays quiet.
+  const sendPhoenixEmailSource = readFileSync("src/lib/email/send-phoenix-email.ts", "utf8");
+  assert.match(
+    sendPhoenixEmailSource,
+    /assertReachableEmailImage\(url, \{ blockLocalAssets: true, skipReservedTestHosts: true \}\)/,
+  );
+
   const designerMetadata = getEmailDesignerMetadata();
   const employeeNameVariable = designerMetadata.variables.find((variable) => variable.token === "employeeName");
   assert.equal(employeeNameVariable?.label, "Employee Name");
