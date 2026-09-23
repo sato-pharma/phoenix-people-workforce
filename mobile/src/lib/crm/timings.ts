@@ -58,6 +58,28 @@ export function formatTimingWindow(timing: Pick<CrmTiming, "startMinute" | "endM
   return `${formatClockMinute(timing.startMinute)} – ${formatClockMinute(timing.endMinute)}`;
 }
 
+export type SeasonalWindows = {
+  windows: CrmTiming[];
+  /** True when it is Ramadan and the customer has no Ramadan timings, so the normal ones are shown. */
+  noRamadanTime: boolean;
+};
+
+/**
+ * The windows that apply on a weekday. PURE PORT of the web `windowsForWeekday`: in Ramadan the
+ * special timings are read; a customer with none falls back to the normal timings, flagged
+ * "no Ramadan time" (owner decision 2026-09-16).
+ */
+export function windowsForWeekday(timings: ReadonlyArray<CrmTiming>, weekday: number, ramadan: boolean): SeasonalWindows {
+  if (ramadan) {
+    const hasRamadan = timings.some((timing) => timing.season === "ramadan");
+    if (hasRamadan) {
+      return { windows: timings.filter((timing) => timing.season === "ramadan" && timing.weekday === weekday), noRamadanTime: false };
+    }
+    return { windows: timings.filter((timing) => timing.season === "normal" && timing.weekday === weekday), noRamadanTime: true };
+  }
+  return { windows: timings.filter((timing) => timing.season === "normal" && timing.weekday === weekday), noRamadanTime: false };
+}
+
 /** "Sat, Mon, Tue" — the days a place receives in a season, in field-week order. Mirrors the web copy. */
 export function receivingDaysLabel(timings: ReadonlyArray<CrmTiming>, season: CrmSeason = "normal"): string {
   const days = new Set(timings.filter((timing) => timing.season === season).map((timing) => timing.weekday));

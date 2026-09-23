@@ -243,6 +243,127 @@ export type ValidateResult = {
   gradeRequestId: string | null;
 };
 
+// ── Plan ────────────────────────────────────────────────────────────────────────────────────────
+// Transcribed from src/lib/phoenix-crm/server/plans.ts (PlanSummary, PlanItemView, PlanDayView,
+// PlannerView, SavedPlan), src/lib/phoenix-crm/suggestions.ts (PlannerCustomer, PlannerPlace) and
+// src/lib/phoenix-crm/plan-rules.ts (PlanItemDraft, PlanExceptionType). Same fields, same names.
+
+export type CrmPlanStatus = "draft" | "submitted" | "approved" | "returned";
+
+export type PlanExceptionType = "another_place" | "by_appointment" | "timings_changed" | "other";
+
+export type PlanGradeTargets = Record<CrmListType, Record<CrmGrade, number | null>>;
+
+/** One customer on one day of the rep's draft. `placeId` is null for a customer not validated yet. */
+export type PlanItemDraft = {
+  planDate: string;
+  customerId: string;
+  placeId: string | null;
+  exceptionType: PlanExceptionType | null;
+  exceptionNote: string | null;
+};
+
+export type PlanSummary = {
+  planId: string;
+  weekStart: string;
+  status: CrmPlanStatus;
+  statusLabel: string;
+  version: number;
+  submittedAt: string | null;
+  submittedByName: string | null;
+  decidedAt: string | null;
+  decidedByName: string | null;
+  /** The SFE Manager decided it, not the reviewing manager. */
+  decidedBySfe: boolean;
+  decisionNote: string | null;
+  updatedAt: string;
+};
+
+export type PlanItemView = {
+  customerId: string;
+  placeId: string | null;
+  /** Carried over from iReports360 and not validated yet. */
+  pending: boolean;
+  name: string;
+  listType: CrmListType;
+  grade: CrmGrade | null;
+  speciality: string | null;
+  placeLabel: string | null;
+  brickName: string | null;
+  zone: string | null;
+  receives: boolean;
+  windowsText: string;
+  startMinute: number | null;
+  exceptionType: string | null;
+  exceptionLabel: string | null;
+  exceptionNote: string | null;
+  /** The customer left the list, or this place was removed, after planning. */
+  stale: boolean;
+  isolated: boolean;
+  nearestKm: number | null;
+};
+
+export type PlanDayView = {
+  date: string;
+  /** ["AM","PM"], or ["AM"] on Thursday, or [] on Friday. */
+  listTypes: CrmListType[];
+  ramadan: boolean;
+  /** Today or later: the rep may still change it. */
+  editable: boolean;
+  items: PlanItemView[];
+  counts: Record<CrmListType, number>;
+  spanKm: number;
+  farApart: boolean;
+};
+
+export type PlannerPlace = {
+  placeId: string;
+  label: string | null;
+  lat: number;
+  lon: number;
+  brick: string | null;
+  zone: string | null;
+  timings: CrmTiming[];
+};
+
+export type PlannerCustomer = {
+  customerId: string;
+  name: string;
+  listType: CrmListType;
+  grade: CrmGrade | null;
+  speciality: string | null;
+  visitsThisMonth: number;
+  pending: boolean;
+  places: PlannerPlace[];
+};
+
+export type PlannerView = {
+  territory: TerritorySummary;
+  isTest: boolean;
+  cairoToday: string;
+  weekStart: string;
+  weeks: Array<{ weekStart: string; status: CrmPlanStatus | null; statusLabel: string }>;
+  readiness: { ready: boolean; total: number; open: number; dropPending: number };
+  pendingCount: number;
+  rules: { pmDailyCap: number; amDailyCap: number; farApartKm: number; gradeTargets: PlanGradeTargets };
+  plan: PlanSummary | null;
+  days: PlanDayView[];
+  customers: PlannerCustomer[];
+  viewerIsRep: boolean;
+  viewerIsReviewer: boolean;
+  canEdit: boolean;
+  canSubmit: boolean;
+  canReopen: boolean;
+  canApprove: boolean;
+  canReturn: boolean;
+  blockedReason: string | null;
+};
+
+export type SavedPlan = { planId: string; status: CrmPlanStatus; version: number; itemCount: number };
+
+/** What /plans/submit and /plans/decide answer with. */
+export type PlanTransition = { planId: string; status: CrmPlanStatus; version: number };
+
 // ── What the phone sends ───────────────────────────────────────────────────────────────────────────
 
 /** One receiving window, as the routes parse it: clock strings, the shape a time input gives. */

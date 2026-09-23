@@ -73,6 +73,16 @@ export function shiftIsoDay(isoDay: string, days: number): string {
   return value.toISOString().slice(0, 10);
 }
 
+/** 0 = Sunday … 6 = Saturday of an ISO day, built at noon UTC so the phone's zone cannot shift it. */
+export function weekdayOfIsoDay(isoDay: string): number {
+  return new Date(`${isoDay}T12:00:00Z`).getUTCDay();
+}
+
+/** "Sat 19 Sept – Thu 24 Sept" — the field week, Saturday to Thursday. */
+export function weekLabel(weekStart: string): string {
+  return `${dayLabel(weekStart)} – ${dayLabel(shiftIsoDay(weekStart, 5))}`;
+}
+
 function instantOf(iso: string | null | undefined): Date | null {
   if (!iso) return null;
   const value = new Date(iso);

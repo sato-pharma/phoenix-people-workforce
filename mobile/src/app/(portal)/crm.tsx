@@ -7,6 +7,7 @@ import { CrmChoice, CrmNote } from "@/components/crm/crm-kit";
 import { ErrorNotice, LoadingScreen } from "@/components/ui";
 import { useCrm } from "@/lib/crm/client";
 import { ListScreen } from "@/features/crm/list-screen";
+import { PlanScreen } from "@/features/crm/plan-screen";
 import { VisitsScreen } from "@/features/crm/visits-screen";
 import type { PendingValidate, PendingVisit } from "@/features/crm/handoff";
 import { hairline, radius, space, type } from "@/theme/tokens";
@@ -24,11 +25,13 @@ import type { CrmOverview, TerritorySummary } from "@/lib/crm/types";
  * The server decides who sees what (GET /api/phoenix-crm/overview) and checks every read and save
  * again; this screen only lays out what it is handed. The two hand-offs the web module carries are here
  * too: validate a customer and its photo can stand for today's visit; save a visit on a customer not
- * validated yet and validate him now. While a visit or a validation is under way the chrome is hidden,
- * so the whole screen is the entry the rep is standing at the door to finish.
+ * validated yet and validate him now. While a visit, a validation or a plan day is open the chrome is
+ * hidden, so the whole screen is the entry the rep is standing at the door to finish.
  */
 
-type SubTab = "visits" | "list";
+type SubTab = "visits" | "list" | "plan";
+
+const SUB_TAB_LABEL: Record<SubTab, string> = { visits: "Visits", list: "List", plan: "Plan" };
 
 function seatOf(overview: CrmOverview, chosen: string | null): string | null {
   const options = overview.territories;
@@ -59,9 +62,11 @@ export default function PhoenixCrmScreen() {
   const [pendingValidate, setPendingValidate] = useState<PendingValidate | null>(null);
   const [visitsWorking, setVisitsWorking] = useState(false);
   const [listWorking, setListWorking] = useState(false);
+  const [planWorking, setPlanWorking] = useState(false);
 
   const onVisitsWork = useCallback((working: boolean) => setVisitsWorking(working), []);
   const onListWork = useCallback((working: boolean) => setListWorking(working), []);
+  const onPlanWork = useCallback((working: boolean) => setPlanWorking(working), []);
 
   const overview = resource.data;
 
@@ -83,7 +88,11 @@ export default function PhoenixCrmScreen() {
   const test = viewer.isSuperAdmin && testMode;
   const seatId = seatOf(overview, chosenSeat);
 
-  const subTabs: SubTab[] = [...(overview.tabs.visits ? (["visits"] as const) : []), ...(overview.tabs.list ? (["list"] as const) : [])];
+  const subTabs: SubTab[] = [
+    ...(overview.tabs.visits ? (["visits"] as const) : []),
+    ...(overview.tabs.list ? (["list"] as const) : []),
+    ...(overview.tabs.plan ? (["plan"] as const) : []),
+  ];
   const activeTab: SubTab = subTabs.includes(tab) ? tab : (subTabs[0] ?? "visits");
 
   if (subTabs.length === 0 || seatId === null) {
@@ -113,7 +122,7 @@ export default function PhoenixCrmScreen() {
   }
 
   const entersVisits = test || (!viewer.isSuperAdmin && overview.visitSeatIds.includes(seatId));
-  const working = activeTab === "visits" ? visitsWorking : listWorking;
+  const working = activeTab === "visits" ? visitsWorking : activeTab === "list" ? listWorking : planWorking;
   const currentTerritory = overview.territories.find((territory) => territory.seatId === seatId) ?? null;
 
   const chrome = (
@@ -173,12 +182,9 @@ export default function PhoenixCrmScreen() {
 
       {subTabs.length > 1 ? (
         <CrmChoice
-          columns={2}
+          columns={subTabs.length >= 3 ? 3 : 2}
           onChange={setTab}
-          options={[
-            { value: "visits", label: "Visits" },
-            { value: "list", label: "List" },
-          ]}
+          options={subTabs.map((value) => ({ value, label: SUB_TAB_LABEL[value] }))}
           value={activeTab}
         />
       ) : null}
@@ -222,6 +228,17 @@ export default function PhoenixCrmScreen() {
               }
               onWorkChange={onListWork}
               pendingValidate={pendingValidate}
+              seatId={seatId}
+              test={test}
+            />
+          </View>
+        ) : null}
+        {overview.tabs.plan ? (
+          <View style={{ display: activeTab === "plan" || planWorking ? "flex" : "none", flex: activeTab === "plan" ? 1 : 0 }}>
+            <PlanScreen
+              key={`plan|${seatId}|${test}`}
+              onOpenList={overview.tabs.list ? () => setTab("list") : undefined}
+              onWorkChange={onPlanWork}
               seatId={seatId}
               test={test}
             />
