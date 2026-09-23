@@ -560,6 +560,7 @@ import { runWeeklyEgdMissingStockTests } from "./weekly-egd-missing-stock.test.t
 import { runWeeklyVerifySheetMatchTests } from "./weekly-verify-sheet-match.test.ts";
 import { runWeeklySalesAccessTests } from "./weekly-sales-access.test.ts";
 import { runWeeklyStockDashboardTests } from "./weekly-stock-dashboard.test.ts";
+import { runWeeklyStockGovernorateScopeTests } from "./weekly-stock-governorate-scope.test.ts";
 import { runWeeklyStockWorkbookTotalsTests } from "./weekly-stock-workbook-totals.test.ts";
 import { runWeeklyWeekComparisonStockTotalTests } from "./weekly-week-comparison-stock-total.test.ts";
 import { runWeeklyCombinedReportUnitTotalsTests } from "./weekly-combined-report-unit-totals.test.ts";
@@ -3086,6 +3087,7 @@ await runTest("weekly EGD: a workbook with no readable stock blocks instead of s
 await runTest("weekly verification screen reads the same sheets as the import and reports a missing sheet as MISSING", runWeeklyVerifySheetMatchTests);
 await runTest("weekly sales access", runWeeklySalesAccessTests);
 await runTest("weekly stock dashboard", runWeeklyStockDashboardTests);
+await runTest("weekly stock: territory viewers see only their own governorate; Kibar Omala stays visible to all", runWeeklyStockGovernorateScopeTests);
 await runTest(
   "weekly stock export: one TOTAL row per tab, no SUM under units, weeks of cover, products or depots, and every total matches the screen",
   runWeeklyStockWorkbookTotalsTests,
