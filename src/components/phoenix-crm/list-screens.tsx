@@ -368,7 +368,7 @@ export function ValidateScreen({
 
   function clientProblem(): string | null {
     if (subject.mode === "new") {
-      if (!listType) return "Choose whether this is a doctor (PM) or an account (AM).";
+      if (!listType) return "Choose AM or PM.";
       if (cleanName.length < 3) return "Write the customer's full name.";
       if (!grade) return "Propose a grade (A, B or C).";
     }
@@ -504,10 +504,10 @@ export function ValidateScreen({
       {subject.mode === "new" ? (
         <CrmBlock className="border-t border-slate-100" title="1 · Customer">
           <div className="grid min-w-0 gap-3 sm:grid-cols-2">
-            <CrmField className="sm:col-span-2" label="Doctor or account">
+            <CrmField className="sm:col-span-2" label="AM or PM">
               <CrmChoice
                 columns={2}
-                label="Doctor or account"
+                label="AM or PM"
                 onChange={(next) => {
                   setListType(next);
                   setSameName(null);

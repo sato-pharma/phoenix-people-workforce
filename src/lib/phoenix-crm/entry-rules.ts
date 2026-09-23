@@ -33,7 +33,7 @@ export const VISIT_PRODUCTS_MAX = 12;
 export const DROP_REASONS = [
   { key: "moved", label: "Moved away" },
   { key: "retired", label: "Retired or stopped practising" },
-  { key: "closed", label: "Clinic or account closed" },
+  { key: "closed", label: "Clinic or place closed" },
   { key: "not_target", label: "Not a target for our line" },
   { key: "duplicate", label: "Duplicate of another customer" },
   { key: "other", label: "Other (write a note)" },
@@ -152,7 +152,7 @@ export type NewCustomerDraft = {
 export function parseNewCustomer(raw: unknown): EntryRuleResult<NewCustomerDraft> {
   const body = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   const listType = parseListType(body.listType);
-  if (!listType) return { ok: false, error: "Choose whether this is a doctor (PM) or an account (AM)." };
+  if (!listType) return { ok: false, error: "Choose AM or PM." };
   const name = cleanText(body.name, CUSTOMER_NAME_MAX);
   if (!name || name.length < 3) return { ok: false, error: "Write the customer's full name." };
   const proposedGrade = parseGrade(body.proposedGrade);

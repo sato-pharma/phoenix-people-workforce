@@ -83,12 +83,10 @@ export const PHOENIX_CRM_DEFAULT_SETTINGS: PhoenixCrmSettings = {
   },
 };
 
-export const PHOENIX_CRM_LIST_LABEL: Record<PhoenixCrmListType, string> = {
-  AM: "Accounts",
-  PM: "Doctors",
-};
-
-export const PHOENIX_CRM_LIST_SINGULAR: Record<PhoenixCrmListType, string> = {
-  AM: "Account",
-  PM: "Doctor",
-};
+/**
+ * A list type has NO other name on any Phoenix CRM screen — it is "AM" and "PM", nothing else (owner,
+ * 2026-09-23). The two label maps that turned them into "Accounts" and "Doctors" were removed here, so
+ * the words cannot come back through a lookup; every screen prints the code itself. `listText`
+ * (src/components/phoenix-crm/labels.ts) is the one place that decides how it reads.
+ * Pinned by tests/phoenix-crm-am-pm-words.test.ts.
+ */

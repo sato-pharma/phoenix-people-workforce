@@ -79,7 +79,7 @@ import {
   PHOENIX_CRM_WEEKDAY_SHORT,
   windowsForWeekday,
 } from "@/lib/phoenix-crm/timings";
-import { PHOENIX_CRM_LIST_LABEL, type PhoenixCrmListType, type PhoenixCrmSeason, type PhoenixCrmTiming } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmListType, PhoenixCrmSeason, PhoenixCrmTiming } from "@/lib/phoenix-crm/types";
 import type { ListCustomer, ListPlace, TerritoryListView } from "@/lib/phoenix-crm/view-types";
 import { cn } from "@/lib/utils";
 
@@ -106,7 +106,7 @@ function countByType<T extends { listType: PhoenixCrmListType }>(rows: ReadonlyA
   };
 }
 
-/** "3 AM · 41 PM" — accounts and doctors side by side, never added together. */
+/** "3 AM · 41 PM" — AM and PM side by side, never added together. */
 function pairText(counts: Record<PhoenixCrmListType, number>): string {
   return `${countText(counts.AM)} AM · ${countText(counts.PM)} PM`;
 }
@@ -536,8 +536,8 @@ function ListHome({
                 onChange={setTypeFilter}
                 options={[
                   { value: "all", label: "All" },
-                  { value: "PM", label: "Doctors" },
-                  { value: "AM", label: "Accounts" },
+                  { value: "PM", label: "PM" },
+                  { value: "AM", label: "AM" },
                 ]}
                 value={typeFilter}
               />
@@ -978,11 +978,11 @@ function TimetableSection({
         <CrmBlock
           className="border-t border-slate-100"
           key={group.listType}
-          title={`${PHOENIX_CRM_LIST_LABEL[group.listType]} · ${group.listType} · ${dayName}${ramadan ? " in Ramadan" : ""}`}
+          title={`${group.listType} · ${dayName}${ramadan ? " in Ramadan" : ""}`}
         >
           {group.rows.length === 0 ? (
             <p className="text-sm font-medium text-slate-500">
-              No {PHOENIX_CRM_LIST_LABEL[group.listType].toLowerCase()} receive on {dayName}
+              No {group.listType} customer receives on {dayName}
               {ramadan ? " in Ramadan" : ""}.
             </p>
           ) : (

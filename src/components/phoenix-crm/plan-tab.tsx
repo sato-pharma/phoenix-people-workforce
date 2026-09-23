@@ -163,14 +163,14 @@ function draftFits(draft: Draft | null, view: PlannerView): draft is Draft {
 
 /** "2 of 5 AM · 9 of 15 PM"; a Thursday morning holds accounts only. */
 function dayCountsText(counts: Record<PhoenixCrmListType, number>, day: PlanDayView, rules: PlanRules): string {
-  const accounts = `${countText(counts.AM)} of ${countText(rules.amDailyCap)} AM`;
-  return day.listTypes.includes("PM") ? `${accounts} · ${countText(counts.PM)} of ${countText(rules.pmDailyCap)} PM` : accounts;
+  const am = `${countText(counts.AM)} of ${countText(rules.amDailyCap)} AM`;
+  return day.listTypes.includes("PM") ? `${am} · ${countText(counts.PM)} of ${countText(rules.pmDailyCap)} PM` : am;
 }
 
-/** "3 AM · 41 PM" — accounts and doctors side by side, never added together. */
+/** "3 AM · 41 PM" — AM and PM side by side, never added together. */
 function pairText(counts: Record<PhoenixCrmListType, number>, day: PlanDayView): string {
-  const accounts = `${countText(counts.AM)} AM`;
-  return day.listTypes.includes("PM") ? `${accounts} · ${countText(counts.PM)} PM` : accounts;
+  const am = `${countText(counts.AM)} AM`;
+  return day.listTypes.includes("PM") ? `${am} · ${countText(counts.PM)} PM` : am;
 }
 
 /** "Evening clinic · Faisal · Brick Haram", each part once; a place with none of them by its order on the customer. */
@@ -501,7 +501,7 @@ function planProblems(states: ReadonlyArray<DayState>, rules: PlanRules): PlanPr
     for (const row of state.rows) {
       if (row.gone !== null) continue;
       if (!state.day.listTypes.includes(row.listType)) {
-        problems.push({ date, message: `${label} is a morning for accounts only. Take ${row.name} off it.` });
+        problems.push({ date, message: `${label} is a morning for AM only. Take ${row.name} off it.` });
       } else if (!row.receives && row.exceptionType === null) {
         problems.push({
           date,
@@ -512,10 +512,10 @@ function planProblems(states: ReadonlyArray<DayState>, rules: PlanRules): PlanPr
       }
     }
     if (state.counts.PM > rules.pmDailyCap) {
-      problems.push({ date, message: `${label} has ${state.counts.PM} doctors. A day holds ${rules.pmDailyCap} doctors at most.` });
+      problems.push({ date, message: `${label} has ${state.counts.PM} PM. A day holds ${rules.pmDailyCap} PM at most.` });
     }
     if (state.counts.AM > rules.amDailyCap) {
-      problems.push({ date, message: `${label} has ${state.counts.AM} accounts. A day holds ${rules.amDailyCap} accounts at most.` });
+      problems.push({ date, message: `${label} has ${state.counts.AM} AM. A day holds ${rules.amDailyCap} AM at most.` });
     }
   }
   return problems;
@@ -1267,8 +1267,8 @@ function WeekScreen({
 
       <CrmBlock className="border-t border-slate-100" title="This week">
         <CrmStatGrid>
-          <CrmStat label="Doctors · PM" note="Placed across the week" value={countText(totals.PM)} />
-          <CrmStat label="Accounts · AM" note="Placed across the week" value={countText(totals.AM)} />
+          <CrmStat label="PM" note="Placed across the week" value={countText(totals.PM)} />
+          <CrmStat label="AM" note="Placed across the week" value={countText(totals.AM)} />
           <CrmStat label="Days planned" note="Saturday to Thursday morning" value={`${plannedDays} of ${states.length}`} />
           <CrmStat
             label="On a day off"
@@ -1432,7 +1432,7 @@ function DayCard({
           {day.date === today ? <CrmPill tone="info">Today</CrmPill> : null}
           {!day.editable ? <CrmPill>Passed</CrmPill> : null}
           {day.ramadan ? <CrmPill tone="orange">Ramadan</CrmPill> : null}
-          {morning ? <CrmPill>Morning · accounts only</CrmPill> : null}
+          {morning ? <CrmPill>Morning · AM only</CrmPill> : null}
         </span>
       </span>
       <span className="block break-words text-sm font-bold text-slate-800">{dayCountsText(state.counts, day, rules)}</span>
@@ -1665,7 +1665,7 @@ function DayScreen({
         {!day.editable || morning || day.ramadan || repCannotChange ? (
           <div className="mt-3 grid min-w-0 gap-2">
             {!day.editable ? <CrmNote>This day has passed. It shows what was planned.</CrmNote> : null}
-            {morning ? <CrmNote>Thursday is a morning: it holds accounts only.</CrmNote> : null}
+            {morning ? <CrmNote>Thursday is a morning: it holds AM only.</CrmNote> : null}
             {day.ramadan ? <CrmNote tone="info">A Ramadan day: each customer&apos;s Ramadan hours are used.</CrmNote> : null}
             {repCannotChange ? (
               <CrmNote>{view.blockedReason ?? "The plan is waiting for review or approved. Take it back on the week page to change it."}</CrmNote>
@@ -1674,14 +1674,14 @@ function DayScreen({
         ) : null}
         <CrmStatGrid className="mt-3">
           <CrmStat
-            label="Accounts · AM"
+            label="AM"
             note="The day's limit"
             tone={state.counts.AM > rules.amDailyCap ? "bad" : "neutral"}
             value={`${countText(state.counts.AM)} of ${countText(rules.amDailyCap)}`}
           />
           {morning ? null : (
             <CrmStat
-              label="Doctors · PM"
+              label="PM"
               note="The day's limit"
               tone={state.counts.PM > rules.pmDailyCap ? "bad" : "neutral"}
               value={`${countText(state.counts.PM)} of ${countText(rules.pmDailyCap)}`}
@@ -1946,8 +1946,8 @@ function AddCustomers({
 
   const typeOptions: ReadonlyArray<CrmChoiceOption<"all" | PhoenixCrmListType>> = [
     { value: "all", label: "Everyone", note: `${countText(distinctCustomers(all))} to choose from` },
-    { value: "PM", label: "Doctors · PM", note: `${countText(distinctCustomers(all.filter((entry) => entry.listType === "PM")))} to choose from` },
-    { value: "AM", label: "Accounts · AM", note: `${countText(distinctCustomers(all.filter((entry) => entry.listType === "AM")))} to choose from` },
+    { value: "PM", label: "PM", note: `${countText(distinctCustomers(all.filter((entry) => entry.listType === "PM")))} to choose from` },
+    { value: "AM", label: "AM", note: `${countText(distinctCustomers(all.filter((entry) => entry.listType === "AM")))} to choose from` },
   ];
 
   const suggestionRow = (suggestion: DaySuggestion) => (
@@ -1968,14 +1968,14 @@ function AddCustomers({
     <CrmBlock className="border-t border-slate-100" title="Add customers">
       <p className="break-words text-sm font-semibold leading-6 text-slate-600">
         {morning
-          ? `Room for ${plural(remaining.AM, "more account", "more accounts")} on this morning.`
-          : `Room for ${plural(remaining.AM, "more account", "more accounts")} and ${plural(remaining.PM, "more doctor", "more doctors")} on this day.`}{" "}
+          ? `Room for ${countText(remaining.AM)} more AM on this morning.`
+          : `Room for ${countText(remaining.AM)} more AM and ${countText(remaining.PM)} more PM on this day.`}{" "}
         Customers who receive on {weekdayName} come first, those not visited this month at the top.
       </p>
 
       {eligible.length === 0 ? (
         <p className="mt-3 text-sm font-medium text-slate-500">
-          {morning ? "No account to place yet." : "No customer to place yet."} Customers on your List tab show here.
+          {morning ? "No AM to place yet." : "No customer to place yet."} Customers on your List tab show here.
         </p>
       ) : all.length === 0 ? (
         <p className="mt-3 text-sm font-medium text-slate-500">Every customer who can go on this day is already on it.</p>

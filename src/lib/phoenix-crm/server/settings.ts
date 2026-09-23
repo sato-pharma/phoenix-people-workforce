@@ -108,8 +108,8 @@ export async function saveSettings(actorHrId: string, raw: unknown): Promise<voi
   const { error } = await getSupabaseAdmin()
     .from("phoenix_crm_settings")
     .update({
-      pm_daily_cap: integerIn(body.pmDailyCap, 1, 60, "The doctors a day"),
-      am_daily_cap: integerIn(body.amDailyCap, 1, 60, "The accounts a day"),
+      pm_daily_cap: integerIn(body.pmDailyCap, 1, 60, "The PM a day"),
+      am_daily_cap: integerIn(body.amDailyCap, 1, 60, "The AM a day"),
       far_apart_km: Math.round(farApart * 10) / 10,
       visit_far_meters: integerIn(body.visitFarMeters, 50, 20000, "The far visit distance"),
       weak_gps_meters: integerIn(body.weakGpsMeters, 10, 5000, "The weak location accuracy"),

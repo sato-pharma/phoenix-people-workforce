@@ -162,7 +162,7 @@ export function resolvePlanItems(input: {
         error:
           allowed.length === 0
             ? `${dayLabel(item.planDate)} is not a working day.`
-            : `${dayLabel(item.planDate)} is a morning: it holds accounts only, so ${customer.name} cannot go there.`,
+            : `${dayLabel(item.planDate)} is a morning: it holds AM only, so ${customer.name} cannot go there.`,
       };
     }
 
@@ -210,13 +210,13 @@ export function resolvePlanItems(input: {
     if (counts.PM > input.settings.pmDailyCap) {
       return {
         ok: false,
-        error: `${dayLabel(day)} has ${counts.PM} doctors. A day holds ${input.settings.pmDailyCap} doctors at most.`,
+        error: `${dayLabel(day)} has ${counts.PM} PM. A day holds ${input.settings.pmDailyCap} PM at most.`,
       };
     }
     if (counts.AM > input.settings.amDailyCap) {
       return {
         ok: false,
-        error: `${dayLabel(day)} has ${counts.AM} accounts. A day holds ${input.settings.amDailyCap} accounts at most.`,
+        error: `${dayLabel(day)} has ${counts.AM} AM. A day holds ${input.settings.amDailyCap} AM at most.`,
       };
     }
   }

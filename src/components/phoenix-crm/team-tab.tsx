@@ -103,7 +103,7 @@ function reviewFilterOf(row: PlanReviewRow): Exclude<ReviewFilter, "all"> {
   return "not_sent";
 }
 
-/** "3 AM · 41 PM" — accounts and doctors side by side, never added together. */
+/** "3 AM · 41 PM" — AM and PM side by side, never added together. */
 function placedText(row: PlanReviewRow): string {
   if (!row.plan) return "No plan yet";
   return `${countText(row.accounts)} AM · ${countText(row.doctors)} PM`;
