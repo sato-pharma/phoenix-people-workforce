@@ -88,6 +88,62 @@ export async function requestPhotoSlot(viewer: PhoenixCrmViewer, raw: unknown): 
   return issuePhotoSlot({ hrId: viewer.hrId, seat, isTest, purpose, cairoToday: viewer.cairoToday });
 }
 
+/** The bucket refuses anything larger; the same 2 MB ceiling as every other Phoenix evidence photo. */
+const PHOTO_MAX_UPLOAD_BYTES = 2 * 1024 * 1024;
+
+/** A `data:image/jpeg;base64,…` URL, tolerant of the base64 having no line breaks. */
+const DATA_URL_PATTERN = /^data:image\/jpeg;base64,([A-Za-z0-9+/=]+)$/;
+
+/**
+ * The native app's photo upload, decoded and stored server-side.
+ *
+ * The web page uploads straight to the signed slot from the browser (`sendToSlot` PUTs the JPEG to
+ * `slot.signedUrl`). React Native cannot PUT the raw bytes of a stamped photo to that URL reliably —
+ * this build has no `expo-file-system`, and `fetch` will not stream a `file://` body to a third-party
+ * URL — so the phone sends the stamped JPEG as a base64 data URL to this function and the SERVER does
+ * the same PUT the browser would have. Every guarantee the slot carries is kept: the same
+ * `requestPhotoSlot` issues the path (who, which territory, what for, test or real, one slot-per-hour
+ * budget), and the returned `path`/`issuedAt` are exactly what a later save consumes with
+ * `phoenix_crm_take_photo`. Only the last hop moves from the phone to this server, which changes
+ * nothing about what is stored or how a visit is dated — the slot's issue time is still the capture
+ * time. Guarded by the same `phoenix_crm:create` permission as the slot route.
+ */
+export async function uploadPhotoDirect(viewer: PhoenixCrmViewer, raw: unknown): Promise<{ path: string; issuedAt: string }> {
+  const body = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const match = DATA_URL_PATTERN.exec(String(body.imageDataUrl ?? "").replace(/\s+/g, ""));
+  if (!match) throw validationError("The photo could not be read. Take it again.");
+  const bytes = Buffer.from(match[1], "base64");
+  if (bytes.length === 0) throw validationError("The photo is empty. Take it again.");
+  if (bytes.length > PHOTO_MAX_UPLOAD_BYTES) {
+    throw validationError("The photo is larger than Phoenix accepts. Take it again.");
+  }
+
+  // Issues the slot with the same gate the browser's slot route uses: a place photo for the rep, a
+  // visit photo for whoever may enter this territory's visits.
+  const slot = await requestPhotoSlot(viewer, body);
+
+  let response: Response;
+  try {
+    response = await fetch(slot.signedUrl, {
+      body: new Uint8Array(bytes),
+      headers: { "content-type": "image/jpeg", "x-upsert": "false" },
+      method: "PUT",
+    });
+  } catch {
+    throw new ApiError(502, "photo_upload_failed", "The photo could not be uploaded. Take it again where the signal is better.");
+  }
+  // A retried upload whose earlier answer was lost: the object already sits at the path. The web
+  // client treats the same 409 as success, and so does the save, which only needs the object to exist.
+  if (!response.ok && response.status !== 409) {
+    const detail = await response.text().catch(() => "");
+    if (!/already exists|duplicate/i.test(detail)) {
+      throw new ApiError(502, "photo_upload_failed", "The photo did not upload. Take it again.");
+    }
+  }
+
+  return { path: slot.path, issuedAt: slot.issuedAt };
+}
+
 /** The territory a stored photo path belongs to, and whether it is a test photo. */
 export function photoPathTerritory(path: string): { seatSegment: string; isTest: boolean } | null {
   const parts = path.split("/");

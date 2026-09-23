@@ -696,6 +696,10 @@ export const accessRegistry = [
   // loadDoctorDirectory — a directory role reads the company, everyone else reads downward only.
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/doctors", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/photos/upload-slot", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
+  // The native app's live photo: it sends the stamped JPEG as a base64 data URL and the server does the
+  // PUT the browser makes to the slot directly (React Native cannot PUT binary to a signed URL). Same
+  // gate as upload-slot — it issues the slot itself — so it audits and requires CSRF the same way.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/photos/upload", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
   // A read sent as a POST (a batch of photo paths does not belong in a URL); it writes nothing.
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/photos/sign", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: true }),
   // The place stamp burned into a live photo (address, brick, area, coordinates). Same gate as taking
