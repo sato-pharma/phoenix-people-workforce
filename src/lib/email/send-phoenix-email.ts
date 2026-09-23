@@ -176,7 +176,11 @@ function resolveTestingRecipients() {
 }
 
 export async function assertReachablePhoenixEmailImage(url = phoenixEmailSignatureHostedUrl) {
-  return assertReachableEmailImage(url, { blockLocalAssets: true });
+  // `skipReservedTestHosts` covers the stub loaders: under them `phoenixEmailSignatureHostedUrl`
+  // is an example.com / example.invalid placeholder, and fetching it logged a 404 that read like
+  // the real signature had gone missing from the mail. The live hosted URL is unaffected — it is
+  // still fetched, and still warns if it ever stops serving an image.
+  return assertReachableEmailImage(url, { blockLocalAssets: true, skipReservedTestHosts: true });
 }
 
 async function loadSuppressedRecipients(

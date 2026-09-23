@@ -130,6 +130,24 @@ export function isBlockedImageHost(hostname: string): boolean {
   return false;
 }
 
+/**
+ * Hosts reserved by RFC 2606 / RFC 6761 for documentation and testing. Nothing real is ever
+ * served from one, so fetching it can only ever produce a misleading failure: the test stub of
+ * the email layout points the signature at `https://example.com/…`, and every email sent under
+ * a stub loader therefore logged `Signature image unreachable … Status: 404` — which reads like
+ * the live signature had vanished, on mail that carried no signature image at all.
+ *
+ * Only the reserved apexes and the reserved TLDs match. A sub-domain such as
+ * `assets.example.com` is deliberately NOT matched: that is the fixture the governance test
+ * uses to exercise the real fetch-and-cache path.
+ */
+export function isReservedTestImageHost(hostname: string): boolean {
+  const h = hostname.trim().toLowerCase().replace(/\.$/, "");
+  if (h === "example.com" || h === "example.net" || h === "example.org") return true;
+  if (h === "example" || h === "invalid" || h === "test") return true;
+  return h.endsWith(".example") || h.endsWith(".invalid") || h.endsWith(".test");
+}
+
 function emailDomain(email: string) {
   return email.trim().toLowerCase().split("@").pop() ?? "";
 }
@@ -234,10 +252,25 @@ export function buildManualComposerIdempotencyKey(input: {
   return `phoenix-hr-${hash}`;
 }
 
+export type EmailImageReachability = {
+  cached: boolean;
+  contentType: string;
+  /** True when the URL was recognised as a documentation/test stub and never fetched. */
+  skipped?: boolean;
+  verified: boolean;
+  warning?: string;
+};
+
 export async function assertReachableEmailImage(url: string, input?: {
   blockLocalAssets?: boolean;
   cacheTtlMs?: number;
-}) {
+  /**
+   * Opt-in, for callers whose URL is a build-time constant that a test loader may have stubbed
+   * (the Phoenix signature). A user-supplied or request-derived URL must NOT set this — there a
+   * reserved host is a mistake worth reporting.
+   */
+  skipReservedTestHosts?: boolean;
+}): Promise<EmailImageReachability> {
   let parsed: URL;
 
   try {
@@ -252,6 +285,11 @@ export async function assertReachableEmailImage(url: string, input?: {
 
   if (input?.blockLocalAssets && (isBlockedImageHost(parsed.hostname) || /\/assets\//i.test(parsed.pathname))) {
     throw new Error("Email signature image must not use a local/internal host or a relative /assets URL.");
+  }
+
+  // A stub URL is not a missing image. Say nothing rather than reporting a 404 nobody can act on.
+  if (input?.skipReservedTestHosts && isReservedTestImageHost(parsed.hostname)) {
+    return { cached: false, contentType: "", skipped: true, verified: false };
   }
 
   const now = Date.now();
