@@ -78,6 +78,26 @@ if (binaries.length === 0) {
 //    fail a perfectly good build. What this gate protects is the Node OCR path, and that runs on
 //    pdf-parse's copy. At least one must be present and must resolve canvas; a tree where NONE is
 //    means CV extraction cannot work at all.
+//
+//    CARRYING TWO IS DELIBERATE, AND THE OBVIOUS TIDY-UP IS A PRODUCTION OUTAGE. Measured
+//    2026-09-23, because "bump pdf-parse so we carry one pdfjs, not two" is the natural next
+//    thought and it does not survive contact:
+//
+//      - There is no bump. pdf-parse 2.4.5 IS latest (published 2025-10-20, nothing since) and it
+//        pins "pdfjs-dist": "5.4.296" EXACTLY, not a range, so no resolver will ever dedupe it
+//        against our 6.x. Only 2.4.4 and 2.4.5 pin exactly; every earlier 2.x used ^5.4.x.
+//      - Forcing it with a pnpm override DOES collapse pdfjs to one copy, and immediately installs
+//        TWO @napi-rs/canvas copies instead (pdf-parse wants 0.1.80, pdfjs 6 wants 1.x) — 36 MB +
+//        37 MB to save 36 MB. The duplication moves; it does not go away.
+//      - And it breaks CV extraction outright. pdfjs 6 REMOVED PDFDocumentProxy.destroy(); it
+//        survives only on the loading task. pdf-parse calls this.doc.destroy(), and BOTH our call
+//        sites (cv-extraction.ts, cv-ocr.ts) call parser.destroy() inside a `finally` — a throw
+//        there DISCARDS the return value, so every PDF CV's text extraction and every scanned-CV
+//        OCR would throw instead of returning. Verified with pdfjs 5 as a control: text extraction
+//        byte-identical on both, destroy() clean on 5 and throwing on 6.
+//
+//    So: leave the two copies alone. What would genuinely collapse them is a future pdf-parse that
+//    pins pdfjs-dist 6.x — that release is the thing to watch for, not an override here.
 const pdfjsDirs = readdirSync(pnpmDir).filter((name) => name.startsWith("pdfjs-dist@"));
 if (pdfjsDirs.length === 0) {
   fail("pdfjs-dist is not in .next/standalone at all — CV extraction cannot work; investigate the build.");
