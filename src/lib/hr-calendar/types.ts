@@ -10,13 +10,19 @@ export type HrCalendarEmployee = {
   workEmail: string | null;
 };
 
-export type HrCalendarEventType = "anniversary" | "birthday" | "new_hire";
+export type HrCalendarEventType = "anniversary" | "birthday" | "first_month" | "new_hire";
 
 export type HrCalendarEvent = {
   date: string;
   employee: HrCalendarEmployee;
   eventType: HrCalendarEventType;
   tenureYears: number;
+  /**
+   * The milestone period this row can be printed as — `1m`, `5y`, `b4` — or null when the row has
+   * no card (a plain new-hire arrival, or a birthday/anniversary with no usable date). A calendar
+   * chip is a link only when this is set.
+   */
+  spec: string | null;
 };
 
 export type HrWeeklyOffMode = "working" | "am_only" | "pm_only" | "full_day";

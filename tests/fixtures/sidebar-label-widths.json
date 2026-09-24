@@ -188,6 +188,7 @@
     "Vacation Request": 100,
     "Vacation Sources": 98,
     "Validated Customers": 119,
+    "Verified Captures": 99,
     "Visual Aids": 67,
     "Weekly / Monthly Plans": 137,
     "Weekly Attendance Review": 156,
@@ -206,6 +207,7 @@
   "portal": {
     "All Marketing Requests": 131,
     "Approval Inbox": 88,
+    "Area Direct Orders": 105,
     "Awareness Approvals": 121,
     "Business Review": 92,
     "CRM": 27,
@@ -278,6 +280,7 @@
     "All": 13,
     "Analytics": 43,
     "Approvals": 48,
+    "Area Orders": 32,
     "Awareness": 50,
     "Awr Appr": 24,
     "CRM": 23,

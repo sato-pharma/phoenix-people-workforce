@@ -14,7 +14,12 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatPhoenixLongDate } from "@/lib/i18n/format";
-import { buildApplyLink, composeJobAdvert, renderAdvertForChannel } from "@/lib/recruitment/outreach/job-advert";
+import {
+  applyDestinationForChannel,
+  buildApplyLink,
+  composeJobAdvert,
+  renderAdvertForChannel,
+} from "@/lib/recruitment/outreach/job-advert";
 import type { ApplyChannelKind } from "@/lib/recruitment/outreach/job-advert";
 import type { ChannelAttribution, JobPostChannel } from "@/lib/recruitment/outreach/job-post-channels";
 
@@ -131,15 +136,24 @@ export function JobAdvertPanel() {
   );
   const body = bodyOverride ?? generatedBody;
 
-  const destination =
-    applyKind === "whatsapp" ? (state?.destinations.whatsappNumber ?? null) : (state?.destinations.email ?? null);
+  const defaultWhatsAppNumber = state?.destinations.whatsappNumber ?? null;
+  const email = state?.destinations.email ?? null;
+  // The default the top of the screen shows; individual channels may override the WhatsApp number.
+  const destination = applyKind === "whatsapp" ? defaultWhatsAppNumber : email;
 
   const linkFor = useCallback(
-    (channel: JobPostChannel) =>
-      destination
-        ? buildApplyLink({ code: channel.code, destination, jobTitle, kind: applyKind, location })
-        : null,
-    [applyKind, destination, jobTitle, location],
+    (channel: JobPostChannel) => {
+      const channelDestination = applyDestinationForChannel({
+        channelApplyWhatsAppNumber: channel.applyWhatsAppNumber,
+        defaultWhatsAppNumber,
+        email,
+        kind: applyKind,
+      });
+      return channelDestination
+        ? buildApplyLink({ code: channel.code, destination: channelDestination, jobTitle, kind: applyKind, location })
+        : null;
+    },
+    [applyKind, defaultWhatsAppNumber, email, jobTitle, location],
   );
 
   const copyForChannel = useCallback(
@@ -199,12 +213,77 @@ export function JobAdvertPanel() {
     }
   }, []);
 
+  // Point one channel's tracked apply link at a specific WhatsApp line, or clear it back to the
+  // company default (a blank value). Only writes when the value actually changed, so tabbing through
+  // the column without editing costs nothing.
+  const setApplyNumber = useCallback(async (channel: JobPostChannel, raw: string) => {
+    const next = raw.trim();
+    if (next === (channel.applyWhatsAppNumber ?? "")) return;
+    setBusy(true);
+    try {
+      const response = await fetch(`/api/recruitment/job-post-channels/${channel.id}`, {
+        body: JSON.stringify({ applyWhatsAppNumber: next.length > 0 ? next : null }),
+        headers: { "content-type": "application/json" },
+        method: "PATCH",
+      });
+      const json = (await response.json()) as Record<string, unknown>;
+      if (!response.ok || json.success !== true) {
+        setNotice(typeof json.message === "string" ? json.message : "That is not a usable WhatsApp number.");
+        return;
+      }
+      setNotice(
+        next.length > 0
+          ? `${channel.name} now sends applicants to ${next}.`
+          : `${channel.name} is back on the default apply number.`,
+      );
+      setReloadKey((key) => key + 1);
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
+  // Tie one relay handset to one advert channel (or clear it with channelCode = null). A code-less
+  // forward from that number is then attributed to the channel; the on-CV code always wins.
+  const assignForwarder = useCallback(async (identifier: string, channelCode: string | null) => {
+    const number = identifier.trim();
+    if (number.length === 0) return;
+    setBusy(true);
+    try {
+      const response = await fetch("/api/recruitment/job-post-channels/forwarders", {
+        body: JSON.stringify({ channelCode, identifier: number }),
+        headers: { "content-type": "application/json" },
+        method: "PUT",
+      });
+      const json = (await response.json()) as Record<string, unknown>;
+      if (!response.ok || json.success !== true) {
+        setNotice(typeof json.message === "string" ? json.message : "Could not update the relay handset.");
+        return;
+      }
+      setReloadKey((key) => key + 1);
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
+  const [newRelay, setNewRelay] = useState("");
+  const [newRelayChannel, setNewRelayChannel] = useState("");
+
   const channels = state?.channels ?? [];
   const activeChannels = channels.filter((channel) => channel.isActive);
   // The number that actually matters once the list runs to forty-odd rows: how many of them will
   // accept a post from you at all. The rest are broadcast feeds you can only ask an admin to carry.
   const postableCount = activeChannels.filter((channel) => !platformOf(channel.kind).broadcast).length;
   const attributionRows = state?.attribution.rows ?? [];
+  // One row per configured relay handset, each showing which channel its code-less forwards land on.
+  const relayRows = channels.flatMap((channel) =>
+    channel.forwarderIdentifiers.map((number) => ({
+      channelCode: channel.code,
+      channelName: channel.name,
+      number,
+    })),
+  );
+  const relaySelectClass =
+    "h-9 w-full max-w-[16rem] rounded-none border border-slate-300 bg-white px-2 text-sm text-slate-900";
 
   return (
     <div className="space-y-6">
@@ -280,12 +359,15 @@ export function JobAdvertPanel() {
         {applyKind === "whatsapp" ? (
           <AdminCallout tone="warning">
             <div>
-              <p className="font-semibold">WhatsApp reaches you, but loses the tracking</p>
+              <p className="font-semibold">WhatsApp keeps the tracking when the code rides on the CV</p>
               <p className="mt-1">
-                CVs sent to the handset only enter this system when someone forwards them, and a
-                forward carries the CV file without the applicant&apos;s own message — which is where
-                the code sits. Those CVs arrive, they just arrive unattributed. Email keeps the code,
-                because it travels in the subject line.
+                CVs sent to the handset enter this system when someone forwards them, and a forward
+                carries the CV file, its caption and its filename — but not the applicant&apos;s
+                separate greeting, which is where the code sits by default. Intake now reads the code
+                off the caption and the filename as well, so it survives a forward whenever it lands
+                on the CV itself. It is lost only when the applicant sends the code as its own message
+                and the file is then forwarded alone. Email always keeps the code, because it travels
+                in the subject line.
               </p>
             </div>
           </AdminCallout>
@@ -293,6 +375,12 @@ export function JobAdvertPanel() {
         {destination ? (
           <p className="text-sm text-slate-600">
             Applicants will reach: <span className="font-medium text-slate-900">{destination}</span>
+            {applyKind === "whatsapp" ? (
+              <span className="text-slate-500">
+                {" "}
+                by default — a channel with its own apply line below overrides this for its own link.
+              </span>
+            ) : null}
           </p>
         ) : (
           <AdminCallout tone="warning">
@@ -348,6 +436,18 @@ export function JobAdvertPanel() {
                     { label: "Status", value: channel.isActive ? "Active" : "Retired" },
                   ]}
                 />
+                <label className="mt-2 block text-xs uppercase text-slate-500" htmlFor={`apply-${channel.id}`}>
+                  Apply line
+                </label>
+                <Input
+                  className="mt-1 h-9 rounded-none font-mono text-xs"
+                  defaultValue={channel.applyWhatsAppNumber ?? ""}
+                  disabled={busy}
+                  id={`apply-${channel.id}`}
+                  key={`apply-card-${channel.id}-${channel.applyWhatsAppNumber ?? ""}`}
+                  onBlur={(event) => setApplyNumber(channel, event.target.value)}
+                  placeholder={defaultWhatsAppNumber ?? "default"}
+                />
                 <div className="mt-2 flex gap-2">
                   <Button onClick={() => copyForChannel(channel)} size="sm">
                     <Copy className="mr-1 h-3 w-3" /> {platformOf(channel.kind).broadcast ? "Copy & ask" : "Copy & open"}
@@ -359,12 +459,13 @@ export function JobAdvertPanel() {
               </PortalRecordCard>
             )}
             renderTable={() => (
-              <PortalDesktopTable minWidth="720px">
+              <PortalDesktopTable minWidth="860px">
                 <thead>
                   <tr className="border-b border-slate-200 text-left text-xs uppercase text-slate-500">
                     <th className="whitespace-nowrap p-2">Channel</th>
                     <th className="whitespace-nowrap p-2">Where</th>
                     <th className="whitespace-nowrap p-2">Code</th>
+                    <th className="whitespace-nowrap p-2">Apply line</th>
                     <th className="whitespace-nowrap p-2">Status</th>
                     <th className="whitespace-nowrap p-2">Post it</th>
                   </tr>
@@ -380,6 +481,17 @@ export function JobAdvertPanel() {
                         ) : null}
                       </td>
                       <td className="whitespace-nowrap p-2 font-mono text-xs text-slate-600">{channel.code}</td>
+                      <td className="whitespace-nowrap p-2">
+                        <Input
+                          aria-label={`Apply line for ${channel.name}`}
+                          className="h-9 max-w-[11rem] rounded-none font-mono text-xs"
+                          defaultValue={channel.applyWhatsAppNumber ?? ""}
+                          disabled={busy}
+                          key={`apply-${channel.id}-${channel.applyWhatsAppNumber ?? ""}`}
+                          onBlur={(event) => setApplyNumber(channel, event.target.value)}
+                          placeholder={defaultWhatsAppNumber ?? "default"}
+                        />
+                      </td>
                       <td className="whitespace-nowrap p-2 text-slate-600">{channel.isActive ? "Active" : "Retired"}</td>
                       <td className="whitespace-nowrap p-2">
                         <div className="flex gap-2">
@@ -402,7 +514,125 @@ export function JobAdvertPanel() {
         </AdminTableShell>
       </section>
 
-      {/* ── 4 · What it produced ───────────────────────────────────────── */}
+      {/* ── 4 · Relay handsets ─────────────────────────────────────────── */}
+      <section className="space-y-3">
+        <AdminSectionHeader
+          description="Most CVs reach us forwarded from a relay handset, which drops the applicant's code-bearing message. Tie each relay to the channel it forwards from, and its code-less forwards inherit that channel. A CV that still carries its own code always keeps it."
+          title="Relay handsets"
+        />
+        <AdminTableShell
+          description="A relay maps to one channel. Move it here whenever a handset's source changes — no code change needed."
+          title={`Relay handsets (${relayRows.length})`}
+        >
+          <PortalResponsiveDataList
+            empty={
+              <PortalEmptyState
+                message="Add a relay handset number below and pick the channel it forwards from."
+                title="No relay handsets mapped"
+              />
+            }
+            getKey={(row: (typeof relayRows)[number]) => row.number}
+            items={relayRows}
+            renderCard={(row: (typeof relayRows)[number]) => (
+              <PortalRecordCard title={row.number}>
+                <label className="mt-2 block text-xs uppercase text-slate-500" htmlFor={`relay-${row.number}`}>
+                  Forwards from
+                </label>
+                <select
+                  className={relaySelectClass}
+                  disabled={busy}
+                  id={`relay-${row.number}`}
+                  onChange={(event) => assignForwarder(row.number, event.target.value || null)}
+                  value={row.channelCode}
+                >
+                  <option value="">— Unassigned —</option>
+                  {channels.map((channel) => (
+                    <option key={channel.id} value={channel.code}>
+                      {channel.name}
+                      {channel.isActive ? "" : " (retired)"}
+                    </option>
+                  ))}
+                </select>
+              </PortalRecordCard>
+            )}
+            renderTable={() => (
+              <PortalDesktopTable minWidth="520px">
+                <thead>
+                  <tr className="border-b border-slate-200 text-left text-xs uppercase text-slate-500">
+                    <th className="whitespace-nowrap p-2">Handset</th>
+                    <th className="whitespace-nowrap p-2">Forwards from</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {relayRows.map((row) => (
+                    <tr className="border-b border-slate-100" key={row.number}>
+                      <td className="whitespace-nowrap p-2 font-mono text-xs text-slate-900">{row.number}</td>
+                      <td className="p-2">
+                        <select
+                          aria-label={`Channel for ${row.number}`}
+                          className={relaySelectClass}
+                          disabled={busy}
+                          onChange={(event) => assignForwarder(row.number, event.target.value || null)}
+                          value={row.channelCode}
+                        >
+                          <option value="">— Unassigned —</option>
+                          {channels.map((channel) => (
+                            <option key={channel.id} value={channel.code}>
+                              {channel.name}
+                              {channel.isActive ? "" : " (retired)"}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </PortalDesktopTable>
+            )}
+          />
+          <div className="mt-3 flex flex-wrap items-end gap-2">
+            <div className="min-w-[12rem] flex-1">
+              <label className="block text-xs uppercase text-slate-500" htmlFor="new-relay-number">
+                Add a relay handset
+              </label>
+              <Input
+                id="new-relay-number"
+                onChange={(event) => setNewRelay(event.target.value)}
+                placeholder="e.g. 01280955558"
+                value={newRelay}
+              />
+            </div>
+            <select
+              aria-label="Channel for the new relay handset"
+              className={relaySelectClass}
+              disabled={busy}
+              onChange={(event) => setNewRelayChannel(event.target.value)}
+              value={newRelayChannel}
+            >
+              <option value="">Pick a channel…</option>
+              {channels.map((channel) => (
+                <option key={channel.id} value={channel.code}>
+                  {channel.name}
+                  {channel.isActive ? "" : " (retired)"}
+                </option>
+              ))}
+            </select>
+            <Button
+              disabled={busy || newRelay.trim().length === 0 || newRelayChannel.length === 0}
+              onClick={async () => {
+                await assignForwarder(newRelay, newRelayChannel || null);
+                setNewRelay("");
+                setNewRelayChannel("");
+              }}
+              size="sm"
+            >
+              <Plus className="mr-1 h-3 w-3" /> Attach
+            </Button>
+          </div>
+        </AdminTableShell>
+      </section>
+
+      {/* ── 5 · What it produced ───────────────────────────────────────── */}
       <section className="space-y-3">
         <AdminSectionHeader
           description={`Candidates whose CV arrived through each group's own link, over the last ${state?.attribution.sinceDays ?? 90} days.`}

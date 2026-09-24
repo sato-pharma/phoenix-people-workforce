@@ -58,6 +58,7 @@ import {
 import { SalesPerformanceSection } from "@/components/employee-portal/dashboard/sales-performance-section";
 import { formatDateOnly } from "@/lib/date-only";
 import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
+import { calculatePediaSplitIncentive } from "@/lib/incentives/pedia-split";
 import { calculateIncentive2026 } from "@/lib/incentives/scheme-2026";
 import { toPeriodLabel } from "@/lib/employee-portal/period";
 import { shouldShowEmployeePortalMarketingQuickAction } from "@/lib/employee-portal/navigation";
@@ -1047,11 +1048,7 @@ function IncentiveSimulatorCard({
     achievementPercent: simAchievement,
   });
 
-  const simGrad = simAchievement >= 100
-    ? "linear-gradient(to right, #16a34a, #86efac)"
-    : simAchievement >= 90
-      ? "linear-gradient(to right, #ca8a04, #fde047)"
-      : "linear-gradient(to right, #dc2626, #fca5a5)";
+  const simGrad = achievementBarGradient(simAchievement);
 
   return (
     <Card className="rounded border border-slate-200 bg-white shadow-[0_8px_20px_rgba(15,23,42,0.04)]">
@@ -1126,7 +1123,26 @@ function IncentiveSimulatorCard({
   );
 }
 
-function IncentivePayoutCurveChart({ data }: { data: MedicalRepPortalData }) {
+/** One "you are here" line on the payout curve. Pedia draws two of them, every other line one. */
+type PayoutCurveMarker = {
+  color: string;
+  label: string;
+  /** Two markers can land on the same achievement, so their labels sit on opposite edges. */
+  labelPosition: "bottom" | "top";
+  value: number;
+};
+
+function IncentivePayoutCurveChart({
+  data,
+  markers,
+  subtitle,
+}: {
+  data: MedicalRepPortalData;
+  /** Omitted everywhere but Pedia, where the seat has two achievements and one line would have to
+   * pick one of them without saying which. */
+  markers?: readonly PayoutCurveMarker[];
+  subtitle?: string;
+}) {
   // Sample every 1% so the axis carries every integer achievement: the payout curve is piecewise
   // LINEAR (a straight ramp inside each band, with a step up at the 90% threshold), so a linear area
   // over dense samples draws it truthfully. A 2% step used to draw it with `stepAfter`, which turned
@@ -1142,6 +1158,18 @@ function IncentivePayoutCurveChart({ data }: { data: MedicalRepPortalData }) {
   // No semester target yet means there is no "you are here" to draw. A line at 0% would put the rep
   // at the bottom of the payout curve, which is a claim about their performance, not about the data.
   const hasSemesterTarget = data.sales.incentiveSemesterTarget > 0;
+  const resolvedMarkers: readonly PayoutCurveMarker[] =
+    markers ??
+    (hasSemesterTarget
+      ? [
+          {
+            color: "#f97316",
+            label: `You: ${actualAchievement.toFixed(0)}%`,
+            labelPosition: "top",
+            value: Math.round(actualAchievement),
+          },
+        ]
+      : []);
 
   return (
     <Card className="rounded border border-slate-200 bg-white shadow-[0_8px_20px_rgba(15,23,42,0.04)]">
@@ -1150,7 +1178,7 @@ function IncentivePayoutCurveChart({ data }: { data: MedicalRepPortalData }) {
           <span className="h-1.5 w-1.5 rounded-sm bg-orange-500" />
           <h3 className="text-phx-lg font-bold tracking-tight text-slate-900">Performance Payout Curve</h3>
         </div>
-        <span className="text-phx-2xs font-medium text-slate-400">Achievement vs Payout %</span>
+        <span className="text-phx-2xs font-medium text-slate-400">{subtitle ?? "Achievement vs Payout %"}</span>
       </div>
       <div className="p-5">
         <ChartErrorBoundary>
@@ -1183,9 +1211,17 @@ function IncentivePayoutCurveChart({ data }: { data: MedicalRepPortalData }) {
                   width={48}
                 />
                 <ReferenceLine x={90} stroke="#dc2626" strokeDasharray="6 3" strokeOpacity={0.4} label={{ value: "90%", position: "top", fill: "#dc2626", fontSize: 9, fontWeight: 700 }} />
-                {hasSemesterTarget ? (
-                  <ReferenceLine x={Math.round(actualAchievement)} stroke="#f97316" strokeWidth={2} strokeDasharray="4 2" strokeOpacity={0.7} label={{ value: `You: ${actualAchievement.toFixed(0)}%`, position: "top", fill: "#f97316", fontSize: 9, fontWeight: 700 }} />
-                ) : null}
+                {resolvedMarkers.map((marker) => (
+                  <ReferenceLine
+                    key={marker.label}
+                    x={marker.value}
+                    stroke={marker.color}
+                    strokeWidth={2}
+                    strokeDasharray="4 2"
+                    strokeOpacity={0.7}
+                    label={{ value: marker.label, position: marker.labelPosition, fill: marker.color, fontSize: 9, fontWeight: 700 }}
+                  />
+                ))}
                 <Tooltip
                   content={({ active, payload }) => {
                     if (!active || !payload?.length) return null;
@@ -1422,6 +1458,433 @@ function PediaSplitIncentiveCard({
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// THE PEDIA INCENTIVE TAB (owner, 2026-09-24: "mismatch between the old rule and the new rule …
+// Simulate Achievement showing wrong misleading data … full rebuild for only pedia line all roles")
+//
+// The split landed in the domain layer and in the card above, but the rest of this tab kept speaking
+// the single-figure rule, and the simulator was the part that actually lied: one slider, scored with
+// calculateIncentive2026, paying the WHOLE semester incentive off ONE achievement. A Pedia seat is
+// not paid that way from Semester 2 2026. At 95% it promised the full two months where the rule pays
+// one month at 95% plus one month at whatever the line total is — and nothing on the card said which
+// of his two achievements the slider even was. The KPI strip and the curve had the same hole: one
+// achievement each, silently the total.
+//
+// Everything below renders ONLY when `data.sales.pediaSplit` is non-null, which the service sets for
+// a Pedia seat in a split semester and for nobody else. That is the whole gate, and it is role-free
+// on purpose: reps, District Managers, Regional Managers and the National Sales Manager are scored
+// on the same two achievements, so they read the same tab (src/lib/incentives/pedia-split.ts).
+//
+// The curve itself is NOT reimplemented here. Every figure is produced by calling
+// calculatePediaSplitIncentive, which calls the owner-locked scheme-2026 twice — so the simulator
+// can never drift from what the split card above pays.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** The payroll figures the locked scheme takes. One reading, so both halves share a salary basis. */
+function incentiveSalaryBasis(data: MedicalRepPortalData) {
+  return {
+    basicSalary: data.payroll.basicSalary,
+    baseSalary: data.payroll.baseSalary,
+    extraCostOfLiving: data.payroll.extraCostOfLiving,
+    fuelAllowance: data.payroll.fuelAllowance,
+    grossSalary: data.payroll.grossSalary,
+    netSalary: data.payroll.netSalary,
+    socialInsurance: data.payroll.socialInsurance,
+    taxes: data.payroll.incomeTax,
+  };
+}
+
+/** Red below the 90% threshold, amber in the eligible band, green at or above target. */
+function achievementBarGradient(value: number) {
+  if (value >= 100) return "linear-gradient(to right, #16a34a, #86efac)";
+  if (value >= 90) return "linear-gradient(to right, #ca8a04, #fde047)";
+  return "linear-gradient(to right, #dc2626, #fca5a5)";
+}
+
+/**
+ * One achievement slider. The Pedia simulator draws two of these — that is the entire point of it.
+ *
+ * Each carries the products it is scored on, because "Sato" and "Total" mean nothing on their own to
+ * the person being paid from them, and the actual achievement it was seeded from, so a rep can tell
+ * at a glance how far he has dragged away from his own real position.
+ */
+function PediaAchievementSlider({
+  accent,
+  actualText,
+  label,
+  onChange,
+  products,
+  value,
+}: {
+  accent: "orange" | "sky";
+  actualText: string;
+  label: string;
+  onChange: (next: number) => void;
+  products: string;
+  value: number;
+}) {
+  const tone =
+    accent === "orange"
+      ? { badge: "border-orange-200 bg-orange-50 text-orange-700", input: "accent-orange-500" }
+      : { badge: "border-sky-200 bg-sky-50 text-sky-700", input: "accent-sky-500" };
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <div className="min-w-0">
+          <p className="text-phx-2xs font-bold uppercase tracking-[0.14em] text-slate-400">{label}</p>
+          <p className="text-phx-2xs font-medium leading-snug text-slate-500">{products}</p>
+        </div>
+        <span className={`rounded border px-2 py-0.5 text-phx-xs font-black ${tone.badge}`}>
+          {value.toFixed(0)}%
+        </span>
+      </div>
+      <input
+        aria-label={label}
+        className={`mt-2.5 h-1.5 w-full cursor-pointer appearance-none rounded-sm bg-slate-100 ${tone.input}`}
+        max={150}
+        min={0}
+        onChange={(event) => onChange(Math.min(150, Math.max(0, Number(event.target.value))))}
+        step={1}
+        type="range"
+        value={value}
+      />
+      <div className="mt-1 flex items-center justify-between text-phx-3xs text-slate-400">
+        <span>0%</span>
+        <span className="font-semibold text-rose-400">90%</span>
+        <span>100%</span>
+        <span>150%</span>
+      </div>
+      <div className="mt-2 h-2 overflow-hidden rounded-sm bg-slate-100">
+        <div
+          className="h-full rounded-sm"
+          style={{ width: `${(Math.min(value, 150) / 150) * 100}%`, background: achievementBarGradient(value) }}
+        />
+      </div>
+      <p className="mt-1.5 text-phx-2xs font-semibold text-slate-500">Your actual: {actualText}</p>
+    </div>
+  );
+}
+
+/**
+ * The Pedia simulator — two sliders, two halves, one total.
+ *
+ * Seeded from the rep's OWN two achievements, so the card opens showing exactly what the split card
+ * above already pays him; every figure moves from there. A missing target seeds 0 rather than
+ * inventing a position, and the slider label says so.
+ */
+function PediaIncentiveSimulatorCard({
+  data,
+  isSalaryVisible,
+  onToggleSalaryVisibility,
+}: {
+  data: MedicalRepPortalData;
+  isSalaryVisible: boolean;
+  onToggleSalaryVisibility: () => void;
+}) {
+  const split = data.sales.pediaSplit;
+  const hasSatoTarget = (split?.satoTarget ?? 0) > 0;
+  const hasTotalTarget = data.sales.incentiveSemesterTarget > 0;
+
+  const [simSato, setSimSato] = useState(split?.satoAchievementPercent ?? 0);
+  const [simTotal, setSimTotal] = useState(data.sales.overviewAchievementPercent);
+
+  const simulated = calculatePediaSplitIncentive({
+    ...incentiveSalaryBasis(data),
+    satoAchievementPercent: simSato,
+    totalAchievementPercent: simTotal,
+  });
+
+  const money = (value: number) => (isSalaryVisible ? egp(value) : maskedMoneyValue);
+  const halves = [
+    {
+      accentText: "text-orange-700",
+      amount: simulated.satoHalfAmount,
+      key: "sato",
+      panel: "border-orange-200 bg-orange-50/50",
+      rate: simulated.sato.payoutPercentage,
+      title: "Sato half",
+    },
+    {
+      accentText: "text-sky-700",
+      amount: simulated.totalHalfAmount,
+      key: "total",
+      panel: "border-sky-200 bg-sky-50/50",
+      rate: simulated.total.payoutPercentage,
+      title: "Total half",
+    },
+  ];
+
+  return (
+    <Card className="rounded border border-slate-200 bg-white shadow-[0_8px_20px_rgba(15,23,42,0.04)]">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-3">
+        <div className="flex items-center gap-2">
+          <span className="h-1.5 w-1.5 rounded-sm bg-orange-500" />
+          <h3 className="text-phx-lg font-bold tracking-tight text-slate-900">Simulate Achievement</h3>
+        </div>
+        <IncentiveSalaryVisibilityToggle
+          isSalaryVisible={isSalaryVisible}
+          onToggleSalaryVisibility={onToggleSalaryVisibility}
+        />
+      </div>
+
+      <div className="space-y-4 p-5">
+        <p className="rounded border border-slate-100 bg-slate-50/60 px-3 py-2 text-phx-xs leading-relaxed text-slate-500">
+          Your two halves are scored separately, so move both. One month of basic salary is paid on
+          your Sato achievement and one month on your total achievement.
+        </p>
+
+        <PediaAchievementSlider
+          accent="orange"
+          actualText={hasSatoTarget ? `${(split?.satoAchievementPercent ?? 0).toFixed(1)}%` : "No target yet"}
+          label="Sato Achievement %"
+          onChange={setSimSato}
+          products="Guamusin · Ivyronc"
+          value={simSato}
+        />
+
+        <PediaAchievementSlider
+          accent="sky"
+          actualText={hasTotalTarget ? `${data.sales.overviewAchievementPercent.toFixed(1)}%` : "No target yet"}
+          label="Total Achievement %"
+          onChange={setSimTotal}
+          products="All four Pedia products"
+          value={simTotal}
+        />
+
+        {/* The two halves, then the sum — the same shape the split card above states, so the two
+            cards can be read against each other without arithmetic. */}
+        <div className="grid grid-cols-2 gap-3">
+          {halves.map((half) => (
+            <div className={`min-w-0 rounded border p-3 ${half.panel}`} key={half.key}>
+              <p className="text-phx-3xs font-bold uppercase tracking-[0.14em] text-slate-400">{half.title}</p>
+              <p className={`mt-1 text-phx-lg font-black tabular-nums ${half.accentText}`}>
+                {half.rate.toFixed(1)}%
+              </p>
+              <p className="mt-1 break-words font-mono text-phx-sm font-black tabular-nums text-slate-900">
+                {money(half.amount)}
+              </p>
+            </div>
+          ))}
+        </div>
+
+        <div className="rounded border border-orange-200 bg-gradient-to-br from-orange-50 to-amber-50/60 p-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="min-w-0">
+              <p className="text-phx-3xs font-bold uppercase tracking-[0.14em] text-slate-400">Payout Rate</p>
+              <p className="mt-1.5 text-xl font-black text-orange-700">
+                {simulated.payoutPercentage.toFixed(1)}%
+              </p>
+            </div>
+            <div className="min-w-0">
+              <p className="text-phx-3xs font-bold uppercase tracking-[0.14em] text-slate-400">Estimated Payout</p>
+              <p className="mt-1.5 break-words text-xl font-black text-slate-900">
+                {money(simulated.payoutAmount)}
+              </p>
+            </div>
+          </div>
+          <p className="mt-2 text-phx-2xs font-medium text-slate-500">
+            Sato half plus total half, out of {money(simulated.semesterTargetIncentive)} at full payout.
+          </p>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+/**
+ * The policy card, stated the way a Pedia seat is actually paid.
+ *
+ * The bands are the same locked curve every line reads — what changes is that a Pedia seat reads it
+ * TWICE, once per half, so the card says what each band pays on one month rather than on two.
+ */
+function PediaIncentivePolicyCard() {
+  const tiers = [
+    { accent: "border-l-slate-300 bg-slate-50/50", badge: "border-slate-200 bg-slate-50 text-slate-500", payout: "0%", range: "< 90%", rate: "Not eligible" },
+    { accent: "border-l-amber-400 bg-amber-50/30", badge: "border-amber-200 bg-amber-50 text-amber-700", payout: "50%", range: "90%", rate: "Threshold unlock" },
+    { accent: "border-l-orange-400 bg-orange-50/30", badge: "border-orange-200 bg-orange-50 text-orange-700", payout: "55 - 100%", range: "91 - 100%", rate: "+5% per 1%" },
+    { accent: "border-l-emerald-400 bg-emerald-50/30", badge: "border-emerald-200 bg-emerald-50 text-emerald-700", payout: "101.5 - 130%", range: "101 - 120%", rate: "+1.5% per 1%" },
+    { accent: "border-l-sky-400 bg-sky-50/30", badge: "border-sky-200 bg-sky-50 text-sky-700", payout: "133 - 220%", range: "121 - 150%", rate: "+3% per 1%" },
+  ];
+
+  return (
+    <Card className="rounded border border-slate-200 bg-white p-5 shadow-[0_8px_20px_rgba(15,23,42,0.04)]">
+      <div className="mb-4 flex items-center gap-2">
+        <span className="h-1.5 w-1.5 rounded-sm bg-orange-500" />
+        <p className="text-phx-lg font-bold tracking-tight text-slate-900">2026 Incentive Policy - Pedia</p>
+      </div>
+
+      <div className="mb-4 rounded border border-slate-100 bg-slate-50/60 px-3 py-2.5">
+        <p className="text-phx-2xs font-bold uppercase tracking-[0.14em] text-slate-400">Semester Target</p>
+        <p className="mt-1 text-sm font-bold text-slate-800">Basic Salary x 2 months</p>
+        <p className="mt-0.5 text-phx-xs leading-relaxed text-slate-500">
+          Paid as two halves of one month each - one scored on Sato, one on your total. The bands
+          below are read once per half.
+        </p>
+      </div>
+
+      <div className="space-y-1">
+        <div className="grid grid-cols-[1fr_80px_1fr] gap-2 px-3 pb-1">
+          <p className="text-phx-3xs font-bold uppercase tracking-[0.14em] text-slate-400">Achievement</p>
+          <p className="text-phx-3xs font-bold uppercase tracking-[0.14em] text-slate-400">Payout</p>
+          <p className="text-right text-phx-3xs font-bold uppercase tracking-[0.14em] text-slate-400">Rate</p>
+        </div>
+        {tiers.map((tier) => (
+          <div
+            className={`grid grid-cols-[1fr_80px_1fr] items-center gap-2 rounded border border-slate-100 border-l-[3px] px-3 py-2 ${tier.accent}`}
+            key={tier.range}
+          >
+            <p className="text-phx-sm font-bold text-slate-700">{tier.range}</p>
+            <span className={`inline-flex w-fit rounded border px-2 py-0.5 text-phx-2xs font-bold ${tier.badge}`}>
+              {tier.payout}
+            </span>
+            <p className="text-right text-phx-xs font-medium text-slate-500">{tier.rate}</p>
+          </div>
+        ))}
+      </div>
+
+      <p className="mt-3 text-phx-2xs font-medium leading-relaxed text-slate-400">
+        Each half is capped at 150% achievement and 220% payout of its own month. Lacto Advanced 1
+        and Lacto Advanced 2 are never scored on their own - they count toward your total.
+      </p>
+    </Card>
+  );
+}
+
+/**
+ * The KPI strip, rebuilt to state BOTH achievements.
+ *
+ * The single-figure strip showed one "Semester Achievement", which on Pedia is the total — a real
+ * number, but only half of what decides this seat's money, and unlabelled as to which half.
+ */
+function PediaIncentiveKpiCards({
+  data,
+  isSalaryVisible,
+}: {
+  data: MedicalRepPortalData;
+  isSalaryVisible: boolean;
+}) {
+  const split = data.sales.pediaSplit;
+  if (!split) return null;
+
+  const hasSatoTarget = split.satoTarget > 0;
+  const hasTotalTarget = data.sales.incentiveSemesterTarget > 0;
+  const semesterLabelText = data.sales.incentiveSemesterLabel ?? "This semester";
+  const salaryRef = calculateIncentive2026({ ...incentiveSalaryBasis(data), achievementPercent: 100 });
+
+  const noteFor = (achievement: number) =>
+    achievement >= 100 ? "Above target" : achievement >= 90 ? "Eligible zone" : `${Math.max(0, 90 - achievement).toFixed(1)}% to threshold`;
+  const accentFor = (achievement: number): MetricAccent =>
+    achievement >= 100 ? "green" : achievement >= 90 ? "amber" : "orange";
+
+  const cards: Array<{ accent: MetricAccent; label: string; note: string; value: string }> = [
+    {
+      accent: hasSatoTarget ? accentFor(split.satoAchievementPercent) : "blue",
+      label: "Sato Achievement",
+      note: hasSatoTarget ? `Guamusin · Ivyronc - ${noteFor(split.satoAchievementPercent)}` : `${semesterLabelText} Sato target not uploaded yet`,
+      value: hasSatoTarget ? `${split.satoAchievementPercent.toFixed(1)}%` : "No target yet",
+    },
+    {
+      accent: hasTotalTarget ? accentFor(data.sales.overviewAchievementPercent) : "blue",
+      label: "Total Achievement",
+      note: hasTotalTarget ? `All four products - ${noteFor(data.sales.overviewAchievementPercent)}` : `${semesterLabelText} not uploaded yet`,
+      value: hasTotalTarget ? `${data.sales.overviewAchievementPercent.toFixed(1)}%` : "No target yet",
+    },
+    {
+      accent: "purple",
+      label: "Basic Salary",
+      note: "Base x 70% - one month per half",
+      value: isSalaryVisible ? egp(salaryRef.basicSalary) : maskedMoneyValue,
+    },
+    {
+      accent: "orange",
+      label: "Semester Incentive",
+      note: "Sato half + total half",
+      value: isSalaryVisible ? egp(split.payoutAmount) : maskedMoneyValue,
+    },
+  ];
+
+  return (
+    // The file's own four-card rhythm, used verbatim by the signals strip above: one card, then
+    // two from 640px, then four from 1280px. The three-card strip beside it steps at 480px because
+    // three cards fit there; four do not.
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      {cards.map((card) => {
+        const tone = metricTone(card.accent);
+        return (
+          <Card
+            className={`group relative flex min-w-0 flex-col overflow-hidden rounded border-l-[3px] border bg-white px-4 py-3.5 shadow-sm ${tone.border}`}
+            key={card.label}
+          >
+            <p className="text-phx-2xs font-bold uppercase tracking-[0.14em] text-slate-500">{card.label}</p>
+            <p className={`mt-2 break-words text-xl font-black leading-none tracking-tight tabular-nums ${tone.value}`}>
+              {card.value}
+            </p>
+            <p className="mt-1.5 break-words text-phx-xs font-medium leading-snug text-slate-500">{card.note}</p>
+            <div className="mt-auto pt-2">
+              <div className="h-1 w-12 rounded-sm" style={{ background: tone.lineGradient }} />
+            </div>
+          </Card>
+        );
+      })}
+    </div>
+  );
+}
+
+/** The whole tab for a Pedia seat, in the order the rep needs it: where he stands, what that pays,
+ * how it is scored, what a different month would pay, and the curve both halves are read from. */
+function PediaIncentiveTab({ data }: { data: MedicalRepPortalData }) {
+  const [isSalaryVisible, setIsSalaryVisible] = useState(false);
+  const split = data.sales.pediaSplit;
+
+  const markers: PayoutCurveMarker[] = [];
+  if ((split?.satoTarget ?? 0) > 0) {
+    markers.push({
+      color: "#f97316",
+      label: `Sato: ${(split?.satoAchievementPercent ?? 0).toFixed(0)}%`,
+      labelPosition: "top",
+      value: Math.round(split?.satoAchievementPercent ?? 0),
+    });
+  }
+  if (data.sales.incentiveSemesterTarget > 0) {
+    markers.push({
+      color: "#0284c7",
+      label: `Total: ${data.sales.overviewAchievementPercent.toFixed(0)}%`,
+      labelPosition: "bottom",
+      value: Math.round(data.sales.overviewAchievementPercent),
+    });
+  }
+
+  return (
+    <div className="space-y-5">
+      {data.sales.incentiveWindowNotice ? (
+        <div className="rounded border border-amber-300 bg-amber-50 px-4 py-3 text-phx-md font-semibold text-amber-900">
+          {data.sales.incentiveWindowNotice}
+        </div>
+      ) : null}
+
+      <PediaIncentiveKpiCards data={data} isSalaryVisible={isSalaryVisible} />
+
+      <PediaSplitIncentiveCard data={data} isSalaryVisible={isSalaryVisible} />
+
+      <div className="grid gap-4 xl:grid-cols-[1.2fr_1fr]">
+        <PediaIncentivePolicyCard />
+        <PediaIncentiveSimulatorCard
+          data={data}
+          isSalaryVisible={isSalaryVisible}
+          onToggleSalaryVisibility={() => setIsSalaryVisible((current) => !current)}
+        />
+      </div>
+
+      <IncentivePayoutCurveChart
+        data={data}
+        markers={markers}
+        subtitle="Each half is read off this curve"
+      />
+    </div>
+  );
+}
+
 function IncentiveKpiCards({ data, isSalaryVisible }: { data: MedicalRepPortalData; isSalaryVisible: boolean }) {
   const achievementPercent = data.sales.overviewAchievementPercent;
   // The semester runs Jul-Dec and its first month is only uploaded partway through. Until then the
@@ -1495,6 +1958,15 @@ export function EmployeePortalIncentivePage({ data }: { data: MedicalRepPortalDa
     return <EmptyStateCard message="Your employee profile is not linked yet. Please contact HR." title="Profile Not Linked" />;
   }
 
+  // A Pedia seat in a split semester is paid on two achievements, so it reads a tab built around
+  // two — KPI strip, simulator and curve alike. `pediaSplit` is the service's own answer to "does
+  // this seat get the split", role-free by design, and it is null for every other line and for the
+  // closed semesters that were actually paid on the single figure. Everything below is unchanged
+  // for them.
+  if (data.sales.pediaSplit) {
+    return <PediaIncentiveTab data={data} />;
+  }
+
   return (
     <div className="space-y-5">
       {/* An incentive is a SEMESTER figure. When the semester is not fully loaded the number below
@@ -1510,10 +1982,9 @@ export function EmployeePortalIncentivePage({ data }: { data: MedicalRepPortalDa
       {/* KPI strip - Achievement + Base Salary + Basic Salary */}
       <IncentiveKpiCards data={data} isSalaryVisible={isIncentiveSalaryVisible} />
 
-      {/* Pedia only, from Semester 2 2026 — null everywhere else and the card is then absent. It
-          sits ABOVE the policy card because it is what the rep is actually paid; the policy below
-          is the curve both of its halves are read from. */}
-      <PediaSplitIncentiveCard data={data} isSalaryVisible={isIncentiveSalaryVisible} />
+      {/* The Pedia split card is NOT rendered here: a Pedia seat returns above, into a tab built
+          around its two achievements. Reaching this point means one achievement decides this
+          seat's money, which is what every card below states. */}
 
       {/* Policy + Simulator side by side */}
       <div className="grid gap-4 xl:grid-cols-[1.2fr_1fr]">

@@ -36,9 +36,18 @@ export const EVENING_REMINDER_MINUTES = 17 * 60;
 export const HOUR_REMINDER_LEAD_MINUTES = 60;
 const PORTAL_BASE = "/employee-portals/interview-calendar";
 const SEARCH_AHEAD_DAYS = 4;
+/**
+ * How many days AFTER an interview to keep nagging the interviewer to record what happened (owner,
+ * 2026-09-23: "keeps pumping ... the first thing that stops it is that the interviewer responds").
+ * Recording any outcome removes the interview from the reminder source, so the pump stops at once; this
+ * bound only keeps a truly-abandoned interview from nagging forever.
+ */
+export const AWAITING_PUMP_MAX_DAYS = 30;
+/** Not before this hour (Cairo) does the daily "record what happened" nag go out. */
+export const AWAITING_PUMP_MINUTES = 9 * 60;
 
 export type InterviewReminder = {
-  kind: "evening" | "hour";
+  kind: "evening" | "hour" | "awaiting";
   /** The message's idempotency key — the whole "sent already?" memory. */
   key: string;
   recipientHrId: string;
@@ -109,6 +118,34 @@ export function planInterviewReminders(interviews: readonly ReminderInterview[],
     });
   }
 
+  // AFTER the interview, once a day from 9:00 AM Cairo, until the interviewer records what happened.
+  // The source query only ever returns interviews with no outcome, so recording one stops this at
+  // once; the day-stamped key makes it fire once per day and again the next day while it stays open.
+  if (cairoMinutesOfDay(now) >= AWAITING_PUMP_MINUTES) {
+    const todayKey = cairoDateKey(now);
+    for (const interview of eligible) {
+      const startMs = new Date(interview.startsAt).getTime();
+      const endMs = startMs + interview.durationMinutes * 60_000;
+      if (endMs > nowMs) continue; // still ahead, or in progress — wait until it has actually ended
+      const daysSince = (nowMs - startMs) / 86_400_000;
+      if (daysSince > AWAITING_PUMP_MAX_DAYS) continue;
+      const heldDay = formatDayLong(cairoDateKey(new Date(interview.startsAt)));
+      reminders.push({
+        href: linkTo(interview),
+        key: `interview-reminder-awaiting:${interview.id}:${todayKey}`,
+        kind: "awaiting",
+        message: `Your interview with ${interview.candidateName} (${heldDay}) is waiting for your response — record what happened on the interview calendar.`,
+        metrics: [
+          { label: "Candidate", value: interview.candidateName },
+          { label: "Interview", value: heldDay },
+        ],
+        recipientHrId: interview.interviewerHrId,
+        subject: `Record what happened — ${interview.candidateName}`,
+        title: `Awaiting your response — ${interview.candidateName}`,
+      });
+    }
+  }
+
   // The evening before, from 5:00 PM Cairo, one list per interviewer for the next working day.
   if (cairoMinutesOfDay(now) >= EVENING_REMINDER_MINUTES) {
     const day = nextWorkingDayAfter(cairoDateKey(now));
@@ -144,11 +181,17 @@ export function planInterviewReminders(interviews: readonly ReminderInterview[],
 
 export type InterviewReminderSend = (reminder: InterviewReminder) => Promise<boolean>;
 
-/** In-app, email and Telegram — the three the owner chose. Answers whether any of them went out. */
+/**
+ * The channels each kind goes by. The evening list and the one-hour nudge use all three the owner
+ * chose (in-app, email, Telegram). The "record what happened" pump repeats DAILY until the interviewer
+ * responds, so it stays in-app + Telegram only — a daily e-mail for up to a month would be a nuisance,
+ * and the pump is the one the owner described as "in-app and Telegram" (2026-09-23).
+ */
 export const sendInterviewReminder: InterviewReminderSend = async (reminder) => {
+  const channels: Array<"in_app" | "email" | "telegram"> = reminder.kind === "awaiting" ? ["in_app", "telegram"] : ["in_app", "email", "telegram"];
   const result = await createSystemNotification({
     actionUrl: reminder.href,
-    channels: ["in_app", "email", "telegram"],
+    channels,
     email: {
       ctaHref: reminder.href,
       ctaLabel: "Open the interview calendar",
@@ -160,11 +203,16 @@ export const sendInterviewReminder: InterviewReminderSend = async (reminder) => 
       summary: reminder.message,
       title: reminder.title,
     },
-    eventType: reminder.kind === "hour" ? "interview_reminder_hour" : "interview_reminder_evening",
+    eventType:
+      reminder.kind === "hour"
+        ? "interview_reminder_hour"
+        : reminder.kind === "awaiting"
+          ? "interview_awaiting_response"
+          : "interview_reminder_evening",
     message: reminder.message,
     metadata: { idempotencyKey: reminder.key },
     module: "recruitment",
-    priority: "normal",
+    priority: reminder.kind === "awaiting" ? "high" : "normal",
     recipientHrId: reminder.recipientHrId,
     title: reminder.title,
   });
@@ -178,7 +226,12 @@ export async function runInterviewReminders(
   send: InterviewReminderSend = sendInterviewReminder,
   load: (from: Date, to: Date) => Promise<ReminderInterview[]> = listInterviewsToRemindAbout,
 ): Promise<InterviewReminderRun> {
-  const interviews = await load(now, new Date(now.getTime() + (SEARCH_AHEAD_DAYS + 1) * 24 * 60 * 60_000));
+  const interviews = await load(
+    // Look back far enough to keep nagging about interviews already held but not yet responded to, and
+    // ahead for the evening-before and one-hour reminders.
+    new Date(now.getTime() - (AWAITING_PUMP_MAX_DAYS + 1) * 86_400_000),
+    new Date(now.getTime() + (SEARCH_AHEAD_DAYS + 1) * 86_400_000),
+  );
   const plan = planInterviewReminders(interviews, now);
   let delivered = 0;
   let failed = 0;

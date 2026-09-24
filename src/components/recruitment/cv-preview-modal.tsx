@@ -306,13 +306,22 @@ export function CvDocumentView({
           // back, invisibly and one drag away, the exact number the box was painted to hide.
           const selectable = allowDownload && !redactPhones;
 
-          // isEvalSupported: false — pdf.js otherwise uses eval()/new Function() to JIT-compile
-          // embedded font programs for speed, which this app's production CSP forbids
-          // (`script-src` has no 'unsafe-eval' outside dev — next.config.ts). pdf.js would detect
-          // the blocked eval and fall back anyway, but disabling it explicitly avoids a console
-          // CSP violation on every render and makes behavior identical between dev and prod.
-          // Rendering correctness is unaffected; only the font-JIT optimization is skipped.
-          const doc = await pdfjsLib.getDocument({ data: bytes, isEvalSupported: false }).promise;
+          // `isEvalSupported: false` stood here until the pdf.js 6 bump, because pdf.js 5 otherwise
+          // JIT-compiled embedded font programs with eval()/new Function() and this app's
+          // production CSP forbids that (`script-src` has no 'unsafe-eval' outside dev —
+          // next.config.ts). pdf.js 6 REMOVED the option along with the eval it guarded, so there
+          // is nothing left to switch off and the type no longer accepts it.
+          //
+          // `wasmUrl` is what must be right now, and it is NOT optional here. pdf.js 6 moved the
+          // JBIG2 and CCITTFax decoders — which is how scanned and faxed documents are encoded,
+          // i.e. a large share of the CVs this modal exists to show — out of the JS bundle and into
+          // jbig2.wasm, joining the JPEG2000 and ICC modules that were already external. It fetches
+          // `${wasmUrl}${filename}` and the default is null, so leaving this unset renders every
+          // scanned CV blank while an ordinary one still looks perfect — a failure that would reach
+          // production looking like "some CVs are broken". The files are committed under
+          // public/pdfjs/wasm/ by `pnpm run sync:pdfjs-assets`, same-origin because the CSP allows
+          // no other, and 'wasm-unsafe-eval' is already in script-src (it is there for Maps).
+          const doc = await pdfjsLib.getDocument({ data: bytes, wasmUrl: "/pdfjs/wasm/" }).promise;
           for (let pageNumber = 1; pageNumber <= doc.numPages; pageNumber += 1) {
             if (!active) return;
             const page = await doc.getPage(pageNumber);

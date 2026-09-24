@@ -38,6 +38,8 @@ import {
   type HiredEmployeeTerms,
 } from "@/lib/recruitment/hire-offer-guard";
 import { getOffer } from "@/lib/recruitment/offers";
+import { listJobPostChannels } from "@/lib/recruitment/outreach/job-post-channels";
+import { isValidChannelCode, normalizeChannelCode } from "@/lib/recruitment/outreach/channel-code";
 import {
   createCandidate,
   getCandidate,
@@ -467,13 +469,91 @@ export async function recordApplicationOfferLetter(applicationId: string, offerL
   }
 }
 
+/**
+ * Resolve a manual source-advert tag to a real channel code, or null to clear it.
+ *
+ * A blank clears the tag. A code is upper-cased, format-checked, and — the part that matters —
+ * confirmed to name a channel that actually exists (including retired ones, which stay resolvable).
+ * A typo must never be stored as if it were an advert: it would invent a row in the source-of-hire
+ * report that maps to nothing. Inactive channels are allowed on purpose, because a hire can be
+ * attributed to a group that has since been retired.
+ */
+async function resolveAttributedChannelCode(raw: string | null | undefined): Promise<string | null> {
+  const code = normalizeChannelCode(raw);
+  if (!code) return null;
+  if (!isValidChannelCode(code)) throw new Error(`${code} is not a valid PX- advert code.`);
+  const channels = await listJobPostChannels({ includeInactive: true });
+  const match = channels.find((channel) => channel.code === code);
+  if (!match) throw new Error(`No advertising channel has the code ${code}.`);
+  return match.code;
+}
+
+/**
+ * Tag (or clear) which advert this application's candidate actually came from.
+ *
+ * Separate from the hire itself so HR can attribute the source at any time — most hires arrive with
+ * no tracked code at all (a forwarded WhatsApp CV drops the applicant's own message, which is the
+ * only place the code lives), and the source is often known only later. Overrides the automatic
+ * code in the source-of-hire report. Scope is enforced through the requisition, exactly as every
+ * other write here is. Passing an empty code clears the tag.
+ */
+export async function setApplicationSourceAttribution(
+  id: string,
+  access: AccessContext,
+  input: { channelCode: string | null },
+): Promise<Application> {
+  const application = await loadApplicationRow(id);
+  // Scope check (throws Forbidden if the requisition is out of the caller's reach).
+  await getRequisition(access, application.requisitionId);
+
+  const code = await resolveAttributedChannelCode(input.channelCode);
+
+  const supabase = recruitmentDb();
+  const now = new Date().toISOString();
+  const { data, error } = await supabase
+    .from("ats_applications")
+    .update({
+      attributed_channel_code: code,
+      attributed_by_hr_id: code ? (access.hrId ?? null) : null,
+      attributed_at: code ? now : null,
+      updated_at: now,
+    })
+    .eq("id", id)
+    .select("*")
+    .single();
+  if (error) throw error;
+
+  await writeApplicationEvent({
+    applicationId: id,
+    fromStage: application.stage,
+    toStage: application.stage,
+    action: "app_source_attributed",
+    actorHrId: access.hrId ?? null,
+    details: { attributedChannelCode: code },
+  });
+
+  return mapApplication(data as ApplicationDbRow);
+}
+
 export async function markApplicationHired(
   id: string,
   access: AccessContext,
-  input: { employeeHrId: string; startDate?: string | null; probationMonths?: number | null },
+  input: {
+    employeeHrId: string;
+    startDate?: string | null;
+    probationMonths?: number | null;
+    attributedChannelCode?: string | null;
+  },
 ): Promise<{ application: Application; employeeHrId: string; termMismatches: HireTermMismatch[] }> {
   const employeeHrId = textOrNull(input.employeeHrId);
   if (!employeeHrId) throw new Error("The hired employee's HR_ID is required.");
+
+  // Validated BEFORE the hire mutation, so a bad tag rejects the request rather than hiring the
+  // person and silently dropping the attribution. Undefined leaves the tag untouched.
+  const attributedChannelCode =
+    input.attributedChannelCode === undefined
+      ? undefined
+      : await resolveAttributedChannelCode(input.attributedChannelCode);
 
   const application = await loadApplicationRow(id);
   const requisition = await getRequisition(access, application.requisitionId);
@@ -495,14 +575,24 @@ export async function markApplicationHired(
   const termMismatches = compareHireTermsToOffer(acceptedOffer, await loadHiredEmployeeTerms(employeeHrId));
 
   const supabase = recruitmentDb();
+  const now = new Date().toISOString();
+  const hirePatch: Record<string, unknown> = {
+    stage: "hired",
+    converted_employee_hr_id: employeeHrId,
+    last_stage_changed_at: now,
+    updated_at: now,
+  };
+  // Only touch the tag when the caller supplied one. `undefined` means "leave whatever is already
+  // there" (a source tagged earlier survives the hire); a resolved value — including null to clear —
+  // is written along with who tagged it and when.
+  if (attributedChannelCode !== undefined) {
+    hirePatch.attributed_channel_code = attributedChannelCode;
+    hirePatch.attributed_by_hr_id = attributedChannelCode ? (access.hrId ?? null) : null;
+    hirePatch.attributed_at = attributedChannelCode ? now : null;
+  }
   const { data, error } = await supabase
     .from("ats_applications")
-    .update({
-      stage: "hired",
-      converted_employee_hr_id: employeeHrId,
-      last_stage_changed_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
+    .update(hirePatch)
     .eq("id", id)
     .select("*")
     .single();
@@ -519,6 +609,7 @@ export async function markApplicationHired(
       offeredJobTitle: acceptedOffer.jobTitle,
       offeredMonthlyGross: acceptedOffer.monthlyGross,
       offeredStartDate: acceptedOffer.startDate,
+      attributedChannelCode: attributedChannelCode ?? null,
       termMismatches,
       termMismatchSummary: describeHireTermMismatches(termMismatches),
     },

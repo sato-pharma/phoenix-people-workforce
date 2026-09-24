@@ -91,12 +91,47 @@ export function runAdminFilenameCellsNeverEllipsiseTests() {
       `sheet name has no spaces to wrap at, so without it the name overflows the column.`,
   );
 
-  // The min-width floor keeps that column readable once nowrap is gone; without it auto table
-  // layout collapses it to 149px and the name stacks four lines deep.
-  const salesFileTd = salesImport.match(/<td className="([^"]*)">\s*<p className="[^"]*">\{batch\.fileName\}/);
+  // The File column still may not be squeezed — but on 2026-09-24 the MECHANISM changed, so this
+  // assertion follows it rather than pinning a crutch that has become the defect.
+  //
+  // The floor was a `min-w-[220px]` on the <td>, and it existed because the table used AUTO layout
+  // over a `min-w-[980px]`: with nowrap gone, auto layout collapsed the column's min-content width
+  // to 149px and stacked the name four lines deep. The sales fits-the-screen pass retired that
+  // whole construct — the table is `table-fixed` now with a percentage <colgroup>, so the File
+  // column takes 20% of the container at lg and 40% below it whatever the data says.
+  //
+  // Leaving the old floor in place would have turned it into the very thing it was hired to
+  // prevent: a `min-w-[220px]` cell inside a fixed table forces the TABLE wider than its container,
+  // which is the sideways scroll the golden rule forbids. What is pinned here is the invariant, not
+  // the token — the column has a structural width the data cannot collapse.
+  // Anchored BACKWARDS from the filename cell, not by the first <table> in the file. The workspace
+  // holds two fixed tables, and a forward match silently pinned the Rows To Fix one instead — it
+  // passed with `table-fixed` deliberately removed from the batch table, which is the whole thing
+  // this is meant to catch. Verified by breaking it: the assertions below now fire.
+  const fileCellIndex = salesImport.indexOf("{batch.fileName}");
+  assert.ok(fileCellIndex > 0, `${SALES_IMPORT}: {batch.fileName} is no longer rendered at all.`);
+  const beforeFileCell = salesImport.slice(0, fileCellIndex);
+  const batchTable = beforeFileCell
+    .slice(beforeFileCell.lastIndexOf("<table "))
+    .match(/<table className="([^"]*)">\s*<colgroup>([\s\S]*?)<\/colgroup>/);
   assert.ok(
-    salesFileTd && /min-w-\[\d+px\]/.test(salesFileTd[1]),
-    `${SALES_IMPORT}: the File <td> is "${salesFileTd?.[1] ?? "(not found)"}" — its min-width floor ` +
-      `is gone. Without it the wrapped filename is squeezed to ~149px and four lines deep.`,
+    batchTable,
+    `${SALES_IMPORT}: the uploaded-sheets table no longer opens with a <colgroup>. The File ` +
+      `column's width is then whatever auto layout gives it, which squeezed it to 149px before. ` +
+      `Re-point this test at whatever makes that width structural — do not drop it.`,
+  );
+  assert.ok(
+    tokens(batchTable[1]).includes("table-fixed"),
+    `${SALES_IMPORT}: the uploaded-sheets table is "${batchTable[1]}" — "table-fixed" is gone, so ` +
+      `the <colgroup> under it is advisory and the File column can be squeezed by its neighbours.`,
+  );
+  // The FIRST <col> in the group is the File column's. Matched as a whole tag, because a
+  // `className`-anywhere search skips a widthless `<col />` and reads the next column's width as
+  // though it were this one's — which passed a deliberately broken file. Verified by breaking it.
+  const firstCol = batchTable[2].match(/<col\b[^>]*>/);
+  assert.ok(
+    firstCol && /w-\[\d+%\]/.test(firstCol[0]),
+    `${SALES_IMPORT}: the File column's <col> is "${firstCol?.[0] ?? "(not found)"}" — it no ` +
+      `longer sets a percentage share of the table, so the filename has no guaranteed room.`,
   );
 }

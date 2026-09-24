@@ -970,18 +970,30 @@ export function SosDashboard({
             description="Channels ranked by value, with month-over-month delta and reach across regions / areas / products"
             action={<TableSearchInput value={distributorTable.query} onChange={distributorTable.setQuery} onClear={distributorTable.clearQuery} placeholder="Search distributors…" className="w-full sm:w-64" />}
           >
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-[#020617] text-white">
+            {/* table-fixed + a percentage colgroup: the columns divide the container, so no
+                distributor name or figure can push the table sideways. Below `md` the four
+                narrowest columns fold away and reappear as a line under the distributor. */}
+            <table className="w-full table-fixed text-sm">
+              <colgroup>
+                <col className="w-[34%] md:w-[24%]" />
+                <col className="w-[24%] md:w-[16%]" />
+                <col className="w-[20%] md:w-[11%]" />
+                <col className="hidden md:table-column md:w-[11%]" />
+                <col className="w-[22%] md:w-[12%]" />
+                <col className="hidden md:table-column md:w-[9%]" />
+                <col className="hidden md:table-column md:w-[8%]" />
+                <col className="hidden md:table-column md:w-[9%]" />
+              </colgroup>
+              <thead className="bg-[#020617] text-white">
                   <tr>
                     <SortableTh label="Distributor" sortKey="label" sort={distributorTable.sort} onSort={distributorTable.toggleSort} />
                     <SortableTh label="Value" sortKey="value" sort={distributorTable.sort} onSort={distributorTable.toggleSort} align="right" />
-                    <th className="px-3 py-2.5 text-right text-xs font-black uppercase tracking-wide">MoM Δ</th>
-                    <th className="px-3 py-2.5 text-right text-xs font-black uppercase tracking-wide">YoY Δ</th>
+                    <th className="break-words px-3 py-2.5 text-right text-xs font-black uppercase tracking-wide">MoM Δ</th>
+                    <th className="hidden break-words px-3 py-2.5 text-right text-xs font-black uppercase tracking-wide md:table-cell">YoY Δ</th>
                     <SortableTh label="Units" sortKey="units" sort={distributorTable.sort} onSort={distributorTable.toggleSort} align="right" />
-                    <SortableTh label="Regions" sortKey="regions" sort={distributorTable.sort} onSort={distributorTable.toggleSort} align="right" />
-                    <SortableTh label="Areas" sortKey="areas" sort={distributorTable.sort} onSort={distributorTable.toggleSort} align="right" />
-                    <SortableTh label="Products" sortKey="products" sort={distributorTable.sort} onSort={distributorTable.toggleSort} align="right" />
+                    <SortableTh className="hidden md:table-cell" label="Regions" sortKey="regions" sort={distributorTable.sort} onSort={distributorTable.toggleSort} align="right" />
+                    <SortableTh className="hidden md:table-cell" label="Areas" sortKey="areas" sort={distributorTable.sort} onSort={distributorTable.toggleSort} align="right" />
+                    <SortableTh className="hidden md:table-cell" label="Products" sortKey="products" sort={distributorTable.sort} onSort={distributorTable.toggleSort} align="right" />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-orange-100">
@@ -999,28 +1011,33 @@ export function SosDashboard({
                           className={`cursor-pointer transition hover:bg-orange-50/40 ${selected ? "bg-orange-100" : ""}`}
                           title={`Click to filter to ${row.label}`}
                         >
-                          <td className="px-3 py-2.5 font-bold text-slate-900 whitespace-nowrap">{row.label}</td>
-                          <td className="px-3 py-2.5 text-right">
+                          <td className="break-words px-3 py-2.5 align-top font-bold text-slate-900">
+                            {row.label}
+                            {/* Below `md` the folded columns come back here, so a phone loses nothing. */}
+                            <span className="mt-0.5 block text-xs font-semibold text-slate-500 md:hidden">
+                              {`YoY ${yoyPct == null ? "—" : `${yoyPct > 0 ? "+" : ""}${(yoyPct * 100).toFixed(1)}%`} · ${formatNumber(row.regions)} regions · ${formatNumber(row.areas)} areas · ${formatNumber(row.products)} products`}
+                            </span>
+                          </td>
+                          <td className="break-words px-3 py-2.5 text-right align-top">
                             <div className="font-black text-slate-900">{compactEGP(row.value)}</div>
                             <Bar2 value={row.value} max={distMax} color="#F97316" />
                           </td>
-                          <td className={`px-3 py-2.5 text-right text-xs font-black tabular-nums whitespace-nowrap ${momPct == null ? "text-slate-300" : momPct >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+                          <td className={`break-words px-3 py-2.5 text-right align-top text-xs font-black tabular-nums ${momPct == null ? "text-slate-300" : momPct >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
                             {momPct == null ? "—" : `${momPct > 0 ? "+" : ""}${(momPct * 100).toFixed(1)}%`}
                           </td>
-                          <td className={`px-3 py-2.5 text-right text-xs font-black tabular-nums whitespace-nowrap ${yoyPct == null ? "text-slate-300" : yoyPct >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+                          <td className={`hidden break-words px-3 py-2.5 text-right align-top text-xs font-black tabular-nums md:table-cell ${yoyPct == null ? "text-slate-300" : yoyPct >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
                             {yoyPct == null ? "—" : `${yoyPct > 0 ? "+" : ""}${(yoyPct * 100).toFixed(1)}%`}
                           </td>
-                          <td className="px-3 py-2.5 text-right text-slate-600">{formatNumber(row.units)}</td>
-                          <td className="px-3 py-2.5 text-right text-slate-600">{formatNumber(row.regions)}</td>
-                          <td className="px-3 py-2.5 text-right text-slate-600">{formatNumber(row.areas)}</td>
-                          <td className="px-3 py-2.5 text-right text-slate-600">{formatNumber(row.products)}</td>
+                          <td className="break-words px-3 py-2.5 text-right align-top text-slate-600">{formatNumber(row.units)}</td>
+                          <td className="hidden break-words px-3 py-2.5 text-right align-top text-slate-600 md:table-cell">{formatNumber(row.regions)}</td>
+                          <td className="hidden break-words px-3 py-2.5 text-right align-top text-slate-600 md:table-cell">{formatNumber(row.areas)}</td>
+                          <td className="hidden break-words px-3 py-2.5 text-right align-top text-slate-600 md:table-cell">{formatNumber(row.products)}</td>
                         </tr>
                       );
                     })
                   )}
                 </tbody>
-              </table>
-            </div>
+            </table>
           </AdminTableShell>
 
           {/* Product + Customer tables */}

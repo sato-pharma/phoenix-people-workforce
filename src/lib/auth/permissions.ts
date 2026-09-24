@@ -82,11 +82,14 @@ export type PermissionResource =
   // narrowing of any kind, and it produces a shareable sheet with people's names and achievement
   // on it — so a narrower role holding it would be both a scope leak and a publishing right.
   | "spotlight"
-  // Milestones: the service-anniversary keepsake. Super Admin and CEO ONLY, for the same two
-  // reasons as spotlight directly above — it reads every active employee's hire date and pulls
-  // their photograph out of the private bucket with no scope narrowing, and what it emits is a
-  // printable sheet with a named person's face on it. Widening it to HR is a decision for the
-  // owner to make in words, not a tidy-up.
+  // Milestones: the service-anniversary and birthday keepsake. SUPER ADMIN ONLY — it is NOT the
+  // same shape as spotlight above, and this is the one place that says so. It was Super Admin and
+  // CEO until the owner narrowed it himself on 2026-09-23, in these words: "not approved. Make it
+  // only super admin. None either uh, CEO." Do not widen it back, to the CEO or to anybody else,
+  // without him saying so in words — it reads every active employee's hire date AND date of birth
+  // with no scope narrowing, pulls their photograph out of the private bucket, and now writes to
+  // the employee record and prints a whole window of people at once. Every one of those is a
+  // publishing right rather than a reading one.
   | "milestones"
   | "employees"
   | "employee_profile"
@@ -903,8 +906,10 @@ const defaultPermissionMatrix: PermissionMap = {
   CEO: {
     // Spotlight: read and export. The owner named him and the Super Admin as the only two holders.
     spotlight: ["read", "export"],
-    // Milestones: read and export, the same two holders and the same reasoning.
-    milestones: ["read", "export"],
+    // 🔴 NO `milestones` HERE, AND NOT BY OVERSIGHT. The owner took it off the CEO on 2026-09-23
+    // ("not approved. Make it only super admin. None either uh, CEO."), so the grant is DELETED
+    // rather than emptied — `milestones: []` would still name him a holder to the union that
+    // builds the resource list, and to every screen that reads it.
     // Market Awareness: he is the second and final approval on every activity — no cost
     // threshold skips him (owner answer 36). `approve` here is HIS action; nothing in this module
     // may ever write a decision row on his behalf.

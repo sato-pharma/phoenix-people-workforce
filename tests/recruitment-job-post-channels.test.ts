@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import { fileURLToPath } from "node:url";
 
 import {
   CHANNEL_CODE_PREFIX,
@@ -14,12 +16,22 @@ import {
   parseChannelPasteList,
 } from "../src/lib/recruitment/outreach/channel-import.ts";
 import {
+  applyDestinationForChannel,
   buildApplyLink,
   buildApplyMessage,
   composeJobAdvert,
   normalizeWhatsAppNumber,
   renderAdvertForChannel,
 } from "../src/lib/recruitment/outreach/job-advert.ts";
+import {
+  forwarderMatches,
+  phoneDigitsTail,
+  resolveForwarderChannelFromList,
+} from "../src/lib/recruitment/outreach/forwarder-match.ts";
+import {
+  NEW_CHANNEL_APPLY_WHATSAPP_NUMBER,
+  channelInsertRow,
+} from "../src/lib/recruitment/outreach/job-post-channels.ts";
 
 /**
  * Advertising channels — which Facebook group actually produced each CV.
@@ -269,5 +281,258 @@ export async function runRecruitmentJobPostChannelTests() {
     nameFromChannelUrl("https://t.me/+SecretHash99"),
     "Telegram group",
     "a join hash is a secret, not a display name — it must never be printed as one",
+  );
+
+  // ── 8 · The code surviving a WhatsApp forward ──────────────────────────────
+  //
+  // 95% of CVs reach us as a forward from a relay handset, and a forward drops the applicant's
+  // separate greeting — the surface the tapped-link code sits on by default. What a forward DOES
+  // carry alongside the file is its caption and its filename, so intake reads the code off those
+  // too. The caption already arrives folded into coverMessage; the filename is read as its own
+  // source, because it is deliberately kept OUT of coverMessage (a raw "Cv.pdf" must never reach
+  // the job-matching model as if it were a covering note). The leading boundary is any
+  // non-alphanumeric, so a space, dash, underscore or dot in a filename all delimit the code.
+  assert.equal(
+    extractChannelCode([null, null, "Ahmed Mohamed CV PX-MRE.pdf"]),
+    "PX-MRE",
+    "the code is read off the CV filename, the one surface a bare forward preserves",
+  );
+  assert.equal(
+    extractChannelCode([null, null, "cv-px-pjc.pdf"]),
+    "PX-PJC",
+    "a lower-cased code in the filename still reads",
+  );
+  assert.equal(
+    extractChannelCode([null, null, "Ahmed_Mohamed_PX-CH.docx"]),
+    "PX-CH",
+    "an underscore is a boundary too — the code is not glued to a word",
+  );
+  assert.equal(
+    extractChannelCode(["Ref: PX-PJC", null, "cv-PX-MRE.pdf"]),
+    "PX-PJC",
+    "a real greeting still wins over the filename — the filename is read LAST",
+  );
+  assert.equal(
+    extractChannelCode([null, null, "Ahmed_Mohamed_Cv.pdf"]),
+    null,
+    "an ordinary CV filename carries no code and stays unattributed",
+  );
+
+  // Source-pin: the invariant above only protects a real forward if intake actually feeds the
+  // filename into the extractor. Assert the wiring, not merely that the extractor CAN read a
+  // filename — the filename is the one source a reader would forget, because it is held off
+  // coverMessage on purpose, so a refactor that "tidied" the extraction call would silently drop it.
+  const intakeSource = fs.readFileSync(
+    fileURLToPath(new URL("../src/lib/recruitment/inbound/cv-intake-service.ts", import.meta.url)),
+    "utf8",
+  );
+  assert.ok(
+    /extractChannelCode\(\[\s*input\.coverMessage,\s*input\.subject,\s*input\.attachment\?\.fileName\s*\]\)/.test(
+      intakeSource,
+    ),
+    "intake reads the source code off coverMessage, subject AND the attachment filename",
+  );
+
+  // ── 9 · Attributing a code-less forward by its relay handset ───────────────
+  //
+  // A forward with no code on it anywhere still came from somewhere: one of a handful of dedicated
+  // relay handsets, each tied to one advert channel. The tail match is what makes that survive the
+  // three ways the SAME line reaches us — the +20 Meta reports, a bare 20, and the local 0-prefixed
+  // number a human types — so a relay configured in one form still matches a CV that arrives in
+  // another. A silently non-matching relay would send every forward down the "no channel" path,
+  // which is the exact failure this whole fallback exists to remove, so the tolerance is the point.
+  assert.equal(phoneDigitsTail("+201280955558"), "280955558", "the +20 international form yields the subscriber tail");
+  assert.equal(phoneDigitsTail("201280955558"), "280955558", "a bare 20 country code collapses to the same tail");
+  assert.equal(phoneDigitsTail("01280955558"), "280955558", "the local 0-prefixed form collapses to the same tail");
+  assert.equal(phoneDigitsTail("0020 128 095 5558"), "280955558", "spaces and a 00 trunk do not change the tail");
+  assert.equal(phoneDigitsTail("12345"), null, "too few digits to be a phone number is no tail, not a wrong one");
+  assert.equal(phoneDigitsTail(null), null, "a missing sender is no tail");
+  assert.equal(phoneDigitsTail("ahmed@example.com"), null, "an email sender has no phone tail at all");
+
+  assert.equal(
+    forwarderMatches(["+201280955558"], "01280955558"),
+    true,
+    "a relay stored international matches a CV that arrived local — same line",
+  );
+  assert.equal(
+    forwarderMatches(["01280955558", "01159888247"], "+201159888247"),
+    true,
+    "any identifier in the list can match",
+  );
+  assert.equal(forwarderMatches(["+201280955558"], "+201159888247"), false, "a different handset does not match");
+  assert.equal(forwarderMatches([], "+201280955558"), false, "a channel with no relay matches nothing");
+  assert.equal(forwarderMatches(["+201280955558"], null), false, "no sender matches nothing, never the first relay");
+  assert.equal(
+    forwarderMatches([null, undefined, ""], "+201280955558"),
+    false,
+    "blank identifiers in the list are skipped, not treated as a wildcard",
+  );
+
+  // Resolving against the channel list is what intake actually calls: first channel whose relay owns
+  // the sender wins, and a retired channel still attributes — a relay that fed a group months ago
+  // keeps its history exactly as a tracking code does.
+  const forwarderChannels = [
+    { code: "PX-FORWARDED", forwarderIdentifiers: ["+201280955558", "+201159888247"] },
+    { code: "PX-MRE", forwarderIdentifiers: ["+201001234567"] },
+    { code: "PX-RETIRED", forwarderIdentifiers: ["+201119999999"] },
+  ];
+  assert.equal(
+    resolveForwarderChannelFromList(forwarderChannels, "01280955558"),
+    "PX-FORWARDED",
+    "a code-less forward resolves to the channel its relay is tied to",
+  );
+  assert.equal(
+    resolveForwarderChannelFromList(forwarderChannels, "+201001234567"),
+    "PX-MRE",
+    "a relay on a second channel resolves to that channel, not the first",
+  );
+  assert.equal(
+    resolveForwarderChannelFromList(forwarderChannels, "+201230000000"),
+    null,
+    "a sender on no configured relay resolves to nothing — an unknown forward stays unattributed",
+  );
+  assert.equal(
+    resolveForwarderChannelFromList(forwarderChannels, "careers@example.com"),
+    null,
+    "a caller with no phone tail is never run through the lookup",
+  );
+
+  // Source-pin: the relay fallback only reaches a code-less forward if intake runs it AFTER the
+  // on-CV extractor, never before. The on-CV code always wins; the relay only fills the gap. A
+  // refactor that resolved the relay unconditionally, or ordered it ahead of the code, would dump
+  // ~95% of CVs — everything off the two big relay handsets — onto one channel, the systematically
+  // wrong number this design exists to avoid. Assert the precedence in the source, not just that the
+  // resolver CAN answer.
+  assert.ok(
+    /const\s+onCvCode\s*=\s*extractChannelCode\(/.test(intakeSource),
+    "intake extracts the on-CV code into onCvCode first",
+  );
+  assert.ok(
+    /onCvCode\s*\?\?\s*\(await\s+resolveForwarderChannelCode\(input\.senderIdentifier\)\)/.test(intakeSource),
+    "the relay channel is only ever a ?? fallback behind the on-CV code — never resolved ahead of it",
+  );
+
+  // ── 10 · Which apply line a channel's tracked link points at ───────────────
+  //
+  // The company runs two WhatsApp apply lines. A channel may carry its own number, and its tracked
+  // link must send applicants there instead of the one company-wide default — WITHOUT changing that
+  // default, which every other channel still funnels to. Get the precedence wrong and either the
+  // second line never receives anyone, or worse, every channel is silently repointed onto it and the
+  // main line goes quiet. So the resolver is pinned in both directions.
+  assert.equal(
+    applyDestinationForChannel({
+      channelApplyWhatsAppNumber: "01159888247",
+      defaultWhatsAppNumber: "01098500699",
+      email: "careers@example.com",
+      kind: "whatsapp",
+    }),
+    "01159888247",
+    "a channel's own WhatsApp apply number overrides the company default for that channel",
+  );
+  assert.equal(
+    applyDestinationForChannel({
+      channelApplyWhatsAppNumber: null,
+      defaultWhatsAppNumber: "01098500699",
+      email: "careers@example.com",
+      kind: "whatsapp",
+    }),
+    "01098500699",
+    "a channel with no override falls back to the company default — the other line is untouched",
+  );
+  assert.equal(
+    applyDestinationForChannel({
+      channelApplyWhatsAppNumber: "01159888247",
+      defaultWhatsAppNumber: "01098500699",
+      email: "careers@example.com",
+      kind: "email",
+    }),
+    "careers@example.com",
+    "email has one careers mailbox — the per-channel WhatsApp number never diverts it",
+  );
+  assert.equal(
+    applyDestinationForChannel({
+      channelApplyWhatsAppNumber: null,
+      defaultWhatsAppNumber: null,
+      email: null,
+      kind: "whatsapp",
+    }),
+    null,
+    "no channel number and no default means no destination — the caller copies without a dead link",
+  );
+
+  // The override only bites once the link builder is fed the resolved destination. Build a link the
+  // way the panel does — resolve the destination, then buildApplyLink — and prove the channel's own
+  // line, not the default, lands in the wa.me number.
+  const overriddenDestination = applyDestinationForChannel({
+    channelApplyWhatsAppNumber: "01159888247",
+    defaultWhatsAppNumber: "01098500699",
+    email: null,
+    kind: "whatsapp",
+  });
+  const overriddenLink = buildApplyLink({
+    code: "PX-WAL",
+    destination: overriddenDestination as string,
+    jobTitle: "Medical Representative",
+    kind: "whatsapp",
+    location: "Giza",
+  });
+  assert.ok(
+    overriddenLink?.startsWith("https://wa.me/201159888247?text="),
+    `the channel's own apply line is the wa.me number, not the default (got ${overriddenLink})`,
+  );
+
+  // Source-pin: the panel must route every channel's link through applyDestinationForChannel, not
+  // read a single screen-wide destination. Without this, a channel's saved apply number would sit in
+  // the database and never reach the link — the override would look configured and do nothing.
+  const panelSource = fs.readFileSync(
+    fileURLToPath(new URL("../src/components/recruitment/job-advert-panel.tsx", import.meta.url)),
+    "utf8",
+  );
+  assert.ok(
+    /applyDestinationForChannel\(\{[\s\S]*channelApplyWhatsAppNumber:\s*channel\.applyWhatsAppNumber/.test(panelSource),
+    "the panel resolves each channel's link through applyDestinationForChannel with that channel's own number",
+  );
+
+  // ── 11 · A new channel is born on the second apply line ─────────────────────
+  // The 45 existing channels were swept onto 01159888247 by hand on 2026-09-24; a channel added
+  // afterwards must start there too, or new groups quietly route applicants back to the company
+  // default. channelInsertRow is the one row every create path builds, so pinning it pins them all.
+  assert.equal(
+    NEW_CHANNEL_APPLY_WHATSAPP_NUMBER,
+    "01159888247",
+    "new channels are born on the second apply line",
+  );
+  assert.notEqual(
+    NEW_CHANNEL_APPLY_WHATSAPP_NUMBER,
+    "01098500699",
+    "the born-on line is the second line, NOT the company-wide default",
+  );
+  assert.equal(
+    normalizeWhatsAppNumber(NEW_CHANNEL_APPLY_WHATSAPP_NUMBER),
+    "201159888247",
+    "the born-on line is a usable wa.me number, not a typo the link builder would drop",
+  );
+  const newRow = channelInsertRow(
+    { name: "Cairo Medical Reps", kind: "whatsapp_group" },
+    { code: "PX-CMR", name: "Cairo Medical Reps", hrId: "B-10" },
+  );
+  assert.equal(
+    newRow.apply_whatsapp_number,
+    "01159888247",
+    "the row written for a new channel carries the second apply line, not null",
+  );
+  assert.equal(newRow.code, "PX-CMR", "the resolved code is written through unchanged");
+  assert.equal(newRow.kind, "whatsapp_group", "the requested kind is written through unchanged");
+
+  // Source-pin: createJobPostChannels must build its insert row through channelInsertRow, so the
+  // born-on default reaches the database. An inline row literal that forgot apply_whatsapp_number
+  // would pass every assertion above and still ship new channels on the wrong line.
+  const serviceSource = fs.readFileSync(
+    fileURLToPath(new URL("../src/lib/recruitment/outreach/job-post-channels.ts", import.meta.url)),
+    "utf8",
+  );
+  assert.ok(
+    /rows\.push\(channelInsertRow\(/.test(serviceSource),
+    "createJobPostChannels builds each insert row through channelInsertRow, so every new channel gets the born-on apply line",
   );
 }

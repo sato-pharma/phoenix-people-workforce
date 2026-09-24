@@ -13,6 +13,7 @@ import {
 } from "../src/lib/recruitment/interview-calendar-export.ts";
 import { createAccessContext, systemAccessContext } from "../src/lib/auth/permissions.ts";
 import {
+  assertMayPickInterviewer,
   calendarRoleFor,
   canSetInterviewOutcome,
   checkCvUpload,
@@ -250,6 +251,18 @@ function runInterviewerAccessTests() {
   assert.match(domain, /Interviewers are District Managers and above/, "choosing someone below District Manager is refused");
   assert.match(domain, /purpose !== "interviewer" \|\| isDistrictManagerOrAbove\(/, "and the picker never offers them");
   assert.match(domain, /async function isChosenInterviewer[\s\S]*isDistrictManagerOrAbove\(/, "a Medical Rep chosen before the rule holds no calendar");
+
+  // WHO MAY PICK ONE: the request flow's point is that a requester who cannot book still names the
+  // interviewer. Booking rights pass; a requester and an interviewer pass; a viewer/commenter is
+  // refused. Requiring "book" here made the picker read "Nobody matches that" for every requester.
+  const dm = createAccessContext({ hrId: "B-116", role: "District Sales Manager" });
+  assert.doesNotThrow(() => assertMayPickInterviewer({ access: dm, link: null, own: "requester" }), "a requester picks who conducts it");
+  assert.doesNotThrow(() => assertMayPickInterviewer({ access: dm, link: null, own: "interviewer" }), "a chosen interviewer picks (self-book)");
+  assert.doesNotThrow(() => assertMayPickInterviewer({ access: dm, link: null, own: "owner" }), "the owner picks");
+  assert.doesNotThrow(() => assertMayPickInterviewer({ access: dm, link: null, own: "editor" }), "an editor picks");
+  assert.throws(() => assertMayPickInterviewer({ access: dm, link: null, own: "viewer" }), /Forbidden/, "a viewer has no interviewer to pick");
+  assert.throws(() => assertMayPickInterviewer({ access: dm, link: null, own: "commenter" }), /Forbidden/, "nor does a commenter");
+  assert.match(domain, /if \(purpose === "interviewer"\) assertMayPickInterviewer\(caller\)/, "the picker search uses the pick gate, not the book gate");
 }
 
 // ── 1 · The week: Sunday to Thursday, 9 to 5, in Cairo ─────────────────────────────────────────
@@ -908,6 +921,14 @@ function runWiringTests() {
     "recordInterviewWhatsAppOpened(caller",
     "listDueZoomInterviews(caller",
     "setInterviewOutcome(caller",
+    // The two-step request flow (interview-requests.ts). Each entry point resolves the caller and
+    // checks a right before it touches a row — pinned in tests/interview-requests.test.ts.
+    "listMyInterviewRequests(caller",
+    "listInterviewRequestsInbox(caller",
+    "createInterviewRequest(caller",
+    "getInterviewRequest(caller",
+    "scheduleInterviewRequestItem(caller",
+    "cancelInterviewRequest(caller",
   ];
   const routes = routeFiles("app/api/recruitment/interview-calendar");
   assert.ok(routes.length >= 28, `the calendar's routes were found (${routes.length})`);

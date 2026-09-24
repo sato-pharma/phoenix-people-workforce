@@ -84,6 +84,30 @@ export async function runInterviewReminderTests() {
   assert.deepEqual(kinds(planInterviewReminders([rep], at("2026-09-22", 10, 3))), [], "no reminder for a Medical Rep");
   assert.deepEqual(kinds(planInterviewReminders([{ ...rep, startsAt: at("2026-09-23", 11).toISOString() }], at("2026-09-22", 17, 3))), [], "and no evening list for one");
 
+  // AFTER THE INTERVIEW: a daily "record what happened" pump until the interviewer responds (owner,
+  // 2026-09-23 — "keeps pumping ... the first thing that stops it is that the interviewer responds").
+  // The source query returns only interviews with NO outcome, so an interview that has one is simply
+  // absent here — that is how responding stops the pump.
+  const held = interview("p", "2026-09-21", 11); // Monday, in the past relative to Tuesday
+  assert.deepEqual(kinds(planInterviewReminders([held], at("2026-09-22", 8, 30))), [], "before 9:00 AM Cairo: no pump yet");
+  const awaiting = planInterviewReminders([held], at("2026-09-22", 9, 30));
+  assert.deepEqual(kinds(awaiting), ["awaiting:D-07"], "after the interview, from 9:00 AM: the interviewer is nagged to respond");
+  assert.match(awaiting[0].message, /waiting for your response/, "and the message says why");
+  const nextDay = planInterviewReminders([held], at("2026-09-23", 9, 30));
+  assert.notEqual(nextDay[0]?.key, awaiting[0].key, "a new day's pump has a new key, so it fires again");
+  assert.deepEqual(
+    kinds(planInterviewReminders([interview("q", "2026-08-01", 11)], at("2026-09-22", 9, 30))),
+    [],
+    "past 30 days a truly-abandoned interview stops nagging",
+  );
+  assert.deepEqual(
+    kinds(planInterviewReminders([interview("r", "2026-09-21", 11, { interviewerHrId: "R-01", interviewerJobTitle: "Medical Representative" })], at("2026-09-22", 9, 30))),
+    [],
+    "no pump for a Medical Rep",
+  );
+  // The stop condition itself: with the outcome recorded, the interview is gone from the source.
+  assert.deepEqual(kinds(planInterviewReminders([], at("2026-09-22", 9, 30))), [], "once responded, nothing to pump");
+
   // The run: sends each planned reminder, counts what went out, survives one failing.
   const sent: string[] = [];
   const run = await runInterviewReminders(
@@ -104,10 +128,12 @@ export async function runInterviewReminderTests() {
 
   // WIRING: the three channels the owner named, once by key, and nothing but the interviewer is told.
   const source = stripComments(read("src/lib/recruitment/interview-reminders.ts"));
-  assert.match(source, /channels: \["in_app", "email", "telegram"\]/, "in-app, email and Telegram — all three");
+  assert.match(source, /: \["in_app", "email", "telegram"\]/, "in-app, email and Telegram — all three for the evening list and the one-hour nudge");
   assert.match(source, /idempotencyKey: reminder\.key/, "every message is deduped by its key");
   assert.match(source, /recipientHrId: reminder\.recipientHrId/, "and goes to the interviewer only");
   assert.doesNotMatch(source, /candidateEmail|recipientMode: "candidate"/, "the candidate is sent nothing");
+  assert.match(source, /kind === "awaiting" \? \["in_app", "telegram"\]/, "the daily pump is in-app + Telegram only — no month of e-mails");
+  assert.match(source, /interview-reminder-awaiting:/, "the pump's key is stamped with the day, so it fires once a day");
   const route = stripComments(read("app/api/cron/interview-reminders/route.ts"));
   assert.match(route, /assertCronAuthorized\(request, "cron\/interview-reminders"\)/, "the cron route checks the secret");
   assert.match(route, /export async function POST/, "and answers the scheduler's POST too");

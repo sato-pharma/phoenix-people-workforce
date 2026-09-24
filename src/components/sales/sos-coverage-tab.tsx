@@ -111,38 +111,66 @@ function DistributorCoverageTable({ rows }: { rows: DistributorCoverageRow[] }) 
           <TableSearchInput value={table.query} onChange={table.setQuery} onClear={table.clearQuery} placeholder="Filter distributors…" />
         </div>
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+      {/* Eight columns cannot be read at 375px and must not scroll sideways, so the five
+          detail columns are MERGED into the Distributor cell below md and shown as their
+          own columns from md up. Nothing is dropped at either width, and every sort
+          control survives where the header row is visible. */}
+      <div>
+        <table className="w-full table-fixed text-sm">
+          <colgroup>
+            <col className="w-[62%] md:w-[15%]" />
+            <col className="w-[38%] md:w-[11%]" />
+            <col className="hidden md:table-column md:w-[13%]" />
+            <col className="hidden md:table-column md:w-[13%]" />
+            <col className="hidden md:table-column md:w-[15%]" />
+            <col className="hidden md:table-column md:w-[11%]" />
+            <col className="hidden md:table-column md:w-[9%]" />
+            <col className="hidden md:table-column md:w-[13%]" />
+          </colgroup>
           <thead>
             <tr className="bg-[#020617] text-left text-white">
               <SortableTh label="Distributor" sortKey="distributorCode" {...thProps} />
               <SortableTh label="Resolved %" sortKey="latestResolvedPct" align="right" {...thProps} />
-              <SortableTh label="Trend (last 5)" {...thProps} />
-              <SortableTh label="New customers" sortKey="latestNewCustomers" align="right" {...thProps} />
-              <SortableTh label="Unmapped products" sortKey="latestUnmappedProducts" align="right" {...thProps} />
-              <SortableTh label="Brick drift" sortKey="latestBrickDrift" align="right" {...thProps} />
-              <SortableTh label="Imports" sortKey="importCount" align="right" {...thProps} />
-              <SortableTh label="Last import" sortKey="latestCommittedAt" align="right" {...thProps} />
+              <SortableTh className={`${thProps.className} hidden md:table-cell`} label="Trend (last 5)" sort={thProps.sort} onSort={thProps.onSort} variant={thProps.variant} />
+              <SortableTh className={`${thProps.className} hidden md:table-cell`} label="New customers" sortKey="latestNewCustomers" align="right" sort={thProps.sort} onSort={thProps.onSort} variant={thProps.variant} />
+              <SortableTh className={`${thProps.className} hidden md:table-cell`} label="Unmapped products" sortKey="latestUnmappedProducts" align="right" sort={thProps.sort} onSort={thProps.onSort} variant={thProps.variant} />
+              <SortableTh className={`${thProps.className} hidden md:table-cell`} label="Brick drift" sortKey="latestBrickDrift" align="right" sort={thProps.sort} onSort={thProps.onSort} variant={thProps.variant} />
+              <SortableTh className={`${thProps.className} hidden md:table-cell`} label="Imports" sortKey="importCount" align="right" sort={thProps.sort} onSort={thProps.onSort} variant={thProps.variant} />
+              <SortableTh className={`${thProps.className} hidden md:table-cell`} label="Last import" sortKey="latestCommittedAt" align="right" sort={thProps.sort} onSort={thProps.onSort} variant={thProps.variant} />
             </tr>
           </thead>
           <tbody>
             {table.rows.length === 0 && <TableNoResults colSpan={8} filtered={table.isFiltered} label="distributors" />}
             {table.rows.map((row) => (
               <tr key={row.distributorCode} className="border-t border-[#EEF2F7] hover:bg-phx-paper">
-                <td className="px-4 py-2.5 font-black text-phx-ink">{row.distributorCode}</td>
-                <td className="px-4 py-2.5 text-right"><PctBadge pct={row.latestResolvedPct} /></td>
-                <td className="px-4 py-2.5"><TrendDots values={row.trend} /></td>
-                <td className="px-4 py-2.5 text-right tabular-nums text-phx-ink">
+                <td className="break-words px-4 py-2.5 align-top font-black text-phx-ink">
+                  {row.distributorCode}
+                  <span className="mt-1 block font-normal text-phx-2xs text-phx-ink-soft md:hidden">
+                    <span className="block">
+                      {row.latestNewCustomers === null ? "new customers not measured" : `${formatNumber(row.latestNewCustomers)} new customers`}
+                      {" · "}{formatNumber(row.latestUnmappedProducts)} unmapped
+                    </span>
+                    <span className="block">
+                      {formatNumber(row.latestBrickDrift)} brick drift · {formatNumber(row.importCount)} imports
+                    </span>
+                    <span className="block">
+                      last {new Date(row.latestCommittedAt).toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" })}
+                    </span>
+                  </span>
+                </td>
+                <td className="px-4 py-2.5 text-right align-top"><PctBadge pct={row.latestResolvedPct} /></td>
+                <td className="hidden px-4 py-2.5 align-top md:table-cell"><TrendDots values={row.trend} /></td>
+                <td className="hidden px-4 py-2.5 text-right align-top tabular-nums text-phx-ink md:table-cell">
                   {row.latestNewCustomers === null ? <span className="text-phx-ink-subtle">not measured</span> : formatNumber(row.latestNewCustomers)}
                 </td>
-                <td className="px-4 py-2.5 text-right tabular-nums text-phx-ink">{formatNumber(row.latestUnmappedProducts)}</td>
-                <td className="px-4 py-2.5 text-right">
+                <td className="hidden px-4 py-2.5 text-right align-top tabular-nums text-phx-ink md:table-cell">{formatNumber(row.latestUnmappedProducts)}</td>
+                <td className="hidden px-4 py-2.5 text-right align-top md:table-cell">
                   {row.latestBrickDrift > 0
                     ? <span className="font-bold text-orange-600">{formatNumber(row.latestBrickDrift)}</span>
                     : <span className="text-phx-ink-faint">0</span>}
                 </td>
-                <td className="px-4 py-2.5 text-right tabular-nums text-phx-ink-soft">{formatNumber(row.importCount)}</td>
-                <td className="px-4 py-2.5 text-right text-phx-ink-soft">
+                <td className="hidden px-4 py-2.5 text-right align-top tabular-nums text-phx-ink-soft md:table-cell">{formatNumber(row.importCount)}</td>
+                <td className="hidden px-4 py-2.5 text-right align-top text-phx-ink-soft md:table-cell">
                   {new Date(row.latestCommittedAt).toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" })}
                 </td>
               </tr>
@@ -166,8 +194,13 @@ function DriftAlertsTable({ alerts }: { alerts: DriftAlert[] }) {
   });
   const thProps = { sort: table.sort, onSort: table.toggleSort, variant: "dark" as const, className: "px-4 py-3 text-phx-xs tracking-[0.14em]" };
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
+    <div>
+      <table className="w-full table-fixed text-sm">
+        <colgroup>
+          <col className="w-[44%]" />
+          <col className="w-[26%]" />
+          <col className="w-[30%]" />
+        </colgroup>
         <thead>
           <tr className="bg-[#020617] text-left text-white">
             <SortableTh label="Distributor" sortKey="distributorCode" {...thProps} />
@@ -179,7 +212,7 @@ function DriftAlertsTable({ alerts }: { alerts: DriftAlert[] }) {
           {table.rows.length === 0 && <TableNoResults colSpan={3} filtered={table.isFiltered} label="drift alerts" />}
           {table.rows.map((alert) => (
             <tr key={alert.batchId} className="border-t border-[#EEF2F7]">
-              <td className="px-4 py-2.5 font-semibold text-phx-ink">{alert.distributorCode}</td>
+              <td className="break-words px-4 py-2.5 font-semibold text-phx-ink">{alert.distributorCode}</td>
               <td className="px-4 py-2.5 text-right font-bold text-orange-600">{formatNumber(alert.brickDriftCount)}</td>
               <td className="px-4 py-2.5 text-right text-phx-ink-soft">
                 {new Date(alert.committedAt).toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" })}
@@ -257,8 +290,14 @@ function BulkMapTable({ bricks, onSaved, rows }: { bricks: BrickOption[]; onSave
           Save all selected ({pendingPicked.length})
         </Button>
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+      <div>
+        <table className="w-full table-fixed text-sm">
+          <colgroup>
+            <col className="w-[34%]" />
+            <col className="w-[18%]" />
+            <col className="w-[14%]" />
+            <col className="w-[34%]" />
+          </colgroup>
           <thead>
             <tr className="bg-[#020617] text-left">
               {["Customer", "Distributor", "Imports", "Assign brick"].map((h) => (
@@ -272,18 +311,20 @@ function BulkMapTable({ bricks, onSaved, rows }: { bricks: BrickOption[]; onSave
               const isSaved = savedKeys.has(key);
               return (
                 <tr key={key} className="border-t border-[#EEF2F7]">
-                  <td className="px-4 py-2">
+                  <td className="break-words px-4 py-2 align-top">
                     <span className="font-semibold text-phx-ink">{r.customerCode}</span>
-                    {r.customerName ? <span className="block max-w-[220px] truncate text-xs text-phx-ink-soft">{r.customerName}</span> : <span className="block text-xs italic text-phx-ink-faint">name not captured</span>}
+                    {/* The name used to be capped at 220px and ellipsised. The column owns
+                        the width now, so it wraps and the whole name is readable. */}
+                    {r.customerName ? <span className="block break-words text-xs text-phx-ink-soft">{r.customerName}</span> : <span className="block text-xs italic text-phx-ink-faint">name not captured</span>}
                   </td>
-                  <td className="px-4 py-2 text-phx-ink-soft">{r.distributorCode}</td>
-                  <td className="px-4 py-2 tabular-nums text-phx-ink-soft">{formatNumber(r.importCount)}</td>
-                  <td className="px-4 py-2">
+                  <td className="break-words px-4 py-2 align-top text-phx-ink-soft">{r.distributorCode}</td>
+                  <td className="px-4 py-2 align-top tabular-nums text-phx-ink-soft">{formatNumber(r.importCount)}</td>
+                  <td className="px-4 py-2 align-top">
                     {isSaved ? (
-                      <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600"><CheckCircle2 className="h-3.5 w-3.5" /> Mapped</span>
+                      <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600"><CheckCircle2 className="h-3.5 w-3.5 shrink-0" /> Mapped</span>
                     ) : (
                       <SearchableSelect
-                        className="h-9 w-full max-w-[280px] rounded-lg border border-phx-line bg-phx-paper px-2 text-sm text-phx-ink outline-none focus:border-phx-accent-line"
+                        className="h-9 w-full rounded-lg border border-phx-line bg-phx-paper px-2 text-sm text-phx-ink outline-none focus:border-phx-accent-line"
                         disabled={saving || bricks.length === 0}
                         onChange={(e) => setPicked((prev) => ({ ...prev, [key]: e.target.value }))}
                         value={picked[key] ?? ""}

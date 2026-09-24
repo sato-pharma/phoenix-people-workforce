@@ -74,7 +74,9 @@ const emptyProductForm: ProductFormState = {
   sourceSheet: "Products",
 };
 
-const tableCellClassName = "px-4 py-3 align-top";
+// Tighter side padding on a phone, so the four columns that survive the fold keep enough room for
+// the Edit / Delete buttons without a sideways scroll.
+const tableCellClassName = "break-words px-2 py-3 align-top lg:px-4";
 
 function sortProducts(products: SourceOfSalesProduct[]) {
   return [...products].sort(
@@ -339,7 +341,7 @@ export function SourceOfSalesProductsTab({
     ],
     initialSort: null,
   });
-  const thProps = { sort: table.sort, onSort: table.toggleSort, variant: "light" as const, className: "text-xs" };
+  const thProps = { sort: table.sort, onSort: table.toggleSort, variant: "light" as const, className: "break-words px-2 text-xs lg:px-4" };
 
   async function reloadProducts() {
     setRefreshing(true);
@@ -496,26 +498,34 @@ export function SourceOfSalesProductsTab({
             />
           </label>
         </div>
-        <div className="overflow-x-auto p-4 md:p-5">
+        <div className="p-4 md:p-5">
           <div className="overflow-hidden rounded-[16px] border border-phx-line">
-            <table className="w-full min-w-[1680px] text-left text-sm">
+            {/* Sixteen columns cannot divide a screen. Each name now carries its own code or
+                normalized form beneath it, the three source columns read as one, and Created +
+                Updated share a cell — nine columns, none of the data dropped. Below `lg` the six
+                detail columns fold away and reappear as sub-lines under the product. */}
+            <table className="w-full table-fixed text-left text-sm">
+              <colgroup>
+                <col className="w-[34%] lg:w-[18%]" />
+                <col className="w-[16%] lg:w-[9%]" />
+                <col className="hidden lg:table-column lg:w-[10%]" />
+                <col className="hidden lg:table-column lg:w-[8%]" />
+                <col className="hidden lg:table-column lg:w-[10%]" />
+                <col className="hidden lg:table-column lg:w-[14%]" />
+                <col className="w-[16%] lg:w-[8%]" />
+                <col className="hidden lg:table-column lg:w-[11%]" />
+                <col className="w-[34%] lg:w-[12%]" />
+              </colgroup>
               <thead className="bg-phx-paper">
                 <tr>
-                  <SortableTh label="Product Code" sortKey="productCode" {...thProps} />
-                  <SortableTh label="Product Name" sortKey="productName" {...thProps} />
-                  <SortableTh label="Normalized Product Name" sortKey="normalizedProductName" {...thProps} />
+                  <SortableTh label="Product" sortKey="productName" {...thProps} />
                   <SortableTh label="Factory Price" sortKey="factoryPrice" {...thProps} />
-                  <SortableTh label="Family" sortKey="family" {...thProps} />
-                  <SortableTh label="Family Code" sortKey="familyCode" {...thProps} />
-                  <SortableTh label="Source" sortKey="source" {...thProps} />
-                  <SortableTh label="Line" sortKey="line" {...thProps} />
-                  <SortableTh label="Normalized Line" sortKey="normalizedLine" {...thProps} />
-                  <SortableTh label="Source File" sortKey="sourceFile" {...thProps} />
-                  <SortableTh label="Source Sheet" sortKey="sourceSheet" {...thProps} />
-                  <SortableTh label="Source Row" sortKey="sourceRowNumber" {...thProps} />
+                  <SortableTh className="hidden text-xs lg:table-cell" label="Family" sortKey="family" sort={table.sort} onSort={table.toggleSort} variant="light" />
+                  <SortableTh className="hidden text-xs lg:table-cell" label="Source" sortKey="source" sort={table.sort} onSort={table.toggleSort} variant="light" />
+                  <SortableTh className="hidden text-xs lg:table-cell" label="Line" sortKey="line" sort={table.sort} onSort={table.toggleSort} variant="light" />
+                  <SortableTh className="hidden text-xs lg:table-cell" label="Source File" sortKey="sourceFile" sort={table.sort} onSort={table.toggleSort} variant="light" />
                   <SortableTh label="Active" sortKey="active" {...thProps} />
-                  <SortableTh label="Created" sortKey="createdAt" {...thProps} />
-                  <SortableTh label="Updated" sortKey="updatedAt" {...thProps} />
+                  <SortableTh className="hidden text-xs lg:table-cell" label="Created · Updated" sortKey="updatedAt" sort={table.sort} onSort={table.toggleSort} variant="light" />
                   <SortableTh label="Action" {...thProps} />
                 </tr>
               </thead>
@@ -524,34 +534,58 @@ export function SourceOfSalesProductsTab({
                   const deleting = deleteLoadingCode === product.productCode;
                   return (
                     <tr className="text-phx-ink-soft" key={product.productCode}>
-                      <td className={`${tableCellClassName} font-black text-phx-ink`}>{product.productCode}</td>
-                      <td className={`${tableCellClassName} font-semibold text-phx-ink`}>{product.productName}</td>
-                      <td className={tableCellClassName}>{product.normalizedProductName}</td>
-                      <td className={tableCellClassName}>{formatCurrency(product.factoryPrice)}</td>
-                      <td className={tableCellClassName}>{product.family}</td>
-                      <td className={tableCellClassName}>{product.familyCode}</td>
-                      <td className={tableCellClassName}>{product.source}</td>
-                      <td className={tableCellClassName}>{product.line}</td>
-                      <td className={tableCellClassName}>{product.normalizedLine}</td>
-                      <td className={tableCellClassName}>{product.sourceFile}</td>
-                      <td className={tableCellClassName}>{product.sourceSheet}</td>
                       <td className={tableCellClassName}>
-                        {product.sourceRowNumber ? formatNumber(product.sourceRowNumber) : "-"}
+                        <span className="block font-semibold text-phx-ink">{product.productName}</span>
+                        <span className="block font-black text-xs text-phx-ink">{product.productCode}</span>
+                        <span className="block text-xs">{product.normalizedProductName}</span>
+                        {/* Below `lg` the folded columns come back here, so a phone loses nothing. */}
+                        <span className="mt-1 block text-xs lg:hidden">
+                          {[product.family, product.familyCode].filter(Boolean).join(" · ") || "-"}
+                        </span>
+                        <span className="block text-xs lg:hidden">
+                          {[product.source, product.line, product.normalizedLine].filter(Boolean).join(" · ") || "-"}
+                        </span>
+                        <span className="block text-xs lg:hidden">
+                          {[product.sourceFile, product.sourceSheet, product.sourceRowNumber ? `row ${formatNumber(product.sourceRowNumber)}` : null]
+                            .filter(Boolean)
+                            .join(" · ") || "-"}
+                        </span>
+                        <span className="block text-xs lg:hidden">
+                          {product.updatedAt ? `Updated ${new Date(product.updatedAt).toLocaleString()}` : "-"}
+                        </span>
+                      </td>
+                      <td className={tableCellClassName}>{formatCurrency(product.factoryPrice)}</td>
+                      <td className={`${tableCellClassName} hidden lg:table-cell`}>
+                        <span className="block">{product.family}</span>
+                        <span className="block text-xs text-phx-ink-faint">{product.familyCode}</span>
+                      </td>
+                      <td className={`${tableCellClassName} hidden lg:table-cell`}>{product.source}</td>
+                      <td className={`${tableCellClassName} hidden lg:table-cell`}>
+                        <span className="block">{product.line}</span>
+                        <span className="block text-xs text-phx-ink-faint">{product.normalizedLine}</span>
+                      </td>
+                      <td className={`${tableCellClassName} hidden lg:table-cell`}>
+                        <span className="block break-words">{product.sourceFile}</span>
+                        <span className="block break-words text-xs text-phx-ink-faint">
+                          {[product.sourceSheet, product.sourceRowNumber ? `row ${formatNumber(product.sourceRowNumber)}` : null]
+                            .filter(Boolean)
+                            .join(" · ") || "-"}
+                        </span>
                       </td>
                       <td className={tableCellClassName}>
                         <Badge variant={product.active ? "success" : "neutral"}>
                           {product.active ? "Active" : "Inactive"}
                         </Badge>
                       </td>
-                      <td className={tableCellClassName}>
-                        {product.createdAt ? new Date(product.createdAt).toLocaleString() : "-"}
-                      </td>
-                      <td className={tableCellClassName}>
-                        {product.updatedAt ? new Date(product.updatedAt).toLocaleString() : "-"}
+                      <td className={`${tableCellClassName} hidden lg:table-cell`}>
+                        <span className="block">{product.createdAt ? new Date(product.createdAt).toLocaleString() : "-"}</span>
+                        <span className="block text-xs text-phx-ink-faint">
+                          {product.updatedAt ? new Date(product.updatedAt).toLocaleString() : "-"}
+                        </span>
                       </td>
                       <td className={tableCellClassName}>
                         {deleteConfirmCode === product.productCode ? (
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
                             <span className="text-xs font-bold text-red-600">Delete this product?</span>
                             <Button
                               className="h-8 gap-1 px-3 text-xs"
@@ -571,7 +605,7 @@ export function SourceOfSalesProductsTab({
                             </Button>
                           </div>
                         ) : (
-                          <div className="flex gap-2">
+                          <div className="flex flex-wrap gap-2">
                             <Button className="h-9 gap-1 px-3" onClick={() => openEditModal(product)} variant="secondary">
                               <Edit3 className="h-3.5 w-3.5" />
                               Edit
@@ -593,7 +627,7 @@ export function SourceOfSalesProductsTab({
                 })}
                 {table.rows.length === 0 ? (
                   <tr>
-                    <td className="px-4 py-8 text-center text-sm font-semibold text-phx-ink-soft" colSpan={16}>
+                    <td className="px-4 py-8 text-center text-sm font-semibold text-phx-ink-soft" colSpan={9}>
                       No products found.
                     </td>
                   </tr>

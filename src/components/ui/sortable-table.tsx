@@ -67,13 +67,19 @@ export function SortButton({
       onClick={() => onSort(sortKey)}
       aria-label={`Sort by ${label}`}
       className={cn(
-        "group inline-flex select-none items-center gap-1 transition hover:opacity-90",
+        // `max-w-full` on the button and `min-w-0 break-words` on the label are what let a sortable
+        // header WRAP instead of clipping. A flex item's default `min-width: auto` is its longest
+        // word, so inside a `table-fixed` column narrower than the word, the button simply overran
+        // its `<th>` — and because the wrapper is `overflow-hidden`, nothing scrolled to reveal it.
+        // Measured on Customer Directory at a 941px viewport: the "Distributor" header wanted 109px
+        // in a 101px cell and lost its last letters. No effect at any width where the label fits.
+        "group inline-flex max-w-full select-none items-center gap-1 transition hover:opacity-90",
         align === "right" && "flex-row-reverse",
         active && "text-phx-accent",
         className,
       )}
     >
-      <span>{label}</span>
+      <span className="min-w-0 break-words">{label}</span>
       {active ? (
         sort?.dir === "asc" ? (
           <ChevronUp className="h-3 w-3 shrink-0" />

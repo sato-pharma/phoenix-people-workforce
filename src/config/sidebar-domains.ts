@@ -221,6 +221,11 @@ export const adminSidebarDomains: readonly SidebarDomain[] = [
       { heading: "CRM Boards", sectionIds: ["crm"] },
       // Not "CRM Integrity": that is the label of a row inside this very group.
       { heading: "CRM Data Quality", sectionIds: ["crm-integrity"] },
+      // The Super-Admin gallery of field-captured customers spans both this domain's direct orders
+      // and Marketing's validated requests; it sits here beside the order desk and pharmacies whose
+      // captures it reviews. "Field Evidence", not "Verified Captures": that is the one row inside
+      // this band, and a heading repeating its own row is blanked by `groupAdminSections`.
+      { heading: "Field Evidence", sectionIds: ["verified-captures"] },
     ],
   },
   {

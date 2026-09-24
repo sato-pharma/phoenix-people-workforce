@@ -187,7 +187,7 @@ function runWiringTests() {
   assert.match(functionBody(calendar, "resolveInterviewer"), /loadPeople\(/, "an interviewer must be a real employee");
   assert.match(functionBody(calendar, "createInterviewBooking"), /interviewer_hr_id: interviewerHrId \?\? null/, "a booking stores its interviewer");
   assert.match(functionBody(calendar, "updateInterviewBooking"), /interviewerColumn/, "and a move can change it");
-  assert.match(functionBody(calendar, "searchInterviewCalendarPeople"), /if \(purpose === "interviewer"\) requireCalendarAccess\(caller, "book", "any"\);\s*else requireCalendarAccess\(caller, "share", null\)/, "anyone who can book can search for an interviewer; only the owner searches to share");
+  assert.match(functionBody(calendar, "searchInterviewCalendarPeople"), /if \(purpose === "interviewer"\) assertMayPickInterviewer\(caller\);\s*else requireCalendarAccess\(caller, "share", null\)/, "anyone who can book OR request can search for an interviewer; only the owner searches to share");
 
   // Zoom opens for THEIR interviews only: the chosen interviewer, or the owner when none is chosen.
   const due = functionBody(calendar, "listDueZoomInterviews");

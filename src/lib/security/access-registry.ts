@@ -885,6 +885,12 @@ export const accessRegistry = [
   // the mutation (Super-Admin gate enforced in the service). csrf is applied to the POST.
   sessionApi({ methods: ["GET", "POST"], pattern: "/api/marketing-requests/:id/track-direct-sales", permission: { resource: "expenses", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/marketing-requests/**", permission: { resource: "expenses", action: "read" }, guard: "domain-helper" }),
+  // Verified Captures gallery — the Super-Admin oversight of field-captured customers (direct orders
+  // and validated marketing requests), read-only. The role gate lives in the domain helper
+  // (assertVerifiedCapturesAccess — Super Admin / system scope only), so permission is null and the
+  // guard is the domain helper, exactly as customer-pharmacy-mapping below.
+  sessionApi({ audit: { classification: "access-read", required: false }, methods: ["GET"], pattern: "/api/verified-captures/marketing", permission: null, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "access-read", required: false }, methods: ["GET"], pattern: "/api/verified-captures/direct-orders", permission: null, guard: "domain-helper" }),
   // Customer Pharmacy Mapping — standalone read-only master-data governance. Role gate lives in the
   // domain helper (assertCustomerPharmacyMappingAccess); Phase 1 is Super Admin + CEO only.
   sessionApi({ audit: { classification: "access-read", required: false }, methods: ["GET"], pattern: "/api/customer-pharmacy-mapping", permission: null, guard: "domain-helper" }),
@@ -1197,6 +1203,13 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/recruitment/interview-calendar/links", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["PATCH", "DELETE"], pattern: "/api/recruitment/interview-calendar/links/*", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ methods: readOnly, pattern: "/api/recruitment/interview-calendar/candidates/search", permission: null, guard: "domain-helper" }),
+  // The two-step interview request flow (owner, 2026-09-23): a District Manager and above, or HR,
+  // asks for a day and attaches CVs; HR gives each CV a time. Self-gated exactly like the rest of the
+  // calendar — the route resolves the caller's calendar role (mayRequestInterviews / book rights) in
+  // interview-requests.ts, so no permission grant is declared here.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/recruitment/interview-calendar/requests", permission: null, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "DELETE"], pattern: "/api/recruitment/interview-calendar/requests/*", permission: null, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/recruitment/interview-calendar/requests/*/schedule", permission: null, guard: "domain-helper", csrfRequired: true }),
   // A district manager hands a CV back to the administrator ("area not match — or any other
   // situation"), and the administrator later clears it from the Returned CVs queue. TWO DIFFERENT
   // GRANTS on purpose: returning is `hiring_interviews:update` — the same folder grant every district
@@ -1354,6 +1367,11 @@ export const accessRegistry = [
   // A tablet plugged in by USB joins the custody register under the next PHX-TAB number; the
   // register's own createDevice writes the required audit row.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/tablets/usb", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
+  // ManageEngine bridge. GET reads the fleet (and a device's location with ?deviceId=); POST issues one
+  // remote command — lock, restart, reset the screen lock, lost mode on/off, or a wipe — each of which
+  // reaches a real tablet and carries its own REQUIRED audit row (manageengine_device_command).
+  sessionApi({ methods: ["GET"], pattern: "/api/devices/manageengine", permission: { resource: "company_devices", action: "approve" } }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/manageengine", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
   // Visual Aids (owner, 2026-09-18). A rep and his DM, RM and NSM read the ACTIVE aids of their own
   // line — the line check lives in src/lib/visual-aids/service.ts, below the permission. Marketing
   // Manager, GPM and Super Admin upload (create) and retire or replace (update); nobody deletes. The
@@ -1432,12 +1450,25 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/spotlight/cheques", permission: { resource: "spotlight", action: "export" } }),
   sessionApi({ audit: { classification: "mutation", required: true }, csrfRequired: true, methods: ["GET", "PUT", "DELETE"], pattern: "/api/spotlight/cheques/signature", permission: { resource: "spotlight", action: "export" } }),
   // ── Milestones ───────────────────────────────────────────────────────────────────────────────
-  // The service-anniversary keepsake. Super Admin and CEO only, for the same reason as Spotlight
-  // directly above: the due list reads every active employee's hire date with no scope narrowing,
-  // and the card pulls a named person's photograph out of the private `employee-photos` bucket
-  // onto a sheet built to be printed and handed around. That is a publishing right.
+  // The service-anniversary keepsake. SUPER ADMIN ONLY — the owner narrowed it from Super Admin +
+  // CEO on 2026-09-23 ("make it only super admin. None either uh, CEO"). The due list reads every
+  // active employee's hire date with no scope narrowing, and the card pulls a named person's
+  // photograph out of the private `employee-photos` bucket onto a sheet built to be printed and
+  // handed around. That is a publishing right.
   sessionApi({ methods: ["GET"], pattern: "/api/milestones/due", permission: { resource: "milestones", action: "read" } }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/milestones/card", permission: { resource: "milestones", action: "export" } }),
+  // A whole window of cards as one PDF, one card per page. Same publishing right as the single card,
+  // and a mutation (it records a print row per card), so csrfRequired. Prints from the record only —
+  // it carries no handed-in photograph.
+  sessionApi({ audit: { classification: "export", required: true }, csrfRequired: true, methods: ["POST"], pattern: "/api/milestones/batch", permission: { resource: "milestones", action: "export" } }),
+  // The acknowledgement that stops the daily reminder: opening the page marks the current window
+  // seen. A mutation (it writes milestone_notice_marks), so csrfRequired; gated on read, since
+  // seeing who is coming up is the same right as reading the due list.
+  sessionApi({ audit: { classification: "mutation", required: true }, csrfRequired: true, methods: ["POST"], pattern: "/api/milestones/seen", permission: { resource: "milestones", action: "read" } }),
+  // The print history — who was congratulated, when, by whom — as JSON for the view and as an .xlsx
+  // download. A read of the append-only log (a record, not a control), so gated on read like the due
+  // list; GET, so no CSRF.
+  sessionApi({ methods: ["GET"], pattern: "/api/milestones/history", permission: { resource: "milestones", action: "read" } }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/sales/monthly-closing/performance-review", permission: { resource: "sales", action: "import" } }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/sales/monthly-closing/performance-review/export", permission: [{ resource: "sales", action: "import" }, { resource: "sales", action: "export" }], csrfExemptReason: "Read-only export, Super Admin and SFE Manager only: re-reads the closing for the requested line+period and serialises the rep ranking, family, by-product and by-area views to XLSX; performs no mutation." }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/sales/customer-directory/export", permission: { resource: "sales", action: "export" }, csrfExemptReason: "Read-only export: re-runs the directory query under the caller's filters and serialises it to a styled XLSX; performs no mutation." }),

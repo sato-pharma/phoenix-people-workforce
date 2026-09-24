@@ -6,6 +6,18 @@ import type {
   HrWeeklyOffMode,
   HrWeeklyOffPolicy,
 } from "@/lib/hr-calendar/types";
+import {
+  birthdaySpec,
+  calendarMilestoneSpecs,
+  firstSatoBirthday,
+  formatMilestoneSpec,
+  formatPlainDateIso,
+  milestoneDate,
+  monthDayOf,
+  monthDayOn,
+  parsePlainDate,
+  satoBirthdayOrdinal,
+} from "@/lib/milestones/periods";
 
 export const defaultHrWeeklyOffPolicy: HrWeeklyOffPolicy = {
   friday: "full_day",
@@ -21,14 +33,24 @@ export function toHrCalendarDateInputValue(date: Date) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
-function monthDayDate(sourceDate: Date, selectedYear: number) {
-  return new Date(selectedYear, sourceDate.getMonth(), sourceDate.getDate());
-}
-
 function dayOfMonth(value: string) {
   return parseDateOnly(value)?.getDate() ?? 0;
 }
 
+/**
+ * The events that fall in one calendar month.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────────
+ * DATED BY THE MILESTONE ARITHMETIC, WHICH CLAMPS. The old code dated an anniversary and a birthday
+ * with `new Date(year, month, day)`, which ROLLS OVER — a 29-February date became 1 March in a
+ * common year, so leap-day staff matched no day of the month and were never notified. Every date
+ * here now comes from `milestoneDate` / `monthDayOn`, which clamp 29 February to 28 February, so the
+ * calendar and the printed card agree to the day and leap-day staff are marked on the 28th.
+ *
+ * "First month and then yearly" (the owner, 2026-09-23): the printable ladder is `calendarMilestoneSpecs`
+ * — the first month, then every year to 60. `spec` carries the period each row prints as, or null for
+ * a row that has no card (a plain arrival, or a birthday/anniversary with no usable date).
+ */
 export function buildHrCalendarEvents(
   employees: HrCalendarEmployee[],
   selectedMonth: number,
@@ -37,37 +59,51 @@ export function buildHrCalendarEvents(
   const events: HrCalendarEvent[] = [];
 
   for (const employee of employees) {
-    const hireDate = parseDateOnly(employee.hireDate);
-    const birthDate = parseDateOnly(employee.birthDate);
+    const hire = parsePlainDate(employee.hireDate);
 
-    if (hireDate && hireDate.getMonth() + 1 === selectedMonth) {
-      const hireYear = hireDate.getFullYear();
-
-      if (hireYear === selectedYear) {
+    if (hire) {
+      // The arrival itself — its own day, its own year, and it prints no card.
+      if (hire.year === selectedYear && hire.month === selectedMonth) {
         events.push({
           date: employee.hireDate,
           employee,
           eventType: "new_hire",
           tenureYears: 0,
+          spec: null,
         });
       }
 
-      if (hireYear < selectedYear) {
+      // The first month, then every year. Each spec is dated arithmetically; only the one that
+      // lands in this month and year is shown, and it carries the period it prints as.
+      for (const spec of calendarMilestoneSpecs(hire, selectedYear)) {
+        const on = milestoneDate(hire, spec);
+        if (on.year !== selectedYear || on.month !== selectedMonth) continue;
         events.push({
-          date: toHrCalendarDateInputValue(monthDayDate(hireDate, selectedYear)),
+          date: formatPlainDateIso(on),
           employee,
-          eventType: "anniversary",
-          tenureYears: selectedYear - hireYear,
+          eventType: spec.unit === "month" ? "first_month" : "anniversary",
+          tenureYears: spec.unit === "year" ? spec.count : 0,
+          spec: formatMilestoneSpec(spec),
         });
       }
     }
 
-    if (birthDate && birthDate.getMonth() + 1 === selectedMonth) {
+    // The birthday — every year, CLAMPED. It prints as `b<ordinal>` when the hire date lets us count
+    // which Sato-Pharma birthday it is; without a hire date the row shows but carries no card.
+    const birthday = monthDayOf(employee.birthDate);
+    if (birthday && birthday.month === selectedMonth) {
+      const on = monthDayOn(birthday, selectedYear);
+      let spec: string | null = null;
+      if (hire) {
+        const ordinal = satoBirthdayOrdinal(on, firstSatoBirthday(hire, birthday));
+        if (ordinal >= 1) spec = birthdaySpec(ordinal);
+      }
       events.push({
-        date: toHrCalendarDateInputValue(monthDayDate(birthDate, selectedYear)),
+        date: formatPlainDateIso(on),
         employee,
         eventType: "birthday",
         tenureYears: 0,
+        spec,
       });
     }
   }
@@ -176,6 +212,7 @@ export function countHrWorkingDays(
 
 export function labelHrCalendarEvent(eventType: HrCalendarEventType, tenureYears: number) {
   if (eventType === "new_hire") return "New hire";
+  if (eventType === "first_month") return "First month";
   if (eventType === "birthday") return "Birthday";
   return `${tenureYears} year anniversary`;
 }

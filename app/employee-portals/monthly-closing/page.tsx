@@ -51,8 +51,12 @@ export default async function PortalMonthlyClosingPage({
     loadError = error instanceof Error ? error.message : "Failed to load Monthly Closing.";
   }
 
-  const description =
-    "Published monthly closing for your line — sales vs target by area and region, rolled up to a national total, with the invoice detail behind it. Scoped to your own areas.";
+  // A Medical Rep sees their own area only — no region or national rollup — so the blurb must not
+  // promise "by area and region, rolled up to a national total" (owner, 2026-09-23).
+  const isMedicalRep = access.role === "Medical Rep";
+  const description = isMedicalRep
+    ? "Published monthly closing for your own area — your products' sales vs target, with the invoice detail behind them."
+    : "Published monthly closing for your line — sales vs target by area and region, rolled up to a national total, with the invoice detail behind it. Scoped to your own areas.";
 
   return (
     <EmployeePortalPageShell
@@ -92,6 +96,7 @@ export default async function PortalMonthlyClosingPage({
         <PortalMonthlyClosingView
           availableLines={result.availableLines}
           availablePeriods={result.availablePeriods}
+          isMedicalRep={isMedicalRep}
           line={result.line}
           matrix={result.matrix}
           office={result.office}

@@ -506,6 +506,7 @@ import { runRecruitmentTransitionsReachableTests } from "./recruitment-transitio
 import { runHiringPackActorStampTests } from "./hiring-pack-actor-stamp.test.ts";
 import { runRecruitmentOfferLetterBridgeTests } from "./recruitment-offer-letter-bridge.test.ts";
 import { runRecruitmentHiringAnalyticsLayoutTests } from "./recruitment-hiring-analytics-layout.test.ts";
+import { runSourceOfHireTests } from "./source-of-hire.test.ts";
 import { runRecruitmentEveryStageHasAWayForwardTests } from "./recruitment-every-stage-has-a-way-forward.test.ts";
 import { runClosingDriftAcknowledgementTests } from "./closing-drift-acknowledgement.test.ts";
 import { runPreviewSessionCannotDecideTests } from "./preview-session-cannot-decide.test.ts";
@@ -560,6 +561,7 @@ import { runWeeklyEgdMissingStockTests } from "./weekly-egd-missing-stock.test.t
 import { runWeeklyVerifySheetMatchTests } from "./weekly-verify-sheet-match.test.ts";
 import { runWeeklySalesAccessTests } from "./weekly-sales-access.test.ts";
 import { runWeeklyStockDashboardTests } from "./weekly-stock-dashboard.test.ts";
+import { runWeeklyStockGovernorateScopeTests } from "./weekly-stock-governorate-scope.test.ts";
 import { runWeeklyStockWorkbookTotalsTests } from "./weekly-stock-workbook-totals.test.ts";
 import { runWeeklyWeekComparisonStockTotalTests } from "./weekly-week-comparison-stock-total.test.ts";
 import { runWeeklyCombinedReportUnitTotalsTests } from "./weekly-combined-report-unit-totals.test.ts";
@@ -753,6 +755,7 @@ import { runMarketingCoverageUrlStateTests } from "./marketing-coverage-url-stat
 import { runWeeklyExportTests } from "./weekly-export-workbook.test.ts";
 import { runWeeklyExportDesignLockTests } from "./weekly-export-design-lock.test.ts";
 import { runMarketingValidationServiceTests } from "./marketing-validation-service.test.ts";
+import { runMarketingValidationReportTests } from "./marketing-validation-report.test.ts";
 import { runMarketingCompleteExistingCustomerTests } from "./marketing-complete-existing-customer.test.ts";
 import { runMarketingCompleteExistingVenueTests } from "./marketing-complete-existing-venue.test.ts";
 import { runMarketingGovernorateCheckTests } from "./marketing-governorate-check.test.ts";
@@ -846,12 +849,14 @@ import { runDeductionEnumLabelTests } from "./deduction-enum-labels.test.ts";
 import { runDeductionCellTimestampTests } from "./deduction-cell-timestamps.test.ts";
 import { runHouseCoverTimestampTests } from "./house-cover-timestamp.test.ts";
 import { runPayslipDocumentTests } from "./payslip-document.test.ts";
+import { runOrganogramEmployeeDocumentTests } from "./organogram-employee-document.test.ts";
 import { runEmployeePayrollEligibilityTests } from "./employee-payroll-eligibility.test.ts";
 import { runEmployeeAccessProvisioningTests } from "./employee-access-provisioning.test.ts";
 import { runHrFunctionGovernanceTests } from "./hr-function-governance.test.ts";
 import { runHrRetentionRegisterTests } from "./hr-retention-register.test.ts";
 import { runMailboxOffboardingTests } from "./mailbox-offboarding.test.ts";
 import { runMailboxBulkRecordingTests } from "./mailbox-bulk-recording.test.ts";
+import { runMailboxOffboardingRobotTests } from "./mailbox-offboarding-robot.test.ts";
 import { runMailboxOffboardingTableFitsTheScreenTests } from "./mailbox-offboarding-table-fits-the-screen.test.ts";
 import { runExpenseDashboardTripsTableFitsTheScreenTests } from "./expense-dashboard-trips-table-fits-the-screen.test.ts";
 import { runDeviceRegisterTests } from "./device-register.test.ts";
@@ -862,6 +867,7 @@ import { runAndroidWebAppTests } from "./android-web-app.test.ts";
 import { runManagedPlayIframeTests } from "./managed-play-iframe.test.ts";
 import { runTabletEnrollmentTests } from "./tablet-enrollment.test.ts";
 import { runTabletAutoRegisterTests } from "./tablet-auto-register.test.ts";
+import { runManageEngineBridgeTests } from "./manageengine-bridge.test.ts";
 import { runCustodyItemValuesTests } from "./custody-item-values.test.ts";
 import { runDeviceImportAttemptLogTests } from "./device-import-attempt-log.test.ts";
 import { runHrAdvisoryModuleAccessTests } from "./hr-advisory-module-access.test.ts";
@@ -1084,6 +1090,7 @@ import { runSosBackfillEmptyBrickSentinelTests } from "./sos-backfill-empty-bric
 import { runSosSeatAttributionPeriodTests } from "./sos-seat-attribution-period.test.ts";
 import { runMonthlyClosingLockTests } from "./monthly-closing-lock.test.ts";
 import { runClosingPeriodGateTests } from "./closing-period-gate.test.ts";
+import { runVerifiedCapturesTests } from "./verified-captures.test.ts";
 import { runSpotlightRankingTests } from "./spotlight-ranking.test.ts";
 import { runOfficeReceiptExplainsItsRowCountTests } from "./office-receipt-explains-its-row-count.test.ts";
 import { runOfficeNegativeUnitsAreReturnsTests } from "./office-negative-units-are-returns.test.ts";
@@ -1165,6 +1172,7 @@ import { runDirectOrderPageAccessTests } from "./direct-orders-page-access.test.
 import { runDirectOrderRotationConfirmationTests } from "./direct-orders-rotation-confirmation.test.ts";
 import { runShareLinkRotationAllowFilesTests } from "./share-link-rotation-allow-files.test.ts";
 import { runDirectOrderRepCountersTests } from "./direct-orders-rep-counters.test.ts";
+import { runDirectOrdersRepAreaViewTests } from "./direct-orders-rep-area-view.test.ts";
 import { runDirectOrderCountersRefusedTests } from "./direct-orders-counters-refused.test.ts";
 import { runDirectOrderFinanceMonthBadgeTests } from "./direct-orders-finance-month-badge.test.ts";
 import { runDirectOrderCollectionTests } from "./direct-orders-collection.test.ts";
@@ -1354,6 +1362,8 @@ import { runOutstationExpenseApprovalStateMetricsTests } from "./outstation-expe
 import { runIncentiveSemesterWindowTests } from "./incentive-semester-window.test.ts";
 
 import { runPediaSplitIncentiveTests } from "./pedia-split-incentive.test.ts";
+
+import { runPediaIncentivePortalTabTests } from "./pedia-incentive-portal-tab.test.ts";
 
 import { runReconciliationHarnessTests } from "./reconciliation-harness.test.ts";
 import { runOutstationSubmitEmailRoutingTests } from "./outstation-submit-email-routing.test.ts";
@@ -1854,11 +1864,13 @@ import { runDataBackupWorkbookTests } from "./data-backup-workbook.test.ts";
 import { runBackgroundFolderFilingGateTests } from "./background-folder-filing-gate.test.ts";
 import { runPhoenixOfficialLogoTests } from "./phoenix-official-logo.test.ts";
 import { runPdfjsLegacyBrowserAssetsTests } from "./pdfjs-legacy-browser-assets.test.ts";
+import { runPdfjsBrowserPolyfillTests } from "./pdfjs-browser-polyfill.test.ts";
 import { runCvPreviewFailureReportTests } from "./cv-preview-failure-report.test.ts";
 import { runCvLinkedInAndSelectableTextTests } from "./cv-linkedin-and-selectable-text.test.ts";
 import { runInterviewCalendarTests } from "./interview-calendar.test.ts";
 import { runInterviewCalendarApplicationTests } from "./interview-calendar-application.test.ts";
 import { runInterviewReminderTests } from "./interview-reminders.test.ts";
+import { runInterviewRequestTests } from "./interview-requests.test.ts";
 import { runInterviewInvitationTests } from "./interview-invitation.test.ts";
 import { runWhatsAppApplicationPrintTests } from "./whatsapp-application-print.test.ts";
 import { runCandidateRecordPrintTests } from "./candidate-record-print.test.ts";
@@ -1924,6 +1936,9 @@ import { runTerritorySharedPinGuardTests } from "./territory-shared-pin-guard.te
 import { runTerritorySearchRegionLabelTests } from "./territory-search-region-label.test.ts";
 import { runTerritorySearchScopeTests } from "./territory-search-scope.test.ts";
 import { runMilestoneCardTests } from "./milestone-card.test.ts";
+import { runMilestoneEnhancementsTests, runMilestonePrintHistoryAndPagingTests } from "./milestone-enhancements.test.ts";
+import { runFitsTheScreenRatchetTests } from "./fits-the-screen-ratchet.test.ts";
+import { runSquareEdgePortalRatchetTests } from "./square-edge-portal-ratchet.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -3028,6 +3043,7 @@ await runTest("recruitment transitions are reachable (a registered stage move no
 await runTest("hiring pack actor stamp (an unknown editor must not erase the last known one)", runHiringPackActorStampTests);
 await runTest("offer bridge (an approved ATS offer pre-fills the letter, and nothing else does)", runRecruitmentOfferLetterBridgeTests);
 await runTest("hiring analytics layout (desktop table, phone cards, square edges, no sideways scroll)", runRecruitmentHiringAnalyticsLayoutTests);
+await runTest("source of hire (manual tag beats tracked code, channel level is 100%, unknown is one honest bucket)", runSourceOfHireTests);
 await runTest("every application stage has a way forward (a stage nobody can leave reads as low adoption)", runRecruitmentEveryStageHasAWayForwardTests);
 await runTest("an acknowledged closing drift stays acknowledged only while it is the SAME drift", runClosingDriftAcknowledgementTests);
 await runTest("a preview session may look at anything and decide nothing (one approved a real 383.62 expense on production)", runPreviewSessionCannotDecideTests);
@@ -3084,6 +3100,7 @@ await runTest("weekly EGD: a workbook with no readable stock blocks instead of s
 await runTest("weekly verification screen reads the same sheets as the import and reports a missing sheet as MISSING", runWeeklyVerifySheetMatchTests);
 await runTest("weekly sales access", runWeeklySalesAccessTests);
 await runTest("weekly stock dashboard", runWeeklyStockDashboardTests);
+await runTest("weekly stock: territory viewers see only their own governorate; Kibar Omala stays visible to all", runWeeklyStockGovernorateScopeTests);
 await runTest(
   "weekly stock export: one TOTAL row per tab, no SUM under units, weeks of cover, products or depots, and every total matches the screen",
   runWeeklyStockWorkbookTotalsTests,
@@ -3372,6 +3389,10 @@ await runTest("a marketing request names its own CRM contact (customer_contact_i
 await runTest("a direct order names the campaign it came from (marketing_request_id is written)", runDirectOrderCampaignLinkTests);
 await runTest("marketing validation service", runMarketingValidationServiceTests);
 await runTest(
+  "marketing validation report: validated is decided live from evidence, not the stored stamp",
+  runMarketingValidationReportTests,
+);
+await runTest(
   "marketing validation: capturing a customer already on record completes it instead of duplicating it",
   runMarketingCompleteExistingCustomerTests,
 );
@@ -3486,6 +3507,7 @@ await runTest("deduction export enum labels", runDeductionEnumLabelTests);
 await runTest("deduction export cell timestamps (Cairo)", runDeductionCellTimestampTests);
 await runTest("house cover timestamp (Cairo, not UTC)", runHouseCoverTimestampTests);
 await runTest("payslip document (house identity SATO-DIS-2026-01)", runPayslipDocumentTests);
+await runTest("organogram employee record document (house identity SATO-DIS-2026-01)", runOrganogramEmployeeDocumentTests);
 await runTest("employee payroll eligibility", runEmployeePayrollEligibilityTests);
 await runTest("employee access provisioning", runEmployeeAccessProvisioningTests);
 await runTest("title permission governance", runTitlePermissionGovernanceTests);
@@ -3557,6 +3579,13 @@ await runTest(
   runMailboxBulkRecordingTests,
 );
 await runTest(
+  "turbify revocation robot (a recycled address belonging to a working employee is NEVER revoked, "
+  + "and a reversed resignation, a same-day last working date and a non-company address are each "
+  + "refused; app passwords are cleared BEFORE the password is reset, so a run that dies between "
+  + "them leaves the door shut rather than the half-revoked state that only LOOKS finished)",
+  runMailboxOffboardingRobotTests,
+);
+await runTest(
   "mailbox offboarding table fits the screen (nine nowrap columns under an overflow-x-auto wrapper "
   + "measured 1840px inside a 909px content box, and the page-level overflow check read clean the "
   + "whole time; four table-fixed columns, merged not shrunk, and long values wrap)",
@@ -3622,6 +3651,13 @@ await runTest(
   "rep tablets add themselves to the custody register (next PHX-TAB number, only tablets on the "
   + "rep rules, never a second entry for a serial or IMEI already registered)",
   runTabletAutoRegisterTests,
+);
+await runTest(
+  "ManageEngine bridge (Zoho token exchange caches and surfaces a refusal, the client retries once "
+  + "on a 401 with a fresh token, device JSON normalizes and matches the register by serial then "
+  + "IMEI, the command allow-list is the seven actions with only the two wipes destructive, and the "
+  + "route error mapping keeps one status per cause)",
+  runManageEngineBridgeTests,
 );
 await runTest("organogram hardening", runOrganogramHardeningTests);
 await runTest("vacancy report / organogram consistency", runVacancyReportOrganogramConsistencyTests);
@@ -4019,6 +4055,7 @@ await runTest("SoS backfill matches the empty-string brick sentinel, not just NU
 await runTest("SoS seat attribution (today's wiring, departed reps keep their credit)", runSosSeatAttributionPeriodTests);
 await runTest('Monthly closing lock (database triggers, not a disabled button)', runMonthlyClosingLockTests);
 await runTest('CLOSING GOLDEN RULE (a month is never published during that month, Cairo boundary)', runClosingPeriodGateTests);
+await runTest('Verified Captures (Super Admin only gate, rep/DM/search filter)', runVerifiedCapturesTests);
 await runTest('SPOTLIGHT (achievement summed never averaged, targeted months only, completed-window gate)', runSpotlightRankingTests);
 await runTest('the Office receipt explains what its Rows Read number is', runOfficeReceiptExplainsItsRowCountTests);
 await runTest('an Office return reduces Office instead of vanishing', runOfficeNegativeUnitsAreReturnsTests);
@@ -4101,6 +4138,7 @@ await runTest("direct orders page access (all 8 pages in both shells refuse thro
 await runTest("direct orders rotation confirmation (evidence of use, never the reply body; unproven revokes nothing)", runDirectOrderRotationConfirmationTests);
 await runTest("share link rotation keeps the file grant (allow_files carried from the old link, never widened; CV lifecycle has no such column)", runShareLinkRotationAllowFilesTests);
 await runTest("direct orders per-rep counters (scope borrowed not re-implemented, read-only, money-first sort, empty speaks)", runDirectOrderRepCountersTests);
+await runTest("a Medical Rep's view-only 'Direct Orders in my area' tab (rep-only gate, only approved+Finance-booked orders from July, reversed/duplicate excluded, area-scoped by the pharmacy's area_code, read-only, product/units/value, and reachable behind its own flag)", runDirectOrdersRepAreaViewTests);
 await runTest("direct orders counters survive cleanup (a refusal on a REJECTED pharmacy counts, an ordinary rejection never does, the page does not go blank)", runDirectOrderCountersRefusedTests);
 await runTest("direct orders finance-month badge (approved never shows alone, one shared pill not four, the gate gets the row not a constant)", runDirectOrderFinanceMonthBadgeTests);
 await runTest("direct orders collection (identity gate not role gate, remainder derived, approved-only, and recording cash never moves the sales month)", runDirectOrderCollectionTests);
@@ -4307,6 +4345,8 @@ await runTest(
 await runTest("incentive semester window (the CALENDAR semester, the same one for every rep; Semester 1 stays closed rather than restated; a rep with no data still gets a named provisional window)", runIncentiveSemesterWindowTests);
 
 await runTest("Pedia split incentive (two halves SUMMED, never a 2x2 gate; it reduces exactly to the single rule when the two achievements agree; outsource is never scored on its own; the locked 2026 curve is called, not copied)", runPediaSplitIncentiveTests);
+
+await runTest("Pedia incentive portal tab (a Pedia seat reads the two-achievement tab, role-free; the simulator is scored on the split and never on the single figure; both achievements are stated and a missing target is not 0%)", runPediaIncentivePortalTabTests);
 
 await runTest("reconciliation harness (a breach names both figures and their sources; a known-open defect never pages nightly; one bad check cannot blind the rest)", runReconciliationHarnessTests);
 await runTest("outstation submit email envelope (employee To, his direct manager Cc, Super Admins Bcc; the CEO is dropped from Cc in every case — direct manager or skip-level — with the skip-level stepping in when the direct manager is the CEO; one mailbox never lands in two headers)", runOutstationSubmitEmailRoutingTests);
@@ -6421,8 +6461,13 @@ await runTest(
 );
 
 await runTest(
-  "the CV viewer serves pdf.js's legacy build, library and worker both carrying the Promise.withResolvers polyfill, so a CV opens on older phone browsers",
+  "the CV viewer serves pdf.js's legacy build, library and worker both opening with our own Promise.withResolvers polyfill, so a CV opens on older phone browsers whatever the vendor stops polyfilling",
   runPdfjsLegacyBrowserAssetsTests,
+);
+
+await runTest(
+  "that polyfill, run in a realm with the built-ins deleted, really does give an older phone browser a working Promise.withResolvers and Array.prototype.findLast — and leaves a modern browser's own alone",
+  runPdfjsBrowserPolyfillTests,
 );
 
 await runTest(
@@ -6448,6 +6493,11 @@ await runTest(
 await runTest(
   "interview reminders go to the chosen interviewer only, District Manager and above, by in-app, email and Telegram: the evening before from 5:00 PM Cairo with the day's list and one hour before each interview, each sent once by its key",
   runInterviewReminderTests,
+);
+
+await runTest(
+  "the interview request flow: a District Manager and above (or HR) may request but a Medical Rep may not, a DM books only himself directly, a booking made from a request shows on both the requester's and the interviewer's calendar and nobody else's, and the service, notifications, routes and UI are wired to the request-then-book steps",
+  runInterviewRequestTests,
 );
 
 await runTest(
@@ -6815,8 +6865,24 @@ await runTest(
   runTerritorySearchScopeTests,
 );
 await runTest(
-  "milestone card: calendar dates never shift a day and month arithmetic clamps (31 Jan + 1m = 28/29 Feb), the Arabic mark's right edge stays inside the trim, the browser layout pass compiles and reaches ids the card actually emits, orange appears exactly three times, and milestones is in permissionResources with both routes asserting it",
+  "milestone card: calendar dates never shift a day and month arithmetic clamps (31 Jan + 1m = 28/29 Feb), the Arabic mark's right edge stays inside the trim, the browser layout pass compiles and reaches ids the card actually emits, orange appears exactly three times, milestones is in permissionResources with both routes asserting it, the portrait FRAME is fixed while the picture inside it moves to a dragged focus, and a handed-in photograph overrides the record's without ever being written back to it",
   runMilestoneCardTests,
+);
+await runTest(
+  "milestone enhancements: the CEO holds no milestones grant (Super Admin only), a single card's SVG stays byte-identical while a batch prefixes and addresses every card and its guard is a COUNT check, the citation fits a two-line budget to an 8.6pt floor, a birthday is dated by Sato-birthday ordinal (hired-on-the-day = first) and never states an age, an occasion's identity is its DERIVED date, the seen route re-derives its window and reads no client list, and the HR-calendar ladder is first-month-then-yearly-clamped-capped-at-60 with leap-day birthdays clamped to 28 February",
+  runMilestoneEnhancementsTests,
+);
+await runTest(
+  "milestone print history and paging: the batch ceiling is raised to 150 for one launch, a print-history row is shaped for the screen (Cairo-local timestamp, occasion label from the period spec, service and birthday alike, actor and subject names with id fallbacks, never an age) and the same rows serialize to a valid XLSX workbook",
+  runMilestonePrintHistoryAndPagingTests,
+);
+await runTest(
+  "fits-the-screen ratchet: the count of overflow-x-auto/scroll sites across app/ and src/components/ may fall and may never rise, so no new screen is given permission to scroll sideways (AGENTS.md §4: \"overflow-x-auto over a min-width IS the bug\")",
+  runFitsTheScreenRatchetTests,
+);
+await runTest(
+  "square-edge ratchet (portalled components): globals.css zeroes every radius inside .admin-shell and .employee-portal-shell, but both are DESCENDANT selectors — a component portalled to document.body escapes them, so the count of rounded-* there may fall and may never rise",
+  runSquareEdgePortalRatchetTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

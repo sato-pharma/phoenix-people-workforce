@@ -18,7 +18,14 @@
 import { validationError } from "@/lib/http/api-errors";
 import { fieldWeekStart, isIsoDay, isRamadanDay, monthStartOf } from "@/lib/phoenix-crm/calendar";
 import { gradeTarget } from "@/lib/phoenix-crm/coverage";
-import { DEVICE_CLOCK_TOLERANCE_MINUTES, deviceClockSkewMinutes, parseGrade, parseVisitDraft } from "@/lib/phoenix-crm/entry-rules";
+import {
+  DEVICE_CLOCK_TOLERANCE_MINUTES,
+  deviceClockSkewMinutes,
+  parseGrade,
+  parseProductAvailability,
+  parseVisitDraft,
+  type ProductAvailability,
+} from "@/lib/phoenix-crm/entry-rules";
 import { checkVisitLocation, formatDistance } from "@/lib/phoenix-crm/geo";
 import { describeDayWindows, isUuid } from "@/lib/phoenix-crm/plan-rules";
 import { managerChain, resolveVisitParticipants } from "@/lib/phoenix-crm/scope";
@@ -70,6 +77,10 @@ export type VisitRow = {
   seniorName: string | null;
   enteredByName: string;
   products: string[];
+  /** The pharmacy the rep took feedback from before the doctor. */
+  pharmacyName: string | null;
+  /** Which of the rep's line products that pharmacy stocks, product by product. */
+  productAvailability: Record<string, ProductAvailability>;
   comment: string | null;
   photoPath: string;
   locationFlag: VisitLocationFlag;
@@ -79,7 +90,8 @@ export type VisitRow = {
 
 const VISIT_COLUMNS =
   "id, visit_date, captured_at, customer_id, list_type, kind, rep_hr_id, manager_hr_id, senior_hr_id, entered_by_hr_id, products, " +
-  "comment, photo_path, accuracy_meters, distance_meters, location_flag, device_skew_minutes, customer:phoenix_crm_customers!customer_id(name)";
+  "comment, pharmacy_name, product_availability, photo_path, accuracy_meters, distance_meters, location_flag, device_skew_minutes, " +
+  "customer:phoenix_crm_customers!customer_id(name)";
 
 function visitKind(value: unknown): PhoenixCrmVisitKind {
   return value === "double" || value === "chain" ? value : "single";
@@ -120,6 +132,8 @@ function mapVisitRow(row: Row, names: PeopleNames): VisitRow {
     seniorName: person(row.senior_hr_id),
     enteredByName: nameOf(names, textOrNull(row.entered_by_hr_id)),
     products: Array.isArray(row.products) ? row.products.map(String) : [],
+    pharmacyName: textOrNull(row.pharmacy_name),
+    productAvailability: parseProductAvailability(row.product_availability),
     comment: textOrNull(row.comment),
     photoPath: String(row.photo_path),
     locationFlag: flag,
@@ -224,6 +238,8 @@ export type VisitFormView = {
   /** Entering as a manager: the viewer's own position in `managers` (they are the visit's manager). */
   viewerPosition: number | null;
   products: string[];
+  /** Pharmacies this seat has typed on earlier visits, most recent first, for the name suggestions. */
+  pharmacies: string[];
   rules: { visitFarMeters: number; weakGpsMeters: number };
   customers: VisitCustomerOption[];
   todayVisits: VisitRow[];
@@ -247,18 +263,48 @@ async function plannedCustomerIds(seatId: string, isTest: boolean, date: string)
   return new Set(((items.data ?? []) as Row[]).map((row) => String(row.customer_id)));
 }
 
+/**
+ * The pharmacy names this seat has typed before, most recent first, deduped case-insensitively. The
+ * form offers them as suggestions; the rep can always type a new one, and it joins the list next time.
+ * A fresh read of recent visits — there is no separate pharmacy store to keep in step.
+ */
+async function loadSeatPharmacies(seatId: string, isTest: boolean): Promise<string[]> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("phoenix_crm_visits")
+    .select("pharmacy_name, captured_at")
+    .eq("seat_id", seatId)
+    .eq("is_test", isTest)
+    .not("pharmacy_name", "is", null)
+    .order("captured_at", { ascending: false })
+    .limit(500);
+  throwIfError(error);
+  const seen = new Set<string>();
+  const names: string[] = [];
+  for (const row of (data ?? []) as Row[]) {
+    const name = textOrNull(row.pharmacy_name);
+    if (!name) continue;
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    names.push(name);
+    if (names.length >= 50) break;
+  }
+  return names;
+}
+
 export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unknown; test: unknown }): Promise<VisitFormView> {
   const { seat, isTest, enteredAs } = territoryForVisit(viewer, raw.seatId, readTestFlag(raw.test));
   const today = viewer.cairoToday;
   const chain = managerChain(viewer.org, seat.seatId);
 
   await ensureReferenceCustomers(seat, isTest);
-  const [{ customers, placesByCustomer }, visitCounts, planned, visitRows, products] = await Promise.all([
+  const [{ customers, placesByCustomer }, visitCounts, planned, visitRows, products, pharmacies] = await Promise.all([
     loadTerritoryCustomers(seat.seatId, isTest, { onListOnly: true }),
     loadMonthVisitCounts(seat.seatId, isTest, monthStartOf(today), today),
     plannedCustomerIds(seat.seatId, isTest, today),
     loadVisitRows(seat.seatId, isTest, today),
     lineProductFamilies(seat.lineName),
+    loadSeatPharmacies(seat.seatId, isTest),
   ]);
   const names = await loadPeopleNames([...territoryPeople(viewer.org, [seat]), ...chain.map((member) => member.hrId), ...visitPeople(visitRows)]);
   const visitedToday = new Set(visitRows.map((row) => String(row.customer_id)));
@@ -314,6 +360,7 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
     })),
     viewerPosition: enteredAs === "manager" ? (chain.find((member) => member.hrId === viewer.hrId)?.position ?? null) : null,
     products,
+    pharmacies,
     rules: { visitFarMeters: settings.visitFarMeters, weakGpsMeters: settings.weakGpsMeters },
     customers: options,
     todayVisits: visitRows.map((row) => mapVisitRow(row, names)),
@@ -359,6 +406,12 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown): Promise
   if (families.length === 0 || visit.products.some((product) => !allowed.has(product))) {
     throw validationError("Choose the products discussed from your line's products. Reload the page.");
   }
+  // The pharmacy stock answers are kept only for products still on the line. A product dropped from
+  // the line since the form loaded is quietly left out rather than blocking the save.
+  const productAvailability: Record<string, ProductAvailability> = {};
+  for (const [product, answer] of Object.entries(visit.productAvailability)) {
+    if (allowed.has(product)) productAvailability[product] = answer;
+  }
 
   const supabase = getSupabaseAdmin();
   const [placesResult, issuedAt] = await Promise.all([
@@ -400,6 +453,8 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown): Promise
       manager_hr_id: participants.value.managerHrId,
       senior_hr_id: participants.value.seniorHrId,
       products: visit.products,
+      pharmacy_name: visit.pharmacyName,
+      product_availability: productAvailability,
       comment: visit.comment,
       photo_path: visit.photoPath,
       reuse_place_photo: reusePlacePhoto,

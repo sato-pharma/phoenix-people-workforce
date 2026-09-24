@@ -87,6 +87,139 @@ export function formatMilestoneSpec(spec: MilestoneSpec): string {
   return `${spec.count}${spec.unit === "day" ? "d" : spec.unit === "year" ? "y" : "m"}`;
 }
 
+// ── Birthdays at Sato Pharma ─────────────────────────────────────────────────
+//
+// 🔴 THIS COUNTS BIRTHDAYS AT SATO PHARMA, NEVER THE PERSON'S AGE. The owner, 2026-09-23:
+// "you will make it count … this is the first birthday for this employee in Sato Pharma, this is
+// the second birthday in his Sato Pharma … and of course mention the birthday date." So the ordinal
+// is measured from the HIRE date, and the age is not merely left unprinted — `MonthDay` carries no
+// year, which makes the age UNREPRESENTABLE by the type that flows to the card.
+
+/** The month and day of a birthday, with NO year — so an age cannot be derived from it. */
+export type MonthDay = { month: number; day: number };
+
+/** Read the month/day of a birth date, dropping the year. Null for a record with no usable date. */
+export function monthDayOf(value: PlainDate | string | null | undefined): MonthDay | null {
+  const date = typeof value === "string" || value == null ? parsePlainDate(value ?? null) : value;
+  if (!date) return null;
+  return { month: date.month, day: date.day };
+}
+
+/**
+ * The date a birthday falls on in one calendar year. CLAMPS, exactly like the milestone arithmetic:
+ * 29 February in a common year becomes 28 February, never 1 March. That clamp is why leap-day staff
+ * are reminded at all — before it, a 29-February birthday matched no day of a common year.
+ */
+export function monthDayOn(birthday: MonthDay, year: number): PlainDate {
+  return { year, month: birthday.month, day: Math.min(birthday.day, daysInMonth(year, birthday.month)) };
+}
+
+/**
+ * The FIRST birthday celebrated at Sato Pharma — the first time the birth month/day falls on or
+ * after the hire date. Hired ON the birthday counts as the first.
+ */
+export function firstSatoBirthday(hire: PlainDate, birthday: MonthDay): PlainDate {
+  const inHireYear = monthDayOn(birthday, hire.year);
+  return comparePlainDates(inHireYear, hire) >= 0 ? inHireYear : monthDayOn(birthday, hire.year + 1);
+}
+
+/** Which birthday at Sato Pharma a given celebration is — 1 for the first. */
+export function satoBirthdayOrdinal(on: PlainDate, first: PlainDate): number {
+  return on.year - first.year + 1;
+}
+
+/** The next Sato-Pharma birthday on or after `from`, with its ordinal. */
+export function nextSatoBirthday(
+  hire: PlainDate,
+  birthday: MonthDay,
+  from: PlainDate,
+): { ordinal: number; on: PlainDate; birthday: MonthDay } {
+  const first = firstSatoBirthday(hire, birthday);
+  let year = Math.max(from.year, first.year);
+  let on = monthDayOn(birthday, year);
+  if (comparePlainDates(on, from) < 0) {
+    year += 1;
+    on = monthDayOn(birthday, year);
+  }
+  return { ordinal: satoBirthdayOrdinal(on, first), on, birthday };
+}
+
+/** Every Sato-Pharma birthday that falls inside `[from, to]`, earliest first. */
+export function satoBirthdaysBetween(
+  hire: PlainDate,
+  birthday: MonthDay,
+  from: PlainDate,
+  to: PlainDate,
+): { ordinal: number; on: PlainDate; birthday: MonthDay }[] {
+  const first = firstSatoBirthday(hire, birthday);
+  const hits: { ordinal: number; on: PlainDate; birthday: MonthDay }[] = [];
+  for (let year = from.year; year <= to.year; year += 1) {
+    if (year < first.year) continue;
+    const on = monthDayOn(birthday, year);
+    if (comparePlainDates(on, from) >= 0 && comparePlainDates(on, to) <= 0) {
+      hits.push({ ordinal: satoBirthdayOrdinal(on, first), on, birthday });
+    }
+  }
+  return hits.sort((a, b) => comparePlainDates(a.on, b.on));
+}
+
+/** The short spec form a birthday takes in the record and on the wire: `b1`, `b4`. */
+export function birthdaySpec(ordinal: number): string {
+  return `b${ordinal}`;
+}
+
+// The birthday card's words. The tile counts WHICH birthday at Sato Pharma it is, the strip and the
+// citation print the birthday DATE, and NOTHING here is the person's age.
+
+/** The numeral on the tile — "01", "04", "12". The ordinal, two digits, like a service milestone. */
+export function birthdayTileNumeral(ordinal: number): string {
+  return ordinal < 10 ? `0${ordinal}` : String(ordinal);
+}
+
+/** The word under the numeral — "BIRTHDAY" (singular, always). Upper-cased by the card, not here. */
+export function birthdayTileUnit(): string {
+  return "birthday";
+}
+
+/** The eyebrow over the name — "first birthday at Sato Pharma". */
+export function birthdayEyebrow(ordinal: number): string {
+  return `${ordinalWord(ordinal)} birthday at Sato Pharma`;
+}
+
+/** The middle cell of the figures strip — "Fourth birthday" (over the date, which the card sets). */
+export function birthdayStripLabel(ordinal: number): string {
+  const word = ordinalWord(ordinal);
+  return `${word.charAt(0).toUpperCase()}${word.slice(1)} birthday`;
+}
+
+/**
+ * The sentence under the name on a birthday card. NO PRONOUNS (like `milestoneCitation`), and NO
+ * AGE — it marks the birthday and names the ordinal at Sato Pharma, never a number of years lived.
+ * "marks", never "completes": nobody completes a birthday.
+ */
+export function birthdayCitation(input: { firstName: string; ordinal: number; on: PlainDate }): string {
+  const { firstName, ordinal, on } = input;
+  return `On ${formatPlainDateWords(on)}, ${firstName} marks ${ordinalWord(ordinal)} birthday at Sato Pharma — a day the whole company is glad to share.`;
+}
+
+// ── The calendar's milestone ladder ──────────────────────────────────────────
+//
+// "first month and then yearly" — the owner, 2026-09-23, redefining the sweep for the HR Calendar.
+// The first month, then EVERY year, including the ones the preset ladder skips (4th, 6th, 7th…).
+// This is NOT `MILESTONE_SWEEP`: it drops six-months and fills in every missing year.
+
+/**
+ * The specs the HR Calendar marks for one hire: the first month, then every year through
+ * `throughYear`. Capped at 60 years — the ceiling `normalizeSpec` allows — and the literals are
+ * built directly so a 61st year cannot throw the whole calendar.
+ */
+export function calendarMilestoneSpecs(hire: PlainDate, throughYear: number): MilestoneSpec[] {
+  const specs: MilestoneSpec[] = [{ count: 1, unit: "month" }];
+  const years = Math.min(Math.max(0, throughYear - hire.year + 1), MAX_COUNT.year);
+  for (let count = 1; count <= years; count += 1) specs.push({ count, unit: "year" });
+  return specs;
+}
+
 // ── Calendar dates ────────────────────────────────────────────────────────────────────────────
 
 const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})/;
@@ -226,6 +359,25 @@ export function ordinalDayWords(day: number): string {
   return `${TENS[Math.floor(day / 10)]}-${ORDINAL_ONES[unit]}`;
 }
 
+const ORDINAL_TENS = ["", "", "twentieth", "thirtieth", "fortieth", "fiftieth", "sixtieth"];
+
+/**
+ * An ordinal in words for any count, not just a day — "fourth", "twenty-first", "fortieth". Used
+ * for a birthday's ordinal, which counts birthdays at Sato Pharma and can pass 31 (the day range
+ * `ordinalDayWords` covers). Past 60 — beyond anyone's service — the numeral is the honest answer.
+ */
+export function ordinalWord(n: number): string {
+  if (n <= 0 || !Number.isInteger(n)) return String(n);
+  if (n <= 20) return ORDINAL_ONES[n] ?? String(n);
+  if (n < 100) {
+    const tens = Math.floor(n / 10);
+    const unit = n % 10;
+    if (unit === 0) return ORDINAL_TENS[tens] ?? String(n);
+    return `${TENS[tens]}-${ORDINAL_ONES[unit]}`;
+  }
+  return String(n);
+}
+
 /** "25 September 2026" — the form every date on the card and in the list takes. */
 export function formatPlainDateLong(date: PlainDate): string {
   return `${date.day} ${MONTH_NAMES[date.month - 1]} ${date.year}`;
@@ -297,8 +449,21 @@ export function milestoneFileName(
   on: PlainDate,
   extension: "pdf" | "png" = "pdf",
 ): string {
+  return milestoneCardFileName(fullName, formatMilestoneSpec(spec), on, extension);
+}
+
+/**
+ * The download name from a spec STRING rather than a `MilestoneSpec`, so a birthday (`b4`) names its
+ * file too — a birthday is not a `MilestoneSpec` and has no `count`/`unit` to format.
+ */
+export function milestoneCardFileName(
+  fullName: string,
+  periodSpec: string,
+  on: PlainDate,
+  extension: "pdf" | "png" = "pdf",
+): string {
   const name = fullName.trim().replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-+|-+$/g, "") || "employee";
-  return `${name}-${formatMilestoneSpec(spec)}-${formatPlainDateIso(on)}.${extension}`;
+  return `${name}-${periodSpec}-${formatPlainDateIso(on)}.${extension}`;
 }
 
 /**

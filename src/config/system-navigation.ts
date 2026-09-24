@@ -37,6 +37,7 @@ import {
   ListChecks,
   Lock,
   Package,
+  PackageSearch,
   LayoutDashboard,
   LayoutGrid,
   LifeBuoy,
@@ -1338,16 +1339,17 @@ export const adminNavigationSectionSeeds = [
     ],
     label: "Spotlight",
   },
-  // Milestones: the service-anniversary keepsake. Same two holders as Spotlight above, for the same
-  // reason — it reads every active employee's hire date with no scope narrowing and prints a sheet
-  // carrying a named person's photograph, which is a publishing right rather than a reading one.
+  // Milestones: the service-anniversary and birthday keepsake. SUPER ADMIN ALONE — not the same
+  // holders as Spotlight above, since the owner narrowed this one himself on 2026-09-23 ("make it
+  // only super admin. None either uh, CEO"). The roles here must match the matrix exactly or
+  // `tests/nav-roles-name-only-permission-holders.test.ts` goes red, which is the point of it.
   //
   // ⚠ THIS ENTRY IS UX, NOT THE GATE. `/api/milestones/{due,card}` each assert `milestones`
   // themselves; hiding the link here protects nothing on its own.
   {
     id: "people-milestones-module",
     items: [
-      { href: "/milestones", icon: Award, label: "Milestones", permissions: [{ action: "read", resource: "milestones" }], roles: ["Super Admin", "CEO"] },
+      { href: "/milestones", icon: Award, label: "Milestones", permissions: [{ action: "read", resource: "milestones" }], roles: ["Super Admin"] },
     ],
     label: "Milestones",
   },
@@ -1449,6 +1451,20 @@ export const adminNavigationSectionSeeds = [
       { href: "/admin/master-data", icon: Network, label: "Master Data", roles: ["Super Admin", "SFE Manager"] },
     ],
     label: "Master Data",
+  },
+
+  // ── Tier 7c: Verified field captures ──────────────────────────────────────────
+  // A read-only gallery of every customer captured in the field — direct orders and validated
+  // marketing requests — with the live photo and the GPS location the rep took. SUPER ADMIN ONLY
+  // (owner, 2026-09-24): it gathers the most sensitive evidence both modules hold (shop-front photos,
+  // home/venue coordinates, and who captured them) onto one company-wide screen, so the sidebar gate
+  // is the narrowest one there is. The page re-asserts the same check server-side.
+  {
+    id: "verified-captures",
+    items: [
+      { href: "/admin/verified-captures", icon: MapPinned, label: "Verified Captures", roles: ["Super Admin"] },
+    ],
+    label: "Verified Captures",
   },
 
   // ── Tier 8: System administration ────────────────────────────────────────────
@@ -1570,6 +1586,10 @@ const employeePortalNavigationSectionSeeds = [
       // order still need the workspace, and their queue lives in it now that the standalone
       // D.Orders Approval row is retired. The Report is reachable from inside the workspace.
       { href: "/employee-portals/direct-orders", icon: ReceiptText, label: "Direct Orders", permissions: [{ resource: "direct_orders", action: "read" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager"], navBadge: "direct-orders-needs-action" },
+      // Medical Rep only — a view-only window onto the counted direct orders in his own area (owner,
+      // 2026-09-24). He never raises one, so it is a separate read from the requester row above; the
+      // page enforces role + area itself. `sales:read` is the permission a rep already holds here.
+      { href: "/employee-portals/direct-orders-in-my-area", icon: PackageSearch, label: "Area Direct Orders", permissions: [{ resource: "sales", action: "read" }], roles: ["Medical Rep"] },
       // Weekly Sales — roles mirror PORTAL_WEEKLY_ROLES plus PORTAL_WEEKLY_REP_ROLES. Medical Rep added
       // 2026-09-16 (owner): the page gives him his own area's weekly sales only (portal-weekly-rep.ts).
       { href: "/employee-portals/weekly-sales", icon: CalendarRange, label: "Weekly Sales", permissions: [{ resource: "sales" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Medical Rep"] },

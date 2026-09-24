@@ -8,6 +8,8 @@
 import type { AccessContext } from "@/lib/auth/permissions";
 import { recruitmentDb, textOrNull } from "@/lib/recruitment/db";
 import { deriveChannelCode, isValidChannelCode, normalizeChannelCode } from "@/lib/recruitment/outreach/channel-code";
+import { phoneDigitsTail, resolveForwarderChannelFromList } from "@/lib/recruitment/outreach/forwarder-match";
+import { normalizeWhatsAppNumber } from "@/lib/recruitment/outreach/job-advert";
 import { hrIdForStorage } from "@/lib/hr-id";
 
 export const JOB_POST_CHANNEL_KINDS = [
@@ -47,6 +49,16 @@ export type JobPostChannel = {
   isActive: boolean;
   notes: string | null;
   createdAt: string | null;
+  /**
+   * Relay/forwarder WhatsApp numbers whose code-less forwarded CVs are attributed to this channel.
+   * A relay is tied to one channel; the on-CV advert code always wins over this fallback.
+   */
+  forwarderIdentifiers: string[];
+  /**
+   * The WhatsApp apply line this channel's tracked link sends applicants to, in the form it was
+   * typed. Null means the company-wide default. Normalised to a wa.me number at link-build time.
+   */
+  applyWhatsAppNumber: string | null;
 };
 
 export type CreateJobPostChannelInput = {
@@ -59,6 +71,39 @@ export type CreateJobPostChannelInput = {
 
 const TABLE = "ats_job_post_channels";
 
+/**
+ * The WhatsApp apply line a newly-added channel is born on.
+ *
+ * A new channel starts here rather than on the company-wide default, so a group added tomorrow
+ * behaves like the 45 channels that were swept onto this line on 2026-09-24 instead of quietly
+ * routing applicants back to the old number. The recruiter can still point any single channel
+ * elsewhere afterwards from the Advertise tab. Stored in the same local form as the column's
+ * existing rows; normalised to a wa.me number at link-build time.
+ */
+export const NEW_CHANNEL_APPLY_WHATSAPP_NUMBER = "01159888247";
+
+/**
+ * The row written for one new channel.
+ *
+ * Pure and DB-free on purpose: the born-on apply line above is the thing that silently regresses if
+ * an insert forgets it, so it is pinned by a test that builds a row rather than by a database
+ * round-trip.
+ */
+export function channelInsertRow(
+  input: CreateJobPostChannelInput,
+  resolved: { code: string; name: string; hrId: string | null },
+): Record<string, unknown> {
+  return {
+    apply_whatsapp_number: NEW_CHANNEL_APPLY_WHATSAPP_NUMBER,
+    code: resolved.code,
+    created_by_hr_id: hrIdForStorage(resolved.hrId),
+    kind: input.kind ?? "other",
+    name: resolved.name,
+    notes: textOrNull(input.notes),
+    url: textOrNull(input.url),
+  };
+}
+
 function asKind(value: unknown): JobPostChannelKind {
   const kind = String(value ?? "");
   return (JOB_POST_CHANNEL_KINDS as readonly string[]).includes(kind) ? (kind as JobPostChannelKind) : "other";
@@ -66,8 +111,12 @@ function asKind(value: unknown): JobPostChannelKind {
 
 function mapChannel(row: Record<string, unknown>): JobPostChannel {
   return {
+    applyWhatsAppNumber: textOrNull(row.apply_whatsapp_number),
     code: String(row.code ?? ""),
     createdAt: textOrNull(row.created_at),
+    forwarderIdentifiers: Array.isArray(row.forwarder_identifiers)
+      ? (row.forwarder_identifiers as unknown[]).map((value) => String(value)).filter((value) => value.length > 0)
+      : [],
     id: String(row.id ?? ""),
     isActive: row.is_active !== false,
     kind: asKind(row.kind),
@@ -128,14 +177,7 @@ export async function createJobPostChannels(
     // Reserve inside the loop, so two new groups in ONE paste cannot be handed the same code.
     takenCodes.push(code);
     takenNames.add(key);
-    rows.push({
-      code,
-      created_by_hr_id: hrIdForStorage(access.hrId),
-      kind: input.kind ?? "other",
-      name,
-      notes: textOrNull(input.notes),
-      url: textOrNull(input.url),
-    });
+    rows.push(channelInsertRow(input, { code, name, hrId: access.hrId }));
   }
 
   if (rows.length === 0) return { created: [], skipped };
@@ -156,7 +198,14 @@ export async function createJobPostChannels(
  */
 export async function updateJobPostChannel(
   id: string,
-  patch: { name?: string; url?: string | null; kind?: JobPostChannelKind; notes?: string | null; isActive?: boolean },
+  patch: {
+    name?: string;
+    url?: string | null;
+    kind?: JobPostChannelKind;
+    notes?: string | null;
+    isActive?: boolean;
+    applyWhatsAppNumber?: string | null;
+  },
 ): Promise<JobPostChannel> {
   const supabase = recruitmentDb();
   const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
@@ -165,11 +214,84 @@ export async function updateJobPostChannel(
   if (patch.kind !== undefined) update.kind = patch.kind;
   if (patch.notes !== undefined) update.notes = textOrNull(patch.notes);
   if (patch.isActive !== undefined) update.is_active = patch.isActive === true;
+  if (patch.applyWhatsAppNumber !== undefined) {
+    // A blank clears the override (fall back to the company default); anything else must be a
+    // dialable number, or the channel would hand out a link that opens a chat with nobody.
+    const trimmed = textOrNull(patch.applyWhatsAppNumber);
+    if (trimmed && !normalizeWhatsAppNumber(trimmed)) {
+      throw new Error("That is not a usable WhatsApp number.");
+    }
+    update.apply_whatsapp_number = trimmed;
+  }
 
   const { data, error } = await supabase.from(TABLE).update(update).eq("id", id).select("*").maybeSingle();
   if (error) throw error;
   if (!data) throw new Error("That advertising channel no longer exists.");
   return mapChannel(data as Record<string, unknown>);
+}
+
+/**
+ * The advert channel that owns a forwarding relay handset, resolved from the sender identifier of
+ * an inbound CV — or null when there is no match (which is the ordinary case).
+ *
+ * Called by intake ONLY when the CV carried no advert code of its own, so a real per-group code
+ * from the caption, filename or greeting always wins over a relay's blanket attribution. Returns
+ * null immediately for anything with no usable phone tail (an email sender, a WhatsApp username
+ * with no number), so email intake never runs a channel lookup it could not answer.
+ *
+ * Retired channels are included: a relay that fed a group months ago keeps attributing, exactly as
+ * a tracking code does after its group is retired.
+ */
+export async function resolveForwarderChannelCode(senderIdentifier: string | null | undefined): Promise<string | null> {
+  if (!phoneDigitsTail(senderIdentifier)) return null;
+  const channels = await listJobPostChannels({ includeInactive: true });
+  return resolveForwarderChannelFromList(channels, senderIdentifier);
+}
+
+/**
+ * Ties one relay handset to one advert channel, or clears it (channelCode = null).
+ *
+ * A relay maps to exactly one channel, so the number is first stripped from every channel that
+ * currently holds it (matched by 9-digit tail, tolerant of +20 / 20 / 0 forms) and then, if a
+ * target is given, appended to that channel. The number is stored in the display form the caller
+ * typed; matching always goes through the tail, so the stored form need not be canonical.
+ */
+export async function assignForwarderToChannel(
+  identifier: string,
+  channelCode: string | null,
+): Promise<void> {
+  const supabase = recruitmentDb();
+  const tail = phoneDigitsTail(identifier);
+  if (!tail) throw new Error("That is not a usable phone number.");
+  const display = String(identifier).trim();
+  const now = new Date().toISOString();
+
+  const channels = await listJobPostChannels({ includeInactive: true });
+
+  // Remove this relay from any channel that currently holds it (its move away from PX-FORWARDED, or
+  // a plain clear). Only channels that actually change are written.
+  for (const channel of channels) {
+    const kept = channel.forwarderIdentifiers.filter((id) => phoneDigitsTail(id) !== tail);
+    if (kept.length !== channel.forwarderIdentifiers.length) {
+      const { error } = await supabase
+        .from(TABLE)
+        .update({ forwarder_identifiers: kept.length > 0 ? kept : null, updated_at: now })
+        .eq("id", channel.id);
+      if (error) throw error;
+    }
+  }
+
+  if (channelCode === null) return;
+
+  const wanted = normalizeChannelCode(channelCode);
+  const target = channels.find((channel) => channel.code === wanted);
+  if (!target) throw new Error("That advertising channel no longer exists.");
+  const next = [...target.forwarderIdentifiers.filter((id) => phoneDigitsTail(id) !== tail), display];
+  const { error } = await supabase
+    .from(TABLE)
+    .update({ forwarder_identifiers: next, updated_at: now })
+    .eq("id", target.id);
+  if (error) throw error;
 }
 
 export type ChannelAttributionRow = {

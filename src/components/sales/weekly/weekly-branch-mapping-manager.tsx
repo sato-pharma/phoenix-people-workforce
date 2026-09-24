@@ -172,6 +172,60 @@ export function WeeklyBranchMappingManager({
   );
   const rows = data?.rows ?? [];
 
+  // One definition per control, used by BOTH the desktop row and the mobile card, so the phone
+  // can never drift into a read-only copy of an editable table.
+  const cardLabel = "mb-1 block text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint";
+  const controlClass =
+    "h-8 w-full border border-phx-line bg-white px-2 text-sm font-semibold text-phx-ink outline-none focus:border-phx-accent-line disabled:opacity-50";
+  const regionSelect = (row: WeeklyBranchRegionRow) => (
+    <SearchableSelect
+      className={controlClass}
+      disabled={busy || row.excluded}
+      onChange={(event) => void saveRow(row, { regionCode: event.target.value })}
+      value={row.regionCode}
+    >
+      <option value="">{row.excluded ? "— excluded —" : "Select…"}</option>
+      {regions.map((region) => (
+        <option key={region.regionCode} value={region.regionCode}>
+          {region.regionName} ({region.regionCode})
+        </option>
+      ))}
+    </SearchableSelect>
+  );
+  const areaSelect = (row: WeeklyBranchRegionRow) => (
+    <SearchableSelect
+      className={controlClass}
+      disabled={busy || row.excluded || !row.regionCode}
+      onChange={(event) => void saveRow(row, { areaCode: event.target.value })}
+      value={row.areaCode ?? ""}
+    >
+      <option value="">Whole region</option>
+      {areasForRegion(row.regionCode).map((area) => (
+        <option key={area.areaCode} value={area.areaCode}>
+          {area.areaName} ({area.areaCode})
+        </option>
+      ))}
+    </SearchableSelect>
+  );
+  const excludeBox = (row: WeeklyBranchRegionRow) => (
+    <input
+      checked={row.excluded}
+      disabled={busy}
+      onChange={(event) => void saveRow(row, { excluded: event.target.checked })}
+      type="checkbox"
+    />
+  );
+  const removeButton = (row: WeeklyBranchRegionRow) => (
+    <button
+      className="inline-flex items-center gap-1 border border-phx-line px-2 py-1 text-xs font-bold text-[#B91C1C] transition hover:border-[#FCA5A5]"
+      disabled={busy}
+      onClick={() => void mutate({ action: "delete", id: row.id })}
+      type="button"
+    >
+      <Trash2 className="h-3.5 w-3.5" /> Remove
+    </button>
+  );
+
   if (!data) {
     return (
       <div className="p-6">
@@ -356,8 +410,71 @@ export function WeeklyBranchMappingManager({
       </div>
 
       {/* Table */}
-      <div className="overflow-x-auto rounded-[6px] border border-phx-line bg-white shadow-sm">
-        <table className="w-full text-sm">
+      <div className="rounded-[6px] border border-phx-line bg-white shadow-sm">
+        {/* Six columns and four controls per row do not fit a phone: measured at 375px the
+            table gave "Excluded" 24px for a 77px header and the Remove button 30px for 79px,
+            and the wrapper scrolled sideways to 524px. Below `md` the same rows render as
+            cards — the admin shell's own rule, desktop tables and mobile cards — carrying the
+            SAME controls, so nothing is read-only on a phone that is editable on a laptop. */}
+        <div className="divide-y divide-[#FFE8D6] md:hidden">
+          {rows.length === 0 ? (
+            <p className="px-3 py-4 text-center text-phx-ink-faint">
+              No branches mapped yet — add one above or upload the template.
+            </p>
+          ) : null}
+          {rows.map((row) => (
+            <div className="space-y-2.5 px-3 py-3" key={row.id}>
+              <div>
+                <p className="break-words text-sm font-semibold text-phx-ink">
+                  {row.branchHeaderRaw || row.rawBranch}
+                </p>
+                <p className="break-words text-xs text-phx-ink-soft">
+                  {row.rawBranch}
+                  {isStock ? ` · Col ${row.branchColumnIndex ?? "—"}` : ""}
+                </p>
+              </div>
+              <label className="block">
+                <span className={cardLabel}>Region</span>
+                {regionSelect(row)}
+              </label>
+              <label className="block">
+                <span className={cardLabel}>Area (optional)</span>
+                {areaSelect(row)}
+              </label>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <label className="flex items-center gap-1.5 text-xs font-bold text-phx-ink-soft">
+                  {excludeBox(row)} Excluded
+                </label>
+                {removeButton(row)}
+              </div>
+              {row.split ? <SplitDetail split={row.split} /> : null}
+            </div>
+          ))}
+        </div>
+        {/* The two selects below used to carry w-44/w-48, which is exactly the
+            "overflow-x-auto over a min-width" the rule names. They are w-full now and
+            the colgroup owns the widths, so the table cannot exceed its container. */}
+        <table className="hidden w-full table-fixed text-sm md:table">
+          {isStock ? (
+            <colgroup>
+              <col className="w-[18%]" />
+              <col className="w-[14%]" />
+              <col className="w-[8%]" />
+              <col className="w-[20%]" />
+              <col className="w-[20%]" />
+              <col className="w-[9%]" />
+              <col className="w-[11%]" />
+            </colgroup>
+          ) : (
+            <colgroup>
+              <col className="w-[20%]" />
+              <col className="w-[16%]" />
+              <col className="w-[22%]" />
+              <col className="w-[22%]" />
+              <col className="w-[9%]" />
+              <col className="w-[11%]" />
+            </colgroup>
+          )}
           <thead className="bg-[#020617] text-left text-phx-xs font-black uppercase tracking-wide text-white">
             <tr>
               <th className="px-3 py-2">Branch name</th>
@@ -379,57 +496,13 @@ export function WeeklyBranchMappingManager({
             )}
             {rows.map((row) => [
               <tr className="border-t border-[#FFE8D6] align-middle" key={row.id}>
-                <td className="px-3 py-2 font-semibold text-phx-ink">{row.branchHeaderRaw || row.rawBranch}</td>
-                <td className="px-3 py-2 text-phx-ink-soft">{row.rawBranch}</td>
+                <td className="break-words px-3 py-2 font-semibold text-phx-ink">{row.branchHeaderRaw || row.rawBranch}</td>
+                <td className="break-words px-3 py-2 text-phx-ink-soft">{row.rawBranch}</td>
                 {isStock && <td className="px-3 py-2 text-phx-ink-soft">{row.branchColumnIndex ?? "—"}</td>}
-                <td className="px-3 py-2">
-                  <SearchableSelect
-                    className="h-8 w-44 border border-phx-line bg-white px-2 text-sm font-semibold text-phx-ink outline-none focus:border-phx-accent-line disabled:opacity-50"
-                    disabled={busy || row.excluded}
-                    onChange={(event) => void saveRow(row, { regionCode: event.target.value })}
-                    value={row.regionCode}
-                  >
-                    <option value="">{row.excluded ? "— excluded —" : "Select…"}</option>
-                    {regions.map((region) => (
-                      <option key={region.regionCode} value={region.regionCode}>
-                        {region.regionName} ({region.regionCode})
-                      </option>
-                    ))}
-                  </SearchableSelect>
-                </td>
-                <td className="px-3 py-2">
-                  <SearchableSelect
-                    className="h-8 w-48 border border-phx-line bg-white px-2 text-sm font-semibold text-phx-ink outline-none focus:border-phx-accent-line disabled:opacity-50"
-                    disabled={busy || row.excluded || !row.regionCode}
-                    onChange={(event) => void saveRow(row, { areaCode: event.target.value })}
-                    value={row.areaCode ?? ""}
-                  >
-                    <option value="">Whole region</option>
-                    {areasForRegion(row.regionCode).map((area) => (
-                      <option key={area.areaCode} value={area.areaCode}>
-                        {area.areaName} ({area.areaCode})
-                      </option>
-                    ))}
-                  </SearchableSelect>
-                </td>
-                <td className="px-3 py-2 text-center">
-                  <input
-                    checked={row.excluded}
-                    disabled={busy}
-                    onChange={(event) => void saveRow(row, { excluded: event.target.checked })}
-                    type="checkbox"
-                  />
-                </td>
-                <td className="px-3 py-2 text-right">
-                  <button
-                    className="inline-flex items-center gap-1 border border-phx-line px-2 py-1 text-xs font-bold text-[#B91C1C] transition hover:border-[#FCA5A5]"
-                    disabled={busy}
-                    onClick={() => void mutate({ action: "delete", id: row.id })}
-                    type="button"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" /> Remove
-                  </button>
-                </td>
+                <td className="px-3 py-2">{regionSelect(row)}</td>
+                <td className="px-3 py-2">{areaSelect(row)}</td>
+                <td className="px-3 py-2 text-center">{excludeBox(row)}</td>
+                <td className="px-3 py-2 text-right">{removeButton(row)}</td>
               </tr>,
               row.split ? <SplitBand columns={isStock ? 7 : 6} key={`${row.id}-split`} split={row.split} /> : null,
             ])}
@@ -445,35 +518,46 @@ export function WeeklyBranchMappingManager({
  * calculation like this". So the arithmetic sits under the branch it belongs to rather than in a
  * separate report — the same screen the mapping is corrected on.
  *
- * It is a BAND rather than a column because the rule is that text never wraps and is never cut with
- * an ellipsis: a nine-area split cannot live in a table cell without breaking one of those. Each
- * area is its own chip, whole and on one line, and the band is free to use the table's full width.
+ * It is a BAND rather than a column because a nine-area split cannot live in a table cell without
+ * being cut with an ellipsis. Each area is its own chip, whole and on one line, and the band is
+ * free to use the table's full width.
+ *
+ * The SENTENCE above the chips is a different thing and must wrap. It carried `whitespace-nowrap`,
+ * and a note reading "Pinned to Gharbia 1 (Tanta) …" then wanted 482px inside a 281px cell, which
+ * dragged the whole table to 524px in a 283px container — a real sideways scroll at 375px, measured
+ * on /sales/weekly/mapping. Where the two owner rules meet, wrapping wins over a horizontal scroll.
  */
-function SplitBand({ columns, split }: { columns: number; split: WeeklyBranchSplitPreview }) {
+function SplitDetail({ split }: { split: WeeklyBranchSplitPreview }) {
   const showsLineLabels = split.arithmetic.length > 1;
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="break-words text-phx-xs font-semibold text-phx-ink-faint">{split.note}</span>
+      {split.arithmetic.map((entry) => (
+        <div className="flex flex-wrap items-center gap-1.5" key={entry.lines.join("|")}>
+          {showsLineLabels && (
+            <span className="break-words text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">
+              {entry.lines.join(" + ")}
+            </span>
+          )}
+          {entry.shares.map((share) => (
+            <span
+              className="whitespace-nowrap rounded-full border border-[#FFD8B4] bg-white px-2 py-0.5 text-phx-xs font-bold text-[#9A3412]"
+              key={share.areaCode}
+            >
+              {share.areaName} <span className="text-phx-accent-press">{share.percentLabel}</span>
+            </span>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SplitBand({ columns, split }: { columns: number; split: WeeklyBranchSplitPreview }) {
   return (
     <tr className="bg-[#FFFBF7]">
       <td className="px-3 pb-2.5 pt-0" colSpan={columns}>
-        <div className="flex flex-col gap-1.5">
-          <span className="whitespace-nowrap text-phx-xs font-semibold text-phx-ink-faint">{split.note}</span>
-          {split.arithmetic.map((entry) => (
-            <div className="flex flex-wrap items-center gap-1.5" key={entry.lines.join("|")}>
-              {showsLineLabels && (
-                <span className="whitespace-nowrap text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">
-                  {entry.lines.join(" + ")}
-                </span>
-              )}
-              {entry.shares.map((share) => (
-                <span
-                  className="whitespace-nowrap rounded-full border border-[#FFD8B4] bg-white px-2 py-0.5 text-phx-xs font-bold text-[#9A3412]"
-                  key={share.areaCode}
-                >
-                  {share.areaName} <span className="text-phx-accent-press">{share.percentLabel}</span>
-                </span>
-              ))}
-            </div>
-          ))}
-        </div>
+        <SplitDetail split={split} />
       </td>
     </tr>
   );
