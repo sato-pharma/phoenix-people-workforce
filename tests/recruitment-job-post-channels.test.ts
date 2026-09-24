@@ -28,6 +28,10 @@ import {
   phoneDigitsTail,
   resolveForwarderChannelFromList,
 } from "../src/lib/recruitment/outreach/forwarder-match.ts";
+import {
+  NEW_CHANNEL_APPLY_WHATSAPP_NUMBER,
+  channelInsertRow,
+} from "../src/lib/recruitment/outreach/job-post-channels.ts";
 
 /**
  * Advertising channels — which Facebook group actually produced each CV.
@@ -487,5 +491,48 @@ export async function runRecruitmentJobPostChannelTests() {
   assert.ok(
     /applyDestinationForChannel\(\{[\s\S]*channelApplyWhatsAppNumber:\s*channel\.applyWhatsAppNumber/.test(panelSource),
     "the panel resolves each channel's link through applyDestinationForChannel with that channel's own number",
+  );
+
+  // ── 11 · A new channel is born on the second apply line ─────────────────────
+  // The 45 existing channels were swept onto 01159888247 by hand on 2026-09-24; a channel added
+  // afterwards must start there too, or new groups quietly route applicants back to the company
+  // default. channelInsertRow is the one row every create path builds, so pinning it pins them all.
+  assert.equal(
+    NEW_CHANNEL_APPLY_WHATSAPP_NUMBER,
+    "01159888247",
+    "new channels are born on the second apply line",
+  );
+  assert.notEqual(
+    NEW_CHANNEL_APPLY_WHATSAPP_NUMBER,
+    "01098500699",
+    "the born-on line is the second line, NOT the company-wide default",
+  );
+  assert.equal(
+    normalizeWhatsAppNumber(NEW_CHANNEL_APPLY_WHATSAPP_NUMBER),
+    "201159888247",
+    "the born-on line is a usable wa.me number, not a typo the link builder would drop",
+  );
+  const newRow = channelInsertRow(
+    { name: "Cairo Medical Reps", kind: "whatsapp_group" },
+    { code: "PX-CMR", name: "Cairo Medical Reps", hrId: "B-10" },
+  );
+  assert.equal(
+    newRow.apply_whatsapp_number,
+    "01159888247",
+    "the row written for a new channel carries the second apply line, not null",
+  );
+  assert.equal(newRow.code, "PX-CMR", "the resolved code is written through unchanged");
+  assert.equal(newRow.kind, "whatsapp_group", "the requested kind is written through unchanged");
+
+  // Source-pin: createJobPostChannels must build its insert row through channelInsertRow, so the
+  // born-on default reaches the database. An inline row literal that forgot apply_whatsapp_number
+  // would pass every assertion above and still ship new channels on the wrong line.
+  const serviceSource = fs.readFileSync(
+    fileURLToPath(new URL("../src/lib/recruitment/outreach/job-post-channels.ts", import.meta.url)),
+    "utf8",
+  );
+  assert.ok(
+    /rows\.push\(channelInsertRow\(/.test(serviceSource),
+    "createJobPostChannels builds each insert row through channelInsertRow, so every new channel gets the born-on apply line",
   );
 }
