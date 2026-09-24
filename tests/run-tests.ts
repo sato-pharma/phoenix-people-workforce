@@ -857,6 +857,7 @@ import { runHrRetentionRegisterTests } from "./hr-retention-register.test.ts";
 import { runMailboxOffboardingTests } from "./mailbox-offboarding.test.ts";
 import { runMailboxBulkRecordingTests } from "./mailbox-bulk-recording.test.ts";
 import { runMailboxOffboardingRobotTests } from "./mailbox-offboarding-robot.test.ts";
+import { runMailboxRobotSweepHookTests } from "./mailbox-robot-sweep-hook.test.ts";
 import { runMailboxOffboardingTableFitsTheScreenTests } from "./mailbox-offboarding-table-fits-the-screen.test.ts";
 import { runExpenseDashboardTripsTableFitsTheScreenTests } from "./expense-dashboard-trips-table-fits-the-screen.test.ts";
 import { runDeviceRegisterTests } from "./device-register.test.ts";
@@ -3586,6 +3587,13 @@ await runTest(
   + "refused; app passwords are cleared BEFORE the password is reset, so a run that dies between "
   + "them leaves the door shut rather than the half-revoked state that only LOOKS finished)",
   runMailboxOffboardingRobotTests,
+);
+await runTest(
+  "mailbox revocation robot wired to the daily sweep (off by default; dry run is the default once "
+  + "enabled and only PHOENIX_TURBIFY_ROBOT_DRY_RUN=false arms a live run; a live run builds the "
+  + "console driver first, so an uncalibrated driver fails closed and the runner is never reached; "
+  + "the pass never throws, so it cannot turn the sweep's dead-man's switch red)",
+  runMailboxRobotSweepHookTests,
 );
 await runTest(
   "mailbox offboarding table fits the screen (nine nowrap columns under an overflow-x-auto wrapper "
