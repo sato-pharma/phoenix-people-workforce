@@ -14,7 +14,12 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatPhoenixLongDate } from "@/lib/i18n/format";
-import { buildApplyLink, composeJobAdvert, renderAdvertForChannel } from "@/lib/recruitment/outreach/job-advert";
+import {
+  applyDestinationForChannel,
+  buildApplyLink,
+  composeJobAdvert,
+  renderAdvertForChannel,
+} from "@/lib/recruitment/outreach/job-advert";
 import type { ApplyChannelKind } from "@/lib/recruitment/outreach/job-advert";
 import type { ChannelAttribution, JobPostChannel } from "@/lib/recruitment/outreach/job-post-channels";
 
@@ -131,15 +136,24 @@ export function JobAdvertPanel() {
   );
   const body = bodyOverride ?? generatedBody;
 
-  const destination =
-    applyKind === "whatsapp" ? (state?.destinations.whatsappNumber ?? null) : (state?.destinations.email ?? null);
+  const defaultWhatsAppNumber = state?.destinations.whatsappNumber ?? null;
+  const email = state?.destinations.email ?? null;
+  // The default the top of the screen shows; individual channels may override the WhatsApp number.
+  const destination = applyKind === "whatsapp" ? defaultWhatsAppNumber : email;
 
   const linkFor = useCallback(
-    (channel: JobPostChannel) =>
-      destination
-        ? buildApplyLink({ code: channel.code, destination, jobTitle, kind: applyKind, location })
-        : null,
-    [applyKind, destination, jobTitle, location],
+    (channel: JobPostChannel) => {
+      const channelDestination = applyDestinationForChannel({
+        channelApplyWhatsAppNumber: channel.applyWhatsAppNumber,
+        defaultWhatsAppNumber,
+        email,
+        kind: applyKind,
+      });
+      return channelDestination
+        ? buildApplyLink({ code: channel.code, destination: channelDestination, jobTitle, kind: applyKind, location })
+        : null;
+    },
+    [applyKind, defaultWhatsAppNumber, email, jobTitle, location],
   );
 
   const copyForChannel = useCallback(
@@ -193,6 +207,35 @@ export function JobAdvertPanel() {
         headers: { "content-type": "application/json" },
         method: "PATCH",
       });
+      setReloadKey((key) => key + 1);
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
+  // Point one channel's tracked apply link at a specific WhatsApp line, or clear it back to the
+  // company default (a blank value). Only writes when the value actually changed, so tabbing through
+  // the column without editing costs nothing.
+  const setApplyNumber = useCallback(async (channel: JobPostChannel, raw: string) => {
+    const next = raw.trim();
+    if (next === (channel.applyWhatsAppNumber ?? "")) return;
+    setBusy(true);
+    try {
+      const response = await fetch(`/api/recruitment/job-post-channels/${channel.id}`, {
+        body: JSON.stringify({ applyWhatsAppNumber: next.length > 0 ? next : null }),
+        headers: { "content-type": "application/json" },
+        method: "PATCH",
+      });
+      const json = (await response.json()) as Record<string, unknown>;
+      if (!response.ok || json.success !== true) {
+        setNotice(typeof json.message === "string" ? json.message : "That is not a usable WhatsApp number.");
+        return;
+      }
+      setNotice(
+        next.length > 0
+          ? `${channel.name} now sends applicants to ${next}.`
+          : `${channel.name} is back on the default apply number.`,
+      );
       setReloadKey((key) => key + 1);
     } finally {
       setBusy(false);
@@ -332,6 +375,12 @@ export function JobAdvertPanel() {
         {destination ? (
           <p className="text-sm text-slate-600">
             Applicants will reach: <span className="font-medium text-slate-900">{destination}</span>
+            {applyKind === "whatsapp" ? (
+              <span className="text-slate-500">
+                {" "}
+                by default — a channel with its own apply line below overrides this for its own link.
+              </span>
+            ) : null}
           </p>
         ) : (
           <AdminCallout tone="warning">
@@ -387,6 +436,18 @@ export function JobAdvertPanel() {
                     { label: "Status", value: channel.isActive ? "Active" : "Retired" },
                   ]}
                 />
+                <label className="mt-2 block text-xs uppercase text-slate-500" htmlFor={`apply-${channel.id}`}>
+                  Apply line
+                </label>
+                <Input
+                  className="mt-1 h-9 rounded-none font-mono text-xs"
+                  defaultValue={channel.applyWhatsAppNumber ?? ""}
+                  disabled={busy}
+                  id={`apply-${channel.id}`}
+                  key={`apply-card-${channel.id}-${channel.applyWhatsAppNumber ?? ""}`}
+                  onBlur={(event) => setApplyNumber(channel, event.target.value)}
+                  placeholder={defaultWhatsAppNumber ?? "default"}
+                />
                 <div className="mt-2 flex gap-2">
                   <Button onClick={() => copyForChannel(channel)} size="sm">
                     <Copy className="mr-1 h-3 w-3" /> {platformOf(channel.kind).broadcast ? "Copy & ask" : "Copy & open"}
@@ -398,12 +459,13 @@ export function JobAdvertPanel() {
               </PortalRecordCard>
             )}
             renderTable={() => (
-              <PortalDesktopTable minWidth="720px">
+              <PortalDesktopTable minWidth="860px">
                 <thead>
                   <tr className="border-b border-slate-200 text-left text-xs uppercase text-slate-500">
                     <th className="whitespace-nowrap p-2">Channel</th>
                     <th className="whitespace-nowrap p-2">Where</th>
                     <th className="whitespace-nowrap p-2">Code</th>
+                    <th className="whitespace-nowrap p-2">Apply line</th>
                     <th className="whitespace-nowrap p-2">Status</th>
                     <th className="whitespace-nowrap p-2">Post it</th>
                   </tr>
@@ -419,6 +481,17 @@ export function JobAdvertPanel() {
                         ) : null}
                       </td>
                       <td className="whitespace-nowrap p-2 font-mono text-xs text-slate-600">{channel.code}</td>
+                      <td className="whitespace-nowrap p-2">
+                        <Input
+                          aria-label={`Apply line for ${channel.name}`}
+                          className="h-9 max-w-[11rem] rounded-none font-mono text-xs"
+                          defaultValue={channel.applyWhatsAppNumber ?? ""}
+                          disabled={busy}
+                          key={`apply-${channel.id}-${channel.applyWhatsAppNumber ?? ""}`}
+                          onBlur={(event) => setApplyNumber(channel, event.target.value)}
+                          placeholder={defaultWhatsAppNumber ?? "default"}
+                        />
+                      </td>
                       <td className="whitespace-nowrap p-2 text-slate-600">{channel.isActive ? "Active" : "Retired"}</td>
                       <td className="whitespace-nowrap p-2">
                         <div className="flex gap-2">

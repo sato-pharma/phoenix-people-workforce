@@ -37,6 +37,28 @@ export function normalizeWhatsAppNumber(value: string | null | undefined): strin
 }
 
 /**
+ * Which apply destination a given channel's tracked link points at.
+ *
+ * The company runs more than one WhatsApp apply line, so a channel may carry its own number
+ * (`channelApplyWhatsAppNumber`) that overrides the company-wide default for that channel alone. A
+ * channel with none falls back to the default, which is how every ordinary group keeps funnelling to
+ * the one watched number. Email has no per-channel override — there is one careers mailbox — so the
+ * channel number is ignored for it. Returns null when the chosen destination is unset, so the caller
+ * copies the advert without a dead link rather than one pointing at nobody.
+ */
+export function applyDestinationForChannel(params: {
+  kind: ApplyChannelKind;
+  channelApplyWhatsAppNumber: string | null;
+  defaultWhatsAppNumber: string | null;
+  email: string | null;
+}): string | null {
+  if (params.kind === "whatsapp") {
+    return params.channelApplyWhatsAppNumber ?? params.defaultWhatsAppNumber;
+  }
+  return params.email;
+}
+
+/**
  * The message the APPLICANT sends back to us, pre-filled into their WhatsApp or mail client.
  *
  * They can see and edit this before sending, so it has to read like something a person would

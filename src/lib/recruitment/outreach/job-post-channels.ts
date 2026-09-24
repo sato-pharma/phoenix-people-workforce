@@ -9,6 +9,7 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import { recruitmentDb, textOrNull } from "@/lib/recruitment/db";
 import { deriveChannelCode, isValidChannelCode, normalizeChannelCode } from "@/lib/recruitment/outreach/channel-code";
 import { phoneDigitsTail, resolveForwarderChannelFromList } from "@/lib/recruitment/outreach/forwarder-match";
+import { normalizeWhatsAppNumber } from "@/lib/recruitment/outreach/job-advert";
 import { hrIdForStorage } from "@/lib/hr-id";
 
 export const JOB_POST_CHANNEL_KINDS = [
@@ -53,6 +54,11 @@ export type JobPostChannel = {
    * A relay is tied to one channel; the on-CV advert code always wins over this fallback.
    */
   forwarderIdentifiers: string[];
+  /**
+   * The WhatsApp apply line this channel's tracked link sends applicants to, in the form it was
+   * typed. Null means the company-wide default. Normalised to a wa.me number at link-build time.
+   */
+  applyWhatsAppNumber: string | null;
 };
 
 export type CreateJobPostChannelInput = {
@@ -72,6 +78,7 @@ function asKind(value: unknown): JobPostChannelKind {
 
 function mapChannel(row: Record<string, unknown>): JobPostChannel {
   return {
+    applyWhatsAppNumber: textOrNull(row.apply_whatsapp_number),
     code: String(row.code ?? ""),
     createdAt: textOrNull(row.created_at),
     forwarderIdentifiers: Array.isArray(row.forwarder_identifiers)
@@ -165,7 +172,14 @@ export async function createJobPostChannels(
  */
 export async function updateJobPostChannel(
   id: string,
-  patch: { name?: string; url?: string | null; kind?: JobPostChannelKind; notes?: string | null; isActive?: boolean },
+  patch: {
+    name?: string;
+    url?: string | null;
+    kind?: JobPostChannelKind;
+    notes?: string | null;
+    isActive?: boolean;
+    applyWhatsAppNumber?: string | null;
+  },
 ): Promise<JobPostChannel> {
   const supabase = recruitmentDb();
   const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
@@ -174,6 +188,15 @@ export async function updateJobPostChannel(
   if (patch.kind !== undefined) update.kind = patch.kind;
   if (patch.notes !== undefined) update.notes = textOrNull(patch.notes);
   if (patch.isActive !== undefined) update.is_active = patch.isActive === true;
+  if (patch.applyWhatsAppNumber !== undefined) {
+    // A blank clears the override (fall back to the company default); anything else must be a
+    // dialable number, or the channel would hand out a link that opens a chat with nobody.
+    const trimmed = textOrNull(patch.applyWhatsAppNumber);
+    if (trimmed && !normalizeWhatsAppNumber(trimmed)) {
+      throw new Error("That is not a usable WhatsApp number.");
+    }
+    update.apply_whatsapp_number = trimmed;
+  }
 
   const { data, error } = await supabase.from(TABLE).update(update).eq("id", id).select("*").maybeSingle();
   if (error) throw error;
