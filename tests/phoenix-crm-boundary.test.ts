@@ -97,6 +97,10 @@ const ROUTE_GATES: RouteGate[] = [
   // Only someone who may enter a visit opens its form.
   get("visits/form", "create"),
   get("list"),
+  // The same territory's list as the Reps List board holds it — by brick, with the month's activity.
+  // It reads a SECOND source beside the CRM's own, so it is authorised through the CRM's own seat
+  // gate (`loadTerritoryList`) before the board is ever loaded, and is scoped to that seat's rep.
+  get("list/board"),
   post("list/validate", "create"),
   // The name and speciality, corrected after validating (owner, 2026-09-22): the rep's own write.
   post("list/rename", "create"),

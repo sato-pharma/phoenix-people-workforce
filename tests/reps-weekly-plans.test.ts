@@ -301,6 +301,20 @@ export async function runRepsWeeklyPlansTests() {
         plans.includes(`<th className={THEAD}>${heading}</th>`),
         `the plan's doctors carry the contact list's own "${heading}" column`,
       );
+      // Confidence is the one heading the contact list now decides at render time: in Phoenix CRM the
+      // owner asked for it to go and for the CRM's own buttons to take its place (2026-09-24). The
+      // SWAP IS THE POINT — Actions occupies that column rather than being added beside it, so the
+      // six measured widths never move and the plan table above, which always shows Confidence, is
+      // still the same six columns. Pinning the literal here would forbid the swap; pinning the
+      // conditional keeps the teeth, because dropping the column outright would fail this just as the
+      // old assertion would.
+      if (heading === "Confidence") {
+        assert.ok(
+          contacts.includes(`<th className={THEAD}>{showConfidence ? "Confidence" : "Actions"}</th>`),
+          "and the contact list still carries Confidence wherever actions are not passed — Phoenix CRM swaps that one column for its buttons, and nothing else",
+        );
+        continue;
+      }
       assert.ok(
         contacts.includes(`<th className={THEAD}>${heading}</th>`),
         `and the contact list still has "${heading}" itself — otherwise the two have drifted and this test is pinning a shape that no longer exists`,

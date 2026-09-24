@@ -142,60 +142,7 @@ export function RepsListListBody({
               "The plan and visits for this month could not be read, so no activity is shown beside the contacts. The list below is complete and unaffected by that.")}
         </p>
       </div>
-      <div className="grid grid-cols-2 gap-2 px-5 pt-3 sm:grid-cols-3 lg:grid-cols-6">
-        {/* The list names are the CRM's own and the owner's own — PM list, AM list,
-            Pharmacist. The sub-line carries each one's share rather than a description,
-            because naming what a list "is" invents a meaning the CRM never stated.
-
-            A PHARMACY IS NOT A CONTACT. Owner, 2026-09-01: "you will not count the
-            pharmacies as contacts... the contacts is divided into AM and PM, and the
-            pharmacies are separate." So the Contacts tile is PM + AM, the two beneath it
-            are its halves and add to 100%, and Pharmacies stands apart with its own count
-            and no share — a share would only re-imply the total he separated them out of. */}
-        <Tile label="Contacts" sub="PM and AM lists" value={String(list.counts.contacts)} />
-        <Tile label="PM list" sub={shareOf(list.counts.pm, list.counts.contacts)} value={String(list.counts.pm)} />
-        <Tile label="AM list" sub={shareOf(list.counts.am, list.counts.contacts)} value={String(list.counts.am)} />
-        <Tile label="Pharmacies" sub="counted apart from contacts" value={String(list.counts.pharmacy)} />
-        {/* The VALUE is the mapped bricks alone. Counting the unmapped localities here
-            too would have this tile report bricks that do not exist — on a rep whose whole
-            area is unmapped it read "Bricks 8 / 0 mapped", which is a contradiction. */}
-        <Tile
-          label="Bricks"
-          sub="mapped territories"
-          value={String(list.groups.length - list.unmappedRegionCount)}
-        />
-        {/* Stated on screen rather than left to be noticed: an unmapped locality is a
-            mapping backlog, and the board is the punch-list for it. */}
-        <Tile
-          label="Awaiting a brick"
-          sub={
-            list.unmappedContactCount > 0
-              ? `${list.unmappedRegionCount} localities not yet mapped`
-              : "every locality is mapped"
-          }
-          tone={list.unmappedContactCount > 0 ? "amber" : "emerald"}
-          value={String(list.unmappedContactCount)}
-        />
-        {/* THE REASON THIS COLUMN EXISTS, AS A NUMBER. It counts ROWS and is deliberately never
-            labelled "contacts": a pharmacy is not a contact (owner, 2026-09-01) and this figure
-            spans both tabs, so that word would restate the very total he separated.
-
-            `untouched` PLUS `missed`, and nothing else — see UNVISITED_STATUSES. A doctor planned
-            for next Tuesday has not been neglected, and counting him here would put a manager on
-            the phone about nothing.
-
-            It wraps onto a second row rather than squeezing the six above it. The golden rule
-            forbids buying width from a neighbour, and a lone tile under the others reads as the
-            summary line it is. */}
-        {board.activityAvailable ? (
-          <Tile
-            label="Not visited"
-            sub={`no visit in ${board.activityMonthLabel}`}
-            tone={board.activityUnvisited > 0 ? "amber" : "emerald"}
-            value={String(board.activityUnvisited)}
-          />
-        ) : null}
-      </div>
+      <RepsListTiles board={board} list={list} />
       <RepsListContacts
         activityAvailable={board.activityAvailable}
         activityMonthLabel={board.activityMonthLabel}
@@ -204,6 +151,77 @@ export function RepsListListBody({
         repName={listName}
       />
     </>
+  );
+}
+
+/**
+ * The breakdown above the list — Contacts · PM · AM · Pharmacies · Bricks · Awaiting a brick, and
+ * Not visited when the month could be read.
+ *
+ * ONE DEFINITION, because Phoenix CRM's List tab shows the same breakdown (owner, 2026-09-24: "the
+ * breakdown of the PM list and the AM, pharmacies and bricks... when there are visits I need the
+ * breakdown to be also not visited"). A second copy next door would agree on the day it was written
+ * and disagree on the first change to any one of these counts — about what a contact is, of all
+ * things, which is the one arithmetic this board exists to keep straight.
+ */
+export function RepsListTiles({
+  board,
+  list,
+}: {
+  board: Pick<RepsListBoard, "activityAvailable" | "activityMonthLabel" | "activityUnvisited">;
+  list: RepsListForRep;
+}) {
+  return (
+    <div className="grid grid-cols-2 gap-2 px-5 pt-3 sm:grid-cols-3 lg:grid-cols-6">
+      {/* The list names are the CRM's own and the owner's own — PM list, AM list,
+          Pharmacist. The sub-line carries each one's share rather than a description,
+          because naming what a list "is" invents a meaning the CRM never stated.
+
+          A PHARMACY IS NOT A CONTACT. Owner, 2026-09-01: "you will not count the
+          pharmacies as contacts... the contacts is divided into AM and PM, and the
+          pharmacies are separate." So the Contacts tile is PM + AM, the two beneath it
+          are its halves and add to 100%, and Pharmacies stands apart with its own count
+          and no share — a share would only re-imply the total he separated them out of. */}
+      <Tile label="Contacts" sub="PM and AM lists" value={String(list.counts.contacts)} />
+      <Tile label="PM list" sub={shareOf(list.counts.pm, list.counts.contacts)} value={String(list.counts.pm)} />
+      <Tile label="AM list" sub={shareOf(list.counts.am, list.counts.contacts)} value={String(list.counts.am)} />
+      <Tile label="Pharmacies" sub="counted apart from contacts" value={String(list.counts.pharmacy)} />
+      {/* The VALUE is the mapped bricks alone. Counting the unmapped localities here
+          too would have this tile report bricks that do not exist — on a rep whose whole
+          area is unmapped it read "Bricks 8 / 0 mapped", which is a contradiction. */}
+      <Tile label="Bricks" sub="mapped territories" value={String(list.groups.length - list.unmappedRegionCount)} />
+      {/* Stated on screen rather than left to be noticed: an unmapped locality is a
+          mapping backlog, and the board is the punch-list for it. */}
+      <Tile
+        label="Awaiting a brick"
+        sub={
+          list.unmappedContactCount > 0
+            ? `${list.unmappedRegionCount} localities not yet mapped`
+            : "every locality is mapped"
+        }
+        tone={list.unmappedContactCount > 0 ? "amber" : "emerald"}
+        value={String(list.unmappedContactCount)}
+      />
+      {/* THE REASON THIS COLUMN EXISTS, AS A NUMBER. It counts ROWS and is deliberately never
+          labelled "contacts": a pharmacy is not a contact (owner, 2026-09-01) and this figure
+          spans both tabs, so that word would restate the very total he separated.
+
+          `untouched` PLUS `missed`, and nothing else — see UNVISITED_STATUSES. A doctor planned
+          for next Tuesday has not been neglected, and counting him here would put a manager on
+          the phone about nothing.
+
+          It wraps onto a second row rather than squeezing the six above it. The golden rule
+          forbids buying width from a neighbour, and a lone tile under the others reads as the
+          summary line it is. */}
+      {board.activityAvailable ? (
+        <Tile
+          label="Not visited"
+          sub={`no visit in ${board.activityMonthLabel}`}
+          tone={board.activityUnvisited > 0 ? "amber" : "emerald"}
+          value={String(board.activityUnvisited)}
+        />
+      ) : null}
+    </div>
   );
 }
 

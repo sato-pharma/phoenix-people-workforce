@@ -144,6 +144,20 @@ export function listUrl(seatId: string, test: boolean): string {
   return crmUrl("/api/phoenix-crm/list", { seatId, test });
 }
 
+/**
+ * The same seat's list as the Reps List / My List board holds it — grouped by brick, with the
+ * AM · PM · Pharmacies breakdown and this month's activity on each row.
+ *
+ * It is a SECOND read of the same territory, not a replacement for `listUrl`: the CRM list carries
+ * what a rep can act on (places, timings, pending validations, requests), the board carries how the
+ * list is shaped (bricks, coverage, who has not been visited). The two are joined on screen by the
+ * contact's CRM id. `month` is left off unless a month is being chosen, so the server picks the
+ * current one in Cairo rather than the browser's idea of today.
+ */
+export function listBoardUrl(seatId: string, test: boolean, month?: string): string {
+  return crmUrl("/api/phoenix-crm/list/board", { month, seatId, test });
+}
+
 /** Who decides a grade or drop request, as a sentence. */
 export function deciderText(view: Pick<TerritoryListView, "isTest" | "territory">): string {
   if (view.isTest) return "In test mode you decide it yourself, under Requests.";
