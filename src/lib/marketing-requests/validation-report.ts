@@ -145,3 +145,36 @@ export function customerFieldEvidenceGap(
   if (anyDesk) return "desk";
   return "second_code";
 }
+
+/**
+ * Is this customer VALIDATED, decided live from the evidence that stands right now — never from the
+ * stored `validation_status` stamp, which is written once and never rewritten (owner, 2026-09-24).
+ *
+ * The owner's rule, in his own words: a validated customer is one "we captured a live photo and took
+ * location for him AND the pharmacies linked to him." So the bar is `complete` — a GPS fix plus a
+ * timestamped live photo that reached the bucket (`evidenceStatusFromInput` on the server) — on the
+ * CUSTOMER **and** on **every** linked pharmacy. Anything short of that is not validated; it is a
+ * capture still in progress, and belongs in the Validate queue, not the Validated tab.
+ *
+ * Why this exists, and why it is `every` not `some`:
+ *   - The stored stamp goes stale in both directions. A 2026-07-02 history backfill and the desk path
+ *     both minted `system_validated` / `sfe_validated` with no live photo at all, and a link that was
+ *     validated while its shop had a photo keeps the stamp after that evidence is cleared. The screen
+ *     used to route the tabs on that frozen stamp, so those customers read "validated" for ever.
+ *     Reading the live evidence instead is the only thing that self-corrects.
+ *   - A DESK validation (location picked on a map, no live photo) therefore stops counting on its
+ *     own — it never reaches `complete` on the customer half — which is exactly the owner's 1-B call.
+ *   - `some` would let one captured shop validate a customer whose other shops were never visited,
+ *     which is the "any-link" reading the frozen stamp already produced and this replaces.
+ *
+ * Zero links is `false`: there is no captured venue to have validated the customer at all.
+ */
+export function customerIsEvidenceValidated(
+  rows: readonly FieldEvidenceGapInput[],
+): boolean {
+  if (rows.length === 0) return false;
+  return rows.every(
+    (row) =>
+      row.customerEvidenceStatus === "complete" && row.pharmacyEvidenceStatus === "complete",
+  );
+}

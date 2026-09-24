@@ -755,6 +755,7 @@ import { runMarketingCoverageUrlStateTests } from "./marketing-coverage-url-stat
 import { runWeeklyExportTests } from "./weekly-export-workbook.test.ts";
 import { runWeeklyExportDesignLockTests } from "./weekly-export-design-lock.test.ts";
 import { runMarketingValidationServiceTests } from "./marketing-validation-service.test.ts";
+import { runMarketingValidationReportTests } from "./marketing-validation-report.test.ts";
 import { runMarketingCompleteExistingCustomerTests } from "./marketing-complete-existing-customer.test.ts";
 import { runMarketingCompleteExistingVenueTests } from "./marketing-complete-existing-venue.test.ts";
 import { runMarketingGovernorateCheckTests } from "./marketing-governorate-check.test.ts";
@@ -3384,6 +3385,10 @@ await runTest("marketing request access", runMarketingRequestAccessTests);
 await runTest("a marketing request names its own CRM contact (customer_contact_id is written)", runMarketingRequestContactLinkTests);
 await runTest("a direct order names the campaign it came from (marketing_request_id is written)", runDirectOrderCampaignLinkTests);
 await runTest("marketing validation service", runMarketingValidationServiceTests);
+await runTest(
+  "marketing validation report: validated is decided live from evidence, not the stored stamp",
+  runMarketingValidationReportTests,
+);
 await runTest(
   "marketing validation: capturing a customer already on record completes it instead of duplicating it",
   runMarketingCompleteExistingCustomerTests,
