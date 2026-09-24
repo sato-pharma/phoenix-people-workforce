@@ -221,23 +221,21 @@ export async function runTurbifyRevocationRobot(options: RobotRunOptions = {}): 
 
   for (const task of dashboard.tasks) {
     const decision = decideRobotAction({ directory, enabled, task, todayIso }, { minDaysBeforeDelete });
-    if (decision.action === "reset") {
-      resetQueue.push(task);
-      continue;
-    }
-    if (decision.action === "delete") {
-      deleteQueue.push(task);
+    if (decision.action !== null) {
+      if (decision.action === "reset") resetQueue.push(task);
+      else deleteQueue.push(task);
       continue;
     }
 
     // A null action carries a reason. Three of them are expected, quiet states — the register is
     // mostly `already_revoked`, and `reset_not_by_robot` / `awaiting_delete_grace` are the normal
     // waiting states of the two-phase model. Listing them would bury the refusals worth reading.
-    if (decision.refusal === "awaiting_delete_grace") {
+    const { refusal, detail } = decision;
+    if (refusal === "awaiting_delete_grace") {
       awaitingGrace += 1;
       continue;
     }
-    if (decision.refusal === "already_revoked" || decision.refusal === "reset_not_by_robot") {
+    if (refusal === "already_revoked" || refusal === "reset_not_by_robot") {
       continue;
     }
     outcomes.push({
@@ -245,8 +243,8 @@ export async function runTurbifyRevocationRobot(options: RobotRunOptions = {}): 
       workEmail: task.workEmail,
       taskId: task.id,
       result: "refused",
-      refusal: decision.refusal,
-      detail: decision.detail,
+      refusal,
+      detail,
     });
   }
 
