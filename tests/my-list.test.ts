@@ -92,11 +92,15 @@ export function runMyListTests() {
     assert.equal(manager.kind, "none", "a manager reaching the resolver gets nothing from it, never `company`");
   }
 
-  // ── THE NAV OFFERS THE ROW TO EXACTLY THE ROLES THE PAGE ADMITS ─────────────────────────────
+  // ── THE ROW IS RETIRED: NO SEAT'S SIDEBAR SHOWS IT, BUT THE CATALOG/REGISTRY WIRING STAYS ────
+  // My List was hidden from the portal sidebar on 2026-09-25 (owner: "hide the my-list board") — the
+  // rep's own contact list now lives in Phoenix CRM's List tab. The hide is reversible: the flag is
+  // held false rather than deleted, and the catalog/registry/layout wiring stays put, so restoring
+  // MY_LIST_PORTAL_ROLES.includes(...) in navigation.ts brings the row back.
   {
     const portalItems = employeePortalNavigationSections.flatMap((section) => section.items);
     const catalog = portalItems.find((item) => item.href === ROUTE);
-    assert.ok(catalog, "the portal sidebar catalog must offer My List");
+    assert.ok(catalog, "the portal sidebar catalog still carries My List, for a clean restore");
     assert.deepEqual(
       [...(catalog.roles ?? [])].sort(),
       [...MY_LIST_PORTAL_ROLES].sort(),
@@ -108,11 +112,11 @@ export function runMyListTests() {
     const flagStart = navSource.indexOf("const showMyListTab");
     assert.ok(flagStart >= 0, "the portal My List visibility flag must exist");
     const flag = navSource.slice(flagStart, navSource.indexOf(";", flagStart) + 1);
-    assert.ok(flag.includes("MY_LIST_PORTAL_ROLES"), "the flag must ask the shared list, not spell the roles out again");
+    assert.ok(/=\s*false\b/.test(flag), "the retired My List flag is held false, hiding the sidebar row from every seat");
 
     const rep = resolveEmployeePortalNavVisibility("Medical Rep", "Medical Rep");
-    assert.equal(rep.showMyListTab, true, "a Medical Rep's sidebar shows My List");
-    assert.equal(rep.showRepsListTab, false, "and not Reps List");
+    assert.equal(rep.showMyListTab, false, "My List is retired — a Medical Rep's sidebar no longer shows it");
+    assert.equal(rep.showRepsListTab, false, "and Reps List stays a manager row");
     const districtManager = resolveEmployeePortalNavVisibility("District Manager", "District Manager");
     assert.equal(districtManager.showMyListTab, false, "a District Manager's sidebar shows no My List");
     assert.equal(districtManager.showRepsListTab, true, "and keeps Reps List");
@@ -139,18 +143,29 @@ export function runMyListTests() {
   // ── THE PAGE READS NO REP FROM THE URL, AND THE TWO DOORS SEND EACH OTHER'S VIEWERS ACROSS ──
   {
     const page = readFileSync("app/employee-portals/my-list/page.tsx", "utf8");
-    assert.ok(page.includes("getMyListScope(access)"), "the reach comes from the session through getMyListScope");
+    // Retired — the page renders no board of its own; it forwards to the Phoenix CRM List tab, the
+    // board's new home, so a bookmark or a stale link still lands on the live board.
+    assert.ok(
+      page.includes('redirect("/employee-portals/field-crm?tab=list")'),
+      "the retired My List route forwards to the Phoenix CRM List tab",
+    );
+    assert.ok(
+      !page.includes("getMyListBoard") && !page.includes("MyListBoardView") && !page.includes("getMyListScope"),
+      "the retired page loads and renders no board of its own",
+    );
+    // THE GATE STAYS: the page still enforces exactly crm_visits:read — the permission its nav
+    // registry entry mirrors — so the sidebar/bottom-nav permission guard keeps one truth in one place.
     assert.ok(
       page.includes('if (!canAccessMyList(access) || !(await canAccess(access, "crm_visits", "read"))) {'),
-      "the page asserts both the role list and the crm_visits:read matrix grant",
+      "the page asserts both the role list and the crm_visits:read matrix grant, matching its registry entry",
     );
     assert.ok(!page.includes("getDoctorListScope"), "My List must never resolve the manager board's reach");
     assert.ok(!/params\?\.rep\b|searchParams.*\brep\b/.test(page), "no URL parameter may name the rep whose list opens");
-    assert.ok(page.includes("logPortalFailure("), "a load failure is logged, not swallowed");
-    assert.ok(page.includes('badge="CRM"') && page.includes('title="My List"'));
     const managerRedirect = page.indexOf('if (canAccessDoctorList(access) && !canAccessMyList(access)) redirect("/employee-portals/reps-list");');
     const pageGate = page.indexOf("if (!canAccessMyList(access)");
+    const crmForward = page.indexOf('redirect("/employee-portals/field-crm?tab=list")');
     assert.ok(managerRedirect >= 0 && managerRedirect < pageGate, "a manager who lands on My List is sent to Reps List before the refusal");
+    assert.ok(pageGate >= 0 && pageGate < crmForward, "the crm_visits:read gate refuses an unauthorised seat before the forward");
 
     const repsList = readFileSync("app/employee-portals/reps-list/page.tsx", "utf8");
     const repRedirect = repsList.indexOf('if (canAccessMyList(access)) redirect("/employee-portals/my-list");');
