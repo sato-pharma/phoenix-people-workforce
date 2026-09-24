@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { isForbiddenError } from "@/lib/auth/server";
+import { ManageEngineAppInputError } from "@/lib/devices/manageengine/apps";
 import { ManageEngineNotConfiguredError } from "@/lib/devices/manageengine/auth";
 import { ManageEngineRequestError } from "@/lib/devices/manageengine/client";
 import { ManageEngineCommandInputError } from "@/lib/devices/manageengine/commands";
@@ -21,7 +22,7 @@ export function manageEngineErrorResponse(error: unknown, fallback: string): Nex
   if (error instanceof ManageEngineNotConfiguredError) {
     return NextResponse.json({ message: error.message, setupRequired: true }, { status: 400 });
   }
-  if (error instanceof ManageEngineCommandInputError) {
+  if (error instanceof ManageEngineCommandInputError || error instanceof ManageEngineAppInputError) {
     return NextResponse.json({ message: error.message }, { status: 400 });
   }
   if (error instanceof ManageEngineRequestError) {

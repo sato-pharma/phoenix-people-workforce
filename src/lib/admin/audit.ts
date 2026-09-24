@@ -80,6 +80,12 @@ export type AuditEntityType =
   // trace is treated as a failed command. The row names the tablet by its custody asset tag, never
   // by any credential.
   | "manageengine_device_command"
+  // Apps pushed to or removed from a rep's tablet from inside Phoenix (2026-09-25). A separate type
+  // from the command above because it is a different kind of act: a command changes what the tablet
+  // is doing for a moment, while installing or removing an app changes what the rep can do with it
+  // until somebody changes it back. REQUIRED audit, written after ManageEngine has accepted the
+  // change, naming the tablet by its custody asset tag and the app by its own name.
+  | "manageengine_device_app"
   // Email routing. `distribution_list` is an edit to a named recipient group — who a future email
   // reaches. `company_email_alias` is the Turbify register beside it.
   //

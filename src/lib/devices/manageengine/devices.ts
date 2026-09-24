@@ -246,3 +246,27 @@ export async function getManageEngineLocation(
     longitude: pickNumber(record, ["longitude", "lng", "lon"]),
   };
 }
+
+/**
+ * Ask the tablet for a FRESH position, then read what is there.
+ *
+ * The GET above returns the last position ManageEngine resolved, which can be hours old on a tablet
+ * that has not been asked. The POST to the same path queues a location request on the device; the
+ * answer arrives when the tablet next reports in, so the read that follows may still show the older
+ * fix. That is why the screen shows the time beside the position rather than a bare address — and
+ * why the request failing is not fatal here: an old position is better than none, so a refused
+ * request still falls through to the read.
+ */
+export async function requestManageEngineLocation(
+  deviceId: string,
+  fetchImpl: typeof fetch = fetch,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<ManageEngineLocation> {
+  await callManageEngine(
+    `/api/v1/mdm/devices/${encodeURIComponent(deviceId)}/locations_with_address`,
+    { body: "{}", method: "POST" },
+    fetchImpl,
+    env,
+  ).catch(() => null);
+  return getManageEngineLocation(deviceId, fetchImpl, env);
+}
