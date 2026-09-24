@@ -885,6 +885,12 @@ export const accessRegistry = [
   // the mutation (Super-Admin gate enforced in the service). csrf is applied to the POST.
   sessionApi({ methods: ["GET", "POST"], pattern: "/api/marketing-requests/:id/track-direct-sales", permission: { resource: "expenses", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/marketing-requests/**", permission: { resource: "expenses", action: "read" }, guard: "domain-helper" }),
+  // Verified Captures gallery — the Super-Admin oversight of field-captured customers (direct orders
+  // and validated marketing requests), read-only. The role gate lives in the domain helper
+  // (assertVerifiedCapturesAccess — Super Admin / system scope only), so permission is null and the
+  // guard is the domain helper, exactly as customer-pharmacy-mapping below.
+  sessionApi({ audit: { classification: "access-read", required: false }, methods: ["GET"], pattern: "/api/verified-captures/marketing", permission: null, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "access-read", required: false }, methods: ["GET"], pattern: "/api/verified-captures/direct-orders", permission: null, guard: "domain-helper" }),
   // Customer Pharmacy Mapping — standalone read-only master-data governance. Role gate lives in the
   // domain helper (assertCustomerPharmacyMappingAccess); Phase 1 is Super Admin + CEO only.
   sessionApi({ audit: { classification: "access-read", required: false }, methods: ["GET"], pattern: "/api/customer-pharmacy-mapping", permission: null, guard: "domain-helper" }),

@@ -1453,6 +1453,20 @@ export const adminNavigationSectionSeeds = [
     label: "Master Data",
   },
 
+  // ── Tier 7c: Verified field captures ──────────────────────────────────────────
+  // A read-only gallery of every customer captured in the field — direct orders and validated
+  // marketing requests — with the live photo and the GPS location the rep took. SUPER ADMIN ONLY
+  // (owner, 2026-09-24): it gathers the most sensitive evidence both modules hold (shop-front photos,
+  // home/venue coordinates, and who captured them) onto one company-wide screen, so the sidebar gate
+  // is the narrowest one there is. The page re-asserts the same check server-side.
+  {
+    id: "verified-captures",
+    items: [
+      { href: "/admin/verified-captures", icon: MapPinned, label: "Verified Captures", roles: ["Super Admin"] },
+    ],
+    label: "Verified Captures",
+  },
+
   // ── Tier 8: System administration ────────────────────────────────────────────
   // Collapsed to a single sidebar entry that opens the Access & Communication hub
   // (app/(admin)/admin/access-communication/page.tsx), which renders the individual
