@@ -620,7 +620,11 @@ export function resolveEmployeePortalNavVisibility(
     showKpisTab,
     showMedicalRepExpensesTab: isMedicalRep,
     showMyPerformanceTab: isA3Account ? false : baseShowMyPerformanceTab,
-    showMyCoachingTab: isMedicalRep,
+    // My Coaching Reports — hidden from the portal sidebar for Medical Rep by owner instruction
+    // (2026-09-24), mirroring the Early Birds change; District Manager / NSM / Regional Manager
+    // keep the row via showTeamCoachingTab below, untouched. The route and the coaching module
+    // itself are unaffected — only this flag, and only for the rep's own row, changed.
+    showMyCoachingTab: false,
     showReportItTab: isA3Account,
     showReportItDashboardTab: isProductManager || isGroupProductManager || isMarketingManager || isTrainingManager,
     // District Manager added 2026-08-22 alongside isLineScopedOrganogramRole in

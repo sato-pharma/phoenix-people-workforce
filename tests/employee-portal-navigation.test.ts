@@ -153,7 +153,7 @@ export function runEmployeePortalNavigationTests() {
   assert.equal(medicalRep.showExpenseActionTab, false, "Medical Rep should not see the manual outstation expense action");
   assert.equal(medicalRep.showExpenseDashboardTab, false, "Medical Rep should not see the Expense Dashboard (they have their own expenses tab)");
   assert.equal(medicalRep.showMedicalRepExpensesTab, true, "Medical Rep should see their own expenses tab");
-  assert.equal(medicalRep.showMyCoachingTab, true, "Medical Rep should see My Coaching Reports");
+  assert.equal(medicalRep.showMyCoachingTab, false, "Medical Rep should not see My Coaching Reports on the sidebar (hidden by owner instruction 2026-09-24)");
   assert.equal(medicalRep.showTeamCoachingTab, false, "Medical Rep should not see Team Coaching Reports");
   assert.equal(medicalRep.showTrainingManagerCreateCoachingTab, false, "Medical Rep should not see Create Coaching Report");
 
