@@ -91,43 +91,96 @@ export const TURBIFY_RESET_HAS_NO_CONFIRMATION = true;
 export const TURBIFY_DELETE_CONFIRMATION_BEHAVIOUR = "unverified" as const;
 
 const MAILBOX_SELECTORS = {
-  /** Confirmed label "Search users..."; typing an address filters the list to that row. */
-  searchBox: { label: "Search users...", selector: "__UNCALIBRATED__" },
-  /** The filtered row for the searched address — the scope every row-action click must be inside. */
+  /** Confirmed live 2026-09-25: the account filter. Typing an address filters the list to its row. */
+  searchBox: { label: "Search users...", selector: 'input[placeholder="Search users..."]' },
+  /** The filtered row for the searched address. Not needed by the reset flow — it matches on the
+   * OTP dialog's address instead — so it stays an uncalibrated placeholder and gates nothing. */
   mailboxRow: { label: "<the row for the searched address>", selector: "__UNCALIBRATED__" },
-  /** Confirmed label "Reset password". One click; NO confirm dialog. */
-  resetPassword: { label: "Reset password", selector: "__UNCALIBRATED__" },
-  /** Confirmed: the post-reset dialog is headed "One-time password" — the reset success signal. */
-  resetConfirmation: { label: "One-time password", selector: "__UNCALIBRATED__" },
-  /** Confirmed label "Close modal" — dismisses the one-time-password dialog without informing anyone. */
-  closeModal: { label: "Close modal", selector: "__UNCALIBRATED__" },
-  /** Confirmed label "More actions" — opens the row menu holding Delete. */
-  moreActions: { label: "More actions", selector: "__UNCALIBRATED__" },
-  /** Confirmed label "Delete" (inside the More actions menu). */
-  deleteUser: { label: "Delete", selector: "__UNCALIBRATED__" },
+  /**
+   * Confirmed live 2026-09-25: `button[aria-label="More actions"]` (aria-haspopup="menu",
+   * bi-three-dots-vertical icon) opens the row menu holding Delete. The RESET flow does NOT use it —
+   * the row has a direct reset button (below) — so this is here for the DELETE flow, which stays
+   * gated by `TURBIFY_DELETE_CALIBRATED` until that flow is observed live.
+   */
+  moreActions: { label: "More actions", selector: 'button[aria-label="More actions"]' },
+  /**
+   * Confirmed live 2026-09-25: the filtered row carries a DIRECT reset button
+   * `button[aria-label="Reset password"]` (title "Reset password", bi-key icon) — no need to open
+   * the More-actions menu. One click resets immediately; there is NO confirm step (the OTP dialog
+   * below is the result, not a confirmation to click through).
+   */
+  resetPassword: { label: "Reset password", selector: 'button[aria-label="Reset password"]' },
+  /**
+   * Confirmed live 2026-09-25: the post-reset dialog is `div.modal-container.modal-medium`
+   * (role="dialog"), headed "One-time password" and naming the mailbox, with Show / Copy / Close
+   * modal / Send invite / Print. Its appearance NAMING THE TARGET ADDRESS is the reset success
+   * signal — the driver records nothing without it.
+   */
+  resetConfirmation: { label: "One-time password", selector: "div.modal-container" },
+  /** Confirmed live 2026-09-25: `button[aria-label="Close modal"]` dismisses the OTP dialog quietly. */
+  closeModal: { label: "Close modal", selector: 'button[aria-label="Close modal"]' },
+  /** Confirmed label "Delete" (inside the More actions menu, carries `text-text-error`); clicked by text. */
+  deleteUser: { label: "Delete", selector: "__TEXT__" },
   /** UNVERIFIED — the confirm control, IF the delete flow has one. Capture on the first live delete. */
   deleteConfirm: { label: "<delete confirm control — unverified>", selector: "__UNCALIBRATED__" },
   /** The real success signal for a delete: the address is GONE from the list on a re-read. */
   deleteConfirmation: { label: "<address absent from the list after delete>", selector: "__UNCALIBRATED__" },
 } as const;
 
+/** The reset-flow selectors that must ALL be real before `TURBIFY_RESET_CALIBRATED` may be true. */
+const RESET_FLOW_SELECTORS: Record<string, string> = {
+  searchBox: MAILBOX_SELECTORS.searchBox.selector,
+  resetPassword: MAILBOX_SELECTORS.resetPassword.selector,
+  resetConfirmation: MAILBOX_SELECTORS.resetConfirmation.selector,
+  closeModal: MAILBOX_SELECTORS.closeModal.selector,
+};
+
 /**
- * Flip to true only once every selector above has been read from the real console.
+ * Two flags, one per irreversibility tier, because reset can be proven and armed long before delete
+ * can. Reset is reversible and its whole flow was captured live 2026-09-25 (only the "More actions"
+ * trigger selector is still outstanding — see `moreActions` above); delete is permanent, has no
+ * restore and no backup, and its confirmation behaviour has never once been observed.
  *
- * A boolean rather than an env var on purpose: this is a property of the CODE being correct, not of
- * the environment being configured, and an env var would let a misconfigured deploy arm an
- * uncalibrated robot.
+ * Booleans rather than env vars on purpose: this is a property of the CODE being correct (the
+ * selectors are real), not of the environment being configured — an env var would let a
+ * misconfigured deploy arm an uncalibrated robot. The environment only decides whether the robot
+ * runs at all (`PHOENIX_TURBIFY_ROBOT_ENABLED`) and whether it is live or dry
+ * (`PHOENIX_TURBIFY_ROBOT_DRY_RUN`).
+ *
+ * 🔴 Do NOT flip `TURBIFY_RESET_CALIBRATED` while any reset-flow selector is still a placeholder —
+ * `createTurbifyConsoleDriver` re-checks and throws if you do, so a half-calibrated flip fails
+ * loudly at build time rather than clicking `__UNCALIBRATED__` over a live mailbox.
  */
-export const TURBIFY_SELECTORS_CALIBRATED = false;
+export const TURBIFY_RESET_CALIBRATED = true;
+export const TURBIFY_DELETE_CALIBRATED = false;
+
+/**
+ * Back-compat alias: the driver is usable (can sign in and reset) once RESET is calibrated. Delete
+ * is gated separately by `TURBIFY_DELETE_CALIBRATED` inside `deleteMailbox`.
+ */
+export const TURBIFY_SELECTORS_CALIBRATED = TURBIFY_RESET_CALIBRATED;
 
 export class TurbifyConsoleNotCalibratedError extends Error {
   constructor() {
     super(
-      "The Turbify console driver has not been calibrated: MAILBOX_SELECTORS in "
-      + "src/lib/mailbox-offboarding/robot/turbify-console.ts still holds placeholders. It refuses "
-      + "to run rather than report a clean pass over mailboxes it never touched.",
+      "The Turbify console driver has not been calibrated for RESET: reset-flow selectors in "
+      + "src/lib/mailbox-offboarding/robot/turbify-console.ts still hold placeholders, or "
+      + "TURBIFY_RESET_CALIBRATED is false. It refuses to run rather than report a clean pass over "
+      + "mailboxes it never touched.",
     );
     this.name = "TurbifyConsoleNotCalibratedError";
+  }
+}
+
+export class TurbifyDeleteNotCalibratedError extends Error {
+  constructor() {
+    super(
+      "The Turbify console driver has not been calibrated for DELETE: the delete-confirmation "
+      + "behaviour has never been observed and TURBIFY_DELETE_CALIBRATED is false. Delete is "
+      + "permanent with no restore and no backup, so it refuses rather than guess a confirmation "
+      + "click. The task stays pending and the daily sweep keeps alerting on it — the safe failure.",
+    );
+    this.name = "TurbifyDeleteNotCalibratedError";
   }
 }
 
@@ -137,6 +190,11 @@ type ConsolePage = ChromiumPage & {
   type: (selector: string, text: string, options?: Record<string, unknown>) => Promise<void>;
   click: (selector: string, options?: Record<string, unknown>) => Promise<void>;
   waitForSelector: (selector: string, options?: Record<string, unknown>) => Promise<unknown>;
+  waitForFunction: (
+    fn: (...args: unknown[]) => unknown,
+    options?: Record<string, unknown>,
+    ...args: unknown[]
+  ) => Promise<unknown>;
   url: () => string;
 };
 
@@ -170,7 +228,20 @@ export function readTurbifyCredentials(
  * missing — both are configuration failures, and failing early costs nothing.
  */
 export async function createTurbifyConsoleDriver(): Promise<TurbifyConsoleDriver> {
-  if (!TURBIFY_SELECTORS_CALIBRATED) throw new TurbifyConsoleNotCalibratedError();
+  if (!TURBIFY_RESET_CALIBRATED) throw new TurbifyConsoleNotCalibratedError();
+
+  // Belt and suspenders: never let a flip to true stand while a reset-flow selector is still a
+  // placeholder. A misconfigured flip fails HERE, at build time, not by clicking "__UNCALIBRATED__"
+  // over a live mailbox.
+  const stillPlaceholder = Object.entries(RESET_FLOW_SELECTORS)
+    .filter(([, selector]) => selector.includes("__UNCALIBRATED__"))
+    .map(([name]) => name);
+  if (stillPlaceholder.length > 0) {
+    throw new Error(
+      `TURBIFY_RESET_CALIBRATED is true but these reset-flow selectors are still placeholders: `
+      + `${stillPlaceholder.join(", ")}. Fill them from a live capture before arming reset.`,
+    );
+  }
 
   const credentials = readTurbifyCredentials();
   if (!credentials) {
@@ -218,12 +289,70 @@ export async function createTurbifyConsoleDriver(): Promise<TurbifyConsoleDriver
       });
     },
 
-    async resetPassword(): Promise<RobotStepResult> {
-      throw new TurbifyConsoleNotCalibratedError();
+    async resetPassword(address: string): Promise<RobotStepResult> {
+      const email = address.trim().toLowerCase();
+      const localPart = email.split("@")[0] ?? email;
+
+      // 1. Filter the list to exactly this mailbox. Triple-click selects any address left from a
+      //    previous mailbox in the same run so the type() below replaces it rather than appends.
+      await page.waitForSelector(MAILBOX_SELECTORS.searchBox.selector, { timeout: 30_000 });
+      await page.click(MAILBOX_SELECTORS.searchBox.selector, { clickCount: 3 });
+      await page.type(MAILBOX_SELECTORS.searchBox.selector, email);
+
+      // 2. Click the row's DIRECT "Reset password" button (bi-key). The filtered row carries it
+      //    inline — no menu to open — and one click resets immediately with no confirm step. If it
+      //    never appears the mailbox is not in the list as expected: THROW, never assume it is
+      //    already gone (a silent skip would leave a live mailbox open while the register moved on).
+      //    The already-revoked case is handled by the gates in safety.ts upstream, not here.
+      const resetButton = await page
+        .waitForSelector(MAILBOX_SELECTORS.resetPassword.selector, { timeout: 15_000 })
+        .catch(() => null);
+      if (!resetButton) {
+        throw new Error(
+          `Reset ${email}: the row's "Reset password" button never appeared after filtering. `
+          + `Not resetting a mailbox whose row could not be found.`,
+        );
+      }
+      await page.click(MAILBOX_SELECTORS.resetPassword.selector);
+
+      // 3. The ONLY success signal: the one-time-password dialog appears NAMING THIS MAILBOX. If it
+      //    names a different mailbox (wrong row) or never appears, THROW — never record a reset that
+      //    was not positively observed on the exact address asked for. Matching the local-part binds
+      //    it to this mailbox without depending on how the dialog renders the full address.
+      const confirmed = await page
+        .waitForFunction(
+          (args: unknown) => {
+            const { heading, addr, local } = args as { heading: string; addr: string; local: string };
+            const dialog = document.querySelector(".modal-container");
+            if (!dialog) return false;
+            const text = (dialog.textContent ?? "").toLowerCase();
+            return text.includes(heading.toLowerCase()) && (text.includes(addr) || text.includes(local));
+          },
+          { timeout: 20_000 },
+          { heading: MAILBOX_SELECTORS.resetConfirmation.label, addr: email, local: localPart },
+        )
+        .catch(() => null);
+      if (!confirmed) {
+        throw new Error(
+          `Reset ${email}: clicked "Reset password" but the "One-time password" dialog naming `
+          + `${email} never appeared. Not recording a reset that was not confirmed on this exact `
+          + `mailbox.`,
+        );
+      }
+
+      // 4. Close the dialog without sending an invite or printing — a leaver needs neither.
+      await page.click(MAILBOX_SELECTORS.closeModal.selector).catch(() => {});
+
+      return "done";
     },
 
     async deleteMailbox(): Promise<RobotStepResult> {
-      throw new TurbifyConsoleNotCalibratedError();
+      // Reset can be armed; delete cannot until its confirmation behaviour has been observed on a
+      // supervised live deletion (no selectors are written for it yet). A delete task therefore
+      // fails loudly — a person looks — rather than guessing a confirmation click on a permanent,
+      // unbackuppable action. The flag (exported, gated separately) exists so this refusal is a
+      // deliberate, greppable state rather than a forgotten stub.
+      throw new TurbifyDeleteNotCalibratedError();
     },
 
     async close() {
