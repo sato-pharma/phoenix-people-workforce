@@ -606,11 +606,12 @@ function runServiceReviewFixTests() {
   assert.match(db, /\n\s*week_passed: \{ status: 409, message: "[^"]+" \},\n/, "the database's week_passed refusal reads as a sentence");
   assert.match(db, /photo_expired: \{ status: 409, message: "This photo was taken more than 2 hours ago\. Take a new photo\." \}/);
 
-  // The product list is paged on its key, never cut at the database's per-answer row cap.
+  // The product list is paged on its key, never cut at the database's per-answer row cap. product_name
+  // rides along so the pharmacy-stock check can group the products under their family.
   const products = source("src/lib/phoenix-crm/server/products.ts");
   assert.match(
     products,
-    /fetchAllRowsKeyset<Record<string, unknown>>\(\s*\(\) => getSupabaseAdmin\(\)\.from\("source_of_sales_products"\)\.select\("product_code, family, line"\)\.eq\("active", true\),\s*\{ cursorColumn: "product_code",/,
+    /fetchAllRowsKeyset<Record<string, unknown>>\(\s*\(\) => getSupabaseAdmin\(\)\.from\("source_of_sales_products"\)\.select\("product_code, product_name, family, line"\)\.eq\("active", true\),\s*\{ cursorColumn: "product_code",/,
     "the product families come from every active product",
   );
   assert.doesNotMatch(products, /\.limit\(/, "no fixed cap on the product list");

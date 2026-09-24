@@ -179,6 +179,52 @@ function availabilitySplit(map: Record<string, ProductAvailability>): { has: str
   return { has, missing };
 }
 
+// One product's Has / Doesn't-have answer in the pharmacy-stock check. Tapping the answer it already
+// carries clears it back to unanswered, so a mistaken tap is undone without a third button.
+function AvailabilityRow({
+  product,
+  answer,
+  disabled,
+  onSet,
+}: {
+  product: string;
+  answer: ProductAvailability | undefined;
+  disabled: boolean;
+  onSet: (product: string, answer: ProductAvailability) => void;
+}) {
+  return (
+    <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 border border-slate-200 bg-white px-3 py-2">
+      <span className="min-w-0 flex-1 break-words text-sm font-black text-slate-700">{product}</span>
+      <div className="flex shrink-0 flex-wrap gap-1.5">
+        <button
+          aria-pressed={answer === "has"}
+          className={cn(
+            "min-h-9 min-w-0 break-words rounded-none border px-3 py-1 text-sm font-black transition disabled:cursor-not-allowed disabled:opacity-50",
+            answer === "has" ? "border-emerald-600 bg-emerald-600 text-white" : "border-slate-200 bg-white text-slate-600 hover:border-emerald-300",
+          )}
+          disabled={disabled}
+          onClick={() => onSet(product, "has")}
+          type="button"
+        >
+          Has
+        </button>
+        <button
+          aria-pressed={answer === "missing"}
+          className={cn(
+            "min-h-9 min-w-0 break-words rounded-none border px-3 py-1 text-sm font-black transition disabled:cursor-not-allowed disabled:opacity-50",
+            answer === "missing" ? "border-rose-500 bg-rose-500 text-white" : "border-slate-200 bg-white text-slate-600 hover:border-rose-300",
+          )}
+          disabled={disabled}
+          onClick={() => onSet(product, "missing")}
+          type="button"
+        >
+          Doesn&apos;t have
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function PharmacyLines({ visit }: { visit: VisitRow }) {
   const { has, missing } = availabilitySplit(visit.productAvailability);
   if (!visit.pharmacyName && has.length === 0 && missing.length === 0) return null;
@@ -764,6 +810,9 @@ function AddVisit({
   const [products, setProducts] = useState<string[]>([]);
   const [pharmacyName, setPharmacyName] = useState("");
   const [availability, setAvailability] = useState<Record<string, ProductAvailability>>({});
+  // Which families in the pharmacy-stock check are expanded to show their concentrations. A family
+  // with a single product is never a group, so it is never in here; the rest start collapsed.
+  const [openFamilies, setOpenFamilies] = useState<Set<string>>(() => new Set());
   const [comment, setComment] = useState("");
   const [photo, setPhoto] = useState<CapturedPhoto | null>(null);
   const [usePlacePhoto, setUsePlacePhoto] = useState(Boolean(handoff?.photo));
@@ -836,6 +885,15 @@ function AddVisit({
       const next = { ...current };
       if (next[product] === answer) delete next[product];
       else next[product] = answer;
+      return next;
+    });
+  }
+
+  function toggleFamily(family: string) {
+    setOpenFamilies((current) => {
+      const next = new Set(current);
+      if (next.has(family)) next.delete(family);
+      else next.add(family);
       return next;
     });
   }
@@ -1082,40 +1140,40 @@ function AddVisit({
           <p className="text-sm font-black text-slate-800">Does this pharmacy have these products?</p>
           <p className="mt-0.5 text-xs font-semibold text-slate-500">Answer the ones you checked — leave the rest blank.</p>
           <div className="mt-2 grid min-w-0 gap-1.5">
-            {loaded.products.map((product) => {
-              const answer = availability[product];
+            {loaded.productFamilies.map((family) => {
+              // A family with one product is answered directly — nothing to expand.
+              if (family.products.length <= 1) {
+                const product = family.products[0] ?? family.family;
+                return <AvailabilityRow answer={availability[product]} disabled={saving} key={family.family} onSet={setStock} product={product} />;
+              }
+              // A family with several concentrations is a group: a header that expands to its products,
+              // with a badge of how many of them have been answered so far.
+              const open = openFamilies.has(family.family);
+              const answered = family.products.filter((product) => availability[product]).length;
               return (
-                <div
-                  className="flex min-w-0 flex-wrap items-center justify-between gap-2 border border-slate-200 bg-white px-3 py-2"
-                  key={product}
-                >
-                  <span className="min-w-0 flex-1 break-words text-sm font-black text-slate-700">{product}</span>
-                  <div className="flex shrink-0 flex-wrap gap-1.5">
-                    <button
-                      aria-pressed={answer === "has"}
-                      className={cn(
-                        "min-h-9 min-w-0 break-words rounded-none border px-3 py-1 text-sm font-black transition disabled:cursor-not-allowed disabled:opacity-50",
-                        answer === "has" ? "border-emerald-600 bg-emerald-600 text-white" : "border-slate-200 bg-white text-slate-600 hover:border-emerald-300",
-                      )}
-                      disabled={saving}
-                      onClick={() => setStock(product, "has")}
-                      type="button"
-                    >
-                      Has
-                    </button>
-                    <button
-                      aria-pressed={answer === "missing"}
-                      className={cn(
-                        "min-h-9 min-w-0 break-words rounded-none border px-3 py-1 text-sm font-black transition disabled:cursor-not-allowed disabled:opacity-50",
-                        answer === "missing" ? "border-rose-500 bg-rose-500 text-white" : "border-slate-200 bg-white text-slate-600 hover:border-rose-300",
-                      )}
-                      disabled={saving}
-                      onClick={() => setStock(product, "missing")}
-                      type="button"
-                    >
-                      Doesn&apos;t have
-                    </button>
-                  </div>
+                <div className="min-w-0 border border-slate-200 bg-white" key={family.family}>
+                  <button
+                    aria-expanded={open}
+                    className="flex min-h-11 w-full min-w-0 items-center justify-between gap-2 rounded-none px-3 py-2 text-left disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={saving}
+                    onClick={() => toggleFamily(family.family)}
+                    type="button"
+                  >
+                    <span className="flex min-w-0 items-center gap-2">
+                      <ChevronRight className={cn("h-4 w-4 shrink-0 text-slate-400 transition-transform", open && "rotate-90")} />
+                      <span className="min-w-0 break-words text-sm font-black text-slate-700">{family.family}</span>
+                    </span>
+                    <span className="shrink-0 text-xs font-black text-slate-500">
+                      {answered > 0 ? `${answered}/${family.products.length}` : `${family.products.length}`}
+                    </span>
+                  </button>
+                  {open ? (
+                    <div className="grid min-w-0 gap-1.5 border-t border-slate-100 p-2">
+                      {family.products.map((product) => (
+                        <AvailabilityRow answer={availability[product]} disabled={saving} key={product} onSet={setStock} product={product} />
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
               );
             })}
