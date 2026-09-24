@@ -93,6 +93,36 @@ const inTab = (row: DoctorListRow, tab: TabKey): boolean =>
   tab === "pharmacies" ? row.listType === "Pharmacy" : row.listType !== "Pharmacy";
 
 /**
+ * BRICK COLOUR — Phoenix CRM's List tab only, never Reps List or My List.
+ *
+ * The owner, 2026-09-24, asked for the bricks and the two tabs to carry colour so a long list is
+ * readable as blocks rather than one grey run. It is OFF by default (`brickColor`) precisely because
+ * this file's colour budget is deliberately tiny — see "The colour budget" below — and the boards
+ * that already spend it must not gain a tenth hue.
+ *
+ * WHAT IS EXCLUDED, AND WHY: amber (an unmapped locality, and the B grade), violet (a shared
+ * customer), orange (a link), rose (the A grade). Each already means something on a row, and a block
+ * wash in the same hue would give one colour two meanings — the exact fault the budget note warns
+ * about. Confidence's emerald/amber pair is free here only because a board that spends brick colour
+ * is a board with NO confidence column (`rowActions` replaces it).
+ *
+ * It lands on the block HEADING and the tab, never on a row: the row already carries the shared and
+ * neighbourhood washes, and a third background there would answer no question at all.
+ */
+const BRICK_TINTS = [
+  { bar: "border-l-sky-500", fill: "bg-sky-50", tab: "border-sky-500" },
+  { bar: "border-l-emerald-500", fill: "bg-emerald-50", tab: "border-emerald-500" },
+  { bar: "border-l-indigo-500", fill: "bg-indigo-50", tab: "border-indigo-500" },
+  { bar: "border-l-teal-500", fill: "bg-teal-50", tab: "border-teal-500" },
+  { bar: "border-l-fuchsia-500", fill: "bg-fuchsia-50", tab: "border-fuchsia-500" },
+  { bar: "border-l-cyan-500", fill: "bg-cyan-50", tab: "border-cyan-500" },
+  { bar: "border-l-lime-500", fill: "bg-lime-50", tab: "border-lime-500" },
+  { bar: "border-l-stone-500", fill: "bg-stone-100", tab: "border-stone-500" },
+] as const;
+
+type BrickTint = (typeof BRICK_TINTS)[number];
+
+/**
  * The List filter now lives INSIDE the Contacts tab and offers only the two lists that tab holds.
  * Leaving "Pharmacists only" in it would let a viewer select an option that empties the tab by
  * definition — a control whose only effect is to produce "nothing matches" is a trap, not a filter.
@@ -130,6 +160,20 @@ const specialityOf = (row: DoctorListRow): string => row.speciality?.trim() || U
 
 /** A group's stable key — the brick id when it has one, else its locality name. */
 const groupKey = (group: RepsListGroup): string => group.brickId ?? `region:${group.heading}`;
+
+/**
+ * A brick's colour, keyed off its place in the WHOLE list rather than the filtered one.
+ *
+ * Indexing the visible groups would repaint every block as a filter narrows the board — a brick that
+ * changes colour as you search is not a brick anyone can learn.
+ */
+function brickTintsFor(groups: readonly RepsListGroup[]): Map<string, BrickTint> {
+  const tints = new Map<string, BrickTint>();
+  groups.forEach((group, index) => {
+    tints.set(groupKey(group), BRICK_TINTS[index % BRICK_TINTS.length]);
+  });
+  return tints;
+}
 
 /**
  * "12 contacts · 3 pharmacies", or just the contacts when a group holds no pharmacies.
@@ -238,14 +282,20 @@ function matches(row: RepsListContact, needle: string): boolean {
   return haystack.includes(needle);
 }
 
-function GroupHeading({ group, shown }: { group: RepsListGroup; shown: number }) {
+function GroupHeading({ group, shown, tint }: { group: RepsListGroup; shown: number; tint?: BrickTint | null }) {
   // A mapped brick and an unmapped locality are visually distinct because they mean different
   // things: the first is a real territory, the second is a locality nobody has mapped to one yet.
   // Same shape, different tone — never a hidden row and never an identical-looking one.
+  //
+  // THE BRICK COLOUR NEVER REACHES AN UNMAPPED BLOCK. Amber here is a statement — "nobody has mapped
+  // this locality yet" — and painting it the next hue in the rotation would delete that statement to
+  // make the page prettier. A tinted block keeps the same square edges and the same 1px rules; the
+  // colour is a left bar and a wash, never a new shape.
+  const mappedTone = tint ? `border-slate-200 border-l-4 ${tint.bar} ${tint.fill}` : "border-slate-200 bg-slate-50";
   return (
     <div
       className={`flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-y px-5 py-2.5 ${
-        group.mapped ? "border-slate-200 bg-slate-50" : "border-amber-200 bg-amber-50"
+        group.mapped ? mappedTone : "border-amber-200 bg-amber-50"
       }`}
     >
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
@@ -842,13 +892,24 @@ function GroupTable({
   group,
   onOpenConfidence,
   onOpenInsights,
+  rowActions,
   rows,
+  showConfidence,
   showList,
 }: {
   group: RepsListGroup;
   onOpenConfidence: (row: RepsListContact) => void;
   onOpenInsights: (row: RepsListContact) => void;
+  /**
+   * Phoenix CRM only. The CRM's own row buttons — Validate, Add a visit, Open — rendered in the
+   * column Confidence otherwise occupies. It is a swap, never an extra column: the golden rule is
+   * that this table never scrolls sideways, and the colgroup below is measured to the pixel, so an
+   * Actions column that ADDED width would be the exact bug those measurements exist to stop.
+   */
+  rowActions?: (row: RepsListContact) => ReactNode;
   rows: RepsListContact[];
+  /** False in the CRM, where the owner asked for the confidence column to go (2026-09-24). */
+  showConfidence: boolean;
   /** False on the Pharmacies tab, where every row's list is "Pharmacist" and the column says nothing. */
   showList: boolean;
 }) {
@@ -915,7 +976,11 @@ function GroupTable({
             <AddressCell locality={row.region} row={row} />
           </div>
           <div className="mt-2">
-            <ConfidenceChip onOpen={() => onOpenConfidence(row)} row={row} />
+            {showConfidence ? (
+              <ConfidenceChip onOpen={() => onOpenConfidence(row)} row={row} />
+            ) : (
+              rowActions?.(row)
+            )}
           </div>
         </PortalRecordCard>
       )}
@@ -947,7 +1012,15 @@ function GroupTable({
                 bilingual strings and the neighbours sentence, and so the one that actually spends
                 width. Nothing is hidden by the drop: the tab heading already says what the list is.
 
-                Both tabs total 100%: 21+13+13+11+16+26 with List, 21+13+11+16+39 without. */}
+                Both tabs total 100%: 21+13+13+11+16+26 with List, 21+13+11+16+39 without.
+
+                IN PHOENIX CRM THE CONFIDENCE COLUMN BECOMES ACTIONS, IN PLACE. The owner asked for
+                the confidence column to go and for Validate · Add a visit · Open to be there instead
+                (2026-09-24). Reusing its 16% rather than appending a seventh column is deliberate:
+                every percentage here was measured in a browser, they total exactly 100, and adding a
+                column would reopen the arithmetic on both tabs at once. "Actions" is also a shorter
+                unbreakable word than "Confidence", so the header that forced 16% in the first place
+                is the one being removed — the column cannot be tighter than it already is. */}
             <colgroup>
               <col className="w-[21%]" />
               <col className="w-[13%]" />
@@ -962,7 +1035,7 @@ function GroupTable({
                 <th className={THEAD}>Specialty</th>
                 {showList ? <th className={THEAD}>List</th> : null}
                 <th className={THEAD}>Brick</th>
-                <th className={THEAD}>Confidence</th>
+                <th className={THEAD}>{showConfidence ? "Confidence" : "Actions"}</th>
                 <th className={THEAD}>Address</th>
               </tr>
             </thead>
@@ -989,7 +1062,11 @@ function GroupTable({
                       {brickCell}
                     </td>
                     <td className="px-3 py-2">
-                      <ConfidenceChip onOpen={() => onOpenConfidence(row)} row={row} />
+                      {showConfidence ? (
+                        <ConfidenceChip onOpen={() => onOpenConfidence(row)} row={row} />
+                      ) : (
+                        rowActions?.(row)
+                      )}
                     </td>
                     {/* The neighbourhood colour lands HERE and nowhere else — the owner put it on
                         the address column, and at ~45% of located rows a row-level wash would
@@ -1017,9 +1094,11 @@ function GroupTable({
 export function RepsListContacts({
   activityAvailable,
   activityMonthLabel,
+  brickColor = false,
   exportTitle = "Reps List",
   groups,
   repName,
+  rowActions,
 }: {
   /** False when the month's plan and visits could not be read. The chip, the filter and the export
    * columns all disappear together — a half-present column is worse than an absent one. */
@@ -1027,11 +1106,26 @@ export function RepsListContacts({
   /** "August 2026". Names the window in the filter label and in the export header, so a saved file
    * can never be read against the wrong month. */
   activityMonthLabel: string;
+  /**
+   * Phoenix CRM only. Gives each brick block, and the two tabs, their own hue — the owner asked for
+   * "the tabs coloured the same bricks" (2026-09-24). OFF everywhere else, so My List, the manager
+   * Reps List and the Weekly Plans tab are untouched by it.
+   */
+  brickColor?: boolean;
   /** The download's sheet name and title — "My List" on a rep's own page, so the file says what it is. */
   exportTitle?: string;
   groups: RepsListGroup[];
   repName: string;
+  /**
+   * Phoenix CRM only. Renders the CRM's own buttons on a row — Validate, Add a visit, Open. PASSING
+   * IT REMOVES THE CONFIDENCE COLUMN, which is the owner's instruction on the same day and not a
+   * side effect worth hiding: the actions take that column's place rather than being added beside
+   * it, so the table's measured widths never move. The confidence dialog and the three confidence
+   * export columns go with it — a download that still scored every row would contradict the screen.
+   */
+  rowActions?: (row: RepsListContact) => ReactNode;
 }) {
+  const showConfidence = !rowActions;
   // Five filters, all client-side: brick, list, grade, specialty and free text. The owner asked for
   // them on 2026-09-01 — "filter by grade, or by specialty, or by AM or PM or pharmacist, or by
   // brick". They compose rather than replace each other, so "grade A neurologists in Smouha" is one
@@ -1066,6 +1160,10 @@ export function RepsListContacts({
   }, []);
 
   const allRows = useMemo(() => groups.flatMap((group) => group.rows), [groups]);
+  // Built from ALL the groups, never from the visible ones: a brick must keep the same hue when a
+  // filter narrows the board or the tab changes, or the colour stops naming the brick and starts
+  // naming its position in whatever is on screen — which is worse than no colour at all.
+  const tints = useMemo(() => (brickColor ? brickTintsFor(groups) : new Map<string, BrickTint>()), [brickColor, groups]);
   // THE TAB IS A PARTITION, NOT A FILTER, and everything below reads from `tabRows` because of it.
   // Picker options are still built from the whole of what the tab holds rather than from the
   // currently narrowed rows — options that vanish as you narrow make the controls feel broken — but
@@ -1177,15 +1275,20 @@ export function RepsListContacts({
           contact figure is the whole point, not a subtitle. `flex-wrap` keeps them side by side on a
           phone at 375px rather than introducing the sideways scroll the golden rule bans. */}
       <div className="flex flex-wrap gap-2 border-b border-slate-200" role="tablist">
-        {TABS.map((entry) => {
+        {TABS.map((entry, index) => {
           const active = tab === entry.key;
+          // "I need the tabs to be coloured the same bricks" (owner, 2026-09-24) — the tabs take
+          // their hue from the SAME palette the brick blocks use, so the two halves of the screen
+          // speak one colour language. It is the palette that is shared, not a particular brick's
+          // colour: a tab holds many bricks, so borrowing one brick's hue would say something false
+          // about the other forty. Off everywhere but Phoenix CRM, where orange stays the accent.
+          const tabTint = brickColor ? BRICK_TINTS[index % BRICK_TINTS.length] : null;
+          const activeTone = tabTint ? `${tabTint.tab} ${tabTint.fill} text-slate-900` : "border-orange-500 text-slate-900";
           return (
             <button
               aria-selected={active}
               className={`-mb-px border-b-2 px-3 py-2 text-left ${
-                active
-                  ? "border-orange-500 text-slate-900"
-                  : "border-transparent text-slate-400 hover:border-slate-300 hover:text-slate-600"
+                active ? activeTone : "border-transparent text-slate-400 hover:border-slate-300 hover:text-slate-600"
               }`}
               key={entry.key}
               onClick={() => chooseTab(entry.key)}
@@ -1325,9 +1428,16 @@ export function RepsListContacts({
                 ]
               : []),
             { key: "map", label: "Map (lat, lon)" },
-            { key: "confidence", label: "Location confidence %" },
-            { key: "confidence_verdict", label: "Confidence verdict" },
-            { key: "confidence_visits", label: "Check-ins behind the score" },
+            // Dropped in Phoenix CRM for the same reason the column is: the owner asked for the
+            // confidence judgement to go, and a download that still carried it would contradict the
+            // screen it was taken from.
+            ...(showConfidence
+              ? [
+                  { key: "confidence", label: "Location confidence %" },
+                  { key: "confidence_verdict", label: "Confidence verdict" },
+                  { key: "confidence_visits", label: "Check-ins behind the score" },
+                ]
+              : []),
             { key: "shared_with", label: "Shared with" },
             { key: "nearby", label: "Same address as" },
           ]}
@@ -1366,12 +1476,14 @@ export function RepsListContacts({
         <div className="border border-slate-200">
           {visible.map((entry) => (
             <div key={groupKey(entry.group)}>
-              <GroupHeading group={entry.group} shown={entry.rows.length} />
+              <GroupHeading group={entry.group} shown={entry.rows.length} tint={tints.get(groupKey(entry.group))} />
               <GroupTable
                 group={entry.group}
                 onOpenConfidence={openConfidence}
                 onOpenInsights={openInsights}
+                rowActions={rowActions}
                 rows={entry.rows}
+                showConfidence={showConfidence}
                 showList={tab === "contacts"}
               />
             </div>
@@ -1379,7 +1491,7 @@ export function RepsListContacts({
         </div>
       )}
 
-      {confidenceFor ? <ConfidenceDialog onClose={closeConfidence} row={confidenceFor} /> : null}
+      {showConfidence && confidenceFor ? <ConfidenceDialog onClose={closeConfidence} row={confidenceFor} /> : null}
       {insightsFor ? <InsightsDialog onClose={closeInsights} row={insightsFor} /> : null}
     </div>
   );

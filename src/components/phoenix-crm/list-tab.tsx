@@ -18,6 +18,8 @@ import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import { Plus, Search } from "lucide-react";
 
+import { RepsListTiles } from "@/components/crm/reps-list-board";
+import { RepsListContacts } from "@/components/crm/reps-list-tables";
 import { useCrmGet } from "@/components/phoenix-crm/api";
 import { cairoStamp, countText, dayLabelWithYear, plural } from "@/components/phoenix-crm/format";
 import {
@@ -38,6 +40,7 @@ import {
   EditDetailsScreen,
   EditPlaceScreen,
   GradeScreen,
+  listBoardUrl,
   listUrl,
   placesDaysText,
   SavedScreen,
@@ -71,6 +74,8 @@ import {
   crmThClassName,
 } from "@/components/phoenix-crm/ui";
 import type { PendingValidate, PendingVisit } from "@/components/phoenix-crm/visits-tab";
+import type { RepsListContact } from "@/lib/crm/reps-list";
+import type { RepsListBoard } from "@/lib/crm/reps-list-board";
 import { weekdayOfIsoDay } from "@/lib/phoenix-crm/calendar";
 import {
   formatTimingWindow,
@@ -83,7 +88,7 @@ import type { PhoenixCrmListType, PhoenixCrmSeason, PhoenixCrmTiming } from "@/l
 import type { ListCustomer, ListPlace, TerritoryListView } from "@/lib/phoenix-crm/view-types";
 import { cn } from "@/lib/utils";
 
-type ListSection = "validate" | "customers" | "timetable" | "requests" | "left";
+type ListSection = "board" | "validate" | "customers" | "timetable" | "requests" | "left";
 type TypeFilter = "all" | PhoenixCrmListType;
 
 /** Accounts first, then doctors, the way the rep's day starts. */
@@ -466,14 +471,18 @@ function ListHome({
   const waiting = view.requests.filter((request) => request.status === "pending");
   const hasReference = view.reference.length > 0 || pending.length > 0;
 
+  // The board is where the list opens (owner, 2026-09-24: "I don't need the My List separated, I need
+  // it in Phoenix CRM"), unless something is actually waiting on the rep or the manager — a validation
+  // to finish or a request to decide outranks a reading view, as it did before the board arrived.
   const defaultSection: ListSection =
-    view.canEdit && pending.length > 0 ? "validate" : view.canReview && waiting.length > 0 ? "requests" : "customers";
-  const current: ListSection = section === "validate" && !hasReference ? "customers" : (section ?? defaultSection);
+    view.canEdit && pending.length > 0 ? "validate" : view.canReview && waiting.length > 0 ? "requests" : "board";
+  const current: ListSection = section === "validate" && !hasReference ? "board" : (section ?? defaultSection);
 
   const needle = query.trim().toLowerCase();
   const typeMatches = (listType: PhoenixCrmListType) => typeFilter === "all" || typeFilter === listType;
 
   const sectionOptions = [
+    { value: "board" as const, label: "The list", note: "By brick · AM · PM · pharmacies" },
     ...(hasReference
       ? [{ value: "validate" as const, label: "To validate", note: pending.length > 0 ? `${countText(pending.length)} to go` : "All done" }]
       : []),
@@ -512,7 +521,10 @@ function ListHome({
         <CrmChoice columns={3} label="Which part of the list" onChange={setSection} options={sectionOptions} value={current} />
       </CrmBlock>
 
-      {current !== "requests" ? (
+      {/* The board brings its own six filters — brick, list, grade, specialty, activity and a search
+          box — so this pair is hidden there rather than sitting above them doing the same job with
+          different words. Two search boxes on one screen is a question about which one is live. */}
+      {current !== "requests" && current !== "board" ? (
         <CrmBlock className="border-t border-slate-100">
           <div className="grid min-w-0 gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] md:items-end">
             <CrmField htmlFor="phoenix-crm-list-search" label="Find a customer">
@@ -544,6 +556,10 @@ function ListHome({
             </CrmField>
           </div>
         </CrmBlock>
+      ) : null}
+
+      {current === "board" ? (
+        <BoardSection onOpen={onOpen} onStartVisit={onVisitCustomer} seatId={seatId} test={test} view={view} />
       ) : null}
 
       {current === "validate" ? (
@@ -605,6 +621,138 @@ function customerMatches(needle: string, customer: ListCustomer): boolean {
     customer.reference?.zone ?? null,
     ...customer.places.flatMap((place) => [place.label, place.address, place.zone, place.brickName]),
   ]);
+}
+
+// ── The list, as the board holds it ─────────────────────────────────────────────────────────────
+
+/**
+ * My List, inside Phoenix CRM — grouped by brick, contacts and pharmacies on their own tabs, with
+ * the CRM's own buttons on every row.
+ *
+ * Owner, 2026-09-24: "I don't need the My List separated, I need it in Phoenix CRM. The same, exactly
+ * the same — but have the options of validate, or add visit, or open... the breakdown of the PM list
+ * and the AM, pharmacies and bricks... when there are visits I need the breakdown to be also not
+ * visited... two tabs, contacts and pharmacies... the tabs coloured the same bricks... the insights
+ * showing. I don't need the confidence column."
+ *
+ * TWO READS OF ONE TERRITORY, JOINED ON THE CONTACT'S CRM ID. The board (`/list/board`) is the
+ * iReports360 mirror: it knows the bricks, the pharmacies, and who has not been visited this month.
+ * The CRM list (`/list`, already loaded above) is what a rep can act on: which customers are pending,
+ * which are validated, and the ids the Validate and Open screens take. Neither can answer the other's
+ * question, which is why both are read rather than one being taught to do both jobs.
+ */
+function BoardSection({
+  onOpen,
+  onStartVisit,
+  seatId,
+  test,
+  view,
+}: {
+  onOpen: (screen: ListScreen) => void;
+  onStartVisit?: (customer: ListCustomer) => void;
+  seatId: string;
+  test: boolean;
+  view: TerritoryListView;
+}) {
+  const resource = useCrmGet<RepsListBoard | null>(listBoardUrl(seatId, test), "board");
+  const board = resource.data;
+
+  // The join. A pending customer carries the iReports360 contact id he was minted from, and that is
+  // the same id the board rows are keyed on — so a board row finds its CRM customer, or finds none
+  // and says so rather than showing a button that would open nothing.
+  const byContact = new Map<number, ListCustomer>();
+  for (const customer of view.customers) {
+    if (customer.referenceContactCrmId !== null) byContact.set(customer.referenceContactCrmId, customer);
+  }
+
+  if (!board?.list) {
+    return (
+      <CrmBlock className="border-t border-slate-100">
+        {resource.error ? (
+          <CrmLoadError message={resource.error} onRetry={resource.reload} />
+        ) : resource.loading ? (
+          <CrmLoading label="Loading the list" />
+        ) : (
+          // Not an error and not an empty list: the seat has nobody in it, so there is no rep whose
+          // list this would be. Saying that is the finding — "no contacts" would blame the CRM.
+          <CrmEmpty
+            message="The brick view belongs to the rep holding the seat. Nobody holds this one, so there is no list to group. The customers themselves are under Customers, unchanged."
+            title="No rep in this territory"
+          />
+        )}
+      </CrmBlock>
+    );
+  }
+
+  /**
+   * The three buttons, on a row.
+   *
+   * A PHARMACY GETS OPEN ALONE (owner's choice, 2026-09-24). The CRM's list is accounts and doctors —
+   * it holds no pharmacies at all — so there is no customer to validate and no visit screen that
+   * would take one. Rather than print three buttons that refuse, the cell says where the row came
+   * from. The pharmacies are on the board because the owner asked to see them, and seeing them is
+   * what the tab is for.
+   */
+  const rowActions = (row: RepsListContact) => {
+    const customer = byContact.get(row.contactCrmId);
+    if (!customer) {
+      return (
+        <p className="text-phx-2xs font-semibold text-slate-400">
+          {row.listType === "Pharmacy" ? "Pharmacy · not on the CRM list" : "Not on the CRM list yet"}
+        </p>
+      );
+    }
+    const pending = customer.status === "pending";
+    return (
+      <div className="flex flex-wrap gap-1.5">
+        {/* Validate only where there is something to validate and the viewer is the rep. A manager
+            reading his rep's list sees Open alone, which is exactly what he can do. */}
+        {pending && view.canEdit && customer.referenceContactCrmId !== null ? (
+          <CrmButton
+            onClick={() => onOpen({ name: "validate", contactCrmId: customer.referenceContactCrmId as number })}
+            size="sm"
+            variant="primary"
+          >
+            Validate
+          </CrmButton>
+        ) : null}
+        {onStartVisit && customer.status !== "dropped" ? (
+          <CrmButton onClick={() => onStartVisit(customer)} size="sm">
+            Add a visit
+          </CrmButton>
+        ) : null}
+        <CrmButton onClick={() => onOpen({ name: "customer", customerId: customer.customerId })} size="sm">
+          Open
+        </CrmButton>
+      </div>
+    );
+  };
+
+  return (
+    <div className="border-t border-slate-100">
+      {/* THE WINDOW, PRINTED ABOVE THE NUMBERS IT SCORES — the same sentence the board prints, for
+          the same reason: on the 2nd of a month almost every contact is legitimately unvisited, and
+          "Not visited 84" with no window under it reads as a collapse in coverage. */}
+      <p className="px-5 pt-4 text-phx-2xs font-semibold text-slate-500">
+        {board.activityAvailable
+          ? `Visits and plan counted from ${board.activityMonth}-01 to ${board.activityAsOf} Cairo.`
+          : "The plan and visits for this month could not be read, so no activity is shown beside the contacts. The list below is complete and unaffected by that."}
+      </p>
+      <RepsListTiles board={board} list={board.list} />
+      <RepsListContacts
+        activityAvailable={board.activityAvailable}
+        activityMonthLabel={board.activityMonthLabel}
+        brickColor
+        exportTitle="Customer list"
+        groups={board.list.groups}
+        // The name heading the download, by NAME and never a seat code (owner's standing rule). The
+        // territory is the fallback for a seat whose occupant could not be named, so the file always
+        // says whose list it is.
+        repName={view.territory.repName ?? view.territory.name}
+        rowActions={rowActions}
+      />
+    </div>
+  );
 }
 
 function ReadinessBlock({ pending, view }: { pending: ReadonlyArray<ListCustomer>; view: TerritoryListView }) {
