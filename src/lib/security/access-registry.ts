@@ -1439,12 +1439,25 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/spotlight/cheques", permission: { resource: "spotlight", action: "export" } }),
   sessionApi({ audit: { classification: "mutation", required: true }, csrfRequired: true, methods: ["GET", "PUT", "DELETE"], pattern: "/api/spotlight/cheques/signature", permission: { resource: "spotlight", action: "export" } }),
   // ── Milestones ───────────────────────────────────────────────────────────────────────────────
-  // The service-anniversary keepsake. Super Admin and CEO only, for the same reason as Spotlight
-  // directly above: the due list reads every active employee's hire date with no scope narrowing,
-  // and the card pulls a named person's photograph out of the private `employee-photos` bucket
-  // onto a sheet built to be printed and handed around. That is a publishing right.
+  // The service-anniversary keepsake. SUPER ADMIN ONLY — the owner narrowed it from Super Admin +
+  // CEO on 2026-09-23 ("make it only super admin. None either uh, CEO"). The due list reads every
+  // active employee's hire date with no scope narrowing, and the card pulls a named person's
+  // photograph out of the private `employee-photos` bucket onto a sheet built to be printed and
+  // handed around. That is a publishing right.
   sessionApi({ methods: ["GET"], pattern: "/api/milestones/due", permission: { resource: "milestones", action: "read" } }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/milestones/card", permission: { resource: "milestones", action: "export" } }),
+  // A whole window of cards as one PDF, one card per page. Same publishing right as the single card,
+  // and a mutation (it records a print row per card), so csrfRequired. Prints from the record only —
+  // it carries no handed-in photograph.
+  sessionApi({ audit: { classification: "export", required: true }, csrfRequired: true, methods: ["POST"], pattern: "/api/milestones/batch", permission: { resource: "milestones", action: "export" } }),
+  // The acknowledgement that stops the daily reminder: opening the page marks the current window
+  // seen. A mutation (it writes milestone_notice_marks), so csrfRequired; gated on read, since
+  // seeing who is coming up is the same right as reading the due list.
+  sessionApi({ audit: { classification: "mutation", required: true }, csrfRequired: true, methods: ["POST"], pattern: "/api/milestones/seen", permission: { resource: "milestones", action: "read" } }),
+  // The print history — who was congratulated, when, by whom — as JSON for the view and as an .xlsx
+  // download. A read of the append-only log (a record, not a control), so gated on read like the due
+  // list; GET, so no CSRF.
+  sessionApi({ methods: ["GET"], pattern: "/api/milestones/history", permission: { resource: "milestones", action: "read" } }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/sales/monthly-closing/performance-review", permission: { resource: "sales", action: "import" } }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/sales/monthly-closing/performance-review/export", permission: [{ resource: "sales", action: "import" }, { resource: "sales", action: "export" }], csrfExemptReason: "Read-only export, Super Admin and SFE Manager only: re-reads the closing for the requested line+period and serialises the rep ranking, family, by-product and by-area views to XLSX; performs no mutation." }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/sales/customer-directory/export", permission: { resource: "sales", action: "export" }, csrfExemptReason: "Read-only export: re-runs the directory query under the caller's filters and serialises it to a styled XLSX; performs no mutation." }),

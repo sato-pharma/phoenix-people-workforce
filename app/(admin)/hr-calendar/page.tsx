@@ -22,8 +22,13 @@ export default async function HrCalendarPage() {
     initialError = hrCalendarErrorMessage(error);
   }
 
+  // Printing a milestone card is Super Admin only (the milestones gate). The calendar chips link
+  // there only for someone who holds it; everyone else sees the same events without a link.
+  const canPrintCards = await canAccess(access, "milestones", "export");
+
   return (
     <HrCalendar
+      canPrintCards={canPrintCards}
       initialData={initialData}
       initialError={initialError}
     />

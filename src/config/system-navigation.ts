@@ -1338,16 +1338,17 @@ export const adminNavigationSectionSeeds = [
     ],
     label: "Spotlight",
   },
-  // Milestones: the service-anniversary keepsake. Same two holders as Spotlight above, for the same
-  // reason — it reads every active employee's hire date with no scope narrowing and prints a sheet
-  // carrying a named person's photograph, which is a publishing right rather than a reading one.
+  // Milestones: the service-anniversary and birthday keepsake. SUPER ADMIN ALONE — not the same
+  // holders as Spotlight above, since the owner narrowed this one himself on 2026-09-23 ("make it
+  // only super admin. None either uh, CEO"). The roles here must match the matrix exactly or
+  // `tests/nav-roles-name-only-permission-holders.test.ts` goes red, which is the point of it.
   //
   // ⚠ THIS ENTRY IS UX, NOT THE GATE. `/api/milestones/{due,card}` each assert `milestones`
   // themselves; hiding the link here protects nothing on its own.
   {
     id: "people-milestones-module",
     items: [
-      { href: "/milestones", icon: Award, label: "Milestones", permissions: [{ action: "read", resource: "milestones" }], roles: ["Super Admin", "CEO"] },
+      { href: "/milestones", icon: Award, label: "Milestones", permissions: [{ action: "read", resource: "milestones" }], roles: ["Super Admin"] },
     ],
     label: "Milestones",
   },
