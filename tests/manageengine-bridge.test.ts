@@ -199,6 +199,45 @@ async function runDeviceTests() {
   assert.equal(device.lostMode, true, "lost_mode_status 1 reads as lost mode on");
   assert.equal(device.lastContactAt, new Date(1_700_000_000_000).toISOString(), "epoch-ms last contact becomes ISO");
 
+  // The live tenant shape (confirmed 2026-09-24): imei is an ARRAY, is_lost_mode_enabled is a real
+  // BOOLEAN, and the holder is a NESTED user object — a flat string read misses all three.
+  resetManageEngineTokenCache();
+  const liveShape = makeFetch({
+    api: [
+      {
+        status: 200,
+        body: {
+          devices: [
+            {
+              device_id: "243158000000130009",
+              device_name: "it.satopharma_TB328XU",
+              product_name: "TB328XU",
+              serial_number: "HA251XLS",
+              imei: ["865569071549107"],
+              platform_type: "android",
+              os_version: "12",
+              is_lost_mode_enabled: false,
+              last_contact_time: "1700000000000",
+              user: { user_name: "IT Satopharma", user_email: "it.satopharma@gmail.com", user_id: "9" },
+            },
+          ],
+        },
+      },
+    ],
+  });
+  const [live] = await listManageEngineDevices(liveShape.fetch, ENV);
+  assert.equal(live.imei, "865569071549107", "an imei array is read as its first element");
+  assert.equal(live.lostMode, false, "a boolean is_lost_mode_enabled=false reads as lost mode off");
+  assert.equal(live.userName, "IT Satopharma", "the holder name is read from the nested user object");
+  assert.equal(live.userEmail, "it.satopharma@gmail.com", "the holder email is read from the nested user object");
+  assert.equal(live.model, "TB328XU", "product_name is accepted as the model");
+  assert.equal(live.isAndroid, true, "platform_type 'android' reads as Android");
+  assert.equal(
+    matchManageEngineToRegister(live, [register({ assetTag: "PHX-TAB-0002", imei: "865569071549107" })])?.assetTag,
+    "PHX-TAB-0002",
+    "the array-sourced imei still matches the register",
+  );
+
   // Register matching: serial first, then IMEI, both on digits/case-insensitively.
   const bySerial: ManageEngineDevice = { ...device, imei: null };
   assert.equal(

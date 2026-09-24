@@ -8,9 +8,11 @@
  * DEFENSIVE FIELD READING. ManageEngine's device JSON uses different key spellings across versions
  * and platforms (`device_id`/`resource_id`/`udid`, `device_name`/`model`, `last_contact_time` in ms).
  * Rather than pin one spelling, each field is read from a small list of candidates and the raw record
- * is kept so a value that does not map is visible in one place. 🔴 The exact spellings are confirmed
- * against a live response before this ships — the candidate lists are the documented shape, not a
- * guarantee of this tenant's.
+ * is kept so a value that does not map is visible in one place. The candidate lists were CONFIRMED
+ * against this tenant's live `GET /api/v1/mdm/devices` response on 2026-09-24, which showed three
+ * shapes a flat string read misses: `imei` arrives as an ARRAY (`["8655…"]`), `is_lost_mode_enabled`
+ * is a real BOOLEAN, and the holder is a NESTED `user` object (`{ user_name, user_email }`). The
+ * readers below handle those alongside the documented flat spellings.
  */
 
 import { normalizeImei, normalizeSerial, imeisMatch } from "@/lib/devices/device-identity";
@@ -35,6 +37,46 @@ function pickNumber(record: RawRecord, keys: readonly string[]): number | null {
     if (typeof value === "string" && value.trim() && Number.isFinite(Number(value))) return Number(value);
   }
   return null;
+}
+
+/** Like {@link pickString}, but also reads the FIRST usable element when the value is an array —
+ * this tenant returns `imei` as `["865569071549107"]`, while the docs show a bare string. */
+function pickStringOrFirst(record: RawRecord, keys: readonly string[]): string | null {
+  for (const key of keys) {
+    const value = record[key];
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        if (typeof item === "string" && item.trim()) return item.trim();
+        if (typeof item === "number" && Number.isFinite(item)) return String(item);
+      }
+      continue;
+    }
+    if (typeof value === "string" && value.trim()) return value.trim();
+    if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  }
+  return null;
+}
+
+/** A flag that ManageEngine sends as a real boolean (`is_lost_mode_enabled`) on some records and as a
+ * "1"/"0" or "true"/"false" string on others. Returns null when no candidate key is present. */
+function pickBoolean(record: RawRecord, keys: readonly string[]): boolean | null {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "boolean") return value;
+    if (typeof value === "number" && Number.isFinite(value)) return value !== 0;
+    if (typeof value === "string" && value.trim()) {
+      const normalized = value.trim().toLowerCase();
+      if (["1", "true", "enabled", "on", "yes"].includes(normalized)) return true;
+      if (["0", "false", "disabled", "off", "no"].includes(normalized)) return false;
+    }
+  }
+  return null;
+}
+
+/** The nested `user` object ManageEngine attaches to a device (`{ user_name, user_email, … }`), or null. */
+function nestedUser(record: RawRecord): RawRecord | null {
+  const user = record.user;
+  return user && typeof user === "object" && !Array.isArray(user) ? (user as RawRecord) : null;
 }
 
 /** ManageEngine reports platform as a code; 2 is Android on the MDM API. */
@@ -80,22 +122,27 @@ export type ManageEngineDevice = {
 function normalizeDevice(record: RawRecord): ManageEngineDevice | null {
   const deviceId = pickString(record, ["device_id", "resource_id", "udid", "id"]);
   if (!deviceId) return null;
-  const lostRaw = pickString(record, ["lost_mode_status", "is_lost_mode", "lostmode"]);
-  const lostMode = lostRaw !== null && ["1", "true", "enabled", "on", "yes"].includes(lostRaw.toLowerCase());
+  const lostMode =
+    pickBoolean(record, ["is_lost_mode_enabled", "lost_mode_status", "is_lost_mode", "lostmode"]) ?? false;
+  const user = nestedUser(record);
   return {
     deviceId,
     enrollmentStatus: pickString(record, ["enrollment_status", "managed_status", "device_status"]),
-    imei: pickString(record, ["imei", "imei_number", "imei1"]),
+    imei: pickStringOrFirst(record, ["imei", "imei_number", "imei1"]),
     isAndroid: platformLabel(record).isAndroid,
     lastContactAt: lastContactIso(record),
     lostMode,
-    model: pickString(record, ["model", "model_name", "device_model"]),
+    model: pickString(record, ["model", "model_name", "device_model", "product_name"]),
     name: pickString(record, ["device_name", "name", "friendly_name"]) ?? deviceId,
     osVersion: pickString(record, ["os_version", "osversion", "product_version"]),
     platformLabel: platformLabel(record).label,
     serialNumber: pickString(record, ["serial_number", "serialnumber", "serial"]),
-    userEmail: pickString(record, ["email_address", "user_email", "email"]),
-    userName: pickString(record, ["user_name", "assigned_user", "username", "owner"]),
+    userEmail:
+      pickString(record, ["email_address", "user_email", "email"]) ??
+      (user ? pickString(user, ["user_email", "email_address", "email"]) : null),
+    userName:
+      pickString(record, ["user_name", "assigned_user", "username", "owner"]) ??
+      (user ? pickString(user, ["user_name", "username", "name"]) : null),
   };
 }
 
