@@ -1,6 +1,18 @@
 "use client";
 
-import { ImageOff, MapPin, ShoppingBag, Sparkles, Store, UserRound, Users } from "lucide-react";
+import {
+  Building2,
+  Check,
+  Database,
+  ImageOff,
+  MapPin,
+  ShoppingBag,
+  Sparkles,
+  Store,
+  TriangleAlert,
+  UserRound,
+  Users,
+} from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 
 import { ZoomHint, ZoomablePhoto } from "@/components/ui/zoomable-photo";
@@ -14,6 +26,7 @@ import {
   type CaptureFilter,
 } from "@/lib/verified-captures/filters";
 import type {
+  VerifiedCaptureDistributorCode,
   VerifiedCaptureLocation,
   VerifiedDirectOrderCaptureRow,
   VerifiedMarketingCaptureRow,
@@ -139,6 +152,125 @@ function FieldPair({ label, value }: { label: string; value: ReactNode }) {
   );
 }
 
+/**
+ * A person shown by NAME and their REAL job title — never an assumed position (owner, 2026-09-25:
+ * "you are writing titles and job positions wrong"). `highlight` marks the requester in orange, the
+ * one name the owner asked to stand out.
+ */
+function PersonField({
+  highlight = false,
+  label,
+  name,
+  title,
+}: {
+  highlight?: boolean;
+  label: string;
+  name: string | null;
+  title: string | null;
+}) {
+  return (
+    <div
+      className={cn(
+        "rounded border px-2.5 py-2",
+        highlight ? "border-orange-300 bg-orange-50" : "border-slate-100 bg-slate-50",
+      )}
+    >
+      <dt
+        className={cn(
+          "flex items-center gap-1 text-phx-2xs font-black uppercase tracking-[0.12em]",
+          highlight ? "text-orange-600" : "text-slate-400",
+        )}
+      >
+        {highlight ? <UserRound className="h-3 w-3" /> : null}
+        {label}
+      </dt>
+      <dd
+        className={cn(
+          "mt-0.5 min-w-0 break-words text-xs font-black",
+          highlight ? "text-orange-700" : "text-slate-900",
+        )}
+      >
+        {name ?? "—"}
+      </dd>
+      <dd className="min-w-0 break-words text-phx-2xs font-bold text-slate-500">{title ?? "Title not on file"}</dd>
+    </div>
+  );
+}
+
+/** The green "in our database" / amber "not in our database" pill the owner asked for. */
+function DatabaseBadge({ inDatabase }: { inDatabase: boolean }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em]",
+        inDatabase ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700",
+      )}
+    >
+      {inDatabase ? <Check className="h-3 w-3" /> : <TriangleAlert className="h-3 w-3" />}
+      {inDatabase ? "In our database" : "Not in our database"}
+    </span>
+  );
+}
+
+/**
+ * PH code + every distributor code on a captured pharmacy, each told "available in our database or
+ * no" (owner ask, 2026-09-25). The distributor is shown by NAME with its short code beside it.
+ */
+function DistributorCodes({
+  codes,
+  phoenixCode,
+}: {
+  codes: VerifiedCaptureDistributorCode[];
+  phoenixCode?: string | null;
+}) {
+  return (
+    <div className="space-y-2 rounded border border-slate-100 bg-slate-50 px-3 py-2">
+      <p className="flex items-center gap-1 text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">
+        <Database className="h-3 w-3" />
+        Codes
+      </p>
+      {phoenixCode !== undefined ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded border border-slate-100 bg-white px-2 py-1.5">
+          <span className="min-w-0 break-words text-xs font-bold text-slate-800">
+            <span className="font-black uppercase tracking-[0.1em] text-slate-400">PH code </span>
+            {phoenixCode ?? "—"}
+          </span>
+          {phoenixCode ? <DatabaseBadge inDatabase /> : null}
+        </div>
+      ) : null}
+      {codes.length === 0 ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded border border-slate-100 bg-white px-2 py-1.5">
+          <span className="text-xs font-bold text-slate-500">No distributor code on file</span>
+          <DatabaseBadge inDatabase={false} />
+        </div>
+      ) : (
+        <ul className="space-y-1.5">
+          {codes.map((code, index) => (
+            <li
+              className="flex flex-wrap items-center justify-between gap-2 rounded border border-slate-100 bg-white px-2 py-1.5"
+              key={`${code.distributorCode ?? "d"}-${code.customerCode ?? index}`}
+            >
+              <span className="flex min-w-0 items-center gap-1.5">
+                <Building2 className="h-3 w-3 shrink-0 text-slate-400" />
+                <span className="min-w-0 break-words text-xs font-bold text-slate-800">
+                  <span className="font-black text-slate-900">
+                    {code.distributorName ?? code.distributorCode ?? "Distributor"}
+                  </span>
+                  {code.distributorName && code.distributorCode ? (
+                    <span className="text-slate-400"> · {code.distributorCode}</span>
+                  ) : null}
+                  {code.customerCode ? <span className="text-slate-500"> · {code.customerCode}</span> : null}
+                </span>
+              </span>
+              <DatabaseBadge inDatabase={code.inDatabase} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 /** The rep + district-manager + search filter row, shared by both tabs. */
 function CaptureFilters({
   filter,
@@ -245,6 +377,9 @@ function marketingSearchText(row: VerifiedMarketingCaptureRow): string {
     row.location.address,
     ...row.pharmacies.map((pharmacy) => pharmacy.displayName),
     ...row.pharmacies.map((pharmacy) => pharmacy.location.address),
+    ...row.pharmacies.flatMap((pharmacy) =>
+      pharmacy.distributorCodes.flatMap((code) => [code.distributorName, code.distributorCode, code.customerCode]),
+    ),
   ]
     .filter(Boolean)
     .join(" ");
@@ -254,8 +389,8 @@ function MarketingCaptureBody({ row }: { row: VerifiedMarketingCaptureRow }) {
   return (
     <div className="space-y-3">
       <dl className="grid grid-cols-2 gap-2">
-        <FieldPair label="Rep" value={row.repName ?? "—"} />
-        <FieldPair label="District manager" value={row.managerName ?? "—"} />
+        <PersonField highlight label="Requested by" name={row.repName} title={row.repTitle} />
+        <PersonField label="Manager" name={row.managerName} title={row.managerTitle} />
         <FieldPair label="Line" value={row.lineName ?? "—"} />
         <FieldPair label="Area" value={row.areaName ?? "—"} />
         <FieldPair label="Governorate" value={row.governorate ?? "—"} />
@@ -283,6 +418,7 @@ function MarketingCaptureBody({ row }: { row: VerifiedMarketingCaptureRow }) {
                 src={pharmacy.photoUrl}
               />
               <LocationBlock heading="Pharmacy location" location={pharmacy.location} />
+              <DistributorCodes codes={pharmacy.distributorCodes} />
             </div>
           ))}
         </div>
@@ -362,7 +498,14 @@ function MarketingTab({ rows }: { rows: VerifiedMarketingCaptureRow[] }) {
 // ── Direct Orders tab ──────────────────────────────────────────────────────────
 
 function directOrderSearchText(row: VerifiedDirectOrderCaptureRow): string {
-  return [row.pharmacyName, row.pharmacyCode, row.location.address].filter(Boolean).join(" ");
+  return [
+    row.pharmacyName,
+    row.pharmacyCode,
+    row.location.address,
+    ...row.distributorCodes.flatMap((code) => [code.distributorName, code.distributorCode, code.customerCode]),
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 function routeLabel(route: VerifiedDirectOrderCaptureRow["route"]): string {
@@ -373,12 +516,11 @@ function DirectOrderCaptureBody({ row }: { row: VerifiedDirectOrderCaptureRow })
   return (
     <div className="space-y-3">
       <dl className="grid grid-cols-2 gap-2">
-        <FieldPair label="Rep" value={row.repName ?? "—"} />
-        <FieldPair label="District manager" value={row.managerName ?? "—"} />
+        <PersonField highlight label="Requested by" name={row.repName} title={row.repTitle} />
+        <PersonField label="Manager" name={row.managerName} title={row.managerTitle} />
         <FieldPair label="Route" value={routeLabel(row.route)} />
         <FieldPair label="Verified" value={row.verifiedAt ? cairoDateTime(row.verifiedAt) : "—"} />
-        <FieldPair label="Verified by" value={row.verifiedByName ?? "—"} />
-        <FieldPair label="Code" value={row.pharmacyCode ?? "—"} />
+        <PersonField label="Verified by" name={row.verifiedByName} title={row.verifiedByTitle} />
       </dl>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -413,6 +555,8 @@ function DirectOrderCaptureBody({ row }: { row: VerifiedDirectOrderCaptureRow })
         )}
         <LocationBlock location={row.location} />
       </div>
+
+      <DistributorCodes codes={row.distributorCodes} phoenixCode={row.pharmacyCode} />
 
       {row.licenseUrl ? (
         <a
