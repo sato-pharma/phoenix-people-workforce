@@ -206,15 +206,51 @@ export function lineCommentSpans(source: string): ReadonlyArray<readonly [number
  * a test matching a call whose argument is preceded by an inline comment must not be handed the
  * two tokens fused together and conclude they were written adjacent.
  */
+/**
+ * Stripped source, remembered by the exact text that produced it.
+ *
+ * Thirty-six test files import this stripper and many of them sweep the whole tree, so the same
+ * file is stripped over and over inside one suite run. The function is pure, so the second answer
+ * can only be the first one. Keyed by the source text itself, which means the cache also collapses
+ * two files that happen to hold identical content.
+ *
+ * Only real files are remembered. Every test that probes the stripper with a crafted one-liner
+ * would otherwise grow this map without bound for no gain, so a short input is computed and
+ * forgotten — which is also what keeps the memory here proportional to the tree and not to the
+ * number of assertions in the suite.
+ */
+const stripped = new Map<string, string>();
+const MEMOISE_FROM = 2_000;
+
 export function stripComments(source: string): string {
+  const cached = stripped.get(source);
+  if (cached !== undefined) return cached;
+
   const drop = new Uint8Array(source.length);
   for (const [a, b] of blockCommentSpans(source)) drop.fill(1, a, b);
   for (const [a, b] of lineCommentSpans(source)) drop.fill(1, a, b);
 
+  // Built run by run rather than character by character. The old loop did `out += …` once per
+  // character — ~200,000 string concatenations for a file the size of system-navigation.ts — and a
+  // whole-tree sweep of app/ + src/ spent ~10.8s in it. Copying a kept run whole, and replacing a
+  // dropped run a line at a time, measured ~1.4s for the identical output: a dropped character
+  // becomes a space, a dropped newline stays a newline, so every offset and line number survives.
   let out = "";
-  for (let i = 0; i < source.length; i += 1) {
-    out += drop[i] && source[i] !== "\n" ? " " : source[i];
+  let index = 0;
+  while (index < source.length) {
+    const start = index;
+    const dropping = drop[index] === 1;
+    while (index < source.length && (drop[index] === 1) === dropping) index += 1;
+    const run = source.slice(start, index);
+    out += dropping
+      ? run
+          .split("\n")
+          .map((line) => " ".repeat(line.length))
+          .join("\n")
+      : run;
   }
+
+  if (source.length >= MEMOISE_FROM) stripped.set(source, out);
   return out;
 }
 

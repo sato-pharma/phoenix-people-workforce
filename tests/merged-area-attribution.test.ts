@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 
 import { applyClosingAreaMergesToDetails } from "../src/lib/sales/closing-area-merges.ts";
+import { cachedIsDirectory, cachedReaddir, cachedReadFile } from "./support/source-corpus.ts";
 import { closingAreaOf } from "../src/lib/sales/closing-row-area.ts";
 
 /**
@@ -38,10 +38,10 @@ const KEEPS_AREAS_APART: readonly string[] = [
 const SEARCH_ROOTS = ["src", "app", "scripts", "tests"];
 
 function walk(dir: string, out: string[] = []): string[] {
-  for (const entry of readdirSync(dir)) {
+  for (const entry of cachedReaddir(dir)) {
     if (entry === "node_modules" || entry === ".next" || entry.startsWith("_wt-")) continue;
     const full = join(dir, entry);
-    if (statSync(full).isDirectory()) walk(full, out);
+    if (cachedIsDirectory(full)) walk(full, out);
     else if (/\.(ts|tsx|mjs)$/.test(entry)) out.push(full);
   }
   return out;
@@ -81,7 +81,7 @@ export function runMergedAreaAttributionTests() {
   // ── The EXACT set of callers that keep the areas apart ───────────────────────────────────────
   const found = SEARCH_ROOTS
     .flatMap((root) => walk(join(REPO, root)))
-    .filter((file) => /keepMergedAreasApart\s*:\s*true/.test(readFileSync(file, "utf8")))
+    .filter((file) => /keepMergedAreasApart\s*:\s*true/.test(cachedReadFile(file)))
     .map((file) => relative(REPO, file).split("\\").join("/"))
     .filter((file) => !file.startsWith("tests/"))
     .sort();
@@ -94,7 +94,7 @@ export function runMergedAreaAttributionTests() {
   );
 
   // The loader must still honour it, or the list above pins a flag that does nothing.
-  const loader = readFileSync(join(REPO, "src/lib/sales/monthly-closing-details.ts"), "utf8");
+  const loader = cachedReadFile(join(REPO, "src/lib/sales/monthly-closing-details.ts"));
   assert.match(
     loader,
     /input\.keepMergedAreasApart === true\s*\n?\s*\?\s*mapped/,

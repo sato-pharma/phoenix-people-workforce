@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 
 import { hrNamespaceRemainder, isHrRewritablePath, toHrNamespacePath } from "@/lib/navigation/shell-headers";
+import { cachedIsDirectory, cachedReaddir, cachedReadFile } from "./support/source-corpus.ts";
 
 import { literalScanFindabilityRecordedRoutes } from "./navigation-reachability-backlog";
 
@@ -99,9 +99,9 @@ const NEVER_IN_NAV = [/^\/$/, /^\/login$/, /^\/privacy$/, /^\/terms$/, /^\/dev(\
 const ROUTE_LITERAL = /["'`](\/[a-z0-9][a-z0-9/_-]*)["'`]/gi;
 
 function walk(dir: string, out: string[] = []): string[] {
-  for (const entry of readdirSync(dir)) {
+  for (const entry of cachedReaddir(dir)) {
     const full = path.join(dir, entry);
-    if (statSync(full).isDirectory()) {
+    if (cachedIsDirectory(full)) {
       if (entry === "node_modules" || entry === ".next" || entry.startsWith("_wt-")) continue;
       walk(full, out);
     } else if (/\.(tsx?|jsx?)$/.test(entry)) {
@@ -146,7 +146,7 @@ const REDIRECT_STUB_BODY =
 function isRetiredRedirectStub(file: string): boolean {
   let source: string;
   try {
-    source = readFileSync(file, "utf8");
+    source = cachedReadFile(file);
   } catch {
     return false;
   }
@@ -189,7 +189,7 @@ export function runNavigationPageFindabilityRatchetTests() {
     const unix = file.replace(/\\/g, "/");
     let source: string;
     try {
-      source = readFileSync(file, "utf8");
+      source = cachedReadFile(file);
     } catch {
       continue;
     }

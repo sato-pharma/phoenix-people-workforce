@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+
+import { cachedIsDirectory, cachedReaddir, cachedReadFile } from "./support/source-corpus.ts";
 
 /**
  * Repo-wide source encoding guard.
@@ -53,12 +54,24 @@ const MOJIBAKE_SIGNATURES: readonly MojibakeSignature[] = [
   },
 ];
 
+/**
+ * The four signatures as one alternation, for the fast "does this file hold ANY mojibake" screen.
+ *
+ * The sweep reads the whole source tree \u2014 src, app, scripts AND tests, ~46M characters \u2014 and all
+ * but a handful of files are clean. The old loop paid four `pattern.test(source)` calls plus a
+ * `source.split(/\r?\n/)` on EVERY file, clean or not; the split alone is millions of allocations
+ * for lines nothing ever looks at. This one regex answers the common case (no match) in a single
+ * pass, and only a file that trips it pays for the per-signature, per-line work below \u2014 where the
+ * exact label and line number still come from the individual patterns, unchanged.
+ */
+const ANY_MOJIBAKE = new RegExp(MOJIBAKE_SIGNATURES.map((s) => s.pattern.source).join("|"));
+
 function collectSourceFiles(root: string): string[] {
   let collected: string[] = [];
-  for (const entry of readdirSync(root)) {
+  for (const entry of cachedReaddir(root)) {
     if (SKIP_DIRECTORIES.has(entry)) continue;
     const filePath = join(root, entry);
-    if (statSync(filePath).isDirectory()) {
+    if (cachedIsDirectory(filePath)) {
       collected = collected.concat(collectSourceFiles(filePath));
     } else if (SOURCE_EXTENSIONS.test(entry)) {
       collected.push(filePath);
@@ -78,7 +91,10 @@ export function runSourceEncodingGuardTests() {
 
   const findings: string[] = [];
   for (const filePath of files) {
-    const source = readFileSync(filePath, "utf8");
+    const source = cachedReadFile(filePath);
+    // The overwhelming majority of files are clean; the combined regex clears them in one pass so
+    // the split and the four per-signature scans below only run on a file that actually trips.
+    if (!ANY_MOJIBAKE.test(source)) continue;
     const lines = source.split(/\r?\n/);
     for (const { label, pattern } of MOJIBAKE_SIGNATURES) {
       if (!pattern.test(source)) continue;

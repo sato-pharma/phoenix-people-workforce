@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
+
+import { cachedIsDirectory, cachedReaddir, cachedReadFile } from "./support/source-corpus.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Standing owner rule: "Report every time in Africa/Cairo local time, never raw UTC."
@@ -169,9 +170,9 @@ function scan(label: string, rawSource: string): { sites: Site[]; calls: number 
 }
 
 function walk(dir: string, out: string[] = []): string[] {
-  for (const entry of readdirSync(dir)) {
+  for (const entry of cachedReaddir(dir)) {
     const full = path.join(dir, entry);
-    if (statSync(full).isDirectory()) {
+    if (cachedIsDirectory(full)) {
       if (entry === "node_modules" || entry.startsWith(".") || entry.startsWith("_wt-")) continue;
       walk(full, out);
     } else if (/\.tsx?$/.test(entry)) {
@@ -288,7 +289,7 @@ export function runInstantFormatTimezoneRatchetTests() {
   const clientSites: string[] = [];
   const serverCapableSites: string[] = [];
   for (const file of files) {
-    const { sites, calls } = scan(file.replace(/\\/g, "/"), readFileSync(file, "utf8"));
+    const { sites, calls } = scan(file.replace(/\\/g, "/"), cachedReadFile(file));
     dateFormatCalls += calls;
     for (const found of sites) (found.isClient ? clientSites : serverCapableSites).push(found.site);
   }

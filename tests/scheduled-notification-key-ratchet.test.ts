@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
+
+import { cachedIsDirectory, cachedReaddir, cachedReadFile } from "./support/source-corpus.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // A QUEUED notification's dedupe key must not be built from the date it is
@@ -261,9 +262,9 @@ function isViolation(s: Site): boolean {
 }
 
 function walk(dir: string, out: string[] = []): string[] {
-  for (const entry of readdirSync(dir)) {
+  for (const entry of cachedReaddir(dir)) {
     const full = path.join(dir, entry);
-    if (statSync(full).isDirectory()) {
+    if (cachedIsDirectory(full)) {
       if (entry === "node_modules" || entry.startsWith(".") || entry.startsWith("_wt-")) continue;
       walk(full, out);
     } else if (/\.tsx?$/.test(entry) && !/\.test\.tsx?$/.test(entry)) {
@@ -390,7 +391,7 @@ export function runScheduledNotificationKeyRatchetTests() {
   const population: Site[] = [];
   for (const file of files) {
     const rel = file.replace(/\\/g, "/");
-    population.push(...scan(rel, readFileSync(file, "utf8")));
+    population.push(...scan(rel, cachedReadFile(file)));
   }
 
   // Anti-vacuity: this repo builds dozens of dedupe keys from template literals.

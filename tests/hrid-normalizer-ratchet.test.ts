@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
+
+import { cachedIsDirectory, cachedReaddir, cachedReadFile } from "./support/source-corpus.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // One canonical HR_ID normaliser, src/lib/hr-id.ts. Everything else should call
@@ -218,9 +219,9 @@ function isBaselineViolation(m: Member): boolean {
 }
 
 function walk(dir: string, out: string[] = []): string[] {
-  for (const entry of readdirSync(dir)) {
+  for (const entry of cachedReaddir(dir)) {
     const full = path.join(dir, entry);
-    if (statSync(full).isDirectory()) {
+    if (cachedIsDirectory(full)) {
       if (entry === "node_modules" || entry.startsWith(".") || entry.startsWith("_wt-")) continue;
       walk(full, out);
     } else if (/\.tsx?$/.test(entry) && !/\.test\.tsx?$/.test(entry)) {
@@ -318,7 +319,7 @@ export function runHrIdNormalizerRatchetTests() {
   const population: Member[] = [];
   for (const file of files) {
     const rel = file.replace(/\\/g, "/");
-    population.push(...scan(rel, readFileSync(file, "utf8"), rel.endsWith("src/lib/hr-id.ts")));
+    population.push(...scan(rel, cachedReadFile(file), rel.endsWith("src/lib/hr-id.ts")));
   }
 
   // Anti-vacuity: the population is dozens of functions and a good share delegate.
