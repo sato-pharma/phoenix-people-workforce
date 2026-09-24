@@ -34,6 +34,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       kind?: JobPostChannelKind;
       notes?: string | null;
       isActive?: boolean;
+      applyWhatsAppNumber?: string | null;
     } = {};
 
     if (body.name !== undefined) {
@@ -48,6 +49,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     }
     if (body.url !== undefined) patch.url = str(body.url);
     if (body.notes !== undefined) patch.notes = str(body.notes);
+    // A blank or null clears the per-channel apply number (falls back to the company default); the
+    // service rejects a non-blank value that is not a dialable WhatsApp number.
+    if (body.applyWhatsAppNumber !== undefined) patch.applyWhatsAppNumber = str(body.applyWhatsAppNumber);
     if (body.isActive !== undefined) patch.isActive = bool(body.isActive) === true;
     if (body.kind !== undefined) {
       const kind = str(body.kind);

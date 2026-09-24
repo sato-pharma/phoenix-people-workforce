@@ -16,6 +16,7 @@ import {
   parseChannelPasteList,
 } from "../src/lib/recruitment/outreach/channel-import.ts";
 import {
+  applyDestinationForChannel,
   buildApplyLink,
   buildApplyMessage,
   composeJobAdvert,
@@ -405,5 +406,86 @@ export async function runRecruitmentJobPostChannelTests() {
   assert.ok(
     /onCvCode\s*\?\?\s*\(await\s+resolveForwarderChannelCode\(input\.senderIdentifier\)\)/.test(intakeSource),
     "the relay channel is only ever a ?? fallback behind the on-CV code — never resolved ahead of it",
+  );
+
+  // ── 10 · Which apply line a channel's tracked link points at ───────────────
+  //
+  // The company runs two WhatsApp apply lines. A channel may carry its own number, and its tracked
+  // link must send applicants there instead of the one company-wide default — WITHOUT changing that
+  // default, which every other channel still funnels to. Get the precedence wrong and either the
+  // second line never receives anyone, or worse, every channel is silently repointed onto it and the
+  // main line goes quiet. So the resolver is pinned in both directions.
+  assert.equal(
+    applyDestinationForChannel({
+      channelApplyWhatsAppNumber: "01159888247",
+      defaultWhatsAppNumber: "01098500699",
+      email: "careers@example.com",
+      kind: "whatsapp",
+    }),
+    "01159888247",
+    "a channel's own WhatsApp apply number overrides the company default for that channel",
+  );
+  assert.equal(
+    applyDestinationForChannel({
+      channelApplyWhatsAppNumber: null,
+      defaultWhatsAppNumber: "01098500699",
+      email: "careers@example.com",
+      kind: "whatsapp",
+    }),
+    "01098500699",
+    "a channel with no override falls back to the company default — the other line is untouched",
+  );
+  assert.equal(
+    applyDestinationForChannel({
+      channelApplyWhatsAppNumber: "01159888247",
+      defaultWhatsAppNumber: "01098500699",
+      email: "careers@example.com",
+      kind: "email",
+    }),
+    "careers@example.com",
+    "email has one careers mailbox — the per-channel WhatsApp number never diverts it",
+  );
+  assert.equal(
+    applyDestinationForChannel({
+      channelApplyWhatsAppNumber: null,
+      defaultWhatsAppNumber: null,
+      email: null,
+      kind: "whatsapp",
+    }),
+    null,
+    "no channel number and no default means no destination — the caller copies without a dead link",
+  );
+
+  // The override only bites once the link builder is fed the resolved destination. Build a link the
+  // way the panel does — resolve the destination, then buildApplyLink — and prove the channel's own
+  // line, not the default, lands in the wa.me number.
+  const overriddenDestination = applyDestinationForChannel({
+    channelApplyWhatsAppNumber: "01159888247",
+    defaultWhatsAppNumber: "01098500699",
+    email: null,
+    kind: "whatsapp",
+  });
+  const overriddenLink = buildApplyLink({
+    code: "PX-WAL",
+    destination: overriddenDestination as string,
+    jobTitle: "Medical Representative",
+    kind: "whatsapp",
+    location: "Giza",
+  });
+  assert.ok(
+    overriddenLink?.startsWith("https://wa.me/201159888247?text="),
+    `the channel's own apply line is the wa.me number, not the default (got ${overriddenLink})`,
+  );
+
+  // Source-pin: the panel must route every channel's link through applyDestinationForChannel, not
+  // read a single screen-wide destination. Without this, a channel's saved apply number would sit in
+  // the database and never reach the link — the override would look configured and do nothing.
+  const panelSource = fs.readFileSync(
+    fileURLToPath(new URL("../src/components/recruitment/job-advert-panel.tsx", import.meta.url)),
+    "utf8",
+  );
+  assert.ok(
+    /applyDestinationForChannel\(\{[\s\S]*channelApplyWhatsAppNumber:\s*channel\.applyWhatsAppNumber/.test(panelSource),
+    "the panel resolves each channel's link through applyDestinationForChannel with that channel's own number",
   );
 }
