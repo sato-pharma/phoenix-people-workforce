@@ -280,12 +280,15 @@ export function JobAdvertPanel() {
         {applyKind === "whatsapp" ? (
           <AdminCallout tone="warning">
             <div>
-              <p className="font-semibold">WhatsApp reaches you, but loses the tracking</p>
+              <p className="font-semibold">WhatsApp keeps the tracking when the code rides on the CV</p>
               <p className="mt-1">
-                CVs sent to the handset only enter this system when someone forwards them, and a
-                forward carries the CV file without the applicant&apos;s own message — which is where
-                the code sits. Those CVs arrive, they just arrive unattributed. Email keeps the code,
-                because it travels in the subject line.
+                CVs sent to the handset enter this system when someone forwards them, and a forward
+                carries the CV file, its caption and its filename — but not the applicant&apos;s
+                separate greeting, which is where the code sits by default. Intake now reads the code
+                off the caption and the filename as well, so it survives a forward whenever it lands
+                on the CV itself. It is lost only when the applicant sends the code as its own message
+                and the file is then forwarded alone. Email always keeps the code, because it travels
+                in the subject line.
               </p>
             </div>
           </AdminCallout>

@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import { fileURLToPath } from "node:url";
 
 import {
   CHANNEL_CODE_PREFIX,
@@ -269,5 +271,55 @@ export async function runRecruitmentJobPostChannelTests() {
     nameFromChannelUrl("https://t.me/+SecretHash99"),
     "Telegram group",
     "a join hash is a secret, not a display name — it must never be printed as one",
+  );
+
+  // ── 8 · The code surviving a WhatsApp forward ──────────────────────────────
+  //
+  // 95% of CVs reach us as a forward from a relay handset, and a forward drops the applicant's
+  // separate greeting — the surface the tapped-link code sits on by default. What a forward DOES
+  // carry alongside the file is its caption and its filename, so intake reads the code off those
+  // too. The caption already arrives folded into coverMessage; the filename is read as its own
+  // source, because it is deliberately kept OUT of coverMessage (a raw "Cv.pdf" must never reach
+  // the job-matching model as if it were a covering note). The leading boundary is any
+  // non-alphanumeric, so a space, dash, underscore or dot in a filename all delimit the code.
+  assert.equal(
+    extractChannelCode([null, null, "Ahmed Mohamed CV PX-MRE.pdf"]),
+    "PX-MRE",
+    "the code is read off the CV filename, the one surface a bare forward preserves",
+  );
+  assert.equal(
+    extractChannelCode([null, null, "cv-px-pjc.pdf"]),
+    "PX-PJC",
+    "a lower-cased code in the filename still reads",
+  );
+  assert.equal(
+    extractChannelCode([null, null, "Ahmed_Mohamed_PX-CH.docx"]),
+    "PX-CH",
+    "an underscore is a boundary too — the code is not glued to a word",
+  );
+  assert.equal(
+    extractChannelCode(["Ref: PX-PJC", null, "cv-PX-MRE.pdf"]),
+    "PX-PJC",
+    "a real greeting still wins over the filename — the filename is read LAST",
+  );
+  assert.equal(
+    extractChannelCode([null, null, "Ahmed_Mohamed_Cv.pdf"]),
+    null,
+    "an ordinary CV filename carries no code and stays unattributed",
+  );
+
+  // Source-pin: the invariant above only protects a real forward if intake actually feeds the
+  // filename into the extractor. Assert the wiring, not merely that the extractor CAN read a
+  // filename — the filename is the one source a reader would forget, because it is held off
+  // coverMessage on purpose, so a refactor that "tidied" the extraction call would silently drop it.
+  const intakeSource = fs.readFileSync(
+    fileURLToPath(new URL("../src/lib/recruitment/inbound/cv-intake-service.ts", import.meta.url)),
+    "utf8",
+  );
+  assert.ok(
+    /extractChannelCode\(\[\s*input\.coverMessage,\s*input\.subject,\s*input\.attachment\?\.fileName\s*\]\)/.test(
+      intakeSource,
+    ),
+    "intake reads the source code off coverMessage, subject AND the attachment filename",
   );
 }
