@@ -199,12 +199,48 @@ export function JobAdvertPanel() {
     }
   }, []);
 
+  // Tie one relay handset to one advert channel (or clear it with channelCode = null). A code-less
+  // forward from that number is then attributed to the channel; the on-CV code always wins.
+  const assignForwarder = useCallback(async (identifier: string, channelCode: string | null) => {
+    const number = identifier.trim();
+    if (number.length === 0) return;
+    setBusy(true);
+    try {
+      const response = await fetch("/api/recruitment/job-post-channels/forwarders", {
+        body: JSON.stringify({ channelCode, identifier: number }),
+        headers: { "content-type": "application/json" },
+        method: "PUT",
+      });
+      const json = (await response.json()) as Record<string, unknown>;
+      if (!response.ok || json.success !== true) {
+        setNotice(typeof json.message === "string" ? json.message : "Could not update the relay handset.");
+        return;
+      }
+      setReloadKey((key) => key + 1);
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
+  const [newRelay, setNewRelay] = useState("");
+  const [newRelayChannel, setNewRelayChannel] = useState("");
+
   const channels = state?.channels ?? [];
   const activeChannels = channels.filter((channel) => channel.isActive);
   // The number that actually matters once the list runs to forty-odd rows: how many of them will
   // accept a post from you at all. The rest are broadcast feeds you can only ask an admin to carry.
   const postableCount = activeChannels.filter((channel) => !platformOf(channel.kind).broadcast).length;
   const attributionRows = state?.attribution.rows ?? [];
+  // One row per configured relay handset, each showing which channel its code-less forwards land on.
+  const relayRows = channels.flatMap((channel) =>
+    channel.forwarderIdentifiers.map((number) => ({
+      channelCode: channel.code,
+      channelName: channel.name,
+      number,
+    })),
+  );
+  const relaySelectClass =
+    "h-9 w-full max-w-[16rem] rounded-none border border-slate-300 bg-white px-2 text-sm text-slate-900";
 
   return (
     <div className="space-y-6">
@@ -405,7 +441,125 @@ export function JobAdvertPanel() {
         </AdminTableShell>
       </section>
 
-      {/* ── 4 · What it produced ───────────────────────────────────────── */}
+      {/* ── 4 · Relay handsets ─────────────────────────────────────────── */}
+      <section className="space-y-3">
+        <AdminSectionHeader
+          description="Most CVs reach us forwarded from a relay handset, which drops the applicant's code-bearing message. Tie each relay to the channel it forwards from, and its code-less forwards inherit that channel. A CV that still carries its own code always keeps it."
+          title="Relay handsets"
+        />
+        <AdminTableShell
+          description="A relay maps to one channel. Move it here whenever a handset's source changes — no code change needed."
+          title={`Relay handsets (${relayRows.length})`}
+        >
+          <PortalResponsiveDataList
+            empty={
+              <PortalEmptyState
+                message="Add a relay handset number below and pick the channel it forwards from."
+                title="No relay handsets mapped"
+              />
+            }
+            getKey={(row: (typeof relayRows)[number]) => row.number}
+            items={relayRows}
+            renderCard={(row: (typeof relayRows)[number]) => (
+              <PortalRecordCard title={row.number}>
+                <label className="mt-2 block text-xs uppercase text-slate-500" htmlFor={`relay-${row.number}`}>
+                  Forwards from
+                </label>
+                <select
+                  className={relaySelectClass}
+                  disabled={busy}
+                  id={`relay-${row.number}`}
+                  onChange={(event) => assignForwarder(row.number, event.target.value || null)}
+                  value={row.channelCode}
+                >
+                  <option value="">— Unassigned —</option>
+                  {channels.map((channel) => (
+                    <option key={channel.id} value={channel.code}>
+                      {channel.name}
+                      {channel.isActive ? "" : " (retired)"}
+                    </option>
+                  ))}
+                </select>
+              </PortalRecordCard>
+            )}
+            renderTable={() => (
+              <PortalDesktopTable minWidth="520px">
+                <thead>
+                  <tr className="border-b border-slate-200 text-left text-xs uppercase text-slate-500">
+                    <th className="whitespace-nowrap p-2">Handset</th>
+                    <th className="whitespace-nowrap p-2">Forwards from</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {relayRows.map((row) => (
+                    <tr className="border-b border-slate-100" key={row.number}>
+                      <td className="whitespace-nowrap p-2 font-mono text-xs text-slate-900">{row.number}</td>
+                      <td className="p-2">
+                        <select
+                          aria-label={`Channel for ${row.number}`}
+                          className={relaySelectClass}
+                          disabled={busy}
+                          onChange={(event) => assignForwarder(row.number, event.target.value || null)}
+                          value={row.channelCode}
+                        >
+                          <option value="">— Unassigned —</option>
+                          {channels.map((channel) => (
+                            <option key={channel.id} value={channel.code}>
+                              {channel.name}
+                              {channel.isActive ? "" : " (retired)"}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </PortalDesktopTable>
+            )}
+          />
+          <div className="mt-3 flex flex-wrap items-end gap-2">
+            <div className="min-w-[12rem] flex-1">
+              <label className="block text-xs uppercase text-slate-500" htmlFor="new-relay-number">
+                Add a relay handset
+              </label>
+              <Input
+                id="new-relay-number"
+                onChange={(event) => setNewRelay(event.target.value)}
+                placeholder="e.g. 01280955558"
+                value={newRelay}
+              />
+            </div>
+            <select
+              aria-label="Channel for the new relay handset"
+              className={relaySelectClass}
+              disabled={busy}
+              onChange={(event) => setNewRelayChannel(event.target.value)}
+              value={newRelayChannel}
+            >
+              <option value="">Pick a channel…</option>
+              {channels.map((channel) => (
+                <option key={channel.id} value={channel.code}>
+                  {channel.name}
+                  {channel.isActive ? "" : " (retired)"}
+                </option>
+              ))}
+            </select>
+            <Button
+              disabled={busy || newRelay.trim().length === 0 || newRelayChannel.length === 0}
+              onClick={async () => {
+                await assignForwarder(newRelay, newRelayChannel || null);
+                setNewRelay("");
+                setNewRelayChannel("");
+              }}
+              size="sm"
+            >
+              <Plus className="mr-1 h-3 w-3" /> Attach
+            </Button>
+          </div>
+        </AdminTableShell>
+      </section>
+
+      {/* ── 5 · What it produced ───────────────────────────────────────── */}
       <section className="space-y-3">
         <AdminSectionHeader
           description={`Candidates whose CV arrived through each group's own link, over the last ${state?.attribution.sinceDays ?? 90} days.`}
