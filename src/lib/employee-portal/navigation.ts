@@ -865,13 +865,15 @@ export function resolveEmployeePortalNavVisibility(
       resolvedRole === "Group Product Manager" ||
       resolvedRole === "Training Manager",
     // Early Birds — mirrors the module's own catalog row in employeePortalNavigationSectionSeeds
-    // (system-navigation.ts) exactly: every portal-mode role in its audience. `isDistrictManager`
-    // deliberately, NOT the exact match used by the sales boards above — the Head-Office "Manager"
-    // rung reaches the page too, and resolveEarlyBirdsScope answers it with an honest "no district
-    // reports to you" rather than an empty grid. CEO / SFE Manager / Super Admin resolve to the
-    // ADMIN shell and get /admin/early-birds from the admin rail instead.
+    // (system-navigation.ts) exactly: every portal-mode role in its audience, MINUS Medical Rep,
+    // hidden from the portal sidebar by owner instruction (2026-09-24) — the page and its
+    // catalog entry (Modules Control, command palette) are untouched, and every other role in
+    // the audience keeps the row. `isDistrictManager` deliberately, NOT the exact match used by
+    // the sales boards above — the Head-Office "Manager" rung reaches the page too, and
+    // resolveEarlyBirdsScope answers it with an honest "no district reports to you" rather than
+    // an empty grid. CEO / SFE Manager / Super Admin resolve to the ADMIN shell and get
+    // /admin/early-birds from the admin rail instead.
     showEarlyBirdsTab:
-      isMedicalRep ||
       isDistrictManager ||
       resolvedRole === "Regional Manager" ||
       isNationalSalesManager ||
