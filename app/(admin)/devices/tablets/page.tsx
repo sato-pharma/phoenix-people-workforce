@@ -1,9 +1,11 @@
 import { redirect } from "next/navigation";
 
+import { ManageEngineFleet } from "@/components/devices/manageengine-fleet";
 import { RepTabletsConsole } from "@/components/devices/rep-tablets-console";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { isAndroidManagementConfigured } from "@/lib/devices/android-web-app";
+import { isManageEngineConfigured } from "@/lib/devices/manageengine/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -21,5 +23,10 @@ export default async function RepTabletsPage() {
     redirect("/hr/devices");
   }
 
-  return <RepTabletsConsole enterpriseBound={isAndroidManagementConfigured()} />;
+  return (
+    <>
+      <RepTabletsConsole enterpriseBound={isAndroidManagementConfigured()} />
+      <ManageEngineFleet bridgeConfigured={isManageEngineConfigured()} />
+    </>
+  );
 }

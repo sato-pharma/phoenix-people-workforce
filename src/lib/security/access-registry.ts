@@ -1361,6 +1361,11 @@ export const accessRegistry = [
   // A tablet plugged in by USB joins the custody register under the next PHX-TAB number; the
   // register's own createDevice writes the required audit row.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/tablets/usb", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
+  // ManageEngine bridge. GET reads the fleet (and a device's location with ?deviceId=); POST issues one
+  // remote command — lock, restart, reset the screen lock, lost mode on/off, or a wipe — each of which
+  // reaches a real tablet and carries its own REQUIRED audit row (manageengine_device_command).
+  sessionApi({ methods: ["GET"], pattern: "/api/devices/manageengine", permission: { resource: "company_devices", action: "approve" } }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/manageengine", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
   // Visual Aids (owner, 2026-09-18). A rep and his DM, RM and NSM read the ACTIVE aids of their own
   // line — the line check lives in src/lib/visual-aids/service.ts, below the permission. Marketing
   // Manager, GPM and Super Admin upload (create) and retire or replace (update); nobody deletes. The

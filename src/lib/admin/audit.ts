@@ -73,6 +73,13 @@ export type AuditEntityType =
   // stores the credential it audits hands it to every reader of the log.
   | "android_device_policy"
   | "android_enrollment_token"
+  // Rep Tablets remote actions (2026-09-24). One row per remote command Phoenix issues to a tablet
+  // through the ManageEngine MDM API — lock, restart, reset the screen lock, lost mode on or off,
+  // and the two wipes. REQUIRED audit, written after ManageEngine has accepted the command: each one
+  // reaches a real tablet in a rep's hands, and the two wipes erase it, so a command that leaves no
+  // trace is treated as a failed command. The row names the tablet by its custody asset tag, never
+  // by any credential.
+  | "manageengine_device_command"
   // Email routing. `distribution_list` is an edit to a named recipient group — who a future email
   // reaches. `company_email_alias` is the Turbify register beside it.
   //
