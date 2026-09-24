@@ -4,21 +4,40 @@
 // directly. Everything here is a plain value already resolved on the server: names not codes,
 // signed photo URLs ready to render, times as raw ISO strings the client formats to Cairo.
 
-/** A captured GPS point plus its human-readable address. Any part may be missing. */
+/**
+ * A captured location, kept BOTH raw and broken into its parts (owner ask, 2026-09-25: "make the
+ * customer location raw as it is and also separate it to brick, area, gov, clean address").
+ *
+ * `rawLocation` is the location exactly as it was captured in the field, unedited — the owner's "raw
+ * as it is". The remaining fields are that same location resolved into its pieces: the clean street
+ * `address`, and the `brick` / `area` / `governorate` it falls in. Any part may be missing.
+ */
 export type VerifiedCaptureLocation = {
   latitude: number | null;
   longitude: number | null;
-  /** A readable address, never a bare code (owner rule: names, never codes). */
+  /** The clean street address — the readable line with any brick/area/region tags stripped off. */
   address: string | null;
+  /** The location exactly as captured, unedited. Never a bare code (owner rule: names, never codes). */
+  rawLocation: string | null;
+  /** The brick the capture falls in, by name. */
+  brick: string | null;
+  /** The area the capture falls in, by name. */
+  area: string | null;
+  /** The sales region the capture falls in, by name (when the capture carried one). */
+  region: string | null;
+  /** The governorate the capture falls in, by name. */
+  governorate: string | null;
 };
 
 /**
  * One distributor code on file for a captured pharmacy, and whether our database recognises it.
  *
  * The owner asked to see the distributor ("DISTB") and the pharmacy's code at it, and to be told
- * "available in our database or no". `inDatabase` is exactly that: true when the code is mapped into
- * our sales territory (a `mapped_area_code` on the direct-order table, `reference_status = matched`
- * on the marketing one), false when it was entered but our reference data has never matched it.
+ * "available in our database or no". `inDatabase` is exactly that: true when the pharmacy's customer
+ * code at that distributor carries real MONTHLY-CLOSING SALES (a non-zero row in
+ * `source_of_sales_channel_customer_rollup`), false when it was entered but our sales data has never
+ * seen a sale under it (owner ask, 2026-09-25: "make 'in our database' check monthly-closing sales,
+ * not territory mapping").
  */
 export type VerifiedCaptureDistributorCode = {
   /** The distributor's readable name, e.g. "Ibn Sina" — never a bare code alone (owner rule). */
@@ -27,7 +46,7 @@ export type VerifiedCaptureDistributorCode = {
   distributorCode: string | null;
   /** The pharmacy's customer code at that distributor. */
   customerCode: string | null;
-  /** True when this code is mapped into our sales territory — "available in our database". */
+  /** True when this code carries real monthly-closing sales — "available in our database". */
   inDatabase: boolean;
 };
 
