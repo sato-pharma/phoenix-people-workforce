@@ -71,6 +71,39 @@ export type CreateJobPostChannelInput = {
 
 const TABLE = "ats_job_post_channels";
 
+/**
+ * The WhatsApp apply line a newly-added channel is born on.
+ *
+ * A new channel starts here rather than on the company-wide default, so a group added tomorrow
+ * behaves like the 45 channels that were swept onto this line on 2026-09-24 instead of quietly
+ * routing applicants back to the old number. The recruiter can still point any single channel
+ * elsewhere afterwards from the Advertise tab. Stored in the same local form as the column's
+ * existing rows; normalised to a wa.me number at link-build time.
+ */
+export const NEW_CHANNEL_APPLY_WHATSAPP_NUMBER = "01159888247";
+
+/**
+ * The row written for one new channel.
+ *
+ * Pure and DB-free on purpose: the born-on apply line above is the thing that silently regresses if
+ * an insert forgets it, so it is pinned by a test that builds a row rather than by a database
+ * round-trip.
+ */
+export function channelInsertRow(
+  input: CreateJobPostChannelInput,
+  resolved: { code: string; name: string; hrId: string | null },
+): Record<string, unknown> {
+  return {
+    apply_whatsapp_number: NEW_CHANNEL_APPLY_WHATSAPP_NUMBER,
+    code: resolved.code,
+    created_by_hr_id: hrIdForStorage(resolved.hrId),
+    kind: input.kind ?? "other",
+    name: resolved.name,
+    notes: textOrNull(input.notes),
+    url: textOrNull(input.url),
+  };
+}
+
 function asKind(value: unknown): JobPostChannelKind {
   const kind = String(value ?? "");
   return (JOB_POST_CHANNEL_KINDS as readonly string[]).includes(kind) ? (kind as JobPostChannelKind) : "other";
@@ -144,14 +177,7 @@ export async function createJobPostChannels(
     // Reserve inside the loop, so two new groups in ONE paste cannot be handed the same code.
     takenCodes.push(code);
     takenNames.add(key);
-    rows.push({
-      code,
-      created_by_hr_id: hrIdForStorage(access.hrId),
-      kind: input.kind ?? "other",
-      name,
-      notes: textOrNull(input.notes),
-      url: textOrNull(input.url),
-    });
+    rows.push(channelInsertRow(input, { code, name, hrId: access.hrId }));
   }
 
   if (rows.length === 0) return { created: [], skipped };
