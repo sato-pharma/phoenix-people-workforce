@@ -37,6 +37,7 @@ import {
   ListChecks,
   Lock,
   Package,
+  PackageSearch,
   LayoutDashboard,
   LayoutGrid,
   LifeBuoy,
@@ -1571,6 +1572,10 @@ const employeePortalNavigationSectionSeeds = [
       // order still need the workspace, and their queue lives in it now that the standalone
       // D.Orders Approval row is retired. The Report is reachable from inside the workspace.
       { href: "/employee-portals/direct-orders", icon: ReceiptText, label: "Direct Orders", permissions: [{ resource: "direct_orders", action: "read" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager"], navBadge: "direct-orders-needs-action" },
+      // Medical Rep only — a view-only window onto the counted direct orders in his own area (owner,
+      // 2026-09-24). He never raises one, so it is a separate read from the requester row above; the
+      // page enforces role + area itself. `sales:read` is the permission a rep already holds here.
+      { href: "/employee-portals/direct-orders-in-my-area", icon: PackageSearch, label: "Area Direct Orders", permissions: [{ resource: "sales", action: "read" }], roles: ["Medical Rep"] },
       // Weekly Sales — roles mirror PORTAL_WEEKLY_ROLES plus PORTAL_WEEKLY_REP_ROLES. Medical Rep added
       // 2026-09-16 (owner): the page gives him his own area's weekly sales only (portal-weekly-rep.ts).
       { href: "/employee-portals/weekly-sales", icon: CalendarRange, label: "Weekly Sales", permissions: [{ resource: "sales" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Medical Rep"] },

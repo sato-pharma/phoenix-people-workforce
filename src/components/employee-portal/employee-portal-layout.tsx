@@ -56,6 +56,7 @@ import {
   BookUser,
   TrendingUp,
   Package,
+  PackageSearch,
   Sunrise,
   Presentation,
 } from "lucide-react";
@@ -259,6 +260,7 @@ function buildEmployeePortalSections({
   showCoachingAnalyticsTab = false,
   showActionsTab = false,
   showDirectOrdersTab = false,
+  showAreaDirectOrdersTab = false,
   showVacationApprovalsTab = false,
   showExcuseApprovalsTab = false,
   showPlanApprovalsTab = false,
@@ -343,6 +345,10 @@ function buildEmployeePortalSections({
         // link and is served their own targets only (owner, 2026-09-16).
         ...(showTargetsTab ? [{ href: "/employee-portals/targets", label: "Targets", icon: Target }] : []),
         ...(showDirectOrdersTab ? [{ href: "/employee-portals/direct-orders", label: "Direct Orders", icon: ReceiptText }] : []),
+        // A Medical Rep's VIEW-ONLY window onto the direct orders their District Manager booked on
+        // pharmacies in the rep's own area (owner, 2026-09-24). Distinct from the requester's Direct
+        // Orders workspace above — the rep never raises one, only watches them land in his territory.
+        ...(showAreaDirectOrdersTab ? [{ href: "/employee-portals/direct-orders-in-my-area", label: "Area Direct Orders", icon: PackageSearch }] : []),
       ],
     },
     // Merged from the old "Team Performance" + "Team Operations": performance views first, then
