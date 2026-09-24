@@ -282,7 +282,45 @@ function matches(row: RepsListContact, needle: string): boolean {
   return haystack.includes(needle);
 }
 
-function GroupHeading({ group, shown, tint }: { group: RepsListGroup; shown: number; tint?: BrickTint | null }) {
+/**
+ * The collapse caret. A chevron drawn with SQUARE line caps and mitred joins, never a rounded one —
+ * the square-edge golden rule reaches a 12px icon exactly as it reaches a card. It points right when
+ * the block is shut and rotates down when it is open, so the shape itself says which way the click
+ * goes rather than relying on colour.
+ */
+function GroupCaret({ open }: { open: boolean }) {
+  return (
+    <svg
+      aria-hidden
+      className={`h-3 w-3 shrink-0 self-center text-slate-500 transition-transform ${open ? "rotate-90" : ""}`}
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="square"
+      strokeLinejoin="miter"
+      strokeWidth="2.5"
+      viewBox="0 0 24 24"
+    >
+      <polyline points="9 6 15 12 9 18" />
+    </svg>
+  );
+}
+
+function GroupHeading({
+  collapsed = false,
+  collapsible = false,
+  group,
+  onToggle,
+  shown,
+  tint,
+}: {
+  /** Phoenix CRM only. When true, the heading is a button that opens and shuts its own block. */
+  collapsible?: boolean;
+  collapsed?: boolean;
+  group: RepsListGroup;
+  onToggle?: () => void;
+  shown: number;
+  tint?: BrickTint | null;
+}) {
   // A mapped brick and an unmapped locality are visually distinct because they mean different
   // things: the first is a real territory, the second is a locality nobody has mapped to one yet.
   // Same shape, different tone — never a hidden row and never an identical-looking one.
@@ -292,13 +330,14 @@ function GroupHeading({ group, shown, tint }: { group: RepsListGroup; shown: num
   // make the page prettier. A tinted block keeps the same square edges and the same 1px rules; the
   // colour is a left bar and a wash, never a new shape.
   const mappedTone = tint ? `border-slate-200 border-l-4 ${tint.bar} ${tint.fill}` : "border-slate-200 bg-slate-50";
-  return (
-    <div
-      className={`flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-y px-5 py-2.5 ${
-        group.mapped ? mappedTone : "border-amber-200 bg-amber-50"
-      }`}
-    >
+  const tone = group.mapped ? mappedTone : "border-amber-200 bg-amber-50";
+  const layout = "flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-y px-5 py-2.5";
+  const body = (
+    <>
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        {/* The caret rides at the head of the block name so a rep collapses a brick from the same
+            place they read it. Only in the collapsible surface, so nothing else grows an icon. */}
+        {collapsible ? <GroupCaret open={!collapsed} /> : null}
         {/* dir="auto" on the heading: brick names in production are single-language Arabic locality
             names, which is the case where block-level auto is house style and correct. */}
         <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-900" dir="auto">
@@ -316,7 +355,17 @@ function GroupHeading({ group, shown, tint }: { group: RepsListGroup; shown: num
       <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">
         {shown === group.rows.length ? describeMix(group.rows) : `${shown} of ${group.rows.length} shown`}
       </span>
-    </div>
+    </>
+  );
+  // A button only where it does something — everywhere else the heading is the exact div it always
+  // was, so My List, the manager Reps List and the Weekly Plans tab render byte-for-byte unchanged.
+  if (!collapsible) {
+    return <div className={`${layout} ${tone}`}>{body}</div>;
+  }
+  return (
+    <button aria-expanded={!collapsed} className={`${layout} w-full text-left ${tone}`} onClick={onToggle} type="button">
+      {body}
+    </button>
   );
 }
 
@@ -1026,8 +1075,21 @@ function GroupTable({
               <col className="w-[13%]" />
               {showList ? <col className="w-[13%]" /> : null}
               <col className="w-[11%]" />
-              <col className="w-[16%]" />
-              <col className={showList ? "w-[26%]" : "w-[39%]"} />
+              {/* IN PHOENIX CRM ADDRESS SITS RIGHT AFTER THE BRICK AND ACTIONS IS LAST (owner,
+                  2026-09-25). It is the same two widths in the other order — 16% and 26%/39% just
+                  swap seats — so both tabs still total exactly 100% and the golden rule holds; only
+                  the board reorders, every other surface keeps Confidence then Address. */}
+              {showConfidence ? (
+                <>
+                  <col className="w-[16%]" />
+                  <col className={showList ? "w-[26%]" : "w-[39%]"} />
+                </>
+              ) : (
+                <>
+                  <col className={showList ? "w-[26%]" : "w-[39%]"} />
+                  <col className="w-[16%]" />
+                </>
+              )}
             </colgroup>
             <thead>
               <tr className="bg-slate-900 text-left">
@@ -1035,8 +1097,17 @@ function GroupTable({
                 <th className={THEAD}>Specialty</th>
                 {showList ? <th className={THEAD}>List</th> : null}
                 <th className={THEAD}>Brick</th>
-                <th className={THEAD}>{showConfidence ? "Confidence" : "Actions"}</th>
-                <th className={THEAD}>Address</th>
+                {showConfidence ? (
+                  <>
+                    <th className={THEAD}>Confidence</th>
+                    <th className={THEAD}>Address</th>
+                  </>
+                ) : (
+                  <>
+                    <th className={THEAD}>Address</th>
+                    <th className={THEAD}>Actions</th>
+                  </>
+                )}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -1061,25 +1132,34 @@ function GroupTable({
                     >
                       {brickCell}
                     </td>
-                    <td className="px-3 py-2">
-                      {showConfidence ? (
-                        <ConfidenceChip onOpen={() => onOpenConfidence(row)} row={row} />
-                      ) : (
-                        rowActions?.(row)
-                      )}
-                    </td>
-                    {/* The neighbourhood colour lands HERE and nowhere else — the owner put it on
-                        the address column, and at ~45% of located rows a row-level wash would
-                        repaint half the board.
+                    {/* The neighbourhood colour lands on the ADDRESS cell and nowhere else — the
+                        owner put it there, and at ~45% of located rows a row-level wash would repaint
+                        half the board. A SHARED ROW KEEPS ITS VIOLET AND LOSES THE NEIGHBOURHOOD
+                        FILL: violet is the rarer signal, so it wins the area; the block is not lost,
+                        because the sentence under the address still names the neighbours in the
+                        block's own hue. Stacking both would give one cell two backgrounds.
 
-                        A SHARED ROW KEEPS ITS VIOLET AND LOSES THE NEIGHBOURHOOD FILL. Violet is
-                        by far the rarer signal, so it wins the area; the block is not lost, because
-                        the sentence under the address still names the neighbours in the block's own
-                        hue. Stacking both would give one cell two backgrounds and answer neither
-                        question. */}
-                    <td className={`px-3 py-2 text-slate-600 ${tint && !shared ? tint.fill : ""}`}>
-                      <AddressCell locality={row.region} row={row} />
-                    </td>
+                        In Phoenix CRM the address cell moves left, right after the brick, so the
+                        neighbourhood wash reads directly beside the block it belongs to and the
+                        clustered same-address rows read as one coloured run; the CRM's own buttons
+                        take the last column. Every other surface keeps Confidence then Address. */}
+                    {showConfidence ? (
+                      <>
+                        <td className="px-3 py-2">
+                          <ConfidenceChip onOpen={() => onOpenConfidence(row)} row={row} />
+                        </td>
+                        <td className={`px-3 py-2 text-slate-600 ${tint && !shared ? tint.fill : ""}`}>
+                          <AddressCell locality={row.region} row={row} />
+                        </td>
+                      </>
+                    ) : (
+                      <>
+                        <td className={`px-3 py-2 text-slate-600 ${tint && !shared ? tint.fill : ""}`}>
+                          <AddressCell locality={row.region} row={row} />
+                        </td>
+                        <td className="px-3 py-2">{rowActions?.(row)}</td>
+                      </>
+                    )}
                   </tr>
                 );
               })}
@@ -1095,6 +1175,7 @@ export function RepsListContacts({
   activityAvailable,
   activityMonthLabel,
   brickColor = false,
+  collapsible = false,
   exportTitle = "Reps List",
   groups,
   repName,
@@ -1112,6 +1193,11 @@ export function RepsListContacts({
    * Reps List and the Weekly Plans tab are untouched by it.
    */
   brickColor?: boolean;
+  /**
+   * Phoenix CRM only. Each brick block opens and shuts on its heading (owner, 2026-09-25). OFF
+   * everywhere else, so every other surface keeps its headings as plain, always-open rows.
+   */
+  collapsible?: boolean;
   /** The download's sheet name and title — "My List" on a rep's own page, so the file says what it is. */
   exportTitle?: string;
   groups: RepsListGroup[];
@@ -1139,6 +1225,19 @@ export function RepsListContacts({
   // both sides of the split and clearing it would be the surprise.
   const [activity, setActivity] = useState("");
   const [query, setQuery] = useState("");
+  // Which brick blocks the reader has shut. A SET of the collapsed keys, not the open ones, so the
+  // default — nothing in the set — is every block open, which is what a list is for. Keyed on the
+  // group's stable key, the same one the colour and the Brick filter use, so a block keeps its state
+  // as a filter narrows the board. Only ever populated in the collapsible surface (Phoenix CRM).
+  const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<string>>(() => new Set());
+  const toggleGroup = useCallback((key: string) => {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
 
   // ONE dialog for the whole board, opened with whichever row was clicked. A dialog per row would be
   // hundreds of mounted overlays; a dialog per group would put a hook count inside a map, which
@@ -1474,20 +1573,33 @@ export function RepsListContacts({
         </p>
       ) : (
         <div className="border border-slate-200">
-          {visible.map((entry) => (
-            <div key={groupKey(entry.group)}>
-              <GroupHeading group={entry.group} shown={entry.rows.length} tint={tints.get(groupKey(entry.group))} />
-              <GroupTable
-                group={entry.group}
-                onOpenConfidence={openConfidence}
-                onOpenInsights={openInsights}
-                rowActions={rowActions}
-                rows={entry.rows}
-                showConfidence={showConfidence}
-                showList={tab === "contacts"}
-              />
-            </div>
-          ))}
+          {visible.map((entry) => {
+            const key = groupKey(entry.group);
+            const isCollapsed = collapsible && collapsedGroups.has(key);
+            return (
+              <div key={key}>
+                <GroupHeading
+                  collapsed={isCollapsed}
+                  collapsible={collapsible}
+                  group={entry.group}
+                  onToggle={collapsible ? () => toggleGroup(key) : undefined}
+                  shown={entry.rows.length}
+                  tint={tints.get(key)}
+                />
+                {isCollapsed ? null : (
+                  <GroupTable
+                    group={entry.group}
+                    onOpenConfidence={openConfidence}
+                    onOpenInsights={openInsights}
+                    rowActions={rowActions}
+                    rows={entry.rows}
+                    showConfidence={showConfidence}
+                    showList={tab === "contacts"}
+                  />
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 

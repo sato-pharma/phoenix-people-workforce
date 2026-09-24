@@ -447,25 +447,39 @@ export function runRepsListTests() {
     // moves and false-fails.
     const colgroup = source.slice(source.indexOf("<colgroup>"), source.indexOf("</colgroup>"));
     const widths = [...colgroup.matchAll(/w-\[(\d+)%\]/g)].map((match) => Number(match[1]));
-    assert.equal(
-      widths.length,
-      7,
-      "the colgroup should declare six columns, one of which (Address) carries both a with-List and a without-List width",
+    // The first four columns are unconditional and always in this order: Contact, Specialty, List,
+    // Brick. Read them positionally.
+    const [contact, specialty, list, brick] = widths;
+    assert.deepEqual(
+      [contact, specialty, list, brick],
+      [21, 13, 13, 11],
+      "the first four columns — Contact, Specialty, List, Brick — keep their measured widths",
     );
-    const [contact, specialty, list, brick, confidence, addressWithList, addressWithoutList] = widths;
+    // The last two columns SWAP SEATS between surfaces: Phoenix CRM puts Address right after the
+    // brick with Actions last (owner, 2026-09-25), every other surface keeps Confidence then Address.
+    // Both orders live in the source, so the colgroup carries the actions/confidence width and both
+    // Address widths in each order. What must hold is the arithmetic, not the order — so read the
+    // three distinct trailing widths and check both tabs still total exactly 100%.
+    const trailing = [...new Set(widths.slice(4))].sort((left, right) => left - right);
+    assert.deepEqual(
+      trailing,
+      [16, 26, 39],
+      "the trailing columns are the actions/confidence width (16%) and Address's two widths (26% with List, 39% without), whatever order a surface puts them in",
+    );
+    const [actions, addressWithList, addressWithoutList] = trailing;
     assert.equal(
-      contact + specialty + list + brick + confidence + addressWithList,
+      contact + specialty + list + brick + actions + addressWithList,
       100,
       "the Contacts tab's six columns must total exactly 100% — table-fixed scales anything else, so a total under 100 leaves dead space and over 100 squeezes every column at once",
     );
     assert.equal(
-      contact + specialty + brick + confidence + addressWithoutList,
+      contact + specialty + brick + actions + addressWithoutList,
       100,
       "and the Pharmacies tab's five must total 100% too: dropping the List column is what frees its share for Address",
     );
     assert.ok(
-      confidence >= 16,
-      `the Confidence column must stay at 16% or wider (it is ${confidence}%): its heading is the single unbreakable word "Confidence", which needs 106px at this uppercase tracking, and 16% is what clears that at the 768px viewport where the desktop table first appears. A single word cannot wrap, so a narrower column puts the heading outside its own cell — silently, because nothing clips and nothing scrolls`,
+      actions >= 16,
+      `the actions/confidence column must stay at 16% or wider (it is ${actions}%): the word "Confidence" is a single unbreakable token needing 106px at this uppercase tracking, and 16% is what clears that at the 768px viewport where the desktop table first appears. A single word cannot wrap, so a narrower column puts the heading outside its own cell — silently, because nothing clips and nothing scrolls`,
     );
   }
 

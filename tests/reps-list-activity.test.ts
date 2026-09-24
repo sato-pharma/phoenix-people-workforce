@@ -480,10 +480,22 @@ export function runRepsListActivityTests() {
     // into one of them rather than added beside them. A seventh column could only be bought by
     // squeezing the other six, and the owner's rule is to fit by MERGING, never by shrinking type.
     assert.equal((tables.match(/<colgroup>/g) ?? []).length, 2, "both tables declare their columns");
+    // Counted per table, because GroupTable's last two columns SWAP SEATS between surfaces (Phoenix
+    // CRM puts Address before Actions, owner 2026-09-25) and so are declared in both orders — eight
+    // <col> literals for six rendered columns. PlanDayTable still declares its six once. A genuine
+    // SEVENTH column would break the width arithmetic pinned in reps-list.test.ts, where both tabs
+    // must total exactly 100%.
+    const groupColgroup = tables.slice(tables.indexOf("<colgroup>"), tables.indexOf("</colgroup>"));
+    const planColgroup = tables.slice(tables.lastIndexOf("<colgroup>"), tables.lastIndexOf("</colgroup>"));
     assert.equal(
-      (tables.match(/<col\s/g) ?? []).length,
-      12,
-      "six columns per table, unchanged by the activity column",
+      (groupColgroup.match(/<col\s/g) ?? []).length,
+      8,
+      "GroupTable declares its first four columns once and its last two in both orders — eight <col> for six rendered columns",
+    );
+    assert.equal(
+      (planColgroup.match(/<col\s/g) ?? []).length,
+      6,
+      "PlanDayTable declares its six columns, unchanged by the activity column",
     );
   }
 
