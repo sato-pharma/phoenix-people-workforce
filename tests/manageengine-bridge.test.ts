@@ -198,6 +198,7 @@ async function runDeviceTests() {
   assert.equal(device.isAndroid, true, "platform code 2 is Android");
   assert.equal(device.lostMode, true, "lost_mode_status 1 reads as lost mode on");
   assert.equal(device.lastContactAt, new Date(1_700_000_000_000).toISOString(), "epoch-ms last contact becomes ISO");
+  assert.equal(device.enrollmentStatus, "Managed", "a status ManageEngine already sends as a word passes through unchanged");
 
   // The live tenant shape (confirmed 2026-09-24): imei is an ARRAY, is_lost_mode_enabled is a real
   // BOOLEAN, and the holder is a NESTED user object — a flat string read misses all three.
@@ -216,6 +217,7 @@ async function runDeviceTests() {
               imei: ["865569071549107"],
               platform_type: "android",
               os_version: "12",
+              managed_status: "2",
               is_lost_mode_enabled: false,
               last_contact_time: "1700000000000",
               user: { user_name: "IT Satopharma", user_email: "it.satopharma@gmail.com", user_id: "9" },
@@ -232,11 +234,32 @@ async function runDeviceTests() {
   assert.equal(live.userEmail, "it.satopharma@gmail.com", "the holder email is read from the nested user object");
   assert.equal(live.model, "TB328XU", "product_name is accepted as the model");
   assert.equal(live.isAndroid, true, "platform_type 'android' reads as Android");
+  assert.equal(live.enrollmentStatus, "Managed", "the bare managed_status code '2' is shown as the word Managed, never the number");
   assert.equal(
     matchManageEngineToRegister(live, [register({ assetTag: "PHX-TAB-0002", imei: "865569071549107" })])?.assetTag,
     "PHX-TAB-0002",
     "the array-sourced imei still matches the register",
   );
+
+  // Enrolment status never leaks a bare code: a removed device reads "Removed" (from is_removed),
+  // and an unmapped numeric managed_status shows no badge rather than a number we cannot name.
+  resetManageEngineTokenCache();
+  const statuses = makeFetch({
+    api: [
+      {
+        status: 200,
+        body: {
+          devices: [
+            { device_id: "r1", managed_status: "3", is_removed: true },
+            { device_id: "r2", managed_status: "99" },
+          ],
+        },
+      },
+    ],
+  });
+  const [removed, unknown] = await listManageEngineDevices(statuses.fetch, ENV);
+  assert.equal(removed.enrollmentStatus, "Removed", "is_removed reads as Removed regardless of the code");
+  assert.equal(unknown.enrollmentStatus, null, "an unmapped numeric status is hidden, never shown as the raw code");
 
   // Register matching: serial first, then IMEI, both on digits/case-insensitively.
   const bySerial: ManageEngineDevice = { ...device, imei: null };

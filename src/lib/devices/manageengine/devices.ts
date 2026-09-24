@@ -79,6 +79,27 @@ function nestedUser(record: RawRecord): RawRecord | null {
   return user && typeof user === "object" && !Array.isArray(user) ? (user as RawRecord) : null;
 }
 
+/**
+ * A human enrolment status, never the raw code ManageEngine sends.
+ *
+ * This tenant's live `GET /api/v1/mdm/devices` returns `managed_status` as a bare integer STRING
+ * ("2") with no text sibling, so rendering it verbatim printed "2" on the console — an owner
+ * names-never-codes violation. `2` is the managed/enrolled state (confirmed against the live device,
+ * which is enrolled, responding to commands and recently seen); a removed device is flagged by the
+ * separate `is_removed` boolean. Any value that is already a word (some tenants/versions send one) is
+ * passed through. An unmapped bare code returns null — the badge is hidden rather than showing a
+ * number or a label we cannot stand behind, and this map is extended when a new live value is seen.
+ */
+const MANAGED_STATUS_LABELS: Readonly<Record<string, string>> = { "2": "Managed" };
+
+function enrollmentLabel(record: RawRecord): string | null {
+  if (pickBoolean(record, ["is_removed"]) === true) return "Removed";
+  const status = pickString(record, ["enrollment_status", "managed_status", "device_status"]);
+  if (status === null) return null;
+  if (!/^\d+$/.test(status)) return status;
+  return MANAGED_STATUS_LABELS[status] ?? null;
+}
+
 /** ManageEngine reports platform as a code; 2 is Android on the MDM API. */
 function platformLabel(record: RawRecord): { label: string; isAndroid: boolean } {
   const raw = pickString(record, ["platform_type", "platform", "os_name", "device_platform"]);
@@ -127,7 +148,7 @@ function normalizeDevice(record: RawRecord): ManageEngineDevice | null {
   const user = nestedUser(record);
   return {
     deviceId,
-    enrollmentStatus: pickString(record, ["enrollment_status", "managed_status", "device_status"]),
+    enrollmentStatus: enrollmentLabel(record),
     imei: pickStringOrFirst(record, ["imei", "imei_number", "imei1"]),
     isAndroid: platformLabel(record).isAndroid,
     lastContactAt: lastContactIso(record),
