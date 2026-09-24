@@ -33,6 +33,7 @@
 import { loadPuppeteer, resolveChromiumPath, type ChromiumPage } from "@/lib/pdf/chromium";
 
 import type { RobotStepResult, TurbifyConsoleDriver } from "./driver";
+import { currentTurbifyTotp } from "./totp";
 
 /** The console's own sign-in page. Confirmed to redirect here from ecp.turbify.com. */
 const LOGIN_URL = "https://login.turbify.com/login?.done=https%3A%2F%2Fecp.turbify.com%2F";
@@ -42,6 +43,31 @@ const LOGIN_SELECTORS = {
   email: 'input[type="email"]',
   password: 'input[type="password"]',
   submit: 'button[type="submit"]',
+} as const;
+
+/**
+ * 🔴 TWO-STEP VERIFICATION IS ENFORCED — proven live on 2026-09-24. A headless sign-in with the
+ * correct password did NOT reach the console: it advanced to a page titled "Two-Step Verification"
+ * at `/tfavalidate` and sent a one-time code. A server cannot receive a code sent to a phone, so the
+ * account's second factor is set to an AUTHENTICATOR APP and its seed is stored as
+ * `PHOENIX_TURBIFY_ADMIN_TOTP_SECRET`; `currentTurbifyTotp()` reproduces the 6-digit code the app
+ * would show. The selectors below are the code-entry field, the "trust this device" option and the
+ * verify button on that page — all still `__UNCALIBRATED__`, because the page's DOM must be read
+ * once the account is actually on authenticator-app 2-step (the SMS-code page seen on 2026-09-24 may
+ * differ from the authenticator page). The still-unknown risk beyond this: whether the datacenter IP
+ * adds a CAPTCHA on top of the code, which only a server-side run can answer.
+ */
+export const TURBIFY_REQUIRES_TWO_STEP = true;
+
+const TWO_STEP_SELECTORS = {
+  /** The page title / url that proves we are being challenged. Confirmed: title "Two-Step Verification", path "/tfavalidate". */
+  challengePath: "/tfavalidate",
+  /** The authenticator-code input. UNVERIFIED against the authenticator-app variant of the page. */
+  codeInput: { label: "<6-digit code field>", selector: "__UNCALIBRATED__" },
+  /** Optional "don't ask again on this device" toggle, if the page offers one. UNVERIFIED. */
+  trustDevice: { label: "<trust this device>", selector: "__UNCALIBRATED__" },
+  /** The verify/submit button on the two-step page. UNVERIFIED. */
+  verify: { label: "<verify code>", selector: "__UNCALIBRATED__" },
 } as const;
 
 /**
@@ -179,12 +205,32 @@ export async function createTurbifyConsoleDriver(): Promise<TurbifyConsoleDriver
       await page.type(LOGIN_SELECTORS.password, credentials.password);
       await page.click(LOGIN_SELECTORS.submit);
 
+      // Two-step verification is enforced on this account (proven 2026-09-24). If the password step
+      // hands us the challenge page, answer it with the authenticator code we generate ourselves;
+      // there is no phone in this loop. A code sent to a phone (SMS/email 2-step) cannot be answered
+      // here, which is exactly why the account's second factor must be an authenticator app.
+      await new Promise((resolve) => setTimeout(resolve, 3_000));
+      if (page.url().includes(TWO_STEP_SELECTORS.challengePath)) {
+        const code = currentTurbifyTotp();
+        if (!code) {
+          throw new Error(
+            "Turbify demanded a second factor but PHOENIX_TURBIFY_ADMIN_TOTP_SECRET is not set, so "
+            + "the robot cannot generate the authenticator code. Set the account's 2-step method to "
+            + "an authenticator app and store its seed.",
+          );
+        }
+        await page.type(TWO_STEP_SELECTORS.codeInput.selector, code);
+        await page.click(TWO_STEP_SELECTORS.trustDevice.selector).catch(() => {});
+        await page.click(TWO_STEP_SELECTORS.verify.selector);
+      }
+
       // PROVE the session, never assume it. A sign-in that silently failed would leave every step
       // below finding nothing and reporting success over live mailboxes.
       await page.waitForSelector(MAILBOX_SELECTORS.searchBox.selector, { timeout: 45_000 }).catch(() => {
         throw new Error(
           "Signed in to Turbify but the mailbox list never appeared. The credential may be wrong, "
-          + "or the account was challenged for a second factor.",
+          + "or a second-factor challenge was not cleared (check the authenticator seed and that the "
+          + "account's 2-step method is an authenticator app, not a code sent to a phone).",
         );
       });
     },
