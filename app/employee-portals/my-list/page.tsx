@@ -1,37 +1,28 @@
-// My List — a Medical Rep's own contact list: Reps List at a rep's reach.
+// My List is RETIRED — its board now lives in Phoenix CRM's List tab (owner, 2026-09-25: "hide the
+// my-list board"). This route no longer renders a board of its own; it forwards to the CRM list,
+// the board's new home, so a saved bookmark or a stale link still lands on the live board.
 //
-// The owner's instruction, 2026-09-16: "show in medical reps accounts the reps-list scoped to
-// everyone scope and call is My List". Every seat reads the board at its own reach; a manager's
-// reach is their reps and a rep's is the rep alone, so this page opens one list and offers no picker.
+// THE GATE STAYS. The page still enforces exactly the permission its nav registry entry mirrors —
+// crm_visits:read — so the sidebar/bottom-nav permission guard (tests/employee-portal-nav-permission-
+// matches-page.test.ts) keeps one truth in one place. A seat without CRM access gets the same
+// refusal it always did; a rep who holds it is forwarded on.
 //
-// THE REACH IS THE SESSION'S HR ID, AND NOTHING ELSE. `getMyListScope` reads no URL parameter, so a
-// hand-typed `?rep=` cannot open anyone else's list — there is no parameter here that names a rep.
+// THE TWO DOORS STILL CROSS. A manager who lands here is sent to Reps List, their own reach onto the
+// same board, exactly as before. Everyone else the gate admits is forwarded to the CRM list.
 //
-// A SEPARATE PAGE, NOT A RELABELLED REPS LIST. The portal nav registry holds one entry per href, and
-// the manager board's role list is pinned as reviewed (doctor-list-roles.ts), so the rep's door is
-// its own route with its own gate. The two pages send each other's viewers across: a rep who lands
-// on Reps List is sent here, and a manager who lands here is sent to Reps List.
+// The board's data loader, view component and scope resolver are left intact and dormant in
+// src/lib/crm — un-hiding is restoring the render here and flipping showMyListTab back in navigation.ts.
 import { redirect } from "next/navigation";
 
-import { EmployeePortalEmptyState, EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
-import { MyListBoardView } from "@/components/crm/reps-list-board";
+import { EmployeePortalEmptyState } from "@/components/employee-portal/enterprise-shell";
 import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
-import { canAccessDoctorList, canAccessMyList, getMyListScope } from "@/lib/crm/doctor-list-access";
-import { getMyListBoard } from "@/lib/crm/reps-list-board";
-import { logPortalFailure } from "@/lib/observability/portal-logging";
+import { canAccessDoctorList, canAccessMyList } from "@/lib/crm/doctor-list-access";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const BASE_PATH = "/employee-portals/my-list";
-const ROUTE = BASE_PATH;
-
-type PageProps = {
-  searchParams?: Promise<{ month?: string }>;
-};
-
-export default async function PortalMyListPage({ searchParams }: PageProps) {
+export default async function PortalMyListPage() {
   const access = await resolveAccessContextFromPage();
 
   if (resolveNavigationMode(access) !== "employee-portal") redirect("/overview");
@@ -42,38 +33,12 @@ export default async function PortalMyListPage({ searchParams }: PageProps) {
   if (!canAccessMyList(access) || !(await canAccess(access, "crm_visits", "read"))) {
     return (
       <EmployeePortalEmptyState
-        message="My List is available to medical reps with CRM access — it shows your own CRM contact list, grouped by brick."
+        message="My List is available to medical reps with CRM access — it now lives in Phoenix CRM's List tab."
         title="My List Unavailable"
       />
     );
   }
 
-  const params = await searchParams;
-
-  let board: Awaited<ReturnType<typeof getMyListBoard>> | null = null;
-  try {
-    board = await getMyListBoard({ params: { month: params?.month }, scope: getMyListScope(access) });
-  } catch (error) {
-    logPortalFailure({ hrId: access.hrId, module: "my-list", role: access.role, route: ROUTE }, error);
-    board = null;
-  }
-
-  if (!board) {
-    return (
-      <EmployeePortalEmptyState
-        message="My List could not load. The CRM mirror is unavailable right now — this is a load failure, not an empty list."
-        title="My List Unavailable"
-      />
-    );
-  }
-
-  return (
-    <EmployeePortalPageShell
-      badge="CRM"
-      description="Your own CRM contact list, grouped by the brick each contact sits in, with this month's plan and visits beside each contact."
-      title="My List"
-    >
-      <MyListBoardView basePath={BASE_PATH} board={board} />
-    </EmployeePortalPageShell>
-  );
+  // Retired — the rep's own contact list is the Phoenix CRM List tab now.
+  redirect("/employee-portals/field-crm?tab=list");
 }

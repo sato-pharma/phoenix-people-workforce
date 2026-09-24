@@ -2,7 +2,7 @@ import { parseRoleStrict, type PhoenixRole } from "@/lib/auth/permissions";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { DOCTOR_COVERAGE_PORTAL_ROLES } from "@/lib/crm/doctor-coverage-roles";
-import { DOCTOR_LIST_PORTAL_ROLES, MY_LIST_PORTAL_ROLES } from "@/lib/crm/doctor-list-roles";
+import { DOCTOR_LIST_PORTAL_ROLES } from "@/lib/crm/doctor-list-roles";
 import { canViewMarketingCoverageReport } from "@/lib/marketing-requests/coverage-report-access";
 import { isDirectOrderRequesterRole } from "@/lib/direct-orders/types";
 import { VISUAL_AIDS_PORTAL_ROLES } from "@/lib/visual-aids/rules";
@@ -525,9 +525,12 @@ export function resolveEmployeePortalNavVisibility(
   // is the "visible row he cannot open" bug the sidebar tests exist to catch. Asking the list itself
   // makes the two answers one answer.
   const showRepsListTab = DOCTOR_LIST_PORTAL_ROLES.includes(resolvedRole);
-  // My List — the rep's own door onto the same board, read off the list its page enforces
-  // (canAccessMyList), for the same one-answer reason as the row above.
-  const showMyListTab = MY_LIST_PORTAL_ROLES.includes(resolvedRole);
+  // My List is RETIRED from the portal sidebar (owner, 2026-09-25: "hide the my-list board") — the
+  // rep's own contact list now lives in Phoenix CRM's List tab, which every rep already reaches by
+  // its own phoenix_crm:read link. The flag stays on the visibility object so the registry and the
+  // sidebar layout keep a real signal to read; it is held false until the row is brought back, at
+  // which point restore `MY_LIST_PORTAL_ROLES.includes(resolvedRole)` here.
+  const showMyListTab = false;
   // KPIs — imported rather than spelled out, unlike Reps List above. doctor-coverage-roles.ts is the
   // SINGLE list of who reaches this board and was deliberately built free of any server-only import
   // for exactly this caller, so there is no second copy to drift. It is also the module the page
