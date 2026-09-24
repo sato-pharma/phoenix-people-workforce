@@ -20,6 +20,7 @@ import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Plus, Search } from "lucide-react";
 
 import { crmPost, crmUrl, errorCodeOf, messageOf, newClientId, useCrmGet } from "@/components/phoenix-crm/api";
+import { CrmDictate } from "@/components/phoenix-crm/dictate";
 import { cairoClock, cairoStamp, dayLabelLong, plural, shiftIsoDay } from "@/components/phoenix-crm/format";
 import {
   customerMetaText,
@@ -58,6 +59,7 @@ import {
 } from "@/components/phoenix-crm/ui";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 import { isIsoDay } from "@/lib/phoenix-crm/calendar";
+import { appendDictated } from "@/lib/phoenix-crm/dictation";
 import { PHARMACY_NAME_MAX, VISIT_COMMENT_MAX, VISIT_PRODUCTS_MAX, type ProductAvailability } from "@/lib/phoenix-crm/entry-rules";
 import type { PhoenixCrmListType, PhoenixCrmVisitKind } from "@/lib/phoenix-crm/types";
 import type {
@@ -270,7 +272,8 @@ function VisitDetails({ visit }: { visit: VisitRow }) {
       {visit.comment ? (
         <p className="whitespace-pre-line break-words">
           <span className="font-black text-slate-800">Comment: </span>
-          {visit.comment}
+          {/* The label stays left-to-right; only the comment itself takes the reader's direction. */}
+          <span dir="auto">{visit.comment}</span>
         </p>
       ) : null}
       <p className="break-words">{visit.locationLabel}</p>
@@ -358,7 +361,11 @@ function VisitTable({ visits }: { visits: ReadonlyArray<VisitRow> }) {
                     </>
                   );
                 })()}
-                {visit.comment ? <span className="mt-1 block whitespace-pre-line text-xs text-slate-500">{visit.comment}</span> : null}
+                {visit.comment ? (
+                  <span className="mt-1 block whitespace-pre-line text-xs text-slate-500" dir="auto">
+                    {visit.comment}
+                  </span>
+                ) : null}
               </td>
               <td className={crmTdClassName}>
                 <span className="flex flex-wrap gap-1">
@@ -1188,8 +1195,11 @@ function AddVisit({
           htmlFor="phoenix-crm-visit-comment"
           label="What happened on the visit"
         >
+          {/* dir="auto" so a comment spoken or typed in Arabic reads right-to-left. This is single-
+              language free text, which is the case block-level dir="auto" is house style for. */}
           <textarea
             className={crmTextareaClassName}
+            dir="auto"
             disabled={saving}
             id="phoenix-crm-visit-comment"
             maxLength={VISIT_COMMENT_MAX}
@@ -1197,6 +1207,10 @@ function AddVisit({
             value={comment}
           />
         </CrmField>
+        {/* The cap is applied here, not by the textarea: `maxLength` constrains TYPING and does
+            nothing to a programmatic append, so a long dictation would push the field past
+            VISIT_COMMENT_MAX and the server would refuse the save. */}
+        <CrmDictate disabled={saving} onAppend={(spoken) => setComment((current) => appendDictated(current, spoken, VISIT_COMMENT_MAX))} />
       </CrmBlock>
 
       <CrmBlock className="border-t border-slate-100" title="6 · Live photo">

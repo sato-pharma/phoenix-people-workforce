@@ -1942,6 +1942,7 @@ import { runMilestoneCardTests } from "./milestone-card.test.ts";
 import { runMilestoneEnhancementsTests, runMilestonePrintHistoryAndPagingTests } from "./milestone-enhancements.test.ts";
 import { runFitsTheScreenRatchetTests } from "./fits-the-screen-ratchet.test.ts";
 import { runSquareEdgePortalRatchetTests } from "./square-edge-portal-ratchet.test.ts";
+import { runPhoenixCrmDictationTests } from "./phoenix-crm-dictation.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -6902,6 +6903,10 @@ await runTest(
 await runTest(
   "square-edge ratchet (portalled components): globals.css zeroes every radius inside .admin-shell and .employee-portal-shell, but both are DESCENDANT selectors — a component portalled to document.body escapes them, so the count of rounded-* there may fall and may never rise",
   runSquareEdgePortalRatchetTests,
+);
+await runTest(
+  "Phoenix CRM Arabic dictation: the engine is asked for ar-EG, support fails closed where there is no speech engine, a dictated phrase APPENDS and never replaces, the cap is applied in the append because maxLength does not constrain a programmatic write, and \"aborted\"/\"no-speech\" stay silent while a blocked microphone names the settings",
+  runPhoenixCrmDictationTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
