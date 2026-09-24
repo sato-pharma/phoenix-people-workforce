@@ -192,11 +192,20 @@ async function claimIntakeEvent(input: InboundCvIntakeInput): Promise<IntakeEven
       sender_identifier: input.senderIdentifier,
       // Which advert brought this person in. The code rides inside the applicant's own first
       // message — coverMessage already holds exactly that (an email's subject and body, or a
-      // WhatsApp caption plus the messages sent just before the CV), so there is nothing extra to
-      // capture at either channel. Null is the ordinary result and means "we do not know", never
-      // "no channel": every CV predating this feature, and everyone who typed their own message
-      // instead of tapping the link, legitimately carries nothing.
-      source_channel_code: extractChannelCode([input.coverMessage, input.subject]),
+      // WhatsApp caption plus the messages sent just before the CV) — and the email subject.
+      //
+      // The CV's own FILENAME is read too, and it is the half that survives a WhatsApp FORWARD.
+      // A forward carries the file, its caption and its filename, but NOT the applicant's separate
+      // greeting — which is where the tapped-link code sits by default — so once a relay handset
+      // forwards a CV on, the caption and the filename are the only surfaces the code can still be
+      // on. The filename is deliberately kept OUT of coverMessage (it would feed "Cv.pdf" to the
+      // job-matching model), so it is read here explicitly and LAST, so a real greeting or subject
+      // still wins over it.
+      //
+      // Null is the ordinary result and means "we do not know", never "no channel": every CV
+      // predating this feature, and everyone who typed their own message instead of tapping the
+      // link, legitimately carries nothing.
+      source_channel_code: extractChannelCode([input.coverMessage, input.subject, input.attachment?.fileName]),
       subject: input.subject ?? null,
     })
     .select("id")
