@@ -1359,6 +1359,8 @@ import { runIncentiveSemesterWindowTests } from "./incentive-semester-window.tes
 
 import { runPediaSplitIncentiveTests } from "./pedia-split-incentive.test.ts";
 
+import { runPediaIncentivePortalTabTests } from "./pedia-incentive-portal-tab.test.ts";
+
 import { runReconciliationHarnessTests } from "./reconciliation-harness.test.ts";
 import { runOutstationSubmitEmailRoutingTests } from "./outstation-submit-email-routing.test.ts";
 import { runOutstationExpenseGateTests } from "./outstation-expense-gate.test.ts";
@@ -4326,6 +4328,8 @@ await runTest(
 await runTest("incentive semester window (the CALENDAR semester, the same one for every rep; Semester 1 stays closed rather than restated; a rep with no data still gets a named provisional window)", runIncentiveSemesterWindowTests);
 
 await runTest("Pedia split incentive (two halves SUMMED, never a 2x2 gate; it reduces exactly to the single rule when the two achievements agree; outsource is never scored on its own; the locked 2026 curve is called, not copied)", runPediaSplitIncentiveTests);
+
+await runTest("Pedia incentive portal tab (a Pedia seat reads the two-achievement tab, role-free; the simulator is scored on the split and never on the single figure; both achievements are stated and a missing target is not 0%)", runPediaIncentivePortalTabTests);
 
 await runTest("reconciliation harness (a breach names both figures and their sources; a known-open defect never pages nightly; one bad check cannot blind the rest)", runReconciliationHarnessTests);
 await runTest("outstation submit email envelope (employee To, his direct manager Cc, Super Admins Bcc; the CEO is dropped from Cc in every case — direct manager or skip-level — with the skip-level stepping in when the direct manager is the CEO; one mailbox never lands in two headers)", runOutstationSubmitEmailRoutingTests);
