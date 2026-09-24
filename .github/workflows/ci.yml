@@ -301,6 +301,18 @@ jobs:
       # 4.4 min. Nothing restores it (see the deleted cache above), so next.config.ts sets
       # `turbopackFileSystemCacheForBuild: false`. The measurement is on that line. If that log line
       # ever reappears in this step, the flag has been lost.
+      #
+      # THIS STEP'S WALL TIME IS RUNNER NOISE, NOT A REGRESSION — DO NOT GO LOOKING FOR THE COMMIT
+      # THAT "SLOWED THE BUILD". Measured 2026-09-25 across 39 successful `main` runs from the two
+      # days prior: the Build step ranged 148s..245s, mean ~193s, with NO step-change tied to any
+      # commit. Commits minutes apart swung 177->194->245->162s (6f0209f, 04991c8, 37c75ae,
+      # 6ddd16e) purely on which shared 2-core GitHub runner drew the job, and the low samples land
+      # AFTER the high ones in time — a real regression shifts the FLOOR, and this floor does not
+      # move. So any single-sample comparison ("it used to be 175s, now it's 213s") is comparing two
+      # draws from one ~±25% distribution and will always find a phantom. The build is Turbopack's
+      # own compile time on a noisy 2-vCPU runner; the ONLY lever that moves both the mean and the
+      # spread is a larger/dedicated runner (a billing decision), not a code change. Do not re-run
+      # the trend — it costs ~40 API calls to re-derive this same answer.
 
       - name: Build
         if: steps.detect.outputs.docs_only != 'true'
