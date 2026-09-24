@@ -3,7 +3,8 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { loadMarketingEvidencePhotosByEntityIds } from "@/lib/marketing-requests/evidence-photo-storage";
 
 import { assertVerifiedCapturesAccess } from "./access";
-import { employeeName, loadEmployeeRecords } from "./employee-lookup";
+import { loadMarketingDistributorCodes } from "./distributor-codes";
+import { employeeName, employeeTitle, loadEmployeeRecords } from "./employee-lookup";
 import type { VerifiedMarketingCaptureRow, VerifiedMarketingCapturePharmacy } from "./types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -129,25 +130,27 @@ export async function listVerifiedMarketingCaptures(
     ...new Set(verified.flatMap((row) => pharmacyIdsByCustomer.get(row.id) ?? [])),
   ];
 
-  const [directory, areasResult, linesResult, customerPhotos, pharmacyPhotos] = await Promise.all([
-    loadEmployeeRecords(hrIds, supabase),
-    areaIds.length
-      ? supabase.from("areas").select("id, code, name").in("id", areaIds)
-      : Promise.resolve({ data: [] as unknown[] }),
-    lineIds.length
-      ? supabase.from("lines").select("id, name").in("id", lineIds)
-      : Promise.resolve({ data: [] as unknown[] }),
-    loadMarketingEvidencePhotosByEntityIds({
-      entityIds: verified.map((row) => row.id),
-      entityType: "customer",
-      supabase,
-    }),
-    loadMarketingEvidencePhotosByEntityIds({
-      entityIds: verifiedPharmacyIds,
-      entityType: "pharmacy",
-      supabase,
-    }),
-  ]);
+  const [directory, areasResult, linesResult, customerPhotos, pharmacyPhotos, distributorCodes] =
+    await Promise.all([
+      loadEmployeeRecords(hrIds, supabase),
+      areaIds.length
+        ? supabase.from("areas").select("id, code, name").in("id", areaIds)
+        : Promise.resolve({ data: [] as unknown[] }),
+      lineIds.length
+        ? supabase.from("lines").select("id, name").in("id", lineIds)
+        : Promise.resolve({ data: [] as unknown[] }),
+      loadMarketingEvidencePhotosByEntityIds({
+        entityIds: verified.map((row) => row.id),
+        entityType: "customer",
+        supabase,
+      }),
+      loadMarketingEvidencePhotosByEntityIds({
+        entityIds: verifiedPharmacyIds,
+        entityType: "pharmacy",
+        supabase,
+      }),
+      loadMarketingDistributorCodes(verifiedPharmacyIds, supabase),
+    ]);
 
   const areaName = new Map(
     ((areasResult.data ?? []) as Array<{ id: number; code: string | null; name: string | null }>).map((row) => [
@@ -176,6 +179,7 @@ export async function listVerifiedMarketingCaptures(
           longitude: toNumber(row.captured_longitude),
           address: row.captured_address,
         },
+        distributorCodes: distributorCodes.get(row.id) ?? [],
       }));
 
     return {
@@ -184,8 +188,10 @@ export async function listVerifiedMarketingCaptures(
       displayName: customer.display_name ?? "(customer)",
       repHrId: customer.owner_hr_id,
       repName: employeeName(directory, customer.owner_hr_id),
+      repTitle: employeeTitle(directory, customer.owner_hr_id),
       managerHrId: customer.manager_hr_id,
       managerName: employeeName(directory, customer.manager_hr_id),
+      managerTitle: employeeTitle(directory, customer.manager_hr_id),
       areaName: customer.area_id !== null ? areaName.get(customer.area_id) ?? null : null,
       lineName: customer.line_id !== null ? lineName.get(customer.line_id) ?? null : null,
       governorate: customer.extracted_governorate_name ?? customer.region_name ?? null,

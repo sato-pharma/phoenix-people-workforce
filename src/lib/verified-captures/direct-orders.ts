@@ -6,7 +6,8 @@ import {
 } from "@/lib/direct-orders/pharmacy-validation";
 
 import { assertVerifiedCapturesAccess } from "./access";
-import { employeeName, loadEmployeesWithManagers, resolveManager } from "./employee-lookup";
+import { loadDirectOrderDistributorCodes } from "./distributor-codes";
+import { employeeName, employeeTitle, loadEmployeesWithManagers, resolveManager } from "./employee-lookup";
 import type { VerifiedDirectOrderCaptureRow } from "./types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -40,7 +41,13 @@ export async function listVerifiedDirectOrderCaptures(
   const supabase = getSupabaseAdmin();
   const requesterHrIds = verified.map((row) => row.requestedByHrId);
   const decidedByHrIds = verified.map((row) => row.decidedByHrId);
-  const directory = await loadEmployeesWithManagers([...requesterHrIds, ...decidedByHrIds], supabase);
+  const [directory, distributorCodes] = await Promise.all([
+    loadEmployeesWithManagers([...requesterHrIds, ...decidedByHrIds], supabase),
+    loadDirectOrderDistributorCodes(
+      verified.map((row) => row.pharmacyId),
+      supabase,
+    ),
+  ]);
 
   return verified.map((row) => {
     const manager = resolveManager(directory, row.requestedByHrId);
@@ -52,10 +59,13 @@ export async function listVerifiedDirectOrderCaptures(
       route: row.validationRoute,
       repHrId: row.requestedByHrId || null,
       repName: row.requestedByName || null,
+      repTitle: employeeTitle(directory, row.requestedByHrId),
       managerHrId: manager.hrId,
       managerName: manager.name,
+      managerTitle: manager.title,
       verifiedAt: row.decidedAt,
       verifiedByName: employeeName(directory, row.decidedByHrId),
+      verifiedByTitle: employeeTitle(directory, row.decidedByHrId),
       photoUrl: row.photoUrl,
       invoiceUrl: row.invoiceUrl,
       invoiceIsPdf: row.invoiceContentType === "application/pdf",
@@ -65,6 +75,7 @@ export async function listVerifiedDirectOrderCaptures(
         longitude: row.capturedLongitude,
         address: row.claimedAddress,
       },
+      distributorCodes: distributorCodes.get(row.pharmacyId) ?? [],
     } satisfies VerifiedDirectOrderCaptureRow;
   });
 }
