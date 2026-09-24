@@ -228,6 +228,121 @@ type PoolRowPanel = "send" | "start" | "folder";
 const fieldClass =
   "w-full border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-orange-400 focus:outline-none";
 
+// ── Source-of-hire: the advert picker ─────────────────────────────────────────────────────────────
+//
+// Which advert this candidate actually came from. Loaded once from the same directory the advert
+// panel builds. It is the ONLY route to advert-level source-of-hire in practice: the tracked code
+// rides inside the applicant's own first message, and a forwarded WhatsApp CV — the bulk of intake —
+// drops that message, so almost nothing arrives attributed. HR tags the real advert here instead.
+type PickerChannel = { code: string; name: string; kind: string; isActive: boolean };
+
+function useJobPostChannels(): PickerChannel[] | null {
+  const [channels, setChannels] = useState<PickerChannel[] | null>(null);
+  // setState only inside the scheduled callback — react-hooks/set-state-in-effect is an error here
+  // and blocks the required lint check (see the advert panel's own note).
+  useEffect(() => {
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch("/api/recruitment/job-post-channels", { cache: "no-store" });
+        const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+        if (cancelled) return;
+        setChannels(
+          res.ok && json.success === true && Array.isArray(json.channels)
+            ? (json.channels as PickerChannel[])
+            : [],
+        );
+      } catch {
+        if (!cancelled) setChannels([]);
+      }
+    }, 0);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, []);
+  return channels;
+}
+
+function SourceAdvertSelect({
+  value,
+  onChange,
+  channels,
+  disabled,
+}: {
+  value: string;
+  onChange: (code: string) => void;
+  channels: PickerChannel[] | null;
+  disabled?: boolean;
+}) {
+  // Active channels, plus whatever is already selected even if it was since retired — so a hire
+  // tagged to a group that has since closed keeps showing that group, not a blank.
+  const options = (channels ?? [])
+    .filter((channel) => channel.isActive || channel.code === value)
+    .sort((left, right) => left.name.localeCompare(right.name));
+  return (
+    <select
+      className={fieldClass}
+      disabled={disabled || channels === null}
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+    >
+      <option value="">{channels === null ? "Loading adverts…" : "Source advert — not set"}</option>
+      {options.map((channel) => (
+        <option key={channel.code} value={channel.code}>
+          {channel.name}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+/**
+ * Tag (or change) the source advert of an already-hired application.
+ *
+ * Keyed by application id at the call site, so the picker re-seeds from that hire's stored tag when
+ * a different row is selected. This is the after-the-fact path: HR usually learns the real source
+ * later, and every hire that arrived without a tracked code needs tagging by hand for it to count.
+ */
+function HiredSourceCard({
+  application,
+  channels,
+  pending,
+  run,
+}: {
+  application: { id: string; attributedChannelCode: string | null };
+  channels: PickerChannel[] | null;
+  pending: boolean;
+  run: (work: () => Promise<string | void>) => void;
+}) {
+  const stored = application.attributedChannelCode ?? "";
+  const [code, setCode] = useState(stored);
+  const dirty = code !== stored;
+  return (
+    <div className="space-y-2 border-t border-slate-200 pt-3">
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Source advert</p>
+      <p className="text-xs text-slate-500">
+        Which advert this hire came from. Tagging it here is what makes the hire count under its real
+        advert in Hiring Analytics — most CVs arrive with no tracked code.
+      </p>
+      <SourceAdvertSelect channels={channels} disabled={pending} value={code} onChange={setCode} />
+      <Button
+        disabled={pending || !dirty}
+        onClick={() =>
+          run(async () => {
+            await postJson(`/api/recruitment/applications/${application.id}/attribute-source`, {
+              channelCode: code || "",
+            });
+            return code ? "Source advert saved." : "Source advert cleared.";
+          })
+        }
+      >
+        Save source advert
+      </Button>
+    </div>
+  );
+}
+
 // Same look as the candidate pool's filter labels (poolFilterLabelClass), but rendered as a plain
 // div/span rather than a <label>. SearchableSelect is a portalled combobox, not a native <select>,
 // so an implicit label would re-target the click and reopen the panel the user just dismissed.
@@ -1355,6 +1470,9 @@ function PipelineTab({
   const [employeeHrId, setEmployeeHrId] = useState(() => hireParams.get("hiredHrId") ?? "");
   const [hireStartDate, setHireStartDate] = useState("");
   const [hireProbationMonths, setHireProbationMonths] = useState("3");
+  const [hireSource, setHireSource] = useState("");
+  // Loaded once for both the hire picker and the after-the-fact tag card below.
+  const pickerChannels = useJobPostChannels();
   const [interviews, setInterviews] = useState<Interview[]>([]);
   const [interviewsError, setInterviewsError] = useState<string | null>(null);
   const [candidateFiles, setCandidateFiles] = useState<RecruitmentFile[]>([]);
@@ -1640,6 +1758,19 @@ function PipelineTab({
                     value={hireProbationMonths}
                     onChange={(e) => setHireProbationMonths(e.target.value)}
                   />
+                  <div className="space-y-1">
+                    <p className="text-xs text-slate-500">
+                      Source advert (optional) — which advert this person came from, if you know it. Most
+                      CVs arrive without a tracked code, so tagging it here is what makes them count in
+                      Hiring Analytics.
+                    </p>
+                    <SourceAdvertSelect
+                      channels={pickerChannels}
+                      disabled={pending}
+                      value={hireSource}
+                      onChange={setHireSource}
+                    />
+                  </div>
                   <Button
                     disabled={pending || !employeeHrId.trim()}
                     onClick={() =>
@@ -1648,9 +1779,11 @@ function PipelineTab({
                           employeeHrId: employeeHrId.trim(),
                           startDate: hireStartDate || undefined,
                           probationMonths: Number(hireProbationMonths) || undefined,
+                          attributedChannelCode: hireSource || "",
                         });
                         setEmployeeHrId("");
                         setHireStartDate("");
+                        setHireSource("");
                         return `Hired as ${typeof data.employeeHrId === "string" ? data.employeeHrId : employeeHrId.trim()}.`;
                       })
                     }
@@ -1658,6 +1791,16 @@ function PipelineTab({
                     Mark as hired
                   </Button>
                 </div>
+              ) : null}
+
+              {canManage && selected.stage === "hired" ? (
+                <HiredSourceCard
+                  key={selected.id}
+                  application={selected}
+                  channels={pickerChannels}
+                  pending={pending}
+                  run={run}
+                />
               ) : null}
 
               {canManage && rejectableStages.has(selected.stage) ? (

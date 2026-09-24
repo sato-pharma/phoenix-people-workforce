@@ -25,6 +25,7 @@
 //     `<colgroup>`, so it fits rather than scrolls.
 
 import type { ChannelEffectiveness, FunnelStep, HiringAnalytics } from "@/lib/recruitment/hiring-analytics";
+import type { SourceOfHire } from "@/lib/recruitment/source-of-hire";
 
 function Tile({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
@@ -161,6 +162,148 @@ function FunnelRows({ steps }: { steps: readonly FunnelStep[] }) {
   );
 }
 
+/**
+ * Where hires actually come from — the channel every hire landed in, and the specific advert where
+ * one is known.
+ *
+ * Two levels because their coverage differs and pretending otherwise would be a lie: channel is
+ * ~100% (every candidate carries a coarse source), advert is only as good as what survived a
+ * forward or what a person tagged. The "known only at the channel level" line says the gap out loud
+ * rather than dressing an Unknown bucket up as a finding.
+ */
+function SourceOfHireSection({ data }: { data: SourceOfHire }) {
+  if (data.totalHires === 0) {
+    return (
+      <section>
+        <h2 className="mb-2 text-sm font-semibold text-slate-900">Where hires actually come from</h2>
+        <p className="text-sm text-slate-500">
+          Nobody has been hired through the pipeline yet, so there is nothing to attribute.
+        </p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="space-y-4">
+      <div>
+        <h2 className="mb-2 text-sm font-semibold text-slate-900">Where hires actually come from</h2>
+        <p className="text-xs text-slate-500">
+          {data.attributedToAdvert} of {data.totalHires}{" "}
+          {data.totalHires === 1 ? "hire is" : "hires are"} tied to a specific advert
+          {data.taggedByAPerson > 0
+            ? ` (${data.taggedByAPerson} tagged by a person)`
+            : ""}
+          . The rest are known only at the channel level — a forwarded WhatsApp CV drops the applicant&apos;s
+          own message, which is the only place the tracked code lives, so the advert is unknown until
+          someone tags it on the hire.
+        </p>
+      </div>
+
+      {/* Channel level — every hire, ~100% coverage. */}
+      <div>
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">By channel</h3>
+        <table className="hidden w-full table-fixed md:table">
+          <colgroup>
+            <col className="w-[70%]" />
+            <col className="w-[30%]" />
+          </colgroup>
+          <thead>
+            <tr className="border-b border-slate-300 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <th className="py-2 pr-2">Channel</th>
+              <th className="py-2">Hires</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.channels.map((row) => (
+              <tr key={row.channel} className="border-b border-slate-200 text-sm text-slate-700">
+                <td className="py-2 pr-2 break-words font-medium text-slate-900">{row.channel}</td>
+                <td className="py-2 tabular-nums">{row.hires}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <div className="space-y-2 md:hidden">
+          {data.channels.map((row) => (
+            <div
+              key={row.channel}
+              className="flex items-baseline justify-between border-b border-slate-200 pb-2 text-sm"
+            >
+              <span className="font-medium text-slate-900">{row.channel}</span>
+              <span className="tabular-nums font-semibold text-slate-900">{row.hires}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Advert level — only where the advert is known, plus one honest Unknown line. */}
+      <div>
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">By advert</h3>
+        {data.adverts.length === 0 ? (
+          <p className="text-sm text-slate-500">
+            No hire is tied to a specific advert yet. Tag a hire&apos;s source on its application, or wait
+            for an applicant who taps a tracked link, and the advert appears here.
+          </p>
+        ) : (
+          <>
+            <table className="hidden w-full table-fixed md:table">
+              <colgroup>
+                <col className="w-[42%]" />
+                <col className="w-[22%]" />
+                <col className="w-[16%]" />
+                <col className="w-[20%]" />
+              </colgroup>
+              <thead>
+                <tr className="border-b border-slate-300 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <th className="py-2 pr-2">Advert</th>
+                  <th className="py-2 pr-2">Channel</th>
+                  <th className="py-2 pr-2">Hires</th>
+                  <th className="py-2">How</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.adverts.map((row) => (
+                  <tr key={row.code} className="border-b border-slate-200 align-top text-sm text-slate-700">
+                    <td className="py-2 pr-2 break-words font-medium text-slate-900">{row.name}</td>
+                    <td className="py-2 pr-2 break-words">{row.channel}</td>
+                    <td className="py-2 pr-2 tabular-nums">{row.hires}</td>
+                    <td className="py-2 break-words text-slate-600">{advertBasisText(row.manualHires, row.autoHires)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="space-y-2 md:hidden">
+              {data.adverts.map((row) => (
+                <div key={row.code} className="border border-slate-200 bg-white p-3">
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-sm font-semibold text-slate-900">{row.name}</span>
+                    <span className="tabular-nums font-semibold text-slate-900">{row.hires}</span>
+                  </div>
+                  <div className="mt-1 text-xs text-slate-500">
+                    {row.channel} · {advertBasisText(row.manualHires, row.autoHires)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+        {data.unknownAdvert > 0 ? (
+          <p className="mt-2 text-xs text-slate-500">
+            {data.unknownAdvert} {data.unknownAdvert === 1 ? "hire has" : "hires have"} no advert yet —
+            counted by channel above, and taggable on the application.
+          </p>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+/** How an advert's hires were attributed — tagged by a person, recovered from a tracked link, or both. */
+function advertBasisText(manualHires: number, autoHires: number): string {
+  if (manualHires > 0 && autoHires > 0) return `${manualHires} tagged · ${autoHires} tracked`;
+  if (manualHires > 0) return "tagged by HR";
+  return "tracked link";
+}
+
 export function HiringAnalyticsView({ report }: { report: HiringAnalytics }) {
   const decided = report.channels.reduce((total, channel) => total + channel.decidedByAPerson, 0);
   const best = [...report.channels]
@@ -194,6 +337,8 @@ export function HiringAnalyticsView({ report }: { report: HiringAnalytics }) {
         </p>
         <ChannelRows channels={report.channels} />
       </section>
+
+      <SourceOfHireSection data={report.sourceOfHire} />
 
       <section>
         <h2 className="mb-2 text-sm font-semibold text-slate-900">Where the pipeline stops</h2>

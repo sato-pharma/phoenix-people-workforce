@@ -26,6 +26,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       employeeHrId,
       startDate: str(body.startDate),
       probationMonths: num(body.probationMonths),
+      // Key present but blank => clear; absent => leave whatever was tagged before untouched.
+      attributedChannelCode: "attributedChannelCode" in body ? str(body.attributedChannelCode) : undefined,
     });
     return NextResponse.json({
       success: true,

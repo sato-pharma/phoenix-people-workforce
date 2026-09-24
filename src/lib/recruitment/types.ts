@@ -441,6 +441,9 @@ export type Application = {
   source: string | null;
   offerId: string | null;
   convertedEmployeeHrId: string | null;
+  /** Manually-tagged source advert (a PX- code) — the effective source-of-hire when the automatic
+   * tracked-link code did not survive intake. Null when nobody has tagged it. */
+  attributedChannelCode: string | null;
   currentOwnerHrId: string | null;
   decisionReason: string | null;
   rejectedReason: string | null;

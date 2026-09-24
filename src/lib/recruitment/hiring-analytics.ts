@@ -29,6 +29,13 @@
 import { isBatchActor } from "@/lib/recruitment/batch-actor";
 import { assertPermission, type AccessContext } from "@/lib/auth/permissions";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { normalizeChannelCode } from "@/lib/recruitment/outreach/channel-code";
+import { listJobPostChannels } from "@/lib/recruitment/outreach/job-post-channels";
+import {
+  buildSourceOfHire,
+  type HiredApplicationInput,
+  type SourceOfHire,
+} from "@/lib/recruitment/source-of-hire";
 
 /** Below this, a channel gets counts but no percentage. */
 export const MIN_CHANNEL_CANDIDATES = 20;
@@ -237,9 +244,32 @@ async function readAllPages<T>(
 export type HiringAnalytics = {
   channels: ChannelEffectiveness[];
   funnel: FunnelStep[];
+  sourceOfHire: SourceOfHire;
   generatedAt: string;
   totalCandidates: number;
 };
+
+/**
+ * The advert each hire's candidate actually came from, keyed by candidate.
+ *
+ * The EARLIEST surviving code wins — the covering message that first brought them, not a code
+ * quoted later in a re-send. Candidates with no code (the majority) simply do not appear, which the
+ * caller reads as "no automatic advert" and falls back to the coarse source or a manual tag.
+ */
+export function earliestCodePerCandidate(
+  events: readonly { candidateId: string | null; code: string | null; createdAt: string | null }[],
+): Map<string, string> {
+  const earliest = new Map<string, { code: string; at: string }>();
+  for (const event of events) {
+    const candidateId = event.candidateId ? String(event.candidateId) : "";
+    const code = normalizeChannelCode(event.code);
+    if (!candidateId || !code) continue;
+    const at = event.createdAt ?? "";
+    const existing = earliest.get(candidateId);
+    if (!existing || at < existing.at) earliest.set(candidateId, { at, code });
+  }
+  return new Map([...earliest.entries()].map(([candidateId, value]) => [candidateId, value.code]));
+}
 
 /**
  * The whole report, for the dashboard.
@@ -282,12 +312,69 @@ export async function loadHiringAnalytics(access: AccessContext): Promise<Hiring
   //
   // BOTH offer tables, because an offer can be made through either door and this step used to see
   // only the door nobody uses. See `offersMade` for why they cannot be deduplicated.
-  const [applications, interviews, governedOffers, letterOffers] = await Promise.all([
+  //
+  // The hired rows are READ, not counted: source-of-hire needs each hire's candidate, its manual
+  // tag and who it came from, and the count for the funnel's last step is just their length.
+  const [applications, interviews, governedOffers, letterOffers, hiredRows, channels] = await Promise.all([
     supabase.from("ats_applications").select("id", { count: "exact", head: true }),
     supabase.from("ats_interviews").select("id", { count: "exact", head: true }),
     supabase.from("ats_offers").select("id", { count: "exact", head: true }),
     supabase.from("offers").select("id", { count: "exact", head: true }),
+    supabase
+      .from("ats_applications")
+      .select("id,candidate_id,converted_employee_hr_id,attributed_channel_code,last_stage_changed_at")
+      .eq("stage", "hired"),
+    listJobPostChannels({ includeInactive: true }),
   ]);
+  if (hiredRows.error) throw hiredRows.error;
+
+  const hiredAppRows = (hiredRows.data ?? []) as Array<{
+    id: string;
+    candidate_id: string | null;
+    converted_employee_hr_id: string | null;
+    attributed_channel_code: string | null;
+    last_stage_changed_at: string | null;
+  }>;
+
+  // The automatic advert for the hired candidates only — a targeted read, not the whole intake log.
+  const hiredCandidateIds = Array.from(
+    new Set(hiredAppRows.map((row) => (row.candidate_id ? String(row.candidate_id) : "")).filter(Boolean)),
+  );
+  const intakeCodeByCandidate = new Map<string, string>();
+  if (hiredCandidateIds.length > 0) {
+    const { data: intakeRows, error: intakeError } = await supabase
+      .from("ats_cv_intake_events")
+      .select("candidate_id,source_channel_code,created_at")
+      .in("candidate_id", hiredCandidateIds)
+      .not("source_channel_code", "is", null);
+    if (intakeError) throw intakeError;
+    for (const [candidateId, code] of earliestCodePerCandidate(
+      (intakeRows ?? []).map((row) => {
+        const r = row as Record<string, unknown>;
+        return {
+          candidateId: r.candidate_id == null ? null : String(r.candidate_id),
+          code: r.source_channel_code == null ? null : String(r.source_channel_code),
+          createdAt: r.created_at == null ? null : String(r.created_at),
+        };
+      }),
+    )) {
+      intakeCodeByCandidate.set(candidateId, code);
+    }
+  }
+
+  const coarseSourceByCandidate = new Map(candidates.map((candidate) => [candidate.id, candidate.source]));
+  const hires: HiredApplicationInput[] = hiredAppRows.map((row) => {
+    const candidateId = row.candidate_id ? String(row.candidate_id) : "";
+    return {
+      applicationId: String(row.id),
+      candidateId,
+      employeeHrId: row.converted_employee_hr_id,
+      hiredAt: row.last_stage_changed_at,
+      manualChannelCode: row.attributed_channel_code,
+      coarseSource: coarseSourceByCandidate.get(candidateId) ?? null,
+      autoChannelCode: intakeCodeByCandidate.get(candidateId) ?? null,
+    };
+  });
 
   return {
     channels: buildChannelEffectiveness(candidates, events),
@@ -296,7 +383,12 @@ export async function loadHiringAnalytics(access: AccessContext): Promise<Hiring
       { label: "Applications", count: applications.count ?? 0 },
       { label: "Interviews", count: interviews.count ?? 0 },
       { label: "Offers", count: offersMade(governedOffers.count, letterOffers.count) },
+      { label: "Hired", count: hiredAppRows.length },
     ]),
+    sourceOfHire: buildSourceOfHire(
+      hires,
+      channels.map((channel) => ({ code: channel.code, name: channel.name, kind: channel.kind })),
+    ),
     generatedAt: new Date().toISOString(),
     totalCandidates: candidates.length,
   };

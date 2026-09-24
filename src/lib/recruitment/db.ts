@@ -278,6 +278,7 @@ export function mapApplication(row: ApplicationDbRow): Application {
     source: textOrNull(row.source),
     offerId: textOrNull(row.offer_id),
     convertedEmployeeHrId: textOrNull(row.converted_employee_hr_id),
+    attributedChannelCode: textOrNull(row.attributed_channel_code),
     currentOwnerHrId: textOrNull(row.current_owner_hr_id),
     decisionReason: textOrNull(row.decision_reason),
     rejectedReason: textOrNull(row.rejected_reason),
