@@ -33,7 +33,6 @@
 import { loadPuppeteer, resolveChromiumPath, type ChromiumPage } from "@/lib/pdf/chromium";
 
 import type { RobotStepResult, TurbifyConsoleDriver } from "./driver";
-import { currentTurbifyTotp } from "./totp";
 
 /** The console's own sign-in page. Confirmed to redirect here from ecp.turbify.com. */
 const LOGIN_URL = "https://login.turbify.com/login?.done=https%3A%2F%2Fecp.turbify.com%2F";
@@ -46,29 +45,21 @@ const LOGIN_SELECTORS = {
 } as const;
 
 /**
- * 🔴 TWO-STEP VERIFICATION IS ENFORCED — proven live on 2026-09-24. A headless sign-in with the
- * correct password did NOT reach the console: it advanced to a page titled "Two-Step Verification"
- * at `/tfavalidate` and sent a one-time code. A server cannot receive a code sent to a phone, so the
- * account's second factor is set to an AUTHENTICATOR APP and its seed is stored as
- * `PHOENIX_TURBIFY_ADMIN_TOTP_SECRET`; `currentTurbifyTotp()` reproduces the 6-digit code the app
- * would show. The selectors below are the code-entry field, the "trust this device" option and the
- * verify button on that page — all still `__UNCALIBRATED__`, because the page's DOM must be read
- * once the account is actually on authenticator-app 2-step (the SMS-code page seen on 2026-09-24 may
- * differ from the authenticator page). The still-unknown risk beyond this: whether the datacenter IP
- * adds a CAPTCHA on top of the code, which only a server-side run can answer.
+ * 🔴 TWO-STEP VERIFICATION MUST BE OFF ON THE ROBOT'S LOGIN — and this is a fail-closed check, not a
+ * thing the robot can answer. Proven live on 2026-09-24: a headless sign-in with the correct
+ * password did NOT reach the console; it advanced to a page titled "Two-Step Verification" at
+ * `/tfavalidate` and sent a one-time code. Turbify's two-step verification only sends that code to a
+ * mobile phone or email (verified against Turbify help article SLN29023) — it offers NO
+ * authenticator-app option — so a headless server cannot generate or receive it. Unattended
+ * operation therefore requires two-step verification to be turned OFF on the Turbify login the robot
+ * uses (My Profile → Security and Privacy → Turn off two-step verification), a decision the owner
+ * took on 2026-09-24 accepting that it removes 2FA from the account that controls every mailbox.
+ *
+ * If the challenge page appears anyway (2-step re-enabled, or the datacenter IP is challenged even
+ * without it), `signIn` throws rather than proceed: a silent stall over live mailboxes is the one
+ * outcome worse than stopping.
  */
-export const TURBIFY_REQUIRES_TWO_STEP = true;
-
-const TWO_STEP_SELECTORS = {
-  /** The page title / url that proves we are being challenged. Confirmed: title "Two-Step Verification", path "/tfavalidate". */
-  challengePath: "/tfavalidate",
-  /** The authenticator-code input. UNVERIFIED against the authenticator-app variant of the page. */
-  codeInput: { label: "<6-digit code field>", selector: "__UNCALIBRATED__" },
-  /** Optional "don't ask again on this device" toggle, if the page offers one. UNVERIFIED. */
-  trustDevice: { label: "<trust this device>", selector: "__UNCALIBRATED__" },
-  /** The verify/submit button on the two-step page. UNVERIFIED. */
-  verify: { label: "<verify code>", selector: "__UNCALIBRATED__" },
-} as const;
+const TWO_STEP_CHALLENGE_PATH = "/tfavalidate";
 
 /**
  * 🔴 BEHAVIOUR MAPPED LIVE, PUPPETEER SELECTORS NOT YET WRITTEN OR PROVEN. The console was walked on
@@ -205,23 +196,16 @@ export async function createTurbifyConsoleDriver(): Promise<TurbifyConsoleDriver
       await page.type(LOGIN_SELECTORS.password, credentials.password);
       await page.click(LOGIN_SELECTORS.submit);
 
-      // Two-step verification is enforced on this account (proven 2026-09-24). If the password step
-      // hands us the challenge page, answer it with the authenticator code we generate ourselves;
-      // there is no phone in this loop. A code sent to a phone (SMS/email 2-step) cannot be answered
-      // here, which is exactly why the account's second factor must be an authenticator app.
+      // Fail closed on a second-factor challenge — the robot cannot answer one (Turbify only sends
+      // the code to a phone/email, never an authenticator app). Reaching this page means 2-step is
+      // on for this login; stop loudly rather than stall silently over live mailboxes.
       await new Promise((resolve) => setTimeout(resolve, 3_000));
-      if (page.url().includes(TWO_STEP_SELECTORS.challengePath)) {
-        const code = currentTurbifyTotp();
-        if (!code) {
-          throw new Error(
-            "Turbify demanded a second factor but PHOENIX_TURBIFY_ADMIN_TOTP_SECRET is not set, so "
-            + "the robot cannot generate the authenticator code. Set the account's 2-step method to "
-            + "an authenticator app and store its seed.",
-          );
-        }
-        await page.type(TWO_STEP_SELECTORS.codeInput.selector, code);
-        await page.click(TWO_STEP_SELECTORS.trustDevice.selector).catch(() => {});
-        await page.click(TWO_STEP_SELECTORS.verify.selector);
+      if (page.url().includes(TWO_STEP_CHALLENGE_PATH)) {
+        throw new Error(
+          "Turbify presented two-step verification, which the robot cannot answer. Two-step "
+          + "verification must be turned OFF on the login the robot uses (My Profile → Security and "
+          + "Privacy → Turn off two-step verification).",
+        );
       }
 
       // PROVE the session, never assume it. A sign-in that silently failed would leave every step
@@ -229,8 +213,7 @@ export async function createTurbifyConsoleDriver(): Promise<TurbifyConsoleDriver
       await page.waitForSelector(MAILBOX_SELECTORS.searchBox.selector, { timeout: 45_000 }).catch(() => {
         throw new Error(
           "Signed in to Turbify but the mailbox list never appeared. The credential may be wrong, "
-          + "or a second-factor challenge was not cleared (check the authenticator seed and that the "
-          + "account's 2-step method is an authenticator app, not a code sent to a phone).",
+          + "or the account was challenged (a CAPTCHA or a second factor that was not cleared).",
         );
       });
     },
