@@ -22,6 +22,11 @@ import {
   normalizeWhatsAppNumber,
   renderAdvertForChannel,
 } from "../src/lib/recruitment/outreach/job-advert.ts";
+import {
+  forwarderMatches,
+  phoneDigitsTail,
+  resolveForwarderChannelFromList,
+} from "../src/lib/recruitment/outreach/forwarder-match.ts";
 
 /**
  * Advertising channels — which Facebook group actually produced each CV.
@@ -321,5 +326,84 @@ export async function runRecruitmentJobPostChannelTests() {
       intakeSource,
     ),
     "intake reads the source code off coverMessage, subject AND the attachment filename",
+  );
+
+  // ── 9 · Attributing a code-less forward by its relay handset ───────────────
+  //
+  // A forward with no code on it anywhere still came from somewhere: one of a handful of dedicated
+  // relay handsets, each tied to one advert channel. The tail match is what makes that survive the
+  // three ways the SAME line reaches us — the +20 Meta reports, a bare 20, and the local 0-prefixed
+  // number a human types — so a relay configured in one form still matches a CV that arrives in
+  // another. A silently non-matching relay would send every forward down the "no channel" path,
+  // which is the exact failure this whole fallback exists to remove, so the tolerance is the point.
+  assert.equal(phoneDigitsTail("+201280955558"), "280955558", "the +20 international form yields the subscriber tail");
+  assert.equal(phoneDigitsTail("201280955558"), "280955558", "a bare 20 country code collapses to the same tail");
+  assert.equal(phoneDigitsTail("01280955558"), "280955558", "the local 0-prefixed form collapses to the same tail");
+  assert.equal(phoneDigitsTail("0020 128 095 5558"), "280955558", "spaces and a 00 trunk do not change the tail");
+  assert.equal(phoneDigitsTail("12345"), null, "too few digits to be a phone number is no tail, not a wrong one");
+  assert.equal(phoneDigitsTail(null), null, "a missing sender is no tail");
+  assert.equal(phoneDigitsTail("ahmed@example.com"), null, "an email sender has no phone tail at all");
+
+  assert.equal(
+    forwarderMatches(["+201280955558"], "01280955558"),
+    true,
+    "a relay stored international matches a CV that arrived local — same line",
+  );
+  assert.equal(
+    forwarderMatches(["01280955558", "01159888247"], "+201159888247"),
+    true,
+    "any identifier in the list can match",
+  );
+  assert.equal(forwarderMatches(["+201280955558"], "+201159888247"), false, "a different handset does not match");
+  assert.equal(forwarderMatches([], "+201280955558"), false, "a channel with no relay matches nothing");
+  assert.equal(forwarderMatches(["+201280955558"], null), false, "no sender matches nothing, never the first relay");
+  assert.equal(
+    forwarderMatches([null, undefined, ""], "+201280955558"),
+    false,
+    "blank identifiers in the list are skipped, not treated as a wildcard",
+  );
+
+  // Resolving against the channel list is what intake actually calls: first channel whose relay owns
+  // the sender wins, and a retired channel still attributes — a relay that fed a group months ago
+  // keeps its history exactly as a tracking code does.
+  const forwarderChannels = [
+    { code: "PX-FORWARDED", forwarderIdentifiers: ["+201280955558", "+201159888247"] },
+    { code: "PX-MRE", forwarderIdentifiers: ["+201001234567"] },
+    { code: "PX-RETIRED", forwarderIdentifiers: ["+201119999999"] },
+  ];
+  assert.equal(
+    resolveForwarderChannelFromList(forwarderChannels, "01280955558"),
+    "PX-FORWARDED",
+    "a code-less forward resolves to the channel its relay is tied to",
+  );
+  assert.equal(
+    resolveForwarderChannelFromList(forwarderChannels, "+201001234567"),
+    "PX-MRE",
+    "a relay on a second channel resolves to that channel, not the first",
+  );
+  assert.equal(
+    resolveForwarderChannelFromList(forwarderChannels, "+201230000000"),
+    null,
+    "a sender on no configured relay resolves to nothing — an unknown forward stays unattributed",
+  );
+  assert.equal(
+    resolveForwarderChannelFromList(forwarderChannels, "careers@example.com"),
+    null,
+    "a caller with no phone tail is never run through the lookup",
+  );
+
+  // Source-pin: the relay fallback only reaches a code-less forward if intake runs it AFTER the
+  // on-CV extractor, never before. The on-CV code always wins; the relay only fills the gap. A
+  // refactor that resolved the relay unconditionally, or ordered it ahead of the code, would dump
+  // ~95% of CVs — everything off the two big relay handsets — onto one channel, the systematically
+  // wrong number this design exists to avoid. Assert the precedence in the source, not just that the
+  // resolver CAN answer.
+  assert.ok(
+    /const\s+onCvCode\s*=\s*extractChannelCode\(/.test(intakeSource),
+    "intake extracts the on-CV code into onCvCode first",
+  );
+  assert.ok(
+    /onCvCode\s*\?\?\s*\(await\s+resolveForwarderChannelCode\(input\.senderIdentifier\)\)/.test(intakeSource),
+    "the relay channel is only ever a ?? fallback behind the on-CV code — never resolved ahead of it",
   );
 }

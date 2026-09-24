@@ -51,6 +51,7 @@ import { inboxCvGate } from "@/lib/recruitment/inbound/email-mailboxes-config";
 import { heldBackReason, strictGateHoldsBack } from "@/lib/recruitment/inbound/inbox-cv-gate";
 import { notifyTalentAcquisitionOfInboundCv } from "@/lib/recruitment/inbound/recruitment-notify";
 import { extractChannelCode } from "@/lib/recruitment/outreach/channel-code";
+import { resolveForwarderChannelCode } from "@/lib/recruitment/outreach/job-post-channels";
 import type { Candidate } from "@/lib/recruitment/types";
 
 export type InboundCvChannel = "email" | "whatsapp" | "website";
@@ -179,6 +180,25 @@ function asMatchReason(value: unknown): CandidateUpsertResult["matchReason"] {
 // real risk during a bulk import, where a burst of AI extractions can outrun the request budget.
 async function claimIntakeEvent(input: InboundCvIntakeInput): Promise<IntakeEventClaim | null> {
   const supabase = recruitmentDb();
+
+  // Which advert brought this person in.
+  //
+  // The code rides inside the applicant's own first message — coverMessage already holds exactly
+  // that (an email's subject and body, or a WhatsApp caption plus the messages sent just before the
+  // CV) — and the email subject. The CV's own FILENAME is read too, and it is the half that survives
+  // a WhatsApp FORWARD: a forward carries the file, its caption and its filename, but NOT the
+  // applicant's separate greeting — which is where the tapped-link code sits by default. The
+  // filename is deliberately kept OUT of coverMessage (it would feed "Cv.pdf" to the job-matching
+  // model), so it is read here explicitly and LAST, so a real greeting or subject still wins over it.
+  //
+  // Only if NONE of those carried a code do we fall back to WHO forwarded it: ~95% of CVs arrive as
+  // a forward from a dedicated relay handset, and each relay is tied to one advert channel. The
+  // on-CV code always wins, so a code-bearing CV keeps its real per-group source; a code-less
+  // forward inherits its relay's channel. A direct applicant (no relay, no code) still resolves to
+  // null — "we do not know", never "no channel".
+  const onCvCode = extractChannelCode([input.coverMessage, input.subject, input.attachment?.fileName]);
+  const sourceChannelCode = onCvCode ?? (await resolveForwarderChannelCode(input.senderIdentifier));
+
   const { data, error } = await supabase
     .from("ats_cv_intake_events")
     .insert({
@@ -190,22 +210,7 @@ async function claimIntakeEvent(input: InboundCvIntakeInput): Promise<IntakeEven
       raw_metadata: input.rawMetadata ?? {},
       sender_display_name: input.senderDisplayName ?? null,
       sender_identifier: input.senderIdentifier,
-      // Which advert brought this person in. The code rides inside the applicant's own first
-      // message — coverMessage already holds exactly that (an email's subject and body, or a
-      // WhatsApp caption plus the messages sent just before the CV) — and the email subject.
-      //
-      // The CV's own FILENAME is read too, and it is the half that survives a WhatsApp FORWARD.
-      // A forward carries the file, its caption and its filename, but NOT the applicant's separate
-      // greeting — which is where the tapped-link code sits by default — so once a relay handset
-      // forwards a CV on, the caption and the filename are the only surfaces the code can still be
-      // on. The filename is deliberately kept OUT of coverMessage (it would feed "Cv.pdf" to the
-      // job-matching model), so it is read here explicitly and LAST, so a real greeting or subject
-      // still wins over it.
-      //
-      // Null is the ordinary result and means "we do not know", never "no channel": every CV
-      // predating this feature, and everyone who typed their own message instead of tapping the
-      // link, legitimately carries nothing.
-      source_channel_code: extractChannelCode([input.coverMessage, input.subject, input.attachment?.fileName]),
+      source_channel_code: sourceChannelCode,
       subject: input.subject ?? null,
     })
     .select("id")
