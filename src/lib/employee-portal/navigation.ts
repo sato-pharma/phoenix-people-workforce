@@ -41,8 +41,6 @@ export type EmployeePortalNavVisibility = {
   showTeamPerformanceTab?: boolean;
   showMedRepsPerformanceTab?: boolean;
   showRepsListTab?: boolean;
-  /** My List — the Reps List board opened on the viewer's own contact list. Medical Rep only. */
-  showMyListTab?: boolean;
   /** KPIs — Summary, Call Rate, Coverage and Frequency. Every portal-mode role with a reach. */
   showKpisTab?: boolean;
   showMedicalRepExpensesTab?: boolean;
@@ -525,12 +523,10 @@ export function resolveEmployeePortalNavVisibility(
   // is the "visible row he cannot open" bug the sidebar tests exist to catch. Asking the list itself
   // makes the two answers one answer.
   const showRepsListTab = DOCTOR_LIST_PORTAL_ROLES.includes(resolvedRole);
-  // My List is RETIRED from the portal sidebar (owner, 2026-09-25: "hide the my-list board") — the
-  // rep's own contact list now lives in Phoenix CRM's List tab, which every rep already reaches by
-  // its own phoenix_crm:read link. The flag stays on the visibility object so the registry and the
-  // sidebar layout keep a real signal to read; it is held false until the row is brought back, at
-  // which point restore `MY_LIST_PORTAL_ROLES.includes(resolvedRole)` here.
-  const showMyListTab = false;
+  // My List was RETIRED from the portal sidebar (owner, 2026-09-25: "hide the my-list board", then
+  // "delete the dormant My List board code") — the rep's own contact list lives in Phoenix CRM's
+  // List tab, which every rep reaches by its own phoenix_crm:read link. The old /employee-portals/
+  // my-list route survives only as a redirect onto it; there is no sidebar row to compute here.
   // KPIs — imported rather than spelled out, unlike Reps List above. doctor-coverage-roles.ts is the
   // SINGLE list of who reaches this board and was deliberately built free of any server-only import
   // for exactly this caller, so there is no second copy to drift. It is also the module the page
@@ -642,7 +638,6 @@ export function resolveEmployeePortalNavVisibility(
     showMarketingCoverageReportTab,
     showMedRepsPerformanceTab,
     showRepsListTab,
-    showMyListTab,
     showKpisTab,
     showMedicalRepExpensesTab: isMedicalRep,
     showMyPerformanceTab: isA3Account ? false : baseShowMyPerformanceTab,

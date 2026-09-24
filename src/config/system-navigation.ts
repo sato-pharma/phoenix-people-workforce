@@ -1655,11 +1655,9 @@ const employeePortalNavigationSectionSeeds = [
       // each viewer sees and getRepsListBoard applies it to the cascade before it derives an option,
       // so the picker is never wider than the viewer.
       { href: "/employee-portals/reps-list", icon: BookUser, label: "Reps List", permissions: [{ resource: "crm_visits", action: "read" }], roles: ["National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Training Manager", "Regional Manager", "District Manager"] },
-      // My List — the same board at a Medical Rep's reach, their own contact list (owner, 2026-09-16:
-      // "show in medical reps accounts the reps-list ... and call is My List"). The Medical Rep's door
-      // onto what Reps List above shows a manager. MY_LIST_PORTAL_ROLES verbatim, pinned equal by
-      // tests/my-list.test.ts; getMyListScope decides the reach from the session's own HR id.
-      { href: "/employee-portals/my-list", icon: BookUser, label: "My List", permissions: [{ resource: "crm_visits", action: "read" }], roles: ["Medical Rep"] },
+      // My List's sidebar row was retired 2026-09-25 (owner: "hide"/"delete the dormant My List board
+      // code") — the rep's own contact list lives in Phoenix CRM's List tab now. The old
+      // /employee-portals/my-list route survives only as a redirect onto it, so it has no catalog row.
       // KPIs — THE 2026-08-28 REBUILD. Doctor Coverage stood here until the owner retired it that
       // day with "rebuild from the beginning"; this is the entry that comes back in its place, and
       // the drift check retired with it comes back too (tests/doctor-coverage-scope.test.ts).

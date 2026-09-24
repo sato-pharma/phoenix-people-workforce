@@ -463,10 +463,12 @@ export async function getRepsListBoard(input: {
 }
 
 /**
- * My List — the viewer's own contact list, on the same assembly as Reps List.
+ * My List — the viewer's own contact list, on the same assembly as Reps List. This is the engine the
+ * Phoenix CRM List tab loads; the old My List sidebar board was retired 2026-09-25.
  *
- * The scope comes from `getMyListScope` (doctor-list-access.ts), which only ever answers with the
- * session's own HR id. Everything below is Reps List with three differences, and only three:
+ * The caller passes a scope restricted to the session's own HR id — the Phoenix CRM List route hands
+ * in `{ agentHrIds: [repHrId], kind: "agents" }`. Everything below is Reps List with three
+ * differences, and only three:
  *
  *  - NO PICKER. A rep chooses nobody, so the options and the selection come back empty.
  *  - A REP THE ORGANOGRAM HAS NOT SEATED STILL GETS THEIR LIST. The cascade offers seated reps only,

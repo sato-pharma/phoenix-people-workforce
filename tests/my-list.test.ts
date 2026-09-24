@@ -3,7 +3,6 @@ import { readFileSync } from "node:fs";
 
 import { PORTAL_NAV_REGISTRY } from "../src/components/employee-portal/employee-portal-nav-registry.ts";
 import { employeePortalNavigationSections } from "../src/config/system-navigation.ts";
-import { getMyListScope } from "../src/lib/crm/doctor-list-access.ts";
 import {
   canAccessDoctorList,
   canAccessMyList,
@@ -74,70 +73,34 @@ export function runMyListTests() {
     }
   }
 
-  // ── THE REACH IS THE SESSION'S OWN HR ID, AND IT FAILS CLOSED ──────────────────────────────
+  // ── THE ROW AND ITS DEAD CODE ARE DELETED, BUT THE ROUTE STILL REDIRECTS ────────────────────
+  // My List's sidebar row and its board view were removed 2026-09-25 (owner: "hide the my-list
+  // board", then "delete the dormant My List board code"). The rep's own contact list lives in
+  // Phoenix CRM's List tab; the old /employee-portals/my-list route survives only as a redirect onto
+  // it. The live board engine (getMyListBoard) is UNTOUCHED — it is what the CRM List tab loads.
   {
-    assert.deepEqual(
-      getMyListScope({ hrId: "a-42", role: "Medical Rep" }),
-      { agentHrIds: ["a-42"], kind: "agents", label: "Medical Rep · own list" },
-      "a rep's reach is exactly one list: their own",
-    );
-    for (const hrId of [null, "", "   "]) {
-      assert.equal(
-        getMyListScope({ hrId, role: "Medical Rep" }).kind,
-        "none",
-        `a session with no HR id (${JSON.stringify(hrId)}) opens nothing — never someone else's list, never the company`,
-      );
-    }
-    const manager = getMyListScope({ hrId: "b-7", role: "District Manager" });
-    assert.equal(manager.kind, "none", "a manager reaching the resolver gets nothing from it, never `company`");
-  }
-
-  // ── THE ROW IS RETIRED: NO SEAT'S SIDEBAR SHOWS IT, BUT THE CATALOG/REGISTRY WIRING STAYS ────
-  // My List was hidden from the portal sidebar on 2026-09-25 (owner: "hide the my-list board") — the
-  // rep's own contact list now lives in Phoenix CRM's List tab. The hide is reversible: the flag is
-  // held false rather than deleted, and the catalog/registry/layout wiring stays put, so restoring
-  // MY_LIST_PORTAL_ROLES.includes(...) in navigation.ts brings the row back.
-  {
+    // No sidebar surface names My List any more.
     const portalItems = employeePortalNavigationSections.flatMap((section) => section.items);
-    const catalog = portalItems.find((item) => item.href === ROUTE);
-    assert.ok(catalog, "the portal sidebar catalog still carries My List, for a clean restore");
-    assert.deepEqual(
-      [...(catalog.roles ?? [])].sort(),
-      [...MY_LIST_PORTAL_ROLES].sort(),
-      "the catalog entry must name exactly MY_LIST_PORTAL_ROLES, or a row appears for a seat the page refuses",
-    );
-    assert.equal(catalog.label, "My List");
-
-    const navSource = readFileSync("src/lib/employee-portal/navigation.ts", "utf8");
-    const flagStart = navSource.indexOf("const showMyListTab");
-    assert.ok(flagStart >= 0, "the portal My List visibility flag must exist");
-    const flag = navSource.slice(flagStart, navSource.indexOf(";", flagStart) + 1);
-    assert.ok(/=\s*false\b/.test(flag), "the retired My List flag is held false, hiding the sidebar row from every seat");
-
-    const rep = resolveEmployeePortalNavVisibility("Medical Rep", "Medical Rep");
-    assert.equal(rep.showMyListTab, false, "My List is retired — a Medical Rep's sidebar no longer shows it");
-    assert.equal(rep.showRepsListTab, false, "and Reps List stays a manager row");
-    const districtManager = resolveEmployeePortalNavVisibility("District Manager", "District Manager");
-    assert.equal(districtManager.showMyListTab, false, "a District Manager's sidebar shows no My List");
-    assert.equal(districtManager.showRepsListTab, true, "and keeps Reps List");
-    const elevated = resolveEmployeePortalNavVisibility("Medical Rep", "National Sales Manager");
+    assert.equal(portalItems.find((item) => item.href === ROUTE), undefined, "the portal catalog no longer offers My List");
     assert.equal(
-      elevated.showMyListTab,
-      false,
-      "the nav follows the access role, as the page gate does — a Medical Rep title on an NSM account is a manager seat",
+      PORTAL_NAV_REGISTRY.filter((entry) => entry.href === ROUTE).length,
+      0,
+      "the portal nav registry no longer carries a My List entry",
     );
 
-    const entries = PORTAL_NAV_REGISTRY.filter((entry) => entry.href === ROUTE);
-    assert.equal(entries.length, 1, "one registry entry per href");
-    assert.deepEqual(entries[0].flags, ["showMyListTab"]);
-    assert.deepEqual(entries[0].permission, { action: "read", resource: "crm_visits" });
-    assert.equal(entries[0].label, "My List");
-
+    // A rep still gets neither board row; the retired visibility flag is gone from the source.
+    const rep = resolveEmployeePortalNavVisibility("Medical Rep", "Medical Rep");
+    assert.equal(rep.showRepsListTab, false, "a Medical Rep never gets the manager Reps List row");
+    const navSource = readFileSync("src/lib/employee-portal/navigation.ts", "utf8");
+    assert.equal(navSource.includes("const showMyListTab"), false, "the showMyListTab flag definition is deleted");
     const layout = readFileSync("src/components/employee-portal/employee-portal-layout.tsx", "utf8");
-    assert.ok(
-      layout.includes('...(showMyListTab ? [{ href: "/employee-portals/my-list", label: "My List"'),
-      "the portal sidebar must render the My List row behind its flag",
-    );
+    assert.equal(layout.includes('href: "/employee-portals/my-list"'), false, "the portal sidebar renders no My List row");
+
+    // The dead board code is gone; the live engine (asserted below) stays.
+    const board = readFileSync("src/components/crm/reps-list-board.tsx", "utf8");
+    assert.equal(board.includes("MyListBoardView"), false, "the unused My List view component is deleted");
+    const access = readFileSync("src/lib/crm/doctor-list-access.ts", "utf8");
+    assert.equal(access.includes("getMyListScope"), false, "the unused getMyListScope resolver is deleted");
   }
 
   // ── THE PAGE READS NO REP FROM THE URL, AND THE TWO DOORS SEND EACH OTHER'S VIEWERS ACROSS ──
@@ -153,11 +116,11 @@ export function runMyListTests() {
       !page.includes("getMyListBoard") && !page.includes("MyListBoardView") && !page.includes("getMyListScope"),
       "the retired page loads and renders no board of its own",
     );
-    // THE GATE STAYS: the page still enforces exactly crm_visits:read — the permission its nav
-    // registry entry mirrors — so the sidebar/bottom-nav permission guard keeps one truth in one place.
+    // THE GATE STAYS: the page still enforces exactly crm_visits:read, so a seat without CRM access
+    // gets the same refusal it always did before being forwarded — the sidebar row is gone, the gate is not.
     assert.ok(
       page.includes('if (!canAccessMyList(access) || !(await canAccess(access, "crm_visits", "read"))) {'),
-      "the page asserts both the role list and the crm_visits:read matrix grant, matching its registry entry",
+      "the retired page still asserts both the role list and the crm_visits:read matrix grant before forwarding",
     );
     assert.ok(!page.includes("getDoctorListScope"), "My List must never resolve the manager board's reach");
     assert.ok(!/params\?\.rep\b|searchParams.*\brep\b/.test(page), "no URL parameter may name the rep whose list opens");
@@ -174,14 +137,6 @@ export function runMyListTests() {
       repRedirect >= 0 && repsListGate > repRedirect,
       "a rep who lands on Reps List from a stale link is sent to My List before the manager gate refuses them",
     );
-
-    const view = readFileSync("src/components/crm/reps-list-board.tsx", "utf8");
-    const viewStart = view.indexOf("export function MyListBoardView");
-    assert.ok(viewStart >= 0, "the My List view must exist");
-    const viewBody = view.slice(viewStart, view.indexOf("\n}\n", viewStart));
-    assert.ok(!viewBody.includes("RepsListFilters") && !viewBody.includes("RepCard"), "My List offers no picker and no rep cards");
-    assert.ok(viewBody.includes("monthPreserve={{}}"), "the month picker carries no rep and no cascade");
-    assert.ok(viewBody.includes('exportTitle="My List"'), "the download is titled My List");
   }
 
   // ── THE LOADER SELECTS THE REP THROUGH THE REVIEWED CASCADE, AND WITHHOLDS EVERY PEER NAME ──
