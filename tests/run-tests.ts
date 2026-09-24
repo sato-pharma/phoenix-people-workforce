@@ -1527,6 +1527,7 @@ import { runPhoenixCrmPlaceLocationFrozenTests } from "./phoenix-crm-place-locat
 import { runPhoenixCrmPortalSidebarTests } from "./phoenix-crm-portal-sidebar.test.ts";
 import { runPhoenixCrmAmPmWordTests } from "./phoenix-crm-am-pm-words.test.ts";
 import { runPhoenixCrmDoctorPharmaciesTests } from "./phoenix-crm-doctor-pharmacies.test.ts";
+import { runPhoenixCrmLineProductsTests } from "./phoenix-crm-line-products.test.ts";
 import { runCrmCutoverTests } from "./crm-cutover.test.ts";
 import { runCrmUnifyVendorReadsTests } from "./crm-unify-vendor-reads.test.ts";
 import { runPhoenixKpiRulesTests } from "./phoenix-kpi-rules.test.ts";
@@ -5045,6 +5046,10 @@ await runTest(
 await runTest(
   "Phoenix CRM links a doctor to his pharmacies (owner, 2026-09-24: \"link doctors to their pharmacies next\", and — asked how — \"Both\"; after the visit form began recording which pharmacy the rep took feedback from, each doctor carries an auto-derived list of the pharmacies his own visits named AND one the rep can pin as primary; groupCustomerPharmacies is the pure core, so case- and spacing-only spelling variants are one pharmacy, the display name and each product's Has/Doesn't-have answer are the most recent visit's, the list is most-recent-first per doctor, and the primary is set by the caller from the pinned name, never inside the grouping)",
   runPhoenixCrmDoctorPharmaciesTests,
+);
+await runTest(
+  "Phoenix CRM groups a line's products by family for the pharmacy-stock check (owner, 2026-09-24: \"show products by families and expandable and collapsable by conc in Does this pharmacy have these products?\"; a pharmacy can carry one concentration of a family and not another, so the stock check is answered per product, grouped under its family; groupLineProducts is the pure core, so products group under their family within a normalized line key, confidential codes are dropped, an unnamed product falls back to its family name, and both families and their products come out sorted and deduplicated)",
+  runPhoenixCrmLineProductsTests,
 );
 
 await runTest(

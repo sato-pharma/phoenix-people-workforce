@@ -34,7 +34,7 @@ import { callPhoenixCrm, numberOrNull, textOrNull, throwIfError } from "@/lib/ph
 import { ensureReferenceCustomers, loadMonthVisitCounts, loadTerritoryCustomers } from "@/lib/phoenix-crm/server/list";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
 import { photoSlotIssuedAt } from "@/lib/phoenix-crm/server/photos";
-import { lineProductFamilies } from "@/lib/phoenix-crm/server/products";
+import { lineProductsByFamily, type LineProductFamily } from "@/lib/phoenix-crm/server/products";
 import { describeTerritory, seatTierTitle, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
 import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmVisitKind } from "@/lib/phoenix-crm/types";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
@@ -237,7 +237,10 @@ export type VisitFormView = {
   managers: VisitPerson[];
   /** Entering as a manager: the viewer's own position in `managers` (they are the visit's manager). */
   viewerPosition: number | null;
+  /** The line's discussed choices — the family names — for "Products discussed". */
   products: string[];
+  /** The same products grouped by family, for the finer per-product pharmacy-stock check. */
+  productFamilies: LineProductFamily[];
   /** Pharmacies this seat has typed on earlier visits, most recent first, for the name suggestions. */
   pharmacies: string[];
   rules: { visitFarMeters: number; weakGpsMeters: number };
@@ -298,14 +301,15 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
   const chain = managerChain(viewer.org, seat.seatId);
 
   await ensureReferenceCustomers(seat, isTest);
-  const [{ customers, placesByCustomer }, visitCounts, planned, visitRows, products, pharmacies] = await Promise.all([
+  const [{ customers, placesByCustomer }, visitCounts, planned, visitRows, productFamilies, pharmacies] = await Promise.all([
     loadTerritoryCustomers(seat.seatId, isTest, { onListOnly: true }),
     loadMonthVisitCounts(seat.seatId, isTest, monthStartOf(today), today),
     plannedCustomerIds(seat.seatId, isTest, today),
     loadVisitRows(seat.seatId, isTest, today),
-    lineProductFamilies(seat.lineName),
+    lineProductsByFamily(seat.lineName),
     loadSeatPharmacies(seat.seatId, isTest),
   ]);
+  const products = productFamilies.map((entry) => entry.family);
   const names = await loadPeopleNames([...territoryPeople(viewer.org, [seat]), ...chain.map((member) => member.hrId), ...visitPeople(visitRows)]);
   const visitedToday = new Set(visitRows.map((row) => String(row.customer_id)));
   const ramadan = isRamadanDay(today, viewer.config.ramadanOverrides);
@@ -360,6 +364,7 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
     })),
     viewerPosition: enteredAs === "manager" ? (chain.find((member) => member.hrId === viewer.hrId)?.position ?? null) : null,
     products,
+    productFamilies,
     pharmacies,
     rules: { visitFarMeters: settings.visitFarMeters, weakGpsMeters: settings.weakGpsMeters },
     customers: options,
@@ -401,16 +406,18 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown): Promise
   });
   if (!participants.ok) throw validationError(participants.error);
 
-  const families = await lineProductFamilies(seat.lineName);
-  const allowed = new Set(families);
-  if (families.length === 0 || visit.products.some((product) => !allowed.has(product))) {
+  const productFamilies = await lineProductsByFamily(seat.lineName);
+  const allowedFamilies = new Set(productFamilies.map((entry) => entry.family));
+  if (productFamilies.length === 0 || visit.products.some((product) => !allowedFamilies.has(product))) {
     throw validationError("Choose the products discussed from your line's products. Reload the page.");
   }
-  // The pharmacy stock answers are kept only for products still on the line. A product dropped from
-  // the line since the form loaded is quietly left out rather than blocking the save.
+  // The pharmacy stock answers are per product (concentration), not per family, so they are kept only
+  // for products still on the line. A product dropped from the line since the form loaded is quietly
+  // left out rather than blocking the save.
+  const allowedProducts = new Set(productFamilies.flatMap((entry) => entry.products));
   const productAvailability: Record<string, ProductAvailability> = {};
   for (const [product, answer] of Object.entries(visit.productAvailability)) {
-    if (allowed.has(product)) productAvailability[product] = answer;
+    if (allowedProducts.has(product)) productAvailability[product] = answer;
   }
 
   const supabase = getSupabaseAdmin();
