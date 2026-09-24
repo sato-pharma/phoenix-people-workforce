@@ -58,7 +58,7 @@ import {
 } from "@/components/phoenix-crm/ui";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 import { isIsoDay } from "@/lib/phoenix-crm/calendar";
-import { VISIT_COMMENT_MAX, VISIT_PRODUCTS_MAX } from "@/lib/phoenix-crm/entry-rules";
+import { PHARMACY_NAME_MAX, VISIT_COMMENT_MAX, VISIT_PRODUCTS_MAX, type ProductAvailability } from "@/lib/phoenix-crm/entry-rules";
 import type { PhoenixCrmListType, PhoenixCrmVisitKind } from "@/lib/phoenix-crm/types";
 import type {
   SavedVisit,
@@ -172,6 +172,40 @@ function LocationPills({ visit }: { visit: VisitRow }) {
   );
 }
 
+function availabilitySplit(map: Record<string, ProductAvailability>): { has: string[]; missing: string[] } {
+  const has: string[] = [];
+  const missing: string[] = [];
+  for (const [product, answer] of Object.entries(map)) (answer === "has" ? has : missing).push(product);
+  return { has, missing };
+}
+
+function PharmacyLines({ visit }: { visit: VisitRow }) {
+  const { has, missing } = availabilitySplit(visit.productAvailability);
+  if (!visit.pharmacyName && has.length === 0 && missing.length === 0) return null;
+  return (
+    <>
+      {visit.pharmacyName ? (
+        <p className="break-words">
+          <span className="font-black text-slate-800">Pharmacy: </span>
+          {visit.pharmacyName}
+        </p>
+      ) : null}
+      {has.length > 0 ? (
+        <p className="break-words">
+          <span className="font-black text-slate-800">Has: </span>
+          {has.join(", ")}
+        </p>
+      ) : null}
+      {missing.length > 0 ? (
+        <p className="break-words">
+          <span className="font-black text-slate-800">Doesn&apos;t have: </span>
+          {missing.join(", ")}
+        </p>
+      ) : null}
+    </>
+  );
+}
+
 function VisitDetails({ visit }: { visit: VisitRow }) {
   const people = visitPeople(visit);
   return (
@@ -186,6 +220,7 @@ function VisitDetails({ visit }: { visit: VisitRow }) {
         <span className="font-black text-slate-800">Products: </span>
         {visit.products.join(", ") || "—"}
       </p>
+      <PharmacyLines visit={visit} />
       {visit.comment ? (
         <p className="whitespace-pre-line break-words">
           <span className="font-black text-slate-800">Comment: </span>
@@ -267,6 +302,16 @@ function VisitTable({ visits }: { visits: ReadonlyArray<VisitRow> }) {
               </td>
               <td className={crmTdClassName}>
                 <span className="block">{visit.products.join(", ") || "—"}</span>
+                {visit.pharmacyName ? <span className="mt-1 block text-xs text-slate-600">Pharmacy: {visit.pharmacyName}</span> : null}
+                {(() => {
+                  const { has, missing } = availabilitySplit(visit.productAvailability);
+                  return (
+                    <>
+                      {has.length > 0 ? <span className="mt-1 block text-xs text-slate-500">Has: {has.join(", ")}</span> : null}
+                      {missing.length > 0 ? <span className="block text-xs text-slate-500">Doesn&apos;t have: {missing.join(", ")}</span> : null}
+                    </>
+                  );
+                })()}
                 {visit.comment ? <span className="mt-1 block whitespace-pre-line text-xs text-slate-500">{visit.comment}</span> : null}
               </td>
               <td className={crmTdClassName}>
@@ -717,6 +762,8 @@ function AddVisit({
   const [managerHrId, setManagerHrId] = useState<string | null>(null);
   const [seniorHrId, setSeniorHrId] = useState<string | null>(null);
   const [products, setProducts] = useState<string[]>([]);
+  const [pharmacyName, setPharmacyName] = useState("");
+  const [availability, setAvailability] = useState<Record<string, ProductAvailability>>({});
   const [comment, setComment] = useState("");
   const [photo, setPhoto] = useState<CapturedPhoto | null>(null);
   const [usePlacePhoto, setUsePlacePhoto] = useState(Boolean(handoff?.photo));
@@ -781,6 +828,18 @@ function AddVisit({
     );
   }
 
+  // The pharmacy stock answer for one product. Tapping the answer it already has clears it back to
+  // unanswered, so a mistaken tap is undone without a third button.
+  function setStock(product: string, answer: ProductAvailability) {
+    setProblem(null);
+    setAvailability((current) => {
+      const next = { ...current };
+      if (next[product] === answer) delete next[product];
+      else next[product] = answer;
+      return next;
+    });
+  }
+
   function draft(visitId: string): Draft {
     if (!customer) return { ok: false, problem: "Choose the customer you visited." };
     if (customer.visitedToday) return { ok: false, problem: "This customer's visit for today is already saved." };
@@ -792,6 +851,7 @@ function AddVisit({
     }
     if (kind === "chain" && !who.senior) return { ok: false, problem: "Choose the senior manager who was on the visit." };
     if (products.length === 0) return { ok: false, problem: "Choose the products you discussed." };
+    if (!pharmacyName.trim()) return { ok: false, problem: "Write the pharmacy you took feedback from." };
     const evidence = placePhoto ?? photo;
     if (!evidence) return { ok: false, problem: "Take a live photo of the clinic sign or door." };
     return {
@@ -806,6 +866,8 @@ function AddVisit({
         managerHrId: kind === "single" ? null : (who.manager?.hrId ?? null),
         seniorHrId: kind === "chain" ? (who.senior?.hrId ?? null) : null,
         products,
+        pharmacyName: pharmacyName.trim(),
+        productAvailability: availability,
         comment: comment.trim() || null,
         photoPath: evidence.path,
         lat: evidence.lat,
@@ -987,7 +1049,81 @@ function AddVisit({
         </p>
       </CrmBlock>
 
-      <CrmBlock className="border-t border-slate-100" title="4 · Comment">
+      <CrmBlock className="border-t border-slate-100" title="4 · Pharmacy you took feedback from">
+        <CrmField
+          hint="Type the pharmacy. Ones you entered before appear as you type; a new one is saved for next time."
+          htmlFor="phoenix-crm-visit-pharmacy"
+          label="Pharmacy name"
+        >
+          <input
+            autoComplete="off"
+            className={crmInputClassName}
+            disabled={saving}
+            id="phoenix-crm-visit-pharmacy"
+            list="phoenix-crm-pharmacies"
+            maxLength={PHARMACY_NAME_MAX}
+            onChange={(event) => {
+              setProblem(null);
+              setPharmacyName(event.target.value);
+            }}
+            placeholder="e.g. El Ezaby — Nasr City"
+            value={pharmacyName}
+          />
+          {loaded.pharmacies.length > 0 ? (
+            <datalist id="phoenix-crm-pharmacies">
+              {loaded.pharmacies.map((name) => (
+                <option key={name} value={name} />
+              ))}
+            </datalist>
+          ) : null}
+        </CrmField>
+
+        <div className="mt-3 min-w-0">
+          <p className="text-sm font-black text-slate-800">Does this pharmacy have these products?</p>
+          <p className="mt-0.5 text-xs font-semibold text-slate-500">Answer the ones you checked — leave the rest blank.</p>
+          <div className="mt-2 grid min-w-0 gap-1.5">
+            {loaded.products.map((product) => {
+              const answer = availability[product];
+              return (
+                <div
+                  className="flex min-w-0 flex-wrap items-center justify-between gap-2 border border-slate-200 bg-white px-3 py-2"
+                  key={product}
+                >
+                  <span className="min-w-0 flex-1 break-words text-sm font-black text-slate-700">{product}</span>
+                  <div className="flex shrink-0 flex-wrap gap-1.5">
+                    <button
+                      aria-pressed={answer === "has"}
+                      className={cn(
+                        "min-h-9 min-w-0 break-words rounded-none border px-3 py-1 text-sm font-black transition disabled:cursor-not-allowed disabled:opacity-50",
+                        answer === "has" ? "border-emerald-600 bg-emerald-600 text-white" : "border-slate-200 bg-white text-slate-600 hover:border-emerald-300",
+                      )}
+                      disabled={saving}
+                      onClick={() => setStock(product, "has")}
+                      type="button"
+                    >
+                      Has
+                    </button>
+                    <button
+                      aria-pressed={answer === "missing"}
+                      className={cn(
+                        "min-h-9 min-w-0 break-words rounded-none border px-3 py-1 text-sm font-black transition disabled:cursor-not-allowed disabled:opacity-50",
+                        answer === "missing" ? "border-rose-500 bg-rose-500 text-white" : "border-slate-200 bg-white text-slate-600 hover:border-rose-300",
+                      )}
+                      disabled={saving}
+                      onClick={() => setStock(product, "missing")}
+                      type="button"
+                    >
+                      Doesn&apos;t have
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </CrmBlock>
+
+      <CrmBlock className="border-t border-slate-100" title="5 · Comment">
         <CrmField
           error={commentLength > VISIT_COMMENT_MAX ? `Keep the comment under ${VISIT_COMMENT_MAX} characters.` : null}
           hint={`Optional · ${commentLength} of ${VISIT_COMMENT_MAX} characters`}
@@ -1005,7 +1141,7 @@ function AddVisit({
         </CrmField>
       </CrmBlock>
 
-      <CrmBlock className="border-t border-slate-100" title="5 · Live photo">
+      <CrmBlock className="border-t border-slate-100" title="6 · Live photo">
         {placePhoto ? (
           <div className="grid gap-2">
             <span className="block w-full overflow-hidden rounded-none border border-slate-200 bg-slate-950">
