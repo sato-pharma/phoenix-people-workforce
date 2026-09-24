@@ -191,6 +191,10 @@ export type EmployeePortalNavVisibility = {
   // roles that ever sit as a person-rung in the approval ladder (see
   // directOrderManagementLadder) — the CEO's rung always resolves to the admin shell.
   showDirectOrdersTab?: boolean;
+  // Direct Orders in my area — the Medical Rep's view-only window onto direct orders booked in
+  // their own territory (owner, 2026-09-24). Distinct from showDirectOrdersTab, which is the
+  // requester WORKSPACE the rep does not have.
+  showAreaDirectOrdersTab?: boolean;
   showVacationApprovalsTab?: boolean;
   // Excuse has its own flag (distinct from vacation) so a module can be hidden for one role
   // without touching the other — e.g. National Sales Manager sees Vacation but not Excuse.
@@ -425,6 +429,22 @@ export function canUseEmployeePortalMarketingRoiTracking(
 }
 
 /**
+ * Direct Orders in my area — the Medical Rep's VIEW-ONLY window onto the direct orders their
+ * District Manager booked on pharmacies in the rep's own area (owner instruction, 2026-09-24).
+ *
+ * Medical-Rep only, by design: every manager seat either RAISES direct orders through the
+ * requester workspace (showDirectOrdersTab / DIRECT_ORDER_REQUESTER_ROLES) or already reads a wider
+ * report, so none of them needs this narrow area window. Rows are bounded server-side to the rep's
+ * own `employees.area_id` — see getRepAreaDirectOrders.
+ */
+export function canUseEmployeePortalAreaDirectOrders(
+  roleLabel: string | null | undefined,
+  accessRole?: string | null | undefined,
+) {
+  return resolvePortalRole(roleLabel, accessRole) === "Medical Rep";
+}
+
+/**
  * Broader than ROI Tracking's own role set: the Marketing Coverage Report is
  * deliberately open to the whole marketing/sales hierarchy INCLUDING Finance
  * Manager and Financial Advisor (scoped to their own subtree server-side — see
@@ -583,6 +603,9 @@ export function resolveEmployeePortalNavVisibility(
   // Coaching Analytics and Double-Visit Analytics, which NSM was not asked to gain here.
   const showRoiIntelligenceTab = showSalesIntelligence || isNationalSalesManager;
   const showDirectOrdersTab = !isCnsLine && isDirectOrderRequesterRole(resolvedRole);
+  // The Medical Rep's read-only "Direct Orders in my area" window (owner, 2026-09-24). Bounded to
+  // the rep's own area server-side; not tied to the requester workspace above.
+  const showAreaDirectOrdersTab = canUseEmployeePortalAreaDirectOrders(resolvedRole);
 
   return {
     showDashboardTab: !isTrainingManager,
@@ -906,6 +929,7 @@ export function resolveEmployeePortalNavVisibility(
     showMyVisitsTab,
     showDeductionsTab,
     showDirectOrdersTab,
+    showAreaDirectOrdersTab,
     // Vacation Approvals — confirmed portal-shell approver roles.
     showVacationApprovalsTab:
       resolvedRole === "District Manager" ||

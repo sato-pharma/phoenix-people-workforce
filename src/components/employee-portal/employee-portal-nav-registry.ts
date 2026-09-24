@@ -25,6 +25,7 @@ import {
   type LucideIcon,
   MapPinned,
   Package,
+  PackageSearch,
   Presentation,
   ReceiptText,
   Send,
@@ -160,6 +161,10 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   // sidebar entry in employee-portal-layout.tsx.
   { label: "ROI Tracker", fullLabel: "Marketing ROI Tracker", href: "/employee-portals/roi-tracker", icon: Target, flags: ["showMarketingRoiTrackingTab", "showMarketingCoverageReportTab"] },
   { label: "Direct Order", fullLabel: "Direct Orders", href: "/employee-portals/direct-orders", icon: ReceiptText, flags: ["showDirectOrdersTab"], navBadge: "direct-orders-needs-action" },
+  // A Medical Rep's view-only window onto the counted direct orders in his own area (owner,
+  // 2026-09-24). No `permission`: the page gates on role + area via canUseEmployeePortalAreaDirectOrders,
+  // not a single assertPermission — same as the requester Direct Order entry above.
+  { label: "Area Orders", fullLabel: "Direct Orders in My Area", href: "/employee-portals/direct-orders-in-my-area", icon: PackageSearch, flags: ["showAreaDirectOrdersTab"] },
   { label: "Visits", fullLabel: "My Visits", href: "/employee-portals/visits", icon: MapPinned, flags: ["showMyVisitsTab"], permission: { resource: "crm_visits", action: "read" } },
   // Phoenix CRM — the rep's own customer list, weekly plan, visits and reports. Beside My Visits
   // because the button inside that page was its only door until 2026-09-23. No `permission`: the
