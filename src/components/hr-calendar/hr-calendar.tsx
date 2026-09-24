@@ -4,10 +4,12 @@ import {
   Baby,
   CalendarDays,
   Cake,
+  Printer,
   RefreshCw,
   Search,
   UserPlus,
 } from "lucide-react";
+import Link from "next/link";
 import { useMemo, useState } from "react";
 
 import {
@@ -24,7 +26,7 @@ import {
   PortalRecordFields,
   PortalResponsiveDataList,
 } from "@/components/employee-portal/portal-primitives";
-import { Badge } from "@/components/ui/badge";
+import { Badge, type BadgeTone } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -43,7 +45,19 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 type Props = {
   initialData: HrCalendarEmployee[] | null;
   initialError: string | null;
+  /** Whether the viewer may print milestone cards — Super Admin only, gated server-side. */
+  canPrintCards: boolean;
 };
+
+/**
+ * The milestones deep link for one event, or null when the row has no card. The workspace opens on
+ * this person and this period; a `b<n>` period prints a birthday card, an `Ny`/`1m` a service one.
+ */
+function cardHref(event: HrCalendarEvent): string | null {
+  if (!event.spec) return null;
+  const params = new URLSearchParams({ hrId: event.employee.hrId, period: event.spec });
+  return `/milestones?${params.toString()}`;
+}
 
 const allValue = "__all__";
 const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -106,6 +120,10 @@ function eventClass(eventType: HrCalendarEventType) {
     return "border-[#A7F3D0] bg-[#ECFDF5] text-[#065F46]";
   }
 
+  if (eventType === "first_month") {
+    return "border-[#BAE6FD] bg-[#F0F9FF] text-[#075985]";
+  }
+
   if (eventType === "birthday") {
     return "border-phx-line-strong bg-phx-paper text-phx-ink-2";
   }
@@ -113,21 +131,29 @@ function eventClass(eventType: HrCalendarEventType) {
   return "border-[#FED7AA] bg-phx-accent-soft text-phx-accent-press";
 }
 
-function eventBadgeVariant(eventType: HrCalendarEventType) {
+function eventBadgeTone(eventType: HrCalendarEventType): BadgeTone {
   if (eventType === "new_hire") {
-    return "success" as const;
+    return "ok";
+  }
+
+  if (eventType === "first_month") {
+    return "info";
   }
 
   if (eventType === "birthday") {
-    return "neutral" as const;
+    return "neutral";
   }
 
-  return "warning" as const;
+  return "warn";
 }
 
 function eventDayLabel(eventType: HrCalendarEventType) {
   if (eventType === "new_hire") {
     return "New hire";
+  }
+
+  if (eventType === "first_month") {
+    return "First month";
   }
 
   if (eventType === "birthday") {
@@ -137,8 +163,27 @@ function eventDayLabel(eventType: HrCalendarEventType) {
   return "Anniversary";
 }
 
-export function HrCalendar({ initialData, initialError }: Props) {
+export function HrCalendar({ canPrintCards, initialData, initialError }: Props) {
   const today = new Date();
+
+  // A "Print card" link, shown only to someone who may print and only for a row that has a card.
+  // Same href everywhere; the three surfaces (grid chip, mobile card, desktop row) style it to fit.
+  function cardActions(event: HrCalendarEvent) {
+    if (!canPrintCards) return null;
+    const href = cardHref(event);
+    if (!href) return null;
+    return (
+      <Link
+        className="inline-flex items-center gap-1 text-phx-xs font-semibold text-phx-accent-press underline-offset-2 hover:underline"
+        href={href}
+        onClick={(clickEvent) => clickEvent.stopPropagation()}
+      >
+        <Printer className="h-3 w-3" />
+        Print card
+      </Link>
+    );
+  }
+
   const currentMonth = today.getMonth() + 1;
   const currentYear = today.getFullYear();
 
@@ -398,6 +443,7 @@ export function HrCalendar({ initialData, initialError }: Props) {
             >
               <option value="all">All events</option>
               <option value="new_hire">New hires</option>
+              <option value="first_month">First month</option>
               <option value="anniversary">Anniversaries</option>
               <option value="birthday">Birthdays</option>
             </SearchableSelect>
@@ -495,23 +541,36 @@ export function HrCalendar({ initialData, initialError }: Props) {
                           {day}
                         </div>
                         <div className="space-y-1.5">
-                          {dayEvents.slice(0, 4).map((event) => (
-                            <div
-                              className={cn(
-                                "rounded-xl border px-2 py-1.5 text-xs shadow-[0_8px_18px_rgba(15,23,42,0.04)]",
-                                eventClass(event.eventType),
-                              )}
-                              key={`${event.eventType}-${event.employee.hrId}-${event.date}`}
-                              title={`${formatEmployeeDisplayName(event.employee.fullName)} - ${eventLabel(event)}`}
-                            >
-                              <p className="break-words font-semibold">
-                                {formatEmployeeDisplayName(event.employee.fullName)}
-                              </p>
-                              <p className="break-words text-phx-xs font-medium opacity-80">
-                                {eventLabel(event)}
-                              </p>
-                            </div>
-                          ))}
+                          {dayEvents.slice(0, 4).map((event) => {
+                            // Identical classes whether it is a link or not — the plan's rule, so a
+                            // printable chip and a plain one read exactly alike but one is clickable.
+                            const chipClass = cn(
+                              "block rounded-xl border px-2 py-1.5 text-xs shadow-[0_8px_18px_rgba(15,23,42,0.04)]",
+                              eventClass(event.eventType),
+                            );
+                            const key = `${event.eventType}-${event.employee.hrId}-${event.date}`;
+                            const chipTitle = `${formatEmployeeDisplayName(event.employee.fullName)} - ${eventLabel(event)}`;
+                            const body = (
+                              <>
+                                <p className="break-words font-semibold">
+                                  {formatEmployeeDisplayName(event.employee.fullName)}
+                                </p>
+                                <p className="break-words text-phx-xs font-medium opacity-80">
+                                  {eventLabel(event)}
+                                </p>
+                              </>
+                            );
+                            const href = canPrintCards ? cardHref(event) : null;
+                            return href ? (
+                              <Link className={chipClass} href={href} key={key} title={`${chipTitle} — print card`}>
+                                {body}
+                              </Link>
+                            ) : (
+                              <div className={chipClass} key={key} title={chipTitle}>
+                                {body}
+                              </div>
+                            );
+                          })}
                           {dayEvents.length > 4 ? (
                             <div className="rounded-xl border border-phx-line-strong bg-phx-paper px-2 py-1 text-xs font-medium text-phx-ink-soft">
                               +{dayEvents.length - 4} more
@@ -557,8 +616,9 @@ export function HrCalendar({ initialData, initialError }: Props) {
                   {formatDate(event.date)} · <span className="font-mono">{event.employee.hrId}</span>
                 </span>
               }
+              actions={cardActions(event)}
               status={
-                <Badge variant={eventBadgeVariant(event.eventType)}>
+                <Badge tone={eventBadgeTone(event.eventType)}>
                   {eventDayLabel(event.eventType)}
                 </Badge>
               }
@@ -615,9 +675,12 @@ export function HrCalendar({ initialData, initialError }: Props) {
                       {formatDate(event.date)}
                     </td>
                     <td className="px-3 py-3">
-                      <Badge variant={eventBadgeVariant(event.eventType)}>
-                        {eventDayLabel(event.eventType)}
-                      </Badge>
+                      <div className="flex flex-col items-start gap-1.5">
+                        <Badge tone={eventBadgeTone(event.eventType)}>
+                          {eventDayLabel(event.eventType)}
+                        </Badge>
+                        {cardActions(event)}
+                      </div>
                     </td>
                     <td className="break-words px-3 py-3">
                       <div>

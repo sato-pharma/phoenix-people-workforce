@@ -20,6 +20,28 @@
 
 import sharp from "sharp";
 
+/**
+ * Where the 4:5 window sits on the photograph, and how far in.
+ *
+ * `x` and `y` are a fraction of the SLACK in each axis — 0 flush to the left/top edge, 1 flush to
+ * the right/bottom, 0.5 dead centre. Deliberately not a pixel offset: the same pair then means the
+ * same framing whatever size the photograph is, and it is the same arithmetic the browser does to
+ * lay the picture out while somebody drags it. Neither side converts anything, so neither side can
+ * drift.
+ *
+ * 🔴 `zoom` IS WHAT MAKES DRAGGING IN ALL FOUR DIRECTIONS POSSIBLE AT ALL. At zoom 1 the
+ * picture is scaled to cover the window exactly, and a rectangle scaled to exactly cover another
+ * rectangle overhangs it in ONE axis only — the other is already shown edge to edge, with nothing
+ * above or below to reveal. Dragging it there does nothing, and looks broken rather than
+ * geometric (the owner, 2026-09-23: "I need dragging up, down, left, right, and any place I
+ * want"). Scale past 1 and both axes overhang, so the picture travels freely in every direction.
+ * 1 means exactly cover, which is what this module has always done.
+ */
+export type PortraitFocus = { x: number; y: number; zoom?: number };
+
+/** Past this the photograph is enlarged more than it can carry and the card prints mush. */
+const MAX_ZOOM = 4;
+
 export type PortraitOptions = {
   /** Output width in pixels. The card prints the photo 350pt wide, so 1600px is ~330 DPI. */
   width?: number;
@@ -29,12 +51,28 @@ export type PortraitOptions = {
   defocus?: number;
   /** Grain amplitude, 0 to 1. Print grain hides banding in a flat studio background. */
   grain?: number;
+  /**
+   * Where to put the window. Omit it and sharp's `attention` strategy chooses, which is the
+   * default the card has always printed. Pass one and that choice is replaced outright — this is
+   * the person at the keyboard saying where the face goes, and a machine's guess never overrides
+   * a human's instruction.
+   */
+  focus?: PortraitFocus | null;
 };
 
-export type PolishedPortrait = { buffer: Buffer; width: number; height: number; contentType: "image/jpeg" };
+export type PolishedPortrait = {
+  buffer: Buffer;
+  width: number;
+  height: number;
+  contentType: "image/jpeg";
+  /** The window this portrait was actually cut at — the handed-in focus, or what `attention` chose. */
+  focus: PortraitFocus;
+};
 
 const DEFAULT_WIDTH = 1600;
 const PORTRAIT_RATIO = 5 / 4;
+/** The size `portraitFocus` scores at. Small enough to be quick, big enough to score the same. */
+const FOCUS_PROBE_WIDTH = 480;
 
 /**
  * Polish a portrait for the card. Returns null when the bytes are not a readable image — the
@@ -52,9 +90,9 @@ export async function polishPortrait(
   try {
     // 1. Portrait crop. `attention` lands on the region sharp scores as most interesting, which on
     //    a head-and-shoulders photograph is the face — closer to a human crop than a centre cut.
-    const cropped = await sharp(input, { failOn: "none" })
-      .rotate() // honour the EXIF orientation a phone wrote; without it portraits arrive sideways
-      .resize(width, height, { fit: "cover", position: sharp.strategy.attention })
+    //    When a focus is handed in, that guess is not consulted at all.
+    const cut = await cutPortrait(input, width, height, options.focus ?? null);
+    const cropped = await sharp(cut.buffer)
       .removeAlpha()
       .toColourspace("srgb")
       .toBuffer();
@@ -84,10 +122,107 @@ export async function polishPortrait(
       .jpeg({ quality: 92, chromaSubsampling: "4:4:4", mozjpeg: true })
       .toBuffer();
 
-    return { buffer, width, height, contentType: "image/jpeg" };
+    return { buffer, width, height, contentType: "image/jpeg", focus: cut.focus };
   } catch {
     return null;
   }
+}
+
+/**
+ * Cut the 4:5 window, and say where it landed.
+ *
+ * 🔴 THE TWO BRANCHES MUST AGREE, or the box somebody drags shows a different picture from the one
+ * that prints. `attention` is sharp's own crop and reports its choice back as `cropOffsetTop` /
+ * `cropOffsetLeft` — NEGATIVE numbers, in the resized space, counting how much was taken off the
+ * top and the left. A focus is applied by resizing to that same cover size and extracting the
+ * window by hand, which is the same geometry the browser applies for `object-fit: cover` with an
+ * `object-position` percentage. Feed the fractions the first branch reported into the second and
+ * the same FRAMING comes back — measured, not assumed — though not the same bytes: one resample
+ * is a single cover pass and the other a resize then an extract, so they round differently by a
+ * pixel or two. That is why the workspace sends no focus at all until somebody drags one: an
+ * untouched card goes down the identical path it always did.
+ */
+async function cutPortrait(
+  input: Buffer,
+  width: number,
+  height: number,
+  focus: PortraitFocus | null,
+): Promise<{ buffer: Buffer; focus: PortraitFocus }> {
+  const upright = await sharp(input, { failOn: "none" })
+    .rotate() // honour the EXIF orientation a phone wrote; without it portraits arrive sideways
+    .toBuffer();
+
+  const meta = await sharp(upright).metadata();
+
+  if (!focus) {
+    // Nobody has framed this one, so sharp's own `attention` strategy does — at cover size, which
+    // is the crop this module has always produced. Its choice is reported back so the box somebody
+    // drags can open exactly where the card is already printing.
+    const cover = coverSize(meta.width ?? width, meta.height ?? height, width, height, 1);
+    const { data, info } = await sharp(upright)
+      .resize(width, height, { fit: "cover", position: sharp.strategy.attention })
+      .toBuffer({ resolveWithObject: true });
+    return {
+      buffer: data,
+      focus: {
+        x: slackFraction(info.cropOffsetLeft, cover.width - width),
+        y: slackFraction(info.cropOffsetTop, cover.height - height),
+        zoom: 1,
+      },
+    };
+  }
+
+  const zoom = clampZoom(focus.zoom);
+  const chosen = { x: clamp01(focus.x), y: clamp01(focus.y), zoom };
+  const fit = coverSize(meta.width ?? width, meta.height ?? height, width, height, zoom);
+  const buffer = await sharp(upright)
+    .resize(fit.width, fit.height)
+    .extract({
+      left: Math.round((fit.width - width) * chosen.x),
+      top: Math.round((fit.height - height) * chosen.y),
+      width,
+      height,
+    })
+    .toBuffer();
+  return { buffer, focus: chosen };
+}
+
+/**
+ * The size a source fills a `width × height` window at, covering it in both axes, times `zoom`.
+ *
+ * At zoom 1 it covers exactly — one axis flush, the other overhanging. Above 1 BOTH overhang,
+ * which is the whole reason a zoom exists: slack in both axes is what a drag travels through.
+ */
+function coverSize(
+  sourceWidth: number,
+  sourceHeight: number,
+  width: number,
+  height: number,
+  zoom: number,
+): { width: number; height: number } {
+  const safeW = Math.max(1, sourceWidth);
+  const safeH = Math.max(1, sourceHeight);
+  const scale = Math.max(width / safeW, height / safeH) * clampZoom(zoom);
+  // Ceil, never round: a rounded-down side lands one pixel short of the window and `extract`
+  // throws rather than returning a slightly small picture.
+  return { width: Math.max(width, Math.ceil(safeW * scale)), height: Math.max(height, Math.ceil(safeH * scale)) };
+}
+
+/**
+ * Turn one of sharp's crop offsets into a fraction of that axis's slack.
+ *
+ * The offsets arrive NEGATIVE — they say how much came off the top and the left — so the sign is
+ * dropped. An axis the photograph already fits exactly has no slack and no meaning to a fraction;
+ * it reports centred, which is what a zero-width drag range shows anyway.
+ */
+function clampZoom(zoom: number | undefined): number {
+  if (typeof zoom !== "number" || !Number.isFinite(zoom)) return 1;
+  return Math.min(MAX_ZOOM, Math.max(1, zoom));
+}
+
+function slackFraction(offset: number | undefined, slack: number): number {
+  if (!Number.isFinite(slack) || slack <= 0) return 0.5;
+  return clamp01(Math.abs(offset ?? 0) / slack);
 }
 
 /** The polished portrait as a `data:` URI, ready to drop into the card's HTML. */
@@ -98,6 +233,27 @@ export async function polishPortraitDataUri(
   const polished = await polishPortrait(input, options);
   if (!polished) return null;
   return `data:${polished.contentType};base64,${polished.buffer.toString("base64")}`;
+}
+
+/**
+ * Where the card would put the window if nobody said otherwise — the crop alone, none of the
+ * polish.
+ *
+ * This exists so the box somebody drags can OPEN on the framing the card already prints. Running
+ * the whole treatment to learn one pair of numbers would cost six sharp passes over a 1600px
+ * image, every time a name is picked, to throw away the picture at the end of it; this runs the
+ * one pass that decides the crop, at a size small enough to be quick and large enough for
+ * `attention` to score the same regions. Measured on a real 492×691 staff photograph: 0.987 here
+ * against 0.996 at full size — under three pixels of a two-thousand-pixel portrait, which is a
+ * starting position, not the printed crop.
+ */
+export async function portraitFocus(input: Buffer): Promise<PortraitFocus | null> {
+  try {
+    const cut = await cutPortrait(input, FOCUS_PROBE_WIDTH, Math.round(FOCUS_PROBE_WIDTH * PORTRAIT_RATIO), null);
+    return cut.focus;
+  } catch {
+    return null;
+  }
 }
 
 async function applyDefocus(base: Buffer, width: number, height: number, amount: number): Promise<Buffer> {

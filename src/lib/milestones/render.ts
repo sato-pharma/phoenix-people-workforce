@@ -11,22 +11,62 @@
 // the pass's own report, so a card that printed WITHOUT it is impossible rather than merely
 // unlikely: no report, no PDF.
 
+import { PDFDocument } from "pdf-lib";
+
 import { withChromiumPage, type ChromiumPage } from "@/lib/pdf/chromium";
 
 import {
   MILESTONE_CARD_LAYOUT_SCRIPT,
   milestoneCardHtml,
   milestoneCardPageSizeMm,
+  milestoneCardsHtml,
   type MilestoneCardInput,
   type MilestoneCardVariant,
 } from "./card";
 
-export type MilestoneCardLayout = { nameSize: number; nameWidth: number; citationLines: number };
+export type MilestoneCardLayout = {
+  nameSize: number;
+  nameWidth: number;
+  citationLines: number;
+  /** The point size the citation settled at after the fit loop — a card near 8.6 was a tight fit. */
+  citationSize: number;
+};
+
+/**
+ * How many cards one Chromium page lays out and prints at a time.
+ *
+ * 🔴 THE BOUND IS DECODED PORTRAIT MEMORY, NOT BROWSER LAUNCHES. The whole batch runs in ONE
+ * `withChromiumPage` — one launch — but every card on a page holds its portrait decoded in memory
+ * at once (~15 MB each). Six is the window that stays well inside the container between `setContent`
+ * calls; the next chunk replaces the content, so the previous chunk's portraits are freed before the
+ * following ones decode. The chunk PDFs are then stitched with pdf-lib into the one file.
+ */
+export const MILESTONE_RENDER_CHUNK = 6;
+
+/**
+ * The most cards one download may carry.
+ *
+ * 🔴 THIS IS A REQUEST-TIME CEILING, NOT A MEMORY ONE. The render pages internally at
+ * `MILESTONE_RENDER_CHUNK`, freeing each chunk's portraits before the next decode, so a large batch
+ * is bounded in memory however big it is — a whole window still prints as ONE download, from ONE
+ * Chromium launch, against ONE export-rate-limit allowance. Client-side paging into several requests
+ * was the obvious-looking way to lift the old 30 and is precisely wrong: the limiter bounds launches,
+ * so page two would 429. So the ceiling is raised here instead (30 → 150, owner 2026-09-23, "add
+ * paging so a whole large window prints as one download"), high enough that a real month of birthdays
+ * and anniversaries across the company clears it, low enough that one request cannot run unbounded.
+ */
+export const MILESTONE_BATCH_MAX = 150;
 
 export type MilestoneCardRender = {
   pdf: Buffer;
   /** What the browser settled on — the proof the layout pass ran. Logged, and asserted in tests. */
   layout: MilestoneCardLayout;
+};
+
+export type MilestoneCardsRender = {
+  pdf: Buffer;
+  /** One report per card, in order — the proof every card was fitted, not just the first. */
+  layouts: MilestoneCardLayout[];
 };
 
 export type MilestoneCardImageRender = {
@@ -60,25 +100,52 @@ function cssPixels(mm: number): number {
  * same way. Two copies of this sequence would eventually disagree about the one thing that matters
  * — whether the layout pass ran before the output was taken.
  */
-async function layOutCard(page: ChromiumPage, html: string): Promise<MilestoneCardLayout> {
+type CardReport = {
+  nameSize?: number;
+  nameWidth?: number;
+  citationLines?: number;
+  citationSize?: number;
+};
+
+/**
+ * Lay every card in the document out and hand back one report PER card.
+ *
+ * 🔴 THE GUARD IS A COUNT, NOT A PRESENCE CHECK. A batch document holds N cards; the pass fits each
+ * and returns `cards: [...]`. Checking only that *a* report came back would pass a document where
+ * cards 2..N printed unfitted — off the frame — because card 1's report is valid. So this refuses
+ * unless there are exactly as many reports as cards asked for, and every one carries real numbers.
+ *
+ * Shared by both outputs on purpose: the picture and the PDF must be the SAME artwork, fitted the
+ * same way. Two copies of this sequence would eventually disagree about whether the pass ran.
+ */
+async function layOutCards(
+  page: ChromiumPage,
+  html: string,
+  expected: number,
+): Promise<MilestoneCardLayout[]> {
   await page.setContent(html, { waitUntil: "networkidle0" });
 
-  const report = (await page.evaluate(MILESTONE_CARD_LAYOUT_SCRIPT)) as {
-    nameSize?: number;
-    nameWidth?: number;
-    citationLines?: number;
-  } | null;
+  const report = (await page.evaluate(MILESTONE_CARD_LAYOUT_SCRIPT)) as { cards?: CardReport[] } | null;
+  const cards = report?.cards;
 
-  if (!report || typeof report.nameSize !== "number" || typeof report.citationLines !== "number") {
-    throw new Error("The milestone card's layout pass did not report back — refusing to print it.");
+  if (!Array.isArray(cards) || cards.length !== expected) {
+    throw new Error("The milestone card's layout pass did not report every card — refusing to print it.");
   }
 
+  const layouts = cards.map((card) => {
+    if (!card || typeof card.nameSize !== "number" || typeof card.citationLines !== "number") {
+      throw new Error("The milestone card's layout pass did not report back — refusing to print it.");
+    }
+    return {
+      nameSize: card.nameSize,
+      nameWidth: card.nameWidth ?? 0,
+      citationLines: card.citationLines,
+      citationSize: card.citationSize ?? 0,
+    };
+  });
+
   await page.emulateMediaType("print");
-  return {
-    nameSize: report.nameSize,
-    nameWidth: report.nameWidth ?? 0,
-    citationLines: report.citationLines,
-  };
+  return layouts;
 }
 
 export async function renderMilestoneCard(
@@ -89,7 +156,7 @@ export async function renderMilestoneCard(
   const size = milestoneCardPageSizeMm(variant);
 
   return withChromiumPage(async (page) => {
-    const layout = await layOutCard(page, html);
+    const [layout] = await layOutCards(page, html, 1);
     const bytes = await page.pdf({
       width: `${size.width}mm`,
       height: `${size.height}mm`,
@@ -99,6 +166,59 @@ export async function renderMilestoneCard(
     });
 
     return { pdf: Buffer.from(bytes), layout };
+  });
+}
+
+/**
+ * A whole window of cards as ONE PDF, one card per page.
+ *
+ * 🔴 ONE BROWSER LAUNCH FOR THE WHOLE BATCH. The rate limit bounds Chromium launches, and this is
+ * one; the number of cards is bounded by `MILESTONE_BATCH_MAX` at the caller, and the memory of
+ * rendering them by the chunk. Each chunk lays out and prints inside the single page, and the chunk
+ * PDFs are stitched with pdf-lib — a page-tree copy, so no artwork is re-rasterised.
+ *
+ * No `photoUpload` and no `photoFocus` ever reach this path: a batch prints from the record only,
+ * because one person's face on another's card is the one mistake that cannot be taken back.
+ */
+export async function renderMilestoneCardsPdf(
+  inputs: MilestoneCardInput[],
+  variant: MilestoneCardVariant = "trim",
+): Promise<MilestoneCardsRender> {
+  if (inputs.length === 0) {
+    throw new Error("A batch needs at least one card.");
+  }
+  const size = milestoneCardPageSizeMm(variant);
+
+  return withChromiumPage(async (page) => {
+    const layouts: MilestoneCardLayout[] = [];
+    const chunkPdfs: Buffer[] = [];
+
+    for (let start = 0; start < inputs.length; start += MILESTONE_RENDER_CHUNK) {
+      const chunk = inputs.slice(start, start + MILESTONE_RENDER_CHUNK);
+      const html = milestoneCardsHtml(chunk, { variant });
+      const chunkLayouts = await layOutCards(page, html, chunk.length);
+      layouts.push(...chunkLayouts);
+      const bytes = await page.pdf({
+        width: `${size.width}mm`,
+        height: `${size.height}mm`,
+        printBackground: true,
+        preferCSSPageSize: true,
+        margin: { top: "0", right: "0", bottom: "0", left: "0" },
+      });
+      chunkPdfs.push(Buffer.from(bytes));
+    }
+
+    if (chunkPdfs.length === 1) {
+      return { pdf: chunkPdfs[0], layouts };
+    }
+
+    const out = await PDFDocument.create();
+    for (const chunk of chunkPdfs) {
+      const source = await PDFDocument.load(chunk);
+      const pages = await out.copyPages(source, source.getPageIndices());
+      for (const one of pages) out.addPage(one);
+    }
+    return { pdf: Buffer.from(await out.save()), layouts };
   });
 }
 
@@ -125,7 +245,7 @@ export async function renderMilestoneCardImage(
 
   return withChromiumPage(async (page) => {
     await page.setViewport({ width, height, deviceScaleFactor: IMAGE_SCALE });
-    const layout = await layOutCard(page, html);
+    const [layout] = await layOutCards(page, html, 1);
     const bytes = await page.screenshot({ type: "png", fullPage: true, omitBackground: false });
 
     return {

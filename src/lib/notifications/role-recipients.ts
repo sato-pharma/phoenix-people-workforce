@@ -38,6 +38,7 @@ export const notificationRoleKeys = [
   "crm_account_setup_alert",
   "sos_mapping_guard_alert",
   "new_hire_mailbox_alert",
+  "service_milestone_notice",
 ] as const;
 
 export type NotificationRoleKey = (typeof notificationRoleKeys)[number];
@@ -231,6 +232,14 @@ export const DEFAULT_NOTIFICATION_ROLE_POLICIES: Record<NotificationRoleKey, Not
     roles: [],
     // Disabled 2026-07-22 at owner request (335437cc) — restored behind this real toggle.
     enabled: false,
+  },
+  service_milestone_notice: {
+    key: "service_milestone_notice",
+    label: "Service milestone notice",
+    description:
+      "Who is reminded, in-app and on Telegram, that someone is coming up on a service milestone or a birthday at Sato Pharma, so a card can be printed in time. It keeps reminding, once a day, until a recipient opens the Milestones page — the owner's chosen acknowledgement (2026-09-23: \"when I open it and the system confirm I see it, this pumping stops\"). Defaults to Super Admin alone, since the owner narrowed the whole module to Super Admin the same day.",
+    roles: ["Super Admin"],
+    enabled: true,
   },
 };
 

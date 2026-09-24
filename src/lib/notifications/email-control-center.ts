@@ -89,6 +89,7 @@ const ROLE_RECIPIENTS_MODULE: Record<NotificationRoleKey, string> = {
   retention_risk_alert: "Retention Risk",
   crm_account_setup_alert: "CRM",
   new_hire_mailbox_alert: "Employees",
+  service_milestone_notice: "Milestones",
 };
 
 const EMAIL_NOTIFICATIONS_MODULE: Record<EmailNotificationType, string> = {

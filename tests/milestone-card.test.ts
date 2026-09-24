@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import sharp from "sharp";
+
 import {
   MILESTONE_CARD_GEOMETRY,
   MILESTONE_CARD_LAYOUT_SCRIPT,
@@ -27,6 +29,7 @@ import {
   MilestoneSpecError,
   type PlainDate,
 } from "@/lib/milestones/periods";
+import { polishPortrait } from "@/lib/milestones/portrait";
 import { permissionResources } from "@/lib/auth/permissions";
 
 /**
@@ -53,7 +56,7 @@ import { permissionResources } from "@/lib/auth/permissions";
  * VERIFIED ON THE EMITTED ARTIFACT, not on the source (AGENTS.md §2.1) — the assertions below read
  * the generated SVG and HTML strings, never the file that produced them.
  */
-export function runMilestoneCardTests() {
+export async function runMilestoneCardTests() {
   // ── 1. The date ─────────────────────────────────────────────────────────────────────────────
 
   assert.deepEqual(parsePlainDate("2026-08-24"), { year: 2026, month: 8, day: 24 });
@@ -405,5 +408,179 @@ export function runMilestoneCardTests() {
   assert.ok(
     nextConfig.includes('source: "/milestones"') && nextConfig.includes('source: "/hr/milestones"'),
     "and it is applied to BOTH spellings — /hr is rewritten onto the admin page after headers match",
+  );
+  // 🔴 THE FRAME NEVER MOVES; THE PICTURE INSIDE IT DOES, AND THE PICTURE CAN BE HANDED IN.
+  // Two owner instructions from 2026-09-23, and they fail in the same silent way: the box on screen
+  // shows one crop and the printer produces another, or a card is printed with the wrong face on it.
+  //
+  // The geometry is asserted for real, not read out of the source. `focus` is a fraction of the
+  // SLACK in each axis, which is exactly what CSS `object-position: <x>% <y>%` does over
+  // `object-fit: cover` — that identity is the only reason the browser preview and sharp's cut agree
+  // without a conversion between them, so if the two branches of `cutPortrait` ever stop meeting,
+  // the drag becomes a lie and nothing else in the suite would notice.
+  const stripe = await sharp({
+    create: { width: 400, height: 1000, channels: 3, background: { r: 255, g: 255, b: 255 } },
+  })
+    .composite([
+      { input: await sharp({ create: { width: 400, height: 100, channels: 3, background: { r: 255, g: 0, b: 0 } } }).png().toBuffer(), top: 0, left: 0 },
+      { input: await sharp({ create: { width: 400, height: 100, channels: 3, background: { r: 0, g: 0, b: 255 } } }).png().toBuffer(), top: 900, left: 0 },
+    ])
+    .png()
+    .toBuffer();
+
+  const topCut = await polishPortrait(stripe, { width: 320, defocus: 0, grain: 0, focus: { x: 0.5, y: 0 } });
+  const bottomCut = await polishPortrait(stripe, { width: 320, defocus: 0, grain: 0, focus: { x: 0.5, y: 1 } });
+  assert.ok(topCut, "polishPortrait must succeed on a synthetic in-memory PNG");
+  assert.ok(bottomCut, "polishPortrait must succeed on a synthetic in-memory PNG");
+  assert.equal(topCut.width, 320, "320x400 is the portrait module's floor, so that is what comes back");
+  assert.equal(topCut.height, 400, "the portrait window is 4:5 whatever the source shape is");
+
+  // Read the whole window's colour balance rather than one pixel: the polish lays a vignette over
+  // the frame, which darkens an edge sample far enough to make a pixel test flap. The vignette is
+  // grey, so it moves every channel together and the BALANCE between them survives it.
+  const topStats = await sharp(topCut.buffer).stats();
+  const bottomStats = await sharp(bottomCut.buffer).stats();
+  assert.ok(
+    topStats.channels[0].mean - topStats.channels[2].mean > 10,
+    "focus y=0 pulls the TOP of the photograph into the window — the red band comes with it",
+  );
+  assert.ok(
+    bottomStats.channels[2].mean - bottomStats.channels[0].mean > 10,
+    "focus y=1 pulls the BOTTOM in — the blue band. If these two agree, dragging does nothing.",
+  );
+
+  // A focus handed back in reproduces the FRAMING it described. Not the same bytes — one path is a
+  // single cover pass and the other a resize then an extract, so they round a pixel apart — but the
+  // window lands in the same place, which is what the box on screen is promising.
+  const chosen = await polishPortrait(stripe, { width: 320, defocus: 0, grain: 0 });
+  assert.ok(chosen, "polishPortrait must succeed on a synthetic in-memory PNG");
+  const again = await polishPortrait(stripe, { width: 320, defocus: 0, grain: 0, focus: chosen.focus });
+  assert.ok(again, "polishPortrait must succeed on a synthetic in-memory PNG");
+  assert.ok(chosen.focus.y >= 0 && chosen.focus.y <= 1, "the reported focus is a fraction, never a pixel offset");
+  assert.equal(again.focus.y, chosen.focus.y, "feeding the reported focus back describes the same window");
+
+  // 🔴 AT ZOOM 1 THE PICTURE CAN ONLY EVER SLIDE ONE WAY, AND THAT IS NOT A BUG TO BE
+  // ARGUED WITH — it is what "scaled to exactly cover" means: one axis overhangs, the other is
+  // already shown edge to edge with nothing beyond it to pull in. The owner hit exactly this and
+  // asked for better on 2026-09-23 ("I need dragging up, down, left, right, and any place I
+  // want"). A zoom past 1 is the only thing that puts slack in BOTH axes, so this asserts the
+  // stuck axis really does come unstuck — measured, because a drag that does nothing reads as
+  // broken and nothing else in the suite would ever notice it.
+  const wide = await sharp({
+    create: { width: 1000, height: 400, channels: 3, background: { r: 255, g: 255, b: 255 } },
+  })
+    .composite([
+      { input: await sharp({ create: { width: 1000, height: 60, channels: 3, background: { r: 255, g: 0, b: 0 } } }).png().toBuffer(), top: 0, left: 0 },
+      { input: await sharp({ create: { width: 1000, height: 60, channels: 3, background: { r: 0, g: 0, b: 255 } } }).png().toBuffer(), top: 340, left: 0 },
+      // Side bands too, so left and right are distinguishable as well as top and bottom. Without
+      // them the middle of this source is uniform white and a horizontal move is a real no-op.
+      { input: await sharp({ create: { width: 60, height: 400, channels: 3, background: { r: 0, g: 200, b: 0 } } }).png().toBuffer(), top: 0, left: 0 },
+      { input: await sharp({ create: { width: 60, height: 400, channels: 3, background: { r: 200, g: 0, b: 200 } } }).png().toBuffer(), top: 0, left: 940 },
+    ])
+    .png()
+    .toBuffer();
+
+  // 1000x400 against a 4:5 window is far WIDER than the frame, so at zoom 1 the full height is
+  // already shown: y=0 and y=1 must be the same picture, however hard anybody drags.
+  const flatTop = await polishPortrait(wide, { width: 320, defocus: 0, grain: 0, focus: { x: 0.5, y: 0 } });
+  const flatBottom = await polishPortrait(wide, { width: 320, defocus: 0, grain: 0, focus: { x: 0.5, y: 1 } });
+  assert.ok(flatTop, "polishPortrait must succeed on a synthetic in-memory PNG");
+  assert.ok(flatBottom, "polishPortrait must succeed on a synthetic in-memory PNG");
+  assert.equal(
+    Buffer.compare(flatTop.buffer, flatBottom.buffer),
+    0,
+    "at zoom 1 a wide photograph has NO vertical slack — dragging up or down is geometrically a no-op",
+  );
+
+  const zoomTop = await polishPortrait(wide, { width: 320, defocus: 0, grain: 0, focus: { x: 0.5, y: 0, zoom: 2 } });
+  const zoomBottom = await polishPortrait(wide, { width: 320, defocus: 0, grain: 0, focus: { x: 0.5, y: 1, zoom: 2 } });
+  assert.ok(zoomTop, "polishPortrait must succeed on a synthetic in-memory PNG");
+  assert.ok(zoomBottom, "polishPortrait must succeed on a synthetic in-memory PNG");
+  const zoomTopStats = await sharp(zoomTop.buffer).stats();
+  const zoomBottomStats = await sharp(zoomBottom.buffer).stats();
+  assert.ok(
+    zoomTopStats.channels[0].mean - zoomTopStats.channels[2].mean > 10,
+    "🔴 zoomed in, UP now reaches the top of the photograph — this is the owner's whole request",
+  );
+  assert.ok(
+    zoomBottomStats.channels[2].mean - zoomBottomStats.channels[0].mean > 10,
+    "and DOWN reaches the bottom. If these agree, the picture is still stuck in one axis.",
+  );
+  const zoomLeft = await polishPortrait(wide, { width: 320, defocus: 0, grain: 0, focus: { x: 0, y: 0.5, zoom: 2 } });
+  const zoomRight = await polishPortrait(wide, { width: 320, defocus: 0, grain: 0, focus: { x: 1, y: 0.5, zoom: 2 } });
+  assert.ok(zoomLeft, "polishPortrait must succeed on a synthetic in-memory PNG");
+  assert.ok(zoomRight, "polishPortrait must succeed on a synthetic in-memory PNG");
+  assert.notEqual(
+    Buffer.compare(zoomLeft.buffer, zoomRight.buffer),
+    0,
+    "and left and right still move too — all four directions at once, which is what was asked for",
+  );
+  const overZoomed = await polishPortrait(wide, { width: 320, defocus: 0, grain: 0, focus: { x: 0.5, y: 0.5, zoom: 99 } });
+  assert.ok(overZoomed, "polishPortrait must succeed on a synthetic in-memory PNG");
+  assert.equal(
+    overZoomed.focus.zoom,
+    4,
+    "the zoom is capped, so a photograph cannot be blown up past what it can carry",
+  );
+
+  assert.ok(
+    workspace.includes("coverFill(natural, focusValue.zoom)") && workspace.includes("fillOffset(fill.w"),
+    "the drag box sizes the picture as a multiple of the frame and offsets it by a fraction of itself — the server's own arithmetic",
+  );
+  // 🔴 A PICTURE MUST NEVER BE STRETCHED OUT OF ITS OWN PROPORTIONS. The multiples above
+  // carry them once the picture has loaded, but until it does its shape is not known, both
+  // multiples are 1, and a bare width/height of 100% squashes it to the frame. The owner saw
+  // exactly that on 2026-09-23 ("the size you made the photo is stretched upon its normal"), so
+  // the cover fit stays on it: a no-op once loaded, and the only thing holding its shape before.
+  assert.ok(
+    /object-cover/.test(workspace.slice(workspace.indexOf("onPointerDown={startDrag}"))),
+    "🔴 the framing picture keeps `object-cover`, or it is drawn stretched until it loads",
+  );
+  // 🔴 AND RESIZING IS A PRESS, NOT A DEFAULT. "I want this resize is option but the photo
+  // is as it is, I press on an option to make it resize if needed" (the owner, same day).
+  assert.ok(
+    workspace.includes("setResizing(true)") && workspace.includes("Resize it"),
+    "the size control is opened by hand — a card nobody resizes prints at the picture's own size",
+  );
+  assert.match(
+    workspace,
+    /const \[resizing, setResizing\] = useState\(false\)/,
+    "and it starts CLOSED, so nothing is resized unless somebody asks for it",
+  );
+  assert.match(
+    workspace,
+    /CENTRE: Focus = \{ x: 0\.5, y: 0\.5, zoom: 1 \}/,
+    "the size it opens at is 1 — exactly cover, the crop this card has always printed",
+  );
+  assert.ok(
+    workspace.includes("FRAME_RATIO") && workspace.includes('"4 / 5"'),
+    "the box itself stays pinned to the card's 4:5: the frame is fixed, only the picture moves",
+  );
+
+  // 🔴 A HANDED-IN PHOTOGRAPH IS FOR THIS CARD AND NOTHING ELSE. Most people never put one
+  // on Phoenix ("if someone is not putting the photo, from where I will get his photo" — the owner,
+  // 2026-09-23), so a card has to be printable from a picture brought in from outside. It must never
+  // become a back door that writes the employee record, which is HR's act on HR's own screen.
+  const service = readFileSync(join(root, "src", "lib", "milestones", "service.ts"), "utf8");
+  assert.ok(
+    /photoUpload\?: Buffer \| null/.test(service),
+    "the card service takes a handed-in photograph",
+  );
+  assert.ok(
+    service.includes("options.photoUpload ?? (employee.hasPhoto"),
+    "an upload WINS over the record's photograph, and is the only source when the record has none",
+  );
+  assert.match(
+    /import \{([^}]*)\} from "@\/lib\/employees\/employee-photo";/.exec(service)?.[1] ?? "",
+    /^\s*streamEmployeePhoto,?\s*$/,
+    "and the ONLY thing it may do to the photo store is READ it — a card is printed, never filed",
+  );
+  assert.ok(
+    cardRoute.includes("MAX_UPLOAD_BYTES") && /data:image\//.test(cardRoute),
+    "the route takes it as a capped image data URI — sharp judges the bytes, the cap judges the weight",
+  );
+  assert.ok(
+    workspace.includes("setUpload(null)") && workspace.includes("resetFields"),
+    "🔴 and picking a different NAME drops it — one person's face on another person's printed card cannot be taken back",
   );
 }

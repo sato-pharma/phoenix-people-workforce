@@ -28,6 +28,10 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
+  birthdayEyebrow,
+  birthdayStripLabel,
+  birthdayTileNumeral,
+  birthdayTileUnit,
   formatPlainDateLong,
   milestoneEyebrow,
   milestoneStripLabel,
@@ -98,6 +102,13 @@ export type MilestoneCardInput = {
   photoDataUri: string | null;
   /** Two letters for the monogram plate when there is no photograph. */
   initials: string;
+  /**
+   * When present, this is a BIRTHDAY card, not a service milestone. The tile, eyebrow and strip
+   * count WHICH birthday at Sato Pharma it is (`ordinal` — a count of birthdays, NEVER an age); the
+   * citation is passed in `citation` and prints the birthday date, never an age. Absent, the card is
+   * a service milestone and renders BYTE-IDENTICALLY to the owner's frozen design.
+   */
+  occasion?: { kind: "birthday"; ordinal: number };
 };
 
 // ── Assets ────────────────────────────────────────────────────────────────────────────────────
@@ -222,8 +233,18 @@ export type MilestoneCardVariant = "trim" | "safe" | "bleed";
 /** 3 mm of bleed, in points. */
 const BLEED = (3 / 25.4) * 72;
 
-function cardBody(input: MilestoneCardInput): string {
+function cardBody(input: MilestoneCardInput, idPrefix = ""): string {
   const parts: string[] = [];
+  // A birthday card differs from a service card ONLY in four strings — the tile numeral, the tile
+  // unit, the eyebrow and the strip's middle label. Everything else (geometry, colours, the photo
+  // frame, the citation) is shared, so the frozen design is untouched for a service milestone.
+  const birthday = input.occasion?.kind === "birthday" ? input.occasion : null;
+  // The three elements the layout pass fits, keyed per card so a document of many cards can fit each
+  // one. The FIRST card carries an empty prefix, so a single card's SVG is byte-for-byte the frozen
+  // design; only cards 2..N are prefixed (`c1-card-name`, …).
+  const nameId = `${idPrefix}card-name`;
+  const ruleId = `${idPrefix}card-name-rule`;
+  const citationId = `${idPrefix}card-citation`;
 
   // 1 ── Head band, the reverse mark, and the seam that closes it.
   parts.push(rect(0, 0, PW, BAND_H, C.navy));
@@ -295,27 +316,29 @@ function cardBody(input: MilestoneCardInput): string {
   parts.push(rect(tx, ty, TILE, TILE, C.ink));
   parts.push(stroked(tx + 5, ty + 5, TILE - 10, TILE - 10, C.onEdge, 0.8));
   parts.push(
-    text(milestoneTileNumeral(input.spec), PW / 2, ty + 38, {
+    text(birthday ? birthdayTileNumeral(birthday.ordinal) : milestoneTileNumeral(input.spec), PW / 2, ty + 38, {
       cls: "micro",
       size: 25,
       fill: C.orange,
       anchor: "middle",
     }),
   );
-  parts.push(micro(milestoneTileUnit(input.spec), PW / 2, ty + 50.5, C.tileLabel, "middle", 6.6, 1.1));
+  parts.push(
+    micro(birthday ? birthdayTileUnit() : milestoneTileUnit(input.spec), PW / 2, ty + 50.5, C.tileLabel, "middle", 6.6, 1.1),
+  );
 
   // 5 ── Eyebrow, name, rule, role.
-  parts.push(micro(milestoneEyebrow(input.spec), PW / 2, 604, C.brand));
+  parts.push(micro(birthday ? birthdayEyebrow(birthday.ordinal) : milestoneEyebrow(input.spec), PW / 2, 604, C.brand));
   parts.push(
     // The size and the rule's width are settled in the browser, where the font can be measured.
-    `<text id="card-name" class="name" x="${n(PW / 2)}" y="652" font-size="${NAME_MAX_PT}" fill="${C.navy}" stroke="${C.navy}" stroke-width="0.3" text-anchor="middle">${esc(input.displayName)}</text>`,
+    `<text id="${nameId}" class="name" x="${n(PW / 2)}" y="652" font-size="${NAME_MAX_PT}" fill="${C.navy}" stroke="${C.navy}" stroke-width="0.3" text-anchor="middle">${esc(input.displayName)}</text>`,
   );
-  parts.push(`<rect id="card-name-rule" x="${n(PW / 2)}" y="672" width="0" height="0.7" fill="${C.faint}"/>`);
+  parts.push(`<rect id="${ruleId}" x="${n(PW / 2)}" y="672" width="0" height="0.7" fill="${C.faint}"/>`);
   if (input.roleLine.trim()) parts.push(micro(input.roleLine, PW / 2, 692, C.soft));
 
   // 6 ── The citation. One sentence, wrapped and balanced in the browser.
   parts.push(
-    `<text id="card-citation" class="body" x="${n(PW / 2)}" y="${CITATION_TOP}" font-size="${CITATION_PT}" fill="${C.body}" text-anchor="middle">${esc(input.citation)}</text>`,
+    `<text id="${citationId}" class="body" x="${n(PW / 2)}" y="${CITATION_TOP}" font-size="${CITATION_PT}" fill="${C.body}" text-anchor="middle">${esc(input.citation)}</text>`,
   );
 
   // 7 ── The figures strip.
@@ -327,7 +350,7 @@ function cardBody(input: MilestoneCardInput): string {
   parts.push(stroked(sx0, sy0, sx1 - sx0, sy1 - sy0, C.tintLine, 0.7));
   const cells: [string, string][] = [
     ["Joined", formatPlainDateLong(input.hireDate)],
-    [milestoneStripLabel(input.spec), formatPlainDateLong(input.on)],
+    [birthday ? birthdayStripLabel(birthday.ordinal) : milestoneStripLabel(input.spec), formatPlainDateLong(input.on)],
     ["Employee id", input.employeeId],
   ];
   const cw = (sx1 - sx0) / cells.length;
@@ -357,8 +380,12 @@ function cardBody(input: MilestoneCardInput): string {
   return parts.join("");
 }
 
-export function milestoneCardSvg(input: MilestoneCardInput, variant: MilestoneCardVariant = "trim"): string {
-  const body = cardBody(input);
+export function milestoneCardSvg(
+  input: MilestoneCardInput,
+  variant: MilestoneCardVariant = "trim",
+  idPrefix = "",
+): string {
+  const body = cardBody(input, idPrefix);
 
   if (variant === "safe") {
     // 92%, centred. The artwork is untouched — only the transform changes, so a safe-margin sheet
@@ -411,84 +438,123 @@ export function milestoneCardPageSizeMm(variant: MilestoneCardVariant): { width:
 }
 
 /**
- * The layout pass that only a browser can do: fit the name to the frame and wrap the citation.
+ * The layout pass that only a browser can do: fit the name to the frame and wrap the citation —
+ * FOR EVERY CARD IN THE DOCUMENT, not just the first.
  *
  * It is a source string because `ChromiumPage.evaluate` takes one, and because the constants it
  * needs are baked in at build time rather than marshalled across the boundary.
+ *
+ * 🔴 IT WALKS `[data-card]`, IT DOES NOT REACH FOR ONE FIXED ID. A batch document holds many cards;
+ * fitting only `card-name` would leave cards 2..N at 42pt off the frame and their citations on one
+ * ~800pt line off the sheet — a failure invisible until the batch is printed, because the FIRST
+ * card's report comes back valid. Each card carries its own `data-prefix`, and the element ids are
+ * prefixed to match (`card-name`, then `c1-card-name`, …). The report is one entry PER card, so the
+ * renderer can COUNT them and refuse a document that did not fit every one.
  */
 export const MILESTONE_CARD_LAYOUT_SCRIPT = `(async () => {
   await document.fonts.ready;
   var PW = ${PW}, FIT = ${NAME_FIT};
-
-  // ── The name. It shrinks; it NEVER truncates (owner rule: no ellipsis, ever). Below the floor
-  //    it is allowed to run wider than the frame, because a clipped name is the worse failure.
-  var name = document.getElementById('card-name');
-  var pt = ${NAME_MAX_PT};
-  while (pt > ${NAME_MIN_PT} && name.getComputedTextLength() > FIT) {
-    pt -= 0.5;
-    name.setAttribute('font-size', String(pt));
-  }
-  var nw = name.getComputedTextLength();
-  var rule = document.getElementById('card-name-rule');
-  rule.setAttribute('x', String((PW - nw) / 2));
-  rule.setAttribute('width', String(nw));
-
-  // ── The citation. Balanced rather than greedy: greedy leaves a two-word orphan on the last
-  //    line, which on a centred block reads as a mistake. Aim every line at total/lines.
-  var cite = document.getElementById('card-citation');
-  var words = cite.textContent.trim().split(/\\s+/);
-  var probe = cite.cloneNode(true);
-  probe.removeAttribute('id');
-  probe.setAttribute('visibility', 'hidden');
-  cite.parentNode.appendChild(probe);
-  var measure = function (s) { probe.textContent = s; return probe.getComputedTextLength(); };
-
-  var total = measure(words.join(' '));
-  var lineCount = Math.max(1, Math.ceil(total / FIT));
-  var lines = [];
-  for (var attempt = 0; attempt < 6; attempt += 1) {
-    var target = total / lineCount;
-    lines = [];
-    var current = '';
-    for (var i = 0; i < words.length; i += 1) {
-      var next = current ? current + ' ' + words[i] : words[i];
-      if (current && lines.length < lineCount - 1 && measure(next) > target) {
-        lines.push(current);
-        current = words[i];
-      } else {
-        current = next;
-      }
-    }
-    if (current) lines.push(current);
-    var widest = 0;
-    for (var j = 0; j < lines.length; j += 1) widest = Math.max(widest, measure(lines[j]));
-    if (widest <= FIT) break;
-    lineCount += 1;
-  }
-
-  // A line must not end on a function word — the identity's rule for the certificate citation.
+  var NAME_MAX = ${NAME_MAX_PT}, NAME_MIN = ${NAME_MIN_PT};
+  var CITE_MAX = ${CITATION_PT}, CITE_FLOOR = 8.6, CITE_BUDGET = 2, CITE_TOP = ${CITATION_TOP}, CITE_LEAD = ${CITATION_LEADING};
   var FUNCTION_WORDS = /^(a|an|the|of|with|and|in|on|at|to|for|as|is|by)$/i;
-  for (var k = 0; k < lines.length - 1; k += 1) {
-    var parts = lines[k].split(' ');
-    if (parts.length > 2 && FUNCTION_WORDS.test(parts[parts.length - 1])) {
-      var moved = parts.pop();
-      if (measure(moved + ' ' + lines[k + 1]) <= FIT) {
-        lines[k] = parts.join(' ');
-        lines[k + 1] = moved + ' ' + lines[k + 1];
-      }
-    }
-  }
-  probe.parentNode.removeChild(probe);
 
-  cite.textContent = '';
-  for (var m = 0; m < lines.length; m += 1) {
-    var span = document.createElementNS('http://www.w3.org/2000/svg', 'tspan');
-    span.setAttribute('x', String(PW / 2));
-    span.setAttribute('y', String(${CITATION_TOP} + m * ${CITATION_LEADING}));
-    span.textContent = lines[m];
-    cite.appendChild(span);
+  var fitCard = function (prefix) {
+    // ── The name. It shrinks; it NEVER truncates (owner rule: no ellipsis, ever). Below the floor
+    //    it is allowed to run wider than the frame, because a clipped name is the worse failure.
+    var name = document.getElementById(prefix + 'card-name');
+    var pt = NAME_MAX;
+    while (pt > NAME_MIN && name.getComputedTextLength() > FIT) {
+      pt -= 0.5;
+      name.setAttribute('font-size', String(pt));
+    }
+    var nw = name.getComputedTextLength();
+    var rule = document.getElementById(prefix + 'card-name-rule');
+    rule.setAttribute('x', String((PW - nw) / 2));
+    rule.setAttribute('width', String(nw));
+
+    // ── The citation. Balanced rather than greedy: greedy leaves a two-word orphan on the last
+    //    line, which on a centred block reads as a mistake. Aim every line at total/lines.
+    //
+    // 🔴 IT FITS A TWO-LINE BUDGET BY SHRINKING THE TYPE, NEVER BY SPILLING A THIRD LINE. The block
+    //    is anchored at CITE_TOP and the figures strip begins at 752; a third line runs its
+    //    descenders INTO the strip. The 25-year service wording already overflowed here, and the
+    //    birthday wording is longer again — so when two lines will not hold the sentence at the
+    //    design size, the font steps down to an 8.6pt floor until it does. Only past that floor is a
+    //    third line allowed, as the least bad option, because the owner's rule is never to truncate.
+    var cite = document.getElementById(prefix + 'card-citation');
+    var words = cite.textContent.trim().split(/\\s+/);
+    var probe = cite.cloneNode(true);
+    probe.removeAttribute('id');
+    probe.setAttribute('visibility', 'hidden');
+    cite.parentNode.appendChild(probe);
+
+    var wrapAt = function (size) {
+      probe.setAttribute('font-size', String(size));
+      var measure = function (s) { probe.textContent = s; return probe.getComputedTextLength(); };
+      var total = measure(words.join(' '));
+      var lineCount = Math.max(1, Math.ceil(total / FIT));
+      var lines = [];
+      for (var attempt = 0; attempt < 6; attempt += 1) {
+        var target = total / lineCount;
+        lines = [];
+        var current = '';
+        for (var i = 0; i < words.length; i += 1) {
+          var next = current ? current + ' ' + words[i] : words[i];
+          if (current && lines.length < lineCount - 1 && measure(next) > target) {
+            lines.push(current);
+            current = words[i];
+          } else {
+            current = next;
+          }
+        }
+        if (current) lines.push(current);
+        var widest = 0;
+        for (var j = 0; j < lines.length; j += 1) widest = Math.max(widest, measure(lines[j]));
+        if (widest <= FIT) break;
+        lineCount += 1;
+      }
+      // A line must not end on a function word — the identity's rule for the certificate citation.
+      for (var k = 0; k < lines.length - 1; k += 1) {
+        var parts = lines[k].split(' ');
+        if (parts.length > 2 && FUNCTION_WORDS.test(parts[parts.length - 1])) {
+          var moved = parts.pop();
+          if (measure(moved + ' ' + lines[k + 1]) <= FIT) {
+            lines[k] = parts.join(' ');
+            lines[k + 1] = moved + ' ' + lines[k + 1];
+          }
+        }
+      }
+      return lines;
+    };
+
+    var citeSize = CITE_MAX;
+    var lines = wrapAt(citeSize);
+    while (lines.length > CITE_BUDGET && citeSize > CITE_FLOOR) {
+      citeSize = Math.max(CITE_FLOOR, Math.round((citeSize - 0.4) * 10) / 10);
+      lines = wrapAt(citeSize);
+    }
+    probe.parentNode.removeChild(probe);
+    cite.setAttribute('font-size', String(citeSize));
+
+    cite.textContent = '';
+    for (var m = 0; m < lines.length; m += 1) {
+      var span = document.createElementNS('http://www.w3.org/2000/svg', 'tspan');
+      span.setAttribute('x', String(PW / 2));
+      span.setAttribute('y', String(CITE_TOP + m * CITE_LEAD));
+      span.textContent = lines[m];
+      cite.appendChild(span);
+    }
+    return { nameSize: pt, nameWidth: nw, citationLines: lines.length, citationSize: citeSize };
+  };
+
+  var cards = document.querySelectorAll('[data-card]');
+  var reports = [];
+  for (var c = 0; c < cards.length; c += 1) {
+    reports.push(fitCard(cards[c].getAttribute('data-prefix') || ''));
   }
-  return { nameSize: pt, nameWidth: nw, citationLines: lines.length };
+  var first = reports[0] || { nameSize: 0, nameWidth: 0, citationLines: 0, citationSize: 0 };
+  // Top-level keys keep the single-card contract; \`cards\` is what a batch counts.
+  return { cards: reports, nameSize: first.nameSize, nameWidth: first.nameWidth, citationLines: first.citationLines, citationSize: first.citationSize };
 })()`;
 
 export type MilestoneCardHtmlOptions = {
@@ -504,21 +570,51 @@ export type MilestoneCardHtmlOptions = {
   autoLayout?: boolean;
 };
 
-/** The whole page, ready for `page.setContent` or an `<iframe srcdoc>`. */
+/** One card's page, ready for `page.setContent` or an `<iframe srcdoc>`. */
 export function milestoneCardHtml(input: MilestoneCardInput, options: MilestoneCardHtmlOptions = {}): string {
+  return milestoneCardsHtml([input], options);
+}
+
+/**
+ * A whole window of cards, one per printed page, ready for `page.setContent`.
+ *
+ * 🔴 THIS IS THE ONE DOCUMENT BUILDER. `milestoneCardHtml` is `milestoneCardsHtml([input])`, so the
+ * single card and the batch travel the exact same path — the batch cannot drift from the single one.
+ *
+ * Each card sits in a `.sheet` carrying `data-card` and its own `data-prefix`; the layout pass walks
+ * `[data-card]` and fits every one. Card 0 takes the EMPTY prefix, so its ids are `card-name` and its
+ * SVG is byte-identical to what a single card has always emitted (a test pins that). Cards 1..N take
+ * `c1-`, `c2-`, … so their ids never collide.
+ *
+ * Page breaks are `break-before: page` on the SECOND sheet onward, never `break-after` (which emits a
+ * blank trailing page) and the gap is `margin-top`, never `margin-bottom` (which would grow a single
+ * card's `fullPage` PNG by a white strip below the art).
+ */
+export function milestoneCardsHtml(
+  inputs: MilestoneCardInput[],
+  options: MilestoneCardHtmlOptions = {},
+): string {
   const variant = options.variant ?? "trim";
   const pinyon = dataUri("fonts/pinyon-script.woff2", "font/woff2");
   const size = variant === "bleed" ? { w: PW + 2 * BLEED, h: PH + 2 * BLEED } : { w: PW, h: PH };
   const script = options.autoLayout
     ? `<script>${MILESTONE_CARD_LAYOUT_SCRIPT}.catch(function () {});</script>`
     : "";
+  const sheets = inputs
+    .map((input, index) => {
+      const prefix = index === 0 ? "" : `c${index}-`;
+      return `<div class="sheet" data-card data-prefix="${prefix}">${milestoneCardSvg(input, variant, prefix)}</div>`;
+    })
+    .join("");
   return `<!doctype html><html><head><meta charset="utf-8"><title>Milestone card</title><style>
   @font-face { font-family: "Pinyon Script"; font-style: normal; font-weight: 400;
     font-display: block; src: url("${pinyon}") format("woff2"); }
   @page { size: ${n(size.w)}pt ${n(size.h)}pt; margin: 0; }
   * { margin: 0; padding: 0; border-radius: 0; box-sizing: border-box; }
-  html, body { width: ${n(size.w)}pt; height: ${n(size.h)}pt; background: #FFF;
+  html, body { width: ${n(size.w)}pt; background: #FFF;
     -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .sheet { width: ${n(size.w)}pt; height: ${n(size.h)}pt; overflow: hidden; position: relative; }
+  .sheet + .sheet { break-before: page; margin-top: ${n(size.h)}pt; }
   svg { display: block; }
   /* The identity's own stacks. "Noto Sans" is what the container has; the Windows and macOS
      names follow so a local render looks the same as the deployed one. */
@@ -527,7 +623,7 @@ export function milestoneCardHtml(input: MilestoneCardInput, options: MilestoneC
   .micro { font-weight: 700; }
   /* Pinyon Script sets exactly one thing: a person's name. */
   .name { font-family: "Pinyon Script", "Great Vibes", cursive; font-weight: 400; }
-  </style></head><body>${milestoneCardSvg(input, variant)}${script}</body></html>`;
+  </style></head><body>${sheets}${script}</body></html>`;
 }
 
 export const MILESTONE_CARD_GEOMETRY = {

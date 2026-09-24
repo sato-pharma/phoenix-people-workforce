@@ -1928,6 +1928,7 @@ import { runTerritorySharedPinGuardTests } from "./territory-shared-pin-guard.te
 import { runTerritorySearchRegionLabelTests } from "./territory-search-region-label.test.ts";
 import { runTerritorySearchScopeTests } from "./territory-search-scope.test.ts";
 import { runMilestoneCardTests } from "./milestone-card.test.ts";
+import { runMilestoneEnhancementsTests, runMilestonePrintHistoryAndPagingTests } from "./milestone-enhancements.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -6831,8 +6832,16 @@ await runTest(
   runTerritorySearchScopeTests,
 );
 await runTest(
-  "milestone card: calendar dates never shift a day and month arithmetic clamps (31 Jan + 1m = 28/29 Feb), the Arabic mark's right edge stays inside the trim, the browser layout pass compiles and reaches ids the card actually emits, orange appears exactly three times, and milestones is in permissionResources with both routes asserting it",
+  "milestone card: calendar dates never shift a day and month arithmetic clamps (31 Jan + 1m = 28/29 Feb), the Arabic mark's right edge stays inside the trim, the browser layout pass compiles and reaches ids the card actually emits, orange appears exactly three times, milestones is in permissionResources with both routes asserting it, the portrait FRAME is fixed while the picture inside it moves to a dragged focus, and a handed-in photograph overrides the record's without ever being written back to it",
   runMilestoneCardTests,
+);
+await runTest(
+  "milestone enhancements: the CEO holds no milestones grant (Super Admin only), a single card's SVG stays byte-identical while a batch prefixes and addresses every card and its guard is a COUNT check, the citation fits a two-line budget to an 8.6pt floor, a birthday is dated by Sato-birthday ordinal (hired-on-the-day = first) and never states an age, an occasion's identity is its DERIVED date, the seen route re-derives its window and reads no client list, and the HR-calendar ladder is first-month-then-yearly-clamped-capped-at-60 with leap-day birthdays clamped to 28 February",
+  runMilestoneEnhancementsTests,
+);
+await runTest(
+  "milestone print history and paging: the batch ceiling is raised to 150 for one launch, a print-history row is shaped for the screen (Cairo-local timestamp, occasion label from the period spec, service and birthday alike, actor and subject names with id fallbacks, never an age) and the same rows serialize to a valid XLSX workbook",
+  runMilestonePrintHistoryAndPagingTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

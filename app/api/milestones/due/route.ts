@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
  * Who is due a service milestone inside a window.
  *
  * ─────────────────────────────────────────────────────────────────────────────────────────────────
- * WHO MAY CALL IT. `milestones:read`, which the matrix grants to the Super Admin and the CEO only.
+ * WHO MAY CALL IT. `milestones:read`, which the matrix grants to the Super Admin alone.
  * THE GATE IS HERE, not in the sidebar: `system-navigation.ts` hiding a link is UX. This route
  * reads every active employee's hire date with no scope narrowing, which is exactly why it is not
  * a team-scoped surface.
@@ -35,7 +35,7 @@ export async function GET(request: Request) {
   } catch (error) {
     if (isForbiddenError(error)) {
       return Response.json(
-        { error: "Milestones are available to the system administrator and the CEO only." },
+        { error: "Milestones are available to the system administrator only." },
         { status: 403 },
       );
     }
