@@ -77,6 +77,17 @@ export function runDirectOrdersRepAreaViewTests() {
   assert.match(service, /\.from\("direct_order_pharmacies"\)/, "pharmacies are found by their area");
   assert.match(service, /\.in\("area_code", part\)/, "the area bound is the pharmacy's area_code — the rep's own territory");
 
+  // ── The "Order date" is when the order was PLACED, never the collection date ──────────────
+  // An order raised and approved in August but COLLECTED in September still counts in August.
+  // Sourcing the displayed order date from collection_date made such a row read as "ordered
+  // September, counted August" — a phantom contradiction (owner, 2026-09-24). created_at (the rep
+  // raising it) must come first in the fallback chain.
+  assert.match(
+    service,
+    /orderDate:\s*request\.created_at\s*\?\?\s*request\.decided_at\s*\?\?\s*request\.collection_date/,
+    "the order date must be the placement stamp (created_at) first — never collection_date, or a later collection reads as a later order",
+  );
+
   // ── Baskets: one row per product, header fallback so nothing is dropped ───────────────────
   assert.match(service, /\.from\("direct_order_request_items"\)/, "product lines come from the item table (baskets)");
   assert.match(
