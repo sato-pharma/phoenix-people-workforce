@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
+
+import { cachedIsDirectory, cachedReaddir, cachedReadFile } from "./support/source-corpus.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Standing owner rule: "Never truncate text with an ellipsis and never let text
@@ -238,9 +239,9 @@ function stripComments(source: string): string {
 }
 
 function walk(dir: string, out: string[] = []): string[] {
-  for (const entry of readdirSync(dir)) {
+  for (const entry of cachedReaddir(dir)) {
     const full = path.join(dir, entry);
-    if (statSync(full).isDirectory()) {
+    if (cachedIsDirectory(full)) {
       // Nothing gitignored lives under app/ or src/, but skip the obvious anyway
       // so a stray local folder can never inflate the count.
       if (entry === "node_modules" || entry.startsWith(".") || entry.startsWith("_wt-")) continue;
@@ -289,7 +290,7 @@ export function runNoEllipsisTruncationRatchetTests() {
 
   const sites: string[] = [];
   for (const file of files) {
-    const source = stripComments(readFileSync(file, "utf8"));
+    const source = stripComments(cachedReadFile(file));
     if (!ANY_TRUNCATION_TOKEN.test(source)) continue;
     source.split("\n").forEach((line, i) => {
       if (CLASS_STRING_WITH_TRUNCATION.test(line)) sites.push(`${file.replace(/\\/g, "/")}:${i + 1}`);
