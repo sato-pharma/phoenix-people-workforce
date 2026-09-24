@@ -5,6 +5,7 @@ import { loadMarketingEvidencePhotosByEntityIds } from "@/lib/marketing-requests
 import { assertVerifiedCapturesAccess } from "./access";
 import { loadMarketingDistributorCodes } from "./distributor-codes";
 import { employeeName, employeeTitle, loadEmployeeRecords } from "./employee-lookup";
+import { buildCaptureLocation } from "./location";
 import type { VerifiedMarketingCaptureRow, VerifiedMarketingCapturePharmacy } from "./types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -47,6 +48,8 @@ type PharmacyRow = {
   captured_latitude: number | string | null;
   captured_longitude: number | string | null;
   captured_address: string | null;
+  extracted_area_name: string | null;
+  extracted_governorate_name: string | null;
 };
 
 type LinkRow = { customer_id: string; pharmacy_id: string; active: boolean | null };
@@ -102,7 +105,9 @@ export async function listVerifiedMarketingCaptures(
   for (let index = 0; index < allPharmacyIds.length; index += 200) {
     const { data, error } = await supabase
       .from("marketing_pharmacies")
-      .select("id, display_name, evidence_status, captured_latitude, captured_longitude, captured_address")
+      .select(
+        "id, display_name, evidence_status, captured_latitude, captured_longitude, captured_address, extracted_area_name, extracted_governorate_name",
+      )
       .in("id", allPharmacyIds.slice(index, index + 200));
     if (error) throw error;
     for (const row of (data ?? []) as PharmacyRow[]) pharmacyById.set(row.id, row);
@@ -174,11 +179,13 @@ export async function listVerifiedMarketingCaptures(
         id: row.id,
         displayName: row.display_name ?? "(pharmacy)",
         photoUrl: pharmacyPhotos.get(row.id)?.signedUrl ?? null,
-        location: {
+        location: buildCaptureLocation({
           latitude: toNumber(row.captured_latitude),
           longitude: toNumber(row.captured_longitude),
-          address: row.captured_address,
-        },
+          capturedAddress: row.captured_address,
+          area: row.extracted_area_name,
+          governorate: row.extracted_governorate_name,
+        }),
         distributorCodes: distributorCodes.get(row.id) ?? [],
       }));
 
@@ -197,11 +204,15 @@ export async function listVerifiedMarketingCaptures(
       governorate: customer.extracted_governorate_name ?? customer.region_name ?? null,
       capturedAt: customer.captured_at,
       photoUrl: customerPhotos.get(customer.id)?.signedUrl ?? null,
-      location: {
+      location: buildCaptureLocation({
         latitude: toNumber(customer.captured_latitude),
         longitude: toNumber(customer.captured_longitude),
-        address: customer.captured_address,
-      },
+        capturedAddress: customer.captured_address,
+        // The customer's own SALES area is the most meaningful "area" for him; the governorate is
+        // already clean on the row.
+        area: customer.area_id !== null ? areaName.get(customer.area_id) ?? null : null,
+        governorate: customer.extracted_governorate_name ?? customer.region_name ?? null,
+      }),
       pharmacyCount: pharmacies.length,
       pharmacies,
     } satisfies VerifiedMarketingCaptureRow;

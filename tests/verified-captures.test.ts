@@ -4,10 +4,18 @@ import {
   ALL,
   EMPTY_CAPTURE_FILTER,
   applyCaptureFilter,
+  cairoMonthKey,
+  distinctMonths,
   distinctPeople,
+  distinctValues,
   matchesCaptureFilter,
   type FilterableCapture,
 } from "../src/lib/verified-captures/filters.ts";
+import {
+  buildCaptureLocation,
+  extractGovernorate,
+  parseCapturedAddress,
+} from "../src/lib/verified-captures/location.ts";
 import { canOpenVerifiedCaptures } from "../src/lib/verified-captures/access.ts";
 import type { PhoenixRole } from "../src/lib/auth/permissions.ts";
 
@@ -124,4 +132,144 @@ export function runVerifiedCapturesTests() {
     false,
     "a non-matching search excludes the row",
   );
+
+  runLocationParseTests();
+  runGeographyAndDateFilterTests();
+}
+
+// ── Parsing one captured string into its parts (owner ask, 2026-09-25) ────────
+function runLocationParseTests() {
+  // A direct-order capture: Google address, then "· Brick/Area/Region <name>" tags.
+  const direct = parseCapturedAddress(
+    "H2G7+966, Qism Shebeen El-Kom, Shibin el Kom, Menofia Governorate 6132720, Egypt · Brick شبين الكوم · Area Menoufia 1 · Region Delta (1)",
+  );
+  assert.equal(direct.brick, "شبين الكوم", "brick is read from the tag");
+  assert.equal(direct.area, "Menoufia 1", "area is read from the tag");
+  assert.equal(direct.region, "Delta (1)", "region is read from the tag");
+  assert.equal(direct.governorate, "Menofia Governorate", "governorate is read from the Google address");
+  assert.ok(direct.cleanAddress?.endsWith("Egypt"), "the clean address has the tags stripped off");
+  assert.ok(!direct.cleanAddress?.includes("Brick"), "no tag leaks into the clean address");
+
+  // A marketing capture: plain reverse-geocode, no tags. Clean address = the whole string.
+  const marketing = parseCapturedAddress(
+    "XW45+PRF, 74 Al Jabal 17, 6th of October City (2), Giza Governorate 3231423, Egypt",
+  );
+  assert.equal(marketing.brick, null, "a plain capture has no brick");
+  assert.equal(marketing.area, null, "a plain capture has no area tag");
+  assert.equal(marketing.governorate, "Giza Governorate", "governorate still reads out of the address");
+  assert.equal(
+    marketing.cleanAddress,
+    "XW45+PRF, 74 Al Jabal 17, 6th of October City (2), Giza Governorate 3231423, Egypt",
+  );
+
+  assert.deepEqual(parseCapturedAddress(null), {
+    cleanAddress: null,
+    brick: null,
+    area: null,
+    region: null,
+    governorate: null,
+  });
+  assert.equal(extractGovernorate("12 Tahrir St, Cairo, Egypt"), null, "no governorate token → null");
+  assert.equal(extractGovernorate("…, Cairo Governorate 4064104, Egypt"), "Cairo Governorate");
+
+  // buildCaptureLocation keeps the raw verbatim and prefers parsed parts over the fallbacks.
+  const built = buildCaptureLocation({
+    latitude: 30.5,
+    longitude: 31.0,
+    capturedAddress: "Somewhere, Menofia Governorate 1, Egypt · Brick B · Area A · Region R",
+    rawFallback: "rep typed this",
+    area: "Fallback Area",
+    governorate: "Fallback Gov",
+  });
+  assert.equal(built.rawLocation, "Somewhere, Menofia Governorate 1, Egypt · Brick B · Area A · Region R");
+  assert.equal(built.brick, "B");
+  assert.equal(built.area, "A", "the parsed area wins over the fallback");
+  assert.equal(built.region, "R");
+  assert.equal(built.governorate, "Fallback Gov", "a clean pre-resolved governorate wins over the scrape");
+  assert.ok(!built.address?.includes("Brick"), "clean address drops the tags");
+
+  // With no captured string, the raw falls back to the rep's own text and the code-resolved names.
+  const fallback = buildCaptureLocation({
+    latitude: null,
+    longitude: null,
+    capturedAddress: null,
+    rawFallback: "طهطا عنيبس",
+    brick: "Tahta brick",
+    area: "Sohag1",
+  });
+  assert.equal(fallback.rawLocation, "طهطا عنيبس");
+  assert.equal(fallback.address, "طهطا عنيبس");
+  assert.equal(fallback.brick, "Tahta brick");
+  assert.equal(fallback.area, "Sohag1");
+}
+
+// ── Geography, month and date-sort filters (owner ask, 2026-09-25) ────────────
+function runGeographyAndDateFilterTests() {
+  const GEO: FilterableCapture[] = [
+    {
+      repHrId: "B-1",
+      repName: "Rep One",
+      managerHrId: "M-1",
+      managerName: "Mgr One",
+      line: "Pedia",
+      area: "Menoufia 1",
+      brick: "شبين الكوم",
+      region: "Delta (1)",
+      sortDate: "2026-09-10T09:00:00Z",
+    },
+    {
+      repHrId: "B-2",
+      repName: "Rep Two",
+      managerHrId: "M-1",
+      managerName: "Mgr One",
+      line: "CNS",
+      area: "Cairo West",
+      brick: "ش الكورنيش",
+      region: "Cairo",
+      sortDate: "2026-08-20T09:00:00Z",
+    },
+    {
+      repHrId: "B-3",
+      repName: "Rep Three",
+      managerHrId: "M-2",
+      managerName: "Mgr Two",
+      line: "Pedia",
+      area: "Menoufia 1",
+      brick: null,
+      region: "Delta (1)",
+      sortDate: "2026-09-25T09:00:00Z",
+    },
+  ];
+
+  assert.deepEqual(distinctValues(GEO, "line"), ["CNS", "Pedia"], "lines are distinct and sorted");
+  assert.deepEqual(distinctValues(GEO, "area"), ["Cairo West", "Menoufia 1"], "areas are distinct and sorted");
+  assert.deepEqual(distinctValues(GEO, "brick"), ["ش الكورنيش", "شبين الكوم"], "empty bricks are dropped");
+  assert.deepEqual(distinctValues(GEO, "region"), ["Cairo", "Delta (1)"], "regions are distinct and sorted");
+
+  assert.equal(cairoMonthKey("2026-09-10T09:00:00Z"), "2026-09", "Cairo month key of a September instant");
+  assert.deepEqual(
+    distinctMonths(GEO).map((month) => month.key),
+    ["2026-09", "2026-08"],
+    "months are distinct and newest-first",
+  );
+
+  assert.equal(applyCaptureFilter(GEO, { ...EMPTY_CAPTURE_FILTER, line: "Pedia" }).length, 2, "line filter");
+  assert.equal(applyCaptureFilter(GEO, { ...EMPTY_CAPTURE_FILTER, area: "Cairo West" }).length, 1, "area filter");
+  assert.equal(
+    applyCaptureFilter(GEO, { ...EMPTY_CAPTURE_FILTER, brick: "شبين الكوم" }).length,
+    1,
+    "brick filter",
+  );
+  assert.equal(
+    applyCaptureFilter(GEO, { ...EMPTY_CAPTURE_FILTER, region: "Delta (1)", line: "Pedia" }).length,
+    2,
+    "region and line together",
+  );
+  assert.equal(applyCaptureFilter(GEO, { ...EMPTY_CAPTURE_FILTER, month: "2026-08" }).length, 1, "month filter");
+
+  // Sort by date, both directions; the default is newest first.
+  const desc = applyCaptureFilter(GEO, { ...EMPTY_CAPTURE_FILTER, sort: "date-desc" });
+  assert.deepEqual(desc.map((row) => row.repHrId), ["B-3", "B-1", "B-2"], "newest first");
+  const asc = applyCaptureFilter(GEO, { ...EMPTY_CAPTURE_FILTER, sort: "date-asc" });
+  assert.deepEqual(asc.map((row) => row.repHrId), ["B-2", "B-1", "B-3"], "oldest first");
 }

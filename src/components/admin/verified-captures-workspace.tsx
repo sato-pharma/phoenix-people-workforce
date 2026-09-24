@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  ArrowUpDown,
   Building2,
   Check,
   Database,
@@ -21,7 +22,9 @@ import { cn } from "@/lib/utils";
 import {
   ALL,
   applyCaptureFilter,
+  distinctMonths,
   distinctPeople,
+  distinctValues,
   EMPTY_CAPTURE_FILTER,
   type CaptureFilter,
 } from "@/lib/verified-captures/filters";
@@ -115,30 +118,60 @@ function PhotoTile({ alt, caption, label, src }: { alt: string; caption?: string
   );
 }
 
-/** Coordinates + address, with a maps link when there is a pin. Matches the validation-desk idiom. */
+/** One labelled part of a location — "Brick شبين الكوم" — rendered only when it has a value. */
+function LocationDetail({ label, value }: { label: string; value: string | null }) {
+  if (!value) return null;
+  return (
+    <div className="min-w-0">
+      <span className="text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-400">{label} </span>
+      <span className="break-words text-xs font-bold text-slate-800">{value}</span>
+    </div>
+  );
+}
+
+/**
+ * The location shown BOTH raw and broken apart (owner, 2026-09-25: "make the customer location raw as
+ * it is and also separate it to brick, area, gov, clean address"). The raw captured string leads,
+ * unedited; the clean address is shown only when it differs from the raw; then brick / area / region /
+ * governorate as their own fields; then the pin as a maps link.
+ */
 function LocationBlock({ heading = "Location", location }: { heading?: string; location: VerifiedCaptureLocation }) {
   const hasPin = location.latitude !== null && location.longitude !== null;
+  const cleanDiffers = Boolean(location.address && location.address !== location.rawLocation);
+  const hasParts = Boolean(location.brick || location.area || location.region || location.governorate);
+  const nothing = !location.rawLocation && !location.address && !hasParts && !hasPin;
   return (
-    <div className="rounded border border-slate-100 bg-slate-50 px-3 py-2">
+    <div className="space-y-1.5 rounded border border-slate-100 bg-slate-50 px-3 py-2">
       <p className="flex items-center gap-1 text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400">
         <MapPin className="h-3 w-3" />
         {heading}
       </p>
-      {location.address ? (
-        <p className="mt-1 break-words text-xs font-bold text-slate-800">{location.address}</p>
+      {location.rawLocation ? (
+        <div className="min-w-0">
+          <span className="text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-400">Raw </span>
+          <span className="break-words text-xs font-bold text-slate-800">{location.rawLocation}</span>
+        </div>
+      ) : null}
+      {cleanDiffers ? <LocationDetail label="Clean address" value={location.address} /> : null}
+      {hasParts ? (
+        <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+          <LocationDetail label="Brick" value={location.brick} />
+          <LocationDetail label="Area" value={location.area} />
+          <LocationDetail label="Region" value={location.region} />
+          <LocationDetail label="Governorate" value={location.governorate} />
+        </div>
       ) : null}
       {hasPin ? (
         <a
-          className="mt-1 inline-flex items-center gap-1 break-all text-xs font-black text-orange-600 hover:text-orange-700 hover:underline"
+          className="inline-flex items-center gap-1 break-all text-xs font-black text-orange-600 hover:text-orange-700 hover:underline"
           href={`https://www.google.com/maps?q=${location.latitude},${location.longitude}`}
           rel="noreferrer"
           target="_blank"
         >
           {location.latitude?.toFixed(5)}, {location.longitude?.toFixed(5)}
         </a>
-      ) : location.address ? null : (
-        <p className="mt-1 text-xs font-bold text-slate-400">No location captured</p>
-      )}
+      ) : null}
+      {nothing ? <p className="text-xs font-bold text-slate-400">No location captured</p> : null}
     </div>
   );
 }
@@ -271,32 +304,76 @@ function DistributorCodes({
   );
 }
 
-/** The rep + district-manager + search filter row, shared by both tabs. */
+function FilterFieldLabel({ children }: { children: ReactNode }) {
+  return <span className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">{children}</span>;
+}
+
+/** A single-value dropdown, rendered only when there is something to choose. */
+function ValueSelect({
+  allLabel,
+  label,
+  onChange,
+  options,
+  value,
+}: {
+  allLabel: string;
+  label: string;
+  onChange: (next: string) => void;
+  options: string[];
+  value: string;
+}) {
+  if (options.length === 0) return null;
+  return (
+    <label className="min-w-0 space-y-1">
+      <FilterFieldLabel>{label}</FilterFieldLabel>
+      <select className={portalInputClassName} onChange={(event) => onChange(event.target.value)} value={value}>
+        <option value={ALL}>{allLabel}</option>
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+/** Everything a tab can filter and sort by. A dimension with no options hides its picker. */
+export type CaptureFilterOptions = {
+  reps: Array<{ hrId: string; name: string }>;
+  managers: Array<{ hrId: string; name: string }>;
+  lines: string[];
+  areas: string[];
+  bricks: string[];
+  regions: string[];
+  months: Array<{ key: string; label: string }>;
+};
+
+/** The requester + manager + geography + month + search + sort row, shared by both tabs. */
 function CaptureFilters({
   filter,
-  managers,
-  reps,
+  options,
   onChange,
   countLabel,
 }: {
   filter: CaptureFilter;
-  managers: Array<{ hrId: string; name: string }>;
-  reps: Array<{ hrId: string; name: string }>;
+  options: CaptureFilterOptions;
   onChange: (next: CaptureFilter) => void;
   countLabel: string;
 }) {
+  const sortNewestFirst = (filter.sort ?? "date-desc") === "date-desc";
   return (
     <PortalFilterBar countLabel={countLabel}>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <label className="min-w-0 space-y-1">
-          <span className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">Rep</span>
+          <FilterFieldLabel>Requester</FilterFieldLabel>
           <select
             className={portalInputClassName}
             onChange={(event) => onChange({ ...filter, rep: event.target.value })}
             value={filter.rep}
           >
-            <option value={ALL}>All reps</option>
-            {reps.map((rep) => (
+            <option value={ALL}>All requesters</option>
+            {options.reps.map((rep) => (
               <option key={rep.hrId} value={rep.hrId}>
                 {rep.name}
               </option>
@@ -304,22 +381,78 @@ function CaptureFilters({
           </select>
         </label>
         <label className="min-w-0 space-y-1">
-          <span className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">District manager</span>
+          <FilterFieldLabel>Manager</FilterFieldLabel>
           <select
             className={portalInputClassName}
             onChange={(event) => onChange({ ...filter, manager: event.target.value })}
             value={filter.manager}
           >
             <option value={ALL}>All managers</option>
-            {managers.map((manager) => (
+            {options.managers.map((manager) => (
               <option key={manager.hrId} value={manager.hrId}>
                 {manager.name}
               </option>
             ))}
           </select>
         </label>
+        <ValueSelect
+          allLabel="All lines"
+          label="Line"
+          onChange={(value) => onChange({ ...filter, line: value })}
+          options={options.lines}
+          value={filter.line ?? ALL}
+        />
+        <ValueSelect
+          allLabel="All regions"
+          label="Region"
+          onChange={(value) => onChange({ ...filter, region: value })}
+          options={options.regions}
+          value={filter.region ?? ALL}
+        />
+        <ValueSelect
+          allLabel="All areas"
+          label="Area"
+          onChange={(value) => onChange({ ...filter, area: value })}
+          options={options.areas}
+          value={filter.area ?? ALL}
+        />
+        <ValueSelect
+          allLabel="All bricks"
+          label="Brick"
+          onChange={(value) => onChange({ ...filter, brick: value })}
+          options={options.bricks}
+          value={filter.brick ?? ALL}
+        />
+        {options.months.length > 0 ? (
+          <label className="min-w-0 space-y-1">
+            <FilterFieldLabel>Month</FilterFieldLabel>
+            <select
+              className={portalInputClassName}
+              onChange={(event) => onChange({ ...filter, month: event.target.value })}
+              value={filter.month ?? ALL}
+            >
+              <option value={ALL}>All months</option>
+              {options.months.map((month) => (
+                <option key={month.key} value={month.key}>
+                  {month.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
         <label className="min-w-0 space-y-1">
-          <span className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">Search</span>
+          <FilterFieldLabel>Sort by date</FilterFieldLabel>
+          <button
+            className={cn(portalInputClassName, "flex items-center justify-between gap-2 text-left font-bold")}
+            onClick={() => onChange({ ...filter, sort: sortNewestFirst ? "date-asc" : "date-desc" })}
+            type="button"
+          >
+            <span>{sortNewestFirst ? "Newest first" : "Oldest first"}</span>
+            <ArrowUpDown className="h-4 w-4 shrink-0 text-slate-400" />
+          </button>
+        </label>
+        <label className="min-w-0 space-y-1 sm:col-span-2 lg:col-span-3">
+          <FilterFieldLabel>Search</FilterFieldLabel>
           <input
             className={portalInputClassName}
             onChange={(event) => onChange({ ...filter, search: event.target.value })}
@@ -367,6 +500,10 @@ function useCaptures<T>(url: string, enabled: boolean) {
 
 // ── Marketing tab ────────────────────────────────────────────────────────────
 
+function locationSearchText(location: VerifiedCaptureLocation): Array<string | null> {
+  return [location.rawLocation, location.address, location.brick, location.area, location.region, location.governorate];
+}
+
 function marketingSearchText(row: VerifiedMarketingCaptureRow): string {
   return [
     row.displayName,
@@ -374,9 +511,9 @@ function marketingSearchText(row: VerifiedMarketingCaptureRow): string {
     row.areaName,
     row.lineName,
     row.governorate,
-    row.location.address,
+    ...locationSearchText(row.location),
     ...row.pharmacies.map((pharmacy) => pharmacy.displayName),
-    ...row.pharmacies.map((pharmacy) => pharmacy.location.address),
+    ...row.pharmacies.flatMap((pharmacy) => locationSearchText(pharmacy.location)),
     ...row.pharmacies.flatMap((pharmacy) =>
       pharmacy.distributorCodes.flatMap((code) => [code.distributorName, code.distributorCode, code.customerCode]),
     ),
@@ -431,11 +568,30 @@ function MarketingTab({ rows }: { rows: VerifiedMarketingCaptureRow[] }) {
   const [filter, setFilter] = useState<CaptureFilter>(EMPTY_CAPTURE_FILTER);
 
   const filterable = useMemo(
-    () => rows.map((row) => ({ ...row, searchText: marketingSearchText(row) })),
+    () =>
+      rows.map((row) => ({
+        ...row,
+        searchText: marketingSearchText(row),
+        line: row.lineName,
+        area: row.areaName,
+        brick: row.location.brick,
+        region: row.location.region ?? row.governorate,
+        sortDate: row.capturedAt,
+      })),
     [rows],
   );
-  const reps = useMemo(() => distinctPeople(filterable, "rep"), [filterable]);
-  const managers = useMemo(() => distinctPeople(filterable, "manager"), [filterable]);
+  const options = useMemo<CaptureFilterOptions>(
+    () => ({
+      reps: distinctPeople(filterable, "rep"),
+      managers: distinctPeople(filterable, "manager"),
+      lines: distinctValues(filterable, "line"),
+      areas: distinctValues(filterable, "area"),
+      bricks: distinctValues(filterable, "brick"),
+      regions: distinctValues(filterable, "region"),
+      months: distinctMonths(filterable),
+    }),
+    [filterable],
+  );
   const filtered = useMemo(() => applyCaptureFilter(filterable, filter), [filterable, filter]);
 
   const withPhoto = filtered.filter((row) => row.photoUrl).length;
@@ -444,17 +600,16 @@ function MarketingTab({ rows }: { rows: VerifiedMarketingCaptureRow[] }) {
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <PortalMetricCard accent="orange" icon={Sparkles} label="Verified customers" value={rows.length} />
-        <PortalMetricCard accent="sky" icon={UserRound} label="Reps" value={reps.length} />
-        <PortalMetricCard accent="emerald" icon={Users} label="District managers" value={managers.length} />
+        <PortalMetricCard accent="sky" icon={UserRound} label="Reps" value={options.reps.length} />
+        <PortalMetricCard accent="emerald" icon={Users} label="District managers" value={options.managers.length} />
         <PortalMetricCard accent="amber" icon={Store} label="With customer photo" value={withPhoto} />
       </div>
 
       <CaptureFilters
         countLabel={`${filtered.length} of ${rows.length} shown`}
         filter={filter}
-        managers={managers}
         onChange={setFilter}
-        reps={reps}
+        options={options}
       />
 
       <PortalSection className="overflow-hidden">
@@ -501,7 +656,7 @@ function directOrderSearchText(row: VerifiedDirectOrderCaptureRow): string {
   return [
     row.pharmacyName,
     row.pharmacyCode,
-    row.location.address,
+    ...locationSearchText(row.location),
     ...row.distributorCodes.flatMap((code) => [code.distributorName, code.distributorCode, code.customerCode]),
   ]
     .filter(Boolean)
@@ -576,11 +731,30 @@ function DirectOrdersTab({ rows }: { rows: VerifiedDirectOrderCaptureRow[] }) {
   const [filter, setFilter] = useState<CaptureFilter>(EMPTY_CAPTURE_FILTER);
 
   const filterable = useMemo(
-    () => rows.map((row) => ({ ...row, searchText: directOrderSearchText(row) })),
+    () =>
+      rows.map((row) => ({
+        ...row,
+        searchText: directOrderSearchText(row),
+        line: null,
+        area: row.location.area,
+        brick: row.location.brick,
+        region: row.location.region,
+        sortDate: row.verifiedAt,
+      })),
     [rows],
   );
-  const reps = useMemo(() => distinctPeople(filterable, "rep"), [filterable]);
-  const managers = useMemo(() => distinctPeople(filterable, "manager"), [filterable]);
+  const options = useMemo<CaptureFilterOptions>(
+    () => ({
+      reps: distinctPeople(filterable, "rep"),
+      managers: distinctPeople(filterable, "manager"),
+      lines: distinctValues(filterable, "line"),
+      areas: distinctValues(filterable, "area"),
+      bricks: distinctValues(filterable, "brick"),
+      regions: distinctValues(filterable, "region"),
+      months: distinctMonths(filterable),
+    }),
+    [filterable],
+  );
   const filtered = useMemo(() => applyCaptureFilter(filterable, filter), [filterable, filter]);
 
   const fieldCount = filtered.filter((row) => row.route === "field").length;
@@ -590,7 +764,7 @@ function DirectOrdersTab({ rows }: { rows: VerifiedDirectOrderCaptureRow[] }) {
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <PortalMetricCard accent="orange" icon={ShoppingBag} label="Verified pharmacies" value={rows.length} />
-        <PortalMetricCard accent="sky" icon={UserRound} label="Reps" value={reps.length} />
+        <PortalMetricCard accent="sky" icon={UserRound} label="Reps" value={options.reps.length} />
         <PortalMetricCard accent="emerald" icon={MapPin} label="Field captures" value={fieldCount} />
         <PortalMetricCard accent="amber" icon={Store} label="By invoice" value={invoiceCount} />
       </div>
@@ -598,9 +772,8 @@ function DirectOrdersTab({ rows }: { rows: VerifiedDirectOrderCaptureRow[] }) {
       <CaptureFilters
         countLabel={`${filtered.length} of ${rows.length} shown`}
         filter={filter}
-        managers={managers}
         onChange={setFilter}
-        reps={reps}
+        options={options}
       />
 
       <PortalSection className="overflow-hidden">
