@@ -20,11 +20,18 @@
 export type RobotStepResult = "done" | "already";
 
 /**
- * The two destructive actions, and nothing else.
+ * The two actions the Turbify console actually offers per mailbox, and nothing else.
  *
- * Deliberately NOT `deleteMailbox` or `suspendMailbox`. Both are dispositions — decisions about
- * what becomes of a person's mail — and the owner has not delegated those to a robot. The robot
- * closes the door; a person decides what happens to the room.
+ * 🔴 WHY NOT `clearAppPasswords`. The original design cleared app passwords after a reset, because
+ * Yahoo app passwords survive a password change. But the admin console has NO control that clears
+ * them — app passwords are managed by the mailbox's own user in their personal Yahoo security page,
+ * which an admin cannot reach. The console's only per-mailbox actions are Reset password, Edit,
+ * Transfer account and Delete user (confirmed against the live console, 2026-09-24). So the robot
+ * cannot reach the register's `revoked` state by reset-plus-clear; the only way it closes the door
+ * for good is to DELETE the mailbox — which is why the owner chose "reset now, delete after N days".
+ *
+ * `resetPassword` blocks web login and any NEW device immediately (the reversible, done-now step);
+ * `deleteMailbox` is the permanent one, gated hard and only run after the grace period.
  */
 export type TurbifyConsoleDriver = {
   /**
@@ -32,16 +39,17 @@ export type TurbifyConsoleDriver = {
    * continues unauthenticated will "successfully" do nothing to every mailbox in the run.
    */
   signIn(): Promise<void>;
-  /** Reset the mailbox password to something nobody holds. */
+  /** Reset the mailbox password to something nobody holds. Reversible; the immediate step. */
   resetPassword(address: string): Promise<RobotStepResult>;
   /**
-   * Revoke every app password on the mailbox.
+   * Delete the mailbox.
    *
-   * THE STEP THAT ACTUALLY CLOSES THE DOOR. Yahoo app passwords survive a password change, so a
-   * reset alone leaves every phone and Outlook client the leaver configured still connected. The
-   * database refuses to call a row `revoked` without this one, and so does the robot.
+   * 🔴 PERMANENT AND UNDOABLE. Turbify offers no restore and this company keeps no mail backup, so
+   * an implementation must be certain it has the right mailbox and must positively observe the
+   * console confirm the deletion before returning `done`. Only ever called after the grace period,
+   * on a mailbox the robot itself already reset, past every gate in safety.ts re-run live.
    */
-  clearAppPasswords(address: string): Promise<RobotStepResult>;
+  deleteMailbox(address: string): Promise<RobotStepResult>;
   /** Release the browser. Must never throw — a failed close must not fail a completed run. */
   close(): Promise<void>;
 };
@@ -60,7 +68,7 @@ export function createDryRunDriver(): TurbifyConsoleDriver {
     async resetPassword() {
       return "done";
     },
-    async clearAppPasswords() {
+    async deleteMailbox() {
       return "done";
     },
     async close() {},

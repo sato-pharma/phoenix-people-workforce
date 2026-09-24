@@ -28,6 +28,20 @@ import { isCompanyAddress } from "@/lib/new-hire-mailbox/address";
 import type { MailboxOffboardingTask } from "@/lib/mailbox-offboarding/types";
 
 /**
+ * The actor every robot write is recorded under.
+ *
+ * Lives in this pure module (not the runner) because two gates depend on it: the delete phase only
+ * completes a pipeline the ROBOT started — it refuses to auto-delete a mailbox a PERSON reset,
+ * because a person who reset a password may be managing that mailbox by hand (forwarding, a
+ * retention hold) and a robot must not finish a decision it did not start.
+ *
+ * `system:` prefixed like the register's other automated actors (`system:resignation`,
+ * `system:mailbox-sweep`), so the existing name-resolution renders it as itself rather than
+ * pretending a person did it.
+ */
+export const ROBOT_ACTOR = "system:turbify-robot" as const;
+
+/**
  * The employment statuses that still mean "this person has left".
  *
  * Kept identical to the register's own LEAVER_STATUSES rather than imported from it, because these
@@ -46,13 +60,40 @@ export const ROBOT_LEAVER_STATUSES = ["resigned", "terminated"] as const;
 export const ROBOT_MIN_DAYS_OVERDUE = 1;
 
 /**
- * The most mailboxes one run may touch.
+ * How many whole days must pass AFTER the robot reset the password before it will delete the
+ * mailbox. The grace window the owner asked for: reset now, delete after N days.
+ *
+ * 🔴 THE CLOCK STARTS AT THE RESET, NOT AT THE LAST WORKING DATE. A task can sit un-reset for
+ * months (the register found 52 leavers on day one), so measuring the grace from the last working
+ * date would let the robot reset a long-idle mailbox and delete it the same week — no real window
+ * for a person to intervene. Measuring from the reset guarantees the full N days between the door
+ * closing and the mailbox being destroyed, whatever the backlog.
+ *
+ * A delete is PERMANENT — Turbify offers no undo and this company keeps no mail backup — so the
+ * window is generous and configurable per run. Thirty days is long enough that a wrongly-reset
+ * working employee, or a leaver who comes back, is noticed and the reset undone before anything is
+ * lost.
+ */
+export const ROBOT_MIN_DAYS_BEFORE_DELETE = 30;
+
+/**
+ * The most mailboxes one run may RESET.
  *
  * A cap is the difference between a bug that damages five mailboxes and one that damages every
  * mailbox the company has. Five clears the current backlog of 13 in three runs while keeping the
  * blast radius of an unnoticed defect small enough to undo by hand.
  */
 export const ROBOT_DEFAULT_MAX_PER_RUN = 5;
+
+/**
+ * The most mailboxes one run may DELETE — stricter than the reset cap, and deliberately so.
+ *
+ * A reset is reversible; a delete is not. If a calibration error ever pointed the delete flow at
+ * the wrong row, this is the number that decides whether it destroys two mailboxes or twenty before
+ * anyone looks. Two per run, plus the 30-day grace and the per-task gates, means a bad delete is
+ * both rare and small.
+ */
+export const ROBOT_DEFAULT_MAX_DELETES_PER_RUN = 2;
 
 /** Why a task was refused. The runner reports these verbatim — they are read by a person. */
 export type RobotRefusal =
@@ -65,11 +106,28 @@ export type RobotRefusal =
   | "no_last_working_date"
   | "too_recent"
   | "address_belongs_to_an_active_employee"
-  | "address_held_by_more_than_one_person";
+  | "address_held_by_more_than_one_person"
+  // The two below are NORMAL skips, not alarms: they mean "not the robot's to finish, or not yet".
+  | "reset_not_by_robot"
+  | "awaiting_delete_grace";
 
 export type RobotSafetyVerdict =
   | { allowed: true }
   | { allowed: false; refusal: RobotRefusal; detail: string };
+
+/** The two things the robot can do to a mailbox. Everything else is a person's decision. */
+export type RobotAction = "reset" | "delete";
+
+/**
+ * What the robot should do with one task this run.
+ *
+ * `action` is the step that is DUE, or null with the reason it is not. A null with
+ * `reset_not_by_robot` or `awaiting_delete_grace` is a quiet, expected skip — the runner does not
+ * alarm on those; any other refusal is a real block a person should read.
+ */
+export type RobotActionDecision =
+  | { action: RobotAction }
+  | { action: null; refusal: RobotRefusal; detail: string };
 
 /**
  * The live facts about one person, re-read at run time. Never the task row's snapshot.
@@ -222,6 +280,65 @@ export function evaluateRevocationSafety(input: RobotSafetyInput): RobotSafetyVe
   }
 
   return { allowed: true };
+}
+
+/** The date-only part of a timestamp ISO, for day arithmetic. Empty string when unparseable. */
+function dateOnly(iso: string | null): string {
+  if (!iso) return "";
+  const match = /^(\d{4}-\d{2}-\d{2})/.exec(iso.trim());
+  return match ? match[1] : "";
+}
+
+/**
+ * Decide the ONE thing the robot should do to this task this run: reset, delete, or nothing.
+ *
+ * Layered on top of `evaluateRevocationSafety` so the base gates run FIRST and identically for both
+ * phases — the address, the live leaver status, the recycled-address check all re-run before a
+ * delete, because in the 30 days since the reset the address could have been handed to a new hire.
+ * A delete that skipped those gates would destroy a working employee's mailbox.
+ *
+ * The phase, once the base gates pass:
+ *   - password not yet reset            → RESET is due.
+ *   - reset, but not BY the robot        → skip (`reset_not_by_robot`). A person reset it; a person
+ *                                          finishes it. The robot never completes a human's pipeline.
+ *   - reset by the robot, grace not up   → skip (`awaiting_delete_grace`). Normal waiting.
+ *   - reset by the robot, grace elapsed  → DELETE is due.
+ */
+export function decideRobotAction(
+  input: RobotSafetyInput,
+  options: { minDaysBeforeDelete?: number } = {},
+): RobotActionDecision {
+  const base = evaluateRevocationSafety(input);
+  if (!base.allowed) return { action: null, refusal: base.refusal, detail: base.detail };
+
+  const { task, todayIso } = input;
+
+  // Phase 1 — the password has never been reset. Reset it now.
+  if (!task.passwordResetAt) return { action: "reset" };
+
+  // The password IS reset. The only thing left the robot may do is delete, and only to its own work.
+  if (task.passwordResetBy !== ROBOT_ACTOR) {
+    return {
+      action: null,
+      refusal: "reset_not_by_robot",
+      detail: `${task.employeeName}'s password was reset by ${task.passwordResetByName ?? task.passwordResetBy ?? "a person"}, not the robot, so the robot leaves the disposition to them.`,
+    };
+  }
+
+  const minDaysBeforeDelete = Number.isFinite(options.minDaysBeforeDelete)
+    ? Math.max(0, Math.floor(options.minDaysBeforeDelete as number))
+    : ROBOT_MIN_DAYS_BEFORE_DELETE;
+  const resetDate = dateOnly(task.passwordResetAt);
+  const daysSinceReset = wholeDaysBetween(resetDate, todayIso);
+  if (!Number.isFinite(daysSinceReset) || daysSinceReset < minDaysBeforeDelete) {
+    return {
+      action: null,
+      refusal: "awaiting_delete_grace",
+      detail: `${task.employeeName}'s mailbox was reset on ${resetDate || "an unknown date"}; the robot deletes it ${minDaysBeforeDelete} days after the reset.`,
+    };
+  }
+
+  return { action: "delete" };
 }
 
 /**
