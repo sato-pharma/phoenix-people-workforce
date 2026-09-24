@@ -1526,6 +1526,7 @@ import { runPhoenixCrmDoctorsDirectoryTests } from "./phoenix-crm-doctors-direct
 import { runPhoenixCrmPlaceLocationFrozenTests } from "./phoenix-crm-place-location-frozen.test.ts";
 import { runPhoenixCrmPortalSidebarTests } from "./phoenix-crm-portal-sidebar.test.ts";
 import { runPhoenixCrmAmPmWordTests } from "./phoenix-crm-am-pm-words.test.ts";
+import { runPhoenixCrmDoctorPharmaciesTests } from "./phoenix-crm-doctor-pharmacies.test.ts";
 import { runCrmCutoverTests } from "./crm-cutover.test.ts";
 import { runCrmUnifyVendorReadsTests } from "./crm-unify-vendor-reads.test.ts";
 import { runPhoenixKpiRulesTests } from "./phoenix-kpi-rules.test.ts";
@@ -5039,6 +5040,11 @@ await runTest(
 await runTest(
   "Phoenix CRM says AM and PM, never Doctors or Accounts (owner, 2026-09-23: \"make it ALL AM PM not doctors and accounts\" — the two label maps that turned the codes into words are deleted so nothing can restore them, no screen string in the module carries either word, no label names a list type twice as \"Doctors · PM\", and the directory tab is called Directory because it holds AM customers too)",
   runPhoenixCrmAmPmWordTests,
+);
+
+await runTest(
+  "Phoenix CRM links a doctor to his pharmacies (owner, 2026-09-24: \"link doctors to their pharmacies next\", and — asked how — \"Both\"; after the visit form began recording which pharmacy the rep took feedback from, each doctor carries an auto-derived list of the pharmacies his own visits named AND one the rep can pin as primary; groupCustomerPharmacies is the pure core, so case- and spacing-only spelling variants are one pharmacy, the display name and each product's Has/Doesn't-have answer are the most recent visit's, the list is most-recent-first per doctor, and the primary is set by the caller from the pinned name, never inside the grouping)",
+  runPhoenixCrmDoctorPharmaciesTests,
 );
 
 await runTest(

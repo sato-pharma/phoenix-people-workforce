@@ -104,6 +104,8 @@ const ROUTE_GATES: RouteGate[] = [
   post("list/validate", "create"),
   // The name and speciality, corrected after validating (owner, 2026-09-22): the rep's own write.
   post("list/rename", "create"),
+  // The pharmacy the rep pins as this doctor's primary (owner, 2026-09-24): his own write.
+  post("list/primary-pharmacy", "create"),
   post("list/places", "create"),
   post("list/places/update", "create"),
   post("list/requests", "create"),
@@ -333,7 +335,10 @@ const MIGRATION = "supabase/migrations/20260916150000_phoenix_crm.sql";
  * transaction, SECURITY DEFINER with a fixed search path, service-role-only execute, its own tables
  * only — and the functions it adds join the set the services may call.
  */
-const LATER_MIGRATIONS = ["supabase/migrations/20260922180258_phoenix_crm_pending_customers.sql"];
+const LATER_MIGRATIONS = [
+  "supabase/migrations/20260922180258_phoenix_crm_pending_customers.sql",
+  "supabase/migrations/20260924234547_add_doctor_primary_pharmacy.sql",
+];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */
 function migrationSql(path = MIGRATION): string {

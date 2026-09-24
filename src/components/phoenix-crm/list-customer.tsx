@@ -31,7 +31,7 @@ import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
 import { RequestCard, sortRequests } from "@/components/phoenix-crm/request-card";
 import { TimingsReadout } from "@/components/phoenix-crm/timings-editor";
 import { CrmBackBar, CrmBlock, CrmButton, CrmFacts, CrmNote, CrmPanel, CrmPill } from "@/components/phoenix-crm/ui";
-import type { ListCustomer, ListPlace, TerritoryListView } from "@/lib/phoenix-crm/view-types";
+import type { CustomerPharmacy, ListCustomer, ListPlace, TerritoryListView } from "@/lib/phoenix-crm/view-types";
 
 const PLACE_RELOAD = new Set(["phoenix_crm_last_place", "phoenix_crm_place_not_found", "phoenix_crm_place_retired"]);
 
@@ -238,6 +238,30 @@ export function CustomerScreen({
         </CrmBlock>
       )}
 
+      {active || pending ? (
+        <CrmBlock className="border-t border-slate-100" title="Pharmacies feedback came from">
+          {customer.pharmacies.length === 0 ? (
+            <p className="break-words text-sm font-medium text-slate-500">
+              No pharmacy feedback yet. When a visit records the pharmacy it took feedback from, that pharmacy appears here.
+            </p>
+          ) : (
+            <div className="grid min-w-0 gap-3">
+              {customer.pharmacies.map((pharmacy) => (
+                <PharmacyCard
+                  canEdit={view.canEdit}
+                  customer={customer}
+                  key={pharmacy.name}
+                  onNotice={onNotice}
+                  pharmacy={pharmacy}
+                  seatId={seatId}
+                  test={test}
+                />
+              ))}
+            </div>
+          )}
+        </CrmBlock>
+      ) : null}
+
       {earlier.length > 0 ? (
         <CrmBlock className="border-t border-slate-100" title="Earlier requests">
           <div className="divide-y divide-slate-100 border border-slate-200">
@@ -365,6 +389,114 @@ function PlaceCard({
                 </CrmButton>
               ) : null}
             </>
+          )}
+        </div>
+      ) : null}
+
+      {problem ? (
+        <CrmNote className="mt-3" tone="bad">
+          {problem}
+        </CrmNote>
+      ) : null}
+    </article>
+  );
+}
+
+function availabilitySplit(products: CustomerPharmacy["products"]): { has: string[]; missing: string[] } {
+  const has: string[] = [];
+  const missing: string[] = [];
+  for (const entry of products) (entry.answer === "has" ? has : missing).push(entry.product);
+  return { has, missing };
+}
+
+/**
+ * One pharmacy the doctor's feedback came from — derived from his visits, not maintained. The rep pins
+ * one as primary; pinning another moves the star, and clearing removes it.
+ */
+function PharmacyCard({
+  canEdit,
+  customer,
+  onNotice,
+  pharmacy,
+  seatId,
+  test,
+}: {
+  canEdit: boolean;
+  customer: ListCustomer;
+  onNotice: (notice: ListNotice) => void;
+  pharmacy: CustomerPharmacy;
+  seatId: string;
+  test: boolean;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const { has, missing } = availabilitySplit(pharmacy.products);
+
+  async function pin(pharmacyName: string) {
+    setBusy(true);
+    setProblem(null);
+    try {
+      await crmPost<unknown>("/api/phoenix-crm/list/primary-pharmacy", { seatId, test, customerId: customer.customerId, pharmacyName }, "result");
+      onNotice(
+        pharmacyName
+          ? { tone: "good", title: `Primary pharmacy set`, message: `${pharmacy.name} for ${customer.name}.` }
+          : { tone: "info", title: `Primary pharmacy cleared`, message: `${customer.name} has no primary pharmacy now.` },
+      );
+    } catch (error) {
+      setProblem(messageOf(error));
+      setBusy(false);
+    }
+  }
+
+  return (
+    <article className="min-w-0 border border-slate-200 bg-white px-3.5 py-3.5">
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0">
+          <h4 className="break-words text-sm font-black text-slate-950">{pharmacy.name}</h4>
+          <p className="mt-0.5 break-words text-xs font-semibold leading-5 text-slate-500">
+            {plural(pharmacy.visits, "visit", "visits")} · last {cairoStamp(pharmacy.lastFeedbackAt)}
+          </p>
+        </div>
+        {pharmacy.isPrimary ? <CrmPill tone="good">Primary</CrmPill> : null}
+      </div>
+
+      {has.length > 0 || missing.length > 0 ? (
+        <div className="mt-3 grid gap-2">
+          {has.length > 0 ? (
+            <div className="flex min-w-0 flex-wrap items-center gap-1">
+              <span className="text-phx-2xs font-black uppercase tracking-wider text-slate-500">Has</span>
+              {has.map((product) => (
+                <CrmPill key={product} tone="good">
+                  {product}
+                </CrmPill>
+              ))}
+            </div>
+          ) : null}
+          {missing.length > 0 ? (
+            <div className="flex min-w-0 flex-wrap items-center gap-1">
+              <span className="text-phx-2xs font-black uppercase tracking-wider text-slate-500">Doesn&apos;t have</span>
+              {missing.map((product) => (
+                <CrmPill key={product} tone="bad">
+                  {product}
+                </CrmPill>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <p className="mt-2 break-words text-xs font-medium text-slate-400">No product answers recorded here yet.</p>
+      )}
+
+      {canEdit ? (
+        <div className="mt-3 flex min-w-0 flex-wrap items-center gap-2">
+          {pharmacy.isPrimary ? (
+            <CrmButton busy={busy} onClick={() => void pin("")} size="sm">
+              Clear primary
+            </CrmButton>
+          ) : (
+            <CrmButton busy={busy} onClick={() => void pin(pharmacy.name)} size="sm" variant="primary">
+              Set as primary
+            </CrmButton>
           )}
         </div>
       ) : null}
