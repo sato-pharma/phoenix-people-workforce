@@ -29,8 +29,11 @@ import {
   parseGrade,
   parseNewCustomer,
   parsePlaceDraft,
+  parseProductAvailability,
+  PHARMACY_NAME_MAX,
   PLACE_TEXT_MAX,
   type PlaceDraft,
+  type ProductAvailability,
 } from "@/lib/phoenix-crm/entry-rules";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
 import type { OrgSeat } from "@/lib/phoenix-crm/scope";
@@ -107,6 +110,25 @@ export type ListCustomerReference = {
   lastVisitedOn: string | null;
 };
 
+/**
+ * A pharmacy the rep took feedback from for this doctor, built from the visits that named it
+ * (phoenix_crm_visits.pharmacy_name). The doctor↔pharmacy link is derived, not maintained: pharmacies
+ * are free text, so they are grouped case-insensitively and the display name is the most recent
+ * spelling. The rep pins one as primary (phoenix_crm_customers.primary_pharmacy_name).
+ */
+export type CustomerPharmacy = {
+  /** The pharmacy as most recently spelled by the rep. */
+  name: string;
+  /** Matches the doctor's pinned primary (compared on the normalized name). */
+  isPrimary: boolean;
+  /** When feedback last named this pharmacy for this doctor (ISO). */
+  lastFeedbackAt: string;
+  /** How many of this doctor's visits took feedback here. */
+  visits: number;
+  /** The latest Has / Doesn't-have answer per product — the most recent visit wins. */
+  products: { product: string; answer: ProductAvailability }[];
+};
+
 export type ListCustomer = {
   customerId: string;
   listType: PhoenixCrmListType;
@@ -131,6 +153,10 @@ export type ListCustomer = {
   pendingGradeRequestId: string | null;
   pendingGrade: PhoenixCrmGrade | null;
   pendingDropRequestId: string | null;
+  /** The pharmacy pinned as this doctor's primary, or null. */
+  primaryPharmacyName: string | null;
+  /** The pharmacies feedback was taken from for this doctor, primary first, then most recent. */
+  pharmacies: CustomerPharmacy[];
 };
 
 export type ListReferenceEntry = {
@@ -232,7 +258,7 @@ export function mapPlaceRow(row: Row): ListPlace {
 const PLACE_COLUMNS =
   "id, customer_id, label, address, brick_id, brick_name, brick_distance_km, area_code, area_name, region_code, region_name, zone, lat, lon, accuracy_meters, timings, photo_path, captured_at, device_skew_minutes";
 const CUSTOMER_COLUMNS =
-  "id, list_type, name, speciality, grade, origin, reference_contact_crm_id, status, validated_at, validated_by_hr_id, dropped_reason, dropped_note, status_changed_at";
+  "id, list_type, name, speciality, grade, origin, reference_contact_crm_id, status, validated_at, validated_by_hr_id, dropped_reason, dropped_note, status_changed_at, primary_pharmacy_name";
 
 /**
  * Every customer carried over from the territory's iReports360 list has a row here, pending until the
@@ -302,6 +328,105 @@ export async function loadMonthVisitCounts(seatId: string, isTest: boolean, mont
     counts.set(customerId, (counts.get(customerId) ?? 0) + 1);
   }
   return counts;
+}
+
+/** The key a free-typed pharmacy name is grouped by — the same normalization the visit form suggests with. */
+export function normalizePharmacyName(name: string): string {
+  return name.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+/** At most this many pharmacies are shown per doctor, most-recent first. */
+const CUSTOMER_PHARMACIES_MAX = 50;
+
+/** One visit's pharmacy feedback, as the grouping reads it. */
+export type PharmacyFeedback = {
+  customerId: string;
+  pharmacyName: string;
+  productAvailability: Record<string, ProductAvailability>;
+  capturedAt: string;
+};
+
+type PharmacyAggregate = {
+  name: string;
+  lastFeedbackAt: string;
+  visits: number;
+  /** product → { answer, at } so a newer visit's answer wins per product. */
+  products: Map<string, { answer: ProductAvailability; at: string }>;
+};
+
+/**
+ * Group a doctor's visit feedback into his pharmacies, case-insensitively: the display name is the most
+ * recent spelling, each product keeps its latest Has/Doesn't-have answer, and the list is most-recent
+ * first. `isPrimary` is left false here and set by the caller, which knows the pinned primary. Pure, so
+ * the grouping is tested without a database.
+ */
+export function groupCustomerPharmacies(feedback: PharmacyFeedback[]): Map<string, CustomerPharmacy[]> {
+  // Oldest first, so a more recent visit's spelling and answers overwrite earlier ones.
+  const rows = [...feedback].sort((left, right) => left.capturedAt.localeCompare(right.capturedAt));
+
+  const byCustomer = new Map<string, Map<string, PharmacyAggregate>>();
+  for (const row of rows) {
+    const name = row.pharmacyName.trim();
+    if (!name) continue;
+    const key = normalizePharmacyName(name);
+    let pharmacies = byCustomer.get(row.customerId);
+    if (!pharmacies) {
+      pharmacies = new Map();
+      byCustomer.set(row.customerId, pharmacies);
+    }
+    const aggregate = pharmacies.get(key) ?? { name, lastFeedbackAt: row.capturedAt, visits: 0, products: new Map() };
+    aggregate.name = name;
+    aggregate.lastFeedbackAt = row.capturedAt;
+    aggregate.visits += 1;
+    for (const [product, answer] of Object.entries(row.productAvailability)) {
+      aggregate.products.set(product, { answer, at: row.capturedAt });
+    }
+    pharmacies.set(key, aggregate);
+  }
+
+  const result = new Map<string, CustomerPharmacy[]>();
+  for (const [customerId, pharmacies] of byCustomer) {
+    const list: CustomerPharmacy[] = [...pharmacies.values()]
+      .map((aggregate) => ({
+        name: aggregate.name,
+        isPrimary: false,
+        lastFeedbackAt: aggregate.lastFeedbackAt,
+        visits: aggregate.visits,
+        products: [...aggregate.products.entries()]
+          .map(([product, latest]) => ({ product, answer: latest.answer }))
+          .sort((left, right) => left.product.localeCompare(right.product)),
+      }))
+      .sort((left, right) => right.lastFeedbackAt.localeCompare(left.lastFeedbackAt))
+      .slice(0, CUSTOMER_PHARMACIES_MAX);
+    result.set(customerId, list);
+  }
+  return result;
+}
+
+/** The pharmacies each doctor's feedback came from, from this territory's visits. */
+export async function loadCustomerPharmacies(seatId: string, isTest: boolean): Promise<Map<string, CustomerPharmacy[]>> {
+  const rows = await fetchAllRowsKeyset<Row>(
+    () =>
+      getSupabaseAdmin()
+        .from("phoenix_crm_visits")
+        .select("id, customer_id, pharmacy_name, product_availability, captured_at")
+        .eq("seat_id", seatId)
+        .eq("is_test", isTest)
+        .not("pharmacy_name", "is", null),
+    { cursorColumn: "id", cursorOf: (row) => String(row.id) },
+  );
+  const feedback: PharmacyFeedback[] = [];
+  for (const row of rows) {
+    const name = text(row.pharmacy_name);
+    if (!name) continue;
+    feedback.push({
+      customerId: String(row.customer_id),
+      pharmacyName: name,
+      productAvailability: parseProductAvailability(row.product_availability),
+      capturedAt: String(row.captured_at),
+    });
+  }
+  return groupCustomerPharmacies(feedback);
 }
 
 type ReferenceRow = {
@@ -418,11 +543,12 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
   const { seat, isTest } = territoryForRead(viewer, seatId, readTestFlag(test));
   const monthStart = monthStartOf(viewer.cairoToday);
   await ensureReferenceCustomers(seat, isTest);
-  const [reference, { customers, placesByCustomer }, requestRows, visitCounts, readinessMap] = await Promise.all([
+  const [reference, { customers, placesByCustomer }, requestRows, visitCounts, pharmaciesByCustomer, readinessMap] = await Promise.all([
     loadReference(seat.seatId, isTest),
     loadTerritoryCustomers(seat.seatId, isTest),
     loadRequestRows([seat.seatId], isTest),
     loadMonthVisitCounts(seat.seatId, isTest, monthStart, viewer.cairoToday),
+    loadCustomerPharmacies(seat.seatId, isTest),
     isTest ? Promise.resolve(null) : loadReadiness([seat.seatId]),
   ]);
 
@@ -459,6 +585,11 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
     const validatedBy = text(row.validated_by_hr_id);
     const contactCrmId = numberOrNull(row.reference_contact_crm_id);
     const referenceRow = contactCrmId === null ? undefined : referenceByContact.get(contactCrmId);
+    const primaryPharmacyName = text(row.primary_pharmacy_name);
+    const primaryKey = primaryPharmacyName ? normalizePharmacyName(primaryPharmacyName) : null;
+    const pharmacies = (pharmaciesByCustomer.get(customerId) ?? [])
+      .map((pharmacy) => ({ ...pharmacy, isPrimary: primaryKey !== null && normalizePharmacyName(pharmacy.name) === primaryKey }))
+      .sort((left, right) => Number(right.isPrimary) - Number(left.isPrimary) || right.lastFeedbackAt.localeCompare(left.lastFeedbackAt));
     return {
       customerId,
       listType,
@@ -483,6 +614,8 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
       pendingGradeRequestId: pending?.grade?.requestId ?? null,
       pendingGrade: pending?.grade?.proposedGrade ?? null,
       pendingDropRequestId: pending?.drop?.requestId ?? null,
+      primaryPharmacyName,
+      pharmacies,
     };
   });
   listCustomers.sort((left, right) => left.listType.localeCompare(right.listType) || left.name.localeCompare(right.name));
@@ -687,6 +820,30 @@ export async function renameCustomer(
     },
   });
   return { customerId: String(result.customer_id), customerName: String(result.customer_name), speciality: text(result.speciality) };
+}
+
+/**
+ * Pin one pharmacy as this doctor's primary, or clear it (an empty name clears). The name is a
+ * free-text pharmacy the rep chose from the ones his feedback already named; the territory's rep only,
+ * and never on a customer that has left the list.
+ */
+export async function setPrimaryPharmacy(
+  viewer: PhoenixCrmViewer,
+  raw: unknown,
+): Promise<{ customerId: string; primaryPharmacyName: string | null }> {
+  const body = record(raw);
+  const { seat, isTest } = territoryForRepWrite(viewer, body.seatId, readTestFlag(body.test));
+  if (!isUuid(body.customerId)) throw validationError("Choose the customer to change.");
+  const result = await callPhoenixCrm<Row>("phoenix_crm_set_primary_pharmacy", {
+    p: {
+      seat_id: seat.seatId,
+      actor_hr_id: viewer.hrId,
+      is_test: isTest,
+      customer_id: String(body.customerId).toLowerCase(),
+      pharmacy_name: cleanText(body.pharmacyName, PHARMACY_NAME_MAX),
+    },
+  });
+  return { customerId: String(result.customer_id), primaryPharmacyName: text(result.primary_pharmacy_name) };
 }
 
 export async function addPlace(viewer: PhoenixCrmViewer, raw: unknown): Promise<{ placeId: string; customerId: string; customerName: string }> {

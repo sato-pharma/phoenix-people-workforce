@@ -18,6 +18,7 @@ export type {
   VisitRow,
 } from "@/lib/phoenix-crm/server/visits";
 export type {
+  CustomerPharmacy,
   ListCustomer,
   ListPlace,
   ListReferenceEntry,
