@@ -33,6 +33,13 @@ export type ManageEngineCommandId =
   | "LOCK"
   | "RESTART"
   | "RESET_PASSCODE"
+  | "SCAN"
+  | "RING"
+  | "SHUTDOWN"
+  | "REMOTE_VIEW"
+  | "REMOTE_CONTROL"
+  | "PAUSE_KIOSK"
+  | "RESUME_KIOSK"
   | "ENABLE_LOST_MODE"
   | "DISABLE_LOST_MODE"
   | "CORPORATE_WIPE"
@@ -74,6 +81,63 @@ export const MANAGEENGINE_COMMANDS: readonly ManageEngineCommandDef[] = [
     id: "RESET_PASSCODE",
     label: "Reset the screen lock",
     pastTense: "Reset the screen lock of",
+  },
+  {
+    action: "scan",
+    description:
+      "Asks the tablet to report in now — its battery, storage, apps and position refresh instead of waiting for the next check-in.",
+    destructive: false,
+    id: "SCAN",
+    label: "Report in now",
+    pastTense: "Asked to report in",
+  },
+  {
+    action: "remote_alarm",
+    description: "Sounds an alarm on the tablet at full volume — for finding one left in a car, a bag or a clinic.",
+    destructive: false,
+    id: "RING",
+    label: "Ring the alarm",
+    pastTense: "Rang the alarm on",
+  },
+  {
+    action: "shutdown",
+    description: "Turns the tablet off. Nobody can turn it back on remotely — somebody has to press its power button.",
+    destructive: false,
+    id: "SHUTDOWN",
+    label: "Shut down",
+    pastTense: "Shut down",
+  },
+  {
+    action: "remote_view",
+    description: "Starts a session that shows the tablet's screen, without touching it. Watch only.",
+    destructive: false,
+    id: "REMOTE_VIEW",
+    label: "View the screen",
+    pastTense: "Started a remote view session on",
+  },
+  {
+    action: "remote_control",
+    description: "Starts a session that shows the tablet's screen and lets it be driven — for walking a rep through something.",
+    destructive: false,
+    id: "REMOTE_CONTROL",
+    label: "Take control",
+    pastTense: "Started a remote control session on",
+  },
+  {
+    action: "pause_kiosk",
+    description: "Lifts kiosk mode for a while, so the whole tablet can be reached — for a repair or a settings change.",
+    destructive: false,
+    id: "PAUSE_KIOSK",
+    label: "Pause kiosk mode",
+    pastTense: "Paused kiosk mode on",
+  },
+  {
+    action: "re_apply_kiosk",
+    description: "Puts the tablet back into kiosk mode, pinned to the company's apps again.",
+    destructive: false,
+    id: "RESUME_KIOSK",
+    label: "Resume kiosk mode",
+    pastTense: "Resumed kiosk mode on",
   },
   {
     action: "enable_lost_mode",
@@ -133,6 +197,20 @@ function resultMessage(def: ManageEngineCommandDef, subject: string): string {
       return `${subject} is restarting now.`;
     case "RESET_PASSCODE":
       return `${subject}'s screen lock is cleared. It will ask the rep to set a new one.`;
+    case "SCAN":
+      return `${subject} has been asked to report in. Its details refresh as soon as it answers.`;
+    case "RING":
+      return `${subject} is sounding its alarm. Locking it or pressing its power button stops it.`;
+    case "SHUTDOWN":
+      return `${subject} is turning off. Somebody has to press its power button to bring it back.`;
+    case "REMOTE_VIEW":
+      return `A remote view session is starting on ${subject}. Open it in ManageEngine's viewer to watch the screen.`;
+    case "REMOTE_CONTROL":
+      return `A remote control session is starting on ${subject}. Open it in ManageEngine's viewer to drive the screen.`;
+    case "PAUSE_KIOSK":
+      return `${subject} is out of kiosk mode. The whole tablet can be reached until kiosk mode is resumed.`;
+    case "RESUME_KIOSK":
+      return `${subject} is back in kiosk mode, pinned to the company's apps.`;
     case "ENABLE_LOST_MODE":
       return `${subject} is in lost mode: locked behind a message and reporting its position.`;
     case "DISABLE_LOST_MODE":

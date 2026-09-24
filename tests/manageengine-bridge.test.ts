@@ -11,9 +11,24 @@ import {
   ManageEngineRequestError,
 } from "../src/lib/devices/manageengine/client.ts";
 import {
+  getManageEngineDeviceApps,
+  installManageEngineApp,
+  ManageEngineAppInputError,
+  removeManageEngineApp,
+} from "../src/lib/devices/manageengine/apps.ts";
+import {
+  batteryPercent,
+  getManageEngineCommandHistory,
+  getManageEngineDeviceDetail,
+  humanizeKey,
+  normalizeDeviceDetail,
+  storageUsedPercent,
+} from "../src/lib/devices/manageengine/detail.ts";
+import {
   getManageEngineLocation,
   listManageEngineDevices,
   matchManageEngineToRegister,
+  requestManageEngineLocation,
   type ManageEngineDevice,
 } from "../src/lib/devices/manageengine/devices.ts";
 import {
@@ -302,10 +317,13 @@ async function runDeviceTests() {
 }
 
 function runCommandCatalogTests() {
-  // The allow-list is exactly the seven ids and nothing else.
+  // The allow-list is exactly these ids and nothing else.
   const ids = MANAGEENGINE_COMMANDS.map((entry) => entry.id);
   assert.equal(new Set(ids).size, ids.length, "command ids are unique");
-  assert.equal(ids.length, 7, "seven remote actions");
+  assert.equal(ids.length, 14, "fourteen remote actions");
+  for (const expected of ["SCAN", "RING", "SHUTDOWN", "REMOTE_VIEW", "REMOTE_CONTROL", "PAUSE_KIOSK", "RESUME_KIOSK"]) {
+    assert.equal(isManageEngineCommandId(expected), true, `${expected} is in the catalogue`);
+  }
   for (const id of ids) assert.equal(isManageEngineCommandId(id), true, `${id} is a known command`);
   assert.equal(isManageEngineCommandId("DELETE_EVERYTHING"), false, "an unknown id is refused");
   assert.equal(isManageEngineCommandId(""), false, "an empty string is refused");
@@ -322,11 +340,208 @@ function runCommandCatalogTests() {
   }
 }
 
+/**
+ * The deep read of one tablet: the promoted headline, the humanising of keys and values, and the
+ * rule that identifiers never reach the screen.
+ */
+async function runDeviceDetailTests() {
+  assert.equal(humanizeKey("battery_level"), "Battery level", "a key becomes a sentence");
+  assert.equal(humanizeKey("os_version"), "OS version", "an acronym stays an acronym");
+  assert.equal(humanizeKey("wifi_mac"), "Wi-Fi MAC", "two acronyms in one key");
+
+  assert.equal(batteryPercent(0.84), 84, "a fraction reads as a percentage");
+  assert.equal(batteryPercent(84), 84, "a percentage reads as itself");
+  assert.equal(batteryPercent(-1), null, "ManageEngine's not-known reads as nothing");
+  assert.equal(batteryPercent("0.5"), 50, "a numeric string is read too");
+
+  assert.equal(
+    storageUsedPercent({ total_device_space: 64_000, used_device_space: 16_000 }),
+    25,
+    "used against total is a unit-free percentage",
+  );
+  assert.equal(
+    storageUsedPercent({ available_device_space: 30, used_device_space: 10 }),
+    25,
+    "used and free stand in for a missing total",
+  );
+  assert.equal(storageUsedPercent({ used_device_space: 10 }), null, "one number alone says nothing");
+
+  const detail = normalizeDeviceDetail("111", {
+    battery_level: 0.42,
+    device_id: "111",
+    device_name: "it.satopharma_TB328XU",
+    last_contact_time: 1_700_000_000_000,
+    model: "TB328XU",
+    network: { carrier: "Vodafone", is_roaming: false, wifi_ssid: "SATO-HQ" },
+    os_version: "13",
+    owned_by: "Corporate",
+    security: { is_encrypted: true, is_passcode_present: true, is_rooted: false },
+    total_device_space: 64_000,
+    udid: "should-not-show",
+    used_device_space: 16_000,
+  });
+
+  const headline = new Map(detail.headline.map((fact) => [fact.label, fact.value]));
+  assert.equal(headline.get("Model"), "TB328XU", "the model is promoted");
+  assert.equal(headline.get("Battery"), "42%", "the battery is promoted as a percentage");
+  assert.equal(headline.get("Storage used"), "25% of the tablet", "storage is promoted unit-free");
+  assert.equal(headline.get("Owned by"), "Corporate", "ownership is promoted");
+
+  const flat = detail.sections.flatMap((section) => section.facts);
+  const labels = flat.map((fact) => fact.label);
+  assert.ok(!labels.includes("Udid"), "an identifier never reaches the screen");
+  assert.ok(
+    detail.sections.some((section) => section.title === "Security"),
+    "a nested object becomes its own section",
+  );
+  const security = new Map(
+    (detail.sections.find((section) => section.title === "Security")?.facts ?? []).map((fact) => [
+      fact.label,
+      fact.value,
+    ]),
+  );
+  assert.equal(security.get("Is encrypted"), "Yes", "a boolean reads as Yes");
+  assert.equal(security.get("Is rooted"), "No", "a boolean reads as No");
+  const network = new Map(
+    (detail.sections.find((section) => section.title === "Network")?.facts ?? []).map((fact) => [
+      fact.label,
+      fact.value,
+    ]),
+  );
+  assert.equal(network.get("Wi-Fi network"), "SATO-HQ", "an ssid is named, not spelled out as a code");
+
+  // An unmapped field still appears — that is the whole point of reading the payload rather than a list.
+  const surprise = normalizeDeviceDetail("111", { device_id: "111", warranty_number: "W-9" });
+  assert.deepEqual(
+    surprise.sections.flatMap((section) => section.facts),
+    [{ label: "Warranty number", value: "W-9" }],
+    "a field this code has never seen still shows, humanised",
+  );
+
+  // The detail read unwraps a `device` envelope, and the history read names commands in words.
+  resetManageEngineTokenCache();
+  const wrapped = makeFetch({ api: [{ status: 200, body: { device: { model: "TB328XU", device_id: "111" } } }] });
+  const fetched = await getManageEngineDeviceDetail("111", wrapped.fetch, ENV);
+  assert.equal(fetched.headline[0]?.value, "TB328XU", "a wrapped payload is unwrapped");
+
+  resetManageEngineTokenCache();
+  const history = makeFetch({
+    api: [
+      {
+        status: 200,
+        body: {
+          commands: [
+            { added_time: 1_700_000_000_000, command_id: "c1", command_name: "corporate_wipe", command_status: 3 },
+            { added_time: 1_700_000_900_000, command_id: "c2", command_name: "lock", command_status: "Sent" },
+          ],
+        },
+      },
+    ],
+  });
+  const commands = await getManageEngineCommandHistory("111", history.fetch, ENV);
+  assert.equal(commands.length, 2, "both commands are read");
+  assert.equal(commands[0].name, "Locked", "the newest command comes first, named in words");
+  assert.equal(commands[1].name, "Removed company data", "an internal command name never reaches the screen");
+  assert.equal(commands[0].status, "Sent", "a word status passes through");
+  assert.equal(commands[1].status, "Acknowledged", "a numeric status is named");
+
+  // A fresh locate asks first, then reads — and a refused request still returns the older position.
+  resetManageEngineTokenCache();
+  const refreshed = makeFetch({
+    api: [
+      { status: 403, body: { error_description: "no licence for that" } },
+      { status: 200, body: { locations: [{ latitude: 30.1, longitude: 31.3, address: "Giza" }] } },
+    ],
+  });
+  const fresh = await requestManageEngineLocation("111", refreshed.fetch, ENV);
+  assert.equal(fresh.address, "Giza", "a refused request still falls through to the last known position");
+  const methods = refreshed.calls.filter((call) => !call.url.includes("/oauth/")).map((call) => call.init.method ?? "GET");
+  assert.deepEqual(methods, ["POST", "GET"], "the position is requested, then read");
+}
+
+/** The apps on a tablet, the company repository, and which of the two an app came from. */
+async function runDeviceAppsTests() {
+  resetManageEngineTokenCache();
+  const stub = makeFetch({
+    api: [
+      {
+        status: 200,
+        body: {
+          apps: [
+            {
+              app_id: "a1",
+              app_name: "Phoenix",
+              app_version: "1.4",
+              identifier: "com.google.enterprise.webapp.phoenix",
+              release_label_details: { release_label_id: "L1", release_label_name: "Production" },
+            },
+            { app_id: "x9", app_name: "Candy Crush", identifier: "com.king.candycrushsaga" },
+          ],
+        },
+      },
+      {
+        status: 200,
+        body: {
+          apps: [
+            {
+              app_id: "a1",
+              app_name: "Phoenix",
+              identifier: "com.google.enterprise.webapp.phoenix",
+              release_label_details: { release_label_id: "L1" },
+            },
+            { app_id: "a2", app_name: "Chrome", identifier: "com.android.chrome" },
+          ],
+        },
+      },
+    ],
+  });
+
+  const state = await getManageEngineDeviceApps("111", stub.fetch, ENV);
+  assert.deepEqual(
+    state.installed.map((app) => `${app.name}:${app.managed}`),
+    ["Candy Crush:false", "Phoenix:true"],
+    "an app in the repository is company-sent; one that is not was installed by the rep",
+  );
+  assert.equal(state.installed[1].releaseLabelId, "L1", "the release label rides along for a re-install");
+  assert.deepEqual(
+    state.available.map((app) => app.name),
+    ["Chrome"],
+    "only repository apps the tablet does not have are offered",
+  );
+  assert.equal(state.repositoryError, false, "the repository read succeeded");
+
+  // The repository failing leaves the installed list readable, and says so.
+  resetManageEngineTokenCache();
+  const halfDown = makeFetch({
+    api: [
+      { status: 200, body: { apps: [{ app_id: "a1", app_name: "Phoenix" }] } },
+      { status: 500, body: { message: "repository down" } },
+    ],
+  });
+  const degraded = await getManageEngineDeviceApps("111", halfDown.fetch, ENV);
+  assert.equal(degraded.repositoryError, true, "a failed repository read is reported, not thrown");
+  assert.equal(degraded.installed.length, 1, "the installed list still shows");
+  assert.equal(degraded.available.length, 0, "nothing is offered when the repository is unknown");
+
+  // Neither change is attempted without both ids — these throw before anything reaches ManageEngine.
+  await assert.rejects(
+    () => installManageEngineApp({ appId: "a1", deviceId: "" }, "B-10", stub.fetch, ENV),
+    ManageEngineAppInputError,
+    "an install with no tablet is refused",
+  );
+  await assert.rejects(
+    () => removeManageEngineApp({ appId: "", deviceId: "111" }, "B-10", stub.fetch, ENV),
+    ManageEngineAppInputError,
+    "a removal with no app is refused",
+  );
+}
+
 function runErrorMappingTests() {
   const status = (error: unknown) => (manageEngineErrorResponse(error, "fallback") as { status: number }).status;
   assert.equal(status(new Error("forbidden: nope")), 403, "a forbidden error maps to 403");
   assert.equal(status(new ManageEngineNotConfiguredError("set the secrets")), 400, "not configured maps to 400");
   assert.equal(status(new ManageEngineCommandInputError("bad input")), 400, "an input error maps to 400");
+  assert.equal(status(new ManageEngineAppInputError("no app")), 400, "an app input error maps to 400");
   assert.equal(status(new ManageEngineRequestError(502, "upstream")), 502, "a ManageEngine request error maps to 502");
   assert.equal(status(new Error("something else")), 500, "an unknown error maps to 500");
 }
@@ -335,6 +550,8 @@ export async function runManageEngineBridgeTests() {
   await runAuthTests();
   await runClientTests();
   await runDeviceTests();
+  await runDeviceDetailTests();
+  await runDeviceAppsTests();
   runCommandCatalogTests();
   runErrorMappingTests();
 }

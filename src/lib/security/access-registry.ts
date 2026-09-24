@@ -1372,11 +1372,17 @@ export const accessRegistry = [
   // A tablet plugged in by USB joins the custody register under the next PHX-TAB number; the
   // register's own createDevice writes the required audit row.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/tablets/usb", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
-  // ManageEngine bridge. GET reads the fleet (and a device's location with ?deviceId=); POST issues one
-  // remote command — lock, restart, reset the screen lock, lost mode on/off, or a wipe — each of which
-  // reaches a real tablet and carries its own REQUIRED audit row (manageengine_device_command).
+  // ManageEngine bridge. GET reads the fleet, and with ?deviceId= one tablet — its position, or with
+  // &view= everything ManageEngine holds about it, the apps on it, or its command history. POST issues
+  // one remote command — lock, restart, reset the screen lock, report in, ring, shut down, view or
+  // control the screen, kiosk mode, lost mode, or a wipe — each of which reaches a real tablet and
+  // carries its own REQUIRED audit row (manageengine_device_command).
   sessionApi({ methods: ["GET"], pattern: "/api/devices/manageengine", permission: { resource: "company_devices", action: "approve" } }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/manageengine", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
+  // Putting an app on a rep's tablet or taking one off reaches that tablet just as a command does, so
+  // it carries the same gate and its own REQUIRED audit row (manageengine_device_app). Refreshing the
+  // app list is a read wearing a POST — the service writes no row for it.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/manageengine/apps", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
   // Visual Aids (owner, 2026-09-18). A rep and his DM, RM and NSM read the ACTIVE aids of their own
   // line — the line check lives in src/lib/visual-aids/service.ts, below the permission. Marketing
   // Manager, GPM and Super Admin upload (create) and retire or replace (update); nobody deletes. The

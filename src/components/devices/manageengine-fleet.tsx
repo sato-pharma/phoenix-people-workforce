@@ -4,10 +4,15 @@
  * Remote control of the rep tablets, through the ManageEngine bridge.
  *
  * The tablets are enrolled in ManageEngine (which has device quota); Phoenix drives them over
- * ManageEngine's REST API so there is one console to look at. This section lists the fleet matched to
- * the custody register and, per tablet, the remote actions: lock, restart, reset the screen lock,
+ * ManageEngine's REST API so there is one console to look at — this one. This section lists the fleet
+ * matched to the custody register and, per tablet, every remote action: lock, restart, reset the
+ * screen lock, report in, ring, shut down, view or control the screen, pause and resume kiosk mode,
  * lost mode on/off, locate, and the two wipes. Every press hits `/api/devices/manageengine`, which is
  * Super Admin only, same-origin, and writes a required audit row naming the tablet.
+ *
+ * OPENING A TABLET mounts `ManageEngineTabletPanel` beneath its row — everything ManageEngine holds
+ * about it, the apps on it (with sending and removing), and its command history. Those three reads
+ * only run while a tablet is open, so the fleet list stays one request.
  *
  * DESIGN IDENTITY is the Rep Tablets page it sits under — the same slate borders, square corners and
  * 9px micro-labels. IT FITS THE SCREEN: the desktop table is `table-fixed` with three columns and the
@@ -15,9 +20,10 @@
  * get cards. Nothing truncates — every line wraps. Destructive actions ask twice before they fire.
  */
 
-import { Loader2, MapPin } from "lucide-react";
+import { ChevronDown, ChevronRight, Loader2, MapPin } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
+import { ManageEngineTabletPanel } from "@/components/devices/manageengine-tablet-panel";
 import { cairoDateTime } from "@/lib/format/cairo-datetime";
 
 const MICRO_LABEL = "text-[9px] font-black uppercase tracking-[0.14em] text-slate-500";
@@ -86,10 +92,22 @@ function messageOf(caught: unknown, fallback: string): string {
   return caught instanceof Error && caught.message ? caught.message : fallback;
 }
 
+/**
+ * Every non-destructive action, in the order a person reaches for them: the everyday three, then
+ * finding a tablet, then the screen-sharing pair, then kiosk mode. Each maps to one command id the
+ * route knows; ManageEngine answers with its own reason when a tablet or a licence cannot take one.
+ */
 const NORMAL_ACTIONS: ReadonlyArray<{ id: string; label: string }> = [
   { id: "LOCK", label: "Lock now" },
   { id: "RESTART", label: "Restart" },
   { id: "RESET_PASSCODE", label: "Reset screen lock" },
+  { id: "SCAN", label: "Report in now" },
+  { id: "RING", label: "Ring the alarm" },
+  { id: "SHUTDOWN", label: "Shut down" },
+  { id: "REMOTE_VIEW", label: "View the screen" },
+  { id: "REMOTE_CONTROL", label: "Take control" },
+  { id: "PAUSE_KIOSK", label: "Pause kiosk mode" },
+  { id: "RESUME_KIOSK", label: "Resume kiosk mode" },
 ];
 const DESTRUCTIVE_ACTIONS: ReadonlyArray<{ id: string; label: string; armed: string }> = [
   { armed: "Press again to remove", id: "CORPORATE_WIPE", label: "Remove company data" },
@@ -115,6 +133,8 @@ export function ManageEngineFleet({ bridgeConfigured }: { bridgeConfigured: bool
   const [notices, setNotices] = useState<Record<string, string>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [locations, setLocations] = useState<Record<string, string>>({});
+  /** One tablet is open at a time — its three deep reads only run while it is. */
+  const [openDeviceId, setOpenDeviceId] = useState<string | null>(null);
 
   const load = useCallback(async (isCurrent: () => boolean) => {
     try {
@@ -169,7 +189,9 @@ export function ManageEngineFleet({ bridgeConfigured }: { bridgeConfigured: bool
     setBusyKey(key);
     setErrors((previous) => ({ ...previous, [row.deviceId]: "" }));
     try {
-      const result = await requestJson<LocationResult>(`/api/devices/manageengine?deviceId=${encodeURIComponent(row.deviceId)}`);
+      const result = await requestJson<LocationResult>(
+        `/api/devices/manageengine?deviceId=${encodeURIComponent(row.deviceId)}&view=locate`,
+      );
       const when = result.locatedAt ? ` · ${cairoDateTime(result.locatedAt)}` : "";
       setLocations((previous) => ({ ...previous, [row.deviceId]: `${locationText(result)}${when}` }));
     } catch (caught) {
@@ -177,6 +199,10 @@ export function ManageEngineFleet({ bridgeConfigured }: { bridgeConfigured: bool
     } finally {
       setBusyKey(null);
     }
+  }, []);
+
+  const toggleOpen = useCallback((row: FleetRow) => {
+    setOpenDeviceId((current) => (current === row.deviceId ? null : row.deviceId));
   }, []);
 
   const rows = data?.rows ?? [];
@@ -188,8 +214,11 @@ export function ManageEngineFleet({ bridgeConfigured }: { bridgeConfigured: bool
         <p className="text-[11px] font-semibold text-slate-500">Live from ManageEngine · Super Admin only</p>
       </div>
       <p className="mt-1 max-w-3xl text-[12px] font-semibold text-slate-600">
-        Lock, restart, reset a screen lock, put a lost tablet into lost mode and locate it, or wipe one that is stolen or
-        being retired. Every action is recorded against the tablet in the audit log.
+        Lock, restart, reset a screen lock, ring a tablet that is mislaid, ask one to report in, shut it down, view or
+        take over its screen, pause and resume kiosk mode, put a lost tablet into lost mode and locate it, or wipe one
+        that is stolen or being retired. Open a tablet to see everything ManageEngine holds about it, the apps on it —
+        sending one or taking one off — and every command it has been sent. Each action is recorded against the tablet in
+        the audit log.
       </p>
 
       {setupRequired ? (
@@ -254,6 +283,8 @@ export function ManageEngineFleet({ bridgeConfigured }: { bridgeConfigured: bool
                     notice={notices[row.deviceId]}
                     onCommand={runCommand}
                     onLocate={locate}
+                    onToggle={toggleOpen}
+                    open={openDeviceId === row.deviceId}
                     row={row}
                     variant="desktop"
                   />
@@ -275,6 +306,8 @@ export function ManageEngineFleet({ bridgeConfigured }: { bridgeConfigured: bool
                 notice={notices[row.deviceId]}
                 onCommand={runCommand}
                 onLocate={locate}
+                onToggle={toggleOpen}
+                open={openDeviceId === row.deviceId}
                 row={row}
                 variant="mobile"
               />
@@ -295,8 +328,11 @@ type BlockProps = {
   notice?: string;
   error?: string;
   location?: string;
+  /** This tablet's deep panel is showing — its three reads are mounted. */
+  open: boolean;
   onCommand: (row: FleetRow, command: string, destructive: boolean) => void;
   onLocate: (row: FleetRow) => void;
+  onToggle: (row: FleetRow) => void;
 };
 
 function TabletCell({ row }: { row: FleetRow }) {
@@ -365,7 +401,7 @@ function StatusCell({ row, location }: { row: FleetRow; location?: string }) {
   );
 }
 
-function FleetActions({ row, busyKey, confirmKey, onCommand, onLocate }: BlockProps) {
+function FleetActions({ row, busyKey, confirmKey, open, onCommand, onLocate, onToggle }: BlockProps) {
   const busy = (key: string) => busyKey === key;
   const anyBusy = busyKey !== null && busyKey.startsWith(`${row.deviceId}:`);
   const lostToggle = row.lostMode
@@ -373,6 +409,14 @@ function FleetActions({ row, busyKey, confirmKey, onCommand, onLocate }: BlockPr
     : { id: "ENABLE_LOST_MODE", label: "Put in lost mode" };
   return (
     <div className="flex flex-wrap gap-2">
+      <button className={ACTION_BUTTON} onClick={() => onToggle(row)} type="button">
+        {open ? (
+          <ChevronDown className="h-3.5 w-3.5" aria-hidden />
+        ) : (
+          <ChevronRight className="h-3.5 w-3.5" aria-hidden />
+        )}
+        {open ? "Close this tablet" : "Open this tablet"}
+      </button>
       {NORMAL_ACTIONS.map((action) => (
         <button
           className={ACTION_BUTTON}
@@ -418,7 +462,7 @@ function FleetActions({ row, busyKey, confirmKey, onCommand, onLocate }: BlockPr
 }
 
 function FleetRowBlock(props: BlockProps) {
-  const { row, variant, columns, notice, error, location } = props;
+  const { row, variant, columns, notice, error, location, open } = props;
   if (variant === "mobile") {
     return (
       <div className="space-y-2 border border-slate-200 bg-white px-4 py-3">
@@ -433,6 +477,7 @@ function FleetRowBlock(props: BlockProps) {
           <FleetActions {...props} />
           {notice ? <p className="mt-2 break-words text-[11px] font-bold text-emerald-800">{notice}</p> : null}
           {error ? <p className="mt-2 break-words text-[11px] font-bold text-rose-700">{error}</p> : null}
+          {open ? <ManageEngineTabletPanel deviceId={row.deviceId} /> : null}
         </div>
       </div>
     );
@@ -455,6 +500,7 @@ function FleetRowBlock(props: BlockProps) {
           <FleetActions {...props} />
           {notice ? <p className="mt-2 break-words text-[11px] font-bold text-emerald-800">{notice}</p> : null}
           {error ? <p className="mt-2 break-words text-[11px] font-bold text-rose-700">{error}</p> : null}
+          {open ? <ManageEngineTabletPanel deviceId={row.deviceId} /> : null}
         </td>
       </tr>
     </>
