@@ -142,11 +142,53 @@ function CustomersTab({ distributorCode, bricks }: { distributorCode: string; br
     finally { setBusyKey(null); }
   }
 
+  // One definition per control, used by BOTH the desktop row and the mobile card, so the phone can
+  // never drift into a read-only copy of an editable table. Every one is `w-full` — the fixed
+  // `w-40`/`w-48`/`w-56` they carried are exactly the un-shrinkable widths that dragged this table
+  // to 561px inside a 283px container at 375px, and the wrapper's `overflow-auto` then scrolled it
+  // sideways. The colgroup owns the widths now, so the table cannot exceed its container.
+  const cardLabel = "mb-1 block text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint";
+  const brickFor = (r: CustomerRow) => edits[r.customerCode] ?? r.brickId;
+
+  const customerFacts = (r: CustomerRow) => (
+    <>
+      <span className="block break-words font-semibold text-phx-ink">{r.customerName || r.customerCode}</span>
+      <span className="block break-words font-mono text-xs text-phx-ink-soft">{r.customerCode}{r.address ? ` · ${r.address}` : ""}</span>
+      {r.source === "auto" ? (
+        <span className="mt-0.5 inline-flex items-center gap-1 rounded-full border border-phx-info-line bg-phx-info-bg px-1.5 py-0.5 text-phx-2xs font-bold text-phx-info">
+          AUTO{typeof r.confidence === "number" ? ` · ${r.confidence}%` : ""}
+        </span>
+      ) : null}
+    </>
+  );
+  const brickPicker = (r: CustomerRow) => (
+    <MappingCombobox onChange={(v) => setEdits((p) => ({ ...p, [r.customerCode]: v }))} options={brickOptions} placeholder="brick" value={brickFor(r)} />
+  );
+  const saveButton = (r: CustomerRow) => (brickFor(r) === r.brickId ? null : (
+    <Button className="h-8 gap-1 bg-[#0B0B0B] font-black text-white hover:bg-phx-accent" disabled={busyKey === r.customerCode}
+      onClick={async () => { if (await post({ action: "upsert", distributorCode, customerCode: r.customerCode, customerName: r.customerName, address: r.address, brickId: brickFor(r) }, r.customerCode)) void load(offset, search, sourceFilter); }}
+      type="button">{busyKey === r.customerCode ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}Save</Button>
+  ));
+  const deleteButton = (r: CustomerRow) => (
+    <Button className="h-8 gap-1 border border-rose-200 text-rose-600 hover:bg-rose-50" disabled={busyKey === r.customerCode}
+      onClick={async () => { if (confirm(`Delete mapping for ${r.customerCode}?`) && await post({ action: "delete", distributorCode, customerCode: r.customerCode }, r.customerCode)) void load(offset, search, sourceFilter); }}
+      type="button" variant="secondary"><Trash2 className="h-3.5 w-3.5" /></Button>
+  );
+
+  const addCodeInput = <input className="h-8 w-full rounded border border-phx-line px-2 text-xs" onChange={(e) => setAddCode(e.target.value)} placeholder="customer code" value={addCode} />;
+  const addNameInput = <input className="h-8 w-full rounded border border-phx-line px-2 text-xs" onChange={(e) => setAddName(e.target.value)} placeholder="name (optional)" value={addName} />;
+  const addBrickPicker = <MappingCombobox onChange={setAddBrick} options={brickOptions} placeholder="brick (B10…)" value={addBrick} />;
+  const addButton = (
+    <Button className="h-8 w-full gap-1 bg-phx-accent font-black text-white hover:bg-[#EA6A0C] md:w-auto" disabled={busyKey === "add" || !addCode.trim() || !addBrick}
+      onClick={async () => { if (await post({ action: "upsert", distributorCode, customerCode: addCode.trim(), customerName: addName.trim(), brickId: addBrick }, "add")) { setAddCode(""); setAddName(""); setAddBrick(""); void load(offset, search, sourceFilter); } }}
+      type="button">{busyKey === "add" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}Add</Button>
+  );
+
   return (
     <div className="space-y-3 p-4">
       <div className="flex flex-wrap items-center gap-2">
         <input
-          className="h-9 w-64 rounded-[6px] border border-phx-line px-3 text-sm outline-none focus:border-phx-accent-line"
+          className="h-9 w-full rounded-[6px] border border-phx-line px-3 text-sm outline-none focus:border-phx-accent-line sm:w-64"
           onChange={(e) => setSearch(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") void load(0, search, sourceFilter); }}
           placeholder="Search code / name / address"
@@ -180,55 +222,49 @@ function CustomersTab({ distributorCode, bricks }: { distributorCode: string; br
 
       {error ? <AdminCallout tone="danger"><span>{error}</span></AdminCallout> : null}
 
-      <div className="overflow-auto rounded-xl border border-phx-line">
-        <table className="w-full text-sm">
+      {/* A phone gets cards, a desktop gets the table (the admin-shell rule) — three editable
+          columns cannot hold a code input, a brick combobox and two buttons inside 283px, and
+          squeezing them is what made this table scroll sideways in the first place. */}
+      <div className="space-y-2 md:hidden">
+        <div className="space-y-2 border border-[#FFE8D6] bg-[#FFFBF5] p-3">
+          <div><span className={cardLabel}>Customer</span>{addCodeInput}<div className="mt-1">{addNameInput}</div></div>
+          <div><span className={cardLabel}>Brick</span>{addBrickPicker}</div>
+          {addButton}
+        </div>
+        {rows.map((r) => (
+          <div className="space-y-2 border border-phx-line p-3" key={r.customerCode}>
+            <div>{customerFacts(r)}</div>
+            <div><span className={cardLabel}>Brick</span>{brickPicker(r)}</div>
+            <div className="flex flex-wrap items-center gap-1.5">{saveButton(r)}{deleteButton(r)}</div>
+          </div>
+        ))}
+        {rows.length === 0 && !loading ? <p className="border border-phx-line p-4 text-center text-xs text-phx-ink-soft">No customer mappings yet.</p> : null}
+      </div>
+
+      <div className="hidden overflow-hidden rounded-xl border border-phx-line md:block">
+        <table className="w-full table-fixed text-sm">
+          <colgroup>
+            <col className="w-[38%]" /><col className="w-[38%]" /><col className="w-[24%]" />
+          </colgroup>
           <thead className={headRow}><tr>
             <th className="px-3 py-2">Customer</th><th className="px-3 py-2">Brick</th><th className="px-3 py-2 text-right">Actions</th>
           </tr></thead>
           <tbody>
             {/* add row */}
             <tr className="border-b border-[#FFE8D6] bg-[#FFFBF5]">
-              <td className="px-3 py-2">
-                <input className="mb-1 h-8 w-40 rounded border border-phx-line px-2 text-xs" onChange={(e) => setAddCode(e.target.value)} placeholder="customer code" value={addCode} />
-                <input className="h-8 w-48 rounded border border-phx-line px-2 text-xs" onChange={(e) => setAddName(e.target.value)} placeholder="name (optional)" value={addName} />
-              </td>
-              <td className="px-3 py-2"><div className="w-56"><MappingCombobox onChange={setAddBrick} options={brickOptions} placeholder="brick (B10…)" value={addBrick} /></div></td>
-              <td className="px-3 py-2 text-right">
-                <Button className="h-8 gap-1 bg-phx-accent font-black text-white hover:bg-[#EA6A0C]" disabled={busyKey === "add" || !addCode.trim() || !addBrick}
-                  onClick={async () => { if (await post({ action: "upsert", distributorCode, customerCode: addCode.trim(), customerName: addName.trim(), brickId: addBrick }, "add")) { setAddCode(""); setAddName(""); setAddBrick(""); void load(offset, search, sourceFilter); } }}
-                  type="button">{busyKey === "add" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}Add</Button>
-              </td>
+              <td className="px-3 py-2">{addCodeInput}<div className="mt-1">{addNameInput}</div></td>
+              <td className="px-3 py-2">{addBrickPicker}</td>
+              <td className="px-3 py-2 text-right">{addButton}</td>
             </tr>
-            {rows.map((r) => {
-              const editing = edits[r.customerCode] ?? r.brickId;
-              const dirty = editing !== r.brickId;
-              return (
-                <tr className="border-b border-[#FFE8D6]" key={r.customerCode}>
-                  <td className="px-3 py-2">
-                    <span className="block font-semibold text-phx-ink">{r.customerName || r.customerCode}</span>
-                    <span className="block font-mono text-xs text-phx-ink-soft">{r.customerCode}{r.address ? ` · ${r.address}` : ""}</span>
-                    {r.source === "auto" ? (
-                      <span className="mt-0.5 inline-flex items-center gap-1 rounded-full border border-phx-info-line bg-phx-info-bg px-1.5 py-0.5 text-phx-2xs font-bold text-phx-info">
-                        AUTO{typeof r.confidence === "number" ? ` · ${r.confidence}%` : ""}
-                      </span>
-                    ) : null}
-                  </td>
-                  <td className="px-3 py-2"><div className="w-56"><MappingCombobox onChange={(v) => setEdits((p) => ({ ...p, [r.customerCode]: v }))} options={brickOptions} placeholder="brick" value={editing} /></div></td>
-                  <td className="px-3 py-2">
-                    <div className="flex items-center justify-end gap-1.5">
-                      {dirty ? (
-                        <Button className="h-8 gap-1 bg-[#0B0B0B] font-black text-white hover:bg-phx-accent" disabled={busyKey === r.customerCode}
-                          onClick={async () => { if (await post({ action: "upsert", distributorCode, customerCode: r.customerCode, customerName: r.customerName, address: r.address, brickId: editing }, r.customerCode)) void load(offset, search, sourceFilter); }}
-                          type="button">{busyKey === r.customerCode ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}Save</Button>
-                      ) : null}
-                      <Button className="h-8 gap-1 border border-rose-200 text-rose-600 hover:bg-rose-50" disabled={busyKey === r.customerCode}
-                        onClick={async () => { if (confirm(`Delete mapping for ${r.customerCode}?`) && await post({ action: "delete", distributorCode, customerCode: r.customerCode }, r.customerCode)) void load(offset, search, sourceFilter); }}
-                        type="button" variant="secondary"><Trash2 className="h-3.5 w-3.5" /></Button>
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
+            {rows.map((r) => (
+              <tr className="border-b border-[#FFE8D6] align-top" key={r.customerCode}>
+                <td className="px-3 py-2">{customerFacts(r)}</td>
+                <td className="px-3 py-2">{brickPicker(r)}</td>
+                <td className="px-3 py-2">
+                  <div className="flex flex-wrap items-center justify-end gap-1.5">{saveButton(r)}{deleteButton(r)}</div>
+                </td>
+              </tr>
+            ))}
             {rows.length === 0 && !loading ? <tr><td className="px-3 py-6 text-center text-xs text-phx-ink-soft" colSpan={3}>No customer mappings yet.</td></tr> : null}
           </tbody>
         </table>
@@ -281,6 +317,23 @@ function AliasTab({ distributorCode, kind, options, codeLabel }: { distributorCo
     finally { setBusyKey(null); }
   }
 
+  // One definition per control, shared by the desktop row and the mobile card. Both the raw-text
+  // input and the code combobox carried `w-56`; two of those plus an Add button cannot fit inside
+  // 283px, so the table reached 561px and the wrapper's `overflow-auto` scrolled it sideways.
+  const cardLabel = "mb-1 block text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint";
+  const addRawInput = <input className="h-8 w-full rounded border border-phx-line px-2 text-xs" onChange={(e) => setAddRaw(e.target.value)} placeholder={kind === "product" ? "item code or name" : "area text"} value={addRaw} />;
+  const addCodePicker = <MappingCombobox onChange={setAddCode} options={options} placeholder={codeLabel} value={addCode} />;
+  const addButton = (
+    <Button className="h-8 w-full gap-1 bg-phx-accent font-black text-white hover:bg-[#EA6A0C] md:w-auto" disabled={busyKey === "add" || !addRaw.trim() || !addCode}
+      onClick={async () => { if (await post({ action: "upsert", distributorCode, raw: addRaw.trim(), code: addCode }, "add")) { setAddRaw(""); setAddCode(""); void load(); } }}
+      type="button">{busyKey === "add" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}Add</Button>
+  );
+  const deleteButton = (r: AliasRow) => (
+    <Button className="h-8 gap-1 border border-rose-200 text-rose-600 hover:bg-rose-50" disabled={busyKey === r.normalizedAlias}
+      onClick={async () => { if (confirm(`Delete mapping "${r.alias || r.normalizedAlias}"?`) && await post({ action: "delete", distributorCode, normalizedAlias: r.normalizedAlias, code: r.code }, r.normalizedAlias)) void load(); }}
+      type="button" variant="secondary"><Trash2 className="h-3.5 w-3.5" /></Button>
+  );
+
   return (
     <div className="space-y-3 p-4">
       <div className="flex items-center gap-2 text-xs text-phx-ink-soft">{rows.length} mapped {loading ? <Loader2 className="h-4 w-4 animate-spin text-phx-accent" /> : null}</div>
@@ -294,28 +347,44 @@ function AliasTab({ distributorCode, kind, options, codeLabel }: { distributorCo
         uploadUrl={kind === "product" ? "/api/sales/monthly-import/product-mapping" : "/api/sales/monthly-import/territory-mapping"}
       />
       {error ? <AdminCallout tone="danger"><span>{error}</span></AdminCallout> : null}
-      <div className="overflow-auto rounded-xl border border-phx-line">
-        <table className="w-full text-sm">
+      {/* Cards on a phone, the table from `md` up — the admin-shell rule. An alias is raw
+          distributor text, so every cell wraps with `break-words`: a single unspaced item name is
+          wider than a fixed column, and nothing scrolls to reveal what a fixed column cuts. */}
+      <div className="space-y-2 md:hidden">
+        <div className="space-y-2 border border-[#FFE8D6] bg-[#FFFBF5] p-3">
+          <div><span className={cardLabel}>Raw {kind === "product" ? "item" : "territory"}</span>{addRawInput}</div>
+          <div><span className={cardLabel}>Phoenix {codeLabel}</span>{addCodePicker}</div>
+          {addButton}
+        </div>
+        {rows.map((r) => (
+          <div className="flex items-start justify-between gap-2 border border-phx-line p-3" key={`${r.normalizedAlias}-${r.code}`}>
+            <div className="min-w-0">
+              <span className="block break-words font-semibold text-phx-ink">{r.alias || r.normalizedAlias}</span>
+              <span className="mt-0.5 block break-words font-mono text-xs text-phx-ink">{r.code}</span>
+            </div>
+            {deleteButton(r)}
+          </div>
+        ))}
+        {rows.length === 0 && !loading ? <p className="border border-phx-line p-4 text-center text-xs text-phx-ink-soft">No mappings yet.</p> : null}
+      </div>
+
+      <div className="hidden overflow-hidden rounded-xl border border-phx-line md:block">
+        <table className="w-full table-fixed text-sm">
+          <colgroup>
+            <col className="w-[42%]" /><col className="w-[42%]" /><col className="w-[16%]" />
+          </colgroup>
           <thead className={headRow}><tr><th className="px-3 py-2">Raw {kind === "product" ? "item" : "territory"}</th><th className="px-3 py-2">Phoenix {codeLabel}</th><th className="px-3 py-2 text-right">Actions</th></tr></thead>
           <tbody>
             <tr className="border-b border-[#FFE8D6] bg-[#FFFBF5]">
-              <td className="px-3 py-2"><input className="h-8 w-56 rounded border border-phx-line px-2 text-xs" onChange={(e) => setAddRaw(e.target.value)} placeholder={kind === "product" ? "item code or name" : "area text"} value={addRaw} /></td>
-              <td className="px-3 py-2"><div className="w-56"><MappingCombobox onChange={setAddCode} options={options} placeholder={codeLabel} value={addCode} /></div></td>
-              <td className="px-3 py-2 text-right">
-                <Button className="h-8 gap-1 bg-phx-accent font-black text-white hover:bg-[#EA6A0C]" disabled={busyKey === "add" || !addRaw.trim() || !addCode}
-                  onClick={async () => { if (await post({ action: "upsert", distributorCode, raw: addRaw.trim(), code: addCode }, "add")) { setAddRaw(""); setAddCode(""); void load(); } }}
-                  type="button">{busyKey === "add" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}Add</Button>
-              </td>
+              <td className="px-3 py-2">{addRawInput}</td>
+              <td className="px-3 py-2">{addCodePicker}</td>
+              <td className="px-3 py-2 text-right">{addButton}</td>
             </tr>
             {rows.map((r) => (
-              <tr className="border-b border-[#FFE8D6]" key={`${r.normalizedAlias}-${r.code}`}>
-                <td className="px-3 py-2 font-semibold text-phx-ink">{r.alias || r.normalizedAlias}</td>
-                <td className="px-3 py-2 font-mono text-xs text-phx-ink">{r.code}</td>
-                <td className="px-3 py-2 text-right">
-                  <Button className="h-8 gap-1 border border-rose-200 text-rose-600 hover:bg-rose-50" disabled={busyKey === r.normalizedAlias}
-                    onClick={async () => { if (confirm(`Delete mapping "${r.alias || r.normalizedAlias}"?`) && await post({ action: "delete", distributorCode, normalizedAlias: r.normalizedAlias, code: r.code }, r.normalizedAlias)) void load(); }}
-                    type="button" variant="secondary"><Trash2 className="h-3.5 w-3.5" /></Button>
-                </td>
+              <tr className="border-b border-[#FFE8D6] align-top" key={`${r.normalizedAlias}-${r.code}`}>
+                <td className="break-words px-3 py-2 font-semibold text-phx-ink">{r.alias || r.normalizedAlias}</td>
+                <td className="break-words px-3 py-2 font-mono text-xs text-phx-ink">{r.code}</td>
+                <td className="px-3 py-2 text-right">{deleteButton(r)}</td>
               </tr>
             ))}
             {rows.length === 0 && !loading ? <tr><td className="px-3 py-6 text-center text-xs text-phx-ink-soft" colSpan={3}>No mappings yet.</td></tr> : null}
