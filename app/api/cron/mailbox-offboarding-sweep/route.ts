@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { runDepartedAccessSweep } from "@/lib/auth/departed-access-sweep";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { runMailboxOffboardingSweep } from "@/lib/mailbox-offboarding/sweep";
+import { runRobotSweepPass } from "@/lib/mailbox-offboarding/robot/sweep-hook";
 import { describeThrown } from "@/lib/error-monitor/describe-thrown";
 import { pingDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { logError } from "@/lib/observability/log";
@@ -48,6 +49,14 @@ export const maxDuration = 60;
  * AND IT FORGETS LEAVERS' "MY EMAIL" CONNECTIONS, right after the departed-access sweep has turned
  * their logins off: a sealed app password must not outlive its owner's access to Phoenix. Same
  * reasoning as above — best-effort, never throws, reported in the response, drives no alarm.
+ *
+ * AND, LAST, IT RUNS THE TURBIFY REVOCATION ROBOT over the tasks it just alerted on. This is where
+ * the register stops being a to-do list a human works and starts closing itself. The robot is OFF
+ * by default (`PHOENIX_TURBIFY_ROBOT_ENABLED`), reports its plan without touching a mailbox until a
+ * live run is asked for explicitly (`PHOENIX_TURBIFY_ROBOT_DRY_RUN=false`), and refuses to act at
+ * all until its console driver is calibrated. See sweep-hook.ts for the three locks. Best-effort,
+ * never throws, reported in the response under `robot`, and — like its neighbours — it drives no
+ * alarm of its own: a robot that could not sign in must not turn the mailbox switch red.
  */
 export async function GET(request: Request) {
   const denied = assertCronAuthorized(request, "cron/mailbox-offboarding-sweep");
@@ -58,6 +67,10 @@ export async function GET(request: Request) {
     const access = await runDepartedAccessSweep();
     const personalMailboxes = await purgeDepartedPersonalMailboxes();
     const result = await runMailboxOffboardingSweep();
+    // Last, and only after the register is up to date: run the robot over what the sweep found. It
+    // never throws (sweep-hook.ts) and its outcome does not feed the switch below — a robot that
+    // could not sign in is a different question from "is a leaver holding a live mailbox?".
+    const robot = await runRobotSweepPass();
     // Keyed on the error COUNT, not on whether this threw. The sweep catches its own failures and
     // carries on (sweep.ts) — including the worst case, where it could not read the register at all
     // and returns errors: 1. A switch driven by throw/no-throw would call that run green, and green
@@ -68,7 +81,7 @@ export async function GET(request: Request) {
       result.errors > 0 ? "fail" : "success",
       result.errors > 0 ? `${result.errors} error(s) during the sweep` : undefined,
     );
-    return NextResponse.json({ success: true, ...result, departedAccess: access, personalMailboxes });
+    return NextResponse.json({ success: true, ...result, departedAccess: access, personalMailboxes, robot });
   } catch (error) {
     await pingDeadMansSwitch(
       "phoenix-mailbox-offboarding-sweep",
