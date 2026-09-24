@@ -142,6 +142,18 @@ export const NAVIGATION_REACHABILITY_BACKLOG: readonly ReachabilityGap[] = [
   // typed address only. Clear this row by deleting the pilot's pages, never by linking them again —
   // its portal twin is recorded in the blind-spot rows below and goes with it.
   { route: "/admin/phoenix-crm", roles: ["CEO","Finance Manager","Financial Advisor","HR Advisory","HR Operations","SFE Manager","Super Admin"], kind: "delisted-by-ruling", reason: "The 2026-09-14 Phoenix CRM pilot's admin page. Its only link was the Phoenix CRM rail card, handed to the clean module at /admin/field-crm when the owner ruled on 2026-09-16 that the pilot's link is hidden once that module ships; the pilot is removed after go-live. The page still serves by direct URL, and only to the pilot's own seats. Guard's mechanical bucket: no-link-anywhere.", recorded: "2026-09-17" },
+  // ── My List, delisted 2026-09-25 ────────────────────────────────────────────────────────────────
+  // My List's board moved into Phoenix CRM's List tab. The owner hid its sidebar row on 2026-09-25
+  // (#4355, "hide the my-list board") and had the dormant board code deleted the same day ("delete the
+  // dormant My List board code"): the MyListBoardView component, the getMyListScope resolver, the
+  // showMyListTab flag and this catalog entry are all gone. The /employee-portals/my-list route
+  // survives ONLY as a redirect onto /employee-portals/field-crm?tab=list, so a saved bookmark or a
+  // stale link still lands on the live board. The reverse guard read this catalog entry as the route's
+  // one nav home (the real sidebar is the flag-gated layout, which #4355 had already switched off), so
+  // removing it is what strands the route — on purpose. Clear this row by deleting the page, never by
+  // linking it again. Guard's mechanical bucket: shell-mirror-of-a-linked-route (its not-in-portal-mode
+  // redirect points at /overview, which navigation offers).
+  { route: "/employee-portals/my-list", roles: ["District Manager","Employee","Group Product Manager","Manager","Marketing Manager","Medical Rep","National Sales Manager","Product Manager","Regional Manager","Training Manager"], kind: "delisted-by-ruling", reason: "My List's board moved into Phoenix CRM's List tab; its sidebar row was hidden 2026-09-25 (#4355) and its dormant board code deleted the same day (owner: 'hide the my-list board', 'delete the dormant My List board code'). The route survives only as a redirect onto /employee-portals/field-crm?tab=list, so a saved bookmark still lands on the live board. Delisted on purpose — clear this row only by deleting the page, never by linking it again. Guard's mechanical bucket: shell-mirror-of-a-linked-route.", recorded: "2026-09-25" },
   { route: "/admin/direct-orders/new", roles: ["CEO", "Finance Manager", "Financial Advisor", "HR Advisory", "HR Operations", "SFE Manager", "Super Admin"], kind: "linked-from-a-component", reason: "Reached from a hand-written link in app/employee-portals/direct-orders/new/page.tsx, not the sidebar rail or a hub card — a recorded decision.", recorded: "2026-08-29" },
   { route: "/admin/email-notifications", roles: ["Super Admin"], kind: "linked-from-a-component", reason: "Reached from a hand-written link in src/lib/notifications/email-control-center.ts, not the sidebar rail or a hub card — a recorded decision.", recorded: "2026-08-29" },
   { route: "/admin/field-sales/dsm-performance", roles: ["CEO", "Finance Manager", "SFE Manager", "Super Admin"], kind: "linked-from-a-component", reason: "Reached from a hand-written link in src/components/admin/ceo-command-center.tsx, not the sidebar rail or a hub card — a recorded decision.", recorded: "2026-08-29" },

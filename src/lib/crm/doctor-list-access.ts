@@ -54,31 +54,6 @@ export {
   type DoctorListScopeBasis,
 };
 
-/**
- * Whose list My List opens: the viewer's own, and nobody else's, ever.
- *
- * The reach is decided from the SESSION's HR id alone — never from a URL parameter, a picker or the
- * org tree. A rep reads one list, their own, so there is nothing for a hand-typed `?rep=` to widen
- * and no directory walk that could put anyone else in scope. KPIs resolves a Medical Rep to the
- * same single-person panel (`doctor-coverage-scope.ts`), so the two boards agree on whose it is.
- *
- * FAILS CLOSED. A seat that is not on the My List role list, or a session with no HR id, resolves
- * to `none` with the reason in words — never to `company`, which is what an unguarded fallthrough
- * into the manager resolver would hand that seat.
- *
- * Pure, so the whole decision is testable without a database.
- */
-export function getMyListScope(access: Pick<AccessContext, "hrId" | "role">): CrmManagerScope {
-  if (!canAccessMyList(access)) {
-    return { kind: "none", reason: `My List is not available to the ${access.role} role.` };
-  }
-  const hrId = access.hrId?.trim() ?? "";
-  if (!hrId) {
-    return { kind: "none", reason: "No HR ID is attached to your session, so your contact list cannot be found." };
-  }
-  return { kind: "agents", agentHrIds: [hrId], label: `${access.role} · own list` };
-}
-
 export function assertDoctorListAccess(context: Pick<AccessContext, "role" | "scope">): void {
   if (!canAccessDoctorList(context)) {
     throw new Error(`Forbidden: ${context.role} cannot read doctor lists.`);

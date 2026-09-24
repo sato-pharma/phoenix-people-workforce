@@ -215,7 +215,6 @@ function buildEmployeePortalSections({
   showTeamPerformanceTab = false,
   showMedRepsPerformanceTab = false,
   showRepsListTab = false,
-  showMyListTab = false,
   showKpisTab = false,
   showMedicalRepExpensesTab = false,
   showDsmsPerformanceTab = false,
@@ -407,14 +406,13 @@ function buildEmployeePortalSections({
         // the team's activity rows, this is the team's assignment — each rep's own CRM contact list,
         // grouped by brick. The admin twin is /admin/reps-list.
         ...(showRepsListTab ? [{ href: "/employee-portals/reps-list", label: "Reps List", icon: BookUser }] : []),
-        // The same board at a Medical Rep's reach: their own contact list and nobody else's. It takes
-        // Reps List's place in the order, because the two never appear together — Reps List is for
-        // the seats reps report to, and My List for the rep (owner, 2026-09-16).
-        ...(showMyListTab ? [{ href: "/employee-portals/my-list", label: "My List", icon: BookUser }] : []),
+        // My List had a row here for the Medical Rep until 2026-09-25, when the owner moved the rep's
+        // own contact list into Phoenix CRM's List tab and retired this row ("hide"/"delete the
+        // dormant My List board code"). A rep reaches their list by the Phoenix CRM link now.
         // KPIs sits directly under Reps List because it answers the next question about the same
         // people: that board is who is on the list, this one is how well the list is being worked.
-        // Its role reach is WIDER — a Medical Rep sees their own three KPIs here, and sees My List
-        // above instead of Reps List, because that board is about the reps who report to you.
+        // Its role reach is WIDER — a Medical Rep sees their own three KPIs here even though Reps
+        // List above is a manager row, because that board is about the reps who report to you.
         ...(showKpisTab ? [{ href: "/employee-portals/kpis", label: "KPIs", icon: TrendingUp }] : []),
         // Reps Plans had a row here until 2026-09-21, when the owner merged it into Reps List as the
         // Call rate tab — one row for one module.
