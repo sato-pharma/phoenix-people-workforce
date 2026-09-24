@@ -301,25 +301,27 @@ export async function runRepsWeeklyPlansTests() {
         plans.includes(`<th className={THEAD}>${heading}</th>`),
         `the plan's doctors carry the contact list's own "${heading}" column`,
       );
-      // Confidence is the one heading the contact list now decides at render time: in Phoenix CRM the
-      // owner asked for it to go and for the CRM's own buttons to take its place (2026-09-24). The
-      // SWAP IS THE POINT — Actions occupies that column rather than being added beside it, so the
-      // six measured widths never move and the plan table above, which always shows Confidence, is
-      // still the same six columns. Pinning the literal here would forbid the swap; pinning the
-      // conditional keeps the teeth, because dropping the column outright would fail this just as the
-      // old assertion would.
-      if (heading === "Confidence") {
-        assert.ok(
-          contacts.includes(`<th className={THEAD}>{showConfidence ? "Confidence" : "Actions"}</th>`),
-          "and the contact list still carries Confidence wherever actions are not passed — Phoenix CRM swaps that one column for its buttons, and nothing else",
-        );
-        continue;
-      }
       assert.ok(
         contacts.includes(`<th className={THEAD}>${heading}</th>`),
         `and the contact list still has "${heading}" itself — otherwise the two have drifted and this test is pinning a shape that no longer exists`,
       );
     }
+
+    // Phoenix CRM swaps the Confidence column for its own buttons and, on the owner's 2026-09-25
+    // instruction, moves Address to sit right after the brick with Actions as the LAST column. The
+    // plan table above always shows Confidence, so pinning the swap and the order here keeps the
+    // teeth: dropping the Actions column, or letting Actions drift back ahead of Address, fails this.
+    const actionsAt = contacts.indexOf('<th className={THEAD}>Actions</th>');
+    assert.ok(actionsAt >= 0, "Phoenix CRM's list still renders an Actions header where Confidence would otherwise be");
+    assert.ok(
+      contacts.lastIndexOf('<th className={THEAD}>Address</th>') < actionsAt,
+      "and in Phoenix CRM the Address column comes before Actions — the address sits right after the brick",
+    );
+    assert.equal(
+      contacts.indexOf("<th className={THEAD}>", actionsAt + 1),
+      -1,
+      "and Actions is the last column header — nothing is rendered after it",
+    );
 
     // The cells themselves, not lookalikes. AddressCell is the one that matters most: it holds the
     // per-segment <bdi> that stops a bilingual address rendering backwards, the Maps link and the

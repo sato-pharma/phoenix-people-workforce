@@ -743,6 +743,7 @@ function BoardSection({
         activityAvailable={board.activityAvailable}
         activityMonthLabel={board.activityMonthLabel}
         brickColor
+        collapsible
         exportTitle="Customer list"
         groups={board.list.groups}
         // The name heading the download, by NAME and never a seat code (owner's standing rule). The
