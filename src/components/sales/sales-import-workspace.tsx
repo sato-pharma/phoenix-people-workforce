@@ -431,6 +431,8 @@ function SummaryTable({
   const [showAll, setShowAll] = useState(false);
   const visibleRows = showAll ? table.rows : table.rows.slice(0, SUMMARY_TABLE_ROW_CAP);
   const hiddenCount = table.rows.length - visibleRows.length;
+  // Read once so the mobile sort control can use it without a non-null assertion.
+  const activeSort = table.sort;
 
   return (
     <div className="space-y-0 p-4 md:p-5">
@@ -456,9 +458,77 @@ function SummaryTable({
           )}
         </div>
       </div>
-      <div className="overflow-hidden border border-phx-line">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[760px] text-left text-sm">
+      {/* Below `md` these five-to-eight columns get about 40px each, so the same rows render as
+          cards — the admin shell's own rule, desktop tables and mobile cards. The sort that lives
+          in the header on a laptop moves to a control above the cards, so a phone loses neither
+          the data nor the ordering. Measured at 375px: the table wanted 760px in a 273px column
+          and the `overflow-x-auto` around it WAS the sideways scroll. */}
+      <div className="border border-phx-line md:hidden">
+        <div className="flex flex-wrap items-center gap-2 border-b border-phx-line bg-phx-paper px-3 py-2">
+          <span className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-phx-ink-faint">Sort by</span>
+          <SearchableSelect
+            className="h-8 border border-phx-line bg-white px-2 text-xs font-bold text-phx-ink outline-none focus:border-phx-accent-line"
+            onChange={(event) => table.toggleSort(event.target.value)}
+            value={table.sort ? table.sort.key : ""}
+          >
+            <option value="">Sheet order</option>
+            {columns.map((column, i) => (
+              <option key={column} value={String(i)}>{column}</option>
+            ))}
+          </SearchableSelect>
+          {activeSort ? (
+            <button
+              aria-label={`Sort ${activeSort.dir === "asc" ? "descending" : "ascending"}`}
+              className="border border-phx-line bg-white px-2 py-1 text-xs font-bold text-phx-ink-soft"
+              onClick={() => table.toggleSort(activeSort.key)}
+              type="button"
+            >
+              {activeSort.dir === "asc" ? "▲ Ascending" : "▼ Descending"}
+            </button>
+          ) : null}
+        </div>
+        {table.rows.length === 0 ? (
+          <p className="px-3 py-6 text-center text-sm text-phx-ink-faint">
+            {table.isFiltered ? "No rows match the filter." : "No data."}
+          </p>
+        ) : (
+          <div className="divide-y divide-phx-line">
+            {visibleRows.map((entry) => (
+              <div className="px-3 py-3" key={`card:${entry.display.join(":")}:${entry.index}`}>
+                {entry.display.map((cell, cellIndex) => (
+                  <div className="flex gap-2 py-0.5" key={`${cell}:${cellIndex}`}>
+                    <span className="w-20 shrink-0 pt-0.5 text-phx-2xs font-bold uppercase tracking-[0.12em] text-phx-ink-faint">
+                      {columns[cellIndex]}
+                    </span>
+                    <span
+                      className={cn(
+                        "min-w-0 break-words text-sm",
+                        cellIndex === 0 ? "font-semibold text-phx-ink" : "text-phx-ink-soft",
+                      )}
+                    >
+                      {cell}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ))}
+            {hiddenCount > 0 && (
+              <div className="px-3 py-3 text-center">
+                <button
+                  className="text-sm font-semibold text-phx-accent hover:underline"
+                  onClick={() => setShowAll(true)}
+                  type="button"
+                >
+                  Show all {table.rows.length} rows ({hiddenCount} more)
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+      <div className="hidden overflow-hidden border border-phx-line md:block">
+        <div>
+          <table className="w-full table-fixed text-left text-sm">
             <thead className="bg-phx-paper">
               <tr>
                 {columns.map((column, i) => (
@@ -530,8 +600,14 @@ function IssueTable({ issues }: { issues: DistributorSalesValidationIssue[] }) {
       description="Rows that must be corrected in the workbook."
       title="Rows To Fix"
     >
-      <div className="overflow-x-auto p-4 md:p-5">
-        <table className="w-full min-w-[720px] text-left text-sm">
+      <div className="p-4 md:p-5">
+        <table className="w-full table-fixed text-left text-sm">
+          <colgroup>
+            <col className="w-[12%]" />
+            <col className="w-[20%]" />
+            <col className="w-[30%]" />
+            <col className="w-[38%]" />
+          </colgroup>
           <thead className="bg-phx-paper">
             <tr>
               <th className={tableHeaderClassName}>Row</th>
@@ -543,10 +619,10 @@ function IssueTable({ issues }: { issues: DistributorSalesValidationIssue[] }) {
           <tbody className="divide-y divide-phx-line">
             {failedIssues.slice(0, 100).map((issue, index) => (
               <tr className="text-phx-ink-soft" key={`${issue.rowNumber}:${issue.field}:${index}`}>
-                <td className="w-24 px-4 py-3 font-semibold text-phx-ink">{issue.rowNumber}</td>
-                <td className="px-4 py-3">{issue.field}</td>
-                <td className="px-4 py-3">{issue.value ?? "-"}</td>
-                <td className="px-4 py-3">{issue.message}</td>
+                <td className="px-4 py-3 align-top font-semibold tabular-nums text-phx-ink">{issue.rowNumber}</td>
+                <td className="break-words px-4 py-3 align-top">{issue.field}</td>
+                <td className="break-words px-4 py-3 align-top">{issue.value ?? "-"}</td>
+                <td className="break-words px-4 py-3 align-top">{issue.message}</td>
               </tr>
             ))}
           </tbody>
@@ -689,20 +765,33 @@ function UploadedSheetsTable({
               </div>
             </AdminCallout>
           ) : (
-            <div className="overflow-x-auto">
+            <div>
+              {/* Ten columns over a min-w-[980px]. Qty and B. Qty MERGE into one Quantity
+                  cell, and the four detail columns fold into the File cell below lg, so
+                  nothing is dropped at either width. */}
               <div className="overflow-hidden rounded-[16px] border border-phx-line">
-                <table className="w-full min-w-[980px] text-left text-sm">
+                <table className="w-full table-fixed text-left text-sm">
+                  <colgroup>
+                    <col className="w-[40%] lg:w-[20%]" />
+                    <col className="hidden lg:table-column lg:w-[14%]" />
+                    <col className="hidden lg:table-column lg:w-[8%]" />
+                    <col className="w-[22%] lg:w-[10%]" />
+                    <col className="hidden lg:table-column lg:w-[8%]" />
+                    <col className="hidden lg:table-column lg:w-[11%]" />
+                    <col className="w-[22%] lg:w-[11%]" />
+                    <col className="hidden lg:table-column lg:w-[10%]" />
+                    <col className="w-[16%] lg:w-[8%]" />
+                  </colgroup>
                   <thead className="bg-phx-paper">
                     <tr>
                       <th className={tableHeaderClassName}>File</th>
-                      <th className={tableHeaderClassName}>Distributor</th>
-                      <th className={tableHeaderClassName}>Period</th>
+                      <th className={`${tableHeaderClassName} hidden lg:table-cell`}>Distributor</th>
+                      <th className={`${tableHeaderClassName} hidden lg:table-cell`}>Period</th>
                       <th className={tableHeaderClassName}>Status</th>
-                      <th className={tableHeaderClassName}>Rows</th>
-                      <th className={tableHeaderClassName}>Qty</th>
-                      <th className={tableHeaderClassName}>B. Qty</th>
+                      <th className={`${tableHeaderClassName} hidden lg:table-cell`}>Rows</th>
+                      <th className={`${tableHeaderClassName} hidden lg:table-cell`}>Quantity</th>
                       <th className={tableHeaderClassName}>Value</th>
-                      <th className={tableHeaderClassName}>Uploaded</th>
+                      <th className={`${tableHeaderClassName} hidden lg:table-cell`}>Uploaded</th>
                       <th className={tableHeaderClassName}>Action</th>
                     </tr>
                   </thead>
@@ -711,23 +800,33 @@ function UploadedSheetsTable({
                       const deleting = deleteLoadingId === batch.batchId;
                       return (
                         <tr className="text-phx-ink-soft" key={batch.batchId}>
-                          <td className="min-w-[220px] max-w-[260px] px-4 py-3">
+                          <td className="px-4 py-3 align-top">
                             <p className="break-words font-semibold text-phx-ink">{batch.fileName}</p>
-                            <p className="mt-1 text-xs text-phx-ink-soft">{batch.uploadedBy}</p>
+                            <p className="mt-1 break-words text-xs text-phx-ink-soft">{batch.uploadedBy}</p>
+                            <p className="mt-1 break-words text-xs text-phx-ink-soft lg:hidden">
+                              {batch.distributorName} / {batch.distributorCode} · {batch.period ?? "-"}
+                            </p>
+                            <p className="mt-0.5 text-xs tabular-nums text-phx-ink-soft lg:hidden">
+                              {formatNumber(batch.rowCount)} rows · {numberWithDecimals(batch.totalQty)} qty
+                              {" · "}{numberWithDecimals(batch.totalBonusQty)} bonus
+                            </p>
+                            <p className="mt-0.5 text-xs text-phx-ink-soft lg:hidden">{new Date(batch.createdAt).toLocaleString()}</p>
                           </td>
-                          <td className="px-4 py-3">{batch.distributorName} / {batch.distributorCode}</td>
-                          <td className="px-4 py-3">{batch.period ?? "-"}</td>
-                          <td className="px-4 py-3">
+                          <td className="hidden break-words px-4 py-3 align-top lg:table-cell">{batch.distributorName} / {batch.distributorCode}</td>
+                          <td className="hidden px-4 py-3 align-top lg:table-cell">{batch.period ?? "-"}</td>
+                          <td className="px-4 py-3 align-top">
                             <Badge variant={batch.status === "validated" ? "success" : "danger"}>
                               {batch.status}
                             </Badge>
                           </td>
-                          <td className="px-4 py-3">{formatNumber(batch.rowCount)}</td>
-                          <td className="px-4 py-3">{numberWithDecimals(batch.totalQty)}</td>
-                          <td className="px-4 py-3">{numberWithDecimals(batch.totalBonusQty)}</td>
-                          <td className="px-4 py-3">{formatCurrency(batch.totalValue)}</td>
-                          <td className="px-4 py-3">{new Date(batch.createdAt).toLocaleString()}</td>
-                          <td className="px-4 py-3">
+                          <td className="hidden px-4 py-3 align-top tabular-nums lg:table-cell">{formatNumber(batch.rowCount)}</td>
+                          <td className="hidden px-4 py-3 align-top tabular-nums lg:table-cell">
+                            <span className="block">{numberWithDecimals(batch.totalQty)}</span>
+                            <span className="block text-xs text-phx-ink-soft">bonus {numberWithDecimals(batch.totalBonusQty)}</span>
+                          </td>
+                          <td className="break-words px-4 py-3 align-top tabular-nums">{formatCurrency(batch.totalValue)}</td>
+                          <td className="hidden break-words px-4 py-3 align-top lg:table-cell">{new Date(batch.createdAt).toLocaleString()}</td>
+                          <td className="px-4 py-3 align-top">
                             <Button
                               className="gap-1"
                               disabled={deleting}

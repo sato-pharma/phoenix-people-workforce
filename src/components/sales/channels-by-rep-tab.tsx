@@ -197,18 +197,29 @@ export function ChannelsByRepTab() {
       </div>
 
       {/* Desktop: the full table. Mobile: cards — never a horizontally scrolling table. */}
-      <div className="hidden overflow-x-auto md:block">
+      <div className="hidden md:block">
         <div className="overflow-hidden border border-phx-line">
-          <table className="w-full min-w-[900px] text-sm">
+          {/* table-fixed + a percentage colgroup: the seven columns divide whatever width the
+              container has, so no data length can push the table sideways. */}
+          <table className="w-full table-fixed text-sm">
+            <colgroup>
+              <col className="w-[22%]" />
+              <col className="w-[10%]" />
+              <col className="w-[16%]" />
+              <col className="w-[13%]" />
+              <col className="w-[13%]" />
+              <col className="w-[13%]" />
+              <col className="w-[13%]" />
+            </colgroup>
             <thead className="bg-[#0B0B0B] text-slate-100">
               <tr>
-                <SortableTh className="text-xs tracking-[0.12em]" label="Rep" onSort={table.toggleSort} sort={table.sort} sortKey="label" variant="dark" />
-                <SortableTh className="text-xs tracking-[0.12em]" label="Line" onSort={table.toggleSort} sort={table.sort} sortKey="lineCode" variant="dark" />
-                <SortableTh className="text-xs tracking-[0.12em]" label="Area" onSort={table.toggleSort} sort={table.sort} sortKey="areaName" variant="dark" />
-                <SortableTh align="right" className="text-xs tracking-[0.12em]" label="Hospitals" onSort={table.toggleSort} sort={table.sort} sortKey="hospitalValue" variant="dark" />
-                <SortableTh align="right" className="text-xs tracking-[0.12em]" label="Stores" onSort={table.toggleSort} sort={table.sort} sortKey="storeValue" variant="dark" />
-                <SortableTh align="right" className="text-xs tracking-[0.12em]" label="Pharmacies" onSort={table.toggleSort} sort={table.sort} sortKey="pharmacyValue" variant="dark" />
-                <SortableTh align="right" className="text-xs tracking-[0.12em]" label="Total" onSort={table.toggleSort} sort={table.sort} sortKey="totalValue" variant="dark" />
+                <SortableTh className="break-words text-xs tracking-[0.12em]" label="Rep" onSort={table.toggleSort} sort={table.sort} sortKey="label" variant="dark" />
+                <SortableTh className="break-words text-xs tracking-[0.12em]" label="Line" onSort={table.toggleSort} sort={table.sort} sortKey="lineCode" variant="dark" />
+                <SortableTh className="break-words text-xs tracking-[0.12em]" label="Area" onSort={table.toggleSort} sort={table.sort} sortKey="areaName" variant="dark" />
+                <SortableTh align="right" className="break-words text-xs tracking-[0.12em]" label="Hospitals" onSort={table.toggleSort} sort={table.sort} sortKey="hospitalValue" variant="dark" />
+                <SortableTh align="right" className="break-words text-xs tracking-[0.12em]" label="Stores" onSort={table.toggleSort} sort={table.sort} sortKey="storeValue" variant="dark" />
+                <SortableTh align="right" className="break-words text-xs tracking-[0.12em]" label="Pharmacies" onSort={table.toggleSort} sort={table.sort} sortKey="pharmacyValue" variant="dark" />
+                <SortableTh align="right" className="break-words text-xs tracking-[0.12em]" label="Total" onSort={table.toggleSort} sort={table.sort} sortKey="totalValue" variant="dark" />
               </tr>
             </thead>
             <tbody className="divide-y divide-phx-line">
@@ -231,7 +242,7 @@ export function ChannelsByRepTab() {
                     )}
                     key={`${row.seatId ?? "none"}:${row.repHrId ?? "none"}:${row.areaCode ?? "none"}:${row.lineCode ?? "none"}`}
                   >
-                    <td className="whitespace-nowrap px-3 py-2.5">
+                    <td className="break-words px-3 py-2.5 align-top">
                       <span
                         className={cn(
                           "block font-semibold",
@@ -241,12 +252,12 @@ export function ChannelsByRepTab() {
                         {row.label}
                       </span>
                     </td>
-                    <td className="whitespace-nowrap px-3 py-2.5 text-slate-600">{row.lineCode ?? "—"}</td>
-                    <td className="whitespace-nowrap px-3 py-2.5 text-slate-600">{row.areaName ?? row.areaCode ?? "—"}</td>
-                    <td className="whitespace-nowrap px-3 py-2.5 text-right font-semibold tabular-nums text-slate-900">{formatCurrency(row.hospitalValue)}</td>
-                    <td className="whitespace-nowrap px-3 py-2.5 text-right font-semibold tabular-nums text-slate-900">{formatCurrency(row.storeValue)}</td>
-                    <td className="whitespace-nowrap px-3 py-2.5 text-right font-semibold tabular-nums text-slate-900">{formatCurrency(row.pharmacyValue)}</td>
-                    <td className="whitespace-nowrap px-3 py-2.5 text-right font-black tabular-nums text-phx-ink">{formatCurrency(row.totalValue)}</td>
+                    <td className="break-words px-3 py-2.5 align-top text-slate-600">{row.lineCode ?? "—"}</td>
+                    <td className="break-words px-3 py-2.5 align-top text-slate-600">{row.areaName ?? row.areaCode ?? "—"}</td>
+                    <td className="break-words px-3 py-2.5 text-right align-top font-semibold tabular-nums text-slate-900">{formatCurrency(row.hospitalValue)}</td>
+                    <td className="break-words px-3 py-2.5 text-right align-top font-semibold tabular-nums text-slate-900">{formatCurrency(row.storeValue)}</td>
+                    <td className="break-words px-3 py-2.5 text-right align-top font-semibold tabular-nums text-slate-900">{formatCurrency(row.pharmacyValue)}</td>
+                    <td className="break-words px-3 py-2.5 text-right align-top font-black tabular-nums text-phx-ink">{formatCurrency(row.totalValue)}</td>
                   </tr>
                 ))
               )}

@@ -324,13 +324,23 @@ export function WeeklyProductMappingManager({
       </div>
 
       {/* Table */}
-      <div className="overflow-x-auto rounded-[6px] border border-phx-line bg-white shadow-sm">
-        <table className="w-full text-sm">
+      <div className="rounded-[6px] border border-phx-line bg-white shadow-sm">
+        <table className="w-full table-fixed text-sm">
+          <colgroup>
+            <col className="w-[24%] md:w-[28%]" />
+            <col className="w-[14%] md:w-[14%]" />
+            <col className="w-[33%] md:w-[42%]" />
+            {/* The Remove button measures 95px with its padding, so the action column keeps a
+                wider share on a phone — a fixed column narrower than its button CLIPS it, and
+                the wrapper never scrolls to reveal what was cut. Measured in a browser at
+                375px: 26% gave the cell 89px and lost the last 6px of the label. */}
+            <col className="w-[29%] md:w-[16%]" />
+          </colgroup>
           <thead className="bg-[#020617] text-left text-phx-xs font-black uppercase tracking-wide text-white">
             <tr>
-              <th className="px-3 py-2">Distributor alias</th>
-              <th className="px-3 py-2">Kind</th>
-              <th className="px-3 py-2">Master product</th>
+              <th className="break-words px-3 py-2">Distributor alias</th>
+              <th className="break-words px-3 py-2">Kind</th>
+              <th className="break-words px-3 py-2">Master product</th>
               <th className="px-3 py-2 text-right" />
             </tr>
           </thead>
@@ -344,9 +354,9 @@ export function WeeklyProductMappingManager({
             )}
             {aliases.map((alias) => (
               <tr className="border-t border-[#FFE8D6] align-middle" key={alias.id}>
-                <td className="px-3 py-2 font-semibold text-phx-ink">{alias.alias}</td>
-                <td className="px-3 py-2 text-phx-ink-soft">{alias.aliasKind}</td>
-                <td className="px-3 py-2">
+                <td className="break-words px-3 py-2 font-semibold text-phx-ink">{alias.alias}</td>
+                <td className="break-words px-3 py-2 text-phx-ink-soft">{alias.aliasKind}</td>
+                <td className="break-words px-3 py-2">
                   <span className="font-semibold text-phx-ink">{alias.productName}</span>
                   <span className="ml-1 text-phx-xs font-medium text-phx-ink-faint">{alias.productCode}</span>
                   {!alias.resolvable && (

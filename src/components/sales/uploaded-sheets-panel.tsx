@@ -128,8 +128,17 @@ export function UploadedSheetsPanel({
         </div>
       )}
 
-      <div className="mt-3 overflow-x-auto rounded-[6px] border border-phx-line">
-        <table className="w-full text-sm">
+      <div className="mt-3 rounded-[6px] border border-phx-line">
+        <table className="w-full table-fixed text-sm">
+          <colgroup>
+            <col className="w-[22%]" />
+            <col className="w-[12%]" />
+            <col className="w-[11%]" />
+            <col className="w-[13%]" />
+            <col className="w-[14%]" />
+            <col className="w-[20%]" />
+            <col className="w-[8%]" />
+          </colgroup>
           <thead className={darkHead}>
             <tr>
               <th className="px-3 py-2">Distributor</th>
@@ -151,7 +160,7 @@ export function UploadedSheetsPanel({
             )}
             {rows.map((batch) => (
               <tr className="border-t border-[#FFE8D6]" key={batch.batchId}>
-                <td className="px-3 py-2 font-bold text-phx-ink">
+                <td className="break-words px-3 py-2 font-bold text-phx-ink">
                   {batch.distributorName} <span className="font-mono text-xs text-phx-ink-faint">{batch.distributorCode}</span>
                 </td>
                 <td className="px-3 py-2">
@@ -163,9 +172,12 @@ export function UploadedSheetsPanel({
                 <td className="px-3 py-2 text-right tabular-nums">{money(batch.totalValue)}</td>
                 <td className="px-3 py-2 tabular-nums text-phx-ink-2">{formatDate(batch.createdAt)}</td>
                 <td className="px-3 py-2 text-phx-ink-soft">
-                  <span className="inline-flex items-center gap-1">
-                    <FileSpreadsheet className="h-3.5 w-3.5 text-phx-ink-faint" />
-                    {batch.fileName ? batch.fileName.slice(0, 28) : "—"}
+                  {/* The name used to be sliced at 28 characters to hold the width down,
+                      which silently dropped the rest of it. The column wraps now, so the
+                      whole file name is shown. */}
+                  <span className="flex items-start gap-1">
+                    <FileSpreadsheet className="mt-0.5 h-3.5 w-3.5 shrink-0 text-phx-ink-faint" />
+                    <span className="min-w-0 break-words">{batch.fileName || "—"}</span>
                   </span>
                 </td>
                 <td className="px-3 py-2 text-right">

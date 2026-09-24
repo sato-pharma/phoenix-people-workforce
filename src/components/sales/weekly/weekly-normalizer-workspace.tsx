@@ -476,22 +476,38 @@ export function WeeklyNormalizerWorkspace({
               </div>
 
               {tab === "coded" ? (
-                <div className="overflow-x-auto border border-phx-line">
-                  <table className="w-full text-sm">
-                    <thead className="bg-[#0B0B0B] text-phx-paper-2"><tr>{["Item code", "Product ID", "Product", "Line", "Branch", "Region", "Area", "Net units", "Stock", "Value"].map((h) => <th className="whitespace-nowrap px-3 py-2 text-left" key={h}>{h}</th>)}</tr></thead>
+                <div className="border border-phx-line">
+                  {/* Ten columns did not fit, so three pairs are MERGED rather than shrunk:
+                      Product ID rides under Product, and Branch/Region/Area become one
+                      Territory cell. table-fixed + the colgroup below make the width
+                      structural, so no data can push this sideways. */}
+                  <table className="w-full table-fixed text-sm">
+                    <colgroup>
+                      <col className="w-[10%]" />
+                      <col className="w-[22%]" />
+                      <col className="w-[10%]" />
+                      <col className="w-[22%]" />
+                      <col className="w-[12%]" />
+                      <col className="w-[12%]" />
+                      <col className="w-[12%]" />
+                    </colgroup>
+                    <thead className="bg-[#0B0B0B] text-phx-paper-2"><tr>{["Code", "Product", "Line", "Territory", "Net units", "Stock", "Value"].map((h) => <th className="px-3 py-2 text-left" key={h}>{h}</th>)}</tr></thead>
                     <tbody>
                       {preview.sampleCoded.map((r, i) => (
                         <tr className={cn("transition-colors hover:bg-orange-50/50", i % 2 && "bg-slate-50/60")} key={`${r.itemCode}|${r.branchCode}|${i}`}>
-                          <td className="whitespace-nowrap px-3 py-1.5 font-mono text-phx-md text-slate-600">{r.itemCode}</td>
-                          <td className="whitespace-nowrap px-3 py-1.5 font-mono text-phx-md font-semibold text-slate-900">{r.productCode}</td>
-                          <td className="whitespace-nowrap px-3 py-1.5 text-slate-600">{r.productName}</td>
-                          <td className="whitespace-nowrap px-3 py-1.5 text-slate-600">{r.officialLine}</td>
-                          <td className="whitespace-nowrap px-3 py-1.5 text-slate-600">{r.branchName || r.branchCode}</td>
-                          <td className="whitespace-nowrap px-3 py-1.5 text-slate-600">{r.regionName || r.regionCode || "—"}</td>
-                          <td className="whitespace-nowrap px-3 py-1.5 text-slate-600">{r.areaCode ?? "—"}</td>
-                          <td className="whitespace-nowrap px-3 py-1.5 text-right font-semibold tabular-nums text-slate-900">{num(r.netQty)}</td>
-                          <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-slate-600">{num(r.stockQty)}</td>
-                          <td className="whitespace-nowrap px-3 py-1.5 text-right font-semibold tabular-nums text-slate-900">{num(r.salesValue)}</td>
+                          <td className="break-words px-3 py-1.5 font-mono text-phx-md text-slate-600">{r.itemCode}</td>
+                          <td className="break-words px-3 py-1.5 text-slate-600">
+                            <span className="font-mono text-phx-md font-semibold text-slate-900">{r.productCode}</span>
+                            <span className="block">{r.productName}</span>
+                          </td>
+                          <td className="break-words px-3 py-1.5 text-slate-600">{r.officialLine}</td>
+                          <td className="break-words px-3 py-1.5 text-slate-600">
+                            <span className="block text-slate-900">{r.branchName || r.branchCode}</span>
+                            <span className="block text-phx-md text-slate-500">{r.regionName || r.regionCode || "—"} · {r.areaCode ?? "—"}</span>
+                          </td>
+                          <td className="px-3 py-1.5 text-right font-semibold tabular-nums text-slate-900">{num(r.netQty)}</td>
+                          <td className="px-3 py-1.5 text-right tabular-nums text-slate-600">{num(r.stockQty)}</td>
+                          <td className="px-3 py-1.5 text-right font-semibold tabular-nums text-slate-900">{num(r.salesValue)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -524,18 +540,26 @@ export function WeeklyNormalizerWorkspace({
                   </div>
 
                   {preview.unknownProducts.length > 0 ? (
-                    <div className="overflow-x-auto border border-phx-line">
-                      <p className="flex items-center gap-2 bg-slate-900 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-white"><span aria-hidden="true" className="h-3.5 w-1 bg-orange-500" />Unknown products ({preview.unknownProducts.length})</p>
-                      <table className="w-full text-sm">
-                        <thead className="bg-slate-100"><tr>{["Raw code", "Raw name", "Rows", "Net units", "Phoenix product", "Confidence"].map((h) => <th className="whitespace-nowrap px-3 py-2 text-left font-semibold text-slate-600" key={h}>{h}</th>)}</tr></thead>
+                    <div className="border border-phx-line">
+                      <p className="flex items-center gap-2 bg-slate-900 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-white"><span aria-hidden="true" className="h-3.5 w-1 shrink-0 bg-orange-500" />Unknown products ({preview.unknownProducts.length})</p>
+                      <table className="w-full table-fixed text-sm">
+                        <colgroup>
+                          <col className="w-[16%]" />
+                          <col className="w-[24%]" />
+                          <col className="w-[9%]" />
+                          <col className="w-[11%]" />
+                          <col className="w-[30%]" />
+                          <col className="w-[10%]" />
+                        </colgroup>
+                        <thead className="bg-slate-100"><tr>{["Raw code", "Raw name", "Rows", "Net units", "Phoenix product", "Confidence"].map((h) => <th className="px-3 py-2 text-left font-semibold text-slate-600" key={h}>{h}</th>)}</tr></thead>
                         <tbody>
                           {preview.unknownProducts.map((u) => (
                             <tr className="border-t border-slate-100 transition-colors hover:bg-orange-50/40" key={u.key}>
-                              <td className="whitespace-nowrap px-3 py-1.5 font-semibold text-slate-900"><span className="inline-flex items-center">{u.itemCode || "—"}<CopyBtn text={u.itemCode} /></span></td>
-                              <td className="whitespace-nowrap px-3 py-1.5 text-slate-600"><span className="inline-flex items-center">{u.itemName || "—"}<CopyBtn text={u.itemName} /></span></td>
-                              <td className="whitespace-nowrap px-3 py-1.5 text-right font-semibold tabular-nums text-slate-700">{u.rows.toLocaleString()}</td>
-                              <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-slate-700">{num(u.netQty)}</td>
-                              <td className="px-3 py-1.5">
+                              <td className="px-3 py-1.5 font-semibold text-slate-900"><span className="flex items-start gap-1"><span className="min-w-0 break-words">{u.itemCode || "—"}</span><CopyBtn text={u.itemCode} /></span></td>
+                              <td className="px-3 py-1.5 text-slate-600"><span className="flex items-start gap-1"><span className="min-w-0 break-words">{u.itemName || "—"}</span><CopyBtn text={u.itemName} /></span></td>
+                              <td className="px-3 py-1.5 text-right font-semibold tabular-nums text-slate-700">{u.rows.toLocaleString()}</td>
+                              <td className="px-3 py-1.5 text-right tabular-nums text-slate-700">{num(u.netQty)}</td>
+                              <td className="min-w-0 px-3 py-1.5">
                                 <ComboBox onChange={(v) => setProductPicks((p) => ({ ...p, [u.key]: v }))} options={productOptions} placeholder="Type product or code…" value={productPicks[u.key] ?? ""} />
                               </td>
                               <td className="px-3 py-1.5 text-center">
@@ -549,26 +573,41 @@ export function WeeklyNormalizerWorkspace({
                   ) : null}
 
                   {preview.unknownBranches.length > 0 ? (
-                    <div className="overflow-x-auto border border-phx-line">
+                    <div className="border border-phx-line">
                       <p className="flex items-center gap-2 bg-slate-900 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-white"><span aria-hidden="true" className="h-3.5 w-1 shrink-0 bg-orange-500" />Unknown branches ({preview.unknownBranches.length}) — a branch is a distributor depot, so the Area is optional: leave it blank to keep the branch region-only</p>
-                      <table className="w-full text-sm">
-                        <thead className="bg-slate-100"><tr>{["Branch", "Name", "Side", "Col", "Rows", "Net units", "Phoenix region", "Area (optional)", "Confidence"].map((h) => <th className="whitespace-nowrap px-3 py-2 text-left font-semibold text-slate-600" key={h}>{h}</th>)}</tr></thead>
+                      {/* Nine columns did not fit. Side+Col merge into Source, and Rows+Net
+                          units into Volume, rather than shrinking the type. */}
+                      <table className="w-full table-fixed text-sm">
+                        <colgroup>
+                          <col className="w-[13%]" />
+                          <col className="w-[17%]" />
+                          <col className="w-[9%]" />
+                          <col className="w-[11%]" />
+                          <col className="w-[20%]" />
+                          <col className="w-[20%]" />
+                          <col className="w-[10%]" />
+                        </colgroup>
+                        <thead className="bg-slate-100"><tr>{["Branch", "Name", "Source", "Volume", "Phoenix region", "Area (optional)", "Confidence"].map((h) => <th className="px-3 py-2 text-left font-semibold text-slate-600" key={h}>{h}</th>)}</tr></thead>
                         <tbody>
                           {preview.unknownBranches.map((b) => {
                             const region = regionPicks[b.key] ?? "";
                             const areaOptions = areaOptionsFor(region);
                             return (
                               <tr className="border-t border-slate-100 transition-colors hover:bg-orange-50/40" key={b.key}>
-                                <td className="whitespace-nowrap px-3 py-1.5 font-semibold text-slate-900"><span className="inline-flex items-center">{b.rawBranch || "—"}<CopyBtn text={b.rawBranch} /></span></td>
-                                <td className="whitespace-nowrap px-3 py-1.5 text-slate-600"><span className="inline-flex items-center">{b.branchName || b.branchColumnHeader || "—"}<CopyBtn text={b.branchName || b.branchColumnHeader} /></span></td>
-                                <td className="whitespace-nowrap px-3 py-1.5 text-xs text-slate-500">{b.sourceFileType}</td>
-                                <td className="whitespace-nowrap px-3 py-1.5 text-right text-xs tabular-nums text-slate-500">{b.branchColumnIndex ?? "—"}</td>
-                                <td className="whitespace-nowrap px-3 py-1.5 text-right font-semibold tabular-nums text-slate-700">{b.rows.toLocaleString()}</td>
-                                <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-slate-700">{num(b.netQty)}</td>
-                                <td className="px-3 py-1.5">
+                                <td className="px-3 py-1.5 font-semibold text-slate-900"><span className="flex items-start gap-1"><span className="min-w-0 break-words">{b.rawBranch || "—"}</span><CopyBtn text={b.rawBranch} /></span></td>
+                                <td className="px-3 py-1.5 text-slate-600"><span className="flex items-start gap-1"><span className="min-w-0 break-words">{b.branchName || b.branchColumnHeader || "—"}</span><CopyBtn text={b.branchName || b.branchColumnHeader} /></span></td>
+                                <td className="break-words px-3 py-1.5 text-xs text-slate-500">
+                                  <span className="block">{b.sourceFileType}</span>
+                                  <span className="block tabular-nums">col {b.branchColumnIndex ?? "—"}</span>
+                                </td>
+                                <td className="px-3 py-1.5 text-right text-slate-700">
+                                  <span className="block font-semibold tabular-nums">{b.rows.toLocaleString()}</span>
+                                  <span className="block text-xs tabular-nums text-slate-500">{num(b.netQty)} units</span>
+                                </td>
+                                <td className="min-w-0 px-3 py-1.5">
                                   <ComboBox onChange={(v) => { setRegionPicks((p) => ({ ...p, [b.key]: v })); setAreaPicks((p) => ({ ...p, [b.key]: "" })); }} options={regionOptions} placeholder="Type region…" value={region} />
                                 </td>
-                                <td className="px-3 py-1.5">
+                                <td className="min-w-0 px-3 py-1.5">
                                   <ComboBox
                                     disabled={!region || region === BRANCH_EXCLUDE_CODE}
                                     onChange={(v) => setAreaPicks((p) => ({ ...p, [b.key]: v }))}
@@ -589,17 +628,23 @@ export function WeeklyNormalizerWorkspace({
                   ) : null}
 
                   {preview.blockedIssues.length > 0 ? (
-                    <div className="overflow-x-auto border border-amber-200">
-                      <p className="flex items-center gap-2 bg-amber-500 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-white"><AlertTriangle className="h-3.5 w-3.5" />No mapping here can fix these ({preview.blockedIssues.length}) — they are master-data repairs</p>
-                      <table className="w-full text-sm">
-                        <thead className="bg-amber-50"><tr>{["Field", "What is wrong", "Value", "Rows"].map((h) => <th className="whitespace-nowrap px-3 py-2 text-left font-semibold text-amber-900" key={h}>{h}</th>)}</tr></thead>
+                    <div className="border border-amber-200">
+                      <p className="flex items-center gap-2 bg-amber-500 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-white"><AlertTriangle className="h-3.5 w-3.5 shrink-0" />No mapping here can fix these ({preview.blockedIssues.length}) — they are master-data repairs</p>
+                      <table className="w-full table-fixed text-sm">
+                        <colgroup>
+                          <col className="w-[18%]" />
+                          <col className="w-[46%]" />
+                          <col className="w-[22%]" />
+                          <col className="w-[14%]" />
+                        </colgroup>
+                        <thead className="bg-amber-50"><tr>{["Field", "What is wrong", "Value", "Rows"].map((h) => <th className="px-3 py-2 text-left font-semibold text-amber-900" key={h}>{h}</th>)}</tr></thead>
                         <tbody>
                           {preview.blockedIssues.map((issue) => (
                             <tr className="border-t border-amber-100" key={`${issue.field}|${issue.message}`}>
-                              <td className="whitespace-nowrap px-3 py-1.5 font-semibold text-slate-900">{issue.field}</td>
-                              <td className="px-3 py-1.5 text-slate-600">{issue.message}</td>
-                              <td className="whitespace-nowrap px-3 py-1.5 text-slate-600">{issue.value ?? "—"}</td>
-                              <td className="whitespace-nowrap px-3 py-1.5 text-right font-semibold tabular-nums text-slate-700">{issue.rows.toLocaleString()}</td>
+                              <td className="break-words px-3 py-1.5 font-semibold text-slate-900">{issue.field}</td>
+                              <td className="break-words px-3 py-1.5 text-slate-600">{issue.message}</td>
+                              <td className="break-words px-3 py-1.5 text-slate-600">{issue.value ?? "—"}</td>
+                              <td className="px-3 py-1.5 text-right font-semibold tabular-nums text-slate-700">{issue.rows.toLocaleString()}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -608,18 +653,25 @@ export function WeeklyNormalizerWorkspace({
                   ) : null}
 
                   {preview.excludedItems.length > 0 ? (
-                    <div className="overflow-x-auto border border-phx-line">
-                      <p className="flex items-center gap-2 bg-slate-700 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-white"><span aria-hidden="true" className="h-3.5 w-1 bg-slate-300" />Held out on purpose ({preview.excludedItems.length}) — mapped to IGNORE, counted here so nothing is dropped silently</p>
-                      <table className="w-full text-sm">
-                        <thead className="bg-slate-100"><tr>{["Item code", "Item name", "Rows", "Net units", "Stock"].map((h) => <th className="whitespace-nowrap px-3 py-2 text-left font-semibold text-slate-600" key={h}>{h}</th>)}</tr></thead>
+                    <div className="border border-phx-line">
+                      <p className="flex items-center gap-2 bg-slate-700 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-white"><span aria-hidden="true" className="h-3.5 w-1 shrink-0 bg-slate-300" />Held out on purpose ({preview.excludedItems.length}) — mapped to IGNORE, counted here so nothing is dropped silently</p>
+                      <table className="w-full table-fixed text-sm">
+                        <colgroup>
+                          <col className="w-[20%]" />
+                          <col className="w-[32%]" />
+                          <col className="w-[16%]" />
+                          <col className="w-[16%]" />
+                          <col className="w-[16%]" />
+                        </colgroup>
+                        <thead className="bg-slate-100"><tr>{["Item code", "Item name", "Rows", "Net units", "Stock"].map((h) => <th className="px-3 py-2 text-left font-semibold text-slate-600" key={h}>{h}</th>)}</tr></thead>
                         <tbody>
                           {preview.excludedItems.map((item) => (
                             <tr className="border-t border-slate-100" key={`${item.itemCode}|${item.itemName}`}>
-                              <td className="whitespace-nowrap px-3 py-1.5 font-mono text-phx-md text-slate-700">{item.itemCode || "—"}</td>
-                              <td className="whitespace-nowrap px-3 py-1.5 text-slate-600">{item.itemName || "—"}</td>
-                              <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-slate-700">{item.rows.toLocaleString()}</td>
-                              <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-slate-700">{num(item.netQty)}</td>
-                              <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-slate-700">{num(item.stockQty)}</td>
+                              <td className="break-words px-3 py-1.5 font-mono text-phx-md text-slate-700">{item.itemCode || "—"}</td>
+                              <td className="break-words px-3 py-1.5 text-slate-600">{item.itemName || "—"}</td>
+                              <td className="px-3 py-1.5 text-right tabular-nums text-slate-700">{item.rows.toLocaleString()}</td>
+                              <td className="px-3 py-1.5 text-right tabular-nums text-slate-700">{num(item.netQty)}</td>
+                              <td className="px-3 py-1.5 text-right tabular-nums text-slate-700">{num(item.stockQty)}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -628,18 +680,25 @@ export function WeeklyNormalizerWorkspace({
                   ) : null}
 
                   {preview.excludedBranches.length > 0 ? (
-                    <div className="overflow-x-auto border border-phx-line">
-                      <p className="flex items-center gap-2 bg-slate-700 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-white"><span aria-hidden="true" className="h-3.5 w-1 bg-slate-300" />Branches held out on purpose ({preview.excludedBranches.length}) — mapped to Exclude, counted here so nothing is dropped silently</p>
-                      <table className="w-full text-sm">
-                        <thead className="bg-slate-100"><tr>{["Branch", "Branch name", "Rows", "Net units", "Stock"].map((h) => <th className="whitespace-nowrap px-3 py-2 text-left font-semibold text-slate-600" key={h}>{h}</th>)}</tr></thead>
+                    <div className="border border-phx-line">
+                      <p className="flex items-center gap-2 bg-slate-700 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-white"><span aria-hidden="true" className="h-3.5 w-1 shrink-0 bg-slate-300" />Branches held out on purpose ({preview.excludedBranches.length}) — mapped to Exclude, counted here so nothing is dropped silently</p>
+                      <table className="w-full table-fixed text-sm">
+                        <colgroup>
+                          <col className="w-[20%]" />
+                          <col className="w-[32%]" />
+                          <col className="w-[16%]" />
+                          <col className="w-[16%]" />
+                          <col className="w-[16%]" />
+                        </colgroup>
+                        <thead className="bg-slate-100"><tr>{["Branch", "Branch name", "Rows", "Net units", "Stock"].map((h) => <th className="px-3 py-2 text-left font-semibold text-slate-600" key={h}>{h}</th>)}</tr></thead>
                         <tbody>
                           {preview.excludedBranches.map((branch) => (
                             <tr className="border-t border-slate-100" key={`${branch.rawBranch}|${branch.branchColumnIndex ?? ""}`}>
-                              <td className="whitespace-nowrap px-3 py-1.5 font-mono text-phx-md text-slate-700">{branch.rawBranch || (branch.branchColumnIndex != null ? `Column ${branch.branchColumnIndex}` : "—")}</td>
-                              <td className="whitespace-nowrap px-3 py-1.5 text-slate-600">{branch.branchName || "—"}</td>
-                              <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-slate-700">{branch.rows.toLocaleString()}</td>
-                              <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-slate-700">{num(branch.netQty)}</td>
-                              <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-slate-700">{num(branch.stockQty)}</td>
+                              <td className="break-words px-3 py-1.5 font-mono text-phx-md text-slate-700">{branch.rawBranch || (branch.branchColumnIndex != null ? `Column ${branch.branchColumnIndex}` : "—")}</td>
+                              <td className="break-words px-3 py-1.5 text-slate-600">{branch.branchName || "—"}</td>
+                              <td className="px-3 py-1.5 text-right tabular-nums text-slate-700">{branch.rows.toLocaleString()}</td>
+                              <td className="px-3 py-1.5 text-right tabular-nums text-slate-700">{num(branch.netQty)}</td>
+                              <td className="px-3 py-1.5 text-right tabular-nums text-slate-700">{num(branch.stockQty)}</td>
                             </tr>
                           ))}
                         </tbody>

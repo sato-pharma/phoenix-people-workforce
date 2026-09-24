@@ -707,8 +707,12 @@ export function SalesQueue({ initialData, initialError }: Props) {
           description="Rows with required fixes before the sheet can move through validation."
           title="Rows To Fix"
         >
-          <div className="overflow-x-auto p-4 md:p-5">
-            <table className="w-full min-w-[640px] text-left text-sm">
+          <div className="p-4 md:p-5">
+            <table className="w-full table-fixed text-left text-sm">
+              <colgroup>
+                <col className="w-[18%]" />
+                <col className="w-[82%]" />
+              </colgroup>
               <thead className="bg-phx-paper">
                 <tr>
                   <th className={adminTableHeaderClassName}>Row</th>
@@ -718,8 +722,8 @@ export function SalesQueue({ initialData, initialError }: Props) {
               <tbody className="divide-y divide-phx-line">
                 {invalidRows.map((row, index) => (
                   <tr className="text-phx-ink-soft" key={`${row.rowNumber}:${index}`}>
-                    <td className="w-24 px-4 py-3 font-semibold text-phx-ink">{row.rowNumber}</td>
-                    <td className="px-4 py-3">{row.messages.join(" | ")}</td>
+                    <td className="px-4 py-3 font-semibold text-phx-ink tabular-nums">{row.rowNumber}</td>
+                    <td className="break-words px-4 py-3">{row.messages.join(" | ")}</td>
                   </tr>
                 ))}
               </tbody>

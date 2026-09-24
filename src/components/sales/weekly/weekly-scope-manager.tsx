@@ -92,8 +92,16 @@ export function WeeklyScopeManager({
       </div>
 
       {/* Current assignments */}
-      <div className="overflow-x-auto border border-phx-line bg-white">
-        <table className="w-full text-sm">
+      <div className="border border-phx-line bg-white">
+        <table className="w-full table-fixed text-sm">
+          <colgroup>
+            <col className="w-[28%] md:w-[26%]" />
+            <col className="w-[20%] md:w-[22%]" />
+            <col className="w-[28%] md:w-[40%]" />
+            {/* The Edit button cannot shrink below about 62px, so the action column keeps a
+                wider share on a phone — a fixed column narrower than its button CLIPS it. */}
+            <col className="w-[24%] md:w-[12%]" />
+          </colgroup>
           <thead className="bg-phx-paper text-left text-phx-xs font-black uppercase tracking-wide text-phx-ink-soft">
             <tr>
               <th className="px-3 py-2">Person</th>
@@ -154,16 +162,19 @@ function AssignmentRow({
   const nameByCode = useMemo(() => new Map(products.map((p) => [p.code, p.name])), [products]);
   return (
     <tr className="border-t border-phx-paper-2 align-top">
-      <td className="px-3 py-2">
+      {/* `break-words` on all three: a single long word is what overruns a fixed column, and
+          the wrapper does not scroll to reveal it. Measured at 375px — "Marketing Manager"
+          wanted 75px in a 62px cell, because "Marketing" alone is wider than the content box. */}
+      <td className="break-words px-3 py-2">
         <div className="font-bold text-phx-ink">{assignment.name}</div>
         <div className="text-phx-xs font-medium text-phx-ink-faint">{assignment.hrId}</div>
       </td>
-      <td className="px-3 py-2 text-phx-ink-2">{assignment.role}</td>
+      <td className="break-words px-3 py-2 text-phx-ink-2">{assignment.role}</td>
       <td className="px-3 py-2">
         <div className="flex flex-wrap gap-1">
           {assignment.productCodes.length === 0 && <span className="text-phx-ink-faint">— none —</span>}
           {assignment.productCodes.map((code) => (
-            <span key={code} className="inline-flex items-center bg-phx-paper-2 px-2 py-0.5 text-phx-xs font-bold text-phx-ink-2">
+            <span key={code} className="inline-flex max-w-full items-center break-words bg-phx-paper-2 px-2 py-0.5 text-phx-xs font-bold text-phx-ink-2">
               {nameByCode.get(code) ?? code}
             </span>
           ))}

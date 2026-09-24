@@ -278,7 +278,9 @@ function ChannelPanel({ channel, group }: { channel: CustomerChannel; group: Cus
     initialSort: null,
   });
 
-  const columnCount = showsKeywords ? 11 : 10;
+  // Brick ID rides inside Brick and Region inside Territory, so the table is nine columns wide
+  // (ten with the matched-word column) — keep this in step with the colgroup below.
+  const columnCount = showsKeywords ? 9 : 8;
 
   return (
     <div className="p-4 md:p-5">
@@ -313,24 +315,38 @@ function ChannelPanel({ channel, group }: { channel: CustomerChannel; group: Cus
       </div>
 
       {/* Desktop: the full table. Mobile: cards — never a horizontally scrolling table. */}
-      <div className="hidden overflow-x-auto md:block">
+      <div className="hidden md:block">
         <div className="overflow-hidden border border-phx-line">
-          <table className="w-full min-w-[1100px] text-sm">
+          {/* Eleven columns cannot divide a screen, so two pairs are MERGED rather than shrunk:
+              Brick ID + Brick Name read as one Brick cell, Area + Region as one Territory cell.
+              table-fixed + a percentage colgroup then makes a sideways scroll impossible. */}
+          <table className="w-full table-fixed text-sm">
+            <colgroup>
+              <col className={showsKeywords ? "w-[15%]" : "w-[18%]"} />
+              {showsKeywords ? <col className="w-[10%]" /> : null}
+              <col className={showsKeywords ? "w-[12%]" : "w-[15%]"} />
+              <col className={showsKeywords ? "w-[12%]" : "w-[13%]"} />
+              <col className={showsKeywords ? "w-[12%]" : "w-[12%]"} />
+              <col className={showsKeywords ? "w-[11%]" : "w-[12%]"} />
+              <col className={showsKeywords ? "w-[8%]" : "w-[9%]"} />
+              <col className={showsKeywords ? "w-[10%]" : "w-[11%]"} />
+              {/* The View link cannot shrink below about 61px, and this table starts at md —
+                  a narrower share CLIPS the button at exactly 768px. */}
+              <col className="w-[10%]" />
+            </colgroup>
             <thead className="bg-[#0B0B0B] text-slate-100">
               <tr>
-                <SortableTh className="text-xs tracking-[0.12em]" label="Customer" onSort={table.toggleSort} sort={table.sort} sortKey="clientName" variant="dark" />
+                <SortableTh className="break-words text-xs tracking-[0.12em]" label="Customer" onSort={table.toggleSort} sort={table.sort} sortKey="clientName" variant="dark" />
                 {showsKeywords ? (
-                  <SortableTh className="text-xs tracking-[0.12em]" label="Matched Word" onSort={table.toggleSort} sort={table.sort} sortKey="matchedKeywords" variant="dark" />
+                  <SortableTh className="break-words text-xs tracking-[0.12em]" label="Matched Word" onSort={table.toggleSort} sort={table.sort} sortKey="matchedKeywords" variant="dark" />
                 ) : null}
-                <SortableTh className="text-xs tracking-[0.12em]" label="Address" onSort={table.toggleSort} sort={table.sort} sortKey="clientAddress" variant="dark" />
-                <SortableTh className="text-xs tracking-[0.12em]" label="Distributor" onSort={table.toggleSort} sort={table.sort} sortKey="distributorName" variant="dark" />
-                <SortableTh className="text-xs tracking-[0.12em]" label="Brick ID" onSort={table.toggleSort} sort={table.sort} sortKey="brickId" variant="dark" />
-                <SortableTh className="text-xs tracking-[0.12em]" label="Brick Name" onSort={table.toggleSort} sort={table.sort} sortKey="brickName" variant="dark" />
-                <SortableTh className="text-xs tracking-[0.12em]" label="Area" onSort={table.toggleSort} sort={table.sort} sortKey="areaName" variant="dark" />
-                <SortableTh className="text-xs tracking-[0.12em]" label="Region" onSort={table.toggleSort} sort={table.sort} sortKey="regionName" variant="dark" />
-                <SortableTh align="right" className="text-xs tracking-[0.12em]" label="Units" onSort={table.toggleSort} sort={table.sort} sortKey="totalUnits" variant="dark" />
-                <SortableTh align="right" className="text-xs tracking-[0.12em]" label="Value" onSort={table.toggleSort} sort={table.sort} sortKey="totalValue" variant="dark" />
-                <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-black uppercase tracking-[0.12em]"></th>
+                <SortableTh className="break-words text-xs tracking-[0.12em]" label="Address" onSort={table.toggleSort} sort={table.sort} sortKey="clientAddress" variant="dark" />
+                <SortableTh className="break-words text-xs tracking-[0.12em]" label="Distributor" onSort={table.toggleSort} sort={table.sort} sortKey="distributorName" variant="dark" />
+                <SortableTh className="break-words text-xs tracking-[0.12em]" label="Brick" onSort={table.toggleSort} sort={table.sort} sortKey="brickName" variant="dark" />
+                <SortableTh className="break-words text-xs tracking-[0.12em]" label="Territory" onSort={table.toggleSort} sort={table.sort} sortKey="areaName" variant="dark" />
+                <SortableTh align="right" className="break-words text-xs tracking-[0.12em]" label="Units" onSort={table.toggleSort} sort={table.sort} sortKey="totalUnits" variant="dark" />
+                <SortableTh align="right" className="break-words text-xs tracking-[0.12em]" label="Value" onSort={table.toggleSort} sort={table.sort} sortKey="totalValue" variant="dark" />
+                <th className="px-3 py-2 text-left text-xs font-black uppercase tracking-[0.12em]"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-phx-line">
@@ -347,30 +363,34 @@ function ChannelPanel({ channel, group }: { channel: CustomerChannel; group: Cus
               ) : (
                 table.rows.map((row) => (
                   <tr className="transition-colors hover:bg-orange-50/50" key={`${row.distributorCode}:${row.clientCode}`}>
-                    <td className="whitespace-nowrap px-3 py-2.5">
+                    <td className="break-words px-3 py-2.5 align-top">
                       <Link className="block" href={customerHref(row)}>
                         <span className="block font-semibold text-phx-ink hover:text-phx-accent">{row.clientName || "—"}</span>
                         <span className="block text-xs text-slate-400">{row.clientCode}</span>
                       </Link>
                     </td>
                     {showsKeywords ? (
-                      <td className="whitespace-nowrap px-3 py-2.5">
-                        <span className="border border-phx-accent-line bg-orange-50 px-2 py-0.5 text-phx-xs font-bold text-[#9A3412]">
+                      <td className="break-words px-3 py-2.5 align-top">
+                        <span className="inline-block border border-phx-accent-line bg-orange-50 px-2 py-0.5 text-phx-xs font-bold text-[#9A3412]">
                           {row.matchedKeywords.join(" + ") || "—"}
                         </span>
                       </td>
                     ) : null}
-                    <td className="whitespace-nowrap px-3 py-2.5 text-slate-500">{row.clientAddress || "—"}</td>
-                    <td className="whitespace-nowrap px-3 py-2.5 text-slate-600">{row.distributorName}</td>
-                    <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-700">{row.brickId}</td>
-                    <td className="whitespace-nowrap px-3 py-2.5 text-slate-600">{row.brickName || "—"}</td>
-                    <td className="whitespace-nowrap px-3 py-2.5 text-slate-600">{row.areaName}</td>
-                    <td className="whitespace-nowrap px-3 py-2.5 text-slate-600">{row.regionName}</td>
-                    <td className="whitespace-nowrap px-3 py-2.5 text-right font-semibold tabular-nums text-slate-900">{formatNumber(row.totalUnits)}</td>
-                    <td className="whitespace-nowrap px-3 py-2.5 text-right font-semibold tabular-nums text-slate-900">{formatCurrency(row.totalValue)}</td>
-                    <td className="px-3 py-2.5">
+                    <td className="break-words px-3 py-2.5 align-top text-slate-500">{row.clientAddress || "—"}</td>
+                    <td className="break-words px-3 py-2.5 align-top text-slate-600">{row.distributorName}</td>
+                    <td className="break-words px-3 py-2.5 align-top text-slate-600">
+                      <span className="block">{row.brickName || "—"}</span>
+                      <span className="block text-xs text-slate-400">{row.brickId}</span>
+                    </td>
+                    <td className="break-words px-3 py-2.5 align-top text-slate-600">
+                      <span className="block">{row.areaName}</span>
+                      <span className="block text-xs text-slate-400">{row.regionName}</span>
+                    </td>
+                    <td className="break-words px-3 py-2.5 text-right align-top font-semibold tabular-nums text-slate-900">{formatNumber(row.totalUnits)}</td>
+                    <td className="break-words px-3 py-2.5 text-right align-top font-semibold tabular-nums text-slate-900">{formatCurrency(row.totalValue)}</td>
+                    <td className="px-3 py-2.5 align-top">
                       <Link
-                        className="inline-flex items-center gap-1 whitespace-nowrap border border-slate-200 bg-white px-2.5 py-1.5 text-phx-xs font-bold text-slate-700 transition hover:border-phx-accent-line hover:text-phx-accent"
+                        className="inline-flex items-center gap-1 border border-slate-200 bg-white px-2.5 py-1.5 text-phx-xs font-bold text-slate-700 transition hover:border-phx-accent-line hover:text-phx-accent"
                         href={customerHref(row)}
                       >
                         View

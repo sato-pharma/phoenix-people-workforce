@@ -197,8 +197,17 @@ import path from "node:path";
  * stood, and a Cairo street address is exactly the length an ellipsis eats. Its parent is already
  * `min-w-0 flex-1` beside a `shrink-0` time column, so wrapping costs no horizontal scroll at
  * 375px. Pinned by tests/crm-route-map-address-never-ellipsises.test.ts.
+ *
+ * 180 -> 175 on 2026-09-24: five cuts fell out of the sales fits-the-screen pass (the
+ * fits-the-screen ratchet is 209 -> 175 in the same change). Three were `line-clamp-2` on a
+ * customer ADDRESS (Customer Directory, and both of Customer Mapping's views), a fourth was the
+ * consolidated view's distributor-code list, and the fifth a `truncate` on the SoS coverage tab's
+ * customer column. All five sat in
+ * tables that are now `table-fixed` with a percentage `<colgroup>`, so the text wraps inside its
+ * own column and the row grows taller instead of the page growing wider: exactly the trade the
+ * owner's rule names, where truncation and horizontal scroll collide and wrapping wins.
  */
-const BASELINE = 180;
+const BASELINE = 175;
 
 const ROOTS = ["app", "src"];
 
