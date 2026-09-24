@@ -65,10 +65,16 @@ function MonthlyMissing({ data, loadError }: { data: SalesReferenceGaps | null; 
             key={group.kind}
             title={group.label}
           >
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[680px] text-left text-sm">
+            <div>
+              <table className="w-full table-fixed text-left text-sm">
+                <colgroup>
+                  <col className="w-[22%]" />
+                  <col className="w-[16%]" />
+                  <col className="w-[34%]" />
+                  <col className="w-[28%]" />
+                </colgroup>
                 <thead><tr>
-                  <th className={tableHeaderClassName}><span className="inline-flex items-center gap-2"><Icon className="h-4 w-4" />Code</span></th>
+                  <th className={tableHeaderClassName}><span className="inline-flex items-center gap-2"><Icon className="h-4 w-4 shrink-0" />Code</span></th>
                   <th className={`${tableHeaderClassName} text-right`}>Rows affected</th>
                   <th className={tableHeaderClassName}>Distributors</th>
                   <th className={tableHeaderClassName}>Periods</th>
@@ -76,10 +82,10 @@ function MonthlyMissing({ data, loadError }: { data: SalesReferenceGaps | null; 
                 <tbody className="divide-y divide-phx-line">
                   {group.gaps.map((gap) => (
                     <tr key={gap.code}>
-                      <td className="px-4 py-2.5 font-semibold text-phx-ink">{gap.code}</td>
+                      <td className="break-words px-4 py-2.5 font-semibold text-phx-ink">{gap.code}</td>
                       <td className={`${cellClassName} text-right tabular-nums`}>{formatNumber(gap.affectedRows)}</td>
-                      <td className={cellClassName}>{joinCapped(gap.distributors)}</td>
-                      <td className={cellClassName}>{joinCapped(gap.periods)}</td>
+                      <td className={`${cellClassName} break-words`}>{joinCapped(gap.distributors)}</td>
+                      <td className={`${cellClassName} break-words`}>{joinCapped(gap.periods)}</td>
                     </tr>
                   ))}
                 </tbody>

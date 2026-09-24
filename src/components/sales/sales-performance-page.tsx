@@ -596,7 +596,7 @@ function FilterBar({
             </button>
           )}
         </div>
-        <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1">
+        <div className="-mx-1 flex flex-wrap gap-1.5 px-1 pb-1">
           {availablePeriods.map((period) => {
             const isActive = allPeriodsSelected || selectedPeriodSet.has(period);
             return (
@@ -1256,8 +1256,15 @@ const ProductTable = memo(function ProductTable({
         {tableEmptyState ? (
           <div className="p-5">{tableEmptyState}</div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px] border-collapse">
+          <div>
+            <table className="w-full table-fixed border-collapse">
+              <colgroup>
+                <col className="w-[30%]" />
+                <col className="w-[17%]" />
+                <col className="w-[17%]" />
+                <col className="w-[22%]" />
+                <col className="w-[14%]" />
+              </colgroup>
               <thead className="bg-slate-50/80">
                 <tr>
                   {productTableColumns.map((column) => (
@@ -1299,21 +1306,21 @@ const ProductTable = memo(function ProductTable({
                           : index % 2 === 1 ? "bg-slate-50/30" : ""
                       }`}
                     >
-                      <td className="border border-slate-100 px-4 py-3">
-                        <p className="text-sm font-semibold text-slate-900 leading-snug">{product.product}</p>
-                        <p className="text-phx-xs text-slate-500">{product.family}</p>
+                      <td className="border border-slate-100 px-4 py-3 align-top">
+                        <p className="break-words text-sm font-semibold text-slate-900 leading-snug">{product.product}</p>
+                        <p className="break-words text-phx-xs text-slate-500">{product.family}</p>
                       </td>
-                      <td className="border border-slate-100 px-4 py-3 text-sm font-bold text-slate-900">{formatCompactCurrency(product.sales)}</td>
-                      <td className="border border-slate-100 px-4 py-3 text-sm font-medium text-slate-500">{formatCompactCurrency(product.target)}</td>
-                      <td className="border border-slate-100 px-4 py-3">
-                        <div className="flex items-center gap-2">
+                      <td className="border border-slate-100 px-4 py-3 align-top text-sm font-bold text-slate-900">{formatCompactCurrency(product.sales)}</td>
+                      <td className="border border-slate-100 px-4 py-3 align-top text-sm font-medium text-slate-500">{formatCompactCurrency(product.target)}</td>
+                      <td className="border border-slate-100 px-4 py-3 align-top">
+                        <div className="flex min-w-0 flex-wrap items-center gap-2">
                           <span
                             className="text-sm font-black"
                             style={{ color: achievementColor(product.achievementRate) }}
                           >
                             {formatPercent(product.achievementRate)}
                           </span>
-                          <div className="h-1.5 w-16 overflow-hidden rounded-sm bg-slate-100 sm:w-20">
+                          <div className="h-1.5 w-full max-w-[5rem] overflow-hidden rounded-sm bg-slate-100">
                             <div
                               className="h-full rounded-sm transition-all duration-500"
                               style={{

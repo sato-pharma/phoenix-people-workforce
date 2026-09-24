@@ -892,16 +892,29 @@ export function MonthlySalesDashboard({
               />
             }
           >
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+            <div>
+              <table className="w-full table-fixed text-sm">
+                {/* Six columns do not fit 349px: measured at 375px, Achv. got 38px for a
+                    badge that wants 59px with its cell padding, and the table sat at 369px
+                    inside a 349px container with nothing to scroll it. Top Product folds
+                    below `md` and comes back as a sub-line under the manager, and the
+                    padding halves on a phone, which is what buys the numeric columns room. */}
+                <colgroup>
+                  <col className="w-[30%] md:w-[22%]" />
+                  <col className="w-[14%] md:w-[14%]" />
+                  <col className="hidden md:table-column md:w-[22%]" />
+                  <col className="w-[18%] md:w-[18%]" />
+                  <col className="w-[18%] md:w-[13%]" />
+                  <col className="w-[20%] md:w-[11%]" />
+                </colgroup>
                 <thead className="bg-[#020617] text-white">
                   <tr>
-                    <SortableTh label="Manager" sortKey="manager" sort={managerTable.sort} onSort={managerTable.toggleSort} />
-                    <SortableTh label="Line" sortKey="line" sort={managerTable.sort} onSort={managerTable.toggleSort} />
-                    <SortableTh label="Top Product" />
-                    <SortableTh label="Sales" sortKey="sales" sort={managerTable.sort} onSort={managerTable.toggleSort} align="right" />
-                    <SortableTh label="Target" sortKey="target" sort={managerTable.sort} onSort={managerTable.toggleSort} align="right" />
-                    <SortableTh label="Achv." sortKey="achievementRate" sort={managerTable.sort} onSort={managerTable.toggleSort} align="right" />
+                    <SortableTh className="px-2 md:px-3" label="Manager" sortKey="manager" sort={managerTable.sort} onSort={managerTable.toggleSort} />
+                    <SortableTh className="px-2 md:px-3" label="Line" sortKey="line" sort={managerTable.sort} onSort={managerTable.toggleSort} />
+                    <SortableTh className="hidden md:table-cell" label="Top Product" />
+                    <SortableTh className="px-2 md:px-3" label="Sales" sortKey="sales" sort={managerTable.sort} onSort={managerTable.toggleSort} align="right" />
+                    <SortableTh className="px-2 md:px-3" label="Target" sortKey="target" sort={managerTable.sort} onSort={managerTable.toggleSort} align="right" />
+                    <SortableTh className="px-2 md:px-3" label="Achv." sortKey="achievementRate" sort={managerTable.sort} onSort={managerTable.toggleSort} align="right" />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -910,15 +923,20 @@ export function MonthlySalesDashboard({
                   ) : (
                     managerTable.rows.map((row) => (
                       <tr key={`${row.manager}-${row.line}`} className="transition hover:bg-orange-50/40">
-                        <td className="px-3 py-2.5 font-bold text-slate-900">{row.manager}</td>
-                        <td className="px-3 py-2.5 text-slate-600">{row.line}</td>
-                        <td className="px-3 py-2.5 text-slate-600">{row.topProduct}</td>
-                        <td className="px-3 py-2.5 text-right">
+                        <td className="break-words px-2 py-2.5 align-top font-bold text-slate-900 md:px-3">
+                          {row.manager}
+                          <span className="mt-0.5 block text-xs font-medium text-slate-500 md:hidden">
+                            {row.topProduct}
+                          </span>
+                        </td>
+                        <td className="break-words px-2 py-2.5 align-top text-slate-600 md:px-3">{row.line}</td>
+                        <td className="hidden break-words px-3 py-2.5 align-top text-slate-600 md:table-cell">{row.topProduct}</td>
+                        <td className="px-2 py-2.5 text-right align-top md:px-3">
                           <div className="font-black text-slate-900">{compactEGP(row.sales)}</div>
                           <Bar2 value={row.sales} max={managerMax} color="#F97316" />
                         </td>
-                        <td className="px-3 py-2.5 text-right text-slate-600">{compactEGP(row.target)}</td>
-                        <td className="px-3 py-2.5 text-right">
+                        <td className="px-2 py-2.5 text-right align-top text-slate-600 md:px-3">{compactEGP(row.target)}</td>
+                        <td className="px-2 py-2.5 text-right align-top md:px-3">
                           <AchievementBadge rate={row.achievementRate} />
                         </td>
                       </tr>
@@ -932,8 +950,15 @@ export function MonthlySalesDashboard({
           {/* Line + Product tables */}
           <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
             <AdminTableShell title="Line Performance" description="Approved sales by product line">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+              <div>
+                <table className="w-full table-fixed text-sm">
+                  <colgroup>
+                    <col className="w-[28%]" />
+                    <col className="w-[24%]" />
+                    <col className="w-[18%]" />
+                    <col className="w-[16%]" />
+                    <col className="w-[14%]" />
+                  </colgroup>
                   <thead className="bg-[#020617] text-white">
                     <tr>
                       <SortableTh label="Line" sortKey="line" sort={lineTable.sort} onSort={lineTable.toggleSort} />
@@ -949,7 +974,7 @@ export function MonthlySalesDashboard({
                     ) : (
                       lineTable.rows.map((row) => (
                         <tr key={row.line} className="transition hover:bg-orange-50/40">
-                          <td className="px-3 py-2.5 font-bold text-slate-900">{row.line}</td>
+                          <td className="break-words px-3 py-2.5 align-top font-bold text-slate-900">{row.line}</td>
                           <td className="px-3 py-2.5 text-right">
                             <div className="font-black text-slate-900">{compactEGP(row.sales)}</div>
                             <Bar2 value={row.sales} max={lineMax} color="#10B981" />
@@ -980,8 +1005,17 @@ export function MonthlySalesDashboard({
                 />
               }
             >
-              <div className="max-h-[460px] overflow-auto">
-                <table className="w-full text-sm">
+              <div className="max-h-[460px] overflow-y-auto">
+                {/* `table-fixed` + a colgroup, not a plain `w-full`: without them the product
+                    names set the width and the table reached 357px inside a 349px wrapper at
+                    375px, which the `overflow-auto` above then scrolled sideways. */}
+                <table className="w-full table-fixed text-sm">
+                  <colgroup>
+                    <col className="w-[34%]" />
+                    <col className="w-[24%]" />
+                    <col className="w-[21%]" />
+                    <col className="w-[21%]" />
+                  </colgroup>
                   <thead className="sticky top-0 z-10 bg-[#020617] text-white">
                     <tr>
                       <SortableTh label="Product" sortKey="product" sort={productTable.sort} onSort={productTable.toggleSort} />
@@ -996,8 +1030,8 @@ export function MonthlySalesDashboard({
                     ) : (
                       productTable.rows.map((row) => (
                         <tr key={row.product} className="transition hover:bg-orange-50/40">
-                          <td className="px-3 py-2.5 font-bold text-slate-900">{row.product}</td>
-                          <td className="px-3 py-2.5 text-slate-600">{row.family}</td>
+                          <td className="break-words px-3 py-2.5 align-top font-bold text-slate-900">{row.product}</td>
+                          <td className="break-words px-3 py-2.5 align-top text-slate-600">{row.family}</td>
                           <td className="px-3 py-2.5 text-right">
                             <div className="font-black text-slate-900">{compactEGP(row.sales)}</div>
                             <Bar2 value={row.sales} max={productMax} color="#8B5CF6" />

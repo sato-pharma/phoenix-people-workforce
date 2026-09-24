@@ -111,9 +111,13 @@ function RegionDot({ regionCode }: { regionCode: string }) {
   );
 }
 
+// These wrap by default so the ranked/summary tables below can be table-fixed and fit
+// their container. The two MATRIX tables (GridTable, and the month series) keep a
+// sideways scroll on purpose — their column count is the product/month count and can
+// never fit — so each re-applies nowrap on its own <table> with [&_th]/[&_td].
 const headClassName =
-  "whitespace-nowrap px-3 py-2.5 text-left text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500";
-const cellClassName = "whitespace-nowrap px-3 py-2 text-sm text-slate-700";
+  "break-words px-3 py-2.5 text-left text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500";
+const cellClassName = "break-words px-3 py-2 text-sm text-slate-700";
 
 /**
  * The owner's shape: who on the left, what across the top.
@@ -125,9 +129,13 @@ const cellClassName = "whitespace-nowrap px-3 py-2 text-sm text-slate-700";
  */
 function GridTable({ grid, measure }: { grid: PerformanceMatrix; measure: "units" | "value" }) {
   const stickyHead = headClassName + " sticky left-0 z-20 bg-slate-50";
+  // EXEMPT from the fits-the-screen sweep, deliberately: one column PER PRODUCT, so the width is
+  // the product count and no merge can bound it — the same shape as the monthly closing matrix,
+  // which the owner ruled keeps its scroll. The sticky first column is the frozen-rep-name half of
+  // that design and only works with a sideways scroll.
   return (
     <div className="overflow-x-auto">
-      <table className="w-full border-collapse">
+      <table className="w-full border-collapse [&_td]:whitespace-nowrap [&_th]:whitespace-nowrap">
         <thead className="border-b border-slate-200 bg-slate-50/80">
           <tr>
             <th className={stickyHead}>Rep</th>
@@ -220,9 +228,11 @@ function SeriesTable({
   rows: PerformanceReviewSeriesRow[];
   subHeading: string;
 }) {
+  // EXEMPT, deliberately: one column PER MONTH in the series, so the width is the month count.
+  // Same ruling as the closing matrix — the scroll stays.
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[52rem] border-collapse">
+      <table className="w-full min-w-[52rem] border-collapse [&_td]:whitespace-nowrap [&_th]:whitespace-nowrap">
         <thead className="border-b border-slate-200 bg-slate-50/80">
           <tr>
             <th className={headClassName}>{rowHeading}</th>
@@ -544,8 +554,20 @@ export function ClosingPerformanceReviewWorkspace({ initialError, initialReview 
         title="Medical rep ranking"
       >
         {/* Desktop gets the full table; a phone gets cards — the admin shell never shows a wide table on mobile. */}
-        <div className="hidden overflow-x-auto lg:block">
-          <table className="w-full min-w-[64rem] border-collapse">
+        <div className="hidden lg:block">
+          {/* min-w-[64rem] made this scroll on any 1024-1280px screen, which is the
+              width most of these are read at. The colgroup owns it now. */}
+          <table className="w-full table-fixed border-collapse">
+            <colgroup>
+              <col className="w-[6%]" />
+              <col className="w-[14%]" />
+              <col className="w-[16%]" />
+              <col className="w-[13%]" />
+              <col className="w-[16%]" />
+              <col className="w-[12%]" />
+              <col className="w-[12%]" />
+              <col className="w-[11%]" />
+            </colgroup>
             <thead className="border-b border-slate-200 bg-slate-50/80">
               <tr>
                 <th className={headClassName}>Rank</th>
@@ -633,8 +655,14 @@ export function ClosingPerformanceReviewWorkspace({ initialError, initialReview 
         title="District managers and regions"
       >
         <div className="grid gap-0 lg:grid-cols-2">
-          <div className="overflow-x-auto border-b border-slate-200 lg:border-b-0 lg:border-r">
-            <table className="w-full min-w-[26rem] border-collapse">
+          <div className="border-b border-slate-200 lg:border-b-0 lg:border-r">
+            <table className="w-full table-fixed border-collapse">
+              <colgroup>
+                <col className="w-[40%]" />
+                <col className="w-[14%]" />
+                <col className="w-[24%]" />
+                <col className="w-[22%]" />
+              </colgroup>
               <thead className="border-b border-slate-200 bg-slate-50/80">
                 <tr>
                   <th className={headClassName}>District manager</th>
@@ -660,8 +688,14 @@ export function ClosingPerformanceReviewWorkspace({ initialError, initialReview 
               </tbody>
             </table>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[26rem] border-collapse">
+          <div>
+            <table className="w-full table-fixed border-collapse">
+              <colgroup>
+                <col className="w-[40%]" />
+                <col className="w-[14%]" />
+                <col className="w-[24%]" />
+                <col className="w-[22%]" />
+              </colgroup>
               <thead className="border-b border-slate-200 bg-slate-50/80">
                 <tr>
                   <th className={headClassName}>Region</th>
@@ -694,8 +728,16 @@ export function ClosingPerformanceReviewWorkspace({ initialError, initialReview 
         description="A family spans several concentrations, so it is measured by value. Units show only where the family happens to be a single product code."
         title="Family performance"
       >
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[40rem] border-collapse">
+        <div>
+          <table className="w-full table-fixed border-collapse">
+            <colgroup>
+              <col className="w-[26%]" />
+              <col className="w-[12%]" />
+              <col className="w-[15%]" />
+              <col className="w-[17%]" />
+              <col className="w-[17%]" />
+              <col className="w-[13%]" />
+            </colgroup>
             <thead className="border-b border-slate-200 bg-slate-50/80">
               <tr>
                 <th className={headClassName}>Product family</th>

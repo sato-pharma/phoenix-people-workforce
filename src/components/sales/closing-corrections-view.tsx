@@ -23,7 +23,7 @@ type Props = {
 };
 
 const headerCell = "px-3 py-2 text-left text-phx-2xs font-bold uppercase tracking-[0.14em] text-slate-500";
-const bodyCell = "px-3 py-2.5 text-sm text-slate-700 align-top";
+const bodyCell = "px-3 py-2.5 text-sm text-slate-700 align-top break-words";
 
 function SectionTable({
   columns,
@@ -37,9 +37,30 @@ function SectionTable({
   if (rows.length === 0) {
     return <p className="px-4 py-3 text-sm text-slate-500 md:px-5">{emptyText}</p>;
   }
+  // The column list is a prop, so no colgroup can be written for it — table-fixed alone
+  // distributes the columns evenly and keeps the width structural.
+  //
+  // Even shares are enough on a laptop and NOT on a phone: measured at 375px, the seven-column
+  // section gave each column 49px and clipped every header ("Distributor" wanted 112px). So below
+  // `md` the same rows render as cards, which is the admin shell's own rule — desktop tables,
+  // mobile cards — with each cell carrying its column's name, so nothing is dropped.
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[760px] border-separate border-spacing-0">
+    <div>
+      <div className="divide-y divide-slate-200 md:hidden">
+        {rows.map((cells, index) => (
+          <div className={`px-4 py-3 ${index % 2 === 1 ? "bg-slate-50/50" : ""}`} key={index}>
+            {cells.map((cell, cellIndex) => (
+              <div className="flex gap-2 py-0.5" key={cellIndex}>
+                <span className="w-24 shrink-0 pt-0.5 text-phx-2xs font-bold uppercase tracking-[0.14em] text-slate-500">
+                  {columns[cellIndex]}
+                </span>
+                <span className="min-w-0 break-words text-sm text-slate-700">{cell}</span>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+      <table className="hidden w-full table-fixed border-separate border-spacing-0 md:table">
         <thead>
           <tr className="border-b border-slate-200 bg-slate-50/70">
             {columns.map((column) => (

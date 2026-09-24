@@ -35,7 +35,7 @@ type DirectoryResponse = {
   success: boolean;
 };
 
-const headerCell = "whitespace-nowrap px-3 py-2 text-left text-xs font-black uppercase tracking-[0.12em]";
+const headerCell = "break-words px-3 py-2 text-left text-xs font-black uppercase tracking-[0.12em]";
 
 function customerHref(row: CustomerDirectoryRow) {
   return `/sales/customer-directory/${encodeURIComponent(row.distributorCode)}/${encodeURIComponent(row.clientCode)}`;
@@ -202,7 +202,7 @@ export function CustomerDirectoryWorkspace({ initialError, initialResult, option
             </AdminCallout>
           </div>
         ) : (
-          <div className="overflow-x-auto p-4 md:p-5">
+          <div className="p-4 md:p-5">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               {result?.truncated ? (
                 <p className="text-xs font-semibold text-[#92400E]">
@@ -225,54 +225,82 @@ export function CustomerDirectoryWorkspace({ initialError, initialResult, option
               </div>
             </div>
             <div className="overflow-hidden border border-phx-line">
-              <table className="w-full min-w-[1100px] text-sm">
+              {/* Ten columns cannot divide a screen, so two pairs are MERGED rather than shrunk:
+                  Brick ID rides under Brick, Region under Territory. table-fixed + a percentage
+                  colgroup then makes a sideways scroll impossible whatever the data. */}
+              <table className="w-full table-fixed text-sm">
+                <colgroup>
+                  <col className="w-[46%] md:w-[20%] lg:w-[18%]" />
+                  <col className="hidden md:table-column md:w-[14%] lg:w-[16%]" />
+                  <col className="hidden md:table-column md:w-[12%] lg:w-[13%]" />
+                  <col className="hidden md:table-column md:w-[12%] lg:w-[13%]" />
+                  <col className="hidden md:table-column md:w-[12%] lg:w-[13%]" />
+                  <col className="hidden md:table-column md:w-[9%] lg:w-[9%]" />
+                  <col className="w-[26%] md:w-[10%] lg:w-[10%]" />
+                  {/* The View link cannot shrink below about 75px, so the action column keeps a
+                      wider share as the screen narrows — a fixed column narrower than its own
+                      button CLIPS it, measured at 768px before this floor went in. */}
+                  <col className="w-[28%] md:w-[11%] lg:w-[8%]" />
+                </colgroup>
                 <thead className="bg-[#0B0B0B] text-slate-100">
                   <tr>
-                    <SortableTh label="Customer" sortKey="clientName" sort={table.sort} onSort={table.toggleSort} variant="dark" className="text-xs tracking-[0.12em]" />
-                    <SortableTh label="Address" sortKey="clientAddress" sort={table.sort} onSort={table.toggleSort} variant="dark" className="text-xs tracking-[0.12em]" />
-                    <SortableTh label="Distributor" sortKey="distributorName" sort={table.sort} onSort={table.toggleSort} variant="dark" className="text-xs tracking-[0.12em]" />
-                    <SortableTh label="Brick ID" sortKey="brickId" sort={table.sort} onSort={table.toggleSort} variant="dark" className="text-xs tracking-[0.12em]" />
-                    <SortableTh label="Brick Name" sortKey="brickName" sort={table.sort} onSort={table.toggleSort} variant="dark" className="text-xs tracking-[0.12em]" />
-                    <SortableTh label="Area" sortKey="areaName" sort={table.sort} onSort={table.toggleSort} variant="dark" className="text-xs tracking-[0.12em]" />
-                    <SortableTh label="Region" sortKey="regionName" sort={table.sort} onSort={table.toggleSort} variant="dark" className="text-xs tracking-[0.12em]" />
-                    <SortableTh label="Units" sortKey="totalUnits" sort={table.sort} onSort={table.toggleSort} align="right" variant="dark" className="text-xs tracking-[0.12em]" />
-                    <SortableTh label="Value" sortKey="totalValue" sort={table.sort} onSort={table.toggleSort} align="right" variant="dark" className="text-xs tracking-[0.12em]" />
+                    <SortableTh label="Customer" sortKey="clientName" sort={table.sort} onSort={table.toggleSort} variant="dark" className="break-words text-xs tracking-[0.12em]" />
+                    <SortableTh label="Address" sortKey="clientAddress" sort={table.sort} onSort={table.toggleSort} variant="dark" className="hidden break-words text-xs tracking-[0.12em] md:table-cell" />
+                    <SortableTh label="Distributor" sortKey="distributorName" sort={table.sort} onSort={table.toggleSort} variant="dark" className="hidden break-words text-xs tracking-[0.12em] md:table-cell" />
+                    <SortableTh label="Brick" sortKey="brickName" sort={table.sort} onSort={table.toggleSort} variant="dark" className="hidden break-words text-xs tracking-[0.12em] md:table-cell" />
+                    <SortableTh label="Territory" sortKey="areaName" sort={table.sort} onSort={table.toggleSort} variant="dark" className="hidden break-words text-xs tracking-[0.12em] md:table-cell" />
+                    <SortableTh label="Units" sortKey="totalUnits" sort={table.sort} onSort={table.toggleSort} align="right" variant="dark" className="hidden break-words text-xs tracking-[0.12em] md:table-cell" />
+                    <SortableTh label="Value" sortKey="totalValue" sort={table.sort} onSort={table.toggleSort} align="right" variant="dark" className="break-words text-xs tracking-[0.12em]" />
                     <th className={headerCell}></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-phx-line">
                   {isLoading ? (
                     <tr>
-                      <td className="px-3 py-6 text-center text-slate-400" colSpan={10}>
+                      <td className="px-3 py-6 text-center text-slate-400" colSpan={8}>
                         <Loader2 className="mx-auto h-5 w-5 animate-spin" />
                       </td>
                     </tr>
                   ) : table.rows.length === 0 ? (
                     customers.length === 0 ? (
                       <tr>
-                        <td className="px-3 py-6 text-center text-slate-400" colSpan={10}>No customers match these filters.</td>
+                        <td className="px-3 py-6 text-center text-slate-400" colSpan={8}>No customers match these filters.</td>
                       </tr>
                     ) : (
-                      <TableNoResults colSpan={10} filtered label="customers" />
+                      <TableNoResults colSpan={8} filtered label="customers" />
                     )
                   ) : (
                     table.rows.map((row) => (
                       <tr className="transition-colors hover:bg-orange-50/50" key={`${row.distributorCode}:${row.clientCode}`}>
-                        <td className="px-3 py-2.5">
+                        <td className="break-words px-3 py-2.5 align-top">
                           <Link className="block" href={customerHref(row)}>
                             <span className="block font-semibold text-phx-ink hover:text-phx-accent">{row.clientName || "—"}</span>
                             <span className="block text-xs text-slate-400">{row.clientCode}</span>
                           </Link>
+                          {/* Below `md` the five folded columns come back here, so a phone loses nothing. */}
+                          <span className="mt-1 block text-xs text-slate-500 md:hidden">{row.clientAddress || "—"}</span>
+                          <span className="block text-xs text-slate-500 md:hidden">
+                            {`${row.distributorName} · ${row.brickName || row.brickId || "—"} · ${row.areaName} / ${row.regionName}`}
+                          </span>
+                          <span className="block text-xs tabular-nums text-slate-500 md:hidden">
+                            {`${formatNumber(row.totalUnits)} units`}
+                          </span>
                         </td>
-                        <td className="max-w-[260px] px-3 py-2.5 text-slate-500"><span className="line-clamp-2">{row.clientAddress || "—"}</span></td>
-                        <td className="whitespace-nowrap px-3 py-2.5 text-slate-600">{row.distributorName}</td>
-                        <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-700">{row.brickId}</td>
-                        <td className="whitespace-nowrap px-3 py-2.5 text-slate-600">{row.brickName || "—"}</td>
-                        <td className="whitespace-nowrap px-3 py-2.5 text-slate-600">{row.areaName}</td>
-                        <td className="whitespace-nowrap px-3 py-2.5 text-slate-600">{row.regionName}</td>
-                        <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums font-semibold text-slate-900">{formatNumber(row.totalUnits)}</td>
-                        <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums font-semibold text-slate-900">{formatCurrency(row.totalValue)}</td>
-                        <td className="px-3 py-2.5">
+                        {/* The address WRAPS — it used to be clamped to two lines, which is the
+                            ellipsis the owner's rule forbids. */}
+                        <td className="hidden break-words px-3 py-2.5 align-top text-slate-500 md:table-cell">{row.clientAddress || "—"}</td>
+                        <td className="hidden break-words px-3 py-2.5 align-top text-slate-600 md:table-cell">{row.distributorName}</td>
+                        <td className="hidden break-words px-3 py-2.5 align-top text-slate-600 md:table-cell">
+                          <span className="block">{row.brickName || "—"}</span>
+                          <span className="block text-xs text-slate-400">{row.brickId}</span>
+                        </td>
+                        <td className="hidden break-words px-3 py-2.5 align-top text-slate-600 md:table-cell">
+                          <span className="block">{row.areaName}</span>
+                          <span className="block text-xs text-slate-400">{row.regionName}</span>
+                        </td>
+                        <td className="hidden break-words px-3 py-2.5 text-right align-top tabular-nums font-semibold text-slate-900 md:table-cell">{formatNumber(row.totalUnits)}</td>
+                        <td className="break-words px-3 py-2.5 text-right align-top tabular-nums font-semibold text-slate-900">{formatCurrency(row.totalValue)}</td>
+                        <td className="px-3 py-2.5 align-top">
                           <Link className="inline-flex items-center gap-1 border border-slate-200 bg-white px-2.5 py-1.5 text-phx-xs font-bold text-slate-700 transition hover:border-phx-accent-line hover:text-phx-accent" href={customerHref(row)}>
                             View <ArrowUpRight className="h-3 w-3" />
                           </Link>

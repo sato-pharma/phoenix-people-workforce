@@ -57,8 +57,33 @@ import path from "node:path";
  * columns. Dropping `overflow-x-auto` on its own just moves the defect from a
  * scrollbar to a clip, and `shrink-0` on an inner element makes a `flex-wrap`
  * inert, so check the row actually wraps after the change rather than assuming it.
+ *
+ * 209 -> 175 on 2026-09-24: src/components/sales, 41 sites -> 7. Every wide sales table now uses
+ * `table-fixed` with a percentage `<colgroup>`, which makes the overflow impossible BY
+ * CONSTRUCTION — the columns divide the container's width, so no customer name, address or figure
+ * can push the table sideways, and removing the wrapper cannot turn into a clip. Where the column
+ * count was the problem it was fixed by MERGING, never by shrinking type: an id rides under the
+ * name it belongs to (Brick ID under Brick, Area/Region into Territory, product code + normalized
+ * name under Product), and the widest grids fold their detail columns below `md`/`lg` and bring
+ * them back as sub-lines, so a phone loses nothing. Four `line-clamp-2` cuts went with it (the
+ * no-ellipsis ratchet is 180 -> 175 in the same change).
+ *
+ * 175 -> 174 on 2026-09-24, from measuring the real pages in a browser rather than trusting the
+ * count. Three of the fixes above were still WRONG on a phone and the ratchet could not see it: a
+ * `table-fixed` table whose cell holds something that cannot shrink — a `whitespace-nowrap` button,
+ * or a sort header whose flex item keeps its default `min-width: auto` — pushes the table past its
+ * container, and an `overflow-hidden` wrapper CLIPS instead of scrolling, so `main` still measures
+ * 375/375 and every check passes while the control is visibly cut. Customer Mapping and Closing
+ * Corrections grew a mobile fold, the shared `SortButton` was taught to wrap, and the last site —
+ * the import Dashboard's generic summary table — turned out to be no exemption at all (it was
+ * mis-read as a distributor-driven sheet preview) and became desktop table + mobile cards.
+ *
+ * The 6 that remain in sales are deliberate and documented in place: the closing matrix
+ * (owner ruling — "the matrix can NEVER fit; leave the scroll"), the two performance-review matrix
+ * tables (one column per product / per month, with a frozen first column), and the territory tree's
+ * desktop half (which has a `md:hidden` mobile tree beside it).
  */
-const BASELINE = 209;
+const BASELINE = 174;
 
 /**
  * app/ and src/components/ are where UI class strings live. src/lib/ is excluded on

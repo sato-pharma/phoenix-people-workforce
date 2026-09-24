@@ -1043,20 +1043,32 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
               </div>
 
               {tab === "coded" ? (
-                <div className="overflow-x-auto border border-phx-line">
-                  <table className="w-full text-sm">
-                    <thead className="bg-[#0B0B0B] text-phx-paper-2"><tr>{["Product ID", "Product", "Brick ID", "Brick", "Area", "Region", "Qty", "Customer"].map((h) => <th className="whitespace-nowrap px-3 py-2 text-left" key={h}>{h}</th>)}</tr></thead>
+                <div className="border border-phx-line">
+                  {/* Eight columns did not fit. Each id rides with its own name, and
+                      Area+Region become one Territory cell, so nothing is lost. */}
+                  <table className="w-full table-fixed text-sm">
+                    <colgroup>
+                      <col className="w-[26%]" />
+                      <col className="w-[22%]" />
+                      <col className="w-[16%]" />
+                      <col className="w-[12%]" />
+                      <col className="w-[24%]" />
+                    </colgroup>
+                    <thead className="bg-[#0B0B0B] text-phx-paper-2"><tr>{["Product", "Brick", "Territory", "Qty", "Customer"].map((h) => <th className="px-3 py-2 text-left" key={h}>{h}</th>)}</tr></thead>
                     <tbody>
                       {preview.sampleCoded.map((r, i) => (
                         <tr className={cn("transition-colors hover:bg-orange-50/50", i % 2 && "bg-slate-50/60")} key={i}>
-                          <td className="px-3 py-1.5 font-mono text-phx-md font-semibold text-slate-900">{r.productCode}</td>
-                          <td className="px-3 py-1.5 text-slate-600">{r.productName}</td>
-                          <td className="px-3 py-1.5 font-mono text-phx-md font-semibold text-slate-700">{r.brickId}</td>
-                          <td className="px-3 py-1.5 text-slate-600">{r.brickName}</td>
-                          <td className="px-3 py-1.5 text-slate-600">{r.areaCode}</td>
-                          <td className="px-3 py-1.5 text-slate-600">{r.regionCode}</td>
-                          <td className="px-3 py-1.5 text-right font-semibold tabular-nums text-slate-900">{r.qty.toLocaleString()}</td>
-                          <td className="px-3 py-1.5 text-slate-600">{r.clientName ?? ""}</td>
+                          <td className="break-words px-3 py-1.5 align-top text-slate-600">
+                            <span className="block font-mono text-phx-md font-semibold text-slate-900">{r.productCode}</span>
+                            <span className="block">{r.productName}</span>
+                          </td>
+                          <td className="break-words px-3 py-1.5 align-top text-slate-600">
+                            <span className="block font-mono text-phx-md font-semibold text-slate-700">{r.brickId}</span>
+                            <span className="block">{r.brickName}</span>
+                          </td>
+                          <td className="break-words px-3 py-1.5 align-top text-slate-600">{r.areaCode} · {r.regionCode}</td>
+                          <td className="px-3 py-1.5 text-right align-top font-semibold tabular-nums text-slate-900">{r.qty.toLocaleString()}</td>
+                          <td className="break-words px-3 py-1.5 align-top text-slate-600">{r.clientName ?? ""}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -1098,8 +1110,8 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
                   </div>
 
                   {preview.unknownProducts.length > 0 ? (
-                    <div className="overflow-x-auto border border-phx-line">
-                      <p className="flex items-center gap-2 bg-slate-900 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-white"><span className="h-3.5 w-1 bg-orange-500" />Unknown products ({countLabel("p", preview.unknownProducts.length)})</p>
+                    <div className="border border-phx-line">
+                      <p className="flex items-center gap-2 bg-slate-900 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-white"><span className="h-3.5 w-1 shrink-0 bg-orange-500" />Unknown products ({countLabel("p", preview.unknownProducts.length)})</p>
                       <BulkAssignBar
                         assignLabel="Bulk map to"
                         busy={busy !== null}
@@ -1109,16 +1121,23 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
                         selectedCount={countSelected("p")}
                         total={preview.unknownProducts.length}
                       />
-                      <table className="w-full text-sm">
-                        <thead className="bg-slate-100"><tr><th className="w-9 px-2 py-2" scope="col"><span className="sr-only">Tick</span></th>{["Raw code", "Raw name", "Rows", "Phoenix product"].map((h) => <th className="px-3 py-2 text-left font-semibold text-slate-600" key={h}>{h}</th>)}</tr></thead>
+                      <table className="w-full table-fixed text-sm">
+                        <colgroup>
+                          <col className="w-[5%]" />
+                          <col className="w-[18%]" />
+                          <col className="w-[26%]" />
+                          <col className="w-[11%]" />
+                          <col className="w-[40%]" />
+                        </colgroup>
+                        <thead className="bg-slate-100"><tr><th className="px-2 py-2" scope="col"><span className="sr-only">Tick</span></th>{["Raw code", "Raw name", "Rows", "Phoenix product"].map((h) => <th className="px-3 py-2 text-left font-semibold text-slate-600" key={h}>{h}</th>)}</tr></thead>
                         <tbody>
                           {visibleRows("p", preview.unknownProducts).map((u) => (
                             <tr className="border-t border-slate-100 transition-colors hover:bg-orange-50/40" key={u.raw}>
-                              <td className="px-2 py-1.5"><input aria-label={`Tick ${u.rawName || u.raw}`} checked={selected[`p:${u.raw}`] ?? false} className="h-3.5 w-3.5 accent-orange-600" onChange={(e) => toggleRow("p", u.raw, e.target.checked)} type="checkbox" /></td>
-                              <td className="px-3 py-1.5 font-semibold text-slate-900"><span className="inline-flex items-center">{u.raw}<CopyBtn text={u.raw} /></span></td>
-                              <td className="px-3 py-1.5 text-slate-600"><span className="inline-flex items-center">{u.rawName}<CopyBtn text={u.rawName} /></span></td>
-                              <td className="px-3 py-1.5 text-right font-semibold tabular-nums text-slate-700">{u.count.toLocaleString()}</td>
-                              <td className="px-3 py-1.5">
+                              <td className="px-2 py-1.5 align-top"><input aria-label={`Tick ${u.rawName || u.raw}`} checked={selected[`p:${u.raw}`] ?? false} className="h-3.5 w-3.5 accent-orange-600" onChange={(e) => toggleRow("p", u.raw, e.target.checked)} type="checkbox" /></td>
+                              <td className="px-3 py-1.5 align-top font-semibold text-slate-900"><span className="flex items-start gap-1"><span className="min-w-0 break-words">{u.raw}</span><CopyBtn text={u.raw} /></span></td>
+                              <td className="px-3 py-1.5 align-top text-slate-600"><span className="flex items-start gap-1"><span className="min-w-0 break-words">{u.rawName}</span><CopyBtn text={u.rawName} /></span></td>
+                              <td className="px-3 py-1.5 text-right align-top font-semibold tabular-nums text-slate-700">{u.count.toLocaleString()}</td>
+                              <td className="min-w-0 px-3 py-1.5 align-top">
                                 <ComboBox onChange={(v) => setPicks((p) => ({ ...p, [`p:${u.raw}`]: v }))} options={productOptions} placeholder="Type product or code…" value={picks[`p:${u.raw}`] ?? ""} />
                               </td>
                             </tr>

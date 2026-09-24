@@ -36,7 +36,7 @@ type MappingResponse = {
 
 type ViewMode = "byDistributor" | "consolidated";
 
-const headerCell = "whitespace-nowrap px-3 py-2 text-left text-xs font-black uppercase tracking-[0.12em]";
+const headerCell = "break-words px-3 py-2 text-left text-xs font-black uppercase tracking-[0.12em]";
 
 export function CustomerMappingWorkspace({ initialError, initialResult, options }: Props) {
   const [result, setResult] = useState<CustomerMappingResult | null>(initialResult);
@@ -199,7 +199,7 @@ export function CustomerMappingWorkspace({ initialError, initialResult, options 
             </AdminCallout>
           </div>
         ) : (
-          <div className="overflow-x-auto p-4 md:p-5">
+          <div className="p-4 md:p-5">
             {result?.truncated ? (
               <p className="mb-3 text-xs font-semibold text-[#92400E]">
                 Showing the first {formatNumber(shownCount)} of {formatNumber(totalCount)} — refine the filters to narrow the list. The XLSX export always contains the full filtered set.
@@ -207,44 +207,73 @@ export function CustomerMappingWorkspace({ initialError, initialResult, options 
             ) : null}
             <div className="overflow-hidden border border-phx-line">
               {view === "byDistributor" ? (
-                <table className="w-full min-w-[1400px] text-sm">
+                /* Eleven columns cannot divide a screen, so each ID rides UNDER the name it
+                   belongs to — code under Customer, brick/area/region ids under their names —
+                   rather than shrinking the type. Nothing is dropped.
+
+                   Seven still cannot divide a PHONE: measured at 375px each column got ~45px and
+                   the master code (a mono token that cannot break) overran its cell. So below `md`
+                   five of them fold away and come back as sub-lines under the customer's name. */
+                <table className="w-full table-fixed text-sm">
+                  <colgroup>
+                    <col className="w-[58%] md:w-[18%]" />
+                    <col className="hidden md:table-column md:w-[18%]" />
+                    <col className="hidden md:table-column md:w-[14%]" />
+                    <col className="hidden md:table-column md:w-[13%]" />
+                    <col className="hidden md:table-column md:w-[12%]" />
+                    <col className="hidden md:table-column md:w-[12%]" />
+                    <col className="w-[42%] md:w-[13%]" />
+                  </colgroup>
                   <thead className="bg-[#0B0B0B] text-slate-100">
                     <tr>
-                      <th className={headerCell}>Customer Code</th>
-                      <th className={headerCell}>Customer Name</th>
-                      <th className={headerCell}>Address</th>
-                      <th className={headerCell}>Distributor</th>
-                      <th className={headerCell}>Brick ID</th>
-                      <th className={headerCell}>Brick Name</th>
-                      <th className={headerCell}>Area ID</th>
-                      <th className={headerCell}>Area Name</th>
-                      <th className={headerCell}>Region ID</th>
-                      <th className={headerCell}>Region Name</th>
+                      <th className={headerCell}>Customer</th>
+                      <th className={`${headerCell} hidden md:table-cell`}>Address</th>
+                      <th className={`${headerCell} hidden md:table-cell`}>Distributor</th>
+                      <th className={`${headerCell} hidden md:table-cell`}>Brick</th>
+                      <th className={`${headerCell} hidden md:table-cell`}>Area</th>
+                      <th className={`${headerCell} hidden md:table-cell`}>Region</th>
                       <th className={headerCell}>Master Customer</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-phx-line">
                     {isLoading ? (
-                      <tr><td className="px-3 py-6 text-center text-slate-400" colSpan={11}><Loader2 className="mx-auto h-5 w-5 animate-spin" /></td></tr>
+                      <tr><td className="px-3 py-6 text-center text-slate-400" colSpan={7}><Loader2 className="mx-auto h-5 w-5 animate-spin" /></td></tr>
                     ) : rows.length === 0 ? (
-                      <tr><td className="px-3 py-6 text-center text-slate-400" colSpan={11}>No customers match these filters.</td></tr>
+                      <tr><td className="px-3 py-6 text-center text-slate-400" colSpan={7}>No customers match these filters.</td></tr>
                     ) : (
                       rows.map((row) => (
                         <tr className="transition-colors hover:bg-orange-50/50" key={`${row.distributorCode}:${row.customerCode}`}>
-                          <td className="whitespace-nowrap px-3 py-2.5 font-semibold tabular-nums text-phx-ink">{row.customerCode}</td>
-                          <td className="px-3 py-2.5 text-slate-700">{row.customerName || "—"}</td>
-                          <td className="max-w-[260px] px-3 py-2.5 text-slate-500"><span className="line-clamp-2">{row.customerAddress || "—"}</span></td>
-                          <td className="whitespace-nowrap px-3 py-2.5 text-slate-600">{row.distributorName}</td>
-                          <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-700">{row.brickId || "—"}</td>
-                          <td className="whitespace-nowrap px-3 py-2.5 text-slate-600">{row.brickName || "—"}</td>
-                          <td className="whitespace-nowrap px-3 py-2.5 text-slate-600">{row.areaCode || "—"}</td>
-                          <td className="whitespace-nowrap px-3 py-2.5 text-slate-600">{row.areaName || "—"}</td>
-                          <td className="whitespace-nowrap px-3 py-2.5 text-slate-600">{row.regionCode || "—"}</td>
-                          <td className="whitespace-nowrap px-3 py-2.5 text-slate-600">{row.regionName || "—"}</td>
-                          <td className="whitespace-nowrap px-3 py-2.5">
+                          <td className="break-words px-3 py-2.5 align-top text-slate-700">
+                            <span className="block">{row.customerName || "—"}</span>
+                            <span className="block font-semibold tabular-nums text-xs text-slate-400">{row.customerCode}</span>
+                            {/* Below `md` the five folded columns come back here, so a phone
+                                loses nothing. */}
+                            <span className="mt-1 block text-xs text-slate-500 md:hidden">{row.customerAddress || "—"}</span>
+                            <span className="block text-xs text-slate-500 md:hidden">{row.distributorName}</span>
+                            <span className="block text-xs text-slate-500 md:hidden">
+                              {`${row.brickName || row.brickId || "—"} · ${row.areaName || row.areaCode || "—"} / ${row.regionName || row.regionCode || "—"}`}
+                            </span>
+                          </td>
+                          {/* The address WRAPS — it used to be clamped to two lines, which is the
+                              ellipsis the owner's rule forbids. */}
+                          <td className="hidden break-words px-3 py-2.5 align-top text-slate-500 md:table-cell">{row.customerAddress || "—"}</td>
+                          <td className="hidden break-words px-3 py-2.5 align-top text-slate-600 md:table-cell">{row.distributorName}</td>
+                          <td className="hidden break-words px-3 py-2.5 align-top text-slate-600 md:table-cell">
+                            <span className="block">{row.brickName || "—"}</span>
+                            <span className="block text-xs text-slate-400">{row.brickId || "—"}</span>
+                          </td>
+                          <td className="hidden break-words px-3 py-2.5 align-top text-slate-600 md:table-cell">
+                            <span className="block">{row.areaName || "—"}</span>
+                            <span className="block text-xs text-slate-400">{row.areaCode || "—"}</span>
+                          </td>
+                          <td className="hidden break-words px-3 py-2.5 align-top text-slate-600 md:table-cell">
+                            <span className="block">{row.regionName || "—"}</span>
+                            <span className="block text-xs text-slate-400">{row.regionCode || "—"}</span>
+                          </td>
+                          <td className="break-words px-3 py-2.5 align-top">
                             <span className="font-mono text-xs font-semibold text-slate-700">{row.masterCustomerId}</span>
                             {row.matched ? (
-                              <span className="ml-2 bg-phx-accent px-1.5 text-phx-2xs font-black text-white">×{row.distributorSpan}</span>
+                              <span className="ml-2 inline-block bg-phx-accent px-1.5 text-phx-2xs font-black text-white">×{row.distributorSpan}</span>
                             ) : null}
                           </td>
                         </tr>
@@ -253,44 +282,70 @@ export function CustomerMappingWorkspace({ initialError, initialResult, options 
                   </tbody>
                 </table>
               ) : (
-                <table className="w-full min-w-[1300px] text-sm">
+                /* Ten columns merged to eight: the master id rides under the customer's name, and
+                   the distributor codes under their count. table-fixed + a percentage colgroup
+                   then makes a sideways scroll impossible whatever the data — and below `md` six
+                   of the eight fold away, returning as sub-lines under the customer's name. */
+                <table className="w-full table-fixed text-sm">
+                  <colgroup>
+                    <col className="w-[58%] md:w-[18%]" />
+                    <col className="hidden md:table-column md:w-[17%]" />
+                    <col className="hidden md:table-column md:w-[12%]" />
+                    <col className="hidden md:table-column md:w-[12%]" />
+                    <col className="hidden md:table-column md:w-[12%]" />
+                    <col className="hidden md:table-column md:w-[14%]" />
+                    <col className="hidden md:table-column md:w-[7%]" />
+                    <col className="w-[42%] md:w-[8%]" />
+                  </colgroup>
                   <thead className="bg-[#0B0B0B] text-slate-100">
                     <tr>
-                      <th className={headerCell}>Master Customer</th>
-                      <th className={headerCell}>Customer Name</th>
-                      <th className={headerCell}>Address</th>
-                      <th className={headerCell}>Brick</th>
-                      <th className={headerCell}>Area</th>
-                      <th className={headerCell}>Region</th>
-                      <th className={`${headerCell} text-right`}>Distributors</th>
-                      <th className={headerCell}>Distributor codes</th>
-                      <th className={`${headerCell} text-right`}>Units</th>
+                      <th className={headerCell}>Customer</th>
+                      <th className={`${headerCell} hidden md:table-cell`}>Address</th>
+                      <th className={`${headerCell} hidden md:table-cell`}>Brick</th>
+                      <th className={`${headerCell} hidden md:table-cell`}>Area</th>
+                      <th className={`${headerCell} hidden md:table-cell`}>Region</th>
+                      <th className={`${headerCell} hidden md:table-cell`}>Distributors</th>
+                      <th className={`${headerCell} hidden text-right md:table-cell`}>Units</th>
                       <th className={`${headerCell} text-right`}>Value</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-phx-line">
                     {isLoading ? (
-                      <tr><td className="px-3 py-6 text-center text-slate-400" colSpan={10}><Loader2 className="mx-auto h-5 w-5 animate-spin" /></td></tr>
+                      <tr><td className="px-3 py-6 text-center text-slate-400" colSpan={8}><Loader2 className="mx-auto h-5 w-5 animate-spin" /></td></tr>
                     ) : consolidated.length === 0 ? (
-                      <tr><td className="px-3 py-6 text-center text-slate-400" colSpan={10}>No customers match these filters.</td></tr>
+                      <tr><td className="px-3 py-6 text-center text-slate-400" colSpan={8}>No customers match these filters.</td></tr>
                     ) : (
                       consolidated.map((master) => (
                         <tr className="transition-colors hover:bg-orange-50/50" key={master.masterCustomerId}>
-                          <td className="whitespace-nowrap px-3 py-2.5">
-                            <span className="font-mono text-xs font-semibold text-slate-700">{master.masterCustomerId}</span>
+                          <td className="break-words px-3 py-2.5 align-top">
+                            <span className="block font-semibold text-phx-ink">{master.customerName || "—"}</span>
+                            <span className="font-mono text-xs font-semibold text-slate-400">{master.masterCustomerId}</span>
                             {master.distributorSpan > 1 ? (
-                              <span className="ml-2 bg-phx-accent px-1.5 text-phx-2xs font-black text-white">×{master.distributorSpan}</span>
+                              <span className="ml-2 inline-block bg-phx-accent px-1.5 text-phx-2xs font-black text-white">×{master.distributorSpan}</span>
                             ) : null}
+                            {/* Below `md` the six folded columns come back here, so a phone loses
+                                nothing. */}
+                            <span className="mt-1 block text-xs text-slate-500 md:hidden">{master.customerAddress || "—"}</span>
+                            <span className="block text-xs text-slate-500 md:hidden">
+                              {`${master.brickName || master.brickId || "—"} · ${master.areaName || "—"} / ${master.regionName || "—"}`}
+                            </span>
+                            <span className="block text-xs text-slate-500 md:hidden">
+                              {`${formatNumber(master.distributorSpan)} distributors · ${master.members.map((member) => member.distributorCode).join(", ")}`}
+                            </span>
+                            <span className="block text-xs tabular-nums text-slate-500 md:hidden">{`${formatNumber(master.totalUnits)} units`}</span>
                           </td>
-                          <td className="px-3 py-2.5 font-semibold text-phx-ink">{master.customerName || "—"}</td>
-                          <td className="max-w-[240px] px-3 py-2.5 text-slate-500"><span className="line-clamp-2">{master.customerAddress || "—"}</span></td>
-                          <td className="whitespace-nowrap px-3 py-2.5 text-slate-600">{master.brickName || master.brickId || "—"}</td>
-                          <td className="whitespace-nowrap px-3 py-2.5 text-slate-600">{master.areaName || "—"}</td>
-                          <td className="whitespace-nowrap px-3 py-2.5 text-slate-600">{master.regionName || "—"}</td>
-                          <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums font-semibold text-slate-900">{formatNumber(master.distributorSpan)}</td>
-                          <td className="max-w-[220px] px-3 py-2.5 text-slate-500"><span className="line-clamp-2">{master.members.map((member) => member.distributorCode).join(", ")}</span></td>
-                          <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums font-semibold text-slate-900">{formatNumber(master.totalUnits)}</td>
-                          <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums font-semibold text-slate-900">{formatCurrency(master.totalValue)}</td>
+                          {/* Address and the distributor-code list WRAP — both were clamped to two
+                              lines, which is the ellipsis the owner's rule forbids. */}
+                          <td className="hidden break-words px-3 py-2.5 align-top text-slate-500 md:table-cell">{master.customerAddress || "—"}</td>
+                          <td className="hidden break-words px-3 py-2.5 align-top text-slate-600 md:table-cell">{master.brickName || master.brickId || "—"}</td>
+                          <td className="hidden break-words px-3 py-2.5 align-top text-slate-600 md:table-cell">{master.areaName || "—"}</td>
+                          <td className="hidden break-words px-3 py-2.5 align-top text-slate-600 md:table-cell">{master.regionName || "—"}</td>
+                          <td className="hidden break-words px-3 py-2.5 align-top text-slate-600 md:table-cell">
+                            <span className="block font-semibold tabular-nums text-slate-900">{formatNumber(master.distributorSpan)}</span>
+                            <span className="block text-xs text-slate-400">{master.members.map((member) => member.distributorCode).join(", ")}</span>
+                          </td>
+                          <td className="hidden break-words px-3 py-2.5 text-right align-top tabular-nums font-semibold text-slate-900 md:table-cell">{formatNumber(master.totalUnits)}</td>
+                          <td className="break-words px-3 py-2.5 text-right align-top tabular-nums font-semibold text-slate-900">{formatCurrency(master.totalValue)}</td>
                         </tr>
                       ))
                     )}
