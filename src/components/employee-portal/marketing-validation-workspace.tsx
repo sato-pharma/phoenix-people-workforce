@@ -66,6 +66,7 @@ import {
 } from "@/lib/marketing-requests/validation-draft-store";
 import {
   customerFieldEvidenceGap,
+  customerIsEvidenceValidated,
   type FieldEvidenceGap,
   fieldEvidenceGapInput,
 } from "@/lib/marketing-requests/validation-report";
@@ -2083,18 +2084,31 @@ export function MarketingValidationWorkspace() {
     () => workspace.onBehalfEmployees.find((employee) => employee.hrId === onBehalfHrId) ?? null,
     [onBehalfHrId, workspace.onBehalfEmployees],
   );
-  const validatedGroups = useMemo(() => {
+  /**
+   * One group per customer, built over ALL of its links, then split into the Validated and Validate
+   * tabs by the LIVE evidence — never by the stored `validation_status` stamp (owner, 2026-09-24).
+   *
+   * The tabs used to route on each link's stored status, which is written once and never rewritten:
+   * a 2026-07-02 history backfill and the desk path both minted a validated status with no live
+   * photo, and a link kept its validated status after its shop's evidence was cleared — so those
+   * customers read "validated" for ever. `customerIsEvidenceValidated` decides it fresh instead: a
+   * customer is validated only when a complete live photo + location stands on him AND on every shop
+   * linked to him, so a desk pick (no live photo) and a stale stamp both fall back to the queue on
+   * their own, and correct themselves the moment the real evidence lands.
+   */
+  const customerGroups = useMemo(() => {
     const groups = new Map<string, ValidatedCustomerGroup>();
     for (const row of workspace.rows) {
-      if (!linkStatusIsSelectable(row.validationStatus)) continue;
       const key = row.customer.id;
       const current = groups.get(key);
       if (current) {
         current.rows.push(row);
-        // The group shows its strongest link, in the same order a backfilled sibling inherits.
+        // The group still shows its strongest link, in the same order a backfilled sibling inherits.
         if (linkStatusRank(row.validationStatus) < linkStatusRank(current.status)) {
           current.status = row.validationStatus;
         }
+        // A desk entry is the only path that stamps validated_at — the honest "an admin typed this".
+        if (row.customer.validatedAt) current.isAdminValidated = true;
       } else {
         groups.set(key, {
           customerName: row.customer.displayName,
@@ -2102,8 +2116,6 @@ export function MarketingValidationWorkspace() {
           // Placeholder: recomputed over the whole group below, because a per-row value here would
           // be wrong for any customer whose links disagree.
           fieldEvidenceGap: null,
-          // A desk entry is the only path that stamps validated_at, so it is the honest signal for
-          // "an admin typed this" — never a field capture.
           isAdminValidated: Boolean(row.customer.validatedAt),
           key,
           rows: [row],
@@ -2111,46 +2123,31 @@ export function MarketingValidationWorkspace() {
         });
       }
     }
-    // Decided once per customer, over ALL of its links — never accumulated row by row. The rule is
-    // "every link inferred", and only the finished group knows that.
+    // Decided once per customer, over ALL of its links — never accumulated row by row.
     return Array.from(groups.values()).map((group) => ({
       ...group,
       fieldEvidenceGap: customerFieldEvidenceGap(group.rows.map(fieldEvidenceGapInput)),
     }));
   }, [workspace.rows]);
+  const validatedGroups = useMemo(
+    () =>
+      customerGroups.filter((group) =>
+        customerIsEvidenceValidated(group.rows.map(fieldEvidenceGapInput)),
+      ),
+    [customerGroups],
+  );
   /**
-   * The customers this rep captured that are NOT in her marketing request list.
-   *
-   * Before 2026-08-12 these appeared nowhere at all: the page had only Validate and Validated tabs,
-   * `validatedGroups` skips anything not validated, and the save message said "Validation rows
-   * saved." either way — so a customer that landed pending simply vanished, with the rep having no
-   * way to know it had, why, or that only a Super Admin / CEO could release it.
+   * Everything not validated by live evidence — the Validate queue. This is now a strict complement
+   * of `validatedGroups` over the same customer groups, so a customer can never sit in both tabs and
+   * one whose capture is unfinished can never hide in Validated behind a stale stamp.
    */
-  const pendingGroups = useMemo(() => {
-    const groups = new Map<string, ValidatedCustomerGroup>();
-    for (const row of workspace.rows) {
-      if (row.validationStatus !== "pending") continue;
-      const key = row.customer.id;
-      const current = groups.get(key);
-      if (current) {
-        current.rows.push(row);
-        continue;
-      }
-      groups.set(key, {
-        customerName: row.customer.displayName,
-        customerType: row.customer.customerType,
-        fieldEvidenceGap: null,
-        isAdminValidated: Boolean(row.customer.validatedAt),
-        key,
-        rows: [row],
-        status: row.validationStatus,
-      });
-    }
-    return Array.from(groups.values()).map((group) => ({
-      ...group,
-      fieldEvidenceGap: customerFieldEvidenceGap(group.rows.map(fieldEvidenceGapInput)),
-    }));
-  }, [workspace.rows]);
+  const pendingGroups = useMemo(
+    () =>
+      customerGroups.filter(
+        (group) => !customerIsEvidenceValidated(group.rows.map(fieldEvidenceGapInput)),
+      ),
+    [customerGroups],
+  );
   const selectedValidatedGroup = useMemo(
     () =>
       validatedGroups.find((group) => group.key === selectedValidatedCustomerKey)
