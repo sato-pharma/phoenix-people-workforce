@@ -37,7 +37,12 @@ export type RepAreaDirectOrderRow = {
   productName: string;
   units: number;
   salesValue: number;
-  /** When — the collection date, falling back to the decision/creation stamp. */
+  /**
+   * When the order was PLACED — `created_at` (the rep raising it), falling back to the decision
+   * then the collection stamp. NOT the collection date: an order raised and approved in August but
+   * collected in September still counts in August, and sourcing this from `collection_date` made
+   * such a row read as "ordered September, counted August" (owner, 2026-09-24).
+   */
   orderDate: string | null;
   /** Which month Finance counted it to sales (YYYY-MM). */
   salesMonth: string;
@@ -206,7 +211,7 @@ export async function getRepAreaDirectOrders(access: AccessContext): Promise<Rep
       productName: (line.productName ?? "").trim() || (line.productCode ?? "").trim() || "—",
       units: toNum(line.qty),
       salesValue: toNum(line.salesValue),
-      orderDate: request.collection_date ?? request.decided_at ?? request.created_at ?? null,
+      orderDate: request.created_at ?? request.decided_at ?? request.collection_date ?? null,
       salesMonth: request.sales_month ?? "",
     });
   };
