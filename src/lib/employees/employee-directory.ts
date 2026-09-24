@@ -2263,7 +2263,27 @@ async function assertActiveCanonicalArea(areaId: number | null | undefined): Pro
   }
 }
 
-export async function upsertEmployee(input: EmployeeMutationInput) {
+// The acting user, threaded down to the `employees` write so the salary-change
+// audit trigger can attribute the edit. It travels as request headers on the
+// PostgREST call; the trigger reads them back via current_setting('request.headers').
+// See supabase/migrations/*_employee_salary_change_log.sql. Absent actor (a system
+// or out-of-band write) is recorded too — just without a name.
+export type EmployeeMutationActor = {
+  actorLoginId?: string | null;
+  actorHrId?: string | null;
+};
+
+function salaryAuditActorHeaders(actor?: EmployeeMutationActor): Record<string, string> {
+  const headers: Record<string, string> = {};
+  const loginId = actor?.actorLoginId?.trim();
+  const hrId = actor?.actorHrId?.trim();
+  // Header values must be ASCII; HR/login ids already are (e.g. "B-10").
+  if (loginId) headers["x-phoenix-actor-login-id"] = loginId;
+  if (hrId) headers["x-phoenix-actor-hr-id"] = hrId;
+  return headers;
+}
+
+export async function upsertEmployee(input: EmployeeMutationInput, actor?: EmployeeMutationActor) {
   const hrId = normalizeHrId(input.hrId);
   const originalHrId = normalizeHrId(input.originalHrId);
   const isUpdate = Boolean(originalHrId);
@@ -2304,6 +2324,7 @@ export async function upsertEmployee(input: EmployeeMutationInput) {
     body: JSON.stringify(payload),
     headers: {
       Prefer: "resolution=merge-duplicates,return=representation",
+      ...salaryAuditActorHeaders(actor),
     },
     method: "POST",
   });

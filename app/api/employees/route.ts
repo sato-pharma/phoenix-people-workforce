@@ -165,7 +165,10 @@ export async function POST(request: Request) {
       }
     }
 
-    const savedRows = await upsertEmployee(payload.employee);
+    const savedRows = await upsertEmployee(payload.employee, {
+      actorLoginId: access.loginId ?? null,
+      actorHrId: access.hrId ?? null,
+    });
     // `originalHrId` is only present when an EXISTING employee is being edited (upsertEmployee
     // derives its own isUpdate from exactly this field), so a blank one is the create signal —
     // the same one access provisioning has always keyed on.
