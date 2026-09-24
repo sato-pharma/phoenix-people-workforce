@@ -45,38 +45,53 @@ const LOGIN_SELECTORS = {
 } as const;
 
 /**
- * 🔴 PARTLY CALIBRATED. The console's LAYOUT was inspected live on 2026-09-24 (Email Control Panel,
- * ecp.turbify.com), so the button TEXT below is real: the per-mailbox actions are exactly
- * "Reset password", "Edit", "Transfer account" and "Delete user", the last three behind a
- * "More actions" menu. What is NOT yet captured is the INSIDE of the two dialogs — the reset
- * dialog's confirm control and the delete dialog's confirm control — because reading them means
- * clicking a live admin over 288 real mailboxes, which is guarded. Those stay `__UNCALIBRATED__`
- * and the flag below stays false until two screenshots of those dialogs fill them in.
+ * 🔴 BEHAVIOUR MAPPED LIVE, PUPPETEER SELECTORS NOT YET WRITTEN OR PROVEN. The console was walked on
+ * 2026-09-24 (Email Control Panel, ecp.turbify.com, 288 mailboxes). What is now KNOWN for certain:
  *
- * A driver that ran with a guessed delete-confirmation selector could fail to confirm (harmless) or
- * confirm the wrong thing (catastrophic), so it refuses to run at all until every value is real.
- * The `label:` fields are the human text seen on the console; a calibration turns each into the
- * actual selector/xpath its automation library needs.
+ *   - The account list has a "Search users..." box; typing an address filters to that mailbox's row.
+ *   - Each row has "Add alias", "Reset password", "Edit" and a "More actions" menu. The menu holds
+ *     "Reset password", "Edit", "Transfer account" and "Delete".
+ *   - 🔴 "Reset password" HAS NO CONFIRMATION. One click resets the password immediately and opens a
+ *     dialog headed "One-time password" showing the email account, the new one-time password
+ *     (Show / Copy), a login link, and "Send invite" / "Print" / "Close modal". The appearance of
+ *     that dialog with the matching email account IS the success signal; the robot then closes it
+ *     without sending or printing (a leaver needs no invite).
+ *   - 🔴 "Delete" — its confirmation behaviour is UNVERIFIED. It was NOT clicked, because reset
+ *     proved this console executes destructive actions with no "are you sure", and a delete is
+ *     permanent with no restore and no backup. Whether Delete opens a confirm dialog or deletes on
+ *     the click must be observed on the FIRST supervised live deletion, never guessed.
+ *
+ * The `label:` fields are the confirmed on-screen text; `selector` stays `__UNCALIBRATED__` because
+ * the production driver runs headless puppeteer, whose click needs a DOM/xpath selector that a
+ * supervised live session must still capture and PROVE. The flag below stays false until then: a
+ * delete flow that has never once been run is not something this file will arm over live mailboxes.
  */
+
+/** Reset is a single immediate click — there is no confirmation dialog to click through. */
+export const TURBIFY_RESET_HAS_NO_CONFIRMATION = true;
+
+/** Whether Delete opens a confirm dialog is unknown until the first supervised live deletion. */
+export const TURBIFY_DELETE_CONFIRMATION_BEHAVIOUR = "unverified" as const;
+
 const MAILBOX_SELECTORS = {
-  /** The account-list search box. Confirmed present ("Search users..."). */
+  /** Confirmed label "Search users..."; typing an address filters the list to that row. */
   searchBox: { label: "Search users...", selector: "__UNCALIBRATED__" },
-  /** How one mailbox row is opened/selected from the filtered list. */
+  /** The filtered row for the searched address — the scope every row-action click must be inside. */
   mailboxRow: { label: "<the row for the searched address>", selector: "__UNCALIBRATED__" },
-  /** Confirmed label: "Reset password" (shown directly on the row and in the More actions menu). */
+  /** Confirmed label "Reset password". One click; NO confirm dialog. */
   resetPassword: { label: "Reset password", selector: "__UNCALIBRATED__" },
-  /** Inside the reset dialog — the control that commits the new password. NEEDS A SCREENSHOT. */
-  resetConfirm: { label: "<reset dialog confirm button>", selector: "__UNCALIBRATED__" },
-  /** The confirmation the console shows AFTER a successful reset. NEEDS A SCREENSHOT. */
-  resetConfirmation: { label: "<post-reset success banner>", selector: "__UNCALIBRATED__" },
-  /** Confirmed label: "More actions" opens the menu holding Delete user. */
+  /** Confirmed: the post-reset dialog is headed "One-time password" — the reset success signal. */
+  resetConfirmation: { label: "One-time password", selector: "__UNCALIBRATED__" },
+  /** Confirmed label "Close modal" — dismisses the one-time-password dialog without informing anyone. */
+  closeModal: { label: "Close modal", selector: "__UNCALIBRATED__" },
+  /** Confirmed label "More actions" — opens the row menu holding Delete. */
   moreActions: { label: "More actions", selector: "__UNCALIBRATED__" },
-  /** Confirmed label: "Delete user" (in the More actions menu and the Edit dialog). */
-  deleteUser: { label: "Delete user", selector: "__UNCALIBRATED__" },
-  /** Inside the delete dialog — the control that confirms the permanent deletion. NEEDS A SCREENSHOT. */
-  deleteConfirm: { label: "<delete dialog confirm button>", selector: "__UNCALIBRATED__" },
-  /** What the console shows once the mailbox is gone. NEEDS A SCREENSHOT. */
-  deleteConfirmation: { label: "<post-delete confirmation>", selector: "__UNCALIBRATED__" },
+  /** Confirmed label "Delete" (inside the More actions menu). */
+  deleteUser: { label: "Delete", selector: "__UNCALIBRATED__" },
+  /** UNVERIFIED — the confirm control, IF the delete flow has one. Capture on the first live delete. */
+  deleteConfirm: { label: "<delete confirm control — unverified>", selector: "__UNCALIBRATED__" },
+  /** The real success signal for a delete: the address is GONE from the list on a re-read. */
+  deleteConfirmation: { label: "<address absent from the list after delete>", selector: "__UNCALIBRATED__" },
 } as const;
 
 /**
