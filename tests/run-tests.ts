@@ -1930,6 +1930,8 @@ import { runTerritorySearchRegionLabelTests } from "./territory-search-region-la
 import { runTerritorySearchScopeTests } from "./territory-search-scope.test.ts";
 import { runMilestoneCardTests } from "./milestone-card.test.ts";
 import { runMilestoneEnhancementsTests, runMilestonePrintHistoryAndPagingTests } from "./milestone-enhancements.test.ts";
+import { runFitsTheScreenRatchetTests } from "./fits-the-screen-ratchet.test.ts";
+import { runSquareEdgePortalRatchetTests } from "./square-edge-portal-ratchet.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -6850,6 +6852,14 @@ await runTest(
 await runTest(
   "milestone print history and paging: the batch ceiling is raised to 150 for one launch, a print-history row is shaped for the screen (Cairo-local timestamp, occasion label from the period spec, service and birthday alike, actor and subject names with id fallbacks, never an age) and the same rows serialize to a valid XLSX workbook",
   runMilestonePrintHistoryAndPagingTests,
+);
+await runTest(
+  "fits-the-screen ratchet: the count of overflow-x-auto/scroll sites across app/ and src/components/ may fall and may never rise, so no new screen is given permission to scroll sideways (AGENTS.md §4: \"overflow-x-auto over a min-width IS the bug\")",
+  runFitsTheScreenRatchetTests,
+);
+await runTest(
+  "square-edge ratchet (portalled components): globals.css zeroes every radius inside .admin-shell and .employee-portal-shell, but both are DESCENDANT selectors — a component portalled to document.body escapes them, so the count of rounded-* there may fall and may never rise",
+  runSquareEdgePortalRatchetTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
