@@ -854,6 +854,7 @@ import { runHrFunctionGovernanceTests } from "./hr-function-governance.test.ts";
 import { runHrRetentionRegisterTests } from "./hr-retention-register.test.ts";
 import { runMailboxOffboardingTests } from "./mailbox-offboarding.test.ts";
 import { runMailboxBulkRecordingTests } from "./mailbox-bulk-recording.test.ts";
+import { runMailboxOffboardingRobotTests } from "./mailbox-offboarding-robot.test.ts";
 import { runMailboxOffboardingTableFitsTheScreenTests } from "./mailbox-offboarding-table-fits-the-screen.test.ts";
 import { runExpenseDashboardTripsTableFitsTheScreenTests } from "./expense-dashboard-trips-table-fits-the-screen.test.ts";
 import { runDeviceRegisterTests } from "./device-register.test.ts";
@@ -3563,6 +3564,13 @@ await runTest(
   + "reopen each need their own written reason, so the bulk guard is a NARROWER predicate than "
   + "isMailboxStep; and the batch cap is enforced before any database client is opened)",
   runMailboxBulkRecordingTests,
+);
+await runTest(
+  "turbify revocation robot (a recycled address belonging to a working employee is NEVER revoked, "
+  + "and a reversed resignation, a same-day last working date and a non-company address are each "
+  + "refused; app passwords are cleared BEFORE the password is reset, so a run that dies between "
+  + "them leaves the door shut rather than the half-revoked state that only LOOKS finished)",
+  runMailboxOffboardingRobotTests,
 );
 await runTest(
   "mailbox offboarding table fits the screen (nine nowrap columns under an overflow-x-auto wrapper "
