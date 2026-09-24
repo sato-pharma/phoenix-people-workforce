@@ -56,7 +56,7 @@ export function runPhoenixCrmCaptureAccuracyBlankTests() {
   for (const [label, accuracyMeters] of BLANKS) {
     const place = valueOf(parsePlaceDraft({ ...CAIRO, accuracyMeters, photoPath: "seat/place.jpg", timings: [{ weekday: 6, start: "17:00", end: "21:00" }] }));
     assert.equal(place.accuracyMeters, null, `a place validated with a ${label} accuracy is saved with no accuracy, not 0 m`);
-    const visit = valueOf(parseVisitDraft({ ...CAIRO, accuracyMeters, customerId: DOCTOR, kind: "single", products: ["Lacto Advanced"], photoPath: "seat/visit.jpg" }));
+    const visit = valueOf(parseVisitDraft({ ...CAIRO, accuracyMeters, customerId: DOCTOR, kind: "single", products: ["Lacto Advanced"], pharmacyName: "El Ezaby", photoPath: "seat/visit.jpg" }));
     assert.equal(visit.accuracyMeters, null, `a visit with a ${label} accuracy is saved with no accuracy, not 0 m`);
   }
 

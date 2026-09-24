@@ -29,6 +29,15 @@ export const PLACE_TEXT_MAX = 200;
 export const VISIT_COMMENT_MAX = 1000;
 export const DROP_REASON_MAX = 500;
 export const VISIT_PRODUCTS_MAX = 12;
+export const PHARMACY_NAME_MAX = 120;
+/**
+ * The pharmacy stock check answers one line's products, not the whole catalogue, so a genuine line
+ * never approaches this. It is only a guard against a phone sending a bag of junk keys.
+ */
+export const PRODUCT_AVAILABILITY_MAX = 60;
+
+/** Whether the pharmacy the rep took feedback from stocks a product, product by product. */
+export type ProductAvailability = "has" | "missing";
 
 export const DROP_REASONS = [
   { key: "moved", label: "Moved away" },
@@ -179,9 +188,31 @@ export type VisitDraft = CapturedFix & {
   managerHrId: string | null;
   seniorHrId: string | null;
   products: string[];
+  /** The pharmacy the rep took feedback from before the doctor; he types it, so it is free text. */
+  pharmacyName: string;
+  /** His answer, per line product, of whether that pharmacy stocks it. Products left blank are absent. */
+  productAvailability: Record<string, ProductAvailability>;
   comment: string | null;
   photoPath: string;
 };
+
+/**
+ * The pharmacy stock answers the phone sent: an object of product → "has"/"missing". Anything else — a
+ * blank product, an answer that is not one of the two, more entries than a line could hold — is dropped
+ * rather than refused, so a stray key never blocks a visit. The keys are checked against the line's
+ * real products on the server (saveVisit), the same way the discussed products are.
+ */
+export function parseProductAvailability(raw: unknown): Record<string, ProductAvailability> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out: Record<string, ProductAvailability> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (Object.keys(out).length >= PRODUCT_AVAILABILITY_MAX) break;
+    const product = cleanText(key, 80);
+    if (!product) continue;
+    if (value === "has" || value === "missing") out[product] = value;
+  }
+  return out;
+}
 
 export function parseVisitDraft(raw: unknown): EntryRuleResult<VisitDraft> {
   const body = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
@@ -195,10 +226,15 @@ export function parseVisitDraft(raw: unknown): EntryRuleResult<VisitDraft> {
   }
   if (kind === "chain" && !seniorHrId) return { ok: false, error: "Choose the senior manager who was on the visit." };
 
+  const pharmacyName = cleanText(body.pharmacyName, PHARMACY_NAME_MAX);
+  if (!pharmacyName) return { ok: false, error: "Write the pharmacy you took feedback from." };
+
   const productsRaw = Array.isArray(body.products) ? body.products : [];
   const products = [...new Set(productsRaw.map((product) => cleanText(product, 80)).filter((product): product is string => Boolean(product)))];
   if (products.length === 0) return { ok: false, error: "Choose the products you discussed." };
   if (products.length > VISIT_PRODUCTS_MAX) return { ok: false, error: `Choose at most ${VISIT_PRODUCTS_MAX} products.` };
+
+  const productAvailability = parseProductAvailability(body.productAvailability);
 
   const commentText = String(body.comment ?? "").trim();
   if (commentText.length > VISIT_COMMENT_MAX) return { ok: false, error: `The comment is longer than ${VISIT_COMMENT_MAX} characters.` };
@@ -217,6 +253,8 @@ export function parseVisitDraft(raw: unknown): EntryRuleResult<VisitDraft> {
       managerHrId: kind === "single" ? null : managerHrId,
       seniorHrId: kind === "chain" ? seniorHrId : null,
       products,
+      pharmacyName,
+      productAvailability,
       comment: commentText || null,
       photoPath,
     },

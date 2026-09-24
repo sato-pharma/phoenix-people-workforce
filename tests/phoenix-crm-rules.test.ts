@@ -560,8 +560,9 @@ function runEntryRuleTests() {
   assert.equal(refusalOf(parseDropDraft({ reason: "other", note: "  " })), "Write why this customer should leave your list.");
   assert.deepEqual(valueOf(parseDropDraft({ reason: "moved", note: " " })), { reason: "moved", note: null });
 
-  // A visit: the customer, who was on it, the products, the comment, a live photo and the location.
-  const visit = { customerId: DOCTOR.toUpperCase(), kind: "single", products: ["Lacto Advanced"], comment: "", photoPath: "seat/visit.jpg", lat: 30.05, lon: 31.23, accuracyMeters: 12 };
+  // A visit: the customer, who was on it, the products, the pharmacy feedback, the comment, a live
+  // photo and the location.
+  const visit = { customerId: DOCTOR.toUpperCase(), kind: "single", products: ["Lacto Advanced"], pharmacyName: "El Ezaby", comment: "", photoPath: "seat/visit.jpg", lat: 30.05, lon: 31.23, accuracyMeters: 12 };
   assert.equal(refusalOf(parseVisitDraft({ ...visit, customerId: "dr-mona" })), "Choose the customer you visited.");
   assert.equal(refusalOf(parseVisitDraft({ ...visit, kind: "triple" })), "Choose who was on the visit.");
   assert.equal(refusalOf(parseVisitDraft({ ...visit, kind: "double" })), "Choose the district manager who was on the visit.");
@@ -569,17 +570,28 @@ function runEntryRuleTests() {
   assert.equal(refusalOf(parseVisitDraft({ ...visit, products: [] })), "Choose the products you discussed.");
   assert.equal(refusalOf(parseVisitDraft({ ...visit, products: ["", "  "] })), "Choose the products you discussed.");
   assert.equal(refusalOf(parseVisitDraft({ ...visit, products: Array.from({ length: 13 }, (_, n) => `Product ${n}`) })), "Choose at most 12 products.");
+  assert.equal(refusalOf(parseVisitDraft({ ...visit, pharmacyName: "  " })), "Write the pharmacy you took feedback from.", "the pharmacy the feedback came from is required");
+  assert.equal(refusalOf(parseVisitDraft({ ...visit, pharmacyName: undefined })), "Write the pharmacy you took feedback from.");
   assert.equal(refusalOf(parseVisitDraft({ ...visit, comment: "x".repeat(1001) })), "The comment is longer than 1000 characters.");
   assert.equal(refusalOf(parseVisitDraft({ ...visit, photoPath: " " })), PHOTO, "every visit carries a live photo");
   assert.equal(refusalOf(parseVisitDraft({ ...visit, lat: 0, lon: 0 })), LOCATION, "every visit carries its location check");
 
-  const single = valueOf(parseVisitDraft({ ...visit, kind: undefined, managerHrId: "T-3", seniorHrId: "T-2", products: ["Lacto Advanced", " Lacto   Advanced ", "Royanoxicam"], comment: "  good  " }));
+  const single = valueOf(parseVisitDraft({ ...visit, kind: undefined, managerHrId: "T-3", seniorHrId: "T-2", products: ["Lacto Advanced", " Lacto   Advanced ", "Royanoxicam"], pharmacyName: "  Seif  Pharmacy ", comment: "  good  " }));
   assert.equal(single.kind, "single");
   assert.equal(single.customerId, DOCTOR, "ids are stored lower case");
   assert.equal(single.managerHrId, null, "a single visit names no manager, whatever the phone sent");
   assert.equal(single.seniorHrId, null);
   assert.deepEqual(single.products, ["Lacto Advanced", "Royanoxicam"]);
+  assert.equal(single.pharmacyName, "Seif Pharmacy", "the pharmacy name is collapsed and trimmed");
+  assert.deepEqual(single.productAvailability, {}, "no stock answers when the phone sent none");
   assert.equal(single.comment, "good");
+
+  // The pharmacy stock: only "has"/"missing" answers on a named product survive; the rest is dropped,
+  // never refused, so a stray key never blocks the visit. The line check happens on the server.
+  const stock = valueOf(parseVisitDraft({ ...visit, productAvailability: { "Lacto Advanced": "has", Royanoxicam: "missing", Guesswork: "maybe", "  ": "has" } }));
+  assert.deepEqual(stock.productAvailability, { "Lacto Advanced": "has", Royanoxicam: "missing" });
+  assert.deepEqual(valueOf(parseVisitDraft({ ...visit, productAvailability: "nope" })).productAvailability, {}, "a non-object availability is dropped");
+  assert.deepEqual(valueOf(parseVisitDraft({ ...visit, productAvailability: ["has"] })).productAvailability, {}, "an array availability is dropped");
   const double = valueOf(parseVisitDraft({ ...visit, kind: "double", managerHrId: "T-3", seniorHrId: "T-2" }));
   assert.deepEqual([double.managerHrId, double.seniorHrId], ["T-3", null], "a double visit is the rep and one manager");
   const chain = valueOf(parseVisitDraft({ ...visit, kind: "chain", managerHrId: "T-3", seniorHrId: "T-2" }));
