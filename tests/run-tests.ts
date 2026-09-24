@@ -864,6 +864,7 @@ import { runAndroidWebAppTests } from "./android-web-app.test.ts";
 import { runManagedPlayIframeTests } from "./managed-play-iframe.test.ts";
 import { runTabletEnrollmentTests } from "./tablet-enrollment.test.ts";
 import { runTabletAutoRegisterTests } from "./tablet-auto-register.test.ts";
+import { runManageEngineBridgeTests } from "./manageengine-bridge.test.ts";
 import { runCustodyItemValuesTests } from "./custody-item-values.test.ts";
 import { runDeviceImportAttemptLogTests } from "./device-import-attempt-log.test.ts";
 import { runHrAdvisoryModuleAccessTests } from "./hr-advisory-module-access.test.ts";
@@ -3629,6 +3630,13 @@ await runTest(
   "rep tablets add themselves to the custody register (next PHX-TAB number, only tablets on the "
   + "rep rules, never a second entry for a serial or IMEI already registered)",
   runTabletAutoRegisterTests,
+);
+await runTest(
+  "ManageEngine bridge (Zoho token exchange caches and surfaces a refusal, the client retries once "
+  + "on a 401 with a fresh token, device JSON normalizes and matches the register by serial then "
+  + "IMEI, the command allow-list is the seven actions with only the two wipes destructive, and the "
+  + "route error mapping keeps one status per cause)",
+  runManageEngineBridgeTests,
 );
 await runTest("organogram hardening", runOrganogramHardeningTests);
 await runTest("vacancy report / organogram consistency", runVacancyReportOrganogramConsistencyTests);
