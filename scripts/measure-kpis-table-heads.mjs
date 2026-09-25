@@ -145,17 +145,26 @@ const CELLS = [
 ];
 
 const html = `<!doctype html><html><head><meta charset="utf-8"><style>${CSS}</style></head><body>
-${CELLS.map(
-  (cell, index) => `
+${CELLS.map((cell, index) => {
+  // The value and caption are literal strings from CELLS above — never user input, never a request
+  // parameter. This script only feeds them to a headless Chromium through page.setContent to measure
+  // how wide the text renders, so the raw-html injection sink the rule guards against cannot occur
+  // here. Each is hoisted to its own statement so the suppression can sit at the line, per the
+  // workflow's own instruction and the shape in src/components/attendance/device-user-mapping-manager.tsx.
+  // nosemgrep: javascript.express.security.injection.raw-html-format.raw-html-format
+  const valueCell = `<span class="value">${cell.body.value}</span>`;
+  // nosemgrep: javascript.express.security.injection.raw-html-format.raw-html-format
+  const captionCell = `<span class="caption">${cell.body.caption}</span>`;
+  return `
   <div class="cell head" id="head-${index}">
     ${cell.head.sortable ? `<span class="link"><span>${cell.head.label}</span><span>↓</span></span>` : `<span>${cell.head.label}</span>`}
     <span class="sub">${cell.head.sub}</span>
   </div>
   <div class="cell body" id="body-${index}">
-    <span class="value">${cell.body.value}</span>
-    <span class="caption">${cell.body.caption}</span>
-  </div>`,
-).join("\n")}
+    ${valueCell}
+    ${captionCell}
+  </div>`;
+}).join("\n")}
 </body></html>`;
 
 const browser = await chromium.launch();
