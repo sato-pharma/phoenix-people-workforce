@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 
 import { ManageEngineEnrollment } from "@/components/devices/manageengine-enrollment";
 import { ManageEngineFleet } from "@/components/devices/manageengine-fleet";
+import { ManageEngineRepTabletRules } from "@/components/devices/manageengine-rep-tablet-rules";
 import { RepTabletsConsole } from "@/components/devices/rep-tablets-console";
 import { PremiumHero } from "@/components/ui/premium-hero";
 import { canAccess } from "@/lib/auth/permissions";
@@ -33,6 +34,11 @@ export default async function RepTabletsPage() {
     redirect("/hr/devices");
   }
 
+  // The rules card reads ManageEngine on mount, so it is only mounted once the bridge has a
+  // credential — with none, it could say nothing except that it cannot connect, which the enrollment
+  // section above it already says once.
+  const manageEngineReady = isManageEngineConfigured();
+
   return (
     <div className="space-y-6">
       <PremiumHero
@@ -41,7 +47,8 @@ export default async function RepTabletsPage() {
         title="Rep Tablets"
       />
       <ManageEngineEnrollment />
-      <ManageEngineFleet bridgeConfigured={isManageEngineConfigured()} />
+      {manageEngineReady ? <ManageEngineRepTabletRules /> : null}
+      <ManageEngineFleet bridgeConfigured={manageEngineReady} />
       <RepTabletsConsole enterpriseBound={isAndroidManagementConfigured()} />
     </div>
   );

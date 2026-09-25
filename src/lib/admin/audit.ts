@@ -92,6 +92,14 @@ export type AuditEntityType =
   // outlives any one command and is a REQUIRED audit. The row names the tablet by its custody asset
   // tag and the rules by the name the company gave them in ManageEngine's console.
   | "manageengine_device_profile"
+  // The company's rep tablet profile itself, BUILT in ManageEngine by Phoenix (2026-09-25) — the
+  // rules, not who follows them. A separate type from the row above because that one records a
+  // tablet being put on a rule set, while this records the rule set coming into existence with the
+  // restrictions and screen lock Phoenix wrote into it. REQUIRED audit: the row carries every field
+  // and value sent, which spelling of the payload name ManageEngine accepted, and whether the
+  // profile was actually PUBLISHED — an unpublished profile restricts nothing, and nobody reading
+  // this later should have to guess which of the two happened.
+  | "manageengine_profile"
   // The ManageEngine enrollment template the Rep Tablets page renders as a QR (2026-09-25). Their
   // REST API has no enrollment endpoint at all, so the payload is copied out of the ManageEngine
   // console once and saved here; saving it is what lets any factory-fresh tablet join the fleet,

@@ -1415,6 +1415,13 @@ export const accessRegistry = [
   // (manageengine_device_profile).
   sessionApi({ methods: ["GET"], pattern: "/api/devices/manageengine/profiles", permission: { resource: "company_devices", action: "approve" } }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/manageengine/profiles", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
+  // BUILDING the company's rep tablet profile — the rules themselves, not who follows them. GET says
+  // whether ManageEngine already holds it and lists every field Phoenix would write, plus the three
+  // rules a profile cannot carry. POST creates it, proves its payloads attached and publishes it, so
+  // it is a REQUIRED audit row (manageengine_profile) on the same Super Admin gate; it reads no body
+  // and puts the profile on no tablet.
+  sessionApi({ methods: ["GET"], pattern: "/api/devices/manageengine/rep-tablet-profile", permission: { resource: "company_devices", action: "approve" } }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/manageengine/rep-tablet-profile", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
   // Visual Aids (owner, 2026-09-18). A rep and his DM, RM and NSM read the ACTIVE aids of their own
   // line — the line check lives in src/lib/visual-aids/service.ts, below the permission. Marketing
   // Manager, GPM and Super Admin upload (create) and retire or replace (update); nobody deletes. The
