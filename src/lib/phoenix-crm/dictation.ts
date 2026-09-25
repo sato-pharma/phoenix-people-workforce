@@ -7,10 +7,12 @@
  * all. That is the only kind of solution available here.
  *
  * This DICTATES. Speech becomes text in the comment field, and what saves is ordinary text in the
- * `comment` column that every screen and every report already reads. Nothing is recorded and nothing
- * is stored as audio. A voice NOTE — audio kept as audio for a human to listen to, transcribed never —
- * is a different feature with its own storage and its own columns, and this one must not be described
- * as one.
+ * `comment` column that every screen and every report already reads. This module records nothing and
+ * stores no audio. The RECORDING is a separate feature with its own storage and its own columns
+ * (`./voice-recorder.ts`), and since 2026-09-25 the two run from ONE button on the form
+ * (`./speak.ts`): the rep speaks once and both happen. They are still two mechanisms, and the text
+ * this module produces is the engine's LIVE reading of the speech — never a transcript of the stored
+ * recording, which no speech service ever reads. Do not describe either half as the other.
  *
  * Recognition is NOT on the phone. Chrome sends the audio to Google's speech service and Safari to
  * Apple's, which is how the engine costs nothing — so a rep's spoken comment, which carries doctor
@@ -21,8 +23,9 @@
  * Whether the REP is told is SETTLED, and settled the other way from how FTP Portal does it. FTP says
  * so on a privacy page; Phoenix says it on the microphone. Offered both on 2026-09-25, the owner chose
  * the control — "add the processor line to the dictation mic, not the privacy page" — so the line
- * lives under the button in `src/components/phoenix-crm/dictate.tsx`, where the rep reads it at the
- * moment he decides to speak. `app/privacy` is deliberately NOT the place: it covers recruitment
+ * lives under the button, where the rep reads it at the moment he decides to speak. It is written by
+ * `speakProcessorLine` in `./speak.ts` and rendered by `src/components/phoenix-crm/speak.tsx`, which
+ * is now the one control for both halves. `app/privacy` is deliberately NOT the place: it covers recruitment
  * candidates only, names no processor, says nothing about employees, and nobody opens it. Do not
  * "complete" this by moving the line there or by adding a second copy.
  *
