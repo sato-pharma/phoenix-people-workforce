@@ -8,12 +8,19 @@
 // that the system chases people, he does not. So the same rule that draws the badge also drives a
 // daily nudge to the person who can actually close it.
 //
+// Who that person is changed on 2026-09-25: a Medical Rep can validate a customer but is "not
+// responsible" for the marketing request behind it and "cannot do it" (owner), so reps are no
+// longer nudged. The nudge routes to the District Manager instead — via the customer's own
+// manager, or the area fall-back over non-rep colleagues (see isFieldCaptureExcludedRole).
+//
 // The rule is NOT re-implemented here. `customerFieldEvidenceGap` is imported from the badge's own
 // module, so a customer can never be badged on screen and absent from someone's list, or the
 // reverse. If that rule changes, both move together or neither does.
 
 import { cairoTodayIso } from "@/lib/attendance/working-days";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
+import { resolveJobFunctionRole } from "@/lib/employees/job-function";
+import type { PhoenixRole } from "@/lib/auth/permissions";
 import {
   isDeskValidated,
   isInferredFromHistory,
@@ -27,14 +34,15 @@ import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /**
- * Where a rep lands from the nudge: the PORTAL's Customer Validation screen, which renders the
+ * Where a recipient lands from the nudge: the PORTAL's Customer Validation screen, which renders the
  * same badge and holds the completion path #2352 added.
  *
  * NOT the Customer Database screen, which is the obvious-looking choice and the wrong one:
- * `assertMarketingCustomerDatabaseAccess` admits Super Admin and SFE Manager ONLY, so linking
- * there would have sent all 51 reps to a 403 every morning. This page is gated by
- * `assertEmployeePortalMarketingPageAccess("requests")`, and Medical Rep is in
- * `marketingCreatorRoles` — checked, not assumed.
+ * `assertMarketingCustomerDatabaseAccess` admits Super Admin and SFE Manager ONLY. This page is
+ * gated by `assertEmployeePortalMarketingPageAccess("validation")`, and every role now nudged —
+ * District / Regional / National Sales Manager, Product Manager — is in `marketingCreatorRoles`,
+ * so the link resolves for them. (Medical Rep is also in that set and can open the page to do the
+ * capture; reps are simply no longer NUDGED here — see isFieldCaptureExcludedRole.)
  */
 export const FIELD_CAPTURE_ACTION_URL = "/employee-portals/marketing-requests/validation";
 
@@ -169,6 +177,24 @@ export type FieldCaptureBacklogInput = {
 };
 
 /**
+ * Roles that do the field capture but are NEVER nudged about the backlog.
+ *
+ * Owner rule, 2026-09-25: a Medical Rep can validate a customer, but is "not responsible" for the
+ * marketing request behind it and "cannot do it" — chasing the field proof is the District
+ * Manager's job. So a rep is never a field-capture recipient: a rep named as a customer's owner
+ * falls through to that customer's manager (the DM) exactly as a leaver does, and the area
+ * fall-back fans out only to non-rep colleagues. Every rep-owned customer measured on production
+ * on 2026-09-25 (14 of them) carried an active DM as its manager, so none is abandoned by this.
+ *
+ * Uses the same job-function classifier the marketing service already uses to decide marketing
+ * eligibility (`resolveJobFunctionRole` in service.ts), so "who is a rep" is answered one way
+ * across the domain rather than reinvented here.
+ */
+export function isFieldCaptureExcludedRole(role: PhoenixRole): boolean {
+  return role === "Medical Rep";
+}
+
+/**
  * Which customers are unproven, and whose problem each one is.
  *
  * Pure. The "is this unproven" half is delegated wholesale to `customerFieldEvidenceGap` — the
@@ -177,36 +203,44 @@ export type FieldCaptureBacklogInput = {
  * `activeEmployees` is the ACTIVE employee directory, whole — not just the people who hold an area.
  * It answers two questions: who works each territory, and whether a rep or manager named on the row
  * still works here at all. Required, with no default, because an empty list is not "no information":
- * it would make every named person a leaver.
+ * it would make every named person a leaver. `role` is each person's job-function role, used only to
+ * drop the excluded recipients (`isFieldCaptureExcludedRole`) — Medical Reps — before anyone is
+ * routed a nudge.
  */
 export function groupFieldCaptureBacklog(
   customers: readonly FieldCaptureBacklogInput[],
-  activeEmployees: ReadonlyArray<{ areaId: number | null; hrId: string }>,
+  activeEmployees: ReadonlyArray<{ areaId: number | null; hrId: string; role: PhoenixRole }>,
 ): MarketingFieldCaptureBacklog {
   // Who works each territory. This mirrors `canSeeMarketingCustomer`'s area test exactly — a
   // non-null `employees.area_id` equal to the customer's — so anybody reached this way is
   // guaranteed to find the row on the page the nudge links to. An employee with no area (most of
   // head office) matches nothing, which is the same way the visibility rule treats them.
   const staffByArea = new Map<number, string[]>();
-  const activeHrIds = new Set<string>();
+  // Employees ELIGIBLE to receive a field-capture nudge: active, and not in an excluded role.
+  // Medical Reps are dropped here (owner rule, 2026-09-25 — see isFieldCaptureExcludedRole), so
+  // both the area fan-out below and the named-owner check treat a rep as if they were not on the
+  // roster at all — a rep-owned customer therefore routes to its DM, never to the rep.
+  const eligibleHrIds = new Set<string>();
   for (const employee of activeEmployees) {
     const hrId = cleanHrId(employee.hrId);
     if (hrId === null) continue;
-    activeHrIds.add(hrId);
+    if (isFieldCaptureExcludedRole(employee.role)) continue;
+    eligibleHrIds.add(hrId);
     if (employee.areaId === null) continue;
     const bucket = staffByArea.get(employee.areaId) ?? [];
     if (!bucket.includes(hrId)) bucket.push(hrId);
     staffByArea.set(employee.areaId, bucket);
   }
 
-  // A name on the row counts only while that person still works here. Nothing re-stamps
-  // `owner_hr_id` or `manager_hr_id` when somebody resigns — the territory ruling below is WHY — so
-  // until 2026-09-17 a leaver stayed first in line for ever: 23 unproven customers that day were
-  // nudged to a rep who had resigned and to nobody else, while an active manager or colleague who
-  // could close them heard nothing.
+  // A name on the row counts only while that person still works here AND is an eligible recipient.
+  // Nothing re-stamps `owner_hr_id` or `manager_hr_id` when somebody resigns — the territory ruling
+  // below is WHY — so until 2026-09-17 a leaver stayed first in line for ever: 23 unproven customers
+  // that day were nudged to a rep who had resigned and to nobody else, while an active manager or
+  // colleague who could close them heard nothing. Since 2026-09-25 a Medical Rep named as owner is
+  // excluded the same way a leaver is, and the name falls through to the manager (the DM).
   const stillHere = (value: string | null | undefined): string | null => {
     const hrId = cleanHrId(value);
-    return hrId !== null && activeHrIds.has(hrId) ? hrId : null;
+    return hrId !== null && eligibleHrIds.has(hrId) ? hrId : null;
   };
 
   const ownerBuckets = new Map<string, FieldCaptureBacklogCustomer[]>();
@@ -379,7 +413,11 @@ export async function loadMarketingFieldCaptureBacklog(): Promise<MarketingField
   }
   return groupFieldCaptureBacklog(
     inputs,
-    employees.map((employee) => ({ areaId: employee.areaId, hrId: employee.hrId })),
+    employees.map((employee) => ({
+      areaId: employee.areaId,
+      hrId: employee.hrId,
+      role: resolveJobFunctionRole(employee.jobTitle),
+    })),
   );
 }
 

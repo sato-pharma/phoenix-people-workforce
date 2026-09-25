@@ -9,6 +9,7 @@ import {
   FIELD_CAPTURE_CHANNELS,
   fieldCaptureNudgeMessage,
   groupFieldCaptureBacklog,
+  isFieldCaptureExcludedRole,
   type FieldCaptureBacklogInput,
 } from "../src/lib/marketing-requests/field-capture-backlog.ts";
 
@@ -17,13 +18,15 @@ import {
 const BACKFILL_NOTE = `Inferred from pending/rejected historical marketing requests — ${INFERRED_HISTORY_MARKER}. Backfill script 2026-07-02.`;
 const DESK_NOTE = `Location chosen from map search — ${DESK_VALIDATION_MARKER}`;
 
-// The active employee directory for the cases below: every rep and manager they name still works
-// here, and none of them holds an area. A name missing from this list is a LEAVER to the grouping,
-// so a case that means "this person is still here" must list them.
+// The active employee directory for the cases below: every person they name still works here, and
+// none of them holds an area. A name missing from this list is a LEAVER to the grouping, so a case
+// that means "this person is still here" must list them. `role` is each person's job-function role;
+// the generic cases below name eligible recipients (managers), and the reps used to prove the
+// 2026-09-25 exclusion get their own fixtures further down.
 const DIRECTORY = [
-  { areaId: null, hrId: "HR-100" },
-  { areaId: null, hrId: "HR-200" },
-  { areaId: null, hrId: "HR-900" },
+  { areaId: null, hrId: "HR-100", role: "District Manager" as const },
+  { areaId: null, hrId: "HR-200", role: "District Manager" as const },
+  { areaId: null, hrId: "HR-900", role: "Regional Manager" as const },
 ];
 
 function customer(overrides: Partial<FieldCaptureBacklogInput> = {}): FieldCaptureBacklogInput {
@@ -102,18 +105,65 @@ export function runMarketingFieldCaptureBacklogTests() {
 
   // ── Who gets chased ───────────────────────────────────────────────────────────────────────
   const owned = groupFieldCaptureBacklog([customer({ managerHrId: "HR-900", ownerHrId: "HR-100" })], DIRECTORY);
-  assert.equal(owned.owners[0].hrId, "HR-100", "the rep who owns it is chased, not their manager");
+  assert.equal(owned.owners[0].hrId, "HR-100", "the eligible named owner is chased, not their manager");
   assert.equal(owned.owners[0].routedVia, "owner");
   assert.equal(owned.owners[0].customers[0].routedVia, "owner", "the reason lives on the customer");
 
   const managed = groupFieldCaptureBacklog([customer({ managerHrId: "HR-900", ownerHrId: null })], DIRECTORY);
-  assert.equal(managed.owners[0].hrId, "HR-900", "with no rep named, the manager is chased");
+  assert.equal(managed.owners[0].hrId, "HR-900", "with no owner named, the manager is chased");
   assert.equal(managed.owners[0].routedVia, "manager");
   assert.equal(managed.owners[0].customers[0].routedVia, "manager");
 
   // An empty string is not an owner — the column is free text, and a blank is not a person.
   const blank = groupFieldCaptureBacklog([customer({ managerHrId: "HR-900", ownerHrId: "   " })], DIRECTORY);
   assert.equal(blank.owners[0].hrId, "HR-900", "a blank owner falls through to the manager");
+
+  // ── A Medical Rep is never the responsible party ────────────────────────────────
+  // Owner ruling, 2026-09-25: a rep may VALIDATE a customer, but the daily "still needs field
+  // proof" nudge belongs to the manager, not the rep — the rep "cannot do it" and is "not
+  // responsible" for the marketing request behind the row. So a rep is excluded from every route,
+  // exactly the way a leaver is: as a named owner, as a named manager, and from the area fan-out.
+  // `isFieldCaptureExcludedRole` is the one predicate the loader and this test share.
+  assert.equal(isFieldCaptureExcludedRole("Medical Rep"), true, "a Medical Rep is never nudged");
+  assert.equal(isFieldCaptureExcludedRole("District Manager"), false, "a District Manager still is");
+  assert.equal(isFieldCaptureExcludedRole("Regional Manager"), false, "and so is a Regional Manager");
+
+  // A rep who OWNS the customer is skipped, and the nudge climbs to that customer's manager — the
+  // real production shape on 2026-09-25, where all 14 rep-owned customers named an active DM.
+  const repOwner = groupFieldCaptureBacklog(
+    [customer({ managerHrId: "HR-900", ownerHrId: "HR-500" })],
+    [
+      { areaId: null, hrId: "HR-500", role: "Medical Rep" as const },
+      { areaId: null, hrId: "HR-900", role: "Regional Manager" as const },
+    ],
+  );
+  assert.equal(repOwner.owners.length, 1, "a rep owner does not get a bucket of their own");
+  assert.equal(repOwner.owners[0].hrId, "HR-900", "the manager is chased instead of the rep owner");
+  assert.equal(repOwner.owners[0].routedVia, "manager", "and the reason reads as manager, not owner");
+
+  // The area fan-out reaches only the managers working that territory — a rep in the same area is
+  // passed over, never nudged.
+  const repArea = groupFieldCaptureBacklog(
+    [customer({ areaId: 7, managerHrId: null, ownerHrId: null })],
+    [
+      { areaId: 7, hrId: "HR-501", role: "Medical Rep" as const },
+      { areaId: 7, hrId: "HR-701", role: "District Manager" as const },
+    ],
+  );
+  assert.deepEqual(
+    repArea.owners.map((owner) => owner.hrId),
+    ["HR-701"],
+    "the area fan-out reaches the manager, never the rep beside them",
+  );
+
+  // An area staffed only by reps has nobody to nudge: the customer is reported unassigned rather
+  // than handed to a rep who is not the one to answer it.
+  const repOnlyArea = groupFieldCaptureBacklog(
+    [customer({ areaId: 7, managerHrId: null, ownerHrId: null })],
+    [{ areaId: 7, hrId: "HR-501", role: "Medical Rep" as const }],
+  );
+  assert.equal(repOnlyArea.owners.length, 0, "a rep-only area nudges nobody");
+  assert.equal(repOnlyArea.unassigned.length, 1, "and the customer is reported, not dropped");
 
   // ── Nobody is dropped ─────────────────────────────────────────────────────────────────────
   // Production held 53 such links on 2026-08-23. A naive group-by-owner loses them in silence,
@@ -136,9 +186,9 @@ export function runMarketingFieldCaptureBacklogTests() {
   const byArea = groupFieldCaptureBacklog(
     [customer({ areaId: 7, customerCode: "MKT-C-0010", customerId: "c10", managerHrId: null, ownerHrId: null })],
     [
-      { areaId: 7, hrId: "HR-701" },
-      { areaId: 7, hrId: "hr-702" },
-      { areaId: 9, hrId: "HR-901" },
+      { areaId: 7, hrId: "HR-701", role: "District Manager" as const },
+      { areaId: 7, hrId: "hr-702", role: "District Manager" as const },
+      { areaId: 9, hrId: "HR-901", role: "District Manager" as const },
     ],
   );
   assert.equal(byArea.totals.unassignedCustomers, 0, "an ownerless customer in a staffed area is not abandoned");
@@ -158,14 +208,14 @@ export function runMarketingFieldCaptureBacklogTests() {
   // whole area about a customer that already names its rep is noise.
   const ownerBeatsArea = groupFieldCaptureBacklog(
     [customer({ areaId: 7, ownerHrId: "HR-100" })],
-    [...DIRECTORY, { areaId: 7, hrId: "HR-701" }],
+    [...DIRECTORY, { areaId: 7, hrId: "HR-701", role: "District Manager" as const }],
   );
   assert.deepEqual(ownerBeatsArea.owners.map((owner) => owner.hrId), ["HR-100"], "a named rep is not diluted");
 
   // An area with nobody in it is a STAFFING fact, and is reported rather than silently swallowed.
   const emptyArea = groupFieldCaptureBacklog(
     [customer({ areaId: 42, managerHrId: null, ownerHrId: null })],
-    [{ areaId: 7, hrId: "HR-701" }],
+    [{ areaId: 7, hrId: "HR-701", role: "District Manager" as const }],
   );
   assert.equal(emptyArea.unassigned.length, 1, "an unstaffed area is still reported, not dropped");
 
@@ -173,7 +223,7 @@ export function runMarketingFieldCaptureBacklogTests() {
   // treats head office. Otherwise every arealess employee would be nudged about every customer.
   const areallessStaff = groupFieldCaptureBacklog(
     [customer({ areaId: 7, managerHrId: null, ownerHrId: null })],
-    [{ areaId: null, hrId: "HR-800" }],
+    [{ areaId: null, hrId: "HR-800", role: "District Manager" as const }],
   );
   assert.equal(areallessStaff.unassigned.length, 1, "an employee with no area is not everybody's rep");
 
@@ -223,8 +273,8 @@ export function runMarketingFieldCaptureBacklogTests() {
     "the customer database is Super Admin / SFE Manager only, so the nudge must not land there",
   );
   assert.ok(
-    marketingCreatorRoles.has("Medical Rep"),
-    "the destination gate must admit the people being nudged",
+    marketingCreatorRoles.has("District Manager"),
+    "the destination gate must admit the managers being nudged",
   );
   assert.ok(
     existsSync(new URL(`../app${FIELD_CAPTURE_ACTION_URL}/page.tsx`, import.meta.url)),
@@ -267,7 +317,7 @@ export function runMarketingFieldCaptureBacklogTests() {
         ownerHrId: null,
       }),
     ],
-    [{ areaId: 7, hrId: "HR-701" }],
+    [{ areaId: 7, hrId: "HR-701", role: "District Manager" as const }],
   );
   const mixedOwner = mixedRoutes.owners[0];
   assert.equal(mixedOwner.hrId, "HR-701", "one person holds both kinds of customer");
@@ -298,8 +348,8 @@ export function runMarketingFieldCaptureBacklogTests() {
   const sharedByArea = groupFieldCaptureBacklog(
     [customer({ areaId: 7, customerCode: "MKT-C-0021", customerId: "c21", managerHrId: null, ownerHrId: null })],
     [
-      { areaId: 7, hrId: "HR-701" },
-      { areaId: 7, hrId: "HR-702" },
+      { areaId: 7, hrId: "HR-701", role: "District Manager" as const },
+      { areaId: 7, hrId: "HR-702", role: "District Manager" as const },
     ],
   );
   assert.deepEqual(
