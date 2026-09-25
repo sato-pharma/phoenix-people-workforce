@@ -315,7 +315,6 @@ export function runCrmNativeVisitsTests() {
       phoenixCrmService.indexOf("if (mayApprove) {") < phoenixCrmService.indexOf('{ seat: "rep", waiting: 0 }'),
     "a district manager is seated as a manager before they could be seated as a rep",
   );
-  assert.match(read("src/components/employee-portal/phoenix-crm-space.tsx"), /if \(seat === "rep"\) return <NativePlanWorkspace \/>;/, "the weekly planner opens only in the rep's seat");
   assert.ok(!grants("Super Admin").includes("create") && !grants("Super Admin").includes("approve"),
     "the Super Admin is nobody's rep and confirms no visit — his entry for a rep is update, below");
   assert.deepEqual(grants("Employee"), [], "an ordinary employee has no visit entry");
@@ -379,12 +378,11 @@ export function runCrmNativeVisitsTests() {
     "the save checks the origin before it saves",
   );
   assert.match(read("app/api/crm/native-visits/all/route.ts"), /await assertPermission\(access, "crm_visit_entry", "update"\);/);
-  // Entry for a rep now lives in Phoenix CRM's Visits tab, in the Super Admin's seat only.
+  // Entry for a rep now lives in Phoenix CRM's Visits tab, in the Super Admin's seat only. The pilot's
+  // own screen that rendered that seat is retired (the owner, 2026-09-25, once nothing served it) —
+  // the on-behalf notice opens the field app.
   assert.match(phoenixCrmService, /if \(mayUpdate\) return \{ seat: "admin", waiting: 0 \};/, "only update seats the Super Admin");
-  assert.match(read("src/components/employee-portal/phoenix-crm-space.tsx"), /if \(seat === "admin"\) return <NativeVisitForRepWorkspace \/>;/);
-  // The owner retired the pilot's pages on 2026-09-25: the rep's on-behalf notice opens the field app.
   assert.match(read("src/lib/crm/native-visits/service.ts"), /actionUrl: "\/employee-portals\/field-crm\?tab=visits",/);
-  assert.match(read("src/components/employee-portal/phoenix-crm-space.tsx"), /\?\? "visits";/, "Visits stays the pilot space's default tab");
   // The old Visits for Reps addresses and the rail link moved to the clean Phoenix CRM when it shipped
   // (the owner, 2026-09-16: the pilot's link is hidden then, and the pilot removed after go-live).
   assert.match(read("app/(admin)/admin/visit-entry/page.tsx"), /redirect\("\/admin\/field-crm"\)/, "Visits for Reps lands on the new Phoenix CRM");

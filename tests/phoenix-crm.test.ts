@@ -18,7 +18,7 @@ import {
 } from "../src/lib/crm/native-visits/rules.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Phoenix CRM — its own space for the pilot (the owner, 2026-09-14).
+// Phoenix CRM — the pilot's roster and KPI backend (the owner, 2026-09-14).
 //
 // WHAT THIS FILE GUARDS:
 //   · THE ROSTER IS THE GATE. A rep opens Phoenix CRM when the Super Admin put HIM on the roster, from
@@ -28,7 +28,12 @@ import {
 //     plan achieved, on the day the verified plan named. Only a doctor visit counts; 100000 is no doctor.
 //   · EVERY EXPORTED SERVICE FUNCTION CHECKS crm_visit_entry ITSELF; the roster needs update; the rep is
 //     told in-app, never by email; a roster row is never deleted.
-//   · THE SPACE IS REACHED from My Visits, and the old pilot pages land in it.
+//
+// The pilot's own screens (Visits, Planning, KPIs and the roster picker) are retired (the owner,
+// 2026-09-25): nothing renders them any more, so they were removed rather than kept as dead code.
+// Its two addresses forward to the field app — pinned in tests/phoenix-crm-retired-pilot-redirect.test.ts.
+// This file keeps the backend they used to sit on: the roster gate, the KPI math and the Super
+// Admin's pilot-roster API, none of which the removal touched.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const MIGRATION = "supabase/migrations/20260914170000_phoenix_crm_pilot_reps.sql";
@@ -210,10 +215,6 @@ export async function runPhoenixCrmTests() {
     "ruling C1: the call rate's working days stop at yesterday",
   );
   assert.match(service, /visits: \(visitsByRep\.get\(repKey\) \?\? \[\]\)\.filter\(\(visit\) => inWindow\(visit\.visitDate\)\),\s*callRateWindow,/, "and so do its calls");
-  const board = read("src/components/employee-portal/phoenix-crm-kpi-board.tsx");
-  assert.match(board, /scored\s+through yesterday: today is not scored until it is over/, "the board says the call rate stops at yesterday");
-  assert.match(board, /call rate to \$\{dayLabel\(row\.callRateWindow\.to\)\}/, "and to which day, on every row");
-  assert.match(board, /call rate starts once today is over/, "and why a rep who joined today has no rate");
 
   // ── 4. The route and the table ───────────────────────────────────────────────────────────────
   const route = read("app/api/crm/phoenix-crm/pilot-reps/route.ts");
@@ -232,19 +233,13 @@ export async function runPhoenixCrmTests() {
   }
   assert.doesNotMatch(sql, /\bgrant\b/i, "nothing is granted to a browser role");
 
-  // ── 5. The space and how it is reached ───────────────────────────────────────────────────────
-  const space = read("src/components/employee-portal/phoenix-crm-space.tsx");
-  assert.match(space, /tab === "pilot-reps" && seat === "admin" \? <PhoenixCrmPilotRosterWorkspace \/>/, "only the Super Admin picks the pilot reps");
-  assert.match(space, /return seat === "admin" \? \["visits", "planning", "kpis", "pilot-reps"\] : \["visits", "planning", "kpis"\];/);
-  // The owner hid the pilot's links when the clean Phoenix CRM shipped (2026-09-16): My Visits and the
-  // admin rail open the new module, and nothing offers the pilot any more. Its two pages forward to the
-  // field app since 2026-09-25 — pinned in tests/phoenix-crm-retired-pilot-redirect.test.ts.
+  // ── 5. The pilot's own screens are gone, and nothing points at them ────────────────────────────
+  // The owner hid the pilot's links when the clean Phoenix CRM shipped (2026-09-16), and retired its
+  // screens outright on 2026-09-25 once nothing rendered them. Its two addresses forward to the field
+  // app — pinned in tests/phoenix-crm-retired-pilot-redirect.test.ts.
   assert.doesNotMatch(read("app/employee-portals/visits/page.tsx"), /href="\/employee-portals\/phoenix-crm"/, "My Visits no longer links the pilot");
   assert.doesNotMatch(read("src/config/system-navigation.ts"), /href: "\/admin\/phoenix-crm"/, "the admin rail no longer links the pilot");
-  for (const component of ["phoenix-crm-kpi-board", "phoenix-crm-pilot-roster-workspace", "phoenix-crm-plans-overview", "phoenix-crm-team-visits"]) {
-    const source = read(`src/components/employee-portal/${component}.tsx`);
-    assert.match(source, /<table className="w-full table-fixed[^"]*">\s*<colgroup>/, `${component} fits the screen: a fixed table with a colgroup`);
-    assert.match(source, /md:hidden/, `${component} gives a phone cards`);
-    assert.doesNotMatch(source, /AM \/|\/ PM/, `${component} never joins AM and PM with a slash`);
+  for (const component of ["phoenix-crm-space", "phoenix-crm-kpi-board", "phoenix-crm-pilot-roster-workspace", "phoenix-crm-plans-overview", "phoenix-crm-team-visits"]) {
+    assert.throws(() => read(`src/components/employee-portal/${component}.tsx`), "the pilot's own screens are removed, not kept as dead code");
   }
 }
