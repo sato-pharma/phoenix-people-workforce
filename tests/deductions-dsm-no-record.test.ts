@@ -1,9 +1,10 @@
 import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 
+import { stripComments } from "./support/comment-strip.ts";
+
 import { isEligibleForPublish } from "../src/lib/deductions/calculations.ts";
 import { DEDUCTION_COLLECTORS, isDeductionCollectorKey } from "../src/lib/deductions/collect.ts";
-import { stripComments } from "./support/comment-strip.ts";
 
 // The DSM no-record rule reverses a documented exclusion that once cost
 // 131,741.94 EGP in wrong deductions, so its guards are asserted as WIRING:
@@ -19,9 +20,7 @@ export async function runDeductionsDsmNoRecordTests(): Promise<void> {
   // National Sales Managers and logsOwnCrmVisitsTitle stay out of scope — so any
   // "must not mention X" assertion run against the raw text fails on the very
   // comment that explains the safeguard. Assert against the code.
-  const code = stripComments(source).split("\n")
-    .filter((line) => !line.trim().startsWith("//"))
-    .join("\n");
+  const code = stripComments(source);
 
   // ── The rule must stay narrow ────────────────────────────────────────────
   // eligibility.ts excludes managers from CRM no-activity because a Product

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { stripComments } from "./support/comment-strip.ts";
 import {
   MAX_ATTENDANCE_EXCEPTION_ROWS,
   fetchAllExceptionRows,
@@ -157,10 +158,7 @@ export async function runAttendanceExceptionRowCapTests() {
   );
   // Comments are stripped first: the docblocks above the pager deliberately quote the old
   // `.limit(500)` so the next reader knows what was removed and why.
-  const code = service
-    .split("\n")
-    .filter((line) => !line.trimStart().startsWith("//") && !line.trimStart().startsWith("*"))
-    .join("\n");
+  const code = stripComments(service);
   assert.doesNotMatch(
     code,
     /\.limit\(\s*\d+\s*\)/,

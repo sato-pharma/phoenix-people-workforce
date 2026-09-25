@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { stripComments } from "./support/comment-strip.ts";
+
 import ExcelJS from "exceljs";
 
 import { buildManagerSummariesDetailed } from "../src/lib/double-visit-analytics/service.ts";
@@ -123,13 +125,7 @@ function checkinRow(day: string): CheckinRow {
 /** Source-contract guards must read the CODE. The comments explaining each of these fixes quote the
  * very strings being banned, so an unfiltered read would match its own rationale. */
 function codeOf(path: string): string {
-  return readFileSync(path, "utf8")
-    .split("\n")
-    .filter((line) => {
-      const trimmed = line.trim();
-      return !trimmed.startsWith("//") && !trimmed.startsWith("*") && !trimmed.startsWith("/*");
-    })
-    .join("\n");
+  return stripComments(readFileSync(path, "utf8"));
 }
 
 export async function runCrmPortalCoveragePopulationsTests() {

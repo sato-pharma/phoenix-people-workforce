@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
+import { stripComments } from "./support/comment-strip.ts";
+
 import { customerDetailRow } from "../src/lib/sales/normalizer/customer-details.ts";
 import { teachesFreeSteps } from "../src/lib/sales/normalizer/customer-map-teaching.ts";
 import { pickConfidence } from "../src/lib/sales/normalizer/pick-confidence.ts";
@@ -61,11 +63,7 @@ function migration(fileName: string): string {
 
 /** TypeScript with its comment lines dropped (whole-line `//` and block-comment lines), whitespace collapsed. */
 function source(path: string): string {
-  const lines = readFileSync(join(ROOT, path), "utf8").split("\n").filter((line) => {
-    const t = line.trim();
-    return !(t.startsWith("//") || t.startsWith("/*") || t.startsWith("*"));
-  });
-  return flat(lines.join("\n"));
+  return flat(stripComments(readFileSync(join(ROOT, path), "utf8")));
 }
 
 function occurrences(haystack: string, needle: string): number {

@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 
+import { stripComments } from "./support/comment-strip.ts";
+
 // The three defects the recruitment folders audit found (2026-09-12), pinned in source because each
 // one lives behind a live Supabase client and none of them can run here without one.
 
@@ -11,13 +13,7 @@ function read(relative: string): string {
 
 /** Source with comment lines removed, so a pin can never be satisfied by the comment explaining it. */
 function codeOnly(source: string): string {
-  return source
-    .split("\n")
-    .filter((line) => {
-      const trimmed = line.trimStart();
-      return !trimmed.startsWith("//") && !trimmed.startsWith("*") && !trimmed.startsWith("/*");
-    })
-    .join("\n");
+  return stripComments(source);
 }
 
 /** One top-level function, from its signature to its closing brace. */

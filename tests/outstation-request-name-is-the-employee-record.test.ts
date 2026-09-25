@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { stripComments } from "./support/comment-strip.ts";
+
 import { outstationRecordName } from "../src/lib/outstation/service.ts";
 
 // An outstation request row is a PERSISTED WORKFLOW RECORD: it feeds the approvals queue, the
@@ -31,10 +33,9 @@ function functionBody(source: string, name: string): string {
 
 /** The `employee_name:` value an insert payload stamps, with comment lines stripped. */
 function stampedNameExpression(body: string, fn: string): string {
-  const match = body
+  const match = stripComments(body)
     .split("\n")
     .map((line) => line.trim())
-    .filter((line) => !line.startsWith("//"))
     .find((line) => line.startsWith("employee_name:"));
   assert.ok(match, `${fn} must stamp employee_name on the request it inserts`);
   return match.slice("employee_name:".length).trim().replace(/,$/, "");

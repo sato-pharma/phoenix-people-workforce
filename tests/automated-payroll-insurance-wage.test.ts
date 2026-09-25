@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { stripComments } from "./support/comment-strip.ts";
+
 import { assembleRows } from "../src/lib/automated-payroll/assemble.ts";
 import { auditPayrollDataQuality, payAffectingIssues } from "../src/lib/automated-payroll/data-quality.ts";
 import type { PopulationMember } from "../src/lib/automated-payroll/recommend.ts";
@@ -252,13 +254,7 @@ export async function runAutomatedPayrollInsuranceWageTests() {
     "src/lib/payroll/exports/statutory-summary.ts",
   ];
   for (const file of readers) {
-    const code = readFileSync(file, "utf8")
-      .split("\n")
-      .filter((line) => {
-        const trimmed = line.trim();
-        return !trimmed.startsWith("//") && !trimmed.startsWith("*") && !trimmed.startsWith("/*");
-      })
-      .join("\n");
+    const code = stripComments(readFileSync(file, "utf8"));
     assert.ok(
       !code.includes("social_insurance_wage"),
       `${file} must read the insurance wage through statutory/insurance-wages.ts, not query the ` +

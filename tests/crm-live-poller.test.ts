@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { stripComments } from "./support/comment-strip.ts";
+
 import {
   computeCrmDelta,
   CONTACT_LIST_SYNC_EARLIEST_CAIRO_MINUTES,
@@ -30,7 +32,6 @@ import {
 import { CONTACT_SYNC_SLICE_COUNT } from "../src/lib/crm/contacts-sync.ts";
 import { filterRowsToUpsert } from "../src/lib/crm/sync.ts";
 import type { IReports360Checkin, IReports360Visit } from "../src/lib/crm/client.ts";
-import { stripComments } from "./support/comment-strip.ts";
 
 function visit(overrides: Partial<IReports360Visit> = {}): IReports360Visit {
   return {
@@ -514,10 +515,7 @@ export function runCrmLivePollerTests() {
   // The predicate itself is pinned in crm-contact-lists.test.ts. This pins that BOTH schedulers
   // actually call it — a correct predicate nobody consults fixes nothing. Shape-pinned with block
   // comments stripped first, so the prose above cannot satisfy these assertions (AGENTS.md §2.1).
-  const strip = (path: string) =>
-    stripComments(readFileSync(path, "utf8")).split("\n")
-      .filter((line) => !line.trim().startsWith("//"))
-      .join("\n");
+  const strip = (path: string) => stripComments(readFileSync(path, "utf8"));
   const pollerStripped = strip("src/lib/crm/live-poller.ts");
   const routeStripped = strip("app/api/cron/crm-contact-lists/route.ts");
   const contactBranch = pollerStripped.match(/async function runScheduledContactListSync\([\s\S]*?\n\}\n/)?.[0] ?? "";
