@@ -142,11 +142,12 @@ export function runPhoenixCrmSpeakTests() {
   // It takes no engine name, and that is deliberate: a browser with NO engine and a browser with a useless
   // one are the same case here — neither wrote anything — so the control has one transcription path rather
   // than two. A second path is how one of the two keeps the stale rule.
-  const module = stripComments(readFileSync(MODULE, "utf8"));
-  const decisionAt = module.indexOf("export function shouldWriteFromRecording");
+  // Not named `module`: Next's lint refuses that identifier anywhere in the repo.
+  const wording = stripComments(readFileSync(MODULE, "utf8"));
+  const decisionAt = wording.indexOf("export function shouldWriteFromRecording");
   assert.ok(decisionAt > 0, `${MODULE} exports the decision`);
   assert.doesNotMatch(
-    module.slice(decisionAt, module.indexOf("export function speakSupported")),
+    wording.slice(decisionAt, wording.indexOf("export function speakSupported")),
     /"live"|"server"|"none"/,
     "the decision names no engine at all — a browser with NO engine and a browser with a useless one are the same case here, and re-admitting an engine name is how the capability check creeps back in",
   );
