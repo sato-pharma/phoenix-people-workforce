@@ -1,14 +1,21 @@
 "use client";
 
 /**
- * Rep Tablets — the rules every rep tablet follows, the QR code that enrolls a new one, and the
- * tablets already enrolled, matched to the custody register.
+ * Rep Tablets, Google's half — the rules every rep tablet follows, the QR code that enrolls a new
+ * one, and the tablets already enrolled, matched to the custody register.
+ *
+ * 🔴 THIS IS THE SECOND PATH SINCE 2026-09-25, and it does not currently enroll anything. Google
+ * gives a new Cloud project a device quota of ZERO until it approves an application, so a tablet
+ * scanning the code below is refused with "your organization has reached its usage limits" while the
+ * enterprise holds no tablets at all. ManageEngine enrolls the fleet in the meantime, from the
+ * section above this one. Nothing here is removed or stubbed: the day Google approves the quota,
+ * this console works again exactly as written.
  *
  * DESIGN IDENTITY is Managed Google Play's and the device register's (AGENTS.md §4: match the
- * sibling pages, never invent a one-off look) — the same `PremiumHero`, slate borders, square
- * corners and 9px uppercase micro-labels. It is the third page of the same job: the register records
- * who holds a tablet, Managed Google Play decides what may be published to it, this page puts it
- * under the company's rules.
+ * sibling pages, never invent a one-off look) — slate borders, square corners and 9px uppercase
+ * micro-labels. It is the third page of the same job: the register records who holds a tablet,
+ * Managed Google Play decides what may be published to it, this page puts it under the company's
+ * rules. The page's `PremiumHero` now lives on the page itself, above the ManageEngine sections.
  *
  * IT FITS THE SCREEN. The enrolled-tablet table is `table-fixed` with a `<colgroup>` totalling 100%,
  * merged to four columns so it holds at the 669px content width the register designs against, and
@@ -20,7 +27,8 @@
  *
  * THE QR CODE IS DRAWN BY REACT — one `<path>` from Phoenix's own encoder — not by a library writing
  * into a DOM node. On 2026-09-18 production's Managed Google Play page crashed because a script wrote
- * into an element React also rendered into; nothing on this page hands a node to anyone.
+ * into an element React also rendered into; nothing on this page hands a node to anyone. That drawing
+ * lives in `qr-image.tsx`, shared with the ManageEngine section so the two paths cannot drift.
  */
 
 import {
@@ -38,7 +46,7 @@ import {
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
-import { PremiumHero } from "@/components/ui/premium-hero";
+import { QrImage, saveQrImage } from "@/components/devices/qr-image";
 import type { ManagedTabletRow, ManagedTabletTone } from "@/lib/devices/managed-tablets";
 import type {
   EnrollmentResult,
@@ -49,7 +57,7 @@ import type {
 import type { EnrollmentValidity } from "@/lib/devices/tablet-enrollment";
 import type { OwnerAppInstallType } from "@/lib/devices/tablet-policy";
 import { cairoDate, cairoDateTime } from "@/lib/format/cairo-datetime";
-import { QR_QUIET_ZONE, encodeQrText, qrSvgPath, type QrCode as QrSymbol } from "@/lib/qr/qr-code";
+import { encodeQrText } from "@/lib/qr/qr-code";
 
 const MICRO_LABEL = "text-[9px] font-black uppercase tracking-[0.14em] text-slate-500";
 const PRIMARY_BUTTON =
@@ -240,66 +248,6 @@ function EnterpriseSection({ enterprise }: { enterprise: RepTabletsEnterprise })
       ) : null}
     </section>
   );
-}
-
-// ---------------------------------------------------------------------------------------------
-// The QR code
-// ---------------------------------------------------------------------------------------------
-
-function QrImage({ code, label }: { code: QrSymbol; label: string }) {
-  const side = code.size + QR_QUIET_ZONE * 2;
-  const path = useMemo(() => qrSvgPath(code), [code]);
-  return (
-    <svg
-      aria-label={label}
-      className="block h-auto w-full max-w-[360px] border border-slate-200 bg-white"
-      role="img"
-      shapeRendering="crispEdges"
-      viewBox={`0 0 ${side} ${side}`}
-      xmlns="http://www.w3.org/2000/svg"
-    >
-      <rect fill="#ffffff" height={side} width={side} />
-      <path d={path} fill="#000000" />
-    </svg>
-  );
-}
-
-/**
- * A PNG of the code with a caption under it, for printing or showing on a second screen.
- *
- * The anchor is clicked DETACHED — never appended to the document — so nothing is added to a tree
- * React owns, not even for a moment.
- */
-function saveQrImage(code: QrSymbol, caption: string, fileName: string) {
-  const scale = 12;
-  const side = (code.size + QR_QUIET_ZONE * 2) * scale;
-  const captionHeight = 72;
-  const canvas = document.createElement("canvas");
-  canvas.width = side;
-  canvas.height = side + captionHeight;
-  const context = canvas.getContext("2d");
-  if (!context) return;
-  context.fillStyle = "#ffffff";
-  context.fillRect(0, 0, canvas.width, canvas.height);
-  context.fillStyle = "#000000";
-  code.modules.forEach((row, y) => {
-    row.forEach((dark, x) => {
-      if (dark) context.fillRect((x + QR_QUIET_ZONE) * scale, (y + QR_QUIET_ZONE) * scale, scale, scale);
-    });
-  });
-  context.fillStyle = "#0f172a";
-  context.font = "bold 26px Arial, sans-serif";
-  context.textAlign = "center";
-  context.fillText(caption, side / 2, side + captionHeight / 2, side - 2 * QR_QUIET_ZONE * scale);
-  canvas.toBlob((blob) => {
-    if (!blob) return;
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = fileName;
-    link.click();
-    window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
-  }, "image/png");
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -731,11 +679,18 @@ export function RepTabletsConsole({ enterpriseBound }: { enterpriseBound: boolea
 
   return (
     <div className="space-y-6">
-      <PremiumHero
-        kicker="Company devices"
-        subtitle="Set the rules every rep tablet follows, enroll a new tablet with a QR code, and see every enrolled tablet beside the custody register. A tablet enrolled here is the company's from its first screen."
-        title="Rep Tablets"
-      />
+      {/* The page's hero moved to the page itself when ManageEngine became the first section
+          (2026-09-25) — this console is no longer what opens the screen. */}
+      <div>
+        <p className={MICRO_LABEL}>Google Android Enterprise &middot; second path</p>
+        <h2 className="mt-1 text-lg font-black text-slate-900">Enrolling through Google</h2>
+        <p className="mt-1 max-w-3xl text-sm text-slate-600">
+          Everything below belongs to Google&rsquo;s Android Management API, not ManageEngine. It is kept whole and it
+          works the moment Google approves the device quota for the Cloud project behind it &mdash; until then a tablet
+          scanning the Google code is refused with &ldquo;your organization has reached its usage limits&rdquo;, even
+          though the enterprise holds no tablets at all. Enroll through ManageEngine above.
+        </p>
+      </div>
 
       {setupRequired ? (
         <div className="space-y-4 border border-slate-200 bg-white p-5">

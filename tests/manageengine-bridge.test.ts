@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   getManageEngineAccessToken,
@@ -37,6 +38,11 @@ import {
   ManageEngineCommandInputError,
 } from "../src/lib/devices/manageengine/commands.ts";
 import { manageEngineErrorResponse } from "../src/lib/devices/manageengine/http.ts";
+import {
+  ManageEngineEnrollmentInputError,
+  parseManageEngineEnrollmentTemplate,
+} from "../src/lib/devices/manageengine/enrollment.ts";
+import { findAccessRegistryEntry } from "../src/lib/security/access-registry.ts";
 import type { RegisterTablet } from "../src/lib/devices/managed-tablets.ts";
 
 /** Full env so `manageEngineAuthConfig` is satisfied — the three secrets plus the two hosts. */
@@ -640,6 +646,197 @@ function runErrorMappingTests() {
   assert.equal(status(new Error("something else")), 500, "an unknown error maps to 500");
 }
 
+// ---------------------------------------------------------------------------------------------
+// The enrollment template — the QR a factory-fresh tablet scans
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * WHAT THIS PINS. ManageEngine's REST API has NO enrollment endpoint: their QR is made once in the
+ * console as an enrollment TEMPLATE and is the same payload for every tablet enrolled through it.
+ * Phoenix therefore HOLDS one instead of minting one, and everything below follows from that.
+ *
+ * 🔴 THE PAYLOAD IS A CREDENTIAL — anyone who scans it puts a tablet into the company's fleet. So
+ * the page's ordinary load must never carry it, the audit row must never record it, and nothing may
+ * log it. Those three are asserted on the source, because a leak of this kind is invisible in
+ * behaviour: the feature works perfectly either way.
+ *
+ * NOTHING IS ADDED TO THE PAYLOAD. Google's token could carry the custody-register id; ManageEngine's
+ * admin extras bundle is their agent's own, and a key Phoenix added is a key it did not expect. The
+ * round trip below pins that the stored payload holds the same keys, and the bundle byte for byte.
+ */
+
+const COMPONENT_KEY = "android.app.extra.PROVISIONING_DEVICE_ADMIN_COMPONENT_NAME";
+const DOWNLOAD_KEY = "android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_DOWNLOAD_LOCATION";
+const CHECKSUM_KEY = "android.app.extra.PROVISIONING_DEVICE_ADMIN_SIGNATURE_CHECKSUM";
+const EXTRAS_KEY = "android.app.extra.PROVISIONING_ADMIN_EXTRAS_BUNDLE";
+const WIFI_KEY = "android.app.extra.PROVISIONING_WIFI_SSID";
+
+const EXTRAS_BUNDLE = { enrollmentToken: "TEST-TEMPLATE-TOKEN-NOT-REAL", serverUrl: "https://mdm.manageengine.com" };
+
+const TEMPLATE: Record<string, unknown> = {
+  [COMPONENT_KEY]: "com.manageengine.mdm.android/com.manageengine.mdm.android.receiver.AgentDeviceAdminMonitor",
+  [DOWNLOAD_KEY]: "https://mdm.manageengine.com/agent/MDMAgent.apk?token=TEST-NOT-REAL",
+  [CHECKSUM_KEY]: "TEST-CHECKSUM-NOT-REAL",
+  [EXTRAS_KEY]: EXTRAS_BUNDLE,
+  [WIFI_KEY]: "Phoenix-Office",
+};
+
+function runEnrollmentTemplateTests() {
+  const { payload, facts } = parseManageEngineEnrollmentTemplate(`\n  ${JSON.stringify(TEMPLATE)}  \n`);
+  assert.equal(facts.agentPackage, "com.manageengine.mdm.android", "the agent package is read out of the component name");
+  assert.equal(
+    facts.downloadHost,
+    "mdm.manageengine.com",
+    "the HOST only — the download URL carries a token in its query, and this line is shown on the page",
+  );
+  assert.equal(facts.hasChecksum, true);
+  assert.equal(facts.joinsWifi, true);
+
+  const stored = JSON.parse(payload) as Record<string, unknown>;
+  assert.deepEqual(
+    Object.keys(stored).sort(),
+    Object.keys(TEMPLATE).sort(),
+    "nothing is added to the payload and nothing is dropped — the agent reads the keys it chose, not keys Phoenix chose",
+  );
+  assert.deepEqual(stored[EXTRAS_KEY], EXTRAS_BUNDLE, "the admin extras bundle passes through untouched");
+
+  // A template with neither a pinned signature nor a Wi-Fi network still saves; the two chips read
+  // false. Refusing one would refuse a template ManageEngine itself produced.
+  const bare = parseManageEngineEnrollmentTemplate(
+    JSON.stringify({ [COMPONENT_KEY]: "com.example.agent/.Admin", [DOWNLOAD_KEY]: "https://example.test/a.apk" }),
+  );
+  assert.deepEqual(bare.facts, {
+    agentPackage: "com.example.agent",
+    downloadHost: "example.test",
+    hasChecksum: false,
+    joinsWifi: false,
+  });
+  assert.equal(
+    parseManageEngineEnrollmentTemplate(JSON.stringify({ ...TEMPLATE, [CHECKSUM_KEY]: "   ", [WIFI_KEY]: "" })).facts.hasChecksum,
+    false,
+    "a blank checksum is no checksum",
+  );
+
+  const refused: Array<[string, string]> = [
+    ["", "nothing pasted"],
+    ["   \n  ", "whitespace"],
+    ["MDM enrollment QR", "the words off the screen instead of the payload"],
+    ["[1,2]", "a JSON array"],
+    ["null", "JSON null"],
+    ["\"a string\"", "a JSON string"],
+    [JSON.stringify({ [DOWNLOAD_KEY]: "https://x.test/a.apk" }), "no component name, so no tablet knows what to install"],
+    [
+      JSON.stringify({ [COMPONENT_KEY]: "com.example.agent", [DOWNLOAD_KEY]: "https://x.test/a.apk" }),
+      "a component name with no receiver after the slash",
+    ],
+    [JSON.stringify({ [COMPONENT_KEY]: "com.example.agent/.Admin" }), "no download location"],
+    [
+      JSON.stringify({ [COMPONENT_KEY]: "com.example.agent/.Admin", [DOWNLOAD_KEY]: "MDMAgent.apk" }),
+      "a download location that is not a URL",
+    ],
+  ];
+  for (const [raw, because] of refused) {
+    assert.throws(
+      () => parseManageEngineEnrollmentTemplate(raw),
+      ManageEngineEnrollmentInputError,
+      `refused, and in words: ${because}`,
+    );
+  }
+}
+
+function enrollmentSource(relative: string): string {
+  return readFileSync(new URL(`../${relative}`, import.meta.url), "utf8");
+}
+
+function runEnrollmentDoorTests() {
+  const approve = { action: "approve", resource: "company_devices" };
+  const read = findAccessRegistryEntry("/api/devices/manageengine/enrollment", "GET");
+  assert.equal(read?.pattern, "/api/devices/manageengine/enrollment", "the read has its own registry entry");
+  assert.deepEqual(read?.permission, approve, "Super Admin only — the same door as the rest of Rep Tablets");
+  const write = findAccessRegistryEntry("/api/devices/manageengine/enrollment", "POST");
+  assert.deepEqual(write?.permission, approve);
+  assert.equal(write?.csrf.required, true);
+  assert.equal(write?.audit.required, true);
+  assert.equal(write?.audit.classification, "mutation");
+
+  const route = enrollmentSource("app/api/devices/manageengine/enrollment/route.ts");
+  assert.match(route, /assertPermission\(access, "company_devices", "approve"\)/, "the route is the security boundary, not the page");
+  assert.match(route, /const csrf = assertSameOriginMutation\(request\);\s*if \(csrf\) return csrf;/);
+  assert.match(route, /"cache-control": "no-store"/, "neither the summary nor the payload is cached between Phoenix and the browser");
+  assert.equal(
+    (route.match(/readManageEngineEnrollmentQr\(\)/g) ?? []).length,
+    1,
+    "exactly one place hands the payload to a browser, and it is the explicit show",
+  );
+  assert.match(route, /payload\.show === true/, "the payload comes back only when a person asks for it");
+
+  const moduleSource = enrollmentSource("src/lib/devices/manageengine/enrollment.ts");
+  const summaryStart = moduleSource.indexOf("export async function getManageEngineEnrollmentSummary(");
+  const summary = moduleSource.slice(summaryStart, moduleSource.indexOf("\nexport ", summaryStart + 1));
+  assert.ok(summaryStart !== -1, "the page's ordinary load has its own function");
+  assert.doesNotMatch(
+    summary,
+    /payload:|return row\b|\.\.\.row\b/,
+    "the load the page does on every visit carries facts ABOUT the template, never the template",
+  );
+
+  const auditStart = moduleSource.indexOf("writeRequiredAuditLog({");
+  const audit = moduleSource.slice(auditStart, moduleSource.indexOf("});", auditStart));
+  assert.ok(auditStart !== -1, "saving a template writes a required audit row");
+  assert.doesNotMatch(
+    audit,
+    /payload|qr_payload|input\.raw|\braw\b/,
+    "the audit row records that the template changed and who changed it — never the template",
+  );
+  assert.match(audit, /entityType: "manageengine_enrollment_template"/);
+
+  // The page order, and what did NOT happen to Google's half.
+  const page = enrollmentSource("app/(admin)/devices/tablets/page.tsx");
+  assert.ok(
+    page.indexOf("<ManageEngineEnrollment") !== -1 &&
+      page.indexOf("<ManageEngineEnrollment") < page.indexOf("<RepTabletsConsole"),
+    "ManageEngine enrolls first — Google refuses every scan until it approves the project's device quota",
+  );
+  assert.match(page, /<RepTabletsConsole/, "Google's console stays on the page, whole, for the day that approval lands");
+
+  for (const file of [
+    "src/lib/devices/manageengine/enrollment.ts",
+    "app/api/devices/manageengine/enrollment/route.ts",
+    "src/components/devices/manageengine-enrollment.tsx",
+    "src/components/devices/qr-image.tsx",
+  ]) {
+    const text = enrollmentSource(file);
+    assert.doesNotMatch(
+      text,
+      /\bconsole\.(log|info|warn|error|debug)\(/,
+      `${file} logs nothing — an enrollment payload must never reach a log`,
+    );
+    assert.doesNotMatch(text, /localStorage|sessionStorage|indexedDB/, `${file} never stores the payload in the browser`);
+  }
+
+  const client = enrollmentSource("src/components/devices/manageengine-enrollment.tsx");
+  assert.doesNotMatch(
+    client,
+    /dangerouslySetInnerHTML|innerHTML|appendChild|insertBefore/,
+    "React draws the QR; nothing writes into the page behind it",
+  );
+  assert.match(client, /setRevealed\(null\)/, "Hide the code drops the payload out of the page");
+  assert.doesNotMatch(
+    client,
+    /\brounded\b|rounded-|\btruncate\b|text-ellipsis|overflow-x-auto/,
+    "square corners, no ellipsis, no sideways scroll",
+  );
+
+  // The QR drawing moved out of the Google console into one shared module; both paths draw the same
+  // symbol, and the console must not have kept a second copy to drift from it.
+  const qrImage = enrollmentSource("src/components/devices/qr-image.tsx");
+  assert.match(qrImage, /qrSvgPath\(/, "the symbol is drawn from Phoenix's own encoder");
+  assert.doesNotMatch(qrImage, /dangerouslySetInnerHTML|innerHTML|appendChild|insertBefore/);
+  const googleHalf = enrollmentSource("src/components/devices/rep-tablets-console.tsx");
+  assert.doesNotMatch(googleHalf, /function QrImage\(|function saveQrImage\(/, "one copy of the QR drawing, not two that can drift");
+  assert.match(googleHalf, /from "@\/components\/devices\/qr-image"/, "Google's half draws with the shared one");
+}
+
 export async function runManageEngineBridgeTests() {
   await runAuthTests();
   await runClientTests();
@@ -649,4 +846,6 @@ export async function runManageEngineBridgeTests() {
   await runDeviceAppsTests();
   runCommandCatalogTests();
   runErrorMappingTests();
+  runEnrollmentTemplateTests();
+  runEnrollmentDoorTests();
 }
