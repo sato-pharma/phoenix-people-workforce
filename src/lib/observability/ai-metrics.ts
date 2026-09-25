@@ -23,7 +23,15 @@ import { logAppError } from "@/lib/error-monitor/service";
 
 // One entry per distinct call-site family (openai-client.ts covers several consumers behind one
 // choke point; the sales AI paths are separate because they hit different providers).
-export type AiCallComponent = "openai_client" | "sales_ai_provider" | "sales_normalizer_ai_suggest" | "sales_weekly_ai_verify";
+// `groq_transcription` is the one entry here that is NOT OpenAI, and deliberately so: the CRM's spoken
+// visit comment falls back to Groq's Whisper where the browser has no speech engine (Firefox), on the
+// owner's cost ruling of 2026-09-25. It shares this alarm because a dead key fails the same silent way.
+export type AiCallComponent =
+  | "groq_transcription"
+  | "openai_client"
+  | "sales_ai_provider"
+  | "sales_normalizer_ai_suggest"
+  | "sales_weekly_ai_verify";
 
 export type AiCallStatus = "success" | "error";
 
@@ -41,6 +49,7 @@ export type AiCallRecord = {
 
 // Owner rule: human-readable names, never raw codes. These reach a screen someone triages from.
 const COMPONENT_LABELS: Record<AiCallComponent, string> = {
+  groq_transcription: "CRM spoken comment — Groq speech to text",
   openai_client: "Shared OpenAI client",
   sales_ai_provider: "Sales AI provider",
   sales_normalizer_ai_suggest: "Sales normalizer — AI suggest",

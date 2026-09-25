@@ -148,6 +148,13 @@ const ROUTE_GATES: RouteGate[] = [
   // Playback, on the photo's own pattern: a read sent as a POST, audited because hearing what a rep
   // said on a call discloses as much as seeing where they stood.
   { route: "voice/sign", method: "POST", action: "read", audit: "access-read", auditRequired: true },
+  // Whether this browser can be offered written words at all: it answers one boolean — is a speech
+  // service configured — and names neither the vendor nor the key, so it is a plain read.
+  get("voice/transcribe"),
+  // Writing out a recording the rep just made, on the browsers that have no speech engine of their
+  // own (Firefox). `create` because it writes into the visit the rep is entering, and audited as a
+  // read because what it discloses is the recording's contents — the same disclosure as voice/sign.
+  { route: "voice/transcribe", method: "POST", action: "create", audit: "access-read", auditRequired: true },
   // The place stamp burned into a live photo: same gate as taking the photo; it persists nothing.
   { route: "location", method: "POST", action: "create", audit: "access-read", auditRequired: false },
   get("settings", "update"),

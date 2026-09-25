@@ -30,6 +30,15 @@ export const KEY_SHAPES = [
     pattern: /^sk-[A-Za-z0-9_-]{20,}$/,
     describe: 'must look like sk-… — letters, digits, "_" and "-" only, with no spaces, dots or line breaks',
   },
+  {
+    // Groq, for the CRM spoken visit comment on a browser with no speech engine of its own (Firefox).
+    // Registered on 2026-09-25 with the feature and BEFORE any key was pasted, for one reason:
+    // OPENAI_API_KEY's masked paste was found only after every AI feature had been silently dead for
+    // days, and this key gets pasted into Railway by hand in exactly the same way. Groq issues gsk_… .
+    name: "GROQ_API_KEY",
+    pattern: /^gsk_[A-Za-z0-9]{20,}$/,
+    describe: "must look like gsk_… — letters and digits only after the prefix, with no spaces, dots or line breaks",
+  },
 ];
 
 /**

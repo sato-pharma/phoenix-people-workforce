@@ -4,7 +4,13 @@
  * Typing Arabic on a phone keyboard, standing at a clinic door, is the slowest part of entering a
  * visit. The browser's own speech engine does Egyptian Arabic server-side at no cost, with no account
  * and no dependency: Chrome on Android and Safari on iOS 14.1 and later have it, Firefox has none at
- * all. That is the only kind of solution available here.
+ * all — no constructor to call, on any platform, and Firefox 157's new on-device engine does not change
+ * that for Arabic (it uses NVIDIA's Parakeet, whose language list has no Arabic, so `ar-EG` answers
+ * `language-not-supported`). THIS MODULE IS THEREFORE NOT THE WHOLE TEXT HALF ANY MORE: where there is
+ * no engine, the finished recording is written out by Phoenix's own server instead
+ * (`./server/voice-transcribe.ts`), on the owner's instruction of 2026-09-25 — "un browsers must be text
+ * and audio". `speakHalves` in `./speak.ts` is what chooses between the two, and it is the only place
+ * that should.
  *
  * This DICTATES. Speech becomes text in the comment field, and what saves is ordinary text in the
  * `comment` column that every screen and every report already reads. This module records nothing and
@@ -17,8 +23,10 @@
  * Recognition is NOT on the phone. Chrome sends the audio to Google's speech service and Safari to
  * Apple's, which is how the engine costs nothing — so a rep's spoken comment, which carries doctor
  * names and what was said about competitors, leaves the device to a third party. That was put to the
- * owner on 2026-09-25 and he ruled it acceptable — keep it. There is no on-device Arabic engine, free
- * or paid, to fall back to, so reopening this only removes the feature.
+ * owner on 2026-09-25 and he ruled it acceptable — keep it. There is no on-device Arabic engine, free or
+ * paid, to put in its place, so reopening THIS decision only removes the feature. (The server path added
+ * the same day sends audio to a third party too, and says so in its own notice — it is a different
+ * processor, not a way of keeping the voice on the phone.)
  *
  * Whether the REP is told is SETTLED, and settled the other way from how FTP Portal does it. FTP says
  * so on a privacy page; Phoenix says it on the microphone. Offered both on 2026-09-25, the owner chose

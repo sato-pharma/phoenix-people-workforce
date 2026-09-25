@@ -29,10 +29,22 @@
  * answered once and the recorder is holding the microphone before the speech engine opens its own
  * capture. Starting the engine first put a second prompt in front of the rep on some Android builds.
  *
- * ONE HALF MAY REFUSE. Firefox has no speech engine at all; a phone can fail the recorder alone. Each
- * half is started independently and neither failure cancels the other — the rep is told which half he
- * has, because a panel that says nothing is a visit saved missing the part he wanted. Only when BOTH
- * refuse is this a failure, and then it is the microphone and the message says where to unblock it.
+ * ONE HALF MAY REFUSE. A phone can fail the recorder alone. Each half is started independently and
+ * neither failure cancels the other — the rep is told which half he has, because a panel that says
+ * nothing is a visit saved missing the part he wanted. Only when BOTH refuse is this a failure, and then
+ * it is the microphone and the message says where to unblock it.
+ *
+ * THE TEXT HALF HAS TWO ENGINES AND THIS FILE RUNS BOTH. Where the browser has a speech engine of its
+ * own it is started with the recorder and writes words as they settle ("live"). Firefox has none at all —
+ * no constructor to call, on any platform — so there the finished RECORDING is sent to Phoenix, which
+ * writes the words out and hands them back a few seconds after Stop ("server", `store` below). The
+ * owner's instruction on 2026-09-25: "un browsers must be text and audio." The second engine is asked for
+ * by PATH, never by re-uploading the audio, so a rep on a clinic's 3G sends the recording once.
+ *
+ * THE SECOND ENGINE IS NEVER FATAL AND ITS FAILURE IS NEVER THE RECORDING'S. It runs after the upload has
+ * already landed and the note is already on screen, so a speech service that refuses costs him the typing
+ * he would have done anyway — it can never lose what he recorded. That ordering is the whole design of
+ * `store`, not an accident of where the call sits.
  *
  * NOTHING HERE CARRIES A TIME. The recording has no `issuedAt` and the payload has no field for one: a
  * note can be made in a car an hour after the call and says nothing about when the visit happened. The
@@ -43,7 +55,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
 import { Mic, Square, Trash2 } from "lucide-react";
 
 import { CrmButton, CrmNote } from "@/components/phoenix-crm/ui";
-import { crmPost } from "@/components/phoenix-crm/api";
+import { crmPost, messageOf, useCrmGet } from "@/components/phoenix-crm/api";
 import { startDictation, type DictationHandle } from "@/lib/phoenix-crm/dictation";
 import {
   speakAccuracyLine,
@@ -56,6 +68,7 @@ import {
   speakProcessorLine,
   speakPromise,
   speakSupported,
+  speakTranscribingLine,
   SPEAK_AGAIN_LABEL,
   SPEAK_LABEL,
   type SpeakHalves,
@@ -75,7 +88,9 @@ type VoiceSlot = { path: string; signedUrl: string; token: string; contentType: 
 /** What the form keeps of the recording: the stored path and the two figures that describe it. */
 export type VoiceNoteValue = { path: string; seconds: number; bytes: number };
 
-const NO_HALVES: SpeakHalves = { text: false, audio: false };
+const NO_HALVES: SpeakHalves = { text: "none", audio: false };
+
+const TRANSCRIBE_URL = "/api/phoenix-crm/voice/transcribe";
 
 const subscribeToNothing = () => () => {};
 
@@ -86,11 +101,15 @@ const noHalvesOnServer = () => NO_HALVES;
  * Capability is read with `useSyncExternalStore` rather than set in an effect, because a `setState`
  * inside `useEffect` is a lint error in this repo. It cannot change while the screen is open, so the
  * subscribe function has nothing to subscribe to — but the snapshot must be a STABLE object or React
- * re-renders forever, so the two booleans are cached behind one identity.
+ * re-renders forever, so the halves are cached behind one identity.
+ *
+ * Asked OPTIMISTICALLY: a browser with no engine of its own is assumed to have the server path, and the
+ * probe below only ever downgrades it. Assuming the opposite would show every Firefox rep "this browser
+ * cannot turn speech into text" for as long as the request takes and then change its mind in front of him.
  */
 let halvesSnapshot: SpeakHalves | null = null;
 function readHalves(): SpeakHalves {
-  if (!halvesSnapshot) halvesSnapshot = speakHalves();
+  if (!halvesSnapshot) halvesSnapshot = speakHalves(true);
   return halvesSnapshot;
 }
 
@@ -129,13 +148,26 @@ export function CrmSpeak({
   test: boolean;
   value: VoiceNoteValue | null;
 }) {
-  const halves = useSyncExternalStore(subscribeToNothing, readHalves, noHalvesOnServer);
+  const browser = useSyncExternalStore(subscribeToNothing, readHalves, noHalvesOnServer);
+
+  /**
+   * Only a browser with no engine of its own has to ask, and it asks because the copy under the button is
+   * a PROMISE: "the words are written when you stop" with nothing configured behind it is the sentence a
+   * rep finds out about at a clinic door. A definite `false` is the only answer that changes anything — a
+   * failed or pending probe leaves the optimistic reading, so the promise never flickers between engines.
+   */
+  const probe = useCrmGet<{ available: boolean }>(browser.text === "server" ? TRANSCRIBE_URL : null, "transcription");
+  const halves: SpeakHalves =
+    browser.text === "server" && probe.data?.available === false ? { ...browser, text: "none" } : browser;
+  /** Pulled out as a plain string so `store` can depend on it without depending on an object identity. */
+  const engine = halves.text;
 
   const [listening, setListening] = useState(false);
   const [started, setStarted] = useState<SpeakHalves>(NO_HALVES);
   const [elapsed, setElapsed] = useState(0);
   const [interim, setInterim] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
@@ -195,6 +227,7 @@ export function CrmSpeak({
         return;
       }
       setUploading(true);
+      let stored: string | null = null;
       try {
         const extension = extensionFor(result.mimeType);
         const slot = await crmPost<VoiceSlot>("/api/phoenix-crm/voice/upload-slot", { extension, seatId, test }, "slot");
@@ -204,13 +237,32 @@ export function CrmSpeak({
           return URL.createObjectURL(result.blob);
         });
         onChange({ path: slot.path, seconds: result.seconds, bytes: result.blob.size });
+        stored = slot.path;
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : "The recording did not upload. Speak again.");
       } finally {
         setUploading(false);
       }
+
+      // The words, on a browser that could not write them while he spoke. Deliberately a SECOND block
+      // after the upload has landed and the note is already on screen: the recording is safe by the time
+      // anything is asked of a speech service, so a refusal here costs him the typing he would have done
+      // anyway and can never cost him what he recorded. `stored` null means the upload failed and its own
+      // sentence is already showing — there is nothing to transcribe and nothing to add to it.
+      if (!stored || engine !== "server") return;
+      setTranscribing(true);
+      try {
+        const written = await crmPost<string>(TRANSCRIBE_URL, { path: stored }, "text");
+        if (written.trim()) onAppend(written.trim());
+      } catch (cause) {
+        // Every refusal from that route is already a sentence for the rep, ending in "type the comment
+        // instead — the recording was still saved", so it is shown as written.
+        setError(messageOf(cause));
+      } finally {
+        setTranscribing(false);
+      }
     },
-    [onChange, seatId, test],
+    [engine, onAppend, onChange, seatId, test],
   );
 
   const stop = useCallback(async () => {
@@ -252,7 +304,7 @@ export function CrmSpeak({
     }
 
     let speech: DictationHandle | null = null;
-    if (halves.text) {
+    if (engine === "live") {
       speech = startDictation({
         onInterim: setInterim,
         onFinal: (text) => {
@@ -282,7 +334,10 @@ export function CrmSpeak({
 
     recorder.current = tape;
     dictation.current = speech;
-    setStarted({ audio: Boolean(tape), text: Boolean(speech) });
+    // The panel reads what actually started, never what the browser merely has. The server engine cannot
+    // "start" — it runs on the finished file — so it counts as the text half only where a recorder is
+    // actually running to produce that file, and reads as nothing at all where one is not.
+    setStarted({ audio: Boolean(tape), text: speech ? "live" : engine === "server" && tape ? "server" : "none" });
     setListening(true);
   }
 
@@ -342,11 +397,12 @@ export function CrmSpeak({
           ) : null}
 
           <div className="min-w-0">
-            <CrmButton busy={uploading} disabled={disabled || uploading} onClick={() => void start()} size="sm">
+            <CrmButton busy={uploading || transcribing} disabled={disabled || uploading || transcribing} onClick={() => void start()} size="sm">
               {/* While saving, the button draws its own spinner (`busy`); a second one here doubled it. */}
-              {uploading ? null : <Mic aria-hidden className="h-4 w-4 shrink-0" />}
-              {uploading ? "Saving the recording" : value ? SPEAK_AGAIN_LABEL : SPEAK_LABEL}
+              {uploading || transcribing ? null : <Mic aria-hidden className="h-4 w-4 shrink-0" />}
+              {uploading ? "Saving the recording" : transcribing ? "Writing out the words" : value ? SPEAK_AGAIN_LABEL : SPEAK_LABEL}
             </CrmButton>
+            {transcribing ? <p className="mt-1.5 break-words text-xs font-medium leading-5 text-orange-700">{speakTranscribingLine()}</p> : null}
             <p className="mt-1.5 break-words text-xs font-medium leading-5 text-slate-500">{speakPromise(halves)}</p>
             {again ? <p className="mt-1 break-words text-xs font-medium leading-5 text-slate-500">{again}</p> : null}
             {accuracy ? <p className="mt-1 break-words text-xs font-medium leading-5 text-slate-500">{accuracy}</p> : null}

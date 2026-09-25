@@ -709,6 +709,15 @@ export const accessRegistry = [
   // Playback, on the photo's own pattern: a read sent as a POST, writing nothing. It is audited because
   // hearing what a rep said on a call is a disclosure of the same kind as seeing where they stood.
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/voice/sign", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: true }),
+  // Writing a voice note out as TEXT, for a browser with no speech engine of its own (Firefox). GET is
+  // only whether the path is configured — a boolean the control asks for BEFORE it promises a rep that
+  // his words will be written, disclosing nothing about anyone, so it is `read` and unaudited.
+  sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/voice/transcribe", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
+  // POST reads a stored recording and sends it to a third-party speech service, so it is audited on the
+  // playback route's classification. Gated on `create`, not `read`: the module narrows it again to a note
+  // this same person recorded in the last two hours, because unlike playback it costs money per second of
+  // audio — "anyone who may hear it" would be a bill for a district's whole history of recordings.
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/voice/transcribe", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
   // The place stamp burned into a live photo (address, brick, area, coordinates). Same gate as taking
   // the photo; it resolves and returns, persisting nothing, so audit is classified but not required.
   sessionApi({ audit: { classification: "access-read", required: false }, methods: ["POST"], pattern: "/api/phoenix-crm/location", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),

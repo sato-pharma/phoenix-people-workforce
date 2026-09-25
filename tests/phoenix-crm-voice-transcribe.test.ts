@@ -1,0 +1,187 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+import {
+  GROQ_TRANSCRIPTION_LANGUAGE,
+  GROQ_TRANSCRIPTION_MODEL,
+  groqTranscriptionMessage,
+  GroqTranscriptionError,
+  isHallucinatedTranscript,
+} from "../src/lib/ai/groq-transcription.ts";
+import { DICTATION_LANG } from "../src/lib/phoenix-crm/dictation.ts";
+import { PRODUCT_VOCABULARY } from "../src/lib/phoenix-crm/dictation-vocabulary.ts";
+import { TRANSCRIPTION_PROMPT } from "../src/lib/phoenix-crm/server/voice-transcribe.ts";
+import { KEY_SHAPES, checkSecretShape } from "../scripts/secret-shape-rules.mjs";
+import { stripComments } from "./support/comment-strip.ts";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phoenix CRM — writing out a visit voice note where the BROWSER cannot (owner, 2026-09-25).
+//
+// WHY THIS PATH EXISTS. The visit form's microphone runs two halves, and the text half is the browser's
+// own free speech engine. Firefox does not have one — not disabled, not behind a flag: there is no
+// `SpeechRecognition` constructor on any platform, so a rep on Firefox got the recording and an empty
+// comment. Firefox 157 does not fix it either (its on-device engine is NVIDIA's Parakeet, which has no
+// Arabic). The owner: "un browsers must be text and audio." So on those browsers the finished RECORDING
+// is written out server-side instead.
+//
+// AND WHY IT IS NOT OPENAI. His cost ruling the same day, in his words: "I don't want it to use it open
+// AI or find a free way to use it in it." Groq serves whisper-large-v3-turbo on a free tier, and only the
+// engine-less browsers ever reach this path — the Chrome, Edge, Safari and Android majority keep using
+// the browser's own engine and never call it. The request below is OpenAI-SHAPED, which is exactly why
+// the assertions here are about what it must never be pointed at.
+//
+// WHAT IS PINNED, and each line is a way this goes wrong while every screen still renders:
+//
+//   1. IT IS NOT OPENAI AND CANNOT BECOME OPENAI BY CONFIGURATION. The endpoint is written out rather
+//      than read from AI_BASE_URL — the variable the sales AI paths use to swap providers — because
+//      swapping THIS one would silently reverse the owner's decision, with nothing on any screen saying
+//      the bill had moved.
+//   2. THE LANGUAGE IS `ar`, NOT `ar-EG`. The same string the browser engine takes is REJECTED here: the
+//      field is ISO-639-1, not BCP-47. Leaving it off is worse than wrong — Whisper then translates to
+//      English, which returns a fluent comment in the wrong language rather than an error.
+//   3. HALLUCINATIONS ARE DROPPED, NOT PASSED ON. Whisper does not fail loudly on silence; it emits
+//      subtitle boilerplate, or repeats one phrase until its budget runs out. Either one lands in a
+//      clinical record as something a doctor supposedly said.
+//   4. THE RECORDING IS FETCHED BY PATH, AND ONLY THE PERSON WHO JUST MADE IT MAY ASK. That is a COST
+//      rule, not a privacy one: playback is free and reading a colleague's note is the point of the
+//      feature, but transcription is charged per second of audio, so "anything in my scope" would turn
+//      one request into a bill for every note a district ever recorded.
+//   5. THE KEY'S SHAPE IS CHECKED BEFORE A KEY EXISTS. OPENAI_API_KEY held a masked paste for days and
+//      was found only after every AI feature had silently died; this one is pasted into Railway by hand
+//      in exactly the same way.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * SYNTHETIC, and built at runtime rather than written out, for the reason railway-secret-shape.test.ts
+ * already records: gitleaks is a required check here and it flagged a convincing literal in that file's
+ * first draft. This has a real key's SHAPE and none of its texture.
+ */
+const SYNTHETIC_GROQ_KEY = `gsk_${"abcdefghijklmnop".repeat(4)}`;
+
+const CLIENT = "src/lib/ai/groq-transcription.ts";
+const SERVICE = "src/lib/phoenix-crm/server/voice-transcribe.ts";
+const ROUTE = "app/api/phoenix-crm/voice/transcribe/route.ts";
+
+export function runPhoenixCrmVoiceTranscribeTests() {
+  const client = stripComments(readFileSync(CLIENT, "utf8"));
+  const service = stripComments(readFileSync(SERVICE, "utf8"));
+  const route = stripComments(readFileSync(ROUTE, "utf8"));
+
+  // ── 1. It is Groq, and it cannot be re-pointed at OpenAI by configuration ──────
+  // The owner refused OpenAI on cost. A provider-swapping env var reaching this file would move the bill
+  // back to the account he said not to use, with nothing on any screen recording that it had moved.
+  assert.match(client, /https:\/\/api\.groq\.com\/openai\/v1\/audio\/transcriptions/, `${CLIENT} calls Groq's transcription endpoint`);
+  assert.doesNotMatch(client, /AI_BASE_URL|OPENAI_API_KEY|OPENAI_BASE_URL/, `${CLIENT} reads no OpenAI variable and no provider override — the endpoint is fixed on purpose`);
+  assert.doesNotMatch(client, /from "openai"|require\("openai"\)/, `${CLIENT} does not import the OpenAI SDK — using it here would put the OpenAI client in the call stack of a feature that must not use OpenAI`);
+  assert.doesNotMatch(service, /openai|OPENAI/i, `${SERVICE} names OpenAI nowhere`);
+  assert.match(client, /process\.env\.GROQ_API_KEY/, `${CLIENT} reads its own key`);
+
+  // ── 2. The language is the API's, not the browser's ───────────────────────────
+  assert.equal(GROQ_TRANSCRIPTION_LANGUAGE, "ar", "the field is an ISO-639-1 language, and `ar` is what it takes");
+  assert.notEqual(
+    GROQ_TRANSCRIPTION_LANGUAGE,
+    DICTATION_LANG,
+    "it is NOT the browser engine's ar-EG: that is a BCP-47 locale and this API rejects it, so sharing one constant between the two engines would break whichever one was changed second",
+  );
+  assert.match(client, /form\.set\("language", GROQ_TRANSCRIPTION_LANGUAGE\)/, `${CLIENT} always names the language — omitted, Whisper translates Arabic speech into fluent ENGLISH text, which reads as a working feature`);
+  assert.equal(GROQ_TRANSCRIPTION_MODEL, "whisper-large-v3-turbo", "the turbo model: several times faster and a fraction of the price, for a gap far smaller than the one between some text and no text");
+  assert.match(client, /form\.set\("temperature", TEMPERATURE\)/, `${CLIENT} pins the temperature — sampling is what turns an unclear second into an invented sentence`);
+
+  // ── 3. Canned and looping output is dropped ───────────────────────────────────
+  // The direction of the error is the whole design, the same as the product corrector's: leaving a rep
+  // with nothing costs him the typing he would have done anyway, and handing him a sentence nobody said
+  // puts a claim in a clinical record that no one knows to doubt.
+  assert.equal(isHallucinatedTranscript(""), true, "nothing at all is not a transcript");
+  assert.equal(isHallucinatedTranscript("   "), true);
+  assert.equal(isHallucinatedTranscript("اشترك في القناة"), true, "a subscribe line is what Whisper emits over silence, and no rep has ever said it on a call");
+  assert.equal(isHallucinatedTranscript("ترجمة نانسي قنقر"), true, "a subtitle credit — the commonest Arabic Whisper hallucination there is");
+  assert.equal(isHallucinatedTranscript("Subtitles by the Amara.org community"), true, "and its English twin, matched case-insensitively");
+  assert.equal(
+    isHallucinatedTranscript("زيارة كويسة الدكتور طلب عينات تيبوفورتين وقال انه هيكتب للاطفال"),
+    false,
+    "a real visit comment passes — this guard must not be the reason Firefox reps get nothing",
+  );
+  assert.equal(
+    isHallucinatedTranscript("تيبوفورتين تيبوفورتين تيبوفورتين تيبوفورتين تيبوفورتين تيبوفورتين تيبوفورتين تيبوفورتين تيبوفورتين"),
+    true,
+    "a decoder stuck on one word repeats it past any point a person would",
+  );
+  assert.equal(
+    isHallucinatedTranscript("قابلت الدكتور وقال تيبوفورتين تيبوفورتين كتير للاطفال في العيادة"),
+    false,
+    "and Egyptian Arabic really does repeat a word for emphasis, so the threshold is deliberately high — a false positive here silently throws away a real comment",
+  );
+  assert.equal(isHallucinatedTranscript("ايوه ايوه"), false, "a short answer is never judged: there is not enough of it to tell emphasis from a loop");
+
+  // ── The vocabulary primes the decoder, and primes it with ARABIC only ─────────
+  // Whisper's `prompt` is preceding CONTEXT, not an instruction — anything imperative written there is
+  // transcribed into the answer. And seeding the Latin spellings makes it answer a wholly Arabic sentence
+  // in Latin script, which is the rep's own words rewritten into a language he did not use.
+  for (const entry of PRODUCT_VOCABULARY) {
+    assert.ok(TRANSCRIPTION_PROMPT.includes(entry.arabic), `the prompt carries ${entry.latin} in Arabic — it is the one class of word a general Arabic model has never heard`);
+    assert.ok(!TRANSCRIPTION_PROMPT.includes(entry.latin), `the prompt does NOT carry ${entry.latin} in Latin — seeding it makes the model answer an Arabic sentence in Latin script`);
+  }
+  assert.ok(!/\b(transcribe|write|correct|please|do not)\b/i.test(TRANSCRIPTION_PROMPT), "the prompt gives no instructions — it cannot be instructed, and an instruction written there is transcribed into the comment");
+
+  // The same corrector the live engine's words go through. A general Arabic model has never heard
+  // "تيبوفورتين" either, so the failure it fixes is identical and the fix must not be duplicated.
+  assert.match(service, /correctDictatedProducts\(spoken\)\.text/, `${SERVICE} runs the same product corrector as the live engine — one lexicon, measured against one corpus`);
+
+  // ── 4. Only the person who just recorded it, and only by path ─────────────────
+  assert.match(service, /\.eq\("issued_to_hr_id", viewer\.hrId\)/, `${SERVICE} transcribes only a note this person recorded — a cost rule: charged per second of audio, "anything in my scope" is a bill for a district's whole history`);
+  assert.match(service, /\.gte\("issued_at", since\)/, `${SERVICE} bounds it to a window, so an old path replayed from a copied payload buys nothing`);
+  assert.match(service, /voicePathTerritory\(path\)/, `${SERVICE} refuses a path that is not shaped like a voice note before it touches storage`);
+  // It fetches the stored object itself — the phone sends a path, never the audio a second time — but it
+  // asks the bucket's OWNER for those bytes. phoenix-crm-boundary.test.ts allows each server file exactly
+  // one bucket and names the owner by filename, so a second file opening this one is the thing that rule
+  // exists to stop; the read lives in voice-notes.ts and this module holds the proof that earns it.
+  assert.match(service, /downloadVoiceNote\(path\)/, `${SERVICE} reads the recording through its bucket's owner`);
+  assert.doesNotMatch(service, /\.storage\.from\(/, `${SERVICE} never opens the bucket itself — one file per bucket, so the module's storage access stays readable in one place`);
+  const ownershipAt = service.indexOf('.eq("issued_to_hr_id", viewer.hrId)');
+  assert.ok(
+    ownershipAt >= 0 && service.indexOf("downloadVoiceNote(path)") > ownershipAt,
+    `${SERVICE} proves the note is his own BEFORE it reads the bytes — the helper authorises nothing, so moving it above that check is the hole`,
+  );
+  assert.doesNotMatch(service, /FormData|multipart/, `${SERVICE} takes no upload: there is exactly one way audio enters this system, and it is the voice slot`);
+
+  // The route spends money at a third party, so it carries a save's refusals even though it reads.
+  assert.match(route, /assertSameOriginMutation\(request\)/, `${ROUTE} refuses a cross-site POST — it spends money per request`);
+  assert.match(route, /assertPermission\(access, "phoenix_crm", "create"\)/, `${ROUTE} gates the words behind the same permission as entering a visit`);
+  assert.match(route, /export const dynamic = "force-dynamic"/, `${ROUTE} is never cached or prefetched`);
+  assert.match(route, /isVoiceTranscriptionConfigured\(\)/, `${ROUTE} answers whether this can write words at all — the control asks BEFORE it promises any, because a browser cannot see the key`);
+  assert.doesNotMatch(route, /GROQ_API_KEY|Groq/, `${ROUTE} never names the service or its key to a phone — a boolean is the whole answer, and the rest belongs in /admin/error-monitor`);
+
+  // ── Every failure is a sentence the rep can act on, and none is fatal ─────────
+  // The transcription runs after the upload has landed, so the recording is already safe: a refusal costs
+  // him the typing he would have done anyway. Each message therefore ends by naming the way out.
+  for (const code of ["auth_failed", "empty", "failed", "not_configured", "quota_exceeded", "rate_limited", "timeout", "too_large"] as const) {
+    const message = groqTranscriptionMessage(new GroqTranscriptionError(code, "internal detail"));
+    assert.match(message, /[Tt]ype the comment/, `the ${code} refusal names typing as the way out — speaking was always an accelerator`);
+    assert.doesNotMatch(message, /internal detail|whisper|groq|HTTP|\b\d{3}\b/i, `the ${code} refusal never shows a rep a model name, a vendor or a status code`);
+  }
+  assert.match(
+    groqTranscriptionMessage(new GroqTranscriptionError("not_configured", "x")),
+    /not set up/,
+    "an unconfigured key is not an error the rep caused, and is not described as one",
+  );
+  assert.match(groqTranscriptionMessage(new Error("something else")), /[Tt]ype the comment/, "an unrecognised failure still ends with the way out rather than nothing");
+
+  // No body is ever logged, for the reason the OpenAI client already carries: on a 401 an OpenAI-shaped
+  // API echoes a fragment of the key back inside its own error message.
+  assert.doesNotMatch(client, /logError\([^)]*body/, `${CLIENT} never logs the response body — a 401 from an OpenAI-shaped API quotes the key back at you`);
+
+  // ── 5. The key's shape is pinned before a key exists ──────────────────────────
+  // OPENAI_API_KEY sat in Railway holding a masked paste, and the rule that would have caught it was
+  // written only afterwards. This one is registered with the feature.
+  assert.ok(KEY_SHAPES.some((entry) => entry.name === "GROQ_API_KEY"), "GROQ_API_KEY has a shape rule — it is pasted into Railway by hand, exactly like the key that failed");
+  assert.deepEqual(checkSecretShape("GROQ_API_KEY", SYNTHETIC_GROQ_KEY), [], "a real-shaped key passes");
+  assert.ok(
+    checkSecretShape("GROQ_API_KEY", `gsk_...${SYNTHETIC_GROQ_KEY}...`).length > 0,
+    "a paste copied off an already-masked screen is refused — that is the exact failure this exists for",
+  );
+  assert.ok(
+    checkSecretShape("GROQ_API_KEY", `${SYNTHETIC_GROQ_KEY}\n`).length > 0,
+    "and so is a trailing newline, which is what `railway variables --stdin` adds to a value",
+  );
+  assert.deepEqual(checkSecretShape("GROQ_API_KEY", undefined), [], "unset is a supported state, not a failure — the control stops promising words instead");
+}
