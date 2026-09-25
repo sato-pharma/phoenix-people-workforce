@@ -132,8 +132,13 @@ import { stripComments } from "./support/comment-strip.ts";
  * xl:hidden`, so nothing lost coverage. Raw `employeeHrId`/`managerHrId` were dropped from both
  * tables' and cards' display per AGENTS.md §4 ("show human-readable names, never raw codes or IDs")
  * — CSV/XLSX export and the filter search value are untouched.
+ *
+ * 254 -> 251 on 2026-09-25: the Territory Drilldown desktop tree's manager branches
+ * (territory-tree-desktop.tsx — RegionRoot, RegionsRoot, AreaLane) dropped their
+ * `overflow-x-auto` wrappers, the same fix already applied to the Medical Rep's AreaRoot; lanes
+ * now stack/wrap under the parent's own width instead of scrolling sideways.
  */
-const BASELINE = 254;
+const BASELINE = 251;
 
 /**
  * app/ and src/components/ are where UI class strings live. src/lib/ is excluded on
