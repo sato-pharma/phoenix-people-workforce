@@ -1386,7 +1386,6 @@ import { runCoordinateParseFollowupsTests } from "./coordinate-parse-followups.t
 import { runPharmacyValidationAccuracyInputTests } from "./pharmacy-validation-accuracy-input.test.ts";
 import { runOutstationAccuracyInputTests } from "./outstation-accuracy-input.test.ts";
 import { runEvidenceStampBlankCoordinatesTests } from "./evidence-stamp-blank-coordinates.test.ts";
-import { runCrmVisitBlankCoordinatesTests } from "./crm-visit-blank-coordinates.test.ts";
 import { runPhoenixCrmCaptureAccuracyBlankTests } from "./phoenix-crm-capture-accuracy-blank.test.ts";
 import { runEvidenceLocationStampTests, runEvidencePanelLayoutTests } from "./evidence-location-stamp.test.ts";
 import { runOutstationWorkloadRollupTests } from "./outstation-workload-rollup.test.ts";
@@ -1524,9 +1523,6 @@ import { runDirectOrdersPharmacyComboboxPlacementTests } from "./direct-orders-p
 import { runDirectOrdersPharmacyCodeCollisionTests } from "./direct-orders-pharmacy-code-collision.test.ts";
 import { runDirectOrderVenueCrmContactLinkTests } from "./direct-order-venue-crm-contact-link.test.ts";
 import { runCrmContactMasterTests } from "./crm-contact-master.test.ts";
-import { runCrmNativeVisitsTests } from "./crm-native-visits.test.ts";
-import { runCrmNativePlansTests } from "./crm-native-plans.test.ts";
-import { runPhoenixCrmTests } from "./phoenix-crm.test.ts";
 import { runPhoenixCrmCalendarTests } from "./phoenix-crm-calendar.test.ts";
 import { runPhoenixCrmRulesTests } from "./phoenix-crm-rules.test.ts";
 import { runPhoenixCrmEmailBlockTests } from "./phoenix-crm-email-block.test.ts";
@@ -4411,9 +4407,8 @@ await runTest("outstation approver sees BOTH photos (the Super Admin approves ev
 await runTest("no GPS on a departure photo is told to the approver with its cause (owner, 2026-09-18: \"the system must record the reason\", then \"Record refused tries\" — since #4007 a departure photo with no location is refused, and each refused try is now saved with its time and cause, reported by the web card, the Android app and the service before the refusal, and shown on both approver screens as \"Tried <time>: No GPS location because location was turned off on the phone.\"; Saad Salama's 1 September photo on file reads \"No GPS location. The phone did not report why.\"; short, never a code or a guessed cause; the app's codes are pinned to the server's list; the stored list is capped)", runOutstationDepartureGpsReasonTests);
 await runTest("blank or missing coordinates on the two paths #3993 left out (Number(null), Number(\"\") and Number(\" \") are 0, so the admin outstation edit saved a destination with no coordinates at 0,0 and the direct-order pharmacy validation route filed a blank pin at 0,0 past its missing-pin refusal; both now read through the shared one-value reader, the admin edit is refused with its existing message, and a blank pin reaches the direct-orders refusal as null)", runCoordinateParseFollowupsTests);
 await runTest("blank GPS accuracy on a direct-order pharmacy claim (the route's Number(\"\") and Number(\" \") stored a blank accuracy as a perfect 0 m fix; the route now passes it through and the service reads it with the shared one-value reader, so a blank accuracy is stored as null and nothing is refused)", runPharmacyValidationAccuracyInputTests);
-await runTest("blank GPS accuracy on an outstation claim, an evidence stamp and a CRM visit (Number(null), Number(\"\") and Number(\" \") are 0, so a claim with no accuracy passed the policy's GPS limit as a perfect 0 m fix; all four outstation routes read it with the shared one-value reader, the claim is saved with no accuracy and held for Super Admin review (owner, 2026-09-18) — never refused, and never held for a National Sales Manager — while 0 stays the manual-entry marker; the evidence stamp and the CRM visit form read a blank accuracy as none)", runOutstationAccuracyInputTests);
+await runTest("blank GPS accuracy on an outstation claim and an evidence stamp (Number(null), Number(\"\") and Number(\" \") are 0, so a claim with no accuracy passed the policy's GPS limit as a perfect 0 m fix; all four outstation routes read it with the shared one-value reader, the claim is saved with no accuracy and held for Super Admin review (owner, 2026-09-18) — never refused, and never held for a National Sales Manager — while 0 stays the manual-entry marker; the evidence stamp reads a blank accuracy as none)", runOutstationAccuracyInputTests);
 await runTest("blank latitude and longitude on an evidence photo stamp (Number(null), Number(\"\") and Number(\" \") are 0, so the four evidence-location endpoints stamped a blank pair at 0°N 0°E and the phone burned that fake pin into the photo; the shared parser now reads each coordinate with the one-value reader, so a blank pair or half-pair takes the same refusal a missing one always did and the phone keeps its photo with the lookup-unavailable stamp)", runEvidenceStampBlankCoordinatesTests);
-await runTest("blank latitude and longitude on a CRM visit (finiteOrNull caught null and \"\" but let \" \" through as 0, so a blank pair read as 0°N 0°E, was flagged out of bounds and kept a position the phone never reported; the rules now read each coordinate with the shared one-value reader, so a blank pair or half-pair takes the missing-fix flag it always should have, and the visit still saves)", runCrmVisitBlankCoordinatesTests);
 await runTest("blank GPS accuracy on a Phoenix CRM live photo (Number(\"\") and Number(\" \") are 0, so a place or visit photo whose phone sent a blank accuracy was saved as a perfect 0 m fix and shown to the manager as \"within 0 m\"; the capture parser now reads the accuracy with the shared one-value reader, so a blank accuracy is unknown, as a missing one always was)", runPhoenixCrmCaptureAccuracyBlankTests);
 await runTest("evidence photo location stamp (full address + Phoenix brick/area/region; a far brick carries its distance; NO line is ever a bare lat/long pair)", runEvidenceLocationStampTests);
 await runTest("evidence photo watermark panel (grows to hold the location block; nothing is drawn past the bottom edge; shrinks the font rather than truncating)", runEvidencePanelLayoutTests);
@@ -5041,21 +5036,6 @@ await runTest(
 await runTest(
   "the CRM contact master keeps dated list periods (a removed contact closes on its last-seen day, never today; a same-day re-run leaves no overlapping periods; a rep's HR id resolving is not a handover; contact 100000 refused; the mirror is never written; the venue picker reads the master first; a failed refresh fails the dead-man ping)",
   runCrmContactMasterTests,
-);
-
-await runTest(
-  "native visits, the pilot (one type table shared by the rules, the migration and pay meaning, with -4 the only leave; today or yesterday only; a missing GPS fix is a flag; AM/PM comes from the contact's list; the pilot is a dated row; only the named partner answers, once, for a rep beneath him; the rep is the session; nothing outside the module names the native tables)",
-  runCrmNativeVisitsTests,
-);
-
-await runTest(
-  "native rep plans, the pilot (a Saturday-to-Thursday week with Thursday a morning; only pilot days from today on can change; AM/PM comes from the contact's list; one row and one id per rep, doctor and day for good, so a re-save keeps ids and a dropped doctor comes back as the same row; only the manager the plan was sent to verifies or returns it, with a note on a return, for a rep beneath that manager; the vendor plan is untouched; nothing outside the module names the plan tables)",
-  runCrmNativePlansTests,
-);
-
-await runTest(
-  "Phoenix CRM, the pilot space (the roster the Super Admin picks is the gate, from the day a rep joins, with no end until removed; the KPIs read Phoenix only — call rate AM against 2 and PM against 10 reported apart and never averaged, coverage, frequency with an unnormed grade left out, plan achieved on the planned day; only a doctor visit counts and 100000 is no doctor; every service function checks crm_visit_entry; the roster is update, in-app notice only, never deleted)",
-  runPhoenixCrmTests,
 );
 
 await runTest(

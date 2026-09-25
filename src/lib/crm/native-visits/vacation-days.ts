@@ -21,7 +21,6 @@ import { getCrmCutoverSetting, isOnOrAfterCrmCutover } from "@/lib/crm/cutover";
 import { addDaysIso, cairoTodayIso } from "@/lib/crm/dates";
 import { isAgentInScope } from "@/lib/crm/doctor-coverage-roles";
 import { getDoctorCoverageScope } from "@/lib/crm/doctor-coverage-scope";
-import type { NativeVisitContactRule } from "@/lib/crm/native-visits/rules";
 import {
   employeeName,
   isMissingTable,
@@ -48,7 +47,6 @@ import {
   vacationDayDecisionRefusal,
   vacationDayRequestRefusal,
   vacationDayRequestStatus,
-  vacationDayWorkRefusal,
   type VacationDayDecision,
   type VacationDayDeciderRole,
   type VacationDayRequestState,
@@ -165,22 +163,6 @@ async function loadRequest(requestId: string): Promise<RequestRecord> {
   return toRecord(data as Record<string, unknown>);
 }
 
-/** The rep's request for that day that still counts: waiting or approved first, else the latest. */
-async function loadLiveRequest(hrId: string, visitDate: string): Promise<RequestRecord | null> {
-  const { data, error } = await getSupabaseAdmin()
-    .from(CRM_NATIVE_VISIT_VACATION_DAY_REQUESTS_TABLE)
-    .select(COLUMNS)
-    .in("hr_id", hrIdLookupKeys(hrId))
-    .eq("visit_date", visitDate)
-    .is("cancelled_at", null)
-    .order("created_at", { ascending: false });
-  if (error) {
-    if (isMissingTable(error)) return null;
-    throw error;
-  }
-  const records = ((data ?? []) as Array<Record<string, unknown>>).map(toRecord);
-  return records.find((record) => vacationDayRequestStatus(stateOf(record)) !== "rejected") ?? records[0] ?? null;
-}
 
 async function fetchRequests(filter: "mine" | "manager" | "hr", hrId: string, since: string): Promise<RequestRecord[]> {
   const base = getSupabaseAdmin().from(CRM_NATIVE_VISIT_VACATION_DAY_REQUESTS_TABLE).select(COLUMNS).gte("visit_date", since);
@@ -233,35 +215,6 @@ function toRow(
     decideAs,
     canCancel,
   };
-}
-
-// ── The visit check ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Why a visit on this day must be refused under rule 9, or null. createNativeVisit calls it after its
- * own crm_visit_entry check. It reads no vacation while the cutover date is null or the day is before
- * it, nor for a day type with no contact (annual vacation itself stays recordable).
- *
- * An unreadable cutover setting THROWS rather than letting the visit through — the offline queue
- * resends it. A cutover table that does not exist yet already reads as "no cutover".
- */
-export async function vacationDayWorkRefusalForRep(input: {
-  hrId: string;
-  visitDate: string;
-  contactRule: NativeVisitContactRule;
-}): Promise<string | null> {
-  if (input.contactRule === "none") return null;
-  const ruleActive = isOnOrAfterCrmCutover(await getCrmCutoverSetting(), input.visitDate);
-  if (!ruleActive) return null;
-  const onApprovedVacation = await isApprovedVacationDay(input.hrId, input.visitDate);
-  if (!onApprovedVacation) return null;
-  const request = await loadLiveRequest(input.hrId, input.visitDate);
-  return vacationDayWorkRefusal({
-    ruleActive,
-    contactRule: input.contactRule,
-    onApprovedVacation,
-    request: request ? stateOf(request) : null,
-  });
 }
 
 // ── Availability (the links) ────────────────────────────────────────────────────────────────────

@@ -72,9 +72,6 @@ export async function runPhoenixCrmRetiredPilotRedirectTests() {
     /\{ from: "\/admin\/phoenix-crm", to: "\/employee-portals\/phoenix-crm", carryQuery: \["tab"\] \},/,
     "only the tab crosses, as the admin page's own preservedQuery does",
   );
-  assert.match(read("src/lib/crm/native-visits/service.ts"), /actionUrl: "\/employee-portals\/field-crm\?tab=visits",/);
-  assert.match(read("src/lib/crm/native-visits/phoenix-crm.ts"), /const PHOENIX_CRM_URL = "\/employee-portals\/field-crm";/);
-  for (const file of ["src/lib/crm/native-visits/service.ts", "src/lib/crm/native-visits/phoenix-crm.ts"]) {
-    assert.doesNotMatch(read(file), /"\/employee-portals\/phoenix-crm/, `${file} sends nobody to the retired pilot`);
-  }
+  // The pilot's own service, notice-builder and roster files that used to carry an actionUrl or a
+  // PHOENIX_CRM_URL constant are retired outright (2026-09-25) — there is nothing left to check there.
 }

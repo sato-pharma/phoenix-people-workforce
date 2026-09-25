@@ -631,39 +631,16 @@ export const accessRegistry = [
   // district manager holding `approve` is still only entitled to HIS reps' plans, and that is the
   // gate a role check cannot perform.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/crm/plan-verification/verify", permission: { resource: "crm_plans", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
-  // Native visit entry — the pilot (CRM phase 3). Writes Phoenix's own visit tables only; nothing
-  // leaves for the vendor and no consumer reads them before cutover. The rep is always the session.
-  sessionApi({ methods: ["GET"], pattern: "/api/crm/native-visits", permission: { resource: "crm_visit_entry", action: "read" }, guard: "assert-permission", csrfRequired: false }),
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/crm/native-visits", permission: { resource: "crm_visit_entry", action: "create" }, guard: "assert-permission", csrfRequired: true }),
-  sessionApi({ methods: ["GET"], pattern: "/api/crm/native-visits/form-options", permission: { resource: "crm_visit_entry", action: "create" }, guard: "assert-permission", csrfRequired: false }),
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/crm/native-visits/delete", permission: { resource: "crm_visit_entry", action: "delete" }, guard: "assert-permission", csrfRequired: true }),
-  // The Super Admin enters a visit FOR a rep and reads every rep's saved visits (the owner, 2026-09-14).
-  // The only visit routes that take a rep from the request: `update` is narrowed again inside the
-  // service to an active medical rep inside the caller's scope.
-  sessionApi({ methods: ["GET"], pattern: "/api/crm/native-visits/on-behalf", permission: { resource: "crm_visit_entry", action: "update" }, guard: "assert-permission", csrfRequired: false }),
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/crm/native-visits/on-behalf", permission: { resource: "crm_visit_entry", action: "update" }, guard: "assert-permission", csrfRequired: true }),
-  sessionApi({ methods: ["GET"], pattern: "/api/crm/native-visits/all", permission: { resource: "crm_visit_entry", action: "update" }, guard: "assert-permission", csrfRequired: false }),
-  // Phoenix CRM's pilot roster (the owner, 2026-09-14): the Super Admin picks the pilot reps. `update` is
-  // narrowed again inside the service to an active medical rep inside the caller's scope.
-  sessionApi({ methods: ["GET"], pattern: "/api/crm/phoenix-crm/pilot-reps", permission: { resource: "crm_visit_entry", action: "update" }, guard: "assert-permission", csrfRequired: false }),
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/crm/phoenix-crm/pilot-reps", permission: { resource: "crm_visit_entry", action: "update" }, guard: "assert-permission", csrfRequired: true }),
-  // A partner confirmation. `approve` is narrowed again inside the service: only the partner NAMED on
-  // the visit may answer, and only for a rep inside his downward scope.
-  sessionApi({ methods: ["GET"], pattern: "/api/crm/native-visits/confirmations", permission: { resource: "crm_visit_entry", action: "approve" }, guard: "assert-permission", csrfRequired: false }),
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/crm/native-visits/confirmations", permission: { resource: "crm_visit_entry", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
   // Working on an approved vacation day (CRM phase 6, rule 9). `guard: "domain-helper"` — the gate is
   // assertVacationDayAccess(): a rep who may enter visits asks, a manager holding crm_visit_entry
   // approve answers for a rep beneath him, and only the administrator gives the HR approval. Each
   // action re-checks its own permission inside the service. Dormant until the CRM cutover date.
+  //
+  // The pilot's own visit entry, on-behalf entry, roster and plans routes that used to sit here are
+  // retired (2026-09-25, once nothing called any of them any more) — the vacation-day-work feature
+  // is the only one left in this family, and crm_visit_entry now gates nothing else.
   sessionApi({ methods: ["GET"], pattern: "/api/crm/native-visits/vacation-day-requests", permission: null, guard: "domain-helper", csrfRequired: false }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/crm/native-visits/vacation-day-requests", permission: null, guard: "domain-helper", csrfRequired: true }),
-  // Native rep plans — the pilot (CRM phase 4). A rep plans only the rep's own week (the session).
-  // `approve` is narrowed again inside the service: only the manager the plan was sent to decides it,
-  // for a rep inside that manager's downward scope. Nothing reaches the vendor plan or its write-back.
-  sessionApi({ methods: ["GET"], pattern: "/api/crm/native-visits/plans", permission: { resource: "crm_visit_entry", action: "create" }, guard: "assert-permission", csrfRequired: false }),
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/crm/native-visits/plans", permission: { resource: "crm_visit_entry", action: "create" }, guard: "assert-permission", csrfRequired: true }),
-  sessionApi({ methods: ["GET"], pattern: "/api/crm/native-visits/plan-reviews", permission: { resource: "crm_visit_entry", action: "approve" }, guard: "assert-permission", csrfRequired: false }),
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/crm/native-visits/plan-reviews", permission: { resource: "crm_visit_entry", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
   // Doctor lists maintained in Phoenix (CRM phase 7). `guard: "domain-helper"` — the gate is
   // assertContactListAccess(): a rep asks for his own list (create), the stored manager answers for a
   // rep beneath him (approve), and the SFE Manager or administrator edits directly (update). Each action

@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { parseNativeVisitDraft } from "../src/lib/crm/native-visits/rules.ts";
 import { parseEvidenceLocationBody } from "../src/lib/evidence/location-service.ts";
 import { readAccuracyInput } from "../src/lib/geo/coordinate-input.ts";
 import { outstationGpsAccuracyHoldReason } from "../src/lib/outstation/decision.ts";
@@ -25,8 +24,9 @@ import { stripComments } from "./support/comment-strip.ts";
 // expense-command.ts reads to tell a manual entry from a live one. A stored null must never read
 // back as that 0.
 //
-// The same parse fixes two more readers: the evidence stamp (`Number(null)` stamped "±0 m") and
-// the CRM visit form (" " slipped past its null and "" checks as 0 m).
+// The same parse fixes one more reader: the evidence stamp (`Number(null)` stamped "±0 m"). It also
+// fixed the CRM native-visit pilot's own visit form, retired outright since (2026-09-25) along with
+// the rest of that pilot's entry backend — nothing left there to pin.
 //
 // Production on 2026-09-18: 115 outstation claims; 23 at 0 m, every one an admin-entered manual
 // claim; the 92 live claims carry 2 to 1,427 m. The defect was latent; no data was repaired.
@@ -44,7 +44,6 @@ const WIZARD = "src/components/outstation/mobile-outstation-wizard.tsx";
 const ADMIN_SCREEN = "src/components/outstation/outstation-requests-admin.tsx";
 const MIGRATION = "supabase/migrations/20260918113748_outstation_captured_accuracy_nullable.sql";
 const EVIDENCE = "src/lib/evidence/location-service.ts";
-const CRM_RULES = "src/lib/crm/native-visits/rules.ts";
 
 const BLANKS = [
   ["null", null],
@@ -209,29 +208,4 @@ export function runOutstationAccuracyInputTests() {
     /accuracyMeters: readAccuracyInput\(input\.accuracyMeters\),/,
     "resolveEvidenceLocation reads the accuracy with the shared reader too",
   );
-
-  // ── The CRM visit form ────────────────────────────────────────────────────────
-  const visitContext = { cairoToday: "2026-09-20", now: new Date("2026-09-20T08:00:00.000Z") };
-  const visitBody = (accuracyMeters: unknown) => ({
-    accuracyMeters,
-    clientSubmissionId: "3f1c2a6e-9b4d-4c8e-8a1f-2b3c4d5e6f70",
-    comment: "",
-    contactCrmId: 5123,
-    deviceRecordedAt: "2026-09-20T07:55:00.000Z",
-    latitude: 30.0444,
-    longitude: 31.2357,
-    partnerHrIds: [],
-    shift: "AM",
-    visitDate: "2026-09-20",
-    visitType: "regular",
-  });
-  for (const [label, value] of BLANKS) {
-    const visit = parseNativeVisitDraft(visitBody(value), visitContext);
-    assert.ok(visit.ok, "a visit with a fix and no accuracy still parses");
-    assert.equal(visit.value.accuracyMeters, null, `a CRM visit whose accuracy is ${label} has none — " " read as 0 m`);
-  }
-  const measured = parseNativeVisitDraft(visitBody(12), visitContext);
-  assert.ok(measured.ok);
-  assert.equal(measured.value.accuracyMeters, 12, "a real accuracy is kept");
-  assert.doesNotMatch(read(CRM_RULES), /finiteOrNull\(body\.accuracyMeters\)/, "the CRM rules read the accuracy with the shared reader");
 }

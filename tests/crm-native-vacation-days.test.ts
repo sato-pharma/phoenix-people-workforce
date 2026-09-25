@@ -139,10 +139,9 @@ export function runCrmNativeVacationDaysTests() {
   // ── 5. The service ────────────────────────────────────────────────────────────────────────────
   const service = read("src/lib/crm/native-visits/vacation-days.ts");
   const exported = [...service.matchAll(/export async function (\w+)\(/g)].map((match) => match[1]);
-  assert.ok(exported.length >= 7, "the vacation-day service's exported functions must be found");
+  assert.ok(exported.length >= 6, "the vacation-day service's exported functions must be found");
   for (const name of exported) {
     const body = functionBody(service, name);
-    if (name === "vacationDayWorkRefusalForRep") continue; // called by createNativeVisit after its own check
     const guard =
       name === "assertVacationDayAccess" || name === "getVacationDayRequestAvailability"
         ? /viewerCapabilities\(access\)/
@@ -169,21 +168,11 @@ export function runCrmNativeVacationDaysTests() {
   for (const name of ["requestVacationDayWork", "cancelVacationDayRequest"]) {
     assert.match(functionBody(service, name), /requireActiveSelf\(access, directory\)/, `${name}: the rep is the session`);
   }
-  const workCheck = functionBody(service, "vacationDayWorkRefusalForRep");
-  const noneAt = workCheck.indexOf('contactRule === "none"');
-  const cutoverAt = workCheck.indexOf("isOnOrAfterCrmCutover(");
-  const leaveAt = workCheck.indexOf("isApprovedVacationDay(");
-  assert.ok(noneAt > 0 && noneAt < cutoverAt && cutoverAt < leaveAt, "the check reads no vacation before the cutover says the rule is on");
+  // The orchestration wrapper that used to call vacationDayWorkRefusal for createNativeVisit is
+  // retired with the pilot's own visit creation (2026-09-25) — the pure rule below stays tested and
+  // ready for whatever calls it once native visit entry is rebuilt.
 
-  // ── 6. createNativeVisit runs the check before it inserts ─────────────────────────────────────
-  const create = functionBody(read("src/lib/crm/native-visits/service.ts"), "createNativeVisit");
-  const checkAt = create.indexOf("vacationDayWorkRefusalForRep(");
-  const insertAt = create.search(/\.insert\(\{\s*client_submission_id/);
-  assert.ok(checkAt > 0 && insertAt > 0 && checkAt < insertAt, "the vacation-day check must run before the visit is inserted");
-  assert.match(create, /contactRule: type\.contact/, "the check is given the visit type's contact rule");
-  assert.match(create, /if \(vacationRefusal\) throw forbiddenError\(/);
-
-  // ── 7. The route ──────────────────────────────────────────────────────────────────────────────
+  // ── 6. The route ──────────────────────────────────────────────────────────────────────────────
   const route = read("app/api/crm/native-visits/vacation-day-requests/route.ts");
   assert.doesNotMatch(route, /body\.(hrId|hr_id|repHrId|agentHrId|managerHrId)|searchParams/, "the route must not take a person from the request");
   const post = route.slice(route.indexOf("export async function POST"));
@@ -191,7 +180,7 @@ export function runCrmNativeVacationDaysTests() {
   assert.match(post, /assertVacationDayAccess\(access\)/);
   assert.match(route.slice(route.indexOf("export async function GET"), route.indexOf("export async function POST")), /assertVacationDayAccess\(access\)/);
 
-  // ── 8. The migration ──────────────────────────────────────────────────────────────────────────
+  // ── 7. The migration ──────────────────────────────────────────────────────────────────────────
   const sql = read("supabase/migrations/20260914010000_crm_native_visit_vacation_day_requests.sql").replace(/--[^\n]*/g, "");
   assert.match(sql, /manager_decided_by = manager_hr_id/, "the database refuses a manager decision by anyone but the stored manager");
   assert.match(sql, /hr_decided_by <> hr_id and hr_decided_by <> manager_hr_id/, "HR is never the rep and never the manager");
@@ -201,15 +190,11 @@ export function runCrmNativeVacationDaysTests() {
   assert.match(sql, /revoke all on table public\.crm_native_visit_vacation_day_requests from anon, authenticated/);
   assert.doesNotMatch(sql, /v2_vacation_requests|salary|deduction/i, "the migration touches no vacation, pay or deduction table");
 
-  // ── 9. Reachability: linked, and hidden until the cutover ─────────────────────────────────────
+  // ── 8. Reachability: linked, and hidden until the cutover ─────────────────────────────────────
   const myVisits = read("app/employee-portals/visits/page.tsx");
   assert.match(myVisits, /vacationDays\.show \? \(\s*<Link[^>]*href="\/employee-portals\/visits\/vacation-day-requests"/);
   const adminApprovals = read("app/(admin)/admin/approvals/vacation/page.tsx");
   assert.match(adminApprovals, /vacationDayWork\.show \? \([\s\S]*?href="\/admin\/approvals\/vacation-day-work"/);
-  assert.match(
-    read("src/components/employee-portal/native-visit-entry-workspace.tsx"),
-    /options\.vacationDayRuleInForce \? \([\s\S]*?href="\/employee-portals\/visits\/vacation-day-requests"/,
-  );
   for (const page of ["app/employee-portals/visits/vacation-day-requests/page.tsx", "app/(admin)/admin/approvals/vacation-day-work/page.tsx"]) {
     assert.match(read(page), /assertVacationDayAccess\(access\)[\s\S]*?if \(!allowed\) redirect\(/, `${page} redirects a viewer who can neither ask nor answer`);
   }
