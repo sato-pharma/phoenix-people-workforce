@@ -3,6 +3,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 
 import { PORTAL_HOME } from "../src/lib/navigation/portal-twins.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // A page inside app/(admin)/ can never render the employee-portal shell.
@@ -49,12 +50,6 @@ const GROUP_LAYOUT = path.join(ADMIN_GROUP, "layout.tsx");
 // The portal shell wrappers. A page in the admin group importing any of these is
 // building a portal frame inside a shell portal users are redirected out of.
 const PORTAL_SHELL_IMPORTS = ["EmployeePortalPageShell", "EmployeePortalShell"];
-
-function stripComments(source: string): string {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, (block) => block.replace(/[^\n]/g, " "))
-    .replace(/(^|[^:])\/\/.*$/gm, "$1");
-}
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {

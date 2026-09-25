@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { aggregateCustomerRows, type CustomerRow } from "../src/lib/sales/sos-dashboard.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 // "Top Customers" is fed by phx_exec_customers, which the dashboard calls ONCE PER SELECTED MONTH
 // and then flattens. The brick panel aggregates that flat list before ranking; the customer panel
@@ -18,10 +19,6 @@ import { aggregateCustomerRows, type CustomerRow } from "../src/lib/sales/sos-da
 // `${distributorCode}::${clientCode}`. It was simply never applied to the ranking.
 
 const read = (path: string) => readFileSync(join(process.cwd(), path), "utf8");
-
-function stripComments(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
-}
 
 function customer(overrides: Partial<CustomerRow>): CustomerRow {
   return {

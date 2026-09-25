@@ -116,6 +116,18 @@ function splitSelectorList(list: string): string[] {
   return out;
 }
 
+/**
+ * A CSS comment stripper, and deliberately NOT `stripComments` from `tests/support/comment-strip.ts`.
+ *
+ * Every other test in this directory was folded onto that shared one on 2026-09-25. This one is the
+ * single exception, because what it reads is `app/globals.css`, and CSS has no `//` comment: the
+ * shared stripper is a JavaScript/TypeScript lexer, so it would treat the `//` in an unquoted
+ * `url(https://…)` as the start of a line comment and delete the rest of that line — silently, and
+ * in the direction that makes a "this declaration must be present" pin fail on a correct file.
+ * Block comments are the only kind CSS has, so this is the whole rule for CSS, not a shortcut.
+ *
+ * Do not "tidy" this onto the shared helper.
+ */
 function stripComments(css: string): string {
   let out = "";
   let cursor = 0;

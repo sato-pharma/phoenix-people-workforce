@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { stripComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // "Decided for you" tells a manager back from leave what somebody else decided on his behalf.
@@ -31,17 +32,6 @@ import { readFileSync } from "node:fs";
 // ─────────────────────────────────────────────────────────────────────────────
 
 const MODULE_URL = new URL("../src/lib/action-center/decided-for-me.ts", import.meta.url);
-
-/** Drop comment lines: the prose above and in the module quotes the removed limits verbatim. */
-function stripComments(source: string): string {
-  return source
-    .split("\n")
-    .filter((line) => {
-      const t = line.trim();
-      return !t.startsWith("//") && !t.startsWith("*") && !t.startsWith("/*");
-    })
-    .join("\n");
-}
 
 /** Split a PostgREST select list on its TOP-LEVEL commas, so `parent(a,b)` stays one token. */
 function selectColumns(select: string): string[] {

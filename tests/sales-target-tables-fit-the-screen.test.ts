@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * The two desktop tables that answer "how are we doing against target?", pinned against the owner's
@@ -89,16 +90,6 @@ const REM_PX = 16;
 
 function read(path: string): string {
   return readFileSync(path, "utf8");
-}
-
-/** Drop block comments and whole-line `//` comments (not brace-aware, deliberately — see
- * tests/section-card-header-fits-a-phone.test.ts). JSX `{/* ... *\/}` comments go with the first rule. */
-function stripComments(source: string): string {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .split("\n")
-    .filter((line) => !line.trim().startsWith("//"))
-    .join("\n");
 }
 
 function tokens(className: string): string[] {

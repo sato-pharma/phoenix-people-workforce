@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
+import { stripComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Standing owner rule (AGENTS.md §4, THE FITS-THE-SCREEN GOLDEN RULE): "never a
@@ -146,18 +147,6 @@ const ROOTS = ["app", "src/components"];
 const CLASS_STRING_WITH_SIDEWAYS_SCROLL =
   /["'`][^"'`\n]*\boverflow-(?:x-)?(?:auto|scroll)\b[^"'`\n]*["'`]/;
 const ANY_SIDEWAYS_SCROLL_TOKEN = /\boverflow-(?:x-)?(?:auto|scroll)\b/;
-
-/**
- * Remove comments before counting, so the class only counts where it is APPLIED.
- * Newlines are preserved so the `file:line` reported for a real site still points at
- * its real line. The `[^:]` guard keeps a `https://…` URL from reading as the start
- * of a line comment and swallowing the rest of the line with it.
- */
-function stripComments(source: string): string {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, (block) => block.replace(/[^\n]/g, " "))
-    .replace(/(^|[^:])\/\/.*$/gm, "$1");
-}
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {

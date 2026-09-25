@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { stripComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Territory Management preview links (owner request, 2026-08-14).
@@ -18,19 +19,6 @@ import { readFileSync } from "node:fs";
 //   4. The internal analysis is projected OUT IN THE DOMAIN, not hidden in the UI — and the line
 //      the link is pinned to is never disclosed, which is what the owner explicitly asked for.
 // ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Comments describe the controls in prose, so a naive whole-file search for "residence" would match
- * the paragraph explaining why residence data is excluded and pass while the code leaked it. Every
- * leak assertion below runs against CODE ONLY.
- */
-function stripComments(source: string): string {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .split("\n")
-    .filter((line) => !line.trim().startsWith("//") && !line.trim().startsWith("*"))
-    .join("\n");
-}
 
 /** Handles both the multi-line types and the single-line ones — `\n};` would miss the latter. */
 function typeBlock(source: string, name: string): string {
