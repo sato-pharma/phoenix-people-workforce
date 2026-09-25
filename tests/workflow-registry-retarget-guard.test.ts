@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { stripSqlComments } from "./support/comment-strip.ts";
 
 /**
  * A migration must never retarget a workflow action to a status the CODE does not expect.
@@ -130,10 +131,7 @@ export function runWorkflowRegistryRetargetGuardTests() {
     // A retarget writes the jsonb path {to}. Comments are stripped first so PROSE describing a
     // past retarget cannot trip the guard — a lesson from a sibling test that matched its own
     // explanatory comment.
-    const code = sql
-      .split("\n")
-      .filter((line) => !line.trim().startsWith("--"))
-      .join("\n");
+    const code = stripSqlComments(sql);
 
     for (const hit of scrapeRetargets(code)) {
       retargets.push({ action: hit.action, file: name, target: hit.target });

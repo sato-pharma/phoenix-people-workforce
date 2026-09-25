@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { duplicateUploadMessage } from "../src/lib/sales/import-duplicate-guard.ts";
+import { stripSqlComments } from "./support/comment-strip.ts";
 
 // Two defects from the deferred-scope audit (run wf_2196360f-a88), shipped together.
 //
@@ -22,10 +23,7 @@ const NORMALIZER_SAVE = fileURLToPath(new URL("../src/lib/sales/normalizer/servi
 const GUARD = fileURLToPath(new URL("../src/lib/sales/import-duplicate-guard.ts", import.meta.url));
 
 function executableSql(path: string) {
-  return readFileSync(path, "utf8")
-    .split("\n")
-    .filter((line) => !line.trim().startsWith("--"))
-    .join("\n");
+  return stripSqlComments(readFileSync(path, "utf8"));
 }
 
 function testOfficeIsUnionedAsExactlyOneRow() {

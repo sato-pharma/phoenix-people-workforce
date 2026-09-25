@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
+import { stripSqlComments } from "./support/comment-strip.ts";
 
 // Regression guard for "an open vacancy's manager is a COPY that goes stale".
 //
@@ -16,10 +17,7 @@ export function runOpenVacancyManagerFollowsSeatTests() {
   const dir = "supabase/migrations";
   const matches = readdirSync(dir).filter((f) => f.endsWith("_open_vacancy_manager_follows_organogram_seat.sql"));
   assert.equal(matches.length, 1, "exactly one migration carries the vacancy-manager-follows-seat rule");
-  const sql = readFileSync(`${dir}/${matches[0]}`, "utf8")
-    .split("\n")
-    .filter((line) => !line.trimStart().startsWith("--"))
-    .join("\n");
+  const sql = stripSqlComments(readFileSync(`${dir}/${matches[0]}`, "utf8"));
 
   function functionBody(name: string): string {
     const start = sql.search(new RegExp(`create\\s+or\\s+replace\\s+function\\s+public\\.${name}\\s*\\(`, "i"));

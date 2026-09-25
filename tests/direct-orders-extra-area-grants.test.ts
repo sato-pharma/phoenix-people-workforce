@@ -87,7 +87,7 @@ export function runDirectOrdersExtraAreaGrantTests() {
   // ── Bricks follow the areas, so a new brick needs no edit here ─────────────
   {
     assert.ok(
-      !/brick/i.test(stripComments(grantSource.replace(/^\s*\/\/.*$/gm, ""))),
+      !/brick/i.test(stripComments(grantSource)),
       "the grant must list AREA codes only — bricks are derived from the granted areas, so listing them would go stale the first time a brick is added",
     );
   }

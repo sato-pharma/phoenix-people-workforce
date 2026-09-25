@@ -14,6 +14,7 @@ import {
 } from "../src/lib/approvals-hub/service.ts";
 import { slaTone, APPROVALS_SLA_THRESHOLDS } from "../src/components/approvals-hub/sla-thresholds.ts";
 import { viewedPersonCanApproveOutstation } from "../src/lib/outstation/admin-access.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 const superAdmin: AccessContext = { hrId: "S-1", role: "Super Admin", scope: "system", source: "system" };
 const ceo: AccessContext = { hrId: "C-1", role: "CEO", scope: "company", source: "session" };
@@ -407,7 +408,7 @@ export function runApprovalsHubTests() {
     "hub-data reads the outstation list only behind includeOutstation",
   );
   assert.equal(
-    approvalsHubDataRoute.replace(/^\s*\/\/.*$/gm, "").match(/listOutstationRequests\(/g)?.length,
+    stripComments(approvalsHubDataRoute).match(/listOutstationRequests\(/g)?.length,
     1,
     "hub-data has exactly one outstation read (comments aside), the gated one",
   );

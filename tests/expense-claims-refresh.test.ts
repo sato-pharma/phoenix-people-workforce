@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 
 import { refreshExpenseClaims, type SupabaseAdmin } from "../src/lib/outstation/claims-refresh.ts";
+import { stripSqlComments } from "./support/comment-strip.ts";
 
 // The `expense_claims` mirror is what approvers actually read in production
 // (`PHOENIX_EXPENSE_CLAIMS_READ=true`), while writes still land in the legacy outstation tables.
@@ -236,9 +237,9 @@ export async function runExpenseClaimsRefreshTests() {
     // comment, so a plain substring search over the source also passes on a migration that merely
     // mentions statement_timeout without actually setting it — measured: deleting the real clause
     // left that weaker check green.
-    const setsTimeout = newest.sql
+    const setsTimeout = stripSqlComments(newest.sql)
       .split("\n")
-      .some((line) => !line.trim().startsWith("--") && /^\s*set\s+statement_timeout\s+to\b/i.test(line));
+      .some((line) => /^\s*set\s+statement_timeout\s+to\b/i.test(line));
 
     assert(
       setsTimeout,
@@ -290,11 +291,7 @@ export async function runExpenseClaimsRefreshTests() {
     // learned the hard way: this migration's header QUOTES the old wording while explaining why it
     // was wrong, so a scan over the whole file finds "Repair the missing expense row" in the prose
     // and reads the branches in the wrong order — measured, it failed on the very file it pins.
-    const assembled = newest.sql
-      .split("\n")
-      .filter((line) => !line.trim().startsWith("--"))
-      .join("\n")
-      .replace(/'\s*\|\|\s*'/g, "");
+    const assembled = stripSqlComments(newest.sql).replace(/'\s*\|\|\s*'/g, "");
 
     const gatePendingBranch = assembled.indexOf("HELD OUT OF PAYROLL in the same action");
     const repairAdvice = assembled.indexOf("Repair the missing expense row");

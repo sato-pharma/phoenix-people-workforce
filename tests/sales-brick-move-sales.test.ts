@@ -24,6 +24,7 @@ import {
   parseBrickRelocation,
   parseBrickSalesMove,
 } from "@/lib/sales/master-data/brick-move-result";
+import { stripComments } from "./support/comment-strip.ts";
 
 // "Correct in database" (owner request, 2026-09-18). The Source Normalizer shows the area of every
 // brick it maps a code to, read-only, and links a wrong one to the Database Mapping page, where the
@@ -285,7 +286,7 @@ function pinScreens() {
 
   const panel = read("src/components/sales/brick-area-correction.tsx");
   // The code only: the file's own comments explain why it avoids the rounded shared Button.
-  const panelCode = panel.replace(/^\s*\/\/.*$/gm, "");
+  const panelCode = stripComments(panel);
   assert.doesNotMatch(panelCode, /rounded/, "the correction panel has square edges (owner's golden rule)");
   assert.doesNotMatch(panelCode, /overflow-x-auto/, "the correction panel never scrolls sideways");
   assert.doesNotMatch(panelCode, /min-w-\[/, "no fixed minimum width pushes the panel past a phone");
