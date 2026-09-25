@@ -13,7 +13,8 @@ export type CrmMasterDataset =
   | "triple_visits"
   | "vacations"
   | "regular_no_checkin"
-  | "regular_dv_no_checkin";
+  | "regular_dv_no_checkin"
+  | "regular_no_contact";
 
 /** All datasets a tab can show, in display order. Unmapped-identity resolution ("CRM Issues") and
  * the double-visit chain-recovery audit are separate views on the same hub page (see
@@ -27,6 +28,7 @@ export const CRM_MASTER_DATASETS: ReadonlyArray<{ id: CrmMasterDataset; label: s
   { id: "vacations", label: "Vacations" },
   { id: "regular_no_checkin", label: "Regular · No Check-in" },
   { id: "regular_dv_no_checkin", label: "Regular DV · No Check-in" },
+  { id: "regular_no_contact", label: "Regular · No Doctor" },
 ];
 
 /** Every filter the master table's filter bar can offer. */
@@ -76,6 +78,10 @@ export const CRM_MASTER_SUPPORTED_FILTERS: Readonly<Record<CrmMasterDataset, rea
   vacations: [...UNIVERSAL_FILTERS, "halfDaysOnly", "minDuration"],
   regular_no_checkin: [...UNIVERSAL_FILTERS, "ampm", "mappingStatus", "visitType"],
   regular_dv_no_checkin: [...UNIVERSAL_FILTERS, "ampm", "mappingStatus", "visitType"],
+  // A Regular Visit saved with no doctor picked (contact_crm_id = 0): the visit type is pinned to
+  // Regular and the row carries no contact/locality, so Visit Type and Mapping Status would only
+  // ever narrow to empty — offer neither. AM/PM still varies and is worth filtering by.
+  regular_no_contact: [...UNIVERSAL_FILTERS, "ampm"],
 };
 
 /** True when `dataset` actually applies `key`. Use this instead of re-deriving per-tab booleans. */
