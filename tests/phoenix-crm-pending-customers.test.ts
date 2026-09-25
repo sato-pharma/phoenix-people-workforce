@@ -101,7 +101,7 @@ function runPickerTests() {
       speciality: null,
       visitsThisMonth: 0,
       pending: false,
-      places: [{ placeId: PLACE_ID, label: "Clinic", lat: 30.05, lon: 31.23, brick: "CA5", zone: "Down town", timings: ALWAYS_OPEN }],
+      places: [{ placeId: PLACE_ID, label: "Clinic", address: "5 Faisal St", lat: 30.05, lon: 31.23, brick: "CA5", zone: "Down town", timings: ALWAYS_OPEN }],
     },
   ];
   const offered = suggestForDay({ weekday: 0, ramadan: false, customers, placed: [], settings: SETTINGS });

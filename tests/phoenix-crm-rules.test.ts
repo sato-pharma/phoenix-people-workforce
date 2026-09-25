@@ -621,8 +621,12 @@ function runEntryRuleTests() {
   assert.equal(deviceClockSkewMinutes("later", new Date()), null);
 }
 
-function place(placeId: string, weekTimings: PhoenixCrmTiming[], where: { brick?: string | null; zone?: string | null; lat?: number; lon?: number } = {}): PlannerPlace {
-  return { placeId, label: null, lat: where.lat ?? 30.02, lon: where.lon ?? 31.16, brick: where.brick ?? null, zone: where.zone ?? null, timings: weekTimings };
+function place(
+  placeId: string,
+  weekTimings: PhoenixCrmTiming[],
+  where: { brick?: string | null; zone?: string | null; lat?: number; lon?: number; address?: string | null } = {},
+): PlannerPlace {
+  return { placeId, label: null, address: where.address ?? null, lat: where.lat ?? 30.02, lon: where.lon ?? 31.16, brick: where.brick ?? null, zone: where.zone ?? null, timings: weekTimings };
 }
 
 function customer(name: string, places: PlannerPlace[], grade: PlannerCustomer["grade"] = null, visitsThisMonth = 0): PlannerCustomer {
@@ -643,6 +647,16 @@ function runSuggestionTests() {
   assert.equal(normalizeArea("  Haram   Faisal "), "haram faisal");
   assert.equal(normalizeArea(""), null);
   assert.equal(normalizeArea(null), null);
+
+  // The rep sees each place's street address while he builds his plan (owner, 2026-09-25).
+  const addressed = suggestForDay({
+    weekday: 6,
+    ramadan: false,
+    customers: [customer("Addressed", [place("addr", timings(timing(6, "18:00")), { brick: "Faisal", address: "5 Faisal St, Giza" })])],
+    placed: [],
+    settings: PHOENIX_CRM_DEFAULT_SETTINGS,
+  });
+  assert.equal(addressed[0]?.address, "5 Faisal St, Giza", "a suggestion carries its place's clean street address");
 
   const anchor = customer("Placed", [place("placed", timings(timing(6, "18:30", "19:30")), { brick: "Faisal", zone: "Haram-Faisal" })], "B");
   const order = suggestNames(

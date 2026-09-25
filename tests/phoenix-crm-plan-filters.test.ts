@@ -39,7 +39,7 @@ function customer(
     speciality: extra.speciality ?? null,
     visitsThisMonth: 0,
     pending: false,
-    places: [{ placeId: `${customerId}-place`, label: null, lat: 0, lon: 0, brick, zone: null, timings }],
+    places: [{ placeId: `${customerId}-place`, label: null, address: null, lat: 0, lon: 0, brick, zone: null, timings }],
   };
 }
 

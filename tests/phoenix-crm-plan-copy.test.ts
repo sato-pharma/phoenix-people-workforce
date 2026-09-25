@@ -37,7 +37,7 @@ function customer(customerId: string, listType: PhoenixCrmListType, placeId: str
     speciality: null,
     visitsThisMonth: 0,
     pending: placeId === null,
-    places: placeId === null ? [] : [{ placeId, label: null, lat: 0, lon: 0, brick: null, zone: null, timings: [] }],
+    places: placeId === null ? [] : [{ placeId, label: null, address: null, lat: 0, lon: 0, brick: null, zone: null, timings: [] }],
   };
 }
 
