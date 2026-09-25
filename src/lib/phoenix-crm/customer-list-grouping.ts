@@ -27,17 +27,35 @@ export const gradeOf = (customer: ListCustomer): string => customer.grade?.trim(
 export const specialityOf = (customer: ListCustomer): string => customer.speciality?.trim() || UNSPECIFIED;
 
 /**
- * Which group a customer belongs to. His first place decides it — a validated customer has one, and
- * where he has several the first is the one the rep entered first. A customer with no place yet (he
- * is pending) is grouped by the locality iReports360 knows, so he still lands under a heading rather
- * than in one grey run. Nothing left to say → "No location yet", kept last.
+ * Which group a customer belongs to.
+ *
+ * His captured place decides it first — a validated customer has one, and where he has several the
+ * first is the one the rep entered first.
+ *
+ * A pending customer has no place yet, but he is not placeless: iReports360 already carries the brick
+ * he sits in. Owner, 2026-09-26 ("group the pending customers under their known brick with a
+ * pending-capture tag"): group him under that KNOWN brick — a real, colour-tinted heading exactly
+ * like a captured one — rather than under an amber "locality not yet mapped" note. He does have a
+ * territory; it simply has not been confirmed on the spot. His row keeps the "Not validated yet" pill,
+ * which is the pending-capture tag. In production every carried-over customer has a known brick, so
+ * the two fallbacks below are for the rare row iReports360 has no brick for at all: his own locality
+ * text, then nothing.
  */
 export function groupOf(customer: ListCustomer): Omit<CustomerGroup, "customers"> {
   const place = customer.places[0] ?? null;
   if (place?.brickId) {
     return { key: place.brickId, heading: place.brickName ?? place.brickId, areaName: place.areaName, mapped: true };
   }
-  const locality = place?.zone ?? place?.brickName ?? customer.reference?.city ?? customer.reference?.zone ?? null;
+  const reference = customer.reference;
+  if (reference?.brickId) {
+    return {
+      key: reference.brickId,
+      heading: reference.brickName ?? reference.brickId,
+      areaName: reference.areaName,
+      mapped: true,
+    };
+  }
+  const locality = place?.zone ?? place?.brickName ?? reference?.city ?? reference?.zone ?? null;
   if (locality) {
     return { key: `loc:${locality.toLowerCase()}`, heading: locality, areaName: place?.areaName ?? null, mapped: false };
   }

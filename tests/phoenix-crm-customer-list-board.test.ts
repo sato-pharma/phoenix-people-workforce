@@ -93,9 +93,26 @@ export function runPhoenixCrmCustomerListBoardTests() {
   assert.equal(byPlaceZone.heading, "Nasr City", "the heading keeps the locality's own case");
   assert.equal(byPlaceZone.mapped, false);
 
-  // No place at all (a pending customer): fall back to the iReports360 reference's city, then zone.
-  const byRefCity = groupOf(customer({ places: [], reference: { address: null, city: "Tanta", zone: null, lastVisitedOn: null } }));
-  assert.equal(byRefCity.key, "loc:tanta", "with no place, the reference city names the group");
+  // A pending customer with no place YET still has a known brick from iReports360, and groups under it
+  // as a real tinted brick — the owner's rule, 2026-09-26: "group the pending customers under their
+  // known brick with a pending-capture tag." The amber "locality not yet mapped" heading is for a row
+  // with no brick at all, which is why the two fallbacks below still exist. If precedence ever put the
+  // locality first, every pending customer would go amber again — the exact thing this removed — and
+  // the board would still render, just wrongly.
+  const byRefBrick = groupOf(
+    customer({
+      places: [],
+      reference: { address: null, city: "Tanta", zone: null, lastVisitedOn: null, brickId: "BR-7", brickName: "Tanta 1", areaName: "Gharbia" },
+    }),
+  );
+  assert.equal(byRefBrick.key, "BR-7", "a pending customer groups under the brick iReports360 already carries for him, keyed on the brick id");
+  assert.equal(byRefBrick.heading, "Tanta 1", "the heading is the brick's NAME, never its code — the owner's naming rule");
+  assert.equal(byRefBrick.areaName, "Gharbia");
+  assert.equal(byRefBrick.mapped, true, "a known brick is a real brick: tinted, ordered with the mapped ones, never the amber 'not yet mapped'");
+
+  // No brick anywhere, but a locality on the reference: fall back to that locality, NOT mapped, lowercased.
+  const byRefCity = groupOf(customer({ places: [], reference: { address: null, city: "Tanta", zone: null, lastVisitedOn: null, brickId: null, brickName: null, areaName: null } }));
+  assert.equal(byRefCity.key, "loc:tanta", "with no place AND no known brick, the reference city names the group");
   assert.equal(byRefCity.mapped, false);
 
   const nowhere = groupOf(customer({ places: [], reference: null }));
@@ -159,7 +176,7 @@ export function runPhoenixCrmCustomerListBoardTests() {
     name: "Dr Mona Adel",
     speciality: "Pediatrics",
     grade: "A" as ListCustomer["grade"],
-    reference: { address: "12 El Nasr St", city: "Giza", zone: null, lastVisitedOn: null },
+    reference: { address: "12 El Nasr St", city: "Giza", zone: null, lastVisitedOn: null, brickId: null, brickName: null, areaName: null },
     places: [place({ label: "Sunrise Clinic", brickName: "Dokki", zone: "Mohandessin" })],
   });
   assert.equal(matchesQuery(searchable, ""), true, "an empty needle matches everyone");
