@@ -99,6 +99,40 @@ export type CrossSellItem = PharmacyActionItem & {
   missingProducts: { code: string; name: string }[];
 };
 
+type LatestTotals = {
+  total: number;
+  pharmacies: number;
+  mainStores: number;
+  wholesalerShares: number;
+  noCustomerCode: number;
+};
+
+/**
+ * The same figures as the whole result, for ONE area. The screen's area picker reads these, never a
+ * sum over the lists: the lists are capped (ACTION_LIST_LIMIT, TOP_PHARMACY_LIMIT), so money filtered
+ * out of them undercounts, and a tile would show one area's count beside every area's money.
+ * A pharmacy counts in the area of its identity (newest month, biggest row) — the area its list row
+ * shows — so the counts, the money and the lists always agree. Main Stores, wholesaler shares and
+ * code-less rows go by the row's own area.
+ */
+export type PharmacyAreaSummary = {
+  counts: PharmacyActionsResult["counts"];
+  valueAtStake: PharmacyActionsResult["valueAtStake"];
+  latestTotals: LatestTotals;
+  /**
+   * This area's own lists, each capped at ACTION_LIST_LIMIT / TOP_PHARMACY_LIMIT the same way the
+   * whole result is — but filtered to the area BEFORE the cap, never after: the whole result's lists
+   * are capped globally, so filtering one of those to an area after the fact can drop rows the tile's
+   * own (uncapped) count still includes. share on "top" is of this area's pharmacy value.
+   */
+  stopped: PharmacyActionItem[];
+  dropping: PharmacyActionItem[];
+  newPharmacies: PharmacyActionItem[];
+  top: PharmacyActionItem[];
+  crossSell: CrossSellItem[];
+  untappedBricks: BrickUniverseEntry[];
+};
+
 export type PharmacyActionsResult = {
   latestPeriod: string | null;
   /** The look-back closings actually available, newest first. */
@@ -116,13 +150,7 @@ export type PharmacyActionsResult = {
   /** EGP a month the lists represent. */
   valueAtStake: { stopped: number; dropping: number; newPharmacies: number };
   /** The latest closing, split so the lists visibly tie back to the whole. */
-  latestTotals: {
-    total: number;
-    pharmacies: number;
-    mainStores: number;
-    wholesalerShares: number;
-    noCustomerCode: number;
-  };
+  latestTotals: LatestTotals;
   coreProducts: { code: string; name: string; buyers: number }[];
   stopped: PharmacyActionItem[];
   dropping: PharmacyActionItem[];
@@ -132,6 +160,8 @@ export type PharmacyActionsResult = {
   untappedBricks: BrickUniverseEntry[];
   /** Every area any list names, for the screen's area filter. */
   areas: { code: string; name: string }[];
+  /** Per-area figures, keyed by area code. An area missing here has nothing in the latest closing or the lists. */
+  byArea: Record<string, PharmacyAreaSummary>;
 };
 
 const EPSILON = 1e-6;
@@ -234,7 +264,9 @@ export function buildPharmacyActions(input: {
   const windowPeriods = ordered.map((entry) => entry.period);
 
   const sharedKeys = findSharedCustomerKeys(ordered);
-  const latestTotals = { total: 0, pharmacies: 0, mainStores: 0, wholesalerShares: 0, noCustomerCode: 0 };
+  const latestTotals: LatestTotals = { total: 0, pharmacies: 0, mainStores: 0, wholesalerShares: 0, noCustomerCode: 0 };
+  // Non-pharmacy latest-closing money by the row's own area (pharmacy money is added per identity below).
+  const otherTotalsByArea = new Map<string, LatestTotals>();
   const pharmacies = new Map<string, PharmacyAggregate>();
   const productNames = new Map<string, string>();
   const bricksWithSales = new Set<string>();
@@ -250,6 +282,17 @@ export function buildPharmacyActions(input: {
         else if (kind === "mainStores") latestTotals.mainStores += value;
         else if (kind === "wholesalerShare") latestTotals.wholesalerShares += value;
         else latestTotals.noCustomerCode += value;
+        if (kind !== "pharmacy") {
+          const areaCode = closingAreaOf(row);
+          if (areaCode) {
+            const bucket = otherTotalsByArea.get(areaCode) ?? { total: 0, pharmacies: 0, mainStores: 0, wholesalerShares: 0, noCustomerCode: 0 };
+            bucket.total += value;
+            if (kind === "mainStores") bucket.mainStores += value;
+            else if (kind === "wholesalerShare") bucket.wholesalerShares += value;
+            else bucket.noCustomerCode += value;
+            otherTotalsByArea.set(areaCode, bucket);
+          }
+        }
       }
       if (kind !== "pharmacy") continue;
       if (value > EPSILON && text(row.brickId)) bricksWithSales.add(upper(row.brickId));
@@ -405,6 +448,55 @@ export function buildPharmacyActions(input: {
   const sum = (list: PharmacyActionItem[], pick: (item: PharmacyActionItem) => number) =>
     round2(list.reduce((total, item) => total + pick(item), 0));
 
+  // ── Per area, from the UNCAPPED lists ──
+  const areaCodes = new Set<string>(otherTotalsByArea.keys());
+  for (const { item } of items) if (item.areaCode) areaCodes.add(item.areaCode);
+  for (const brick of untappedBricks) if (brick.areaCode) areaCodes.add(brick.areaCode);
+  const byArea: Record<string, PharmacyAreaSummary> = {};
+  for (const code of areaCodes) {
+    const mine = <T extends { areaCode: string }>(list: T[]): T[] => list.filter((entry) => entry.areaCode === code);
+    const areaItems = items.filter(({ item }) => item.areaCode === code).map(({ item }) => item);
+    const areaActive = areaItems.filter((item) => item.latestValue > EPSILON);
+    const areaStopped = mine(stopped);
+    const areaDropping = mine(dropping);
+    const areaNew = mine(newPharmacies);
+    const areaCrossSell = mine(crossSell);
+    const areaUntappedBricks = mine(untappedBricks);
+    const other = otherTotalsByArea.get(code);
+    const pharmacyValue = areaItems.reduce((total, item) => total + item.latestValue, 0);
+    byArea[code] = {
+      counts: {
+        activePharmacies: areaActive.length,
+        stopped: areaStopped.length,
+        dropping: areaDropping.length,
+        newPharmacies: areaNew.length,
+        crossSell: mine(crossSell).length,
+        untappedBricks: mine(untappedBricks).length,
+      },
+      valueAtStake: {
+        stopped: sum(areaStopped, (item) => item.priorAverage),
+        dropping: sum(areaDropping, (item) => item.priorAverage - item.latestValue),
+        newPharmacies: sum(areaNew, (item) => item.latestValue),
+      },
+      latestTotals: {
+        total: round2(pharmacyValue + (other?.total ?? 0)),
+        pharmacies: round2(pharmacyValue),
+        mainStores: round2(other?.mainStores ?? 0),
+        wholesalerShares: round2(other?.wholesalerShares ?? 0),
+        noCustomerCode: round2(other?.noCustomerCode ?? 0),
+      },
+      stopped: areaStopped.slice(0, ACTION_LIST_LIMIT),
+      dropping: areaDropping.slice(0, ACTION_LIST_LIMIT),
+      newPharmacies: areaNew.slice(0, ACTION_LIST_LIMIT),
+      top: areaActive
+        .map((item) => ({ ...item, share: pharmacyValue > EPSILON ? item.latestValue / pharmacyValue : null }))
+        .sort((left, right) => right.latestValue - left.latestValue)
+        .slice(0, TOP_PHARMACY_LIMIT),
+      crossSell: areaCrossSell.slice(0, ACTION_LIST_LIMIT),
+      untappedBricks: areaUntappedBricks.slice(0, ACTION_LIST_LIMIT),
+    };
+  }
+
   return {
     latestPeriod,
     priorPeriods,
@@ -437,5 +529,6 @@ export function buildPharmacyActions(input: {
     crossSell: crossSell.slice(0, ACTION_LIST_LIMIT),
     untappedBricks: untappedBricks.slice(0, ACTION_LIST_LIMIT),
     areas: [...areas].map(([code, name]) => ({ code, name })).sort((left, right) => left.name.localeCompare(right.name)),
+    byArea,
   };
 }
