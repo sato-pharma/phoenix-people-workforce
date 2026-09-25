@@ -22,11 +22,53 @@ import { useEffect, useState } from "react";
 import { cairoDateTime } from "@/lib/format/cairo-datetime";
 
 const MICRO_LABEL = "text-[9px] font-black uppercase tracking-[0.14em] text-slate-500";
+// Self-contained class strings, never a base constant with a colour appended: there is no
+// tailwind-merge in these components, so two competing border colours would be decided by stylesheet
+// source order rather than by the className. Same rule as `headwind-fleet.tsx`.
+// `max-w-full break-all text-left` is not decoration: the armed button's label carries a package name,
+// which is one unbreakable word, and at 375px a long one would push the row wider than the screen.
+// Wrapping wins over shrinking type — the fits-the-screen rule.
+const REMOVE_ACTION =
+  "inline-flex max-w-full items-center gap-1.5 break-all border border-slate-300 px-2 py-0.5 text-left text-[10px] font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50";
+const REMOVE_ARMED =
+  "inline-flex max-w-full items-center gap-1.5 break-all border border-rose-700 bg-rose-700 px-2 py-0.5 text-left text-[10px] font-semibold text-white transition hover:bg-rose-800 disabled:opacity-50";
 
 type DeviceFact = { label: string; value: string };
 type DeviceDetail = { deviceNumber: string; headline: DeviceFact[]; sections: Array<{ title: string; facts: DeviceFact[] }> };
-type InstalledApp = { packageName: string; name: string; version: string | null; isRemoteScreenApp: boolean };
+type InstalledApp = {
+  packageName: string;
+  name: string;
+  version: string | null;
+  isRemoteScreenApp: boolean;
+  /** The server decides this, never the browser — see `isManagementApp` in `headwind/apps.ts`. */
+  isManagementApp: boolean;
+};
 type AppsRead = { installed: InstalledApp[]; remoteScreenAppPresent: boolean };
+type RemovalResult = { packageName: string; assetTag: string | null; message: string };
+
+async function removeApp(deviceNumber: string, packageName: string): Promise<RemovalResult> {
+  const response = await fetch("/api/devices/headwind/apps", {
+    body: JSON.stringify({ deviceNumber, packageName }),
+    cache: "no-store",
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  let payload: unknown = null;
+  try {
+    payload = await response.json();
+  } catch {
+    payload = null;
+  }
+  if (!response.ok) {
+    const failure = (payload ?? {}) as { message?: unknown };
+    throw new Error(
+      typeof failure.message === "string" && failure.message
+        ? failure.message
+        : "The server answered with an error and no explanation.",
+    );
+  }
+  return payload as RemovalResult;
+}
 type CommandRecord = { summary: string; actor: string | null; issuedAt: string };
 
 async function readJson<T>(url: string): Promise<T> {
@@ -124,10 +166,121 @@ function FactList({ facts }: { facts: DeviceFact[] }) {
   );
 }
 
+/**
+ * The apps on one tablet, each with a Remove that reaches the tablet silently.
+ *
+ * 🔴 REMOVAL IS TWO PRESSES, AND THE SECOND ONE SAYS THE PACKAGE OUT LOUD. The rep is never prompted
+ * — the agent is the device owner, so the app simply goes — which means the only place a mistake can
+ * be caught is here, before it is sent. The armed button therefore names the package rather than
+ * saying "confirm", and the app list is re-read afterwards so nobody reads a stale list as proof.
+ *
+ * 🔴 AND "SENT" IS NOT "GONE". The server accepts the message and hands it on; whether the tablet was
+ * awake to act on it shows in the list at its next check-in. The sentence shown says exactly that.
+ */
+type RemovalState = {
+  /** The tablet this state belongs to — see the derivation below, and `useRead`'s own note. */
+  deviceNumber: string;
+  /** Bumped after a removal so the app list is read again; it is part of the URL `useRead` keys on. */
+  round: number;
+  armed: string | null;
+  busy: string | null;
+  notice: string | null;
+  failure: string | null;
+};
+
+const NOTHING_PENDING = { armed: null, busy: null, failure: null, notice: null, round: 0 } as const;
+
+function AppsPanel({ deviceNumber }: { deviceNumber: string }) {
+  const query = encodeURIComponent(deviceNumber);
+  const [state, setState] = useState<RemovalState>({ deviceNumber, ...NOTHING_PENDING });
+
+  // 🔴 DERIVED DURING THE RENDER, NEVER RESET IN AN EFFECT — the same rule `useRead` above explains,
+  // and here it is not only about render counts. An armed Remove belongs to ONE tablet: carried
+  // across a switch, the next press would take an app off a different rep's tablet. Keeping the
+  // tablet's number inside the state means the previous tablet's armed button, notice and failure are
+  // simply not this tablet's, and are not shown.
+  const own = state.deviceNumber === deviceNumber ? state : { deviceNumber, ...NOTHING_PENDING };
+  const apps = useRead<AppsRead>(`/api/devices/headwind?deviceNumber=${query}&view=apps&round=${own.round}`);
+
+  async function remove(packageName: string) {
+    if (own.armed !== packageName) {
+      setState({ ...own, armed: packageName, failure: null, notice: null });
+      return;
+    }
+    setState({ ...own, armed: null, busy: packageName, failure: null, notice: null });
+    try {
+      const result = await removeApp(deviceNumber, packageName);
+      setState({ ...own, armed: null, busy: null, failure: null, notice: result.message, round: own.round + 1 });
+    } catch (caught: unknown) {
+      setState({
+        ...own,
+        armed: null,
+        busy: null,
+        failure: caught instanceof Error && caught.message ? caught.message : "Could not remove that app.",
+        notice: null,
+      });
+    }
+  }
+
+  return (
+    <Panel title="Apps on this tablet">
+      {apps.loading ? <Busy what="the apps" /> : null}
+      {apps.error ? <Failed message={apps.error} /> : null}
+      {own.notice ? <p className="break-words text-[11px] font-bold text-emerald-800">{own.notice}</p> : null}
+      {own.failure ? <Failed message={own.failure} /> : null}
+      {apps.data && !apps.loading && !apps.error ? (
+        apps.data.installed.length === 0 ? (
+          <p className="text-[11px] font-semibold text-slate-500">
+            The tablet has not reported its apps yet. The list fills in at its next check-in.
+          </p>
+        ) : (
+          <ul className="space-y-1">
+            {apps.data.installed.map((app) => (
+              <li className="flex flex-wrap items-baseline gap-x-2 gap-y-1" key={app.packageName}>
+                <span className="break-words text-[11px] font-bold text-slate-900">{app.name}</span>
+                {app.version ? (
+                  <span className="break-words text-[11px] font-semibold text-slate-500">{app.version}</span>
+                ) : null}
+                {app.isRemoteScreenApp ? (
+                  <span className="border border-emerald-600 px-1 text-[8px] font-black uppercase tracking-[0.12em] text-emerald-800">
+                    Screen sharing
+                  </span>
+                ) : null}
+                {app.isManagementApp ? (
+                  <span
+                    className="border border-slate-300 px-1 text-[8px] font-black uppercase tracking-[0.12em] text-slate-500"
+                    title="This is the app that manages the tablet. Removing it would cut the tablet off from the company server for good."
+                  >
+                    Manages this tablet
+                  </span>
+                ) : (
+                  <button
+                    className={own.armed === app.packageName ? REMOVE_ARMED : REMOVE_ACTION}
+                    disabled={own.busy !== null}
+                    onClick={() => void remove(app.packageName)}
+                    title={
+                      app.isRemoteScreenApp
+                        ? "Removing this ends screen sharing on this tablet until it is installed again."
+                        : `Removes ${app.packageName} from the tablet. Nothing is shown to the rep.`
+                    }
+                    type="button"
+                  >
+                    {own.busy === app.packageName ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> : null}
+                    {own.armed === app.packageName ? `Press again to remove ${app.packageName}` : "Remove"}
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )
+      ) : null}
+    </Panel>
+  );
+}
+
 export function HeadwindTabletPanel({ deviceNumber }: { deviceNumber: string }) {
   const query = encodeURIComponent(deviceNumber);
   const detail = useRead<DeviceDetail>(`/api/devices/headwind?deviceNumber=${query}&view=detail`);
-  const apps = useRead<AppsRead>(`/api/devices/headwind?deviceNumber=${query}&view=apps`);
   const history = useRead<{ commands: CommandRecord[] }>(`/api/devices/headwind?deviceNumber=${query}&view=history`);
 
   return (
@@ -156,33 +309,7 @@ export function HeadwindTabletPanel({ deviceNumber }: { deviceNumber: string }) 
         ) : null}
       </Panel>
 
-      <Panel title="Apps on this tablet">
-        {apps.loading ? <Busy what="the apps" /> : null}
-        {apps.error ? <Failed message={apps.error} /> : null}
-        {apps.data && !apps.loading && !apps.error ? (
-          apps.data.installed.length === 0 ? (
-            <p className="text-[11px] font-semibold text-slate-500">
-              The tablet has not reported its apps yet. The list fills in at its next check-in.
-            </p>
-          ) : (
-            <ul className="space-y-1">
-              {apps.data.installed.map((app) => (
-                <li className="flex flex-wrap items-baseline gap-x-2" key={app.packageName}>
-                  <span className="break-words text-[11px] font-bold text-slate-900">{app.name}</span>
-                  {app.version ? (
-                    <span className="break-words text-[11px] font-semibold text-slate-500">{app.version}</span>
-                  ) : null}
-                  {app.isRemoteScreenApp ? (
-                    <span className="border border-emerald-600 px-1 text-[8px] font-black uppercase tracking-[0.12em] text-emerald-800">
-                      Screen sharing
-                    </span>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          )
-        ) : null}
-      </Panel>
+      <AppsPanel deviceNumber={deviceNumber} />
 
       <Panel title="What has been done to this tablet from Phoenix">
         {history.loading ? <Busy what="the history" /> : null}

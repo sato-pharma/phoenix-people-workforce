@@ -77,7 +77,15 @@ type FleetRow = {
   holderJobTitle: string | null;
   unregistered: boolean;
 };
-type CommandDef = { id: string; label: string; description: string; destructive: boolean; ready: boolean };
+type CommandDef = {
+  id: string;
+  label: string;
+  description: string;
+  destructive: boolean;
+  ready: boolean;
+  /** Why it refuses, when it does — the server writes this sentence, never the console. */
+  pendingReason: string | null;
+};
 type FleetState = {
   rows: FleetRow[];
   registerError: boolean;
@@ -317,16 +325,24 @@ export function HeadwindFleet() {
         from Phoenix. Each action is recorded against the tablet in the audit log.
       </p>
 
+      {/*
+        🔴 EACH REFUSED ACTION GIVES ITS OWN REASON, AND THE REASONS ARE NOT THE SAME. One says the
+        free edition of the server has nowhere to put the instruction, which no amount of waiting
+        changes; another says Phoenix will not show a position it has not watched arrive. Rolling
+        them into one "pending" sentence would leave a person deciding about a stolen tablet unable
+        to tell which they are looking at. The sentences come from the server — see
+        `HEADWIND_UNCONFIRMED_REASONS`.
+      */}
       {pendingCommands.length > 0 ? (
-        <div className="mt-3 flex max-w-3xl flex-col gap-1 border border-slate-200 bg-white px-4 py-3 text-[11px] font-semibold text-slate-600">
-          <p className={MICRO_LABEL}>Not connected yet</p>
-          <p>
-            <span className={`mr-1 inline-block ${PENDING_CHIP}`}>Pending</span>
-            {pendingCommands.map((command) => command.label).join(", ")} — the server can do{" "}
-            {pendingCommands.length === 1 ? "this" : "these"}, but the exact instruction Phoenix must send is read off the
-            server&rsquo;s own list once it is running. Until then the buttons are deliberately switched off rather than
-            reporting a success that never reached the tablet.
-          </p>
+        <div className="mt-3 flex max-w-3xl flex-col gap-2 border border-slate-200 bg-white px-4 py-3 text-[11px] font-semibold text-slate-600">
+          <p className={MICRO_LABEL}>Switched off, and why</p>
+          {pendingCommands.map((command) => (
+            <p key={command.id}>
+              <span className={`mr-1 inline-block ${PENDING_CHIP}`}>{command.label}</span>
+              {command.pendingReason ??
+                "Phoenix will not send this yet, so the button is switched off rather than reporting a success that never reached the tablet."}
+            </p>
+          ))}
         </div>
       ) : null}
 
@@ -622,7 +638,7 @@ function FleetActions({
           <span
             className={PENDING_ACTION}
             key={command.id}
-            title="The server can do this — the exact instruction Phoenix must send is read off its own list once it is running."
+            title={command.pendingReason ?? command.description}
           >
             {command.label}
             <span className={PENDING_CHIP}>Pending</span>
@@ -647,7 +663,7 @@ function FleetActions({
             <span
               className={PENDING_ACTION}
               key={command.id}
-              title="The server can do this — the exact instruction Phoenix must send is read off its own list once it is running."
+              title={command.pendingReason ?? command.description}
             >
               {command.label}
               <span className={PENDING_CHIP}>Pending</span>
