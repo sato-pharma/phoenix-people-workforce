@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { AccessContext } from "@/lib/auth/permissions";
+import { invalidateExecutiveDashboardCache } from "@/lib/dashboard/invalidation";
 import { hrIdForStorage } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -189,6 +190,11 @@ export async function transferEmployeeSeat(
     p_to_seat_id: toSeatId,
   });
   if (error) throw new Error(error.message);
+
+  // The RPC just moved a seat in au_v_org_tree — bust the cached org tree (shared "sos-reference"
+  // tag) so the CRM sync panel and every other org-scoped read see it immediately, not after the
+  // cache's 300s TTL. This was the one write path with no invalidation call at all.
+  invalidateExecutiveDashboardCache("employee seat transfer", ["employees", "vacancies"]);
 
   return data as SeatTransferResult;
 }
