@@ -123,8 +123,17 @@ import { stripComments } from "./support/comment-strip.ts";
  * DO NOT narrow the pattern back to the `-x-` pair to make this number smaller. That is the exact
  * move this entry exists to prevent, and a page that scrolls sideways does not care which spelling
  * let it.
+ *
+ * 256 -> 254 on 2026-09-25: the manager/HR Vacation Report's two desktop tables (Leave Entitlements,
+ * 9 columns; Master Requests, 12 columns) each dropped their `hidden md:block overflow-x-auto`
+ * wrapper for `hidden xl:block` with `<table className="w-full table-fixed">` and a percentage
+ * `<colgroup>` — the entitlements table merged to 6 columns (dropping the raw HR ID column), the
+ * requests table to 8. Below `xl` both already had a `block md:hidden` card fallback, now `block
+ * xl:hidden`, so nothing lost coverage. Raw `employeeHrId`/`managerHrId` were dropped from both
+ * tables' and cards' display per AGENTS.md §4 ("show human-readable names, never raw codes or IDs")
+ * — CSV/XLSX export and the filter search value are untouched.
  */
-const BASELINE = 256;
+const BASELINE = 254;
 
 /**
  * app/ and src/components/ are where UI class strings live. src/lib/ is excluded on

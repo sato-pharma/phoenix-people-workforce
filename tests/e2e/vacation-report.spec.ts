@@ -244,12 +244,14 @@ test.describe("Vacation Report Page", () => {
   // ─── Sortable Column Headers (#5) ──────────────────────────────
 
   test("entitlements table has sortable column headers", async ({ page }) => {
-    // HR ID header should be sortable (default sort)
-    const hrIdHeader = page.locator("th").filter({ hasText: "HR ID" }).first();
-    await expect(hrIdHeader).toBeVisible();
+    // Employee header is sortable (default sort). The raw "HR ID" column was removed so the
+    // manager/HR view shows names, never codes (owner rule); the table only renders at xl+.
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const employeeHeader = page.locator("th").filter({ hasText: "Employee" }).first();
+    await expect(employeeHeader).toBeVisible();
 
     // Click to toggle sort direction
-    await hrIdHeader.click();
+    await employeeHeader.click();
 
     // Sort indicator icon should exist
     const sortIcon = page.locator("th svg").first();
@@ -257,6 +259,8 @@ test.describe("Vacation Report Page", () => {
   });
 
   test("requests table has sortable column headers", async ({ page }) => {
+    // The desktop table renders at xl+; below that the cards carry the data.
+    await page.setViewportSize({ width: 1440, height: 900 });
     const requestsTab = page.getByRole("tab", { name: /Master Requests/i });
     await requestsTab.click();
     await page.waitForURL(/tab=requests/);
