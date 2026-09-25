@@ -213,8 +213,11 @@ import { stripComments } from "./support/comment-strip.ts";
  * showed the raw code and now shows the master's NAME (closing-details-panel.tsx) — a name is
  * longer than a code and an ellipsis on it is exactly the cut the owner's rule forbids, so the
  * `truncate` there became `break-words`.
+ *
+ * 174 -> 173 on 2026-09-25: the Territory Drilldown manager tree's block card
+ * (territory-tree-desktop.tsx, BlockLane) — its block-code line truncated, same fix.
  */
-const BASELINE = 174;
+const BASELINE = 173;
 
 const ROOTS = ["app", "src"];
 
