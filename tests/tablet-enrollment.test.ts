@@ -1141,7 +1141,18 @@ function runDoorTests() {
   const consoleSource = source("src/components/devices/rep-tablets-console.tsx");
   assert.doesNotMatch(consoleSource, /dangerouslySetInnerHTML|innerHTML|appendChild|insertBefore/, "React draws the QR; nothing writes into the page behind it");
   assert.doesNotMatch(consoleSource, /localStorage|sessionStorage|indexedDB/, "the code is never stored in the browser");
-  assert.match(consoleSource, /qrSvgPath\(/);
+  // THE QR DRAWING MOVED to `src/components/devices/qr-image.tsx` on 2026-09-25, when ManageEngine
+  // enrollment arrived and needed the same symbol. Both guards follow it there, and the console must
+  // not have kept a second copy behind to drift from it.
+  const qrImageSource = source("src/components/devices/qr-image.tsx");
+  assert.match(qrImageSource, /qrSvgPath\(/, "the symbol is drawn by React, from Phoenix's own encoder");
+  assert.doesNotMatch(qrImageSource, /dangerouslySetInnerHTML|innerHTML|appendChild|insertBefore/);
+  assert.doesNotMatch(qrImageSource, /localStorage|sessionStorage|indexedDB/);
+  assert.doesNotMatch(
+    consoleSource,
+    /function QrImage\(|function saveQrImage\(/,
+    "one copy of the QR drawing, not two that can drift",
+  );
   // WHOLE STATEMENTS, not lines. A type import wide enough to wrap is still a type import, and
   // reading this one line at a time called the second line of one a value import (2026-09-25).
   for (const statement of consoleSource.match(/^import[\s\S]*?;$/gm) ?? []) {
@@ -1174,6 +1185,7 @@ function runDoorTests() {
     "app/api/devices/tablets/usb/route.ts",
     "src/lib/devices/tablet-auto-register.ts",
     "src/components/devices/rep-tablets-console.tsx",
+    "src/components/devices/qr-image.tsx",
   ]) {
     assert.doesNotMatch(source(file), /\bconsole\.(log|info|warn|error|debug)\(/, `${file} logs nothing — an enrollment code must never reach a log`);
   }

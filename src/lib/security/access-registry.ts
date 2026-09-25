@@ -1391,6 +1391,13 @@ export const accessRegistry = [
   // it carries the same gate and its own REQUIRED audit row (manageengine_device_app). Refreshing the
   // app list is a read wearing a POST — the service writes no row for it.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/manageengine/apps", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
+  // The ManageEngine enrollment template — the QR a factory-fresh tablet scans. GET returns everything
+  // ABOUT the template and never the template itself; POST either saves a new one (REQUIRED audit,
+  // manageengine_enrollment_template) or, with `show`, hands the saved payload to the page for the one
+  // moment it draws the QR. 🔴 That payload is a credential — anyone who scans it enrolls a tablet into
+  // the company fleet — so both verbs sit behind company_devices:approve, Super Admin only.
+  sessionApi({ methods: ["GET"], pattern: "/api/devices/manageengine/enrollment", permission: { resource: "company_devices", action: "approve" } }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/manageengine/enrollment", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
   // Visual Aids (owner, 2026-09-18). A rep and his DM, RM and NSM read the ACTIVE aids of their own
   // line — the line check lives in src/lib/visual-aids/service.ts, below the permission. Marketing
   // Manager, GPM and Super Admin upload (create) and retire or replace (update); nobody deletes. The

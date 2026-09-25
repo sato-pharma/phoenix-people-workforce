@@ -5,6 +5,7 @@ import { ManageEngineAppInputError } from "@/lib/devices/manageengine/apps";
 import { ManageEngineNotConfiguredError } from "@/lib/devices/manageengine/auth";
 import { ManageEngineRequestError } from "@/lib/devices/manageengine/client";
 import { ManageEngineCommandInputError } from "@/lib/devices/manageengine/commands";
+import { ManageEngineEnrollmentInputError } from "@/lib/devices/manageengine/enrollment";
 
 /**
  * One error mapping for the ManageEngine bridge routes, so the page reads the same status for the
@@ -22,7 +23,11 @@ export function manageEngineErrorResponse(error: unknown, fallback: string): Nex
   if (error instanceof ManageEngineNotConfiguredError) {
     return NextResponse.json({ message: error.message, setupRequired: true }, { status: 400 });
   }
-  if (error instanceof ManageEngineCommandInputError || error instanceof ManageEngineAppInputError) {
+  if (
+    error instanceof ManageEngineCommandInputError ||
+    error instanceof ManageEngineAppInputError ||
+    error instanceof ManageEngineEnrollmentInputError
+  ) {
     return NextResponse.json({ message: error.message }, { status: 400 });
   }
   if (error instanceof ManageEngineRequestError) {

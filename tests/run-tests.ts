@@ -3669,7 +3669,10 @@ await runTest(
   "ManageEngine bridge (Zoho token exchange caches and surfaces a refusal, the client retries once "
   + "on a 401 with a fresh token, device JSON normalizes and matches the register by serial then "
   + "IMEI, the command allow-list is the seven actions with only the two wipes destructive, and the "
-  + "route error mapping keeps one status per cause)",
+  + "route error mapping keeps one status per cause) — and the enrollment template a factory-fresh "
+  + "tablet scans: the pasted payload is refused in words unless it names a device admin component "
+  + "and a downloadable agent, nothing is added to it, and the credential reaches neither the "
+  + "page's ordinary load, nor the audit row, nor any log)",
   runManageEngineBridgeTests,
 );
 await runTest("organogram hardening", runOrganogramHardeningTests);

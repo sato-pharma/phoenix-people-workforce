@@ -86,6 +86,12 @@ export type AuditEntityType =
   // until somebody changes it back. REQUIRED audit, written after ManageEngine has accepted the
   // change, naming the tablet by its custody asset tag and the app by its own name.
   | "manageengine_device_app"
+  // The ManageEngine enrollment template the Rep Tablets page renders as a QR (2026-09-25). Their
+  // REST API has no enrollment endpoint at all, so the payload is copied out of the ManageEngine
+  // console once and saved here; saving it is what lets any factory-fresh tablet join the fleet,
+  // which is why it is a REQUIRED audit and not an ordinary settings change. The row names the
+  // template and the agent package it installs — NEVER the payload, which is itself the credential.
+  | "manageengine_enrollment_template"
   // Email routing. `distribution_list` is an edit to a named recipient group — who a future email
   // reaches. `company_email_alias` is the Turbify register beside it.
   //
