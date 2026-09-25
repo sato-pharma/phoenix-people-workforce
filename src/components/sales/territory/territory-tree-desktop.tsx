@@ -330,7 +330,7 @@ function AreaLane({
   };
 
   return (
-    <div className="min-w-[280px] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_2px_12px_rgba(15,23,42,0.06)]">
+    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_2px_12px_rgba(15,23,42,0.06)]">
       <button
         aria-expanded={open}
         className="flex w-full flex-col gap-1 bg-gradient-to-br from-slate-800 to-slate-950 px-3 py-2.5 text-left text-white"
@@ -391,7 +391,7 @@ function RegionRoot({
 }) {
   return (
     <div className="flex flex-col items-center">
-      <div className="min-w-[240px] max-w-md rounded-xl border border-slate-900 bg-gradient-to-br from-slate-800 to-slate-950 px-5 py-3.5 text-center text-white shadow-[0_16px_36px_rgba(15,23,42,0.35)]">
+      <div className="w-full max-w-md rounded-xl border border-slate-900 bg-gradient-to-br from-slate-800 to-slate-950 px-5 py-3.5 text-center text-white shadow-[0_16px_36px_rgba(15,23,42,0.35)]">
         <div className="flex items-center justify-center gap-1.5 text-phx-2xs font-black uppercase tracking-[0.16em] text-orange-300">
           <MapPin className="h-3.5 w-3.5" />
           Your region
@@ -509,7 +509,7 @@ function RegionsRoot({
 }) {
   return (
     <div className="flex flex-col items-center">
-      <div className="min-w-[240px] max-w-md rounded-xl border border-orange-200 bg-gradient-to-br from-orange-50 to-orange-100 px-5 py-3.5 text-center text-slate-900 shadow-[0_16px_36px_rgba(15,23,42,0.1)]">
+      <div className="w-full max-w-md rounded-xl border border-orange-200 bg-gradient-to-br from-orange-50 to-orange-100 px-5 py-3.5 text-center text-slate-900 shadow-[0_16px_36px_rgba(15,23,42,0.1)]">
         <div className="flex items-center justify-center gap-1.5 text-phx-2xs font-black uppercase tracking-[0.16em] text-orange-600">
           <MapPin className="h-3.5 w-3.5" />
           My regions
@@ -582,7 +582,9 @@ export function TerritoryTreeDesktop({ tree }: { tree: UseTerritoryTreeResult })
     if (skeleton.regions.length === 1) {
       const region = skeleton.regions[0];
       return (
-        <div className="space-y-10 overflow-x-auto rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-8 sm:px-6">
+        // No overflow-x-auto and no width floor on a manager's tree (fits-the-screen rule):
+        // every card in it wraps rather than widening past the viewport — see AreaRoot.
+        <div className="space-y-10 rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-8 sm:px-6">
           <RegionRoot
             areas={skeleton.areas.filter((area) => area.regionCode === region.regionCode)}
             blocks={skeleton.blocks}
@@ -594,7 +596,7 @@ export function TerritoryTreeDesktop({ tree }: { tree: UseTerritoryTreeResult })
       );
     }
     return (
-      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-8 sm:px-6">
+      <div className="rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-8 sm:px-6">
         <RegionsRoot
           blocks={skeleton.blocks}
           bricks={skeleton.bricks}

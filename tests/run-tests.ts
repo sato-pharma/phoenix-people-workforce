@@ -1961,6 +1961,7 @@ import { runPhoenixCrmSpeakTests } from "./phoenix-crm-speak.test.ts";
 import { runPhoenixCrmDictationCorrectTests } from "./phoenix-crm-dictation-correct.test.ts";
 import { runPhoenixCrmDictationCorpusTests } from "./phoenix-crm-dictation-corpus.test.ts";
 import { runTerritorySyncPanelRoleScopingTests } from "./territory-sync-panel-role-scoping.test.ts";
+import { runTerritoryTreeDesktopFitsTheScreenTests } from "./territory-tree-desktop-fits-the-screen.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -6999,6 +7000,10 @@ await runTest(
 await runTest(
   "territory sync panel: lastSyncedBy is resolved to a name (never the raw login/HR id, with a system: actor and an unresolvable one both named in words), and the per-line reconciliation chips are gated behind showReconciliation — derived from isTerritoryLinePickerRole (Super Admin, CEO) — while canRun stays unconditional for every Territory Drilldown role",
   runTerritorySyncPanelRoleScopingTests,
+);
+await runTest(
+  "territory drilldown desktop tree fits the screen: no overflow-x-auto and no min-w-[…] floor anywhere in the file — Medical Rep's AreaRoot and the manager branches (RegionRoot, RegionsRoot, AreaLane, BlockLane) alike — and block/area/region names wrap rather than truncate",
+  runTerritoryTreeDesktopFitsTheScreenTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

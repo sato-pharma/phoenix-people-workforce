@@ -132,15 +132,23 @@ import { stripComments } from "./support/comment-strip.ts";
  * xl:hidden`, so nothing lost coverage. Raw `employeeHrId`/`managerHrId` were dropped from both
  * tables' and cards' display per AGENTS.md §4 ("show human-readable names, never raw codes or IDs")
  * — CSV/XLSX export and the filter search value are untouched.
- */
-/*
+ *
  * 254 -> 240 on 2026-09-25: the Medical Rep portal polish. The rep's own screens stopped
  * scrolling sideways page by page: My Visits, the CRM portal grid, Coverage and Outstation history
  * became `table-fixed` with a percentage `<colgroup>` instead of PortalDesktopTable's min-width
  * box; the segmented tab strip wraps instead of hiding a scrollbar; the 360 trend chart draws to
- * its column.
+ * its column. That change and the Territory Drilldown manager-tree fix below landed on separate
+ * branches in parallel and both touched the rep's own AreaRoot wrapper site — the count after
+ * merge is not a simple subtraction of the two entries, see the next entry for the true count.
+ *
+ * 240 -> 238 on 2026-09-25: the Territory Drilldown desktop tree's manager branches
+ * (territory-tree-desktop.tsx — the single-region and multi-region root wrappers under
+ * `TerritoryTreeDesktop`) dropped their `overflow-x-auto` wrappers, the same fix already applied
+ * to the Medical Rep's AreaRoot above; lanes now stack/wrap under the parent's own width instead
+ * of scrolling sideways. (RegionRoot, RegionsRoot and AreaLane never carried `overflow-x-auto`
+ * themselves — only the two outer wrapper `<div>`s in `TerritoryTreeDesktop` did.)
  */
-const BASELINE = 240;
+const BASELINE = 238;
 
 /**
  * app/ and src/components/ are where UI class strings live. src/lib/ is excluded on
