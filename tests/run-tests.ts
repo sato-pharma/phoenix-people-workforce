@@ -10,6 +10,7 @@ import { runSalesExportGeneratedStampCairoTests } from "./sales-export-generated
 import { runExportEmailGeneratedStampCairoTests } from "./export-email-generated-stamp-cairo.test.ts";
 import { runEmployee360VisitClassificationTests } from "./employee-360-visit-classification.test.ts";
 import { runEmployee360DoubleVisitCountTests } from "./employee-360-double-visit-count.test.ts";
+import { runEmployee360PeriodCairoTests } from "./employee-360-period-cairo.test.ts";
 import { runErrorMonitorNewIssueDiffTests } from "./error-monitor-new-issue-diff.test.ts";
 import { runOutstationReviewMapRasterTests } from "./outstation-review-map-raster.test.ts";
 import { runErrorMonitorDerivedStatusTests } from "./error-monitor-derived-status.test.ts";
@@ -6979,6 +6980,10 @@ await runTest(
 await runTest(
   "Phoenix CRM dictation, measured against the corpus: the corrector is run over every word the field force writes near a product name, with the number of words it changes pinned exactly — so a widened vocabulary goes red with the old count and the new one side by side, rather than silently rewriting more of a clinical record. No competitor's drug and no token carrying a dose is ever touched, and the only thing it can emit is a canonical product name behind the rep's own prefix",
   runPhoenixCrmDictationCorpusTests,
+);
+await runTest(
+  "Employee 360 period resolution follows the Cairo calendar (today, This month, quarter and YTD all resolve off currentCairoDateOnlyIso, not the server's UTC clock)",
+  runEmployee360PeriodCairoTests,
 );
 await runTest(
   "territory sync panel: lastSyncedBy is resolved to a name (never the raw login/HR id, with a system: actor and an unresolvable one both named in words), and the per-line reconciliation chips are gated behind showReconciliation — derived from isTerritoryLinePickerRole (Super Admin, CEO) — while canRun stays unconditional for every Territory Drilldown role",
