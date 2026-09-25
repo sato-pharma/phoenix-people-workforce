@@ -136,23 +136,32 @@ system with their own permissions. To build one pointed elsewhere, set
 `EXPO_PUBLIC_PHOENIX_API_URL` in the build profile's `env` block in `eas.json` — any non-production
 target is labelled on the login screen and on Profile.
 
-### Over-the-air updates — not set up, and the one thing to get right if they are
+### Over-the-air updates — live, and the one thing to get right
 
-**There is no update pipeline today.** `eas.json` has no `channel` and `expo-updates` is not a
-dependency, deliberately, so that nothing here implies a capability that does not exist.
+🔴 **This section said "there is no update pipeline today" long after there was one, and a session
+acted on it.** Both halves of that claim are false now: `expo-updates` is a dependency (`~58.0.5`)
+and every profile in `eas.json` carries a `channel`. `production` (the store AAB) and `mdm` (the APK
+the rep tablets sideload) sit on the **same** `production` channel deliberately, so one `eas update`
+reaches both. Read `eas.json` and `package.json` before believing any prose on this page.
 
-It is worth knowing what it would buy. EAS Update ships the non-native parts of the app —
+**Whether a change needs a new binary is mechanical, not a judgement call.** `runtimeVersion` is
+`{"policy": "fingerprint"}`: if the fingerprint is unchanged, `eas update` lands on the binaries
+already installed and no rebuild is needed. Check with `eas update:list --branch production --json`
+rather than assuming — assuming it cost a wasted build on 2026-09-25.
+
+It is worth knowing what it buys. EAS Update ships the non-native parts of the app —
 JavaScript, styling, images — over the air to an already-installed app. This app is almost entirely
 those parts: screens, business rules, API calls, copy. A new binary, and so a new store release, is
 needed only for a change to native code or native dependencies, a change to app permissions, or an
 Expo SDK upgrade.
 
-🔴 **If you wire it, pin the runtime-version policy deliberately — do not take a default.** The
+🔴 **The runtime-version policy is pinned deliberately — do not change it to a default.** The
 runtime version is what ties a JS bundle to the native binary that can run it. Publish a bundle to a
 binary whose runtime does not match and the app may misbehave or crash on launch. Managed Play can
 withdraw a bad *binary*, but an over-the-air bundle never travels through the store at all — it goes
-from EAS straight to the installed app. So the recall path the chosen route buys does not cover the
-one channel that can reach every tablet at once.
+from EAS straight to the installed app. So no store recall path covers the one channel that can
+reach every tablet at once. **A sideloaded MDM APK has even less of one** — nothing can pull a bad
+update back off a rep's tablet.
 
 It is the same shape as the signing note above — cheap to get right at setup, expensive to discover
 later. Both are recorded here rather than left to be rediscovered.
