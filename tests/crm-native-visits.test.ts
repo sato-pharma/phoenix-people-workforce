@@ -382,9 +382,8 @@ export function runCrmNativeVisitsTests() {
   // Entry for a rep now lives in Phoenix CRM's Visits tab, in the Super Admin's seat only.
   assert.match(phoenixCrmService, /if \(mayUpdate\) return \{ seat: "admin", waiting: 0 \};/, "only update seats the Super Admin");
   assert.match(read("src/components/employee-portal/phoenix-crm-space.tsx"), /if \(seat === "admin"\) return <NativeVisitForRepWorkspace \/>;/);
-  for (const page of ["app/(admin)/admin/phoenix-crm/page.tsx", "app/employee-portals/phoenix-crm/page.tsx"]) {
-    assert.match(read(page), /const \{ seat \} = await getPhoenixCrmAccess\(access\);\s*if \(!seat\) \{?\s*redirect\(/, `${page} turns away anyone with no seat`);
-  }
+  // The owner retired the pilot's pages on 2026-09-25: the rep's on-behalf notice opens the field app.
+  assert.match(read("src/lib/crm/native-visits/service.ts"), /actionUrl: "\/employee-portals\/field-crm\?tab=visits",/);
   assert.match(read("src/components/employee-portal/phoenix-crm-space.tsx"), /\?\? "visits";/, "Visits stays the pilot space's default tab");
   // The old Visits for Reps addresses and the rail link moved to the clean Phoenix CRM when it shipped
   // (the owner, 2026-09-16: the pilot's link is hidden then, and the pilot removed after go-live).

@@ -287,7 +287,7 @@ async function notifyRepOfOnBehalfVisit(input: {
   const what = [nativeDayLabel(input.visitDate), input.shift, input.typeLabel, input.doctor].filter(Boolean).join(" · ");
   try {
     await createSystemNotification({
-      actionUrl: "/employee-portals/phoenix-crm?tab=visits",
+      actionUrl: "/employee-portals/field-crm?tab=visits",
       ...(input.enteredByHrId ? { actorId: input.enteredByHrId } : {}),
       category: "general",
       channels: ["in_app"],
