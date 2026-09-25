@@ -7,6 +7,7 @@ import {
   DIRECT_ORDER_FINANCE_HR_ID,
 } from "../src/lib/direct-orders/collection-rules.ts";
 import type { AccessContext } from "../src/lib/auth/permissions.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * Recording money collected against a direct order.
@@ -184,10 +185,7 @@ export async function runDirectOrderCollectionTests() {
     new URL("../src/components/direct-orders/direct-order-collection-control.tsx", import.meta.url),
     "utf8",
   );
-  const controlCode = control
-    .split("\n")
-    .filter((line) => !line.trim().startsWith("//") && !line.trim().startsWith("*") && !line.trim().startsWith("{/*"))
-    .join("\n");
+  const controlCode = stripComments(control);
 
   assert.match(
     controlCode,
