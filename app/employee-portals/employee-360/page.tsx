@@ -410,6 +410,7 @@ export default async function EmployeePortalEmployee360Page({
             is nobody to pick and the report is the whole page. Anyone with a team returned above
             with the browse list instead. */}
         <Employee360View
+          bare
           category={roleCategory}
           comparison={comparison}
           pmMarketing={pmMarketing}

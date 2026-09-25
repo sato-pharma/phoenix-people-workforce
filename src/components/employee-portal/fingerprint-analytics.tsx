@@ -1,10 +1,17 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Clock, Download, Fingerprint, LogIn, LogOut, RefreshCw, ScanLine, Users } from "lucide-react";
+import { AlarmClock, CalendarDays, CheckCircle2, Clock, Download, RefreshCw, Users, UserX } from "lucide-react";
 
+import {
+  PortalEmptyState,
+  PortalMetricCard,
+  PortalSection,
+} from "@/components/employee-portal/portal-primitives";
 import { Badge } from "@/components/ui/badge";
 import type { EmployeeAttendanceData } from "@/lib/attendance/employee-attendance";
+import { addDaysToDateOnly, formatDateOnly } from "@/lib/date-only";
+import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 
 
@@ -27,14 +34,19 @@ type Props = {
 type QuickFilter = "this-month" | "last-month" | "last-30" | "custom";
 
 // ─── Date helpers ─────────────────────────────────────────────────────────────
+//
+// Every range is built from the CAIRO calendar day, never the browser's clock: a phone set to
+// another zone (or a laptop left on UTC) used to ask for the wrong month between midnight and
+// 03:00, and "today" silently fell out of "This month".
 
 function pad(n: number) {
   return String(n).padStart(2, "0");
 }
 
-function todayKey() {
-  const d = new Date();
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+function cairoToday() {
+  const today = currentCairoDateOnlyIso();
+  const [year, month] = today.split("-").map(Number);
+  return { month, today, year };
 }
 
 function firstDayOfMonth(year: number, month: number) {
@@ -42,17 +54,15 @@ function firstDayOfMonth(year: number, month: number) {
 }
 
 function lastDayOfMonth(year: number, month: number) {
-  const d = new Date(year, month, 0); // day 0 of next month = last day of this month
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  // Day 0 of the next month is the last day of this one; UTC so no zone can shift it.
+  return `${year}-${pad(month)}-${pad(new Date(Date.UTC(year, month, 0)).getUTCDate())}`;
 }
 
 function rangeForFilter(filter: QuickFilter, customMonth: string): { from: string; to: string } {
-  const today = new Date();
-  const y = today.getFullYear();
-  const m = today.getMonth() + 1; // 1-based
+  const { month: m, today, year: y } = cairoToday();
 
   if (filter === "this-month") {
-    return { from: firstDayOfMonth(y, m), to: todayKey() };
+    return { from: firstDayOfMonth(y, m), to: today };
   }
 
   if (filter === "last-month") {
@@ -62,73 +72,37 @@ function rangeForFilter(filter: QuickFilter, customMonth: string): { from: strin
   }
 
   if (filter === "last-30") {
-    const d = new Date();
-    d.setDate(d.getDate() - 30);
-    return { from: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`, to: todayKey() };
+    return { from: addDaysToDateOnly(today, -30) ?? today, to: today };
   }
 
   // custom month — "YYYY-MM"
   if (customMonth) {
     const [cy, cm] = customMonth.split("-").map(Number);
-    const currentMonthKey = `${y}-${pad(m)}`;
-    const isCurrentMonth = customMonth === currentMonthKey;
+    const isCurrentMonth = customMonth === `${y}-${pad(m)}`;
     return {
       from: firstDayOfMonth(cy, cm),
-      to: isCurrentMonth ? todayKey() : lastDayOfMonth(cy, cm),
+      to: isCurrentMonth ? today : lastDayOfMonth(cy, cm),
     };
   }
 
-  return { from: todayKey(), to: todayKey() };
+  return { from: today, to: today };
 }
 
 function generateMonthOptions(): Array<{ label: string; value: string }> {
+  const { month, year } = cairoToday();
   const options: Array<{ label: string; value: string }> = [];
-  const today = new Date();
   for (let i = 0; i < 13; i++) {
-    const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
+    const d = new Date(Date.UTC(year, month - 1 - i, 1));
     options.push({
-      label: d.toLocaleDateString("en-US", { month: "long", year: "numeric" }),
-      value: `${d.getFullYear()}-${pad(d.getMonth() + 1)}`,
+      label: d.toLocaleDateString("en-US", { month: "long", timeZone: "UTC", year: "numeric" }),
+      value: `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}`,
     });
   }
   return options;
 }
 
 function displayDate(key: string) {
-  const [y, m, d] = key.split("-").map(Number);
-  if (!y || !m || !d) return key;
-  return new Date(y, m - 1, d).toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" });
-}
-
-// ─── KPI tile — flat corporate (square, crisp, black/orange) ──────────────────
-
-type Accent = "amber" | "green" | "orange" | "red" | "slate";
-
-const TONE: Record<Accent, { bar: string; value: string }> = {
-  amber:  { bar: "bg-amber-500",   value: "text-amber-600"   },
-  green:  { bar: "bg-emerald-500", value: "text-emerald-600" },
-  orange: { bar: "bg-orange-500",  value: "text-orange-600"  },
-  red:    { bar: "bg-rose-500",    value: "text-rose-600"    },
-  slate:  { bar: "bg-slate-800",   value: "text-slate-900"   },
-};
-
-function KpiCard({ accent, label, note, value }: { accent: Accent; label: string; note: string; value: number }) {
-  const { bar, value: valueColor } = TONE[accent];
-  return (
-    <div className="group relative min-h-[124px] overflow-hidden border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-colors duration-200 hover:border-orange-300">
-      <div className={`absolute inset-x-0 top-0 h-[3px] ${bar}`} />
-      <div className="flex h-full flex-col justify-between gap-4 p-5">
-        <div className="flex items-center gap-2">
-          <span className={`h-1.5 w-1.5 ${bar}`} />
-          <p className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">{label}</p>
-        </div>
-        <div>
-          <p className={`text-[28px] font-black leading-none tracking-tight tabular-nums ${valueColor}`}>{value}</p>
-          <p className="mt-2 text-phx-xs font-semibold text-slate-400">{note}</p>
-        </div>
-      </div>
-    </div>
-  );
+  return formatDateOnly(key, "en-GB", { day: "numeric", month: "short", year: "numeric" }, key);
 }
 
 // ─── Status badge ─────────────────────────────────────────────────────────────
@@ -142,34 +116,38 @@ function StatusBadge({ status }: { status: string }) {
   return <Badge variant="danger">{status}</Badge>;
 }
 
+function lateMinutesOf(value: string | null | undefined) {
+  const minutes = Number.parseInt(value ?? "0", 10);
+  return Number.isFinite(minutes) ? minutes : 0;
+}
+
 // ─── Shared chrome ────────────────────────────────────────────────────────────
 
 const CARD = "border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]";
 const FIELD =
-  "h-10 border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-100";
+  "min-h-10 border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-100";
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
 const QUICK_BUTTONS: Array<{ id: QuickFilter; label: string }> = [
-  { id: "this-month",  label: "This Month"  },
-  { id: "last-month",  label: "Last Month"  },
-  { id: "last-30",     label: "Last 30 Days" },
-  { id: "custom",      label: "Custom"      },
+  { id: "last-30",     label: "Last 30 days" },
+  { id: "this-month",  label: "This month"   },
+  { id: "last-month",  label: "Last month"   },
+  { id: "custom",      label: "Pick a month" },
 ];
 
-const MONTH_OPTIONS = generateMonthOptions();
-
 export function FingerprintAnalytics({ hrId, initialData, targets }: Props) {
-  const today = new Date();
-  const currentMonthValue = `${today.getFullYear()}-${pad(today.getMonth() + 1)}`;
+  const [monthOptions] = useState(generateMonthOptions);
 
   const viewTargets: FingerprintTarget[] =
     targets && targets.length > 0 ? targets : [{ hrId, label: "My report", sublabel: "You", isSelf: true }];
   const hasReports = viewTargets.length > 1;
 
   const [data,         setData]         = useState<EmployeeAttendanceData>(initialData);
-  const [activeFilter, setActiveFilter] = useState<QuickFilter>("this-month");
-  const [customMonth,  setCustomMonth]  = useState<string>(currentMonthValue);
+  // Both pages that render this load the last 30 days on the server, so that is the chip that
+  // starts selected. It used to start on "This month" while the table showed the last 30 days.
+  const [activeFilter, setActiveFilter] = useState<QuickFilter>("last-30");
+  const [customMonth,  setCustomMonth]  = useState<string>(() => monthOptions[0]?.value ?? "");
   const [selectedHrId, setSelectedHrId] = useState<string>(hrId);
   const [fetchError,   setFetchError]   = useState<string | null>(null);
   const [isPending,    startTransition] = useTransition();
@@ -202,7 +180,13 @@ export function FingerprintAnalytics({ hrId, initialData, targets }: Props) {
 
   function handleQuickFilter(filter: QuickFilter) {
     setActiveFilter(filter);
-    if (filter === "custom") return; // wait for month select
+    if (filter === "custom") {
+      // Load the month already showing in the picker, so the chip never sits selected over
+      // another range's data.
+      const { from, to } = rangeForFilter("custom", customMonth);
+      fetchRange(from, to);
+      return;
+    }
     const { from, to } = rangeForFilter(filter, "");
     fetchRange(from, to);
   }
@@ -224,21 +208,22 @@ export function FingerprintAnalytics({ hrId, initialData, targets }: Props) {
     `?hrId=${encodeURIComponent(selectedHrId)}&dateFrom=${data.dateFrom}&dateTo=${data.dateTo}`;
 
   const { summary, rows } = data;
+  const rangeLabel = `${displayDate(data.dateFrom)} – ${displayDate(data.dateTo)}`;
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
 
       {/* ── Whose report (managers only) ─────────────────────────────────── */}
       {hasReports && (
-        <div className={`overflow-hidden ${CARD} p-4`}>
+        <div className={`${CARD} p-4`}>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-3">
+            <div className="flex min-w-0 items-center gap-3">
               <span className="flex h-9 w-9 shrink-0 items-center justify-center bg-slate-900 text-orange-400">
                 <Users className="h-4 w-4" />
               </span>
-              <div>
-                <p className="text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-400">Whose Report</p>
-                <p className="text-phx-md font-semibold text-slate-800">
+              <div className="min-w-0">
+                <p className="text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-400">Whose report</p>
+                <p className="break-words text-phx-md font-semibold text-slate-800">
                   {selectedTarget?.isSelf
                     ? "Your own attendance"
                     : `${selectedTarget?.label}${selectedTarget?.sublabel ? ` · ${selectedTarget.sublabel}` : ""}`}
@@ -260,70 +245,64 @@ export function FingerprintAnalytics({ hrId, initialData, targets }: Props) {
         </div>
       )}
 
-      {/* ── Filter strip ─────────────────────────────────────────────────── */}
-      <div className={`overflow-hidden ${CARD} p-4`}>
-
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-
-          {/* Quick-filter buttons */}
-          <div className="flex flex-wrap gap-2">
+      {/* ── Range + export ───────────────────────────────────────────────── */}
+      <div className={`${CARD} p-3 sm:p-4`}>
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          {/* Quick ranges: a 2×2 grid on a phone, one row from tablet up — never a sideways scroll. */}
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
             {QUICK_BUTTONS.map(({ id, label }) => {
               const active = activeFilter === id;
               return (
                 <button
+                  aria-pressed={active}
                   key={id}
                   onClick={() => handleQuickFilter(id)}
                   type="button"
                   disabled={isPending}
                   className={[
-                    "inline-flex h-9 items-center gap-1.5 px-4 text-phx-sm font-bold uppercase tracking-wide transition-colors duration-150",
+                    "inline-flex min-h-10 items-center justify-center gap-1.5 px-3 text-phx-sm font-bold uppercase leading-tight tracking-wide transition-colors duration-150 sm:px-4",
                     active
                       ? "bg-orange-500 text-white"
                       : "border border-slate-300 bg-white text-slate-600 hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700",
-                    isPending && !active ? "opacity-50 cursor-not-allowed" : "",
+                    isPending && !active ? "cursor-not-allowed opacity-50" : "",
                   ].join(" ")}
                 >
-                  {isPending && active ? <RefreshCw className="h-3 w-3 animate-spin" /> : null}
+                  {isPending && active ? <RefreshCw className="h-3 w-3 shrink-0 animate-spin" /> : null}
                   {label}
                 </button>
               );
             })}
           </div>
 
-          {/* Export button */}
           <a
-            className="inline-flex h-9 shrink-0 items-center gap-1.5 border border-slate-300 bg-white px-4 text-phx-sm font-bold uppercase tracking-wide text-slate-600 transition-colors hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700"
+            className="inline-flex min-h-10 shrink-0 items-center justify-center gap-1.5 border border-slate-900 bg-slate-900 px-4 text-phx-sm font-bold uppercase tracking-wide text-white transition-colors hover:border-orange-600 hover:bg-orange-600"
             href={exportHref}
             data-no-print
           >
-            <Download className="h-3.5 w-3.5" />
-            Export XLSX
+            <Download className="h-3.5 w-3.5 shrink-0" />
+            Download Excel
           </a>
         </div>
 
-        {/* Custom month picker — only visible when "Custom" is active */}
         {activeFilter === "custom" && (
-          <div className="mt-4 flex flex-wrap items-end gap-3 border-t border-slate-100 pt-4">
-            <div className="space-y-1.5">
-              <p className="text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-400">Select Month</p>
+          <div className="mt-3 border-t border-slate-100 pt-3">
+            <label className="block max-w-xs space-y-1.5">
+              <span className="block text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-400">Month</span>
               <SearchableSelect
-                className={FIELD}
+                className={`${FIELD} w-full`}
                 onChange={(e) => handleCustomMonth(e.target.value)}
                 value={customMonth}
               >
-                {MONTH_OPTIONS.map(({ label, value }) => (
+                {monthOptions.map(({ label, value }) => (
                   <option key={value} value={value}>{label}</option>
                 ))}
               </SearchableSelect>
-            </div>
-            <p className="pb-2.5 text-xs font-semibold text-slate-400">
-              Showing {displayDate(data.dateFrom)} → {displayDate(data.dateTo)}
-            </p>
+            </label>
           </div>
         )}
 
         {fetchError && (
-          <p className="mt-3 border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">
+          <p className="mt-3 border border-rose-200 bg-rose-50 px-3 py-2 text-phx-sm font-semibold text-rose-700">
             {fetchError}
           </p>
         )}
@@ -332,167 +311,119 @@ export function FingerprintAnalytics({ hrId, initialData, targets }: Props) {
       {/* ── Results (dims while a new range loads) ───────────────────────── */}
       <div
         aria-busy={isPending}
-        className={`space-y-5 transition-opacity duration-200 ${isPending ? "opacity-60" : "opacity-100"}`}
+        className={`space-y-4 transition-opacity duration-200 ${isPending ? "opacity-60" : "opacity-100"}`}
       >
-
-        {/* ── KPI tiles ──────────────────────────────────────────────────── */}
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:gap-4">
-          <KpiCard accent="slate"  label="Total Recorded" value={summary.totalRows}                      note="Days in range"     />
-          <KpiCard accent="green"  label="Complete"        value={summary.completeDays}                   note="Full working days" />
-          <KpiCard accent="amber"  label="Late / Early"    value={summary.lateDays}                       note="Attendance flags"  />
-          <KpiCard accent="orange" label="Short / Absent"  value={summary.shortDays + summary.absentDays} note="Below threshold"   />
+        <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+          <PortalMetricCard accent="slate" icon={CalendarDays} label="Days recorded" value={summary.totalRows} />
+          <PortalMetricCard accent="emerald" icon={CheckCircle2} label="Complete" value={summary.completeDays} />
+          <PortalMetricCard accent="amber" icon={AlarmClock} label="Late / early" value={summary.lateDays} />
+          <PortalMetricCard accent="rose" icon={UserX} label="Short / absent" value={summary.shortDays + summary.absentDays} />
         </div>
 
-        {/* ── Punch log ─────────────────────────────────────────────────── */}
-        {rows.length === 0 ? (
-          <div className={`flex flex-col items-center justify-center ${CARD} py-20 text-center`}>
-            <span className="flex h-12 w-12 items-center justify-center bg-slate-900 text-orange-400">
-              <ScanLine className="h-6 w-6" />
+        <PortalSection
+          actions={
+            <span className="bg-slate-900 px-2.5 py-1 text-phx-xs font-bold uppercase tracking-wide text-slate-100 tabular-nums">
+              {rows.length} {rows.length === 1 ? "day" : "days"}
             </span>
-            <p className="mt-4 text-sm font-bold text-slate-700">No records for this period</p>
-            <p className="mt-1 text-xs text-slate-400">Try a different time range above.</p>
-          </div>
-        ) : (
-          <div className={`overflow-hidden ${CARD}`}>
-
-            {/* section header */}
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
-              <div className="flex items-center gap-3">
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center bg-slate-900 text-orange-400">
-                  <Fingerprint className="h-4 w-4" />
-                </span>
-                <div>
-                  <p className="text-phx-2xs font-black uppercase tracking-[0.20em] text-orange-500">Fingerprint Log</p>
-                  <p className="mt-0.5 text-phx-md font-semibold text-slate-800 tabular-nums">
-                    {displayDate(data.dateFrom)} → {displayDate(data.dateTo)}
-                  </p>
-                </div>
-              </div>
-              <span className="bg-slate-900 px-2.5 py-1 text-phx-xs font-bold uppercase tracking-wide text-slate-100 tabular-nums">
-                {rows.length} {rows.length === 1 ? "record" : "records"}
-              </span>
-            </div>
-
-            {/* Mobile: premium card list (tables are desktop-only) */}
-            <div className="space-y-2.5 p-3 md:hidden">
-              {rows.map((row) => {
-                const lateMin = parseInt(row.lateMinutes ?? "0", 10);
-                return (
-                  <div className="border border-slate-200 bg-white p-3" key={row.rawDate}>
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-mono text-xs font-bold text-slate-800">{row.date}</span>
-                      <StatusBadge status={row.status} />
+          }
+          eyebrow="Fingerprint log"
+          title={rangeLabel}
+        >
+          {rows.length === 0 ? (
+            <PortalEmptyState
+              message="Nothing was recorded in this range. Pick another range above."
+              title="No punches in this range"
+            />
+          ) : (
+            <>
+              {/* Phone: one card per day. */}
+              <div className="divide-y divide-slate-100 md:hidden">
+                {rows.map((row) => {
+                  const lateMin = lateMinutesOf(row.lateMinutes);
+                  return (
+                    <div className="px-4 py-3" key={row.rawDate}>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-phx-md font-bold tabular-nums text-slate-900">{row.date}</span>
+                        <StatusBadge status={row.status} />
+                      </div>
+                      <dl className="mt-2.5 grid grid-cols-3 gap-2">
+                        <div className="min-w-0 border border-slate-100 bg-slate-50 px-2.5 py-2">
+                          <dt className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">In</dt>
+                          <dd className="mt-0.5 text-phx-md font-bold tabular-nums text-slate-800">{row.firstPunch || "—"}</dd>
+                        </div>
+                        <div className="min-w-0 border border-slate-100 bg-slate-50 px-2.5 py-2">
+                          <dt className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">Out</dt>
+                          <dd className="mt-0.5 text-phx-md font-bold tabular-nums text-slate-800">{row.lastPunch || "—"}</dd>
+                        </div>
+                        <div className="min-w-0 border border-slate-100 bg-slate-50 px-2.5 py-2">
+                          <dt className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">Hours</dt>
+                          <dd className="mt-0.5 text-phx-md font-bold tabular-nums text-slate-800">{row.timeLong || "—"}</dd>
+                        </div>
+                      </dl>
+                      {lateMin > 0 && (
+                        <p className="mt-2 text-phx-sm font-bold tabular-nums text-amber-700">{lateMin} min late</p>
+                      )}
                     </div>
-                    <dl className="mt-2.5 grid grid-cols-3 gap-2 text-center">
-                      <div>
-                        <dt className="text-phx-3xs font-black uppercase tracking-[0.12em] text-slate-400">In</dt>
-                        <dd className="mt-0.5 font-mono text-xs font-semibold text-slate-700">{row.firstPunch || "—"}</dd>
-                      </div>
-                      <div>
-                        <dt className="text-phx-3xs font-black uppercase tracking-[0.12em] text-slate-400">Out</dt>
-                        <dd className="mt-0.5 font-mono text-xs font-semibold text-slate-700">{row.lastPunch || "—"}</dd>
-                      </div>
-                      <div>
-                        <dt className="text-phx-3xs font-black uppercase tracking-[0.12em] text-slate-400">Duration</dt>
-                        <dd className="mt-0.5 font-mono text-xs font-semibold text-slate-700">{row.timeLong || "—"}</dd>
-                      </div>
-                    </dl>
-                    {lateMin > 0 && (
-                      <div className="mt-2 flex flex-wrap items-center gap-2">
-                        <span className="inline-flex bg-amber-100 px-2.5 py-0.5 text-phx-xs font-bold text-amber-800 tabular-nums">
-                          +{lateMin} min late
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
 
-            {/* Desktop: full table */}
-            <div className="hidden overflow-x-auto md:block">
-              {(() => {
-                const baseCols = ["Date", "Clock In", "Clock Out", "Duration", "Late", "Status"] as const;
-                return (
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr>
-                        {baseCols.map((col) => (
-                          <th key={col} className="px-4 py-3 font-black uppercase tracking-[0.14em]">
-                            {col}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-
-                    <tbody>
-                      {rows.map((row, i) => {
-                        const lateMin = parseInt(row.lateMinutes ?? "0", 10);
-                        return (
-                          <tr
-                            key={row.rawDate}
-                            className={`transition-colors duration-150 hover:bg-orange-50/60 ${i % 2 === 0 ? "bg-white" : "bg-slate-50/50"}`}
-                          >
-                            <td className="px-4 py-3 text-center font-mono text-xs font-bold text-slate-800">
-                              {row.date}
-                            </td>
-
-                            <td className="px-4 py-3 text-center">
-                              {row.firstPunch ? (
-                                <span className="inline-flex items-center gap-1.5">
-                                  <LogIn className="h-3 w-3 shrink-0 text-emerald-500" />
-                                  <span className="font-mono text-xs font-semibold text-slate-700">{row.firstPunch}</span>
-                                </span>
-                              ) : (
-                                <span className="text-xs text-slate-300">—</span>
-                              )}
-                            </td>
-
-                            <td className="px-4 py-3 text-center">
-                              {row.lastPunch ? (
-                                <span className="inline-flex items-center gap-1.5">
-                                  <LogOut className="h-3 w-3 shrink-0 text-slate-400" />
-                                  <span className="font-mono text-xs font-semibold text-slate-700">{row.lastPunch}</span>
-                                </span>
-                              ) : (
-                                <span className="text-xs text-slate-300">—</span>
-                              )}
-                            </td>
-
-                            <td className="px-4 py-3 text-center">
-                              {row.timeLong ? (
-                                <span className="inline-flex items-center gap-1.5 bg-slate-100 px-2 py-0.5">
-                                  <Clock className="h-3 w-3 text-slate-400" />
-                                  <span className="font-mono text-xs font-bold text-slate-700">{row.timeLong}</span>
-                                </span>
-                              ) : (
-                                <span className="text-xs text-slate-300">—</span>
-                              )}
-                            </td>
-
-                            <td className="px-4 py-3 text-center">
-                              {lateMin > 0 ? (
-                                <span className="inline-flex bg-amber-100 px-2.5 py-0.5 text-phx-xs font-bold text-amber-800 tabular-nums">
-                                  +{lateMin} min
-                                </span>
-                              ) : (
-                                <span className="text-xs text-slate-300">—</span>
-                              )}
-                            </td>
-
-                            <td className="px-4 py-3 text-center">
-                              <StatusBadge status={row.status} />
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                );
-              })()}
-            </div>
-          </div>
-        )}
+              {/* Tablet and desktop: fixed layout and a colgroup, so the table fits its column at
+                  every width — no min-width and no sideways scroll (the fits-the-screen rule). */}
+              <div className="hidden md:block">
+                <table className="w-full table-fixed text-left text-phx-md">
+                  <colgroup>
+                    <col className="w-[24%]" />
+                    <col className="w-[22%]" />
+                    <col className="w-[14%]" />
+                    <col className="w-[16%]" />
+                    <col className="w-[24%]" />
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      <th className="px-3 py-2.5">Date</th>
+                      <th className="px-3 py-2.5">In · Out</th>
+                      <th className="px-3 py-2.5">Hours</th>
+                      <th className="px-3 py-2.5">Late</th>
+                      <th className="px-3 py-2.5">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {rows.map((row) => {
+                      const lateMin = lateMinutesOf(row.lateMinutes);
+                      return (
+                        <tr className="bg-white transition hover:bg-orange-50/30" key={row.rawDate}>
+                          <td className="px-3 py-2.5 font-bold tabular-nums text-slate-900">{row.date}</td>
+                          <td className="px-3 py-2.5 tabular-nums text-slate-700">
+                            {row.firstPunch || row.lastPunch ? (
+                              <span className="flex flex-wrap items-center gap-x-1">
+                                <Clock className="h-3 w-3 shrink-0 text-slate-400" />
+                                {row.firstPunch || "—"}
+                                <span className="text-slate-400">·</span>
+                                {row.lastPunch || "—"}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400">—</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2.5 tabular-nums text-slate-700">{row.timeLong || "—"}</td>
+                          <td className="px-3 py-2.5 tabular-nums">
+                            {lateMin > 0 ? (
+                              <span className="font-bold text-amber-700">{lateMin} min</span>
+                            ) : (
+                              <span className="text-slate-400">—</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2.5"><StatusBadge status={row.status} /></td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </PortalSection>
       </div>
     </div>
   );

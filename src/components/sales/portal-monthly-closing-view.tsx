@@ -7,6 +7,7 @@ import { useMemo, useState, useTransition } from "react";
 import { ClosingDetailsPanel } from "@/components/sales/closing-details-panel";
 import { ClosingMatrixTable } from "@/components/sales/closing-matrix-table";
 import { PortalRepClosingList } from "@/components/sales/portal-rep-closing-list";
+import { formatPeriod } from "@/components/sales/target-visuals";
 import {
   MonthlyClosingFilters,
   emptyMonthlyClosingFilter,
@@ -237,13 +238,14 @@ export function PortalMonthlyClosingView({ matrix, office = null, line, availabl
                 onChange={(event) => onSelectPeriod(event.target.value)}
                 value={selectedPeriod ?? ""}
               >
+                {/* The month in words ("Aug 2026"); the value stays the period code the loader reads. */}
                 {availablePeriods.map((period) => (
-                  <option key={period} value={period}>{period}</option>
+                  <option key={period} value={period}>{formatPeriod(period)}</option>
                 ))}
               </SearchableSelect>
             ) : (
               <div className="flex h-11 w-44 items-center rounded border border-slate-200 bg-slate-50 px-3.5 text-sm font-semibold text-slate-900">
-                {selectedPeriod ?? "—"}
+                {formatPeriod(selectedPeriod)}
               </div>
             )}
           </label>
@@ -280,13 +282,18 @@ export function PortalMonthlyClosingView({ matrix, office = null, line, availabl
 
         {tab === "matrix" ? (
           <>
-            <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-4 md:flex-row md:items-center md:justify-between">
+            <div
+              className={
+                isMedicalRep
+                  ? "flex justify-end border-b border-slate-100 px-4 py-4"
+                  : "flex flex-col gap-3 border-b border-slate-100 px-4 py-4 md:flex-row md:items-center md:justify-between"
+              }
+            >
               {/* A rep's view is a single area — the region/area filters would offer one option each
                   (the region being exactly what the owner does not want surfaced), so hide the whole
-                  bar for them and leave only Export. Every other viewer keeps the filters. */}
-              {isMedicalRep ? (
-                <div />
-              ) : (
+                  bar for them and leave Export alone on the row, at its end. Every other viewer keeps
+                  the filters. */}
+              {isMedicalRep ? null : (
                 <MonthlyClosingFilters
                   areas={filterOptions.areas}
                   onChange={setFilter}
@@ -323,7 +330,7 @@ export function PortalMonthlyClosingView({ matrix, office = null, line, availabl
             )}
           </>
         ) : (
-          <ClosingDetailsPanel line={line} period={selectedPeriod} showConfidentialToggle={false} />
+          <ClosingDetailsPanel line={line} period={selectedPeriod} showConfidentialToggle={false} surface="portal" />
         )}
       </div>
     </div>

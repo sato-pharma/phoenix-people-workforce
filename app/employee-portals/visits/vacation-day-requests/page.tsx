@@ -17,7 +17,7 @@ export default async function NativeVisitVacationDayRequestsPage() {
 
   return (
     <EmployeePortalPageShell
-      badge="Visits"
+      badge="Field Activity"
       description="Asking to enter visits on a day HR approved as vacation. The day opens only when the manager and HR both approve."
       title="Vacation-Day Requests"
     >

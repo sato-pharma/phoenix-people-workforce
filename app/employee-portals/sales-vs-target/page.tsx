@@ -4,7 +4,7 @@ import { EmployeePortalPageShell } from "@/components/employee-portal/enterprise
 import { VsTargetDashboard } from "@/components/sales/vs-target/vs-target-dashboard-dynamic";
 import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
-import { buildVsTargetDashboard } from "@/lib/sales/vs-target-page";
+import { buildVsTargetDashboard, type VsTargetDashboardData } from "@/lib/sales/vs-target-page";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,10 +31,12 @@ export default async function PortalSalesVsTargetPage({
   const sp = await searchParams;
   const data = await buildVsTargetDashboard(access, sp.period ?? null);
 
+  // Badge and title are the sidebar's own section and label. The description names only the levels
+  // THIS viewer can open: a Medical Rep gets areas, products and bricks, never team, region or rep.
   return (
     <EmployeePortalPageShell
-      badge="Field Performance"
-      description="Your sales against your target, by team, region, area, rep and brick."
+      badge="Sales"
+      description={describeScope(data)}
       errorBoundaryTitle="Sales vs Target unavailable"
       title="Sales vs Target"
     >
@@ -45,4 +47,19 @@ export default async function PortalSalesVsTargetPage({
       <VsTargetDashboard data={data} basePath="/employee-portals/sales-vs-target" kicker="Field Performance" surface="portal" />
     </EmployeePortalPageShell>
   );
+}
+
+/** "Your sales against your target, by area, product and brick." — the levels the dashboard offers. */
+function describeScope(data: VsTargetDashboardData): string {
+  const levels = [
+    data.levels.team ? "team" : null,
+    data.levels.region ? "region" : null,
+    data.levels.area ? "area" : null,
+    data.levels.rep ? "rep" : null,
+    data.products.length > 0 ? "product" : null,
+    data.levels.brick ? "brick" : null,
+  ].filter((level): level is string => level != null);
+  if (levels.length === 0) return "Your sales against your target.";
+  if (levels.length === 1) return `Your sales against your target, by ${levels[0]}.`;
+  return `Your sales against your target, by ${levels.slice(0, -1).join(", ")} and ${levels[levels.length - 1]}.`;
 }

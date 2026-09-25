@@ -16,20 +16,29 @@
 // active tab is the only one mounted, so only its data loads — switching tabs is a
 // fresh mount, exactly like navigating between the two old pages.
 //
+// The live tracker is told it sits in the PORTAL (`surface="portal"`), so it does
+// not draw a second "ROI Tracker" hero under the page's own header.
+//
 // The initial tab is read once from ?tab (roi | coverage) so the retired
 // /employee-portals/marketing-requests/coverage-report route and the command
 // palette can deep-link straight to Coverage. It is NOT written back to the URL on
 // switch: MarketingCoverageReportWorkspace owns the query string for its own filter
 // state, and a second writer here would fight it.
+//
+// The strip is real tab markup — a `tablist` owning two `tab`s, each pointing at
+// the one `tabpanel` — with the arrow keys moving between them, so a screen reader
+// announces "tab, 1 of 2" instead of two loose buttons that claim to be tabs.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState, type ReactNode } from "react";
+import { useId, useState, type KeyboardEvent, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 
 import { MarketingCoverageReportWorkspace } from "@/components/marketing-requests/marketing-coverage-report-workspace";
 import { MarketingRoiLiveTracker } from "@/components/marketing-requests/marketing-roi-live-tracker";
 
 type RoiTrackerTab = "roi" | "coverage";
+
+const TAB_ORDER: RoiTrackerTab[] = ["roi", "coverage"];
 
 export function RoiTrackerTabs({
   canSeeCoverage,
@@ -47,27 +56,63 @@ export function RoiTrackerTabs({
     if (requested === "roi" && canSeeRoi) return "roi";
     return canSeeRoi ? "roi" : "coverage";
   });
+  const baseId = useId();
 
   const showTabStrip = canSeeRoi && canSeeCoverage;
   const activeTab: RoiTrackerTab = tab === "roi" && canSeeRoi ? "roi" : "coverage";
+  const tabId = (key: RoiTrackerTab) => `${baseId}-tab-${key}`;
+  const panelId = `${baseId}-panel`;
+
+  function onStripKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    const step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+    const edge = event.key === "Home" ? TAB_ORDER[0] : event.key === "End" ? TAB_ORDER[TAB_ORDER.length - 1] : null;
+    if (!step && !edge) return;
+    event.preventDefault();
+    const next =
+      edge ?? TAB_ORDER[(TAB_ORDER.indexOf(activeTab) + step + TAB_ORDER.length) % TAB_ORDER.length];
+    setTab(next);
+    document.getElementById(tabId(next))?.focus();
+  }
+
+  const content = (
+    <>
+      {activeTab === "roi" && canSeeRoi ? <MarketingRoiLiveTracker surface="portal" /> : null}
+      {activeTab === "coverage" && canSeeCoverage ? (
+        <MarketingCoverageReportWorkspace isSuperAdmin={isSuperAdmin} />
+      ) : null}
+    </>
+  );
 
   return (
     <div className="space-y-6">
       {showTabStrip ? (
-        <div className="flex gap-2 rounded-sm border border-slate-200 bg-white p-1.5">
-          <TabButton active={activeTab === "roi"} onClick={() => setTab("roi")}>
-            ROI
-          </TabButton>
-          <TabButton active={activeTab === "coverage"} onClick={() => setTab("coverage")}>
-            Coverage
-          </TabButton>
+        <div
+          aria-label="ROI Tracker views"
+          className="grid grid-cols-2 gap-2 rounded-sm border border-slate-200 bg-white p-1.5"
+          onKeyDown={onStripKeyDown}
+          role="tablist"
+        >
+          {TAB_ORDER.map((key) => (
+            <TabButton
+              active={activeTab === key}
+              controls={panelId}
+              id={tabId(key)}
+              key={key}
+              onClick={() => setTab(key)}
+            >
+              {key === "roi" ? "ROI" : "Coverage"}
+            </TabButton>
+          ))}
         </div>
       ) : null}
 
-      {activeTab === "roi" && canSeeRoi ? <MarketingRoiLiveTracker /> : null}
-      {activeTab === "coverage" && canSeeCoverage ? (
-        <MarketingCoverageReportWorkspace isSuperAdmin={isSuperAdmin} />
-      ) : null}
+      {showTabStrip ? (
+        <div aria-labelledby={tabId(activeTab)} id={panelId} role="tabpanel">
+          {content}
+        </div>
+      ) : (
+        content
+      )}
     </div>
   );
 }
@@ -75,22 +120,29 @@ export function RoiTrackerTabs({
 function TabButton({
   active,
   children,
+  controls,
+  id,
   onClick,
 }: {
   active: boolean;
   children: ReactNode;
+  controls: string;
+  id: string;
   onClick: () => void;
 }) {
   return (
     <button
+      aria-controls={controls}
       aria-selected={active}
-      className={`min-h-9 rounded-sm px-4 text-phx-md font-bold transition ${
+      className={`min-h-10 rounded-sm px-4 text-phx-md font-bold transition md:min-h-9 ${
         active
           ? "bg-orange-500 text-white shadow-[0_4px_12px_rgba(249,115,22,0.25)]"
           : "border border-slate-200 bg-white text-slate-600 hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
       }`}
+      id={id}
       onClick={onClick}
       role="tab"
+      tabIndex={active ? 0 : -1}
       type="button"
     >
       {children}

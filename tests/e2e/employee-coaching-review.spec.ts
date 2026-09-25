@@ -86,11 +86,13 @@ test.describe("Employee Coaching Report Review", () => {
 
   // ─── Employee Context Card ────────────────────────────────────────
 
-  test("employee context card shows name and HR ID", async ({ page }) => {
+  // Name only: the raw HR ID line was removed from the rep's screen (owner rule — human-readable
+  // names, never raw codes or IDs).
+  test("employee context card shows the name, never the raw HR ID", async ({ page }) => {
     const reportLoaded = await page.getByText("Field Coaching Review").isVisible().catch(() => false);
     if (!reportLoaded) return;
     await expect(page.getByText("Employee context")).toBeVisible();
-    await expect(page.getByText(/HR ID:/)).toBeVisible();
+    await expect(page.getByText(/HR ID:/)).toHaveCount(0);
   });
 
   test("employee context shows line, area, team pills", async ({ page }) => {

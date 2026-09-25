@@ -380,7 +380,8 @@ export function InternalMessagesMenu({ isAdminMode }: { isAdminMode: boolean }) 
                             {message.direction}
                           </span>
                         </div>
-                        <p className={cn("mt-2 line-clamp-2 text-xs leading-5", isAdminMode ? "text-phx-line-strong" : "text-phx-ink-2")}>{message.body}</p>
+                        {/* The whole body, wrapped — never clamped to two lines behind an ellipsis. */}
+                        <p className={cn("mt-2 break-words text-xs leading-5", isAdminMode ? "text-phx-line-strong" : "text-phx-ink-2")}>{message.body}</p>
                         <div className="mt-2 flex flex-wrap items-center gap-2 text-phx-xs">
                           <span className={isAdminMode ? "text-phx-ink-soft" : "text-phx-ink-faint"}>{formatMessageTime(message.createdAt)}</span>
                           <span className={cn("inline-flex items-center gap-1 rounded px-2 py-0.5 font-bold", message.emailStatus === "sent" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600")}>

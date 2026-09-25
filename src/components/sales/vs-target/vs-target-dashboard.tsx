@@ -28,6 +28,7 @@ import {
   Users,
 } from "lucide-react";
 
+import { PortalEmptyState } from "@/components/employee-portal/portal-primitives";
 import { CountUpNumber } from "@/components/ui/count-up";
 import { cn } from "@/lib/utils";
 import type { BrickNode, VsTargetNode, VsTargetTotals } from "@/lib/sales/vs-target";
@@ -155,7 +156,9 @@ function HierarchyTable({
             <col style={{ width: "24%" }} />
             <col style={{ width: "21%" }} />
           </colgroup>
-          <thead className="sticky top-0 z-10">
+          {/* No `sticky` head: the page scrolls, not this table, so a sticky head slid under the
+              fixed top bar and did nothing. */}
+          <thead>
             <tr className={TABLE_HEAD_CLASS}>
               <th className="px-4 py-2.5">{columnLabel}</th>
               <th className="px-4 py-2.5 text-right">Sales</th>
@@ -174,17 +177,28 @@ function HierarchyTable({
                     onClick={onDrill ? () => onDrill(node) : undefined}
                   >
                     <td className="px-4 py-3 align-top font-bold text-slate-900">
-                      <span className="flex items-start gap-1.5">
-                        {onDrill ? (
+                      {onDrill ? (
+                        // The row stays clickable for a mouse; this button is what a keyboard reaches.
+                        <button
+                          type="button"
+                          aria-expanded={isOpen}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onDrill(node);
+                          }}
+                          className="flex w-full items-start gap-1.5 text-left font-bold text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-orange-500"
+                        >
                           <ChevronDown
                             className={cn(
                               "mt-0.5 h-3.5 w-3.5 shrink-0 transition-transform",
                               isOpen ? "text-orange-600" : "-rotate-90 text-slate-400",
                             )}
                           />
-                        ) : null}
+                          <span className="min-w-0 break-words">{node.name}</span>
+                        </button>
+                      ) : (
                         <span className="min-w-0 break-words">{node.name}</span>
-                      </span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-right align-top">
                       <span className="block font-bold tabular-nums text-slate-900">
@@ -230,50 +244,72 @@ function HierarchyTable({
         </table>
       </div>
 
-      {/* Phone and tablet: cards, never a table. */}
-      <div className="space-y-2 p-3 lg:hidden">
-        {nodes.map((node) => (
-          <div key={node.key} className="flex border border-slate-200 bg-white">
-            <span className="w-1 shrink-0" style={{ backgroundColor: achievementHex(node.current.achievementValue) }} aria-hidden />
-            <div className="min-w-0 flex-1 p-3">
-              <div className="flex items-baseline justify-between gap-3">
-                <p className="min-w-0 break-words text-sm font-bold text-slate-900">{node.name}</p>
-                <span className={cn("shrink-0 text-sm font-black tabular-nums", achievementTone(node.current.achievementValue))}>
-                  {formatPct(node.current.achievementValue)}
-                </span>
-              </div>
-              <div className="mt-2">
-                <ProportionBar fraction={Math.abs(node.current.actualValue) / maxSales} color={ACTUAL_COLOR} />
-              </div>
-              <dl className="mt-2.5 grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
-                <div className={CARD_FACT_CLASS}>
-                  <dt className="text-slate-500">Sales</dt>
-                  <dd className="whitespace-nowrap font-bold tabular-nums text-slate-900">{formatEgp(node.current.actualValue)}</dd>
+      {/* Phone and tablet: cards, never a table — two to a row on a tablet. `items-start` so an
+          area opened to its bricks grows on its own instead of stretching the card beside it. An
+          area card opens its bricks here too: the drill-down was desktop-only, so below 1024px a
+          rep could not reach his bricks at all. */}
+      <div className="space-y-2 p-3 md:grid md:grid-cols-2 md:items-start md:gap-2 md:space-y-0 lg:hidden">
+        {nodes.map((node) => {
+          const isOpen = drillKey === node.key;
+          return (
+            <div key={node.key} className="flex border border-slate-200 bg-white">
+              <span className="w-1 shrink-0" style={{ backgroundColor: achievementHex(node.current.achievementValue) }} aria-hidden />
+              <div className="min-w-0 flex-1 p-3">
+                <div className="flex items-baseline justify-between gap-3">
+                  <p className="min-w-0 break-words text-sm font-bold text-slate-900">{node.name}</p>
+                  <span className={cn("shrink-0 text-sm font-black tabular-nums", achievementTone(node.current.achievementValue))}>
+                    {formatPct(node.current.achievementValue)}
+                  </span>
                 </div>
-                <div className={CARD_FACT_CLASS}>
-                  <dt className="text-slate-500">Target</dt>
-                  <dd className="whitespace-nowrap font-semibold tabular-nums text-slate-700">
-                    {node.current.targetValue === 0 ? "None" : formatEgp(node.current.targetValue)}
-                  </dd>
+                <div className="mt-2">
+                  <ProportionBar fraction={Math.abs(node.current.actualValue) / maxSales} color={ACTUAL_COLOR} />
                 </div>
-                {hasPrior ? (
+                <dl className="mt-2.5 grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
                   <div className={CARD_FACT_CLASS}>
-                    <dt className="text-slate-500">vs {priorLabel}</dt>
-                    <dd><GrowthPill value={node.growth} /></dd>
+                    <dt className="text-slate-500">Sales</dt>
+                    <dd className="whitespace-nowrap font-bold tabular-nums text-slate-900">{formatEgp(node.current.actualValue)}</dd>
                   </div>
-                ) : null}
-                {node.current.uncoveredActualValue !== 0 ? (
                   <div className={CARD_FACT_CLASS}>
-                    <dt className="text-slate-500">No target</dt>
-                    <dd className="whitespace-nowrap font-semibold tabular-nums text-amber-600">
-                      {formatEgp(node.current.uncoveredActualValue)}
+                    <dt className="text-slate-500">Target</dt>
+                    <dd className="whitespace-nowrap font-semibold tabular-nums text-slate-700">
+                      {node.current.targetValue === 0 ? "None" : formatEgp(node.current.targetValue)}
                     </dd>
                   </div>
+                  {hasPrior ? (
+                    <div className={CARD_FACT_CLASS}>
+                      <dt className="text-slate-500">vs {priorLabel}</dt>
+                      <dd><GrowthPill value={node.growth} /></dd>
+                    </div>
+                  ) : null}
+                  {node.current.uncoveredActualValue !== 0 ? (
+                    <div className={CARD_FACT_CLASS}>
+                      <dt className="text-slate-500">No target</dt>
+                      <dd className="whitespace-nowrap font-semibold tabular-nums text-amber-600">
+                        {formatEgp(node.current.uncoveredActualValue)}
+                      </dd>
+                    </div>
+                  ) : null}
+                </dl>
+                {onDrill ? (
+                  <button
+                    type="button"
+                    aria-expanded={isOpen}
+                    onClick={() => onDrill(node)}
+                    className="mt-2.5 flex min-h-11 w-full items-center justify-between gap-3 border-t border-slate-100 pt-2 text-xs font-bold text-orange-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-orange-500"
+                  >
+                    {isOpen ? "Hide bricks" : "Show bricks"}
+                    <ChevronDown className={cn("h-4 w-4 shrink-0 transition-transform", isOpen ? "rotate-180" : undefined)} />
+                  </button>
                 ) : null}
-              </dl>
+                {onDrill && isOpen ? (
+                  <div className="mt-1 border-t border-slate-100 pt-2.5">
+                    <BrickPanel bricks={bricks ?? null} loading={Boolean(bricksLoading)} />
+                  </div>
+                ) : null}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </>
   );
@@ -297,7 +333,43 @@ function BrickPanel({ bricks, loading }: { bricks: BrickNode[] | null; loading: 
       <p className={cn("mb-2", LABEL_CLASS)}>
         Bricks — {bricks.length.toLocaleString("en-US")} in this area, {formatEgpFull(total)}
       </p>
-      <div className="border border-slate-200 bg-white">
+      {/* Phone and tablet: one small card per brick. The table below leaves each money column about
+          33px on a phone, so it is desktop-only — the same split as the area rows above. */}
+      <ul className="space-y-1.5 lg:hidden">
+        {bricks.map((brick) => (
+          <li key={brick.key} className="border border-slate-200 bg-white px-3 py-2.5">
+            <div className="flex items-baseline justify-between gap-3">
+              <p
+                className={cn(
+                  "min-w-0 break-words text-xs",
+                  brick.isUnassigned ? "italic text-slate-400" : "font-semibold text-slate-800",
+                )}
+              >
+                {brick.name}
+              </p>
+              <span className="shrink-0 whitespace-nowrap text-xs font-black tabular-nums text-slate-900">
+                {formatEgpFull(brick.salesValue)}
+              </span>
+            </div>
+            <div className="mt-1.5">
+              <ProportionBar fraction={Math.abs(brick.salesValue) / max} color={ACTUAL_COLOR} />
+            </div>
+            <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-phx-xs">
+              <div className={CARD_FACT_CLASS}>
+                <dt className="text-slate-500">Source of Sales</dt>
+                <dd className="whitespace-nowrap tabular-nums text-slate-700">{formatEgpFull(brick.indirectValue)}</dd>
+              </div>
+              <div className={CARD_FACT_CLASS}>
+                <dt className="text-slate-500">Direct Orders</dt>
+                <dd className="whitespace-nowrap tabular-nums text-slate-700">
+                  {brick.directValue === 0 ? <span className="text-slate-300">—</span> : formatEgpFull(brick.directValue)}
+                </dd>
+              </div>
+            </dl>
+          </li>
+        ))}
+      </ul>
+      <div className="hidden border border-slate-200 bg-white lg:block">
         <table className="w-full table-fixed text-left text-xs">
           <colgroup>
             <col style={{ width: "28%" }} />
@@ -354,7 +426,7 @@ function LeaderList({
   return (
     <ol className="divide-y divide-slate-100">
       {nodes.map((node, index) => (
-        <li key={node.key} className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-orange-50/40">
+        <li key={node.key} className="flex items-center gap-3 px-4 py-3">
           <span
             className={cn(
               "flex h-7 w-7 shrink-0 items-center justify-center text-phx-xs font-black ring-1 ring-inset",
@@ -375,6 +447,51 @@ function LeaderList({
         </li>
       ))}
     </ol>
+  );
+}
+
+/**
+ * A "nothing to show" panel. In the employee portal it is the house PortalEmptyState (icon tile,
+ * title, message), the one empty panel every sales page shares; the admin shell keeps its own text
+ * panel exactly as it was. The wording is the caller's either way.
+ */
+function EmptyPanel({
+  surface,
+  title,
+  children,
+  hint,
+  compact = false,
+}: {
+  surface: "sales" | "portal";
+  title: string;
+  children: React.ReactNode;
+  hint?: string;
+  /** The admin panel's shorter one-line spacing. */
+  compact?: boolean;
+}) {
+  if (surface === "portal") {
+    return (
+      <div className={SURFACE_CLASS}>
+        <PortalEmptyState
+          title={title}
+          message={
+            <>
+              <p>{children}</p>
+              {hint ? <p className="mt-2">{hint}</p> : null}
+            </>
+          }
+        />
+      </div>
+    );
+  }
+  return (
+    <div className={cn(SURFACE_CLASS, "px-4 py-12 text-center")}>
+      <p className="text-sm font-bold text-slate-900">{title}</p>
+      <p className={compact ? "mt-1 text-xs text-slate-500" : "mx-auto mt-1.5 max-w-xl text-xs leading-5 text-slate-500"}>
+        {children}
+      </p>
+      {hint ? <p className="mt-3 text-xs text-slate-500">{hint}</p> : null}
+    </div>
   );
 }
 
@@ -517,6 +634,7 @@ export function VsTargetDashboard({
           }
           footer={
             <BandChoice
+              surface="portal"
               label="Month"
               options={data.periods.map((period) => ({ value: period, label: formatPeriod(period) }))}
               selected={data.period}
@@ -607,31 +725,26 @@ export function VsTargetDashboard({
       )}
 
       {!data.salesLoaded ? (
-        <div className={cn(SURFACE_CLASS, "px-4 py-12 text-center")}>
-          <p className="text-sm font-bold text-slate-900">
-            Monthly Closing for {formatPeriod(data.period)} has not been published yet.
-          </p>
-          <p className="mx-auto mt-1.5 max-w-xl text-xs leading-5 text-slate-500">
-            This is not a zero. Sales for this month are not final until reconciled and published, so there is
-            nothing to measure against target yet.
-            {data.pendingDirectValue !== 0
-              ? ` ${formatEgpFull(data.pendingDirectValue)} of Direct Orders is already booked into this month and joins the total the moment the closing is published.`
-              : ""}
-            {/* pendingTargetValue, never totals.targetValue: totals hold PUBLISHED rows only, so in this
-                panel their target is always 0 and the sentence could never render. */}
-            {data.pendingTargetValue !== 0
-              ? ` A target of ${formatEgpFull(data.pendingTargetValue)} is already loaded and will be measured as soon as the closing is published.`
-              : ""}
-          </p>
-          <p className="mt-3 text-xs text-slate-500">Pick an earlier month above to see published results.</p>
-        </div>
+        <EmptyPanel
+          surface={surface}
+          title={`Monthly Closing for ${formatPeriod(data.period)} has not been published yet.`}
+          hint="Pick an earlier month above to see published results."
+        >
+          This is not a zero. Sales for this month are not final until reconciled and published, so there is
+          nothing to measure against target yet.
+          {data.pendingDirectValue !== 0
+            ? ` ${formatEgpFull(data.pendingDirectValue)} of Direct Orders is already booked into this month and joins the total the moment the closing is published.`
+            : ""}
+          {/* pendingTargetValue, never totals.targetValue: totals hold PUBLISHED rows only, so in this
+              panel their target is always 0 and the sentence could never render. */}
+          {data.pendingTargetValue !== 0
+            ? ` A target of ${formatEgpFull(data.pendingTargetValue)} is already loaded and will be measured as soon as the closing is published.`
+            : ""}
+        </EmptyPanel>
       ) : data.isEmptyScope ? (
-        <div className={cn(SURFACE_CLASS, "px-4 py-12 text-center")}>
-          <p className="text-sm font-bold text-slate-900">No sales in your scope for {formatPeriod(data.period)}.</p>
-          <p className="mt-1 text-xs text-slate-500">
-            This is not a zero — no sales rows were attributed to your territory for this month.
-          </p>
-        </div>
+        <EmptyPanel surface={surface} title={`No sales in your scope for ${formatPeriod(data.period)}.`} compact>
+          This is not a zero — no sales rows were attributed to your territory for this month.
+        </EmptyPanel>
       ) : (
         <>
           {/* Coverage banner */}
@@ -702,7 +815,7 @@ export function VsTargetDashboard({
 
           {/* ── Analysis row: product mix + channel + leaderboards ── */}
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-            <SectionCard
+            <SectionCard surface={surface}
               title="Top products"
               subtitle={`${data.products.length.toLocaleString("en-US")} products sold this month`}
               icon={Package}
@@ -712,7 +825,7 @@ export function VsTargetDashboard({
                 {topProducts.map((product) => (
                   <li
                     key={product.key}
-                    className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1.5 px-4 py-2.5 transition-colors hover:bg-orange-50/40"
+                    className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1.5 px-4 py-2.5"
                   >
                     <p className="min-w-0 break-words text-phx-md font-bold text-slate-900">{product.name}</p>
                     <span className="whitespace-nowrap text-phx-md font-black tabular-nums text-slate-900">
@@ -727,7 +840,7 @@ export function VsTargetDashboard({
               </ul>
             </SectionCard>
 
-            <SectionCard title="Where the sales came from" subtitle="Both sources, same period" icon={Boxes}>
+            <SectionCard surface={surface} title="Where the sales came from" subtitle="Both sources, same period" icon={Boxes}>
               {data.channels && channelTotal !== 0 ? (
                 /* Top-aligned, not centred: this card sits beside a tall product list, and
                    centring its short content leaves a dead band across the top of the card. */
@@ -777,10 +890,10 @@ export function VsTargetDashboard({
           {/* Leaderboards — only where there is something to rank. */}
           {data.leaders.top.length > 0 ? (
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-              <SectionCard title={`Top ${data.leaders.level}s`} subtitle="By achievement against target" icon={Trophy}>
+              <SectionCard surface={surface} title={`Top ${data.leaders.level}s`} subtitle="By achievement against target" icon={Trophy}>
                 <LeaderList nodes={data.leaders.top} tone="top" emptyLabel="Nothing measurable yet." />
               </SectionCard>
-              <SectionCard title="Needs attention" subtitle="Lowest achievement against a real target" icon={TrendingDown}>
+              <SectionCard surface={surface} title="Needs attention" subtitle="Lowest achievement against a real target" icon={TrendingDown}>
                 <LeaderList
                   nodes={data.leaders.bottom}
                   tone="bottom"
@@ -793,7 +906,7 @@ export function VsTargetDashboard({
           {/* Trend — rendered ONLY when there is more than one loaded month. A single bar in an
               empty grid reads as a broken chart, which is exactly how the first build looked. */}
           {data.trendIsMeaningful ? (
-            <SectionCard title="Sales vs Target trend" subtitle="From July 2026, when the dashboard starts" icon={TrendingUp}>
+            <SectionCard surface={surface} title="Sales vs Target trend" subtitle="From July 2026, when the dashboard starts" icon={TrendingUp}>
               <div className="h-72 w-full p-4">
                 <ResponsiveContainer height="100%" width="100%">
                   <ComposedChart data={trendData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
@@ -820,7 +933,7 @@ export function VsTargetDashboard({
           ) : null}
 
           {/* Breakdown */}
-          <SectionCard
+          <SectionCard surface={surface}
             title="Performance breakdown"
             subtitle={canDrill ? "Select an area to open its bricks" : undefined}
             icon={LEVEL_META[level].icon}
@@ -835,7 +948,7 @@ export function VsTargetDashboard({
                       setLevel(key);
                       setDrillKey(null);
                     }}
-                    className={cn("whitespace-nowrap", chipClass(key === level))}
+                    className={cn("whitespace-nowrap", chipClass(key === level, surface))}
                   >
                     {LEVEL_META[key].label}
                   </button>
@@ -871,7 +984,7 @@ export function VsTargetDashboard({
 
           {/* Missing targets */}
           {data.uncovered.length > 0 ? (
-            <SectionCard
+            <SectionCard surface={surface}
               title="Areas missing a target"
               subtitle={`${data.uncovered.length} areas · ${formatEgpFull(missingTargetValue)} unmeasured`}
               icon={AlertTriangle}

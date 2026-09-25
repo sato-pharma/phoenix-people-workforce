@@ -8,7 +8,7 @@ import { Card } from "@/components/ui/card";
  *  - `FormSkeleton`      — for single-form pages (excuses, expenses, training-manager create)
  *  - `DashboardSkeleton` — for KPI + chart pages (incentive, marketing, coaching, etc.)
  *
- * Each template renders the dark hero placeholder + content placeholders
+ * Each template renders the navy header placeholder + content placeholders
  * sized roughly to the real page, so the user sees something stable
  * during the SSR fetch + hydration window.
  */
@@ -22,12 +22,16 @@ function Pulse({ className }: { className?: string }) {
   );
 }
 
-function HeroSkeleton({ badgeWidth = "w-36" }: { badgeWidth?: string }) {
+// The same frame as EmployeePortalPageShell's command header (navy #08111f, slate-800 rule, its
+// padding), so the page does not change colour and size the moment it arrives. It used to be a
+// black-to-brown gradient no portal page has. The bars are SHARES of the width under a max-w cap,
+// never fixed pixels, so the placeholder can never push a 360px screen sideways.
+function HeroSkeleton({ badgeWidth = "max-w-[9rem]" }: { badgeWidth?: string }) {
   return (
-    <section className="relative box-border w-full overflow-hidden rounded border border-slate-800 bg-[linear-gradient(135deg,#070707_0%,#111827_52%,#2C1605_100%)] p-5 sm:p-6 lg:p-8">
-      <Pulse className={`h-6 ${badgeWidth} !bg-slate-700/50`} />
-      <Pulse className="mt-5 h-8 w-56 !bg-slate-700/50 sm:w-72" />
-      <Pulse className="mt-3 h-4 w-64 !bg-slate-700/40 sm:w-80" />
+    <section className="relative box-border w-full overflow-hidden rounded-sm border border-slate-800 bg-[#08111f] px-4 py-4 sm:px-5 sm:py-5 lg:px-6">
+      <Pulse className={`h-5 w-full ${badgeWidth} !bg-white/10`} />
+      <Pulse className="mt-3 h-8 w-full max-w-[18rem] !bg-white/15" />
+      <Pulse className="mt-2 h-4 w-full max-w-[20rem] !bg-white/10" />
     </section>
   );
 }

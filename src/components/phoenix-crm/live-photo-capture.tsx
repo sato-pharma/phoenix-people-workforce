@@ -158,6 +158,7 @@ export function LivePhotoCapture({
   value: CapturedPhoto | null;
   weakGpsMeters: number;
 }) {
+  const rootRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const watchRef = useRef<number | null>(null);
@@ -265,6 +266,9 @@ export function LivePhotoCapture({
     setError(null);
     if (!startLocation()) return;
     setStage("starting");
+    // Opened from the foot of a long form, the camera would otherwise open below the fold. Bring its
+    // top up under the page header once the video has taken its place.
+    requestAnimationFrame(() => rootRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
     await startCamera();
   }
 
@@ -376,12 +380,16 @@ export function LivePhotoCapture({
   const weak = Boolean(fix && fix.accuracyMeters !== null && fix.accuracyMeters > weakGpsMeters);
   const previewUrl = value?.previewUrl ?? shot?.previewUrl ?? null;
 
+  // A flex column rather than a grid: the shutter row below is sticky, and a sticky box travels within
+  // its container — a flex column is unambiguously that, where a grid row can pin it to its own cell.
   return (
-    <div className="grid min-w-0 gap-3">
+    <div className="flex min-w-0 scroll-mt-20 flex-col gap-3" ref={rootRef}>
       {hint && !value ? <p className="text-sm font-medium leading-6 text-slate-600">{hint}</p> : null}
 
+      {/* The video leaves room under it for the shutter row, the page header and the bottom bar.
+          `svh` is the height with a phone browser's toolbars showing, so it never grows under them. */}
       <div className={cn("relative min-w-0 overflow-hidden rounded-none border border-slate-200 bg-slate-950", showVideo ? "block" : "hidden")}>
-        <video autoPlay className="block max-h-[62vh] w-full object-contain" muted playsInline ref={videoRef} />
+        <video autoPlay className="block max-h-[calc(100svh-15rem)] w-full object-contain" muted playsInline ref={videoRef} />
         {!cameraReady ? (
           <div className="absolute inset-0 flex items-center justify-center text-sm font-bold text-white/80">
             <LoaderCircle aria-hidden className="mr-2 h-4 w-4 animate-spin" />
@@ -391,7 +399,10 @@ export function LivePhotoCapture({
       </div>
 
       {showVideo ? (
-        <div className="grid gap-2">
+        // Held on screen while the camera is open: sticky to the bottom, above the portal's bottom
+        // navigation on a phone (the app sets --crm-sticky-bottom to its height), so the shutter is
+        // always within reach however far down the form the camera was opened.
+        <div className="sticky bottom-[var(--crm-sticky-bottom,0px)] z-20 grid gap-2 bg-white py-2 lg:bottom-0">
           {fix ? (
             <p className={cn("flex min-w-0 items-start gap-2 text-sm font-bold", weak ? "text-amber-800" : "text-emerald-700")}>
               <LocateFixed aria-hidden className="mt-0.5 h-4 w-4 shrink-0" />
@@ -431,7 +442,7 @@ export function LivePhotoCapture({
         <div className="grid gap-2">
           {previewUrl ? (
             <span className="block w-full overflow-hidden rounded-none border border-slate-200 bg-slate-950">
-              <ZoomablePhoto alt="The photo just taken" className="block max-h-[50vh] w-full object-contain" src={previewUrl} />
+              <ZoomablePhoto alt="The photo just taken" className="block max-h-[50svh] w-full object-contain" src={previewUrl} />
             </span>
           ) : null}
           {stage === "failed" ? (
@@ -457,7 +468,7 @@ export function LivePhotoCapture({
       {value ? (
         <div className="grid gap-2">
           <span className="block w-full overflow-hidden rounded-none border border-slate-200 bg-slate-950">
-            <ZoomablePhoto alt="The live photo" className="block max-h-[50vh] w-full object-contain" src={value.previewUrl} />
+            <ZoomablePhoto alt="The live photo" className="block max-h-[50svh] w-full object-contain" src={value.previewUrl} />
           </span>
           <p className="break-words text-xs font-semibold leading-5 text-slate-600">
             {value.locationLabel} · {accuracyText(value.accuracyMeters)}

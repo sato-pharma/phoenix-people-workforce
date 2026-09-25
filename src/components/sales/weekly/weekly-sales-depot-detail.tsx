@@ -4,11 +4,13 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Building2,
   CalendarRange,
+  ChevronDown,
   Coins,
   Download,
   MapPin,
   Package,
   RotateCcw,
+  SlidersHorizontal,
   Split,
   TrendingUp,
   TriangleAlert,
@@ -17,6 +19,7 @@ import {
 } from "lucide-react";
 
 import { MultiSelectFilter, type MultiSelectFilterMode, type MultiSelectFilterOption } from "@/components/ui/multi-select-filter";
+import { formatEgp, formatEgpFull } from "@/components/sales/target-visuals";
 import { WeeklyUnitProductPicker } from "@/components/sales/weekly/weekly-unit-product-picker";
 import {
   WEEKLY_SALES_DETAIL_BASIS_LABELS,
@@ -121,15 +124,7 @@ const STATUS_COPY: Record<Exclude<WeeklySalesDetailStatus, "ok">, string> = {
 };
 
 // ── Formatting ───────────────────────────────────────────────────────────────
-function formatEgp(value: number): string {
-  const abs = Math.abs(value);
-  if (abs >= 1_000_000) return `EGP ${(value / 1_000_000).toFixed(2)}M`;
-  if (abs >= 1_000) return `EGP ${(value / 1_000).toFixed(1)}K`;
-  return `EGP ${Math.round(value).toLocaleString("en-US")}`;
-}
-function formatEgpFull(value: number): string {
-  return `EGP ${Math.round(value).toLocaleString("en-US")}`;
-}
+// Money (formatEgp, formatEgpFull) comes from the shared sales formatters in target-visuals.tsx.
 function formatCount(value: number): string {
   return Math.round(value).toLocaleString("en-US");
 }
@@ -182,6 +177,10 @@ export function WeeklySalesDepotDetail({
   const [pager, setPager] = useState({ key: "", limit: PAGE_SIZE });
   // The "Units for" pick. null until one is picked: the product with the most value is shown.
   const [unitProduct, setUnitProduct] = useState<string | null>(null);
+  // Below `md` the filter grid folds behind a "Filters · n" toggle, so a phone reaches the figures
+  // without scrolling past five or six stacked filters first. Every filter stays; from `md` up the
+  // grid is always open.
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const cacheRef = useRef(new Map<string, WeeklySalesDepotDetailPayload>());
   const refreshRef = useRef(refreshKey);
@@ -338,19 +337,32 @@ export function WeeklySalesDepotDetail({
     <Panel
       title="Filters"
       overflowVisible
+      bodyClassName={filtersOpen ? undefined : "hidden md:block"}
       action={
-        activeFilterCount > 0 ? (
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            onClick={resetFilters}
-            className="inline-flex items-center gap-1.5 bg-white/10 px-2.5 py-1 text-phx-2xs font-black uppercase tracking-wide text-white transition hover:bg-orange-500"
+            onClick={() => setFiltersOpen((open) => !open)}
+            aria-expanded={filtersOpen}
+            className="inline-flex min-h-10 items-center gap-1.5 border border-slate-600 bg-white/10 px-2.5 text-phx-2xs font-black uppercase tracking-wide text-white transition hover:bg-orange-500 md:hidden"
           >
-            <RotateCcw className="h-3 w-3" />
-            Reset {activeFilterCount}
+            <SlidersHorizontal className="h-3 w-3" />
+            {`Filters · ${activeFilterCount}`}
+            <ChevronDown className={`h-3 w-3 transition-transform ${filtersOpen ? "rotate-180" : ""}`} />
           </button>
-        ) : (
-          <span className="text-phx-2xs font-bold uppercase tracking-widest text-slate-400">No filters applied</span>
-        )
+          {activeFilterCount > 0 ? (
+            <button
+              type="button"
+              onClick={resetFilters}
+              className="inline-flex min-h-10 items-center gap-1.5 bg-white/10 px-2.5 py-1 text-phx-2xs font-black uppercase tracking-wide text-white transition hover:bg-orange-500 md:min-h-0"
+            >
+              <RotateCcw className="h-3 w-3" />
+              Reset {activeFilterCount}
+            </button>
+          ) : (
+            <span className="hidden text-phx-2xs font-bold uppercase tracking-widest text-slate-400 md:inline">No filters applied</span>
+          )}
+        </div>
       }
     >
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -581,7 +593,7 @@ export function WeeklySalesDepotDetail({
                       key={item.key}
                       type="button"
                       onClick={() => setTab(item.key)}
-                      className={`whitespace-nowrap px-2.5 py-1 text-phx-2xs font-black uppercase tracking-wide transition ${
+                      className={`min-h-10 whitespace-nowrap px-2.5 py-1 text-phx-2xs font-black uppercase tracking-wide transition md:min-h-0 ${
                         activeTab === item.key ? "bg-orange-500 text-white" : "bg-slate-800 text-slate-300 hover:text-white"
                       }`}
                     >
@@ -591,7 +603,7 @@ export function WeeklySalesDepotDetail({
                 </div>
                 <a
                   href={exportHref}
-                  className="inline-flex h-7 items-center gap-1.5 border border-slate-600 bg-white px-2.5 text-phx-2xs font-black uppercase tracking-wide text-slate-900 transition hover:border-orange-400 hover:text-orange-600"
+                  className="inline-flex h-10 items-center gap-1.5 border border-slate-600 bg-white px-2.5 text-phx-2xs font-black uppercase tracking-wide text-slate-900 transition hover:border-orange-400 hover:text-orange-600 md:h-7"
                 >
                   <Download className="h-3 w-3" />
                   Export
@@ -658,7 +670,7 @@ export function WeeklySalesDepotDetail({
                 <button
                   type="button"
                   onClick={showMore}
-                  className="inline-flex items-center gap-1.5 border border-slate-200 bg-white px-3 py-1.5 text-phx-2xs font-black uppercase tracking-wide text-slate-700 transition hover:border-orange-300 hover:text-orange-600"
+                  className="inline-flex min-h-10 items-center gap-1.5 border border-slate-200 bg-white px-3 py-1.5 text-phx-2xs font-black uppercase tracking-wide text-slate-700 transition hover:border-orange-300 hover:text-orange-600 md:min-h-0"
                 >
                   Show {formatCount(Math.min(PAGE_SIZE, rowCount - limit))} more
                 </button>
@@ -695,11 +707,14 @@ function Panel({
   action,
   children,
   overflowVisible = false,
+  bodyClassName,
 }: {
   title: string;
   action?: ReactNode;
   children: ReactNode;
   overflowVisible?: boolean;
+  /** Extra classes on the padded body of an `overflowVisible` panel (the Filters panel folds it on a phone). */
+  bodyClassName?: string;
 }) {
   return (
     <div
@@ -712,7 +727,7 @@ function Panel({
         </div>
         {action}
       </div>
-      {overflowVisible ? <div className="p-4">{children}</div> : children}
+      {overflowVisible ? <div className={bodyClassName ? `${bodyClassName} p-4` : "p-4"}>{children}</div> : children}
     </div>
   );
 }
@@ -786,15 +801,16 @@ function BasisNote({ basis }: { basis: WeeklySalesDetailBasis }) {
 function CardStat({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0 border border-slate-100 bg-slate-50 px-2 py-1.5">
-      <p className="break-words text-phx-3xs font-black uppercase tracking-wide text-slate-400">{label}</p>
+      <p className="break-words text-phx-2xs font-black uppercase tracking-wide text-slate-400">{label}</p>
       <p className="text-xs font-black tabular-nums text-slate-900">{value}</p>
     </div>
   );
 }
 
-// The desktop tables open at 1024 px, where the portal's main column leaves them about 620 px. They fit it
-// by merging columns, never by shrinking type: the movement badge sits under the name, the weeks under
-// the average, and no figure column is narrower than its widest figure.
+// The desktop tables open at `md` (768 px), where a tablet's column is about 736 px; their narrowest home
+// is 1024 px with the sidebar open, about 620 px. They fit it by merging columns, never by shrinking
+// type: the movement badge sits under the name, the weeks under the average, and no figure column is
+// narrower than its widest figure. Below `md` a phone reads cards.
 const TH = "px-3 py-2.5 font-black";
 const TH_NUM = "px-3 py-2.5 text-right font-black";
 const TD_NUM = "px-3 py-2.5 text-right tabular-nums text-slate-700";
@@ -810,7 +826,7 @@ function cellPlace(cell: WeeklySalesDetailCell, isRep: boolean): string {
 function CellsTable({ rows, isRep }: { rows: WeeklySalesDetailCell[]; isRep: boolean }) {
   return (
     <>
-      <div className="hidden lg:block">
+      <div className="hidden md:block">
         <table className="w-full table-fixed text-left text-sm">
           <colgroup>
             <col className="w-[26%]" />
@@ -854,7 +870,7 @@ function CellsTable({ rows, isRep }: { rows: WeeklySalesDetailCell[]; isRep: boo
           </tbody>
         </table>
       </div>
-      <div className="space-y-2 p-3 lg:hidden">
+      <div className="space-y-2 p-3 md:hidden">
         {rows.map((cell) => (
           <div key={cellKey(cell)} className="flex overflow-hidden border border-slate-200 bg-white">
             <span className={`w-[3px] shrink-0 ${MOVEMENT_RAIL[cell.movement]}`} />
@@ -895,7 +911,7 @@ function DrillName({ name, onClick }: { name: string; onClick?: () => void }) {
 function ProductsTable({ rows, onDrill }: { rows: WeeklySalesDetailProductRow[]; onDrill?: (code: string) => void }) {
   return (
     <>
-      <div className="hidden lg:block">
+      <div className="hidden md:block">
         <table className="w-full table-fixed text-left text-sm">
           <colgroup>
             <col className="w-[26%]" />
@@ -940,7 +956,7 @@ function ProductsTable({ rows, onDrill }: { rows: WeeklySalesDetailProductRow[];
           </tbody>
         </table>
       </div>
-      <div className="space-y-2 p-3 lg:hidden">
+      <div className="space-y-2 p-3 md:hidden">
         {rows.map((row) => {
           const movement = weeklySalesMovement(row.units, row.value);
           return (
@@ -990,7 +1006,7 @@ function GroupTable({
   const unitsOf = (code: string): WeeklySalesDetailProductUnits => units.byCode[code] ?? { units: 0, avgWeeklyUnits: 0 };
   return (
     <>
-      <div className="hidden lg:block">
+      <div className="hidden md:block">
         <table className="w-full table-fixed text-left text-sm">
           {/* The unit column is fitted by merging Share under the value, never by shrinking type. */}
           <colgroup>
@@ -1042,7 +1058,7 @@ function GroupTable({
           </tbody>
         </table>
       </div>
-      <div className="space-y-2 p-3 lg:hidden">
+      <div className="space-y-2 p-3 md:hidden">
         {rows.map((row) => {
           const movement = weeklySalesMovement(0, row.value);
           return (

@@ -40,7 +40,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { Loader2, Mic, Square, Trash2 } from "lucide-react";
+import { Mic, Square, Trash2 } from "lucide-react";
 
 import { CrmButton, CrmNote } from "@/components/phoenix-crm/ui";
 import { crmPost } from "@/components/phoenix-crm/api";
@@ -319,7 +319,7 @@ export function CrmSpeak({
               Stop
             </CrmButton>
           </div>
-          <p className="mt-1 break-words text-[11px] font-medium leading-4 text-orange-700/80">{speakLiveHint(started)}</p>
+          <p className="mt-1 break-words text-phx-xs font-medium leading-4 text-orange-700/80">{speakLiveHint(started)}</p>
           {interim ? (
             <p className="mt-1.5 break-words text-xs font-medium italic leading-5 text-slate-600" dir="auto">
               {interim}
@@ -343,13 +343,14 @@ export function CrmSpeak({
 
           <div className="min-w-0">
             <CrmButton busy={uploading} disabled={disabled || uploading} onClick={() => void start()} size="sm">
-              {uploading ? <Loader2 aria-hidden className="h-4 w-4 shrink-0 animate-spin" /> : <Mic aria-hidden className="h-4 w-4 shrink-0" />}
+              {/* While saving, the button draws its own spinner (`busy`); a second one here doubled it. */}
+              {uploading ? null : <Mic aria-hidden className="h-4 w-4 shrink-0" />}
               {uploading ? "Saving the recording" : value ? SPEAK_AGAIN_LABEL : SPEAK_LABEL}
             </CrmButton>
             <p className="mt-1.5 break-words text-xs font-medium leading-5 text-slate-500">{speakPromise(halves)}</p>
             {again ? <p className="mt-1 break-words text-xs font-medium leading-5 text-slate-500">{again}</p> : null}
             {accuracy ? <p className="mt-1 break-words text-xs font-medium leading-5 text-slate-500">{accuracy}</p> : null}
-            {processor ? <p className="mt-1 break-words text-[11px] font-medium leading-4 text-slate-400">{processor}</p> : null}
+            {processor ? <p className="mt-1 break-words text-phx-xs font-medium leading-4 text-slate-400">{processor}</p> : null}
           </div>
         </div>
       )}

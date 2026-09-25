@@ -256,6 +256,7 @@ export default async function EmployeePortalEmployee360DetailPage({
           to={period.current.to}
         />
         <Employee360View
+          bare
           category={roleCategory}
           comparison={comparison}
           pmMarketing={pmMarketing}

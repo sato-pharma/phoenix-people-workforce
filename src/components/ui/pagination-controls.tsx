@@ -24,10 +24,11 @@ export function PaginationControls({
       <p className="text-phx-xs font-bold text-slate-500">
         {from}–{to} of {total}
       </p>
+      {/* 40px buttons on a phone, where they are thumb targets; the compact 28px from md up. */}
       <div className="flex items-center gap-1">
         <button
           aria-label="Previous page"
-          className="inline-flex h-7 w-7 items-center justify-center rounded-sm border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
+          className="inline-flex h-10 w-10 items-center justify-center rounded-sm border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50 disabled:opacity-40 md:h-7 md:w-7"
           disabled={page === 0}
           onClick={() => onPageChange(page - 1)}
           type="button"
@@ -39,7 +40,7 @@ export function PaginationControls({
         </span>
         <button
           aria-label="Next page"
-          className="inline-flex h-7 w-7 items-center justify-center rounded-sm border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
+          className="inline-flex h-10 w-10 items-center justify-center rounded-sm border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50 disabled:opacity-40 md:h-7 md:w-7"
           disabled={page >= totalPages - 1}
           onClick={() => onPageChange(page + 1)}
           type="button"

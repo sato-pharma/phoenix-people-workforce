@@ -71,15 +71,37 @@ function placesText(row: DoctorDirectoryRow): string {
   return row.placeCount > 0 ? `${plural(row.placeCount, "place", "places")} on record` : "No place on record";
 }
 
+/** Whose territories a territory-scoped directory holds, as the page already knows it. */
+type DirectoryReach = "own" | "own-and-beneath" | "beneath";
+
+/**
+ * The sentence under the title. A rep reads his OWN territory here, so "beneath you" — a manager's
+ * words — would describe it wrongly; the server's scope is unchanged, only how it is said.
+ */
+function reachText(view: DoctorDirectoryView, reach: DirectoryReach): string {
+  if (view.scope === "company") return "Every validated customer in the company, across all open lines.";
+  const territories = plural(view.territoryCount, "territory", "territories");
+  if (reach === "own") {
+    return view.territoryCount === 1 ? "Every validated customer in your territory." : `Every validated customer in your ${territories}.`;
+  }
+  if (reach === "own-and-beneath") return `Every validated customer in ${territories}: your own and the ones beneath you.`;
+  return `Every validated customer in ${territories} beneath you.`;
+}
+
+const PANEL_TITLE = "Validated customers";
+
 export function DoctorsTab({
   onOpenList,
   openableSeatIds,
+  reach,
   test,
 }: {
   /** A territory's List tab. Absent where this viewer's page offers no territory to open. */
   onOpenList?: (seatId: string) => void;
   /** The territories this viewer's page can actually open, so a row never offers a door that is shut. */
   openableSeatIds: ReadonlyArray<string>;
+  /** Whose territories these are — the viewer's own (a rep), the ones beneath him, or both. */
+  reach: DirectoryReach;
   test: boolean;
 }) {
   const idPrefix = useId();
@@ -99,8 +121,19 @@ export function DoctorsTab({
     setLimit(PAGE);
   }
 
-  if (directory.error) return <CrmLoadError message={directory.error} onRetry={directory.reload} />;
-  if (!directory.data) return <CrmLoading label="Reading the directory" />;
+  // Waiting and failing sit inside the tab's own panel, as on every other tab, so the page does not
+  // jump from a bare line to a panel when the directory arrives.
+  if (directory.error || !directory.data) {
+    return (
+      <CrmPanel eyebrow="Directory" title={PANEL_TITLE}>
+        {directory.error ? (
+          <CrmLoadError message={directory.error} onRetry={directory.reload} />
+        ) : (
+          <CrmLoading label="Reading the directory" />
+        )}
+      </CrmPanel>
+    );
+  }
 
   const view = directory.data;
   const counts = {
@@ -130,20 +163,13 @@ export function DoctorsTab({
   }
 
   return (
-    <CrmPanel
-      description={
-        view.scope === "company"
-          ? "Every validated customer in the company, across all open lines."
-          : `Every validated customer in ${plural(view.territoryCount, "territory", "territories")} beneath you.`
-      }
-      eyebrow="Directory"
-      title="Validated customers"
-    >
+    <CrmPanel description={reachText(view, reach)} eyebrow="Directory" title={PANEL_TITLE}>
       <CrmBlock>
-        {/* AM and PM side by side, never added together (the AM · PM golden rule). */}
-        <CrmStatGrid>
-          <CrmStat label="PM" value={countText(counts.PM)} />
+        {/* AM and PM side by side, AM first, never added together (the AM · PM golden rule). Three
+            tiles, so three columns from `md` — a fourth track would sit empty. */}
+        <CrmStatGrid className="md:grid-cols-3">
           <CrmStat label="AM" value={countText(counts.AM)} />
+          <CrmStat label="PM" value={countText(counts.PM)} />
           <CrmStat label="Territories" note="Open lines only" value={countText(view.territoryCount)} />
         </CrmStatGrid>
         <p className="mt-3 break-words text-sm font-medium leading-6 text-slate-600">

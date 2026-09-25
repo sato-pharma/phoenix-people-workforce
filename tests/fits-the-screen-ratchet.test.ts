@@ -133,7 +133,14 @@ import { stripComments } from "./support/comment-strip.ts";
  * tables' and cards' display per AGENTS.md §4 ("show human-readable names, never raw codes or IDs")
  * — CSV/XLSX export and the filter search value are untouched.
  */
-const BASELINE = 254;
+/*
+ * 254 -> 240 on 2026-09-25: the Medical Rep portal polish. The rep's own screens stopped
+ * scrolling sideways page by page: My Visits, the CRM portal grid, Coverage and Outstation history
+ * became `table-fixed` with a percentage `<colgroup>` instead of PortalDesktopTable's min-width
+ * box; the segmented tab strip wraps instead of hiding a scrollbar; the 360 trend chart draws to
+ * its column.
+ */
+const BASELINE = 240;
 
 /**
  * app/ and src/components/ are where UI class strings live. src/lib/ is excluded on

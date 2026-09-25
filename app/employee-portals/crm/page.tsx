@@ -23,6 +23,7 @@ import { addDaysIso, todayIso } from "@/lib/crm/dates";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { assertPermission, type AccessContext } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContextFromPage } from "@/lib/auth/server";
+import { logPortalFailure } from "@/lib/observability/portal-logging";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -70,7 +71,7 @@ async function PortalCrmContent({
     typeof minDurationRaw === "string" && Number.isFinite(Number(minDurationRaw)) ? Number(minDurationRaw) : null;
 
   let data: CrmMasterData | null = null;
-  let loadError: string | null = null;
+  let loadFailed = false;
   try {
     data = await getCrmMasterData(
       {
@@ -95,11 +96,23 @@ async function PortalCrmContent({
       scope,
     );
   } catch (error) {
-    loadError = error instanceof Error ? error.message : "Failed to load CRM.";
+    // Logged, and explained in words: `error.message` here is a Supabase or PostgREST sentence, never
+    // something to print to a medical rep (the same fix the KPIs page carries).
+    logPortalFailure({ hrId: access.hrId, module: "crm", role: access.role, route: "/employee-portals/crm" }, error);
+    loadFailed = true;
   }
 
   if (!data) {
-    return <EmployeePortalEmptyState message={loadError ?? "No CRM data is available for your scope yet."} title="CRM unavailable" />;
+    return (
+      <EmployeePortalEmptyState
+        message={
+          loadFailed
+            ? "CRM could not load just now. This is a loading problem, not an empty record — try again in a minute."
+            : "No CRM data is available for your scope yet."
+        }
+        title="CRM unavailable"
+      />
+    );
   }
 
   // Freshness signal for the manager reading a decision surface. getCrmMasterData ALREADY fetches
@@ -112,7 +125,28 @@ async function PortalCrmContent({
     .then((setting) => setting.vendorSyncRetiredAt)
     .catch(() => null);
 
-  const tableKey = `${dataset}:${data.dateFrom}:${data.dateTo}:${data.page}:${data.pageSize}`;
+  // Remount the client table whenever ANY applied input changes, so its filter inputs re-seed — the
+  // same rule the admin hub keys on. Keyed on the page and dates alone, removing a filter chip left the
+  // old value sitting in its input, and the next Apply silently put the filter back.
+  const tableKey = [
+    dataset,
+    data.dateFrom,
+    data.dateTo,
+    data.page,
+    data.pageSize,
+    data.search,
+    data.agentHrId,
+    data.ampm,
+    data.visitType,
+    data.mappingStatus,
+    data.line,
+    data.hireFrom,
+    data.hireTo,
+    data.minDuration,
+    data.halfDaysOnly,
+  ].join(":");
+  // A medical rep's own rows: the grid drops the team-only filters and speaks to him, not to a manager.
+  const selfScope = access.role === "Medical Rep";
   return (
     <div className="space-y-4">
       <span className="inline-flex items-center gap-1.5 rounded border border-orange-200 bg-orange-50 px-2.5 py-1 text-phx-xs font-semibold uppercase tracking-[0.08em] text-orange-700">
@@ -125,13 +159,16 @@ async function PortalCrmContent({
         latestSyncRuns={data.latestSyncRuns}
         readOnly
         retiredAt={vendorSyncRetiredAt}
+        surface="portal"
       />
-      <CrmTabBar active={data.dataset} extraTabs={[]} />
+      <CrmTabBar active={data.dataset} extraTabs={[]} surface="portal" />
       <CrmMasterTable
         data={data}
         key={tableKey}
         exportPath="/api/employee-portals/crm/master-export"
+        selfScope={selfScope}
         showMappingFilter={false}
+        surface="portal"
       />
     </div>
   );
@@ -166,8 +203,9 @@ export default async function PortalCrmPage({
   const params = await searchParams;
 
   return (
+    // One badge for the whole Field Activity group: the sidebar section's own title.
     <EmployeePortalPageShell
-      badge="Fieldforce"
+      badge="Field Activity"
       description="Every field visit and GPS check-in across your scope — full detail, filters and export."
       errorBoundaryTitle="CRM unavailable"
       title="CRM"

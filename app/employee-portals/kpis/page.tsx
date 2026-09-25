@@ -70,13 +70,17 @@ export default async function PortalKpisPage({ searchParams }: PageProps) {
 
   if (resolveNavigationMode(access) !== "employee-portal") redirect("/overview");
 
-  // Unlike the admin page this EXPLAINS rather than redirects, exactly as both siblings do.
+  // Unlike the admin page this EXPLAINS rather than redirects, exactly as both siblings do — and
+  // INSIDE the portal shell, so the refusal carries the same header as the board it stands in for
+  // rather than floating on the page as a bare card.
   if (!canSeeDoctorCoverage(access.role) || !(await canAccess(access, "crm_visits", "read"))) {
     return (
-      <EmployeePortalEmptyState
-        message="KPIs is available to field seats with CRM access — it shows the call rate, coverage and frequency of the reps in your reach, and a medical rep's own three measures."
-        title="KPIs Unavailable"
-      />
+      <EmployeePortalPageShell badge="CRM" title="KPIs">
+        <EmployeePortalEmptyState
+          message="KPIs is available to field seats with CRM access — it shows the call rate, coverage and frequency of the reps in your reach, and a medical rep's own three measures."
+          title="KPIs Unavailable"
+        />
+      </EmployeePortalPageShell>
     );
   }
 
@@ -120,10 +124,12 @@ export default async function PortalKpisPage({ searchParams }: PageProps) {
 
   if (!board) {
     return (
-      <EmployeePortalEmptyState
-        message="KPIs could not load. The CRM mirror is unavailable right now — this is a load failure, not a month in which nobody called anyone."
-        title="KPIs Unavailable"
-      />
+      <EmployeePortalPageShell badge="CRM" title="KPIs">
+        <EmployeePortalEmptyState
+          message="KPIs could not load. The CRM mirror is unavailable right now — this is a load failure, not a month in which nobody called anyone."
+          title="KPIs Unavailable"
+        />
+      </EmployeePortalPageShell>
     );
   }
 

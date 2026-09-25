@@ -5,9 +5,10 @@ import { test, expect } from "@playwright/test";
  * (/employee-portals/contact-hr-support).
  *
  * Covers:
- * - Page load + hero
- * - Insights strip (avg response time / channels / office hours)
- * - HR Support Channels card with 3 desks
+ * - Page load + hero (named after the sidebar row: "Leave & HR" / "Request Support")
+ * - The rep's own ticket figures (open / resolved / sent / last sent)
+ * - "What happens next" — three steps. It replaced three placeholder "desks" whose email and
+ *   WhatsApp buttons pointed at addresses that do not exist (hr-support@phoenix.local, …).
  * - Request form fields + accessibility
  * - Form submit flow shows success message
  * - Recent Requests empty state
@@ -25,7 +26,7 @@ test.describe("Contact HR Support", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto(BASE_URL, { waitUntil: "domcontentloaded" });
     await expect(
-      page.locator("h1").filter({ hasText: /Contact HR Support/i }).first(),
+      page.locator("h1").filter({ hasText: /Request Support/i }).first(),
     ).toBeVisible({ timeout: 20_000 });
   });
 
@@ -33,48 +34,35 @@ test.describe("Contact HR Support", () => {
 
   test("page loads and displays hero header", async ({ page }) => {
     await expect(
-      page.locator("h1").filter({ hasText: /Contact HR Support/i }),
+      page.locator("h1").filter({ hasText: /Request Support/i }),
     ).toBeVisible();
   });
 
-  test("hero shows HR Support badge", async ({ page }) => {
+  test("hero shows the sidebar section as its badge", async ({ page }) => {
     const badge = page
-      .locator("section p")
-      .filter({ hasText: /HR Support/i })
+      .locator("section span")
+      .filter({ hasText: /Leave & HR/i })
       .first();
     await expect(badge).toBeVisible();
   });
 
-  // ─── Insights Strip ─────────────────────────────────────────────────
+  // ─── The rep's own figures ──────────────────────────────────────────
 
-  test("insights strip shows 3 metrics", async ({ page }) => {
-    await expect(page.getByText("Avg response time").first()).toBeVisible();
-    await expect(page.getByText("Channels open").first()).toBeVisible();
-    await expect(page.getByText("Office hours").first()).toBeVisible();
+  test("figures strip shows the rep's own ticket counts", async ({ page }) => {
+    await expect(page.getByText("Open", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("Resolved", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("Sent", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("Last sent", { exact: true }).first()).toBeVisible();
   });
 
-  // ─── HR Channels Card ──────────────────────────────────────────────
+  // ─── What happens next ─────────────────────────────────────────────
 
-  test("HR Support Channels card lists 3 desks", async ({ page }) => {
-    await expect(page.getByText("HR Support Desk").first()).toBeVisible();
-    await expect(page.getByText("Talent Support Desk").first()).toBeVisible();
-    await expect(page.getByText("Operations Support Desk").first()).toBeVisible();
-  });
-
-  test("Use Form button has aria-label", async ({ page }) => {
-    const useFormBtn = page
-      .locator('button[aria-label*="Use support form for"]')
-      .first();
-    await expect(useFormBtn).toBeVisible();
-  });
-
-  test("clicking Use Form populates Subject field", async ({ page }) => {
-    const useFormBtn = page
-      .locator('button[aria-label*="Use support form for"]')
-      .first();
-    await useFormBtn.click();
-    const subjectInput = page.locator('input[aria-label="Support subject"]');
-    await expect(subjectInput).toHaveValue(/HR Support Desk request/);
+  test("what-happens-next lists the three steps and no placeholder contact", async ({ page }) => {
+    await expect(page.getByText("What happens next").first()).toBeVisible();
+    await expect(page.getByText("You send the request").first()).toBeVisible();
+    await expect(page.getByText("HR picks it up").first()).toBeVisible();
+    await expect(page.getByText("You follow it here").first()).toBeVisible();
+    await expect(page.locator('a[href*="phoenix.local"], a[href*="wa.me/20100000000"]')).toHaveCount(0);
   });
 
   // ─── Request Form ──────────────────────────────────────────────────
@@ -146,15 +134,20 @@ test.describe("Contact HR Support", () => {
   test("mobile viewport (375px) renders without crash", async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 812 });
     await expect(
-      page.locator("h1").filter({ hasText: /Contact HR Support/i }).first(),
+      page.locator("h1").filter({ hasText: /Request Support/i }).first(),
     ).toBeVisible();
-    await expect(page.getByText("HR Support Desk").first()).toBeVisible();
+    await expect(page.getByText("What happens next").first()).toBeVisible();
+    const overflow = await page.evaluate(() => {
+      const main = document.querySelector("main");
+      return main ? main.scrollWidth - main.clientWidth : 0;
+    });
+    expect(overflow).toBeLessThanOrEqual(0);
   });
 
   test("tablet viewport (768px) renders correctly", async ({ page }) => {
     await page.setViewportSize({ width: 768, height: 1024 });
     await expect(
-      page.locator("h1").filter({ hasText: /Contact HR Support/i }).first(),
+      page.locator("h1").filter({ hasText: /Request Support/i }).first(),
     ).toBeVisible();
   });
 
@@ -162,7 +155,7 @@ test.describe("Contact HR Support", () => {
 
   test("page renders without crash (error boundary verification)", async ({ page }) => {
     await expect(
-      page.locator("h1").filter({ hasText: /Contact HR Support/i }).first(),
+      page.locator("h1").filter({ hasText: /Request Support/i }).first(),
     ).toBeVisible();
   });
 });

@@ -305,6 +305,14 @@ export async function buildVsTargetDashboard(
   // never a list of one.
   const leaderNodes = repNodes.length > 1 ? repNodes : areaNodes;
   const leaderLevel = repNodes.length > 1 ? "Medical Rep" : "Area";
+  // A Medical Rep (the `self` bound) has no rep level, so the fallback above would rank his own one
+  // or two areas: "Top Areas" crowned his own area #1 and "Needs attention" was always empty, since
+  // rankByAchievement keeps the two lists apart and five nodes or fewer leave nothing for the bottom.
+  // That is not a leaderboard. He gets none, and the dashboard hides the pair when `top` is empty.
+  const leaders: VsTargetDashboardData["leaders"] =
+    bound.kind === "self"
+      ? { top: [], bottom: [], level: leaderLevel }
+      : { ...rankByAchievement(leaderNodes, 5), level: leaderLevel };
 
   return {
     period,
@@ -322,7 +330,7 @@ export async function buildVsTargetDashboard(
     reps: repNodes,
     managers: levels.rep ? rollupByDm(rows, priorRows, names) : [],
     products: rollupByProduct(rows, priorRows, (code) => productNames.get(code.toUpperCase()) ?? "Unnamed product"),
-    leaders: { ...rankByAchievement(leaderNodes, 5), level: leaderLevel },
+    leaders,
     trend: buildTrend(scopedAll, trendPeriods),
     trendIsMeaningful: loadedPeriodCount > 1,
     channels: buildChannelSplit(attribution, bound),

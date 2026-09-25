@@ -1,6 +1,7 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, Fragment, useCallback, useContext, useId, useMemo, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 import {
   PortalRecordCard,
@@ -8,6 +9,8 @@ import {
   PortalResponsiveDataList,
 } from "@/components/employee-portal/portal-primitives";
 import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
+import { useDialogA11y } from "@/components/ui/use-dialog-a11y";
+import { useHydrated } from "@/hooks/use-hydrated";
 import {
   ACTIVITY_CLASS,
   ACTIVITY_FILTER_ORDER,
@@ -57,6 +60,22 @@ const THEAD = "px-3 py-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] t
 const LABEL_CLASS = "block text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400";
 const SELECT_CLASS =
   "h-9 w-full border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400";
+
+/**
+ * The same two controls on Phoenix CRM's List tab, where a rep filters with a thumb: 44px on a phone
+ * (36px from `md`, as above), labels at the house 10px floor, and a square edge written out because a
+ * phone's native select draws its own. My List, the manager Reps List and the admin board keep the
+ * two classes above byte for byte.
+ */
+const FIELD_LABEL_CLASS = "block text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-400";
+const FIELD_SELECT_CLASS =
+  "h-11 w-full rounded-none border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 md:h-9";
+
+/**
+ * True inside Phoenix CRM's List tab (the `collapsible` board). Read where a prop cannot reach without
+ * changing a call site the tests pin — the insights chip is drawn from three places.
+ */
+const FieldSurface = createContext(false);
 
 /**
  * The three list names, in the owner's own words — corrected by him on 2026-09-01: PM list, AM list,
@@ -331,7 +350,9 @@ function GroupHeading({
   // colour is a left bar and a wash, never a new shape.
   const mappedTone = tint ? `border-slate-200 border-l-4 ${tint.bar} ${tint.fill}` : "border-slate-200 bg-slate-50";
   const tone = group.mapped ? mappedTone : "border-amber-200 bg-amber-50";
-  const layout = "flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-y px-5 py-2.5";
+  // Phoenix CRM's blocks use the module's `px-4 sm:px-5`, so a heading lines up with the rows around
+  // it on a phone; every other surface keeps its `px-5`.
+  const layout = `flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-y ${collapsible ? "px-4 sm:px-5" : "px-5"} py-2.5`;
   const body = (
     <>
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
@@ -498,6 +519,14 @@ function ConfidenceChip({ onOpen, row }: { onOpen: () => void; row: RepsListCont
  * dialogs that close differently is the kind of divergence nobody notices until one of them traps a
  * reader on a phone with no way out — and there are three ways out of this one on purpose: the
  * backdrop, the ×, and Escape.
+ *
+ * PORTALED TO THE BODY. The portal's page-transition wrapper keeps a `transform` after it animates in,
+ * and a `position: fixed` element inside a transformed ancestor is placed against THAT ancestor, not
+ * the screen: the sheet landed at the foot of the whole page, off-screen once the reader had scrolled,
+ * under the bottom navigation, and the reader saw a dimmed page and nothing else. Mounted on
+ * `document.body` it is placed against the screen again. Out there no shell rule squares its corners,
+ * so `rounded-none` is written on the sheet itself. `useDialogA11y` holds the focus inside it, closes
+ * it on Escape and stops the page scrolling behind it.
  */
 function DialogShell({
   children,
@@ -512,26 +541,25 @@ function DialogShell({
   /** The contact the popup is about. */
   subject: string;
 }) {
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  const dialogRef = useDialogA11y<HTMLDivElement>({ onClose, open: true });
+  // A portal needs a document; the server render (and the first client pass) draws nothing.
+  const mounted = useHydrated();
+  if (!mounted) return null;
 
-  return (
+  return createPortal(
     <div
-      aria-modal
-      className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/40 p-0 sm:items-center sm:p-4"
+      aria-label={`${eyebrow}: ${subject}`}
+      aria-modal="true"
+      className="fixed inset-0 z-[300] flex items-end justify-center bg-slate-900/40 p-0 sm:items-center sm:p-4"
       onClick={onClose}
+      ref={dialogRef}
       role="dialog"
     >
       {/* Bottom sheet on a phone, centred card on a desktop. `max-h` plus vertical scroll keeps a
           long explanation inside the viewport — the golden rule bans a SIDEWAYS scroll, and this
-          never has one: every line wraps. */}
+          never has one: every line wraps. The bottom padding clears a phone's home indicator. */}
       <div
-        className="max-h-[85vh] w-full max-w-lg overflow-y-auto border border-slate-200 bg-white shadow-xl"
+        className="max-h-[85svh] w-full max-w-lg overflow-y-auto rounded-none border border-slate-200 bg-white pb-[env(safe-area-inset-bottom)] shadow-xl"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3 border-b border-slate-200 bg-slate-900 px-4 py-3">
@@ -543,7 +571,7 @@ function DialogShell({
           </div>
           <button
             aria-label="Close"
-            className="shrink-0 px-2 py-1 text-lg font-bold leading-none text-slate-300 hover:text-white"
+            className="-my-2 -mr-2 inline-flex h-10 w-10 shrink-0 items-center justify-center text-lg font-bold leading-none text-slate-300 hover:text-white"
             onClick={onClose}
             type="button"
           >
@@ -552,7 +580,8 @@ function DialogShell({
         </div>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -614,11 +643,16 @@ function ConfidenceDialog({ onClose, row }: { onClose: () => void; row: RepsList
  * press away. A row with nothing odd renders NOTHING here, which is most rows.
  */
 function InsightsChip({ onOpen, row }: { onOpen: () => void; row: RepsListContact }) {
+  // On the rep's field surface the chip is pressed at a clinic door, so it is a real target there
+  // (32px, the 10px label floor). Everywhere else it stays the compact chip it always was.
+  const field = useContext(FieldSurface);
   const insights = row.insights ?? null;
   if (!insights || insights.length === 0) return null;
   return (
     <button
-      className="mt-1 inline-block bg-slate-900 px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-[0.08em] text-white hover:bg-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400"
+      className={`mt-1 bg-slate-900 font-black uppercase tracking-[0.08em] text-white hover:bg-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 ${
+        field ? "inline-flex min-h-8 items-center px-2 text-phx-2xs" : "inline-block px-1.5 py-0.5 text-phx-3xs"
+      }`}
       onClick={onOpen}
       title="Something about this record looks wrong"
       type="button"
@@ -1194,8 +1228,11 @@ export function RepsListContacts({
    */
   brickColor?: boolean;
   /**
-   * Phoenix CRM only. Each brick block opens and shuts on its heading (owner, 2026-09-25). OFF
-   * everywhere else, so every other surface keeps its headings as plain, always-open rows.
+   * Phoenix CRM only — the rep's field surface. Each brick block opens and shuts on its heading
+   * (owner, 2026-09-25); on a phone the filter row folds behind one "Filters" toggle, so the first
+   * customer is not a screen of selects away; and the filter controls take the field sizes (44px on
+   * a phone, 10px labels, a labelled search box). OFF everywhere else, so every other surface keeps
+   * its headings, its filter row and its control sizes exactly as they were.
    */
   collapsible?: boolean;
   /** The download's sheet name and title — "My List" on a rep's own page, so the file says what it is. */
@@ -1225,6 +1262,10 @@ export function RepsListContacts({
   // both sides of the split and clearing it would be the surprise.
   const [activity, setActivity] = useState("");
   const [query, setQuery] = useState("");
+  // Phoenix CRM, phones only: whether the filter row is unfolded. Shut by default — the toggle names
+  // how many filters are on, so a narrowed list never passes for the whole one.
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const filtersId = useId();
   // Which brick blocks the reader has shut. A SET of the collapsed keys, not the open ones, so the
   // default — nothing in the set — is every block open, which is what a list is for. Keyed on the
   // group's stable key, the same one the colour and the Brick filter use, so a block keeps its state
@@ -1367,8 +1408,18 @@ export function RepsListContacts({
         ? `${localities} awaiting a brick`
         : `${bricks} and ${localities} awaiting one`;
 
+  // The field surface's controls; every other surface keeps its own two classes.
+  const labelClass = collapsible ? FIELD_LABEL_CLASS : LABEL_CLASS;
+  const selectClass = collapsible ? FIELD_SELECT_CLASS : SELECT_CLASS;
+  // What the folded toggle says, so a phone showing a narrowed list says so before it is opened.
+  const filtersOn = [brick, listType, activity, grade, speciality, query.trim()].filter(Boolean).length;
+  // `hidden` and `flex` are never written together: they set one property, and which of two display
+  // utilities wins is the stylesheet's order, not the class list's.
+  const filterRowClass =
+    collapsible && !filtersOpen ? "hidden flex-wrap items-end gap-3 md:flex" : "flex flex-wrap items-end gap-3";
+
   return (
-    <div className="space-y-3 p-5">
+    <div className={collapsible ? "space-y-3 px-4 py-5 sm:px-5" : "space-y-3 p-5"}>
       {/* The two tabs, and the split the owner asked for "to avoid misleading". Each carries its own
           count so the separation is legible before either is opened — the pharmacy figure beside the
           contact figure is the whole point, not a subtitle. `flex-wrap` keeps them side by side on a
@@ -1404,10 +1455,24 @@ export function RepsListContacts({
       </div>
 
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="flex flex-wrap items-end gap-3">
+        {/* Phoenix CRM on a phone: the filter row folds behind this one toggle, which says how many
+            filters are on. From `md` up the row is always open and the toggle is gone. */}
+        {collapsible ? (
+          <button
+            aria-controls={filtersId}
+            aria-expanded={filtersOpen}
+            className="flex min-h-11 min-w-0 flex-1 items-center justify-between gap-2 rounded-none border border-slate-200 bg-white px-3 text-left text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-600 md:hidden"
+            onClick={() => setFiltersOpen((open) => !open)}
+            type="button"
+          >
+            <span className="min-w-0 break-words">{filtersOn > 0 ? `Filters · ${filtersOn} on` : "Filters"}</span>
+            <GroupCaret open={filtersOpen} />
+          </button>
+        ) : null}
+        <div className={filterRowClass} id={collapsible ? filtersId : undefined}>
           <label className="block w-full sm:w-56">
-            <span className={LABEL_CLASS}>Brick</span>
-            <select className={`mt-1 ${SELECT_CLASS}`} onChange={(event) => setBrick(event.target.value)} value={brick}>
+            <span className={labelClass}>Brick</span>
+            <select className={`mt-1 ${selectClass}`} onChange={(event) => setBrick(event.target.value)} value={brick}>
               <option value="">All bricks</option>
               {tabGroups.map((group) => (
                 <option key={groupKey(group)} value={groupKey(group)}>
@@ -1423,9 +1488,9 @@ export function RepsListContacts({
               control never disappears while still filtering. */}
           {tab === "contacts" ? (
             <label className="block w-full sm:w-48">
-              <span className={LABEL_CLASS}>List</span>
+              <span className={labelClass}>List</span>
               <select
-                className={`mt-1 ${SELECT_CLASS}`}
+                className={`mt-1 ${selectClass}`}
                 onChange={(event) => setListType(event.target.value)}
                 value={listType}
               >
@@ -1442,9 +1507,9 @@ export function RepsListContacts({
               about the rep; a missing control reads as what it is. */}
           {activityAvailable ? (
             <label className="block w-full sm:w-56">
-              <span className={LABEL_CLASS}>{`Activity · ${activityMonthLabel}`}</span>
+              <span className={labelClass}>{`Activity · ${activityMonthLabel}`}</span>
               <select
-                className={`mt-1 ${SELECT_CLASS}`}
+                className={`mt-1 ${selectClass}`}
                 onChange={(event) => setActivity(event.target.value)}
                 value={activity}
               >
@@ -1462,8 +1527,8 @@ export function RepsListContacts({
             </label>
           ) : null}
           <label className="block w-full sm:w-40">
-            <span className={LABEL_CLASS}>Grade</span>
-            <select className={`mt-1 ${SELECT_CLASS}`} onChange={(event) => setGrade(event.target.value)} value={grade}>
+            <span className={labelClass}>Grade</span>
+            <select className={`mt-1 ${selectClass}`} onChange={(event) => setGrade(event.target.value)} value={grade}>
               <option value="">All grades</option>
               {gradeOptions.map((option) => (
                 <option key={option} value={option}>
@@ -1473,9 +1538,9 @@ export function RepsListContacts({
             </select>
           </label>
           <label className="block w-full sm:w-56">
-            <span className={LABEL_CLASS}>Specialty</span>
+            <span className={labelClass}>Specialty</span>
             <select
-              className={`mt-1 ${SELECT_CLASS}`}
+              className={`mt-1 ${selectClass}`}
               onChange={(event) => setSpeciality(event.target.value)}
               value={speciality}
             >
@@ -1494,12 +1559,28 @@ export function RepsListContacts({
               ))}
             </select>
           </label>
-          <TableSearchInput
-            onChange={setQuery}
-            onClear={() => setQuery("")}
-            placeholder="Search contact, specialty or address…"
-            value={query}
-          />
+          {/* On the field surface the search box is labelled like its neighbours, sized for a thumb
+              and given a width of its own; everywhere else it is the compact box it always was. */}
+          {collapsible ? (
+            <label className="block w-full sm:w-64">
+              <span className={labelClass}>Search</span>
+              <TableSearchInput
+                className="mt-1"
+                onChange={setQuery}
+                onClear={() => setQuery("")}
+                placeholder="Contact, specialty or address"
+                size="md"
+                value={query}
+              />
+            </label>
+          ) : (
+            <TableSearchInput
+              onChange={setQuery}
+              onClear={() => setQuery("")}
+              placeholder="Search contact, specialty or address…"
+              value={query}
+            />
+          )}
         </div>
         <ExportXlsxButton
           columns={[
@@ -1572,35 +1653,38 @@ export function RepsListContacts({
             : "Nothing matches this filter."}
         </p>
       ) : (
-        <div className="border border-slate-200">
-          {visible.map((entry) => {
-            const key = groupKey(entry.group);
-            const isCollapsed = collapsible && collapsedGroups.has(key);
-            return (
-              <div key={key}>
-                <GroupHeading
-                  collapsed={isCollapsed}
-                  collapsible={collapsible}
-                  group={entry.group}
-                  onToggle={collapsible ? () => toggleGroup(key) : undefined}
-                  shown={entry.rows.length}
-                  tint={tints.get(key)}
-                />
-                {isCollapsed ? null : (
-                  <GroupTable
+        // The rows below read whether they are on the field surface (the insights chip's size).
+        <FieldSurface.Provider value={collapsible}>
+          <div className="border border-slate-200">
+            {visible.map((entry) => {
+              const key = groupKey(entry.group);
+              const isCollapsed = collapsible && collapsedGroups.has(key);
+              return (
+                <div key={key}>
+                  <GroupHeading
+                    collapsed={isCollapsed}
+                    collapsible={collapsible}
                     group={entry.group}
-                    onOpenConfidence={openConfidence}
-                    onOpenInsights={openInsights}
-                    rowActions={rowActions}
-                    rows={entry.rows}
-                    showConfidence={showConfidence}
-                    showList={tab === "contacts"}
+                    onToggle={collapsible ? () => toggleGroup(key) : undefined}
+                    shown={entry.rows.length}
+                    tint={tints.get(key)}
                   />
-                )}
-              </div>
-            );
-          })}
-        </div>
+                  {isCollapsed ? null : (
+                    <GroupTable
+                      group={entry.group}
+                      onOpenConfidence={openConfidence}
+                      onOpenInsights={openInsights}
+                      rowActions={rowActions}
+                      rows={entry.rows}
+                      showConfidence={showConfidence}
+                      showList={tab === "contacts"}
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </FieldSurface.Provider>
       )}
 
       {showConfidence && confidenceFor ? <ConfidenceDialog onClose={closeConfidence} row={confidenceFor} /> : null}

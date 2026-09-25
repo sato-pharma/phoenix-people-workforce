@@ -406,7 +406,7 @@ function teamVerdict(board: KpisBoard): { headline: string; tone: KpiBand; stand
  * The standing pill keeps its own tone colours: `tone.chip` was always a light-surface class set
  * — it sat on a dark band and looked out of place there, and reads correctly here.
  */
-function KpiHero({ board, showTitle }: { board: KpisBoard; showTitle: boolean }) {
+function KpiHero({ board, showTitle, solo }: { board: KpisBoard; showTitle: boolean; solo: boolean }) {
   const verdict = teamVerdict(board);
   const tone = toneOf(verdict.tone);
   return (
@@ -432,7 +432,8 @@ function KpiHero({ board, showTitle }: { board: KpisBoard; showTitle: boolean })
             </>
           ) : null}
           <p className={pageHeaderDescriptionClassName}>{verdict.headline}</p>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+          {/* On the scale (was an off-scale 11px), and one step larger on a phone only. */}
+          <p className="text-phx-sm font-semibold uppercase tracking-[0.12em] text-slate-500 sm:text-phx-xs">
             {board.scopeLabel} · {board.monthLabel} · {board.range.periodLabel}
           </p>
         </div>
@@ -447,8 +448,11 @@ function KpiHero({ board, showTitle }: { board: KpisBoard; showTitle: boolean })
               className={`h-2.5 w-2.5 shrink-0 ${tone.bar} shadow-[0_0_0_3px_rgba(255,255,255,0.65)]`}
             />
             <span className="min-w-0">
-              <span className="block text-[10px] font-black uppercase tracking-[0.16em]">Team standing</span>
-              <span className="mt-0.5 block text-[13px] font-black leading-tight">
+              {/* A medical rep's own board has no team to stand in — the pill says "Standing". */}
+              <span className="block text-phx-xs font-black uppercase tracking-[0.16em] sm:text-phx-2xs">
+                {solo ? "Standing" : "Team standing"}
+              </span>
+              <span className="mt-0.5 block text-phx-md font-black leading-tight">
                 {verdict.standing ?? KPI_BAND_LABEL[verdict.tone]}
               </span>
             </span>
@@ -501,12 +505,14 @@ function KpiOverallPanel({ board, partial }: { board: KpisBoard; partial: boolea
           {/* basis-full on a phone, so the explanation gets the whole width instead of a column
               three words wide; basis-0 from `sm` up, where it shares the row with the figure. */}
           <div className="min-w-0 flex-1 basis-full sm:basis-0">
-            <p className="text-phx-2xs font-bold leading-4 text-slate-800">{index.formula}</p>
-            <p className="mt-1 text-phx-3xs leading-4 text-slate-500">{index.method}</p>
+            {/* One step larger below `sm` only: at 9–10px the arithmetic was the hardest line on a
+                phone to read, and it is the line the owner asked for. Desktop is unchanged. */}
+            <p className="text-phx-xs font-bold leading-4 text-slate-800 sm:text-phx-2xs">{index.formula}</p>
+            <p className="mt-1 text-phx-2xs leading-4 text-slate-500 sm:text-phx-3xs">{index.method}</p>
             {partial ? (
               // A single number is the easiest thing on this board to misread mid-month — the four
               // tiles at least carry their own counts. So the caveat travels with it.
-              <p className="mt-1 text-phx-3xs font-semibold leading-4 text-slate-600">
+              <p className="mt-1 text-phx-2xs font-semibold leading-4 text-slate-600 sm:text-phx-3xs">
                 {board.workingDays} of {board.workingDaysInWindow} working days are in, so this is a position in the
                 period rather than a finished score.
               </p>
@@ -525,6 +531,9 @@ function KpiOverallPanel({ board, partial }: { board: KpisBoard; partial: boolea
   );
 }
 
+/** A no-break space: holds a figure and its label on one line (see tabHeadline). */
+const NBSP = "\u00a0";
+
 /** The number each tab puts under its own label, so the strip is a summary in its own right. */
 function tabHeadline(board: KpisBoard, tab: KpiTab): string {
   const { totals } = board;
@@ -532,22 +541,26 @@ function tabHeadline(board: KpisBoard, tab: KpiTab): string {
   // board consolidates to. The head count it replaced here is still on screen twice over: its own
   // tile, and the filter bar's "12 of 73". Falls back to the head count when not one of the four
   // measures could be scored, because "No score reps" is not a sentence.
+  //
+  // Every figure is tied to its own label with a NO-BREAK SPACE (NBSP), so the only place a headline
+  // can wrap is at " · ". Measured at 1024px with the sidebar open, "100% AM · 100% PM" broke as
+  // "…100%" over "PM" — a figure separated from the half of the day it belongs to.
   if (tab === "summary") {
     return board.kpiIndex.overallPct == null
-      ? `${totals.reps} rep${totals.reps === 1 ? "" : "s"}`
-      : `${board.kpiIndex.overallPct}% overall`;
+      ? `${totals.reps}${NBSP}rep${totals.reps === 1 ? "" : "s"}`
+      : `${board.kpiIndex.overallPct}%${NBSP}overall`;
   }
   // NOT "1.63 / 6.57" — a slash between two rates reads as a fraction, and the owner read it as
   // one on 2026-09-04 ("you are putting the call rate out of six. No never."). They are two
   // separate rates against two separate targets, so they are labelled, never divided.
-  if (tab === "call-rate") return `${rate(totals.amRate)} AM · ${rate(totals.pmRate)} PM`;
+  if (tab === "call-rate") return `${rate(totals.amRate)}${NBSP}AM · ${rate(totals.pmRate)}${NBSP}PM`;
   if (tab === "coverage") return `${totals.coveragePct}%`;
   // THE TWO REPORTS' HEADLINES read against the rep's LIST, not his plan — a different denominator
   // from the four tabs above, which is why they are computed here rather than taken from `totals`.
   // The AM and PM figures are LABELLED and never divided, for the same reason the call-rate
   // headline is: a slash between two independent measures reads as a fraction.
   if (tab === "am-pm") {
-    return `${listCoverage(board, "am")} AM · ${listCoverage(board, "pm")} PM`;
+    return `${listCoverage(board, "am")}${NBSP}AM · ${listCoverage(board, "pm")}${NBSP}PM`;
   }
   // What the tab lays out rather than a number: the strip is drawn from whichever board is on screen,
   // and a figure computed here would describe that board's period, not the weeks the tab shows.
@@ -556,7 +569,7 @@ function tabHeadline(board: KpisBoard, tab: KpiTab): string {
     const withList = board.kpiReports.filter((report) => report.pharmacies.applicable).length;
     // "Not applicable" for the whole tab is a real answer when nobody in view carries pharmacies —
     // a 0% would read as "these reps covered no pharmacies", which is the opposite of the truth.
-    return withList === 0 ? "Not applicable" : `${listCoverage(board, "pharmacy")} · ${withList} with a list`;
+    return withList === 0 ? "Not applicable" : `${listCoverage(board, "pharmacy")} · ${withList}${NBSP}with a list`;
   }
   return `${totals.frequencyPct}%`;
 }
@@ -607,16 +620,23 @@ function KpiTabStrip({ context }: { context: ViewContext }) {
     <div className="grid grid-cols-2 border border-b-0 border-slate-200 bg-white sm:grid-cols-4">
       {KPI_TABS.map((tab, index) => {
         const current = tab === active;
-        // The hairline between the two phone rows. It is a border rather than a gap so the strip
-        // stays one block, and it goes at `sm` because from there the four sit on a single row.
-        const rowTwo = index >= 2 ? " border-t border-t-slate-200 sm:border-t-0" : "";
+        // SEVEN tabs since 2026-09-22, on a grid built for four. The hairline between rows is a border
+        // rather than a gap so the strip stays one block, and it is set PER BREAKPOINT from the tab's
+        // position: two to a row on a phone, so every tab from the third starts a new row's worth of
+        // border; four to a row from `sm`, so only the fifth onward sits on a second row. (The old
+        // rule dropped the line for EVERY tab from `sm`, so rows two and one ran together.)
+        const rowLine =
+          index >= 4 ? " border-t border-t-slate-200" : index >= 2 ? " border-t border-t-slate-200 sm:border-t-0" : "";
+        // `last:col-span-2`: seven cells leave an odd one out at both widths — the last cell of four
+        // rows of two on a phone, and three in the second row of four from `sm`. Spanning two
+        // columns closes the gap instead of leaving an empty half-cell or an empty eighth slot.
         return (
           <Link
             aria-current={current ? "page" : undefined}
             className={
               current
-                ? `relative min-w-0 overflow-hidden border-b-2 border-b-orange-500 bg-gradient-to-b from-orange-50 to-orange-50/30 px-3 py-2.5 sm:px-5${rowTwo}`
-                : `relative min-w-0 border-b-2 border-b-transparent px-3 py-2.5 transition-colors hover:bg-slate-50 sm:px-5${rowTwo}`
+                ? `relative min-w-0 overflow-hidden border-b-2 border-b-orange-500 bg-gradient-to-b from-orange-50 to-orange-50/30 px-3 py-2.5 last:col-span-2 sm:px-5${rowLine}`
+                : `relative min-w-0 border-b-2 border-b-transparent px-3 py-2.5 transition-colors last:col-span-2 hover:bg-slate-50 sm:px-5${rowLine}`
             }
             href={hrefWith(context, { tab })}
             key={tab}
@@ -1767,16 +1787,18 @@ function RepCard({
       <dl className="mt-2.5 grid grid-cols-3 gap-2">
         {measures.map((measure) => (
           <div className="min-w-0" key={measure.label}>
-            <dt className="text-phx-3xs font-black uppercase tracking-[0.1em] text-slate-400">{measure.label}</dt>
+            {/* The card is phone-only (md:hidden), and at 9px its labels and captions were the
+                smallest type on the board — one step up below `sm`, unchanged from `sm`. */}
+            <dt className="text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-400 sm:text-phx-3xs">{measure.label}</dt>
             <dd className={`mt-0.5 text-sm font-black tabular-nums ${toneOf(measure.band).text}`}>{measure.value}</dd>
             <KpiMeter band={measure.band} value={measure.fill} />
-            <dd className="mt-1 text-phx-3xs leading-4 text-slate-500">{measure.caption}</dd>
+            <dd className="mt-1 text-phx-2xs leading-4 text-slate-500 sm:text-phx-3xs">{measure.caption}</dd>
             {measure.extra ? <dd className="mt-1">{measure.extra}</dd> : null}
           </div>
         ))}
       </dl>
       {row.hasCallRate ? (
-        <p className="mt-1.5 text-phx-3xs leading-4 text-slate-500">
+        <p className="mt-1.5 text-phx-2xs leading-4 text-slate-500 sm:text-phx-3xs">
           <span className="font-black uppercase tracking-[0.1em] text-slate-400">Reported</span>{" "}
           <span className="tabular-nums">
             {rate(row.amReportedRate)} AM · {rate(row.pmReportedRate)} PM
@@ -1840,8 +1862,11 @@ export function KpisBoardView({
         <div className="px-5 py-6">
           <p className="text-sm font-semibold text-slate-700">{board.scopeReason}</p>
           <p className={`mt-1 ${CAPTION}`}>
-            KPIs are scoped to the reps you manage. If you believe this is wrong, ask your administrator to check
-            your seat in the organogram.
+            {/* In the portal the reader is as likely to be a medical rep reading his own board as a
+                manager, so the sentence does not assume he manages anyone. */}
+            {chrome === "portal"
+              ? "KPIs show your own visits, or the reps who report to you. If you believe this is wrong, ask your administrator to check your seat in the organogram."
+              : "KPIs are scoped to the reps you manage. If you believe this is wrong, ask your administrator to check your seat in the organogram."}
           </p>
         </div>
       </div>
@@ -1877,10 +1902,14 @@ export function KpisBoardView({
     board.workingDays < board.workingDaysInWindow && (board.workingDays > 0 || board.range.todayLeftOut);
   const phoenix = isPhoenix(board);
   const callWord = phoenix ? "visits" : "verified";
+  // A MEDICAL REP'S OWN BOARD: the portal, with one rep in reach. The manager's furniture reads wrong
+  // there — "Medical reps in reach: 1", an "Advanced filters" panel over a board of one, "Showing 1 of
+  // 1", a "Team standing" pill — so it is relabelled or put away. The admin shell is untouched.
+  const solo = chrome === "portal" && board.scopedReps <= 1;
 
   return (
     <div className="space-y-4">
-      <KpiHero board={board} showTitle={chrome === "admin"} />
+      <KpiHero board={board} showTitle={chrome === "admin"} solo={solo} />
 
       {/* The tab strip and the board below it share ONE floating envelope — a two-layer premium
           shadow on the wrapper (owner's godmode golden rule) rather than one on each, so they read
@@ -1922,20 +1951,24 @@ export function KpisBoardView({
             />
           </div>
 
-          <KpisFilterBar
-            basePath={basePath}
-            facets={board.facets}
-            filters={filters}
-            kpiRules={board.kpiRules}
-            month={board.month}
-            period={weekly ? "month" : board.range.periodKey}
-            rep={context.openRep}
-            tab={tab}
-            trend={trendScale}
-            measure={trendMetric}
-            total={board.scopedReps}
-            visible={board.reps.length}
-          />
+          {/* Hidden on a rep's own board — unless a filter is somehow on, in which case the panel
+              stays so the filter can always be seen and taken off. */}
+          {solo && !filtered ? null : (
+            <KpisFilterBar
+              basePath={basePath}
+              facets={board.facets}
+              filters={filters}
+              kpiRules={board.kpiRules}
+              month={board.month}
+              period={weekly ? "month" : board.range.periodKey}
+              rep={context.openRep}
+              tab={tab}
+              trend={trendScale}
+              measure={trendMetric}
+              total={board.scopedReps}
+              visible={board.reps.length}
+            />
+          )}
           <ActiveFilterChips context={context} />
 
           {/* THE HOLIDAY CAVEAT. When a holiday calendar could not be read the denominator may be too
@@ -2010,18 +2043,35 @@ export function KpisBoardView({
               (2026-09-05) and was retracted the same day (#3341): the owner's 8-12 band belongs to
               PM alone, not AM+PM summed, and that per-list model now lives entirely in
               rep-kpi-reports.ts's two-report tabs. Do not re-add a combined tile here. */}
-          <div className="grid gap-3 border-t border-slate-100 px-4 py-4 sm:grid-cols-2 sm:px-5 lg:grid-cols-6">
-            <KpiTile
-              caption={
-                // "2 working days" alone reads as a footnote; "2 of 22" is the fact that makes the
-                // two percentages below it legible. Same numbers, and the holiday note is kept.
-                board.holidayDays > 0
-                  ? `${board.workingDays} of ${board.workingDaysInWindow} working days · ${board.holidayDays} national holiday(s) removed`
-                  : `${board.workingDays} of ${board.workingDaysInWindow} working days · Sat–Wed`
-              }
-              label={filtered ? "Medical reps shown" : "Medical reps in reach"}
-              value={filtered ? `${totals.reps} of ${board.scopedReps}` : String(totals.reps)}
-            />
+          {/* Three across from `lg`, six only from `2xl`. At `lg` the portal's sidebar opens and the
+              content drops to about 636px, so six tiles were ~89px each: a 27px "100%" was clipped by
+              the tile's own overflow-hidden and "1.63 of 2" split over two lines. */}
+          <div className="grid gap-3 border-t border-slate-100 px-4 py-4 sm:grid-cols-2 sm:px-5 lg:grid-cols-3 2xl:grid-cols-6">
+            {solo ? (
+              // A rep's own board: a head count of one is not a figure. The tile states the working
+              // days instead — both numbers were already in its caption.
+              <KpiTile
+                caption={
+                  board.holidayDays > 0
+                    ? `Sat–Wed · ${board.holidayDays} national holiday(s) removed`
+                    : "Sat–Wed"
+                }
+                label="Working days"
+                value={`${board.workingDays} of ${board.workingDaysInWindow}`}
+              />
+            ) : (
+              <KpiTile
+                caption={
+                  // "2 working days" alone reads as a footnote; "2 of 22" is the fact that makes the
+                  // two percentages below it legible. Same numbers, and the holiday note is kept.
+                  board.holidayDays > 0
+                    ? `${board.workingDays} of ${board.workingDaysInWindow} working days · ${board.holidayDays} national holiday(s) removed`
+                    : `${board.workingDays} of ${board.workingDaysInWindow} working days · Sat–Wed`
+                }
+                label={filtered ? "Medical reps shown" : "Medical reps in reach"}
+                value={filtered ? `${totals.reps} of ${board.scopedReps}` : String(totals.reps)}
+              />
+            )}
             <KpiTile
               band={kpiBandOf(totals.amAttainmentPct)}
               caption={`${totals.amVerified} ${callWord} · target ${board.amTarget} a day`}
@@ -2141,7 +2191,10 @@ export function KpisBoardView({
             <>
               {/* THE LEADERBOARDS. Three, never one — a single "best rep" would need a blended
                   score, and this board adds no fourth measure. They rank the FILTERED rows, so
-                  filtering to one line answers "best in that line". */}
+                  filtering to one line answers "best in that line". Only when there is more than one
+                  rep to rank: a board of one put a medical rep at "#1 of 1" in up to five gold-disc
+                  cards, two phone screens above his own card. */}
+              {board.reps.length > 1 ? (
               <div className="border-t border-slate-100">
                 <KpiSection
                   description="Best three on each measure, from the reps currently in view. Separate answers — often different people. The morning and the afternoon are ranked apart."
@@ -2187,6 +2240,7 @@ export function KpisBoardView({
                   </div>
                 </KpiSection>
               </div>
+              ) : null}
 
               <div className="border-t border-slate-100">
                 <div className="divide-y divide-slate-100 md:hidden">

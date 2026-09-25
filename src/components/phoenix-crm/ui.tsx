@@ -144,7 +144,8 @@ export function CrmButton({
       aria-busy={busy || undefined}
       className={cn(
         "inline-flex min-w-0 items-center justify-center gap-2 rounded-none text-center font-black transition disabled:cursor-not-allowed disabled:opacity-50",
-        size === "sm" ? "min-h-9 px-3 py-1.5 text-xs" : "min-h-11 px-4 py-2 text-sm",
+        // A small button is still a thumb's target on a phone (40px); it tightens to 36px from `md` up.
+        size === "sm" ? "min-h-10 px-3 py-1.5 text-xs md:min-h-9" : "min-h-11 px-4 py-2 text-sm",
         BUTTON_VARIANTS[variant],
         className,
       )}
@@ -269,14 +270,20 @@ export function CrmStat({ label, note, tone = "neutral", value }: { label: React
   return (
     <div className={cn("min-w-0 rounded-none border border-l-[3px] border-slate-200/80 bg-white px-3.5 py-3", STAT_BARS[tone])}>
       <p className="break-words text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">{label}</p>
-      <p className={cn("mt-2 text-2xl font-black leading-none", STAT_VALUES[tone])}>{value}</p>
+      {/* `leading-tight`, not `leading-none`: a value such as "3 AM · 12 PM" wraps on a phone, and its
+          two lines must not touch. */}
+      <p className={cn("mt-2 break-words text-2xl font-black leading-tight", STAT_VALUES[tone])}>{value}</p>
       {note ? <p className="mt-1 break-words text-xs font-semibold leading-5 text-slate-500">{note}</p> : null}
     </div>
   );
 }
 
+/**
+ * Two a row on a phone, four from `md`. A tablet (768–1023px, no sidebar) is wider than a 1024px
+ * desktop with the sidebar open, so it gets the desktop's four rather than the phone's two.
+ */
 export function CrmStatGrid({ children, className }: { children: ReactNode; className?: string }) {
-  return <div className={cn("grid grid-cols-2 gap-2 lg:grid-cols-4", className)}>{children}</div>;
+  return <div className={cn("grid grid-cols-2 gap-2 md:grid-cols-4", className)}>{children}</div>;
 }
 
 export type CrmChoiceOption<T extends string> = { value: T; label: ReactNode; note?: ReactNode; disabled?: boolean };

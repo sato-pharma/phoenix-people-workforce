@@ -108,6 +108,52 @@ function ratio1(value: number | null): string {
   return value == null ? "—" : value.toFixed(1);
 }
 
+// Human labels for the DATE-ONLY keys this report carries ("2026-08", "2026-08-14"). They are
+// calendar values, not instants, so they format in UTC — a zone offset must never move the day.
+// Anything that does not look like one is shown as it came, never guessed at.
+const monthLabelFmt = new Intl.DateTimeFormat("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
+const monthOnlyFmt = new Intl.DateTimeFormat("en-US", { month: "short", timeZone: "UTC" });
+const dayLabelFmt = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+
+/** "2026-08" → "Aug 2026". */
+function monthLabel(period: string): string {
+  const [year, month] = period.split("-").map(Number);
+  if (!year || !month) return period;
+  return monthLabelFmt.format(new Date(Date.UTC(year, month - 1, 1)));
+}
+
+/**
+ * Chart axis labels for a run of "YYYY-MM" keys: just "Aug" while every point sits in one year,
+ * "Aug 2026" once the run crosses a year, so a label is never ambiguous.
+ */
+function monthAxisLabels(periods: string[]): string[] {
+  const years = new Set(periods.map((period) => period.slice(0, 4)));
+  if (years.size > 1) return periods.map(monthLabel);
+  return periods.map((period) => {
+    const [year, month] = period.split("-").map(Number);
+    if (!year || !month) return period;
+    return monthOnlyFmt.format(new Date(Date.UTC(year, month - 1, 1)));
+  });
+}
+
+/** "2026-08-14" → "14 Aug 2026". */
+function dayLabel(value: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+  if (!match) return value;
+  return dayLabelFmt.format(new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))));
+}
+
+/** A company benchmark, spelled out: "vs 1,234 company avg", never "vs 1,234 co.". */
+function companyAvg(value: string | number): string {
+  return `${value} company avg`;
+}
+
+const MOMENTUM_LABEL: Record<Employee360Profile["momentumTrend"], string> = {
+  up: "rising",
+  down: "falling",
+  flat: "steady",
+};
+
 type FieldBenchmarks = Employee360Profile["fieldBenchmarks"];
 
 /** "98 of 131 reps have linked sales through Aug 2026" — computed live, never a written-down share. */
@@ -235,19 +281,31 @@ function KpiTile({
 }) {
   const tone = goodWhenAbove == null ? "text-slate-900" : goodWhenAbove ? "text-emerald-600" : "text-amber-600";
   const tip = explain ?? KPI_EXPLAIN[label];
-  return (
-    <div
-      title={tip}
-      className="group rounded-[14px] border border-slate-200/80 bg-slate-50/60 p-3.5 transition-all duration-200 hover:-translate-y-0.5 hover:border-slate-300 hover:bg-white hover:shadow-[0_10px_24px_rgba(15,23,42,0.07)]"
-    >
-      <div className="flex items-center gap-1 text-phx-2xs font-black uppercase tracking-wide text-slate-400">
-        <span>{label}</span>
+  const tileClass =
+    "group rounded-[14px] border border-slate-200/80 bg-slate-50/60 p-3.5 transition-all duration-200 hover:-translate-y-0.5 hover:border-slate-300 hover:bg-white hover:shadow-[0_10px_24px_rgba(15,23,42,0.07)]";
+  const body = (
+    <>
+      <span className="flex items-center gap-1 text-phx-2xs font-black uppercase tracking-wide text-slate-400">
+        <span className="min-w-0 break-words">{label}</span>
         {tip ? <Info className="h-3 w-3 shrink-0 text-slate-300 transition-colors group-hover:text-slate-500" aria-hidden /> : null}
-      </div>
-      <div className={cn("mt-1.5 text-2xl font-black tabular-nums", tone)}>{value}</div>
-      {benchmark ? <div className="mt-1 text-phx-xs font-bold text-slate-400">vs {benchmark}</div> : null}
-      {hint ? <div className="mt-0.5 text-phx-xs text-slate-400">{hint}</div> : null}
-    </div>
+      </span>
+      <span className={cn("mt-1.5 block break-words text-2xl font-black tabular-nums", tone)}>{value}</span>
+      {benchmark ? <span className="mt-1 block text-phx-xs font-bold text-slate-400">vs {benchmark}</span> : null}
+      {hint ? <span className="mt-0.5 block break-words text-phx-xs text-slate-400">{hint}</span> : null}
+    </>
+  );
+  if (!tip) return <div className={tileClass}>{body}</div>;
+  // The explanation used to live only in a `title` tooltip, which a touch screen never shows — the
+  // field force reads this on a phone. The whole tile now opens it (no client JS: <details>); the
+  // hover tooltip stays for a mouse.
+  return (
+    <details className={tileClass} title={tip}>
+      <summary className="block cursor-pointer list-none outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40 [&::-webkit-details-marker]:hidden">
+        {body}
+        <span className="sr-only"> — tap for what this means</span>
+      </summary>
+      <p className="mt-2 border-t border-slate-200 pt-2 text-phx-xs leading-snug text-slate-500">{tip}</p>
+    </details>
   );
 }
 
@@ -308,17 +366,29 @@ function DeltaChip({ label, delta, kind, goodUp = true, judged = true }: { label
   const deltaText =
     rawDelta == null ? "—" : `${rawDelta >= 0 ? "▲ +" : "▼ "}${Math.abs(rawDelta) < 10 && kind !== "int" ? rawDelta.toFixed(1) : Math.round(rawDelta)}${kind === "pct" ? "pp" : ""}`;
   const tip = DELTA_EXPLAIN[label];
-  return (
-    <div title={tip} className="group rounded-[12px] border border-slate-200/80 bg-slate-50/60 p-2.5">
-      <div className="flex items-center gap-1 text-phx-2xs font-black uppercase tracking-wide text-slate-400">
-        <span>{label}</span>
+  const chipClass = "group min-w-0 rounded-[12px] border border-slate-200/80 bg-slate-50/60 p-2.5";
+  const body = (
+    <>
+      <span className="flex items-center gap-1 text-phx-2xs font-black uppercase tracking-wide text-slate-400">
+        <span className="min-w-0 break-words">{label}</span>
         {tip ? <Info className="h-3 w-3 shrink-0 text-slate-300 transition-colors group-hover:text-slate-500" aria-hidden /> : null}
-      </div>
-      <div className="mt-0.5 text-lg font-black tabular-nums text-slate-900">{fmt(delta.cur)}</div>
-      <div className={cn("text-phx-xs font-bold tabular-nums", tone)}>
+      </span>
+      <span className="mt-0.5 block text-lg font-black tabular-nums text-slate-900">{fmt(delta.cur)}</span>
+      <span className={cn("block break-words text-phx-xs font-bold tabular-nums", tone)}>
         {deltaText} <span className="font-medium text-slate-400">vs {fmt(delta.prev)}</span>
-      </div>
-    </div>
+      </span>
+    </>
+  );
+  if (!tip) return <div className={chipClass}>{body}</div>;
+  // Visible on a tap, not only in a hover `title` that a phone never shows (see KpiTile).
+  return (
+    <details className={chipClass} title={tip}>
+      <summary className="block cursor-pointer list-none outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40 [&::-webkit-details-marker]:hidden">
+        {body}
+        <span className="sr-only"> — tap for what this means</span>
+      </summary>
+      <p className="mt-2 border-t border-slate-200 pt-2 text-phx-xs leading-snug text-slate-500">{tip}</p>
+    </details>
   );
 }
 
@@ -328,13 +398,17 @@ function ComparisonStrip({ comparison }: { comparison: Employee360Comparison }) 
       <div className="mb-3 text-phx-xs font-black uppercase tracking-wide text-slate-400">
         Period-over-period — this period vs {comparison.previousLabel}
       </div>
-      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6">
+      {/* Columns follow the CARD's width, not the window's: at 1024 with the sidebar open a
+          window-sized lg: split six chips into ~59px each. */}
+      <div className="@container">
+      <div className="grid grid-cols-2 gap-2.5 @lg:grid-cols-3 @3xl:grid-cols-6">
         <DeltaChip label="Productive visits" delta={comparison.productiveVisits} kind="int" />
         <DeltaChip label="Visits / day" delta={comparison.visitsPerActiveDay} kind="ratio" />
         <DeltaChip label="Customers" delta={comparison.distinctCustomers} kind="int" />
         <DeltaChip label="Campaign share" delta={comparison.campaignShare} kind="pct" goodUp={false} />
         <DeltaChip label="Check-in coverage" delta={comparison.checkinCoverage} kind="pct" judged={false} />
         <DeltaChip label="Check-ins" delta={comparison.checkinCount} kind="int" judged={false} />
+      </div>
       </div>
     </Card>
   );
@@ -384,17 +458,44 @@ function DayOfWeekBars({ counts, title }: { counts: number[]; title: string }) {
   );
 }
 
+// FITS THE SCREEN, NO ELLIPSIS (AGENTS.md §4). A labelled bar row used to be a fixed-width label
+// beside a fixed-width figure with the bar squeezed between them: at 375px the card holds ~277px,
+// so a w-40 + w-20 row left a 13px bar (and a w-40 + w-28 or w-48 + w-16 row left none at all)
+// while `truncate` cut the label. In a narrow list the label and its figure now share the first
+// line — the label WRAPS — and the bar takes the full width beneath; once the LIST is 28rem wide
+// the three sit on one line. A container query, not a window one: two of these lists sit in half
+// of a two-column card, which at 640px or at 1024px with the sidebar open is ~270px wide.
+const BAR_LIST = "@container space-y-1.5";
+const BAR_ROW = "grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 @md:grid-cols-[10rem_minmax(0,1fr)_7rem]";
+const BAR_LABEL = "min-w-0 break-words text-xs text-slate-500";
+const BAR_TRACK = "col-span-2 h-3 overflow-hidden rounded-full bg-slate-100 @md:col-span-1 @md:col-start-2 @md:row-start-1";
+const BAR_FIGURE = "text-right text-xs tabular-nums text-slate-400 @md:col-start-3 @md:row-start-1";
+
+// The bordered name-and-figures lists (products, double visits, reps reached, trips). A name used
+// to `truncate` beside a `shrink-0` figure inside an `overflow-hidden` box, so a long product,
+// manager or customer name was cut with no sign at 375px. Now both sides WRAP: the name takes the
+// room, the figures keep at most a little over half of it, and nothing is clipped.
+const LIST_BOX = "rounded-[14px] border border-slate-200";
+const LIST_ROW = "flex items-start justify-between gap-3 border-b border-slate-100 px-3 py-2 text-sm last:border-b-0 hover:bg-slate-50/70";
+const LIST_NAME = "min-w-0 flex-1 break-words text-slate-800";
+const LIST_SIDE = "min-w-0 max-w-[55%] break-words text-right text-xs text-slate-400";
+const LIST_DATED = "flex min-w-0 flex-1 items-start gap-2";
+const LIST_DATE = "w-20 shrink-0 pt-px text-xs text-slate-400";
+
+/** Shown where a person's name is missing — never their raw HR ID in its place. */
+const NAME_NOT_ON_RECORD = "Name not on record";
+
 function MixRows({ items }: { items: { label: string; count: number; pct: number }[] }) {
   const max = Math.max(1, ...items.map((i) => i.count));
   return (
-    <div className="space-y-1.5">
+    <div className={BAR_LIST}>
       {items.map((it) => (
-        <div key={it.label} className="flex items-center gap-3">
-          <div className="w-40 shrink-0 truncate text-xs text-slate-500" title={it.label}>{it.label}</div>
-          <div className="h-3 flex-1 overflow-hidden rounded-full bg-slate-100">
+        <div key={it.label} className={BAR_ROW}>
+          <div className={BAR_LABEL}>{it.label}</div>
+          <div className={BAR_FIGURE}>{it.count} · {Math.round(it.pct * 100)}%</div>
+          <div className={BAR_TRACK}>
             <div className="h-full rounded-full bg-indigo-500/70" style={{ width: `${(it.count / max) * 100}%` }} />
           </div>
-          <div className="w-20 shrink-0 text-right text-xs tabular-nums text-slate-400">{it.count} · {Math.round(it.pct * 100)}%</div>
         </div>
       ))}
     </div>
@@ -461,7 +562,7 @@ function campaignTrendCopy(trend: Employee360Profile["campaignTrend"]): { label:
   if (!trend) return null;
   const from = `${Math.round(trend.fromCampaignShare * 100)}%`;
   const to = `${Math.round(trend.toCampaignShare * 100)}%`;
-  const span = `${trend.fromMonth} → ${trend.toMonth}`;
+  const span = `${monthLabel(trend.fromMonth)} → ${monthLabel(trend.toMonth)}`;
   if (trend.direction === "improving") return { label: `▼ Campaign falling, regular rising (${from} → ${to} campaign, ${span}) · the best direction`, tone: "text-emerald-600" };
   if (trend.direction === "worsening") return { label: `▲ Campaign rising, regular falling (${from} → ${to} campaign, ${span})`, tone: "text-amber-600" };
   if (trend.fromCampaignShare === 0 && trend.toCampaignShare === 0) return { label: `Held at all regular (${span})`, tone: "text-emerald-600" };
@@ -576,6 +677,7 @@ export function Employee360View({
   teamLifecycle = null,
   tmAnalytics = null,
   pmMarketing = null,
+  bare = false,
 }: {
   subject: Employee360Subject;
   summary: Employee360Profile;
@@ -586,6 +688,12 @@ export function Employee360View({
   teamLifecycle?: TeamLifecycleSummary | null;
   tmAnalytics?: TrainingManagerAnalytics | null;
   pmMarketing?: PmMarketingSummary | null;
+  /**
+   * The employee portal's page shell already pads and sizes the content column, so its two call
+   * sites render the report BARE: no second padding (32px lost at 375px) and no max-width, which
+   * also lines the report up with the period filter above it. The admin page keeps both.
+   */
+  bare?: boolean;
 }) {
   const b = summary.benchmarks;
   const salesCoverage = salesCoverageText(summary.fieldBenchmarks);
@@ -607,13 +715,13 @@ export function Employee360View({
   const showReceivedSide = category === "medical-rep";
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 p-4 sm:p-6">
+    <div className={bare ? "space-y-6" : "mx-auto max-w-5xl space-y-6 p-4 sm:p-6"}>
       {/* Header / identity */}
       <IdentityHero subject={subject} tenure={tenure} windowLabel={summary.window.label} benchmarkLabel={b.windowLabel} roleLabel={EMPLOYEE_360_ROLE_META[category].label} />
 
       {/* Trust strip */}
       <div className="flex flex-wrap gap-2 text-xs">
-        <TrustChip ok={summary.isMapped} okText="CRM visits linked" badText="No CRM visits linked to this HR_ID" />
+        <TrustChip ok={summary.isMapped} okText="CRM visits linked" badText="No CRM visits linked to this employee" />
         {showCheckin ? (
           <TrustChip ok={summary.hasGpsCheckins} okText={`${intFmt.format(summary.checkinCount)} GPS check-ins`} badText="No GPS check-ins ever logged" />
         ) : null}
@@ -669,18 +777,18 @@ export function Employee360View({
         </SectionHeader>
         <SummaryLine text={summary.visitsSummaryText} />
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <KpiTile label="Productive visits" value={intFmt.format(summary.productiveVisits)} benchmark={`${intFmt.format(b.productiveVisits)} co.`} hint={tenure ? "total — read with tenure" : undefined} />
-          <KpiTile label="Visits / active day" value={ratio1(summary.visitsPerActiveDay)} benchmark={`${b.visitsPerActiveDay} co.`} goodWhenAbove={summary.visitsPerActiveDay == null ? null : summary.visitsPerActiveDay >= b.visitsPerActiveDay} />
-          <KpiTile label="Active days" value={intFmt.format(summary.activeDays)} benchmark={`${b.activeDays} co.`} />
-          <KpiTile label="Distinct customers" value={intFmt.format(summary.distinctCustomers)} benchmark={`${b.distinctCustomers} co.`} />
-          <KpiTile label="Regular visits" value={intFmt.format(summary.regularVisits)} benchmark={`${intFmt.format(b.regularVisits)} co.`} />
-          <KpiTile label="Campaign visits" value={intFmt.format(summary.campaignVisits)} benchmark={`${intFmt.format(b.campaignVisits)} co.`} />
-          <KpiTile label="Doubles received" value={intFmt.format(summary.doublesReceived)} benchmark={`${b.doublesReceived} co.`} hint="visits with a manager alongside" />
+          <KpiTile label="Productive visits" value={intFmt.format(summary.productiveVisits)} benchmark={companyAvg(intFmt.format(b.productiveVisits))} hint={tenure ? "total — read with tenure" : undefined} />
+          <KpiTile label="Visits / active day" value={ratio1(summary.visitsPerActiveDay)} benchmark={companyAvg(b.visitsPerActiveDay)} goodWhenAbove={summary.visitsPerActiveDay == null ? null : summary.visitsPerActiveDay >= b.visitsPerActiveDay} />
+          <KpiTile label="Active days" value={intFmt.format(summary.activeDays)} benchmark={companyAvg(b.activeDays)} />
+          <KpiTile label="Distinct customers" value={intFmt.format(summary.distinctCustomers)} benchmark={companyAvg(b.distinctCustomers)} />
+          <KpiTile label="Regular visits" value={intFmt.format(summary.regularVisits)} benchmark={companyAvg(intFmt.format(b.regularVisits))} />
+          <KpiTile label="Campaign visits" value={intFmt.format(summary.campaignVisits)} benchmark={companyAvg(intFmt.format(b.campaignVisits))} />
+          <KpiTile label="Doubles received" value={intFmt.format(summary.doublesReceived)} benchmark={companyAvg(b.doublesReceived)} hint="visits with a manager alongside" />
           <KpiTile label="Admin / non-visit" value={intFmt.format(summary.adminVisits + summary.trainingVisits)} hint="meetings, training, leave, etc." />
         </div>
 
         <div className="mt-5 grid gap-3 sm:grid-cols-3">
-          <KpiTile label="Last 30 days" value={intFmt.format(summary.last30)} hint={`prior 30d: ${summary.prev30} · ${summary.momentumTrend}`} goodWhenAbove={summary.momentumTrend === "up" ? true : summary.momentumTrend === "down" ? false : null} />
+          <KpiTile label="Last 30 days" value={intFmt.format(summary.last30)} hint={`previous 30 days: ${intFmt.format(summary.prev30)} · ${MOMENTUM_LABEL[summary.momentumTrend]}`} goodWhenAbove={summary.momentumTrend === "up" ? true : summary.momentumTrend === "down" ? false : null} />
           <KpiTile label="Avg visits / customer" value={ratio1(summary.avgVisitsPerCustomer)} hint={`${summary.repeatCustomers} repeat · ${summary.oneTimeCustomers} one-time`} />
           <KpiTile label="Utilization" value={pct(summary.utilization)} hint={`${summary.activeDays}/${summary.workingDaysInWindow} working days`} />
         </div>
@@ -716,7 +824,7 @@ export function Employee360View({
           <div className="mb-5">
             <div className="mb-1.5 text-xs font-bold text-slate-500">Monthly visit trend</div>
             <LineChart
-              labels={summary.monthly.map((m) => m.month.slice(5))}
+              labels={monthAxisLabels(summary.monthly.map((m) => m.month))}
               series={[
                 { name: "Regular", color: CHART_COLORS.regular, points: summary.monthly.map((m) => m.regular), area: true },
                 { name: "Campaign", color: CHART_COLORS.campaign, points: summary.monthly.map((m) => m.campaign) },
@@ -733,7 +841,7 @@ export function Employee360View({
               const total = m.regular + m.campaign;
               return (
                 <div key={m.month} className="flex items-center gap-3">
-                  <div className="w-16 shrink-0 text-xs font-semibold text-slate-500">{m.month}</div>
+                  <div className="w-16 shrink-0 text-xs font-semibold text-slate-500">{monthLabel(m.month)}</div>
                   <div className="flex h-5 flex-1 overflow-hidden rounded-full bg-slate-100">
                     <div className="h-full bg-sky-500" style={{ width: `${(m.regular / monthlyMax) * 100}%` }} title={`${m.regular} regular`} />
                     <div className="h-full bg-orange-500" style={{ width: `${(m.campaign / monthlyMax) * 100}%` }} title={`${m.campaign} campaign`} />
@@ -760,7 +868,7 @@ export function Employee360View({
         <SectionHeader
           icon={Clock}
           tone="indigo"
-          sub="Visit records have no clock time — timing below is from GPS check-ins (check_date). Visit-level intra-day is AM/PM only."
+          sub="Visit records have no clock time — timing below is from GPS check-ins. Visit-level intra-day is AM/PM only."
         >
           Check-in Timing &amp; Authenticity
         </SectionHeader>
@@ -774,7 +882,7 @@ export function Employee360View({
             <SummaryLine text={summary.checkinSummaryText} />
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               <KpiTile label="GPS check-ins" value={intFmt.format(summary.checkinCount)} />
-              <KpiTile label="Check-in : visit" value={ratio1(summary.checkinToVisitRatio)} benchmark={`${b.checkinToVisitRatio} co.`} hint="GPS corroboration of visits" />
+              <KpiTile label="Check-in : visit" value={ratio1(summary.checkinToVisitRatio)} benchmark={companyAvg(b.checkinToVisitRatio)} hint="GPS corroboration of visits" />
               <KpiTile label="Check-in coverage" value={pct(summary.checkinCoverage)} hint="days with GPS ÷ active days" />
               <KpiTile label="Late-night tail" value={pct(summary.lateNightShare)} goodWhenAbove={summary.lateNightShare == null ? null : !(summary.lateNightShare > 0.2)} hint="check-ins 22:00–01:00" />
             </div>
@@ -800,7 +908,7 @@ export function Employee360View({
               <div>
                 <div className="mb-1.5 text-xs font-bold text-slate-500">GPS coverage by month</div>
                 <LineChart
-                  labels={summary.coverageTrend.map((m) => m.month.slice(5))}
+                  labels={monthAxisLabels(summary.coverageTrend.map((m) => m.month))}
                   series={[{ name: "Coverage", color: CHART_COLORS.coverage, points: summary.coverageTrend.map((m) => (m.coverage == null ? null : m.coverage * 100)), area: true }]}
                   height={150}
                   yMax={100}
@@ -903,7 +1011,7 @@ function LeadershipSection({ leadership, isTM }: { leadership: LeadershipActivit
           {leadership.byRep.length > 0 ? (
             <div className="mt-5">
               <div className="mb-1.5 text-xs font-bold text-slate-500">Reps reached (most-touched first)</div>
-              <div className="overflow-hidden rounded-[14px] border border-slate-200">
+              <div className={LIST_BOX}>
                 {leadership.byRep.map((r) => {
                   const parts = [
                     r.coachingReports > 0 ? `${r.coachingReports} coaching` : null,
@@ -911,9 +1019,9 @@ function LeadershipSection({ leadership, isTM }: { leadership: LeadershipActivit
                     r.avgScoreGiven != null ? `${Math.round(r.avgScoreGiven)}% avg` : null,
                   ].filter(Boolean);
                   return (
-                    <div key={r.hrId} className="flex items-center justify-between gap-3 border-b border-slate-100 px-3 py-2 text-sm last:border-b-0 hover:bg-slate-50/70">
-                      <span className="truncate text-slate-800">{r.name ?? r.hrId}</span>
-                      <span className="shrink-0 text-xs tabular-nums text-slate-400">{parts.join(" · ")}</span>
+                    <div key={r.hrId} className={LIST_ROW}>
+                      <span className={LIST_NAME}>{r.name ?? r.hrId}</span>
+                      <span className={cn(LIST_SIDE, "tabular-nums")}>{parts.join(" · ")}</span>
                     </div>
                   );
                 })}
@@ -924,14 +1032,14 @@ function LeadershipSection({ leadership, isTM }: { leadership: LeadershipActivit
           {leadership.recentDv.length > 0 ? (
             <div className="mt-5">
               <div className="mb-1.5 text-xs font-bold text-slate-500">Recent double-visits conducted</div>
-              <div className="overflow-hidden rounded-[14px] border border-slate-200">
+              <div className={LIST_BOX}>
                 {leadership.recentDv.map((e, i) => (
-                  <div key={`${e.date}-${i}`} className="flex items-center justify-between gap-3 border-b border-slate-100 px-3 py-2 text-sm last:border-b-0 hover:bg-slate-50/70">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <span className="w-20 shrink-0 text-xs text-slate-400">{e.date}</span>
-                      <span className="truncate text-slate-800">{e.repName ?? "—"}</span>
+                  <div key={`${e.date}-${i}`} className={LIST_ROW}>
+                    <div className={LIST_DATED}>
+                      <span className={LIST_DATE}>{dayLabel(e.date)}</span>
+                      <span className={LIST_NAME}>{e.repName ?? "—"}</span>
                     </div>
-                    <span className="shrink-0 text-xs text-slate-400">{e.kind}{e.customerName ? ` · ${e.customerName}` : ""}</span>
+                    <span className={LIST_SIDE}>{e.kind}{e.customerName ? ` · ${e.customerName}` : ""}</span>
                   </div>
                 ))}
               </div>
@@ -948,7 +1056,7 @@ function SalesSection({ sales, field }: { sales: Employee360Profile["sales"]; fi
   const coverage = salesCoverageText(field);
   const companyAchievement =
     field?.companyAchievementPct != null
-      ? `${pctPoints(field.companyAchievementPct)} co.${field.salesThroughLabel ? ` · through ${field.salesThroughLabel}` : ""}`
+      ? `${companyAvg(pctPoints(field.companyAchievementPct))}${field.salesThroughLabel ? ` · through ${field.salesThroughLabel}` : ""}`
       : undefined;
   return (
     <Card className={PREMIUM_CARD}>
@@ -965,7 +1073,7 @@ function SalesSection({ sales, field }: { sales: Employee360Profile["sales"]; fi
         <>
           <SummaryLine text={sales.summaryText} />
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <KpiTile label={sales.isTeamRollup ? "Team sales" : "Total sales"} value={compactFmt.format(sales.totalSales)} hint={sales.isTeamRollup ? `${sales.teamRepCount} reps` : sales.latestMonth ? `through ${sales.latestMonth}` : undefined} />
+            <KpiTile label={sales.isTeamRollup ? "Team sales" : "Total sales"} value={compactFmt.format(sales.totalSales)} hint={sales.isTeamRollup ? `${sales.teamRepCount} reps` : sales.latestMonth ? `through ${monthLabel(sales.latestMonth)}` : undefined} />
             <KpiTile
               label={sales.isTeamRollup ? "Team target" : "Total target"}
               value={compactFmt.format(sales.totalTarget)}
@@ -1000,7 +1108,7 @@ function SalesSection({ sales, field }: { sales: Employee360Profile["sales"]; fi
             <div className="mt-5">
               <div className="mb-1.5 text-xs font-bold text-slate-500">Sales vs target trend</div>
               <LineChart
-                labels={sales.monthly.map((m) => m.month.slice(5))}
+                labels={monthAxisLabels(sales.monthly.map((m) => m.month))}
                 series={[
                   { name: "Sales", color: CHART_COLORS.sales, points: sales.monthly.map((m) => m.sales), area: true },
                   // A month with no target is a GAP in the target line, never a dive to zero.
@@ -1019,7 +1127,7 @@ function SalesSection({ sales, field }: { sales: Employee360Profile["sales"]; fi
                   // The month's sales are real and shown; there is no target to grade them against.
                   return (
                     <div key={m.month} className="flex items-center gap-3">
-                      <div className="w-16 shrink-0 text-xs font-semibold text-slate-500">{m.month}</div>
+                      <div className="w-16 shrink-0 text-xs font-semibold text-slate-500">{monthLabel(m.month)}</div>
                       <div className="flex min-h-4 flex-1 items-center border border-dashed border-slate-300 bg-white px-2 text-phx-2xs font-semibold text-slate-500">
                         No target set · sales only
                       </div>
@@ -1034,7 +1142,7 @@ function SalesSection({ sales, field }: { sales: Employee360Profile["sales"]; fi
                 const tone = achv >= 100 ? "bg-emerald-500" : achv >= 70 ? "bg-amber-500" : "bg-red-500";
                 return (
                   <div key={m.month} className="flex items-center gap-3">
-                    <div className="w-16 shrink-0 text-xs font-semibold text-slate-500">{m.month}</div>
+                    <div className="w-16 shrink-0 text-xs font-semibold text-slate-500">{monthLabel(m.month)}</div>
                     <div className="h-4 flex-1 overflow-hidden rounded-full bg-slate-100">
                       <div className={cn("h-full rounded-full", tone)} style={{ width: `${width}%` }} />
                     </div>
@@ -1049,11 +1157,11 @@ function SalesSection({ sales, field }: { sales: Employee360Profile["sales"]; fi
           {sales.topProducts.length > 0 ? (
             <div className="mt-5">
               <div className="mb-1.5 text-xs font-bold text-slate-500">Top products by sales</div>
-              <div className="overflow-hidden rounded-[14px] border border-slate-200">
+              <div className={LIST_BOX}>
                 {sales.topProducts.map((p) => (
-                  <div key={p.product} className="flex items-center justify-between gap-3 border-b border-slate-100 px-3 py-2 text-sm last:border-b-0 hover:bg-slate-50/70">
-                    <span className="truncate text-slate-800">{p.product}</span>
-                    <span className="shrink-0 tabular-nums text-slate-400">{compactFmt.format(p.sales)} · {pctPoints(p.achievementPct)}</span>
+                  <div key={p.product} className={LIST_ROW}>
+                    <span className={LIST_NAME}>{p.product}</span>
+                    <span className="min-w-0 max-w-[55%] break-words text-right tabular-nums text-slate-400">{compactFmt.format(p.sales)} · {pctPoints(p.achievementPct)}</span>
                   </div>
                 ))}
               </div>
@@ -1062,15 +1170,15 @@ function SalesSection({ sales, field }: { sales: Employee360Profile["sales"]; fi
           {sales.byFamily.length > 1 ? (
             <div className="mt-5">
               <div className="mb-1.5 text-xs font-bold text-slate-500">Achievement by product family</div>
-              <div className="space-y-1.5">
+              <div className={BAR_LIST}>
                 {sales.byFamily.slice(0, 6).map((f) => {
                   const achv = f.achievementPct ?? 0;
                   const tone = achv >= 100 ? "bg-emerald-500" : achv >= 70 ? "bg-amber-500" : "bg-red-500";
                   return (
-                    <div key={f.family} className="flex items-center gap-3">
-                      <div className="w-40 shrink-0 truncate text-xs text-slate-500" title={f.family}>{f.family}</div>
-                      <div className="h-3 flex-1 overflow-hidden rounded-full bg-slate-100"><div className={cn("h-full rounded-full", tone)} style={{ width: `${Math.min(150, achv) / 1.5}%` }} /></div>
-                      <div className="w-28 shrink-0 text-right text-xs tabular-nums text-slate-400">{pctPoints(f.achievementPct)} · {compactFmt.format(f.sales)}</div>
+                    <div key={f.family} className={BAR_ROW}>
+                      <div className={BAR_LABEL}>{f.family}</div>
+                      <div className={BAR_FIGURE}>{pctPoints(f.achievementPct)} · {compactFmt.format(f.sales)}</div>
+                      <div className={BAR_TRACK}><div className={cn("h-full rounded-full", tone)} style={{ width: `${Math.min(150, achv) / 1.5}%` }} /></div>
                     </div>
                   );
                 })}
@@ -1094,18 +1202,11 @@ const BRICK_STATUS: Record<Employee360BrickStatus, { label: string; className: s
   idle: { label: "No sales, no doctors", className: "border-slate-200 bg-slate-50 text-slate-500" },
 };
 
-const monthLabelFmt = new Intl.DateTimeFormat("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
-
-function brickMonthLabel(period: string): string {
-  const [year, month] = period.split("-").map(Number);
-  if (!year || !month) return period;
-  return monthLabelFmt.format(new Date(Date.UTC(year, month - 1, 1)));
-}
-
+// Brick months use the report-wide monthLabel ("Aug 2026"), defined at the top of this file.
 function brickMonthsLabel(months: string[]): string {
   if (months.length === 0) return "no landed month";
-  if (months.length === 1) return brickMonthLabel(months[0]);
-  return `${brickMonthLabel(months[0])} to ${brickMonthLabel(months[months.length - 1])}`;
+  if (months.length === 1) return monthLabel(months[0]);
+  return `${monthLabel(months[0])} to ${monthLabel(months[months.length - 1])}`;
 }
 
 function plural(count: number, one: string, many: string): string {
@@ -1370,7 +1471,7 @@ function CoachingSection({ coaching, field }: { coaching: Employee360Profile["co
             <KpiTile
               label="Latest score"
               value={pctPoints(coaching.latest?.finalScorePercent ?? null)}
-              hint={coaching.latest ? `${zoneOf(coaching.latest.zone).label} · ${coaching.latest.date}` : undefined}
+              hint={coaching.latest ? `${zoneOf(coaching.latest.zone).label} · ${dayLabel(coaching.latest.date)}` : undefined}
             />
             <KpiTile
               label="Improvement"
@@ -1391,7 +1492,7 @@ function CoachingSection({ coaching, field }: { coaching: Employee360Profile["co
                   return (
                     <div key={`${r.date}-${i}`} className="rounded-[12px] border border-slate-200 px-3 py-2 text-center">
                       <div className={cn("text-lg font-black tabular-nums", z.tone)}>{pctPoints(r.finalScorePercent)}</div>
-                      <div className="text-phx-2xs text-slate-400">{r.date}</div>
+                      <div className="text-phx-2xs text-slate-400">{dayLabel(r.date)}</div>
                       <div className={cn("text-phx-2xs font-bold", z.tone)}>{z.label}</div>
                     </div>
                   );
@@ -1403,16 +1504,20 @@ function CoachingSection({ coaching, field }: { coaching: Employee360Profile["co
           {coaching.weakestCompetencies.length > 0 ? (
             <div className="mt-5">
               <div className="mb-1.5 text-xs font-bold text-slate-500">Weakest competencies (avg across reports, worst first)</div>
-              <div className="space-y-1.5">
+              <div className={BAR_LIST}>
                 {coaching.weakestCompetencies.map((c: CoachingCompetency) => {
                   const tone = c.avgPercent >= 80 ? "bg-emerald-500" : c.avgPercent >= 60 ? "bg-amber-500" : "bg-red-500";
                   return (
-                    <div key={c.key} className="flex items-center gap-3">
-                      <div className="w-48 shrink-0 truncate text-xs text-slate-500" title={`${c.label} · ${c.category}`}>{c.label}</div>
-                      <div className="h-3 flex-1 overflow-hidden rounded-full bg-slate-100">
+                    <div key={c.key} className={BAR_ROW}>
+                      {/* The category rode only in a hover title before; it is printed now. */}
+                      <div className={BAR_LABEL}>
+                        {c.label}
+                        {c.category ? <span className="block text-phx-2xs text-slate-400">{c.category}</span> : null}
+                      </div>
+                      <div className={BAR_FIGURE}>{Math.round(c.avgPercent)}% · {c.avgScore.toFixed(1)}/5</div>
+                      <div className={BAR_TRACK}>
                         <div className={cn("h-full rounded-full", tone)} style={{ width: `${c.avgPercent}%` }} />
                       </div>
-                      <div className="w-16 shrink-0 text-right text-xs tabular-nums text-slate-400">{Math.round(c.avgPercent)}% · {c.avgScore.toFixed(1)}/5</div>
                     </div>
                   );
                 })}
@@ -1521,7 +1626,8 @@ function DoubleVisitSection({ dv }: { dv: Employee360Profile["doubleVisits"] }) 
         <EmptyState>No double-visits recorded for this employee in the window.</EmptyState>
       ) : (
         <>
-          <div className="grid grid-cols-3 gap-3">
+          {/* One column on a phone: three across left ~54px tiles at 375px, labels spilling out. */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <KpiTile label="Double-visits received" value={intFmt.format(dv.totalReceived)} />
             <KpiTile label="With Training Manager" value={intFmt.format(dv.tmCount)} hint="TM field coaching" />
             <KpiTile label="Distinct visitors" value={intFmt.format(dv.distinctVisitors)} />
@@ -1533,7 +1639,7 @@ function DoubleVisitSection({ dv }: { dv: Employee360Profile["doubleVisits"] }) 
               <div className="flex flex-wrap gap-2">
                 {dv.byVisitor.map((v) => (
                   <span key={v.hrId} className={cn("rounded-full border px-2.5 py-1 text-xs font-semibold", v.isTrainingManager ? "border-indigo-200 bg-indigo-50 text-indigo-700" : "border-slate-200 text-slate-500")}>
-                    {v.name ?? v.hrId.toUpperCase()} · {v.count}{v.isTrainingManager ? " · TM" : ""}
+                    {v.name ?? NAME_NOT_ON_RECORD} · {v.count}{v.isTrainingManager ? " · TM" : ""}
                   </span>
                 ))}
               </div>
@@ -1542,15 +1648,17 @@ function DoubleVisitSection({ dv }: { dv: Employee360Profile["doubleVisits"] }) 
 
           <div className="mt-5">
             <div className="mb-1.5 text-xs font-bold text-slate-500">Recent double-visits{dv.totalReceived > dv.events.length ? ` (latest ${dv.events.length} of ${dv.totalReceived})` : ""}</div>
-            <div className="overflow-hidden rounded-[14px] border border-slate-200">
+            <div className={LIST_BOX}>
               {dv.events.map((e, i) => (
-                <div key={`${e.date}-${i}`} className="flex items-center justify-between gap-3 border-b border-slate-100 px-3 py-2 text-sm last:border-b-0 hover:bg-slate-50/70">
-                  <div className="flex min-w-0 items-center gap-2">
-                    <span className="w-20 shrink-0 text-xs text-slate-400">{e.date}</span>
-                    <span className="truncate text-slate-800">{e.doubleName ?? e.doubleHrId.toUpperCase()}</span>
-                    {e.isTrainingManager ? <span className="shrink-0 rounded bg-indigo-100 px-1.5 py-0.5 text-phx-2xs font-bold text-indigo-700">TM</span> : null}
+                <div key={`${e.date}-${i}`} className={LIST_ROW}>
+                  <div className={LIST_DATED}>
+                    <span className={LIST_DATE}>{dayLabel(e.date)}</span>
+                    <span className="min-w-0 break-words text-slate-800">
+                      {e.doubleName ?? NAME_NOT_ON_RECORD}
+                      {e.isTrainingManager ? <span className="ml-1.5 inline-block rounded bg-indigo-100 px-1.5 py-0.5 text-phx-2xs font-bold text-indigo-700">TM</span> : null}
+                    </span>
                   </div>
-                  <span className="shrink-0 text-xs text-slate-400">{e.kind}{e.ampm ? ` · ${e.ampm.toUpperCase()}` : ""}{e.customerName ? ` · ${e.customerName}` : ""}</span>
+                  <span className={LIST_SIDE}>{e.kind}{e.ampm ? ` · ${e.ampm.toUpperCase()}` : ""}{e.customerName ? ` · ${e.customerName}` : ""}</span>
                 </div>
               ))}
             </div>
@@ -1607,7 +1715,7 @@ function TrainingManagerSection({ a }: { a: TrainingManagerAnalytics }) {
             <div className="mt-5">
               <div className="mb-1.5 text-xs font-bold text-slate-500">Coaching cadence — sessions &amp; reps reached per month</div>
               <LineChart
-                labels={a.monthly.map((m) => m.month.slice(5))}
+                labels={monthAxisLabels(a.monthly.map((m) => m.month))}
                 series={[
                   { name: "Sessions", color: CHART_COLORS.regular, points: a.monthly.map((m) => m.sessions), area: true },
                   { name: "Reps", color: CHART_COLORS.campaign, points: a.monthly.map((m) => m.reps) },
@@ -1624,7 +1732,7 @@ function TrainingManagerSection({ a }: { a: TrainingManagerAnalytics }) {
                 <div className="space-y-1">
                   {a.concentratedReps.map((r) => (
                     <div key={r.hrId} className="flex items-center justify-between gap-3 text-sm">
-                      <span className="min-w-0 truncate text-slate-600">
+                      <span className="min-w-0 break-words text-slate-600">
                         {r.name}
                         {r.line ? <span className="text-slate-400"> · {r.line}</span> : null}
                       </span>
@@ -1698,7 +1806,7 @@ function MarketingRoiSection({ m }: { m: PmMarketingSummary }) {
               <div className="space-y-1">
                 {m.topRequests.map((r) => (
                   <div key={r.code} className="flex items-center justify-between gap-3 text-sm">
-                    <span className="min-w-0 truncate text-slate-600">
+                    <span className="min-w-0 break-words text-slate-600">
                       {r.code}
                       {r.line ? <span className="text-slate-400"> · {r.line}</span> : null}
                     </span>
@@ -1769,10 +1877,10 @@ function TeamHealthSection({ teamHealth }: { teamHealth: TeamHealthSummary }) {
               <div className="space-y-1">
                 {teamHealth.coached.map((r) => (
                   <div key={r.hrId} className="flex items-center justify-between gap-3 text-sm">
-                    <span className="min-w-0 truncate text-slate-600">{r.name}</span>
+                    <span className="min-w-0 break-words text-slate-600">{r.name}</span>
                     <span className="shrink-0 text-xs tabular-nums text-slate-400">
                       {r.coachingCount}× · {r.averageScore == null ? "—" : `${Math.round(r.averageScore)}%`}
-                      {r.latestCoachingDate ? ` · ${r.latestCoachingDate}` : ""}
+                      {r.latestCoachingDate ? ` · ${dayLabel(r.latestCoachingDate)}` : ""}
                     </span>
                   </div>
                 ))}
@@ -1882,7 +1990,7 @@ function MonthCompareTable({ months }: { months: { month: string; cost: number; 
             const up = delta != null && delta > 0;
             return (
               <tr key={m.month} className="border-t border-slate-100">
-                <td className="break-words py-1.5 pr-2 text-left font-semibold tabular-nums text-slate-600">{m.month}</td>
+                <td className="break-words py-1.5 pr-2 text-left font-semibold tabular-nums text-slate-600">{monthLabel(m.month)}</td>
                 <td className="px-2 py-1.5 text-right tabular-nums text-slate-500">{intFmt.format(m.trips)}</td>
                 <td className="px-2 py-1.5 text-right tabular-nums">
                   <span className="block font-bold text-slate-800">{compactFmt.format(m.cost)}</span>
@@ -1969,7 +2077,7 @@ function ExpensesSection({
               {payroll.monthly.length > 1 ? (
                 <div className="mt-5">
                   <div className="mb-1.5 text-xs font-bold text-slate-500">Monthly spend trend</div>
-                  <LineChart labels={payroll.monthly.map((m) => m.month.slice(5))} series={[{ name: "Cost", color: "#f43f5e", points: payroll.monthly.map((m) => m.cost), area: true }]} height={160} yFormat={(n) => compactFmt.format(n)} />
+                  <LineChart labels={monthAxisLabels(payroll.monthly.map((m) => m.month))} series={[{ name: "Cost", color: "#f43f5e", points: payroll.monthly.map((m) => m.cost), area: true }]} height={160} yFormat={(n) => compactFmt.format(n)} />
                 </div>
               ) : null}
 
@@ -1978,24 +2086,24 @@ function ExpensesSection({
               <div className="mt-5 grid gap-5 sm:grid-cols-2">
                 <div>
                   <div className="mb-1.5 text-xs font-bold text-slate-500">Where the money goes</div>
-                  <div className="space-y-1.5">
+                  <div className={BAR_LIST}>
                     {payroll.categories.map((c) => (
-                      <div key={c.key} className="flex items-center gap-3">
-                        <div className="w-32 shrink-0 truncate text-xs text-slate-500">{c.label}</div>
-                        <div className="h-3 flex-1 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-rose-500/70" style={{ width: `${(c.amount / catMax) * 100}%` }} /></div>
-                        <div className="w-24 shrink-0 text-right text-xs tabular-nums text-slate-400">{compactFmt.format(c.amount)} · {Math.round(c.pct * 100)}%</div>
+                      <div key={c.key} className={BAR_ROW}>
+                        <div className={BAR_LABEL}>{c.label}</div>
+                        <div className={BAR_FIGURE}>{compactFmt.format(c.amount)} · {Math.round(c.pct * 100)}%</div>
+                        <div className={BAR_TRACK}><div className="h-full rounded-full bg-rose-500/70" style={{ width: `${(c.amount / catMax) * 100}%` }} /></div>
                       </div>
                     ))}
                   </div>
                 </div>
                 <div>
                   <div className="mb-1.5 text-xs font-bold text-slate-500">Top destinations by cost</div>
-                  <div className="space-y-1.5">
+                  <div className={BAR_LIST}>
                     {payroll.byDestination.map((d) => (
-                      <div key={d.name} className="flex items-center gap-3">
-                        <div className="w-32 shrink-0 truncate text-xs text-slate-500" title={d.name}>{d.name}</div>
-                        <div className="h-3 flex-1 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-amber-500/70" style={{ width: `${(d.cost / destMax) * 100}%` }} /></div>
-                        <div className="w-24 shrink-0 text-right text-xs tabular-nums text-slate-400">{compactFmt.format(d.cost)} · {d.trips}t</div>
+                      <div key={d.name} className={BAR_ROW}>
+                        <div className={BAR_LABEL}>{d.name}</div>
+                        <div className={BAR_FIGURE}>{compactFmt.format(d.cost)} · {d.trips}t</div>
+                        <div className={BAR_TRACK}><div className="h-full rounded-full bg-amber-500/70" style={{ width: `${(d.cost / destMax) * 100}%` }} /></div>
                       </div>
                     ))}
                   </div>
@@ -2003,7 +2111,7 @@ function ExpensesSection({
               </div>
 
               {payroll.unresolvedTrips.length > 0 ? (
-                <div className="mt-5 overflow-hidden rounded-[14px] border border-amber-200 bg-amber-50/50">
+                <div className="mt-5 rounded-[14px] border border-amber-200 bg-amber-50/50">
                   <div className="border-b border-amber-200/70 px-3 py-2">
                     <div className="text-xs font-bold text-amber-700">
                       Unresolved trips ({payroll.unresolvedTrips.length})
@@ -2013,12 +2121,12 @@ function ExpensesSection({
                     </p>
                   </div>
                   {payroll.unresolvedTrips.map((t, i) => (
-                    <div key={i} className="flex items-center justify-between gap-3 border-b border-amber-200/50 px-3 py-1.5 text-sm last:border-b-0">
-                      <div className="flex min-w-0 items-center gap-2">
-                        <span className="w-20 shrink-0 text-xs text-slate-400">{t.date}</span>
-                        <span className="truncate text-slate-500">{t.type} · no destination recorded</span>
+                    <div key={i} className="flex items-start justify-between gap-3 border-b border-amber-200/50 px-3 py-1.5 text-sm last:border-b-0">
+                      <div className={LIST_DATED}>
+                        <span className={LIST_DATE}>{dayLabel(t.date)}</span>
+                        <span className="min-w-0 break-words text-slate-500">{t.type} · no destination recorded</span>
                       </div>
-                      <span className="shrink-0 text-xs tabular-nums text-slate-400">
+                      <span className={cn(LIST_SIDE, "tabular-nums")}>
                         {compactFmt.format(t.total)}
                         {t.km != null ? ` · ${Math.round(t.km)}km` : ""}
                         {t.transport ? ` · ${t.transport}` : ""}
@@ -2041,14 +2149,14 @@ function ExpensesSection({
 
               <div className="mt-5">
                 <div className="mb-1.5 text-xs font-bold text-slate-500">Most expensive trips</div>
-                <div className="overflow-hidden rounded-[14px] border border-slate-200">
+                <div className={LIST_BOX}>
                   {payroll.topTrips.map((t, i) => (
-                    <div key={i} className="flex items-center justify-between gap-3 border-b border-slate-100 px-3 py-2 text-sm last:border-b-0 hover:bg-slate-50/70">
-                      <div className="flex min-w-0 items-center gap-2">
-                        <span className="w-20 shrink-0 text-xs text-slate-400">{t.date}</span>
-                        <span className="truncate text-slate-800">{t.destination || (t.type === "Meeting" ? "Meeting" : "—")}</span>
+                    <div key={i} className={LIST_ROW}>
+                      <div className={LIST_DATED}>
+                        <span className={LIST_DATE}>{dayLabel(t.date)}</span>
+                        <span className={LIST_NAME}>{t.destination || (t.type === "Meeting" ? "Meeting" : "—")}</span>
                       </div>
-                      <span className="shrink-0 text-xs tabular-nums text-slate-400">
+                      <span className={cn(LIST_SIDE, "tabular-nums")}>
                         {compactFmt.format(t.total)}
                         {t.km != null ? ` · ${Math.round(t.km)}km` : ""}
                         {t.transport ? ` · ${t.transport}` : ""}
