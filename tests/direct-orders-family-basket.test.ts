@@ -9,6 +9,7 @@ import {
   validateDirectOrderBasket,
 } from "../src/lib/direct-orders/product-family.ts";
 import { DIRECT_ORDER_REPORT_COLUMNS } from "../src/lib/direct-orders/report-columns.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * One request may carry several products — from ONE family, and only a family allowed to combine.
@@ -117,10 +118,7 @@ export async function runDirectOrderFamilyBasketTests() {
   for (const fn of ["familyAllowsMultipleItems", "selectableFamilyMembers"]) {
     assert.match(form, new RegExp(`\\b${fn}\\b`), `the form must use ${fn}`);
   }
-  const formCode = form
-    .split("\n")
-    .filter((line) => !line.trim().startsWith("//") && !line.trim().startsWith("*") && !line.trim().startsWith("{/*"))
-    .join("\n");
+  const formCode = stripComments(form);
   assert.doesNotMatch(
     formCode,
     /"LA"|'LA'/,
@@ -192,10 +190,7 @@ export async function runDirectOrderFamilyBasketTests() {
 
   // ── The API route decides nothing ──────────────────────────────────────────
   const route = readFileSync(new URL("../app/api/direct-orders/submit/route.ts", import.meta.url), "utf8");
-  const routeCode = route
-    .split("\n")
-    .filter((line) => !line.trim().startsWith("//") && !line.trim().startsWith("*"))
-    .join("\n");
+  const routeCode = stripComments(route);
   assert.match(routeCode, /items:/, "the route must forward items");
   assert.doesNotMatch(
     routeCode,

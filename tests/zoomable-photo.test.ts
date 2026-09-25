@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { stripComments } from "./support/comment-strip.ts";
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Tap a photo → it opens full screen and zooms.
 //
@@ -19,23 +21,16 @@ const source = (path: string) => readFileSync(path, "utf8");
  * Needed because several of these files DISCUSS `<img>` in prose — cv-preview-modal.tsx explains at
  * length why a photographed CV is rendered as one — and a "no bare <img> left" check that reads a
  * comment as code fails on a file that is already correct.
+ *
+ * `stripComments` is the repo's sanctioned stripper, and it answers this file's original worry —
+ * that a comment strip could swallow real JSX hundreds of lines below an unbalanced opener, whose
+ * failure then reads as "this surface was never wired" on a surface that plainly was. It scans for
+ * string and template state instead of pattern-matching, so a `/*` inside a quoted route pattern
+ * opens nothing, and it only drops a block once it has seen the close — an opener that is never
+ * closed therefore KEEPS the rest of the file rather than eating it. Wrong in the safe direction.
  */
 function code(path: string): string {
-  // Line-wise, NOT a `/* … */` regex: one unbalanced comment opener anywhere in a 2,000-line file
-  // makes a block-matching strip swallow real JSX hundreds of lines further down, and the failure
-  // reads as "this surface was never wired" on a surface that plainly was.
-  return source(path)
-    .split("\n")
-    .filter((line) => {
-      const trimmed = line.trim();
-      return !(
-        trimmed.startsWith("//") ||
-        trimmed.startsWith("*") ||
-        trimmed.startsWith("/*") ||
-        trimmed.startsWith("{/*")
-      );
-    })
-    .join("\n");
+  return stripComments(source(path));
 }
 
 /**
