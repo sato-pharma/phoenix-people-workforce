@@ -47,6 +47,7 @@
 | Document | Description |
 |---|---|
 | [Attendance Agent](attendance-agent.md) | Local ZKTeco attendance integration |
+| [Headwind MDM + RustDesk](devices/headwind-rustdesk.md) | The company's own rep-tablet management server and free remote screen — what it replaces, how the box is built, and how a tablet moves onto it |
 | [Observability](observability.md) | Error capture, monitoring, alerting |
 | [Development Workflow](development-workflow.md) | Engineering operating rules and contributor governance |
 | [Sato Email Composer](sato-email-composer.md) | Manual company email at `/admin/sato-email` — fixed Sato templates or free-typed, sent to distribution lists in the company identity |

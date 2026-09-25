@@ -80,6 +80,12 @@ export type AuditEntityType =
   // trace is treated as a failed command. The row names the tablet by its custody asset tag, never
   // by any credential.
   | "manageengine_device_command"
+  // The same act, on the company's OWN Headwind MDM server (2026-09-25) — apply settings, wake the
+  // remote app, restart, lock, locate, kiosk on and off, and the factory reset. A separate type from
+  // the row above because the two consoles are separate systems during the changeover and "what was
+  // done to this tablet" must be answerable per system; the `messageType` actually sent is recorded
+  // beside the action, so a command whose wire name is later corrected is still readable afterwards.
+  | "headwind_device_command"
   // Apps pushed to or removed from a rep's tablet from inside Phoenix (2026-09-25). A separate type
   // from the command above because it is a different kind of act: a command changes what the tablet
   // is doing for a moment, while installing or removing an app changes what the rep can do with it

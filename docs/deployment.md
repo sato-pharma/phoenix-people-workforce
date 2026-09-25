@@ -16,6 +16,7 @@ retirement).
 | Email delivery | Resend | — |
 | Error monitoring | Self-hosted (`app_error_events` + Railway logs) | See [observability.md](observability.md) |
 | Attendance agent | Local Windows machine | — |
+| Rep-tablet management + remote screen | **Dedicated VPS** (~$5–6/month, **Europe**) | Headwind MDM + RustDesk relay, from [`docker-compose.headwind.yml`](../docker-compose.headwind.yml). Nothing in CI builds or starts it and Railway never touches it; Phoenix only talks to it over HTTPS. Ships dark — with `HEADWIND_MDM_*` unset, Rep Tablets is unchanged. See [devices/headwind-rustdesk.md](devices/headwind-rustdesk.md) |
 
 Railway is **GitHub-connected**: it deploys from this repo on push to the default branch. There is
 no deploy workflow in `.github/workflows/` that ships production any more.

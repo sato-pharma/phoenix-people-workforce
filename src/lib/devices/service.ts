@@ -1011,10 +1011,11 @@ export async function markDevice(input: MarkDeviceInput, actor: string): Promise
 }
 
 /** Which console reported the IMEI — it decides the audit row's wording, nothing else. */
-export type ReportedImeiSource = "android_management" | "manageengine";
+export type ReportedImeiSource = "android_management" | "manageengine" | "headwind";
 
 const REPORTED_IMEI_SOURCE_NAMES: Readonly<Record<ReportedImeiSource, string>> = {
   android_management: "Google",
+  headwind: "Headwind",
   manageengine: "ManageEngine",
 };
 

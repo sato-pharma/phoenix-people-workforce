@@ -871,6 +871,7 @@ import { runAndroidWebAppTests } from "./android-web-app.test.ts";
 import { runManagedPlayIframeTests } from "./managed-play-iframe.test.ts";
 import { runTabletEnrollmentTests } from "./tablet-enrollment.test.ts";
 import { runTabletAutoRegisterTests } from "./tablet-auto-register.test.ts";
+import { runHeadwindBridgeTests } from "./headwind-bridge.test.ts";
 import { runManageEngineBridgeTests } from "./manageengine-bridge.test.ts";
 import { runCustodyItemValuesTests } from "./custody-item-values.test.ts";
 import { runDeviceImportAttemptLogTests } from "./device-import-attempt-log.test.ts";
@@ -3684,7 +3685,7 @@ await runTest(
 await runTest(
   "ManageEngine bridge (Zoho token exchange caches and surfaces a refusal, the client retries once "
   + "on a 401 with a fresh token, device JSON normalizes and matches the register by serial then "
-  + "IMEI, the command allow-list is the seven actions with only the two wipes destructive, and the "
+  + "IMEI, the command allow-list is the fourteen actions with only the two wipes destructive, and the "
   + "route error mapping keeps one status per cause) — and the enrollment template a factory-fresh "
   + "tablet scans: the pasted payload is refused in words unless it names a device admin component "
   + "and a downloadable agent, nothing is added to it, and the credential reaches neither the "
@@ -3694,6 +3695,20 @@ await runTest(
   + "overwriting one somebody typed and never on a tie — and its rules are read and changed from "
   + "Phoenix without Phoenix ever authoring a profile's contents)",
   runManageEngineBridgeTests,
+);
+await runTest(
+  "Headwind bridge — the company's own device-management server (the admin password is sent as the "
+  + "MD5 hash Headwind's wire format demands and never as itself, a refusal that arrives wearing an "
+  + "HTTP 200 is an error rather than an empty fleet, an expired session re-mints and retries exactly "
+  + "once, a device's NUMBER and its database row id are kept apart because a push addressed by the "
+  + "wrong one reports success and reaches no tablet, the `info` blob parses whether it arrives as an "
+  + "object or as a JSON string, a tablet adds itself to the custody register through the same door "
+  + "the other two bridges use and its reported IMEI never overwrites one somebody typed nor lands on "
+  + "a tie, the six actions whose Headwind wire name is not published stay null and refuse with a "
+  + "plain sentence before anything is sent rather than guessing a name that would answer 200 and "
+  + "reach nothing, a remote-screen link carries the tablet and no credential, and the whole section "
+  + "ships dark until the server's settings are set)",
+  runHeadwindBridgeTests,
 );
 await runTest("organogram hardening", runOrganogramHardeningTests);
 await runTest("vacancy report / organogram consistency", runVacancyReportOrganogramConsistencyTests);

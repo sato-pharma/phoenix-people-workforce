@@ -1,0 +1,234 @@
+/**
+ * Signing in to the company's own Headwind MDM server.
+ *
+ * WHY THIS EXISTS. ManageEngine's free edition caps the fleet at 25 tablets and stops remote screen
+ * view and control when the trial ends, and the owner expects to reach about a hundred tablets
+ * (2026-09-25). Headwind MDM Community is open source, self-hosted and has NO managed-device limit,
+ * so Phoenix drives the tablets through the company's own server instead. This module is the sign-in
+ * half of that bridge; `client.ts` is the one HTTP path built on it.
+ *
+ * THE CREDENTIAL IS AN ADMIN LOGIN ON THE COMPANY'S OWN SERVER, set as server-only env. There is no
+ * vendor, no OAuth dance and no third party holding a token: the server is ours.
+ * 🔴 NONE OF THESE VALUES ARE IN GIT, and none of them may ever be logged — a Headwind admin login is
+ * a password that factory-resets tablets.
+ *
+ * 🔴 THE PASSWORD IS SENT AS AN MD5 HASH, NOT AS ITSELF, AND THAT IS HEADWIND'S WIRE FORMAT, NOT A
+ * SECURITY CHOICE OF OURS. `POST /rest/public/jwt/login` takes `{ login, password }` where `password`
+ * is the lower-case hex MD5 of the real one; sending the plain password fails to sign in. The real
+ * password never leaves this module, and the transport is HTTPS either way. Do not "upgrade" this to
+ * SHA-256 — the server would simply refuse every sign-in.
+ *
+ * THE TOKEN IS CACHED IN MEMORY, never persisted, and shared between concurrent callers the way the
+ * ManageEngine bridge shares its access token: the Rep Tablets page loads several cards at once and a
+ * cold cache would otherwise sign in several times in the same instant. Headwind does not publish the
+ * JWT's lifetime, so the cache is deliberately short and `client.ts` re-mints once on a 401 — the
+ * cache is an optimisation, never a correctness assumption.
+ */
+
+import { createHash } from "node:crypto";
+
+const LOGIN_PATH = "/rest/public/jwt/login";
+
+/**
+ * How long a minted JWT is trusted before it is re-minted.
+ *
+ * 🔴 THIS IS OURS, NOT HEADWIND'S. Headwind does not document the lifetime of the token
+ * `/rest/public/jwt/login` returns, so nothing here may claim to know it. Thirty minutes is short
+ * enough that an expiry is rare and cheap when it happens (signing in again is one request to our own
+ * server), and `callHeadwind` clears the cache and retries once on a 401 regardless — so a token that
+ * expires sooner than this costs one retry, never a failed action.
+ */
+const TOKEN_LIFETIME_MS = 30 * 60_000;
+
+export class HeadwindNotConfiguredError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "HeadwindNotConfiguredError";
+  }
+}
+
+export type HeadwindAuthConfig = {
+  /** The company's Headwind server, e.g. https://mdm.satopharma.com — no trailing slash. */
+  baseUrl: string;
+  login: string;
+  password: string;
+};
+
+function trimTrailingSlash(value: string): string {
+  return value.replace(/\/+$/, "");
+}
+
+/**
+ * The Headwind credential from env, or a clear error naming exactly what is missing.
+ *
+ * Nothing here has a safe default: a guessed server address would send an admin password to whoever
+ * owns that name.
+ */
+export function headwindAuthConfig(env: NodeJS.ProcessEnv = process.env): HeadwindAuthConfig {
+  const baseUrl = trimTrailingSlash(env.HEADWIND_MDM_BASE_URL?.trim() ?? "");
+  const login = env.HEADWIND_MDM_LOGIN?.trim();
+  const password = env.HEADWIND_MDM_PASSWORD?.trim();
+
+  const missing = [
+    baseUrl ? null : "HEADWIND_MDM_BASE_URL",
+    login ? null : "HEADWIND_MDM_LOGIN",
+    password ? null : "HEADWIND_MDM_PASSWORD",
+  ].filter((entry): entry is string => entry !== null);
+  if (missing.length > 0) {
+    throw new HeadwindNotConfiguredError(
+      `The Headwind bridge is not connected yet: set ${missing.join(", ")} (from the company's own Headwind server). ` +
+        "Until then the Phoenix console cannot reach the tablets on it.",
+    );
+  }
+
+  return { baseUrl, login: login!, password: password! };
+}
+
+/** True when all three Headwind settings are present — the bridge can reach the company's server. */
+export function isHeadwindConfigured(env: NodeJS.ProcessEnv = process.env): boolean {
+  return Boolean(
+    env.HEADWIND_MDM_BASE_URL?.trim() && env.HEADWIND_MDM_LOGIN?.trim() && env.HEADWIND_MDM_PASSWORD?.trim(),
+  );
+}
+
+/**
+ * The Cloudflare Access service-token headers, when the console is behind a Cloudflare Tunnel.
+ *
+ * WHY THIS EXISTS (owner's decision, 2026-09-25: "use cloudflare tunnel for the mdm console").
+ * Headwind Community has no two-factor sign-in, so the console sits behind Cloudflare Access — a
+ * person signs in to Cloudflare before the login page is even reachable. 🔴 BUT PHOENIX IS NOT A
+ * PERSON AND CANNOT SIGN IN. Without these two headers every call from Phoenix would be answered by
+ * Cloudflare's own sign-in page instead of by Headwind, and the whole bridge would go dark the
+ * moment the tunnel was switched on. A service token is Cloudflare's answer for exactly that: a
+ * machine credential Access accepts in place of a human session.
+ *
+ * 🔴 AND THIS IS WHY THERE IS NO `/rest/*` BYPASS RULE IN THE RUNBOOK. Putting Access on the console
+ * while letting the REST API through unauthenticated would protect nothing that matters: the API is
+ * what lists, commands and factory-resets tablets, and the console is only a browser talking to it.
+ * A bypass would lock the front door and leave the back one open.
+ *
+ * BOTH OR NEITHER. One alone cannot authenticate, and Access would answer an HTML sign-in page that
+ * is not JSON — so a half-set pair is refused here, by name, rather than surfacing later as an
+ * unreadable reply from a server that is in fact perfectly healthy.
+ */
+export function headwindAccessHeaders(env: NodeJS.ProcessEnv = process.env): Record<string, string> {
+  const id = env.HEADWIND_MDM_ACCESS_CLIENT_ID?.trim();
+  const secret = env.HEADWIND_MDM_ACCESS_CLIENT_SECRET?.trim();
+  if (!id && !secret) return {};
+  if (!id || !secret) {
+    throw new HeadwindNotConfiguredError(
+      "The Cloudflare Access service token is only half set: " +
+        `${id ? "HEADWIND_MDM_ACCESS_CLIENT_SECRET" : "HEADWIND_MDM_ACCESS_CLIENT_ID"} is missing. ` +
+        "Set both or neither — with one alone, Cloudflare answers every Phoenix request with its own " +
+        "sign-in page and the Headwind server never sees it.",
+    );
+  }
+  return { "CF-Access-Client-Id": id, "CF-Access-Client-Secret": secret };
+}
+
+/** Headwind's wire form for a password: lower-case hex MD5. See the header — this is not a choice. */
+export function headwindPasswordHash(password: string): string {
+  return createHash("md5").update(password, "utf8").digest("hex");
+}
+
+type CachedToken = { token: string; expiresAt: number };
+let cached: CachedToken | null = null;
+/** A sign-in already in flight, shared by every caller until it settles, so a cold page signs in once. */
+let pending: Promise<string> | null = null;
+
+type LoginResponse = {
+  status?: unknown;
+  message?: unknown;
+  data?: unknown;
+  token?: unknown;
+  authToken?: unknown;
+};
+
+/**
+ * The token out of a Headwind login response, whatever shape this server's version answers in.
+ *
+ * Headwind wraps REST replies as `{ status, message, data }`, and the JWT has been seen both at
+ * `data.authToken` and, on other builds, as a bare `data` string or a top-level `token`. Reading a
+ * short candidate list rather than pinning one spelling means a server upgrade cannot silently break
+ * sign-in with a token that is present but under a different name.
+ */
+function tokenFromLogin(payload: LoginResponse): string | null {
+  const candidates: unknown[] = [payload.token, payload.authToken];
+  const data = payload.data;
+  if (typeof data === "string") candidates.push(data);
+  if (data && typeof data === "object" && !Array.isArray(data)) {
+    const record = data as Record<string, unknown>;
+    candidates.push(record.authToken, record.token, record.jwt, record.accessToken, record.access_token);
+  }
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim()) return candidate.trim();
+  }
+  return null;
+}
+
+/**
+ * A valid Headwind JWT, minted from the admin login and cached until it nears expiry.
+ *
+ * Concurrent callers share one in-flight sign-in. A refusal is surfaced as a NotConfigured error
+ * naming what the server said, because on our own server a refused login means the credential is
+ * wrong — there is no rate limit or vendor throttle to confuse it with.
+ */
+export async function getHeadwindToken(
+  fetchImpl: typeof fetch = fetch,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<string> {
+  if (cached && cached.expiresAt > Date.now()) return cached.token;
+  if (pending) return pending;
+  pending = mintHeadwindToken(fetchImpl, env).finally(() => {
+    pending = null;
+  });
+  return pending;
+}
+
+async function mintHeadwindToken(fetchImpl: typeof fetch, env: NodeJS.ProcessEnv): Promise<string> {
+  const config = headwindAuthConfig(env);
+
+  const response = await fetchImpl(`${config.baseUrl}${LOGIN_PATH}`, {
+    body: JSON.stringify({ login: config.login, password: headwindPasswordHash(config.password) }),
+    cache: "no-store",
+    // The Access headers go on the sign-in too — it is the FIRST request Cloudflare sees, so a
+    // tunnel would otherwise turn every other call into a failure that blames the credential.
+    headers: { accept: "application/json", "content-type": "application/json", ...headwindAccessHeaders(env) },
+    method: "POST",
+  });
+
+  let payload: LoginResponse = {};
+  let answeredJson = true;
+  try {
+    payload = (await response.json()) as LoginResponse;
+  } catch {
+    payload = {};
+    answeredJson = false;
+  }
+
+  const token = response.ok ? tokenFromLogin(payload) : null;
+  if (!token) {
+    const said = typeof payload.message === "string" && payload.message ? ` (${payload.message})` : "";
+    // 🔴 A REPLY THAT IS NOT JSON AT ALL IS ALMOST ALWAYS CLOUDFLARE, NOT HEADWIND. With the console
+    // behind a tunnel, an Access sign-in PAGE comes back instead of an answer — so the credential
+    // being checked is the wrong one, and a session told to check the admin password would spend the
+    // afternoon on a server that is perfectly healthy. Say which door actually shut.
+    const wrongDoor = answeredJson
+      ? ` Check HEADWIND_MDM_LOGIN and HEADWIND_MDM_PASSWORD against the admin account on ${config.baseUrl}.`
+      : " The reply was not JSON at all, which is what a Cloudflare Access sign-in page looks like from here:" +
+        " check HEADWIND_MDM_ACCESS_CLIENT_ID and HEADWIND_MDM_ACCESS_CLIENT_SECRET first, and only then" +
+        " the Headwind admin login.";
+    throw new HeadwindNotConfiguredError(
+      `The Headwind server refused the Phoenix sign-in${said}.${wrongDoor} (HTTP ${response.status}.)`,
+    );
+  }
+
+  cached = { expiresAt: Date.now() + TOKEN_LIFETIME_MS, token };
+  return token;
+}
+
+/** Drop the cached token — for tests, and after a 401 so the next call signs in again. */
+export function resetHeadwindTokenCache(): void {
+  cached = null;
+  pending = null;
+}
