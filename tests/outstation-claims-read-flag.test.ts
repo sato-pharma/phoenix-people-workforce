@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { stripComments } from "./support/comment-strip.ts";
+
 import { expenseClaimsReadEnabled } from "../src/lib/outstation/claims-read-flag.ts";
 
 /**
@@ -51,17 +53,14 @@ export async function runOutstationClaimsReadFlagTests() {
   // without loading claims-read.ts, which imports back from expenses.ts.
   const flagModule = readFileSync(new URL("../src/lib/outstation/claims-read-flag.ts", import.meta.url), "utf8");
   assert.doesNotMatch(
-    flagModule.split("\n").filter((line) => !line.trim().startsWith("*") && !line.trim().startsWith("//")).join("\n"),
+    stripComments(flagModule),
     /\bimport\b/,
     "claims-read-flag.ts must import nothing — the moment it imports, it can be dragged into the cycle it exists to avoid",
   );
 
   // ── The guard order in expenses.ts ─────────────────────────────────────────
   const expenses = readFileSync(new URL("../src/lib/outstation/expenses.ts", import.meta.url), "utf8");
-  const code = expenses
-    .split("\n")
-    .filter((line) => !line.trim().startsWith("//") && !line.trim().startsWith("*"))
-    .join("\n");
+  const code = stripComments(expenses);
 
   assert.match(
     code,

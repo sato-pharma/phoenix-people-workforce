@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 
+import { stripComments } from "./support/comment-strip.ts";
+
 import { chooseCvCopies, copyLabelsFor, shouldMirrorCopy, withCopyLabel } from "../src/lib/recruitment/cv-duplicate-copies.ts";
 import {
   ATS_UPLOAD_CHANNEL_FOLDER,
@@ -665,9 +667,7 @@ export function runDriveScriptAgreesWithAppTests() {
   // ── THE ROOT IS THE CABINET, AND THE SCRIPT MUST NOT OWN A SECOND ANSWER ──────────────────────
   // A local copy of the folder walker rooted at the FROZEN tree filed 32 CVs there on 2026-09-09
   // while every count read clean.
-  const codeLines = source
-    .split("\n")
-    .filter((line) => !line.trimStart().startsWith("*") && !line.trimStart().startsWith("//"));
+  const codeLines = stripComments(source).split("\n");
 
   assert.ok(
     codeLines.some(

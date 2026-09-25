@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 
+import { stripComments } from "./support/comment-strip.ts";
+
 /**
  * "ONE PLACE" HAS TO REACH THE DESKS, or it stops at the edge of one route.
  *
@@ -99,10 +101,7 @@ export async function runDirectOrderDeskShellTests() {
   // absent access gate, precisely so nobody adds them — and an assertion that cannot tell a comment
   // from a call site is one that gets "fixed" by deleting the explanation.
   const layoutSource = readFileSync(new URL("layout.tsx", groupDir), "utf8");
-  const layout = layoutSource
-    .split("\n")
-    .filter((line) => !line.trim().startsWith("//") && !line.trim().startsWith("*") && !line.trim().startsWith("/*"))
-    .join("\n");
+  const layout = stripComments(layoutSource);
   assert.doesNotMatch(
     layout,
     /redirect\(|assertPermission|Forbidden/,

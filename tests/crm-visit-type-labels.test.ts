@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { stripComments } from "./support/comment-strip.ts";
+
 import {
   CRM_VISIT_TYPE_FILTER_CODES,
   CRM_VISIT_TYPE_OPTIONS,
@@ -8,7 +10,6 @@ import {
   resolveVisitTypeLabel,
 } from "../src/lib/crm/visit-types.ts";
 import { describeCrmDay } from "../src/lib/attendance/crm-day-maps.ts";
-import { stripComments } from "./support/comment-strip.ts";
 
 // iReports360 documents nine visit-type codes. It also sends seven it never documented, and for
 // every one of those the `visitTypeDescription` it sends is the literal string "Unknown".
@@ -294,10 +295,7 @@ function runCommentSensitiveCodeTests(): void {
  * satisfy its own assertions (AGENTS.md §2.1).
  */
 function runVisitTypeSurfaceTests(): void {
-  const strip = (source: string): string =>
-    stripComments(source).split("\n")
-      .filter((line) => !line.trim().startsWith("//") && !line.trim().startsWith("*"))
-      .join("\n");
+  const strip = (source: string): string => stripComments(source);
 
   const view = strip(readFileSync("src/components/field-workforce-compliance/field-workforce-visits-view.tsx", "utf8"));
   assert.ok(

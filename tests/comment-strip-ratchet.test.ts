@@ -71,9 +71,10 @@ import { codeEatenByNaiveStrip, stripComments } from "./support/comment-strip.ts
  * flagging it needs the file resolved, whereas a line filter tracks no block state anywhere — every
  * one of them is one multi-line comment away from the same failure, whatever it is pointed at.
  *
- * Measured 2026-09-25: 47 such call sites in 42 test files, of which #4382 folds 9. The rest are
- * listed in {@link GRANDFATHERED}, so this lands green and stops the 43rd rather than waiting for a
- * 42-file repair. That list is a budget per file, never a permission — fold one, delete its row.
+ * Measured 2026-09-25: 47 such call sites in 42 test files. All are now folded onto
+ * {@link stripComments} — #4382 took 9, #4388 took 13, and this change took the remaining 25 — so
+ * {@link GRANDFATHERED} is empty and its budget is 0. The detector now permits zero: the next
+ * line-wise stripper anywhere fails on its very first site.
  *
  * A shape detector whose offender count is meant to reach zero cannot be guarded by a floor on
  * offenders at all. That was the argument for this half first, and 2026-09-25 made it true of the
@@ -130,46 +131,18 @@ const MAX_ARGUMENT_CHARS = 2_000;
 const SWEPT_FILE_FLOOR = 1_200;
 
 /**
- * The line-wise strippers that already existed when this check was written — seeded at 47 sites in
- * 42 files, trimmed to the 25 sites in 23 files the detector actually reads today.
+ * The line-wise strippers that existed when this check was written — 47 sites in 42 files, measured
+ * 2026-09-25 — are now ALL folded onto {@link stripComments} (#4382, #4388, and the change that
+ * emptied this list). Nothing remains to grandfather.
  *
- * The 19 rows removed on 2026-09-25 were budgeting sites that no longer exist: #4382 folded nine of
- * them, and the others were already clean when the list was seeded. A row for an empty file is not
- * harmless — it silently re-permits the shape in a file that had stopped using it.
- *
- * A BUDGET, not a permission: the number is the most a file may hold, so a file #4382 empties keeps
- * passing whichever order the two land in, while a NEW one anywhere — or a second one in a listed
- * file — fails. Fold a file onto `stripComments` and delete its row; nothing here is allowed to
- * grow. {@link GRANDFATHERED_SITE_BUDGET} makes an addition impossible to make quietly.
+ * It stays a BUDGET, not a permission: an empty list with a budget of 0 means no test may strip
+ * comments line-wise anywhere, so the detector below fails on the very first new site. The list may
+ * only shrink — it is already empty — and {@link GRANDFATHERED_SITE_BUDGET} may never rise.
  */
-const GRANDFATHERED: ReadonlyMap<string, number> = new Map([
-  ["tests/approvals-hub-row-cap.test.ts", 1],
-  ["tests/attendance-exception-row-cap.test.ts", 1],
-  ["tests/automated-payroll-crm-leave-fails-closed.test.ts", 1],
-  ["tests/automated-payroll-insurance-wage.test.ts", 1],
-  ["tests/automated-payroll-leaver-overpayment.test.ts", 1],
-  ["tests/closing-summary-fits.test.ts", 1],
-  ["tests/crm-live-poller.test.ts", 1],
-  ["tests/crm-portal-coverage-populations.test.ts", 1],
-  ["tests/crm-visit-type-labels.test.ts", 1],
-  ["tests/cv-cabinet-audit-fixes.test.ts", 1],
-  ["tests/deductions-crm-vacation-employment-join.test.ts", 1],
-  ["tests/deductions-dsm-no-record.test.ts", 1],
-  ["tests/deductions-vacation-ledger-guard.test.ts", 1],
-  ["tests/direct-orders-desk-shell.test.ts", 1],
-  ["tests/direct-orders-second-review-fixes.test.ts", 2],
-  ["tests/direct-orders-unresolved-manager-rung.test.ts", 1],
-  ["tests/drive-cabinet-folders.test.ts", 1],
-  ["tests/normalizer-mapping-truth.test.ts", 1],
-  ["tests/outstation-claims-read-flag.test.ts", 2],
-  ["tests/outstation-request-name-is-the-employee-record.test.ts", 1],
-  ["tests/pharmacy-license-evidence.test.ts", 1],
-  ["tests/recruitment-simplify.test.ts", 1],
-  ["tests/repo-doctor-worktree-restore-advice.test.ts", 1],
-]);
+const GRANDFATHERED: ReadonlyMap<string, number> = new Map([]);
 
-/** The sum of the budget above. It may fall. It may never rise. Seeded at 47, trimmed to 25. */
-const GRANDFATHERED_SITE_BUDGET = 25;
+/** The sum of the budget above. Seeded at 47; every site is now folded, so it is 0. It may never rise. */
+const GRANDFATHERED_SITE_BUDGET = 0;
 
 function walk(dir: string): string[] {
   const out: string[] = [];

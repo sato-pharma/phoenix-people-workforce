@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
+import { stripComments } from "./support/comment-strip.ts";
+
 import { cairoDayKey, summarizeCandidatePool } from "../src/lib/recruitment/candidate-stats.ts";
 import {
   CANDIDATE_STATUS_NOTE_MAX_LENGTH,
@@ -256,13 +258,7 @@ export async function runRecruitmentSimplifyTests() {
   // Comment lines are stripped before the check. The file explains the incident by quoting the
   // broken filter verbatim, which is how this codebase documents a fix — and a guard that fires on
   // the explanation would force the explanation to be deleted. Only real code is asserted on.
-  const notifyCode = notify
-    .split("\n")
-    .filter((line) => {
-      const trimmed = line.trim();
-      return !trimmed.startsWith("//") && !trimmed.startsWith("*") && !trimmed.startsWith("/*");
-    })
-    .join("\n");
+  const notifyCode = stripComments(notify);
   assert.doesNotMatch(
     notifyCode,
     /employment_status"?,\s*"Active"/,

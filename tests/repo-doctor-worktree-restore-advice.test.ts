@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { stripComments } from "./support/comment-strip.ts";
+
 // repo-doctor must never tell anyone to run `pnpm install` in a worktree.
 //
 // `--strip-idle` deletes `node_modules` and `.next` from idle worktrees, and both its offer and its
@@ -33,17 +35,18 @@ const read = (p: string) => readFileSync(join(process.cwd(), p), "utf8");
  * caught it only because it was checked before trusting a single red.
  */
 function codeOnly(source: string): string {
-  return source
-    .split(/\r?\n/)
-    .filter((line) => {
-      const t = line.trim();
-      return !(t.startsWith("//") || t.startsWith("*") || t.startsWith("/*"));
-    })
-    .join("\n");
+  return stripComments(source);
 }
 
 export function runRepoDoctorWorktreeRestoreAdviceTests() {
   const doctor = codeOnly(read("scripts/repo-doctor.mjs"));
+  // stripComments blanks a comment to spaces in place — where the old line filter deleted comment
+  // lines outright — so every reported file:line stays true. A proximity window over the source is
+  // therefore diluted by any explanatory comment between two phrases: the five-line note above the
+  // completion message pushes "path entries reclaimed" and its `--repair` hint past 400 bytes even
+  // though no CODE separates them. Collapse whitespace runs so the windows below count code
+  // distance, the way they did when comments were removed.
+  const doctorCode = doctor.replace(/\s+/g, " ");
 
   // ── 1. Every mention in real output is a prohibition, never an instruction ──
   {
@@ -63,12 +66,12 @@ export function runRepoDoctorWorktreeRestoreAdviceTests() {
   // list. These assert the correct advice is present, in the offer and in the completion line.
   {
     assert.match(
-      doctor,
+      doctorCode,
       /Run with --strip-idle[\s\S]{0,200}new-session\.mjs --repair/,
       "the --strip-idle offer must say how to restore a stripped worktree",
     );
     assert.match(
-      doctor,
+      doctorCode,
       /path entries reclaimed[\s\S]{0,400}new-session\.mjs --repair/,
       "the post-strip completion line must say how to restore — it is the line that gets copied",
     );

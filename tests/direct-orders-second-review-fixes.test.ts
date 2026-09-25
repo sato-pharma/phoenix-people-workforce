@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { stripComments } from "./support/comment-strip.ts";
+
 import {
   canAssignDirectOrderSalesMonth,
   canRecordDirectOrderCollection,
@@ -172,13 +174,9 @@ export async function runDirectOrderSecondReviewFixTests() {
   // Checked against CODE, not prose: the comment explaining why the group is gone necessarily
   // names it, and an assertion that cannot tell a comment from a call site is one that will be
   // "fixed" by deleting the explanation.
-  const needsActionCode = readFileSync(
-    new URL("../src/lib/direct-orders/needs-action.ts", import.meta.url),
-    "utf8",
-  )
-    .split("\n")
-    .filter((line) => !line.trim().startsWith("//"))
-    .join("\n");
+  const needsActionCode = stripComments(
+    readFileSync(new URL("../src/lib/direct-orders/needs-action.ts", import.meta.url), "utf8"),
+  );
   assert.ok(
     !needsActionCode.includes("finish_draft"),
     "the finish_draft kind must stay removed until real draft create/edit/submit paths exist",
@@ -336,10 +334,7 @@ export async function runDirectOrderSecondReviewFixTests() {
   // client-side; once a tab became a navigation it was unreachable. So the correct assertion is no
   // longer "gated" but ABSENT, which is strictly stronger: a gate can be widened by accident, and a
   // call that does not exist cannot be.
-  const workspaceDataCode = workspaceDataSource
-    .split("\n")
-    .filter((line) => !line.trim().startsWith("//") && !line.trim().startsWith("*"))
-    .join("\n");
+  const workspaceDataCode = stripComments(workspaceDataSource);
   assert.ok(
     !workspaceDataCode.includes("getDirectOrderReport("),
     "THE FULL-TABLE READ IS BACK IN THE WORKSPACE LOADER. Every view now has a read sized to what " +
