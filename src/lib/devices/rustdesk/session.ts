@@ -2,10 +2,11 @@
  * Opening a remote screen session on one tablet.
  *
  * WHAT THIS DOES AND DELIBERATELY DOES NOT DO. Phoenix does not carry the video: the RustDesk desktop
- * app on the Super Admin's own computer connects to the tablet through the company's relay. So this
- * module hands back the three things that app needs — which tablet, which relay, and the relay's
- * public key — and Phoenix's job ends there. Building a browser viewer would mean putting a rep's
- * screen through the Phoenix web app, which is neither needed nor wanted.
+ * app on the Super Admin's own computer connects to the tablet through a relay — RustDesk's own by
+ * default, the company's if one is configured. So this module hands back what that app needs — which
+ * tablet, which relay, and, on a self-hosted relay, its public key — and Phoenix's job ends there.
+ * Building a browser viewer would mean putting a rep's screen through the Phoenix web app, which is
+ * neither needed nor wanted.
  *
  * 🔴 THE SESSION PASSWORD IS NEVER PART OF THIS, IN ANY FORM. RustDesk's link scheme accepts a
  * password in the query string, and it must not be used: a URL is logged by browsers, by proxies and
@@ -20,17 +21,31 @@
  * sessions yet" — never as an error, and never as a guess at somebody else's ID.
  */
 
-import { rustDeskConfig, type RustDeskConfig } from "@/lib/devices/rustdesk/config";
+import {
+  rustDeskConfig,
+  type RustDeskConfig,
+  type RustDeskRelayMode,
+} from "@/lib/devices/rustdesk/config";
 
 export type RustDeskTarget = {
   /** The tablet's RustDesk ID, from its Headwind record. */
   rustDeskId: string;
   /** What the person clicks: opens the RustDesk desktop app straight onto this tablet. */
   connectUrl: string;
-  /** The company's relay, shown so it can be checked against the app's own settings. */
-  relayHost: string;
-  /** Public by design — the app needs it to verify the relay. Never a secret. */
-  publicKey: string;
+  /**
+   * What the console prints after "through …" — a hostname on the company's own relay, or a plain
+   * phrase on RustDesk's public one.
+   *
+   * 🔴 THE CONSOLE READS THIS AND NEVER `relayHost`, WHICH IS NULL ON THE PUBLIC RELAY. Reading the
+   * host directly is how a toast ends up saying "through null".
+   */
+  relayLabel: string;
+  /** The company's own relay host so it can be checked against the app's settings — null on public. */
+  relayHost: string | null;
+  /** Public by design — the app needs it to verify a SELF-HOSTED relay. Null on public. Never a secret. */
+  publicKey: string | null;
+  /** Which relay carries this session. */
+  relayMode: RustDeskRelayMode;
   /** Watch only, or drive it. Control needs the tablet's accessibility service switched on. */
   mode: RustDeskSessionMode;
 };
@@ -55,8 +70,9 @@ function connectUrl(rustDeskId: string): string {
 /**
  * The target for a screen session on a tablet, or a plain sentence saying why there is none.
  *
- * Throws `RustDeskNotConfiguredError` when the relay settings are missing — the page turns that into
- * setup instructions rather than an error, exactly as it does for a missing MDM credential.
+ * Throws `RustDeskNotConfiguredError` only when a SELF-HOSTED relay is half configured — the page
+ * turns that into setup instructions rather than an error, exactly as it does for a missing MDM
+ * credential. Empty settings are not an error: they are the public relay, and it works.
  */
 export function rustDeskTarget(
   input: { rustDeskId: string | null; mode: RustDeskSessionMode },
@@ -81,6 +97,8 @@ export function rustDeskTarget(
       mode: input.mode,
       publicKey: config.publicKey,
       relayHost: config.relayHost,
+      relayLabel: config.relayLabel,
+      relayMode: config.relayMode,
       rustDeskId,
     },
   };

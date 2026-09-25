@@ -1,16 +1,25 @@
 # Headwind MDM + RustDesk — the company's own device-management server.
 #
-# WHAT THIS IS FOR. Rep tablets are managed from Phoenix, but the server they talk to has to live
-# somewhere that can hold open raw TCP and UDP ports and keep a disk. That is not Railway (it hosts
-# the web app) and it is certainly not Supabase (it is a database, and it is the PAYROLL database —
-# a device-management server talking to reps' tablets all day does not belong beside it). So this
-# runs on one small dedicated box, about $5–6 a month, in EUROPE like everything else here.
+# 🔴 THIS IS NO LONGER HOW THE COMPANY RUNS IT — IT IS THE OPTIONAL SELF-HOSTED PATH, KEPT ON
+# PURPOSE. Since 2026-09-25, at the owner's instruction: Headwind runs on RAILWAY (already paid for,
+# already in europe-west4, already deploying from this repository — see
+# infra/headwind-phoenix-actions/railway.toml) and the remote screen uses RUSTDESK'S OWN FREE EU
+# RELAY. No box is rented, and the whole of §4 of the runbook changed with it.
+#
+# WHAT THIS FILE IS STILL FOR. One thing Railway genuinely cannot do: it allows ONE TCP proxy port
+# per service and NO UDP at all, while RustDesk's ID server needs 21115–21119 TCP plus 21116 UDP.
+# So the day the company wants to OWN the relay rather than share RustDesk's — an SLA and custody,
+# not secrecy, since RustDesk is NaCl end-to-end encrypted either way — it needs a real box, and
+# this file is that box, unchanged and ready:
 #
 #   docker compose --env-file .env.headwind -f docker-compose.headwind.yml up -d
 #
+# It is NOT Supabase either, and never should be: that is a database, and it is the PAYROLL
+# database — a device-management server talking to reps' tablets all day does not belong beside it.
+#
 # 🔴 THIS FILE IS NOT RUN BY PHOENIX AND IS NOT PART OF THE APP. It is kept in the repository so the
-# server the company depends on is described in version control rather than in somebody's memory of
-# what they typed once. Nothing in CI builds or starts it.
+# path the company may take is described in version control rather than in somebody's memory of what
+# they typed once. Nothing in CI builds or starts it.
 #
 # 🔴 HEADWIND NEEDS AN EXTERNAL POSTGRES — its own documentation says a database installation on
 # localhost DOES NOT WORK — which is why `db` below is a service of its own rather than something

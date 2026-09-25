@@ -87,7 +87,7 @@ import {
   HeadwindAppInputError,
 } from "../src/lib/devices/headwind/apps.ts";
 import { headwindImeisToRecord, headwindTabletsToRegister } from "../src/lib/devices/headwind/register-sync.ts";
-import { isRustDeskConfigured, rustDeskPackageName, RustDeskNotConfiguredError } from "../src/lib/devices/rustdesk/config.ts";
+import { isRustDeskConfigured, rustDeskConfig, rustDeskPackageName, RustDeskNotConfiguredError } from "../src/lib/devices/rustdesk/config.ts";
 import { rustDeskTarget } from "../src/lib/devices/rustdesk/session.ts";
 import { findAccessRegistryEntry } from "../src/lib/security/access-registry.ts";
 import { stripComments } from "./support/comment-strip.ts";
@@ -1201,21 +1201,60 @@ async function runConsoleUserTests() {
 }
 
 function runRemoteScreenTests() {
-  assert.equal(isRustDeskConfigured({} as NodeJS.ProcessEnv), false);
+  // 🔴 EMPTY IS A WORKING CONFIGURATION, NOT A MISSING ONE — the owner's decision, 2026-09-25. This
+  // asserted `false` until that day, which is what kept the screen buttons greyed out until somebody
+  // rented a box. RustDesk is NaCl end-to-end encrypted, so its public relay carries ciphertext it
+  // cannot read; self-hosting buys ownership, not secrecy. If this line ever reads `false` again,
+  // remote screen has silently gone back to needing a server nobody agreed to pay for.
+  assert.equal(isRustDeskConfigured({} as NodeJS.ProcessEnv), true, "no settings at all means RustDesk's public relay, and it works");
   assert.equal(isRustDeskConfigured(ENV), true);
   assert.equal(rustDeskPackageName(ENV), "com.carriez.flutter_hbb", "RustDesk's Android package keeps its Flutter project id — this looks wrong and is right");
 
-  assert.throws(() => rustDeskTarget({ mode: "view", rustDeskId: "1" }, {} as NodeJS.ProcessEnv), RustDeskNotConfiguredError);
+  const publicRelay = rustDeskConfig({} as NodeJS.ProcessEnv);
+  assert.equal(publicRelay.relayMode, "public");
+  assert.equal(publicRelay.relayHost, null, "there is no single public host to name, so none is invented");
+  assert.equal(publicRelay.publicKey, null, "and no key, because there is no private relay to verify");
+  assert.match(publicRelay.relayLabel, /public relay/i, "but the console always has a phrase to print");
+
+  const own = rustDeskConfig(ENV);
+  assert.equal(own.relayMode, "self-hosted");
+  assert.equal(own.relayLabel, "relay.test.local", "on the company's own relay the label IS the host");
+
+  // 🔴 HALF A SELF-HOSTED RELAY IS THE ONE THING STILL REFUSED. A client pointed at a private relay
+  // it cannot verify does not fail loudly — it quietly connects elsewhere, and a fleet everyone
+  // believes is on the company's own relay while it is not is worse than either honest answer.
+  // `as unknown as` and not a plain cast: this repo's ProcessEnv requires NODE_ENV, so a one-key
+  // literal is not assignable to it. The point of these two is precisely that they are PARTIAL.
+  const hostOnly = { RUSTDESK_RELAY_HOST: "relay.test.local" } as unknown as NodeJS.ProcessEnv;
+  const keyOnly = { RUSTDESK_PUBLIC_KEY: "PUBLICKEYNOTASECRET=" } as unknown as NodeJS.ProcessEnv;
+  assert.throws(() => rustDeskConfig(hostOnly), RustDeskNotConfiguredError, "a host with no key is refused");
+  assert.throws(() => rustDeskConfig(keyOnly), RustDeskNotConfiguredError, "and a key with no host");
+  assert.equal(isRustDeskConfigured(hostOnly), false, "so the console turns the buttons off rather than guessing");
+  assert.equal(isRustDeskConfigured(keyOnly), false);
+  assert.throws(() => rustDeskTarget({ mode: "view", rustDeskId: "1" }, hostOnly), RustDeskNotConfiguredError);
 
   // A tablet with no ID yet gets a sentence saying what to do, not an error.
   const notReady = rustDeskTarget({ mode: "control", rustDeskId: null }, ENV);
   assert.equal(notReady.target, null);
   assert.match(String(notReady.reason), /RustDesk ID/, "and it says in plain words where the ID comes from");
 
+  // The same tablet, with nothing configured at all, still opens — through the public relay.
+  const onPublic = rustDeskTarget({ mode: "view", rustDeskId: "123456789" }, {} as NodeJS.ProcessEnv);
+  assert.equal(onPublic.reason, null, "no box, no settings, and the session still opens");
+  assert.equal(onPublic.target?.relayMode, "public");
+  assert.match(String(onPublic.target?.relayLabel), /public relay/i);
+
   const ready = rustDeskTarget({ mode: "control", rustDeskId: "123 456 789" }, ENV);
   assert.equal(ready.reason, null);
   assert.equal(ready.target?.connectUrl, "rustdesk://connect/123%20456%20789", "a value somebody typed is encoded, never pasted into a link raw");
   assert.equal(ready.target?.relayHost, "relay.test.local");
+  assert.equal(ready.target?.relayLabel, "relay.test.local");
+
+  // 🔴 THE CONSOLE READS `relayLabel`, NEVER `relayHost` — the host is null on the public relay, and
+  // a toast built from it reads "through null" for every tablet in the fleet.
+  const fleetUi = stripComments(source("src/components/devices/headwind-fleet.tsx"));
+  assert.doesNotMatch(fleetUi, /target!?\.relayHost/, "the fleet page never prints the raw relay host");
+  assert.match(fleetUi, /target!\.relayLabel/, "it prints the label, which is never null");
 
   // 🔴 NO SECRET IN THE LINK. RustDesk's scheme accepts a password in the query string and it must
   // never be used: a URL is logged by browsers, proxies and anything that touches it, and a tablet's
@@ -1228,7 +1267,7 @@ function runRemoteScreenTests() {
 function runErrorMappingTests() {
   const cases: Array<[unknown, number, string]> = [
     [new HeadwindNotConfiguredError("not connected"), 400, "a missing credential is a SETUP state, not a failure"],
-    [new RustDeskNotConfiguredError("no relay"), 400, "so is a missing relay"],
+    [new RustDeskNotConfiguredError("half a relay"), 400, "so is a half-configured relay"],
     [new HeadwindCommandUnconfirmedError("not connected yet"), 501, "an action Phoenix cannot name is neither the person's fault nor the tablet's"],
     [new HeadwindCommandInputError("say which tablet"), 400, "a mistake in what was sent"],
     [new HeadwindRequestError(500, "the server said no"), 502, "the far end refusing"],
@@ -1539,26 +1578,38 @@ async function runCloudflareAccessTests() {
     /no exception rule for `\/rest\/\*`/,
     "and refuses that exception in writing — it is the obvious-looking simplification, and it would leave the API that factory-resets tablets open",
   );
+  // 🔴 REWORDED 2026-09-25 WHEN THE SERVER MOVED TO RAILWAY, AND THE DANGER IT GUARDS IS UNCHANGED.
+  // This used to read `31000 stays open directly`, because the rented box published the tablets'
+  // push channel on its own port. Railway publishes no second port, so that sentence is gone — but
+  // the mistake it existed to prevent is not: a tablet has no Cloudflare identity and never will,
+  // so Access on the TABLETS' hostname answers every sync with a sign-in page and takes the whole
+  // fleet dark while the server itself looks healthy. The runbook must refuse that in writing.
   assert.match(
     runbook,
-    /31000 stays open directly/,
-    "while saying plainly that the tablets' own channel is NOT behind the tunnel — putting it there would take the fleet offline",
+    /NEVER PUT ACCESS ON `mdm\.satopharma\.com`/,
+    "the tablets' own hostname is NOT behind Access — putting it there would take the fleet offline",
+  );
+  assert.match(
+    runbook,
+    /31000 is not published/,
+    "and the runbook states the real cost of Railway's one-port limit rather than leaving it to be found in an incident",
   );
 
-  // 🔴 THE MOST EXPENSIVE MISTAKE IN THE WHOLE RUNBOOK, AND THE MOST NATURAL ONE TO MAKE.
-  // `cloudflared tunnel route dns` replaces its hostname with a proxied CNAME, and Cloudflare's proxy
-  // carries HTTP ports only. Run it on the TABLETS' name and every tablet goes dark at its next
-  // check-in on 31000 — looking exactly like a dead server rather than like a DNS setting. So the
-  // runbook must route the tunnel to a separate console hostname and never to the tablets' one.
+  // 🔴 THE MOST EXPENSIVE MISTAKE IN THE WHOLE RUNBOOK, AND THE MOST NATURAL ONE TO MAKE: putting
+  // one rule on one hostname. The fleet and the console must stay two names, and only the console's
+  // goes through Cloudflare. The Railway path makes this EASIER to get wrong, not harder — both
+  // names sit on the same service now, so nothing physical separates them any more.
   assert.match(
     runbook,
-    /cloudflared tunnel route dns phoenix-mdm mdm-console\.satopharma\.com/,
-    "the tunnel is routed to the CONSOLE hostname",
+    /Zero Trust → Access → Applications\*\*, add\s+`mdm-console\.satopharma\.com`/,
+    "the Access application is on the CONSOLE hostname",
   );
+  // The old cloudflared instruction is gone with the box, and must not come back on the tablets'
+  // name if the self-hosted path is ever revived.
   assert.doesNotMatch(
     runbook,
     /tunnel route dns \S+ mdm\.satopharma\.com/,
-    "and never to mdm.satopharma.com, which the tablets reach on 31000 — a port Cloudflare's proxy does not carry",
+    "and no tunnel is ever routed to mdm.satopharma.com, which is the tablets' own name",
   );
   assert.match(
     runbook,
