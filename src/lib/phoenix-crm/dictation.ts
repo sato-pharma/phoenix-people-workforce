@@ -18,11 +18,13 @@
  * owner on 2026-09-25 and he ruled it acceptable — keep it. There is no on-device Arabic engine, free
  * or paid, to fall back to, so reopening this only removes the feature.
  *
- * One part of it is NOT settled and this comment does not settle it: whether the REP is told his voice
- * goes to Google or Apple. FTP Portal says so on a privacy page. Phoenix has one too — `app/privacy`,
- * last updated July 2026 — but it covers RECRUITMENT CANDIDATES only, names no processor, and says
- * nothing about employees, so it does not cover this and adding a line to it would not be enough on
- * its own. That is the owner's call, and it is still open.
+ * Whether the REP is told is SETTLED, and settled the other way from how FTP Portal does it. FTP says
+ * so on a privacy page; Phoenix says it on the microphone. Offered both on 2026-09-25, the owner chose
+ * the control — "add the processor line to the dictation mic, not the privacy page" — so the line
+ * lives under the button in `src/components/phoenix-crm/dictate.tsx`, where the rep reads it at the
+ * moment he decides to speak. `app/privacy` is deliberately NOT the place: it covers recruitment
+ * candidates only, names no processor, says nothing about employees, and nobody opens it. Do not
+ * "complete" this by moving the line there or by adding a second copy.
  *
  * It is strictly an accelerator. Every comment it fills can still be typed, and where the engine is
  * missing the control is not rendered at all rather than rendered inert — an inert microphone reads as

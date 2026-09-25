@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   appendDictated,
   dictationErrorMessage,
@@ -102,4 +103,41 @@ export function runPhoenixCrmDictationTests() {
       `every dictation failure names typing as the way out (${code}) — dictation is an accelerator and the comment can always be typed`,
     );
   }
+
+  // ── The rep is told where his voice goes, on the control itself ───────────────────────────────
+  // Recognition is not on the phone: Chrome streams the audio to Google and Safari to Apple, and a
+  // visit comment carries doctor names and what was said about competitors. The owner ruled that
+  // processing acceptable AND ruled on where the rep is told — offered the privacy page on
+  // 2026-09-25, he chose the microphone: "add the processor line to the dictation mic, not the
+  // privacy page". This pins the decision so a later tidy-up cannot quietly drop it.
+  const dictate = readFileSync("src/components/phoenix-crm/dictate.tsx", "utf8");
+  // Cut out the notice the rep actually READS, and assert against that rather than against the file.
+  // The file is not the screen: the comment above this paragraph explains the decision and names
+  // Google, Apple, Chrome and Safari itself, so a check over the whole file passes happily while the
+  // rendered line has stopped naming anyone. Measured — deleting "Apple's on Safari" from the
+  // paragraph left a file-wide check green.
+  const notice = /Your voice is sent to the browser[\s\S]*?<\/p>/.exec(dictate)?.[0];
+  assert.ok(
+    notice,
+    "the microphone tells the rep his voice leaves the phone — the owner put this notice on the control rather than on a privacy page, because the rep reads it where he decides to speak",
+  );
+  for (const processor of ["Google", "Apple", "Chrome", "Safari"]) {
+    assert.match(
+      notice,
+      new RegExp(processor),
+      `the rendered notice names ${processor} — "sent to a third party" tells the rep nothing he can act on, and naming the processor is the whole point of saying it`,
+    );
+  }
+  // And the decision is recorded where the next session will hit it first.
+  const dictation = readFileSync("src/lib/phoenix-crm/dictation.ts", "utf8");
+  assert.match(
+    dictation,
+    /Whether the REP is told is SETTLED/,
+    "the module header records the disclosure as decided — a header that still calls it open invites the next session to 'finish' it by adding a second copy to app/privacy, which is the one place the owner ruled it out of",
+  );
+  assert.doesNotMatch(
+    dictation,
+    /the owner's call, and it is still open/,
+    "the sentence that called it open is gone, not just contradicted further down",
+  );
 }
