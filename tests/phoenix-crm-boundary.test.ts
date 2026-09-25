@@ -4,6 +4,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { permissionMatrix, permissionResources, phoenixRoles, type PermissionAction, type PhoenixRole } from "../src/lib/auth/permissions.ts";
 import { MODULE_LABELS } from "../src/lib/navigation/module-catalog.ts";
 import { accessRegistry, findAccessRegistryEntry } from "../src/lib/security/access-registry.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * Phoenix CRM's edges (the owner, 2026-09-16: a clean new module, built from scratch, "we will not throw
@@ -126,6 +127,14 @@ const ROUTE_GATES: RouteGate[] = [
   post("photos/upload", "create"),
   // A read sent as a POST (a batch of photo paths does not belong in a URL), audited as a read.
   { route: "photos/sign", method: "POST", action: "read", audit: "access-read", auditRequired: true },
+  // The voice note's slot: the same create gate as the photo's, because whoever may enter this
+  // territory's visits is exactly who may attach a recording to one. It is a SEPARATE route rather
+  // than a purpose argument on photos/upload-slot for the reason the table is separate — a recording
+  // is not evidence of presence and must never be reachable through the path that issues one.
+  post("voice/upload-slot", "create"),
+  // Playback, on the photo's own pattern: a read sent as a POST, audited because hearing what a rep
+  // said on a call discloses as much as seeing where they stood.
+  { route: "voice/sign", method: "POST", action: "read", audit: "access-read", auditRequired: true },
   // The place stamp burned into a live photo: same gate as taking the photo; it persists nothing.
   { route: "location", method: "POST", action: "create", audit: "access-read", auditRequired: false },
   get("settings", "update"),
@@ -338,6 +347,11 @@ const MIGRATION = "supabase/migrations/20260916150000_phoenix_crm.sql";
 const LATER_MIGRATIONS = [
   "supabase/migrations/20260922180258_phoenix_crm_pending_customers.sql",
   "supabase/migrations/20260924234547_add_doctor_primary_pharmacy.sql",
+  // The voice note, and it must stay LAST: liveMigrationSql swaps in the text of the final entry that
+  // names a function, and this is the most recent migration to replace phoenix_crm_save_visit. Listed
+  // earlier, it would leave the checks below reading a body the database has already stopped running —
+  // the exact failure the comment above this array warns about.
+  "supabase/migrations/20260925030047_phoenix_crm_visit_voice_note.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */
@@ -461,6 +475,7 @@ function runMigrationTests() {
   // The migrations that follow it are held to the same hygiene, and their functions join the set the
   // services may call. A function replaced by a later migration is not counted twice.
   const callable = new Set(functions);
+  const allTables = [...tables];
   for (const path of LATER_MIGRATIONS) {
     const later = migrationSql(path);
     assertMigrationHygiene(later, path);
@@ -468,6 +483,28 @@ function runMigrationTests() {
     assert.ok(added.length > 0, `${path} replaces no function — has it been renamed?`);
     assertFunctionGrants(later, path, added.filter((name) => !callable.has(name)));
     for (const name of added) callable.add(name);
+
+    // A table a LATER migration adds. It cannot join the first migration's lock loop, so it states the
+    // same four statements itself — and the check has to be made here, because until this loop existed
+    // a table added after the first migration was invisible to every rule below: the services could
+    // read it, and nothing said whether anon and authenticated could too.
+    const laterTables = [...later.matchAll(/\bcreate table if not exists public\.(phoenix_crm_[a-z_]+) \(/g)].map((match) => match[1]);
+    assert.equal(
+      laterTables.length,
+      (later.match(/\bcreate\s+table\b/gi) ?? []).length,
+      `${path}: every table it creates is a public.phoenix_crm_* table`,
+    );
+    for (const table of laterTables) {
+      for (const statement of [
+        `alter table public.${table} enable row level security;`,
+        `create policy ${table}_service_role\n  on public.${table} for all to service_role using (true) with check (true);`,
+        `revoke all on table public.${table} from public, anon, authenticated;`,
+        `grant all on table public.${table} to service_role;`,
+      ]) {
+        assert.ok(later.includes(statement), `${path}: ${table} is locked to the service role — missing: ${statement.split("\n")[0]}`);
+      }
+      allTables.push(table);
+    }
   }
 
   // The photo bucket: private, JPEG only, 2 MB; a re-run makes it private again.
@@ -491,7 +528,7 @@ function runMigrationTests() {
       tableUses += 1;
       const table = match[1];
       if (table.startsWith("phoenix_crm_")) {
-        assert.ok(tables.includes(table), `${file} uses ${table}, which the migration does not create`);
+        assert.ok(allTables.includes(table), `${file} uses ${table}, which no migration in this module creates`);
         continue;
       }
       assert.ok(READ_ONLY_SOURCES.includes(table), `${file} uses ${table} — outside its own tables Phoenix CRM reads only the organogram, people's names and the product list`);
@@ -503,13 +540,36 @@ function runMigrationTests() {
       rpcUses += 1;
       assert.ok(callable.has(match[1]), `${file} calls ${match[1]}, which no Phoenix CRM migration creates`);
     }
+    // The module has two buckets, and each file reaches exactly one of them. Stated per file rather
+    // than as "either of ours": the two hold different kinds of evidence — a photo says somebody was
+    // there, a recording says nothing about where it was made — and a file that could open both is a
+    // file that could quietly file a recording where the photos are read from.
+    const bucketFor = file.endsWith("/voice-notes.ts") ? "PHOENIX_CRM_VOICE_BUCKET" : "PHOENIX_CRM_PHOTO_BUCKET";
     for (const match of source.matchAll(/\.storage\.from\(\s*([^)]*)\)/g)) {
-      assert.equal(match[1].trim(), "PHOENIX_CRM_PHOTO_BUCKET", `${file} opens a bucket other than the module's own`);
+      assert.equal(match[1].trim(), bucketFor, `${file} opens a bucket other than the one it owns`);
     }
   }
   assert.ok(tableUses >= 20, `found only ${tableUses} table reads in the services`);
   assert.ok(rpcUses >= 12, `found only ${rpcUses} function calls in the services`);
   assert.match(readFileSync("src/lib/phoenix-crm/server/photos.ts", "utf8"), /export const PHOENIX_CRM_PHOTO_BUCKET = "phoenix-crm-photos";/);
+  assert.match(readFileSync("src/lib/phoenix-crm/server/voice-notes.ts", "utf8"), /export const PHOENIX_CRM_VOICE_BUCKET = "phoenix-crm-voice";/);
+
+  // The voice note's own rule, and the reason it is asserted rather than written down: a recording
+  // carries no authority over when a visit happened, so phoenix_crm_take_voice returns void where its
+  // photo sibling returns the issue time that becomes captured_at. Returning nothing is what makes the
+  // rule unbreakable by a later edit — and voice-notes.ts exports no issuedAt for one to reach for.
+  const voiceSql = migrationSql("supabase/migrations/20260925030047_phoenix_crm_visit_voice_note.sql");
+  assert.match(
+    voiceSql,
+    /create or replace function public\.phoenix_crm_take_voice\([\s\S]*?\)\s*\nreturns void\n/,
+    "phoenix_crm_take_voice returns void — a recording may not date a visit",
+  );
+  assert.doesNotMatch(
+    // Stripped, because the comment explaining the absence necessarily names the thing that is absent.
+    stripComments(readFileSync("src/lib/phoenix-crm/server/voice-notes.ts", "utf8")),
+    /\bissuedAt\b/,
+    "voice-notes.ts hands back no issue time — there must be nothing here for a later change to date a visit with",
+  );
 }
 
 // ── 6. The risk review's fixes (2026-09-17) ─────────────────────────────────────────────────────────

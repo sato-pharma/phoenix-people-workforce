@@ -1529,6 +1529,7 @@ import { runPhoenixCrmPortalSidebarTests } from "./phoenix-crm-portal-sidebar.te
 import { runPhoenixCrmAmPmWordTests } from "./phoenix-crm-am-pm-words.test.ts";
 import { runPhoenixCrmDoctorPharmaciesTests } from "./phoenix-crm-doctor-pharmacies.test.ts";
 import { runPhoenixCrmLineProductsTests } from "./phoenix-crm-line-products.test.ts";
+import { runPhoenixCrmVoiceNoteTests } from "./phoenix-crm-voice-note.test.ts";
 import { runCrmCutoverTests } from "./crm-cutover.test.ts";
 import { runCrmUnifyVendorReadsTests } from "./crm-unify-vendor-reads.test.ts";
 import { runPhoenixKpiRulesTests } from "./phoenix-kpi-rules.test.ts";
@@ -5059,6 +5060,11 @@ await runTest(
 await runTest(
   "Phoenix CRM groups a line's products by family for the pharmacy-stock check (owner, 2026-09-24: \"show products by families and expandable and collapsable by conc in Does this pharmacy have these products?\"; a pharmacy can carry one concentration of a family and not another, so the stock check is answered per product, grouped under its family; groupLineProducts is the pure core, so products group under their family within a normalized line key, confidential codes are dropped, an unnamed product falls back to its family name, and both families and their products come out sorted and deduplicated)",
   runPhoenixCrmLineProductsTests,
+);
+
+await runTest(
+  "Phoenix CRM keeps a visit note as the rep's own voice (owner, 2026-09-25: a rep outside a clinic says in twenty seconds what he will not type in two minutes, and in Egyptian Arabic the keyboard is the slow part; this keeps the AUDIO, transcribed by nothing and seen by no speech service, which is the whole difference from the dictation shipped the same night where the audio goes to Google or Apple and what saves is text; the ruling that shapes it is that a recording DATES NOTHING — it can be made in a car an hour later — so phoenix_crm_take_voice returns void where its photo sibling returns the issue time that becomes captured_at, the slot answer carries no time and neither does anything the phone sends; the path is the only thing trusted, the seconds and bytes beside it are labels on a play button and are clamped, dropped entirely when there is no path to describe; and the dictation control no longer says \"Nothing is recorded\", which was true until a recorder was put on the same form)",
+  runPhoenixCrmVoiceNoteTests,
 );
 
 await runTest(
