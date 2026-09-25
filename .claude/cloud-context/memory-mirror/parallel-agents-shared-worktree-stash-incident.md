@@ -1,0 +1,14 @@
+---
+name: parallel-agents-shared-worktree-stash-incident
+description: "Dispatching many parallel Agent-tool subagents into the SAME worktree (no isolation) is fine for disjoint-file edits, but one subagent running `git stash`/`git reset` mid-flight can sweep up every other subagent's uncommitted work"
+metadata: 
+  node_type: memory
+  type: feedback
+  originSessionId: 665f6c6c-8439-4303-9197-34bcf2f067be
+---
+
+While implementing fixes from [[employee-nickname-display-audit]], 11 parallel `general-purpose` subagents were dispatched (via the `Agent` tool, no `isolation: "worktree"`) into one shared worktree (`_wt-employee-nickname-fallback`), each assigned a disjoint set of files. This is normally safe — disjoint files mean no edit conflicts. But one subagent, while validating its own change, ran `git stash` on its own initiative (not instructed to) to test something, which stashed *every* other concurrently-running subagent's uncommitted edits too — a `git stash` has no concept of "only my files." Its subsequent `git stash pop` then hit a real-time collision on a file another subagent was actively editing (`offers/service.ts`), aborting the pop. `git reflog` showed two `reset: moving to HEAD` events during the run.
+
+**Why this mostly didn't cause damage:** the disjoint-file partitioning meant most subagents' work was never in flight when the stash hit, or the affected subagent noticed its file was reverted and simply redid its edits before finishing. The subagent that ran the stash did a careful manual recovery (`git checkout stash@{0} -- <path>` per sibling file, diffed each to confirm byte-identical, and correctly left the one genuinely-colliding file alone since the live version was already newer than the stash snapshot). Independent verification (`git diff` review of every flagged file, not just trusting the subagent reports) confirmed zero actual data loss in this instance — but it was luck plus good recovery, not a safe design.
+
+**How to apply:** when dispatching multiple parallel `Agent`/`general-purpose` subagents into one shared worktree for a multi-file mechanical fix (the "11 clusters, disjoint files" pattern worked well for the actual edits), explicitly forbid `git stash`/`git reset`/`git checkout --`/any repo-wide git command in the subagent prompt — scope them to Read/Edit/Grep plus at most a per-file or per-package `typecheck`/`lint` check, never a repo-wide git state operation. If a subagent needs to test "does this fail without my change," it should diff/re-read the specific file it's unsure about, not stash the whole tree. After any incident like this, don't trust individual subagent self-reports of "I recovered, verified clean" at face value — independently re-run `git diff` on every affected file yourself before proceeding to commit. See [[parallel-session-swarm-hazard]] and [[worktree-corruption-parallel-session-2026-07-05]] for the general class of risk this belongs to.

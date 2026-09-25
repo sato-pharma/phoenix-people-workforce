@@ -1,0 +1,28 @@
+---
+name: crm-module-audit-and-filters-export-fix-2026-07-27
+description: "CRM Master (/admin/crm) deep-dive audit + PR #1380 fixing Visit Type filter, XLSX export, filter redesign; key prod-data gaps"
+metadata: 
+  node_type: memory
+  type: project
+  originSessionId: 6d20aeb9-9413-4a9f-b937-e9c675075ca7
+  modified: 2026-08-22T22:24:04.237Z
+---
+
+Full CRM (iReports360 mirror) audit on 2026-07-27 + fixes in **PR #1380 — MERGED to main 2026-07-27 as 220a1d7e** (`codex/crm-master-filters-export-fix`). *(2026-07-27 pipeline, since replaced: "Staging auto-deploys from main; production picks up on the next batched ~2h deploy window." Production has been Railway since 2026-08-01 — **a merge to `main` ships immediately**, no window — see [[railway-merge-is-the-production-deploy]].)* Branched off origin/main; gate green (typecheck/lint/452 tests/build); server-render verified 200 as Super Admin via local dev-auth. Local worktree `_wt-crm-fixes` + remote branch still exist (await owner CLEAN); do the live visual pass on staging/prod.
+
+**Reported bugs (both reproduced live + confirmed in prod SQL), fixed in #1380:**
+- Visit Type filter "Campaign (Prospection)" returned 0 of 29,304 rows: `sanitizeSearch()` strips parens → ilike `%Campaign  Prospection%` (double space) matches nothing. Fix = exact `.eq("visit_type_description", visitType)`. sanitizeSearch stays only on the free-text Search box.
+- Export "spins then fails": client fetched up to 50k rows then POSTed all to `/api/exports/table` which styled every cell via ExcelJS with NO maxDuration. Benchmark: 50k≈41s/920MB (hung), 20k≈22s/370MB. Fix = shared cell-style refs + sampled col widths in `table-workbook.ts` (behavior-preserving, helps ALL exports), cap export at `CRM_MASTER_EXPORT_MAX_ROWS=20000` (in master-datasets.ts, client-safe), maxDuration=300, user-visible error.
+- Export also silently dropped 5 of 13 filters (line/hireFrom/hireTo/minDuration/halfDaysOnly) → exported a superset. Fixed (route forwards all 13).
+- Filter redesign: one unified panel, single Apply/Reset, removable active-filter chips, removed separate Agent HR ID box (Search now also matches `double_hr_id` server-side).
+- Data fix: Visit Time was blank on the 2 No-Check-in tabs (~1,755 rows w/ real save time) → seeded save-tier in `attachDerived`.
+
+**Honest scores (data accuracy = #1 per owner):** in-module accuracy 84, downstream sync accuracy 88, sync reliability 78, filtering/export 48, performance 52, security 90, observability 72, code quality 74, UX 66; overall ~74. Timezone handling, single-door guardrail, identity/reclassification/recognition math all verified CORRECT.
+
+**Open follow-ups (NOT in #1380, audit recommendations):**
+- Region→brick mapping is EMPTY in prod (`ireports360_crm_region_brick_resolutions` = 0 rows / 294 unmapped regions) → every regular visit capped at "75% Partial" and PHX brick/area/region cols blank. **PR #1385 (`codex/crm-region-mapping-autopopulate`) — MERGED to main 2026-07-27 as d6ec2888** makes the Download Template self-populating: admin fills only Brick ID (dropdown of 1005 active bricks), Brick Name/Block/Area/Region code+name auto-fill via in-sheet VLOOKUP vs an embedded "Bricks" sheet; import unchanged (Region Mapping stays sheet[0]). Owner still needs to fill + upload to actually populate the 294. Geography is line-independent (all 42 areas serve all 3 lines). Names live in source_of_sales_{blocks(description),areas(area_name),regions(region_name)}; area→line in au_v_line_area_map.
+- Employee 360 + probation SFE evidence skip `collapseDuplicateDoubleVisitSubmissions` → over-count double visits by ~24% (11,677 raw → 8,876 real stops) vs DV Analytics/FWC/payroll.
+- ✅ Proper streaming/server-side export to lift the 20k cap — DONE 07-29 in PR #1464 (`codex/crm-export-streaming`), MERGED to main as `931ac6d7`. ⚠️ SHIPPED BROKEN: the full unfiltered Visits export (~110k rows) took 3-6 min real-world, past whatever cut the connection, producing a corrupted .xlsx ("file format... not valid"). Root cause + fix in [[crm-export-streaming-corruption-incident]] — PR #1473 MERGED as `a5cb5027` same day, verified 3-6min → 119s against real prod data. ✅ DEPLOYED to production 2026-07-29 23:5x — confirmed `sha-a5cb5027` is the `latestRevision` serving 100% traffic on phoenix-hr.satopharma.com. The 20k cap + the two-hop "fetch rows as JSON → POST back → style full workbook in memory" build are GONE (they OOM'd the 1Gi instance → "Export failed — Export failed"). Now `streamCrmMasterExportPages` (master.ts) walks every page UNCAPPED (1M runaway-stop only) with pre-loaded roster/brick overlays; `streamCrmMasterWorkbookResponse` (master-export-workbook.ts) streams the xlsx row-by-row via ExcelJS `stream.xlsx.WorkbookWriter` + `Readable.toWeb` (flat memory); route `GET /api/admin/crm/master-export` streams the file, client does one fetch→download. Cell rendering shared in `master-cell-format.ts`. `CRM_MASTER_EXPORT_MAX_ROWS` deleted. DB paging still offset-based (keyset = fast-follow for huge unfiltered pulls). Reusable streaming pattern: [[fwc-godmode-export-and-exceljs-limits]].
+- Perf: `ireports360_visits_effective` per-row correlated (404ms/74k), search count seq scan (838ms, no trigram index), computed tabs recompute up to 60k rows/navigation.
+
+Prod facts (2026-07-27): 108,397 visits / 91,184 checkins, 0 dup/null keys; 93.0% agent-resolved (79 agents/7,589 rows unmapped); 96.9% of regular visits have a GPS check-in. 4 sync crons incl. 15-min live-sync 08:30–12:01 Cairo. Related: [[ireports360-crm-integration]] [[crm-single-source-door-guardrail]] [[ireports360-timestamps-cairo-local-mislabeled-utc]] [[crm-resigned-slot-reused-for-new-hire]] [[fwc-godmode-export-and-exceljs-limits]]

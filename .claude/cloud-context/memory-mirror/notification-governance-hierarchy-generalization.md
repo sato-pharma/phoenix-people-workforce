@@ -1,0 +1,25 @@
+---
+name: notification-governance-hierarchy-generalization
+description: "Generalized the probation cross-line notification-leak fix (#1199) to the shared cross-module governance resolver — removed department/area/team org-scope matching from permissionBasedRecipients(); PR #1204 MERGED+LIVE 2026-07-20 (commit 88f6ddb9)"
+metadata: 
+  node_type: memory
+  type: project
+  originSessionId: 8c826290-3610-4c5c-80f9-d84104d12c1c
+  modified: 2026-07-20T10:20:35.397Z
+---
+
+Owner directive 2026-07-20: "why u use department id use hr-id and heirarchy in all modules" — after the probation notification leak fix ([[probation-workflow-notification-line-leak]]), the owner wants the SAME root-cause pattern fixed generically wherever it's shared, not just bypassed for probation.
+
+**Root cause (shared code):** `permissionBasedRecipients()` in `src/lib/notifications/policy.ts` — used by the `"permission_based"` recipient strategy for `payroll.*`, `contract_renewal.*`, `offers.*`, `recruitment.*`, `resignations.*`, `vacation.*`, `employee_import.*` (probation already bypasses this resolver via its own explicit-recipient fix) — matched any active user holding the resource permission whose `department_id`/`area_id`/`team_id`/`line_id` equalled the subject's (`hasOrgScope`, any-match OR logic), in addition to the subject's actual manager chain.
+
+**Blast-radius evidence (queried prod `ozucdzovmcqvepbozvqf` before changing code):** `department_id=1` = 98 active employees spanning all 3 product lines (same bucket that caused the probation leak). `area_id`/`team_id` groups are mostly small (1-13 people) but several still straddle 2-3 lines. Only Super Admin/CEO/Finance Manager get automatic company-wide scope (`scopeForRole()`); every other role needs a real self/manager/hierarchy match.
+
+**Two modules already hit the exact pre-fix-probation pattern** (real subjectHrId, no explicit recipientHrId, so they fall through to governance): `src/lib/contracts/service.ts:455` (contract_renewal workflow status changes) and `src/lib/resignations/service.ts:424` (resignation workflow status changes). Resignations' historical rows show 0 delivered recipients — NOT a safeguard, just an unrelated under-delivery bug (the subject's `employment_status` likely fails the `isActiveEmployee()` active/on_leave check once they're mid-resignation, so `subject` resolves null and everything skips, including Super Admin/CEO). If that separate bug were ever fixed, it would have started leaking the same way probation did.
+
+**Latent worst-case found:** `payroll:read` is granted to nearly every role including Medical Rep/Employee (self-service payslip access). Every real payroll call site today (`automated-payroll/notify.ts`) uses an explicit `recipientHrId`, so this path has never fired for real — but it was a bigger landmine than probation's: if any future payroll code path ever set a subject without an explicit recipient, up to ~98 department-mates (any role, since payroll:read is nearly universal) could see another employee's payroll notification.
+
+**Fix (PR #1204, branch `codex/notification-policy-hierarchy`, pushed, NOT yet merged):** removed the `hasOrgScope()` function and its 4 line/department/area/team checks entirely from `permissionBasedRecipients()`. Recipients are now: self-match, `reportsTo` (direct manager), `inManagerChain` (full chain walk), or `context.scope === "company"/"system"` (Super Admin/CEO/Finance Manager bypass) — same shape as the probation fix. Updated two source-assertion regression-guard tests (`tests/title-permission-governance.test.ts`, `tests/notification-governance-hardening.test.ts`) that had pinned the OLD `hasOrgScope(...)` calls as required — this repo tests this module via source-assertions (regex on file text), not functional DB-backed tests, so I followed that existing convention rather than introducing a new one.
+
+**Deliberately NOT fixed here (flagged for later, not a regression):** Talent Acquisition's ad-hoc coverage on `offers`/`recruitment`/`employee_import` via accidental department/area/team overlap — this was never reliable even before (only worked when department happened to coincide) and prod has **zero** real historical deliveries through this path for those 3 modules, so removing it changes nothing in practice. A proper fix would be an explicit role-based recipient lookup for functional (non-hierarchical) roles, not org-unit matching.
+
+Gate green: typecheck, lint (0 errors), 423/423 tests, pre-push gate (routes/migrations/lint/typecheck). PR #1204 opened, owner approved with "go ahead", merged 2026-07-20 (commit 88f6ddb9). CI for that exact merge commit got cancelled by GitHub's concurrency-group behavior (several other sessions merged PRs to `main` back-to-back in the same window — #1200, #1201, #1203, and this one, all within ~3 minutes) — normal/benign, not a failure: merges are fast-forwards, so the commit rode along on the next CI run that ran to completion (tip `f17463a8`). That run passed, the Cloud Run deploy built/smoke-tested/promoted to 100%, and `https://phoenix-hr.satopharma.com` verified 200 post-deploy. **CLOSED — live in production.**
