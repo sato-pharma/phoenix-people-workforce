@@ -14,6 +14,7 @@
  */
 
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
+import { countDevicesByState, getEnterpriseProfile } from "@/lib/devices/android-enterprise";
 import { androidManagementTokenProvider } from "@/lib/devices/android-management-auth";
 import { CHROME_PACKAGE_NAME, androidManagementConfig } from "@/lib/devices/android-web-app";
 import {
@@ -76,7 +77,22 @@ export type RepTabletApp = {
   installType: OwnerAppInstallType;
 };
 
+export type RepTabletsEnterprise = {
+  /** The binding itself — what `ANDROID_MANAGEMENT_ENTERPRISE_NAME` holds. Always known. */
+  name: string;
+  displayName: string | null;
+  contactEmail: string | null;
+  kind: string | null;
+  /** Every device Google holds under this enterprise, in EVERY state — the true count. */
+  deviceCount: number;
+  /** That count broken down by what Google says each device is doing. */
+  byState: Array<{ label: string; count: number }>;
+  /** Set when the enterprise's own details could not be read. The count above still stands. */
+  error: string | null;
+};
+
 export type RepTabletsState = {
+  enterprise: RepTabletsEnterprise;
   policy: {
     /** False until the first save — nothing can be enrolled before then. */
     exists: boolean;
@@ -136,10 +152,13 @@ async function appTitles(
  */
 export async function getRepTabletsState(actor: string): Promise<RepTabletsState> {
   const connection = await connect();
-  const [live, devices, loaded] = await Promise.all([
+  const [live, devices, loaded, profile] = await Promise.all([
     getRepTabletPolicy(connection),
     listEnterpriseDevices(connection),
     loadRegister(),
+    // The enterprise's own details are the one part of this page that may fail on its own. It costs
+    // the page a display name, never the device count beside it — see `android-enterprise.ts`.
+    getEnterpriseProfile(connection).catch((error: unknown) => deviceErrorMessage(error)),
   ]);
 
   let register = loaded;
@@ -165,9 +184,20 @@ export async function getRepTabletsState(actor: string): Promise<RepTabletsState
   const version = typeof live?.version === "string" ? live.version : null;
   const tablets = buildManagedTabletRows(devices, register.entries, { appTitles: titles, currentPolicyVersion: version });
 
+  const readProfile = typeof profile === "string" ? null : profile;
+
   return {
     defaultValidity: DEFAULT_ENROLLMENT_VALIDITY,
     enrollable: enrollableTablets(register.entries, tablets),
+    enterprise: {
+      byState: countDevicesByState(devices),
+      contactEmail: readProfile?.contactEmail ?? null,
+      deviceCount: devices.length,
+      displayName: readProfile?.displayName ?? null,
+      error: typeof profile === "string" ? profile : null,
+      kind: readProfile?.kind ?? null,
+      name: readProfile?.name ?? connection.enterpriseName,
+    },
     installTypes: OWNER_APP_INSTALL_TYPES,
     loadedAt: new Date().toISOString(),
     policy: {
