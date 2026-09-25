@@ -1595,11 +1595,13 @@ function applyMasterFilters(
   if (dataset === "regular_dv_no_checkin") {
     q = q.eq("regular_no_checkin", true).not("double_crm_id", "is", null).neq("double_crm_id", 0);
   }
-  // A Regular Visit (type 0) the rep saved with NO doctor picked — contact_crm_id 0, so no contact,
-  // no locality and no brick to resolve. Not a mapping gap the system can close (there's nothing to
-  // map to); it's a rep data-entry habit a DM coaches. Surfaced so it's visible per rep, scoped by
-  // the viewer's own team on the portal and company-wide on /admin/crm.
-  if (dataset === "regular_no_contact") q = q.eq("visit_type", 0).eq("contact_crm_id", 0);
+  // A field visit the rep saved with NO doctor picked — contact_crm_id 0, so no contact, no
+  // locality and no brick to resolve. Two visit types reach it: Regular (0) and the vendor's
+  // catch-all Unknown (-30), both carrying only a free-text comment. NOT the -16 Training half
+  // (also described "Unknown" but a different code). Not a mapping gap the system can close
+  // (there's nothing to map to); it's a rep data-entry habit a DM coaches. Surfaced so it's visible
+  // per rep, scoped by the viewer's own team on the portal and company-wide on /admin/crm.
+  if (dataset === "regular_no_contact") q = q.in("visit_type", [0, -30]).eq("contact_crm_id", 0);
 
   // Advanced filters. agent_hr_id exists on both tables; double_hr_id is visits-only. Match
   // either so filtering by one employee surfaces EVERY record they appear in — as the primary
