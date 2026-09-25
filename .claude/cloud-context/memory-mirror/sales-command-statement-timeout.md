@@ -1,0 +1,25 @@
+---
+name: sales-command-statement-timeout
+description: "/admin/sales-command 'Failed to load Source of Sales data' = Postgres 57014 statement timeout: authenticator role caps EVERY app query at 8s; exec aggregates were too slow + rpcAll re-ran them per page. Fixed via DB timeout override + indexes + single-pass rpcAll + lite comparison mode. PR #74."
+metadata:
+  node_type: memory
+  type: project
+  originSessionId: 327053e1-14d5-4c36-a35a-08bcab2024c2
+---
+
+The CEO's `/admin/sales-command` page showed **"Failed to load Source of Sales data."** — a generic fallback that HID the real error. Real cause (server-logged after I added `console.error`): **Postgres `57014` "canceling statement due to statement timeout."**
+
+**THE reusable gotcha — every app Supabase call is capped at 8s.** The Supabase `authenticator` role (which PostgREST uses for every request, then `SET ROLE service_role`) has `ALTER ROLE authenticator SET statement_timeout = '8s'`. `SET ROLE` does NOT re-apply the target role's settings, so even `getSupabaseAdmin()` (service_role, whose own rolconfig is null/120s) effectively runs under **8s**. The DB default `statement_timeout` is 120s and `anon`=3s / `authenticated`=8s — but the one that bites server code is **authenticator=8s**. Any heavy query/RPC from the app must finish < 8s or get 57014. Override per-function with `ALTER FUNCTION f(args) SET statement_timeout = '45s'` (function-scoped, no body change, reversible via `RESET`). `pgrst.db_max_rows` is **null** on prod (no PostgREST row cap → one unbounded `.rpc()` returns all rows).
+
+**Why the exec dashboard was slow:**
+- The 3 exec aggregates (`phx_exec_distributor_product` ~5.7s, `phx_exec_customers` ~7.7s/12,794 rows, `phx_exec_brick` ~4s) each scan the whole month of ~32k fact rows. Slowness was a per-batch nested-loop (re-scans rows once PER validated batch — 2x for May, 4x for April) from a stale row-estimate; `ANALYZE` + an expression index on `upper(btrim(product_code))` flips it to a single index-scan + hash join (customers 7.7s→1.3s).
+- **`rpcAll` (src/lib/supabase/server.ts) was an anti-pattern**: it paged a set-returning RPC 1000-at-a-time with `.range()`, but Postgres can't push the offset into the function's GROUP BY, so EACH page re-ran the FULL aggregation (12,794 rows = 13 pages × 7.7s ≈ 100s). Rewrote it to a **single execution** (exact-count + cap-safe paging fallback).
+- The page loads current + prior(+YoY) reports concurrently. The prior/YoY baselines only feed MoM/YoY delta columns; everything the dashboard reads from a baseline (national value/units, byLine, `comparison.byDistributor`, `comparison.regionByDistributor`) derives PURELY from `distProductRows` (see `rollupByDistributor`/`assembleComparison`), so `loadExecutiveReport(period, { mode: "comparison" })` skips the ~7s customers + brick aggregates and export-data assembly.
+- **`loadSalesReferenceData` loads a 29,251-row `source_of_sales_customer_map` crosswalk** (paged 1000/req ≈ 30 round-trips) that powers ONLY the import brick auto-fill; the report never needs it. Added `loadSalesReferenceData({ includeCustomerBricks: false })`.
+- `getSupabaseAdmin({ requestTimeoutMs })` overrides the global 15s per-request AbortController (src/lib/supabase/server.ts); the report uses 30s. Route has `export const maxDuration = 60`.
+
+**Shipped & MERGED to prod 2026-06-08:** DB migration `20260608010000_exec_report_rpc_timeout_and_perf.sql` (ALTER FUNCTION statement_timeout=45s ×3 + 2 expression indexes + ANALYZE) — **applied to prod via MCP** (additive, reversible, RESULT-NEUTRAL: customers value 25,024,980.37 / 12,794 rows identical before & after). App changes **PR #74** (`codex/sales-command-perf-fix`) — squash-merged to main as `e1f6459`, deployed to production. Verified on prod data: customers(2026-05) 7.7s→1.3s; live dashboard renders real data + MoM/YoY columns, no error.
+
+**Side-quest:** fixing this surfaced that `main`'s CI was RED for ALL PRs — `tests/weekly-monthly-plans-v1.test.ts` asserted 3 literal strings the weekly-plans 5-column rewrite (eb2d4d1) renamed (`Double visit Medical Rep`→assert `doubleVisitMedicalRep(HrId|Name)` field; `Calendar view`→assert `formatDayName(row.activityDate)` since the preview was consolidated into the day-per-row grid, NOT removed; `Export visible XLSX`→`Export XLSX`). Fixed in **PR #76** (merged first to green main). Lesson: source-grepping feature-presence tests break silently on UI rewrites; assert stable data bindings, not display labels.
+
+GOTCHAS hit while shipping: (1) after `git push` advanced the branch, GitHub left PR #74's head sha STALE (CI never re-triggered) — **close+reopen the PR** forced the head re-sync. (2) `main` has NO GitHub branch protection (policy-only), so no required checks block a merge. (3) The shared primary working tree was full of parallel-session cruft — used an isolated `git worktree` to merge origin/main into #74 cleanly. Both `executive-report.ts` and `monthly-closing-comparison.ts` still carry the pre-existing NUL byte.

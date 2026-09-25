@@ -1,0 +1,24 @@
+---
+name: portal-linkage-phase1
+description: "Employee-portal linkage overhaul (attendance recognition, weekly-to-monthly lock, national-holiday/pending-vacation injection). BOTH phases SHIPPED 2026-07-07 — f4012060 (Phase 1) and db80e309 (Phase 2, the two-way return conversation with employee_plan_comments). The \"built in worktree, NOT committed\" framing is six weeks stale."
+metadata: 
+  node_type: memory
+  type: project
+  originSessionId: c5ccb619-0027-49a6-888c-b3d860f5ef7d
+---
+
+Owner asked for "perfect linkage" across weekly plan / monthly plan / planning calendar (shared) / private calendar / vacation, after two incidents: (1) a submitted weekly plan didn't appear in the monthly ("where is week 1?"), (2) a submitted field day still flagged "missing attendance" on the private calendar.
+
+**A 4-stream audit found:** private/planning calendars + private calendar are live read-models (no stored copies). Root causes — attendance recognition only accepted literal `activity_type==="Field"` and dropped out the moment a plan left the shared-calendar status set (returned/edit-requested); weekly→monthly prefill only ran `if (!selectedPlan)` (never on a saved/returned draft) and weekly rows were unlocked; national holidays were only a soft-warn (not injected) though `getConfirmedNationalHolidays` (applies HR `attendance_holiday_overrides` observed dates) already existed; pending vacation was a black hole (plan blocked it, calendar hid it, attendance flagged missing).
+
+**Phase 1 BUILT** on branch `codex/portal-linkage-phase1` in worktree `F:\Phoenix Workforce\_wt-portal-linkage` (off origin/main 60b7c2a4). **Gates ALL green** (typecheck/lint 0 problems/328 test files/build). **NOT committed/pushed — awaiting owner review.** Files: `src/lib/private-calendar/logic.ts` + `service.ts`, `src/lib/weekly-planning/service.ts`, `src/components/employee-portal/plans-workspace.tsx`, `tests/private-calendar.test.ts`.
+
+Owner decisions locked: weekly→monthly = **locked & authoritative**; any **out-of-office** planned day (Single/Double Visit, Coaching, Travel, Training, external Meeting/Event, Remote) self-proves attendance, only Office/Admin need a punch; field day **counts through review/return**; leave never hand-declared — removed Vacation/National Vacation/Other from the activity dropdown (Coaching kept, still persists as `activity_type="Other"`).
+
+Key impls: `planActivityCountsAsAttendance` + `privateCalendarPlanStatuses` (review-proof status set) in logic.ts; the two attendance exceptions made mutually exclusive + off-day/excuse-aware; Cairo-local "today"; private-calendar vacation loader now shows approved (manager_decision='approved' OR status='approved') AND pending (needs_assignment/pending_manager) so pending reserves the day; getPlanPrefill injects locked pending-vacation rows + locked National Vacation rows (via `loadNationalHolidayDates`→`getConfirmedNationalHolidays`); `loadWeeklySourcedItems` now `locked:true`; submit guard accepts pending vacations; locked rows exempt from client submit-validation (avoids Double-Visit rep trap).
+
+**Deferred / NOT done (be honest at review):** Phase 2 = the two-way return **conversation** (needs new `employee_plan_comments` table + migration → separate approval) — see audit stream 4. Also unaddressed: cross-line planning-calendar conflict visibility (only company-wide viewers see cross-line double-bookings), excuse 2h treated as full-day attendance cover, weekly Double-Visit rep not carried through prefill (auto-resolves from area at submit). Possible overlap: `_wt-holiday-confirmation` / branch `codex/hide-national-vacation-plan-pill` also touches national-vacation-in-plan — reconcile at merge.
+
+**PHASE 2 SHIPPED 2026-07-07** (commits f4012060 Phase 1 + db80e309 Phase 2, both on main): `employee_plan_comments` table, `listPlanComments`/`addPlanComment` in weekly-planning/service.ts, `GET/POST /api/weekly-plans/[id]/comments`, `PlanConversationThread` component wired into both plans-workspace.tsx (submitter) and plan-request-detail.tsx (approver). Commit message explicitly noted the migration (20260708010000) was "not applied to production by this commit" — **this meant the feature's application code was live on production while its table did not exist, i.e. a real live bug** (any comment read/post would fail). Found and fixed 2026-07-08: applied the migration to production (after owner said "production migration" following an unrelated flag) — verified table exists, route now returns clean 403 (permission-denied) instead of a DB error. Also caught + fixed the standard MCP `apply_migration` version-drift ([[mcp-apply-migration-version-drift]]) on this one too.
+
+Related: [[plan-workspace-slot-workweek-linkage]] [[vacation-action-center-build]] [[weekly-plan-approvals-in-action-center]] [[company-org-structure-head-office]] [[feedback-auto-git-workflow]].
