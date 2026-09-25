@@ -1406,6 +1406,7 @@ import { runEpdaPediaWarehouseRulingsTests } from "./epda-pedia-warehouse-ruling
 import { runImportSplitPreviewTests } from "./import-split-preview.test.ts";
 import { runCityListNewAreaGuardTests } from "./city-list-new-area-guard.test.ts";
 import { runClosingSourceMaskTests } from "./closing-source-mask.test.ts";
+import { runClosingDetailsDistributorNamesTests } from "./closing-details-distributor-names.test.ts";
 import { runQemaWarehouseSplitTests } from "./qema-warehouse-split.test.ts";
 import { runMergedAreaAttributionTests } from "./merged-area-attribution.test.ts";
 import { runPediaUpperEgyptSplitTests } from "./pedia-upper-egypt-split.test.ts";
@@ -4480,6 +4481,10 @@ await runTest(
 await runTest(
   "El Qema leaves no trace in a closing detail (distributor and customer blanked for every viewer but Super Admin, masked AFTER the split computes and BEFORE any workbook is written — never relabelled as another real distributor)",
   runClosingSourceMaskTests,
+);
+await runTest(
+  "Closing Details shows distributor NAMES, never codes (master name, else Unnamed distributor; named after the El Qema mask, so a masked or blank source gets no name and no filter option)",
+  runClosingDetailsDistributorNamesTests,
 );
 await runTest(
   "Pedia Upper Egypt split (August closes on the single Upper Egypt district over 37 El Qema areas; September resolves Upper Egypt 1 and Upper Egypt 2 with Luxor inside Qena 2 over 39; and the August distribution is identical before and after the dated pair is written)",

@@ -10,10 +10,10 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 // and this is a client component. See closing-headline.ts.
 import { countsInClosingHeadline } from "@/lib/sales/closing-headline";
 import type {
-  ClosingDetailRow,
-  ClosingDetailsResult,
-  ClosingDetailsTotals,
-} from "@/lib/sales/monthly-closing-details";
+  NamedClosingDetailRow,
+  NamedClosingDetailsResult,
+} from "@/lib/sales/closing-details-distributor-names";
+import type { ClosingDetailsTotals } from "@/lib/sales/monthly-closing-details";
 
 // The Details tab: every distributor invoice line behind the closing, with the Phoenix
 // brick -> area roll-up applied and an explicit flag for whether the row is inside the
@@ -46,7 +46,7 @@ const selectClassName =
   "h-10 w-full rounded-2xl border border-phx-line bg-phx-paper px-3 text-sm font-semibold text-phx-ink outline-none transition focus:border-phx-accent-line focus:ring-4 focus:ring-phx-accent/10 disabled:opacity-60";
 
 export function ClosingDetailsPanel({ line, period, showConfidentialToggle = false }: Props) {
-  const [data, setData] = useState<ClosingDetailsResult | null>(null);
+  const [data, setData] = useState<NamedClosingDetailsResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [isExporting, setIsExporting] = useState(false);
@@ -101,7 +101,7 @@ export function ClosingDetailsPanel({ line, period, showConfidentialToggle = fal
           cache: "no-store",
         });
         const payload = (await response.json()) as {
-          data?: ClosingDetailsResult;
+          data?: NamedClosingDetailsResult;
           error?: string;
           success: boolean;
         };
@@ -392,8 +392,9 @@ export function ClosingDetailsPanel({ line, period, showConfidentialToggle = fal
               value={distributorCode}
             >
               <option value="">All distributors</option>
-              {(data?.options.distributors ?? []).map((code) => (
-                <option key={code} value={code}>{code}</option>
+              {/* The code is the value the filter sends back; the NAME is what the reader sees. */}
+              {(data?.options.distributors ?? []).map((distributor) => (
+                <option key={distributor.code} value={distributor.code}>{distributor.name}</option>
               ))}
             </SearchableSelect>
           </label>
@@ -456,16 +457,16 @@ export function ClosingDetailsPanel({ line, period, showConfidentialToggle = fal
 }
 
 /** Desktop: a real table. Hidden on small screens — see DetailCards. */
-function DetailTable({ rows, totals }: { rows: ClosingDetailRow[]; totals: ClosingDetailsTotals }) {
+function DetailTable({ rows, totals }: { rows: NamedClosingDetailRow[]; totals: ClosingDetailsTotals }) {
   return (
     <div className="hidden md:block">
       <table className="w-full table-fixed border-collapse text-left text-xs">
         <thead>
           <tr className="bg-[#0B0B0B] text-white">
-            <th className="w-[7%] px-3 py-2 font-bold">Dist.</th>
+            <th className="w-[9%] px-3 py-2 font-bold">Distributor</th>
             <th className="w-[11%] px-3 py-2 font-bold">Area</th>
             <th className="w-[14%] px-3 py-2 font-bold">Brick</th>
-            <th className="w-[23%] px-3 py-2 font-bold">Customer</th>
+            <th className="w-[21%] px-3 py-2 font-bold">Customer</th>
             <th className="w-[16%] px-3 py-2 font-bold">Product</th>
             <th className="w-[9%] px-3 py-2 text-right font-bold">Units</th>
             <th className="w-[11%] px-3 py-2 text-right font-bold">Value</th>
@@ -478,7 +479,10 @@ function DetailTable({ rows, totals }: { rows: ClosingDetailRow[]; totals: Closi
               className={`border-b border-slate-100 ${countsInClosingHeadline(row) ? "" : "bg-amber-50/70"}`}
               key={row.id}
             >
-              <td className="truncate px-3 py-2 font-semibold text-slate-700">{row.distributorCode}</td>
+              {/* The NAME, never the code (owner rule). It wraps rather than truncates: a name cut to
+                  an ellipsis is the other thing this column must never do. Blank on a row with no
+                  distributor — a Main Stores row — by design; see closing-details-distributor-names.ts. */}
+              <td className="break-words px-3 py-2 font-semibold text-slate-700">{row.distributorName}</td>
               <td className="truncate px-3 py-2 text-slate-700" title={`${row.areaName} (${row.areaCode})`}>
                 {row.areaName}
               </td>
@@ -525,7 +529,7 @@ function DetailTable({ rows, totals }: { rows: ClosingDetailRow[]; totals: Closi
 }
 
 /** Mobile: cards, never a horizontally scrolling table. */
-function DetailCards({ rows }: { rows: ClosingDetailRow[] }) {
+function DetailCards({ rows }: { rows: NamedClosingDetailRow[] }) {
   return (
     <div className="space-y-2 px-4 md:hidden">
       {rows.map((row) => (
@@ -535,7 +539,7 @@ function DetailCards({ rows }: { rows: ClosingDetailRow[] }) {
         >
           <div className="flex items-start justify-between gap-2">
             <p className="text-sm font-bold text-slate-900">{row.clientName || "— no customer —"}</p>
-            <span className="shrink-0 text-xs font-bold text-slate-500">{row.distributorCode}</span>
+            <span className="max-w-[45%] break-words text-right text-xs font-bold text-slate-500">{row.distributorName}</span>
           </div>
           <p className="mt-0.5 text-xs text-slate-500">
             {row.areaName} · {row.brickName || row.brickId}
