@@ -1946,6 +1946,8 @@ import { runMilestoneEnhancementsTests, runMilestonePrintHistoryAndPagingTests }
 import { runFitsTheScreenRatchetTests } from "./fits-the-screen-ratchet.test.ts";
 import { runSquareEdgePortalRatchetTests } from "./square-edge-portal-ratchet.test.ts";
 import { runPhoenixCrmDictationTests } from "./phoenix-crm-dictation.test.ts";
+import { runPhoenixCrmDictationCorrectTests } from "./phoenix-crm-dictation-correct.test.ts";
+import { runPhoenixCrmDictationCorpusTests } from "./phoenix-crm-dictation-corpus.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -6932,6 +6934,14 @@ await runTest(
 await runTest(
   "Phoenix CRM Arabic dictation: the engine is asked for ar-EG, support fails closed where there is no speech engine, a dictated phrase APPENDS and never replaces, the cap is applied in the append because maxLength does not constrain a programmatic write, and \"aborted\"/\"no-speech\" stay silent while a blocked microphone names the settings",
   runPhoenixCrmDictationTests,
+);
+await runTest(
+  "Phoenix CRM dictation product correction: the lexicon is built from 136,983 real old-CRM comments, an Arabic clitic is preserved while only the stem is respelled, each token is corrected in its OWN script, and the corrector REFUSES to touch ordinary Arabic, a rep's short form, or a token equally near two products — because inventing a drug name in a clinical note is the expensive direction of the error",
+  runPhoenixCrmDictationCorrectTests,
+);
+await runTest(
+  "Phoenix CRM dictation, measured against the corpus: the corrector is run over every word the field force writes near a product name, with the number of words it changes pinned exactly — so a widened vocabulary goes red with the old count and the new one side by side, rather than silently rewriting more of a clinical record. No competitor's drug and no token carrying a dose is ever touched, and the only thing it can emit is a canonical product name behind the rep's own prefix",
+  runPhoenixCrmDictationCorpusTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

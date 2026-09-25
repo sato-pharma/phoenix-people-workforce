@@ -33,6 +33,8 @@
  * programmatic append) and the two error rules.
  */
 
+import { correctDictatedProducts } from "@/lib/phoenix-crm/dictation-correct";
+
 /** Egyptian Arabic. The engine still handles English product names mixed into the sentence. */
 export const DICTATION_LANG = "ar-EG";
 
@@ -157,8 +159,12 @@ export function startDictation(callbacks: DictationCallbacks): DictationHandle |
     for (let index = event.resultIndex; index < event.results.length; index += 1) {
       const result = event.results[index];
       const text = result?.[0]?.transcript ?? "";
-      if (result?.isFinal) callbacks.onFinal(text.trim());
-      else interim += text;
+      if (result?.isFinal) {
+        // Corrected on the FINAL phrase only. The interim preview is left raw on purpose: it is
+        // revised several times a second and respelling a word that is about to change again makes
+        // the preview flicker between two brand names while the rep is still talking.
+        callbacks.onFinal(correctDictatedProducts(text.trim()).text);
+      } else interim += text;
     }
     callbacks.onInterim(interim.trim());
   };
