@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { countDevicesByState, getEnterpriseProfile } from "../src/lib/devices/android-enterprise.ts";
 import { AndroidManagementRequestError, CHROME_PACKAGE_NAME } from "../src/lib/devices/android-web-app.ts";
 import {
   buildManagedTabletRows,
@@ -1141,8 +1142,15 @@ function runDoorTests() {
   assert.doesNotMatch(consoleSource, /dangerouslySetInnerHTML|innerHTML|appendChild|insertBefore/, "React draws the QR; nothing writes into the page behind it");
   assert.doesNotMatch(consoleSource, /localStorage|sessionStorage|indexedDB/, "the code is never stored in the browser");
   assert.match(consoleSource, /qrSvgPath\(/);
-  for (const line of consoleSource.split("\n").filter((text) => /from "@\/lib\/devices\//.test(text))) {
-    assert.match(line, /^import type /, `a client component takes only TYPES from the server-side device modules: ${line.trim()}`);
+  // WHOLE STATEMENTS, not lines. A type import wide enough to wrap is still a type import, and
+  // reading this one line at a time called the second line of one a value import (2026-09-25).
+  for (const statement of consoleSource.match(/^import[\s\S]*?;$/gm) ?? []) {
+    if (!/from "@\/lib\/devices\//.test(statement)) continue;
+    assert.match(
+      statement,
+      /^import type /,
+      `a client component takes only TYPES from the server-side device modules: ${statement.replace(/\s+/g, " ")}`,
+    );
   }
   assert.doesNotMatch(consoleSource, /\brounded\b|rounded-|\btruncate\b|text-ellipsis|overflow-x-auto/);
   assert.match(consoleSource, /requestJson<ImeiRecordResult>\("\/api\/devices\/tablets\/imei", \{\}\)/, "the page asks for the IMEI copy by itself");
@@ -1171,11 +1179,106 @@ function runDoorTests() {
   }
 }
 
+// ---------------------------------------------------------------------------------------------
+// The enterprise itself, and its device count
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * WHAT THIS PINS. The page shows which Google enterprise the fleet is, and how many tablets Google
+ * holds under it — the number a refusal that speaks of a limit has to be read against.
+ *
+ * 🔴 THE COUNT IS EVERY STATE, AND IT SURVIVES A FAILED `enterprises.get`. Counting only working
+ * tablets would answer a limit question with a smaller number than Google's own, and letting the
+ * display-name call fail the page would answer it with no number at all. Both are asserted here.
+ */
+async function runEnterpriseTests() {
+  let google = fakeGoogle([
+    {
+      body: {
+        contactInfo: { contactEmail: "phoenixx.oag@gmail.com" },
+        enterpriseDisplayName: "Sato Pharma",
+        enterpriseType: "MANAGED_GOOGLE_PLAY_ACCOUNTS_ENTERPRISE",
+        name: ENTERPRISE,
+      },
+      status: 200,
+    },
+  ]);
+  let profile = await getEnterpriseProfile(connection, google.impl);
+  assert.equal(google.calls[0].url, `${API}/${ENTERPRISE}`);
+  assert.equal(google.calls[0].method, "GET");
+  assert.equal(google.calls[0].authorization, "Bearer test-access-token");
+  assert.equal(profile.displayName, "Sato Pharma");
+  assert.equal(profile.contactEmail, "phoenixx.oag@gmail.com");
+  assert.equal(
+    profile.kind,
+    "Managed Google Play Accounts — created by Phoenix itself",
+    "the kind decides which Google limits apply, so it is shown in words, not as a shouted constant",
+  );
+
+  // An older enterprise answers only the per-kind field. Reading it keeps the line from going blank.
+  google = fakeGoogle([
+    { body: { enterpriseType: "ENTERPRISE_TYPE_UNSPECIFIED", managedGoogleDomainType: "TYPE_TEAM" }, status: 200 },
+  ]);
+  profile = await getEnterpriseProfile(connection, google.impl);
+  assert.equal(profile.kind, "Bound to a Google Workspace domain");
+
+  // Proto3 drops defaults: an enterprise that set none of it still answers, with the binding intact.
+  google = fakeGoogle([{ body: {}, status: 200 }]);
+  profile = await getEnterpriseProfile(connection, google.impl);
+  assert.deepEqual(profile, { contactEmail: null, displayName: null, kind: null, name: ENTERPRISE });
+
+  google = fakeGoogle([{ body: { error: { code: 403 } }, status: 403 }]);
+  await assert.rejects(
+    getEnterpriseProfile(connection, google.impl),
+    (error: unknown) => error instanceof AndroidManagementRequestError && error.status === 403,
+    "the module throws; the PAGE is what decides a failed read costs a display name and not the count",
+  );
+
+  const states = countDevicesByState([
+    { state: "ACTIVE" },
+    { state: "ACTIVE" },
+    { state: "DELETED" },
+    { state: "PROVISIONING" },
+    { state: "SOMETHING_NEW" },
+    {},
+  ]);
+  assert.deepEqual(states, [
+    { count: 2, label: "Working" },
+    { count: 1, label: "SOMETHING_NEW" },
+    { count: 1, label: "STATE_NOT_REPORTED" },
+    { count: 1, label: "Still setting up" },
+    { count: 1, label: "Wiped and removed" },
+  ]);
+  assert.equal(
+    states.reduce((total, row) => total + row.count, 0),
+    6,
+    "every device is counted somewhere — a state with no word for it is shown as Google spells it, never dropped",
+  );
+  assert.deepEqual(countDevicesByState([]), [], "an empty fleet shows no rows of zeroes");
+
+  const service = source("src/lib/devices/rep-tablets-service.ts");
+  assert.match(
+    service,
+    /deviceCount: devices\.length/,
+    "the count is the whole device list — no state filter, or it would answer a limit question with a smaller number than Google's own",
+  );
+  assert.match(
+    service,
+    /getEnterpriseProfile\(connection\)\.catch\(/,
+    "a failed enterprises.get costs the page a display name, never the device count beside it",
+  );
+
+  const consoleSource = source("src/components/devices/rep-tablets-console.tsx");
+  assert.match(consoleSource, /<EnterpriseSection enterprise=\{data\.enterprise\}/, "the page shows the enterprise");
+  assert.match(consoleSource, /Tablets Google holds/);
+}
+
 export async function runTabletEnrollmentTests() {
   runQrTests();
   runPolicyTests();
   runEnrollmentRequestTests();
   await runGoogleCallTests();
+  await runEnterpriseTests();
   runMatchingTests();
   runImeiTests();
   runDoorTests();

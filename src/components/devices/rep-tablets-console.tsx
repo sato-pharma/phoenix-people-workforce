@@ -40,7 +40,12 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 
 import { PremiumHero } from "@/components/ui/premium-hero";
 import type { ManagedTabletRow, ManagedTabletTone } from "@/lib/devices/managed-tablets";
-import type { EnrollmentResult, ImeiRecordResult, RepTabletsState } from "@/lib/devices/rep-tablets-service";
+import type {
+  EnrollmentResult,
+  ImeiRecordResult,
+  RepTabletsEnterprise,
+  RepTabletsState,
+} from "@/lib/devices/rep-tablets-service";
 import type { EnrollmentValidity } from "@/lib/devices/tablet-enrollment";
 import type { OwnerAppInstallType } from "@/lib/devices/tablet-policy";
 import { cairoDate, cairoDateTime } from "@/lib/format/cairo-datetime";
@@ -162,6 +167,78 @@ function WarningBox({ title, children }: { title: string; children: ReactNode })
         </div>
       </div>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------------------------
+// The enterprise
+// ---------------------------------------------------------------------------------------------
+
+/** One fact about the enterprise. `min-w-0` plus wrapping: a long binding breaks, it never scrolls. */
+function EnterpriseFact({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="min-w-0 border border-slate-200 bg-slate-50 px-3 py-2">
+      <p className={MICRO_LABEL}>{label}</p>
+      <p className="mt-1 break-words text-sm font-bold text-slate-900">{children}</p>
+    </div>
+  );
+}
+
+/**
+ * Which enterprise on Google this fleet is, and how many tablets it holds.
+ *
+ * THE COUNT IS EVERY STATE, which is the count Google itself works from — so it is the number to
+ * read against a refusal that speaks of a limit, and a count of zero says that refusal was about
+ * something other than this fleet's size.
+ */
+function EnterpriseSection({ enterprise }: { enterprise: RepTabletsEnterprise }) {
+  return (
+    <section className="space-y-4 border border-slate-200 bg-white p-5">
+      <div>
+        <p className={MICRO_LABEL}>The Google enterprise</p>
+        <h2 className="mt-1 text-lg font-black text-slate-900">
+          {enterprise.displayName ?? "Phoenix’s Android Enterprise"}
+        </h2>
+        <p className="mt-1 max-w-3xl text-sm text-slate-600">
+          Every rule, QR code and tablet on this page belongs to this one enterprise on Google. Its tablet count is
+          what Google counts when it decides whether another tablet may enroll.
+        </p>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <EnterpriseFact label="Tablets Google holds">
+          {enterprise.deviceCount === 1 ? "1 tablet" : `${enterprise.deviceCount} tablets`}
+        </EnterpriseFact>
+        <EnterpriseFact label="Binding">{enterprise.name}</EnterpriseFact>
+        <EnterpriseFact label="How it was made">{enterprise.kind ?? "Google did not say"}</EnterpriseFact>
+        <EnterpriseFact label="Google contacts">
+          {enterprise.contactEmail ?? "No address on the enterprise"}
+        </EnterpriseFact>
+      </div>
+
+      {enterprise.byState.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className={MICRO_LABEL}>What they are doing</span>
+          {enterprise.byState.map((state) => (
+            <Chip key={state.label} tone="neutral">
+              {state.label}: {state.count}
+            </Chip>
+          ))}
+        </div>
+      ) : (
+        <p className="text-sm text-slate-600">
+          Google holds no tablets at all under this enterprise. A refusal to enroll that speaks of a limit is
+          therefore not about how many tablets this fleet has &mdash; it is a limit on the Google project behind the
+          QR code, and it is lifted on Google&rsquo;s side, not here.
+        </p>
+      )}
+
+      {enterprise.error ? (
+        <WarningBox title="The enterprise&rsquo;s own details did not load">
+          <p>The tablet count above is still what Google holds. {enterprise.error}</p>
+        </WarningBox>
+      ) : null}
+    </section>
   );
 }
 
@@ -695,6 +772,9 @@ export function RepTabletsConsole({ enterpriseBound }: { enterpriseBound: boolea
 
       {!setupRequired && data && policy ? (
         <>
+          {/* ── The enterprise ────────────────────────────────────────────────────────── */}
+          <EnterpriseSection enterprise={data.enterprise} />
+
           {/* ── The rules ─────────────────────────────────────────────────────────────── */}
           <section className="space-y-4 border border-slate-200 bg-white p-5">
             <div>
