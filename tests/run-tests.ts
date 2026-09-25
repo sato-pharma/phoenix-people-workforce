@@ -1215,6 +1215,7 @@ import { runRscClientFunctionPropTests } from "./rsc-client-function-props.test.
 import { runDirectOrdersInvoiceScanTests } from "./direct-orders-invoice-scan.test.ts";
 import { runDirectOrdersArabicSearchTests } from "./direct-orders-arabic-search.test.ts";
 import { runCrmBrickCentroidsCacheTests } from "./crm-brick-centroids-cache.test.ts";
+import { runOrgTreeCacheInvalidationTests } from "./org-tree-cache-invalidation.test.ts";
 import { runSosReferenceReadLoadTests } from "./sos-reference-read-load.test.ts";
 import { runBrickCentroidCoverageTests } from "./brick-centroid-coverage.test.ts";
 import { runDirectOrdersAreaAutofillTests } from "./direct-orders-area-autofill.test.ts";
@@ -4222,6 +4223,7 @@ await runTest("client bundle boundary (no \"use client\" module reaches node:cry
 await runTest("direct orders invoice scan (a dim page gains real contrast, a failed prepare returns the original, EXIF rotation is applied, no binarisation, the reader is sent the PREPARED image)", runDirectOrdersInvoiceScanTests);
 await runTest("direct orders Arabic search (every fold survives, the strip class never swallows a letter, an unnamed customer is ranked down not hidden, both birth paths are searched)", runDirectOrdersArabicSearchTests);
 await runTest("CRM brick-centroids cache (shared Data Cache not a per-segment module var, 300s TTL unchanged, sos-reference tag, DB read byte-identical, catch OUTSIDE the cache so a transient error is never cached as [], concurrent callers share ONE lookup)", runCrmBrickCentroidsCacheTests);
+await runTest("org tree cache invalidation (a hire, seat transfer, resignation or decline busts the shared sos-reference tag instead of only self-healing after its 300s TTL; seat-transfer's own RPC call now invalidates too)", runOrgTreeCacheInvalidationTests);
 await runTest("SoS reference read load (a burst of concurrent centroid lookups runs ONE load and every caller gets that value, the slot clears on settle and on failure, the Master Map exact count asks for a one-row page)", runSosReferenceReadLoadTests);
 await runTest("brick centroid coverage (numerator and denominator count the SAME population — an orphan centroid whose brick is retired can never make Geo readiness report more located bricks than exist, which is what kept the Build geo index button hidden)", runBrickCentroidCoverageTests);
 await runTest("direct orders area auto-fill (the body carries pointers only, the server copies the catalogue row and fails closed, a picked pharmacy never carries client geography)", runDirectOrdersAreaAutofillTests);
