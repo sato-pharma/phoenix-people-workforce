@@ -108,53 +108,91 @@ export async function transcribeVoiceNote(viewer: PhoenixCrmViewer, raw: unknown
 
   const supabase = getSupabaseAdmin();
 
-  // His own note, recorded within the window. Not "a note in my scope": see the header — this is the
-  // difference between one request and a bill for a district's whole history of recordings.
+  // His own note, recorded within the window, AND not already written out. Not "a note in my scope":
+  // see the header — the window is a cost rule, and so is this. A recording is transcribed at most ONCE.
+  //
+  // 🔴 THE UPDATE IS THE CHECK. Selecting the slot and then calling Groq left the SAME path replayable
+  // without limit inside its two-hour window — every resubmission a fresh paid call — which the window was
+  // supposed to prevent. So the row is CLAIMED instead: the update sets `transcribed_at` only WHERE it is
+  // still null, which is a single row lock, so two requests racing for one path cannot both bill Groq, and
+  // a later resubmission of a path already written out is refused below with no call at all. Total
+  // transcriptions are then bounded by the slot-issuance ceiling a rep already lives under (SLOTS_PER_HOUR
+  // in `./voice-notes.ts`), because each slot buys exactly one.
   const since = new Date(Date.now() - TRANSCRIBE_WINDOW_MS).toISOString();
-  const slot = await supabase
+  const claim = await supabase
     .from("phoenix_crm_voice_uploads")
-    .select("path")
+    .update({ transcribed_at: new Date().toISOString() })
     .eq("path", path)
     .eq("issued_to_hr_id", viewer.hrId)
     .gte("issued_at", since)
+    .is("transcribed_at", null)
+    .select("path")
     .maybeSingle();
-  throwIfError(slot.error);
-  if (!slot.data) {
+  throwIfError(claim.error);
+  if (!claim.data) {
+    // No row was claimed. Tell "not his, or expired" apart from "already written out" only to word the
+    // refusal — both end the same way, because the recording is saved and typing was always open.
+    const existing = await supabase
+      .from("phoenix_crm_voice_uploads")
+      .select("path")
+      .eq("path", path)
+      .eq("issued_to_hr_id", viewer.hrId)
+      .gte("issued_at", since)
+      .maybeSingle();
+    throwIfError(existing.error);
+    if (existing.data) {
+      throw new ApiError(409, "already_transcribed", "That recording was already written out. Type the comment instead.");
+    }
     throw new ApiError(403, "forbidden", "That recording is not one you just made. Speak again, or type the comment.");
   }
 
-  // The bucket is opened by its owner, `./voice-notes.ts`, and only there — one file per bucket, pinned by
-  // tests/phoenix-crm-boundary.test.ts. The ownership proof above is what earns this call; the helper
-  // itself checks nothing, so it must never be moved above that check.
-  const audio = await downloadVoiceNote(path);
-  if (!audio) {
-    throw new ApiError(404, "not_found", "The recording could not be read back. Type the comment instead.");
-  }
-  if (audio.byteLength === 0 || audio.byteLength > VOICE_MAX_BYTES) {
-    throw validationError("That recording cannot be turned into text. Type the comment instead.");
-  }
-
-  let spoken: string;
+  // From the claim on, any failure hands the one transcription BACK. A read-back miss or a transient
+  // speech-service outage must not permanently burn a recording's single shot, so the claim is released
+  // and the rep — or a retry — can ask again. Only a transcript that actually came back keeps it.
   try {
-    spoken = await transcribeWithGroq({
-      audio,
-      contentType,
-      // The speech service reads the container from the part's filename, and the stored path's own name is
-      // a UUID with the right extension — so no name is invented, and nothing about the rep, his
-      // territory or the visit travels in it.
-      filename: path.slice(path.lastIndexOf("/") + 1),
-      prompt: TRANSCRIPTION_PROMPT,
-      purpose: "crm_visit_comment",
-    });
-  } catch (cause) {
-    // Never a 500 and never the vendor's wording: every one of these is a sentence the rep can act on,
-    // and all of them end the same way, because the recording is already saved and typing was never shut.
-    const status = cause instanceof GroqTranscriptionError && cause.code === "rate_limited" ? 429 : 502;
-    throw new ApiError(status, "transcription_failed", groqTranscriptionMessage(cause));
-  }
+    // The bucket is opened by its owner, `./voice-notes.ts`, and only there — one file per bucket, pinned by
+    // tests/phoenix-crm-boundary.test.ts. The ownership proof above is what earns this call; the helper
+    // itself checks nothing, so it must never be moved above that check.
+    const audio = await downloadVoiceNote(path);
+    if (!audio) {
+      throw new ApiError(404, "not_found", "The recording could not be read back. Type the comment instead.");
+    }
+    if (audio.byteLength === 0 || audio.byteLength > VOICE_MAX_BYTES) {
+      throw validationError("That recording cannot be turned into text. Type the comment instead.");
+    }
 
-  // The same corrector the live engine's output goes through, for the same reason: a general Arabic model
-  // has never heard "تيبوفورتين" and returns the nearest ordinary word, and the product name is the only
-  // part of a visit comment anyone reads it for.
-  return { text: correctDictatedProducts(spoken).text };
+    let spoken: string;
+    try {
+      spoken = await transcribeWithGroq({
+        audio,
+        contentType,
+        // The speech service reads the container from the part's filename, and the stored path's own name is
+        // a UUID with the right extension — so no name is invented, and nothing about the rep, his
+        // territory or the visit travels in it.
+        filename: path.slice(path.lastIndexOf("/") + 1),
+        prompt: TRANSCRIPTION_PROMPT,
+        purpose: "crm_visit_comment",
+      });
+    } catch (cause) {
+      // Never a 500 and never the vendor's wording: every one of these is a sentence the rep can act on,
+      // and all of them end the same way, because the recording is already saved and typing was never shut.
+      const status = cause instanceof GroqTranscriptionError && cause.code === "rate_limited" ? 429 : 502;
+      throw new ApiError(status, "transcription_failed", groqTranscriptionMessage(cause));
+    }
+
+    // The same corrector the live engine's output goes through, for the same reason: a general Arabic model
+    // has never heard "تيبوفورتين" and returns the nearest ordinary word, and the product name is the only
+    // part of a visit comment anyone reads it for.
+    return { text: correctDictatedProducts(spoken).text };
+  } catch (error) {
+    // Release the single-transcription claim taken above, so nothing here that failed before a transcript
+    // came back leaves the recording permanently un-writable. This never runs on success — the return
+    // inside the try exits without touching it.
+    await supabase
+      .from("phoenix_crm_voice_uploads")
+      .update({ transcribed_at: null })
+      .eq("path", path)
+      .eq("issued_to_hr_id", viewer.hrId);
+    throw error;
+  }
 }
