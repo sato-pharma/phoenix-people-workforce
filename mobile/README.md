@@ -144,6 +144,20 @@ and every profile in `eas.json` carries a `channel`. `production` (the store AAB
 the rep tablets sideload) sit on the **same** `production` channel deliberately, so one `eas update`
 reaches both. Read `eas.json` and `package.json` before believing any prose on this page.
 
+🔴 **`app.json` pins `"platforms": ["ios", "android"]`, and removing it breaks every build.** Without
+it Expo infers the list, and infers a different one in the two places that matter: on this machine the
+project is managed, so it resolves `["android", "ios", "web"]`, while on the EAS builder the
+fingerprint is taken *after* prebuild has created `android/`, so the project reads as bare and
+resolves `["android", "ios"]`. That one key sits inside the hashed `expoConfig`, the two fingerprints
+disagree, and EAS fails the build outright in the **Configure expo-updates** phase with `Runtime
+version calculated on local machine not equal to runtime version calculated during build.` It is a
+hard error, not a warning, because a mismatch would mean updates published from here could never
+reach that binary. It cost build `1349ebf3` on 2026-09-25. The pinned value is the one EAS already
+resolved, so it moves no fingerprint: the APK's runtime version is
+`15a5625fe6ef81cafe308d80302c27781bbb5509`, identical to the store AAB's — which is what makes the
+shared `production` channel above genuinely reach both. Check it without a build:
+`node ./node_modules/expo-updates/bin/cli.js fingerprint:generate --platform android`.
+
 **Whether a change needs a new binary is mechanical, not a judgement call.** `runtimeVersion` is
 `{"policy": "fingerprint"}`: if the fingerprint is unchanged, `eas update` lands on the binaries
 already installed and no rebuild is needed. Check with `eas update:list --branch production --json`
