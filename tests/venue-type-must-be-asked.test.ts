@@ -11,6 +11,7 @@ import {
   venueTypeChoiceLabel,
   venueTypeIsAnswered,
 } from "../src/lib/venues/venue-type.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 // A venue type nobody answered is not a pharmacy.
 //
@@ -44,14 +45,7 @@ const CAPTURE_SCREENS = [SUBMIT_FORM, REGISTRY_MANAGER, VALIDATION_WORKSPACE];
 
 /** Source with comments stripped — a comment naming a call is not a call. */
 function code(path: string): string {
-  return readFileSync(path, "utf8")
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .split("\n")
-    .map((line) => {
-      const idx = line.indexOf("//");
-      return idx >= 0 ? line.slice(0, idx) : line;
-    })
-    .join("\n");
+  return stripComments(readFileSync(path, "utf8"));
 }
 
 /** Every argument any surviving `normalizeVenueType(...)` call is applied to, in one file. */

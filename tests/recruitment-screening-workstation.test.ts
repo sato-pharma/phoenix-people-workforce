@@ -21,6 +21,7 @@ import {
 } from "../src/lib/recruitment/screening-queues.ts";
 import { STALE_SEND_NUDGE_AFTER_DAYS } from "../src/lib/recruitment/stale-send-thresholds.ts";
 import { vacancyPlaceLabel } from "../src/lib/recruitment/vacancy-applicants.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * The screening REVIEW WORKSTATION — the rebuild of 2026-09-04.
@@ -81,7 +82,7 @@ function workstationFiles(): string[] {
  * string keeps the rest of its line.
  */
 function withoutComments(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+  return stripComments(source);
 }
 
 /** The 10 fields of a screening fact read, all absent. Each test sets only what it is about. */

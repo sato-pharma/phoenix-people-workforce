@@ -4,6 +4,7 @@ import { join, relative, sep } from "node:path";
 
 import { requireWeeklyAccessScope, type WeeklyAccessScope } from "../src/lib/sales/weekly/access.ts";
 import { loadWeeklyDashboard } from "../src/lib/sales/weekly/service.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 // 🔴 THE WEEKLY DASHBOARD LOADER DEFAULTED TO "FULL ACCESS, RESTRICTED PRODUCTS REVEALED" — found 2026-09-20.
 //
@@ -43,7 +44,7 @@ const SCOPE_MESSAGE = /access scope/i;
 
 /** Comments out, so an explanation that names a call cannot satisfy or trip a source check. */
 function code(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+  return stripComments(source);
 }
 
 function read(rel: string): string {

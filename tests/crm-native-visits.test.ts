@@ -28,6 +28,7 @@ import {
   CRM_LEAVE_VISIT_TYPE_CODES,
   crmVisitTypeMeaningStrict,
 } from "../src/lib/crm/visit-type-meaning.ts";
+import { stripSqlComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Native visits — the PILOT (CRM phase 3).
@@ -51,10 +52,6 @@ const MIGRATION = "supabase/migrations/20260913170000_crm_native_visits_pilot.sq
 
 function read(relativePath: string) {
   return readFileSync(new URL(`../${relativePath}`, import.meta.url), "utf8");
-}
-
-function stripSqlComments(sql: string) {
-  return sql.replace(/--[^\n]*/g, "");
 }
 
 function sourceFiles(relativeDir: string): string[] {

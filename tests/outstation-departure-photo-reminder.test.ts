@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { outstationDeparturePhotoReminderDue } from "../src/lib/outstation/expense-gate.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 function source(path: string) {
   return readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
@@ -155,7 +156,7 @@ export function runOutstationDeparturePhotoReminderTests() {
   // separate, un-deduplicated send rather than a no-op.
   // Comments stripped first: the metadata note explains WHY the overdue message is gone, and a
   // test that forbade the word outright would forbid recording the decision.
-  const sendCode = sendSlice.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+  const sendCode = stripComments(sendSlice);
   assert.equal(
     /overdue/i.test(sendCode),
     false,

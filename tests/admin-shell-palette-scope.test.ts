@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
+import { stripCssComments } from "./support/comment-strip.ts";
 
 // The admin shell's warm-neutral identity, and the two things that make it safe.
 //
@@ -71,7 +72,7 @@ function documentedBlockAt(markerIndex: number, endMarkerIndex?: number): string
     endMarkerIndex === undefined
       ? GLOBALS_SOURCE.length
       : GLOBALS_SOURCE.lastIndexOf("/*", endMarkerIndex);
-  return stripComments(GLOBALS_SOURCE.slice(start, end === -1 ? undefined : end));
+  return stripCssComments(GLOBALS_SOURCE.slice(start, end === -1 ? undefined : end));
 }
 
 /**
@@ -114,31 +115,6 @@ function splitSelectorList(list: string): string[] {
   }
   out.push(current);
   return out;
-}
-
-/**
- * A CSS comment stripper, and deliberately NOT `stripComments` from `tests/support/comment-strip.ts`.
- *
- * Every other test in this directory was folded onto that shared one on 2026-09-25. This one is the
- * single exception, because what it reads is `app/globals.css`, and CSS has no `//` comment: the
- * shared stripper is a JavaScript/TypeScript lexer, so it would treat the `//` in an unquoted
- * `url(https://…)` as the start of a line comment and delete the rest of that line — silently, and
- * in the direction that makes a "this declaration must be present" pin fail on a correct file.
- * Block comments are the only kind CSS has, so this is the whole rule for CSS, not a shortcut.
- *
- * Do not "tidy" this onto the shared helper.
- */
-function stripComments(css: string): string {
-  let out = "";
-  let cursor = 0;
-  for (;;) {
-    const open = css.indexOf("/*", cursor);
-    if (open === -1) return out + css.slice(cursor);
-    out += css.slice(cursor, open);
-    const close = css.indexOf("*/", open + 2);
-    if (close === -1) return out;
-    cursor = close + 2;
-  }
 }
 
 /** Tailwind's own slate ramp, read live from the installed package rather than copied. */

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { stripComments } from "./support/comment-strip.ts";
 
 function source(path: string) {
   return readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
@@ -18,7 +19,7 @@ function functionSlice(src: string, declaration: string) {
 
 /** Executable code only — the comments explain the incidents and must not satisfy or trip a match. */
 function code(slice: string) {
-  return slice.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+  return stripComments(slice);
 }
 
 /**

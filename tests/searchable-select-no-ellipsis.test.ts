@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * The searchable dropdown clipped every option label with an ellipsis.
@@ -63,7 +64,7 @@ export function runSearchableSelectNoEllipsisTests() {
   // Nowhere else in the component either. `truncate` anywhere here clips something a person reads.
   // Comments are stripped first: the rule is about the class being APPLIED, not the word being
   // discussed, and the fix's own comment names the class it removed in order to explain itself.
-  const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+  const code = stripComments(source);
   assert.ok(
     !/\btruncate\b/.test(code),
     "`truncate` reappeared in searchable-select.tsx; it always ends as an ellipsis on screen",

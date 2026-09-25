@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * The legacy probation feedback path is RETIRED (2026-09-01) and must not come back.
@@ -108,9 +109,7 @@ export function runProbationLegacyFeedbackRetiredTests() {
   // why it went, and those notes are the point. Only CODE is checked, so a note cannot fail this.
   const offenders: string[] = [];
   for (const full of sourceFiles()) {
-    const code = readFileSync(full, "utf8")
-      .replace(/\/\*[\s\S]*?\*\//g, "")
-      .replace(/(^|[^:])\/\/.*$/gm, "$1");
+    const code = stripComments(readFileSync(full, "utf8"));
     const hits = RETIRED_IDENTIFIERS.filter((id) => code.includes(id));
     if (hits.length > 0) {
       offenders.push(`${path.relative(REPO_ROOT, full).split(path.sep).join("/")} -> ${hits.join(", ")}`);

@@ -22,6 +22,7 @@ import {
   notificationRoleKeys,
 } from "../src/lib/notifications/role-recipients.ts";
 import { resolveNotificationPolicy } from "../src/lib/notifications/policy.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 const ROOT = process.cwd();
 
@@ -265,7 +266,7 @@ export function runCrmAccountSetupTests() {
   // Comments are stripped first. The rule's own doc-comment explains at length WHY area is not the
   // test, and a bare substring check would fail on the explanation rather than on the code — the
   // same shape as pinning `truncate` in the panel below.
-  const serviceCode = service.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  const serviceCode = stripComments(service);
   assert.ok(
     !serviceCode.includes("areaId") && !serviceCode.includes("area_id"),
     "area must NOT gate this queue: every head-office employee carries an area_id, because Head office IS an area",

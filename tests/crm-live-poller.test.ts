@@ -30,6 +30,7 @@ import {
 import { CONTACT_SYNC_SLICE_COUNT } from "../src/lib/crm/contacts-sync.ts";
 import { filterRowsToUpsert } from "../src/lib/crm/sync.ts";
 import type { IReports360Checkin, IReports360Visit } from "../src/lib/crm/client.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 function visit(overrides: Partial<IReports360Visit> = {}): IReports360Visit {
   return {
@@ -514,9 +515,7 @@ export function runCrmLivePollerTests() {
   // actually call it — a correct predicate nobody consults fixes nothing. Shape-pinned with block
   // comments stripped first, so the prose above cannot satisfy these assertions (AGENTS.md §2.1).
   const strip = (path: string) =>
-    readFileSync(path, "utf8")
-      .replace(/\/\*[\s\S]*?\*\//g, "")
-      .split("\n")
+    stripComments(readFileSync(path, "utf8")).split("\n")
       .filter((line) => !line.trim().startsWith("//"))
       .join("\n");
   const pollerStripped = strip("src/lib/crm/live-poller.ts");

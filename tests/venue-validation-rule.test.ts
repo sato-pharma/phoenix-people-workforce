@@ -13,6 +13,7 @@ import {
   venueIdentityGapMessage,
   venueIdentityIsEstablished,
 } from "../src/lib/venues/venue-validation-rule.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 // The owner's rule for validating a venue, and the proof that it FIRES rather than merely existing.
 //
@@ -38,14 +39,7 @@ const CAPTURE_SCREEN = "src/components/direct-orders/pharmacy-validation-capture
 
 /** Source with comments stripped — a comment naming a call is not a call. */
 function code(path: string): string {
-  return readFileSync(path, "utf8")
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .split("\n")
-    .map((line) => {
-      const idx = line.indexOf("//");
-      return idx >= 0 ? line.slice(0, idx) : line;
-    })
-    .join("\n");
+  return stripComments(readFileSync(path, "utf8"));
 }
 
 /**

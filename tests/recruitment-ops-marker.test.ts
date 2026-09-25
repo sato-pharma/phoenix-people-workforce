@@ -32,6 +32,7 @@ import {
   cvRereadOpsMarker,
   isCvRereadMarker,
 } from "../src/lib/recruitment/ops-marker.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 const MODULE = "src/lib/recruitment/ops-marker.ts";
 const WRITERS = [
@@ -49,7 +50,7 @@ const read = (relative: string) => readFileSync(path.join(process.cwd(), relativ
 // `ops:cv-reread-20260816` as history, and a guard that cannot tell a quotation from code would
 // force that explanation to be deleted to stay green.
 const withoutComments = (source: string) =>
-  source.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/^[ \t]*\/\/.*$/gm, " ");
+  stripComments(source);
 
 /** Today in Africa/Cairo as YYYYMMDD, derived here so the module cannot certify its own answer. */
 const cairoDayNow = () => new Date().toLocaleDateString("en-CA", { timeZone: "Africa/Cairo" }).split("-").join("");

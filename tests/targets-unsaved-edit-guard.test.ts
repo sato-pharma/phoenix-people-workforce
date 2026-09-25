@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { expandTargetPeriodScope } from "@/lib/sales/monthly-targets";
+import { stripComments } from "./support/comment-strip.ts";
 
 // The Targets authoring screen, rebuilt 2026-09-08 after a month of hand-entered Pedia targets was
 // lost and the owner rejected the screen that lost them.
@@ -22,7 +23,7 @@ import { expandTargetPeriodScope } from "@/lib/sales/monthly-targets";
 
 /** Comments describe the guard as thoroughly as the code does; assert on the CODE. */
 function code(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+  return stripComments(source);
 }
 
 const read = (path: string): string => readFileSync(join(process.cwd(), path), "utf8");

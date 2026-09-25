@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { stripComments } from "./support/comment-strip.ts";
 
 // The three ingestion items Phase 11 deferred. Two are guarded here by source scan (they live deep
 // in the distributor parser and validation report, which are not cheaply fixture-driven); the
@@ -14,7 +15,7 @@ import { join } from "node:path";
 //     quantity from the import) produced NO signal at all.
 
 function code(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+  return stripComments(source);
 }
 
 const read = (p: string) => code(readFileSync(join(process.cwd(), p), "utf8"));

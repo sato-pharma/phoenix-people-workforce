@@ -29,6 +29,7 @@ import {
   NATIVE_VISIT_PLAN_NOT_VERIFIED_MESSAGE,
   nativeVisitPlanRefusal,
 } from "../src/lib/crm/native-visits/rules.ts";
+import { stripSqlComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Native rep plans — the PILOT (CRM phase 4).
@@ -51,10 +52,6 @@ const MIGRATION = "supabase/migrations/20260913210000_crm_native_rep_plans_pilot
 
 function read(relativePath: string) {
   return readFileSync(new URL(`../${relativePath}`, import.meta.url), "utf8");
-}
-
-function stripSqlComments(sql: string) {
-  return sql.replace(/--[^\n]*/g, "");
 }
 
 function sourceFiles(relativeDir: string): string[] {

@@ -22,6 +22,7 @@ import {
   templateAllowedForCandidate,
   variableLabel,
 } from "../src/lib/recruitment/whatsapp-templates/variables.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 export function runWhatsAppMessageTemplateTests() {
   // ── The placeholder scanner ──────────────────────────────────────────────────────────────
@@ -559,15 +560,6 @@ export function runWhatsAppMessageTemplateTests() {
     "document_list is filled on BOTH paths, so it must not push a template off the CV screen",
   );
 
-  // 🔴 DERIVED FROM THE BODY, NEVER FROM THE CATEGORY. Keying this on `category === "Probation"`
-  // works this afternoon and breaks the first time the category is renamed from the template editor
-  // - which the owner can do with no warning that anything depends on the old word.
-  // COMMENTS STRIPPED FIRST. Both files explain in prose why the category is the wrong key,
-  // quoting the very expression this forbids — so a naive scan matches the warning against doing
-  // it and reports the anti-pattern as present. A pinning test that pins the ANTI-pattern is worse
-  // than no test: it goes red on correct code, and gets "fixed" by deleting the explanation.
-  const stripComments = (source: string) =>
-    source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
   const variablesSource = stripComments(
     readFileSync("src/lib/recruitment/whatsapp-templates/variables.ts", "utf8"),
   );

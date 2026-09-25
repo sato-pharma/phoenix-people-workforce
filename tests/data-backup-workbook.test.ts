@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import ExcelJS from "exceljs";
 
 import { buildBackupWorkbook, type DataBackupPayload } from "@/lib/admin/data-backup";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * THE ADMIN DATA BACKUP MUST BE WRITTEN ROW BY ROW, NOT ASSEMBLED IN MEMORY.
@@ -37,9 +38,7 @@ export async function runDataBackupWorkbookTests() {
   const modulePath = resolve(process.cwd(), "src/lib/admin/data-backup.ts");
   // Comments are stripped first: the module explains the ceiling by NAMING the call that hits it,
   // and a sweep that reads the explanation as the offence fails on the very file that fixed it.
-  const code = readFileSync(modulePath, "utf8")
-    .replace(/\/\*[\s\S]*?\*\//g, " ")
-    .replace(/(^|[^:])\/\/.*$/gm, "$1");
+  const code = stripComments(readFileSync(modulePath, "utf8"));
 
   assert.ok(
     code.includes("ExcelJS.stream.xlsx.WorkbookWriter"),

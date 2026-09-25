@@ -7,6 +7,7 @@ import {
   type CrmVacationEmployee,
 } from "../src/lib/deductions/connectors/vacation.ts";
 import { canonicalHrIdKey } from "../src/lib/hr-id.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * WHO A CRM ANNUAL-VACATION (-4) DAY BELONGS TO — owner decision 2026-09-13.
@@ -90,9 +91,7 @@ export function runDeductionsCrmVacationEmploymentJoinTests() {
   );
 
   // ---- the connector actually routes through the resolver --------------------------------------
-  const source = readFileSync("src/lib/deductions/connectors/vacation.ts", "utf8")
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .split("\n")
+  const source = stripComments(readFileSync("src/lib/deductions/connectors/vacation.ts", "utf8")).split("\n")
     .filter((line) => !line.trim().startsWith("//"))
     .join("\n");
   assert.ok(

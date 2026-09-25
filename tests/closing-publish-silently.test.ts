@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * A CLOSING CAN BE PUBLISHED SILENTLY — AND SILENCE MUST ALWAYS BE ASKED FOR.
@@ -51,9 +52,7 @@ function exportedFunctionBody(source: string, name: string): string {
 
 /** Source with comments stripped, so a condition quoted in prose cannot satisfy a check. */
 function code(source: string): string {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, " ")
-    .replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+  return stripComments(source);
 }
 
 export function runClosingPublishSilentlyTests() {

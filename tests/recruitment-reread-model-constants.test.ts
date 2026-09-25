@@ -29,6 +29,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 
 import { OCR_EXTRACTION_MODEL, RULE_ONLY_EXTRACTION_MODEL } from "../src/lib/recruitment/cv-extraction.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 const LIB = "src/lib/recruitment/cv-extraction.ts";
 const SCRIPT = "scripts/recruitment-reread-never-read-cvs.ts";
@@ -46,7 +47,7 @@ const identifiersIn = (fragment: string) => new Set(fragment.split(/[^\w$]+/).fi
 // comment is not a string in a set, and a guard that cannot tell them apart forces the explanation
 // to be deleted to stay green. Only line-leading `//` is stripped, so a `//` inside a URL survives.
 const withoutComments = (source: string) =>
-  source.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/^[ \t]*\/\/.*$/gm, " ");
+  stripComments(source);
 
 // A non-model read is recorded under Phoenix's own name — "phoenix-rules", "phoenix-rules+ocr".
 // A read the model did is recorded under the MODEL's name ("gpt-5.4", or the model plus a "+rules"

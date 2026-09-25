@@ -6,6 +6,7 @@ import {
   readDeparturePhotoPosition,
   reviewDepartureEvidence,
 } from "../src/lib/outstation/departure-evidence.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // A departure photo with NO GPS fix must record the distance as UNKNOWN, never measure it from
@@ -127,9 +128,7 @@ export function runOutstationDeparturePhotoNullCoordsTests() {
 
   // ── The route must use the domain reader, never a bare Number() on the body ──
   // Code only: the route's own comment names the old parse in order to warn against it.
-  const route = readFileSync(ROUTE_SOURCE, "utf8")
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/^\s*\/\/.*$/gm, "");
+  const route = stripComments(readFileSync(ROUTE_SOURCE, "utf8"));
   assert.match(
     route,
     /readDeparturePhotoPosition\(body\)/,

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { stripSqlComments } from "./support/comment-strip.ts";
 
 // Direct sales reach their REGION'S District Manager.
 //
@@ -29,7 +30,7 @@ const MIGRATIONS = join(process.cwd(), "supabase/migrations");
 
 /** Strip block and line comments so an assertion can never match prose in the header. */
 function code(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])--[^\n]*/g, "$1");
+  return stripSqlComments(source).replace(/(^|[^:])--[^\n]*/g, "$1");
 }
 
 function readMigration(fragment: string): string {

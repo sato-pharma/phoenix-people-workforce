@@ -330,7 +330,7 @@ function runImportTests() {
     }
   }
 
-  const viewTypes = readFileSync("src/lib/phoenix-crm/view-types.ts", "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+  const viewTypes = stripComments(readFileSync("src/lib/phoenix-crm/view-types.ts", "utf8"));
   assert.doesNotMatch(viewTypes, /^\s*import\b/m, "view-types.ts imports nothing");
   const exported = viewTypes.match(/^\s*export\b.*$/gm) ?? [];
   assert.ok(exported.length >= 5, "view-types.ts still carries the screens' shapes");

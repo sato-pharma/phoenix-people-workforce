@@ -6,6 +6,7 @@ import {
   type MarketingMasterResolverClient,
   resolveMarketingPharmacyCodes,
 } from "@/lib/marketing-requests/master-resolution";
+import { stripComments } from "./support/comment-strip.ts";
 
 // Marketing pharmacy codes must reach the Source-of-Sales customer master automatically.
 //
@@ -22,14 +23,7 @@ const SERVICE = "src/lib/marketing-requests/service.ts";
 const RESOLVER_MIGRATION = "supabase/migrations/20260819234500_resolver_keeps_an_agreed_area.sql";
 
 function code(path: string): string {
-  return readFileSync(path, "utf8")
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .split("\n")
-    .map((line) => {
-      const idx = line.indexOf("//");
-      return idx >= 0 ? line.slice(0, idx) : line;
-    })
-    .join("\n");
+  return stripComments(readFileSync(path, "utf8"));
 }
 
 type RpcCall = { args: Record<string, unknown>; fn: string };

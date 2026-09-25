@@ -10,6 +10,7 @@ import {
   UNNAMED_FILER_LABEL,
   UNNAMED_MANAGER_LABEL,
 } from "../src/lib/recruitment/person-labels.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * Seen live: /hr/recruitment → Folders tab → Medical Representative → "Behira 1", 2026-09-11.
@@ -28,7 +29,7 @@ import {
  */
 
 function code(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+  return stripComments(source);
 }
 
 const read = (p: string) => readFileSync(join(process.cwd(), p), "utf8");

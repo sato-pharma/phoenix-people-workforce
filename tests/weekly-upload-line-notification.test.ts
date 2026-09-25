@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import { groupWeeklyProductsByTrackedLine } from "../src/lib/sales/weekly/upload-notification.ts";
 import type { WeeklyProductSummary } from "../src/lib/sales/weekly/types.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * A WEEKLY UPLOAD TELLS EXACTLY THE LINES WHOSE PRODUCTS IT CARRIES — AND NOBODY ELSE.
@@ -46,9 +47,7 @@ const NOTIFIER_SOURCE = readFileSync(
 
 /** Source with comments stripped, so a rule quoted in prose cannot satisfy a check. */
 function code(source: string): string {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, " ")
-    .replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+  return stripComments(source);
 }
 
 /**
