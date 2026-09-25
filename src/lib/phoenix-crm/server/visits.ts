@@ -37,6 +37,7 @@ import { describeDayWindows, isUuid } from "@/lib/phoenix-crm/plan-rules";
 import { managerChain, resolveVisitParticipants } from "@/lib/phoenix-crm/scope";
 import { readTestFlag, territoryForRead, territoryForVisit, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, numberOrNull, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
+import { judgeCapture } from "@/lib/phoenix-crm/server/location-integrity";
 import { ensureReferenceCustomers, loadMonthVisitCounts, loadTerritoryCustomers } from "@/lib/phoenix-crm/server/list";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
 import { photoSlotIssuedAt } from "@/lib/phoenix-crm/server/photos";
@@ -491,6 +492,25 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown): Promise
       device_skew_minutes: issuedAt ? deviceClockSkewMinutes(visit.deviceCapturedAt, new Date(issuedAt)) : null,
     },
   });
+
+  // Was this position real? Judged AFTER the save, deliberately: the answer never reaches the rep,
+  // never changes what comes back to him, and can never cost him a visit he actually made. A repeat
+  // save (`duplicate`) is skipped — the first one was already judged.
+  if (result.duplicate !== true) {
+    const capturedAt = new Date(String(result.captured_at));
+    if (!Number.isNaN(capturedAt.getTime())) {
+      await judgeCapture({
+        subjectKind: "visit",
+        subjectId: visitId,
+        seatId: seat.seatId,
+        repHrId: participants.value.repHrId ?? viewer.hrId,
+        customerId: visit.customerId,
+        isTest,
+        fix: { lat: visit.lat, lon: visit.lon, accuracyMeters: visit.accuracyMeters, capturedAt },
+        deviceMocked: visit.deviceMocked,
+      });
+    }
+  }
 
   return {
     visitId: String(result.id),

@@ -120,6 +120,10 @@ const ROUTE_GATES: RouteGate[] = [
   get("team"),
   // The Doctors directory: validated customers across territories, scoped downward on the server.
   get("doctors"),
+  // Location integrity evidence. `update` is the OUTER gate only — the service refuses every holder
+  // of it but the Super Admin, because a rep who learned this board exists would learn what it
+  // measures. Read-only by design: there is no POST, so nothing here can be cleared or edited away.
+  get("integrity", "update"),
   get("reports"),
   post("photos/upload-slot", "create"),
   // The native app's live photo: the phone sends the stamped JPEG as a base64 data URL and the server
@@ -352,6 +356,10 @@ const LATER_MIGRATIONS = [
   // earlier, it would leave the checks below reading a body the database has already stopped running —
   // the exact failure the comment above this array warns about.
   "supabase/migrations/20260925030047_phoenix_crm_visit_voice_note.sql",
+  // Location integrity evidence. It adds a TABLE and no function, which is why the loop below accepts
+  // either — and it may sit after the voice note without breaking the ordering rule above, because
+  // that rule is about the last entry to name a FUNCTION, and this one names none.
+  "supabase/migrations/20260925033551_phoenix_crm_location_integrity.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */
@@ -480,15 +488,22 @@ function runMigrationTests() {
     const later = migrationSql(path);
     assertMigrationHygiene(later, path);
     const added = functionsIn(later, path);
-    assert.ok(added.length > 0, `${path} replaces no function — has it been renamed?`);
-    assertFunctionGrants(later, path, added.filter((name) => !callable.has(name)));
-    for (const name of added) callable.add(name);
 
     // A table a LATER migration adds. It cannot join the first migration's lock loop, so it states the
     // same four statements itself — and the check has to be made here, because until this loop existed
     // a table added after the first migration was invisible to every rule below: the services could
     // read it, and nothing said whether anon and authenticated could too.
     const laterTables = [...later.matchAll(/\bcreate table if not exists public\.(phoenix_crm_[a-z_]+) \(/g)].map((match) => match[1]);
+
+    // A migration must contribute something this scan can SEE. The guard is against a rename quietly
+    // matching nothing — an entry that parses to no functions and no tables proves only that the
+    // regexes have stopped working. A table-only migration is legitimate and satisfies it.
+    assert.ok(
+      added.length > 0 || laterTables.length > 0,
+      `${path} adds no function and no table — have they been renamed, or the regexes outgrown?`,
+    );
+    assertFunctionGrants(later, path, added.filter((name) => !callable.has(name)));
+    for (const name of added) callable.add(name);
     assert.equal(
       laterTables.length,
       (later.match(/\bcreate\s+table\b/gi) ?? []).length,

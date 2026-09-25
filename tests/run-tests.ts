@@ -1526,6 +1526,7 @@ import { runPhoenixCrmPendingCustomerTests } from "./phoenix-crm-pending-custome
 import { runPhoenixCrmCustomerListBoardTests } from "./phoenix-crm-customer-list-board.test.ts";
 import { runPhoenixCrmDoctorsDirectoryTests } from "./phoenix-crm-doctors-directory.test.ts";
 import { runPhoenixCrmPlaceLocationFrozenTests } from "./phoenix-crm-place-location-frozen.test.ts";
+import { runPhoenixCrmLocationIntegrityTests } from "./phoenix-crm-location-integrity.test.ts";
 import { runPhoenixCrmPortalSidebarTests } from "./phoenix-crm-portal-sidebar.test.ts";
 import { runPhoenixCrmAmPmWordTests } from "./phoenix-crm-am-pm-words.test.ts";
 import { runPhoenixCrmDoctorPharmaciesTests } from "./phoenix-crm-doctor-pharmacies.test.ts";
@@ -5050,6 +5051,11 @@ await runTest(
 await runTest(
   "Phoenix CRM's captured location is frozen and separated (owner, 2026-09-23: \"the capture location is never editable and its separated when captured to brick area region clean addresss and raw location\" — the phone sends no address, zone or brick and has no box to type one into; the server resolves the clean address, the part of town, the brick with its distance, the area and the region from the captured coordinates; and the database's edit path writes only the place's name and its days and hours)",
   runPhoenixCrmPlaceLocationFrozenTests,
+);
+
+await runTest(
+  "Phoenix CRM catches a mock location app silently (owner, 2026-09-25: \"close this hole without reps knowing\" — Android's own mock-provider flag plus server-side replay, physics, jitter and precision checks; an honest rep in one building all morning is never flagged, a confessed mock location still SAVES with no message of any kind, and no rep-facing screen reads the verdict)",
+  runPhoenixCrmLocationIntegrityTests,
 );
 
 await runTest(

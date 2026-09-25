@@ -381,6 +381,8 @@ export type PlacePayload = {
   lon: number;
   accuracyMeters: number | null;
   deviceCapturedAt: string | null;
+  /** Android's mock-provider flag; null on iOS. Recorded on the server, shown to no rep. */
+  deviceMocked: boolean | null;
   label: string | null;
   timings: TimingDraftPayload[];
 };

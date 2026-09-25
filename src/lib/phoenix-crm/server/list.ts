@@ -47,6 +47,7 @@ import {
   type PhoenixCrmViewer,
 } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, chunk, numberOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
+import { judgeCapture } from "@/lib/phoenix-crm/server/location-integrity";
 import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { photoSlotIssuedAt } from "@/lib/phoenix-crm/server/photos";
@@ -715,6 +716,36 @@ async function placePayload(place: PlaceDraft): Promise<Row> {
   };
 }
 
+/**
+ * Judge the position a place was captured at, once the place is safely on file.
+ *
+ * Separate from `placePayload` on purpose: that function builds what gets SAVED, and nothing about
+ * this check may ever influence that. This runs afterwards, writes only to the private integrity
+ * table, returns nothing and throws nothing — a rep validating a customer sees no difference at all.
+ */
+async function judgeCaptureForPlace(
+  viewer: PhoenixCrmViewer,
+  seatId: string,
+  isTest: boolean,
+  placeId: string,
+  customerId: string,
+  capturedAtText: string,
+  place: PlaceDraft,
+): Promise<void> {
+  const capturedAt = new Date(capturedAtText);
+  if (Number.isNaN(capturedAt.getTime())) return;
+  await judgeCapture({
+    subjectKind: "place",
+    subjectId: placeId,
+    seatId,
+    repHrId: viewer.hrId,
+    customerId,
+    isTest,
+    fix: { lat: place.lat, lon: place.lon, accuracyMeters: place.accuracyMeters, capturedAt },
+    deviceMocked: place.deviceMocked,
+  });
+}
+
 export type ValidateResult = {
   customerId: string;
   customerName: string;
@@ -771,6 +802,10 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
     restored: result.restored === true,
     gradeRequestId: text(result.grade_request_id),
   };
+  // A validated place is the reference point every later visit to this customer is measured against,
+  // so a spoof here is worth more to a cheat than a spoofed visit — one fake pin makes a year of
+  // visits read "ok". Judged after the save, silently, exactly as a visit is.
+  await judgeCaptureForPlace(viewer, seat.seatId, isTest, validated.placeId, validated.customerId, validated.capturedAt, place.value);
   if (validated.gradeRequestId) {
     await notifyPhoenixCrm(
       {
@@ -861,7 +896,11 @@ export async function addPlace(viewer: PhoenixCrmViewer, raw: unknown): Promise<
       place: await placePayload(place.value),
     },
   });
-  return { placeId: String(result.place_id), customerId: String(result.customer_id), customerName: String(result.customer_name) };
+  const added = { placeId: String(result.place_id), customerId: String(result.customer_id), customerName: String(result.customer_name) };
+  // A second place is a second reference point, judged exactly as the first one is.
+  const issuedAt = await photoSlotIssuedAt(place.value.photoPath).catch(() => null);
+  if (issuedAt) await judgeCaptureForPlace(viewer, seat.seatId, isTest, added.placeId, added.customerId, issuedAt, place.value);
+  return added;
 }
 
 /** Editing a place's timings and details (no new photo: the change is kept in the events), or removing it. */

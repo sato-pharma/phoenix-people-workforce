@@ -4111,6 +4111,24 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     permissions: [{ resource: "phoenix_crm", action: "read" }],
     roles: ["Super Admin", "CEO", "SFE Manager", "Training Manager"],
   },
+  {
+    // Location integrity (the owner, 2026-09-25): the captures whose GPS the server could not
+    // believe — a mock-location app the phone admitted to, a coordinate used before, a trip nobody
+    // could have made. Nothing to confuse with /admin/crm-integrity above, which is the iReports360
+    // vendor feed's data quality; this one is about whether a rep was where he said he was.
+    //
+    // THE SUPER ADMIN'S ALONE, and the narrow role list is the point rather than tidiness: the rep
+    // is never told he was flagged (his own app shows nothing at all), so the fewer people who can
+    // open the board, the longer it keeps working. The enforcing gates are `phoenix_crm:update` on
+    // /api/phoenix-crm/integrity and `viewer.isSuperAdmin` inside the service AND the page — this
+    // card only decides whether the link is drawn.
+    href: "/admin/phoenix-crm/integrity",
+    icon: ShieldAlert,
+    label: "Location Integrity",
+    description: "Visits and validated places whose position does not hold up — checked on every capture, shown to no rep.",
+    permissions: [{ resource: "phoenix_crm", action: "update" }],
+    roles: ["Super Admin"],
+  },
   // Reps Plans had its own card here until 2026-09-21, when the owner merged it into Reps List
   // ("merge the 2 modules into 1 module WHICH REPS LIST"). The board is now the Call rate tab of the
   // Reps List card above, still behind canAccessRepsPlans plus crm_visits:read, and /admin/reps-plans
@@ -4663,6 +4681,7 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
           "/admin/double-visit-data-integrity",
           "/admin/brick-coverage",
           "/admin/field-workforce-compliance",
+          "/admin/phoenix-crm/integrity",
         ],
       },
     ],
