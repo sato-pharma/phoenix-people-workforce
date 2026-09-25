@@ -472,6 +472,7 @@ import { runCrmParticipantFilterTests } from "./crm-participant-filter.test.ts";
 import { runCrmVisitTimeTests } from "./crm-visit-time.test.ts";
 import { runCrmReadsHrIdCasingTests } from "./crm-reads-hrid-casing.test.ts";
 import { runCrmVisitsSelfScopeTests } from "./crm-visits-self-scope.test.ts";
+import { runMyVisitsFieldSplitTests } from "./my-visits-field-split.test.ts";
 import { runCrmLiveSyncWindowTests } from "./crm-live-sync-window.test.ts";
 import { runCrmLivePollerTests } from "./crm-live-poller.test.ts";
 import { runCrmDuplicateVisitCollapseTests } from "./crm-duplicate-visit-collapse.test.ts";
@@ -586,6 +587,7 @@ import { runEmployee360CustomerKeyTests } from "./employee-360-customer-key.test
 import { runEmployee360BrickCoverageTests } from "./employee-360-brick-coverage.test.ts";
 import { runEmployee360UntargetedMonthsTests } from "./employee-360-untargeted-months.test.ts";
 import { runEmployee360CampaignMixTests } from "./employee-360-campaign-mix.test.ts";
+import { runEmployee360LiveFieldBenchmarksTests } from "./employee-360-live-field-benchmarks.test.ts";
 import { runWeeklyColumnContractTests } from "./weekly-column-contract.test.ts";
 import { runSosCustomerMapBrickFillTests } from "./sos-customer-map-brick-fill.test.ts";
 import { runSalesReferenceCrosswalkCallersTests } from "./sales-reference-crosswalk-callers.test.ts";
@@ -932,6 +934,7 @@ import { runVacationOverlapWarningsTests } from "./vacation-overlap-warnings.tes
 import { runVacationReportFilterEquivalenceTests } from "./vacation-report-filter-equivalence.test.ts";
 import { runVacationBalanceReservesPendingTests } from "./vacation-balance-reserves-pending.test.ts";
 import { runVacationEntitlementsBalanceIgnoresFiltersTests } from "./vacation-entitlements-balance-ignores-filters.test.ts";
+import { runPortalHomeAnnualLeaveLeftTests } from "./portal-home-annual-leave-left.test.ts";
 import { runCsrfRouteCoverageTests } from "./csrf-route-coverage.test.ts";
 import { runContractRenewalHardeningTests } from "./contract-renewal-hardening.test.ts";
 import { runCronAuthSingleGuardTests } from "./cron-auth-single-guard.test.ts";
@@ -1394,6 +1397,8 @@ import { runWorkflowRegistryRetargetGuardTests } from "./workflow-registry-retar
 
 
 import { runSalesVsTargetTests } from "./sales-vs-target.test.ts";
+import { runVsTargetPageAreaMergePeriodTests } from "./vs-target-page-area-merge-period.test.ts";
+import { runTargetsPageAreaMergePeriodTests } from "./targets-page-area-merge-period.test.ts";
 import { runMakeItHappenTests } from "./make-it-happen.test.ts";
 import { runBrickDrilldownFollowsTheAreaMergeTests } from "./brick-drilldown-follows-the-area-merge.test.ts";
 import { runAchievementCountsUnmappedTests } from "./achievement-counts-unmapped.test.ts";
@@ -1406,6 +1411,7 @@ import { runEpdaPediaWarehouseRulingsTests } from "./epda-pedia-warehouse-ruling
 import { runImportSplitPreviewTests } from "./import-split-preview.test.ts";
 import { runCityListNewAreaGuardTests } from "./city-list-new-area-guard.test.ts";
 import { runClosingSourceMaskTests } from "./closing-source-mask.test.ts";
+import { runClosingDetailsDistributorNamesTests } from "./closing-details-distributor-names.test.ts";
 import { runQemaWarehouseSplitTests } from "./qema-warehouse-split.test.ts";
 import { runMergedAreaAttributionTests } from "./merged-area-attribution.test.ts";
 import { runPediaUpperEgyptSplitTests } from "./pedia-upper-egypt-split.test.ts";
@@ -1951,6 +1957,7 @@ import { runPhoenixCrmDictationTests } from "./phoenix-crm-dictation.test.ts";
 import { runPhoenixCrmSpeakTests } from "./phoenix-crm-speak.test.ts";
 import { runPhoenixCrmDictationCorrectTests } from "./phoenix-crm-dictation-correct.test.ts";
 import { runPhoenixCrmDictationCorpusTests } from "./phoenix-crm-dictation-corpus.test.ts";
+import { runTerritorySyncPanelRoleScopingTests } from "./territory-sync-panel-role-scoping.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -2980,6 +2987,7 @@ await runTest("crm participant visit filter (agent-or-partner door filter fails 
 await runTest("crm visit time (GPS check-in → save time → none; never visit_date_time)", runCrmVisitTimeTests);
 await runTest("crm reads hr-id casing (door matches agent/double hr ids case-insensitively)", runCrmReadsHrIdCasingTests);
 await runTest("crm visits self-scope (My Visits portal module: exact agent/double hrId scoping, no searchParams override)", runCrmVisitsSelfScopeTests);
+await runTest("my visits field split (My Visits and Team Visits count calls only, like the KPI drill-down)", runMyVisitsFieldSplitTests);
 await runTest("crm live-sync window (8:30 AM-12:01 PM Cairo boundary, inclusive both ends)", runCrmLiveSyncWindowTests);
 await runTest(
   "crm live poller (stable fingerprint, delta vs memo, cadence tiers, upsert-filter seam, startup "
@@ -3146,6 +3154,7 @@ await runTest("employee 360 customer key (contact 0 and the catch-all reach nobo
 await runTest("employee 360 bricks: the area's bricks sold or not, against the rep's CURRENT list; months follow the period from the hire month", runEmployee360BrickCoverageTests);
 await runTest("employee 360: a month with no target shows its sales and stays out of achievement; most-visited customers split into AM doctors, PM doctors and pharmacies", runEmployee360UntargetedMonthsTests);
 await runTest("employee 360: 100% regular is the best case — no healthy band, a campaign majority is the only flag, and campaign falling while regular rises reads as the best direction", runEmployee360CampaignMixTests);
+await runTest("employee 360: the company figures (reps with linked sales, company achievement, reps ever coached) are computed live and dated — no written-down figure renders", runEmployee360LiveFieldBenchmarksTests);
 await runTest("weekly column contract", runWeeklyColumnContractTests);
 await runTest("sos customer-map brick fill", runSosCustomerMapBrickFillTests);
 await runTest("sales reference crosswalk callers (name-master callers skip the customer→brick crosswalk; the import auto-fill keeps it)", runSalesReferenceCrosswalkCallersTests);
@@ -3772,6 +3781,11 @@ await runTest(
   "vacation balance reserves submitted-but-undecided leave for DISPLAY only (pricing stays "
   + "approved-only so payroll and deductions are untouched)",
   runVacationBalanceReservesPendingTests,
+);
+await runTest(
+  "portal home Medical Rep tile shows annual leave LEFT (entitlement minus taken, via "
+  + "getEmployeeAnnualLeaveBalanceDays/buildEmployeeEligibilityRows), not the raw entitlement",
+  runPortalHomeAnnualLeaveLeftTests,
 );
 await runTest("csrf route coverage", runCsrfRouteCoverageTests);
 await runTest("contract renewal hardening", runContractRenewalHardeningTests);
@@ -4400,6 +4414,8 @@ await runTest("outstation departure-photo resend (the one action that deliberate
 await runTest("outstation manager workload rollup (a DM's ride-alongs are already his; an NSM reaches one hop but only on the days he was actually out with that DM; a shared rep counts once)", runOutstationWorkloadRollupTests);
 
 await runTest("sales vs target (no target reads as null not 0%, July 2026 has no prior period, and a medical rep is bounded to their own rows not their whole line)", runSalesVsTargetTests);
+await runTest("Sales vs Target and the portal Targets manager branch name a merged area from the PERIOD on screen, never today's month (an August Anti Infective OT2 row must not read 'Ismailia and Suez'), and the product roll-up falls back to 'Unnamed product' rather than a raw code", runVsTargetPageAreaMergePeriodTests);
+await runTest("the admin sales Targets authoring page names a merged area from the PERIOD on screen, never today's month (an August Anti Infective OT2 row must not read 'Ismailia and Suez')", runTargetsPageAreaMergePeriodTests);
 await runTest("make it happen (units only, value and % derived; history from July 2026; growth may continue but never above the best month, a plateau stays flat, a decline is never inflated, under three closed months the average caps it; an unreachable target is said honestly; eight roles only, a PM plans their own products)", runMakeItHappenTests);
 await runTest("brick drill-down follows the Fayoum/Beni Suef area merge (per line)", runBrickDrilldownFollowsTheAreaMergeTests);
 await runTest(
@@ -4479,6 +4495,10 @@ await runTest(
 await runTest(
   "El Qema leaves no trace in a closing detail (distributor and customer blanked for every viewer but Super Admin, masked AFTER the split computes and BEFORE any workbook is written — never relabelled as another real distributor)",
   runClosingSourceMaskTests,
+);
+await runTest(
+  "Closing Details shows distributor NAMES, never codes (master name, else Unnamed distributor; named after the El Qema mask, so a masked or blank source gets no name and no filter option)",
+  runClosingDetailsDistributorNamesTests,
 );
 await runTest(
   "Pedia Upper Egypt split (August closes on the single Upper Egypt district over 37 El Qema areas; September resolves Upper Egypt 1 and Upper Egypt 2 with Luxor inside Qena 2 over 39; and the August distribution is identical before and after the dated pair is written)",
@@ -6958,6 +6978,10 @@ await runTest(
 await runTest(
   "Employee 360 period resolution follows the Cairo calendar (today, This month, quarter and YTD all resolve off currentCairoDateOnlyIso, not the server's UTC clock)",
   runEmployee360PeriodCairoTests,
+);
+await runTest(
+  "territory sync panel: lastSyncedBy is resolved to a name (never the raw login/HR id, with a system: actor and an unresolvable one both named in words), and the per-line reconciliation chips are gated behind showReconciliation — derived from isTerritoryLinePickerRole (Super Admin, CEO) — while canRun stays unconditional for every Territory Drilldown role",
+  runTerritorySyncPanelRoleScopingTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import {
   getManageEngineAccessToken,
   isManageEngineConfigured,
+  ManageEngineAuthThrottledError,
   ManageEngineNotConfiguredError,
   resetManageEngineTokenCache,
 } from "../src/lib/devices/manageengine/auth.ts";
@@ -74,6 +75,7 @@ import {
 } from "../src/lib/devices/manageengine/register-sync.ts";
 import { REP_TABLET_RULES } from "../src/lib/devices/tablet-policy.ts";
 import { findAccessRegistryEntry } from "../src/lib/security/access-registry.ts";
+import { stripComments } from "./support/comment-strip.ts";
 import type { RegisterTablet } from "../src/lib/devices/managed-tablets.ts";
 
 /** Full env so `manageEngineAuthConfig` is satisfied — the three secrets plus the two hosts. */
@@ -168,6 +170,35 @@ function runAuthTests() {
     assert.equal(await getManageEngineAccessToken(ok.fetch, ENV), "tok-abc", "the access token is returned");
     assert.equal(await getManageEngineAccessToken(ok.fetch, ENV), "tok-abc", "the second ask is served from cache");
     assert.equal(ok.calls.length, 1, "the cached token is reused — Zoho is called once");
+
+    // Concurrent asks on a cold cache share ONE in-flight mint — the four cards that load together
+    // must not each hit Zoho, which is what tripped its rate limit and showed "Access Denied".
+    resetManageEngineTokenCache();
+    const shared = makeFetch({ token: [{ status: 200, body: { access_token: "tok-shared", expires_in: 3600 } }] });
+    const [first, second] = await Promise.all([
+      getManageEngineAccessToken(shared.fetch, ENV),
+      getManageEngineAccessToken(shared.fetch, ENV),
+    ]);
+    assert.equal(first, "tok-shared");
+    assert.equal(second, "tok-shared");
+    assert.equal(
+      shared.calls.filter((call) => call.url.includes("/oauth/v2/token")).length,
+      1,
+      "two concurrent asks mint once, not twice",
+    );
+
+    // Zoho's throttle ("Access Denied") is transient, not a dead credential: a ThrottledError whose
+    // message never tells the owner to re-generate the Self Client.
+    resetManageEngineTokenCache();
+    const throttled = makeFetch({ token: [{ status: 200, body: { error: "Access Denied" } }] });
+    await assert.rejects(
+      () => getManageEngineAccessToken(throttled.fetch, ENV),
+      (error: unknown) =>
+        error instanceof ManageEngineAuthThrottledError &&
+        /rate-limited/i.test((error as Error).message) &&
+        !/re-generate/i.test((error as Error).message),
+      "Access Denied is surfaced as a transient throttle, never as a credential to re-generate",
+    );
   })();
 }
 
@@ -351,6 +382,13 @@ async function runDeviceTests() {
   assert.equal(location.longitude, 31.25);
   assert.equal(location.address, "Cairo");
   assert.equal(location.locatedAt, new Date(1_700_000_000_000).toISOString());
+  // The read hits the live `/locations` endpoint, never the async `/locations_with_address` export
+  // that answered 400 in production ("Mandatory parameter export_batch_id is not present").
+  const locateUrl = located.calls.find((call) => !call.url.includes("/oauth/"))?.url ?? "";
+  assert.ok(
+    locateUrl.endsWith("/locations"),
+    `the position is read from /locations, not ${locateUrl.split("/mdm/devices/")[1] ?? locateUrl}`,
+  );
 }
 
 function runCommandCatalogTests() {
@@ -482,18 +520,27 @@ async function runDeviceDetailTests() {
   assert.equal(commands[0].status, "Sent", "a word status passes through");
   assert.equal(commands[1].status, "Done", "a numeric status is named");
 
-  // A fresh locate asks first, then reads — and a refused request still returns the older position.
+  // The Locate button reads the last position the tablet reported, from `/locations` — a single
+  // GET, no async `/locations_with_address` export (which returned 400 on both verbs in production).
   resetManageEngineTokenCache();
   const refreshed = makeFetch({
     api: [
-      { status: 403, body: { error_description: "no licence for that" } },
       { status: 200, body: { locations: [{ latitude: 30.1, longitude: 31.3, address: "Giza" }] } },
     ],
   });
   const fresh = await requestManageEngineLocation("111", refreshed.fetch, ENV);
-  assert.equal(fresh.address, "Giza", "a refused request still falls through to the last known position");
-  const methods = refreshed.calls.filter((call) => !call.url.includes("/oauth/")).map((call) => call.init.method ?? "GET");
-  assert.deepEqual(methods, ["POST", "GET"], "the position is requested, then read");
+  assert.equal(fresh.latitude, 30.1, "the reported position is read back");
+  assert.equal(fresh.longitude, 31.3);
+  const apiCalls = refreshed.calls.filter((call) => !call.url.includes("/oauth/"));
+  assert.deepEqual(
+    apiCalls.map((call) => call.init.method ?? "GET"),
+    ["GET"],
+    "the position is a single read, not an export request",
+  );
+  assert.ok(
+    (apiCalls[0]?.url ?? "").endsWith("/locations"),
+    "the read hits /locations, never the /locations_with_address export",
+  );
 }
 
 /**
@@ -916,14 +963,54 @@ function runEnrollmentDoorTests() {
   );
   assert.match(audit, /entityType: "manageengine_enrollment_template"/);
 
-  // The page order, and what did NOT happen to Google's half.
+  // The page order, and what became of Google's half.
   const page = enrollmentSource("app/(admin)/devices/tablets/page.tsx");
   assert.ok(
     page.indexOf("<ManageEngineEnrollment") !== -1 &&
-      page.indexOf("<ManageEngineEnrollment") < page.indexOf("<RepTabletsConsole"),
+      page.indexOf("<ManageEngineEnrollment") < page.indexOf("<ManageEngineFleet"),
     "ManageEngine enrolls first — Google refuses every scan until it approves the project's device quota",
   );
-  assert.match(page, /<RepTabletsConsole/, "Google's console stays on the page, whole, for the day that approval lands");
+  // Read the RENDER, not the prose: the doc comment names `<RepTabletsConsole …/>` on purpose, as the
+  // one line to re-add the day Google's quota lands, so the check must ignore comments or it trips on
+  // its own restoration note.
+  assert.doesNotMatch(
+    stripComments(page),
+    /<RepTabletsConsole/,
+    "Google's console is OFF the page (owner, 2026-09-25) — it duplicated every ManageEngine card while Google holds zero tablets",
+  );
+  // Taken off the page, NOT deleted: the component and the routes it calls stay in the repo for the day approval lands.
+  assert.match(
+    enrollmentSource("src/components/devices/rep-tablets-console.tsx"),
+    /export function RepTabletsConsole/,
+    "the Google console component stays in the repo, whole",
+  );
+
+  // The free-trial split (owner asked, 2026-09-25): the two remote-troubleshooting features — and
+  // ONLY those two — are marked as stopping when the trial falls back to the free edition, and the
+  // page carries a colour key that says so. Screen sharing is ManageEngine's paid add-on; every other
+  // action keeps working on the free edition.
+  const fleet = enrollmentSource("src/components/devices/manageengine-fleet.tsx");
+  assert.match(
+    fleet,
+    /\{\s*id:\s*"REMOTE_VIEW"[^}]*stopsAfterTrial:\s*true/,
+    "View the screen is marked as stopping after the free trial (remote-troubleshooting add-on)",
+  );
+  assert.match(
+    fleet,
+    /\{\s*id:\s*"REMOTE_CONTROL"[^}]*stopsAfterTrial:\s*true/,
+    "Take control is marked as stopping after the free trial (remote-troubleshooting add-on)",
+  );
+  assert.equal(
+    (fleet.match(/stopsAfterTrial:\s*true/g) ?? []).length,
+    2,
+    "exactly the two screen-sharing features stop after the trial — nothing else is marked paid",
+  );
+  assert.doesNotMatch(
+    fleet,
+    /\{\s*id:\s*"LOCK"[^}]*stopsAfterTrial/,
+    "Lock keeps working on the free edition — it is never marked paid",
+  );
+  assert.match(fleet, /After the free trial ends/, "the fleet shows a colour key for what stops after the trial");
 
   for (const file of [
     "src/lib/devices/manageengine/enrollment.ts",

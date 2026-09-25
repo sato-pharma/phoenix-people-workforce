@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   buildPharmacyActions,
@@ -44,6 +45,101 @@ function periods(byPeriod: Record<string, PharmacyActionRow[]>): PeriodRows[] {
 }
 
 export function runSosPharmacyActionsTests() {
+  // ── PER AREA: every tile's count and money come from one area-scoped set ─────
+  // A rep with two areas picked one and saw that area's COUNTS beside every area's EGP, and a
+  // "Buying pharmacies" figure that never narrowed (2026-09-25). byArea is computed from the
+  // uncapped lists, so its counts, its money and its top list agree, and the areas sum to the whole.
+  {
+    const cairo2 = { areaCode: "CA2", sheetAreaCode: "CA2", areaName: "Cairo 2", sheetAreaName: "Cairo 2", brickId: "B2" };
+    const result = buildPharmacyActions({
+      periods: periods({
+        [LATEST]: [
+          row({ clientCode: "A1", salesValue: 100 }),
+          row({ clientCode: "A2", salesValue: 40 }),
+          row({ clientCode: "B1", salesValue: 700, ...cairo2 }),
+          row({ clientCode: "BNEW", salesValue: 60, ...cairo2 }),
+          row({ clientCode: "", salesValue: 30, ...cairo2 }),
+        ],
+        [P1]: [
+          row({ clientCode: "A1", salesValue: 100 }),
+          row({ clientCode: "A2", salesValue: 100 }),
+          row({ clientCode: "AGONE", salesValue: 90 }),
+          row({ clientCode: "B1", salesValue: 700, ...cairo2 }),
+          row({ clientCode: "BGONE", salesValue: 300, ...cairo2 }),
+        ],
+      }),
+    });
+    const ca1 = result.byArea.CA1;
+    const ca2 = result.byArea.CA2;
+    assert.ok(ca1 && ca2, "each area with sales gets a summary");
+
+    const inAreaOf = (code: string) => <T extends { areaCode: string }>(list: T[]) => list.filter((item) => item.areaCode === code);
+    for (const [code, summary] of Object.entries(result.byArea)) {
+      const inArea = inAreaOf(code);
+      assert.equal(summary.counts.stopped, inArea(result.stopped).length, `${code}: stopped count = its list`);
+      assert.equal(summary.counts.dropping, inArea(result.dropping).length, `${code}: dropping count = its list`);
+      assert.equal(summary.counts.newPharmacies, inArea(result.newPharmacies).length, `${code}: new count = its list`);
+      assert.equal(summary.valueAtStake.stopped, inArea(result.stopped).reduce((t, i) => t + i.priorAverage, 0), `${code}: stopped EGP = its own pharmacies`);
+      assert.equal(summary.valueAtStake.newPharmacies, inArea(result.newPharmacies).reduce((t, i) => t + i.latestValue, 0), `${code}: new EGP = its own pharmacies`);
+      assert.equal(summary.counts.activePharmacies, summary.top.length, `${code}: buying count = its top list (under the cap)`);
+      assert.equal(summary.latestTotals.pharmacies, summary.top.reduce((t, i) => t + i.latestValue, 0), `${code}: buying EGP = its buying pharmacies`);
+      assert.ok(summary.top.every((item) => item.areaCode === code), `${code}: top list holds only its own pharmacies`);
+      assert.deepEqual(summary.stopped.map((item) => item.key), inArea(result.stopped).map((item) => item.key), `${code}: stopped LIST is its own area's rows, not the count alone`);
+      assert.deepEqual(summary.dropping.map((item) => item.key), inArea(result.dropping).map((item) => item.key), `${code}: dropping LIST is its own area's rows`);
+      assert.deepEqual(summary.newPharmacies.map((item) => item.key), inArea(result.newPharmacies).map((item) => item.key), `${code}: new LIST is its own area's rows`);
+      assert.deepEqual(summary.crossSell.map((item) => item.key), inArea(result.crossSell).map((item) => item.key), `${code}: cross-sell LIST is its own area's rows`);
+      assert.deepEqual(summary.untappedBricks.map((b) => b.brickId), inArea(result.untappedBricks).map((b) => b.brickId), `${code}: untapped-bricks LIST is its own area's rows`);
+    }
+
+    assert.equal(ca1.counts.activePharmacies, 2, "Cairo 1 has two buying pharmacies, not the four across both areas");
+    assert.equal(ca1.latestTotals.pharmacies, 140, "Cairo 1's buying EGP is its own 140, not 900");
+    assert.equal(ca1.valueAtStake.stopped, 90, "Cairo 1's stopped EGP is AGONE only");
+    assert.equal(ca1.valueAtStake.dropping, 60, "Cairo 1's dropping EGP is A2 only (100 before, 40 latest)");
+    assert.equal(ca2.valueAtStake.stopped, 300, "Cairo 2's stopped EGP is BGONE only");
+    assert.equal(ca2.latestTotals.noCustomerCode, 30, "a code-less row lands in its own area's tie-back");
+    assert.equal(ca2.latestTotals.total, 790);
+    assert.equal(ca1.top[0].share, 100 / 140, "an area's top share is of that area's pharmacy value");
+
+    const sumOf = (pick: (summary: (typeof result.byArea)[string]) => number) =>
+      Object.values(result.byArea).reduce((total, summary) => total + pick(summary), 0);
+    assert.equal(sumOf((a) => a.latestTotals.total), result.latestTotals.total, "the areas add back to the whole closing");
+    assert.equal(sumOf((a) => a.latestTotals.pharmacies), result.latestTotals.pharmacies);
+    assert.equal(sumOf((a) => a.counts.activePharmacies), result.counts.activePharmacies);
+    assert.equal(sumOf((a) => a.valueAtStake.stopped), result.valueAtStake.stopped);
+
+    // The screen reads byArea for every figure AND every list, never the whole result's globally
+    // capped list filtered to an area — that undercounts once a line passes ACTION_LIST_LIMIT
+    // (caught in review on this PR: only "top" read the per-area list at first).
+    const screen = readFileSync(new URL("../src/components/sales/portal/portal-sos-pharmacy-actions.tsx", import.meta.url), "utf8");
+    assert.ok(screen.includes("actions.byArea?.[area]"), "the screen scopes its figures through byArea");
+    for (const whole of ["actions.valueAtStake", "actions.counts", "actions.latestTotals"]) {
+      assert.ok(!screen.includes(whole), `the screen never renders ${whole} directly — it would stay all-areas when an area is picked`);
+    }
+    for (const capped of ["inArea(actions.crossSell)", "inArea(actions.untappedBricks)", "inArea(actions[tab])"]) {
+      assert.ok(!screen.includes(capped), `the screen never filters ${capped} to an area — that list is already globally capped`);
+    }
+    for (const scoped of ["scope?.crossSell", "scope?.untappedBricks", "scope?.["]) {
+      assert.ok(screen.includes(scoped), `the screen reads ${scoped} for its list, not the capped whole-result array`);
+    }
+  }
+
+  // ── The global cap can hide an area's own rows behind bigger rows from OTHER areas: byArea's
+  // lists must be capped PER AREA, not filtered out of the whole result's already-capped list ──
+  {
+    const big = { areaCode: "CA9", sheetAreaCode: "CA9", areaName: "Cairo 9", sheetAreaName: "Cairo 9", brickId: "B9" };
+    const latestRows = [row({ clientCode: "SMALL", salesValue: 0 })];
+    const priorRows = [row({ clientCode: "SMALL", salesValue: 10 })];
+    for (let i = 0; i < 204; i += 1) {
+      latestRows.push(row({ clientCode: `BIG${i}`, salesValue: 0, ...big }));
+      priorRows.push(row({ clientCode: `BIG${i}`, salesValue: 1000, ...big }));
+    }
+    const result = buildPharmacyActions({ periods: periods({ [LATEST]: latestRows, [P1]: priorRows }) });
+    assert.equal(result.stopped.length, 200, "the whole-result list is capped at ACTION_LIST_LIMIT");
+    assert.ok(!result.stopped.some((item) => item.name === "Pharmacy SMALL"), "SMALL's tiny average sorts past the global cap, out of the whole list");
+    assert.equal(result.byArea.CA1.counts.stopped, 1, "CA1's tile count still finds SMALL");
+    assert.deepEqual(result.byArea.CA1.stopped.map((item) => item.name), ["Pharmacy SMALL"], "CA1's own LIST still shows SMALL — capped per area, not filtered out of the global 200");
+  }
+
   // ── STOPPED ────────────────────────────────────────────────────────────────
   {
     const result = buildPharmacyActions({

@@ -162,7 +162,7 @@ export default async function PortalTargetsPage({
     rows = gridRows
       .map((row) => ({
         areaCode: row.areaCode ?? "",
-        areaName: getMergedAreaName(selectedLine, row.areaCode ?? "") ?? areaName.get(row.areaCode ?? "") ?? "",
+        areaName: getMergedAreaName(selectedLine, row.areaCode ?? "", selectedPeriod) ?? areaName.get(row.areaCode ?? "") ?? "",
         regionCode: row.regionCode,
         regionName: regionName(row.regionCode),
         areaState: row.areaState,

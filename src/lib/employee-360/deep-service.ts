@@ -8,16 +8,20 @@
 // Honesty rules encoded here:
 //  - Coaching is one rater (the Training Manager) and sparse — future-dated rows
 //    are excluded and counted; "not coached" is a coverage state, never a 0.
-//  - Sales lags visits and covers ~2/3 of reps — a rep with no sales rows shows
-//    "no validated sales", never 0%.
+//  - Sales lags visits and covers only part of the field — a rep with no sales rows shows
+//    "no validated sales", never 0%. How much of the field it covers is computed live
+//    (fieldBenchmarks below), never written down.
 //  - Impact windows report their sample size so a thin before/after isn't oversold.
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getRepContactList } from "@/lib/crm/contact-lists";
 import type { CrmListType } from "@/lib/crm/contacts-web-client";
 import { CRM_DOUBLE_VISIT_TYPE_CODES, isCrmDoubleVisitRow, queryVisitsLimited } from "@/lib/crm/reads";
-import { hrIdLookupKeys } from "@/lib/hr-id";
+import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
 import type { PhoenixRole } from "@/lib/auth/permissions";
+import { getEmployeeDirectoryRows, isActiveDirectoryEmployee } from "@/lib/employees/employee-directory";
+import { currentCairoDateParts } from "@/lib/i18n/format";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { canViewRestrictedProducts, restrictedProductNameSet, stripRestrictedRowsByName } from "@/lib/sales/access-scope";
 import { getPmProductCodes, resolvePmSalesFamilies } from "@/lib/employee-360/pm-products";
 import {
@@ -46,7 +50,7 @@ import {
 import { EMPLOYEE_360_BENCHMARKS } from "./benchmarks";
 import { loadEmployee360BrickPanel, type Employee360BrickPanel } from "./brick-coverage";
 import { canonicalizeLocation, canonicalizeTransport, resolveGovernorate } from "./egypt-locations";
-import { isFieldLeaderCategory, type Employee360RoleCategory } from "./roles";
+import { isFieldLeaderCategory, resolveEmployee360RoleCategory, type Employee360RoleCategory } from "./roles";
 
 const IMPACT_WINDOW_DAYS = 30;
 
@@ -319,7 +323,7 @@ export function aggregateSalesRows(rows: SalesRow[], isTeamRollup: boolean, cont
     : "";
   const summaryText =
     rows.length === 0
-      ? "No validated sales records for this employee yet (only ~2/3 of reps have linked sales)."
+      ? "No validated sales records for this employee yet."
       : teamPrefix +
         `${compact(totalSales)} of sales across ${monthly.length} month${monthly.length === 1 ? "" : "s"}. ` +
         gradedPart +
@@ -1277,8 +1281,111 @@ async function getLeadershipActivity(
   };
 }
 
+// ── Field benchmarks (company-wide, computed live) ───────────────────────────
+// The company figures a person is set beside. Until 2026-09-25 three of them were literals measured
+// once on 2026-07-12 — the share of reps with linked sales, the company achievement beside a rep's own,
+// and the count of reps ever coached — and the screen kept printing them as the field force changed.
+// tests/employee-360-live-field-benchmarks.test.ts fails if any of the three is written back in.
+// Each is now worked out on every load from rows the profile already reads, and carries the month it
+// describes. (The visit averages in benchmarks.ts are a separate, heavier question and stay as they are.)
+export type Employee360FieldBenchmarks = {
+  /** Active Medical Reps on the directory today — the denominator of both coverage figures. */
+  fieldReps: number;
+  /** Of them, how many hold at least one validated sales row — the same test as a rep's "Sales linked". */
+  repsWithSales: number;
+  /** The company's achievement under the closing's rule, the company as the subject; null when no month carries a target. */
+  companyAchievementPct: number | null;
+  /** The latest month holding validated sales ("Aug 2026") — what both sales figures run through. */
+  salesThroughLabel: string | null;
+  /** Of the field reps, how many have ever been coached; null when that read failed, so no figure is shown. */
+  repsEverCoached: number | null;
+  /** The month the roster and the coaching count describe ("Sep 2026", Cairo). */
+  asOfLabel: string;
+};
+
+/**
+ * PURE. `salesRows` are the company's rows after the hire-month drop and the viewer's product mask —
+ * the same rows a rep's own figures are cut from, so the two sit on one basis.
+ */
+export function summarizeFieldBenchmarks(input: {
+  fieldRepHrIds: readonly string[];
+  salesRows: readonly SalesRow[];
+  coachedRepHrIds: readonly string[] | null;
+  asOfMonth: string;
+}): Employee360FieldBenchmarks {
+  const keyed = (ids: Iterable<string | null>) => {
+    const out = new Set<string>();
+    for (const id of ids) {
+      const key = canonicalHrIdKey(id);
+      if (key) out.add(key);
+    }
+    return out;
+  };
+  const reps = keyed(input.fieldRepHrIds);
+  const repsWithSales = [...keyed(input.salesRows.map((r) => r.employee_hr_id))].filter((k) => reps.has(k)).length;
+  const coached = input.coachedRepHrIds == null ? null : [...keyed(input.coachedRepHrIds)].filter((k) => reps.has(k)).length;
+  const company = aggregateSalesRows([...input.salesRows], false, 0);
+  return {
+    fieldReps: reps.size,
+    repsWithSales,
+    companyAchievementPct: company.achievementPct,
+    salesThroughLabel: company.latestMonth ? monthLabel(company.latestMonth) : null,
+    repsEverCoached: coached,
+    asOfLabel: monthLabel(input.asOfMonth),
+  };
+}
+
+/** Every rep with a coaching report dated today or earlier — the per-rep section's own future-date cut. Null on a failed read. */
+async function loadCoachedRepHrIds(): Promise<string[] | null> {
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const rows = await fetchAllRows<{ id: string; medical_rep_hr_id: string | null }>(
+      () => getSupabaseAdmin().from("coaching_reports").select("id,medical_rep_hr_id").lte("coaching_date", today),
+      "id",
+    );
+    return rows.map((r) => String(r.medical_rep_hr_id ?? "")).filter(Boolean);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The live company figures for this viewer. The sales rows, the hire months and the directory are
+ * the loads the profile and its page already made (memoized per request, or cached), so the only new
+ * read is the coaching one. Null when anything fails: a missing company figure is honest, a stale one
+ * is not.
+ */
+async function getFieldBenchmarks(viewerRole: PhoenixRole): Promise<Employee360FieldBenchmarks | null> {
+  try {
+    const { year, month } = currentCairoDateParts();
+    const [directory, all, hireMonths, coachedRepHrIds] = await Promise.all([
+      getEmployeeDirectoryRows({ includeInactive: true }),
+      loadCanonicalEmployee360SalesRows(),
+      loadEmployee360HireMonths(),
+      loadCoachedRepHrIds(),
+    ]);
+    let salesRows = maskRestrictedEmployee360Rows(dropPreHireEmployee360Rows(all, hireMonths), viewerRole);
+    if (!canViewRestrictedProducts(viewerRole)) {
+      salesRows = applyRestrictedProductFilter(salesRows, viewerRole, await restrictedProductNameSet());
+    }
+    const fieldRepHrIds = directory
+      .filter((row) => isActiveDirectoryEmployee(row) && resolveEmployee360RoleCategory(row.jobTitle ?? row.positionTitle) === "medical-rep")
+      .map((row) => row.hrId);
+    return summarizeFieldBenchmarks({
+      fieldRepHrIds,
+      salesRows,
+      coachedRepHrIds,
+      asOfMonth: `${year}-${String(month).padStart(2, "0")}`,
+    });
+  } catch {
+    return null;
+  }
+}
+
 // ── Orchestrator ─────────────────────────────────────────────────────────────
 export type Employee360Profile = Employee360Summary & {
+  /** Live company figures (sales coverage, company achievement, coaching coverage); null when unavailable. */
+  fieldBenchmarks: Employee360FieldBenchmarks | null;
   sales: SalesSummary;
   coaching: CoachingSummary;
   doubleVisits: DoubleVisitHistory;
@@ -1329,7 +1436,7 @@ export async function getEmployee360Profile(
     pmSalesFamilies.length > 0
       ? getEmployeeSalesByFamilies(pmSalesFamilies, viewerRole)
       : getEmployeeSales(salesTeam, viewerRole);
-  const [visits, checkins, sales, tmIds, expenses, leadership, bricks, listsByContact] = await Promise.all([
+  const [visits, checkins, sales, tmIds, expenses, leadership, bricks, listsByContact, fieldBenchmarks] = await Promise.all([
     fetchVisitRows(hrId, window),
     fetchCheckinRows(hrId, window),
     salesPromise,
@@ -1341,6 +1448,7 @@ export async function getEmployee360Profile(
     // A rep's own area against his own current list. A manager's seat carries no area of his own.
     roleCategory === "medical-rep" ? loadEmployee360BrickPanel(hrId, window, viewerRole) : Promise.resolve(null),
     roleCategory === "medical-rep" ? loadRepListsByContact(hrId) : Promise.resolve(undefined),
+    getFieldBenchmarks(viewerRole),
   ]);
   const coaching = await getEmployeeCoaching(hrId, nameByHrId);
 
@@ -1396,6 +1504,7 @@ export async function getEmployee360Profile(
     hrId,
     window,
     benchmarks: EMPLOYEE_360_BENCHMARKS,
+    fieldBenchmarks,
     isMapped: visits.length > 0,
     ...visitSummary,
     ...checkinSummary,

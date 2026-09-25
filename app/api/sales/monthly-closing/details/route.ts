@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { loadDistributorNameIndex, nameClosingDetailDistributors } from "@/lib/sales/closing-details-distributor-names";
 import { gateClosingDetailsPeriod } from "@/lib/sales/closing-details-publication-gate";
 import { loadMonthlyClosingDetails } from "@/lib/sales/monthly-closing-details";
 import {
@@ -58,7 +59,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ success: false, error: gate.error }, { status: 403 });
     }
 
-    const data = await loadMonthlyClosingDetails({
+    const [details, distributorNames] = await Promise.all([loadMonthlyClosingDetails({
       access,
       line,
       period: gate.kind === "published" ? gate.period : period,
@@ -77,7 +78,11 @@ export async function GET(request: Request) {
         inclusion: searchParams.get("inclusion") ?? "",
         search: searchParams.get("search") ?? "",
       },
-    });
+    }), loadDistributorNameIndex()]);
+
+    // Names go on AFTER the loader returns, so El Qema is already gone from the rows and the options
+    // for every viewer who may not see it. See closing-details-distributor-names.ts.
+    const data = nameClosingDetailDistributors(details, distributorNames, access);
 
     return NextResponse.json({ success: true, data });
   } catch (error) {

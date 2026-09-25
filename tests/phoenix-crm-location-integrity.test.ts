@@ -284,6 +284,9 @@ export function runPhoenixCrmLocationIntegrityTests(): void {
       const literals = withoutComments.match(/(["'`])(?:\\.|(?!\1)[\s\S])*\1/g) ?? [];
       for (const literal of literals) {
         assert.equal(/mock|fake\s*gps|spoof/i.test(literal), false, `${path} must never say ${literal} to a rep`);
+        // And it must never name the countermeasure to switch off — telling the one person you caught
+        // to "turn off any app that changes the location" is the exact tip the silent rule forbids.
+        assert.equal(/app that changes the location/i.test(literal), false, `${path} must never tell a rep to turn off a location-changing app: ${literal}`);
       }
     }
 

@@ -76,8 +76,11 @@ export default async function TerritoryDrilldownPage({
     >
       <div className="mb-4">
         {/* Every role that can open this page is a Territory Drilldown role, and by owner decision
-            all of them may run the (corrective, idempotent) sync — so the button is always live here. */}
-        <TerritorySyncPanel canRun />
+            all of them may run the (corrective, idempotent) sync — so the button is always live
+            here. The per-line reconciliation chips are narrower: they cover every line the sync
+            touched, not just this viewer's own, so only a role that already sees every line
+            company-wide (the line-picker roles, same as showLinePicker above) gets to see them. */}
+        <TerritorySyncPanel canRun showReconciliation={isTerritoryLinePickerRole(access.role)} />
       </div>
       <Suspense fallback={<DashboardSkeleton chartCount={1} kpiCount={0} />}>
         <TerritoryDrilldownContent access={access} selectedLine={selectedLine} />

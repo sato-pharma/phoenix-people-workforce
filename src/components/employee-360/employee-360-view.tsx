@@ -108,6 +108,14 @@ function ratio1(value: number | null): string {
   return value == null ? "—" : value.toFixed(1);
 }
 
+type FieldBenchmarks = Employee360Profile["fieldBenchmarks"];
+
+/** "98 of 131 reps have linked sales through Aug 2026" — computed live, never a written-down share. */
+function salesCoverageText(field: FieldBenchmarks): string | null {
+  if (!field || field.fieldReps === 0) return null;
+  return `${intFmt.format(field.repsWithSales)} of ${intFmt.format(field.fieldReps)} reps have linked sales${field.salesThroughLabel ? ` through ${field.salesThroughLabel}` : ""}`;
+}
+
 function tenureLabel(hireDate: string | null): string | null {
   if (!hireDate) return null;
   const start = new Date(hireDate);
@@ -580,6 +588,7 @@ export function Employee360View({
   pmMarketing?: PmMarketingSummary | null;
 }) {
   const b = summary.benchmarks;
+  const salesCoverage = salesCoverageText(summary.fieldBenchmarks);
   const tenure = tenureLabel(subject.hireDate);
   const monthlyMax = Math.max(1, ...summary.monthly.map((m) => m.regular + m.campaign));
   const trendCopy = campaignTrendCopy(summary.campaignTrend);
@@ -634,7 +643,7 @@ export function Employee360View({
       {tmAnalytics ? <TrainingManagerSection a={tmAnalytics} /> : null}
 
       {/* Team / line sales — leaders show it up top (reps see their own further down). */}
-      {isLeader && category !== "training-manager" ? <SalesSection sales={summary.sales} /> : null}
+      {isLeader && category !== "training-manager" ? <SalesSection sales={summary.sales} field={summary.fieldBenchmarks} /> : null}
 
       {/* Team development — coaching coverage of a field manager's own reps. */}
       {teamHealth ? <TeamHealthSection teamHealth={teamHealth} /> : null}
@@ -810,7 +819,7 @@ export function Employee360View({
       ) : null}
 
       {/* Sales & Achievement — reps see their own here (leaders saw team sales up top). */}
-      {!isLeader ? <SalesSection sales={summary.sales} /> : null}
+      {!isLeader ? <SalesSection sales={summary.sales} field={summary.fieldBenchmarks} /> : null}
 
       {/* Bricks — the rep's area against the rep's CURRENT list (Medical Reps only; null otherwise). */}
       {!isLeader && summary.bricks ? <BrickCoverageSection panel={summary.bricks} /> : null}
@@ -833,14 +842,15 @@ export function Employee360View({
       {/* Coaching / impact / double-visits RECEIVED — a rep-side view (Medical Reps). */}
       {showReceivedSide ? (
         <>
-          <CoachingSection coaching={summary.coaching} />
+          <CoachingSection coaching={summary.coaching} field={summary.fieldBenchmarks} />
           <ImpactSection impact={summary.impact} />
           <DoubleVisitSection dv={summary.doubleVisits} />
         </>
       ) : null}
 
       <p className="px-1 text-phx-xs text-slate-400">
-        Employee 360 · {EMPLOYEE_360_ROLE_META[category].label} view — sections are tailored to this role. Sales lag visits ~2 months and cover ~2/3 of reps; coaching is a single-rater signal — light pillars are coverage states, never a punishing zero. Benchmarks are company 2026 YTD averages.
+        Employee 360 · {EMPLOYEE_360_ROLE_META[category].label} view — sections are tailored to this role. Sales lag visits ~2 months
+        {salesCoverage ? ` (${salesCoverage})` : ""}; coaching is a single-rater signal — light pillars are coverage states, never a punishing zero. Benchmarks are company 2026 YTD averages.
       </p>
     </div>
   );
@@ -933,8 +943,13 @@ function LeadershipSection({ leadership, isTM }: { leadership: LeadershipActivit
   );
 }
 
-function SalesSection({ sales }: { sales: Employee360Profile["sales"] }) {
+function SalesSection({ sales, field }: { sales: Employee360Profile["sales"]; field: FieldBenchmarks }) {
   const untargeted = sales.untargetedLabel;
+  const coverage = salesCoverageText(field);
+  const companyAchievement =
+    field?.companyAchievementPct != null
+      ? `${pctPoints(field.companyAchievementPct)} co.${field.salesThroughLabel ? ` · through ${field.salesThroughLabel}` : ""}`
+      : undefined;
   return (
     <Card className={PREMIUM_CARD}>
       <SectionHeader
@@ -945,7 +960,7 @@ function SalesSection({ sales }: { sales: Employee360Profile["sales"] }) {
         Sales &amp; Achievement{sales.isTeamRollup ? " (Team)" : ""}
       </SectionHeader>
       {!sales.hasData ? (
-        <EmptyState>No validated sales records for this employee yet (only ~2/3 of reps have linked sales).</EmptyState>
+        <EmptyState>No validated sales records for this employee yet{coverage ? ` (${coverage})` : ""}.</EmptyState>
       ) : (
         <>
           <SummaryLine text={sales.summaryText} />
@@ -959,7 +974,7 @@ function SalesSection({ sales }: { sales: Employee360Profile["sales"] }) {
             <KpiTile
               label="Achievement"
               value={pctPoints(sales.achievementPct)}
-              benchmark="61% co."
+              benchmark={companyAchievement}
               goodWhenAbove={sales.achievementPct == null ? null : sales.achievementPct >= 100}
               hint={untargeted ? "months with a target only" : undefined}
               explain={
@@ -1335,7 +1350,7 @@ function BrickCoverageSection({ panel }: { panel: Employee360BrickPanel }) {
   );
 }
 
-function CoachingSection({ coaching }: { coaching: Employee360Profile["coaching"] }) {
+function CoachingSection({ coaching, field }: { coaching: Employee360Profile["coaching"]; field: FieldBenchmarks }) {
   return (
     <Card className={PREMIUM_CARD}>
       <SectionHeader icon={GraduationCap} tone="violet" sub="Received coaching (double-visit assessments). Single-rater signal — read as guidance, not objective truth.">
@@ -1344,7 +1359,10 @@ function CoachingSection({ coaching }: { coaching: Employee360Profile["coaching"
       {!coaching.hasData ? (
         <EmptyState>
           No coaching reports on record for this employee.
-          {coaching.futureDatedExcluded > 0 ? ` (${coaching.futureDatedExcluded} future-dated row(s) excluded.)` : ""} Field-wide only ~33 of 127 reps have ever been coached.
+          {coaching.futureDatedExcluded > 0 ? ` (${coaching.futureDatedExcluded} future-dated row(s) excluded.)` : ""}
+          {field && field.fieldReps > 0 && field.repsEverCoached != null
+            ? ` Field-wide, ${intFmt.format(field.repsEverCoached)} of ${intFmt.format(field.fieldReps)} reps have ever been coached (as of ${field.asOfLabel}).`
+            : ""}
         </EmptyState>
       ) : (
         <>

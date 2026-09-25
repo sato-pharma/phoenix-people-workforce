@@ -32,7 +32,7 @@ import {
   wrapWatermarkText,
 } from "@/components/outstation/evidence-watermark";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
-import { formatDistance, isUsableFix } from "@/lib/phoenix-crm/geo";
+import { formatDistance } from "@/lib/phoenix-crm/geo";
 import type { PhotoSlot } from "@/lib/phoenix-crm/view-types";
 import { cn } from "@/lib/utils";
 
@@ -204,10 +204,6 @@ export function LivePhotoCapture({
           accuracyMeters: Number.isFinite(position.coords.accuracy) ? position.coords.accuracy : null,
           at: new Date(position.timestamp || Date.now()).toISOString(),
         };
-        if (!isUsableFix(reading.lat, reading.lon)) {
-          setLocationNote("Your phone reports a location outside Egypt. Turn off any app that changes the location, then wait here.");
-          return;
-        }
         setLocationNote(null);
         setFix((current) => {
           if (!current || current.accuracyMeters === null) return reading;
