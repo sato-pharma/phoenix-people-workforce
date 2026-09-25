@@ -1,26 +1,14 @@
 /**
- * Table names for native (Phoenix-entered) visits — the pilot.
+ * Table names for native (Phoenix-entered) visits.
+ *
+ * The pilot's own visit, plan and roster tables are retired (2026-09-25, once nothing read or wrote
+ * them any more) — crm_native_visit_pilots stays in the database, unread, as pilot history, exactly
+ * as the pilot's own original migration intended, but nothing in the app names it any more either.
  *
  * Kept apart from src/lib/crm/tables.ts on purpose: that file names the read-only vendor mirror, and
- * tests/crm-native-visits.test.ts fails if any file outside src/lib/crm/native-visits/ references
- * these constants. Until the cutover no report, KPI, deduction, probation count or payroll input may
- * read a native row — the same visit also exists in the vendor feed, so reading both double-counts.
+ * this one is for what Phoenix itself writes.
  */
 
-export const CRM_NATIVE_VISIT_PILOTS_TABLE = "crm_native_visit_pilots";
-
-// Phoenix CRM (the owner, 2026-09-14): the reps the Super Admin picks for the pilot, from any line.
-export const CRM_NATIVE_PILOT_REPS_TABLE = "crm_native_pilot_reps";
-export const CRM_NATIVE_PILOT_REP_EVENTS_TABLE = "crm_native_pilot_rep_events";
-export const CRM_NATIVE_VISITS_TABLE = "crm_native_visits";
-export const CRM_NATIVE_VISIT_PARTNERS_TABLE = "crm_native_visit_partners";
-export const CRM_NATIVE_VISIT_EVENTS_TABLE = "crm_native_visit_events";
-
-// Native rep plans (phase 4). Same rule: nothing outside this folder names them before cutover.
-export const CRM_NATIVE_PLANS_TABLE = "crm_native_plans";
-export const CRM_NATIVE_PLAN_ITEMS_TABLE = "crm_native_plan_items";
-export const CRM_NATIVE_PLAN_EVENTS_TABLE = "crm_native_plan_events";
-
-// Working on an approved vacation day (phase 6, rule 9). Same rule.
+// Working on an approved vacation day (phase 6, rule 9).
 export const CRM_NATIVE_VISIT_VACATION_DAY_REQUESTS_TABLE = "crm_native_visit_vacation_day_requests";
 export const CRM_NATIVE_VISIT_VACATION_DAY_REQUEST_EVENTS_TABLE = "crm_native_visit_vacation_day_request_events";
