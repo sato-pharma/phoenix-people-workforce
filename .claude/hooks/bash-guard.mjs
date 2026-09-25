@@ -6,6 +6,9 @@
 //       node_modules, which every worktree's node_modules is only a junction to.
 //   C7  a raw `next dev` — it skips scripts/dev-server.mjs, so Next hands the server half of RAM
 //       (8,086 MB here) instead of the launcher's 4,096, and nothing refuses a second server.
+//   C8  a LOCAL typecheck — it needs 4.0-4.5 GB, dies at node's own ~4.1 GB default, and the memory
+//       watchdog reaps it. A reaped run prints nothing, so the session re-runs it in another
+//       spelling. PHX_TYPECHECK_OK=1 (or $env:PHX_TYPECHECK_OK=1) stands it down for one command.
 //
 // And triggers one NON-blocking side effect:
 //   C5  worktree removal — hands the command to worktree-exit-guard.mjs --pre-removal so the
@@ -193,6 +196,134 @@ function rawNextDevLaunch(command) {
   return commandSegments(withoutHereStringBodies(withoutHeredocBodies(command))).find(launchesRawNextDev) ?? null;
 }
 
+/** `tsc`, however the path to it was spelled, including the `lib/tsc.js` entry node runs directly. */
+const TSC_BASENAME = /^tsc(?:\.(?:js|cmd|exe|bat))?$/i;
+
+/** The basename of a token, with either slash flavour stripped. */
+const binName = (token) =>
+  String(token ?? '')
+    .replace(/^.*[\\/]/, '')
+    .toLowerCase();
+
+/**
+ * argv for one segment, QUOTE-AWARE. A plain `split(/\s+/)` breaks
+ * `"C:\Program Files\nodejs\node.exe"` into two tokens and the guard then reads `"C:\Program` as the
+ * binary — and every path on this machine has a space in it, so that is the common case, not the
+ * exotic one. Quote-awareness is also what keeps `echo "tsc --noEmit"` safe: there the tsc text is a
+ * single ARGUMENT token, never the binary.
+ */
+function argvTokens(text) {
+  const tokens = [];
+  let current = '';
+  let quote = null;
+  let started = false;
+  for (const ch of String(text)) {
+    if (quote) {
+      if (ch === quote) quote = null;
+      else current += ch;
+      started = true;
+    } else if (ch === '"' || ch === "'") {
+      quote = ch;
+      started = true;
+    } else if (/\s/.test(ch)) {
+      if (started) tokens.push(current);
+      current = '';
+      started = false;
+    } else {
+      current += ch;
+      started = true;
+    }
+  }
+  if (started) tokens.push(current);
+  return tokens;
+}
+
+/**
+ * Does this segment start a local typecheck? Every form below was taken from a real kill in
+ * ~/.claude/scripts/mem-watchdog.log, not imagined: sessions reach for `.bin/tsc`, `typescript/bin/tsc`,
+ * `typescript/lib/tsc.js`, a backslash spelling of the same, `-p tsconfig.json`, and a hand-raised
+ * `--max-old-space-size`, because each silent death reads like a broken command rather than a kill.
+ *
+ * `--noEmit` is REQUIRED for a direct tsc so that a real build (`tsc -b`, an emit into dist) is not
+ * caught by a rule about the checking loop. `pnpm run typecheck` needs no such test — that script IS
+ * `tsc --noEmit --pretty false`. `pnpm run ci` is deliberately NOT matched: AGENTS.md §7 keeps it as
+ * the owner's own opt-in for the one case CI cannot answer, a migration or a production deploy.
+ */
+function launchesLocalTypecheck(segment, root) {
+  // TWO readings of the same segment, because `unwrapped()` strips a LEADING quote and so
+  // unbalances every line whose first token is a quoted path — and on this machine it usually is:
+  // `"C:\Program Files\nodejs\node.exe"`. The raw reading catches that one; the unwrapped reading
+  // catches `cmd /c`, `bash -lc` and a leading `VAR=value`. A match in either is a launch.
+  return [segment.trim(), unwrapped(segment)].some((text) => readsAsLocalTypecheck(text, root));
+}
+
+/**
+ * Is `<manager> run <script>` a typecheck?
+ *
+ * By NAME first, and only the exact `typecheck`, because that is what package.json holds and the
+ * name has to answer from a folder where package.json is not readable at all — which is most of
+ * them, since sessions run `pnpm run typecheck` from wherever they happen to be.
+ *
+ * Then by BODY, resolved through one `<manager> run <other>` hop. `check:edit` was exactly that
+ * hop, a bare alias for `pnpm run typecheck`, and it was deleted on 2026-09-25 for costing minutes
+ * and usually returning nothing; a differently-named alias is the obvious way for this guard to be
+ * walked around, by a session or by a future script. A body holding a SEPARATOR is not resolved:
+ * `ci` chains eleven commands and stays the owner's own opt-in (AGENTS.md §7).
+ */
+function scriptIsTypecheck(script, root, seen = new Set()) {
+  if (!script || seen.has(script)) return false;
+  seen.add(script);
+  if (script.toLowerCase() === 'typecheck') return true;
+
+  const body = String(packageScripts(root)[script] ?? '').trim();
+  if (!body) return false;
+  const passthrough = /^(?:pnpm|npm|yarn)(?:\s+run)?\s+([\w:.-]+)\s*$/.exec(body);
+  if (passthrough) return scriptIsTypecheck(passthrough[1], root, seen);
+  if (/[|&;\n]/.test(body)) return false;
+  return readsAsLocalTypecheck(body, root);
+}
+
+/** One reading of a segment: is the thing being LAUNCHED here tsc, and is it checking rather than emitting? */
+function readsAsLocalTypecheck(text, root) {
+  const tokens = argvTokens(text);
+  let i = 0;
+  // Leading `VAR=value` belongs to the environment, not the command.
+  while (i < tokens.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[i])) i += 1;
+  if (i >= tokens.length) return false;
+
+  let bin = binName(tokens[i]);
+  let rest = tokens.slice(i + 1);
+  const words = () => rest.filter((token) => !token.startsWith('-'));
+
+  if (/^(?:pnpm|npm|yarn)(?:\.(?:cmd|exe))?$/.test(bin)) {
+    const [first, second] = words();
+    if (first === 'run') return scriptIsTypecheck(second, root);
+    // `yarn <script>` needs no `run`.
+    if (bin.startsWith('yarn') && first && first !== 'exec' && first !== 'dlx') {
+      return scriptIsTypecheck(first, root);
+    }
+    if (first !== 'exec' && first !== 'dlx') return false;
+    bin = binName(second);
+  } else if (/^npx(?:\.(?:cmd|exe))?$/.test(bin)) {
+    bin = binName(words()[0]);
+  } else if (/^node(?:\.exe)?$/.test(bin)) {
+    // node's own flags (`--max-old-space-size=…`) come first; the script is the first non-flag token.
+    bin = binName(words()[0]);
+  }
+
+  if (!TSC_BASENAME.test(bin)) return false;
+  return /--noemit\b/i.test(text);
+}
+
+/** The segment that starts a local typecheck, or null. */
+function localTypecheckLaunch(command, root) {
+  return (
+    commandSegments(withoutHereStringBodies(withoutHeredocBodies(command))).find((segment) =>
+      launchesLocalTypecheck(segment, root),
+    ) ?? null
+  );
+}
+
 /** A binary whose package is not named after it. */
 const BIN_PACKAGE = { tsc: 'typescript', tsserver: 'typescript' };
 
@@ -323,6 +454,50 @@ try {
         'PHOENIX_DEV_HEAP_MB=0 hands the choice back to Next, and PHOENIX_ALLOW_MULTIPLE_DEV_SERVERS=1 ' +
         'allows a second server.',
     );
+  }
+
+  // C8 — a LOCAL typecheck, anywhere. Checked BEFORE C6 so that `pnpm run typecheck` in a worktree
+  // gets this reason rather than the pnpm one, which would send the session to the node-direct form
+  // of the very command being refused.
+  //
+  // Why a hook and not a rule. The rule already existed — AGENTS.md §7 has said "CI is the gate, do
+  // not run a local full validation" since check:harden was retired — and it did not hold, because a
+  // reaped typecheck prints NOTHING and exits non-zero. That is indistinguishable from a command the
+  // session typed wrong, so the session tries another spelling: measured 2026-09-25, six kills in ten
+  // minutes at 04:17, 04:19, 04:21, 04:24, 04:25 and 04:27, walking `.bin/tsc` -> `typescript/bin/tsc`
+  // -> `-p tsconfig.json` -> `--max-old-space-size=6144` -> `lib/tsc.js` -> a backslash spelling.
+  // A markdown rule also only loads at session start, so it never reaches the dozen sessions already
+  // open; this file is re-read by node on EVERY tool call, so a session gets it on its next command.
+  //
+  // This is the job the heavy-job gate used to do. Its own log shows 15 plain `tsc` refusals, the
+  // last three at 20:44 on 2026-09-17 ("needs 5000 MB | available 2,321 MB"), and it was retired that
+  // evening for holding jobs in a queue nothing could ever release on a 16 GB box. An instant, honest
+  // refusal is the half of it that was worth keeping — no queue, no waiting, no 5,000 MB floor.
+  //
+  // The stand-down reads both dialects, because half the commands here arrive as PowerShell, and
+  // `PHX_TYPECHECK_OK=1 <cmd>` is not something PowerShell can run.
+  const STAND_DOWN = /(?:^|[\s;&|(])\s*(?:\$env:)?PHX_TYPECHECK_OK\s*=\s*['"]?1['"]?(?![\w.])/i;
+  if (!STAND_DOWN.test(cmd) && process.env.PHX_TYPECHECK_OK !== '1') {
+    // The root is the folder the command runs in: that is where its package.json is, and so
+    // where a script name resolves to a body.
+    const typecheck = localTypecheckLaunch(cmd, String(input?.cwd || process.cwd()));
+    if (typecheck) {
+      const once =
+        input.tool_name === 'PowerShell'
+          ? `$env:PHX_TYPECHECK_OK=1; ${typecheck.trim()}`
+          : `PHX_TYPECHECK_OK=1 ${typecheck.trim()}`;
+      deny(
+        'A local typecheck is refused on this machine - it does not fail, it gets KILLED, and silently. ' +
+          '`tsc` over this repo needs 4.0-4.5 GB of heap; node\'s own default ceiling is about 4.1 GB, and ' +
+          'with the desktop app holding ~4.2 GB across its processes, mem-watchdog.ps1 reaps tsc as the ' +
+          'largest node job once free RAM drops under its floor. Raising --max-old-space-size makes it the ' +
+          'BIGGEST job and so the FIRST victim: 4096, 5120, 6144 and 7168 were all tried and all reaped.\n' +
+          'Push the branch instead. The PR\'s required `typecheck` check runs cold on a clean runner in ' +
+          'about three minutes, and it is the check that actually blocks the merge (AGENTS.md §7).\n' +
+          'For a one-off you will sit and watch, stand this guard down for that one command:\n' +
+          `  ${once}`,
+      );
+    }
   }
 
   // C6 — pnpm inside a linked worktree. AGENTS.md §5 has said "never" since the junction layout

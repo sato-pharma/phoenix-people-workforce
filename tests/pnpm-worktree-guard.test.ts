@@ -43,6 +43,13 @@ type Decision = { decision: "allow" | "deny"; reason: string };
  * CLAUDE_PROJECT_DIR is DELETED unless a case sets it. The suite itself usually runs inside a
  * worktree, so an inherited value would silently make the "primary checkout" cases deny — passing
  * for the wrong reason while proving nothing about the primary.
+ *
+ * PHX_TYPECHECK_OK stands C8 DOWN for every case here, and that is deliberate. C8 refuses a local
+ * typecheck and is checked BEFORE C6, so without this the typecheck script this fixture is built
+ * around would be answered by the wrong clause — every assertion below would be reading C8's words
+ * and proving nothing about pnpm in a worktree. The ordering itself is right: C6 converts
+ * `pnpm run typecheck` into `node node_modules/typescript/bin/tsc --noEmit --pretty false`, which
+ * is a command C8 refuses, so C6 must never be the clause that answers a typecheck.
  */
 function runGuard(
   cwd: string,
@@ -52,6 +59,10 @@ function runGuard(
   const env = { ...process.env };
   delete env.CLAUDE_PROJECT_DIR;
   if (options.projectDir) env.CLAUDE_PROJECT_DIR = options.projectDir;
+  // Set AFTER the spread, never inside it: adding a property to the object literal makes TypeScript
+  // infer a fresh anonymous type from the spread, which drops ProcessEnv's index signature, and the
+  // `delete` above then stops compiling. It cost a red `typecheck` on #4380.
+  env.PHX_TYPECHECK_OK = "1";
 
   const payload = JSON.stringify({
     tool_name: options.tool ?? "Bash",

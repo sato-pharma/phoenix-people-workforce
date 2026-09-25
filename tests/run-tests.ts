@@ -1890,6 +1890,7 @@ import { runBusinessCardsTests } from "./business-cards.test.ts";
 import { runDevServerExitReasonTests } from "./dev-server-exit-reason.test.ts";
 import { runDevServerHeapCapTests } from "./dev-server-heap-cap.test.ts";
 import { runRawNextDevGuardTests } from "./raw-next-dev-guard.test.ts";
+import { runLocalTypecheckGuardTests } from "./local-typecheck-guard.test.ts";
 import { runAutorunGuardFalseArmingTests } from "./autorun-guard-false-arming.test.ts";
 import { runTrapInjectorClustersTests } from "./trap-injector-clusters.test.ts";
 import { runDocsShareTokenGuardTests } from "./docs-share-token-guard.test.ts";
@@ -6626,6 +6627,11 @@ await runTest(
 await runTest(
   "bash-guard C7 refuses a raw `next dev` in every form a session starts one (node, npx, pnpm exec, a quoted path with spaces, cmd /c, Start-Process, WMI) and names the launcher with the same port, while the launcher, next build, and commands, commit messages, heredocs and here-strings that only mention it stay allowed",
   runRawNextDevGuardTests,
+);
+
+await runTest(
+  "bash-guard C8 refuses a local typecheck in every spelling the watchdog log records it being killed in (node with a raised heap, typescript/bin/tsc, lib/tsc.js, a backslash path, a quoted path with spaces, pnpm/npm/yarn run typecheck, npx, pnpm exec, .bin/tsc, bare tsc) and hands back a stand-down in the dialect that asked, while pnpm run ci, a real emit, and commands, commit messages, heredocs and here-strings that only mention it stay allowed",
+  runLocalTypecheckGuardTests,
 );
 
 await runTest(
