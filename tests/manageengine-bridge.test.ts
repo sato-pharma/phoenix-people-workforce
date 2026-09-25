@@ -689,14 +689,19 @@ async function runDeviceAppsTests() {
  * a label-less app lands in the default stable channel, which is the wanted behaviour.
  */
 async function runAppRepositoryUploadTests() {
-  // A body that is not FormData still gets JSON, as every other bridge call relies on.
+  // A body that is not FormData still gets JSON on both request and response, as every other bridge
+  // call relies on.
   resetManageEngineTokenCache();
   const jsonStub = makeFetch({ api: [{ status: 200, body: {} }] });
   await callManageEngine("/api/v1/mdm/apps", { body: "{}", method: "POST" }, jsonStub.fetch, ENV);
   const jsonHeaders = jsonStub.calls.at(-1)!.init.headers as Record<string, string>;
   assert.equal(jsonHeaders["content-type"], "application/json", "an ordinary body is still declared as JSON");
+  assert.equal(jsonHeaders["accept"], "application/json", "an ordinary call still asks for JSON back");
 
-  // 🔴 A multipart body carries NO content-type from the client — fetch writes it, boundary and all.
+  // 🔴 A multipart body carries NEITHER content-type NOR accept from the client. fetch writes the
+  // real content-type (boundary and all), and `/emsapi/files` answers 406 Not Acceptable to an upload
+  // that also sends `accept: application/json` — measured live 2026-09-25 — while returning the file
+  // JSON perfectly well when Accept is absent.
   resetManageEngineTokenCache();
   const formStub = makeFetch({ api: [{ status: 200, body: { fileID: "9911" } }] });
   const form = new FormData();
@@ -709,11 +714,19 @@ async function runAppRepositoryUploadTests() {
     undefined,
     "a multipart upload must not be stamped as JSON — the boundary fetch writes is the only thing that parses it",
   );
+  assert.equal(
+    formHeaders["accept"],
+    undefined,
+    "a multipart upload must not ask for JSON back — /emsapi/files answers 406 to an Accept: application/json upload",
+  );
   assert.ok(formCall.init.body instanceof FormData, "the form itself reaches fetch, not a serialization of it");
 
   // Both spellings of the file id are read, because the two upload endpoints differ.
   assert.equal(manageEngineFileId({ fileID: "77" }), "77", "the /emsapi/files spelling is read");
   assert.equal(manageEngineFileId({ file_id: 88 }), "88", "the deprecated endpoint's spelling is read");
+  // 🔴 /emsapi/files actually answers with an ARRAY of file records — the id is inside it, not on top.
+  assert.equal(manageEngineFileId([{ fileID: "243158000000133170" }]), "243158000000133170", "the array /emsapi/files wraps the record in is unwrapped");
+  assert.equal(manageEngineFileId([]), null, "an empty array is no file id, not a crash");
   assert.equal(manageEngineFileId(null), null, "no payload is no file id, not a crash");
 
   // The fallback fires only where the endpoint is absent — never on a refusal.
@@ -740,11 +753,25 @@ async function runAppRepositoryUploadTests() {
   assert.doesNotThrow(() => assertUploadableApk("Phoenix-Workforce.APK", 42), "the extension check ignores case");
 
   // The create body — every value is a decision, so every value is pinned.
-  const body = manageEngineAppCreateBody({ appName: "Phoenix Workforce", fileId: "91273987129" });
-  assert.equal(body.app_type, 3, "an APK built here is an Enterprise app, never a store listing");
+  const body = manageEngineAppCreateBody({
+    appName: "Phoenix Workforce",
+    fileId: "91273987129",
+    appCategoryId: "243158000000134093",
+  });
+  assert.equal(
+    body.app_type,
+    2,
+    "app_type is a 0-indexed enum — Enterprise is 2; a 3 is out of range and answers a misleading 500 COM0004",
+  );
+  assert.equal(body.platform_type, 2, "an APK is Android — the create call is rejected 400 without platform_type");
   assert.equal(body.supported_devices, 3, "both device sizes, so a phone in the fleet is not excluded");
   assert.equal(body.app_file, 91273987129, "a numeric file id is sent as a number, which is how ManageEngine types it");
   assert.equal(body.app_name, "Phoenix Workforce", "the name reaches ManageEngine as given");
+  assert.equal(
+    body.app_category_id,
+    "243158000000134093",
+    "app_category_id is Required — a create without it answers 500 COM0004, not a clear missing-field error",
+  );
   assert.ok(
     !("release_label_id" in body),
     "no channel was chosen, so none is invented — ManageEngine puts a label-less app in the default stable channel",
@@ -753,6 +780,7 @@ async function runAppRepositoryUploadTests() {
 
   const labelled = manageEngineAppCreateBody({
     appName: "Phoenix",
+    appCategoryId: "243158000000134093",
     description: "  the field app  ",
     fileId: "abc-123",
     releaseLabelId: "12345",
@@ -760,6 +788,25 @@ async function runAppRepositoryUploadTests() {
   assert.equal(labelled.release_label_id, 12345, "a chosen channel is sent, numerically");
   assert.equal(labelled.app_file, "abc-123", "a non-numeric file id is sent unchanged rather than coerced to NaN");
   assert.equal(labelled.description, "the field app", "the description is trimmed");
+
+  // 🔴 ManageEngine's own ids are 18 digits, past 2^53 — coercing one to Number rounds its last
+  // digits, so the create carries an app_file that points at no uploaded file and ManageEngine
+  // answers a bare 500. An id outside the safe range is sent as the exact string it arrived as.
+  const bigIds = manageEngineAppCreateBody({
+    appName: "Phoenix Workforce",
+    fileId: "243158000000134349",
+    appCategoryId: "243158000000134093",
+  });
+  assert.equal(
+    bigIds.app_file,
+    "243158000000134349",
+    "an 18-digit file id is sent as the exact string — Number('243158000000134349') rounds to 243158000000134340 and 500s the create",
+  );
+  assert.equal(
+    bigIds.app_category_id,
+    "243158000000134093",
+    "an 18-digit category id is sent exactly, never rounded through Number",
+  );
 }
 
 function runErrorMappingTests() {

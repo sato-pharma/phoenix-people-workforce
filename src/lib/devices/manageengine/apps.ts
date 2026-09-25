@@ -116,9 +116,22 @@ export async function listManageEngineAppRepository(
 /** The biggest APK Phoenix will carry to ManageEngine. Well past any Phoenix build; a guard, not a limit. */
 export const MAX_APP_UPLOAD_BYTES = 200 * 1024 * 1024;
 
-/** ManageEngine's own enumerations, written out rather than left as bare numbers at the call site. */
-const APP_TYPE_ENTERPRISE = 3;
+/**
+ * ManageEngine's own enumerations, written out rather than left as bare numbers at the call site.
+ *
+ * 🔴 app_type is 0-INDEXED here, and getting it wrong costs a whole afternoon: the live tenant returns
+ * `app_type: "0"` for its Free-Store apps, so the order is 0 Free Store · 1 Paid Store · 2 Enterprise —
+ * NOT the 1-based reading the docs invite. An out-of-range `3` is not rejected with a clear message;
+ * /api/v1/mdm/apps answers a bare `500 COM0004 Internal Server error`, which looks transient and is not
+ * (measured live 2026-09-25: app_type 3 → 500, app_type 2 → 200 with the new app_id). platform_type is
+ * a SEPARATE, 1-indexed enum (2 = Android, confirmed against the same live apps) — do not "align" them.
+ */
+const APP_TYPE_ENTERPRISE = 2;
 const SUPPORTED_DEVICES_BOTH = 3;
+// 🔴 platform_type is REQUIRED on create — /api/v1/mdm/apps answers `400 Invalid value for the
+// parameter platform_type` without it (measured live 2026-09-25). 1 iOS · 2 Android · 3 Windows;
+// the rep tablets are Android, and the artifact is an .apk, so this is always 2 here.
+const PLATFORM_TYPE_ANDROID = 2;
 /** The module the file is uploaded FOR. Without it the file lands with no purpose and the app create fails. */
 const FILE_MODULE_APP_MGMT = "MDM_APP_MGMT";
 
@@ -129,11 +142,17 @@ export type UploadedApp = {
   message: string;
 };
 
-export function manageEngineFileId(payload: RawRecord | null): string | null {
-  if (!payload) return null;
+export function manageEngineFileId(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") return null;
+  // 🔴 /emsapi/files answers with an ARRAY of file records — `[{ "fileID": … }]`, confirmed live
+  // 2026-09-25 — so the file id sits one level inside it, not on the top-level object. The deprecated
+  // /api/v1/mdm/files answers with a bare object. Unwrap a single-file array before reading, or the
+  // upload looks like it lost its id and the app is never created.
+  const record = (Array.isArray(payload) ? payload[0] : payload) as RawRecord | undefined;
+  if (!record || typeof record !== "object") return null;
   // The two upload endpoints answer with different spellings — `fileID` from /emsapi/files, `file_id`
   // from the deprecated one — so both are read rather than assuming which one served the call.
-  return pickString(payload, ["fileID", "file_id", "fileId", "id"]);
+  return pickString(record, ["fileID", "file_id", "fileId", "id"]);
 }
 
 /**
@@ -145,9 +164,22 @@ export function isMissingEndpointStatus(status: number): boolean {
   return status === 404 || status === 405 || status === 501;
 }
 
-/** A long id ManageEngine sends back as a string is sent back to it as a number, which is how it types them. */
+/**
+ * An id ManageEngine sends back as a string is sent back to it as a number, which is how it types
+ * them — EXCEPT when the id is too big for a JS number to hold exactly.
+ *
+ * 🔴 ManageEngine's own ids run to 18 digits, past JavaScript's safe-integer ceiling (2^53 ≈ 9e15).
+ * `Number("243158000000134349")` is `243158000000134340` — the last digits are silently rounded off.
+ * The create call then carries an `app_file` that points at no uploaded file, and ManageEngine
+ * answers a bare `500 Internal Server error` with no hint that a rounded id is the cause (measured
+ * live 2026-09-25: the exact string in a JSON field is accepted, the rounded number 500s). So an id
+ * outside the safe range is kept as the exact string it arrived as; only a small id — a hand-set
+ * release label, a test fixture — becomes a number.
+ */
 function asId(value: string): number | string {
-  return /^\d+$/.test(value) ? Number(value) : value;
+  if (!/^\d+$/.test(value)) return value;
+  const asNumber = Number(value);
+  return Number.isSafeInteger(asNumber) ? asNumber : value;
 }
 
 /**
@@ -184,21 +216,64 @@ export function assertUploadableApk(fileName: string, byteLength: number): void 
 export function manageEngineAppCreateBody(input: {
   fileId: string;
   appName: string;
+  appCategoryId: string;
   description?: string | null;
   releaseLabelId?: string | null;
-  appCategoryId?: string | null;
 }): Record<string, unknown> {
   const releaseLabelId = input.releaseLabelId?.trim() || null;
-  const appCategoryId = input.appCategoryId?.trim() || null;
   return {
     app_file: asId(input.fileId),
     app_name: input.appName,
     app_type: APP_TYPE_ENTERPRISE,
+    platform_type: PLATFORM_TYPE_ANDROID,
     supported_devices: SUPPORTED_DEVICES_BOTH,
-    ...(appCategoryId ? { app_category_id: asId(appCategoryId) } : {}),
+    // 🔴 app_category_id is REQUIRED — a create without it answers 500 COM0004, not a clear
+    // "missing field", so the caller resolves one before building this body (see
+    // resolveManageEngineAppCategoryId). release_label_id stays absent unless a channel was chosen —
+    // for a new enterprise app ManageEngine rejects it (IAM0018) and files the app in default stable.
+    app_category_id: asId(input.appCategoryId),
     ...(releaseLabelId ? { release_label_id: asId(releaseLabelId) } : {}),
     ...(input.description?.trim() ? { description: input.description.trim() } : {}),
   };
+}
+
+/**
+ * Find a category id the create call will accept.
+ *
+ * 🔴 app_category_id is required on create, it is a PER-TENANT id, and the app list exposes only the
+ * category NAME — the numeric id appears only on a single app's own detail. So a real id is read from
+ * an app the repository already holds rather than hardcoded (a hardcoded id is wrong on every other
+ * tenant and answers 400 COM0005). A workforce APK is business software, so a BUSINESS or PRODUCTIVITY
+ * category is preferred when one exists; otherwise any existing category serves, because the category
+ * is a grouping label in the repository, not a capability granted to the app.
+ */
+const PREFERRED_CATEGORY_NAMES = ["BUSINESS", "PRODUCTIVITY"];
+
+export async function resolveManageEngineAppCategoryId(
+  fetchImpl: typeof fetch = fetch,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<string> {
+  const apps = appsArray(await callManageEngine<RawRecord>("/api/v1/mdm/apps", {}, fetchImpl, env));
+  const byName = (name: string) =>
+    apps.find((record) => (pickString(record, ["app_category_name"]) ?? "").toUpperCase() === name);
+  const chosen = PREFERRED_CATEGORY_NAMES.map(byName).find(Boolean) ?? apps[0] ?? null;
+  const appId = chosen ? pickString(chosen, ["app_id", "id"]) : null;
+  if (!appId) {
+    throw new ManageEngineRequestError(
+      502,
+      "The company app repository holds no existing app to read a category from, and ManageEngine requires one on every new app. Add the first app from the ManageEngine console, then upload from here.",
+    );
+  }
+  const categoryId = pickString(await callManageEngine<RawRecord>(`/api/v1/mdm/apps/${appId}`, {}, fetchImpl, env), [
+    "app_category_id",
+  ]);
+  if (!categoryId) {
+    throw new ManageEngineRequestError(
+      502,
+      "ManageEngine returned no category id for an existing app, so a new app cannot be filed under the category its create call requires.",
+    );
+  }
+  return categoryId;
 }
 
 /**
@@ -283,6 +358,9 @@ export async function uploadManageEngineApp(
   assertUploadableApk(fileName, input.bytes.byteLength);
 
   const appName = input.appName?.trim() || fileName.replace(/\.apk$/i, "");
+  // The category is resolved BEFORE the upload so a repository that cannot supply one fails fast,
+  // rather than after a multi-megabyte package is already on the wire.
+  const appCategoryId = input.appCategoryId?.trim() || (await resolveManageEngineAppCategoryId(fetchImpl, env));
   const fileId = await uploadAppPackage(fileName, input.bytes, fetchImpl, env);
 
   const created = await callManageEngine<RawRecord>(
@@ -290,7 +368,7 @@ export async function uploadManageEngineApp(
     {
       body: JSON.stringify(
         manageEngineAppCreateBody({
-          appCategoryId: input.appCategoryId,
+          appCategoryId,
           appName,
           description: input.description,
           fileId,
