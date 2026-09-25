@@ -5,6 +5,7 @@ import {
   Boxes,
   Building2,
   CalendarRange,
+  ChevronDown,
   Clock,
   Coins,
   Download,
@@ -13,11 +14,13 @@ import {
   Package,
   RefreshCw,
   RotateCcw,
+  SlidersHorizontal,
   TriangleAlert,
   Truck,
 } from "lucide-react";
 
 import { MultiSelectFilter, type MultiSelectFilterMode, type MultiSelectFilterOption } from "@/components/ui/multi-select-filter";
+import { formatEgp, formatEgpFull } from "@/components/sales/target-visuals";
 import { WeeklyUnitProductPicker } from "@/components/sales/weekly/weekly-unit-product-picker";
 import {
   WEEKLY_STOCK_COVER_LOW_WEEKS,
@@ -95,15 +98,7 @@ const TABS: { key: StockTab; label: string }[] = [
 ];
 
 // ── Formatting ───────────────────────────────────────────────────────────────
-function formatEgp(value: number): string {
-  const abs = Math.abs(value);
-  if (abs >= 1_000_000) return `EGP ${(value / 1_000_000).toFixed(2)}M`;
-  if (abs >= 1_000) return `EGP ${(value / 1_000).toFixed(1)}K`;
-  return `EGP ${Math.round(value).toLocaleString("en-US")}`;
-}
-function formatEgpFull(value: number): string {
-  return `EGP ${Math.round(value).toLocaleString("en-US")}`;
-}
+// Money (formatEgp, formatEgpFull) comes from the shared sales formatters in target-visuals.tsx.
 function formatUnits(value: number): string {
   return Math.round(value).toLocaleString("en-US");
 }
@@ -141,6 +136,9 @@ export function WeeklyStockDashboard({ initial, feedPath, exportPath }: Props) {
   const [pager, setPager] = useState({ key: "", limit: PAGE_SIZE });
   // The "Units for" pick. null until one is picked: the product with the most stock value is shown.
   const [unitProduct, setUnitProduct] = useState<string | null>(null);
+  // Below `md` the filter grid folds behind a "Filters · n" toggle, so a phone reaches the figures
+  // without scrolling past six stacked filters first. Every filter stays; from `md` up it is always open.
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const firstRun = useRef(true);
   const cacheRef = useRef(new Map<string, WeeklyStockPayload>());
@@ -266,7 +264,16 @@ export function WeeklyStockDashboard({ initial, feedPath, exportPath }: Props) {
     selection.depots.length +
     selection.statuses.length;
 
-  const pageKey = `${query}|${tab}`;
+  // A tab is offered only when it has something to compare. Regions only when the viewer may filter by
+  // region: a one-region scope (a rep's) would list the depots' own region labels, which never name
+  // Upper Egypt 1, Upper Egypt 2 or Delta (3). Areas only when there is more than one area, as Branch
+  // Detail does. A tab that drops out falls back to Branch × Product.
+  const tabs = TABS.filter((item) =>
+    item.key === "regions" ? vis.region : item.key === "areas" ? areaOptions.length > 1 : true,
+  );
+  const activeTab: StockTab = tabs.some((item) => item.key === tab) ? tab : "cells";
+
+  const pageKey = `${query}|${activeTab}`;
   const limit = pager.key === pageKey ? pager.limit : PAGE_SIZE;
   const showMore = () => setPager({ key: pageKey, limit: limit + PAGE_SIZE });
 
@@ -276,15 +283,15 @@ export function WeeklyStockDashboard({ initial, feedPath, exportPath }: Props) {
   const totalCover = kpis.coverWeeks;
 
   const rowCount =
-    tab === "cells"
+    activeTab === "cells"
       ? view.cells.length
-      : tab === "products"
+      : activeTab === "products"
         ? view.products.length
-        : tab === "depots"
+        : activeTab === "depots"
           ? view.depots.length
-          : tab === "areas"
+          : activeTab === "areas"
             ? view.areas.length
-            : tab === "regions"
+            : activeTab === "regions"
               ? view.regions.length
               : view.distributors.length;
 
@@ -293,7 +300,9 @@ export function WeeklyStockDashboard({ initial, feedPath, exportPath }: Props) {
   // A group row adds several products, so beside its value it shows ONE product's own units there
   // (weeklyStockProductUnitsByGroup), worked out from the same cells the row is.
   const groupCut: WeeklyStockGroupCut | null =
-    tab === "depots" || tab === "areas" || tab === "regions" || tab === "distributors" ? tab : null;
+    activeTab === "depots" || activeTab === "areas" || activeTab === "regions" || activeTab === "distributors"
+      ? activeTab
+      : null;
   const unitsProduct = weeklyStockUnitProduct(view.products, unitProduct);
   const groupUnits = useMemo<GroupUnits>(
     () => ({
@@ -335,7 +344,7 @@ export function WeeklyStockDashboard({ initial, feedPath, exportPath }: Props) {
             type="button"
             onClick={refresh}
             disabled={loading}
-            className="inline-flex items-center gap-1.5 rounded-sm border border-slate-200 bg-white px-2.5 py-1.5 text-phx-2xs font-black uppercase tracking-wide text-slate-700 transition hover:border-orange-300 hover:text-orange-600 disabled:opacity-50"
+            className="inline-flex min-h-10 items-center gap-1.5 rounded-sm border border-slate-200 bg-white px-2.5 py-1.5 text-phx-2xs font-black uppercase tracking-wide text-slate-700 transition hover:border-orange-300 hover:text-orange-600 disabled:opacity-50 md:min-h-0"
           >
             <RefreshCw className={`h-3 w-3 ${loading ? "animate-spin" : ""}`} />
             Sync now
@@ -368,19 +377,32 @@ export function WeeklyStockDashboard({ initial, feedPath, exportPath }: Props) {
       <Panel
         title="Filters"
         overflowVisible
+        bodyClassName={filtersOpen ? undefined : "hidden md:block"}
         action={
-          activeFilterCount > 0 ? (
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              onClick={resetFilters}
-              className="inline-flex items-center gap-1.5 rounded-sm bg-white/10 px-2.5 py-1 text-phx-2xs font-black uppercase tracking-wide text-white transition hover:bg-orange-500"
+              onClick={() => setFiltersOpen((open) => !open)}
+              aria-expanded={filtersOpen}
+              className="inline-flex min-h-10 items-center gap-1.5 border border-slate-600 bg-white/10 px-2.5 text-phx-2xs font-black uppercase tracking-wide text-white transition hover:bg-orange-500 md:hidden"
             >
-              <RotateCcw className="h-3 w-3" />
-              Reset {activeFilterCount}
+              <SlidersHorizontal className="h-3 w-3" />
+              {`Filters · ${activeFilterCount}`}
+              <ChevronDown className={`h-3 w-3 transition-transform ${filtersOpen ? "rotate-180" : ""}`} />
             </button>
-          ) : (
-            <span className="text-phx-2xs font-bold uppercase tracking-widest text-slate-400">No filters applied</span>
-          )
+            {activeFilterCount > 0 ? (
+              <button
+                type="button"
+                onClick={resetFilters}
+                className="inline-flex min-h-10 items-center gap-1.5 rounded-sm bg-white/10 px-2.5 py-1 text-phx-2xs font-black uppercase tracking-wide text-white transition hover:bg-orange-500 md:min-h-0"
+              >
+                <RotateCcw className="h-3 w-3" />
+                Reset {activeFilterCount}
+              </button>
+            ) : (
+              <span className="hidden text-phx-2xs font-bold uppercase tracking-widest text-slate-400 md:inline">No filters applied</span>
+            )}
+          </div>
         }
       >
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -487,13 +509,13 @@ export function WeeklyStockDashboard({ initial, feedPath, exportPath }: Props) {
             action={
               <div className="flex flex-wrap items-center gap-2">
                 <div className="flex flex-wrap border border-slate-700">
-                  {TABS.map((item) => (
+                  {tabs.map((item) => (
                     <button
                       key={item.key}
                       type="button"
                       onClick={() => setTab(item.key)}
-                      className={`whitespace-nowrap px-2.5 py-1 text-phx-2xs font-black uppercase tracking-wide transition ${
-                        tab === item.key ? "bg-orange-500 text-white" : "bg-slate-800 text-slate-300 hover:text-white"
+                      className={`min-h-10 whitespace-nowrap px-2.5 py-1 text-phx-2xs font-black uppercase tracking-wide transition md:min-h-0 ${
+                        activeTab === item.key ? "bg-orange-500 text-white" : "bg-slate-800 text-slate-300 hover:text-white"
                       }`}
                     >
                       {item.label}
@@ -502,7 +524,7 @@ export function WeeklyStockDashboard({ initial, feedPath, exportPath }: Props) {
                 </div>
                 <a
                   href={exportHref}
-                  className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-slate-600 bg-white px-2.5 text-phx-2xs font-black uppercase tracking-wide text-slate-900 transition hover:border-orange-400 hover:text-orange-600"
+                  className="inline-flex h-10 items-center gap-1.5 rounded-sm border border-slate-600 bg-white px-2.5 text-phx-2xs font-black uppercase tracking-wide text-slate-900 transition hover:border-orange-400 hover:text-orange-600 md:h-7"
                 >
                   <Download className="h-3 w-3" />
                   Export
@@ -527,11 +549,11 @@ export function WeeklyStockDashboard({ initial, feedPath, exportPath }: Props) {
             ) : null}
             {rowCount === 0 ? (
               <div className="p-8 text-center text-sm font-semibold text-slate-400">No stock rows for this selection.</div>
-            ) : tab === "cells" ? (
+            ) : activeTab === "cells" ? (
               <CellsTable rows={view.cells.slice(0, limit)} />
-            ) : tab === "products" ? (
+            ) : activeTab === "products" ? (
               <ProductsTable rows={view.products.slice(0, limit)} onDrill={(code) => drill("products", code)} />
-            ) : tab === "distributors" ? (
+            ) : activeTab === "distributors" ? (
               <GroupTable
                 nameLabel="Distributor"
                 rows={view.distributors.slice(0, limit)}
@@ -540,12 +562,12 @@ export function WeeklyStockDashboard({ initial, feedPath, exportPath }: Props) {
               />
             ) : (
               <GroupTable
-                nameLabel={tab === "depots" ? "Branch" : tab === "areas" ? "Area" : "Region"}
-                rows={(tab === "depots" ? view.depots : tab === "areas" ? view.areas : view.regions).slice(0, limit)}
+                nameLabel={activeTab === "depots" ? "Branch" : activeTab === "areas" ? "Area" : "Region"}
+                rows={(activeTab === "depots" ? view.depots : activeTab === "areas" ? view.areas : view.regions).slice(0, limit)}
                 onDrill={
-                  tab === "regions" && !vis.region
+                  activeTab === "regions" && !vis.region
                     ? undefined
-                    : (code) => drill(tab === "depots" ? "depots" : tab === "areas" ? "areas" : "regions", code)
+                    : (code) => drill(activeTab === "depots" ? "depots" : activeTab === "areas" ? "areas" : "regions", code)
                 }
                 units={groupUnits}
               />
@@ -558,7 +580,7 @@ export function WeeklyStockDashboard({ initial, feedPath, exportPath }: Props) {
                 <button
                   type="button"
                   onClick={showMore}
-                  className="inline-flex items-center gap-1.5 rounded-sm border border-slate-200 bg-white px-3 py-1.5 text-phx-2xs font-black uppercase tracking-wide text-slate-700 transition hover:border-orange-300 hover:text-orange-600"
+                  className="inline-flex min-h-10 items-center gap-1.5 rounded-sm border border-slate-200 bg-white px-3 py-1.5 text-phx-2xs font-black uppercase tracking-wide text-slate-700 transition hover:border-orange-300 hover:text-orange-600 md:min-h-0"
                 >
                   Show {formatUnits(Math.min(PAGE_SIZE, rowCount - limit))} more
                 </button>
@@ -586,11 +608,14 @@ function Panel({
   action,
   children,
   overflowVisible = false,
+  bodyClassName,
 }: {
   title: string;
   action?: ReactNode;
   children: ReactNode;
   overflowVisible?: boolean;
+  /** Extra classes on the padded body of an `overflowVisible` panel (the Filters panel folds it on a phone). */
+  bodyClassName?: string;
 }) {
   return (
     <div
@@ -603,7 +628,7 @@ function Panel({
         </div>
         {action}
       </div>
-      {overflowVisible ? <div className="p-4">{children}</div> : children}
+      {overflowVisible ? <div className={bodyClassName ? `${bodyClassName} p-4` : "p-4"}>{children}</div> : children}
     </div>
   );
 }
@@ -658,15 +683,16 @@ function StatusBadge({ status }: { status: WeeklyStockStatus }) {
 function CardStat({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0 rounded-sm border border-slate-100 bg-slate-50 px-2 py-1.5">
-      <p className="break-words text-phx-3xs font-black uppercase tracking-wide text-slate-400">{label}</p>
+      <p className="break-words text-phx-2xs font-black uppercase tracking-wide text-slate-400">{label}</p>
       <p className="text-xs font-black tabular-nums text-slate-900">{value}</p>
     </div>
   );
 }
 
-// The desktop tables open at 1024 px, where the portal's main column leaves them about 620 px. They fit it
-// by merging columns, never by shrinking type: the status badge sits under the name, the weeks of cover
-// under the average, and no figure column is narrower than its widest figure.
+// The desktop tables open at `md` (768 px), where a tablet's column is about 736 px; their narrowest home
+// is 1024 px with the sidebar open, about 620 px. They fit it by merging columns, never by shrinking
+// type: the status badge sits under the name, the weeks of cover under the average, and no figure column
+// is narrower than its widest figure. Below `md` a phone reads cards.
 const TH = "px-3 py-2.5 font-black";
 const TH_NUM = "px-3 py-2.5 text-right font-black";
 const TD_NUM = "px-3 py-2.5 text-right tabular-nums text-slate-700";
@@ -674,7 +700,7 @@ const TD_NUM = "px-3 py-2.5 text-right tabular-nums text-slate-700";
 function CellsTable({ rows }: { rows: WeeklyStockCell[] }) {
   return (
     <>
-      <div className="hidden lg:block">
+      <div className="hidden md:block">
         <table className="w-full table-fixed text-left text-sm">
           <colgroup>
             <col className="w-[26%]" />
@@ -719,7 +745,7 @@ function CellsTable({ rows }: { rows: WeeklyStockCell[] }) {
           </tbody>
         </table>
       </div>
-      <div className="space-y-2 p-3 lg:hidden">
+      <div className="space-y-2 p-3 md:hidden">
         {rows.map((cell) => (
           <div key={`${cell.branchKey}|${cell.productCode}`} className="flex overflow-hidden rounded-sm border border-slate-200 bg-white">
             <span className={`w-[3px] shrink-0 ${STATUS_RAIL[cell.status]}`} />
@@ -761,7 +787,7 @@ function DrillName({ name, onClick }: { name: string; onClick?: () => void }) {
 function ProductsTable({ rows, onDrill }: { rows: WeeklyStockProductRow[]; onDrill: (code: string) => void }) {
   return (
     <>
-      <div className="hidden lg:block">
+      <div className="hidden md:block">
         <table className="w-full table-fixed text-left text-sm">
           <colgroup>
             <col className="w-[28%]" />
@@ -806,7 +832,7 @@ function ProductsTable({ rows, onDrill }: { rows: WeeklyStockProductRow[]; onDri
           </tbody>
         </table>
       </div>
-      <div className="space-y-2 p-3 lg:hidden">
+      <div className="space-y-2 p-3 md:hidden">
         {rows.map((row) => (
           <div key={row.productCode} className="flex overflow-hidden rounded-sm border border-slate-200 bg-white">
             <span className={`w-[3px] shrink-0 ${STATUS_RAIL[row.status]}`} />
@@ -857,7 +883,7 @@ function GroupTable({
   const unitsOf = (code: string): WeeklyStockProductUnits => units.byCode[code] ?? { stockUnits: 0, avgWeeklyUnits: 0 };
   return (
     <>
-      <div className="hidden lg:block">
+      <div className="hidden md:block">
         <table className="w-full table-fixed text-left text-sm">
           {/* The unit column is fitted by narrowing the name and the product count, never by shrinking type. */}
           <colgroup>
@@ -914,7 +940,7 @@ function GroupTable({
           </tbody>
         </table>
       </div>
-      <div className="space-y-2 p-3 lg:hidden">
+      <div className="space-y-2 p-3 md:hidden">
         {rows.map((row) => (
           <div key={row.code} className="flex overflow-hidden rounded-sm border border-slate-200 bg-white">
             <span className={`w-[3px] shrink-0 ${STATUS_RAIL[row.status]}`} />

@@ -104,11 +104,14 @@ export default async function PayslipsPage() {
 
   return (
     <EmployeePortalChrome data={data} visibility={visibility}>
-            <EmployeePortalPageShell
-        description="Review your monthly compensation with clarity and confidence."
-        title="My Earnings"
+      {/* Same name, badge and look as /employee-portals/payslips, which a rep reaches from the
+          sidebar — a payslip notification lands here instead, and must not open a different page. */}
+      <EmployeePortalPageShell
+        badge="Pay & Expenses"
+        description="Your salary breakdown and every published payslip, month by month."
+        title="Payslips"
       >
-        <MedicalRepPayrollPage data={data} />
+        <MedicalRepPayrollPage data={data} surface="employee-portal" />
       </EmployeePortalPageShell>
     </EmployeePortalChrome>
   );

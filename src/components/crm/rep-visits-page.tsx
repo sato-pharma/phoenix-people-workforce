@@ -30,6 +30,7 @@ import { buildKpisQuery, parseKpiFilters } from "@/lib/crm/kpis-filters";
 import { loadOrgPlacementTree } from "@/lib/crm/org-placement-data";
 import { loadCrmMappingCoverage, loadRepVisits } from "@/lib/crm/rep-visits-data";
 import { buildRepsPlansBoard, CALL_RATE_THROUGH_YESTERDAY, repsPlansRange, resolveRepsPlansMonth } from "@/lib/crm/reps-plans";
+import { logPortalFailure } from "@/lib/observability/portal-logging";
 
 /**
  * The KPIs board's own query, carried through unchanged — month, window and every advanced filter —
@@ -48,6 +49,7 @@ export async function RepVisitsPageBody({
   basePath,
   query,
   repParam,
+  surface = "admin",
 }: {
   access: AccessContext;
   /** "/admin/kpis" or "/employee-portals/kpis" — the KPIs board whose Call Rate tab this page
@@ -56,7 +58,16 @@ export async function RepVisitsPageBody({
   query: RepVisitsPageQuery | undefined;
   /** The url-encoded rep key from the route segment. */
   repParam: string;
+  /**
+   * WHICH SHELL draws the page. `admin` (the default, so the admin twin renders exactly as before)
+   * owns the page's only heading, so the rep's name is its `<h1>`. `portal` sits under
+   * EmployeePortalPageShell, which has already drawn the `<h1>` — so the name steps down to an `<h2>`,
+   * the stats sit on a grid a phone can read, a load failure is logged and explained in words, and
+   * the admin-only "map the regions" instruction is not shown to a rep who cannot open that screen.
+   */
+  surface?: "admin" | "portal";
 }) {
+  const portal = surface === "portal";
   const today = cairoTodayIso();
   const month = resolveRepsPlansMonth(one(query?.month), today);
   // The SAME window the board was read on. A rep opened from a one-week board must be scored over
@@ -120,7 +131,15 @@ export async function RepVisitsPageBody({
       tree,
     });
   } catch (error) {
-    loadError = error instanceof Error ? error.message : "CRM visit data is unavailable.";
+    // The portal logs the failure and says what happened in words — `error.message` on this path is a
+    // Supabase or PostgREST sentence, never something to print to a medical rep. The admin twin keeps
+    // the raw text for the people who fix it.
+    if (portal) logPortalFailure({ hrId: access.hrId, module: "kpis", role: access.role, route: basePath }, error);
+    loadError = portal
+      ? "The CRM visit data is unavailable right now. This is a loading problem, not a month with no visits — try again in a minute."
+      : error instanceof Error
+        ? error.message
+        : "CRM visit data is unavailable.";
   }
 
   if (!board) {
@@ -173,6 +192,9 @@ export async function RepVisitsPageBody({
   ]);
 
   const territory = row.territories.map((cell) => `${cell.lineName} · ${cell.regionName}`).join("  |  ");
+  // The portal prints each territory as its own wrapping item rather than joining them with a pipe:
+  // " · " already separates a line from its region inside one territory.
+  const territoryCells = row.territories.map((cell) => `${cell.lineName} · ${cell.regionName}`);
   const roleLabel = row.seatTierLabel ?? row.jobTitle ?? "Not in organogram";
   // The window these rows and the two rates above them were BOTH measured over. Naming the month
   // alone while a week is in view is what made the rate look wrong in the first place.
@@ -189,13 +211,27 @@ export async function RepVisitsPageBody({
           not printed (the owner's standing rule — names, never codes, on screen). */}
       <div className="border border-slate-200 bg-white px-5 py-4">
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <h1 className="text-xl font-black text-slate-900">{row.repName}</h1>
+          <div className={portal ? "min-w-0" : undefined}>
+            {/* The portal shell has already drawn the page's <h1> ("KPIs"), so there the name is the
+                section heading under it, never a second <h1>. */}
+            {portal ? (
+              <h2 className="break-words text-xl font-black text-slate-900">{row.repName}</h2>
+            ) : (
+              <h1 className="text-xl font-black text-slate-900">{row.repName}</h1>
+            )}
             <p className="mt-1 flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500">
               <span className="border border-slate-300 bg-slate-50 px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-600">
                 {roleLabel}
               </span>
-              {territory ? <span>{territory}</span> : null}
+              {portal
+                ? territoryCells.map((cell, index) => (
+                    <span className="break-words" key={`${cell}-${index}`}>
+                      {cell}
+                    </span>
+                  ))
+                : territory
+                  ? <span>{territory}</span>
+                  : null}
               {/* Ruling A1 (owner, 2026-09-21): the same marker as the board, because the rates
                   beside it read "—" for the same reason. */}
               {row.noGpsFeed ? (
@@ -208,14 +244,17 @@ export async function RepVisitsPageBody({
           {/* The board's own two rates, repeated here so the reader can see at a glance that the rows
               below are what produced them. A manager's percentages stay blank, exactly as on the
               board — the 2 AM / 10 PM target is a medical rep's. */}
-          <div className="flex flex-wrap gap-5">
-            <div className="text-right">
+          {/* In the portal the four figures sit on a GRID — two by two on a phone, four across from `sm`,
+              left-aligned where they stack — instead of a right-aligned flex-wrap that broke raggedly
+              at 360–430px. AM, PM and Pharmacy stay three separate figures, AM first. */}
+          <div className={portal ? "grid w-full grid-cols-2 gap-x-5 gap-y-3 sm:w-auto sm:grid-cols-4" : "flex flex-wrap gap-5"}>
+            <div className={portal ? "min-w-0 sm:text-right" : "text-right"}>
               <p className="text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">
                 {row.scored ? `AM of ${row.am.target}` : "AM rate"}
               </p>
               <p className="text-lg font-black text-slate-900">{row.am.verifiedRate?.toFixed(2) ?? "—"}</p>
             </div>
-            <div className="text-right">
+            <div className={portal ? "min-w-0 sm:text-right" : "text-right"}>
               <p className="text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">
                 {row.scored ? `PM of ${row.pm.target}` : "PM rate"}
               </p>
@@ -224,11 +263,11 @@ export async function RepVisitsPageBody({
             {/* Pharmacies are separate from AM/PM (owner, 2026-09-05) and have no target set yet —
                 see PHARMACY_CALL_RATE_TARGET — so this tile shows the raw rate with no "of N". Zero
                 is a normal reading, not a gap: never badge it the way a zero AM/PM would be. */}
-            <div className="text-right">
+            <div className={portal ? "min-w-0 sm:text-right" : "text-right"}>
               <p className="text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">Pharmacy rate</p>
               <p className="text-lg font-black text-slate-900">{row.pharmacy.verifiedRate?.toFixed(2) ?? "—"}</p>
             </div>
-            <div className="text-right">
+            <div className={portal ? "min-w-0 sm:text-right" : "text-right"}>
               <p className="text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">Working days</p>
               <p className="text-lg font-black text-slate-900">{row.workingDays}</p>
             </div>
@@ -262,6 +301,7 @@ export async function RepVisitsPageBody({
         monthLabel={windowLabel}
         rows={visits.rows}
         summary={visits.summary}
+        surface={surface}
       />
     </div>
   );

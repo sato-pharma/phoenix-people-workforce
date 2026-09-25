@@ -40,6 +40,7 @@ import {
   Trophy,
 } from "lucide-react";
 
+import { formatEgp, formatEgpFull } from "@/components/sales/target-visuals";
 import { WeeklySalesDepotDetail } from "@/components/sales/weekly/weekly-sales-depot-detail";
 import type {
   PortalWeeklyRepSales,
@@ -50,16 +51,10 @@ import { WEEKLY_UNITS_UNDER_ONE, weeklyUnitsUnderOne } from "@/lib/sales/weekly/
 
 type RepTab = "month" | "detail";
 
-// ── formatting (identical to the managers' tabs, so the two screens speak one language) ─────────
-function formatEgp(value: number): string {
-  const abs = Math.abs(value);
-  if (abs >= 1_000_000) return `EGP ${(value / 1_000_000).toFixed(2)}M`;
-  if (abs >= 1_000) return `EGP ${(value / 1_000).toFixed(1)}K`;
-  return `EGP ${Math.round(value).toLocaleString("en-US")}`;
-}
-function formatEgpFull(value: number): string {
-  return `EGP ${Math.round(value).toLocaleString("en-US")}`;
-}
+// ── formatting ──────────────────────────────────────────────────────────────────────────────
+// Money comes from the shared sales formatters (target-visuals.tsx), so every sales screen prints it
+// the same way. formatNumber stays here: the unit wrappers below are lifted from this file and run by
+// tests/weekly-units-under-one.test.ts, which needs it beside them.
 function formatNumber(value: number): string {
   return Math.round(value).toLocaleString("en-US");
 }
@@ -157,7 +152,7 @@ export function PortalWeeklyRepView({ data }: { data: PortalWeeklyRepSales }) {
               value={data.month?.code ?? ""}
               onChange={(event) => goToMonth(event.target.value)}
               disabled={isPending || data.months.length === 0}
-              className="border border-slate-200 bg-white px-2 py-1.5 text-xs font-bold text-slate-800 outline-none transition focus:border-orange-300 disabled:opacity-60"
+              className="min-h-10 border border-slate-200 bg-white px-2 py-1.5 text-xs font-bold text-slate-800 outline-none transition focus:border-orange-300 disabled:opacity-60 md:min-h-0"
             >
               {data.months.map((month) => (
                 <option key={month.code} value={month.code}>
@@ -170,7 +165,7 @@ export function PortalWeeklyRepView({ data }: { data: PortalWeeklyRepSales }) {
             type="button"
             onClick={syncNow}
             disabled={isPending}
-            className="inline-flex items-center gap-1.5 border border-slate-200 bg-white px-2.5 py-1.5 text-phx-2xs font-black uppercase tracking-wide text-slate-700 transition hover:border-orange-300 hover:text-orange-600 disabled:opacity-50"
+            className="inline-flex min-h-10 items-center gap-1.5 border border-slate-200 bg-white px-2.5 py-1.5 text-phx-2xs font-black uppercase tracking-wide text-slate-700 transition hover:border-orange-300 hover:text-orange-600 disabled:opacity-50 md:min-h-0"
           >
             <RefreshCw className={`h-3 w-3 ${isPending ? "animate-spin" : ""}`} />
             Sync now
@@ -329,7 +324,11 @@ export function PortalWeeklyRepView({ data }: { data: PortalWeeklyRepSales }) {
   );
 }
 
-/** The rep's two views of his month, in the managers' tab bar's exact look. */
+/**
+ * The rep's two views of his month, in the managers' tab bar's exact look. Two tabs side by side at
+ * every width: stacked on a phone they cost two full-width rows before any figure, and the hint under
+ * each label only shows from `sm` up.
+ */
 function RepTabBar({ active, onChange }: { active: RepTab; onChange: (next: RepTab) => void }) {
   const tabs: { key: RepTab; label: string; hint: string; icon: typeof Coins }[] = [
     { key: "month", label: "My Month", hint: "Week by week, per product", icon: CalendarRange },
@@ -337,7 +336,7 @@ function RepTabBar({ active, onChange }: { active: RepTab; onChange: (next: RepT
   ];
   return (
     <div className="overflow-hidden border border-slate-200 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.05)] ring-1 ring-slate-200/60">
-      <div className="flex flex-col sm:flex-row">
+      <div className="grid grid-cols-2">
         {tabs.map((item) => {
           const isActive = active === item.key;
           const Icon = item.icon;
@@ -347,7 +346,7 @@ function RepTabBar({ active, onChange }: { active: RepTab; onChange: (next: RepT
               type="button"
               onClick={() => onChange(item.key)}
               aria-current={isActive ? "page" : undefined}
-              className={`relative flex flex-1 items-center gap-3 px-4 py-3 text-left transition ${
+              className={`relative flex min-w-0 items-center gap-2 px-3 py-3 text-left transition sm:gap-3 sm:px-4 ${
                 isActive ? "bg-slate-900" : "bg-white hover:bg-slate-50"
               }`}
             >
@@ -365,7 +364,7 @@ function RepTabBar({ active, onChange }: { active: RepTab; onChange: (next: RepT
                 <span className={`block break-words text-sm font-black tracking-tight ${isActive ? "text-white" : "text-slate-900"}`}>
                   {item.label}
                 </span>
-                <span className="block break-words text-phx-2xs font-bold uppercase tracking-wide text-slate-400">{item.hint}</span>
+                <span className="hidden break-words text-phx-2xs font-bold uppercase tracking-wide text-slate-400 sm:block">{item.hint}</span>
               </span>
             </button>
           );
@@ -382,10 +381,12 @@ type ProductRow = PortalWeeklyRepSales["products"][number];
 function ProductTable({ products, weeks }: { products: ProductRow[]; weeks: RepWeeklyWeek[] }) {
   // Fixed layout with every width declared, so the table can never grow past its container. The weeks
   // share what the product name, units and value columns leave; a long product name wraps instead.
+  // It opens at `md`, like every other sales table: a tablet's ~736px column is wider than the ~620px
+  // this table was fitted to at 1024px with the sidebar open, so a tablet reads the table, not cards.
   const weekWidth = weeks.length > 0 ? 52 / weeks.length : 0;
   const peaks = new Map(products.map((product) => [product.productCode, peakOf(weeks, product.unitsByWeek)]));
   return (
-    <div className="hidden lg:block">
+    <div className="hidden md:block">
       <table className="w-full table-fixed border-collapse">
         <colgroup>
           <col style={{ width: weeks.length > 0 ? "24%" : "76%" }} />
@@ -457,7 +458,7 @@ function ProductTable({ products, weeks }: { products: ProductRow[]; weeks: RepW
 
 function ProductCards({ products, weeks }: { products: ProductRow[]; weeks: RepWeeklyWeek[] }) {
   return (
-    <div className="divide-y divide-slate-100 lg:hidden">
+    <div className="divide-y divide-slate-100 md:hidden">
       {products.map((product) => {
         const peak = peakOf(weeks, product.unitsByWeek);
         return (
@@ -622,7 +623,7 @@ function RepTile({
           {delta != null ? <DeltaPill delta={delta} /> : null}
         </div>
         <p className="mt-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">{label}</p>
-        <p className="mt-0.5 whitespace-nowrap text-lg font-black tabular-nums tracking-tight text-slate-900 sm:text-xl">
+        <p className="mt-0.5 break-words text-lg font-black tabular-nums tracking-tight text-slate-900 sm:text-xl">
           {value}
         </p>
         {sub ? <p className="mt-0.5 text-phx-2xs font-semibold leading-snug text-slate-400">{sub}</p> : null}

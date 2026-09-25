@@ -7,12 +7,10 @@ import { getEmployeeAttendanceData, loadAttendanceDirectReports } from "@/lib/at
 import { loadAttendancePolicyExplainer } from "@/lib/attendance/policy-explainer-loader";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { addDaysToDateOnly } from "@/lib/date-only";
+import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 
 export const dynamic = "force-dynamic";
-
-function dateKey(date: Date) {
-  return date.toISOString().slice(0, 10);
-}
 
 export default async function FingerprintAnalyticsPage() {
   const access = await resolveAccessContextFromPage();
@@ -26,10 +24,9 @@ export default async function FingerprintAnalyticsPage() {
     redirect("/employee-portals");
   }
 
-  const dateTo = dateKey(new Date());
-  const thirtyDaysAgo = new Date();
-  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-  const dateFrom = dateKey(thirtyDaysAgo);
+  // The Cairo calendar day, not the server's UTC one — the same window My Attendance loads.
+  const dateTo = currentCairoDateOnlyIso();
+  const dateFrom = addDaysToDateOnly(dateTo, -30) ?? dateTo;
 
   let initialData = null;
   let initialError: string | null = null;
@@ -83,20 +80,16 @@ export default async function FingerprintAnalyticsPage() {
 
   return (
     <EmployeePortalPageShell
-      badge="My Attendance"
-      description="Your complete punch history — filter by date range and export a formatted Excel report."
-      title="Fingerprint Analytics"
+      badge="Leave & HR"
+      description="Your full punch history. Pick a range, then download it as an Excel file."
+      title="Attendance Analytics"
     >
       {initialError && (
-        <p className="mb-4 rounded border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+        <p className="border border-rose-200 bg-rose-50 px-4 py-3 text-phx-md font-semibold text-rose-800">
           {initialError}
         </p>
       )}
-      {policyExplainer && (
-        <div className="mb-5">
-          <AttendancePolicyCard explainer={policyExplainer} />
-        </div>
-      )}
+      {policyExplainer && <AttendancePolicyCard explainer={policyExplainer} />}
       <FingerprintAnalytics hrId={hrId} initialData={initialData} targets={targets} />
     </EmployeePortalPageShell>
   );

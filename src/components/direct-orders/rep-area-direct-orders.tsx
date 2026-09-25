@@ -1,24 +1,45 @@
-import type { RepAreaDirectOrdersReport } from "@/lib/direct-orders/rep-area-view-service";
+"use client";
+
+import { PackageSearch } from "lucide-react";
+
+import { PortalEmptyState } from "@/components/employee-portal/portal-primitives";
+import {
+  SURFACE_CLASS,
+  SectionCard,
+  TABLE_HEAD_CLASS,
+  TABLE_ROW_CLASS,
+  formatEgpFull,
+  formatPeriod,
+} from "@/components/sales/target-visuals";
+import type { RepAreaDirectOrderRow, RepAreaDirectOrdersReport } from "@/lib/direct-orders/rep-area-view-service";
+import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 
 type Props = { report: RepAreaDirectOrdersReport };
 
-const money = (value: number) => `${Math.round(value).toLocaleString("en-US")} EGP`;
+/** Units exactly as the service returns them — never rounded. */
 const units = (value: number) => value.toLocaleString("en-US");
 
-/** "2026-08" → "Aug 2026". Falls back to the raw month if it is not YYYY-MM. */
-function monthLabel(month: string): string {
-  const match = /^(\d{4})-(\d{2})$/.exec(month);
-  if (!match) return month || "—";
-  const date = new Date(Number(match[1]), Number(match[2]) - 1, 1);
-  return new Intl.DateTimeFormat("en-GB", { month: "short", year: "numeric", timeZone: "Africa/Cairo" }).format(date);
+/** The colour the sales pages already give the Direct Orders channel (Sales vs Target's split). */
+const DIRECT_ORDERS_RAIL = "#8B5CF6";
+
+/** A card's figure row: label and value side by side, wrapping rather than cutting. */
+const CARD_FACT_CLASS = "flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5";
+
+function lineCount(count: number): string {
+  return `${count.toLocaleString("en-US")} ${count === 1 ? "order line" : "order lines"}`;
 }
 
-/** A collection date (YYYY-MM-DD) or an ISO stamp → "12 Aug 2026", Cairo. */
+/**
+ * An order stamp → "12 Aug 2026", Cairo. A bare date (YYYY-MM-DD) is read at noon UTC so it is the
+ * same calendar day on the server and in every browser that renders this client component.
+ */
 function dayLabel(value: string | null): string {
   if (!value) return "—";
-  const date = new Date(value.length <= 10 ? `${value}T00:00:00` : value);
+  const date = new Date(value.length <= 10 ? `${value}T12:00:00Z` : value);
   if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("en-GB", {
+  // stableEnGbFormatter, never a bare Intl en-GB: CLDR 42 changed the September abbreviation from
+  // "Sep" to "Sept", so server and browser disagree and React throws hydration error #418.
+  return stableEnGbFormatter({
     day: "2-digit",
     month: "short",
     year: "numeric",
@@ -26,12 +47,33 @@ function dayLabel(value: string | null): string {
   }).format(date);
 }
 
+type MonthGroup = { month: string; rows: RepAreaDirectOrderRow[]; units: number; value: number };
+
+/**
+ * The rows under the month Finance counted them in, newest month first as the service sorts them.
+ * Display only: each subtotal is the plain sum of the rows printed under it.
+ */
+function groupByCountedMonth(rows: RepAreaDirectOrderRow[]): MonthGroup[] {
+  const groups = new Map<string, MonthGroup>();
+  for (const row of rows) {
+    const group = groups.get(row.salesMonth) ?? { month: row.salesMonth, rows: [], units: 0, value: 0 };
+    group.rows.push(row);
+    group.units += row.units;
+    group.value += row.salesValue;
+    groups.set(row.salesMonth, group);
+  }
+  return [...groups.values()];
+}
+
 /**
  * Direct Orders in my area — the Medical Rep's read-only view (owner, 2026-09-24).
  *
- * One row per product line, showing the pharmacy it was booked on, when it was collected, the
- * month Finance counted it to sales, and its units and value. No actions: the rep can only watch
- * their District Manager's direct-order spend land in their territory.
+ * One row per product line, grouped under the month Finance counted it to sales, showing the
+ * pharmacy it was booked on, when it was ordered, and its units and value. No actions: the rep can
+ * only watch their District Manager's direct-order spend land in their territory.
+ *
+ * It speaks the sales pages' visual language (`target-visuals.tsx`): the same section card, table
+ * head, row and "EGP 1,234" money as Sales vs Target and Targets.
  */
 export function RepAreaDirectOrders({ report }: Props) {
   const { rows, areaNames, totalUnits, totalValue } = report;
@@ -39,94 +81,138 @@ export function RepAreaDirectOrders({ report }: Props) {
 
   if (rows.length === 0) {
     return (
-      <section className="border border-phx-line bg-white px-4 py-8 text-center">
-        <p className="text-sm font-bold text-slate-600">No direct orders counted to sales in {areaLabel} yet.</p>
-        <p className="mt-1 text-phx-sm text-slate-400">
-          An order appears here once it is approved and Finance books it to a sales month.
-        </p>
-      </section>
+      <div className={SURFACE_CLASS}>
+        <PortalEmptyState
+          title={`No direct orders counted to sales in ${areaLabel} yet.`}
+          message="An order appears here once it is approved and Finance books it to a sales month."
+        />
+      </div>
     );
   }
 
-  return (
-    <section className="border border-phx-line bg-white">
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-phx-line bg-slate-900 px-4 py-2.5">
-        <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">
-          {areaLabel} — {rows.length} {rows.length === 1 ? "order line" : "order lines"}
-        </h3>
-        <span className="text-phx-xs font-bold uppercase tracking-wider text-slate-400">
-          {units(totalUnits)} units · {money(totalValue)}
-        </span>
-      </header>
+  const groups = groupByCountedMonth(rows);
 
-      {/* Desktop: the full table. table-fixed + colgroup so it always fits, never a sideways scroll. */}
+  return (
+    <SectionCard
+      surface="portal"
+      icon={PackageSearch}
+      title={areaLabel}
+      subtitle={`${lineCount(rows.length)} · ${units(totalUnits)} units · ${formatEgpFull(totalValue)}`}
+    >
+      {/* Tablet and desktop: table-fixed + colgroup, so it always fits — never a sideways scroll. Five
+          columns, not six: the counted month heads each group, so a row carries only its order date,
+          and the width that freed went to Units and Value, which cannot wrap. */}
       <div className="hidden md:block">
         <table className="w-full table-fixed text-left text-sm">
           <colgroup>
-            <col style={{ width: "26%" }} />
-            <col style={{ width: "22%" }} />
-            <col style={{ width: "16%" }} />
-            <col style={{ width: "16%" }} />
-            <col style={{ width: "8%" }} />
+            <col style={{ width: "27%" }} />
+            <col style={{ width: "23%" }} />
+            <col style={{ width: "18%" }} />
             <col style={{ width: "12%" }} />
+            <col style={{ width: "20%" }} />
           </colgroup>
           <thead>
-            <tr className="border-b border-phx-line text-phx-xs font-black uppercase tracking-wider text-slate-500">
-              <th className="px-3 py-2">Pharmacy</th>
-              <th className="px-3 py-2">Product</th>
-              <th className="px-3 py-2">Order date</th>
-              <th className="px-3 py-2">Counted in</th>
-              <th className="px-3 py-2 text-right">Units</th>
-              <th className="px-3 py-2 text-right">Value</th>
+            <tr className={TABLE_HEAD_CLASS}>
+              <th className="px-3 py-2.5">Pharmacy</th>
+              <th className="px-3 py-2.5">Product</th>
+              <th className="px-3 py-2.5">Order date</th>
+              <th className="px-3 py-2.5 text-right">Units</th>
+              <th className="px-3 py-2.5 text-right">Value</th>
             </tr>
           </thead>
-          <tbody>
-            {rows.map((row, index) => (
-              <tr
-                key={`${row.requestId}-${row.productName}-${index}`}
-                className="border-b border-[#f1f4f6] align-top hover:bg-orange-50/40"
-              >
-                <td className="px-3 py-2">
-                  <p className="font-bold text-slate-900">{row.pharmacyName}</p>
-                  <p className="text-phx-xs text-slate-500">{row.areaName}</p>
+          {groups.map((group) => (
+            <tbody key={group.month}>
+              <tr className="border-b border-slate-200 bg-slate-50">
+                <td className="px-3 py-2" colSpan={3}>
+                  <span className="font-black text-slate-900">Counted in {formatPeriod(group.month)}</span>
+                  <span className="text-phx-xs font-semibold text-slate-500">{` · ${lineCount(group.rows.length)}`}</span>
                 </td>
-                <td className="px-3 py-2 text-slate-700">{row.productName}</td>
-                <td className="px-3 py-2 text-slate-700">{dayLabel(row.orderDate)}</td>
-                <td className="px-3 py-2 font-bold text-slate-900">{monthLabel(row.salesMonth)}</td>
-                <td className="px-3 py-2 text-right font-bold text-slate-900">{units(row.units)}</td>
-                <td className="px-3 py-2 text-right font-bold text-slate-900">{money(row.salesValue)}</td>
+                <td className="whitespace-nowrap px-3 py-2 text-right font-black tabular-nums text-slate-900">
+                  {units(group.units)}
+                </td>
+                <td className="whitespace-nowrap px-3 py-2 text-right font-black tabular-nums text-slate-900">
+                  {formatEgpFull(group.value)}
+                </td>
               </tr>
-            ))}
-          </tbody>
+              {group.rows.map((row, index) => (
+                <tr key={`${row.requestId}-${row.productName}-${index}`} className={`${TABLE_ROW_CLASS} align-top`}>
+                  <td className="px-3 py-2.5">
+                    <p dir="auto" className="break-words font-bold text-slate-900">
+                      {row.pharmacyName}
+                    </p>
+                    <p dir="auto" className="break-words text-phx-xs text-slate-500">
+                      {row.areaName}
+                    </p>
+                  </td>
+                  <td className="break-words px-3 py-2.5 text-slate-700">{row.productName}</td>
+                  <td className="px-3 py-2.5 text-slate-700">{dayLabel(row.orderDate)}</td>
+                  <td className="whitespace-nowrap px-3 py-2.5 text-right font-bold tabular-nums text-slate-900">
+                    {units(row.units)}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2.5 text-right font-bold tabular-nums text-slate-900">
+                    {formatEgpFull(row.salesValue)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          ))}
           <tfoot>
-            <tr className="border-t border-phx-line bg-slate-50 text-phx-sm font-black text-slate-900">
-              <td className="px-3 py-2 uppercase tracking-wider" colSpan={4}>
-                Total
+            <tr className="border-t-2 border-slate-200 bg-slate-50/70">
+              <td className="px-3 py-3 font-black text-slate-900" colSpan={3}>
+                All months
               </td>
-              <td className="px-3 py-2 text-right">{units(totalUnits)}</td>
-              <td className="px-3 py-2 text-right">{money(totalValue)}</td>
+              <td className="whitespace-nowrap px-3 py-3 text-right font-black tabular-nums text-slate-900">{units(totalUnits)}</td>
+              <td className="whitespace-nowrap px-3 py-3 text-right font-black tabular-nums text-slate-900">
+                {formatEgpFull(totalValue)}
+              </td>
             </tr>
           </tfoot>
         </table>
       </div>
 
-      {/* Mobile: cards. The owner's rule is that mobile never gets a table. */}
-      <div className="space-y-2 p-3 md:hidden">
-        {rows.map((row, index) => (
-          <article key={`${row.requestId}-${row.productName}-${index}`} className="block border border-phx-line p-3">
-            <p className="text-sm font-black text-slate-900">{row.pharmacyName}</p>
-            <p className="text-phx-xs text-slate-500">{row.areaName}</p>
-            <p className="mt-2 text-sm font-bold text-slate-900">{row.productName}</p>
-            <p className="mt-1 text-sm font-bold text-slate-900">
-              {units(row.units)} units · {money(row.salesValue)}
-            </p>
-            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-phx-xs text-slate-500">
-              <span>ordered {dayLabel(row.orderDate)}</span>
-              <span className="font-black text-slate-700">counted in {monthLabel(row.salesMonth)}</span>
+      {/* Phone: cards under the same month headings. The owner's rule is that a phone never gets a table. */}
+      <div className="md:hidden">
+        {groups.map((group) => (
+          <section key={group.month} className="border-b border-slate-100 last:border-b-0">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 bg-slate-50 px-3 py-2">
+              <p className="min-w-0 text-xs font-black text-slate-900">
+                Counted in {formatPeriod(group.month)}
+                <span className="block text-phx-xs font-semibold text-slate-500">
+                  {`${lineCount(group.rows.length)} · ${units(group.units)} units`}
+                </span>
+              </p>
+              <p className="whitespace-nowrap text-sm font-black tabular-nums text-slate-900">{formatEgpFull(group.value)}</p>
             </div>
-          </article>
+            <div className="space-y-2 p-3">
+              {group.rows.map((row, index) => (
+                <article key={`${row.requestId}-${row.productName}-${index}`} className="flex border border-slate-200 bg-white">
+                  <span className="w-1 shrink-0" style={{ backgroundColor: DIRECT_ORDERS_RAIL }} aria-hidden />
+                  <div className="min-w-0 flex-1 p-3">
+                    <p dir="auto" className="break-words text-sm font-black text-slate-900">
+                      {row.pharmacyName}
+                    </p>
+                    <p dir="auto" className="break-words text-phx-xs text-slate-500">
+                      {row.areaName}
+                    </p>
+                    <p className="mt-2 break-words text-sm font-bold text-slate-800">{row.productName}</p>
+                    <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 border-t border-slate-100 pt-2 text-xs">
+                      <div className={CARD_FACT_CLASS}>
+                        <dt className="text-slate-500">Units</dt>
+                        <dd className="whitespace-nowrap font-bold tabular-nums text-slate-900">{units(row.units)}</dd>
+                      </div>
+                      <div className={CARD_FACT_CLASS}>
+                        <dt className="text-slate-500">Value</dt>
+                        <dd className="whitespace-nowrap font-black tabular-nums text-slate-900">{formatEgpFull(row.salesValue)}</dd>
+                      </div>
+                    </dl>
+                    <p className="mt-2 text-phx-xs text-slate-500">Ordered {dayLabel(row.orderDate)}</p>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
         ))}
       </div>
-    </section>
+    </SectionCard>
   );
 }

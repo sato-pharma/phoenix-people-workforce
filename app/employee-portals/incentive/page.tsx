@@ -12,6 +12,12 @@ import { getEmployeePortalIncentiveData } from "@/lib/employee-portal/service";
 
 export const dynamic = "force-dynamic";
 
+// The sidebar's own words: "Incentive" under "Pay & Expenses". The unavailable state keeps the same
+// header, so the page never loses its title when the data does not load.
+const PAGE_BADGE = "Pay & Expenses";
+const PAGE_TITLE = "Incentive";
+const PAGE_DESCRIPTION = "Review your incentive progress and earnings incentives in the same place.";
+
 export default async function EmployeePortalIncentivePageRoute() {
   const access = await resolveAuthenticatedPageAccess();
   if (resolveNavigationMode(access) !== "employee-portal") {
@@ -39,18 +45,17 @@ export default async function EmployeePortalIncentivePageRoute() {
 
   if (!data) {
     return (
-      <EmployeePortalEmptyState
-        message="Unable to load incentive data. Please try again later."
-        title="Portal Unavailable"
-      />
+      <EmployeePortalPageShell badge={PAGE_BADGE} description={PAGE_DESCRIPTION} title={PAGE_TITLE}>
+        <EmployeePortalEmptyState
+          message="Unable to load incentive data. Please try again later."
+          title="Portal Unavailable"
+        />
+      </EmployeePortalPageShell>
     );
   }
 
   return (
-    <EmployeePortalPageShell
-      description="Review your incentive progress and earnings incentives in the same place."
-      title="Incentive Center"
-    >
+    <EmployeePortalPageShell badge={PAGE_BADGE} description={PAGE_DESCRIPTION} title={PAGE_TITLE}>
       <EmployeePortalIncentivePage data={data} />
     </EmployeePortalPageShell>
   );

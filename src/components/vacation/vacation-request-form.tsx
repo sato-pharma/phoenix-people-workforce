@@ -34,7 +34,6 @@ import {
   getVacationPolicyToday,
   vacationUnpaidReasonLabel,
 } from "@/lib/vacation/calculations";
-import { formatHrIdForDisplay } from "@/lib/hr-id";
 import type {
   VacationBalanceSnapshot,
   VacationDayPart,
@@ -489,12 +488,11 @@ function VacationBalanceCard({
 /* ─── Summary Person ───────────────────────────────────────────────── */
 /* ═══════════════════════════════════════════════════════════════════ */
 
+/** A name, never the HR ID under it — the owner's rule is human-readable names, never raw IDs. */
 function VacationSummaryPerson({
-  hrId,
   label,
   name,
 }: {
-  hrId: string | null | undefined;
   label: string;
   name: string;
 }) {
@@ -503,11 +501,8 @@ function VacationSummaryPerson({
       <p className="text-phx-2xs font-bold uppercase tracking-[0.10em] text-slate-400">
         {label}
       </p>
-      <p className="mt-1 text-phx-md font-semibold leading-5 text-slate-900">
+      <p className="mt-1 break-words text-phx-md font-semibold leading-5 text-slate-900">
         {name}
-      </p>
-      <p className="mt-0.5 text-phx-2xs font-medium uppercase tracking-[0.12em] text-slate-500">
-        {formatHrIdForDisplay(hrId) ?? "No HR ID"}
       </p>
     </div>
   );
@@ -696,9 +691,16 @@ function VacationDatePicker({
       </button>
 
       {open && !disabled ? (
+        // The calendar never narrows below 300px, which is wider than one column of the two-up date
+        // row on a laptop with the sidebar open (~296px). Anchored left, the END picker's calendar
+        // then hung past the card's right edge; anchoring it right makes the extra width grow back
+        // into the card instead.
         <div
           ref={dropdownRef}
-          className="absolute z-30 mt-1 w-full min-w-[300px] rounded-sm border border-slate-200 bg-white p-3 shadow-[0_8px_24px_rgba(15,23,42,0.12)]"
+          className={cn(
+            "absolute z-30 mt-1 w-full min-w-[300px] rounded-sm border border-slate-200 bg-white p-3 shadow-[0_8px_24px_rgba(15,23,42,0.12)]",
+            picker === "end" ? "right-0" : "left-0",
+          )}
         >
           <div className="grid grid-cols-2 gap-1.5">
             <SearchableSelect
@@ -1391,7 +1393,10 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
         const reportBase = pathname?.startsWith("/employee-portals")
           ? "/employee-portals/vacation-report"
           : "/leave-management/vacation-report";
-        router.push(`${reportBase}?status=pending_manager`);
+        // `tab=requests` is what puts the request just sent on screen. The report opens on its
+        // Entitlements tab by default, so the status filter alone landed the employee on their
+        // balance row with the new request one tab away — the one thing they came to confirm.
+        router.push(`${reportBase}?tab=requests&status=pending_manager`);
         router.refresh();
       }, 1200);
     } catch (submitError) {
@@ -1516,8 +1521,11 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
         ) : null}
 
         {/* ── Tab Bar ────────────────────────────────────────────── */}
+        {/* Three equal columns on a phone. The three labels need ~380px on one line and a phone's
+            content column is ~351px, so the old `overflow-x-auto` strip scrolled sideways — the
+            pattern the fits-the-screen rule names. Each label now wraps inside its own third. */}
         <div
-          className="flex w-full gap-0.5 overflow-x-auto rounded-sm border border-slate-200 bg-slate-50 p-0.5"
+          className="grid w-full grid-cols-3 gap-0.5 rounded-sm border border-slate-200 bg-slate-50 p-0.5 sm:flex"
           role="tablist"
           aria-label="Vacation request page tabs"
         >
@@ -1527,7 +1535,7 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
               <button
                 aria-selected={active}
                 className={cn(
-                  "h-9 shrink-0 whitespace-nowrap rounded-sm px-3 text-phx-md font-bold transition",
+                  "min-h-9 rounded-sm px-2 py-1 text-center text-phx-md font-bold leading-tight transition sm:shrink-0 sm:whitespace-nowrap sm:px-3",
                   active ? "bg-white text-orange-600 shadow-sm" : "text-slate-500 hover:bg-white/70 hover:text-slate-700",
                 )}
                 key={tab.value}
@@ -1555,17 +1563,14 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
               <div className="rounded-sm border border-slate-200 bg-white p-3 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
                 <div className="grid gap-2 md:grid-cols-[1fr_1fr_1fr_auto] md:items-center">
                   <VacationSummaryPerson
-                    hrId={initialData?.employee.hrId}
                     label="Employee"
                     name={initialData?.employee.displayName ?? "-"}
                   />
                   <VacationSummaryPerson
-                    hrId={initialData?.manager?.hrId}
                     label="Direct manager"
                     name={initialData?.manager?.displayName ?? "Not assigned"}
                   />
                   <VacationSummaryPerson
-                    hrId={initialData?.managerOfManager?.hrId}
                     label="Manager of manager"
                     name={initialData?.managerOfManager?.displayName ?? (initialData?.manager ? "Top of hierarchy" : "Not assigned")}
                   />

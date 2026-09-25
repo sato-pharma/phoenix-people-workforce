@@ -3,7 +3,6 @@
 import { useMemo, useState } from "react";
 
 import {
-  PortalDesktopTable,
   PortalEmptyState,
   PortalPagination,
   PortalRecordCard,
@@ -32,12 +31,32 @@ type TabId = "visits" | "double" | "checkins" | "team";
 
 // "team" is appended last and only rendered for a viewer who actually has a team (see the filter on
 // TABS below), so a Medical Rep's tab strip is unchanged.
+//
+// Sentence case, and the count sits UNDER the label rather than in brackets beside it: three
+// uppercase "LABEL (n)" tabs needed about 400px and a phone gives the strip 285–355px, so the
+// Check-ins tab used to sit off the right edge behind a hidden scrollbar.
 const TABS: ReadonlyArray<{ id: TabId; label: string }> = [
-  { id: "visits", label: "My Visits" },
-  { id: "double", label: "Double Visits" },
+  { id: "visits", label: "My visits" },
+  { id: "double", label: "Double visits" },
   { id: "checkins", label: "Check-ins" },
-  { id: "team", label: "Team Visits" },
+  { id: "team", label: "Team visits" },
 ];
+
+/**
+ * THE DESKTOP TABLES FIT; THEY NEVER SCROLL SIDEWAYS (the owner's fits-the-screen golden rule).
+ *
+ * They used to sit in PortalDesktopTable, whose wrapper is `overflow-x-auto` over a 720–1040px
+ * `min-width` — the exact shape AGENTS.md §4 names as the bug. Measured on the audit: 286px of
+ * sideways scroll at 768px, 386px at 1024px with the sidebar open. Each table is now
+ * `w-full table-fixed` over a percentage `<colgroup>`, fitted by MERGING columns: the day carries its
+ * AM/PM and the time chip, the contact carries the visit type under the name. Every cell wraps
+ * (`break-words`); nothing is `whitespace-nowrap` and nothing is cut with an ellipsis.
+ *
+ * `hidden … md:table` plus `data-portal-desktop-table` keeps each one desktop-only — below 768px a
+ * phone gets the cards. Pinned by tests/my-visits-tables-fit.test.ts.
+ */
+const TABLE = "hidden w-full table-fixed border-collapse text-left text-sm md:table";
+const TD = "break-words px-3 py-3 align-top";
 
 // DATE-ONLY (`ireports360_visits.visit_date` and the window bounds — a `date` column, unlike the vendor
 // timestamptz handled by formatVendorLocal below), which `new Date` parses as UTC midnight. UTC here is
@@ -84,7 +103,8 @@ function VisitTimeBadge({ source, value }: { source: VisitTimeSource; value: str
   if (!value) return <span className="text-slate-400">—</span>;
   const isGps = source === "gps_checkin";
   return (
-    <span className="inline-flex items-center gap-1.5">
+    // flex-wrap: in a narrow Day column the chip drops under the time instead of pushing the cell.
+    <span className="inline-flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
       <span title={formatVendorLocal(value)}>{formatVendorTimeOnly(value)}</span>
       <span
         className={`rounded px-1 py-0.5 text-phx-3xs font-bold uppercase tracking-wide ${
@@ -149,12 +169,20 @@ function TeamVisitCard({ row }: { row: TeamCrmVisitRow }) {
   );
 }
 
+/**
+ * A double visit's time is ALWAYS the save time: fetchMyDoubleVisits (my-crm-visits.ts) resolves it
+ * with no check-in on purpose — matching one would mean reading the PRIMARY rep's check-ins, which are
+ * outside this viewer's own scope. So it carries the same chip as every other visit, and the chip
+ * always says "Logged", never GPS. It used to print the date a second time instead, with no chip.
+ */
+const DOUBLE_VISIT_TIME_SOURCE: VisitTimeSource = "save_time";
+
 function DoubleVisitCard({ row }: { row: MyCrmDoubleVisitRow }) {
   return (
     <PortalRecordCard
       accent="sky"
       meta={<span>{formatDateOnly(row.visitDate)}{row.ampm ? ` · ${row.ampm}` : ""}</span>}
-      status={<span className="text-xs font-bold text-slate-600">{formatVendorLocal(row.visitTime)}</span>}
+      status={<VisitTimeBadge source={DOUBLE_VISIT_TIME_SOURCE} value={row.visitTime} />}
       title={row.contactName || row.customerName || row.visitTypeDescription || "Visit"}
     >
       <PortalRecordFields
@@ -300,7 +328,7 @@ function TabPager({
   return (
     <PortalPagination label={label}>
       <button
-        className="rounded border border-slate-200 bg-white px-3 py-1.5 text-xs font-black text-slate-600 disabled:opacity-40"
+        className="min-h-10 border border-slate-200 bg-white px-3 py-1.5 text-xs font-black text-slate-600 disabled:opacity-40 md:min-h-9"
         disabled={safePage <= 1}
         onClick={onPrevious}
         type="button"
@@ -308,7 +336,7 @@ function TabPager({
         Previous
       </button>
       <button
-        className="rounded border border-slate-200 bg-white px-3 py-1.5 text-xs font-black text-slate-600 disabled:opacity-40"
+        className="min-h-10 border border-slate-200 bg-white px-3 py-1.5 text-xs font-black text-slate-600 disabled:opacity-40 md:min-h-9"
         disabled={safePage >= totalPages}
         onClick={onNext}
         type="button"
@@ -356,11 +384,19 @@ export function MyVisitsWorkspace({
   const checkinsPage = usePagedRows(checkins, page);
   const teamPage = usePagedRows(teamSplit.fieldRows, page);
   const rangeLabel = `${formatDateOnly(dateFrom)} – ${formatDateOnly(dateTo)}`;
+  // The shell above already says "My Visits", so the section names the WINDOW instead of repeating
+  // the page title. Derived from the two date-only bounds (both UTC midnight, so the difference is a
+  // whole number of days), never hard-coded, so it cannot drift from the page's own window.
+  const windowDays = Math.round((Date.parse(dateTo) - Date.parse(dateFrom)) / 86_400_000);
+  const sectionTitle = Number.isFinite(windowDays) && windowDays > 0 ? `Last ${windowDays} days` : "Your visits";
 
   return (
-    <PortalSection description={`Showing ${rangeLabel}`} eyebrow="CRM Visits" title="My Visits">
+    <PortalSection description={`Showing ${rangeLabel}`} eyebrow="CRM Visits" title={sectionTitle}>
       <div className="space-y-4 p-4 sm:p-5">
-        <PortalSegmentedTabs>
+        {/* A GRID of equal cells, never a scrolling row: three tabs share one row even at 360px, each
+            label wrapping over its own count, and a manager's fourth tab makes it two by two on a
+            phone. Nothing here is whitespace-nowrap, so no tab can run off the edge. */}
+        <PortalSegmentedTabs className={tabs.length === 4 ? "grid grid-cols-2 sm:grid-cols-4" : "grid grid-cols-3"}>
           {tabs.map((item) => {
             const count =
               item.id === "visits"
@@ -370,16 +406,21 @@ export function MyVisitsWorkspace({
                   : item.id === "team"
                     ? teamSplit.fieldRows.length
                     : checkins.length;
+            const active = tab === item.id;
             return (
               <button
-                className={`flex-1 whitespace-nowrap rounded px-3 py-2 text-xs font-black uppercase tracking-wide transition ${
-                  tab === item.id ? "bg-orange-600 text-white shadow-sm" : "text-slate-600 hover:bg-white"
+                aria-pressed={active}
+                className={`min-h-10 min-w-0 px-2 py-2 text-center transition ${
+                  active ? "bg-orange-600 text-white shadow-sm" : "text-slate-600 hover:bg-white"
                 }`}
                 key={item.id}
                 onClick={() => selectTab(item.id)}
                 type="button"
               >
-                {item.label} ({count})
+                <span className="block break-words text-xs font-black leading-tight">{item.label}</span>
+                <span className={`mt-0.5 block text-sm font-black tabular-nums ${active ? "text-white" : "text-slate-900"}`}>
+                  {count}
+                </span>
               </button>
             );
           })}
@@ -399,38 +440,49 @@ export function MyVisitsWorkspace({
               items={teamPage.paged}
               renderCard={(row) => <TeamVisitCard row={row} />}
               renderTable={() => (
-                <PortalDesktopTable minWidth="1040px">
-                  <thead className="bg-slate-50 text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500">
+                <table className={TABLE} data-portal-desktop-table>
+                  <colgroup>
+                    <col style={{ width: "18%" }} />
+                    <col style={{ width: "17%" }} />
+                    <col style={{ width: "25%" }} />
+                    <col style={{ width: "15%" }} />
+                    <col style={{ width: "25%" }} />
+                  </colgroup>
+                  <thead>
                     <tr>
-                      <th className="px-4 py-3">Rep</th>
-                      <th className="px-4 py-3">Date</th>
-                      <th className="px-4 py-3">Time</th>
-                      <th className="px-4 py-3">Type</th>
-                      <th className="px-4 py-3">Contact</th>
+                      <th className="px-3 py-3" scope="col">Rep</th>
+                      <th className="px-3 py-3" scope="col">Day</th>
                       {/* No Customer column - customerName is empty on every visit (see master.ts). */}
-                      <th className="px-4 py-3">With</th>
-                      <th className="px-4 py-3">Comment</th>
+                      <th className="px-3 py-3" scope="col">Contact</th>
+                      <th className="px-3 py-3" scope="col">With</th>
+                      <th className="px-3 py-3" scope="col">Comment</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 bg-white">
                     {teamPage.paged.map((row) => (
                       <tr className="align-top" key={row.id}>
-                        <td className="px-4 py-3 font-black text-slate-950">{row.agentName || "—"}</td>
-                        <td className="px-4 py-3 font-bold text-slate-800">
-                          {formatDateOnly(row.visitDate)}
-                          {row.ampm ? ` (${row.ampm})` : ""}
+                        <td className={`${TD} font-black text-slate-950`}>{row.agentName || "—"}</td>
+                        <td className={TD}>
+                          <span className="block font-bold text-slate-800">
+                            {formatDateOnly(row.visitDate)}
+                            {row.ampm ? ` · ${row.ampm}` : ""}
+                          </span>
+                          <span className="mt-1 block text-xs">
+                            <VisitTimeBadge source={row.visitTimeSource} value={row.visitTime} />
+                          </span>
                         </td>
-                        <td className="px-4 py-3">
-                          <VisitTimeBadge source={row.visitTimeSource} value={row.visitTime} />
+                        <td className={TD}>
+                          <span className="block text-slate-800">{row.contactName || "—"}</span>
+                          {row.visitTypeDescription ? (
+                            <span className="mt-0.5 block text-xs font-semibold text-slate-500">{row.visitTypeDescription}</span>
+                          ) : null}
                         </td>
-                        <td className="px-4 py-3 text-slate-700">{row.visitTypeDescription || "—"}</td>
-                        <td className="px-4 py-3 text-slate-700">{row.contactName || "—"}</td>
-                        <td className="px-4 py-3 text-slate-700">{row.doubleName || "—"}</td>
-                        <td className="max-w-[280px] px-4 py-3 leading-5 text-slate-600">{row.comment || "—"}</td>
+                        <td className={`${TD} text-slate-700`}>{row.doubleName || "—"}</td>
+                        <td className={`${TD} leading-5 text-slate-600`}>{row.comment || "—"}</td>
                       </tr>
                     ))}
                   </tbody>
-                </PortalDesktopTable>
+                </table>
               )}
             />
             <TabPager
@@ -452,36 +504,46 @@ export function MyVisitsWorkspace({
               items={visitsPage.paged}
               renderCard={(row) => <VisitCard row={row} />}
               renderTable={() => (
-                <PortalDesktopTable minWidth="980px">
-                  <thead className="bg-slate-50 text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500">
+                <table className={TABLE} data-portal-desktop-table>
+                  <colgroup>
+                    <col style={{ width: "18%" }} />
+                    <col style={{ width: "30%" }} />
+                    <col style={{ width: "20%" }} />
+                    <col style={{ width: "32%" }} />
+                  </colgroup>
+                  <thead>
                     <tr>
-                      <th className="px-4 py-3">Date</th>
-                      <th className="px-4 py-3">Time</th>
-                      <th className="px-4 py-3">Type</th>
-                      <th className="px-4 py-3">Contact</th>
+                      <th className="px-3 py-3" scope="col">Day</th>
                       {/* No Customer column - customerName is empty on every visit (see master.ts). */}
-                      <th className="px-4 py-3">With</th>
-                      <th className="px-4 py-3">Comment</th>
+                      <th className="px-3 py-3" scope="col">Contact</th>
+                      <th className="px-3 py-3" scope="col">Double visit with</th>
+                      <th className="px-3 py-3" scope="col">Comment</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 bg-white">
                     {visitsPage.paged.map((row) => (
                       <tr className="align-top" key={row.id}>
-                        <td className="px-4 py-3 font-bold text-slate-800">
-                          {formatDateOnly(row.visitDate)}
-                          {row.ampm ? ` (${row.ampm})` : ""}
+                        <td className={TD}>
+                          <span className="block font-bold text-slate-800">
+                            {formatDateOnly(row.visitDate)}
+                            {row.ampm ? ` · ${row.ampm}` : ""}
+                          </span>
+                          <span className="mt-1 block text-xs">
+                            <VisitTimeBadge source={row.visitTimeSource} value={row.visitTime} />
+                          </span>
                         </td>
-                        <td className="px-4 py-3">
-                          <VisitTimeBadge source={row.visitTimeSource} value={row.visitTime} />
+                        <td className={TD}>
+                          <span className="block font-black text-slate-950">{row.contactName || "—"}</span>
+                          {row.visitTypeDescription ? (
+                            <span className="mt-0.5 block text-xs font-semibold text-slate-500">{row.visitTypeDescription}</span>
+                          ) : null}
                         </td>
-                        <td className="px-4 py-3 text-slate-700">{row.visitTypeDescription || "—"}</td>
-                        <td className="px-4 py-3 font-black text-slate-950">{row.contactName || "—"}</td>
-                        <td className="px-4 py-3 text-slate-700">{row.doubleName || "—"}</td>
-                        <td className="max-w-[280px] px-4 py-3 leading-5 text-slate-600">{row.comment || "—"}</td>
+                        <td className={`${TD} text-slate-700`}>{row.doubleName || "—"}</td>
+                        <td className={`${TD} leading-5 text-slate-600`}>{row.comment || "—"}</td>
                       </tr>
                     ))}
                   </tbody>
-                </PortalDesktopTable>
+                </table>
               )}
             />
             <TabPager
@@ -508,33 +570,45 @@ export function MyVisitsWorkspace({
               items={doublePage.paged}
               renderCard={(row) => <DoubleVisitCard row={row} />}
               renderTable={() => (
-                <PortalDesktopTable minWidth="980px">
-                  <thead className="bg-slate-50 text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500">
+                <table className={TABLE} data-portal-desktop-table>
+                  <colgroup>
+                    <col style={{ width: "18%" }} />
+                    <col style={{ width: "30%" }} />
+                    <col style={{ width: "20%" }} />
+                    <col style={{ width: "32%" }} />
+                  </colgroup>
+                  <thead>
                     <tr>
-                      <th className="px-4 py-3">Date</th>
-                      <th className="px-4 py-3">Time</th>
-                      <th className="px-4 py-3">Type</th>
-                      <th className="px-4 py-3">Contact</th>
-                      <th className="px-4 py-3">Primary rep</th>
-                      <th className="px-4 py-3">Comment</th>
+                      <th className="px-3 py-3" scope="col">Day</th>
+                      <th className="px-3 py-3" scope="col">Contact</th>
+                      <th className="px-3 py-3" scope="col">Primary rep</th>
+                      <th className="px-3 py-3" scope="col">Comment</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 bg-white">
                     {doublePage.paged.map((row) => (
                       <tr className="align-top" key={row.id}>
-                        <td className="px-4 py-3 font-bold text-slate-800">
-                          {formatDateOnly(row.visitDate)}
-                          {row.ampm ? ` (${row.ampm})` : ""}
+                        <td className={TD}>
+                          <span className="block font-bold text-slate-800">
+                            {formatDateOnly(row.visitDate)}
+                            {row.ampm ? ` · ${row.ampm}` : ""}
+                          </span>
+                          <span className="mt-1 block text-xs">
+                            <VisitTimeBadge source={DOUBLE_VISIT_TIME_SOURCE} value={row.visitTime} />
+                          </span>
                         </td>
-                        <td className="px-4 py-3 text-slate-700">{formatVendorLocal(row.visitTime)}</td>
-                        <td className="px-4 py-3 text-slate-700">{row.visitTypeDescription || "—"}</td>
-                        <td className="px-4 py-3 font-black text-slate-950">{row.contactName || row.customerName || "—"}</td>
-                        <td className="px-4 py-3 text-slate-700">{row.primaryAgentName || "—"}</td>
-                        <td className="max-w-[280px] px-4 py-3 leading-5 text-slate-600">{row.comment || "—"}</td>
+                        <td className={TD}>
+                          <span className="block font-black text-slate-950">{row.contactName || row.customerName || "—"}</span>
+                          {row.visitTypeDescription ? (
+                            <span className="mt-0.5 block text-xs font-semibold text-slate-500">{row.visitTypeDescription}</span>
+                          ) : null}
+                        </td>
+                        <td className={`${TD} text-slate-700`}>{row.primaryAgentName || "—"}</td>
+                        <td className={`${TD} leading-5 text-slate-600`}>{row.comment || "—"}</td>
                       </tr>
                     ))}
                   </tbody>
-                </PortalDesktopTable>
+                </table>
               )}
             />
             <TabPager
@@ -555,24 +629,29 @@ export function MyVisitsWorkspace({
               items={checkinsPage.paged}
               renderCard={(row) => <CheckinCard row={row} />}
               renderTable={() => (
-                <PortalDesktopTable minWidth="720px">
-                  <thead className="bg-slate-50 text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500">
+                <table className={TABLE} data-portal-desktop-table>
+                  <colgroup>
+                    <col style={{ width: "24%" }} />
+                    <col style={{ width: "30%" }} />
+                    <col style={{ width: "46%" }} />
+                  </colgroup>
+                  <thead>
                     <tr>
-                      <th className="px-4 py-3">Date &amp; time</th>
-                      <th className="px-4 py-3">Contact</th>
-                      <th className="px-4 py-3">Address</th>
+                      <th className="px-3 py-3" scope="col">Date &amp; time</th>
+                      <th className="px-3 py-3" scope="col">Contact</th>
+                      <th className="px-3 py-3" scope="col">Address</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 bg-white">
                     {checkinsPage.paged.map((row) => (
                       <tr className="align-top" key={row.id}>
-                        <td className="px-4 py-3 font-bold text-slate-800">{formatVendorLocal(row.checkDate)}</td>
-                        <td className="px-4 py-3 font-black text-slate-950">{row.contactName || "—"}</td>
-                        <td className="max-w-[360px] px-4 py-3 leading-5 text-slate-600">{row.address || "—"}</td>
+                        <td className={`${TD} font-bold text-slate-800`}>{formatVendorLocal(row.checkDate)}</td>
+                        <td className={`${TD} font-black text-slate-950`}>{row.contactName || "—"}</td>
+                        <td className={`${TD} leading-5 text-slate-600`}>{row.address || "—"}</td>
                       </tr>
                     ))}
                   </tbody>
-                </PortalDesktopTable>
+                </table>
               )}
             />
             <TabPager

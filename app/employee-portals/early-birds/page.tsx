@@ -129,7 +129,7 @@ export default async function PortalEarlyBirdsPage({ searchParams }: PageProps) 
             That rep is not in this district&apos;s ranking for {period.label}.
           </p>
           <p className="mt-1 break-words text-sm text-amber-800">
-            He may have moved district, or he may not have been a medical rep in that fortnight. The
+            They may have moved district, or may not have been a medical rep in that fortnight. The
             board below is unaffected.
           </p>
         </div>

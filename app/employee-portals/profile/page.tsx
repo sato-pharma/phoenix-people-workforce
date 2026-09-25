@@ -6,12 +6,12 @@ import {
   ClipboardList,
   Fingerprint,
   Hourglass,
-  Mail,
   MapPin,
   ShieldCheck,
   UserCog,
   Users,
 } from "lucide-react";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import {
@@ -54,6 +54,12 @@ function renewalTone(daysUntilRenewal: number | null) {
   if (daysUntilRenewal <= 30) return "text-amber-600";
   if (daysUntilRenewal <= 90) return "text-sky-600";
   return "text-emerald-600";
+}
+
+// The status is stored as a code ("active", "on_leave"); an employee reads a word.
+function employmentStatusLabel(status: string | null | undefined) {
+  const words = (status || "active").replace(/_+/g, " ").trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
 function probationTone(status: "Completed" | "Not Started" | "On Probation") {
@@ -153,7 +159,7 @@ export default async function EmployeePortalProfilePage() {
     {
       icon: ShieldCheck,
       label: "Employment status",
-      value: hrContract.employmentStatus || "active",
+      value: employmentStatusLabel(hrContract.employmentStatus),
     },
     {
       icon: ClipboardList,
@@ -188,21 +194,14 @@ export default async function EmployeePortalProfilePage() {
           hasUploadedPhoto={Boolean(uploadedPhoto)}
           initials={photoInitials}
         />
-        <NotificationSettingsPanel />
-        <ChangePasswordForm />
-        <BiometricDevicesCard />
-
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <ScopeBadge scope={access.scope} />
-          <span className="inline-flex items-center gap-2 rounded border border-orange-200 bg-orange-50 px-3.5 py-1.5 text-xs font-semibold uppercase tracking-[0.08em] text-orange-700">
-            <Mail className="h-3.5 w-3.5" />
-            Contact HR to update this information
-          </span>
         </div>
 
+        {/* Who you are first — identity, contract and placement — then the settings below them.
+            The settings cards used to come first, full width, so at 1440 the password form ran
+            ~1,000px wide above the details a rep opens this page to read. */}
         <div className="grid gap-5 lg:grid-cols-2">
-          <BottomNavCustomizer visibility={navVisibility} />
-
           <Card className="rounded border border-slate-200 bg-white p-5 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-6">
             <div className="mb-4 flex items-center gap-2">
               <span className="inline-flex rounded border border-orange-200 bg-orange-50 px-2.5 py-0.5 text-phx-xs font-semibold uppercase tracking-wider text-orange-600">
@@ -306,6 +305,9 @@ export default async function EmployeePortalProfilePage() {
             </dl>
           </Card>
 
+          {/* ONE way to reach HR, and it goes somewhere. This used to be two identical
+              "Contact HR to update this information" chips (here and beside the scope badge) that
+              looked like buttons and did nothing. */}
           <Card className="rounded border border-orange-100 bg-orange-50/40 p-5 shadow-[0_1px_3px_rgba(15,23,42,0.04)] sm:p-6 lg:col-span-2">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
@@ -316,15 +318,26 @@ export default async function EmployeePortalProfilePage() {
                   Your profile is read-only. HR can update your contract, area, manager, or contact details.
                 </p>
                 <p className="mt-1 text-xs text-slate-600">
-                  Contact HR to update this information. HR will follow up with confirmation.
+                  Send HR a request and they will follow up with confirmation.
                 </p>
               </div>
-              <span className="inline-flex items-center gap-2 self-start rounded border border-orange-200 bg-white px-3.5 py-1.5 text-xs font-semibold uppercase tracking-[0.08em] text-orange-700 sm:self-center">
-                <UserCog className="h-3.5 w-3.5" />
-                Contact HR to update this information
-              </span>
+              <Link
+                className="inline-flex min-h-10 shrink-0 items-center gap-2 self-start rounded border border-orange-300 bg-white px-3.5 py-1.5 text-xs font-semibold uppercase tracking-[0.08em] text-orange-700 transition-colors hover:border-orange-400 hover:bg-orange-50 sm:self-center md:min-h-9"
+                href="/employee-portals/contact-hr-support"
+              >
+                <UserCog className="h-3.5 w-3.5 shrink-0" />
+                Contact HR
+              </Link>
             </div>
           </Card>
+        </div>
+
+        {/* Settings — two across on a wide screen instead of four full-width cards. */}
+        <div className="grid gap-5 xl:grid-cols-2">
+          <NotificationSettingsPanel />
+          <ChangePasswordForm />
+          <BiometricDevicesCard />
+          <BottomNavCustomizer visibility={navVisibility} />
         </div>
       </div>
     </EmployeePortalPageShell>

@@ -263,6 +263,6 @@ export function runWeeklyStockDashboardTests() {
   const figures = [...dashboard.matchAll(/<p className="([^"]*)">\{value\}<\/p>/g)].map((match) => match[1]);
   assert.equal(figures.length, 2, "the headline tile and the phone card each print one figure");
   for (const figure of figures) assert.doesNotMatch(figure, /\bwhitespace-nowrap\b/, "a figure wraps inside its box, never runs out of it");
-  assert.match(dashboard, /hidden lg:block/, "desktop reads full tables");
-  assert.match(dashboard, /lg:hidden/, "a phone reads cards");
+  assert.match(dashboard, /<div className="hidden md:block">/, "desktop and tablet (from md) read full tables");
+  assert.match(dashboard, /<div className="space-y-2 p-3 md:hidden">/, "a phone reads cards");
 }

@@ -7,11 +7,15 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { PaginationControls } from "@/components/ui/pagination-controls";
+import { periodLabel } from "@/lib/business-review/period-format";
+import { deductionsCategoryLabel, deductionsUnitLabel } from "@/lib/deductions/calculations.ts";
 import type {
   DeductionsComment,
   DeductionsPortalLine,
   DeductionsSalaryRecordsColumn,
+  DeductionsUnit,
 } from "@/lib/deductions/types";
+import { cairoDate, utcDate } from "@/lib/format/cairo-datetime";
 import { cn } from "@/lib/utils";
 import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
 
@@ -38,12 +42,19 @@ function formatNumber(value: number): string {
   }).format(value);
 }
 
-function formatDate(value: string): string {
-  try {
-    return new Intl.DateTimeFormat("en", { dateStyle: "medium" }).format(new Date(value));
-  } catch {
-    return value;
-  }
+/**
+ * A deduction date is a calendar day ("2026-08-14"), read in UTC so the day cannot shift; anything
+ * carrying a time is a real instant and reads in Cairo. Both come out as "14 Aug 2026".
+ */
+function formatDeductionDate(value: string): string {
+  const text = String(value ?? "").trim();
+  const label = /^\d{4}-\d{2}-\d{2}$/.test(text) ? utcDate(text) : cairoDate(text);
+  return label === "—" && text ? text : label;
+}
+
+/** Days read as "2 Days"; an amount-unit deduction is money, so it reads as EGP like the admin screen. */
+function formatDeductionValue(value: number, unit: DeductionsUnit): string {
+  return unit === "amount" ? formatMoney(value) : `${formatNumber(value)} ${deductionsUnitLabel(unit)}`;
 }
 
 function payrollColumnLabel(column: DeductionsSalaryRecordsColumn) {
@@ -150,18 +161,21 @@ export function DeductionsPortalWorkspace({
 
   return (
     <div className="space-y-4">
+      {/* text-xl below sm: at 640–767px a six-digit amount ("EGP 123,456.00") is wider than a
+          third of the row in text-2xl, so the figure steps down a size and may wrap rather than
+          run past its card. */}
       <div className="grid gap-3 sm:grid-cols-3">
         <Card className="rounded border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-400">Rows</p>
-          <p className="mt-2 text-2xl font-black text-slate-950">{formatNumber(totals.count)}</p>
+          <p className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-400">Deductions</p>
+          <p className="mt-2 break-words text-xl font-black text-slate-950 sm:text-2xl">{formatNumber(totals.count)}</p>
         </Card>
         <Card className="rounded border border-slate-200 bg-white p-4 shadow-sm">
           <p className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-400">Applied Days</p>
-          <p className="mt-2 text-2xl font-black text-slate-950">{formatNumber(totals.days)}</p>
+          <p className="mt-2 break-words text-xl font-black text-slate-950 sm:text-2xl">{formatNumber(totals.days)}</p>
         </Card>
         <Card className="rounded border border-slate-200 bg-white p-4 shadow-sm">
           <p className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-400">Applied Amount</p>
-          <p className="mt-2 text-2xl font-black text-slate-950">{formatMoney(totals.amount)}</p>
+          <p className="mt-2 break-words text-xl font-black text-slate-950 sm:text-2xl">{formatMoney(totals.amount)}</p>
         </Card>
       </div>
 
@@ -177,32 +191,31 @@ export function DeductionsPortalWorkspace({
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <p className="font-black text-slate-950">{line.employeeName ?? line.employeeCode}</p>
-                    <Badge variant="neutral">{line.employeeCode}</Badge>
-                    <Badge variant="success">{line.monthKey}</Badge>
+                    <p className="min-w-0 break-words font-black text-slate-950">{line.employeeName ?? line.employeeCode}</p>
+                    <Badge variant="success">{periodLabel(line.monthKey)}</Badge>
                     <Badge variant="warning">{payrollColumnLabel(line.payrollColumn)}</Badge>
                   </div>
                   <p className="mt-2 text-sm font-semibold text-slate-700">
-                    {line.sourceModule} / {line.deductionType}
+                    {deductionsCategoryLabel(line.deductionType)}
                   </p>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Dates: {line.dates.length > 0 ? line.dates.join(", ") : "-"}
+                  <p className="mt-1 break-words text-xs text-slate-500">
+                    Dates: {line.dates.length > 0 ? line.dates.map(formatDeductionDate).join(", ") : "-"}
                   </p>
                   {line.hrNote ? (
-                    <p className="mt-2 text-xs text-slate-600">HR note: {line.hrNote}</p>
+                    <p className="mt-2 break-words text-xs text-slate-600">HR note: {line.hrNote}</p>
                   ) : null}
                 </div>
-                <div className="grid min-w-[260px] gap-2 rounded border border-slate-100 bg-slate-50 p-3 text-xs">
+                <div className="grid w-full gap-2 rounded border border-slate-100 bg-slate-50 p-3 text-xs lg:w-[260px] lg:shrink-0">
                   <div className="flex justify-between gap-3">
                     <span className="text-slate-500">Original flagged</span>
                     <span className="font-mono font-black text-slate-900">
-                      {formatNumber(line.originalDeductionValue)} {line.deductionUnit}
+                      {formatDeductionValue(line.originalDeductionValue, line.deductionUnit)}
                     </span>
                   </div>
                   <div className="flex justify-between gap-3">
                     <span className="text-slate-500">HR applied</span>
                     <span className="font-mono font-black text-slate-900">
-                      {formatNumber(line.appliedDeductionValue)} {line.deductionUnit}
+                      {formatDeductionValue(line.appliedDeductionValue, line.deductionUnit)}
                     </span>
                   </div>
                   <div className="flex justify-between gap-3">
@@ -222,9 +235,9 @@ export function DeductionsPortalWorkspace({
                     <div className="mt-3 space-y-2">
                       {candidateComments.map((comment) => (
                         <div className="rounded border border-slate-100 bg-slate-50 p-3 text-sm" key={comment.id}>
-                          <p className="text-slate-700">{comment.body}</p>
+                          <p className="break-words text-slate-700">{comment.body}</p>
                           <p className="mt-1 text-phx-xs font-semibold text-slate-400">
-                            {formatDate(comment.createdAt)}
+                            {cairoDate(comment.createdAt)}
                           </p>
                         </div>
                       ))}
@@ -244,7 +257,7 @@ export function DeductionsPortalWorkspace({
                       }
                     />
                     <Button
-                      className="gap-2"
+                      className="h-10 gap-2"
                       disabled={savingCandidateId === line.candidateId}
                       type="button"
                       onClick={() => {

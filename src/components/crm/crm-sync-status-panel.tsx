@@ -39,6 +39,7 @@ export function CrmSyncStatusPanel({
   latestSyncRuns,
   retiredAt = null,
   readOnly = false,
+  surface = "admin",
 }: {
   configured: boolean;
   dateFrom: string;
@@ -52,6 +53,13 @@ export function CrmSyncStatusPanel({
    * hide the backfill control: the backfill endpoint is Super-Admin-only, so a field manager clicking
    * it would only ever get a 403. When true the footer is dropped, same as when the vendor is retired. */
   readOnly?: boolean;
+  /**
+   * `portal` (the employee-portal CRM only) shows ONE freshness line — "Updated {Cairo time}" — or
+   * nothing at all. A field seat was being shown the sync plumbing: "fetched · upserted" counts, a
+   * "sanity cap — check for a partial fetch" warning, raw run error text and environment-variable
+   * names. None of it is his to act on. `admin` (the default) is the full run history, unchanged.
+   */
+  surface?: "admin" | "portal";
 }) {
   const [backfillFrom, setBackfillFrom] = useState(dateFrom);
   const [backfillTo, setBackfillTo] = useState(dateTo);
@@ -82,6 +90,18 @@ export function CrmSyncStatusPanel({
     } finally {
       setBusy(false);
     }
+  }
+
+  if (surface === "portal") {
+    // After the vendor was retired Phoenix records visits directly, so there is no sync to report.
+    if (retiredAt) return null;
+    const latest = latestSyncRuns.find((run) => run.status === "success" && run.completedAt);
+    if (!latest?.completedAt) return null;
+    return (
+      <p className="text-xs font-semibold text-slate-500" role="status">
+        Updated {formatDateTime(latest.completedAt)}
+      </p>
+    );
   }
 
   return (

@@ -287,10 +287,35 @@ function storeOpen(key: string, open: boolean) {
 const KEY_FIGURES_OPEN_KEY = "phx.privateCalendar.keyFiguresOpen";
 const FILTERS_OPEN_KEY = "phx.privateCalendar.filtersOpen";
 
+// An item's status arrives as its source's own code — `pending_hr`, `performed`, `holiday` — or,
+// for attendance, as a word already written for people ("Late", "Short day"). Codes are named
+// here; anything else keeps its own wording, with a stray underscore turned into a space.
+const statusLabels: Record<string, string> = {
+  approved: "Approved",
+  holiday: "Holiday",
+  needs_assignment: "Awaiting assignment",
+  pending: "Pending",
+  pending_hr: "Waiting for HR",
+  pending_manager: "Waiting for manager",
+  pending_review: "Under review",
+  performed: "Done",
+  rejected: "Rejected",
+  submitted: "Submitted",
+};
+
+function statusLabel(status: string) {
+  const known = statusLabels[status.trim().toLowerCase()];
+  if (known) return known;
+  if (!status.includes("_") && !/^[a-z]/.test(status)) return status;
+  const words = status.replace(/_+/g, " ").trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
 function itemSearchText(item: PrivateCalendarItem) {
   return [
     item.title,
     item.status,
+    item.status ? statusLabel(item.status) : null,
     item.time,
     item.description,
     item.employeeHrId,
@@ -346,17 +371,31 @@ function chipTitle(item: PrivateCalendarItem, viewMode: PrivateCalendarViewMode)
   return item.title;
 }
 
+// A person as the calendar prints them: the name, and the HR ID beside it only where the surface
+// asks for IDs (see showHrIds).
+function personLabel(name: string, hrId: string | null | undefined, showHrId: boolean) {
+  return showHrId && hrId ? `${name} (${hrId})` : name;
+}
+
 function employeeOptionLabel(employee: { fullName: string; hrId: string; jobTitle: string | null; lineName: string | null }) {
   return `${employee.fullName} (${employee.hrId})${employee.lineName ? ` - ${employee.lineName}` : ""}${employee.jobTitle ? ` - ${employee.jobTitle}` : ""}`;
 }
 
 export function PrivateCalendar({
   initialWorkspace,
+  showDeskDetail,
   surface = "employee",
   todayIso: todayIsoProp,
   viewerHrId = null,
 }: {
   initialWorkspace: PrivateCalendarWorkspace;
+  /**
+   * The desk's technical detail — HR IDs beside names, and each entry's source system, table and
+   * record ID. Defaults to on for the admin-shell workspace surface and off everywhere else, so an
+   * employee sees names and the source's own name only. A desk page on the employee surface can
+   * pass `true` to keep them.
+   */
+  showDeskDetail?: boolean;
   surface?: PrivateCalendarSurface;
   /** Today's date as YYYY-MM-DD, computed once on the server to prevent SSR/hydration mismatch. */
   todayIso: string;
@@ -432,12 +471,15 @@ export function PrivateCalendar({
   // (attendance, leave, CRM double visits) — there is no separate "planned" view
   // to distinguish anymore, so this flag currently has no effect on what renders.
   const actualOnly = surface === "employee";
-  const panelClass = isWorkspaceSurface
-    ? "overflow-hidden rounded-sm border border-slate-200 bg-white shadow-sm"
-    : "overflow-hidden rounded-sm bg-white shadow-lg ring-1 ring-slate-200/60";
-  const secondaryPanelClass = isWorkspaceSurface
-    ? "overflow-hidden rounded-sm border border-slate-200 bg-white shadow-sm"
-    : "overflow-hidden rounded-sm bg-white shadow-md ring-1 ring-slate-200/60";
+  // One flat, bordered panel on both surfaces. The employee surface used to add a gradient band
+  // and floating shadow-lg / ring panels directly under the portal's own navy page header — two
+  // dark bands stacked, in a look no other portal page uses.
+  const panelClass = "overflow-hidden rounded-sm border border-slate-200 bg-white shadow-sm";
+  const secondaryPanelClass = panelClass;
+  // Raw HR IDs and source tables/record IDs are for a desk, which resolves people and records by
+  // ID. On the employee surface a person is their name — a rep never needs his own ID beside it.
+  const deskDetail = showDeskDetail ?? isWorkspaceSurface;
+  const showHrIds = deskDetail;
   const inputClass = isWorkspaceSurface
     ? "h-9 w-full rounded-sm border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-500/15 disabled:cursor-not-allowed disabled:opacity-60"
     : "h-9 w-full rounded-sm border-0 bg-slate-100 px-3 text-sm font-semibold text-slate-800 outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-orange-300 disabled:cursor-not-allowed disabled:opacity-60";
@@ -787,13 +829,17 @@ export function PrivateCalendar({
 
       {/* ── Header + Metrics ── */}
       <section className={panelClass}>
-        <div className={isWorkspaceSurface ? "border-b border-slate-200 bg-slate-950 px-5 py-4" : "bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 px-6 py-5"}>
+        <div className="border-b border-slate-200 bg-slate-950 px-5 py-4">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-phx-xs font-black uppercase tracking-[0.14em] text-white/80 ring-1 ring-white/20">
-                  Private Calendar
-                </span>
+              <div className="mb-3 flex flex-wrap items-center gap-2 empty:hidden">
+                {/* The portal page header above already names the page, so the employee surface
+                    does not say "Private Calendar" a third time. */}
+                {isWorkspaceSurface ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-phx-xs font-black uppercase tracking-[0.14em] text-white/80 ring-1 ring-white/20">
+                    Private Calendar
+                  </span>
+                ) : null}
                 {workspace.access.isGlobalViewer ? (
                   <span className="inline-flex items-center gap-1.5 rounded-full bg-phx-info/20 px-3 py-1 text-phx-xs font-black uppercase tracking-[0.14em] text-phx-info-bg ring-1 ring-phx-info-line/30">
                     Global view
@@ -805,12 +851,12 @@ export function PrivateCalendar({
                   </span>
                 ) : null}
               </div>
-              <h2 className="mt-3 text-3xl font-black tracking-tight text-white">{monthLabel(year, month)}</h2>
+              <h2 className="text-3xl font-black tracking-tight text-white">{monthLabel(year, month)}</h2>
               <p className="mt-1 text-sm font-semibold text-slate-300">
                 {isTeamView
                   ? `${teamSummary.length} visible employee${teamSummary.length === 1 ? "" : "s"}`
                   : selectedEmployee.fullName}{" "}
-                {!isTeamView ? <span className="font-mono text-xs text-slate-400">{selectedEmployee.hrId}</span> : null}
+                {!isTeamView && showHrIds ? <span className="font-mono text-xs text-slate-400">{selectedEmployee.hrId}</span> : null}
               </p>
               <p className="mt-1 text-xs font-semibold text-slate-400">
                 {isPending ? "Syncing…" : lastSyncedAt ? `Synced at ${formatSyncedAt(lastSyncedAt)}` : null}
@@ -1059,7 +1105,7 @@ export function PrivateCalendar({
               >
                 <option value={allValue}>All statuses</option>
                 {statusOptions.map((status) => (
-                  <option key={status} value={status}>{status}</option>
+                  <option key={status} value={status}>{statusLabel(status)}</option>
                 ))}
               </SearchableSelect>
             </label>
@@ -1171,7 +1217,7 @@ export function PrivateCalendar({
                   <span className="text-sm font-black text-slate-900">{exception.title}</span>
                   {exception.employeeName ? (
                     <span className="inline-flex items-center bg-white px-1.5 py-0.5 text-phx-xs font-semibold text-slate-600 ring-1 ring-inset ring-slate-200">
-                      {exception.employeeName}{exception.employeeHrId ? ` (${exception.employeeHrId})` : ""}
+                      {personLabel(exception.employeeName, exception.employeeHrId, showHrIds)}
                     </span>
                   ) : null}
                   <span className="w-full pl-4 text-phx-xs font-semibold leading-relaxed text-slate-600">
@@ -1188,6 +1234,7 @@ export function PrivateCalendar({
         <PrivateCalendarAgenda
           agendaDays={agendaDays}
           onSelectDate={setSelectedDate}
+          showHrIds={showHrIds}
           viewMode={viewMode}
         />
       ) : (
@@ -1420,7 +1467,7 @@ export function PrivateCalendar({
                   Exception Warnings
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-                  {selectedExceptions.map((exception) => <ExceptionItem exception={exception} key={exception.id} />)}
+                  {selectedExceptions.map((exception) => <ExceptionItem exception={exception} key={exception.id} showHrIds={showHrIds} />)}
                 </div>
               </section>
             ) : null}
@@ -1433,7 +1480,7 @@ export function PrivateCalendar({
               ) : (
                 <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
                   {timelineItems.map((item) => (
-                    <TimelineItem item={item} key={item.id} viewMode={viewMode} />
+                    <TimelineItem item={item} key={item.id} showHrIds={showHrIds} showSourceTrace={deskDetail} viewMode={viewMode} />
                   ))}
                 </div>
               )}
@@ -1449,10 +1496,12 @@ export function PrivateCalendar({
 function PrivateCalendarAgenda({
   agendaDays,
   onSelectDate,
+  showHrIds,
   viewMode,
 }: {
   agendaDays: { date: string; dayExceptions: PrivateCalendarException[]; dayItems: PrivateCalendarItem[] }[];
   onSelectDate: (date: string) => void;
+  showHrIds: boolean;
   viewMode: PrivateCalendarViewMode;
 }) {
   if (agendaDays.length === 0) {
@@ -1492,7 +1541,7 @@ function PrivateCalendarAgenda({
                   <div className="mt-1.5 flex flex-wrap gap-1.5 pl-[18px]">
                     {exception.employeeName ? (
                       <span className="inline-flex items-center bg-white px-1.5 py-0.5 text-phx-xs font-semibold text-slate-600 ring-1 ring-inset ring-slate-200">
-                        {exception.employeeName}{exception.employeeHrId ? ` (${exception.employeeHrId})` : ""}
+                        {personLabel(exception.employeeName, exception.employeeHrId, showHrIds)}
                       </span>
                     ) : null}
                     <span className="w-full text-phx-xs font-semibold leading-relaxed text-slate-600">
@@ -1519,7 +1568,7 @@ function PrivateCalendarAgenda({
                     </span>
                     {item.status ? (
                       <span className="ml-auto inline-flex items-center whitespace-nowrap bg-phx-paper px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-phx-ink-soft">
-                        {item.status}
+                        {statusLabel(item.status)}
                       </span>
                     ) : null}
                   </div>
@@ -1774,7 +1823,7 @@ function VerificationSourceMultiSelect({
   );
 }
 
-function ExceptionItem({ exception }: { exception: PrivateCalendarException }) {
+function ExceptionItem({ exception, showHrIds }: { exception: PrivateCalendarException; showHrIds: boolean }) {
   const tone = exceptionTone(exception.severity);
   return (
     <article className={["border-l-4 p-4 shadow-sm ring-1", tone.border, tone.panelStrong].join(" ")}>
@@ -1784,7 +1833,7 @@ function ExceptionItem({ exception }: { exception: PrivateCalendarException }) {
         </h4>
         {exception.employeeName ? (
           <p className={["mt-1 text-xs font-semibold", tone.text].join(" ")}>
-            {exception.employeeName}{exception.employeeHrId ? ` (${exception.employeeHrId})` : ""}
+            {personLabel(exception.employeeName, exception.employeeHrId, showHrIds)}
           </p>
         ) : null}
       </div>
@@ -1795,7 +1844,18 @@ function ExceptionItem({ exception }: { exception: PrivateCalendarException }) {
   );
 }
 
-function TimelineItem({ item, viewMode }: { item: PrivateCalendarItem; viewMode: PrivateCalendarViewMode }) {
+function TimelineItem({
+  item,
+  showHrIds,
+  showSourceTrace,
+  viewMode,
+}: {
+  item: PrivateCalendarItem;
+  showHrIds: boolean;
+  /** The admin-shell desk sees the system, table and record ID; everyone else sees only the source's name. */
+  showSourceTrace: boolean;
+  viewMode: PrivateCalendarViewMode;
+}) {
   return (
     <article
       className={[
@@ -1820,13 +1880,13 @@ function TimelineItem({ item, viewMode }: { item: PrivateCalendarItem; viewMode:
             <h4 className="mt-2 text-sm font-black text-slate-950">{item.title}</h4>
             {viewMode === "team" && item.employeeName ? (
               <p className="mt-1 text-xs font-semibold text-slate-500">
-                {item.employeeName}{item.employeeHrId ? ` (${item.employeeHrId})` : ""}
+                {personLabel(item.employeeName, item.employeeHrId, showHrIds)}
               </p>
             ) : null}
           </div>
           {item.status ? (
-            <span className="shrink-0 bg-phx-paper px-2.5 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-phx-ink-soft">
-              {item.status}
+            <span className="min-w-0 max-w-[45%] break-words bg-phx-paper px-2.5 py-0.5 text-right text-phx-2xs font-black uppercase tracking-[0.1em] text-phx-ink-soft">
+              {statusLabel(item.status)}
             </span>
           ) : null}
         </div>
@@ -1857,14 +1917,20 @@ function TimelineItem({ item, viewMode }: { item: PrivateCalendarItem; viewMode:
           </div>
         ) : null}
 
+        {/* An employee sees WHERE the entry came from, by its name. Database table names and
+            record IDs (`ireports360_visits`, `v2_vacation_requests`, a UUID) are for the desk. */}
         <div className="mt-4 border-t border-slate-100 pt-3">
           <div className="flex items-center gap-1.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">
             <FileSearch className="h-3 w-3" />
-            Source trace
+            {showSourceTrace ? "Source trace" : "Recorded in"}
           </div>
-          <p className="mt-1 text-phx-xs font-semibold text-slate-500">{item.sourceLabel}</p>
-          <p className="text-phx-xs font-semibold text-slate-400">{item.sourceSystem}{item.sourceTable ? ` · ${item.sourceTable}` : ""}</p>
-          {item.sourceRecordId ? <p className="font-mono text-phx-xs text-slate-400">ID: {item.sourceRecordId}</p> : null}
+          <p className="mt-1 break-words text-phx-xs font-semibold text-slate-500">{item.sourceLabel}</p>
+          {showSourceTrace ? (
+            <>
+              <p className="break-words text-phx-xs font-semibold text-slate-400">{item.sourceSystem}{item.sourceTable ? ` · ${item.sourceTable}` : ""}</p>
+              {item.sourceRecordId ? <p className="break-all font-mono text-phx-xs text-slate-400">ID: {item.sourceRecordId}</p> : null}
+            </>
+          ) : null}
         </div>
       </div>
     </article>

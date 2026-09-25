@@ -17,7 +17,8 @@ function TrendTooltip({ active, payload }: { active?: boolean; payload?: Array<{
   const point = payload[0].payload;
   return (
     <div className="rounded-md border border-slate-700 bg-slate-900 px-2.5 py-2 text-phx-xs text-white shadow-lg">
-      <p className="font-bold text-orange-300">{point.period}</p>
+      {/* The month in words ("July 2026"), never the raw "2026-07". */}
+      <p className="font-bold text-orange-300">{periodProseLabel(point.period)}</p>
       {point.products.length === 0 ? (
         <p className="mt-0.5 text-slate-300">No sales</p>
       ) : (

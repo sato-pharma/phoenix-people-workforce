@@ -31,11 +31,13 @@ export default async function EmployeePortalAreaDirectOrdersPage() {
 
   const report = await getRepAreaDirectOrders(access);
 
+  // Badge and title are the sidebar's own section and label ("Sales" · "Area Direct Orders"), so the
+  // page is called what the rep tapped. The date shown is when an order was PLACED, never collected.
   return (
     <EmployeePortalPageShell
       badge="Sales"
-      title="Direct Orders"
-      description="The direct orders booked on pharmacies in your area — who each was for, when it was collected, and the sales month it counted in. View only."
+      title="Area Direct Orders"
+      description="The direct orders booked on pharmacies in your area — who each was for, when it was ordered, and the sales month Finance counted it in. View only."
     >
       <RepAreaDirectOrders report={report} />
     </EmployeePortalPageShell>

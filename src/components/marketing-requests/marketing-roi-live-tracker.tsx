@@ -35,13 +35,18 @@
 // adds NO attribution logic, exactly like the archive tracker — see roi-tracker-service.ts.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CalendarClock, ChevronDown, RefreshCcw, Search, SlidersHorizontal, Target } from "lucide-react";
 
-import { AdminCallout, AdminInsightChip, AdminPageHero, AdminTableShell } from "@/components/admin/admin-design-system";
+import { AdminCallout, AdminInsightChip, AdminPageHero, AdminSectionHeader } from "@/components/admin/admin-design-system";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
+import { useRepositionOnViewportChange } from "@/hooks/use-reposition-on-viewport-change";
 import type { ExportColumn, ExportRow } from "@/lib/export/table-workbook";
+import { cairoDate, utcDate } from "@/lib/format/cairo-datetime";
+import { clampPanelToViewport, type PanelPlacement } from "@/lib/navigation/panel-position";
+import { DISPLAY_SCALE_APPLIED_CSS_VAR } from "@/lib/ui/display-scale";
 import { ROI_DATA_COVERAGE_LABEL, ROI_RESULT_STATUS_LABEL } from "@/lib/marketing-requests/roi-labels";
 import { roiConfidenceOf } from "@/lib/marketing-requests/roi-confidence";
 import type { RoiConfidenceBand } from "@/lib/marketing-requests/roi-confidence";
@@ -146,6 +151,16 @@ function monthLabel(period: string): string {
   return names[index] ? `${names[index]} ${year}` : period;
 }
 
+/** "2026-08 → 2027-03" as "Aug 2026 → Mar 2027" — the window keys are periods, never shown raw. */
+function windowLabel(roiWindow: string): string {
+  return roiWindow.replace(/\b\d{4}-\d{2}\b/g, (period) => monthLabel(period));
+}
+
+/** Who asked. A missing name reads "Unknown" — never the raw HR ID behind it. */
+function requesterLabel(row: RoiTrackerRow): string {
+  return row.requesterName?.trim() || "Unknown";
+}
+
 function Badge({ className, children }: { className?: string; children: React.ReactNode }) {
   return (
     <span className={cn("inline-flex items-center rounded-sm border px-2 py-0.5 text-phx-2xs font-black uppercase tracking-wide", className)}>
@@ -184,14 +199,20 @@ const FACETS: Facet[] = [
   },
   { key: "region", label: "Region", values: (row) => (row.region ? [row.region] : []) },
   { key: "line", label: "Line", values: (row) => (row.line ? [row.line] : []) },
-  { key: "requester", label: "Requester", values: (row) => [row.requesterName ?? row.requesterHrId] },
+  { key: "requester", label: "Requester", values: (row) => [requesterLabel(row)] },
   { key: "customer", label: "Customer", values: (row) => [row.customerName] },
   { key: "type", label: "Request type", values: (row) => (row.requestTypeName ? [row.requestTypeName] : []) },
   { key: "result", label: "Result", values: (row) => [ROI_RESULT_STATUS_LABEL[row.resultStatus]] },
   { key: "status", label: "Request status", values: (row) => [readableRequestStatus(row.status)] },
   { key: "product", label: "Product", values: (row) => row.products.map((product) => product.productName) },
-  { key: "distributor", label: "Distributor", values: (row) => row.distributorCodes },
+  { key: "distributor", label: "Distributor", values: (row) => row.distributorCodes.map((code) => distributorLabel(row, code)) },
 ];
+
+/** A distributor by its name, read off the row's own pharmacies; the code only when no name is loaded. */
+function distributorLabel(row: RoiTrackerRow, code: string): string {
+  const name = row.pharmacies.find((pharmacy) => pharmacy.distributorCode === code)?.distributorName?.trim();
+  return name || code;
+}
 
 type FacetState = Record<string, string[]>;
 
@@ -204,7 +225,28 @@ function matchesFacets(row: RoiTrackerRow, selected: FacetState): boolean {
   });
 }
 
-/** Native <details> disclosure — no outside-click listener, no focus trap, nothing to desync. */
+/** Tailwind `w-64` — the width a filter pop-up asks for before it is fitted to the screen. */
+const FACET_PANEL_WIDTH = 256;
+
+/**
+ * The zoom in force on the page (`--phx-scale-applied`: 0.8 by default from 1024px up, 1 below).
+ * The anchor is measured in screen pixels, but the pop-up's margin and width are laid out inside
+ * the zoomed page, so the two have to be converted — otherwise a desktop pop-up is shifted by only
+ * 80% of what the clamp asked for and still hangs past the edge.
+ */
+function appliedDisplayScale(): number {
+  const raw = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue(DISPLAY_SCALE_APPLIED_CSS_VAR));
+  return Number.isFinite(raw) && raw > 0 ? raw : 1;
+}
+
+/**
+ * Native <details> disclosure — no outside-click listener, no focus trap, nothing to desync.
+ *
+ * The pop-up is fitted to the SCREEN, not to the button: a filter near the right edge used to open
+ * a 256px panel straight off the side of a phone (and, inside a clipping card, off the side of every
+ * screen). It is measured when the summary is pressed and re-fitted if the viewport changes while
+ * it is open — the same clamp the top bar's panels use (src/lib/navigation/panel-position.ts).
+ */
 function FacetSelect({
   facet,
   options,
@@ -216,26 +258,54 @@ function FacetSelect({
   selected: string[];
   onChange: (next: string[]) => void;
 }) {
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+  const summaryRef = useRef<HTMLElement>(null);
+  const [open, setOpen] = useState(false);
+  const [placement, setPlacement] = useState<PanelPlacement | null>(null);
+
+  const reposition = useCallback(() => {
+    const anchor = summaryRef.current?.getBoundingClientRect();
+    if (!anchor) return;
+    const scale = appliedDisplayScale();
+    const onScreen = clampPanelToViewport({
+      anchorLeft: anchor.left,
+      preferredWidth: FACET_PANEL_WIDTH * scale,
+      viewportWidth: document.documentElement.clientWidth,
+    });
+    setPlacement({ offsetLeft: onScreen.offsetLeft / scale, width: onScreen.width / scale });
+  }, []);
+
+  useRepositionOnViewportChange(open, reposition);
+
   if (options.length === 0) return null;
 
   const toggle = (value: string) =>
     onChange(selected.includes(value) ? selected.filter((entry) => entry !== value) : [...selected, value]);
 
   return (
-    <details className="relative">
+    <details className="relative" onToggle={(event) => setOpen(event.currentTarget.open)} ref={detailsRef}>
       <summary
         className={cn(
-          "flex cursor-pointer list-none items-center gap-1.5 rounded-sm border px-2 py-1 text-xs font-semibold transition",
+          "flex min-h-10 cursor-pointer list-none items-center gap-1.5 rounded-sm border px-2 py-1 text-xs font-semibold transition md:min-h-0",
           selected.length > 0
             ? "border-slate-900 bg-slate-900 text-white"
             : "border-slate-200 text-slate-700 hover:border-slate-300",
         )}
+        onClick={() => {
+          // Measured BEFORE the disclosure opens, from the summary's own rect, so the pop-up is
+          // already in place on its first frame.
+          if (!detailsRef.current?.open) reposition();
+        }}
+        ref={summaryRef}
       >
         {facet.label}
         {selected.length > 0 ? <span className="tabular-nums">({selected.length})</span> : null}
         <ChevronDown className="h-3 w-3" />
       </summary>
-      <div className="absolute left-0 z-30 mt-1 flex max-h-72 w-64 flex-col gap-0.5 overflow-auto rounded-sm border border-slate-200 bg-white p-2 shadow-lg">
+      <div
+        className="absolute left-0 z-30 mt-1 flex max-h-72 w-64 flex-col gap-0.5 overflow-y-auto rounded-sm border border-slate-200 bg-white p-2 shadow-lg"
+        style={placement ? { marginLeft: placement.offsetLeft, width: placement.width } : undefined}
+      >
         {selected.length > 0 ? (
           <button
             className="mb-1 self-start text-phx-xs font-semibold text-slate-500 underline"
@@ -246,9 +316,9 @@ function FacetSelect({
           </button>
         ) : null}
         {options.map((option) => (
-          <label className="flex cursor-pointer items-center gap-2 rounded-sm px-1 py-0.5 text-xs hover:bg-slate-50" key={option}>
+          <label className="flex cursor-pointer items-center gap-2 rounded-sm px-1 py-1 text-xs hover:bg-slate-50" key={option}>
             <input checked={selected.includes(option)} onChange={() => toggle(option)} type="checkbox" />
-            <span className="min-w-0 flex-1 text-slate-700">{option}</span>
+            <span className="min-w-0 flex-1 break-words text-slate-700">{option}</span>
           </label>
         ))}
       </div>
@@ -326,11 +396,12 @@ function FlightPath({
         <div className="h-7 w-full rounded-sm bg-slate-100" />
       )}
 
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+      {/* Six stages: 2 · 3 · 6 across, so no width leaves one card alone on a second row. */}
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
         {STAGE_ORDER.map((stage) => (
           <button
             className={cn(
-              "flex flex-col items-start gap-0.5 rounded-sm border p-2 text-left transition",
+              "flex min-w-0 flex-col items-start gap-0.5 break-words rounded-sm border p-2 text-left transition",
               focus === stage ? "border-slate-900 ring-1 ring-slate-900" : "border-slate-200 hover:border-slate-300",
             )}
             key={stage}
@@ -450,6 +521,8 @@ function WaitingOnAPerson({ rows, onPick }: { rows: RoiTrackerRow[]; onPick: (re
       if (!current) continue;
       // "Since" = the most recent decision already taken on this request. There is no createdAt on
       // the row, so a request with no decisions yet honestly reports nothing rather than a guess.
+      // Kept as the full instant (it sorts correctly) and shown as its CAIRO day — slicing the UTC
+      // string put a decision taken between midnight and 03:00 Cairo on the day before.
       const decided = row.approvals
         .map((approval) => approval.decisionAt)
         .filter((value): value is string => Boolean(value))
@@ -457,7 +530,7 @@ function WaitingOnAPerson({ rows, onPick }: { rows: RoiTrackerRow[]; onPick: (re
       list.push({
         assignedRole: current.assignedRole,
         row,
-        since: decided.length > 0 ? decided[decided.length - 1].slice(0, 10) : null,
+        since: decided.length > 0 ? decided[decided.length - 1] : null,
         stepName: current.stepName,
       });
     }
@@ -486,11 +559,11 @@ function WaitingOnAPerson({ rows, onPick }: { rows: RoiTrackerRow[]; onPick: (re
             >
               {entry.row.requestCode}
             </button>
-            <span className="min-w-0 flex-1 truncate text-xs text-slate-600">{entry.row.customerName}</span>
+            <span className="min-w-0 flex-1 break-words text-xs text-slate-600">{entry.row.customerName}</span>
             <Badge className="border-amber-200 bg-amber-50 text-amber-800">{entry.stepName}</Badge>
             <span className="text-xs text-slate-500">{entry.assignedRole}</span>
             <span className="w-28 text-right text-xs tabular-nums text-slate-500">
-              {entry.since ? `since ${entry.since}` : "not started"}
+              {entry.since ? `since ${cairoDate(entry.since)}` : "not started"}
             </span>
             <span className="w-24 text-right text-xs font-semibold tabular-nums text-slate-700">
               {money(entry.row.estimatedCost)}
@@ -633,20 +706,21 @@ function RequestCard({
         </button>
       </div>
 
-      <div className="grid gap-4 px-3 py-3 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)]">
-        <div className="flex flex-col gap-1">
-          <span className="text-sm font-medium text-slate-800">{row.customerName}</span>
+      {/* Three columns from `md` (768px) — a tablet has room for them — one column on a phone. */}
+      <div className="grid gap-4 px-3 py-3 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)]">
+        <div className="flex min-w-0 flex-col gap-1">
+          <span className="break-words text-sm font-medium text-slate-800">{row.customerName}</span>
           <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-2 gap-y-0.5 text-xs">
             <dt className="text-slate-400">Region</dt>
-            <dd className={row.region ? "text-slate-700" : "text-slate-400 italic"}>{row.region ?? "Not recorded yet"}</dd>
+            <dd className={row.region ? "break-words text-slate-700" : "text-slate-400 italic"}>{row.region ?? "Not recorded yet"}</dd>
             <dt className="text-slate-400">Line</dt>
-            <dd className="text-slate-700">{row.line ?? "—"}</dd>
+            <dd className="break-words text-slate-700">{row.line ?? "—"}</dd>
             <dt className="text-slate-400">Requester</dt>
-            <dd className="text-slate-700">{row.requesterName ?? row.requesterHrId}</dd>
+            <dd className="break-words text-slate-700">{requesterLabel(row)}</dd>
             <dt className="text-slate-400">Status</dt>
             <dd className="text-slate-700">{readableRequestStatus(row.status)}</dd>
             <dt className="text-slate-400">Paid</dt>
-            <dd className="tabular-nums text-slate-700">{row.payDate ?? "Not yet"}</dd>
+            <dd className="tabular-nums text-slate-700">{row.payDate ? utcDate(row.payDate) : "Not yet"}</dd>
           </dl>
           <div className="mt-1 border-t border-slate-100 pt-2">
             <ApprovalTracker row={row} />
@@ -658,14 +732,14 @@ function RequestCard({
           <span className="text-phx-2xs font-black uppercase tracking-wide text-slate-500">Judgeable</span>
           <span className="text-lg font-bold text-slate-900">{month ? monthLabel(month) : "—"}</span>
           <span className="text-phx-xs text-slate-500">
-            {row.roiWindow ? `Window ${row.roiWindow}` : "No window — not paid yet"}
+            {row.roiWindow ? `Window ${windowLabel(row.roiWindow)}` : "No window — not paid yet"}
           </span>
           <span className="text-phx-xs text-slate-500">{ROI_DATA_COVERAGE_LABEL[row.dataCoverage]}</span>
         </div>
 
         <div className="flex flex-col gap-1 rounded-sm border border-slate-100 bg-slate-50/50 p-2">
           <span className="text-phx-2xs font-black uppercase tracking-wide text-slate-500">Committed vs returned</span>
-          <div className="flex items-baseline gap-1.5">
+          <div className="flex flex-wrap items-baseline gap-x-1.5">
             <span className="text-lg font-bold tabular-nums text-slate-900">
               {measured ? money(row.actualSalesValue) : "—"}
             </span>
@@ -710,7 +784,7 @@ function RequestCard({
                     {readableStepStatus(approval.status)}
                   </Badge>
                   {approval.decisionAt ? (
-                    <span className="tabular-nums text-slate-500">{approval.decisionAt.slice(0, 10)}</span>
+                    <span className="tabular-nums text-slate-500">{cairoDate(approval.decisionAt)}</span>
                   ) : null}
                   {approval.isCc ? <span className="text-slate-400">(cc)</span> : null}
                 </li>
@@ -759,7 +833,7 @@ function toExportRow(row: RoiTrackerRow, dataFrontier: string | null): ExportRow
     region: row.region ?? "",
     requestCode: row.requestCode,
     requiredRoiValue: Math.round(row.requiredRoiValue),
-    requester: row.requesterName ?? row.requesterHrId,
+    requester: requesterLabel(row),
     result: ROI_RESULT_STATUS_LABEL[row.resultStatus],
     roiWindow: row.roiWindow ?? "",
     stage: STAGE_META[stageOf(row, dataFrontier)].label,
@@ -770,7 +844,13 @@ function toExportRow(row: RoiTrackerRow, dataFrontier: string | null): ExportRow
 }
 
 // ── Page ─────────────────────────────────────────────────────────────────────
-export function MarketingRoiLiveTracker() {
+/**
+ * `surface` says which shell hosts the tracker. The admin page has no header of its own, so the
+ * tracker draws its hero there. The portal renders it under EmployeePortalPageShell (inside the
+ * ROI Tracker tabs), which already carries the page title — a second hero there read "ROI Tracker"
+ * twice in two different looks, so the portal gets no hero and Refresh moves into the toolbar.
+ */
+export function MarketingRoiLiveTracker({ surface = "admin" }: { surface?: "admin" | "portal" } = {}) {
   const [report, setReport] = useState<RoiTrackerReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -891,26 +971,36 @@ export function MarketingRoiLiveTracker() {
 
   return (
     <div className="flex flex-col gap-5">
-      <AdminPageHero
-        actions={
-          <Button onClick={() => void refresh()} variant="secondary">
-            <RefreshCcw className="mr-2 h-4 w-4" />
-            Refresh
-          </Button>
-        }
-        description="Money in flight: what stage each campaign is at, who is holding it, and the month you can finally judge it."
-        eyebrow="Marketing"
-        icon={<Target className="h-6 w-6" />}
-        title="ROI Tracker"
-      />
+      {surface === "admin" ? (
+        <AdminPageHero
+          actions={
+            <Button onClick={() => void refresh()} variant="secondary">
+              <RefreshCcw className="mr-2 h-4 w-4" />
+              Refresh
+            </Button>
+          }
+          description="Money in flight: what stage each campaign is at, who is holding it, and the month you can finally judge it."
+          eyebrow="Marketing"
+          icon={<Target className="h-6 w-6" />}
+          title="ROI Tracker"
+        />
+      ) : null}
 
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         {dataFrontier ? (
-          <AdminInsightChip tone="slate">Validated sales through {dataFrontier}</AdminInsightChip>
+          <AdminInsightChip tone="slate">Validated sales through {monthLabel(dataFrontier)}</AdminInsightChip>
         ) : (
           <AdminInsightChip tone="orange">No validated sales data loaded</AdminInsightChip>
         )}
         {report?.includedRestricted ? <AdminInsightChip tone="orange">Includes confidential products</AdminInsightChip> : null}
+        {/* The portal has no hero, so Refresh lives on this row — the one that is always drawn,
+            including after a failed load whose message tells the reader to press it. */}
+        {surface === "portal" ? (
+          <Button className="h-10 w-full sm:ml-auto sm:h-8 sm:w-auto" onClick={() => void refresh()} variant="secondary">
+            <RefreshCcw className="mr-2 h-4 w-4" />
+            Refresh
+          </Button>
+        ) : null}
       </div>
 
       {error ? (
@@ -938,44 +1028,50 @@ export function MarketingRoiLiveTracker() {
           <JudgementCalendar dataFrontier={dataFrontier} rows={allRows} />
           <WaitingOnAPerson onPick={(requestId) => setExpanded(requestId)} rows={allRows} />
 
-          <AdminTableShell
-            action={
-              <div className="flex flex-wrap items-center gap-2">
-                {stageFocus ? (
-                  <button
-                    className="inline-flex items-center gap-1 rounded-sm border border-slate-900 bg-slate-900 px-2 py-1 text-xs font-semibold text-white"
-                    onClick={() => setStageFocus(null)}
-                    type="button"
-                  >
-                    {STAGE_META[stageFocus].label} · clear
-                  </button>
-                ) : null}
-                <label className="relative flex items-center">
-                  <Search aria-hidden="true" className="pointer-events-none absolute left-2 h-3.5 w-3.5 text-slate-400" />
-                  <input
-                    aria-label="Search requests"
-                    className="w-full rounded-sm border border-slate-200 py-1 pl-7 pr-2 text-xs lg:w-56"
-                    onChange={(event) => setSearch(event.target.value)}
-                    placeholder="Request, customer, requester…"
-                    type="search"
-                    value={search}
+          {/*
+            AdminTableShell's own card, minus its `overflow-hidden`. That clip cut every filter pop-up
+            at the card's edge — sideways for any filter near the right, and to ~70px tall when the
+            list below was empty. The corners are square, so the clip was doing nothing else.
+          */}
+          <Card className="border border-slate-200/90 bg-white p-0">
+            <AdminSectionHeader
+              action={
+                <div className="flex flex-wrap items-center gap-2">
+                  {stageFocus ? (
+                    <button
+                      className="inline-flex min-h-10 items-center gap-1 rounded-sm border border-slate-900 bg-slate-900 px-2 py-1 text-xs font-semibold text-white md:min-h-0"
+                      onClick={() => setStageFocus(null)}
+                      type="button"
+                    >
+                      {STAGE_META[stageFocus].label} · clear
+                    </button>
+                  ) : null}
+                  <label className="relative flex w-full items-center sm:w-auto">
+                    <Search aria-hidden="true" className="pointer-events-none absolute left-2 h-3.5 w-3.5 text-slate-400" />
+                    <input
+                      aria-label="Search requests"
+                      className="w-full rounded-sm border border-slate-200 py-1 pl-7 pr-2 text-xs lg:w-56"
+                      onChange={(event) => setSearch(event.target.value)}
+                      placeholder="Request, customer, requester…"
+                      type="search"
+                      value={search}
+                    />
+                  </label>
+                  <ExportXlsxButton
+                    columns={EXPORT_COLUMNS}
+                    label="Export XLSX"
+                    rows={rows.map((row) => toExportRow(row, dataFrontier))}
+                    sheetName="ROI Tracker"
+                    subtitle={`${rows.length} of ${allRows.length} request(s) · ${
+                      dataFrontier ? `validated sales through ${monthLabel(dataFrontier)}` : "no validated sales data loaded"
+                    }`}
+                    title="Marketing ROI Tracker — live"
                   />
-                </label>
-                <ExportXlsxButton
-                  columns={EXPORT_COLUMNS}
-                  label="Export XLSX"
-                  rows={rows.map((row) => toExportRow(row, dataFrontier))}
-                  sheetName="ROI Tracker"
-                  subtitle={`${rows.length} of ${allRows.length} request(s) · ${
-                    dataFrontier ? `validated sales through ${dataFrontier}` : "no validated sales data loaded"
-                  }`}
-                  title="Marketing ROI Tracker — live"
-                />
-              </div>
-            }
-            description="Grouped by the month each campaign becomes judgeable — the soonest its result can honestly be called."
-            title={`Requests (${rows.length}${rows.length !== allRows.length ? ` of ${allRows.length}` : ""})`}
-          >
+                </div>
+              }
+              description="Grouped by the month each campaign becomes judgeable — the soonest its result can honestly be called."
+              title={`Requests (${rows.length}${rows.length !== allRows.length ? ` of ${allRows.length}` : ""})`}
+            />
             <div className="flex flex-wrap items-center gap-1.5 border-b border-slate-100 bg-slate-50/50 px-3 py-2">
               <SlidersHorizontal aria-hidden="true" className="h-3.5 w-3.5 text-slate-400" />
               {FACETS.map((facet) => (
@@ -1040,7 +1136,7 @@ export function MarketingRoiLiveTracker() {
                 })}
               </div>
             )}
-          </AdminTableShell>
+          </Card>
         </>
       ) : null}
     </div>

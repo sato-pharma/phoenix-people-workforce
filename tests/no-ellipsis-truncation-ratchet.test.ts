@@ -214,10 +214,14 @@ import { stripComments } from "./support/comment-strip.ts";
  * longer than a code and an ellipsis on it is exactly the cut the owner's rule forbids, so the
  * `truncate` there became `break-words`.
  *
- * 174 -> 173 on 2026-09-25: the Territory Drilldown manager tree's block card
- * (territory-tree-desktop.tsx, BlockLane) — its block-code line truncated, same fix.
+ * 174 -> 151 on 2026-09-25: the Medical Rep portal polish. The cuts became wraps — most in
+ * Employee 360 (bar lists, product and double-visit names), the rest in closing details, the
+ * message menu and the rep's field screens — each where a `min-w-0 break-words` cell or a merged
+ * column now gives the name the room it needs. Includes the Territory Drilldown manager tree's
+ * block card (territory-tree-desktop.tsx, BlockLane) — its block-code line truncated, same fix,
+ * landed independently on the territory-tree-manager-fit branch and merged in here.
  */
-const BASELINE = 173;
+const BASELINE = 151;
 
 const ROOTS = ["app", "src"];
 

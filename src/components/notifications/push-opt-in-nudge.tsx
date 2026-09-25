@@ -148,7 +148,7 @@ export function PushOptInNudge() {
           </button>
           <button
             aria-label="Dismiss"
-            className="border border-slate-300 bg-white p-1.5 text-slate-500 hover:text-slate-700 disabled:opacity-60"
+            className="inline-flex items-center justify-center border border-slate-300 bg-white p-3 text-slate-500 hover:text-slate-700 disabled:opacity-60 md:p-2.5"
             disabled={status === "working"}
             onClick={dismiss}
             type="button"

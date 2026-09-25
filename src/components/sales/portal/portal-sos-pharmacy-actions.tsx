@@ -11,6 +11,8 @@ import {
   TABLE_HEAD_CLASS,
   TABLE_ROW_CLASS,
   chipClass,
+  formatEgp,
+  formatPeriod,
 } from "@/components/sales/target-visuals";
 import type { MonthPaceResult, MonthPaceRow } from "@/lib/sales/sos-month-pace";
 import type { PortalPharmacyActionsPayload } from "@/lib/sales/sos-pharmacy-actions-loader";
@@ -87,23 +89,17 @@ const EMPTY_AREA: PharmacyAreaSummary = {
 const BAND_KICKER = "Sales Operations";
 const BAND_TITLE = "Source of Sales";
 
-function formatEgp(value: number): string {
-  const abs = Math.abs(value);
-  if (abs >= 1_000_000) return `EGP ${(value / 1_000_000).toFixed(2)}M`;
-  if (abs >= 1_000) return `EGP ${(value / 1_000).toFixed(1)}K`;
-  return `EGP ${Math.round(value).toLocaleString("en-US")}`;
-}
+// Money and months come from the shared sales formatters (target-visuals.tsx), so this page prints
+// them exactly as Sales vs Target and Targets do. The percentage stays whole here on purpose.
 function formatPct(value: number): string {
   return `${Math.round(value * 100)}%`;
 }
-function formatPeriod(period: string | null | undefined): string {
-  const match = /^(\d{4})-(\d{2})$/.exec(String(period ?? "").trim());
-  if (!match) return "—";
-  return new Date(Number(match[1]), Number(match[2]) - 1, 1).toLocaleDateString("en-US", { month: "short", year: "numeric" });
-}
 
+// A phone tap target is at least 40px; the compact 32px control returns from `md` up.
 const SELECT_CLASS =
-  "h-8 min-w-0 max-w-full border border-slate-200 bg-white px-2 text-xs font-bold text-slate-700 transition-colors hover:border-orange-300 focus:border-orange-500 focus:outline-none";
+  "h-10 min-w-0 max-w-full border border-slate-200 bg-white px-2 text-xs font-bold text-slate-700 transition-colors hover:border-orange-300 focus:border-orange-500 focus:outline-none md:h-8";
+/** The shared chip, grown to a 40px tap target on a phone. Appended as a plain string, never cn(). */
+const TAP_CHIP = "min-h-10 md:min-h-0";
 
 function Tile({
   accent,
@@ -260,7 +256,7 @@ function ShowMore({ shown, total, onMore }: { shown: number; total: number; onMo
   return (
     <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
       <p className="text-phx-2xs font-semibold text-slate-500">{`Showing ${shown} of ${total}`}</p>
-      <button className={chipClass(false)} onClick={onMore} type="button">
+      <button className={`${chipClass(false)} ${TAP_CHIP}`} onClick={onMore} type="button">
         Show more
       </button>
     </div>
@@ -301,21 +297,36 @@ function MonthPace({ pace, area }: { pace: MonthPaceResult; area: string }) {
   const rows = area ? pace.rows.filter((row) => row.areaCode === area) : pace.rows;
   const month = formatPeriod(pace.period);
   const showDirect = pace.hasDirectOrders;
+  // Four columns at every width (fits-the-screen rule): the target, the weekly figure and the direct
+  // orders are MERGED into one "so far of target" cell rather than three money columns, which at
+  // 1024px with the sidebar open left each figure about 60px and broke every one onto two lines.
   const leadColumn: Column<MonthPaceRow & { key: string }> = {
     label: "Area",
-    width: showDirect ? "20%" : "24%",
+    width: "24%",
     render: (row) => <span className="break-words text-sm font-bold text-slate-900">{row.areaName}</span>,
   };
   const columns: Column<MonthPaceRow & { key: string }>[] = [
-    { label: "Month target", width: showDirect ? "14%" : "16%", align: "right", render: (row) => (row.targetValue == null ? "—" : formatEgp(row.targetValue)) },
-    { label: "Weekly so far", width: showDirect ? "14%" : "16%", align: "right", render: (row) => formatEgp(row.weeklyValue) },
-    ...(showDirect
-      ? [{ label: "Direct orders", width: "14%", align: "right" as const, render: (row: MonthPaceRow) => formatEgp(row.directValue) }]
-      : []),
-    { label: "Progress", width: showDirect ? "24%" : "28%", render: (row) => <PaceBar row={row} /> },
+    {
+      label: "So far of target",
+      width: "34%",
+      align: "right",
+      render: (row) => (
+        <div className="min-w-0">
+          <p className="break-words">
+            {row.targetValue == null ? formatEgp(row.soFarValue) : `${formatEgp(row.soFarValue)} of ${formatEgp(row.targetValue)}`}
+          </p>
+          {showDirect ? (
+            <p className="mt-0.5 break-words text-phx-2xs font-semibold text-slate-500">
+              {`weekly ${formatEgp(row.weeklyValue)} + direct ${formatEgp(row.directValue)}`}
+            </p>
+          ) : null}
+        </div>
+      ),
+    },
+    { label: "Progress", width: "28%", render: (row) => <PaceBar row={row} /> },
     {
       label: "Pace",
-      width: showDirect ? "14%" : "16%",
+      width: "14%",
       render: (row) =>
         row.onPace == null ? (
           <span className="text-slate-400">—</span>
@@ -593,18 +604,14 @@ export function PortalSosPharmacyActions({ subtitle }: { subtitle: string }) {
       ].filter(Boolean)
     : [];
 
-  // Headline stats: the latest PUBLISHED closing only. Weekly pace never appears here.
+  // Headline stats: the latest PUBLISHED closing only. Weekly pace never appears here. The buying
+  // pharmacies count is NOT repeated here: it is the fourth tile below, the one that opens its list.
   const bandStats = actions ? (
     <>
       <BandStat
         label="Latest closing"
         note={`${data.line ? `${data.line} · ` : ""}${formatPeriod(actions.latestPeriod)}`}
         value={formatEgp(totals?.total ?? 0)}
-      />
-      <BandStat
-        label="Buying pharmacies"
-        note={`${formatEgp(totals?.pharmacies ?? 0)} in the latest closing`}
-        value={String(countOf("top"))}
       />
       <BandStat
         label="Value at stake"
@@ -690,7 +697,7 @@ export function PortalSosPharmacyActions({ subtitle }: { subtitle: string }) {
                     <button
                       key={entry.key}
                       aria-pressed={selected}
-                      className={chipClass(selected)}
+                      className={`${chipClass(selected)} ${TAP_CHIP}`}
                       onClick={() => selectTab(entry.key)}
                       type="button"
                     >

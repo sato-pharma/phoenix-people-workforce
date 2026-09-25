@@ -90,8 +90,10 @@ export function EarlyBirdOfTheFortnightCard({
           <Trophy className="h-3.5 w-3.5 shrink-0 text-amber-400" />
           {stars.length > 1 ? "Stars of the Fortnight" : "Early Bird"} · {stars[0].periodLabel}
         </h2>
+        {/* A 40px tap target that barely grows the bar: the negative margin hands back most of
+            the height the padding adds (the text alone was a ~15px target on a phone). */}
         <Link
-          className="inline-flex shrink-0 items-center gap-1 text-phx-2xs font-bold uppercase tracking-widest text-slate-400 hover:text-orange-400"
+          className="-my-2.5 inline-flex min-h-10 shrink-0 items-center gap-1 text-phx-2xs font-bold uppercase tracking-widest text-slate-400 hover:text-orange-400"
           href={href}
         >
           View board

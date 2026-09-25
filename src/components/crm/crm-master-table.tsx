@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition, type ReactNode } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Braces, ChevronLeft, ChevronRight, Download, Info, Loader2, Search, TriangleAlert, X } from "lucide-react";
 
@@ -29,11 +29,13 @@ import type {
  * the Visits Report's Visit Time column, so the two screens read identically. `source` is the raw
  * row.visit_time_source value ("GPS check-in" | "Logged/save" | null); visit_time_source is
  * deliberately not its own table column (redundant once folded in here). */
-function VisitTimeCell({ source, value }: { source: unknown; value: unknown }) {
+function VisitTimeCell({ source, value, wrap = false }: { source: unknown; value: unknown; wrap?: boolean }) {
   if (value === null || value === undefined || value === "") return <span className="text-slate-400">—</span>;
   const isGps = source === "GPS check-in";
   return (
-    <span className="inline-flex items-center gap-1.5">
+    // `wrap` (portal only): in a narrow merged Day column the chip drops under the time rather than
+    // pushing the cell wider. The admin grid's nowrap cells render exactly as before.
+    <span className={wrap ? "inline-flex flex-wrap items-center gap-x-1.5 gap-y-0.5" : "inline-flex items-center gap-1.5"}>
       <span title={formatVendorLocal(value)}>{formatVendorTimeOnly(value)}</span>
       <span
         className={`rounded px-1 py-0.5 text-phx-3xs font-bold uppercase tracking-wide ${
@@ -78,6 +80,571 @@ function masterCell(col: CrmMasterColumn, row: CrmMasterRow) {
   return renderCell(row[col.key], col.kind);
 }
 
+// ── The employee-portal surface ─────────────────────────────────────────────────────────────────
+//
+// /employee-portals/crm renders this same component with `surface="portal"`; /admin/crm renders it
+// with the default and is byte-for-byte what it was. For a medical rep the admin grid was the raw
+// dataset explorer: 44 nowrap columns in a scroll box (a sideways scroll at every width from 768px,
+// behind a 1px mirrored scrollbar a touch tablet never shows), phone cards titled "CRM Visit ID" and
+// then ~43 fields of HR ids, CRM ids, region ids, numeric type codes, coordinates and the raw JSON.
+//
+// So the portal draws a FITTED table instead: `w-full table-fixed` over a percentage colgroup, the
+// fields merged into a handful of columns a person reads (day with its AM/PM and time chip, the
+// doctor with his speciality and grade, the type with how it is counted, who was on the visit, where,
+// and the comment). Every OTHER column is one tap away under "All fields" — ids and coordinates live
+// only there — so the owner's 2026-07-30 requirement that these seats get the FULL grid
+// (portal-crm-scope.ts) still holds, without a sideways scroll. No raw JSON is shown in the portal.
+
+/** One merged column of the portal table, and the card field it becomes on a phone. */
+type PortalColumn = {
+  id: string;
+  label: string;
+  /** Percentage of the table; every dataset's widths sum to 100. */
+  width: string;
+  /** The dataset columns this merged column shows, so "All fields" does not repeat them. */
+  keys: readonly string[];
+  render: (row: CrmMasterRow) => ReactNode;
+  /** The phone card's field. Omitted = `render`; returning null leaves the field off the card. */
+  card?: (row: CrmMasterRow) => ReactNode | null;
+  /** The phone card field's label, when `card` shows something other than the column head says. */
+  cardLabel?: string;
+  /** Already said in the card's title or meta line, so not repeated as a field. */
+  inCardHeader?: boolean;
+};
+
+function textOf(row: CrmMasterRow, key: string): string | null {
+  const value = row[key];
+  if (value === null || value === undefined) return null;
+  const text = String(value).trim();
+  return text && text !== "—" ? text : null;
+}
+
+function dateOf(row: CrmMasterRow, key: string): string | null {
+  return textOf(row, key) ? renderCell(row[key], "date") : null;
+}
+
+function joined(parts: ReadonlyArray<string | null>): string | null {
+  const kept = parts.filter((part): part is string => Boolean(part));
+  return kept.length > 0 ? kept.join(" · ") : null;
+}
+
+function Sub({ children }: { children: ReactNode }) {
+  return <span className="mt-0.5 block break-words text-slate-500">{children}</span>;
+}
+
+function Lead({ children }: { children: ReactNode }) {
+  return (
+    <span className="block break-words font-semibold text-slate-900" dir="auto">
+      {children}
+    </span>
+  );
+}
+
+const DASH = <span className="text-slate-400">—</span>;
+
+function visitDayText(row: CrmMasterRow): string | null {
+  return joined([dateOf(row, "visit_date"), textOf(row, "ampm")]);
+}
+
+function contactSub(row: CrmMasterRow): string | null {
+  const grade = textOf(row, "crm_contact_grade");
+  return joined([textOf(row, "speciality"), grade ? `grade ${grade}` : null]);
+}
+
+/** Where the visit happened: the GPS-resolved brick when a check-in matched, else the CRM's own
+ * region name, each said as what it is. Never blank without saying so. */
+function whereCell(row: CrmMasterRow): ReactNode {
+  const gps = joined([textOf(row, "geo_brick"), textOf(row, "geo_area")]);
+  if (gps) {
+    return (
+      <>
+        <Lead>{gps}</Lead>
+        <Sub>Brick (GPS)</Sub>
+      </>
+    );
+  }
+  const region = textOf(row, "crm_region_name");
+  if (region) {
+    return (
+      <>
+        <Lead>{region}</Lead>
+        <Sub>CRM region</Sub>
+      </>
+    );
+  }
+  return DASH;
+}
+
+function commentCell(row: CrmMasterRow): ReactNode {
+  const comment = textOf(row, "comment");
+  return comment ? (
+    <span className="block break-words text-slate-700" dir="auto">
+      {comment}
+    </span>
+  ) : (
+    DASH
+  );
+}
+
+/**
+ * The merged columns for a dataset. `selfScope` is a medical rep reading his own rows: he needs no
+ * "whose visit" column, while a district, regional or line manager in the same portal does.
+ */
+function portalColumnsFor(dataset: CrmMasterData["dataset"], selfScope: boolean): PortalColumn[] {
+  if (dataset === "checkins") {
+    return [
+      {
+        id: "when",
+        inCardHeader: true,
+        keys: ["check_date"],
+        label: "Date & time",
+        render: (row) => <Lead>{textOf(row, "check_date") ? formatVendorLocal(row.check_date) : "—"}</Lead>,
+        width: "22%",
+      },
+      {
+        id: "contact",
+        inCardHeader: true,
+        keys: ["contact_name"],
+        label: "Contact",
+        render: (row) => <Lead>{textOf(row, "contact_name") ?? "—"}</Lead>,
+        width: "26%",
+      },
+      {
+        id: "address",
+        keys: ["address"],
+        label: "Address",
+        render: (row) => {
+          const address = textOf(row, "address");
+          return address ? (
+            <span className="block break-words text-slate-700" dir="auto">
+              {address}
+            </span>
+          ) : (
+            DASH
+          );
+        },
+        width: "30%",
+      },
+      {
+        id: "where",
+        keys: ["geo_brick", "geo_area", "geo_confidence"],
+        label: "Brick · Area (GPS)",
+        render: (row) => {
+          const gps = joined([textOf(row, "geo_brick"), textOf(row, "geo_area")]);
+          const confidence = textOf(row, "geo_confidence");
+          return gps ? (
+            <>
+              <Lead>{gps}</Lead>
+              {confidence ? <Sub>{confidence}</Sub> : null}
+            </>
+          ) : (
+            DASH
+          );
+        },
+        width: "22%",
+      },
+    ];
+  }
+
+  if (dataset === "vacations") {
+    const period: PortalColumn = {
+      id: "period",
+      inCardHeader: true,
+      keys: ["from_date", "to_date"],
+      label: "Period",
+      render: (row) => {
+        const from = dateOf(row, "from_date");
+        const to = dateOf(row, "to_date");
+        return <Lead>{from && to && from !== to ? `${from} to ${to}` : (from ?? to ?? "—")}</Lead>;
+      },
+      width: selfScope ? "26%" : "22%",
+    };
+    const days: PortalColumn = {
+      id: "days",
+      keys: ["duration", "half_days"],
+      label: "Days",
+      render: (row) => {
+        const duration = textOf(row, "duration");
+        const halves = Number(row.half_days ?? 0);
+        return (
+          <>
+            <Lead>{duration ?? "—"}</Lead>
+            {halves > 0 ? <Sub>{halves === 1 ? "1 half-day" : `${halves} half-days`}</Sub> : null}
+          </>
+        );
+      },
+      width: selfScope ? "14%" : "12%",
+    };
+    // The card's TITLE is the leave type, so its field carries only the holiday, when there is one.
+    const type: PortalColumn = {
+      card: (row) => textOf(row, "national_holiday"),
+      cardLabel: "National holiday",
+      id: "type",
+      keys: ["visit_type_description", "national_holiday"],
+      label: "Type",
+      render: (row) => {
+        const holiday = textOf(row, "national_holiday");
+        return (
+          <>
+            <Lead>{textOf(row, "visit_type_description") ?? "—"}</Lead>
+            {holiday ? <span className="mt-0.5 block break-words font-semibold text-amber-800">{holiday}</span> : null}
+          </>
+        );
+      },
+      width: selfScope ? "26%" : "22%",
+    };
+    const comment: PortalColumn = {
+      id: "comment",
+      keys: ["comment"],
+      label: "Comment",
+      render: commentCell,
+      width: selfScope ? "34%" : "22%",
+    };
+    if (selfScope) return [period, days, type, comment];
+    return [
+      {
+        id: "rep",
+        keys: ["agent_name"],
+        label: "Rep",
+        render: (row) => <Lead>{textOf(row, "agent_name") ?? "—"}</Lead>,
+        width: "22%",
+      },
+      period,
+      days,
+      type,
+      comment,
+    ];
+  }
+
+  if (dataset === "triple_visits") {
+    return [
+      {
+        id: "day",
+        inCardHeader: true,
+        keys: ["visit_date"],
+        label: "Day",
+        render: (row) => <Lead>{dateOf(row, "visit_date") ?? "—"}</Lead>,
+        width: "16%",
+      },
+      {
+        id: "contact",
+        inCardHeader: true,
+        keys: ["contact_name"],
+        label: "Contact",
+        render: (row) => <Lead>{textOf(row, "contact_name") ?? "—"}</Lead>,
+        width: "26%",
+      },
+      {
+        id: "chain",
+        keys: ["base_name", "mid_name", "top_name", "line"],
+        label: "Rep → manager → manager",
+        render: (row) => (
+          <>
+            <Lead>
+              {[textOf(row, "base_name"), textOf(row, "mid_name"), textOf(row, "top_name")]
+                .map((name) => name ?? "—")
+                .join(" → ")}
+            </Lead>
+            {textOf(row, "line") ? <Sub>{textOf(row, "line")}</Sub> : null}
+          </>
+        ),
+        width: "38%",
+      },
+      {
+        id: "confidence",
+        keys: ["confidence"],
+        label: "Confidence",
+        render: (row) => (
+          <span className="block break-words text-slate-700">{textOf(row, "confidence") ?? "—"}</span>
+        ),
+        width: "20%",
+      },
+    ];
+  }
+
+  // Every visit-shaped dataset: Visits, Double Visits and the three "no check-in / no doctor" tabs.
+  return [
+    {
+      id: "day",
+      inCardHeader: true,
+      keys: ["visit_date", "ampm", "visit_time"],
+      label: "Day",
+      render: (row) => (
+        <>
+          <Lead>{visitDayText(row) ?? "—"}</Lead>
+          <span className="mt-1 block">
+            <VisitTimeCell source={row.visit_time_source} value={row.visit_time} wrap />
+          </span>
+        </>
+      ),
+      width: "16%",
+    },
+    {
+      id: "contact",
+      keys: ["contact_name", "speciality", "crm_contact_grade"],
+      label: "Contact",
+      render: (row) => {
+        const sub = contactSub(row);
+        return (
+          <>
+            <Lead>{textOf(row, "contact_name") ?? "—"}</Lead>
+            {sub ? <Sub>{sub}</Sub> : null}
+          </>
+        );
+      },
+      // The card's TITLE is the contact, so its field carries only what sits under the name.
+      card: contactSub,
+      cardLabel: "Speciality",
+      width: "22%",
+    },
+    {
+      id: "type",
+      keys: ["visit_type_description", "effective_type"],
+      label: "Type",
+      render: (row) => {
+        const description = textOf(row, "visit_type_description");
+        const effective = textOf(row, "effective_type");
+        return (
+          <>
+            <Lead>{description ?? "—"}</Lead>
+            {effective && effective !== description ? <Sub>{`Counted as ${effective}`}</Sub> : null}
+          </>
+        );
+      },
+      width: "14%",
+    },
+    {
+      id: "with",
+      keys: selfScope ? ["double_name", "triple_flag"] : ["agent_name", "double_name", "triple_flag"],
+      label: selfScope ? "Double visit with" : "Rep · double with",
+      render: (row) => {
+        const double = textOf(row, "double_name");
+        const triple = textOf(row, "triple_flag");
+        const tripleLine = triple ? <Sub>{`Triple · ${triple}`}</Sub> : null;
+        if (selfScope) {
+          return double || triple ? (
+            <>
+              {double ? <Lead>{double}</Lead> : null}
+              {tripleLine}
+            </>
+          ) : (
+            DASH
+          );
+        }
+        return (
+          <>
+            <Lead>{textOf(row, "agent_name") ?? "—"}</Lead>
+            {double ? <Sub>{`with ${double}`}</Sub> : null}
+            {tripleLine}
+          </>
+        );
+      },
+      width: "16%",
+    },
+    {
+      id: "where",
+      keys: ["geo_brick", "geo_area", "crm_region_name"],
+      label: "Where",
+      render: whereCell,
+      width: "14%",
+    },
+    {
+      id: "comment",
+      keys: ["comment"],
+      label: "Comment",
+      render: commentCell,
+      width: "18%",
+    },
+  ];
+}
+
+/** The phone card's title, meta line and status for one row — a person or a place, never an id. */
+function portalCardHeader(dataset: CrmMasterData["dataset"], row: CrmMasterRow): { meta: ReactNode; status?: ReactNode; title: ReactNode } {
+  if (dataset === "checkins") {
+    return {
+      meta: textOf(row, "check_date") ? formatVendorLocal(row.check_date) : undefined,
+      title: textOf(row, "contact_name") ?? "Check-in",
+    };
+  }
+  if (dataset === "vacations") {
+    const from = dateOf(row, "from_date");
+    const to = dateOf(row, "to_date");
+    return {
+      meta: from && to && from !== to ? `${from} to ${to}` : (from ?? to ?? undefined),
+      title: textOf(row, "visit_type_description") ?? "Leave",
+    };
+  }
+  if (dataset === "triple_visits") {
+    return { meta: dateOf(row, "visit_date") ?? undefined, title: textOf(row, "contact_name") ?? "Triple visit" };
+  }
+  return {
+    meta: visitDayText(row) ?? undefined,
+    status: <VisitTimeCell source={row.visit_time_source} value={row.visit_time} wrap />,
+    title: textOf(row, "contact_name") ?? textOf(row, "visit_type_description") ?? "Visit",
+  };
+}
+
+const ALL_FIELDS_BUTTON =
+  "inline-flex min-h-10 items-center gap-1 border px-2.5 py-1 text-phx-xs font-bold transition md:min-h-8";
+
+function AllFieldsButton({ count, isOpen, onToggle }: { count: number; isOpen: boolean; onToggle: () => void }) {
+  return (
+    <button
+      aria-expanded={isOpen}
+      className={`${ALL_FIELDS_BUTTON} ${
+        isOpen ? "border-orange-400 bg-orange-50 text-orange-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"
+      }`}
+      onClick={onToggle}
+      type="button"
+    >
+      {isOpen ? "Hide fields" : `All fields (${count})`}
+    </button>
+  );
+}
+
+function PortalMasterRecords({
+  data,
+  expanded,
+  onToggle,
+  selfScope,
+}: {
+  data: CrmMasterData;
+  expanded: ReadonlySet<string>;
+  onToggle: (id: string) => void;
+  selfScope: boolean;
+}) {
+  const columns = portalColumnsFor(data.dataset, selfScope);
+  const shown = new Set(columns.flatMap((column) => column.keys));
+  // Every column the merged ones do not already show — ids and coordinates included, raw JSON never.
+  const rest = data.columns.filter((col) => !shown.has(col.key));
+  const restFields = (row: CrmMasterRow) => rest.map((col) => ({ label: col.label, value: masterCell(col, row) }));
+
+  return (
+    <>
+      {/* Phones: one card per record, titled by the person or place it is about. */}
+      <div className="divide-y divide-slate-100 border border-slate-200 bg-white md:hidden">
+        {data.rows.map((row: CrmMasterRow) => {
+          const isHoliday = typeof row.national_holiday === "string" && row.national_holiday.length > 0;
+          const header = portalCardHeader(data.dataset, row);
+          const isOpen = expanded.has(row.id);
+          const fields = columns
+            .filter((column) => !column.inCardHeader)
+            .flatMap((column) => {
+              const value = column.card ? column.card(row) : column.render(row);
+              return value === null || value === undefined || value === ""
+                ? []
+                : [{ label: column.cardLabel ?? column.label, value }];
+            });
+          return (
+            <PortalRecordCard
+              accent={isHoliday ? "amber" : "slate"}
+              className={isHoliday ? "bg-amber-100/70" : undefined}
+              key={row.id}
+              meta={header.meta}
+              status={header.status}
+              title={header.title}
+            >
+              {fields.length > 0 ? <PortalRecordFields fields={fields} /> : null}
+              {rest.length > 0 ? (
+                <div className="mt-3">
+                  <AllFieldsButton count={rest.length} isOpen={isOpen} onToggle={() => onToggle(row.id)} />
+                </div>
+              ) : null}
+              {isOpen && rest.length > 0 ? (
+                <div className="mt-2">
+                  <PortalRecordFields fields={restFields(row)} />
+                </div>
+              ) : null}
+            </PortalRecordCard>
+          );
+        })}
+      </div>
+
+      {/* From md: a fitted table. table-fixed + colgroup, every cell wraps, nothing scrolls sideways. */}
+      <table
+        className="hidden w-full table-fixed border-collapse border border-slate-200 bg-white text-left text-xs md:table"
+        data-portal-desktop-table
+      >
+        <colgroup>
+          {columns.map((column) => (
+            <col key={column.id} style={{ width: column.width }} />
+          ))}
+        </colgroup>
+        <thead>
+          <tr>
+            {columns.map((column) => (
+              <th className="px-3 py-2 font-semibold" key={column.id} scope="col">
+                {column.label}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {data.rows.map((row: CrmMasterRow) => {
+            const isHoliday = typeof row.national_holiday === "string" && row.national_holiday.length > 0;
+            const isOpen = expanded.has(row.id);
+            return (
+              <PortalMasterRow
+                columns={columns}
+                isHoliday={isHoliday}
+                isOpen={isOpen}
+                key={row.id}
+                onToggle={() => onToggle(row.id)}
+                restCount={rest.length}
+                restFields={isOpen ? restFields(row) : []}
+                row={row}
+              />
+            );
+          })}
+        </tbody>
+      </table>
+    </>
+  );
+}
+
+function PortalMasterRow({
+  columns,
+  isHoliday,
+  isOpen,
+  onToggle,
+  restCount,
+  restFields,
+  row,
+}: {
+  columns: readonly PortalColumn[];
+  isHoliday: boolean;
+  isOpen: boolean;
+  onToggle: () => void;
+  restCount: number;
+  restFields: Array<{ label: ReactNode; value: ReactNode }>;
+  row: CrmMasterRow;
+}) {
+  return (
+    <>
+      <tr className={`align-top text-slate-700 ${isHoliday ? "bg-amber-100/70" : "hover:bg-orange-50/40"}`}>
+        {columns.map((column, index) => (
+          <td className="break-words px-3 py-2" key={column.id}>
+            {column.render(row)}
+            {/* The row's expander rides in its first cell, where the eye starts the row. */}
+            {index === 0 && restCount > 0 ? (
+              <span className="mt-2 block">
+                <AllFieldsButton count={restCount} isOpen={isOpen} onToggle={onToggle} />
+              </span>
+            ) : null}
+          </td>
+        ))}
+      </tr>
+      {isOpen && restFields.length > 0 ? (
+        <tr className="bg-slate-50/70">
+          <td className="px-3 py-3" colSpan={columns.length}>
+            <PortalRecordFields fields={restFields} />
+          </td>
+        </tr>
+      ) : null}
+    </>
+  );
+}
+
 const FILTER_FIELD = "flex flex-col gap-1 text-phx-xs font-semibold uppercase tracking-wide text-slate-500";
 const FILTER_INPUT = "border border-slate-200 px-2 py-1.5 text-sm text-slate-800 focus:border-orange-400 focus:outline-none";
 
@@ -90,11 +657,26 @@ export function CrmMasterTable({
   // viewer would always get zero. Hidden for the portal (the server also forces it off, so this is
   // only the UX half).
   showMappingFilter = true,
+  surface = "admin",
+  selfScope = false,
 }: {
   data: CrmMasterData;
   exportPath?: string;
   showMappingFilter?: boolean;
+  /**
+   * `portal` (set ONLY by app/employee-portals/crm/page.tsx) draws the fitted table and person-titled
+   * cards above, wraps the export/pager row, and speaks to a field seat rather than an administrator.
+   * `admin` (the default) is the raw dataset explorer, unchanged.
+   */
+  surface?: "admin" | "portal";
+  /**
+   * A medical rep reading his own rows (portal only). The Line and Hired filters can only ever match
+   * himself, so they are not offered, and the search hint names what he would actually search for.
+   */
+  selfScope?: boolean;
 }) {
+  const portal = surface === "portal";
+  const hideTeamFilters = portal && selfScope;
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -135,6 +717,8 @@ export function CrmMasterTable({
   const syncLock = useRef(false);
 
   useEffect(() => {
+    // The portal draws a fitted table with no scroll box, so there is nothing to mirror.
+    if (portal) return;
     // Width of the scrolling content = the widest of the table element and its scroll container. The
     // table reflows WIDER well after first paint (nowrap columns, RTL Arabic text, web fonts loading a
     // second or two later), and a single early read captures a too-small width → the top scrollbar goes
@@ -161,7 +745,7 @@ export function CrmMasterTable({
       observer?.disconnect();
       window.removeEventListener("resize", measure);
     };
-  }, [data.rows, data.columns, data.dataset]);
+  }, [data.rows, data.columns, data.dataset, portal]);
 
   function mirrorScroll(from: "top" | "body") {
     if (syncLock.current) return;
@@ -346,12 +930,25 @@ export function CrmMasterTable({
                 onKeyDown={(event) => {
                   if (event.key === "Enter") applyFilters();
                 }}
-                placeholder={isCheckins ? "Agent HR ID, contact, address…" : "Agent, double, contact, customer, comment, HR ID…"}
+                placeholder={
+                  portal
+                    ? isCheckins
+                      ? selfScope
+                        ? "Doctor or address"
+                        : "Doctor, address or HR ID"
+                      : selfScope
+                        ? "Doctor, partner or comment"
+                        : "Rep, partner, doctor or comment"
+                    : isCheckins
+                      ? "Agent HR ID, contact, address…"
+                      : "Agent, double, contact, customer, comment, HR ID…"
+                }
                 type="search"
                 value={searchText}
               />
             </div>
           </label>
+          {hideTeamFilters ? null : (
           <label className={FILTER_FIELD}>
             Line
             <select
@@ -367,6 +964,9 @@ export function CrmMasterTable({
               ))}
             </select>
           </label>
+          )}
+          {hideTeamFilters ? null : (
+          <>
           <label className="flex flex-col gap-1 text-phx-xs font-semibold uppercase tracking-wide text-slate-500">
             Hired from
             <input
@@ -385,6 +985,8 @@ export function CrmMasterTable({
               value={hireToText}
             />
           </label>
+          </>
+          )}
           {supports("ampm") ? (
             <label className="flex flex-col gap-1 text-phx-xs font-semibold uppercase tracking-wide text-slate-500">
               AM/PM
@@ -498,7 +1100,7 @@ export function CrmMasterTable({
 
       {/* Count + page size + pagination */}
       <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-600">
-        <p className="flex items-center gap-2">
+        <p className={portal ? "flex min-w-0 flex-wrap items-center gap-2" : "flex items-center gap-2"}>
           <span>
             <span className="font-bold text-slate-900">{data.totalCount.toLocaleString()}</span> records
             {data.totalCount > 0 ? (
@@ -524,7 +1126,9 @@ export function CrmMasterTable({
             </span>
           ) : null}
         </p>
-        <div className="flex items-center gap-3">
+        {/* The portal row WRAPS: Export, Rows and Prev · Page · Next need about 380px, and a 360–390px
+            phone gives them 336–366px, so without a wrap the shell's overflow clip cut Next off. */}
+        <div className={portal ? "flex w-full flex-wrap items-center justify-between gap-2 sm:w-auto sm:justify-end" : "flex items-center gap-3"}>
           <button
             className="inline-flex h-8 items-center gap-2 border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition enabled:hover:border-orange-300 enabled:hover:text-orange-700 disabled:cursor-not-allowed disabled:opacity-40"
             disabled={exportBusy || data.totalCount === 0}
@@ -585,6 +1189,8 @@ export function CrmMasterTable({
         <div className="border border-slate-200 bg-white px-5 py-8 text-center text-sm text-slate-500">
           No records match the current filters.
         </div>
+      ) : portal ? (
+        <PortalMasterRecords data={data} expanded={expanded} onToggle={toggleRaw} selfScope={selfScope} />
       ) : (
         <>
           {/* Mobile: one card per record — AGENTS.md §4. The desktop grid below is a genuine raw

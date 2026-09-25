@@ -82,9 +82,10 @@ export default async function PortalTargetsPage({
     // Not caught: a failed read belongs to the error boundary, exactly as on the rep's Sales vs
     // Target page — an empty result would tell the rep a published month is still awaiting closing.
     const repTargets = await loadRepTargets(access, period ?? null);
+    // Badge and title are the sidebar's own section and label ("Sales" · "Targets").
     return (
       <EmployeePortalPageShell
-        badge="Field Performance"
+        badge="Sales"
         description="Your own targets by product and month, and how far you reached them once each month's closing is published."
         errorBoundaryTitle="Targets unavailable"
         title="Targets"
@@ -209,7 +210,7 @@ export default async function PortalTargetsPage({
 
   return (
     <EmployeePortalPageShell
-      badge="Sales Operations"
+      badge="Sales"
       description="Your areas' targets and achievement against loaded distributor sales, by product and month."
       errorBoundaryTitle="Targets unavailable"
       title="Targets"

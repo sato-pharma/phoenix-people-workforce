@@ -1261,8 +1261,8 @@ export async function runWeeklySalesDepotDetailTests() {
     assert.equal(widths.reduce((sum, width) => sum + width, 0), 100, "every colgroup adds up to the table's width");
     assert.doesNotMatch(table, />(?:Movement|Weeks)<\/th>/, "the movement badge sits under the name and the weeks under the average");
   }
-  assert.match(detail, /hidden lg:block/, "desktop reads full tables");
-  assert.match(detail, /lg:hidden/, "a phone reads cards");
+  assert.match(detail, /<div className="hidden md:block">/, "desktop and tablet (from md) read full tables");
+  assert.match(detail, /<div className="space-y-2 p-3 md:hidden">/, "a phone reads cards");
   assert.match(detail, /const exportHref = `\$\{exportPath\}\$\{query \? `\?\$\{query\}` : ""\}`;/, "Export sends the screen's own query");
   assert.equal(
     (detail.match(/<DrillName name=\{row\.name\} onClick=\{onDrill && row\.code \? /g) ?? []).length,
