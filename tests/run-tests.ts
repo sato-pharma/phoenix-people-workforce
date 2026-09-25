@@ -1163,6 +1163,7 @@ import { runPayrollCopilotHolidayBridgingTests } from "./payroll-copilot-holiday
 import { runDirectOrdersApprovalFlowTests } from "./direct-orders-approval-flow.test.ts";
 import { runDirectOrdersApprovalDetailNamesTests } from "./direct-orders-approval-detail-names.test.ts";
 import { runDirectOrderFamilyBasketTests } from "./direct-orders-family-basket.test.ts";
+import { runDirectOrderRequesterHrIdStorageFormTests } from "./direct-order-requester-hr-id-storage-form.test.ts";
 import { runOutstationClaimsReadFlagTests } from "./outstation-claims-read-flag.test.ts";
 import { runExpenseClaimsSelectRlsTests } from "./expense-claims-select-rls.test.ts";
 import { runDirectOrdersUnbookedQueueTests } from "./direct-orders-unbooked-queue.test.ts";
@@ -4188,6 +4189,11 @@ await runTest("payroll resignation-candidate visibility (additive batch-dashboar
 await runTest("direct orders approval flow (ladder per role, sequential gating, caps flag not block, pharmacy-price value)", runDirectOrdersApprovalFlowTests);
 await runTest("direct orders approval detail (names never codes, medical rep, notification completeness)", runDirectOrdersApprovalDetailNamesTests);
 await runTest("direct orders family basket (Lacto only, confidential excluded, form offers what the service accepts)", runDirectOrderFamilyBasketTests);
+
+await runTest(
+  "a direct order stores its requester in the STORED form, not the lower-case comparison key: hrIdForStorage keeps the two spellings apart, both submit paths use it, no read filters the column with a case-sensitive .eq, and the database trigger that catches everything which is not the writer stays on requester_hr_id alone (never the actor columns holding system sentinels)",
+  runDirectOrderRequesterHrIdStorageFormTests,
+);
 await runTest("outstation claims-read flag (off by default, and the flag gates the import)", runOutstationClaimsReadFlagTests);
 await runTest("expense_claims select RLS (select-only, grant after policy, no predicate widening)", runExpenseClaimsSelectRlsTests);
 await runTest("direct orders unbooked queue (badge wired through all 4 lists, setter-only, filter, graduated ageing, dead tiles gone)", runDirectOrdersUnbookedQueueTests);
