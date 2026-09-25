@@ -32,6 +32,13 @@ const ACTION_BUTTON =
 const DANGER_ACTION =
   "inline-flex items-center gap-1.5 border border-rose-700 px-2.5 py-1.5 text-[12px] font-semibold text-rose-700 transition hover:bg-rose-50 disabled:opacity-50";
 const DANGER_ARMED = "border-rose-700 bg-rose-700 text-white hover:bg-rose-800";
+// Amber marks an action that STOPS when the free trial ends. It is a self-contained class string,
+// not ACTION_BUTTON with amber appended — the two would both carry a border-colour and, with no
+// tailwind-merge here, source order in the stylesheet (not the className) would decide the winner.
+const TRIAL_STOP_ACTION =
+  "inline-flex items-center gap-1.5 border border-amber-500 bg-amber-50 px-2.5 py-1.5 text-[12px] font-semibold text-amber-800 transition hover:bg-amber-100 disabled:opacity-50";
+/** The little square "PAID" chip inside a stops-after-trial button — colour is never the only signal. */
+const TRIAL_STOP_CHIP = "border border-amber-500 px-1 text-[8px] font-black uppercase tracking-[0.12em] text-amber-800";
 
 type FleetRow = {
   deviceId: string;
@@ -121,15 +128,20 @@ function messageOf(caught: unknown, fallback: string): string {
  * finding a tablet, then the screen-sharing pair, then kiosk mode. Each maps to one command id the
  * route knows; ManageEngine answers with its own reason when a tablet or a licence cannot take one.
  */
-const NORMAL_ACTIONS: ReadonlyArray<{ id: string; label: string }> = [
+// `stopsAfterTrial` marks a feature that is NOT in ManageEngine's free edition: viewing and taking
+// over a tablet's screen are the remote-troubleshooting add-on, sold only with a paid plan (and the
+// two features that are Professional-only in every one of ManageEngine's own edition pages). When the
+// free trial ends and the account falls back to the free edition, these two stop; every other action
+// here keeps working, capped at 25 tablets and one technician.
+const NORMAL_ACTIONS: ReadonlyArray<{ id: string; label: string; stopsAfterTrial?: boolean }> = [
   { id: "LOCK", label: "Lock now" },
   { id: "RESTART", label: "Restart" },
   { id: "RESET_PASSCODE", label: "Reset screen lock" },
   { id: "SCAN", label: "Report in now" },
   { id: "RING", label: "Ring the alarm" },
   { id: "SHUTDOWN", label: "Shut down" },
-  { id: "REMOTE_VIEW", label: "View the screen" },
-  { id: "REMOTE_CONTROL", label: "Take control" },
+  { id: "REMOTE_VIEW", label: "View the screen", stopsAfterTrial: true },
+  { id: "REMOTE_CONTROL", label: "Take control", stopsAfterTrial: true },
   { id: "PAUSE_KIOSK", label: "Pause kiosk mode" },
   { id: "RESUME_KIOSK", label: "Resume kiosk mode" },
 ];
@@ -268,6 +280,28 @@ export function ManageEngineFleet({ bridgeConfigured }: { bridgeConfigured: bool
         sending one or taking one off — and every command it has been sent. Each action is recorded against the tablet in
         the audit log.
       </p>
+
+      {/* Colour key for the free-trial split (owner asked, 2026-09-25). Amber = stops when the trial
+          ends; everything else keeps working on the free edition, which is capped at 25 tablets. */}
+      <div className="mt-3 flex max-w-3xl flex-col gap-1 border border-slate-200 bg-white px-4 py-3 text-[11px] font-semibold text-slate-600">
+        <p className="text-[9px] font-black uppercase tracking-[0.14em] text-slate-500">After the free trial ends</p>
+        <p>
+          <span className="mr-1 inline-block border border-amber-500 bg-amber-50 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-amber-800">
+            Paid
+          </span>
+          <span className="font-bold text-amber-800">View the screen</span> and{" "}
+          <span className="font-bold text-amber-800">Take control</span> stop — screen sharing is ManageEngine&rsquo;s
+          remote-troubleshooting add-on, sold only with a paid plan.
+        </p>
+        <p>
+          <span className="mr-1 inline-block border border-slate-300 bg-white px-1.5 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-slate-600">
+            Free
+          </span>
+          Everything else here keeps working on the free edition — capped at <span className="font-bold">25 tablets</span>{" "}
+          and <span className="font-bold">one technician</span>. If your ManageEngine console shows a PRO badge on any other
+          action, it stops too — say so and it gets the amber mark.
+        </p>
+      </div>
 
       {setupRequired ? (
         <div className="mt-4 border border-amber-300 bg-amber-50 px-4 py-3 text-[12px] font-semibold text-amber-900">
@@ -490,14 +524,16 @@ function FleetActions({ row, busyKey, confirmKey, open, onCommand, onLocate, onT
       </button>
       {NORMAL_ACTIONS.map((action) => (
         <button
-          className={ACTION_BUTTON}
+          className={action.stopsAfterTrial ? TRIAL_STOP_ACTION : ACTION_BUTTON}
           disabled={anyBusy}
           key={action.id}
           onClick={() => onCommand(row, action.id, false)}
+          title={action.stopsAfterTrial ? "Stops when the free trial ends — needs a paid ManageEngine plan" : undefined}
           type="button"
         >
           {busy(`${row.deviceId}:${action.id}`) ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : null}
           {action.label}
+          {action.stopsAfterTrial ? <span className={TRIAL_STOP_CHIP}>Paid</span> : null}
         </button>
       ))}
       <button className={ACTION_BUTTON} disabled={anyBusy} onClick={() => onCommand(row, lostToggle.id, false)} type="button">

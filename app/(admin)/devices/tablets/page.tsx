@@ -4,11 +4,9 @@ import { ManageEngineAppRepository } from "@/components/devices/manageengine-app
 import { ManageEngineEnrollment } from "@/components/devices/manageengine-enrollment";
 import { ManageEngineFleet } from "@/components/devices/manageengine-fleet";
 import { ManageEngineRepTabletRules } from "@/components/devices/manageengine-rep-tablet-rules";
-import { RepTabletsConsole } from "@/components/devices/rep-tablets-console";
 import { PremiumHero } from "@/components/ui/premium-hero";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
-import { isAndroidManagementConfigured } from "@/lib/devices/android-web-app";
 import { isManageEngineConfigured } from "@/lib/devices/manageengine/auth";
 
 export const dynamic = "force-dynamic";
@@ -28,8 +26,15 @@ export const dynamic = "force-dynamic";
  * ManageEngine, then the two company-wide things a tablet is later put ON — the rules, and the app
  * repository that every tablet's Apps section can only offer from — then the ManageEngine fleet and
  * everything that can be done to a tablet in it, and
- * only then Google's console, kept whole and marked as the second path. Nothing Google-side was
- * removed; the day that quota is approved, that console works again exactly as written.
+ * only then Google's console.
+ *
+ * GOOGLE CONSOLE TAKEN OFF THIS PAGE 2026-09-25 (owner's instruction). It rendered a full second
+ * copy of every ManageEngine card above — its own enrollment QR, rules, app list and enrolled-tablet
+ * table — while Google holds ZERO tablets and cannot enroll one (quota zero), so the whole "second
+ * path" was pure duplication on the page. Nothing Google-side was DELETED: the `RepTabletsConsole`
+ * component and every `app/api/devices/tablets/*` route it calls stay in the repo untouched. The day
+ * Google approves the quota, re-add the one `<RepTabletsConsole …/>` line below and it works again
+ * exactly as written.
  */
 export default async function RepTabletsPage() {
   const access = await resolveAccessContextFromPage();
@@ -53,7 +58,6 @@ export default async function RepTabletsPage() {
       {manageEngineReady ? <ManageEngineRepTabletRules /> : null}
       {manageEngineReady ? <ManageEngineAppRepository /> : null}
       <ManageEngineFleet bridgeConfigured={manageEngineReady} />
-      <RepTabletsConsole enterpriseBound={isAndroidManagementConfigured()} />
     </div>
   );
 }

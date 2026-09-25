@@ -253,11 +253,20 @@ export type ManageEngineLocation = {
 };
 
 /**
- * A device's last known position, with address where ManageEngine resolved one.
+ * A device's last known position.
  *
  * Unlike the Android Management API — which reports a position only over a Pub/Sub channel while a
  * tablet is in lost mode — ManageEngine exposes it directly, so the Phoenix console can show where a
  * tablet was last seen on demand.
+ *
+ * 🔴 READS `/locations`, NOT `/locations_with_address`. The `_with_address` path is an ASYNC EXPORT,
+ * not a live read: a GET on it is refused outright ("Mandatory parameter export_batch_id is not
+ * present") and its POST only queues a location-history export ("… is being exported"). Neither can
+ * answer "where is this tablet now". `/locations` returns the last position the device reported —
+ * latitude, longitude and the time it was taken — in the same `{ locations: [ … ] }` shape.
+ * ManageEngine does not reverse-geocode it, so `address` is normally absent and the screen shows the
+ * coordinates and the time. Verified against the production tenant on 2026-09-25: `_with_address`
+ * returned 400 on both verbs, `/locations` returned 200 with a live fix.
  */
 export async function getManageEngineLocation(
   deviceId: string,
@@ -265,7 +274,7 @@ export async function getManageEngineLocation(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<ManageEngineLocation> {
   const payload = await callManageEngine<RawRecord>(
-    `/api/v1/mdm/devices/${encodeURIComponent(deviceId)}/locations_with_address`,
+    `/api/v1/mdm/devices/${encodeURIComponent(deviceId)}/locations`,
     {},
     fetchImpl,
     env,
@@ -280,25 +289,18 @@ export async function getManageEngineLocation(
 }
 
 /**
- * Ask the tablet for a FRESH position, then read what is there.
+ * The position behind the "Locate" button.
  *
- * The GET above returns the last position ManageEngine resolved, which can be hours old on a tablet
- * that has not been asked. The POST to the same path queues a location request on the device; the
- * answer arrives when the tablet next reports in, so the read that follows may still show the older
- * fix. That is why the screen shows the time beside the position rather than a bare address — and
- * why the request failing is not fatal here: an old position is better than none, so a refused
- * request still falls through to the read.
+ * A tablet reports its position to ManageEngine on every check-in, so `/locations` already holds a
+ * recent fix and the button reads it directly — the screen shows the time beside the position, so an
+ * older fix reads as what it is. There is no live "ping for GPS now" verb in the ManageEngine API
+ * that answers into this read: the only POST that responded, `/locations_with_address`, merely
+ * queues an address-history export and never feeds a coordinate back, so it is not called here.
  */
 export async function requestManageEngineLocation(
   deviceId: string,
   fetchImpl: typeof fetch = fetch,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<ManageEngineLocation> {
-  await callManageEngine(
-    `/api/v1/mdm/devices/${encodeURIComponent(deviceId)}/locations_with_address`,
-    { body: "{}", method: "POST" },
-    fetchImpl,
-    env,
-  ).catch(() => null);
   return getManageEngineLocation(deviceId, fetchImpl, env);
 }
