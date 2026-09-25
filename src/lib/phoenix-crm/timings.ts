@@ -180,6 +180,31 @@ export function windowsForWeekday(timings: PhoenixCrmTiming[], weekday: number, 
   return { windows: timings.filter((timing) => timing.season === "normal" && timing.weekday === weekday), noRamadanTime: false };
 }
 
+/**
+ * A window overlaps a clock range [fromMinute, toMinute). Used by the day filter "receives on this day
+ * between X and Y". An open-ended window counts as one hour long, as everywhere else, and a window that
+ * runs past midnight is compared on its real end so a late clinic still matches a late range.
+ */
+export function windowOverlapsRange(
+  window: Pick<PhoenixCrmTiming, "startMinute" | "endMinute">,
+  fromMinute: number,
+  toMinute: number,
+): boolean {
+  const end = window.endMinute ?? window.startMinute + 60;
+  return window.startMinute < toMinute && end > fromMinute;
+}
+
+/** True when the customer receives on `weekday` in a window overlapping [fromMinute, toMinute). */
+export function receivesInRange(
+  timings: PhoenixCrmTiming[],
+  weekday: number,
+  ramadan: boolean,
+  fromMinute: number,
+  toMinute: number,
+): boolean {
+  return windowsForWeekday(timings, weekday, ramadan).windows.some((window) => windowOverlapsRange(window, fromMinute, toMinute));
+}
+
 /** "Sat, Mon, Tue" — the days a set of timings covers, Saturday first. */
 export function receivingDaysLabel(timings: PhoenixCrmTiming[], season: PhoenixCrmSeason = "normal"): string {
   const days = new Set(timings.filter((timing) => timing.season === season).map((timing) => timing.weekday));

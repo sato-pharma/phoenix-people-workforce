@@ -66,6 +66,14 @@ export type PhoenixCrmSettings = {
    * count for coverage but never for frequency.
    */
   gradeTargets: Record<PhoenixCrmListType, Record<PhoenixCrmGrade, number | null>>;
+  /**
+   * The call rate the monthly plan is measured against: AM accounts a working day (owner: 2) and PM
+   * doctors a working day (owner: 10), reported APART and NEVER averaged (the call-rate golden rule).
+   * Copied from src/lib/crm/call-rate.ts's standard, not imported, so the phone bundle never pulls that
+   * module in; tests/phoenix-crm-rules.test.ts keeps the two equal.
+   */
+  callRateAmTarget: number;
+  callRatePmTarget: number;
 };
 
 export const PHOENIX_CRM_DEFAULT_SETTINGS: PhoenixCrmSettings = {
@@ -81,6 +89,10 @@ export const PHOENIX_CRM_DEFAULT_SETTINGS: PhoenixCrmSettings = {
     PM: { A: 3, B: 2, C: 1 },
     AM: { A: 1, B: null, C: null },
   },
+  // The company's standard call rate (src/lib/crm/call-rate.ts, owner): 2 AM accounts and 10 PM
+  // doctors a working day. Copied, not imported; tests/phoenix-crm-rules.test.ts keeps the two equal.
+  callRateAmTarget: 2,
+  callRatePmTarget: 10,
 };
 
 /**

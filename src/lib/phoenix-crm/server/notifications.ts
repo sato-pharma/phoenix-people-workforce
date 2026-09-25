@@ -17,7 +17,7 @@
  * Never throws: a notice that cannot be delivered must not undo a saved decision.
  */
 
-import { formatPhoenixLongDate } from "@/lib/i18n/format";
+import { formatPhoenixLongDate, formatPhoenixMonth } from "@/lib/i18n/format";
 import { createSystemNotificationForRecipients } from "@/lib/notifications/system";
 import { logError } from "@/lib/observability/log";
 import { dropReasonLabel } from "@/lib/phoenix-crm/entry-rules";
@@ -70,6 +70,28 @@ export type PhoenixCrmNotice =
       planId: string;
       version: number;
       weekStart: string;
+      status: "approved" | "returned";
+      deciderHrId: string;
+      decidedAs: "reviewer" | "sfe";
+      repHrIds: string[];
+      note: string | null;
+    }
+  | {
+      kind: "monthly_plan_submitted";
+      org: OrgIndex;
+      seat: OrgSeat;
+      monthlyPlanId: string;
+      version: number;
+      monthStart: string;
+      submitterHrId: string;
+    }
+  | {
+      kind: "monthly_plan_decided";
+      org: OrgIndex;
+      seat: OrgSeat;
+      monthlyPlanId: string;
+      version: number;
+      monthStart: string;
       status: "approved" | "returned";
       deciderHrId: string;
       decidedAs: "reviewer" | "sfe";
@@ -147,6 +169,48 @@ async function describe(notice: PhoenixCrmNotice): Promise<Delivery | null> {
       recordId: notice.planId,
       idempotencyKey: `phoenix_crm:plan:${notice.planId}:v${notice.version}:submitted`,
       subjectHrId: notice.submitterHrId,
+    };
+  }
+
+  if (notice.kind === "monthly_plan_submitted") {
+    const reviewer = territoryReviewer(notice.org, notice.seat.seatId);
+    if (!reviewer) return null;
+    const names = await loadPeopleNames([notice.submitterHrId]);
+    const rep = nameOf(names, notice.submitterHrId, "A rep");
+    const month = formatPhoenixMonth(notice.monthStart);
+    return {
+      recipients: [reviewer.hrId],
+      eventType: "monthly_plan_waiting",
+      title: `Monthly plan to review from ${rep}`,
+      message: `${rep} sent the ${territory} plan for ${month}. Approve it or return it with a note in Phoenix CRM.`,
+      tab: "team",
+      recordId: notice.monthlyPlanId,
+      idempotencyKey: `phoenix_crm:monthly:${notice.monthlyPlanId}:v${notice.version}:submitted`,
+      subjectHrId: notice.submitterHrId,
+    };
+  }
+
+  if (notice.kind === "monthly_plan_decided") {
+    const names = await loadPeopleNames([notice.deciderHrId]);
+    const decider = nameOf(names, notice.deciderHrId, "Your manager");
+    const month = formatPhoenixMonth(notice.monthStart);
+    const recipients = [...notice.repHrIds];
+    if (notice.status === "returned" && notice.decidedAs === "sfe") {
+      const reviewer = territoryReviewer(notice.org, notice.seat.seatId);
+      if (reviewer) recipients.push(reviewer.hrId);
+    }
+    const approved = notice.status === "approved";
+    return {
+      recipients,
+      eventType: approved ? "monthly_plan_approved" : "monthly_plan_returned",
+      title: approved ? `Monthly plan approved: ${month}` : `Monthly plan returned: ${month}`,
+      message: approved
+        ? `${decider} approved the ${territory} plan for ${month}.`
+        : `${decider} returned the ${territory} plan for ${month} for changes.${notice.note ? ` Note: ${notice.note}` : ""}`,
+      tab: "plan",
+      recordId: notice.monthlyPlanId,
+      idempotencyKey: `phoenix_crm:monthly:${notice.monthlyPlanId}:v${notice.version}:${notice.status}`,
+      subjectHrId: notice.repHrIds[0] ?? null,
     };
   }
 

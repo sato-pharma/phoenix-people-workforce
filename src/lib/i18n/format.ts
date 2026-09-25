@@ -166,6 +166,19 @@ export function formatPhoenixLongDate(value: Date | string | null | undefined) {
   }).format(date);
 }
 
+/** "September 2026" in Africa/Cairo. Accepts a date-only string (a month's first day) or an instant. */
+export function formatPhoenixMonth(value: Date | string | null | undefined) {
+  if (!value) return "—";
+  const date = asValidDate(value) ?? asValidDateTime(value);
+  if (!date) return typeof value === "string" ? value : "—";
+
+  return new Intl.DateTimeFormat("en-GB", {
+    month: "long",
+    timeZone: PHOENIX_BUSINESS_TIME_ZONE,
+    year: "numeric",
+  }).format(date);
+}
+
 /** "12:15 PM" in Africa/Cairo. */
 export function formatPhoenixTime(value: Date | string | null | undefined) {
   if (!value) return "—";

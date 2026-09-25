@@ -27,7 +27,7 @@ import { DoctorsTab } from "@/components/phoenix-crm/doctors-tab";
 import { countText, plural } from "@/components/phoenix-crm/format";
 import { ListTab } from "@/components/phoenix-crm/list-tab";
 import { releaseCapturedPhoto } from "@/components/phoenix-crm/live-photo-capture";
-import { PlanTab } from "@/components/phoenix-crm/plan-tab";
+import { MonthlyPlanTab } from "@/components/phoenix-crm/month-screen";
 import { ReportsTab } from "@/components/phoenix-crm/reports-tab";
 import { SettingsTab } from "@/components/phoenix-crm/settings-tab";
 import { TeamTab } from "@/components/phoenix-crm/team-tab";
@@ -647,7 +647,7 @@ export function PhoenixCrmApp({
       );
     }
     return (
-      <PlanTab
+      <MonthlyPlanTab
         key={`${seatId}|${test}`}
         onChanged={refreshOverview}
         onDirtyChange={holdReporters.plan}

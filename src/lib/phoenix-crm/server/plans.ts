@@ -72,26 +72,26 @@ function record(raw: unknown): Row {
   return (raw && typeof raw === "object" ? raw : {}) as Row;
 }
 
-function listTypeOf(value: unknown): PhoenixCrmListType {
+export function listTypeOf(value: unknown): PhoenixCrmListType {
   return value === "AM" ? "AM" : "PM";
 }
 
-function statusOf(value: unknown): PhoenixCrmPlanStatus {
+export function statusOf(value: unknown): PhoenixCrmPlanStatus {
   return value === "submitted" || value === "approved" || value === "returned" ? value : "draft";
 }
 
 // ── Reading plans ───────────────────────────────────────────────────────────────────────────────
 
-const PLAN_COLUMNS =
+export const PLAN_COLUMNS =
   "id, seat_id, week_start, status, version, submitted_at, submitted_by_hr_id, decided_at, decided_by_hr_id, decided_by_role, decision_note, created_by_hr_id, updated_at, is_test";
 
 /** Each item with its customer and place as they are now, so a customer who left the list shows. */
-const ITEM_COLUMNS =
+export const ITEM_COLUMNS =
   "id, plan_id, plan_date, customer_id, place_id, list_type, receives, start_minute, exception_type, exception_note, " +
   "customer:phoenix_crm_customers!customer_id(name, grade, speciality, status), " +
   "place:phoenix_crm_places!place_id(label, brick_name, zone, lat, lon, timings, status)";
 
-const REVIEW_ITEM_COLUMNS =
+export const REVIEW_ITEM_COLUMNS =
   "id, plan_id, plan_date, customer_id, list_type, receives, " +
   "customer:phoenix_crm_customers!customer_id(status), place:phoenix_crm_places!place_id(lat, lon, status)";
 
@@ -111,7 +111,7 @@ export type PlanSummary = {
   updatedAt: string;
 };
 
-function planPeople(rows: ReadonlyArray<Row>): Array<string | null> {
+export function planPeople(rows: ReadonlyArray<Row>): Array<string | null> {
   return rows.flatMap((row) => [textOrNull(row.submitted_by_hr_id), textOrNull(row.decided_by_hr_id)]);
 }
 
@@ -135,7 +135,7 @@ function mapPlan(row: Row, names: PeopleNames): PlanSummary {
   };
 }
 
-async function loadPlanItemRows(planIds: ReadonlyArray<string>, columns: string): Promise<Row[]> {
+export async function loadPlanItemRows(planIds: ReadonlyArray<string>, columns: string): Promise<Row[]> {
   const rows: Row[] = [];
   for (const part of chunk([...new Set(planIds)], 50)) {
     const page = await fetchAllRowsKeyset<Row>(
@@ -151,7 +151,7 @@ async function loadPlanItemRows(planIds: ReadonlyArray<string>, columns: string)
  * A planned customer who has left the list since, or whose planned place was removed. A customer who
  * is not validated yet is NOT stale — he is planned on purpose, and stale blocks submitting.
  */
-function isStaleItem(row: Row): boolean {
+export function isStaleItem(row: Row): boolean {
   const status = record(row.customer).status;
   if (status !== "active" && status !== "pending") return true;
   // He has no place, so there is no place to have been removed.
@@ -159,9 +159,9 @@ function isStaleItem(row: Row): boolean {
   return record(row.place).status !== "active";
 }
 
-type TerritoryReadiness = { ready: boolean; total: number; open: number; dropPending: number };
+export type TerritoryReadiness = { ready: boolean; total: number; open: number; dropPending: number };
 
-async function territoryReadiness(seatId: string, isTest: boolean, markReady: boolean): Promise<TerritoryReadiness> {
+export async function territoryReadiness(seatId: string, isTest: boolean, markReady: boolean): Promise<TerritoryReadiness> {
   if (isTest) {
     const summary = summarizeReadiness((await loadReference(seatId, true)).map((row) => row.state));
     return { ready: summary.ready, total: summary.total, open: summary.open, dropPending: summary.dropPending };
@@ -240,7 +240,7 @@ export type PlannerView = {
   blockedReason: string | null;
 };
 
-function buildDays(input: {
+export function buildDays(input: {
   weekStart: string;
   cairoToday: string;
   itemRows: ReadonlyArray<Row>;

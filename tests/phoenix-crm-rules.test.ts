@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 
+import { AM_CALL_RATE_TARGET, PM_CALL_RATE_TARGET } from "../src/lib/crm/call-rate.ts";
 import { DEFAULT_REP_KPI_STANDARDS } from "../src/lib/crm/rep-kpi-reports.ts";
 import { coverageTier, gradeTarget, sharePercent, summarizeCoverage, summarizeReadiness } from "../src/lib/phoenix-crm/coverage.ts";
 import {
@@ -126,6 +127,16 @@ function runDefaultsTests() {
   );
   assert.equal(PHOENIX_CRM_DEFAULT_SETTINGS.pmDailyCap, 15, "the owner's daily maximum of doctors on a plan day");
   assert.equal(PHOENIX_CRM_DEFAULT_SETTINGS.amDailyCap, 5, "the owner's daily maximum of accounts on a plan day");
+  assert.equal(
+    PHOENIX_CRM_DEFAULT_SETTINGS.callRateAmTarget,
+    AM_CALL_RATE_TARGET,
+    "the monthly plan's AM call-rate target is the company's 2 — copied into types.ts, so the two must stay equal",
+  );
+  assert.equal(
+    PHOENIX_CRM_DEFAULT_SETTINGS.callRatePmTarget,
+    PM_CALL_RATE_TARGET,
+    "the monthly plan's PM call-rate target is the company's 10",
+  );
 }
 
 function runTimingTests() {

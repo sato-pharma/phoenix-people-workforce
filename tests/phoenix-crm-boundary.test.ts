@@ -117,6 +117,15 @@ const ROUTE_GATES: RouteGate[] = [
   post("plans/submit", "create"),
   post("plans/decide", "approve"),
   get("plans/reviews"),
+  // Last month's iReports360 plan, read-only, as the "Copy last month" reference (server/plan-history).
+  get("plans/history"),
+  // The monthly umbrella above the weekly plans: the whole month in the planner, and the rep's own
+  // submit/reopen of the month. The days are still saved a week at a time through /plans; this never
+  // writes a placement. A manager's decision on a sent month is /monthly-plans/reviews.
+  get("monthly-plans"),
+  post("monthly-plans", "create"),
+  get("monthly-plans/reviews"),
+  post("monthly-plans/reviews", "approve"),
   get("team"),
   // The Doctors directory: validated customers across territories, scoped downward on the server.
   get("doctors"),
@@ -351,15 +360,17 @@ const MIGRATION = "supabase/migrations/20260916150000_phoenix_crm.sql";
 const LATER_MIGRATIONS = [
   "supabase/migrations/20260922180258_phoenix_crm_pending_customers.sql",
   "supabase/migrations/20260924234547_add_doctor_primary_pharmacy.sql",
-  // The voice note, and it must stay LAST: liveMigrationSql swaps in the text of the final entry that
-  // names a function, and this is the most recent migration to replace phoenix_crm_save_visit. Listed
-  // earlier, it would leave the checks below reading a body the database has already stopped running —
-  // the exact failure the comment above this array warns about.
+  // The voice note. It must stay after every migration that REPLACES phoenix_crm_save_visit, because
+  // liveMigrationSql applies each entry's replacement in order and the last one wins — and this is the
+  // most recent migration to replace save_visit. Listed before such a migration, it would leave the
+  // checks below reading a body the database has already stopped running. Migrations that follow it add
+  // only a new table (location integrity) or brand-new functions (the monthly plan) and replace nothing,
+  // so they cannot disturb that.
   "supabase/migrations/20260925030047_phoenix_crm_visit_voice_note.sql",
-  // Location integrity evidence. It adds a TABLE and no function, which is why the loop below accepts
-  // either — and it may sit after the voice note without breaking the ordering rule above, because
-  // that rule is about the last entry to name a FUNCTION, and this one names none.
+  // Location integrity evidence — adds a TABLE and no function.
   "supabase/migrations/20260925033551_phoenix_crm_location_integrity.sql",
+  // The monthly plan — two new tables and two brand-new functions (open, transition); replaces nothing.
+  "supabase/migrations/20260925165851_phoenix_crm_monthly_plans.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */
@@ -644,9 +655,11 @@ function runMigrationReviewFixTests(sql: string) {
     "the planned customers are the items of those sent days only",
   );
   assert.doesNotMatch(planVsActual, /\bpl\.status\b/, "plan against actual never reads a plan's status today — a reopened or returned plan would take finished days out");
-  // The report trusts every plan event to carry the status it left the plan in.
+  // The report trusts every plan event to carry the status it left the plan in. Four places write a
+  // weekly plan event: submit, reopen and decide in the weekly transition, plus the monthly plan's
+  // transition, which cascades the month's field weeks and records each week's own event.
   const eventInserts = [...sql.matchAll(/insert into public\.phoenix_crm_plan_events \(([^)]*)\)/g)];
-  assert.equal(eventInserts.length, 3, "plans write their events in three places");
+  assert.equal(eventInserts.length, 4, "plans write their events in four places");
   for (const insert of eventInserts) {
     assert.ok(insert[1].split(",").map((column) => column.trim()).includes("to_status"), `a plan event is written without its status: (${insert[1]})`);
   }

@@ -70,8 +70,8 @@ import {
   type PlanItemDraft,
 } from "@/lib/phoenix-crm/plan-rules";
 import { normalizeArea, suggestForDay, type DaySuggestion, type PlannerCustomer, type PlannerPlace } from "@/lib/phoenix-crm/suggestions";
-import { formatTimingWindow, PHOENIX_CRM_WEEKDAY_NAMES, windowsForWeekday } from "@/lib/phoenix-crm/timings";
-import type { PhoenixCrmListType, PhoenixCrmPlanStatus } from "@/lib/phoenix-crm/types";
+import { formatTimingWindow, PHOENIX_CRM_WEEKDAY_NAMES, windowOverlapsRange, windowsForWeekday } from "@/lib/phoenix-crm/timings";
+import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmPlanStatus } from "@/lib/phoenix-crm/types";
 import type { PlanDayView, PlanItemView, PlannerView, SavedPlan } from "@/lib/phoenix-crm/view-types";
 import { cn } from "@/lib/utils";
 
@@ -1870,6 +1870,14 @@ function distinctCustomers(suggestions: ReadonlyArray<DaySuggestion>): number {
   return new Set(suggestions.map((suggestion) => suggestion.customerId)).size;
 }
 
+/** "14:30" → minutes after midnight, or null for a blank or malformed field. */
+function clockToMinutes(value: string): number | null {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(value.trim());
+  if (!match) return null;
+  const minute = Number(match[1]) * 60 + Number(match[2]);
+  return Number.isFinite(minute) && minute >= 0 && minute <= 1439 ? minute : null;
+}
+
 function AddCustomers({
   counts,
   day,
@@ -1890,9 +1898,16 @@ function AddCustomers({
   const [typeFilter, setTypeFilter] = useState<"all" | PhoenixCrmListType>("all");
   const [query, setQuery] = useState("");
   const [area, setArea] = useState("");
+  const [fromTime, setFromTime] = useState("");
+  const [toTime, setToTime] = useState("");
   const [showOff, setShowOff] = useState(false);
   const [limit, setLimit] = useState(SUGGESTION_PAGE);
   const [offLimit, setOffLimit] = useState(SUGGESTION_PAGE);
+  const [specialityFilter, setSpecialityFilter] = useState("");
+  const [gradeFilter, setGradeFilter] = useState<"" | PhoenixCrmGrade>("");
+  const [dayFilter, setDayFilter] = useState<ReadonlySet<number>>(() => new Set<number>());
+  const [unvisitedOnly, setUnvisitedOnly] = useState(false);
+  const [groupByBrick, setGroupByBrick] = useState(false);
 
   const weekday = weekdayOfIsoDay(day.date);
   const weekdayName = PHOENIX_CRM_WEEKDAY_NAMES[weekday];
@@ -1923,7 +1938,31 @@ function AddCustomers({
   }
   areaOptions.sort((left, right) => left.label.localeCompare(right.label));
 
+  // Every weekday each customer receives on, across all his places — so the "Receives on" filter can
+  // narrow to doctors who receive on any chosen day even while one single day is being planned.
+  const receivingDaysByCustomer = new Map<string, Set<number>>();
+  for (const customer of view.customers) {
+    const days = new Set<number>();
+    for (const place of customer.places) for (const timing of place.timings) days.add(timing.weekday);
+    receivingDaysByCustomer.set(customer.customerId, days);
+  }
+  // Saturday-first, and only the weekdays at least one offered doctor actually receives on.
+  const dayOptions = [6, 0, 1, 2, 3, 4, 5].filter((weekday) => all.some((suggestion) => receivingDaysByCustomer.get(suggestion.customerId)?.has(weekday)));
+  const specialityOptions = [...new Set(all.map((suggestion) => suggestion.speciality).filter((value): value is string => Boolean(value)))].sort((left, right) => left.localeCompare(right));
+  const gradeOptions = (["A", "B", "C"] as const).filter((grade) => all.some((suggestion) => suggestion.grade === grade));
+  const gradeChoiceOptions: ReadonlyArray<CrmChoiceOption<"" | PhoenixCrmGrade>> = [
+    { value: "", label: "Any grade" },
+    ...gradeOptions.map((grade) => ({ value: grade, label: `Grade ${grade}` })),
+  ];
+
   const needle = query.trim().toLowerCase();
+  // "Receives between X and Y" on this fixed day. A blank end runs to midnight, a blank start from
+  // midnight; when either is set, a customer with no window on this day cannot match the range.
+  const fromMinute = clockToMinutes(fromTime);
+  const toMinute = clockToMinutes(toTime);
+  const windowActive = fromMinute !== null || toMinute !== null;
+  const rangeFrom = fromMinute ?? 0;
+  const rangeTo = toMinute ?? 1440;
   const shown = all.filter(
     (suggestion) =>
       (typeFilter === "all" || suggestion.listType === typeFilter) &&
@@ -1931,13 +1970,40 @@ function AddCustomers({
         [suggestion.name, suggestion.speciality, suggestion.placeLabel, suggestion.zone, suggestion.brick].some(
           (part) => part !== null && part.toLowerCase().includes(needle),
         )) &&
-      (!area || normalizeArea(suggestion.zone) === area || normalizeArea(suggestion.brick) === area),
+      (!area || normalizeArea(suggestion.zone) === area || normalizeArea(suggestion.brick) === area) &&
+      (!specialityFilter || suggestion.speciality === specialityFilter) &&
+      (gradeFilter === "" || suggestion.grade === gradeFilter) &&
+      (dayFilter.size === 0 || [...(receivingDaysByCustomer.get(suggestion.customerId) ?? [])].some((weekday) => dayFilter.has(weekday))) &&
+      (!unvisitedOnly || suggestion.visitsThisMonth === 0) &&
+      (!windowActive || suggestion.windows.some((window) => windowOverlapsRange(window, rangeFrom, rangeTo))),
   );
   const receiving = shown.filter((suggestion) => suggestion.receives);
   const notReceiving = shown.filter((suggestion) => !suggestion.receives);
-  const filtered = needle !== "" || area !== "" || typeFilter !== "all";
+  const filtered =
+    needle !== "" || area !== "" || typeFilter !== "all" || windowActive || specialityFilter !== "" || gradeFilter !== "" || dayFilter.size > 0 || unvisitedOnly;
   const bulk = pickWithinCaps(receiving, remaining);
   const receivingCustomers = distinctCustomers(receiving);
+
+  // The other weekdays a doctor receives on (Saturday-first, the day being planned removed) — shown as
+  // chips under his name so the rep can chain a visit across days without opening each one.
+  const otherDaysOf = (customerId: string): number[] =>
+    [6, 0, 1, 2, 3, 4, 5].filter((other) => other !== weekday && (receivingDaysByCustomer.get(customerId)?.has(other) ?? false));
+
+  // Cluster a list by brick, so a day's candidates read in geographic groups and fewer visits land far
+  // apart. A customer with no brick falls into one "No brick" group.
+  const brickGroups = (list: ReadonlyArray<DaySuggestion>): Array<{ key: string; label: string; rows: DaySuggestion[] }> => {
+    const groups = new Map<string, { label: string; rows: DaySuggestion[] }>();
+    for (const suggestion of list) {
+      const key = normalizeArea(suggestion.brick) ?? "—";
+      const label = suggestion.brick?.trim() ? `Brick ${suggestion.brick.trim()}` : "No brick";
+      const group = groups.get(key) ?? { label, rows: [] };
+      group.rows.push(suggestion);
+      groups.set(key, group);
+    }
+    return [...groups.entries()]
+      .map(([key, group]) => ({ key, label: group.label, rows: group.rows }))
+      .sort((left, right) => left.label.localeCompare(right.label));
+  };
 
   function filterBy(update: () => void) {
     update();
@@ -1968,6 +2034,7 @@ function AddCustomers({
       key={`${suggestion.customerId}|${suggestion.placeId}`}
       locked={locked}
       onAdd={(exceptionType, exceptionNote) => addOne(suggestion, exceptionType, exceptionNote)}
+      otherDays={otherDaysOf(suggestion.customerId)}
       suggestion={suggestion}
       weekdayName={weekdayName}
     />
@@ -2037,6 +2104,113 @@ function AddCustomers({
                 </CrmField>
               ) : null}
             </div>
+            {/* Receives on this day between X and Y — both optional; a blank end means to the day's close. */}
+            <div className="grid min-w-0 grid-cols-2 gap-3 sm:max-w-md">
+              <CrmField hint="Optional" htmlFor={`${idPrefix}-from-${day.date}`} label={`Receives on ${weekdayName} from`}>
+                <input
+                  className={crmInputClassName}
+                  id={`${idPrefix}-from-${day.date}`}
+                  onChange={(event) => {
+                    const next = event.target.value;
+                    filterBy(() => setFromTime(next));
+                  }}
+                  type="time"
+                  value={fromTime}
+                />
+              </CrmField>
+              <CrmField hint="Optional" htmlFor={`${idPrefix}-to-${day.date}`} label="To">
+                <input
+                  className={crmInputClassName}
+                  id={`${idPrefix}-to-${day.date}`}
+                  onChange={(event) => {
+                    const next = event.target.value;
+                    filterBy(() => setToTime(next));
+                  }}
+                  type="time"
+                  value={toTime}
+                />
+              </CrmField>
+            </div>
+            {gradeOptions.length > 0 ? (
+              <CrmField label="Grade">
+                <CrmChoice columns={4} label="Grade" onChange={(next) => filterBy(() => setGradeFilter(next))} options={gradeChoiceOptions} value={gradeFilter} />
+              </CrmField>
+            ) : null}
+            {specialityOptions.length > 1 ? (
+              <CrmField htmlFor={`${idPrefix}-spec-${day.date}`} label="Speciality">
+                <CrmSelect
+                  id={`${idPrefix}-spec-${day.date}`}
+                  onChange={(event) => {
+                    const next = event.target.value;
+                    filterBy(() => setSpecialityFilter(next));
+                  }}
+                  value={specialityFilter}
+                >
+                  <option value="">Every speciality</option>
+                  {specialityOptions.map((speciality) => (
+                    <option key={speciality} value={speciality}>
+                      {speciality}
+                    </option>
+                  ))}
+                </CrmSelect>
+              </CrmField>
+            ) : null}
+            {dayOptions.length > 1 ? (
+              <CrmField hint="Pick one or more — keeps customers who receive on any of them" label="Receives on">
+                <div aria-label="Receives on" className="grid grid-cols-3 gap-1.5 sm:grid-cols-4" role="group">
+                  {dayOptions.map((weekday) => {
+                    const selected = dayFilter.has(weekday);
+                    return (
+                      <button
+                        aria-pressed={selected}
+                        className={cn(
+                          "min-h-11 min-w-0 rounded-none border px-3 py-2 text-left text-sm font-black transition",
+                          selected ? "border-orange-500 bg-orange-50 text-orange-800" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300",
+                        )}
+                        key={weekday}
+                        onClick={() =>
+                          filterBy(() =>
+                            setDayFilter((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(weekday)) next.delete(weekday);
+                              else next.add(weekday);
+                              return next;
+                            }),
+                          )
+                        }
+                        type="button"
+                      >
+                        <span className="block break-words">{PHOENIX_CRM_WEEKDAY_NAMES[weekday]}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </CrmField>
+            ) : null}
+            <div className="flex flex-wrap gap-1.5">
+              <button
+                aria-pressed={unvisitedOnly}
+                className={cn(
+                  "min-h-11 rounded-none border px-3 py-2 text-sm font-black transition",
+                  unvisitedOnly ? "border-orange-500 bg-orange-50 text-orange-800" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300",
+                )}
+                onClick={() => filterBy(() => setUnvisitedOnly((on) => !on))}
+                type="button"
+              >
+                Not visited this month
+              </button>
+              <button
+                aria-pressed={groupByBrick}
+                className={cn(
+                  "min-h-11 rounded-none border px-3 py-2 text-sm font-black transition",
+                  groupByBrick ? "border-orange-500 bg-orange-50 text-orange-800" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300",
+                )}
+                onClick={() => setGroupByBrick((on) => !on)}
+                type="button"
+              >
+                Group by brick
+              </button>
+            </div>
             {filtered && receivingCustomers > 0 ? (
               <div className="grid gap-2 sm:flex sm:flex-wrap sm:items-center">
                 <CrmButton disabled={locked || bulk.length === 0} onClick={addBulk} variant="primary">
@@ -2062,16 +2236,29 @@ function AddCustomers({
                 {receiving.length === 0 ? (
                   <p className="text-sm font-medium text-slate-500">Nobody found receives on {weekdayName}.</p>
                 ) : (
-                  <>
-                    <div className="divide-y divide-slate-100 border border-slate-200">{receiving.slice(0, limit).map(suggestionRow)}</div>
-                    {receiving.length > limit ? (
-                      <div className="mt-2">
-                        <CrmButton onClick={() => setLimit((current) => current + SUGGESTION_PAGE)} size="sm">
-                          Show {countText(Math.min(SUGGESTION_PAGE, receiving.length - limit))} more of the {countText(receiving.length - limit)} left
-                        </CrmButton>
-                      </div>
-                    ) : null}
-                  </>
+                  groupByBrick ? (
+                    <div className="grid gap-3">
+                      {brickGroups(receiving).map((group) => (
+                        <div className="min-w-0" key={group.key}>
+                          <h4 className="mb-1.5 break-words text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">
+                            {group.label} · {countText(group.rows.length)}
+                          </h4>
+                          <div className="divide-y divide-slate-100 border border-slate-200">{group.rows.map(suggestionRow)}</div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <>
+                      <div className="divide-y divide-slate-100 border border-slate-200">{receiving.slice(0, limit).map(suggestionRow)}</div>
+                      {receiving.length > limit ? (
+                        <div className="mt-2">
+                          <CrmButton onClick={() => setLimit((current) => current + SUGGESTION_PAGE)} size="sm">
+                            Show {countText(Math.min(SUGGESTION_PAGE, receiving.length - limit))} more of the {countText(receiving.length - limit)} left
+                          </CrmButton>
+                        </div>
+                      ) : null}
+                    </>
+                  )
                 )}
 
                 {notReceiving.length > 0 ? (
@@ -2116,6 +2303,7 @@ function SuggestionRow({
   idPrefix,
   locked,
   onAdd,
+  otherDays,
   suggestion,
   weekdayName,
 }: {
@@ -2128,6 +2316,8 @@ function SuggestionRow({
   idPrefix: string;
   locked: boolean;
   onAdd: (exceptionType: PlanExceptionType | null, exceptionNote: string | null) => void;
+  /** The other weekdays this doctor receives on, Saturday-first, so a rep can chain-plan him. */
+  otherDays: number[];
   suggestion: DaySuggestion;
   weekdayName: string;
 }) {
@@ -2181,6 +2371,19 @@ function SuggestionRow({
               </>
             )}
           </p>
+          {!suggestion.pending && otherDays.length > 0 ? (
+            <div className="mt-1.5 flex max-w-full flex-wrap items-center gap-1">
+              <span className="text-xs font-semibold text-slate-500">Also receives</span>
+              {otherDays.map((day) => (
+                <span
+                  key={day}
+                  className="inline-flex min-h-6 items-center border border-slate-200 bg-slate-50 px-1.5 text-xs font-bold text-slate-700"
+                >
+                  {PHOENIX_CRM_WEEKDAY_NAMES[day].slice(0, 3)}
+                </span>
+              ))}
+            </div>
+          ) : null}
         </div>
         {asking ? null : (
           <CrmButton disabled={locked || full} onClick={add} size="sm" variant={suggestion.receives ? "primary" : "secondary"}>

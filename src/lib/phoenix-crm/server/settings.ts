@@ -57,6 +57,11 @@ export async function loadPhoenixCrmConfig(): Promise<PhoenixCrmConfig> {
         visitFarMeters: Number(row.visit_far_meters),
         weakGpsMeters: Number(row.weak_gps_meters),
         gradeTargets: readTargets(row.grade_targets),
+        // The call rate is the company-wide locked standard (the call-rate golden rule: AM against 2,
+        // PM against 10), never a per-territory setting — it has no column and is not editable, so it
+        // always comes from the constant, and cannot drift from the rule the KPI board is pinned to.
+        callRateAmTarget: PHOENIX_CRM_DEFAULT_SETTINGS.callRateAmTarget,
+        callRatePmTarget: PHOENIX_CRM_DEFAULT_SETTINGS.callRatePmTarget,
       }
     : PHOENIX_CRM_DEFAULT_SETTINGS;
 

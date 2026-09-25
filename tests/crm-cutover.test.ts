@@ -217,7 +217,11 @@ function readDoorTests() {
   assert.ok((reads.match(/\.from\(\s*CRM_CHECKINS_UNIFIED_VIEW\s*\)/g) ?? []).length >= 2, "both check-in reads use the unified view");
 
   const planBoard = read("src/lib/crm/plan-board.ts");
-  assert.equal((planBoard.match(/\.from\(\s*CRM_PLAN_ENTRIES_UNIFIED_VIEW\s*\)/g) ?? []).length, 2, "both plan-board reads use the unified view");
+  assert.equal(
+    (planBoard.match(/\.from\(\s*CRM_PLAN_ENTRIES_UNIFIED_VIEW\s*\)/g) ?? []).length,
+    3,
+    "all three plan-board reads use the unified view — the board summary, one plan's entries, and the monthly planner's last-month reference",
+  );
   assert.ok(read("src/lib/crm/rep-doctor-lists.ts").includes(".from(CRM_PLAN_ENTRIES_UNIFIED_VIEW)"), "rep doctor lists read the unified plan view");
   const repsList = read("src/lib/crm/reps-list.ts");
   assert.equal((repsList.match(/\.from\(\s*CRM_CHECKINS_UNIFIED_VIEW\s*\)/g) ?? []).length, 2, "both reps-list check-in reads use the unified view");
