@@ -298,6 +298,7 @@ function columnsForDataset(dataset: CrmMasterDataset): readonly CrmMasterColumn[
   if (dataset === "checkins") return CRM_CHECKIN_COLUMNS;
   if (dataset === "vacations") return CRM_VACATION_COLUMNS;
   if (dataset === "regular_no_checkin" || dataset === "regular_dv_no_checkin") return CRM_VISIT_BASE_COLUMNS;
+  if (dataset === "regular_no_contact") return CRM_VISIT_BASE_COLUMNS;
   if (dataset === "triple_visits") return CRM_TRIPLE_COLUMNS;
   if (dataset === "double_visits") return CRM_DOUBLE_VISIT_COLUMNS;
   return CRM_VISIT_COLUMNS; // visits
@@ -1594,6 +1595,11 @@ function applyMasterFilters(
   if (dataset === "regular_dv_no_checkin") {
     q = q.eq("regular_no_checkin", true).not("double_crm_id", "is", null).neq("double_crm_id", 0);
   }
+  // A Regular Visit (type 0) the rep saved with NO doctor picked — contact_crm_id 0, so no contact,
+  // no locality and no brick to resolve. Not a mapping gap the system can close (there's nothing to
+  // map to); it's a rep data-entry habit a DM coaches. Surfaced so it's visible per rep, scoped by
+  // the viewer's own team on the portal and company-wide on /admin/crm.
+  if (dataset === "regular_no_contact") q = q.eq("visit_type", 0).eq("contact_crm_id", 0);
 
   // Advanced filters. agent_hr_id exists on both tables; double_hr_id is visits-only. Match
   // either so filtering by one employee surfaces EVERY record they appear in — as the primary
@@ -1673,9 +1679,15 @@ async function attachDerived(
   if (dataset === "visits" || dataset === "double_visits") {
     checkinCorrelationAvailable = await attachNearestCheckins(rows, resources?.checkinsIndex);
   }
-  // The two No-Check-in tabs never correlate a check-in (they're defined by NOT having one), so seed
-  // the Logged/save visit time directly — otherwise the Visit Time column renders blank for them.
-  else if (dataset === "regular_no_checkin" || dataset === "regular_dv_no_checkin") attachSaveTierVisitTime(rows);
+  // These tabs never correlate a check-in — the two No-Check-in tabs are defined by NOT having one,
+  // and the No-Doctor tab is contact-less — so seed the Logged/save visit time directly, otherwise
+  // the Visit Time column renders blank for them.
+  else if (
+    dataset === "regular_no_checkin" ||
+    dataset === "regular_dv_no_checkin" ||
+    dataset === "regular_no_contact"
+  )
+    attachSaveTierVisitTime(rows);
   if (dataset === "double_visits") {
     // Flag the double visits that are actually part of a triple (third person stacked that day).
     const byVisitId = resources?.triples ?? (await computeTriplesInRange(range)).byVisitId;
