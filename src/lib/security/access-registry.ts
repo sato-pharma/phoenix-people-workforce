@@ -1428,6 +1428,49 @@ export const accessRegistry = [
   // tablet and the package (headwind_device_command). Reading what is installed is the fleet route's
   // ?view=apps; this route only removes. The management app itself is refused in the service.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/headwind/apps", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
+  // Erasing the COMPANY'S data from one tablet, leaving the tablet enrolled and working — what a
+  // handover needs, where a factory reset would also take the enrolment and mean setting the tablet up
+  // by hand again. GET returns the scope in plain words for the second press to print; POST does it.
+  // 🔴 The scope is NOT in the body: the apps and folders are the owner's own answer, fixed in
+  // src/lib/devices/headwind/wipe.ts, because a wipe that can be aimed from a request can be
+  // mis-aimed. Silent on the tablet, so the same Super Admin gate and a REQUIRED audit row
+  // (headwind_device_command) naming the tablet and every instruction sent.
+  sessionApi({ methods: ["GET"], pattern: "/api/devices/headwind/wipe", permission: { resource: "company_devices", action: "approve" } }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/headwind/wipe", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
+  // The tablet CONFIGURATIONS themselves — the rules a tablet follows, not the tablets. GET lists them
+  // or reads one; POST attaches an app or a file to one, moves a tablet onto one, or writes the kiosk
+  // branding. 🔴 Every whole-object write is an OPAQUE ROUND-TRIP (read the server's own JSON, change
+  // one field, put it back), because a PUT wipes and re-inserts the app, settings and file lists — and
+  // because a configuration carries a PLAINTEXT password Phoenix must carry through without reading.
+  // REQUIRED audit row (headwind_configuration); Super Admin only.
+  sessionApi({ methods: ["GET"], pattern: "/api/devices/headwind/configurations", permission: { resource: "company_devices", action: "approve" } }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/headwind/configurations", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
+  // Sending an APK or a file up to the Headwind server and attaching it to a configuration, which is
+  // how an app installs on a tablet — there is no "install" push in Headwind at all. Multipart, so it
+  // gets its own route and its own 300-second budget, the shape the ManageEngine upload already sets.
+  // REQUIRED audit row (headwind_configuration); Super Admin only.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/headwind/upload", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
+  // The custody actions a tablet can be told to take that are NOT ordinary pushes — lock, lost mode on
+  // and off, factory reset, reset the screen lock, ring the alarm, and show a message on the screen.
+  // GET says which of them this box can actually do right now and why, so the console never draws a
+  // button it cannot honour. 🔴 Four of them need the Phoenix add-on on the Headwind box; without it
+  // GET says so and POST refuses in words — it never reports an action as sent when nothing was.
+  // REQUIRED audit row (headwind_device_command); Super Admin only.
+  sessionApi({ methods: ["GET"], pattern: "/api/devices/headwind/actions", permission: { resource: "company_devices", action: "approve" } }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/headwind/actions", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
+  // The tablet enrolment code — the Headwind twin of the ManageEngine enrolment card. Phoenix STORES
+  // and redraws the QR payload the owner pastes in; it never mints one, because the code's checksum
+  // depends on the APK the box itself serves. 🔴 GET never returns the code: it returns whether one is
+  // held and the facts about it. Revealing it is an explicit POST { show: true }, and the audit row
+  // carries the facts and NEVER the payload. REQUIRED audit row (headwind_enrollment).
+  sessionApi({ methods: ["GET"], pattern: "/api/devices/headwind/enrollment", permission: { resource: "company_devices", action: "approve" } }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/headwind/enrollment", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
+  // Console logins for the team — free and uncapped on this server, unlike the seat-priced trial it
+  // replaces. GET lists the people who can sign in and the roles available; POST adds one or retires
+  // one. 🔴 A password is written, never read back: GET returns no credential of any kind, and the
+  // audit row names the login and the role and never the password. REQUIRED audit row (headwind_user).
+  sessionApi({ methods: ["GET"], pattern: "/api/devices/headwind/users", permission: { resource: "company_devices", action: "approve" } }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/headwind/users", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
   // Visual Aids (owner, 2026-09-18). A rep and his DM, RM and NSM read the ACTIVE aids of their own
   // line — the line check lives in src/lib/visual-aids/service.ts, below the permission. Marketing
   // Manager, GPM and Super Admin upload (create) and retire or replace (update); nobody deletes. The

@@ -13,6 +13,7 @@ import { getHeadwindCommandHistory, getHeadwindDeviceDetail } from "@/lib/device
 import { getHeadwindLocation, listHeadwindDevices } from "@/lib/devices/headwind/devices";
 import { getHeadwindFleet } from "@/lib/devices/headwind/fleet";
 import { headwindErrorResponse } from "@/lib/devices/headwind/http";
+import { getHeadwindLocationHistory } from "@/lib/devices/headwind/locations";
 import { rustDeskPackageName } from "@/lib/devices/rustdesk/config";
 import { isRustDeskSessionMode, rustDeskTarget } from "@/lib/devices/rustdesk/session";
 import { hrIdForStorage } from "@/lib/hr-id";
@@ -27,8 +28,9 @@ export const dynamic = "force-dynamic";
  *
  * `?deviceNumber=…` alone gives the tablet's last known position, the way the ManageEngine route
  * answers a bare `deviceId`. `view` asks for one of the deeper reads instead: `detail` (everything
- * Headwind holds), `apps` (what is installed), `history` (what Phoenix has done to it), `screen`
- * (where a remote screen session would connect — 🔴 a target, never a credential).
+ * Headwind holds), `apps` (what is installed), `history` (what Phoenix has done to it), `locations`
+ * (where it has been, each row naming its source), `screen` (where a remote screen session would
+ * connect — 🔴 a target, never a credential).
  */
 export async function GET(request: Request) {
   try {
@@ -53,6 +55,11 @@ export async function GET(request: Request) {
         return NextResponse.json(await getHeadwindDeviceApps(deviceNumber, rustDeskPackageName()));
       case "history":
         return NextResponse.json({ commands: await getHeadwindCommandHistory(deviceNumber) });
+      // 🔴 WHERE THE TABLET HAS BEEN, EVERY ROW SAYING WHICH SOURCE IT CAME FROM. The two are never
+      // blended: one is the position that rides on each check-in, the other the movement plugin's own
+      // record. Blending them draws a confident line through places a tablet never went.
+      case "locations":
+        return NextResponse.json(await getHeadwindLocationHistory(deviceNumber));
       case "screen": {
         const mode = params.get("mode")?.trim();
         if (!isHeadwindScreenMode(mode)) {

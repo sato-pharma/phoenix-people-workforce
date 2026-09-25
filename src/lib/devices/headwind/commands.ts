@@ -23,26 +23,40 @@
  * 🔴 NEVER PARK AN UNKNOWN ON A BOX THAT HAS NOT BEEN BUILT WHEN THE CODE THAT ANSWERS IT IS PUBLIC.
  * That is the rule this file exists to carry.
  *
- * AN ACTION THAT STILL CANNOT BE SENT IS LISTED, NOT HIDDEN, AND REFUSES RATHER THAN PRETENDS. Its
- * wire name is `null` in `HEADWIND_MESSAGE_TYPES` below, `HEADWIND_UNCONFIRMED_REASONS` says WHY in
- * one sentence a non-engineer can act on, the console greys the button and shows that sentence, and
- * the route answers 501. The reasons differ and the console must not flatten them: lock and factory
- * reset need a server-side field the Community edition does not have, while a live position only
- * needs one round trip watched on a real tablet.
+ * ── 🔴 A CORRECTION, 2026-09-25: THREE OF THESE BUTTONS WERE REFUSED FOR A REASON THAT WAS WRONG ───
+ *
+ * This comment used to say that lock and factory reset "need a server-side field the Community edition
+ * does not have", and that a live position needed a round trip nobody had watched. The first half was
+ * wrong about WHERE the gap is, and the console repeated it to the owner as a settled limit.
+ *
+ * The free AGENT implements all of it, and always has (`hmdm-android` 6.39, `c9221a1f`): `lock` and
+ * `lockMessage` drive `MainActivity.showLockScreen()`, `factoryReset` reaches `dpm.wipeData(0)`,
+ * `passwordReset` reaches `dpm.resetPasswordWithToken`. What is missing is at the other end — the
+ * open-source SERVER's `Configuration` and `SyncResponse` carry none of those fields, so there is
+ * nowhere to write the instruction the tablet is already listening for. That is a server gap, not a
+ * tablet one, and a server we own can be extended: `com.hmdm.rest.json.SyncResponseHook` is a public
+ * Apache-2.0 interface for exactly this, and the Phoenix add-on in `infra/headwind-phoenix-actions/`
+ * implements it. **No tablet changes.**
+ *
+ * So `LOCK` and `FACTORY_RESET` are no longer refused here — they DELEGATE to
+ * `src/lib/devices/headwind/actions.ts`, which asks the add-on and refuses in words if this particular
+ * box has not been rebuilt with it. `LOCATE_NOW` delegates to `locations.ts`, which wakes the tablet
+ * and returns the position WITH ITS AGE, which is what the old refusal was really protecting: not
+ * showing a stale fix as a live one. Their `messageType` stays `null` because they genuinely are not
+ * push messages — the null now means "carried another way", and `isHeadwindCommandReady` says so.
+ *
+ * AN ACTION THAT STILL CANNOT BE SENT IS LISTED, NOT HIDDEN, AND REFUSES RATHER THAN PRETENDS.
  */
 
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
+import { takeHeadwindAction } from "@/lib/devices/headwind/actions";
 import { callHeadwind } from "@/lib/devices/headwind/client";
-import { listHeadwindDevices, matchHeadwindToRegister } from "@/lib/devices/headwind/devices";
-import { getDeviceRegisterData } from "@/lib/devices/service";
+import { locateHeadwindDevice } from "@/lib/devices/headwind/locations";
+import { HeadwindCommandInputError, resolveHeadwindActionTarget } from "@/lib/devices/headwind/target";
 import { rustDeskPackageName } from "@/lib/devices/rustdesk/config";
 
-export class HeadwindCommandInputError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "HeadwindCommandInputError";
-  }
-}
+export { HeadwindCommandInputError, resolveHeadwindActionTarget };
+export type { HeadwindActionTarget } from "@/lib/devices/headwind/target";
 
 /** Phoenix does not yet know the word this server wants for that action. Never a tablet's failure. */
 export class HeadwindCommandUnconfirmedError extends Error {
@@ -98,46 +112,37 @@ export const HEADWIND_MESSAGE_TYPES: Readonly<Record<HeadwindCommandId, string |
   // agent next reads its configuration. So resuming is the config update — the same message, a
   // different sentence to the person pressing it.
   RESUME_KIOSK: "configUpdated",
-  // 🔴 NOT A PUSH MESSAGE ON THIS SERVER, AND NOT AN UNKNOWN EITHER. The agent does carry `lock`,
-  // `lockMessage` and `factoryReset` — but as fields of the configuration it DOWNLOADS
-  // (`ServerConfig.java`), not as messages it can be sent. And the Community server's own
-  // `Configuration` and `Device` records (hmdm-server, `common/.../persistence/domain/`) have no
-  // column for either, so there is no REST call in this edition that sets them. Writing a name here
-  // would not make these work; they need a server-side field that does not exist. Left refusing, and
-  // §6 of the runbook says so in words.
+  // 🔴 NOT PUSH MESSAGES — CARRIED ANOTHER WAY, WHICH IS NOT THE SAME AS REFUSED. The agent does carry
+  // `lock`, `lockMessage` and `factoryReset`, but as fields of the configuration it DOWNLOADS
+  // (`ServerConfig.java`), never as messages it can be sent. The open-source server has no column for
+  // them — so the Phoenix add-on injects them into the sync response instead
+  // (`infra/headwind-phoenix-actions/`, through Headwind's own `SyncResponseHook`). These two delegate
+  // to `actions.ts`, which asks the add-on and refuses in plain words if this box has not got it yet.
   FACTORY_RESET: null,
   LOCK: null,
-  // Location rides along in the device's own report rather than answering a message of its own. Left
-  // refusing until the round trip is watched on a real tablet — a position is evidence about where a
-  // person was, and a stale one presented as "now" is worse than no button.
+  // Location rides along in the device's own report rather than answering a message of its own, so
+  // there is nothing to push. It delegates to `locations.ts`, which wakes the tablet with
+  // `configUpdated` and returns the position WITH ITS AGE — which is what the old refusal was really
+  // protecting. A stale fix presented as "now" is worse than no button; a stale fix presented as four
+  // days old is useful.
   LOCATE_NOW: null,
 };
 
 /**
- * Why an action still refuses, in one sentence the person pressing it can act on.
+ * Why an action refuses, in one sentence the person pressing it can act on.
  *
- * 🔴 THE TWO REASONS ARE NOT THE SAME AND THE CONSOLE MUST NOT FLATTEN THEM INTO "PENDING". One says
- * the Community server has nowhere to put the instruction — waiting will not change it, and the
- * answer is a paid edition or a different mechanism. The other says Phoenix will not show a position
- * it has not yet watched arrive. A person deciding what to do about a stolen tablet needs to know
- * which of those they are looking at.
+ * 🔴 EMPTY SINCE 2026-09-25, AND THAT IS THE RESULT, NOT AN OVERSIGHT. All three entries that used to
+ * live here said the free edition could not do something the free AGENT had been doing all along — the
+ * gap was in the server, and the server is ours. The button that was labelled impossible now works; the
+ * only thing that can still stop it is the add-on not being installed on a particular box, and that
+ * refusal is written where it is decided (`actions.ts`), against the live box, rather than hard-coded
+ * as a fact about the product.
+ *
+ * The map itself stays, because the next action Phoenix cannot send should be listed and explained
+ * rather than hidden — and because a `null` wire name with no sentence beside it is exactly the
+ * unexplained grey button this whole design exists to avoid.
  */
-export const HEADWIND_UNCONFIRMED_REASONS: Readonly<Partial<Record<HeadwindCommandId, string>>> = {
-  FACTORY_RESET:
-    "The company's server cannot send this. On the Headwind agent a factory reset is a setting the " +
-    "tablet reads out of its configuration, not an instruction that can be sent to it — and the free " +
-    "edition's configuration has no such setting to switch on. A tablet is wiped by hand from the " +
-    "server's own console, or on the tablet itself.",
-  LOCATE_NOW:
-    "The tablet reports where it is with its regular check-in rather than answering a question. " +
-    "Phoenix shows the position from that last check-in, and will not put a “now” button on the " +
-    "screen until the round trip has been watched on a real tablet — a stale position shown as a live " +
-    "one is worse than none.",
-  LOCK:
-    "The company's server cannot send this. On the Headwind agent the lock is a setting the tablet " +
-    "reads out of its configuration, not an instruction that can be sent to it — and the free " +
-    "edition's configuration has no such setting to switch on.",
-};
+export const HEADWIND_UNCONFIRMED_REASONS: Readonly<Partial<Record<HeadwindCommandId, string>>> = {};
 
 export type HeadwindCommandDef = {
   id: HeadwindCommandId;
@@ -174,14 +179,18 @@ export const HEADWIND_COMMANDS: readonly HeadwindCommandDef[] = [
     pastTense: "Restarted",
   },
   {
-    description: "Locks the screen now. The rep unlocks it with their PIN, pattern or password.",
+    // 🔴 NOT THE ANDROID SCREEN LOCK. This is the agent's own full-screen overlay: the rep's own PIN
+    // does not clear it, and it is taken off from here. Describing it as "locks the screen" is how
+    // somebody locks a working tablet expecting the rep to carry on after unlocking it.
+    description:
+      "Puts a full-screen lock over the tablet. Nothing on it can be used until it is unlocked from here — the rep's own PIN will not clear it.",
     destructive: false,
     id: "LOCK",
     label: "Lock now",
     pastTense: "Locked",
   },
   {
-    description: "Asks the tablet to report where it is now, instead of showing the position from its last check-in.",
+    description: "Wakes the tablet and reads back where it says it is, with how old that position is.",
     destructive: false,
     id: "LOCATE_NOW",
     label: "Locate now",
@@ -215,13 +224,32 @@ const COMMANDS_BY_ID = new Map<HeadwindCommandId, HeadwindCommandDef>(
   HEADWIND_COMMANDS.map((entry) => [entry.id, entry]),
 );
 
+/**
+ * Which module carries an action that is not a push message.
+ *
+ * 🔴 THE POINT OF THIS MAP IS THAT THE OLD BUTTONS KEEP WORKING. `LOCK`, `FACTORY_RESET` and
+ * `LOCATE_NOW` are on the tablet panel already; moving them to their own routes and leaving these
+ * three refusing would have been a correction that broke the console. They delegate instead, so the
+ * fix reaches the buttons that exist rather than only the ones added beside them.
+ */
+const DELEGATED: Readonly<Partial<Record<HeadwindCommandId, "action" | "locate">>> = {
+  FACTORY_RESET: "action",
+  LOCATE_NOW: "locate",
+  LOCK: "action",
+};
+
 export function isHeadwindCommandId(value: unknown): value is HeadwindCommandId {
   return typeof value === "string" && COMMANDS_BY_ID.has(value as HeadwindCommandId);
 }
 
-/** True when this server has a confirmed word for the action — what the console greys a button on. */
+/**
+ * True when Phoenix can actually carry the action — what the console greys a button on.
+ *
+ * 🔴 IT IS NO LONGER "HAS A PUSH MESSAGE". Three actions are carried by another module rather than by
+ * the push channel, and reading a `null` wire name as "not ready" would grey three buttons that work.
+ */
 export function isHeadwindCommandReady(id: HeadwindCommandId): boolean {
-  return HEADWIND_MESSAGE_TYPES[id] !== null;
+  return HEADWIND_MESSAGE_TYPES[id] !== null || DELEGATED[id] !== undefined;
 }
 
 /** Why this action refuses, or null when it can be sent. Never a bare "pending" — see the map above. */
@@ -289,50 +317,12 @@ function payloadFor(id: HeadwindCommandId, env: NodeJS.ProcessEnv): string {
   return "";
 }
 
-export type HeadwindActionTarget = {
-  deviceNumber: string;
-  deviceName: string;
-  /** The custody asset tag where the tablet is in the register — what a person is shown and audited. */
-  assetTag: string | null;
-  /** The asset tag, falling back to the server's name for the tablet. Never blank. */
-  subject: string;
-};
-
-/**
- * Resolve the tablet an action is about to reach, against the LIVE fleet.
- *
- * 🔴 EVERY ACTION GOES THROUGH HERE, AND THERE IS EXACTLY ONE COPY OF IT ON PURPOSE. Two things it
- * guarantees are easy to lose in a second copy: an action cannot be aimed at a tablet that has left
- * the fleet, and the audit row names the tablet by the asset tag a person would recognise rather than
- * by a server row number.
- *
- * 🔴 AND THE PUSH IS ADDRESSED BY DEVICE NUMBER, NEVER BY THE SERVER'S ROW ID. `deviceNumbers` is a
- * list and `/rest/private/push` answers 200 whether or not anything in it matched, so an id sent
- * there would report a success that reached no tablet at all.
- */
-export async function resolveHeadwindActionTarget(
-  deviceNumber: string,
-  fetchImpl: typeof fetch = fetch,
-  env: NodeJS.ProcessEnv = process.env,
-): Promise<HeadwindActionTarget> {
-  const [devices, register] = await Promise.all([
-    listHeadwindDevices(fetchImpl, env),
-    getDeviceRegisterData().catch(() => ({ devices: [] as Awaited<ReturnType<typeof getDeviceRegisterData>>["devices"] })),
-  ]);
-  const device = devices.find((candidate) => candidate.deviceNumber === deviceNumber);
-  if (!device) {
-    throw new HeadwindCommandInputError(
-      "That tablet is not in the Headwind fleet any more. Reload the page and try again from its row.",
-    );
-  }
-  const assetTag = matchHeadwindToRegister(device, register.devices)?.assetTag ?? null;
-  return { assetTag, deviceName: device.name, deviceNumber: device.deviceNumber, subject: assetTag ?? device.name };
-}
-
 /**
  * Run one remote action against one Headwind-managed tablet.
  *
  * Resolves the device from the live fleet, pushes the message, then writes the required audit row.
+ * The three actions that are not push messages are handed to the module that does carry them, which
+ * writes its own audit row — so there is exactly one row per act, never two and never none.
  */
 export async function issueHeadwindCommand(
   input: { deviceNumber: string; command: HeadwindCommandId },
@@ -345,6 +335,16 @@ export async function issueHeadwindCommand(
 
   const deviceNumber = input.deviceNumber.trim();
   if (!deviceNumber) throw new HeadwindCommandInputError("Say which tablet to act on.");
+
+  const delegate = DELEGATED[def.id];
+  if (delegate === "locate") {
+    const located = await locateHeadwindDevice({ deviceNumber }, actor, fetchImpl, env);
+    return { assetTag: located.assetTag, command: def.id, message: located.message };
+  }
+  if (delegate === "action") {
+    const taken = await takeHeadwindAction({ action: def.id, deviceNumber }, actor, fetchImpl, env);
+    return { assetTag: taken.assetTag, command: def.id, message: taken.message };
+  }
 
   const messageType = HEADWIND_MESSAGE_TYPES[def.id];
   if (messageType === null) {

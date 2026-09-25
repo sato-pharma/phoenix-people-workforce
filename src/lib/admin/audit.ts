@@ -86,6 +86,24 @@ export type AuditEntityType =
   // done to this tablet" must be answerable per system; the `messageType` actually sent is recorded
   // beside the action, so a command whose wire name is later corrected is still readable afterwards.
   | "headwind_device_command"
+  // A tablet CONFIGURATION on the company's own Headwind server (2026-09-25) — the rules a tablet
+  // follows, rather than any one tablet. Apart from the command row above because it reaches every
+  // tablet carrying that configuration at once, and keeps reaching new ones: attaching an app, sending
+  // a file, writing the kiosk branding or moving a tablet onto a different set of rules all land here.
+  // 🔴 A configuration carries a PLAINTEXT device password, so the row records WHICH configuration and
+  // WHAT changed about it, and never the object itself — an audit trail that stores the credential it
+  // audits hands it to every reader of the log.
+  | "headwind_configuration"
+  // The Headwind enrolment code (2026-09-25) — the QR a tablet is set up from. One row, the same shape
+  // the ManageEngine enrolment card already uses: the row carries the FACTS about the code (which
+  // server, which configuration, when it was stored, who stored it, who asked to see it) and NEVER the
+  // payload, because the payload is the enrolment.
+  | "headwind_enrollment"
+  // A console login on the company's own Headwind server (2026-09-25) — added, changed or retired.
+  // Apart from Phoenix's own user rows because this is a second system with its own sign-ins: someone
+  // who can reach the MDM console can reach every tablet, whatever Phoenix says. The row names the
+  // login and the role it was given, and NEVER the password.
+  | "headwind_user"
   // Apps pushed to or removed from a rep's tablet from inside Phoenix (2026-09-25). A separate type
   // from the command above because it is a different kind of act: a command changes what the tablet
   // is doing for a moment, while installing or removing an app changes what the rep can do with it
