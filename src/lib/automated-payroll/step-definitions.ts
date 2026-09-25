@@ -451,7 +451,7 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
     phase: "part2",
     title: "Outstation expenses",
     subtitle:
-      "Outstation expenses to reimburse (added to pay, in Part 2). The figure is what you APPROVED on the Expense Approvals page — trips nobody has decided yet are NOT in it, and their value is shown separately as \"Awaiting Decision\". Expand any employee to see every trip, decided or not, with dates, route, distance, the cost split and its \"HR Approved\" line. To pay a waiting trip, approve it on the Expense Approvals page and reopen this step, or type the amount here with a note. Someone whose trip never reached the expense table at all won't be listed — use \"Add employee\" to put them on the sheet. Edit or confirm.",
+      "Outstation expenses to reimburse (added to pay, in Part 2). The figure is what you APPROVED on the Expense Approvals page — trips nobody has decided yet are NOT in it, and their value is shown separately as \"Awaiting Decision\". A trip claimed twice in the same run — same day, same destination, same amount — is held out of the figure and shown as \"On Hold — Duplicate\", with the reason on the trip line; it is not refused, so approving it or typing the amount still pays it. Expand any employee to see every trip, decided or not, with dates, route, distance, the cost split and its \"HR Approved\" line. To pay a waiting trip, approve it on the Expense Approvals page and reopen this step, or type the amount here with a note. Someone whose trip never reached the expense table at all won't be listed — use \"Add employee\" to put them on the sheet. Edit or confirm.",
     contextColumns: [
       { key: "Hire Date", label: "Hire Date" },
       { key: "Trips", label: "Trips" },
@@ -459,6 +459,10 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
       // Money, so the grid card and the xlsx both currency-format it. Reads 0 for an employee
       // whose trips are all decided — which is the state this column exists to drive towards.
       { key: "Awaiting Decision", label: "Awaiting Decision", money: true },
+      // Extra copies of a trip already counted in the figure — the same day, the same destination
+      // and the same amount as another trip in this very run. Reads 0 for everyone in every payout
+      // run Phoenix has had but one (May 2026, 351.00 paid twice), so a non-zero is worth opening.
+      { key: "On Hold — Duplicate", label: "On Hold — Duplicate", money: true },
     ],
     fields: [
       { key: "expenses", label: "Expenses", kind: "money" },
@@ -485,6 +489,9 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
       { key: "HR Approved", label: "HR Approved" },
       { key: "Description", label: "Description" },
       { key: "Trip ID", label: "Trip ID" },
+      // Reads "—" on an ordinary trip and names the other copy on a held one, so the column is
+      // part of the breakdown rather than something that only appears when there is bad news.
+      { key: "On Hold", label: "On Hold" },
     ],
   },
   p2_vacation: {
