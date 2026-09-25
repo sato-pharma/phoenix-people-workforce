@@ -1,0 +1,29 @@
+---
+name: automated-payroll-module-build
+description: "New \"Automated Payroll\" HR wizard module — brand-new stepped Part1/Part2 monthly salary sheet, built from scratch, reuses payroll logic"
+metadata: 
+  node_type: memory
+  type: project
+  originSessionId: c9fb3aa9-d60c-4cf6-a88c-9cbf81642649
+  modified: 2026-07-20T10:22:00.610Z
+---
+
+**Automated Payroll** — brand-new module (owner asked for it 2026-07-20; existing payroll/Copilot "didn't give what I want"). HR-owned stepped **Part 1 / Part 2** monthly-salary wizard. Built from scratch on branch `codex/automated-payroll` (worktree `F:\Phoenix Workforce\_wt-automated-payroll`). **Add-only** — no existing payroll file edited except one additive nav entry in `src/config/system-navigation.ts`.
+
+**Reuses (imports, never edits):** `policy.ts` (`calculatePayrollParts`, Basic=Base×0.70 — locked), `copilot/proration.ts` (joiner/leaver, owner-confirmed), `copilot/{deductions-review,expense-review,vacation-settlement,feeders}.ts` (recommendation feeders), `salary-source.ts`, `salary-import.ts` (`validateSalaryRows`), `service.ts` (`createSalaryBatch`/`findSalaryBatchForPeriod`), `sales-workbook-kit`/`phoenix-xlsx-style` (branded xlsx), deductions-governance calcs.
+
+**Owner decisions (locked this session):** publish to payslips = **separate manual Super-Admin-only action** (not auto on Part-2 confirm); **fingerprint reduces Part 1** (First Part = min(Basic,effNet) − FP); held employee = **red row, excluded from payout, NO payslip until released**; finance download = **export-only** locked sheet + 2 Finance Edit columns; incentive/bonus/overtime = one Part-2 "Additions" step; scope = all active + joiners/leavers; boosters built = pre-flight validation gate + live reconciliation totals + audit trail. One-part employees get full Net in Part 1.
+
+**Split math (verified by unit test `tests/automated-payroll-split.test.ts`):** frozen First Part at Part-1 confirm; Second Part = totalPayable − frozen; First+Second=Total always; overpaid clamp carries residual. Gross derived forward from prorated base so pre-flight validator passes for joiner/leaver.
+
+**Structure:** `src/lib/automated-payroll/` (types, permissions, split, draft-store, recommend, assemble, validate/reconcile/audit, run-service, notify, http, step-definitions, exports/*, imports/*); `app/api/automated-payroll/**` (15 routes, all registered in `src/lib/security/access-registry.ts` with guard:"domain-helper"); `src/components/automated-payroll/` (wizard + generic RecommendationStep + finance panel); `app/(admin)/admin/automated-payroll/{page,finance/page}.tsx`. Migration `supabase/migrations/20260720100000_automated_payroll.sql` (4 staging tables `automated_payroll_{runs,step_state,draft_rows,audit}`, RLS mirrors copilot).
+
+**Access:** wizard+publish = Super Admin; finance tab = CEO/Financial Advisor/Finance Manager/Super Admin. Publish sets salary_batches.status='approved' directly (trigger allows uploaded→approved) → payslips live. Held excluded from published batch.
+
+**STATUS: PROD-LIVE (2026-07-20).** PR #1198 MERGED to main (squash b1d026b5); main CI green; production deployed (conclusion success, prod domain healthy). Migration APPLIED + advisor-clean on BOTH staging (cifwmndunmlxjhyjugxa) AND production (ozucdzovmcqvepbozvqf) — 4 tables, RLS+policies, no anon. Full staging browser test PASSED (local dev vs staging DB, since deployed staging URL is prod-mode/no-dev-auth + password-entry prohibited): create-run 200, mutual-exclusion 409 for a copilot-active month, feeders ran on real data, hold step listed 116 employees, confirm persisted, cancel 200; role gating Medical Rep 403/403, Finance Manager finance-200/wizard-403. `check:harden` green (423 tests). **Only remaining owner action: the first production Publish (writes real payslips) stays deliberate/Super-Admin.** Worktree `_wt-automated-payroll` KEPT per owner (not cleaned) — branch codex/automated-payroll squash-merged so needs `git branch -D` when cleaning.
+
+**Fixes PR #1203 MERGED+PROD-LIVE (2026-07-20)** — CI got cancelled/superseded by an unrelated concurrent merge (#1200) landing on main seconds later; the NEXT CI run (covering combined main) went green and deployed normally. Reconfirmed deploy chain shape: staging's workflow triggers on prod's `Deploy to Google Cloud Run` completing (reuses the prod-built image), NOT directly off CI — so after a merge, watch CI→prod, THEN staging fires automatically; don't expect them in parallel.
+
+**Owner corrections (2026-07-20, branch `codex/automated-payroll-fixes`, all in recommend.ts — no shared engine touched):** (1) EXPENSES real source = `outstation_expenses` by payout_month/year (skip imported_payroll_batch_id not null), NOT outstation_expense_requests (near-empty) — June staging 14 emp/25,209 EGP; show ALL payout-month rows (wizard IS the HR approval point), not just hr_approved. (2) CRM no-activity: exclude office days — drop any no-activity date with a fingerprint punch (loadEmployeeDayPunchMinutes), recompute days×base/30. (3) CRM leave (AV): reuse `buildFieldWorkforceCompliancePreviewFromVisitsReport` (visit_type -4/-15→AV, excuse-aware) for CRM leave dates; balance-first via calculatePaymentForRequest.balanceBeforeDays, remainder→salary; de-dup vs v2 vacation dates. Verified live on June staging. Hany one-part = DATA not code (employees.payment_mode). FWC field_workforce_compliance_days archive only holds CLOSED months (≤ May); live month = ireports360_visits.
+
+Gotchas hit: Badge variants here are `neutral|success|warning|danger` (not secondary/destructive); Switch uses `onChange` not `onCheckedChange`, no `disabled`; `react-hooks/set-state-in-effect` is enabled (disable-comment fetch-on-mount effects); routes must use literal `resolveAccessContext` token + be in the access registry or the coverage test fails.

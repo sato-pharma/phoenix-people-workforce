@@ -1,0 +1,31 @@
+---
+name: marketing-roi-14point-verified-audit
+description: "TRUE status of the 14-point Marketing ROI enhancement plan, verified 2026-07-29 by 4 deep-read agents against merged main (corrects the earlier grep-audit which undercounted)."
+metadata: 
+  node_type: memory
+  type: project
+  originSessionId: 894ee5c3-efa3-4a87-b040-fe1a6c19297c
+  modified: 2026-08-22T22:24:09.961Z
+---
+
+The grep-based 14-point audit UNDERCOUNTED (missed features under different names). Re-verified 2026-07-29 by reading the actual code in merged main. Use THIS, not the grep table.
+
+**Attribution rule (core):** a request's `actual = COALESCE(SUM(value),0)` — GROSS sum over sales rows where `distributor_code + client_code + product_code + invoice_period∈[payDate month … +roiDurationMonths−1]` all match the request's OWN target pharmacies. `value = qty×(1−discount)×factory_price`. Required ROI = flat **10× estimated cost** (not a baseline). RPC `phx_marketing_request_roi_actuals_v2` (migration `20260719151000_...`), materialized twin `phx_refresh_marketing_roi_facts` (`20260719152000_...`, DELETE+INSERT refresh). `roi-report-service.ts:822`.
+
+**Verdicts:**
+- ✅ DONE: **1** attribution receipt (per-request line-level, `[id]/view-sales/export` "Matched Sales" sheet; gap: no BULK line-level) · **3** confidence score 0–100 shown on card+draft (`roiConfidenceOf`/`draftCaptureConfidence`) · **14** SLA cron (`runMarketingSlaDaily`, due-soon 3d/escalate 2d) + awaiting-approval EGP bottleneck (live tracker Flight Path ZONE 1 + ZONE 3). Plus **#0 capture picker** (#1460).
+- 🟡 PARTIAL: **2** near-miss — only 3 of 4 categories fire; `unvalidated_batch` ("matched but batch not validated") defined but NEVER detected; sibling-customer-code miss also not detected (3rd probe relaxes distributor, not customer) · **6** gate blocks not_found + written override (≥10-char reason) done, but "trading history with distributor" NOT built (matched=registered, not traded) · **7** overlap DETECTED + shown to approver but NOT de-duplicated → number still double-counts (same `source_of_sales_import_rows.id` credited to each contesting request) · **11** cohort ROI exists in adjacent SMI module (`src/lib/sales-marketing-intelligence`, `phx_marketing_roi_fast`) by month/product/line/region/distributor/customer, ranked — MISSING request-type/requester/approver · **13** ranked cohort ROI in SMI but sorted by coverage-gap, no explicit return-per-spend league.
+- ⬜ MISSING: **4** baseline-adjusted ROI (no run-rate subtraction; window hard-bounded to campaign months) · **5** control-group incrementality (only own target pharmacies; brick_id used for geo rollup only) · **8** forecast sanity check · **9** freeze verdict at judgement · **10** recalculation diff log · **12** forecast accuracy per requester.
+
+**High-leverage insights:**
+- **9+10+12 share ONE root cause:** actuals computed LIVE + destructive DELETE+INSERT refresh with only a run-level log (`marketing_roi_refresh_runs`). Nothing snapshotted/diffed/scored. A single build (snapshot attributed rows + policy_version at judgement + a before/after diff ledger) unlocks 9 and 10 and enables 12. Also fixes the silent-rewrite risk: a SoS re-upload currently overwrites already-judged actuals.
+- **OWNER RULING 2026-07-29: ROI is intentionally GROSS.** Count ALL target-pharmacy sales of the request's product during the request's period — that IS the campaign's return by design. Baseline-adjusted/uplift (item 4) and control-group incrementality (item 5) are **NOT wanted — do NOT build**, drop from backlog. Owner also rejected a non-authoritative uplift/increase FLAG. Owner's words: "every time I upload a sheet, if it's in the request's window the sales just count normally" — so the recompute-on-upload behavior is DESIRED, meaning **item 9 'freeze verdict' is also NOT a concern** for them. The gross in-window recompute IS the intended design. Don't reopen. (Item 8 forecast-sanity would still need run-rate data if ever pursued.)
+- **7 (overlap de-dup): STOOD DOWN 2026-07-29.** Measured 23 contested rows / ~67k EGP phantom (28% of reported) on prod — BUT all 25 contested requests are HISTORICAL (created 2026-06-20 backfill, pay dates Jan–Jun, approved/archived), i.e. the parked historical set. Owner: "you will never meet this situation" going forward (one campaign per pharmacy+product+window). So #7 not needed for the live system; existing `request-overlap.ts` detection stays as approver-facing safety net. Do NOT rebuild.
+
+**GAP-FIX STATUS (2026-07-29, this session) — 14-point plan now fully closed or ruled out:**
+- ✅ SHIPPED/MERGED: #1463 (item 3 capture score on draft card) · #1466 (item 2 near-miss "unvalidated batch") · #1469 (item 2 near-miss "sibling customer code") · #1470 (item 1 bulk line-level Matched-Sales export sheet) · #1471 (items 11/12/13 — `buildRoiCohorts` engine + "Performance" tab: cohort ROI by type/requester/approver + efficiency league + forecast accuracy; unit-tested; UI NOT browser-verified — dev server was down). #1463/#1466/#1469/#1470 merged to main 22:47Z; #1471 auto-merging on green CI. Land live on the ~2-hourly scheduled prod deploy. *(Both mechanics in that sentence are dead as of 2026-08-23: there is no scheduled prod deploy — Railway ships **on merge, immediately** since 2026-08-01 — and `gh pr merge --auto` is now **banned** in this repo; `allow_auto_merge` is `false` so it is rejected anyway. See [[railway-merge-is-the-production-deploy]], [[gh-pr-merge-auto-merges-immediately]].)*
+- ⏭️ SKIPPED by owner: items **6** (trading-history gate) + **8** (forecast sanity) — owner chose to keep the submission form clean (no entry-time warnings).
+- 🚫 RULED OUT by owner: items **4/5** (gross ROI is correct by design), **7** (overlap historical-only, won't recur), **9/10** (recompute-on-upload is desired). Item **14** (SLA + bottleneck) already done pre-session.
+- Net: nothing left open on the marketing ROI module. Confidence score (#1463) is wired but still omits trading-history/product-bridge/overlap factors — deliberate, not a gap.
+
+Earlier this session: **PR #1463** capture-quality score wired onto the draft card (completed item 3's rendering). Related: [[marketing-pharmacy-picker-1460-cutover-resume]] [[marketing-roi-three-engines-divergence]]

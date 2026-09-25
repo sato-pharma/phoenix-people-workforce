@@ -1,0 +1,19 @@
+---
+name: sos-brick-authoritative-geography
+description: "SoS rule — the BRICK is the single source of truth for region/area; never trust the distributor sheet's region/area columns; value always computed from qty."
+metadata: 
+  node_type: memory
+  type: project
+  originSessionId: 32c760dd-334c-4e6e-ae33-d1303f5c55a5
+---
+
+LOCKED RULE (owner directive, 2026-06-15): in Source of Sales, the **Brick ID is the single source of truth for geography**. Region and Area must ALWAYS be derived from the brick via the master (brick → area → region), and the distributor sheet's own Region/Area columns are ignored entirely. Value is always computed (`Qty × factory_price × (1 − discount)`), never read from the sheet — the company **Direct** channel is the only exception (no factory price; its sheet value is the truth) and stays as-is.
+
+**Why:** the Customer Directory Excel showed ~43 "regions" that were not in the master (e.g. "BEHIRA 2", "ALEX WEST"). Root cause: the importer read region/area RAW from the distributor's "Region ID"/"Area ID" columns first (crosswalk only a blank-fallback). One distributor (**PS**) fills those columns with its own governorate territory names, which aren't our 7 regions (AB, CA, GZ, D1, D2, UE, OT). The importer only warned, never remapped. NOT a 2026-06-14 regression — directory logic is from 2026-06-04, importer geography last changed 2026-06-11, PS data loaded 06-08→06-11. The customer_map crosswalk is a dead end (18,878 rows, 2 distributors; only 15 of PS's 21,499 customers in it) — the brick is the reliable anchor (all 96,947 PS rows resolve to a valid master brick).
+
+**How to apply:**
+- Importer `src/lib/sales/monthly-distributor-import.ts`: after `brickReference` is resolved, if `!template.regionOnly && brickReference` then `areaCode`/`regionCode` (and their names, and the region/area #N/A checks) come from the brick master, overriding the sheet. `geographyFromBrick` flag added. Region-only channels (Direct) keep their sheet region.
+- The old "uploaded hierarchy is kept (warning)" behavior is GONE — brick silently wins. Test `tests/sales-distributor-import.test.ts` mismatch case updated + a foreign-label ("BEHIRA 2") case added asserting `byBrick.regionCode === "CA"`.
+- Existing prod data backfilled via MCP (project precedent): backup table `public.sos_import_rows_geo_backup_20260615` (33,311 rows: old region/area), then UPDATE set region/area + names from brick master. After: phantom regions 43 → 1 (the legit Direct "NATIONAL"). Reversible from the backup; drop it once confirmed stable.
+
+State 2026-06-15 (audit follow-up): the code fix was found sitting UNCOMMITTED on `main` (the branch existed but never received the commit, never pushed — at real risk of loss). Rescued: committed as `cc6083e8` on `codex/sos-brick-authoritative-geography`, full `check:harden` gate GREEN (lint+typecheck+test+build, exit 0), pushed to origin, and opened **PR #175** (https://github.com/Phoenix-HR/phoenix-people-workforce/pull/175) — NOT merged, awaiting owner approval. The deployed prod importer still uses OLD logic until #175 merges, so a distributor upload before then re-creates phantom regions. Backup table `sos_import_rows_geo_backup_20260615` VERIFIED healthy (live import rows = 108,282; only 8 distinct region codes = no phantom sprawl; ~62 rows with an unmatched region_code, likely Direct/region-only). Recommendation: KEEP the backup table until #175 is merged+deployed and one real upload is validated; do NOT drop it yet (irreversible). It trips an `rls_disabled_in_public` advisor — silence harmlessly with `ALTER TABLE ... ENABLE ROW LEVEL SECURITY` (no policy = service-role only) instead of dropping. Related: [[command-center-perf-on2-sales]] [[source-of-sales-reset-and-missing-data]] [[sofico-upload-template-recognition]].
