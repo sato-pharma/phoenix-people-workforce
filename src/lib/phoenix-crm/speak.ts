@@ -28,8 +28,14 @@
  *              mechanisms. Never unify them, and never let one engine's sentence be shown for the other.
  *   "none"   — nothing can produce text (no engine, and no recording to send).
  *
- * Firefox 157 (2026-09-29) adds an on-device engine and does not change this: Mozilla's implementation
- * uses NVIDIA's Parakeet, which has no Arabic, so `ar-EG` answers `language-not-supported`.
+ * 🔴 A BROWSER THAT *HAS* AN ENGINE IS NOT A BROWSER THAT CAN WRITE ARABIC, and reading the first as the
+ * second is the bug the owner hit within the hour ("DIDNT WROITE", 2026-09-25). Firefox 157 ships a
+ * constructor backed by NVIDIA's Parakeet, which has no Arabic at all: the engine is detected, it starts,
+ * and `ar-EG` fails asynchronously with `language-not-supported` — by which time the engine choice above
+ * has already ruled the recording out of being written. So the engine names below are only what the
+ * control PROMISES at the moment of the press; what is actually done afterwards is decided by
+ * `shouldWriteFromRecording`, from what the live engine really produced. Never re-derive that from
+ * capability again.
  *
  * A BROWSER MAY HAVE ONLY ONE HALF. Every sentence the control shows is chosen from the halves that
  * actually work and from the engine it actually has, because a promise of "both" under a button that can
@@ -75,6 +81,35 @@ export function speakHalves(serverTranscription = false): SpeakHalves {
 export function speakTextEngine(input: { audio: boolean; live: boolean; serverTranscription: boolean }): SpeakTextEngine {
   if (input.live) return "live";
   return input.serverTranscription && input.audio ? "server" : "none";
+}
+
+/**
+ * Whether to write the words out of the stored recording once the microphone has closed.
+ *
+ * 🔴 THIS EXISTS BECAUSE `speakTextEngine` ALONE SHIPPED A HOLE, AND THE OWNER FOUND IT: "DIDNT WROITE"
+ * (2026-09-25, on the day the server engine went live). A browser HAVING a speech engine is not the same
+ * as that engine being able to write Egyptian Arabic, and the code treated them as one thing. Firefox 157
+ * ships a constructor backed by NVIDIA's Parakeet, which has no Arabic: `isDictationSupported()` answers
+ * true, the engine starts without complaint, `ar-EG` then fails ASYNCHRONOUSLY — and because the engine
+ * was chosen as "live" before any of that, the finished recording was never sent anywhere. The rep got a
+ * recording and an empty comment, which is exactly the state the whole feature was built to end.
+ *
+ * So the decision moved from "what does this browser HAVE" to WHAT ACTUALLY HAPPENED. One rule, checked
+ * after the fact: there is a recording, the server path is configured, and the live engine wrote NOTHING.
+ *
+ * It subsumes the capability answer rather than sitting beside it — the "server" engine writes nothing
+ * live by definition, so it satisfies this rule the same way a failed "live" engine does, and there is
+ * one path to transcription instead of two. And it is the conservative direction: a live engine that
+ * wrote even one phrase is believed and nothing is sent, so a working Chrome never pays for a second
+ * reading and a rep who said nothing at all is never charged for silence (`wroteLive` false with no
+ * stored path returns false).
+ */
+export function shouldWriteFromRecording(input: {
+  storedPath: string | null;
+  serverAvailable: boolean;
+  wroteLive: boolean;
+}): boolean {
+  return Boolean(input.storedPath) && input.serverAvailable && !input.wroteLive;
 }
 
 /**
@@ -124,17 +159,24 @@ export function speakAccuracyLine(halves: SpeakHalves): string | null {
  * Nothing leaves the phone for a third party when only the recorder runs, so the line is not shown
  * then: the recording goes to Phoenix's own storage and to nobody else.
  *
- * THE TWO ENGINES SEND DIFFERENT THINGS AND THE LINE MUST SAY SO. The live engine streams his speech
- * and never touches the stored file, which is why that branch exempts the recording by name. The server
- * engine sends THE RECORDING ITSELF, so repeating that exemption there would be a plain falsehood about
- * the one thing this notice exists to be honest about.
+ * THE TWO ENGINES SEND DIFFERENT THINGS AND THE LINE MUST SAY SO. The live engine streams his speech;
+ * the server engine sends THE RECORDING ITSELF.
+ *
+ * 🔴 THE LIVE BRANCH USED TO PROMISE "no speech service ever reads it" ABOUT THE RECORDING, AND THAT
+ * SENTENCE IS NOW RETIRED — do not restore it. Since `shouldWriteFromRecording` lets a live engine that
+ * wrote nothing hand its recording to the server path, a browser can start on the live engine and still
+ * end up sending the file. The old wording was true of the code that shipped this morning and became a
+ * falsehood the moment the handover was added; a privacy promise that is true of the happy path only is
+ * the worst kind of copy this notice can carry, so the condition is named instead of hidden.
  */
 export function speakProcessorLine(halves: SpeakHalves): string | null {
   if (halves.text === "none") return null;
   if (halves.text === "server") {
     return "This browser cannot turn speech into text on its own, so Phoenix sends the recording to Groq's speech service to be written out. Nothing else reads it.";
   }
-  const kept = halves.audio ? " The recording itself is stored by Phoenix, and no speech service ever reads it." : "";
+  const kept = halves.audio
+    ? " The recording is stored by Phoenix; if this browser writes no words at all, it is sent to Groq's speech service so they can be written out."
+    : "";
   return `Your voice is sent to the browser's speech service — Google's on Chrome, Apple's on Safari — to be turned into text.${kept}`;
 }
 
