@@ -433,7 +433,8 @@ export function canUseEmployeePortalMarketingRoiTracking(
  * Medical-Rep only, by design: every manager seat either RAISES direct orders through the
  * requester workspace (showDirectOrdersTab / DIRECT_ORDER_REQUESTER_ROLES) or already reads a wider
  * report, so none of them needs this narrow area window. Rows are bounded server-side to the rep's
- * own `employees.area_id` — see getRepAreaDirectOrders.
+ * own area(s) — `employees.area_id` plus their own REP seat's areas, merged areas expanded for the
+ * counted month — see getRepAreaDirectOrders.
  */
 export function canUseEmployeePortalAreaDirectOrders(
   roleLabel: string | null | undefined,
