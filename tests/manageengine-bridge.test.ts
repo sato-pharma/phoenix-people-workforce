@@ -75,6 +75,7 @@ import {
 } from "../src/lib/devices/manageengine/register-sync.ts";
 import { REP_TABLET_RULES } from "../src/lib/devices/tablet-policy.ts";
 import { findAccessRegistryEntry } from "../src/lib/security/access-registry.ts";
+import { stripComments } from "./support/comment-strip.ts";
 import type { RegisterTablet } from "../src/lib/devices/managed-tablets.ts";
 
 /** Full env so `manageEngineAuthConfig` is satisfied — the three secrets plus the two hosts. */
@@ -969,8 +970,11 @@ function runEnrollmentDoorTests() {
       page.indexOf("<ManageEngineEnrollment") < page.indexOf("<ManageEngineFleet"),
     "ManageEngine enrolls first — Google refuses every scan until it approves the project's device quota",
   );
+  // Read the RENDER, not the prose: the doc comment names `<RepTabletsConsole …/>` on purpose, as the
+  // one line to re-add the day Google's quota lands, so the check must ignore comments or it trips on
+  // its own restoration note.
   assert.doesNotMatch(
-    page,
+    stripComments(page),
     /<RepTabletsConsole/,
     "Google's console is OFF the page (owner, 2026-09-25) — it duplicated every ManageEngine card while Google holds zero tablets",
   );
