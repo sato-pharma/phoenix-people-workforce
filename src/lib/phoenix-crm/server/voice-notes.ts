@@ -64,6 +64,18 @@ const EXTENSIONS: Record<string, string> = {
   ".mp3": "audio/mpeg",
 };
 
+/**
+ * The stored object's media type, read from the path's own extension.
+ *
+ * Exported for the transcription path, which has to tell a speech service what container it is being
+ * handed. It reads the SAME map the slot validates against, so a format the slot would refuse can never
+ * be described to anything downstream as one of the four.
+ */
+export function voiceContentType(path: string): string | null {
+  const dot = path.lastIndexOf(".");
+  return dot < 0 ? null : EXTENSIONS[path.slice(dot).toLowerCase()] ?? null;
+}
+
 function storageSegment(value: string): string {
   return value.replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "territory";
 }
@@ -164,4 +176,24 @@ export async function signVoicePaths(viewer: PhoenixCrmViewer, rawPaths: unknown
     if (entry.path && entry.signedUrl && !entry.error) signed[entry.path] = entry.signedUrl;
   }
   return signed;
+}
+
+/**
+ * The stored bytes of one recording, for a caller that has already decided it may have them.
+ *
+ * THIS FILE OPENS THE BUCKET; ITS CALLERS DO NOT. `tests/phoenix-crm-boundary.test.ts` allows each
+ * server file exactly one bucket and names the owner by filename, so the module's storage access stays
+ * in one place a reviewer can read in full — and adding a second file that opens this bucket is the
+ * thing that rule exists to stop, not a detail to widen it for. `./voice-transcribe.ts` therefore asks
+ * here instead of reaching for `.storage` itself.
+ *
+ * It authorises NOTHING. Scope, ownership and freshness are the caller's to prove before it calls —
+ * `signVoicePaths` above proves scope for playback, and the transcription service proves the much
+ * narrower "his own note, just now". A bare path handed straight to this function is a hole; that is
+ * why it takes no viewer and can therefore never look like it checked one.
+ */
+export async function downloadVoiceNote(path: string): Promise<Uint8Array | null> {
+  const { data, error } = await getSupabaseAdmin().storage.from(PHOENIX_CRM_VOICE_BUCKET).download(path);
+  if (error || !data) return null;
+  return new Uint8Array(await data.arrayBuffer());
 }

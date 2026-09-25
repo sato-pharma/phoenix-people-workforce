@@ -471,6 +471,7 @@ copies directly with no variable fallback, so deleting the secret copies would s
 | Secret | Purpose |
 |---|---|
 | OPENAI_API_KEY | AI-assist features (email drafting, SoS normalizer suggestions) |
+| GROQ_API_KEY | **Not OpenAI, deliberately.** Writes a Phoenix CRM visit voice note out as Arabic text for a browser with **no speech engine of its own** — Firefox, on every platform. Chrome, Edge, Safari and Android use the browser's own free engine and never reach it, so only the Firefox share of visits is charged, and a recording is capped at one minute. The owner's cost ruling, 2026-09-25. Unset is a **supported** state, not a broken one: the control asks the server (`GET /api/phoenix-crm/voice/transcribe`) and stops promising Firefox reps their words will be written. Keys are `gsk_…`, and `scripts/secret-shape-rules.mjs` refuses a masked paste of one — the failure OPENAI_API_KEY shipped in 2026-09-02. Railway production only; **not** in `sync-railway-production-secrets.yml`, so it is set on Railway directly and no GitHub secret overwrites it. |
 
 ### Feature flags
 | Secret | Purpose |

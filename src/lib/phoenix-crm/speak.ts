@@ -9,35 +9,72 @@
  * THE TWO HALVES ARE STILL TWO HALVES, and this module exists so that stays visible in the code as
  * well as on the screen. They run from one press off one microphone, but they are independent:
  *
- *   TEXT  — the browser's speech engine listens live and hands back words, which are appended to the
- *           comment as they settle. Nothing about the stored recording produces this text.
- *   AUDIO — `MediaRecorder` keeps what was said, and it is uploaded as a file. No speech service ever
- *           reads that file.
+ *   TEXT  — words end up in the comment. HOW they get there depends on the browser; see below.
+ *   AUDIO — `MediaRecorder` keeps what was said, and it is uploaded as a file.
  *
- * So the text is NOT a transcription of the recording. It is a second, parallel reading of the same
- * speech, made live by an engine that can mishear Egyptian Arabic — which is exactly why the accuracy
- * line below tells the rep which of the two is the truth when they disagree. Describing the text as
- * "the transcript of the note" would be false, and it is the one thing this feature must never say.
+ * THE TEXT HALF HAS TWO ENGINES, AND THEY ARE NOT INTERCHANGEABLE — this is the distinction every
+ * sentence below turns on, and the one a later edit will be tempted to flatten.
  *
- * A BROWSER MAY HAVE ONLY ONE HALF. Firefox has `MediaRecorder` and no speech engine at all, so it
- * records and writes nothing; a browser with a speech engine and no recorder writes and keeps nothing.
- * Every sentence the control shows is chosen from the halves that actually work, because a promise of
- * "both" under a button that can only do one of them is the kind of copy a rep discovers at a clinic
- * door. The lines live here, as pure functions, so they are pinned by tests rather than by reading.
+ *   "live"   — the browser's own speech engine (Chrome, Edge, Safari, Android) listens and hands back
+ *              words as they settle, free, with no account. The text is a SECOND, PARALLEL reading of
+ *              the same speech, made live by an engine that can mishear Egyptian Arabic. It is NOT a
+ *              transcription of the stored recording, and no speech service ever reads that file.
+ *              Describing the text as "the transcript of the note" would be false here.
+ *   "server" — the browser has NO speech engine at all. Firefox has none, on any platform: there is no
+ *              constructor to call, so nothing can be written while he talks. Here the finished
+ *              RECORDING is sent from Phoenix's own server to a speech service and what comes back is
+ *              the text — so here the text IS a transcript of the recording, which is the exact
+ *              opposite of the "live" case. Both statements are true because they describe different
+ *              mechanisms. Never unify them, and never let one engine's sentence be shown for the other.
+ *   "none"   — nothing can produce text (no engine, and no recording to send).
+ *
+ * Firefox 157 (2026-09-29) adds an on-device engine and does not change this: Mozilla's implementation
+ * uses NVIDIA's Parakeet, which has no Arabic, so `ar-EG` answers `language-not-supported`.
+ *
+ * A BROWSER MAY HAVE ONLY ONE HALF. Every sentence the control shows is chosen from the halves that
+ * actually work and from the engine it actually has, because a promise of "both" under a button that can
+ * only do one of them — or a promise of words "as you talk" where they arrive after he stops — is the
+ * kind of copy a rep discovers at a clinic door. The lines live here, as pure functions, so they are
+ * pinned by tests rather than by reading.
  */
 
 import { isDictationSupported } from "@/lib/phoenix-crm/dictation";
 import { formatSeconds, isRecordingSupported, MAX_SECONDS } from "@/lib/phoenix-crm/voice-recorder";
 
+/** How the words get into the comment in this browser. See the header — these are not interchangeable. */
+export type SpeakTextEngine = "live" | "server" | "none";
+
 /** What the one control can actually do in the browser it is running in. */
-export type SpeakHalves = { text: boolean; audio: boolean };
+export type SpeakHalves = { text: SpeakTextEngine; audio: boolean };
 
 export const SPEAK_LABEL = "Speak the comment";
 export const SPEAK_AGAIN_LABEL = "Speak again";
 
-/** Live capability. Both are false on the server, so the control never renders and then vanishes. */
-export function speakHalves(): SpeakHalves {
-  return { text: isDictationSupported(), audio: isRecordingSupported() };
+/**
+ * Live capability. Both halves are dead on the server, so the control never renders and then vanishes.
+ *
+ * `serverTranscription` is whether Phoenix's own transcription path is configured — the screen asks the
+ * server, because a browser cannot see whether the key exists and a button must not promise words that
+ * nothing can write. The server engine also requires the RECORDER: it transcribes the stored recording,
+ * so with nothing recording there is nothing to send.
+ */
+export function speakHalves(serverTranscription = false): SpeakHalves {
+  const audio = isRecordingSupported();
+  return { audio, text: speakTextEngine({ audio, live: isDictationSupported(), serverTranscription }) };
+}
+
+/**
+ * Which engine writes the words, kept pure so every combination is pinned by a test rather than by
+ * reading — the browser capabilities it decides from cannot be faked in the suite.
+ *
+ * Two rules, and both are load-bearing. The browser's OWN engine always wins where it exists: it is free,
+ * it needs no account, it writes while he talks, and on Egyptian Arabic it is at least as good as a
+ * general Whisper model. And the server engine requires the RECORDER, because what it transcribes IS the
+ * recording — offering it without one promises a transcript of a file that will never exist.
+ */
+export function speakTextEngine(input: { audio: boolean; live: boolean; serverTranscription: boolean }): SpeakTextEngine {
+  if (input.live) return "live";
+  return input.serverTranscription && input.audio ? "server" : "none";
 }
 
 /**
@@ -45,28 +82,37 @@ export function speakHalves(): SpeakHalves {
  * control reads as a bug — the comment can always be typed.
  */
 export function speakSupported(halves: SpeakHalves): boolean {
-  return halves.text || halves.audio;
+  return halves.text !== "none" || halves.audio;
 }
 
 /** What pressing the button will actually do, said in terms of the halves this browser has. */
 export function speakPromise(halves: SpeakHalves): string {
-  if (halves.text && halves.audio) {
-    return "Speak once: the words are written into the comment as you talk, and the recording is kept with the visit.";
+  if (halves.text === "live") {
+    return halves.audio
+      ? "Speak once: the words are written into the comment as you talk, and the recording is kept with the visit."
+      : "Speak once and the words are written into the comment as you talk. This browser cannot keep a recording.";
   }
-  if (halves.audio) {
-    return "Speak once and the recording is kept with the visit. This browser cannot turn speech into text, so type the comment as well.";
+  if (halves.text === "server") {
+    // "when you stop", never "as you talk". This browser writes nothing while he speaks, and a rep who
+    // was promised live words watches an empty field for a minute and presses Stop thinking it failed.
+    return "Speak once: the recording is kept with the visit, and the words are written into the comment when you stop. This browser cannot write them as you talk.";
   }
-  return "Speak once and the words are written into the comment as you talk. This browser cannot keep a recording.";
+  return "Speak once and the recording is kept with the visit. This browser cannot turn speech into text, so type the comment as well.";
 }
 
 /**
  * Which of the two to believe when they disagree, said only where both halves ran.
  *
- * The engine mishears, and a misheard brand name in a clinical note is a sale that never happened.
- * The recording cannot mishear anything, so it is the record and the text is the reading of it.
+ * Either engine mishears, and a misheard brand name in a clinical note is a sale that never happened.
+ * The recording cannot mishear anything, so it is the record and the text is a reading of it — and the
+ * wording differs by engine because what the text IS differs: a parallel live reading, or the speech
+ * service's reading of that same file.
  */
 export function speakAccuracyLine(halves: SpeakHalves): string | null {
-  if (!(halves.text && halves.audio)) return null;
+  if (!halves.audio || halves.text === "none") return null;
+  if (halves.text === "server") {
+    return "The text is what the speech service made of the recording, so read it before you save — the recording is what you actually said.";
+  }
   return "The text is what the speech service heard, so read it before you save — the recording is what you actually said.";
 }
 
@@ -77,9 +123,17 @@ export function speakAccuracyLine(halves: SpeakHalves): string | null {
  *
  * Nothing leaves the phone for a third party when only the recorder runs, so the line is not shown
  * then: the recording goes to Phoenix's own storage and to nobody else.
+ *
+ * THE TWO ENGINES SEND DIFFERENT THINGS AND THE LINE MUST SAY SO. The live engine streams his speech
+ * and never touches the stored file, which is why that branch exempts the recording by name. The server
+ * engine sends THE RECORDING ITSELF, so repeating that exemption there would be a plain falsehood about
+ * the one thing this notice exists to be honest about.
  */
 export function speakProcessorLine(halves: SpeakHalves): string | null {
-  if (!halves.text) return null;
+  if (halves.text === "none") return null;
+  if (halves.text === "server") {
+    return "This browser cannot turn speech into text on its own, so Phoenix sends the recording to Groq's speech service to be written out. Nothing else reads it.";
+  }
   const kept = halves.audio ? " The recording itself is stored by Phoenix, and no speech service ever reads it." : "";
   return `Your voice is sent to the browser's speech service — Google's on Chrome, Apple's on Safari — to be turned into text.${kept}`;
 }
@@ -87,16 +141,22 @@ export function speakProcessorLine(halves: SpeakHalves): string | null {
 /** The heading on the live panel while the microphone is open. */
 export function speakLiveLabel(halves: SpeakHalves, elapsed: number): string {
   const clock = `${formatSeconds(elapsed)} of ${formatSeconds(MAX_SECONDS)}`;
-  if (halves.text && halves.audio) return `Listening — ${clock}`;
+  if (halves.text === "live" && halves.audio) return `Listening — ${clock}`;
+  // The server engine is not listening to anything yet, so this is a recording and says so.
   if (halves.audio) return `Recording — ${clock}`;
   return "Listening — speak now";
 }
 
 /** What the live panel says is happening to the speech, under the clock. */
 export function speakLiveHint(halves: SpeakHalves): string {
-  if (halves.text && halves.audio) return "Writing the words and keeping the recording.";
-  if (halves.audio) return "Keeping the recording. The words are not being written.";
-  return "Writing the words. Nothing is being recorded.";
+  if (halves.text === "live") return halves.audio ? "Writing the words and keeping the recording." : "Writing the words. Nothing is being recorded.";
+  if (halves.text === "server") return "Keeping the recording. The words are written when you stop.";
+  return "Keeping the recording. The words are not being written.";
+}
+
+/** While the finished recording is being written out, on the browsers that do it after the fact. */
+export function speakTranscribingLine(): string {
+  return "Writing out the words — this takes a few seconds. Do not leave the visit yet.";
 }
 
 /**
@@ -125,10 +185,14 @@ export function speakBlockedMessage(): string {
 /**
  * What to say when one half opened and the other did not, which is the case that would otherwise pass
  * silently: the rep sees the panel, assumes both, and saves a visit missing the half he wanted.
+ *
+ * The server engine is not a half that can "open" — it runs after the recording exists — so a running
+ * recorder on that browser is everything that was ever going to run, and there is nothing to report.
  */
 export function speakPartialMessage(started: SpeakHalves): string | null {
-  if (started.text && started.audio) return null;
+  if (started.text === "live" && started.audio) return null;
+  if (started.text === "server" && started.audio) return null;
   if (started.audio) return "The words are not being written — the speech service did not start. The recording is still being kept.";
-  if (started.text) return "The recording did not start. The words are still being written into the comment.";
+  if (started.text === "live") return "The recording did not start. The words are still being written into the comment.";
   return null;
 }

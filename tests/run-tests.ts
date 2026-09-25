@@ -1959,6 +1959,7 @@ import { runFitsTheScreenRatchetTests } from "./fits-the-screen-ratchet.test.ts"
 import { runSquareEdgePortalRatchetTests } from "./square-edge-portal-ratchet.test.ts";
 import { runPhoenixCrmDictationTests } from "./phoenix-crm-dictation.test.ts";
 import { runPhoenixCrmSpeakTests } from "./phoenix-crm-speak.test.ts";
+import { runPhoenixCrmVoiceTranscribeTests } from "./phoenix-crm-voice-transcribe.test.ts";
 import { runPhoenixCrmDictationCorrectTests } from "./phoenix-crm-dictation-correct.test.ts";
 import { runPhoenixCrmDictationCorpusTests } from "./phoenix-crm-dictation-corpus.test.ts";
 import { runTerritorySyncPanelRoleScopingTests } from "./territory-sync-panel-role-scoping.test.ts";
@@ -6999,6 +7000,10 @@ await runTest(
 await runTest(
   "Phoenix CRM one spoken-comment control (owner, 2026-09-25 — \"I speak once and this speaking appears in the field as a text and saved as a record. Both.\"): one press runs both halves off one microphone, every sentence the rep reads is a pure function so it can only promise what the browser actually has, the processor notice stays on the control naming Google/Apple/Chrome/Safari, and the TEXT IS NEVER CALLED A TRANSCRIPT OF THE RECORDING — the engine's live reading can mishear where the stored audio, which no speech service ever touches, cannot",
   runPhoenixCrmSpeakTests,
+);
+await runTest(
+  "Phoenix CRM spoken comment on a browser with NO speech engine (owner, 2026-09-25 — \"un browsers must be text and audio\"): Firefox has no SpeechRecognition on any platform, so the finished recording is written out server-side by Groq and NEVER by OpenAI, which he refused on cost — the endpoint is fixed rather than read from AI_BASE_URL, the language is the API's `ar` and never the browser's `ar-EG` (which it rejects, and which omitted makes Whisper translate to fluent English), subtitle boilerplate and a stuck decoder are DROPPED rather than filed as something a doctor said, only the person who just recorded a note may have it transcribed because it is charged per second of audio, and the key's shape is pinned before any key exists",
+  runPhoenixCrmVoiceTranscribeTests,
 );
 await runTest(
   "Phoenix CRM dictation product correction: the lexicon is built from 136,983 real old-CRM comments, an Arabic clitic is preserved while only the stem is respelled, each token is corrected in its OWN script, and the corrector REFUSES to touch ordinary Arabic, a rep's short form, or a token equally near two products — because inventing a drug name in a clinical note is the expensive direction of the error",

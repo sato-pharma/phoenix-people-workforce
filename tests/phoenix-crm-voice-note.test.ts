@@ -10,10 +10,16 @@ import { stripComments } from "./support/comment-strip.ts";
 // Phoenix CRM — the visit's spoken note (owner, 2026-09-25).
 //
 // A rep standing outside a clinic can say in twenty seconds what he will not type in two minutes, and
-// in Egyptian Arabic the keyboard is the slow part. This keeps the AUDIO: nothing transcribes it and no
-// speech service sees it, which is the whole difference from the dictation shipped the same night,
-// where the audio goes to Google or Apple and what saves is text. They sit on the same form and the
-// one thing that must never happen is the two being described, stored or scored as one another.
+// in Egyptian Arabic the keyboard is the slow part. This keeps the AUDIO, which is the whole difference
+// from the dictation shipped the same night, where the speech goes to Google or Apple as it is spoken and
+// what saves is text. They sit on the same form and the one thing that must never happen is the two being
+// described, stored or scored as one another.
+//
+// ON MOST BROWSERS NOTHING READS THE STORED FILE, AND ON ONE KIND SOMETHING DOES. Firefox has no speech
+// engine at all, so there the finished recording is written out by Phoenix's own server
+// (src/lib/phoenix-crm/server/voice-transcribe.ts, added the same day on the owner's "un browsers must be
+// text and audio"). That is a SECOND engine in a SECOND module behind a SECOND route — never a change to
+// anything pinned in this file, and the sweep below is what keeps it out of the audio's own path.
 //
 // What is pinned here is what has no other alarm:
 //
@@ -27,8 +33,9 @@ import { stripComments } from "./support/comment-strip.ts";
 //   3. THE HALVES DO NOT FEED EACH OTHER. Since 2026-09-25 both run from ONE button (owner: "I speak
 //      once and this speaking appears in the field as a text and saved as a record. Both."), so the
 //      wording that kept them apart is no longer two sentences on two controls — it is one control
-//      saying which of the two to believe. The words come from the engine listening live; the stored
-//      audio is read by nothing. Pinned structurally below, and in words in phoenix-crm-speak.test.ts.
+//      saying which of the two to believe. Where the browser has an engine the words come from it
+//      listening live and the stored audio is read by nothing; where it has none they come from the
+//      stored audio itself. Pinned structurally below, and in words in phoenix-crm-speak.test.ts.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const RECORDER = "src/lib/phoenix-crm/voice-recorder.ts";
@@ -165,16 +172,21 @@ export function runPhoenixCrmVoiceNoteTests() {
   assert.match(recorder, /recorder\.state\s*!==\s*"inactive"/, `${RECORDER} stops a PAUSED recorder too — a backgrounded tab pauses rather than stops, and "nothing to stop" is what leaves the mic open`);
   assert.match(control, /recorder\.current\?\.cancel\(\)/, `${CONTROL} releases the microphone when the screen goes`);
 
-  // ── Nothing transcribes the RECORDING, and nothing says it does ───────────────
-  // The control is deliberately NOT in this sweep any more: since the two halves were merged onto one
-  // button it hosts the speech engine itself, so a "no recogniser here" check over it would be red for
-  // a correct file. What must stay true is that the path the AUDIO travels — recorder, server, player —
-  // never meets one, which is what makes "no speech service ever reads the recording" a fact about the
-  // code rather than a sentence on a screen.
+  // ── The audio path itself still meets no speech engine ────────────────────────
+  // NARROWED 2026-09-25, in the same day's second change, and the narrowing is the point. A browser with
+  // no speech engine of its own (Firefox) now DOES have the stored recording written out — by
+  // src/lib/phoenix-crm/server/voice-transcribe.ts, which is its own module reached by its own route. So
+  // "nothing ever transcribes a recording" is no longer true and must not be asserted; what is asserted
+  // is that the audio's OWN path — the recorder, the slot server that mints and signs it, and the player
+  // — carries no recogniser and no transcription, so the second engine cannot be reached by accident from
+  // any of the three. It is one extra import away and that import is what this sweep refuses.
+  //
+  // The control is not in the sweep either: since the halves were merged onto one button it hosts the
+  // live engine, so a "no recogniser here" check over it would be red for a correct file.
   assert.doesNotMatch(
     stripComments(readFileSync(SERVER, "utf8")) + recorder + player,
     /SpeechRecognition|webkitSpeech|transcri/i,
-    "the stored recording never reaches a speech engine — that is what the text half is not a transcript OF",
+    "the slot server, the recorder and the player hold no speech engine and no transcription — the second engine lives in its own module, so no screen or storage path can reach it sideways",
   );
 
   // And inside the one control the halves stay apart: the engine hands back TEXT, which goes to the
