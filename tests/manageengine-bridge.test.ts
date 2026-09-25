@@ -932,14 +932,24 @@ function runEnrollmentDoorTests() {
   );
   assert.match(audit, /entityType: "manageengine_enrollment_template"/);
 
-  // The page order, and what did NOT happen to Google's half.
+  // The page order, and what became of Google's half.
   const page = enrollmentSource("app/(admin)/devices/tablets/page.tsx");
   assert.ok(
     page.indexOf("<ManageEngineEnrollment") !== -1 &&
-      page.indexOf("<ManageEngineEnrollment") < page.indexOf("<RepTabletsConsole"),
+      page.indexOf("<ManageEngineEnrollment") < page.indexOf("<ManageEngineFleet"),
     "ManageEngine enrolls first — Google refuses every scan until it approves the project's device quota",
   );
-  assert.match(page, /<RepTabletsConsole/, "Google's console stays on the page, whole, for the day that approval lands");
+  assert.doesNotMatch(
+    page,
+    /<RepTabletsConsole/,
+    "Google's console is OFF the page (owner, 2026-09-25) — it duplicated every ManageEngine card while Google holds zero tablets",
+  );
+  // Taken off the page, NOT deleted: the component and the routes it calls stay in the repo for the day approval lands.
+  assert.match(
+    enrollmentSource("src/components/devices/rep-tablets-console.tsx"),
+    /export function RepTabletsConsole/,
+    "the Google console component stays in the repo, whole",
+  );
 
   for (const file of [
     "src/lib/devices/manageengine/enrollment.ts",
