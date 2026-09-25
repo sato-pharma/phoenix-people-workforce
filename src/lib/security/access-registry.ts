@@ -1402,6 +1402,19 @@ export const accessRegistry = [
   // the company fleet — so both verbs sit behind company_devices:approve, Super Admin only.
   sessionApi({ methods: ["GET"], pattern: "/api/devices/manageengine/enrollment", permission: { resource: "company_devices", action: "approve" } }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/manageengine/enrollment", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
+  // Copying the IMEI a ManageEngine-managed tablet reports into its custody-register entry, where the
+  // entry holds none (2026-09-25 — the ManageEngine twin of /api/devices/tablets/imei). It reads NO
+  // body: which entries are written, and with which IMEI, is decided on the server from the live fleet
+  // and the register, so the browser can ask for the copy but never say what it copies. Each IMEI
+  // written carries its own REQUIRED audit row (company_device).
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/manageengine/imei", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
+  // The rules a rep tablet carries — ManageEngine's profiles, the vendor's half of what the Android
+  // Management policy did. GET reads the company's Android profiles, or with ?deviceId= what one tablet
+  // carries. POST puts a rule set on a tablet or takes it off, which changes what that tablet is
+  // ALLOWED to do in a rep's hands — same gate as a remote command, and its own REQUIRED audit row
+  // (manageengine_device_profile).
+  sessionApi({ methods: ["GET"], pattern: "/api/devices/manageengine/profiles", permission: { resource: "company_devices", action: "approve" } }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/manageengine/profiles", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
   // Visual Aids (owner, 2026-09-18). A rep and his DM, RM and NSM read the ACTIVE aids of their own
   // line — the line check lives in src/lib/visual-aids/service.ts, below the permission. Marketing
   // Manager, GPM and Super Admin upload (create) and retire or replace (update); nobody deletes. The

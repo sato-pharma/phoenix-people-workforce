@@ -8,11 +8,11 @@
  * answers "what is going on with THIS one". Keeping it under the row means the answer arrives without
  * losing the list, and a tablet in lost mode stays visible at the top while its detail is read.
  *
- * EACH SECTION FETCHES ITSELF, ONCE, WHEN THE PANEL IS OPENED. Three reads reach ManageEngine —
- * detail, apps, command history — and a tablet that has not been opened costs nothing. A section that
- * fails says so in its own box and leaves the other two working: ManageEngine answers these three
- * endpoints independently and one being unavailable (a remote-control add-on, say) is not a reason to
- * blank the tablet.
+ * EACH SECTION FETCHES ITSELF, ONCE, WHEN THE PANEL IS OPENED. Four reads reach ManageEngine —
+ * detail, the rules it carries, apps, command history — and a tablet that has not been opened costs
+ * nothing. A section that fails says so in its own box and leaves the others working: ManageEngine
+ * answers these endpoints independently and one being unavailable (a remote-control add-on, say) is
+ * not a reason to blank the tablet.
  *
  * IT FITS THE SCREEN (AGENTS.md §4). Facts are a wrapping grid, not a table, so nothing has to be
  * shrunk or scrolled sideways at 375px; every value wraps and nothing truncates. Corners are square,
@@ -41,6 +41,17 @@ type TabletApp = {
 };
 type AppsState = { installed: TabletApp[]; available: TabletApp[]; repositoryError: boolean };
 type CommandRecord = { commandId: string | null; name: string; status: string | null; remarks: string | null; issuedAt: string | null };
+type TabletProfile = {
+  profileId: string;
+  name: string;
+  description: string | null;
+  /** What the rules cover, in words — "Screen lock", "What the tablet may do". */
+  payloads: string[];
+  /** Only on rules the tablet is carrying: ManageEngine's own word on whether it took them. */
+  status?: string | null;
+  appliedAt?: string | null;
+};
+type ProfileState = { applied: TabletProfile[]; available: TabletProfile[]; catalogueError: boolean };
 
 async function readJson<T>(url: string, body?: unknown): Promise<T> {
   const response = await fetch(url, {
@@ -317,6 +328,159 @@ function AppsSection({ deviceId }: { deviceId: string }) {
   );
 }
 
+/**
+ * The rules this tablet is carrying — ManageEngine's profiles, the vendor's half of what Google's
+ * policy did.
+ *
+ * WHAT IS ON THE TABLET, AND WHAT ELSE IT COULD BE PUT ON. The rules themselves are authored in
+ * ManageEngine's console — Phoenix never writes a profile's contents, because their REST API does
+ * not document the Android restriction keys and a guessed key would publish a profile that restricts
+ * nothing while this screen says the tablet is locked down. What Phoenix drives is WHICH tablet
+ * carries WHICH of the company's rule sets, and both directions are audited by asset tag.
+ */
+function RulesSection({ deviceId }: { deviceId: string }) {
+  const [state, setState] = useState<ProfileState | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [chosen, setChosen] = useState("");
+
+  // A promise chain, not an async body — see DetailSection above.
+  const load = useCallback(
+    (isCurrent: () => boolean) =>
+      readJson<ProfileState>(`/api/devices/manageengine/profiles?deviceId=${encodeURIComponent(deviceId)}`)
+        .then((result) => {
+          if (!isCurrent()) return;
+          setState(result);
+          setError(null);
+        })
+        .catch((caught: unknown) => {
+          if (isCurrent()) setError(messageOf(caught, "Could not read the rules on this tablet."));
+        })
+        .finally(() => {
+          if (isCurrent()) setLoading(false);
+        }),
+    [deviceId],
+  );
+
+  useEffect(() => {
+    let current = true;
+    void load(() => current);
+    return () => {
+      current = false;
+    };
+  }, [load]);
+
+  const change = useCallback(
+    async (body: Record<string, unknown>, key: string) => {
+      setBusy(key);
+      setNotice(null);
+      try {
+        const result = await readJson<{ message: string }>("/api/devices/manageengine/profiles", { deviceId, ...body });
+        setNotice(result.message);
+        await load(() => true);
+      } catch (caught) {
+        setError(messageOf(caught, "Could not change the rules on this tablet."));
+      } finally {
+        setBusy(null);
+      }
+    },
+    [deviceId, load],
+  );
+
+  const available = state?.available ?? [];
+  const pick = available.find((profile) => profile.profileId === chosen) ?? null;
+
+  return (
+    <SectionShell error={error} loading={loading} title="What this tablet is allowed to do">
+      <div className="mt-2 space-y-2">
+        {(state?.applied ?? []).length === 0 ? (
+          <p className="text-[11px] font-semibold text-slate-500">
+            This tablet carries none of the company&apos;s rule sets — it is running on whatever the enrollment left on
+            it. Put one on below.
+          </p>
+        ) : null}
+        {(state?.applied ?? []).map((profile) => (
+          <div
+            className="flex flex-wrap items-start justify-between gap-2 border-b border-slate-100 pb-2"
+            key={profile.profileId}
+          >
+            <div className="min-w-0">
+              <p className="break-words text-[12px] font-bold text-slate-900">{profile.name}</p>
+              <p className="break-words text-[11px] font-semibold text-slate-500">
+                {[
+                  profile.payloads.join(" · ") || null,
+                  profile.status,
+                  profile.appliedAt ? cairoDateTime(profile.appliedAt) : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </p>
+              {profile.description ? (
+                <p className="break-words text-[11px] font-semibold text-slate-500">{profile.description}</p>
+              ) : null}
+            </div>
+            <button
+              className={ACTION_BUTTON}
+              disabled={busy !== null}
+              onClick={() => void change({ change: "REMOVE", profileId: profile.profileId }, `remove:${profile.profileId}`)}
+              type="button"
+            >
+              {busy === `remove:${profile.profileId}` ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+              ) : (
+                <Trash2 className="h-3.5 w-3.5" aria-hidden />
+              )}
+              Take off
+            </button>
+          </div>
+        ))}
+      </div>
+
+      {state?.catalogueError ? (
+        <p className="mt-2 break-words text-[11px] font-bold text-amber-700">
+          The company&apos;s rule sets could not be read, so there is nothing to put on from here yet.
+        </p>
+      ) : null}
+
+      <div className="mt-3 flex flex-wrap items-end gap-2 border-t border-slate-100 pt-2">
+        <label className="min-w-0 flex-1">
+          <span className={MICRO_LABEL}>Put a rule set on this tablet</span>
+          <select
+            className="mt-1 w-full min-w-0 border border-slate-300 bg-white px-2 py-1.5 text-[12px] font-semibold text-slate-900"
+            disabled={available.length === 0 || busy !== null}
+            onChange={(event) => setChosen(event.target.value)}
+            value={chosen}
+          >
+            <option value="">
+              {available.length === 0
+                ? "Every rule set the company has is already on it"
+                : "Choose a rule set"}
+            </option>
+            {available.map((profile) => (
+              <option key={profile.profileId} value={profile.profileId}>
+                {profile.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          className={ACTION_BUTTON}
+          disabled={pick === null || busy !== null}
+          onClick={() => (pick ? void change({ change: "APPLY", profileId: pick.profileId }, `apply:${pick.profileId}`) : undefined)}
+          type="button"
+        >
+          {busy?.startsWith("apply:") ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : null}
+          Put it on
+        </button>
+      </div>
+
+      {notice ? <p className="mt-2 break-words text-[11px] font-bold text-emerald-800">{notice}</p> : null}
+    </SectionShell>
+  );
+}
+
 function HistorySection({ deviceId }: { deviceId: string }) {
   const [commands, setCommands] = useState<CommandRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -370,11 +534,12 @@ function HistorySection({ deviceId }: { deviceId: string }) {
   );
 }
 
-/** The three deep reads for one tablet, mounted only once its row is opened. */
+/** The four deep reads for one tablet, mounted only once its row is opened. */
 export function ManageEngineTabletPanel({ deviceId }: { deviceId: string }) {
   return (
     <div className="mt-3 space-y-3 border-t border-slate-200 pt-3">
       <DetailSection deviceId={deviceId} />
+      <RulesSection deviceId={deviceId} />
       <AppsSection deviceId={deviceId} />
       <HistorySection deviceId={deviceId} />
     </div>

@@ -38,7 +38,13 @@ export async function GET(request: Request) {
     await assertPermission(access, "company_devices", "approve");
     const params = new URL(request.url).searchParams;
     const deviceId = params.get("deviceId")?.trim();
-    if (!deviceId) return NextResponse.json(await getManageEngineFleet());
+    if (!deviceId) {
+      // The fleet read is also what lets a newly enrolled tablet add itself to the custody register,
+      // so it needs the person any such entry is written in the name of — see `fleet.ts`.
+      const actor =
+        hrIdForStorage(access.hrId) ?? resolveEmployeeIdentityId(access) ?? access.loginId ?? access.role;
+      return NextResponse.json(await getManageEngineFleet(actor));
+    }
 
     switch (params.get("view")?.trim()) {
       case "detail":

@@ -3673,7 +3673,11 @@ await runTest(
   + "route error mapping keeps one status per cause) — and the enrollment template a factory-fresh "
   + "tablet scans: the pasted payload is refused in words unless it names a device admin component "
   + "and a downloadable agent, nothing is added to it, and the credential reaches neither the "
-  + "page's ordinary load, nor the audit row, nor any log)",
+  + "page's ordinary load, nor the audit row, nor any log; and everything Google's half did for an "
+  + "enrolled tablet now happens for a ManageEngine-enrolled one: it adds itself to the custody "
+  + "register under the next PHX-TAB tag, the IMEI it reports fills an entry holding none — never "
+  + "overwriting one somebody typed and never on a tie — and its rules are read and changed from "
+  + "Phoenix without Phoenix ever authoring a profile's contents)",
   runManageEngineBridgeTests,
 );
 await runTest("organogram hardening", runOrganogramHardeningTests);

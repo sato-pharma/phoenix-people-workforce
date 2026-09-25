@@ -86,6 +86,12 @@ export type AuditEntityType =
   // until somebody changes it back. REQUIRED audit, written after ManageEngine has accepted the
   // change, naming the tablet by its custody asset tag and the app by its own name.
   | "manageengine_device_app"
+  // A rule set — ManageEngine calls it a profile — put on a rep's tablet or taken off it
+  // (2026-09-25). This is the ManageEngine half of what the Android Management policy did: it
+  // changes what the tablet is ALLOWED to do, its screen lock and kiosk pinning included, so it
+  // outlives any one command and is a REQUIRED audit. The row names the tablet by its custody asset
+  // tag and the rules by the name the company gave them in ManageEngine's console.
+  | "manageengine_device_profile"
   // The ManageEngine enrollment template the Rep Tablets page renders as a QR (2026-09-25). Their
   // REST API has no enrollment endpoint at all, so the payload is copied out of the ManageEngine
   // console once and saved here; saving it is what lets any factory-fresh tablet join the fleet,

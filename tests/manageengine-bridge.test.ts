@@ -42,6 +42,17 @@ import {
   ManageEngineEnrollmentInputError,
   parseManageEngineEnrollmentTemplate,
 } from "../src/lib/devices/manageengine/enrollment.ts";
+import {
+  changeManageEngineProfile,
+  getManageEngineProfileState,
+  listManageEngineProfiles,
+  ManageEngineProfileInputError,
+  profilePayloadLabel,
+} from "../src/lib/devices/manageengine/profiles.ts";
+import {
+  manageEngineImeisToRecord,
+  manageEngineTabletsToRegister,
+} from "../src/lib/devices/manageengine/register-sync.ts";
 import { findAccessRegistryEntry } from "../src/lib/security/access-registry.ts";
 import type { RegisterTablet } from "../src/lib/devices/managed-tablets.ts";
 
@@ -837,6 +848,332 @@ function runEnrollmentDoorTests() {
   assert.match(googleHalf, /from "@\/components\/devices\/qr-image"/, "Google's half draws with the shared one");
 }
 
+/**
+ * The maker a self-registering tablet carries onto its custody-register entry.
+ *
+ * 🔴 `product_name` IS NOT IT, THOUGH THE DOCUMENTATION SAYS IT IS. ManageEngine's device API
+ * documentation gives `"product_name": "samsung"`, but this tenant's live response (captured
+ * 2026-09-24 and pinned in the device tests above) sends `"product_name": "TB328XU"` — a Lenovo
+ * MODEL number. Live reality outranks the documented example: the maker is read only from a key that
+ * cannot mean anything else, and this tenant naming none means a null maker, never a model number
+ * filed as a maker for good on a register entry nobody will re-check.
+ */
+async function runManufacturerTests() {
+  resetManageEngineTokenCache();
+  const stub = makeFetch({
+    api: [
+      {
+        status: 200,
+        body: {
+          devices: [
+            { device_id: "me-1", device_name: "Tab A9", manufacturer: "Samsung", model: "SM-X115", platform_type: 2 },
+            { device_id: "me-2", device_name: "it.satopharma_TB328XU", product_name: "TB328XU", platform_type: 2 },
+          ],
+        },
+      },
+    ],
+  });
+  const devices = await listManageEngineDevices(stub.fetch, ENV);
+
+  assert.equal(devices[0].manufacturer, "Samsung", "a maker ManageEngine names is read");
+  assert.equal(devices[0].model, "SM-X115", "beside the model");
+  assert.equal(
+    devices[1].manufacturer,
+    null,
+    "product_name is NEVER read as the maker — on this tenant it is a model number, whatever the docs example says",
+  );
+  assert.equal(devices[1].model, "TB328XU", "it stays a model candidate, which is what it holds here");
+}
+
+/** A device shaped the way the live tenant sends them, for the register-sync decisions. */
+function meDevice(overrides: Partial<ManageEngineDevice>): ManageEngineDevice {
+  return {
+    deviceId: "me-1",
+    enrollmentStatus: "Managed",
+    imei: null,
+    isAndroid: true,
+    lastContactAt: null,
+    lostMode: false,
+    manufacturer: "samsung",
+    model: "SM-X115",
+    name: "Tab A9",
+    osVersion: "14",
+    platformLabel: "Android",
+    serialNumber: null,
+    userEmail: null,
+    userName: null,
+    ...overrides,
+  };
+}
+
+/**
+ * Everything Google's half did for an enrolled tablet, now done for a ManageEngine-enrolled one:
+ * the tablet puts itself into the custody register, and the IMEI it reports fills an entry that
+ * holds none.
+ */
+function runRegisterSyncTests() {
+  const fresh = meDevice({ deviceId: "me-new", serialNumber: "R9XABCDEF", imei: "865569071549107" });
+
+  // A managed Android tablet the register has never seen is added, with its maker and model.
+  const toRegister = manageEngineTabletsToRegister([fresh], []);
+  assert.equal(toRegister.length, 1, "an unregistered ManageEngine tablet is added to the custody register");
+  assert.deepEqual(
+    toRegister[0],
+    { imei: "865569071549107", manufacturer: "samsung", model: "SM-X115", serialNumber: "R9XABCDEF" },
+    "with the serial, IMEI, maker and model ManageEngine reports — the maker is not the model",
+  );
+
+  // Already in the register, by serial or by IMEI: nothing is added, so no tablet gets a second tag.
+  assert.deepEqual(
+    manageEngineTabletsToRegister([fresh], [register({ serialNumber: "r9xabcdef" })]),
+    [],
+    "a tablet the register already holds by serial is never added twice",
+  );
+  assert.deepEqual(
+    manageEngineTabletsToRegister([fresh], [register({ imei: "86556907154910" })]),
+    [],
+    "nor one it holds by IMEI, compared on digits",
+  );
+
+  // What is not a rep tablet, and what cannot be told apart from the next one.
+  assert.deepEqual(
+    manageEngineTabletsToRegister([meDevice({ isAndroid: false, serialNumber: "IPAD1" })], []),
+    [],
+    "an iPad in the tenant is not a rep tablet",
+  );
+  assert.deepEqual(
+    manageEngineTabletsToRegister([meDevice({ enrollmentStatus: "Removed", serialNumber: "GONE1" })], []),
+    [],
+    "a tablet ManageEngine has removed is not added",
+  );
+  assert.deepEqual(
+    manageEngineTabletsToRegister([meDevice({ imei: null, serialNumber: null })], []),
+    [],
+    "a tablet reporting neither a serial nor an IMEI cannot be told apart from another one",
+  );
+
+  // Two ManageEngine records for one physical tablet make one entry, not two.
+  assert.equal(
+    manageEngineTabletsToRegister([fresh, meDevice({ deviceId: "me-dupe", serialNumber: "R9XABCDEF" })], []).length,
+    1,
+    "one tablet enrolled twice is one register entry",
+  );
+
+  // ── The IMEI copy ──────────────────────────────────────────────────────────────────────────────
+  const entry = register({ assetTag: "PHX-TAB-0007", id: "reg-7", serialNumber: "R9XABCDEF" });
+
+  assert.deepEqual(
+    manageEngineImeisToRecord([fresh], [entry]),
+    [{ assetTag: "PHX-TAB-0007", imei: "865569071549107", registerDeviceId: "reg-7" }],
+    "the IMEI a serial-matched tablet reports fills an entry that holds none",
+  );
+
+  assert.deepEqual(
+    manageEngineImeisToRecord([fresh], [{ ...entry, imei: "111111111111111" }]),
+    [],
+    "an IMEI somebody typed is never overwritten, even when the tablet reports a different one",
+  );
+
+  assert.deepEqual(
+    manageEngineImeisToRecord(
+      [meDevice({ deviceId: "me-imei-only", imei: "865569071549107", serialNumber: null })],
+      [register({ id: "reg-8", imei: "865569071549107" })],
+    ),
+    [],
+    "an entry matched BY that IMEI already holds it — nothing is copied (the serial check above it is belt and braces)",
+  );
+
+  assert.deepEqual(
+    manageEngineImeisToRecord([fresh], [entry, register({ assetTag: "PHX-TAB-0009", id: "reg-9", imei: "865569071549107" })]),
+    [],
+    "an IMEI another entry already holds is refused — it would be on two tablets",
+  );
+
+  // Ties are held back rather than guessed, both ways round.
+  assert.deepEqual(
+    manageEngineImeisToRecord(
+      [fresh, meDevice({ deviceId: "me-twin", imei: "490154203237518", serialNumber: "R9XABCDEF" })],
+      [entry],
+    ),
+    [],
+    "two tablets claiming one entry writes nothing at all",
+  );
+  assert.deepEqual(
+    manageEngineImeisToRecord(
+      [fresh, meDevice({ deviceId: "me-twin", imei: "865569071549107", serialNumber: "SECOND1" })],
+      [entry, register({ assetTag: "PHX-TAB-0010", id: "reg-10", serialNumber: "SECOND1" })],
+    ),
+    [],
+    "one IMEI reaching two entries writes nothing at all",
+  );
+}
+
+/**
+ * The rules a tablet carries — ManageEngine's profiles, the vendor's half of Google's policy.
+ *
+ * 🔴 PHOENIX NEVER WRITES A PROFILE'S CONTENTS. Their REST API does not document the Android
+ * restriction payload's field names, and a guessed key would publish a profile that restricts
+ * nothing while the screen says the tablet is locked down. These tests pin that the module reads the
+ * company's own profiles and drives WHICH tablet carries WHICH of them, and nothing more.
+ */
+async function runProfileTests() {
+  resetManageEngineTokenCache();
+
+  // The catalogue: Android only, payloads in words, sorted by name.
+  const catalogue = makeFetch({
+    api: [
+      {
+        status: 200,
+        body: {
+          profiles: [
+            { profile_id: 12, profile_name: "Rep tablet rules", platform_type: 2, payloads: ["restrictionspolicy", "passcodepolicy"] },
+            { profile_id: 13, profile_name: "Alpha", platform_type: 2, payloads: ["applockpolicy"] },
+            { profile_id: 20, profile_name: "iPad rules", platform_type: 1, payloads: ["restrictionspolicy"] },
+          ],
+        },
+      },
+    ],
+  });
+  const profiles = await listManageEngineProfiles(catalogue.fetch, ENV);
+  assert.deepEqual(
+    profiles.map((profile) => profile.name),
+    ["Alpha", "Rep tablet rules"],
+    "an iOS profile is left out — a tablet cannot carry one, and offering it could only fail",
+  );
+  assert.deepEqual(
+    profiles[1].payloads,
+    ["What the tablet may do", "Screen lock"],
+    "what a profile restricts is shown in words, never as restrictionspolicy",
+  );
+  assert.equal(profiles[1].profileId, "12", "the id is a string on the wire whatever ManageEngine sends");
+  assert.match(catalogue.calls.at(-1)!.url, /\/api\/v1\/mdm\/profiles$/, "the catalogue is the documented endpoint");
+
+  // An unmapped payload still reads as words rather than a code.
+  assert.equal(profilePayloadLabel("somethingnewpolicy"), "Somethingnew", "an unmapped payload is title-cased, never hidden");
+  assert.equal(profilePayloadLabel("passcodepolicy"), "Screen lock");
+
+  // One tablet: what it carries, and what else it could be put on.
+  resetManageEngineTokenCache();
+  const perDevice = makeFetch({
+    api: [
+      {
+        status: 200,
+        body: {
+          profiles: [
+            { profile_id: 12, profile_name: "Rep tablet rules", platform_type: 2, payloads: ["restrictionspolicy"], status: "Applied", applied_time: 1_758_000_000_000 },
+          ],
+        },
+      },
+      {
+        status: 200,
+        body: {
+          profiles: [
+            { profile_id: 12, profile_name: "Rep tablet rules", platform_type: 2, payloads: ["restrictionspolicy"] },
+            { profile_id: 13, profile_name: "Alpha", platform_type: 2, payloads: ["applockpolicy"] },
+          ],
+        },
+      },
+    ],
+  });
+  const state = await getManageEngineProfileState("me-1", perDevice.fetch, ENV);
+  assert.deepEqual(state.applied.map((profile) => profile.name), ["Rep tablet rules"]);
+  assert.equal(state.applied[0].status, "Applied", "ManageEngine's own word on whether the tablet took it");
+  assert.equal(state.applied[0].appliedAt, new Date(1_758_000_000_000).toISOString(), "and when, as an instant the page shows in Cairo time");
+  assert.deepEqual(
+    state.available.map((profile) => profile.name),
+    ["Alpha"],
+    "a rule set already on the tablet is never offered again as something to add",
+  );
+  assert.equal(state.catalogueError, false);
+  assert.ok(
+    perDevice.calls.some((call) => /\/api\/v1\/mdm\/devices\/me-1\/profiles$/.test(call.url)),
+    "the tablet's own profiles come from the documented per-device endpoint",
+  );
+
+  // The catalogue failing does not blank what the tablet is carrying.
+  resetManageEngineTokenCache();
+  const halfDown = makeFetch({
+    api: [
+      { status: 200, body: { profiles: [{ profile_id: 12, profile_name: "Rep tablet rules", platform_type: 2 }] } },
+      { status: 500, body: { error_description: "profiles unavailable" } },
+    ],
+  });
+  const degraded = await getManageEngineProfileState("me-1", halfDown.fetch, ENV);
+  assert.equal(degraded.catalogueError, true, "the catalogue being down is said plainly");
+  assert.equal(degraded.applied.length, 1, "and what the tablet carries still shows");
+
+  // Nothing is sent on a change that names no tablet, no rules, or an action that is not one of two.
+  for (const [input, why] of [
+    [{ action: "associate" as const, deviceId: "", profileId: "12" }, "no tablet"],
+    [{ action: "associate" as const, deviceId: "me-1", profileId: "" }, "no rules"],
+    [{ action: "publish" as unknown as "associate", deviceId: "me-1", profileId: "12" }, "an action that is not one of the two"],
+  ]) {
+    resetManageEngineTokenCache();
+    const untouched = makeFetch({});
+    await assert.rejects(
+      () => changeManageEngineProfile(input as Parameters<typeof changeManageEngineProfile>[0], "B-10", untouched.fetch, ENV),
+      ManageEngineProfileInputError,
+      `a change with ${why} is refused in words`,
+    );
+    assert.equal(untouched.calls.length, 0, `a change with ${why} reaches neither Zoho nor ManageEngine`);
+  }
+}
+
+/** The two new doors, and what the code that walks through them must not do. */
+function runParityDoorTests() {
+  const approve = { action: "approve", resource: "company_devices" };
+  for (const [pattern, methods] of [
+    ["/api/devices/manageengine/imei", ["POST"]],
+    ["/api/devices/manageengine/profiles", ["GET", "POST"]],
+  ] as const) {
+    for (const method of methods) {
+      const entry = findAccessRegistryEntry(pattern, method);
+      assert.equal(entry?.pattern, pattern, `${method} ${pattern} has its own access-registry entry`);
+      assert.deepEqual(entry?.permission, approve, `${pattern} is Super Admin only — the rest of Rep Tablets' door`);
+      if (method === "POST") {
+        assert.equal(entry?.csrf.required, true, `${pattern} is same-origin only`);
+        assert.equal(entry?.audit.required, true, `${pattern} writes a REQUIRED audit row`);
+        assert.equal(entry?.audit.classification, "mutation");
+      }
+    }
+  }
+
+  // 🔴 The IMEI copy takes NOTHING from the browser: which entries are written, and with which IMEI,
+  // is decided on the server from the live fleet and the register.
+  const imeiRoute = enrollmentSource("app/api/devices/manageengine/imei/route.ts");
+  assert.doesNotMatch(imeiRoute, /request\.json\(/, "the IMEI copy reads no body — the browser cannot choose what is written");
+  assert.match(imeiRoute, /listManageEngineDevices\(\)/, "it reads the fleet again on the server");
+  assert.match(imeiRoute, /assertSameOriginMutation/);
+
+  // The register write says where the number came from. A row reading "reports to Google" about a
+  // number ManageEngine read would be a false record of a value's origin.
+  const registerService = enrollmentSource("src/lib/devices/service.ts");
+  assert.match(
+    registerService,
+    /reports to \$\{REPORTED_IMEI_SOURCE_NAMES\[source\]\}/,
+    "the audit row names the console that reported the IMEI",
+  );
+  const sync = enrollmentSource("src/lib/devices/manageengine/register-sync.ts");
+  assert.match(sync, /source: "manageengine"/, "and the ManageEngine path passes its own");
+
+  // 🔴 Phoenix never authors a profile's contents — see profiles.ts. A POST or PUT to /profiles would
+  // be exactly that, and the restriction keys are undocumented, so a guess would restrict nothing.
+  const profiles = enrollmentSource("src/lib/devices/manageengine/profiles.ts");
+  assert.doesNotMatch(
+    profiles,
+    /restrictionspolicy["']\s*:|payloaditems|\/profiles["'],\s*\{\s*body/,
+    "Phoenix never writes a profile's contents — only which tablet carries which of the company's own",
+  );
+  assert.match(profiles, /devices\/\$\{encodeURIComponent\(deviceId\)\}\/profiles/, "it associates against the device endpoint");
+  assert.match(profiles, /entityType: "manageengine_device_profile"/, "and every change is an audited act on a real tablet");
+
+  // One register write path, whichever console noticed the tablet first.
+  const autoRegister = enrollmentSource("src/lib/devices/tablet-auto-register.ts");
+  assert.match(autoRegister, /manageengine:/, "ManageEngine is a door into the same register entry, with its own note");
+  assert.match(sync, /registerTablet\(facts, "manageengine"/, "through the same registerTablet the Google half calls");
+  assert.doesNotMatch(sync, /createDevice\(/, "never a second way of creating a register entry that could drift");
+}
+
 export async function runManageEngineBridgeTests() {
   await runAuthTests();
   await runClientTests();
@@ -848,4 +1185,8 @@ export async function runManageEngineBridgeTests() {
   runErrorMappingTests();
   runEnrollmentTemplateTests();
   runEnrollmentDoorTests();
+  await runManufacturerTests();
+  runRegisterSyncTests();
+  await runProfileTests();
+  runParityDoorTests();
 }

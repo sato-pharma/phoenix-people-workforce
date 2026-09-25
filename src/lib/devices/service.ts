@@ -1010,9 +1010,22 @@ export async function markDevice(input: MarkDeviceInput, actor: string): Promise
   return typeof data === "string" ? data : String(data ?? input.status);
 }
 
+/** Which console reported the IMEI — it decides the audit row's wording, nothing else. */
+export type ReportedImeiSource = "android_management" | "manageengine";
+
+const REPORTED_IMEI_SOURCE_NAMES: Readonly<Record<ReportedImeiSource, string>> = {
+  android_management: "Google",
+  manageengine: "ManageEngine",
+};
+
 /**
- * Record the IMEI a managed tablet reports to Google on its register entry — ONLY where the entry
+ * Record the IMEI a managed tablet reports to its MDM on its register entry — ONLY where the entry
  * holds none.
+ *
+ * THE AUDIT ROW NAMES THE CONSOLE THAT REPORTED IT, and the default stays Google so the Android
+ * Management path is unchanged to the byte. A row reading "reports to Google" about a number
+ * ManageEngine read would be a false record of where a value came from, which is the one thing an
+ * audit row exists to get right.
  *
  * The one register write whose value no person typed: Rep Tablets calls it with what the tablet
  * itself reported, so the IMEI a police report or an operator asks for is on the entry without
@@ -1025,10 +1038,14 @@ export async function markDevice(input: MarkDeviceInput, actor: string): Promise
  * on digits, so a typed "35-123456-789012-3" counts), and `uq_company_devices_imei` refuses the
  * same text at the database, whatever called this.
  */
-export async function recordReportedImei(input: { deviceId: string; imei: string }, actor: string): Promise<boolean> {
+export async function recordReportedImei(
+  input: { deviceId: string; imei: string; source?: ReportedImeiSource },
+  actor: string,
+): Promise<boolean> {
   const supabase = getSupabaseAdmin();
   const imei = trimmed(input.imei);
   if (!imei) throw new Error("There is no IMEI to record.");
+  const source = input.source ?? "android_management";
 
   const { data: before, error: readError } = await supabase
     .from("company_devices")
@@ -1044,9 +1061,9 @@ export async function recordReportedImei(input: { deviceId: string; imei: string
     actorLoginId: actor,
     entityType: "company_device",
     entityId: input.deviceId,
-    summary: `Recorded the IMEI ${row.asset_tag} reports to Google in the custody register`,
+    summary: `Recorded the IMEI ${row.asset_tag} reports to ${REPORTED_IMEI_SOURCE_NAMES[source]} in the custody register`,
     oldValues: { imei: row.imei },
-    newValues: { imei, source: "android_management" },
+    newValues: { imei, source },
   });
 
   const update = supabase
