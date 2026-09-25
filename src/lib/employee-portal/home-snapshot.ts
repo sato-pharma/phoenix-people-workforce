@@ -7,6 +7,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { devSafePromiseAllSettled } from "@/lib/utils/dev-safe-promise-all";
 import { isReviewPeriod, windowLabel } from "@/lib/business-review/period-format";
 import { getVacationBalancePeriod } from "@/lib/vacation/calculations";
+import { getEmployeeAnnualLeaveBalanceDays } from "@/lib/vacation/service";
 import {
   getDsmTeamPerformance,
   getEmployeePortalShellData,
@@ -354,6 +355,15 @@ export type PortalHomeSnapshot = {
   planAdherence: PortalPlanAdherence | null;
   latestPayslip: { month: string; netSalary: number } | null;
   leaveEntitlementDays: number | null;
+  /**
+   * Annual leave DAYS LEFT — entitlement minus every already-approved paid day taken this balance
+   * period, via getEmployeeAnnualLeaveBalanceDays (the Vacation Report's own entitlement-row math),
+   * never a second copy of the subtraction. Distinct from leaveEntitlementDays above, which is the
+   * raw yearly grant some dashboards (Product Manager/GPM) deliberately still show labelled
+   * "annual entitlement" — do not repoint those at this field, and do not repoint this one at the
+   * entitlement figure. Null only when the balance could not be computed (no employee match).
+   */
+  leaveDaysRemaining: number | null;
   mrSalesAchievement: { achievementPercent: number; salesValue: number; targetValue: number } | null;
   monthlySalesTrend: Array<{ year: number; month: number; achievementPercent: number; salesValue: number; targetValue: number }> | null;
   doubleVisitPulse: { daysSinceLastDv: number | null; dvsThisMonth: number; dvsLast90Days: number } | null;
@@ -1123,9 +1133,12 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
     role,
   });
 
-  // Pure calculation — no DB.
-  const balance = getVacationBalancePeriod({ hireDate: shell.hrContract.hireDate, referenceDate: today });
-  const [roleExtras, dvFocus, earlyBirdStars, planAdherence] = await Promise.all([
+  // Pure calculation — no DB. employeeHrId is required so a per-employee calendar-year reset
+  // (see usesCalendarYearVacationReset in vacation/calculations.ts) applies here exactly as it
+  // does on the Vacation Report and the request page — omitting it silently kept this tile on
+  // the hire-anniversary reset for an employee whose real period had already rolled over.
+  const balance = getVacationBalancePeriod({ employeeHrId: hrId, hireDate: shell.hrContract.hireDate, referenceDate: today });
+  const [roleExtras, dvFocus, earlyBirdStars, planAdherence, leaveDaysRemaining] = await Promise.all([
     roleExtrasPromise,
     dvFocusPromise,
     // Computed OUTSIDE the role branches: it is the same three line-stars for every audience, so
@@ -1139,6 +1152,8 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
     // a person has plans is the only honest test, so that is the test — the loader returns null for
     // everyone who has none.
     hrId ? loadPortalPlanAdherence(hrId).catch(() => null) : Promise.resolve(null),
+    // Days LEFT, not the raw entitlement — see leaveDaysRemaining's own doc on PortalHomeSnapshot.
+    hrId ? getEmployeeAnnualLeaveBalanceDays(hrId).catch(() => null) : Promise.resolve(null),
   ]);
 
   return {
@@ -1151,6 +1166,7 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
     planAdherence,
     latestPayslip,
     leaveEntitlementDays: balance?.entitlementDays ?? null,
+    leaveDaysRemaining,
     mrSalesAchievement,
     monthlySalesTrend,
     doubleVisitPulse,
