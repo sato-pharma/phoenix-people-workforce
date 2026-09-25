@@ -88,8 +88,8 @@ export async function runMobileCrmVoiceCommentTests() {
   assert.ok(uploadAt < transcribeAt, "the recording is stored before it is transcribed, so a failed transcription never loses the audio");
   assert.match(
     voice,
-    /return \{ note, status: "stored", text: "" \}/,
-    "a refused transcription returns the stored note with empty text, not a failure",
+    /return \{ note, status: "stored", text: "", transcriptionError: crmErrorMessage\(error\) \}/,
+    "a refused transcription returns the stored note with empty text and the reason to show, not a failure",
   );
 
   // --- The availability probe is the free GET, never the paid POST. ------------------------------

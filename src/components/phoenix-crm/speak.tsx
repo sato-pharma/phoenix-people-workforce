@@ -94,6 +94,18 @@ const NO_HALVES: SpeakHalves = { text: "none", audio: false };
 
 const TRANSCRIBE_URL = "/api/phoenix-crm/voice/transcribe";
 
+/**
+ * The handover breadcrumb is throttled to at most one per window — not latched for the tab's whole life. It
+ * exists because the handover makes no request of its own, so `/admin/error-monitor` would otherwise have
+ * nothing to show that the Firefox path is being taken. On Firefox that handover is the NORMAL path on
+ * every recording, so logging each one buries real errors under a steady stream of non-errors. A
+ * one-per-page-load latch went too far the other way: after the very first handover it fell permanently
+ * silent, so a tab left open for hours — whose feature later broke — showed error-monitor nothing at all.
+ * A time throttle keeps the volume to one heartbeat per window while proving the path is STILL live.
+ */
+const HANDOVER_LOG_INTERVAL_MS = 10 * 60 * 1000;
+let handoverReportedAt = 0;
+
 const subscribeToNothing = () => () => {};
 
 /** Neither half on the server, so the control never renders on the first pass and then vanishes. */
@@ -356,12 +368,18 @@ export function CrmSpeak({
           if (handingOver) {
             // So the panel stops promising words as he talks — it said "writing as you talk" until now.
             setStarted((was) => ({ ...was, text: "server" }));
-            // One breadcrumb, because this failure was invisible from the server: the request was never
-            // made, so `/admin/error-monitor` had nothing at all to show while the owner waited.
-            reportClientError({
-              context: `speak=handover engineCode=${code} recorder=1 serverAvailable=1`,
-              error: new Error("Browser speech engine has no Arabic — writing the recording out instead"),
-            });
+            // One breadcrumb per window: this failure is invisible from the server because the request was
+            // never made, so `/admin/error-monitor` needs to see it happen — but on Firefox it is the normal
+            // path on every recording, so logging each one would drown real errors. Throttled, not latched:
+            // a heartbeat keeps proving the path is live instead of going silent forever after the first.
+            const now = Date.now();
+            if (now - handoverReportedAt > HANDOVER_LOG_INTERVAL_MS) {
+              handoverReportedAt = now;
+              reportClientError({
+                context: `speak=handover engineCode=${code} recorder=1 serverAvailable=1`,
+                error: new Error("Browser speech engine has no Arabic — writing the recording out instead"),
+              });
+            }
           } else setError(message);
 
           if (!recorder.current) setListening(false);

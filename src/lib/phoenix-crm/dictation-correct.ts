@@ -77,16 +77,25 @@ const ARABIC_DIACRITICS = /[ً-ْـٰ]/g;
  * ي are routinely swapped, ة and ه are swapped constantly in Egyptian typing, and the Persian letters
  * چ ڤ گ appear where a rep is reaching for a sound Arabic has no letter for — which is precisely what
  * happens with a European brand name.
+ *
+ * The LETTER folds live here, alone, because a second normaliser needs the identical set: `normalizeEchoWord`
+ * in `../ai/groq-transcription` compares a re-transcription against the prompt and must fold every spelling
+ * this does, or an echo spelled the new way slips its comparison and the fabricated prompt sentence lands in
+ * a comment. It strips its own diacritics and edge punctuation and then calls this, so a fold added here
+ * reaches both with no second edit — the drift that let an echo through cannot reopen.
  */
-export function normalizeArabic(word: string): string {
+export function foldArabicLetters(word: string): string {
   return word
-    .replace(ARABIC_DIACRITICS, "")
     .replace(/[أإآٱ]/g, "ا")
     .replace(/ى/g, "ي")
     .replace(/ة/g, "ه")
     .replace(/چ/g, "ج")
     .replace(/ڤ/g, "ف")
     .replace(/گ/g, "ك");
+}
+
+export function normalizeArabic(word: string): string {
+  return foldArabicLetters(word.replace(ARABIC_DIACRITICS, ""));
 }
 
 function isArabic(word: string): boolean {

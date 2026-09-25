@@ -10,6 +10,7 @@ import {
   stripPromptEcho,
 } from "../src/lib/ai/groq-transcription.ts";
 import { DICTATION_LANG } from "../src/lib/phoenix-crm/dictation.ts";
+import { foldArabicLetters, normalizeArabic } from "../src/lib/phoenix-crm/dictation-correct.ts";
 import { PRODUCT_VOCABULARY } from "../src/lib/phoenix-crm/dictation-vocabulary.ts";
 import { TRANSCRIPTION_PROMPT } from "../src/lib/phoenix-crm/server/voice-transcribe.ts";
 import { KEY_SHAPES, checkSecretShape } from "../scripts/secret-shape-rules.mjs";
@@ -151,12 +152,13 @@ export function runPhoenixCrmVoiceTranscribeTests() {
     sampleAt > lastProductAt,
     "the Egyptian sample comes LAST, after the product names: the closest preceding text is the strongest influence and dialect is what was wrong, while ending on a comma-separated list biases the answer towards writing a list",
   );
-  // The 224-token cap drops the END of a prompt silently. Arabic runs about three tokens a word, so this
-  // budget keeps both halves inside it with room to spare — and if the cap is ever reached it is the
-  // sample that goes, not the product names, which is the whole reason for the order above.
+  // The 224-token cap keeps the FINAL tokens of a prompt and drops the ones at the START, silently. Arabic
+  // runs about three tokens a word, so this budget keeps both halves inside it with room to spare — and if
+  // the cap is ever reached it is the product NAMES, at the head, that go, not the sample at the tail. The
+  // order does not protect the names; staying well under the cap does, which is what this pins.
   assert.ok(
     TRANSCRIPTION_PROMPT.length <= 400,
-    `the prompt stays well inside the 224-token cap (${TRANSCRIPTION_PROMPT.length} characters) — over it the model drops the tail with no error, and the tail is the dialect steer`,
+    `the prompt stays well inside the 224-token cap (${TRANSCRIPTION_PROMPT.length} characters) — over it the model drops the HEAD with no error, and the head is the product names`,
   );
   // 🔴 It can be handed back verbatim instead of transcribed, so every claim in it can surface in a comment
   // as something a doctor supposedly said. It therefore states nothing about anybody.
@@ -196,6 +198,55 @@ export function runPhoenixCrmVoiceTranscribeTests() {
     stripAt >= 0 && guardAt > stripAt,
     `${CLIENT} strips the echo BEFORE judging the answer: an echoed Egyptian sentence is fluent, unrepetitive and about a doctor, so the hallucination guard would pass it through`,
   );
+
+  // ── The four review fixes are pinned so a later edit cannot quietly undo them ──
+  // 2026-09-26. Each is a behaviour a source-fingerprint pass would miss and a plain refactor could revert
+  // while every screen still renders; the review that found them is only paid for once if these fire on the
+  // way back in.
+
+  // (a) The echo comparison and product matching fold the SAME letters, because they ARE one function. A
+  // form the decoder reaches for that one folds and the other does not is how an echo slips the compare and
+  // the fabricated sample sentence lands in a comment; sharing foldArabicLetters shuts that path for good.
+  for (const [raw, folded] of [["أإآٱ", "اااا"], ["ى", "ي"], ["ة", "ه"], ["چ", "ج"], ["ڤ", "ف"], ["گ", "ك"]] as const) {
+    assert.equal(foldArabicLetters(raw), folded, `foldArabicLetters folds ${raw} → ${folded}`);
+    assert.equal(normalizeArabic(raw), folded, `normalizeArabic folds ${raw} identically — the two normalisers cannot drift`);
+  }
+  assert.match(client, /foldArabicLetters\(/, `${CLIENT}'s echo guard folds through the shared foldArabicLetters, so a fold added for product matching reaches it with no second edit`);
+
+  // (b) The edge strip cleans a removed echo's leftover mark WITHOUT eating a real ending. A head echo can
+  // strand a dangling terminal mark and a comment never opens on one, so the leading edge strips . ! ? ؟;
+  // the trailing edge must not, or a rep's own «...؟» reaches the manager as a flat statement.
+  assert.equal(
+    stripPromptEcho("الدكتور مهتم بالمنتج؟", TRANSCRIPTION_PROMPT),
+    "الدكتور مهتم بالمنتج؟",
+    "a real comment ending in ؟ keeps it — the trailing strip must not eat a comment's own final mark",
+  );
+  assert.equal(
+    stripPromptEcho("؟ الدكتور مهتم بالمنتج", TRANSCRIPTION_PROMPT),
+    "الدكتور مهتم بالمنتج",
+    "a leading terminal mark — all a head echo can strand — is still cleaned",
+  );
+  assert.equal(
+    stripPromptEcho("الدكتور مهتم بالمنتج،  ", TRANSCRIPTION_PROMPT),
+    "الدكتور مهتم بالمنتج",
+    "trailing whitespace and a separator comma are still trimmed",
+  );
+
+  // (c) The two browser-only halves keep the behaviour the review restored. They run in a real browser — a
+  // React effect and a MediaRecorder — so this node suite pins them by source: a revert turns one red.
+  const speakSource = stripComments(readFileSync("src/components/phoenix-crm/speak.tsx", "utf8"));
+  const recorderSource = stripComments(readFileSync("src/lib/phoenix-crm/voice-recorder.ts", "utf8"));
+  // The engine-handover breadcrumb is throttled by TIME, not latched once for the tab's life: a permanent
+  // boolean hid every handover after the first, so a server path that began failing left no trace.
+  assert.match(speakSource, /handoverReportedAt/, "speak.tsx throttles the handover log by timestamp, not a one-shot boolean");
+  assert.match(speakSource, /now - handoverReportedAt > HANDOVER_LOG_INTERVAL_MS/, "speak.tsx logs again once the interval passes — a later handover is never silently swallowed");
+  assert.doesNotMatch(speakSource, /handoverReported\s*=\s*true/, "speak.tsx keeps no permanent latch — restoring one is the regression this pins");
+  // The two stop paths build the Recording through ONE settle(), so a recorder already inactive returns the
+  // same typed blob and one-second floor as the recorder's own onstop.
+  assert.match(recorderSource, /const settle = \(\): Recording =>/, "voice-recorder.ts builds the Recording in one place");
+  assert.match(recorderSource, /new Blob\(chunks, \{ type \}\)/, "voice-recorder.ts gives the blob its codec type so the <audio> preview can play it");
+  assert.match(recorderSource, /Math\.max\(1, elapsed\(\)\)/, "voice-recorder.ts floors the length to a second so a recording never reports 0:00");
+  assert.match(recorderSource, /resolve\(settle\(\)\)/, "voice-recorder.ts's inactive-stop fallback returns the shared settle(), not a hand-copied second build");
 
   // The same corrector the live engine's words go through. A general Arabic model has never heard
   // "تيبوفورتين" either, so the failure it fixes is identical and the fix must not be duplicated.

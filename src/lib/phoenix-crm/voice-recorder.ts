@@ -109,13 +109,20 @@ export async function startRecording(onTick?: (seconds: number) => void): Promis
     for (const track of stream.getTracks()) track.stop();
   };
 
+  // One place builds the finished Recording, so the two stop paths — the recorder's own `onstop` and the
+  // fallback below for a recorder already inactive — cannot drift the way they once did, when one gained a
+  // typed blob and a one-second floor and the other kept an untyped blob and a raw count. The typed blob
+  // lets the in-form <audio> preview infer the codec, and the floor stops a recording ever reporting 0:00.
+  const settle = (): Recording => {
+    const type = recorder.mimeType || mimeType || "audio/webm";
+    return { blob: new Blob(chunks, { type }), mimeType: type, seconds: Math.max(1, elapsed()) };
+  };
+
   let stopResolver: ((value: Recording) => void) | null = null;
 
   recorder.onstop = () => {
-    const seconds = Math.max(1, elapsed());
-    const type = recorder.mimeType || mimeType || "audio/webm";
     release();
-    stopResolver?.({ blob: new Blob(chunks, { type }), mimeType: type, seconds });
+    stopResolver?.(settle());
   };
 
   // Hard cap. Without this, one forgotten recording is the storage budget.
@@ -143,12 +150,10 @@ export async function startRecording(onTick?: (seconds: number) => void): Promis
         // the mic open. Stopping properly also flushes the last chunk.
         if (recorder.state !== "inactive") recorder.stop();
         else {
+          // Already inactive: the hard cap, a backgrounded tab or an error stopped it before this ran. The
+          // same `settle` the onstop path uses builds the result, so it cannot differ by how it ended.
           release();
-          resolve({
-            blob: new Blob(chunks),
-            mimeType: recorder.mimeType || mimeType || "audio/webm",
-            seconds: elapsed(),
-          });
+          resolve(settle());
         }
       }),
     cancel: () => {

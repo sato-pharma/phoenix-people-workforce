@@ -76,7 +76,9 @@ export function CrmSpeakComment({
 
   const [working, setWorking] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
-  const [silent, setSilent] = useState(false);
+  // The note shown when the recording was saved but produced no words — the message says WHY, because a
+  // silent clinic and a downed speech service are not the same thing to a rep deciding what to do next.
+  const [silentNote, setSilentNote] = useState<string | null>(null);
   /** Whether the words can be written out at all. Optimistic: only a definite "no" withdraws the promise. */
   const [canWrite, setCanWrite] = useState(true);
   // `finish` is reachable from the auto-stop effect as well as the button, and the two must not overlap:
@@ -129,16 +131,26 @@ export function CrmSpeakComment({
       return;
     }
     onChange(outcome.note);
-    // Empty text with the note stored is the ordinary "could not make it out" ending, not a failure: the
-    // recording is saved and the only thing left is to type. It gets an ordinary note, never a red one.
-    setSilent(outcome.text.length === 0);
-    if (outcome.text) onAppend(outcome.text);
+    if (outcome.text) {
+      onAppend(outcome.text);
+      setSilentNote(null);
+    } else {
+      // Empty text with the note stored is never a failure — the recording is saved and the only thing
+      // left is to type — so it gets an ordinary note, never a red one. But WHICH note depends on why the
+      // words are missing: `transcriptionError` carries the service's own sentence when the service failed,
+      // and only a genuine silence falls through to the "nothing could be made out" line. Blaming silence
+      // for a service that was down sends the rep to listen for words that were never going to come.
+      setSilentNote(
+        outcome.transcriptionError ??
+          "Nothing could be made out in the recording. The recording is saved — type the comment instead.",
+      );
+    }
   }
 
   async function start() {
     if (working || state.isRecording) return;
     setProblem(null);
-    setSilent(false);
+    setSilentNote(null);
     const access = await prepareCrmMicrophone();
     if (!access.granted) {
       setProblem(describeMissingCrmMicrophone(access));
@@ -195,7 +207,7 @@ export function CrmSpeakComment({
           The words cannot be written out right now, so the recording is kept and the comment is typed.
         </Text>
       )}
-      {silent ? <CrmNote tone="info">Nothing could be made out in the recording. The recording is saved — type the comment instead.</CrmNote> : null}
+      {silentNote ? <CrmNote tone="info">{silentNote}</CrmNote> : null}
       {problem ? <CrmNote tone="bad">{problem}</CrmNote> : null}
     </View>
   );
