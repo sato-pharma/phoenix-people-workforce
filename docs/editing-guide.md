@@ -42,9 +42,15 @@ Keep access control in server-side permission checks too. Sidebar visibility imp
 During active editing, run **nothing** locally. `check:edit` was a `pnpm run typecheck` alias and is
 retired as an editing habit: on the owner's 16 GB machine a cold `tsc` now needs 4.0–4.5 GB of heap,
 OOMs at node's own 4.1 GB default after 155 s, and is then reaped by `mem-watchdog.ps1` as the
-largest node job — 18 killed in three days, each printing nothing, so the session ran it again.
+largest node job — every one of the 23 kills its log still held was a typecheck, each printing
+nothing, so the session ran it again.
 Raising `--max-old-space-size` only makes it the first victim. Keep editing; the PR's `typecheck`
 check is cold, clean and ~3 minutes.
+
+Since 2026-09-25 this is not advice: `.claude/hooks/bash-guard.mjs` clause **C8 denies** a local
+typecheck in every spelling, because a reaped run prints nothing and so reads as a typo rather than a
+kill. `PHX_TYPECHECK_OK=1 <cmd>` (`$env:PHX_TYPECHECK_OK=1; <cmd>` in PowerShell) stands it down for
+one command you intend to watch.
 
 For a commit, push, or PR there is nothing to run locally — the PR's required checks are the
 gate. Before a **migration or a production deploy**, which CI never sees, run the whole gate once by

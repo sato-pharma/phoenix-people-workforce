@@ -30,11 +30,19 @@ rule, the retired `check:harden`, and the per-change matrix: [AGENTS.md §7](AGE
 🔴 **A local typecheck is no longer a "fast editing gate" — it does not fit on the owner's machine,
 and `check:edit` is retired as an editing habit.** Measured 2026-09-25: a cold `tsc` needs 4.0–4.5 GB
 of heap and OOMs at node's own 4.1 GB default after 155 s, and `mem-watchdog.ps1` then reaps it as
-the largest node job — **18 killed in 3 days, 18 of the 19 node kills in that window**, each printing
-nothing, so the session simply ran it again. Raising `--max-old-space-size` makes it the FIRST victim
+the largest node job — and **every one of the 23 kills its log still held was a typecheck**, not one
+other kind of node job among them, each printing nothing, so the session simply ran it again. (The
+log rotates at 800 lines, about a day and a half here, so it can only ever show the recent window —
+never read its start date as the date the trouble began.) Raising `--max-old-space-size` makes it the FIRST victim
 (4096, 5120, 6144 and 7168 were all tried, all reaped). It grew with the repo: 5,065 → 6,048
 `.ts/.tsx` files in 13 days, CI's own cold run 125 s → 183 s. **Push the branch — the PR's
 `typecheck` check is cold, clean and ~3 min.**
+
+**And since 2026-09-25 it is a DENY, not a rule:** `.claude/hooks/bash-guard.mjs` clause **C8**
+refuses a local typecheck in every spelling. The rule alone could not hold, because a reaped run
+prints nothing and exits non-zero — a session cannot tell that from a typo, so it tries the next
+spelling. `PHX_TYPECHECK_OK=1 <cmd>` (`$env:PHX_TYPECHECK_OK=1; <cmd>` in PowerShell) stands it down
+for one command. Pinned by `tests/local-typecheck-guard.test.ts`.
 
 ## The two rules that apply to every change
 
