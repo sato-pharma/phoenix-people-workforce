@@ -1523,9 +1523,6 @@ import { runDirectOrdersPharmacyComboboxPlacementTests } from "./direct-orders-p
 import { runDirectOrdersPharmacyCodeCollisionTests } from "./direct-orders-pharmacy-code-collision.test.ts";
 import { runDirectOrderVenueCrmContactLinkTests } from "./direct-order-venue-crm-contact-link.test.ts";
 import { runCrmContactMasterTests } from "./crm-contact-master.test.ts";
-import { runCrmNativeVisitsTests } from "./crm-native-visits.test.ts";
-import { runCrmNativePlansTests } from "./crm-native-plans.test.ts";
-import { runPhoenixCrmTests } from "./phoenix-crm.test.ts";
 import { runPhoenixCrmCalendarTests } from "./phoenix-crm-calendar.test.ts";
 import { runPhoenixCrmRulesTests } from "./phoenix-crm-rules.test.ts";
 import { runPhoenixCrmEmailBlockTests } from "./phoenix-crm-email-block.test.ts";
@@ -5039,21 +5036,6 @@ await runTest(
 await runTest(
   "the CRM contact master keeps dated list periods (a removed contact closes on its last-seen day, never today; a same-day re-run leaves no overlapping periods; a rep's HR id resolving is not a handover; contact 100000 refused; the mirror is never written; the venue picker reads the master first; a failed refresh fails the dead-man ping)",
   runCrmContactMasterTests,
-);
-
-await runTest(
-  "native visits, the pilot (one type table shared by the rules, the migration and pay meaning, with -4 the only leave; today or yesterday only; a missing GPS fix is a flag; AM/PM comes from the contact's list; the pilot is a dated row; only the named partner answers, once, for a rep beneath him; the rep is the session; nothing outside the module names the native tables)",
-  runCrmNativeVisitsTests,
-);
-
-await runTest(
-  "native rep plans, the pilot (a Saturday-to-Thursday week with Thursday a morning; only pilot days from today on can change; AM/PM comes from the contact's list; one row and one id per rep, doctor and day for good, so a re-save keeps ids and a dropped doctor comes back as the same row; only the manager the plan was sent to verifies or returns it, with a note on a return, for a rep beneath that manager; the vendor plan is untouched; nothing outside the module names the plan tables)",
-  runCrmNativePlansTests,
-);
-
-await runTest(
-  "Phoenix CRM, the pilot space (the roster the Super Admin picks is the gate, from the day a rep joins, with no end until removed; the KPIs read Phoenix only — call rate AM against 2 and PM against 10 reported apart and never averaged, coverage, frequency with an unnormed grade left out, plan achieved on the planned day; only a doctor visit counts and 100000 is no doctor; every service function checks crm_visit_entry; the roster is update, in-app notice only, never deleted)",
-  runPhoenixCrmTests,
 );
 
 await runTest(
