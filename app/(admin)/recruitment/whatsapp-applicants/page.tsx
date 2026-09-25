@@ -27,6 +27,11 @@ export default async function WhatsAppApplicantsPage() {
     redirect("/employee-portals");
   }
   const canViewCandidates = await canAccess(access, "candidates", "read");
+  // Whether this reader may mark Shortlist / Reject / Pending straight from this page — the same
+  // authority the screening page already requires to write a status
+  // (PATCH /api/recruitment/candidates/[id]/status). The route re-checks it itself; this only
+  // decides whether the buttons are worth drawing.
+  const canDecide = await canAccess(access, "candidates", "update");
 
   return (
     <PageContainer>
@@ -38,7 +43,7 @@ export default async function WhatsAppApplicantsPage() {
         </p>
       </div>
       {canViewCandidates ? (
-        <WhatsAppApplicantsSearch view={await loadWhatsAppApplicantsView()} />
+        <WhatsAppApplicantsSearch canDecide={canDecide} view={await loadWhatsAppApplicantsView()} />
       ) : (
         <p className="border border-slate-200 bg-white p-6 text-sm text-slate-600">
           This list names candidates and opens their CVs, and your account cannot view candidates.

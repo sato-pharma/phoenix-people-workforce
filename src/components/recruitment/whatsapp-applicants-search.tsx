@@ -22,6 +22,7 @@ import {
   type CandidateDecisionTab,
 } from "@/lib/recruitment/candidate-decision-tabs";
 import { candidatePageHref } from "@/lib/recruitment/candidate-page-link";
+import { candidateStatusLabels } from "@/lib/recruitment/candidate-status";
 import { screeningHref } from "@/lib/recruitment/screening-link";
 import {
   applicantMatches,
@@ -68,9 +69,123 @@ function FilterSelect({
   );
 }
 
-function ApplicantCell({ pool, row, titleLabel }: { pool: string; row: WhatsAppApplicantRow; titleLabel: string | null }) {
+/**
+ * The three verdicts this page itself can set, straight from the list (owner, request of this
+ * page: "make any sign … shortlist or reject or pending on any CV"). The candidate can carry any of
+ * the six statuses (see candidate-status.ts) — the other three (Back-up, Sent to manager, Hired)
+ * are decisions with their own side effects and stay on the screening page — but only these three
+ * are a plain, reversible triage a person makes reading down a list, so only these three get a
+ * button and a highlighted box here.
+ */
+const QUICK_DECISIONS = [
+  { label: "Shortlist", status: "shortlisted" as const },
+  { label: "Reject", status: "rejected" as const },
+  { label: "Pending", status: "new" as const },
+];
+type QuickDecisionStatus = (typeof QUICK_DECISIONS)[number]["status"];
+
+function isQuickDecisionStatus(value: string): value is QuickDecisionStatus {
+  return QUICK_DECISIONS.some((option) => option.status === value);
+}
+
+/** The box around the name: green for Shortlisted, red for Rejected, light blue for Pending. */
+const QUICK_DECISION_BOX_CLASS: Record<QuickDecisionStatus, string> = {
+  new: "border-sky-300 bg-sky-50",
+  rejected: "border-rose-300 bg-rose-50",
+  shortlisted: "border-emerald-300 bg-emerald-50",
+};
+
+/** The matching button, filled in, once that is the candidate's current status. */
+const QUICK_DECISION_ACTIVE_BUTTON_CLASS: Record<QuickDecisionStatus, string> = {
+  new: "border-sky-600 bg-sky-600 text-white",
+  rejected: "border-rose-600 bg-rose-600 text-white",
+  shortlisted: "border-emerald-600 bg-emerald-600 text-white",
+};
+
+/**
+ * Shortlist / Reject / Pending, right on this row. Writes through the same route the screening
+ * page's own decision buttons use — `PATCH /api/recruitment/candidates/[id]/status` — so the same
+ * server-side authority and event trail apply whichever screen made the call.
+ */
+function WhatsAppApplicantDecisionButtons({
+  candidateId,
+  name,
+  onDecided,
+  status,
+}: {
+  candidateId: string;
+  name: string;
+  onDecided: (candidateId: string, status: QuickDecisionStatus) => void;
+  status: string;
+}) {
+  const [pending, setPending] = useState<QuickDecisionStatus | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const setDecision = async (next: QuickDecisionStatus) => {
+    if (pending) return;
+    setPending(next);
+    setError(null);
+    try {
+      const res = await fetch(`/api/recruitment/candidates/${candidateId}/status`, {
+        body: JSON.stringify({ status: next }),
+        headers: { "Content-Type": "application/json" },
+        method: "PATCH",
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { message?: string };
+        throw new Error(data.message ?? "Could not save that decision.");
+      }
+      onDecided(candidateId, next);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not save that decision.");
+    } finally {
+      setPending(null);
+    }
+  };
+
   return (
-    <div className="min-w-0">
+    <div className="mt-2 min-w-0">
+      <div aria-label={`Mark ${name}`} className="flex flex-wrap gap-1.5" role="group">
+        {QUICK_DECISIONS.map((option) => {
+          const active = isQuickDecisionStatus(status) && status === option.status;
+          return (
+            <button
+              className={`border px-2 py-0.5 text-xs font-semibold disabled:opacity-60 ${
+                active
+                  ? QUICK_DECISION_ACTIVE_BUTTON_CLASS[option.status]
+                  : "border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
+              }`}
+              disabled={pending !== null}
+              key={option.status}
+              onClick={() => void setDecision(option.status)}
+              type="button"
+            >
+              {pending === option.status ? "Saving…" : option.label}
+            </button>
+          );
+        })}
+      </div>
+      {error ? <p className="mt-1 break-words text-xs text-rose-600">{error}</p> : null}
+    </div>
+  );
+}
+
+function ApplicantCell({
+  canDecide,
+  onDecided,
+  pool,
+  row,
+  titleLabel,
+}: {
+  canDecide: boolean;
+  onDecided: (candidateId: string, status: QuickDecisionStatus) => void;
+  pool: string;
+  row: WhatsAppApplicantRow;
+  titleLabel: string | null;
+}) {
+  const boxClass = isQuickDecisionStatus(row.status) ? QUICK_DECISION_BOX_CLASS[row.status] : "border-transparent";
+  return (
+    <div className={`min-w-0 border p-2 ${boxClass}`}>
       {/* The name opens everything on file for this person — their own page, which links on to
           screening for a decision. A new tab, so the filtered list is still here when it is closed. */}
       <Link
@@ -90,6 +205,16 @@ function ApplicantCell({ pool, row, titleLabel }: { pool: string; row: WhatsAppA
         <span className="mt-0.5 block break-words text-xs text-slate-500" dir="auto">
           Typed job title: {row.typedTitle}
         </span>
+      ) : null}
+      {/* Mark them straight from this list (owner: "make any sign … shortlist or reject or pending on
+          any CV"). Absent for a reader who can see candidates but cannot decide them. */}
+      {canDecide ? (
+        <WhatsAppApplicantDecisionButtons
+          candidateId={row.candidateId}
+          name={row.name}
+          onDecided={onDecided}
+          status={row.status}
+        />
       ) : null}
       {/* Book them straight from the list (owner, 2026-09-18: "from WhatsApp application screening
           tab … any CV"). Absent for anyone the interview calendar is not shared with as an editor. */}
@@ -187,7 +312,7 @@ function emptyMessage(filtered: boolean, tab: CandidateDecisionTab): string {
   return filtered ? `Nobody on ${pile} matches these filters.` : `Nobody who applied for this title is on ${pile}.`;
 }
 
-export function WhatsAppApplicantsSearch({ view }: { view: WhatsAppApplicantsView }) {
+export function WhatsAppApplicantsSearch({ canDecide, view }: { canDecide: boolean; view: WhatsAppApplicantsView }) {
   // /recruitment, or /hr/recruitment in the HR sidebar. See whatsAppApplicantsPoolHref.
   const pool = whatsAppApplicantsPoolHref(usePathname());
   const [title, setTitle] = useState("");
@@ -198,14 +323,32 @@ export function WhatsAppApplicantsSearch({ view }: { view: WhatsAppApplicantsVie
   // every screen that lists CVs, and stays put when the job title changes: it is a choice of pile,
   // not of search.
   const [decisionTab, setDecisionTab] = useState<CandidateDecisionTab>(DEFAULT_CANDIDATE_DECISION_TAB);
+  // A DECISION MADE ON THIS PAGE, keyed by candidate id, laid over `view.rows` — the same shape as
+  // the screening page's own `decided` map. `view` is the one server read this page loads; without
+  // this, pressing Shortlist would write through but the tab strip and this list would keep
+  // reading the status it had a moment ago until the page is reloaded.
+  const [decisions, setDecisions] = useState<Record<string, QuickDecisionStatus>>({});
+  const onDecided = (candidateId: string, status: QuickDecisionStatus) =>
+    setDecisions((current) => ({ ...current, [candidateId]: status }));
+  const rows = useMemo(
+    () =>
+      Object.keys(decisions).length === 0
+        ? view.rows
+        : view.rows.map((row) =>
+            row.candidateId in decisions
+              ? { ...row, status: decisions[row.candidateId], statusLabel: candidateStatusLabels[decisions[row.candidateId]] }
+              : row,
+          ),
+    [decisions, view.rows],
+  );
 
   const chosenTitle = view.titles.find((entry) => entry.value === title) ?? null;
   const filters = chosenTitle ? (view.filtersByTitle[chosenTitle.value] ?? []) : [];
   // Everyone the title and the filters find, across every pile. The tab strip counts these, so each
   // number on it is the list that tab opens.
   const acrossTabs = useMemo(
-    () => view.rows.filter((row) => applicantMatches(row, title, selections)),
-    [view.rows, title, selections],
+    () => rows.filter((row) => applicantMatches(row, title, selections)),
+    [rows, title, selections],
   );
   const decisionCounts = useMemo(() => countCandidatesByDecisionTab(acrossTabs), [acrossTabs]);
   const matches = useMemo(
@@ -214,10 +357,8 @@ export function WhatsAppApplicantsSearch({ view }: { view: WhatsAppApplicantsVie
   );
   // The tab's own pile under this title before any filter, for "12 of 40".
   const tabTotal = useMemo(
-    () =>
-      view.rows.filter((row) => row.titleValue === title && candidateMatchesDecisionTab(row.status, decisionTab))
-        .length,
-    [view.rows, title, decisionTab],
+    () => rows.filter((row) => row.titleValue === title && candidateMatchesDecisionTab(row.status, decisionTab)).length,
+    [rows, title, decisionTab],
   );
   const shown = matches.slice(0, limit);
   const filtered = Object.values(selections).some(Boolean);
@@ -364,7 +505,13 @@ export function WhatsAppApplicantsSearch({ view }: { view: WhatsAppApplicantsVie
                     {shown.map((row) => (
                       <tr className="border-b border-slate-100 align-top last:border-b-0" key={row.key}>
                         <td className="px-3 py-3">
-                          <ApplicantCell pool={pool} row={row} titleLabel={chosenTitle?.label ?? null} />
+                          <ApplicantCell
+                            canDecide={canDecide}
+                            onDecided={onDecided}
+                            pool={pool}
+                            row={row}
+                            titleLabel={chosenTitle?.label ?? null}
+                          />
                         </td>
                         <td className="px-3 py-3">
                           <RegionCell row={row} />
@@ -384,7 +531,13 @@ export function WhatsAppApplicantsSearch({ view }: { view: WhatsAppApplicantsVie
               <ul className="divide-y divide-slate-100 border border-slate-200 bg-white md:hidden">
                 {shown.map((row) => (
                   <li className="space-y-2.5 px-4 py-3 text-sm" key={row.key}>
-                    <ApplicantCell pool={pool} row={row} titleLabel={chosenTitle?.label ?? null} />
+                    <ApplicantCell
+                      canDecide={canDecide}
+                      onDecided={onDecided}
+                      pool={pool}
+                      row={row}
+                      titleLabel={chosenTitle?.label ?? null}
+                    />
                     <div>
                       <span className={labelClass}>Region</span>
                       <div className="mt-0.5">
