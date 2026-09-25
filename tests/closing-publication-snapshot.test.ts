@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { stripSqlComments } from "./support/comment-strip.ts";
 
 // PUBLISHING A CLOSING MUST RECORD WHAT WAS PUBLISHED.
 //
@@ -62,10 +63,7 @@ export async function runClosingPublicationSnapshotTests(): Promise<void> {
   // ── 1. the trigger fires on INSERT and never on UPDATE ─────────────────────────────────────
   // Stripping comments first: this file explains at length why there is no update branch, and the
   // word "update" appears throughout that prose.
-  const statements = normalized
-    .split("\n")
-    .filter((line) => !line.trimStart().startsWith("--"))
-    .join("\n");
+  const statements = stripSqlComments(normalized);
 
   assert.ok(
     /create\s+trigger\s+trg_publication_take_snapshot\s+before\s+insert\s+on\s+public\.monthly_closing_publications/.test(

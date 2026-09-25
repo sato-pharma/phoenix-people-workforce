@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { stripSqlComments } from "./support/comment-strip.ts";
 
 // Reported finding (system-wide Head Office audit, 2026-07-25): analytics.dim_products — the
 // default, non-privileged product dimension view backing every Analytics dashboard's Line/Product/
@@ -52,10 +53,7 @@ export function runAnalyticsDimProductsHeadOfficeExclusionTests() {
 
   // Guard: pure view replacement — no data mutation, no drop, no RLS/grant change (grants on a
   // column-compatible CREATE OR REPLACE VIEW carry over automatically in Postgres).
-  const sqlBody = migration
-    .split("\n")
-    .filter((line) => !line.trimStart().startsWith("--"))
-    .join("\n");
+  const sqlBody = stripSqlComments(migration);
   assert.doesNotMatch(
     sqlBody,
     /drop table|truncate|delete from|alter table|disable row level security|grant |revoke /i,

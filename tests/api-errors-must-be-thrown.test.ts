@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync, statSync } from "node:fs";
+import { stripComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The helpers in src/lib/http/api-errors.ts are FACTORIES: `notFoundError("...")` builds an
@@ -88,11 +89,13 @@ export function runApiErrorsMustBeThrownTests() {
       const source = readFileSync(new URL(fileHref), "utf8");
       if (!ERROR_FACTORIES.some((name) => source.includes(name))) continue;
 
-      const lines = source.split(/\r?\n/);
+      // Comments are blanked rather than deleted, so `i` still names the real line of the real
+      // file in the report below.
+      const lines = stripComments(source).split(/\r?\n/);
       lines.forEach((line, i) => {
-        // Skip imports and comment lines outright.
+        // Imports are skipped outright; comment text is already gone.
         const trimmed = line.trim();
-        if (trimmed.startsWith("import ") || trimmed.startsWith("//") || trimmed.startsWith("*")) return;
+        if (trimmed.startsWith("import ")) return;
 
         for (const name of ERROR_FACTORIES) {
           const pattern = new RegExp(`(^|[^\\w.])${name}\\s*\\(`, "g");

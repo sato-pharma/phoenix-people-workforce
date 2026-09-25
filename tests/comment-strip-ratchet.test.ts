@@ -72,9 +72,30 @@ import { codeEatenByNaiveStrip, stripComments } from "./support/comment-strip.ts
  * one of them is one multi-line comment away from the same failure, whatever it is pointed at.
  *
  * Measured 2026-09-25: 47 such call sites in 42 test files. All are now folded onto
- * {@link stripComments} — #4382 took 9, #4388 took 13, and this change took the remaining 25 — so
- * {@link GRANDFATHERED} is empty and its budget is 0. The detector now permits zero: the next
- * line-wise stripper anywhere fails on its very first site.
+ * {@link stripComments} — #4382 took 9, #4388 took 13, and #4390 took the remaining 25 — so
+ * {@link GRANDFATHERED} is empty and its budget is 0.
+ *
+ * ## Three spellings this detector could not see, and the clean tree that was not one
+ *
+ * With the budget at 0 and the list empty, this check reported a clean tree — and 26 hand-rolled
+ * comment-line decisions were sitting in 24 files it had swept. They were written in spellings the
+ * detector did not know:
+ *
+ *     .filter((line) => !line.trimStart().startsWith("--"))   20 sites, SQL
+ *     .filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line))      the prefix test as a REGEX
+ *     if (trimmed.startsWith("//")) continue;                  skipped, not removed
+ *     .replace(/^\s*\/\/.*$/gm, "")                            no filter anywhere
+ *
+ * Each has the blindness above, and the SQL ones add their own: a `--` written AFTER code survives,
+ * and a `/* … *\/` block survives whole. Measured across the 608 migrations, that left 2,653
+ * non-space characters of comment text standing in 34 files. It is not theoretical either —
+ * appending `-- the old predicate was not in ('LA003', …)` to a real statement line in the
+ * exec-panels migration turns `exec-panels-confidential-reveal` red on a correct file, because its
+ * whole job is to assert that predicate is absent from executable SQL.
+ *
+ * So the detector now reads all three shapes, and the fixtures below carry one of each. A detector
+ * that sees one spelling of a shape measures fashion, not the shape — and it says "clean" in
+ * exactly the voice it would use if the tree were.
  *
  * A shape detector whose offender count is meant to reach zero cannot be guarded by a floor on
  * offenders at all. That was the argument for this half first, and 2026-09-25 made it true of the
@@ -102,11 +123,51 @@ const SANCTIONED = new Set(["tests/support/comment-strip.ts", "tests/comment-str
 const NAIVE_STRIP_TEXT = /\\\/\\\*[\s\S]{0,24}?\\\*\\\//;
 
 /**
- * A comment-prefix test applied to one line — `startsWith("//")`, `startsWith("/*")`,
- * `startsWith("{/*")`. Those three openers are what every hand-rolled line filter in this repo
- * tests for, in one of three quote styles.
+ * A comment-prefix test applied to one line, in either spelling.
+ *
+ * `startsWith("//")`, `startsWith("/*")`, `startsWith("{/*")`, `startsWith("*")` and the SQL
+ * `startsWith("--")`, in any of three quote styles — and the same test written as a regex,
+ * `/^\s*\/\//`, `/^\s*(\/\/|\*|\/\*)/`, `/^\s*--/`.
+ *
+ * The regex arm and the `--` arm were added on 2026-09-25, after the `startsWith`-only version
+ * reported a clean tree while 26 sites in 24 files were still stripping comments by hand: 20 SQL
+ * filters keyed on `--`, and six JavaScript ones written with a regex instead. A detector that
+ * sees one spelling of a shape measures nothing but fashion.
+ *
+ * The quote must CLOSE immediately after the marker. `name.startsWith("--phx-")` in
+ * `design-tokens-contract` is a CSS custom-property test, not a comment test, and flagging it
+ * would be the first false alarm — which is how a ratchet gets switched off.
  */
-const COMMENT_PREFIX_TEST = /startsWith\(\s*(["'`])(?:\/\/|\/\*|\{\/\*)\1\s*\)/;
+const COMMENT_PREFIX_TEST = new RegExp(
+  [
+    String.raw`startsWith\(\s*(["'\`])(?:\/\/|\/\*|\{\/\*|\*|--)\1\s*\)`,
+    String.raw`\^\\s\*\(?(?:\\\/\\\/|\\\*|--)`,
+  ].join("|"),
+);
+
+/**
+ * The same test, for the `if (…) continue` shape, WITHOUT the bare `*` arm.
+ *
+ * That shape carries no `.split(`/`.join(` to corroborate it (see {@link SPLIT_LOOKBEHIND}), so it
+ * is judged on the marker alone — and a bare `"*"` is a markdown bullet as often as a comment
+ * continuation. The four unambiguous openers are enough: every real site found on 2026-09-25 used
+ * one.
+ */
+const COMMENT_SKIP_PREFIX = /startsWith\(\s*(["'`])(?:\/\/|\/\*|\{\/\*|--)\1\s*\)/;
+
+/**
+ * `.replace(/^\s*\/\/.*$/gm, "")` — a whole-line comment strip with no `.filter` anywhere.
+ *
+ * The `$` is load-bearing. `marketing-config-grants` writes `.replace(/^\s*--/gm, "")` to strip the
+ * MARKER and read the comment prose it then asserts on: that keeps the text, and folding it onto a
+ * stripper would delete the very thing under test. Removing the marker is not removing the comment.
+ */
+const WHOLE_LINE_COMMENT_REPLACE = new RegExp(
+  String.raw`\.replace\(\s*\/\^\\s\*\(?(?:\\\/\\\/|--)[^/\n]*\$\/gm`,
+);
+
+/** How far past `if (…)` the `continue` or `return` may sit. A brace and a newline, no more. */
+const SKIP_LOOKAHEAD = 40;
 
 /**
  * How far either side of the `.filter(` the line-splitting may sit.
@@ -138,6 +199,10 @@ const SWEPT_FILE_FLOOR = 1_200;
  * It stays a BUDGET, not a permission: an empty list with a budget of 0 means no test may strip
  * comments line-wise anywhere, so the detector below fails on the very first new site. The list may
  * only shrink — it is already empty — and {@link GRANDFATHERED_SITE_BUDGET} may never rise.
+ *
+ * Widening the detector to three more spellings the same day surfaced 26 further sites in 24 files.
+ * Not one was added here: they were folded, and the budget stayed 0. A widening paid for with a
+ * grandfather row is a widening that changed nothing.
  */
 const GRANDFATHERED: ReadonlyMap<string, number> = new Map([]);
 
@@ -286,9 +351,12 @@ function parenthesisedArgument(
  * benign. The remedy is always the same one-line import of {@link stripComments}.
  */
 function lineWiseStripSites(source: string): number[] {
-  const sites: number[] = [];
+  const lineOf = (index: number) => source.slice(0, index).split("\n").length;
+  const sites = new Set<number>();
 
-  for (const hit of source.matchAll(/\.filter\s*\(/g)) {
+  // 1 · the filter shape: `.split(…).filter(<comment prefix test>).join(…)`, or `.some`/`.find`
+  //     over the array it keeps.
+  for (const hit of source.matchAll(/\.(?:filter|some|find)\s*\(/g)) {
     const open = hit.index + hit[0].length - 1;
     const argument = parenthesisedArgument(source, open);
     if (!argument || !COMMENT_PREFIX_TEST.test(argument.text)) continue;
@@ -297,10 +365,30 @@ function lineWiseStripSites(source: string): number[] {
     const ahead = source.slice(argument.end, argument.end + JOIN_LOOKAHEAD);
     if (!/\.split\s*\(/.test(behind) && !/\.join\s*\(/.test(ahead)) continue;
 
-    sites.push(source.slice(0, hit.index).split("\n").length);
+    sites.add(lineOf(hit.index));
   }
 
-  return sites;
+  // 2 · the loop shape: `if (line.startsWith("//")) continue;` inside a walk over split lines. It
+  //     strips nothing and allocates nothing, which is exactly why a `.filter`-only detector cannot
+  //     see it — the comment is skipped rather than removed, with the identical blindness.
+  for (const hit of source.matchAll(/\bif\s*\(/g)) {
+    const open = hit.index + hit[0].length - 1;
+    const argument = parenthesisedArgument(source, open);
+    if (!argument || !COMMENT_SKIP_PREFIX.test(argument.text)) continue;
+
+    const ahead = source.slice(argument.end, argument.end + SKIP_LOOKAHEAD);
+    if (!/^\s*\{?\s*(?:continue|return)\b/.test(ahead)) continue;
+
+    sites.add(lineOf(hit.index));
+  }
+
+  // 3 · the replace shape: `.replace(/^\s*\/\/.*$/gm, "")`, which is the line filter written as one
+  //     regex. No split, no filter, no join — nothing for the first two passes to find.
+  for (const hit of source.matchAll(new RegExp(WHOLE_LINE_COMMENT_REPLACE.source, "g"))) {
+    sites.add(lineOf(hit.index));
+  }
+
+  return [...sites].sort((a, b) => a - b);
 }
 
 /**
@@ -512,6 +600,43 @@ function testTheLineWiseDetectorFiresOnTheShapesItIsNamedFor() {
         '  .filter((line) => !line.trimStart().startsWith("*") && !line.trimStart().startsWith("//"));',
       ].join("\n"),
     ],
+    // The three spellings that escaped this detector until 2026-09-25, each taken from a real site.
+    [
+      'the SQL `--` filter (20 sites, e.g. crm-cutover)',
+      [
+        "const sqlCode = read(path)",
+        '  .split("\\n")',
+        '  .filter((line) => !line.trimStart().startsWith("--"))',
+        '  .join("\\n");',
+      ].join("\n"),
+    ],
+    [
+      "the prefix test written as a REGEX (direct-orders-approval-detail-names)",
+      [
+        "const adminListCode = adminList",
+        '  .split("\\n")',
+        "  .filter((line) => !/^\\s*(\\/\\/|\\*|\\/\\*)/.test(line))",
+        '  .join("\\n");',
+      ].join("\n"),
+    ],
+    [
+      "the loop that SKIPS a comment line rather than removing it (crm-sync-run-columns)",
+      [
+        'for (const line of block.split("\\n")) {',
+        "  const trimmed = line.trim();",
+        '  if (trimmed.startsWith("//")) continue;',
+        "  keys.add(trimmed);",
+        "}",
+      ].join("\n"),
+    ],
+    [
+      "a multi-condition skip, where the comment test is not the first arm (api-errors-must-be-thrown)",
+      'if (trimmed.startsWith("import ") || trimmed.startsWith("//") || trimmed.startsWith("*")) return;',
+    ],
+    [
+      "the whole-line replace, with no filter anywhere (approvals-hub, sales-brick-move-sales)",
+      'const panelCode = panel.replace(/^\\s*\\/\\/.*$/gm, "");',
+    ],
   ];
 
   for (const [what, fixture] of positives) {
@@ -536,6 +661,20 @@ function testTheLineWiseDetectorFiresOnTheShapesItIsNamedFor() {
     [
       "a comment-prefix filter that COUNTS rather than strips",
       "const docLines = collected.filter((line) => line.trim().startsWith(\"//\")).length;",
+    ],
+    // The three that must stay quiet under the wider spellings added on 2026-09-25. Each is a real
+    // line in `tests/`, and flagging any of them would make the ratchet wrong rather than strict.
+    [
+      "a CSS custom-property prefix, which merely begins with the SQL comment marker",
+      'const custom = names.filter((name) => !name.startsWith("--phx-")).join("\\n");',
+    ],
+    [
+      "a replace that strips the `--` MARKER to read the comment prose (marketing-config-grants)",
+      'const prose = raw.replace(/^\\s*--/gm, "").replace(/\\s+/g, " ");',
+    ],
+    [
+      "a guard that returns on something which is not a comment",
+      'if (trimmed.startsWith("import ")) return;',
     ],
   ];
 
@@ -610,13 +749,17 @@ function testNoNewTestStripsCommentsLineWise() {
   assert.deepEqual(
     offenders,
     [],
-    "a test is stripping comments with a hand-rolled line filter. It skips a `{/*` line without " +
-      "opening a comment BLOCK, so the body of a multi-line JSX comment is scanned as code — its " +
-      "continuation lines start with neither `*` nor `//` — and it drops the whole line beginning " +
-      "`{/*`, so real code sharing a line with a one-line JSX comment is never scanned at all. A " +
-      "negative assertion then fails on the comment; a positive one PASSES on a screen that no " +
-      "longer has the thing it pins. Import `stripComments` from tests/support/comment-strip.ts " +
-      "and call it on the source instead.",
+    "a test is deciding line by line whether something is a comment — with a `.filter`, an " +
+      "`if (…) continue`, or a whole-line `.replace`. Every spelling shares one blindness: a line " +
+      "is judged by how it STARTS, so nothing tracks whether a comment is already open. In JS/TSX " +
+      "the body of a multi-line `{/* … */}` is then scanned as code (its continuation lines begin " +
+      "with neither `*` nor `//`), and the whole line beginning `{/*` is dropped, so real code " +
+      "sharing it is never scanned at all. In SQL a `--` written AFTER code survives untouched, " +
+      "and a `/* … */` block survives entirely — measured 2026-09-25, 2,653 characters of comment " +
+      "text across 34 of the 608 migrations. A negative assertion then fails on the comment; a " +
+      "positive one PASSES on a file that no longer has the thing it pins. Import `stripComments` " +
+      "(JS/TSX), `stripSqlComments` (SQL) or `stripCssComments` (CSS) from " +
+      "tests/support/comment-strip.ts and call it on the source instead.",
   );
 }
 

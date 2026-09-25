@@ -34,6 +34,7 @@ import path from "node:path";
 import { computeMailboxFlags } from "../src/lib/mailbox-offboarding/service.ts";
 import { buildMailboxAlertSignature } from "../src/lib/mailbox-offboarding/sweep.ts";
 import type { MailboxOffboardingTask } from "../src/lib/mailbox-offboarding/types.ts";
+import { stripSqlComments } from "./support/comment-strip.ts";
 
 const MIGRATIONS_DIR = path.join(process.cwd(), "supabase", "migrations");
 
@@ -84,12 +85,9 @@ function recordBody(sql: string): string {
   return sql.slice(start, end);
 }
 
-/** Strips SQL line comments, so a rule can never be "satisfied" by prose describing it. */
+/** Strips SQL comments, so a rule can never be "satisfied" by prose describing it. */
 function withoutComments(sql: string): string {
-  return sql
-    .split("\n")
-    .filter((line) => !line.trim().startsWith("--"))
-    .join("\n");
+  return stripSqlComments(sql);
 }
 
 export async function runMailboxOffboardingTests(): Promise<void> {

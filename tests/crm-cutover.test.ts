@@ -28,6 +28,7 @@ import {
 } from "../src/lib/crm/tables.ts";
 import { crmVacationPersonKey } from "../src/lib/deductions/connectors/vacation.ts";
 import { canonicalHrIdKey } from "../src/lib/hr-id.ts";
+import { stripSqlComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The CRM cutover (CRM phase 5).
@@ -49,12 +50,9 @@ import { canonicalHrIdKey } from "../src/lib/hr-id.ts";
 
 const read = (path: string) => readFileSync(path, "utf8");
 
-/** The SQL with every `--` comment line removed, so a pin can never be satisfied by prose. */
+/** The SQL with every comment removed, so a pin can never be satisfied by prose. */
 function sqlCode(path: string): string {
-  return read(path)
-    .split("\n")
-    .filter((line) => !line.trimStart().startsWith("--"))
-    .join("\n");
+  return stripSqlComments(read(path));
 }
 
 const DATED: CrmCutoverSetting = { cutoverDate: "2026-10-01", vendorSyncRetiredAt: null };

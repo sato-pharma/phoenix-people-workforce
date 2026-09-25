@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * Every column the sync writes to `ireports360_visits_sync_runs` must actually exist in the schema.
@@ -28,10 +29,8 @@ export function runCrmSyncRunColumnsTests() {
 
   // Keys are `column_name: value`; comment lines inside the block must not be picked up.
   const written = new Set<string>();
-  for (const line of updateBlock[1].split("\n")) {
-    const trimmed = line.trim();
-    if (trimmed.startsWith("//")) continue;
-    const key = /^([a-z_][a-z0-9_]*)\s*:/.exec(trimmed);
+  for (const line of stripComments(updateBlock[1]).split("\n")) {
+    const key = /^([a-z_][a-z0-9_]*)\s*:/.exec(line.trim());
     if (key) written.add(key[1]);
   }
   assert.ok(written.size > 0, "parsed no columns out of the sync-run update — the regex has drifted");
