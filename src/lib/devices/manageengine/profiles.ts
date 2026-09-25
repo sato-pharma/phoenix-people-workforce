@@ -176,6 +176,34 @@ export async function listManageEngineProfiles(
     .sort((left, right) => left.name.localeCompare(right.name));
 }
 
+/**
+ * Whether the tablet has taken a profile, IN WORDS.
+ *
+ * 🔴 `status` ON THIS ENDPOINT IS A BARE CODE, AND PUTTING IT ON THE PAGE BREAKS THE HOUSE RULE THAT
+ * THIS SYSTEM SHOWS NAMES, NEVER CODES. Measured against the live tenant while a profile was landing
+ * on PHX-TAB-0002: it read `"18"` on the way and `"6"` once applied. Neither means anything to the
+ * person reading the row, and a page that prints 18 at somebody is telling them nothing at all.
+ *
+ * ManageEngine sends the sentence itself beside the code — `localized_remarks`, and `remarks` behind
+ * it — so those are read first: "Successfully applied the policy". The two codes seen live are
+ * mapped as a fallback. An UNKNOWN code is answered with null rather than with the number, and the
+ * row then says ManageEngine has given no word yet, which is the truth: a number this code cannot
+ * read is not a status, and inventing a meaning for it would be worse than admitting the gap.
+ */
+const DEVICE_PROFILE_STATUS: Readonly<Record<string, string>> = {
+  "6": "Applied",
+  "18": "On its way to the tablet",
+};
+
+function deviceProfileStatus(record: RawRecord): string | null {
+  const said = pickString(record, ["localized_remarks", "remarks"]);
+  if (said && !/^\d+$/.test(said)) return said;
+  const code = pickString(record, ["status", "profile_status", "association_status"]);
+  if (!code) return null;
+  if (DEVICE_PROFILE_STATUS[code]) return DEVICE_PROFILE_STATUS[code];
+  return /^\d+$/.test(code) ? null : code;
+}
+
 /** The profiles one tablet is carrying, with ManageEngine's own word on whether it took them. */
 export async function getManageEngineDeviceProfiles(
   deviceId: string,
@@ -195,7 +223,7 @@ export async function getManageEngineDeviceProfiles(
       return {
         ...profile,
         appliedAt: isoTime(record, ["applied_time", "association_time", "last_modified_time"]),
-        status: pickString(record, ["status", "profile_status", "association_status"]),
+        status: deviceProfileStatus(record),
       } satisfies ManageEngineDeviceProfile;
     })
     .filter((profile): profile is ManageEngineDeviceProfile => profile !== null);
