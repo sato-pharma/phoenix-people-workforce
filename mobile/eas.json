@@ -17,6 +17,13 @@
         "buildType": "app-bundle"
       },
       "distribution": "store"
+    },
+    "mdm": {
+      "channel": "production",
+      "android": {
+        "buildType": "apk"
+      },
+      "distribution": "internal"
     }
   }
 }

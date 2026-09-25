@@ -115,6 +115,36 @@ silently with nothing in the console pointing back here.
 
 ---
 
+## The rep tablets take an APK, not the AAB — and through ManageEngine
+
+The rep tablets do **not** enrol through Google. Google gives a new Cloud project a device quota of
+**zero** until it approves an application, so the Google QR is refused on the tablet; ManageEngine is
+an approved EMM with its own allowance and is how every tablet in this fleet is managed. That makes
+its app repository, not managed Play, the channel that puts Phoenix on a rep's tablet today.
+
+🔴 **The AAB cannot be uploaded to ManageEngine.** An `.aab` is a Play-only publishing format: Google
+builds the per-device APKs from it. An MDM that sideloads onto a managed device needs the installable
+artifact itself. Build with the **`mdm`** profile — `buildType: "apk"`, `distribution: "internal"` —
+and upload that `.apk`:
+
+```
+eas build --platform android --profile mdm
+```
+
+**Its channel is `production` on purpose, matching the store profile.** An APK built on the `preview`
+channel is a working tablet that silently never receives an `eas update` again, and nothing on the
+device says so. Both artifacts on one channel means one OTA stream reaches the store build and the
+tablets together. Do not "tidy" `mdm` onto its own channel.
+
+**Phoenix cannot do the upload for you, but ManageEngine's API could.** `src/lib/devices/manageengine/apps.ts`
+can list the repository and install, remove or refresh an app on a device — it has **no upload call**.
+ManageEngine does document one (`POST /api/v1/mdm/apps`, "Add an app to MDM server", scope
+`MDMOnDemand.MDMDeviceMgmt.CREATE`), so this is a gap in Phoenix rather than a vendor floor, and it is
+the one worth closing if uploading by hand becomes a habit. Contrast **deleting a device**, which the
+vendor genuinely does not expose — see `src/lib/devices/manageengine/commands.ts`.
+
+---
+
 ## What the Play Console route would have cost
 
 Kept only so nobody re-derives it and reaches the wrong conclusion again. **Do not take this route.**
