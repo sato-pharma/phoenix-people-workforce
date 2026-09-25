@@ -16,6 +16,7 @@ import {
 // (it reaches node:crypto through the employee directory) and importing a value from it here
 // breaks the webpack dev build for this route and every route compiled after it.
 import { TEAM_VISIT_ROW_CAP } from "@/lib/employee-portal/my-crm-visits-constants";
+import { myOffDutyReason, partitionMyVisitRows } from "@/lib/employee-portal/my-visits-partition";
 import { utcDate } from "@/lib/format/cairo-datetime";
 import type {
   MyCrmCheckinRow,
@@ -179,6 +180,97 @@ function CheckinCard({ row }: { row: MyCrmCheckinRow }) {
   );
 }
 
+const OFF_DUTY_TH = "px-3 py-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-white";
+
+/**
+ * Leave, public holidays, meetings and training — listed under their own heading, never counted as
+ * visits. Same heading, wording and layout as the KPI drill-down's group (rep-visits-detail.tsx), so
+ * a rep reads one rule on both screens. Shown rather than dropped: "where was I on the 27th" is a
+ * real question. Fitted table, square edges, text wraps — never a sideways scroll.
+ */
+function DaysNotInFieldGroup({ rows, showRep }: { rows: Array<MyCrmVisitRow & { agentName?: string | null }>; showRep: boolean }) {
+  if (rows.length === 0) return null;
+  return (
+    <div className="border border-slate-200 bg-white">
+      <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-slate-200 bg-slate-100 px-4 py-3">
+        <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-600">Days not in the field</h3>
+        <p className="text-phx-xs text-slate-500">
+          {rows.length.toLocaleString("en-US")} {rows.length === 1 ? "day" : "days"} · leave, public holidays, meetings and
+          training · never counted as a visit
+        </p>
+      </div>
+      <div className="p-4">
+        <PortalResponsiveDataList
+          empty={<p className="px-3 py-6 text-center text-xs text-slate-400">None in this window.</p>}
+          getKey={(row) => row.id}
+          items={rows}
+          renderCard={(row) => (
+            <PortalRecordCard
+              accent="slate"
+              meta={<span>{formatDateOnly(row.visitDate)}{row.ampm ? ` · ${row.ampm}` : ""}</span>}
+              title={showRep ? row.agentName || "Unnamed rep" : row.visitTypeDescription || "Not in the field"}
+            >
+              <PortalRecordFields
+                fields={[
+                  ...(showRep ? [{ label: "Type", value: row.visitTypeDescription || "—" }] : []),
+                  ...(myOffDutyReason(row) ? [{ label: "Reason", value: myOffDutyReason(row) }] : []),
+                ]}
+              />
+            </PortalRecordCard>
+          )}
+          renderTable={() => (
+            <div className="hidden md:block">
+              <table className="w-full table-fixed border-collapse text-left text-xs" data-portal-desktop-table>
+                <colgroup>
+                  {showRep ? <col style={{ width: "20%" }} /> : null}
+                  <col style={{ width: showRep ? "16%" : "18%" }} />
+                  <col style={{ width: showRep ? "20%" : "26%" }} />
+                  <col style={{ width: showRep ? "44%" : "56%" }} />
+                </colgroup>
+                <thead>
+                  <tr className="bg-slate-600 text-left">
+                    {showRep ? (
+                      <th className={OFF_DUTY_TH} scope="col">
+                        Rep
+                      </th>
+                    ) : null}
+                    <th className={OFF_DUTY_TH} scope="col">
+                      Date
+                    </th>
+                    <th className={OFF_DUTY_TH} scope="col">
+                      Day
+                    </th>
+                    <th className={OFF_DUTY_TH} scope="col">
+                      Reason
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {rows.map((row) => (
+                    <tr className="bg-white align-top hover:bg-slate-50" key={row.id}>
+                      {showRep ? (
+                        <td className="break-words px-3 py-2 font-black text-slate-950">{row.agentName || "—"}</td>
+                      ) : null}
+                      <td className="break-words px-3 py-2 font-semibold text-slate-900">
+                        {formatDateOnly(row.visitDate)}
+                        {row.ampm ? ` (${row.ampm})` : ""}
+                      </td>
+                      <td className="break-words px-3 py-2 font-semibold text-slate-600">{row.visitTypeDescription || "—"}</td>
+                      <td className="break-words px-3 py-2 text-slate-600">
+                        {myOffDutyReason(row) ?? <span className="text-slate-300">—</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        />
+      </div>
+    </div>
+  );
+}
+
 function usePagedRows<T>(rows: T[], page: number) {
   return useMemo(() => {
     const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
@@ -254,10 +346,15 @@ export function MyVisitsWorkspace({
     setPage(1);
   }
 
-  const visitsPage = usePagedRows(visits, page);
+  // Calls apart from days not in the field — the tab count and the paged list are the calls only,
+  // matching the KPI drill-down (owner, 2026-09-25). See my-visits-partition.ts.
+  const visitSplit = useMemo(() => partitionMyVisitRows(visits), [visits]);
+  const teamSplit = useMemo(() => partitionMyVisitRows(teamVisits), [teamVisits]);
+
+  const visitsPage = usePagedRows(visitSplit.fieldRows, page);
   const doublePage = usePagedRows(doubleVisits, page);
   const checkinsPage = usePagedRows(checkins, page);
-  const teamPage = usePagedRows(teamVisits, page);
+  const teamPage = usePagedRows(teamSplit.fieldRows, page);
   const rangeLabel = `${formatDateOnly(dateFrom)} – ${formatDateOnly(dateTo)}`;
 
   return (
@@ -267,11 +364,11 @@ export function MyVisitsWorkspace({
           {tabs.map((item) => {
             const count =
               item.id === "visits"
-                ? visits.length
+                ? visitSplit.fieldRows.length
                 : item.id === "double"
                   ? doubleVisits.length
                   : item.id === "team"
-                    ? teamVisits.length
+                    ? teamSplit.fieldRows.length
                     : checkins.length;
             return (
               <button
@@ -297,7 +394,7 @@ export function MyVisitsWorkspace({
               </p>
             ) : null}
             <PortalResponsiveDataList
-              empty={<PortalEmptyState message="No visits recorded by your team in this window." title="No team visits yet" />}
+              empty={<PortalEmptyState message="No field visits recorded by your team in this window." title="No team visits yet" />}
               getKey={(row) => row.id}
               items={teamPage.paged}
               renderCard={(row) => <TeamVisitCard row={row} />}
@@ -343,13 +440,14 @@ export function MyVisitsWorkspace({
               safePage={teamPage.safePage}
               totalPages={teamPage.totalPages}
             />
+            <DaysNotInFieldGroup rows={teamSplit.offDutyRows} showRep />
           </>
         ) : null}
 
         {tab === "visits" ? (
           <>
             <PortalResponsiveDataList
-              empty={<PortalEmptyState message="No visits recorded by you in this window." title="No visits yet" />}
+              empty={<PortalEmptyState message="No field visits recorded by you in this window." title="No visits yet" />}
               getKey={(row) => row.id}
               items={visitsPage.paged}
               renderCard={(row) => <VisitCard row={row} />}
@@ -393,6 +491,7 @@ export function MyVisitsWorkspace({
               safePage={visitsPage.safePage}
               totalPages={visitsPage.totalPages}
             />
+            <DaysNotInFieldGroup rows={visitSplit.offDutyRows} showRep={false} />
           </>
         ) : null}
 

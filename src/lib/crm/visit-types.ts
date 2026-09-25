@@ -109,6 +109,24 @@ export function classifyVisit(type: number | null, comment: string | null, rawDe
   return { label, bucket: "admin" };
 }
 
+/**
+ * Is this visit a CALL, or a day the rep was not in the field?
+ *
+ * Field work is the "regular" and "campaign" buckets — exactly what `classifyCallProof`
+ * (crm/call-rate.ts) scores, and so exactly what the KPI drill-down lists as visits.
+ * Everything else — leave, public holidays, meetings, training, admin — arrives down the
+ * same CRM feed with a date and an AM/PM flag, and the owner's 2026-08-28 ruling keeps it
+ * apart under "Days not in the field". This is a DISPLAY split only: `-5`, `-6` and `-16`
+ * stay WORKING days for attendance and pay, which never read this function.
+ *
+ * The portal's My Visits and Team Visits tabs read this so their counts match the KPI
+ * drill-down; `tests/my-visits-field-split.test.ts` pins it against `classifyCallProof`.
+ */
+export function isFieldWorkVisit(type: number | null, comment: string | null, rawDescription: string | null): boolean {
+  const { bucket } = classifyVisit(type, comment, rawDescription);
+  return bucket === "regular" || bucket === "campaign";
+}
+
 /** The vendor's placeholder for "I have no description for this code". */
 const VENDOR_UNKNOWN = "unknown";
 

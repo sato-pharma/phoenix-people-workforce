@@ -14,7 +14,7 @@
 import { indexCheckinsByAgentContactDay, pickCheckinForVisit } from "@/lib/crm/checkin-match";
 import { queryCheckins, queryVisits, queryVisitsLimited, resolveVisitTime } from "@/lib/crm/reads";
 import type { VisitTimeSource } from "@/lib/crm/reads";
-import { resolveVisitTypeLabel } from "@/lib/crm/visit-types";
+import { isFieldWorkVisit, resolveVisitTypeLabel } from "@/lib/crm/visit-types";
 import { TEAM_VISIT_ROW_CAP } from "@/lib/employee-portal/my-crm-visits-constants";
 
 export type MyCrmWindow = { dateFrom: string; dateTo: string };
@@ -72,6 +72,9 @@ export type MyCrmVisitRow = {
   customerName: string | null;
   doubleName: string | null;
   comment: string | null;
+  /** A call (regular or campaign) rather than leave, a holiday, a meeting or training — the same
+   *  split the KPI drill-down makes. See isFieldWorkVisit in crm/visit-types.ts. */
+  fieldWork: boolean;
 };
 
 /** A subordinate's visit as a manager sees it: the self-visit shape plus whose visit it is. */
@@ -165,6 +168,7 @@ export async function fetchMyVisits(hrId: string, window: MyCrmWindow): Promise<
       contactName: row.contact_name,
       customerName: row.customer_name,
       doubleName: row.double_name,
+      fieldWork: isFieldWorkVisit(row.visit_type, row.comment, row.visit_type_description),
       id: row.id,
       visitDate: row.visit_date,
       visitTime: resolved.time,
@@ -241,6 +245,7 @@ export async function fetchTeamVisits(hrIds: string[], window: MyCrmWindow): Pro
         contactName: row.contact_name,
         customerName: row.customer_name,
         doubleName: row.double_name,
+        fieldWork: isFieldWorkVisit(row.visit_type, row.comment, row.visit_type_description),
         id: row.id,
         visitDate: row.visit_date,
         visitTime: resolved.time,
