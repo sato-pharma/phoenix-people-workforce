@@ -130,6 +130,26 @@ export function CrmDictate({
             Speak and it is written into the comment — what saves is the text, not your voice. To save the
             voice itself, use Record a voice note below.
           </p>
+          {/*
+            The rep is told WHERE his voice goes, at the moment he decides to press the button rather
+            than on a policy page he will never open. That placement is the owner's decision, taken on
+            2026-09-25 when he was offered the privacy page instead and chose this: "add the processor
+            line to the dictation mic, not the privacy page".
+
+            It is here because recognition does not happen on the phone. Chrome streams the audio to
+            Google's speech service and Safari to Apple's, which is how the engine costs nothing — and
+            a visit comment carries the names of the AM and PM customers he saw, and what was said
+            about competitors. The owner ruled the processing itself acceptable; this is the half
+            that tells the person speaking.
+
+            Neither vendor is named by sniffing the user agent. The two engines are reached through the
+            same `webkitSpeechRecognition` on both browsers, so any detection would be a guess dressed
+            up as a fact, and naming both is true whichever one the rep is on.
+          */}
+          <p className="mt-1 break-words text-[11px] font-medium leading-4 text-slate-400">
+            Your voice is sent to the browser&apos;s speech service — Google&apos;s on Chrome,
+            Apple&apos;s on Safari — to be turned into text.
+          </p>
         </div>
       )}
 
