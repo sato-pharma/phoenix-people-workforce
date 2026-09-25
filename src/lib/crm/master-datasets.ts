@@ -28,7 +28,7 @@ export const CRM_MASTER_DATASETS: ReadonlyArray<{ id: CrmMasterDataset; label: s
   { id: "vacations", label: "Vacations" },
   { id: "regular_no_checkin", label: "Regular · No Check-in" },
   { id: "regular_dv_no_checkin", label: "Regular DV · No Check-in" },
-  { id: "regular_no_contact", label: "Regular · No Doctor" },
+  { id: "regular_no_contact", label: "No Doctor" },
 ];
 
 /** Every filter the master table's filter bar can offer. */
@@ -78,9 +78,10 @@ export const CRM_MASTER_SUPPORTED_FILTERS: Readonly<Record<CrmMasterDataset, rea
   vacations: [...UNIVERSAL_FILTERS, "halfDaysOnly", "minDuration"],
   regular_no_checkin: [...UNIVERSAL_FILTERS, "ampm", "mappingStatus", "visitType"],
   regular_dv_no_checkin: [...UNIVERSAL_FILTERS, "ampm", "mappingStatus", "visitType"],
-  // A Regular Visit saved with no doctor picked (contact_crm_id = 0): the visit type is pinned to
-  // Regular and the row carries no contact/locality, so Visit Type and Mapping Status would only
-  // ever narrow to empty — offer neither. AM/PM still varies and is worth filtering by.
+  // A field visit saved with no doctor picked (contact_crm_id = 0) — visit type Regular (0) or the
+  // vendor's Unknown (-30). The row carries no contact/locality, so Mapping Status would only ever
+  // narrow to empty; the Visit Type column already distinguishes Regular from Unknown per row, so
+  // there is no separate type dropdown. AM/PM still varies and is worth filtering by.
   regular_no_contact: [...UNIVERSAL_FILTERS, "ampm"],
 };
 
