@@ -34,6 +34,46 @@ import { codeEatenByNaiveStrip, stripComments } from "./support/comment-strip.ts
  * That resolution is the fragile part, and a resolver that silently resolves nothing would make
  * this file pass forever while checking nothing. {@link RESOLVED_PAIR_FLOOR} is the guard: 38
  * pairs resolve today, and the floor fails the test long before the resolver degrades to useless.
+ *
+ * ## The second shape: a hand-rolled LINE-WISE filter
+ *
+ * The naive block regex is not the only way to strip a comment badly, and the check above cannot
+ * see the other way at all — because the other way contains no regex. Nine call sites across seven
+ * tests had each written a line filter instead:
+ *
+ *     source.split("\n").filter((line) => {
+ *       const t = line.trim();
+ *       return !t.startsWith("//") && !t.startsWith("*") && !t.startsWith("/*") && !t.startsWith("{/*");
+ *     }).join("\n")
+ *
+ * It skips a `{/*` line without ever OPENING a comment block, so the BODY of a multi-line JSX
+ * comment is scanned as code: the continuation lines are plain indented prose and start with
+ * neither `*` nor `//`, so nothing else catches them. It also drops the WHOLE line beginning
+ * `{/*`, so real code sharing a line with a one-line JSX comment is never scanned at all.
+ *
+ * Five of those nine false-positived on a multi-line comment. The one that matters most did the
+ * opposite: `direct-orders-collection` pins its screen with a POSITIVE `assert.match`, so a comment
+ * cannot turn it red — it turns it GREEN. With the real `Total collected (Finance)` heading renamed
+ * on the screen and left behind in a comment above it, that test passed a screen whose heading no
+ * longer existed. #4382 folded all nine onto {@link stripComments}; this file could not have caught
+ * one of them.
+ *
+ * {@link lineWiseStripSites} therefore looks for the SHAPE, not for a damaged file. That is the
+ * deliberate difference from the check above: the block regex is safe on all but 39 files, so
+ * flagging it needs the file resolved, whereas a line filter tracks no block state anywhere — every
+ * one of them is one multi-line comment away from the same failure, whatever it is pointed at.
+ *
+ * Measured 2026-09-25: 47 such call sites in 42 test files, of which #4382 folds 9. The rest are
+ * listed in {@link GRANDFATHERED}, so this lands green and stops the 43rd rather than waiting for a
+ * 42-file repair. That list is a budget per file, never a permission — fold one, delete its row.
+ *
+ * A shape detector whose offender count is meant to reach zero cannot be guarded by a floor on
+ * offenders the way {@link RESOLVED_PAIR_FLOOR} guards the resolver. Its guard is
+ * {@link testTheLineWiseDetectorFiresOnTheShapesItIsNamedFor} instead: every historical spelling as
+ * a fixture, three negatives so it is not simply flagging everything, and a live control that runs
+ * the detector over this very file's bytes — the one control that cannot pass while the walk, the
+ * paren matcher or the regexes are broken. {@link SWEPT_FILE_FLOOR} covers the remaining way to
+ * check nothing, which is to sweep an empty tree.
  */
 
 const TESTS_DIR = "tests";
@@ -53,6 +93,92 @@ const NAIVE_STRIP_TEXT = /\\\/\\\*[\s\S]{0,24}?\\\*\\\//;
 
 /** 38 pairs resolve today. A resolver that has quietly stopped working must fail, not pass. */
 const RESOLVED_PAIR_FLOOR = 20;
+
+/**
+ * A comment-prefix test applied to one line — `startsWith("//")`, `startsWith("/*")`,
+ * `startsWith("{/*")`. Those three openers are what every hand-rolled line filter in this repo
+ * tests for, in one of three quote styles.
+ */
+const COMMENT_PREFIX_TEST = /startsWith\(\s*(["'`])(?:\/\/|\/\*|\{\/\*)\1\s*\)/;
+
+/**
+ * How far either side of the `.filter(` the line-splitting may sit.
+ *
+ * A `.filter(` testing a comment prefix is only a STRIPPER when the lines came from a split or go
+ * back into a join — otherwise it is counting comment lines, or picking them out to assert on, both
+ * of which are fine. Measured 2026-09-25 across the 47 real sites: all 47 have a `.split(` behind
+ * them within 300 characters, and 45 a `.join(` ahead within 200. The two without a join keep the
+ * array and scan it with `.some(...)` / `.find(...)`, which is the identical bug, so either signal
+ * alone is enough.
+ */
+const SPLIT_LOOKBEHIND = 300;
+const JOIN_LOOKAHEAD = 200;
+
+/**
+ * A runaway paren scan would swallow the rest of the file and report whatever it found there, so
+ * the argument matcher gives up past this. No real filter body comes close.
+ */
+const MAX_ARGUMENT_CHARS = 2_000;
+
+/** `tests/` holds 1,834 `.ts` files today. A sweep that has stopped reading them must fail. */
+const SWEPT_FILE_FLOOR = 1_200;
+
+/**
+ * The line-wise strippers that already existed when this check was written — 47 sites in 42 files,
+ * measured 2026-09-25, of which #4382 folds 9.
+ *
+ * A BUDGET, not a permission: the number is the most a file may hold, so a file #4382 empties keeps
+ * passing whichever order the two land in, while a NEW one anywhere — or a second one in a listed
+ * file — fails. Fold a file onto `stripComments` and delete its row; nothing here is allowed to
+ * grow. {@link GRANDFATHERED_SITE_BUDGET} makes an addition impossible to make quietly.
+ */
+const GRANDFATHERED: ReadonlyMap<string, number> = new Map([
+  ["tests/action-center-row-caps.test.ts", 1],
+  ["tests/admin-filename-cells-never-ellipsise.test.ts", 1],
+  ["tests/approvals-hub-row-cap.test.ts", 1],
+  ["tests/attendance-exception-row-cap.test.ts", 1],
+  ["tests/automated-payroll-crm-leave-fails-closed.test.ts", 1],
+  ["tests/automated-payroll-insurance-wage.test.ts", 1],
+  ["tests/automated-payroll-leaver-overpayment.test.ts", 1],
+  ["tests/ceo-top-movers-share.test.ts", 1],
+  ["tests/closing-summary-fits.test.ts", 1],
+  ["tests/crm-live-poller.test.ts", 1],
+  ["tests/crm-portal-coverage-populations.test.ts", 1],
+  ["tests/crm-route-map-address-never-ellipsises.test.ts", 1],
+  ["tests/crm-visit-type-labels.test.ts", 1],
+  ["tests/cv-cabinet-audit-fixes.test.ts", 1],
+  ["tests/decided-for-me-row-caps.test.ts", 1],
+  ["tests/deductions-crm-vacation-employment-join.test.ts", 1],
+  ["tests/deductions-dsm-no-record.test.ts", 1],
+  ["tests/deductions-vacation-ledger-guard.test.ts", 1],
+  ["tests/direct-orders-approval-flow.test.ts", 3],
+  ["tests/direct-orders-collection.test.ts", 1],
+  ["tests/direct-orders-desk-shell.test.ts", 1],
+  ["tests/direct-orders-family-basket.test.ts", 2],
+  ["tests/direct-orders-second-review-fixes.test.ts", 2],
+  ["tests/direct-orders-unresolved-manager-rung.test.ts", 1],
+  ["tests/drive-cabinet-folders.test.ts", 1],
+  ["tests/early-birds-board-wraps.test.ts", 1],
+  ["tests/early-birds-fortnight-card-wraps.test.ts", 1],
+  ["tests/employee-directory-stale-bound.test.ts", 1],
+  ["tests/normalizer-mapping-truth.test.ts", 1],
+  ["tests/outstation-claims-read-flag.test.ts", 2],
+  ["tests/outstation-request-name-is-the-employee-record.test.ts", 1],
+  ["tests/pharmacy-license-evidence.test.ts", 1],
+  ["tests/portal-chrome-never-clips-text.test.ts", 1],
+  ["tests/portal-home-no-dead-approvals-fetch.test.ts", 1],
+  ["tests/portal-tools-grid-fits-a-phone.test.ts", 1],
+  ["tests/recruitment-simplify.test.ts", 1],
+  ["tests/repo-doctor-worktree-restore-advice.test.ts", 1],
+  ["tests/sales-command-band-fits-a-laptop.test.ts", 1],
+  ["tests/sales-target-tables-fit-the-screen.test.ts", 1],
+  ["tests/section-card-header-fits-a-phone.test.ts", 1],
+  ["tests/territory-preview-link-controls.test.ts", 1],
+  ["tests/zoomable-photo.test.ts", 1],
+]);
+
+/** The sum of the budget above on the day it was written. It may fall. It may never rise. */
+const GRANDFATHERED_SITE_BUDGET = 47;
 
 function walk(dir: string): string[] {
   const out: string[] = [];
@@ -146,6 +272,60 @@ function resolveStrippedPairs(): Pair[] {
 }
 
 /**
+ * The balanced text of the call argument whose `(` sits at `open`, and the index just past its `)`.
+ *
+ * Paren counting, with no notion of string state — a `(` or `)` written inside a string literal in
+ * the filter body would misread where the argument ends. All 47 real sites parse correctly today
+ * and the fixtures below pin the shapes, so the cost of that simplification is bounded: a mis-parse
+ * that ends early drops the site (the sweep goes quiet on one file, which the live control catches
+ * if it ever becomes general), and {@link MAX_ARGUMENT_CHARS} stops one that ends late from reading
+ * the rest of the file as a filter body.
+ */
+function parenthesisedArgument(
+  source: string,
+  open: number,
+): { readonly text: string; readonly end: number } | null {
+  const limit = Math.min(source.length, open + MAX_ARGUMENT_CHARS);
+  let depth = 0;
+  for (let i = open; i < limit; i += 1) {
+    const c = source[i];
+    if (c === "(") depth += 1;
+    else if (c === ")") {
+      depth -= 1;
+      if (depth === 0) return { text: source.slice(open + 1, i), end: i + 1 };
+    }
+  }
+  return null;
+}
+
+/**
+ * The 1-based line numbers in `source` where a hand-rolled LINE-WISE comment stripper sits.
+ *
+ * `.filter(…)` whose body tests a comment prefix on a line, with the line-splitting either behind
+ * it or the re-join ahead of it. That is the whole shape, and it is reported wherever it appears:
+ * unlike the naive block regex, a line filter is not safe on any file, because it tracks no block
+ * state at all — so there is no file to resolve and no measurement that could make one instance
+ * benign. The remedy is always the same one-line import of {@link stripComments}.
+ */
+function lineWiseStripSites(source: string): number[] {
+  const sites: number[] = [];
+
+  for (const hit of source.matchAll(/\.filter\s*\(/g)) {
+    const open = hit.index + hit[0].length - 1;
+    const argument = parenthesisedArgument(source, open);
+    if (!argument || !COMMENT_PREFIX_TEST.test(argument.text)) continue;
+
+    const behind = source.slice(Math.max(0, hit.index - SPLIT_LOOKBEHIND), hit.index);
+    const ahead = source.slice(argument.end, argument.end + JOIN_LOOKAHEAD);
+    if (!/\.split\s*\(/.test(behind) && !/\.join\s*\(/.test(ahead)) continue;
+
+    sites.push(source.slice(0, hit.index).split("\n").length);
+  }
+
+  return sites;
+}
+
+/**
  * The detector must be shown to fire, on a case small enough to read. Without this, every
  * assertion below would pass just as happily if `codeEatenByNaiveStrip` always returned 0.
  */
@@ -205,7 +385,176 @@ function testNoTestStripsAFileTheStripWouldDamage() {
   );
 }
 
+/**
+ * The line-wise detector, shown to fire on every spelling it was written for and to stay quiet on
+ * three things that are not strippers.
+ *
+ * This is the whole degradation guard for the check below, and it carries that weight because a
+ * floor on offenders cannot: the offender count is MEANT to fall to zero as the 42 files are
+ * folded, so `found >= n` would have to be retired exactly when it started mattering. Fixtures do
+ * not expire. The negatives matter as much as the positives — a detector that flags every `.filter(`
+ * in `tests/` would be silenced within a day, which is the failure mode the resolution above was
+ * built to avoid.
+ */
+function testTheLineWiseDetectorFiresOnTheShapesItIsNamedFor() {
+  const positives: ReadonlyArray<readonly [string, string]> = [
+    [
+      "the four-prefix block body (ceo-top-movers-share)",
+      [
+        "const code = component",
+        '  .split("\\n")',
+        "  .filter((line) => {",
+        "    const t = line.trim();",
+        '    return !t.startsWith("//") && !t.startsWith("*") && !t.startsWith("/*") && !t.startsWith("{/*");',
+        "  })",
+        '  .join("\\n");',
+      ].join("\n"),
+    ],
+    [
+      "the two-prefix one-line arrow (direct-orders-approval-flow)",
+      [
+        "const serviceCode = serviceSource",
+        '  .split("\\n")',
+        '  .filter((line) => !line.trim().startsWith("//") && !line.trim().startsWith("*"))',
+        '  .join("\\n");',
+      ].join("\n"),
+    ],
+    [
+      "the CRLF-tolerant split (direct-orders-approval-flow, second site)",
+      [
+        "const code = source",
+        "  .split(/\\r?\\n/)",
+        "  .filter((line) => {",
+        "    const t = line.trim();",
+        '    return !t.startsWith("//") && !t.startsWith("*") && !t.startsWith("{/*");',
+        "  })",
+        '  .join("\\n");',
+      ].join("\n"),
+    ],
+    [
+      "the whole chain on one physical line (direct-orders-collection)",
+      'const controlCode = control.split("\\n").filter((line) => !line.trim().startsWith("//") && ' +
+        '!line.trim().startsWith("*") && !line.trim().startsWith("{/*")).join("\\n");',
+    ],
+    [
+      "trimStart, and the array kept rather than re-joined (drive-cabinet-folders)",
+      [
+        "const codeLines = source",
+        '  .split("\\n")',
+        '  .filter((line) => !line.trimStart().startsWith("*") && !line.trimStart().startsWith("//"));',
+      ].join("\n"),
+    ],
+  ];
+
+  for (const [what, fixture] of positives) {
+    assert.equal(
+      lineWiseStripSites(fixture).length,
+      1,
+      `the detector must flag ${what} — a spelling it misses is a spelling that escapes it`,
+    );
+  }
+
+  const negatives: ReadonlyArray<readonly [string, string]> = [
+    ["the sanctioned remedy", "const code = stripComments(source);"],
+    [
+      "a split/join filter that is not about comments",
+      [
+        "const body = source",
+        '  .split("\\n")',
+        '  .filter((line) => !line.trim().startsWith("import "))',
+        '  .join("\\n");',
+      ].join("\n"),
+    ],
+    [
+      "a comment-prefix filter that COUNTS rather than strips",
+      "const docLines = collected.filter((line) => line.trim().startsWith(\"//\")).length;",
+    ],
+  ];
+
+  for (const [what, fixture] of negatives) {
+    assert.deepEqual(
+      lineWiseStripSites(fixture),
+      [],
+      `the detector must not flag ${what} — a ratchet that cries wolf is turned off`,
+    );
+  }
+
+  // The live control. Fixtures prove the regexes; only this proves the detector still works on real
+  // file bytes, read off the disk through the same path the sweep uses. This file is the one place
+  // in `tests/` guaranteed to contain the shape, because the fixtures above ARE the shape.
+  const self = "tests/comment-strip-ratchet.test.ts";
+  assert.ok(
+    SANCTIONED.has(self),
+    "this file must stay sanctioned — it has to spell out the shape in order to detect it, and " +
+      "the sweep below would otherwise report its own fixtures as offenders",
+  );
+  assert.ok(
+    lineWiseStripSites(readFileSync(self, "utf8")).length >= positives.length,
+    "the detector found fewer sites in this file than it has fixtures. It is reading the disk, " +
+      "the paren matcher or the regexes wrongly — not passing because the tree is clean",
+  );
+}
+
+/**
+ * No test under `tests/` strips comments with a hand-rolled line filter, beyond the ones that
+ * already did on 2026-09-25.
+ */
+function testNoNewTestStripsCommentsLineWise() {
+  const files = walk(TESTS_DIR);
+
+  assert.ok(
+    files.length >= SWEPT_FILE_FLOOR,
+    `the sweep read only ${files.length} files under ${TESTS_DIR}/, below the floor of ` +
+      `${SWEPT_FILE_FLOOR}. A sweep that has stopped seeing the tree reports no offenders for the ` +
+      "wrong reason. Fix walk(), do not lower the floor.",
+  );
+
+  const budgeted = [...GRANDFATHERED.values()].reduce((sum, n) => sum + n, 0);
+  assert.ok(
+    budgeted <= GRANDFATHERED_SITE_BUDGET,
+    `the grandfather list now budgets ${budgeted} sites, above the ${GRANDFATHERED_SITE_BUDGET} it ` +
+      "was seeded with. It may only shrink: fold the file onto stripComments and delete its row, " +
+      "never add one.",
+  );
+
+  const vanished = [...GRANDFATHERED.keys()].filter((file) => !existsSync(file));
+  assert.deepEqual(
+    vanished,
+    [],
+    "a grandfathered file no longer exists, so its row is keeping a budget alive for nothing and " +
+      "would silently re-permit the shape if the name were ever reused. Delete these rows.",
+  );
+
+  const offenders: string[] = [];
+  for (const file of files) {
+    if (SANCTIONED.has(file)) continue;
+
+    const sites = lineWiseStripSites(readFileSync(file, "utf8"));
+    const allowed = GRANDFATHERED.get(file) ?? 0;
+    if (sites.length <= allowed) continue;
+
+    offenders.push(
+      `${file} strips comments line-wise at line ${sites.join(", ")} ` +
+        `(${sites.length} site(s), ${allowed} grandfathered)`,
+    );
+  }
+
+  assert.deepEqual(
+    offenders,
+    [],
+    "a test is stripping comments with a hand-rolled line filter. It skips a `{/*` line without " +
+      "opening a comment BLOCK, so the body of a multi-line JSX comment is scanned as code — its " +
+      "continuation lines start with neither `*` nor `//` — and it drops the whole line beginning " +
+      "`{/*`, so real code sharing a line with a one-line JSX comment is never scanned at all. A " +
+      "negative assertion then fails on the comment; a positive one PASSES on a screen that no " +
+      "longer has the thing it pins. Import `stripComments` from tests/support/comment-strip.ts " +
+      "and call it on the source instead.",
+  );
+}
+
 export function runCommentStripRatchetTests() {
   testTheDetectorCatchesTheTrapItIsNamedFor();
   testNoTestStripsAFileTheStripWouldDamage();
+  testTheLineWiseDetectorFiresOnTheShapesItIsNamedFor();
+  testNoNewTestStripsCommentsLineWise();
 }
