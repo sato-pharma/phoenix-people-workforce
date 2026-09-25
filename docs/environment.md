@@ -170,6 +170,48 @@ round trip to the company mailbox.
 | ANDROID_MANAGEMENT_ACCESS_TOKEN | A short-lived OAuth token (`gcloud auth print-access-token`) for a one-off local run. Read first, ahead of the key — **so never set it on Railway**: it would outrank the key and die within the hour | |
 | ANDROID_MANAGEMENT_KEY | A service-account JSON key, base64-encoded — production's credential since 2026-09-18: `phoenix-amapi` on `phoenix-hr-2026`, holding the Android Management User role and nothing else. A fleet-wide approval credential — server-only, never exposed to a browser. The owner's Google org blocks key creation (`iam.disableServiceAccountKeyCreation`), so a rotation means lifting that block on the one project, minting, and restoring it — **the owner's own action**, never a session's | |
 
+## Headwind MDM + RustDesk (Optional — the company's own rep-tablet server)
+
+Lets **Rep Tablets** drive the fleet from the company's own Headwind MDM server instead of a vendor,
+and opens a free remote-screen session on a tablet through the company's own RustDesk relay. Full
+account, including how the server is built and how a tablet moves onto it:
+[docs/devices/headwind-rustdesk.md](devices/headwind-rustdesk.md).
+
+🔒 **THE WHOLE SECTION SHIPS DARK.** With `HEADWIND_MDM_*` unset, the Headwind card does not render
+at all and no route reaches out — `/devices/tablets` is byte-for-byte the ManageEngine page it is
+today. That is deliberate: the bridge merges to production before the server exists, and the owner
+turns it on by setting these variables once the box is up.
+
+**Why a separate box and not Railway or Supabase.** RustDesk's relay needs fixed raw TCP *and* UDP
+ports (21115–21119) with the real client addresses visible, which Railway does not offer; and a
+device-management server talking to reps' tablets all day does not belong beside the payroll
+database. It is one small dedicated VPS, about $5–6/month, **in Europe** like everything else here.
+
+| Variable | Description | Default |
+|---|---|---|
+| HEADWIND_MDM_BASE_URL | The company's Headwind server **at its console hostname**, e.g. `https://mdm-console.satopharma.com` — the one behind the Cloudflare Tunnel, not `mdm.satopharma.com`, which is the tablets' own direct name and must stay off Cloudflare's proxy because 31000 is not an HTTP port. Pointing this at the tablets' name works, and quietly puts the API back on the public internet. No trailing slash — one is trimmed either way. Nothing here has a safe default: a guessed address would send an admin password to whoever owns that name | |
+| HEADWIND_MDM_LOGIN | An admin login on that server. Give Phoenix its own account, not a person's, so the audit trail on the Headwind side reads as "Phoenix" | |
+| HEADWIND_MDM_PASSWORD | That account's password, **in plain text here**. 🔴 Phoenix MD5-hashes it before sending, because that is Headwind's wire format — do not pre-hash it yourself, and never "upgrade" the hash: the server would refuse every sign-in. A Headwind admin password factory-resets tablets — server-only, never exposed to a browser, never logged | |
+| HEADWIND_MDM_ACCESS_CLIENT_ID | The Cloudflare Access **service token** id, when the console is behind a Cloudflare Tunnel — which it is, by the owner's decision of 2026-09-25, because Headwind Community has no admin two-factor. 🔴 Access asks a *person* to sign in and Phoenix is not one: without this, every Phoenix call is answered by Cloudflare's own sign-in page and the bridge goes dark against a perfectly healthy server. Sent as the `CF-Access-Client-Id` header | |
+| HEADWIND_MDM_ACCESS_CLIENT_SECRET | That token's secret, sent as `CF-Access-Client-Secret`. **Both or neither** — one alone is refused by name before any call goes out, because Cloudflare would answer HTML and the failure would then read as a wrong Headwind password. Cloudflare shows it once, at creation; server-only, never logged. Leave both unset for a server with no tunnel | |
+| RUSTDESK_RELAY_HOST | The company's RustDesk relay, e.g. `relay.satopharma.com`. Shown on screen so it can be checked against the desktop app's own settings | |
+| RUSTDESK_PUBLIC_KEY | The relay's public key, from `rustdesk-data/id_ed25519.pub` on the box. **Public by design** — the app needs it to verify the relay. The matching *private* key never leaves the server | |
+| RUSTDESK_APP_PACKAGE | The Android package the remote-screen app installs under. Only set it if a rebuilt client changes the package | com.carriez.flutter_hbb |
+
+🔴 **The screen-session password is NOT here and must never be.** Phoenix builds a connect target —
+which tablet, which relay, the public key — and stops. The person types the tablet's access password
+into the RustDesk app themselves, or the tablet is set up for unattended access. RustDesk's link
+scheme accepts a password in the query string; a URL is logged by browsers, proxies and anything that
+touches it, and a tablet's permanent password in a log is a tablet anybody can drive.
+
+🔴 **A tablet's RustDesk ID lives in Headwind, not in a Phoenix table** — in each device's first
+custom field. One place to look, and nothing to keep in step when a tablet is re-enrolled.
+
+**The server's own settings are a different file.** `ADMIN_EMAIL`, `BASE_DOMAIN`, `SQL_*` and the
+pinned image tags belong in `.env.headwind` **on the box**, beside
+[`docker-compose.headwind.yml`](../docker-compose.headwind.yml); `.env.headwind.example` documents
+them. Nothing in that file is a Phoenix variable and none of it goes on Railway.
+
 ## Observability
 
 `COMMIT_SHA` / `NEXT_PUBLIC_COMMIT_SHA` are the release identifier for the self-hosted

@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 
+import { HeadwindFleet } from "@/components/devices/headwind-fleet";
 import { ManageEngineAppRepository } from "@/components/devices/manageengine-app-repository";
 import { ManageEngineEnrollment } from "@/components/devices/manageengine-enrollment";
 import { ManageEngineFleet } from "@/components/devices/manageengine-fleet";
@@ -7,6 +8,7 @@ import { ManageEngineRepTabletRules } from "@/components/devices/manageengine-re
 import { PremiumHero } from "@/components/ui/premium-hero";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { isHeadwindConfigured } from "@/lib/devices/headwind/auth";
 import { isManageEngineConfigured } from "@/lib/devices/manageengine/auth";
 
 export const dynamic = "force-dynamic";
@@ -47,6 +49,13 @@ export default async function RepTabletsPage() {
   // section above it already says once.
   const manageEngineReady = isManageEngineConfigured();
 
+  // 🔴 THE HEADWIND SECTION SHIPS DARK. It renders ONLY once the company's own Headwind server exists
+  // and its three settings are on Railway; until then this page is byte-for-byte what it is today, so
+  // the whole bridge can be merged to production before the server is built. When the fleet has moved
+  // across, the ManageEngine lines come off exactly the way the Google console did — one line, with
+  // nothing deleted from the repo.
+  const headwindReady = isHeadwindConfigured();
+
   return (
     <div className="space-y-6">
       <PremiumHero
@@ -58,6 +67,7 @@ export default async function RepTabletsPage() {
       {manageEngineReady ? <ManageEngineRepTabletRules /> : null}
       {manageEngineReady ? <ManageEngineAppRepository /> : null}
       <ManageEngineFleet bridgeConfigured={manageEngineReady} />
+      {headwindReady ? <HeadwindFleet /> : null}
     </div>
   );
 }

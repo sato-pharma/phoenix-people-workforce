@@ -1,0 +1,285 @@
+/**
+ * Reading the Headwind fleet and matching it to Phoenix's custody register.
+ *
+ * The list comes from `POST /rest/private/devices/search` — a POST, not a GET, with the filter and
+ * the page in the body. Each tablet is matched to a register entry exactly the way the ManageEngine
+ * and Android Management views match it: by serial number, then by IMEI, both compared on digits
+ * through the shared `device-identity` helpers, so "the same tablet" means one thing on every screen.
+ *
+ * 🔴 A HEADWIND DEVICE HAS TWO IDENTIFIERS AND THEY ARE NOT INTERCHANGEABLE. `id` is the row number
+ * in the server's own database; `number` is the DEVICE NUMBER the agent enrolled under, and it is the
+ * one every remote action is addressed to (`deviceNumbers` on `/rest/private/push`). Sending an `id`
+ * where a number belongs reaches nothing at all and reports success, because the push endpoint
+ * accepts a list and simply matches none of it. Both are carried here for that reason, and
+ * `deviceNumber` is what commands use.
+ *
+ * DEFENSIVE FIELD READING, AND THE `info` BLOB. The searchable device row carries the enrolment
+ * facts; everything the tablet itself reports — model, Android version, serial, battery, position —
+ * arrives inside a nested `info` object which SOME BUILDS SEND AS A JSON STRING rather than an
+ * object. It is parsed here once, and every field is read from a short candidate list rather than one
+ * pinned spelling, so a server upgrade cannot silently blank a column. A value that does not map is
+ * left null — a null reads as "not reported", which is true, while a guess would not be.
+ */
+
+import { normalizeImei, normalizeSerial, imeisMatch } from "@/lib/devices/device-identity";
+import { callHeadwind } from "@/lib/devices/headwind/client";
+import type { RegisterTablet } from "@/lib/devices/managed-tablets";
+
+type RawRecord = Record<string, unknown>;
+
+function pickString(record: RawRecord, keys: readonly string[]): string | null {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+    if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  }
+  return null;
+}
+
+function pickNumber(record: RawRecord, keys: readonly string[]): number | null {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value === "string" && value.trim() && Number.isFinite(Number(value))) return Number(value);
+  }
+  return null;
+}
+
+function pickBoolean(record: RawRecord, keys: readonly string[]): boolean | null {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "boolean") return value;
+    if (typeof value === "number" && Number.isFinite(value)) return value !== 0;
+    if (typeof value === "string" && value.trim()) {
+      const normalized = value.trim().toLowerCase();
+      if (["1", "true", "enabled", "on", "yes"].includes(normalized)) return true;
+      if (["0", "false", "disabled", "off", "no"].includes(normalized)) return false;
+    }
+  }
+  return null;
+}
+
+/** The nested `info` the agent reports, parsed whether it arrived as an object or as a JSON string. */
+function deviceInfo(record: RawRecord): RawRecord {
+  for (const key of ["info", "deviceInfo", "details"] as const) {
+    const value = record[key];
+    if (value && typeof value === "object" && !Array.isArray(value)) return value as RawRecord;
+    if (typeof value === "string" && value.trim().startsWith("{")) {
+      try {
+        const parsed = JSON.parse(value) as unknown;
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed as RawRecord;
+      } catch {
+        // A malformed blob is not a reason to lose the whole device — the enrolment fields still read.
+      }
+    }
+  }
+  return {};
+}
+
+/** An epoch-ms or ISO timestamp as ISO, or null. Headwind sends `lastUpdate` in milliseconds. */
+function isoTime(record: RawRecord, keys: readonly string[]): string | null {
+  const ms = pickNumber(record, keys);
+  if (ms !== null && ms > 0) {
+    // A value in seconds rather than milliseconds would date to 1970; treat anything below the year
+    // 2001 in ms as seconds rather than rendering an obviously wrong date on the console.
+    const millis = ms < 1_000_000_000_000 ? ms * 1000 : ms;
+    return new Date(millis).toISOString();
+  }
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) {
+      const parsed = Date.parse(value);
+      if (!Number.isNaN(parsed)) return new Date(parsed).toISOString();
+    }
+  }
+  return null;
+}
+
+export type HeadwindDevice = {
+  /** The device NUMBER — what a remote action is addressed to. Never the database id. */
+  deviceNumber: string;
+  /** The server's own row id, for the reads that take one. */
+  deviceId: string;
+  /** What the console shows: the description the admin typed, else the device number. */
+  name: string;
+  manufacturer: string | null;
+  model: string | null;
+  serialNumber: string | null;
+  imei: string | null;
+  phone: string | null;
+  osVersion: string | null;
+  /** The Headwind configuration the tablet runs — its rules, its kiosk and its app list. */
+  configurationName: string | null;
+  configurationId: string | null;
+  /** Battery charge as a percentage, where the agent reported one. */
+  batteryLevel: number | null;
+  batteryCharging: boolean | null;
+  /** The Headwind agent's own version — a tablet far behind the fleet is worth seeing. */
+  agentVersion: string | null;
+  lastContactAt: string | null;
+  /** Position from the tablet's own last report, where location is switched on for it. */
+  latitude: number | null;
+  longitude: number | null;
+  locatedAt: string | null;
+  /**
+   * The tablet's RustDesk ID, out of Headwind's FIRST free-text admin field.
+   *
+   * 🔴 IT LIVES IN HEADWIND ON PURPOSE, NOT IN A PHOENIX TABLE. Headwind gives each device three
+   * custom fields; keeping the ID in the first one means one place to look and nothing to keep in
+   * step when a tablet is re-enrolled or replaced. Empty reads as "no screen session set up yet".
+   */
+  rustDeskId: string | null;
+  /** Headwind has no "removed" state — a device is enrolled or it is not in the list at all. */
+  enrollmentStatus: string | null;
+  /** Kept for the register matcher's sake: every Headwind-managed device is Android. */
+  isAndroid: boolean;
+  platformLabel: string;
+};
+
+function normalizeDevice(record: RawRecord): HeadwindDevice | null {
+  const info = deviceInfo(record);
+  const deviceNumber = pickString(record, ["number", "deviceNumber", "deviceId"]);
+  if (!deviceNumber) return null;
+
+  const latitude = pickNumber(info, ["lat", "latitude"]);
+  const longitude = pickNumber(info, ["lon", "lng", "longitude"]);
+  const location = info.location && typeof info.location === "object" ? (info.location as RawRecord) : {};
+
+  return {
+    agentVersion: pickString(record, ["launcherVersion", "agentVersion"]) ?? pickString(info, ["launcherVersion", "version"]),
+    batteryCharging: pickBoolean(info, ["batteryCharging", "charging", "isCharging"]),
+    batteryLevel: pickNumber(info, ["batteryLevel", "battery"]),
+    configurationId: pickString(record, ["configurationId", "configId"]),
+    configurationName: pickString(record, ["configName", "configurationName", "configuration"]),
+    deviceId: pickString(record, ["id"]) ?? deviceNumber,
+    deviceNumber,
+    // 🔴 "Enrolled" IS A FACT HERE, NOT A DEFAULT. Headwind's device list holds only devices whose
+    // agent has enrolled; there is no removed/pending state to render, and the server's `statusCode`
+    // is a colour hint for its own console, not an enrolment state. So the word is written plainly
+    // rather than read from a field that does not mean it — the column exists to match the other two
+    // bridges, which do have states worth showing.
+    enrollmentStatus: "Enrolled",
+    imei: pickString(record, ["imei"]) ?? pickString(info, ["imei", "imei1"]),
+    isAndroid: true,
+    lastContactAt: isoTime(record, ["lastUpdate", "lastContact", "lastSeen"]),
+    latitude: latitude ?? pickNumber(location, ["lat", "latitude"]),
+    locatedAt: isoTime(location, ["ts", "time", "timestamp"]) ?? isoTime(info, ["locationTs"]),
+    longitude: longitude ?? pickNumber(location, ["lon", "lng", "longitude"]),
+    manufacturer: pickString(info, ["manufacturer", "brand", "vendor"]),
+    model: pickString(info, ["model", "deviceModel"]) ?? pickString(record, ["model"]),
+    name: pickString(record, ["description", "name"]) ?? deviceNumber,
+    osVersion: pickString(info, ["androidVersion", "osVersion", "sdkVersion"]),
+    phone: pickString(record, ["phone", "phoneNumber"]),
+    platformLabel: "Android",
+    rustDeskId: pickString(record, ["custom1"]),
+    serialNumber: pickString(info, ["serial", "serialNumber"]) ?? pickString(record, ["serial", "serialNumber"]),
+  };
+}
+
+type SearchResponse = RawRecord & { items?: unknown; devices?: unknown };
+
+function devicesArray(payload: unknown): RawRecord[] {
+  if (Array.isArray(payload)) return payload as RawRecord[];
+  if (payload && typeof payload === "object") {
+    const record = payload as SearchResponse;
+    for (const key of ["items", "devices"] as const) {
+      const value = record[key];
+      if (Array.isArray(value)) return value as RawRecord[];
+    }
+  }
+  return [];
+}
+
+/**
+ * Every device the company's Headwind server manages, normalized.
+ *
+ * 🔴 THE PAGE SIZE IS DELIBERATELY LARGER THAN THE FLEET WILL EVER BE. Headwind's search is paged and
+ * a page size left at its default would quietly stop listing tablets once the fleet outgrows it — a
+ * missing tablet on a custody console is worse than a slow one. The owner expects about a hundred
+ * tablets; a thousand leaves the ceiling far out of reach, and the page count is checked below so a
+ * fleet that somehow exceeds it reports the truth rather than a short list.
+ */
+export async function listHeadwindDevices(
+  fetchImpl: typeof fetch = fetch,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<HeadwindDevice[]> {
+  const payload = await callHeadwind<SearchResponse>(
+    "/rest/private/devices/search",
+    { body: JSON.stringify({ pageNum: 1, pageSize: 1000, value: "" }), method: "POST" },
+    fetchImpl,
+    env,
+  );
+  return devicesArray(payload)
+    .map((record) => normalizeDevice(record))
+    .filter((device): device is HeadwindDevice => device !== null);
+}
+
+/**
+ * The register entry a Headwind device belongs to, and HOW it was recognised.
+ *
+ * The how matters for exactly one decision: copying the IMEI the tablet reports onto its register
+ * entry. An entry matched BY that IMEI already holds it, and an entry matched by nothing else has
+ * not been confirmed by anything the tablet itself carries — only a SERIAL match says "this row is
+ * certainly this tablet", which is the same bar the other two bridges set before they write an IMEI.
+ */
+export type HeadwindRegisterMatch = { entry: RegisterTablet; bySerial: boolean };
+
+export function matchHeadwindToRegisterDetailed(
+  device: HeadwindDevice,
+  register: readonly RegisterTablet[],
+): HeadwindRegisterMatch | null {
+  const serial = normalizeSerial(device.serialNumber);
+  if (serial) {
+    const entry = register.find((candidate) => normalizeSerial(candidate.serialNumber) === serial);
+    if (entry) return { bySerial: true, entry };
+  }
+  const imei = normalizeImei(device.imei);
+  if (imei) {
+    const entry = register.find((candidate) => {
+      const registered = normalizeImei(candidate.imei);
+      return registered !== null && imeisMatch(registered, imei);
+    });
+    if (entry) return { bySerial: false, entry };
+  }
+  return null;
+}
+
+/** The register entry a Headwind device belongs to, by serial then IMEI, or null. */
+export function matchHeadwindToRegister(
+  device: HeadwindDevice,
+  register: readonly RegisterTablet[],
+): RegisterTablet | null {
+  return matchHeadwindToRegisterDetailed(device, register)?.entry ?? null;
+}
+
+export type HeadwindLocation = {
+  latitude: number | null;
+  longitude: number | null;
+  address: string | null;
+  locatedAt: string | null;
+};
+
+/**
+ * A tablet's last known position.
+ *
+ * 🔴 THIS IS A READ OF WHAT THE TABLET ALREADY REPORTED, NOT A LIVE PING. Headwind's agent sends its
+ * position with its regular check-in when location is enabled in the tablet's configuration, and the
+ * fleet read already carries it — so this reads the same list rather than inventing an endpoint. The
+ * console shows the TIME beside the position, so an older fix reads as what it is. Headwind does not
+ * reverse-geocode, so `address` is always null here and the screen shows coordinates; naming a street
+ * we had not been told would be a fabricated fact.
+ */
+export async function getHeadwindLocation(
+  deviceNumber: string,
+  fetchImpl: typeof fetch = fetch,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<HeadwindLocation> {
+  const devices = await listHeadwindDevices(fetchImpl, env);
+  const device = devices.find((candidate) => candidate.deviceNumber === deviceNumber);
+  return {
+    address: null,
+    latitude: device?.latitude ?? null,
+    locatedAt: device?.locatedAt ?? device?.lastContactAt ?? null,
+    longitude: device?.longitude ?? null,
+  };
+}

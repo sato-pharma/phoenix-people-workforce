@@ -129,6 +129,11 @@ cloud-run-env.yaml
 cloud-run-env-all.yaml
 
 .env*
+# An `.env.<thing>.example` is a TEMPLATE and holds no value — `.env.analytics.example` has been
+# tracked since the analytics box, and `.env.headwind.example` documents the device-management one.
+# The negation at the top of this file is shadowed by the two `.env*` lines that follow it, so it is
+# repeated here, last, where it actually wins. It stays narrow on purpose: only `.example`.
+!.env.*.example
 .vercel
 
 # Next.js regenerates this on every dev/build and rewrites its import target

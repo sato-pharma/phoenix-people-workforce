@@ -1407,6 +1407,21 @@ export const accessRegistry = [
   // and puts the profile on no tablet.
   sessionApi({ methods: ["GET"], pattern: "/api/devices/manageengine/rep-tablet-profile", permission: { resource: "company_devices", action: "approve" } }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/manageengine/rep-tablet-profile", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
+  // Headwind bridge (2026-09-25) — the company's OWN MDM server, which has no device cap and no trial.
+  // GET reads the fleet, and with ?deviceNumber= one tablet: its position, or with &view= everything
+  // Headwind holds about it, the apps on it, what Phoenix has done to it, or where a remote screen
+  // session would connect. 🔴 The screen view hands back a TARGET, never a credential — no session
+  // password and no private key ever leaves the server. POST issues one remote action, each of which
+  // reaches a real tablet and carries its own REQUIRED audit row (headwind_device_command). Same Super
+  // Admin gate as the ManageEngine bridge beside it: the two consoles differ, the custody rules do not.
+  sessionApi({ methods: ["GET"], pattern: "/api/devices/headwind", permission: { resource: "company_devices", action: "approve" } }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/headwind", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
+  // Copying the IMEI a Headwind-managed tablet reports into its custody-register entry, where the entry
+  // holds none — the Headwind twin of the two routes above it. It reads NO body: which entries are
+  // written, and with which IMEI, is decided on the server from the live fleet and the register, so the
+  // browser can ask for the copy but never say what it copies. Each IMEI written carries its own
+  // REQUIRED audit row (company_device).
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/headwind/imei", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
   // Visual Aids (owner, 2026-09-18). A rep and his DM, RM and NSM read the ACTIVE aids of their own
   // line — the line check lives in src/lib/visual-aids/service.ts, below the permission. Marketing
   // Manager, GPM and Super Admin upload (create) and retire or replace (update); nobody deletes. The

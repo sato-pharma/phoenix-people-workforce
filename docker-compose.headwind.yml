@@ -1,0 +1,104 @@
+# Headwind MDM + RustDesk — the company's own device-management server.
+#
+# WHAT THIS IS FOR. Rep tablets are managed from Phoenix, but the server they talk to has to live
+# somewhere that can hold open raw TCP and UDP ports and keep a disk. That is not Railway (it hosts
+# the web app) and it is certainly not Supabase (it is a database, and it is the PAYROLL database —
+# a device-management server talking to reps' tablets all day does not belong beside it). So this
+# runs on one small dedicated box, about $5–6 a month, in EUROPE like everything else here.
+#
+#   docker compose --env-file .env.headwind -f docker-compose.headwind.yml up -d
+#
+# 🔴 THIS FILE IS NOT RUN BY PHOENIX AND IS NOT PART OF THE APP. It is kept in the repository so the
+# server the company depends on is described in version control rather than in somebody's memory of
+# what they typed once. Nothing in CI builds or starts it.
+#
+# 🔴 HEADWIND NEEDS AN EXTERNAL POSTGRES — its own documentation says a database installation on
+# localhost DOES NOT WORK — which is why `db` below is a service of its own rather than something
+# switched on inside the hmdm container.
+#
+# 🔴 RUSTDESK RUNS ON `network_mode: host` AND THAT IS NOT A SHORTCUT. Its relay needs fixed ports
+# 21115–21119 on both TCP and UDP with the real client addresses visible; behind Docker's NAT the
+# hole-punching that keeps sessions off the relay stops working and every session becomes slow.
+#
+# 🔴 BACK UP TWO THINGS OR THE FLEET IS UNRECOVERABLE: the `headwind-db` volume (every tablet, its
+# rules and its history) and `rustdesk-data` (the relay's key pair — losing it means re-pairing every
+# tablet by hand). A snapshot of the box covers both; take one before any upgrade.
+
+name: phoenix-headwind
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${SQL_BASE}
+      POSTGRES_USER: ${SQL_USER}
+      POSTGRES_PASSWORD: ${SQL_PASS}
+    volumes:
+      - headwind-db:/var/lib/postgresql/data
+    healthcheck:
+      # The hmdm container fails its own first-run configuration against a database that is merely
+      # LISTENING but not ready, and then needs FORCE_RECONFIGURE to try again — so it waits for this.
+      test: ["CMD-SHELL", "pg_isready -U ${SQL_USER} -d ${SQL_BASE}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  hmdm:
+    # 🔴 PIN A REAL PUBLISHED TAG IN .env.headwind BEFORE THE FIRST RUN. `latest` on a server that
+    # manages a hundred company tablets means an upgrade nobody chose can arrive with a restart. The
+    # example file explains where to read the current tag; this reads it rather than hard-coding one
+    # that may not exist.
+    image: headwindmdm/hmdm:${HEADWIND_IMAGE_TAG}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # The admin account created on first run, and where the tablets will reach this server. The
+      # domain must already point at this box — Headwind asks Let's Encrypt for a certificate on
+      # startup and a name that does not resolve here fails that request.
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      BASE_DOMAIN: ${BASE_DOMAIN}
+      PROTOCOL: https
+      SQL_HOST: db
+      SQL_BASE: ${SQL_BASE}
+      SQL_USER: ${SQL_USER}
+      SQL_PASS: ${SQL_PASS}
+      # Left empty on purpose. Setting it re-runs the whole first-time configuration, which is what
+      # you want ONCE after a failed first start and never afterwards.
+      FORCE_RECONFIGURE: ${FORCE_RECONFIGURE:-}
+    ports:
+      - "443:443"
+      # The tablets' own channel — the agent checks in here. Not the admin console.
+      - "31000:31000"
+    volumes:
+      - headwind-letsencrypt:/etc/letsencrypt
+      - headwind-work:/usr/local/tomcat/work
+
+  # RustDesk ID / rendezvous server. This is what a tablet and a computer both sign in to so they can
+  # find each other.
+  hbbs:
+    image: rustdesk/rustdesk-server:${RUSTDESK_IMAGE_TAG}
+    command: hbbs
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./rustdesk-data:/root
+    depends_on:
+      - hbbr
+
+  # RustDesk relay. Used only when two ends cannot reach each other directly; it carries the screen
+  # when they cannot, which is why it lives on the same box and not on somebody else's free service.
+  hbbr:
+    image: rustdesk/rustdesk-server:${RUSTDESK_IMAGE_TAG}
+    command: hbbr
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./rustdesk-data:/root
+
+volumes:
+  headwind-db:
+  headwind-letsencrypt:
+  headwind-work:
