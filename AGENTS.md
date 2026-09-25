@@ -319,16 +319,33 @@ reaps NODE JOBS, and a dev server only as a RUNAWAY (8 GB+ of commit) or after 2
 WORK** (owner's choice, 2026-09-21) — one in use under 8 GB is never touched. Under **1,800 MB** it
 reaps a typecheck, build or test run, under **500 MB** any node job.
 
+**THE ROUTING GOLDEN RULE (owner-confirmed 2026-09-25) — route by what a task NEEDS, not what it
+is, and default to cloud.** The 4am mechanical test: needs a **browser look, a dev-auth role sweep,
+or local creds/files** → local worktree; is a **decision, a merge/deploy, or the database** → main
+checkout; **everything else → cloud.** Cloud sessions never compete for this box's RAM, so
+defaulting to cloud IS the anti-freeze lever, not a compromise — the freeze bites on the number of
+*local* sessions, never on the work itself.
+
+🔴 **A CLOUD SESSION IS PHOENIX-BLIND BY DEFAULT — it gets the git repo and your prompt, and NOTHING
+ELSE.** The two layers that make a LOCAL session wake up knowing Phoenix — the global standing rules
+(`~/.claude/CLAUDE.md`) and the ENTIRE auto-memory (`MEMORY.md` + every memory file) — live on the
+laptop, are not in git, and never reach cloud. Cloud knows only the committed files (`AGENTS.md`, the
+project `CLAUDE.md`, `docs/`, the code) plus what the task prompt spells out. **So never send cloud a
+judgment call or an open question that leans on tribal knowledge — send it a SPECIFIED change whose
+context is in the repo or the prompt. A generic answer from cloud is this gap, not a broken session.**
+Account: `docs/agents-worktree-and-machine-limits.md`.
+
 Route work by tier:
 
 | Tier | Where | Use for |
 | --- | --- | --- |
-| **A — Cloud session** *(the default)* | Isolated cloud clone, ends in a PR | Any independent task not needing localhost browser verification, local files or local credentials. Sonnet by default. |
-| **B — Local worktree** (max 2–3 woken) | Sibling `_wt-<task>` | Only tasks needing browser preview, dev-auth role sweeps or local creds. |
-| **C — Main checkout** (exactly one — the control tower) | primary repo folder | Reviews, merge/deploy decisions, DB operations, deployed-env verification, worktree triage. Never feature edits. |
+| **A — Cloud session** *(the default)* | Isolated cloud clone, ends in a PR | A SPECIFIED, self-contained change — feature, logic fix, refactor, a test, docs — whose context is in the repo or the prompt, plus anything heavy (build, typecheck, full test). NOT judgment calls or memory-dependent questions. Sonnet by default. |
+| **B — Local worktree** (max 2–3 woken) | Sibling `_wt-<task>` | ONLY a task needing a browser look, a dev-auth role sweep, or local creds/files. |
+| **C — Main checkout** (exactly one — the control tower) | primary repo folder | Decisions, merge/deploy, DB (Supabase) work, deployed-env verification, worktree triage, the memory index. Never feature edits. |
 
 Only the control-tower session rewrites the memory index; others may append memory files but never
-reorganize it. Cloud sessions cannot see local state — put everything they need in the task prompt.
+reorganize it. Because cloud is repo-plus-prompt only, a cloud task's prompt carries every fact it
+needs — never assume it can see local state, memory or the standing rules.
 
 ## 6. Approval rules
 

@@ -1152,9 +1152,49 @@ Route work by tier:
 
 | Tier | Where | Use for |
 | --- | --- | --- |
-| **A — Cloud session** *(the default)* | Isolated cloud clone, ends in a PR | Any independent task not needing localhost browser verification, local files, or local credentials. Sonnet by default. |
-| **B — Local worktree** (max 2–3 woken) | Sibling `_wt-<task>` | Only tasks needing browser preview, dev-auth role sweeps, or local creds. |
-| **C — Main checkout** (exactly one — the control tower) | primary repo folder | Reviews, merge/deploy decisions, DB operations, deployed-env verification, worktree triage. Never feature edits. |
+| **A — Cloud session** *(the default)* | Isolated cloud clone, ends in a PR | A SPECIFIED, self-contained change — feature, logic fix, refactor, a test, docs — whose context is in the repo or the prompt, plus anything heavy (build, typecheck, full test). NOT judgment calls or memory-dependent questions. Sonnet by default. |
+| **B — Local worktree** (max 2–3 woken) | Sibling `_wt-<task>` | ONLY a task needing a browser look, a dev-auth role sweep, or local creds/files. |
+| **C — Main checkout** (exactly one — the control tower) | primary repo folder | Decisions, merge/deploy, DB (Supabase) work, deployed-env verification, worktree triage, the memory index. Never feature edits. |
 
 Only the control-tower session rewrites the memory index; others may append memory files but never
-reorganize it. Cloud sessions cannot see local state — put everything they need in the task prompt.
+reorganize it.
+
+## The routing golden rule, and why cloud feels generic (2026-09-25)
+
+The owner audited his own local-vs-cloud habit on **2026-09-25** and confirmed the rule above as a
+golden rule. This is the account behind it.
+
+**How he actually works** (measured 2026-09-21, 90-day window): ~46 commits/day at 6.7 files each,
+more fix commits (1,935) than feature (1,226), and a fifth of every instruction is
+merge/deploy/verify-prod. Sessions run for hours, often after midnight, with many open at once. Two
+things follow. First, most of his changes are code CI can prove — they never needed the laptop.
+Second, the merge/deploy fifth is *deciding*, not building, and belongs in one place. So the rule
+routes by what a task NEEDS and makes it mechanical enough to apply while tired: browser / role
+sweep / local creds → local worktree; decision / merge / database → main checkout; everything else →
+cloud.
+
+**Why default-to-cloud is the anti-freeze lever, not a sacrifice.** The hard-freeze on this 16 GB box
+bites on the number of concurrent *local* sessions (each ~269 MB, and one `next dev` or a cold
+typecheck adds gigabytes), never on how much work exists. A cloud session runs on Anthropic's
+hardware and takes nothing from this laptop's RAM, so moving the default to cloud directly removes
+the pressure that causes the freeze — it is the fix, not a compromise.
+
+**Why cloud "doesn't know the app" and answers generically** — the owner's own report on 2026-09-25,
+and the reason cloud can NOT be a blanket default. A local session wakes up knowing Phoenix from
+three stacked layers: (1) the git repo — `AGENTS.md`, the project `CLAUDE.md`, `docs/`, the code;
+(2) the global standing rules in `~/.claude/CLAUDE.md`; (3) the auto-memory — `MEMORY.md` plus every
+file under `~/.claude/projects/.../memory/`. **Only layer 1 is in git.** A cloud session is an
+isolated clone of the repo, so it gets layer 1 and nothing else: layers 2 and 3 live on the laptop,
+outside version control, and never travel. Verified 2026-09-25 — `git ls-files` confirms `AGENTS.md`,
+the project `CLAUDE.md` and `docs/` are tracked (they reach cloud) and that no `MEMORY.md` or memory
+file is tracked at all (cloud never sees them). So a cloud session's entire Phoenix knowledge is the
+committed files plus whatever the task prompt spells out. Ask it an open, judgment-heavy or
+memory-dependent question and it answers generically because the layer that held the answer stayed
+home — that is expected, not a broken session.
+
+**The consequence, and the discipline.** Cloud is excellent for a *specified* change whose context
+lives in the repo — which is itself a reason to capture durable rules in `AGENTS.md`/`docs/` rather
+than only in memory, because that is the layer cloud can read. It is wrong for a call that leans on
+tribal knowledge unless the prompt carries that knowledge. Practically: a cloud task's prompt states
+the facts, the files, and the exact outcome, and never assumes the session can see local state, the
+standing rules, or memory.
