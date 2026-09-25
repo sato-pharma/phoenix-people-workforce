@@ -934,6 +934,7 @@ import { runVacationReportFilterEquivalenceTests } from "./vacation-report-filte
 import { runVacationBalanceReservesPendingTests } from "./vacation-balance-reserves-pending.test.ts";
 import { runVacationEntitlementsBalanceIgnoresFiltersTests } from "./vacation-entitlements-balance-ignores-filters.test.ts";
 import { runPortalHomeAnnualLeaveLeftTests } from "./portal-home-annual-leave-left.test.ts";
+import { runPortalHomeAnnualLeaveLeftRmStandardTests } from "./portal-home-annual-leave-left-rm-standard.test.ts";
 import { runCsrfRouteCoverageTests } from "./csrf-route-coverage.test.ts";
 import { runContractRenewalHardeningTests } from "./contract-renewal-hardening.test.ts";
 import { runCronAuthSingleGuardTests } from "./cron-auth-single-guard.test.ts";
@@ -3785,6 +3786,11 @@ await runTest(
   "portal home Medical Rep tile shows annual leave LEFT (entitlement minus taken, via "
   + "getEmployeeAnnualLeaveBalanceDays/buildEmployeeEligibilityRows), not the raw entitlement",
   runPortalHomeAnnualLeaveLeftTests,
+);
+await runTest(
+  "portal home RM and Standard (DSM/NSM/etc.) tiles also show annual leave LEFT via "
+  + "leaveDaysRemaining, not the raw entitlement — PmGpmCommandCenter keeps its own",
+  runPortalHomeAnnualLeaveLeftRmStandardTests,
 );
 await runTest("csrf route coverage", runCsrfRouteCoverageTests);
 await runTest("contract renewal hardening", runContractRenewalHardeningTests);
