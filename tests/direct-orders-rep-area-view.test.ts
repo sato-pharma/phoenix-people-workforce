@@ -1,5 +1,12 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import {
+  monthsBetween,
+  repAreaCodesForMonth,
+  repAreaDisplayName,
+  UNNAMED_AREA,
+  UNNAMED_PRODUCT,
+} from "@/lib/direct-orders/rep-area-view-service";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // "Direct Orders in my area" — the Medical Rep's VIEW-ONLY window (owner, 2026-09-24).
@@ -76,6 +83,67 @@ export function runDirectOrdersRepAreaViewTests() {
   assert.match(service, /\.from\("areas"\)/, "the numeric area id is resolved to its text code");
   assert.match(service, /\.from\("direct_order_pharmacies"\)/, "pharmacies are found by their area");
   assert.match(service, /\.in\("area_code", part\)/, "the area bound is the pharmacy's area_code — the rep's own territory");
+
+  // ── ALL the rep's areas, merged areas expanded for the COUNTED month (owner, 2026-09-25) ──
+  // One `employees.area_id` used to be the whole scope, so the rep of Anti Infective's "Ismailia
+  // and Suez" (OT2 + OT9, one area from 2026-09) saw only Suez's orders, and a rep whose seat
+  // covers two areas saw one — while Sales vs Target counted both.
+  const merged = { lineCode: "anti_infective", homeAreaCode: "OT2", seatAreas: [] };
+  assert.deepEqual(
+    [...repAreaCodesForMonth(merged, "2026-09")].sort(),
+    ["OT2", "OT9"],
+    "MERGED AREA: from 2026-09 the Ismailia and Suez rep must see BOTH halves — OT9 (Ismailia) carries its own orders",
+  );
+  assert.deepEqual(
+    [...repAreaCodesForMonth(merged, "2026-08")],
+    ["OT2"],
+    "the merge starts 2026-09: an August order in Ismailia was a separate Others area, never this rep's",
+  );
+  assert.equal(
+    repAreaDisplayName("anti_infective", "OT9", "2026-09", new Map([["OT9", "Ismailia"]])),
+    "Ismailia and Suez",
+    "a folded half shows under the merged area's name from the month the merge starts",
+  );
+  assert.equal(
+    repAreaDisplayName("anti_infective", "OT9", "2026-08", new Map([["OT9", "Ismailia"]])),
+    "Ismailia",
+    "before the merge, the half keeps its own name",
+  );
+
+  // A seat covering two areas (the live OT2 seat carries OT9 too) brings both, dated by the seat
+  // map as of the counted month's LAST day — a row opening 2026-09-01 does not reach August.
+  const twoAreas = {
+    lineCode: "cns",
+    homeAreaCode: "CA1",
+    seatAreas: [
+      { lineCode: "cns", areaCode: "CA1", effectiveFrom: "2026-07-13", effectiveTo: null },
+      { lineCode: "cns", areaCode: "CA2", effectiveFrom: "2026-09-01", effectiveTo: null },
+      { lineCode: "cns", areaCode: "CA3", effectiveFrom: "2026-07-13", effectiveTo: "2026-09-01" },
+    ],
+  };
+  assert.deepEqual([...repAreaCodesForMonth(twoAreas, "2026-09")].sort(), ["CA1", "CA2"], "TWO AREAS: the seat's second area counts");
+  assert.deepEqual(
+    [...repAreaCodesForMonth(twoAreas, "2026-08")].sort(),
+    ["CA1", "CA3"],
+    "a seat row counts only while in force (effective_to EXCLUSIVE, as of the month end)",
+  );
+  // Never wider than the rep's own seat and home area.
+  assert.deepEqual(
+    [...repAreaCodesForMonth({ lineCode: null, homeAreaCode: "GZ3", seatAreas: [] }, "2026-09")],
+    ["GZ3"],
+    "a rep with no seat keeps exactly the home area",
+  );
+  assert.equal(repAreaCodesForMonth({ lineCode: null, homeAreaCode: null, seatAreas: [] }, "2026-09").size, 0, "no area, no orders");
+  assert.deepEqual(monthsBetween("2026-11", "2027-02"), ["2026-11", "2026-12", "2027-01", "2027-02"], "the window spans a year end");
+  assert.match(service, /scopeFor\(request\.sales_month\)\.has\(pharmacy\.areaCode\)/, "each order is scoped by its OWN counted month");
+  assert.match(service, /\.from\("au_v_line_area_map_all"\)[\s\S]{0,120}\.in\("rep_seat_id", seatIds\)/, "the rep's own REP seat areas are read");
+
+  // ── No raw code ever renders as a name ──────────────────────────────────────────────────
+  assert.equal(UNNAMED_AREA, "Unnamed area");
+  assert.equal(UNNAMED_PRODUCT, "Unnamed product");
+  assert.equal(repAreaDisplayName("cns", "ZZ9", "2026-09", new Map()), "Unnamed area", "an area with no name shows 'Unnamed area', never its code");
+  assert.match(service, /productName: \(line\.productName \?\? ""\)\.trim\(\) \|\| UNNAMED_PRODUCT,/, "a product with no name shows 'Unnamed product'");
+  assert.doesNotMatch(service, /\|\| code;|\(line\.productCode \?\? ""\)/, "no fallback to a raw area or product code");
 
   // ── The "Order date" is when the order was PLACED, never the collection date ──────────────
   // An order raised and approved in August but COLLECTED in September still counts in August.
