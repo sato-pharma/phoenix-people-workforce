@@ -1,4 +1,4 @@
-package com.satopharma.phoenix.headwind;
+package com.hmdm.plugins.phoenix;
 
 import java.util.List;
 import java.util.logging.Level;
@@ -7,6 +7,7 @@ import java.util.logging.Logger;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 
+import com.hmdm.plugins.phoenix.rest.PhoenixSyncResponseDecorator;
 import com.hmdm.rest.json.SyncResponseHook;
 import com.hmdm.rest.json.SyncResponseInt;
 
@@ -18,6 +19,12 @@ import com.hmdm.rest.json.SyncResponseInt;
  * `reboot`, and `ConfigUpdater` acts on each with a real `DevicePolicyManager` call. The open-source
  * server never sets them. Headwind's own `SyncResponseHook` is the published way to extend that
  * response — so this adds the missing half without touching a tablet, an agent or Headwind's core.
+ *
+ * 🔴 THE TABLET IS IDENTIFIED BY THE `int deviceId` THIS METHOD IS HANDED, AND BY NOTHING ELSE.
+ * The first draft called `response.getDeviceId()`. That method does not exist: `SyncResponseInt`
+ * declares 66 getters and not one of them returns a device identifier — measured by reading the
+ * interface out of `common-0.1.0.jar`, not from the project's source on the web. `handle`'s own first
+ * argument is the device's primary key in Headwind's `devices` table, so the store joins on it.
  *
  * 🔴 THE HOOK RUNS ON EVERY CHECK-IN OF EVERY TABLET. It must be fast, and it must never throw: an
  * exception here is an exception on the fleet's hottest path, and a tablet that cannot sync is a
@@ -45,10 +52,7 @@ public class PhoenixSyncResponseHook implements SyncResponseHook {
     public SyncResponseInt handle(int deviceId, SyncResponseInt response) {
         if (response == null) return null;
         try {
-            String deviceNumber = response.getDeviceId();
-            if (deviceNumber == null || deviceNumber.isEmpty()) return response;
-
-            List<PhoenixActionStore.PendingAction> pending = store.openFor(deviceNumber);
+            List<PhoenixActionStore.PendingAction> pending = store.openFor(deviceId);
             if (pending.isEmpty()) return response;
 
             PhoenixSyncResponseDecorator decorated = new PhoenixSyncResponseDecorator(response);
@@ -90,7 +94,7 @@ public class PhoenixSyncResponseHook implements SyncResponseHook {
             // An unlock takes effect the moment it is folded in; nothing needs to come back from the
             // tablet to prove a lock was lifted, because the absence of the field IS the lift.
             if (Boolean.FALSE.equals(decorated.getLock())) {
-                store.clearStanding(response.getDeviceId());
+                store.clearStanding(deviceId);
             }
 
             return decorated;

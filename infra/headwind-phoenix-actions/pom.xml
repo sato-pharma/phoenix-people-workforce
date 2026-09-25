@@ -3,13 +3,39 @@
   The Phoenix actions add-on for the company's own Headwind MDM server.
 
   🔴 THIS IS NOT BUILT BY THE PHOENIX REPOSITORY'S CI. The six required checks are TypeScript and do
-  not see this directory. It is compiled by the Headwind box's own `docker compose build`, against the
-  Headwind jars already inside the pinned image — which is why `hmdm-server` is `provided` scope here
-  rather than downloaded: the versions must be the ones the running server actually has, and pulling a
-  different one from a repository is how a plugin compiles cleanly and then fails to load.
+  not see this directory. It is compiled by the Docker build that produces the Headwind image, against
+  the Headwind jars taken out of the pinned WAR itself — which is why every Headwind dependency below
+  is `provided` scope rather than downloaded: the versions must be the ones the running server
+  actually has, and pulling a different one from a repository is how a plugin compiles cleanly and
+  then fails to load.
 
-  The version below is a placeholder matched to the image tag at build time by the Dockerfile. If the
-  box is upgraded, this is one of the two places to change (the other is HEADWIND_IMAGE_TAG).
+  🔴 EVERY VERSION BELOW IS MEASURED FROM `hmdm-5.40.1-os.war`, NOT CHOSEN. Measured 2026-09-26 by
+  unpacking it: 114 jars in WEB-INF/lib, 73 loose classes in WEB-INF/classes.
+
+    com.hmdm:common:0.1.0    `SyncResponseHook`, `SyncResponseInt` and the `Sync*Int` types the
+                             interface's generics name; also `AuthFilter`, `PrivateIPFilter`,
+                             `PublicIPFilter`.
+    com.hmdm:platform:0.1.0  `PluginConfiguration` — the interface Headwind's classpath scan looks
+                             for, and the only reason this add-on is ever instantiated.
+    com.hmdm:jwt:0.2.0       `JWTFilter`, the first filter on the private path.
+
+  There is no `com.hmdm:server` artifact and never was: Headwind's core is eleven small jars named for
+  their area, all at 0.1.0, and the REST layer that consumes them is loose classes in WEB-INF/classes
+  rather than a jar at all. An earlier revision of this file depended on `server`, the Dockerfile's
+  `find -name 'server*.jar'` matched nothing, and Maven answered "Is a directory" with an empty
+  version in the coordinate.
+
+  The rest are `provided` too, at the versions the WAR actually ships rather than the newest that
+  resolves: guice 4.2.2 (not 4.2.3), jackson-annotations 2.10.0 (not 2.13.4), javax.ws.rs-api 2.0.1
+  (not 2.1.1). Compiling against a NEWER provided API than the server carries is the one mistake in
+  this file that would not fail the build — it fails at runtime, once, as a NoSuchMethodError inside a
+  hook nobody is watching.
+
+  🔴 `javax.servlet-api` IS THE ONE VERSION NOT READ OUT OF THE WAR, BECAUSE IT IS NOT IN THE WAR.
+  The servlet API is provided by Tomcat, and the pinned image is `tomcat:9-jdk11-temurin-jammy`, which
+  is Servlet 4.0 — hence 4.0.1. It is used only as the declared type of a parameter this add-on passes
+  straight through, so the risk a wrong version would carry is nil, but the reason is written down so
+  the next reader does not go looking for it in the WAR and conclude something is missing.
 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -23,39 +49,97 @@
   <name>Phoenix actions for Headwind MDM</name>
 
   <properties>
-    <maven.compiler.source>11</maven.compiler.source>
-    <maven.compiler.target>11</maven.compiler.target>
+    <!--
+      🔴 JAVA 8 BYTECODE, AND IT IS NOT A STYLE CHOICE — A JAVA 11 BUILD TAKES THE WHOLE SERVER DOWN.
+      This said 11, and the fourth and fifth Railway builds both compiled, deployed, and started a
+      container Railway called SUCCESS while the application served nothing at all:
+
+          SEVERE StandardContext.filterStart Exception starting filter [HMDMApplication]
+            java.lang.IllegalArgumentException
+              at jersey.repackaged.org.objectweb.asm.ClassReader.<init>(ClassReader.java:171)
+              at org.glassfish.jersey.server.internal.scanning.AnnotationAcceptingListener.process
+              at org.glassfish.jersey.server.ResourceConfig.scanClasses
+          SEVERE StandardContext.startInternal Context [] startup failed due to previous errors
+
+      Headwind runs **Jersey 2.25.1**, which scans every jar in WEB-INF/lib for @Path using a
+      repackaged **ASM 5**. ASM 5 reads class files up to major 52 and throws a bare
+      IllegalArgumentException — no message, no class name — on anything newer. Java 11 emits major
+      55. So the add-on did not merely fail to load: Jersey aborted its scan, the HMDMApplication
+      filter failed to start, and Tomcat killed the entire context. **A working Headwind server was
+      broken by a compiler flag.**
+
+      Measured 2026-09-26 from `hmdm-5.40.1-os.war`: every one of Headwind's own 255 classes is
+      major 52 — common, platform, jwt, messaging and the 73 loose ones in WEB-INF/classes, without
+      a single exception. Matching them is the requirement.
+
+      `release` rather than `source`/`target`: those two compile old syntax against the JDK 11
+      class library, so a Java 11-only method resolves at build time and NoSuchMethodErrors at
+      runtime. `release` pins the API as well. Pinned by tests/headwind-bridge.test.ts.
+    -->
+    <maven.compiler.release>8</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <hmdm.version>5.34.1</hmdm.version>
+    <!-- Overridden by the Dockerfile from each jar's own filename, so an image upgrade needs no edit
+         here. The defaults are what 5.40.1 ships. -->
+    <hmdm.common.version>0.1.0</hmdm.common.version>
+    <hmdm.platform.version>0.1.0</hmdm.platform.version>
+    <hmdm.jwt.version>0.2.0</hmdm.jwt.version>
   </properties>
 
   <dependencies>
-    <!-- Headwind's own core, already inside the image. `provided` so it is never bundled. -->
     <dependency>
       <groupId>com.hmdm</groupId>
-      <artifactId>server</artifactId>
-      <version>${hmdm.version}</version>
+      <artifactId>common</artifactId>
+      <version>${hmdm.common.version}</version>
+      <scope>provided</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>com.hmdm</groupId>
+      <artifactId>platform</artifactId>
+      <version>${hmdm.platform.version}</version>
+      <scope>provided</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>com.hmdm</groupId>
+      <artifactId>jwt</artifactId>
+      <version>${hmdm.jwt.version}</version>
       <scope>provided</scope>
     </dependency>
 
     <dependency>
       <groupId>com.google.inject</groupId>
       <artifactId>guice</artifactId>
-      <version>4.2.3</version>
+      <version>4.2.2</version>
+      <scope>provided</scope>
+    </dependency>
+
+    <!-- `ServletModule`, the base class of PhoenixRestModule. Separate artifact from guice itself. -->
+    <dependency>
+      <groupId>com.google.inject.extensions</groupId>
+      <artifactId>guice-servlet</artifactId>
+      <version>4.2.2</version>
+      <scope>provided</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>javax.servlet</groupId>
+      <artifactId>javax.servlet-api</artifactId>
+      <version>4.0.1</version>
       <scope>provided</scope>
     </dependency>
 
     <dependency>
       <groupId>javax.ws.rs</groupId>
       <artifactId>javax.ws.rs-api</artifactId>
-      <version>2.1.1</version>
+      <version>2.0.1</version>
       <scope>provided</scope>
     </dependency>
 
     <dependency>
       <groupId>com.fasterxml.jackson.core</groupId>
       <artifactId>jackson-annotations</artifactId>
-      <version>2.13.4</version>
+      <version>2.10.0</version>
       <scope>provided</scope>
     </dependency>
 

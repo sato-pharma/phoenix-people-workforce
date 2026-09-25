@@ -1,4 +1,4 @@
-package com.satopharma.phoenix.headwind;
+package com.hmdm.plugins.phoenix;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -16,12 +16,20 @@ import javax.sql.DataSource;
  * 🔴 PLAIN JDBC ON HEADWIND'S OWN DATASOURCE, DELIBERATELY. Headwind uses MyBatis with mappers
  * registered through its Guice modules; adding a mapper means joining that wiring, which is the part
  * of this add-on most likely to need a correction on the first build. Fewer things to wire is fewer
- * things that fail silently — and this is four statements, not an ORM's worth of work.
+ * things that fail silently — and this is five statements, not an ORM's worth of work.
  *
  * 🔴 EVERY STATEMENT IS PARAMETERISED. A device number arrives from the tablet's own sync request,
  * which is an UNAUTHENTICATED public endpoint — it is attacker-controlled input by definition, and
  * concatenating it into SQL on the server that can wipe a hundred tablets is not a thing to get
  * almost right.
+ *
+ * 🔴 THE TABLE KEYS ON THE DEVICE NUMBER, BUT THE HOOK ONLY KNOWS THE NUMERIC ID, SO THE READ JOINS.
+ * Phoenix speaks device NUMBERS — that is what Headwind's REST API exposes and what a person reads on
+ * a tablet's label. `SyncResponseHook.handle` is handed `int deviceId`, the primary key of Headwind's
+ * own `devices` row, and — measured, not assumed — `SyncResponseInt` has NO `getDeviceId()` to
+ * recover the number from. So the two reads below join `devices` on its primary key, which is exactly
+ * one row, so the join can never multiply the result. Columns confirmed from Headwind's own
+ * `DeviceMapper.xml`: `devices.id` and `devices.number`.
  */
 public final class PhoenixActionStore {
 
@@ -100,20 +108,23 @@ public final class PhoenixActionStore {
     }
 
     /**
-     * What a tablet should be told at this check-in.
+     * What a tablet should be told at this check-in, found by Headwind's own numeric device id.
      *
      * 🔴 ORDERED OLDEST FIRST, AND EVERY OPEN ROW IS RETURNED, NOT JUST THE LATEST. "Lock it" then
      * "wipe it" must not become "wipe it" alone, and "lock" then "unlock" must resolve in the order a
      * person pressed them. The hook folds them in that order; the last word wins, which is what a
      * person pressing two buttons expects.
      */
-    public List<PendingAction> openFor(String deviceNumber) throws SQLException {
-        String sql = "select id, action, message, password from phoenix_pending_actions"
-            + " where device_number = ? and confirmed_at is null order by id asc";
+    public List<PendingAction> openFor(int deviceId) throws SQLException {
+        String sql = "select a.id, a.action, a.message, a.password"
+            + " from phoenix_pending_actions a"
+            + " join devices d on d.number = a.device_number"
+            + " where d.id = ? and a.confirmed_at is null"
+            + " order by a.id asc";
         List<PendingAction> pending = new ArrayList<>();
         try (Connection connection = dataSource.getConnection();
              PreparedStatement statement = connection.prepareStatement(sql)) {
-            statement.setString(1, deviceNumber);
+            statement.setInt(1, deviceId);
             try (ResultSet rows = statement.executeQuery()) {
                 while (rows.next()) {
                     pending.add(new PendingAction(
@@ -168,14 +179,15 @@ public final class PhoenixActionStore {
     }
 
     /** Clear the standing states — what "unlock" and "lost mode off" actually do. */
-    public void clearStanding(String deviceNumber) throws SQLException {
+    public void clearStanding(int deviceId) throws SQLException {
         String sql = "update phoenix_pending_actions set confirmed_at = now()"
-            + " where device_number = ? and confirmed_at is null and action in (?, ?)";
+            + " where confirmed_at is null and action in (?, ?)"
+            + " and device_number in (select d.number from devices d where d.id = ?)";
         try (Connection connection = dataSource.getConnection();
              PreparedStatement statement = connection.prepareStatement(sql)) {
-            statement.setString(1, deviceNumber);
-            statement.setString(2, LOCK);
-            statement.setString(3, LOST_MODE_ON);
+            statement.setString(1, LOCK);
+            statement.setString(2, LOST_MODE_ON);
+            statement.setInt(3, deviceId);
             statement.executeUpdate();
         }
     }

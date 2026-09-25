@@ -90,7 +90,7 @@ import { headwindImeisToRecord, headwindTabletsToRegister } from "../src/lib/dev
 import { isRustDeskConfigured, rustDeskConfig, rustDeskPackageName, RustDeskNotConfiguredError } from "../src/lib/devices/rustdesk/config.ts";
 import { rustDeskTarget } from "../src/lib/devices/rustdesk/session.ts";
 import { findAccessRegistryEntry } from "../src/lib/security/access-registry.ts";
-import { stripComments } from "./support/comment-strip.ts";
+import { stripComments, stripHashComments } from "./support/comment-strip.ts";
 import type { RegisterTablet } from "../src/lib/devices/managed-tablets.ts";
 
 /** Full env so `headwindAuthConfig` and the relay config are both satisfied. */
@@ -1408,6 +1408,224 @@ function runServerImageTests() {
   const dockerfile = source("infra/headwind-phoenix-actions/Dockerfile");
   assert.match(dockerfile, /ARG HEADWIND_IMAGE_TAG/, "the tag comes in from compose");
   assert.doesNotMatch(dockerfile, /FROM headwindmdm\/hmdm:latest/, "never `latest` on a hundred company tablets");
+
+  // 🔴 THE IMAGE HAS NO EXPLODED WEBAPP, AND ONE OF THE TWO MISTAKES THAT FOLLOW IS SILENT.
+  //
+  // `headwindmdm/hmdm` ships Tomcat and an entrypoint. The application is a WAR the entrypoint
+  // DOWNLOADS on first start, so `/usr/local/tomcat/webapps/ROOT/` exists only inside a RUNNING
+  // container. Two things were written against it and Railway's first build, 2026-09-26, found the
+  // first within ninety seconds:
+  //
+  //   COPY --from=headwind …/webapps/ROOT/WEB-INF/lib   failed the build outright. Loud, and cheap.
+  //   COPY --from=build … INTO …/webapps/ROOT/WEB-INF/lib   would have SUCCEEDED — Docker creates the
+  //   path — and shipped a broken image: at first start the entrypoint drops a newer `ROOT.war` in
+  //   beside it and Tomcat, unpacking it, deletes the directory the jar was sitting in. The add-on
+  //   would be absent, the status endpoint would answer 404, and the console would report the four
+  //   custody actions as unavailable. Nothing in this repository would be wrong.
+  //
+  // Stripped with the `#` lexer, not the JavaScript one: this file's header quotes both wrong paths
+  // at length so nobody writes them again, and a raw-text guard would match its own warning.
+  const recipe = stripHashComments(dockerfile);
+  assert.ok(
+    !recipe.includes("webapps/ROOT"),
+    "no instruction reads from or writes to the exploded webapp — that directory does not exist in the image, only in a running container",
+  );
+  assert.match(
+    recipe,
+    /jar uf /,
+    "the add-on jar goes INSIDE the WAR, which is the only placement that survives Tomcat unpacking it",
+  );
+
+  // 🔴 AND THE CACHE IS SEEDED AT START, NOT AT BUILD, BECAUSE A VOLUME SITS ON IT.
+  // compose mounts `headwind-work` over /usr/local/tomcat/work, which is where Headwind's WAR cache
+  // lives. A WAR baked in at build time is invisible the moment that volume exists: the entrypoint
+  // finds an empty cache, downloads a clean WAR, and the add-on is gone with no error anywhere.
+  assert.match(
+    recipe,
+    /ENTRYPOINT \["\/phoenix-entrypoint\.sh"\]/,
+    "the image starts through our own entrypoint, which seeds the cache after mounts",
+  );
+  const entrypoint = stripHashComments(source("infra/headwind-phoenix-actions/phoenix-entrypoint.sh"));
+  assert.match(
+    entrypoint,
+    /exec \/docker-entrypoint\.sh "\$@"/,
+    "and it then hands over to Headwind's own entrypoint untouched, rather than reimplementing it",
+  );
+  assert.doesNotMatch(
+    entrypoint,
+    /BASE_DIR=["']?\/usr/,
+    "the cache path is read out of the image's own entrypoint, never hard-coded — a hard-coded path that drifts does not fail, it silently loses the add-on",
+  );
+
+  // 🔴 THE CORE JAR IS FOUND BY THE CLASS IT CARRIES, NEVER BY ITS FILENAME.
+  //
+  // Headwind ships no `server-*.jar`. Measured 2026-09-26 by unpacking hmdm-5.40.1-os.war: 114 jars
+  // in WEB-INF/lib and not one of them matches that name. The core is eleven small jars named for
+  // their area — common, push, audit, deviceinfo, notification, platform, messaging, devicelog-core,
+  // devicelog-postgres, jwt, xtra — all at 0.1.0, and both classes this add-on compiles against
+  // (SyncResponseHook, SyncResponseInt) are inside `common-0.1.0.jar`.
+  //
+  // The name-based `find` returned nothing, `-Dfile=` fell back to a directory, and Maven answered
+  // `Failed to install artifact com.hmdm:server:jar:: Is a directory` — an empty version in the
+  // coordinate, forty minutes from the error text to the cause. A filename can be renamed between
+  // versions; the class the add-on extends cannot move without the add-on breaking anyway.
+  assert.match(
+    recipe,
+    /com\/hmdm\/rest\/json\/SyncResponseHook\.class/,
+    "the build locates Headwind's core by the class the add-on extends, so a renamed jar cannot silently empty the classpath",
+  );
+  assert.ok(
+    !recipe.includes("server*.jar"),
+    "and never by a `server*.jar` name, which does not exist in any Headwind WAR",
+  );
+
+  const pom = source("infra/headwind-phoenix-actions/pom.xml");
+  assert.match(
+    pom,
+    /<artifactId>common<\/artifactId>/,
+    "the pom depends on com.hmdm:common — the artifact that actually carries SyncResponseHook",
+  );
+  assert.doesNotMatch(
+    pom,
+    /<artifactId>server<\/artifactId>/,
+    "never com.hmdm:server, which Headwind does not publish and this WAR does not contain",
+  );
+
+  // 🔴 JAVA 8 BYTECODE — THE FIFTH BUILD, 2026-09-26, AND THE WORST FAILURE OF THE FIVE.
+  // Headwind runs Jersey 2.25.1, which scans every jar in WEB-INF/lib for @Path through a repackaged
+  // ASM 5. ASM 5 reads class files up to major 52 and throws a bare IllegalArgumentException — no
+  // message, no class name — on anything newer. Java 11 emits major 55. Compiling this add-on to 11
+  // did not just stop it loading: Jersey aborted its scan, the HMDMApplication filter failed to
+  // start, and Tomcat killed the whole context. A working Headwind server, broken by a compiler flag,
+  // on a deployment Railway reported green. Every one of Headwind's own 255 classes is major 52.
+  assert.match(
+    pom,
+    /<maven\.compiler\.release>8<\/maven\.compiler\.release>/,
+    "the add-on compiles to Java 8 bytecode — Headwind's Jersey 2.25.1 scans WEB-INF/lib with ASM 5, which refuses major 55 and takes the ENTIRE application down, not just this jar",
+  );
+  for (const legacy of ["maven.compiler.source", "maven.compiler.target"]) {
+    assert.ok(
+      !pom.includes(`<${legacy}>`),
+      `and through <maven.compiler.release>, never <${legacy}> — source/target compile old syntax against the JDK 11 class library, so a Java 11-only method resolves at build time and NoSuchMethodErrors in production`,
+    );
+  }
+
+  // 🔴 AND THE `provided` VERSIONS ARE THE ONES THE WAR SHIPS, NOT THE NEWEST THAT RESOLVES.
+  // This is the one mistake in that file that does NOT fail the build: compiling against a newer
+  // provided API than the running server carries fails later, once, as a NoSuchMethodError inside a
+  // hook nobody is watching. Read out of hmdm-5.40.1-os.war the same day.
+  for (const [artifact, version] of [
+    ["guice", "4.2.2"],
+    ["jackson-annotations", "2.10.0"],
+    ["javax.ws.rs-api", "2.0.1"],
+  ] as const) {
+    assert.match(
+      pom,
+      new RegExp(`<artifactId>${artifact.replace(/\./g, "\\.")}</artifactId>\\s*\\n\\s*<version>${version.replace(/\./g, "\\.")}</version>`),
+      `${artifact} is pinned to ${version}, the version inside the WAR — a newer provided API compiles and then fails at runtime`,
+    );
+  }
+
+  // 🔴 AND `-DpomFile`, NOT BARE COORDINATES — THE THIRD FAILED BUILD, 2026-09-26.
+  // Given only -DgroupId/-DartifactId/-Dversion, install:install-file digs the pom Maven left INSIDE
+  // the jar out of META-INF/maven and installs THAT as the descriptor. Headwind's carries
+  // `<parent>com.hmdm:root:0.1.0</parent>`, a pom that exists only in Headwind's own source tree. The
+  // install succeeded and the very next command died reading what it had just written:
+  // "Failed to read artifact descriptor for com.hmdm:common:jar:0.1.0 … com.hmdm:root:pom:0.1.0 (absent)".
+  assert.match(
+    recipe,
+    /-DpomFile=/,
+    "each Headwind jar is installed with a minimal generated descriptor, never the reactor pom baked inside it — that one names a parent nothing can resolve",
+  );
+
+  // 🔴 AND TOMCAT'S WEB-APPLICATION LOG IS FORCED ONTO STDOUT — THE FOURTH BUILD, 2026-09-26.
+  // That build deployed, Railway reported SUCCESS, and Tomcat printed "One or more Filters failed to
+  // start. Full details will be found in the appropriate container log file" — a file inside the
+  // container, which on Railway nothing can read. The deployment was green and the server was serving
+  // nothing. Appending the console handler to the `[localhost]` logger puts that detail where Railway
+  // keeps it. It looks like tidy-up-able noise, which is exactly why it is pinned.
+  assert.match(
+    recipe,
+    /\[Catalina\]\.\[localhost\]\.handlers = .*java\.util\.logging\.ConsoleHandler/,
+    "Tomcat's web-application log is appended to stdout, because Railway captures stdout and nothing else — without it a failed filter names its own cause into a file no one can open",
+  );
+
+  // ── The four defects that would NOT have failed a build ───────────────────────────────────────
+  //
+  // 🔴 EVERY ONE OF THESE SHIPS A GREEN BUILD AND A DEAD ADD-ON. That is what makes them worth a test
+  // each: the first draft of this add-on would have compiled, built, deployed, started, logged
+  // nothing, and answered 404 on every endpoint while four buttons in Phoenix did nothing at all.
+  // All four were found by reading the shipped WAR on 2026-09-26, not by running anything.
+
+  // Read with comments stripped, for the same reason the Dockerfile above is: each of these files
+  // documents the wrong version of itself at length so nobody writes it again, and a raw-text guard
+  // would match its own warning. (The JavaScript lexer is the right one for Java — identical comment
+  // grammar; the only divergences are regex literals, which Java has not, and char literals, which
+  // nothing in this directory uses. Add one and pick a lexer that knows about it.)
+  const java = (file: string) =>
+    stripComments(source(`infra/headwind-phoenix-actions/src/main/java/com/hmdm/plugins/phoenix/${file}`));
+
+  // 1. Headwind instantiates a plugin by scanning for implementations of PluginConfiguration. There
+  //    is no list to add to and no descriptor file — but a bare Guice module is picked up by nothing.
+  const pluginConfig = java("PhoenixPluginConfigurationImpl.java");
+  assert.match(
+    pluginConfig,
+    /implements PluginConfiguration/,
+    "the add-on declares a PluginConfiguration — the only thing Headwind's classpath scan looks for, and without it no module in this directory is ever constructed",
+  );
+
+  // 2. 🔴 AND THAT SCAN IS WHITELISTED TO ONE PACKAGE. `PluginList` runs
+  //    `new ClassGraph().enableAllInfo().whitelistPackages("com.hmdm").scan()`, so a configuration
+  //    class anywhere else is invisible. The first draft lived in `com.satopharma.phoenix.headwind`.
+  assert.match(
+    pluginConfig,
+    /^package com\.hmdm\.plugins\.phoenix;/m,
+    "the plugin configuration lives under com.hmdm, because Headwind's ClassGraph scan whitelists exactly that package and would never see it anywhere else",
+  );
+  assert.match(
+    pluginConfig,
+    /return "com\.hmdm\.plugins\.phoenix";/,
+    "and it declares that same subtree as its root package, the way every shipped Headwind plugin does",
+  );
+
+  // 3. The hook is a MULTIBINDING. SyncResource injects `Set<SyncResponseHook>`, and Guice fills a Set
+  //    only from a Multibinder — a plain bind() binds a key nothing injects, so the set stays empty
+  //    and the hook is never called. Nothing anywhere would say so.
+  const wiring = java("guice/module/PhoenixActionsModule.java");
+  assert.match(
+    wiring,
+    /Multibinder\.newSetBinder\(binder\(\), SyncResponseHook\.class\)/,
+    "the sync hook is added through a Multibinder — the call site injects a Set, which a plain bind() never fills",
+  );
+  assert.doesNotMatch(
+    wiring,
+    /\n\s*bind\(SyncResponseHook\.class\)/,
+    "and never as a plain binding, which starts cleanly and simply never runs",
+  );
+
+  // 4. The decorator delegates the WHOLE interface. An incomplete delegation does not fail to
+  //    compile if the missing methods are written by hand as stubs — it ships tablets a configuration
+  //    with its applications or kiosk settings quietly missing. 66 is the interface's own method
+  //    count, measured from SyncResponseInt in common-0.1.0.jar; a Headwind upgrade that adds a field
+  //    fails the compile first and this number is then bumped deliberately, which is the point.
+  const decorator = java("rest/PhoenixSyncResponseDecorator.java");
+  assert.equal(
+    (decorator.match(/return delegate\./g) ?? []).length,
+    66,
+    "every one of SyncResponseInt's 66 getters is delegated — a gap here does not crash, it hands a tablet a configuration with pieces missing",
+  );
+
+  // 🔴 AND NOTHING CALLS getDeviceId(), WHICH SyncResponseInt DOES NOT HAVE. The first draft used it
+  // in both the hook and the decorator, from the interface as published on the web rather than the
+  // one in the WAR. The device is identified by the `int deviceId` the hook is handed, and the store
+  // joins Headwind's own `devices` row on it.
+  const hook = java("PhoenixSyncResponseHook.java");
+  for (const [name, code] of [["the hook", hook], ["the decorator", decorator]] as const) {
+    assert.ok(
+      !code.includes("getDeviceId()"),
+      `${name} never calls getDeviceId() — SyncResponseInt declares no such method, and the tablet is identified by the device id the hook is handed`,
+    );
+  }
 }
 
 /**
