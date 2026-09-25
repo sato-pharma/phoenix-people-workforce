@@ -97,7 +97,7 @@ export default async function TargetsPage({
         const target = targetByCell.get(`${area.areaCode}|${product.productCode.toUpperCase()}`);
         return {
           areaCode: area.areaCode,
-          areaName: getMergedAreaName(selectedLine, area.areaCode) ?? area.areaName,
+          areaName: getMergedAreaName(selectedLine, area.areaCode, selectedPeriod) ?? area.areaName,
           regionCode: area.regionCode,
           regionName: regionName(area.regionCode),
           areaState: area.areaState,
