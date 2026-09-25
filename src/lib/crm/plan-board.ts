@@ -444,6 +444,54 @@ export async function getPlanEntries(crmPlanId: number, agentCrmId?: number | nu
   return rows;
 }
 
+/** One agent's plan rows over a date window, for the Phoenix CRM "Copy last month" reference. */
+export type AgentPlanEntryRow = {
+  contact_crm_id: number | null;
+  ampm: string | null;
+  contact_grade: string | null;
+  contact_name: string | null;
+  speciality: string | null;
+  plan_date: string | null;
+  plan_frequency: number | null;
+};
+
+/**
+ * Last month's plan rows for one agent, by hr id, over a date window — the source of the native CRM's
+ * "Copy last month". This lives here, behind the CRM door, so no module outside src/lib/crm queries the
+ * plan mirror directly (tests/crm-single-source.test.ts). A missing plan schema degrades to `null`
+ * (no reference), never an error, exactly as the other iReports360 readers here do.
+ *
+ * `ilike` with no wildcard is a case-insensitive exact match — the mixed-case agent_hr_id makes a plain
+ * .eq under-return. Weekly rows carry a plan_date; monthly rows carry a frequency and no date, so both
+ * are asked for (dated in the window, or the month/year) and the caller splits them out.
+ */
+export async function getAgentPlanEntriesForWindow(
+  agentHrId: string,
+  start: string,
+  end: string,
+): Promise<AgentPlanEntryRow[] | null> {
+  const supabase = getSupabaseAdmin();
+  const rows: AgentPlanEntryRow[] = [];
+  let offset = 0;
+  for (;;) {
+    const { data, error } = await supabase
+      .from(CRM_PLAN_ENTRIES_UNIFIED_VIEW)
+      .select("contact_crm_id, ampm, contact_grade, contact_name, speciality, plan_date, plan_frequency")
+      .ilike("agent_hr_id", agentHrId)
+      .or(`and(plan_date.gte.${start},plan_date.lte.${end}),and(plan_month.eq.${Number(start.slice(5, 7))},plan_year.eq.${Number(start.slice(0, 4))})`)
+      .range(offset, offset + PAGE_SIZE - 1);
+    if (error) {
+      if (isPlanSchemaMissing(error)) return null;
+      throw new Error(error.message);
+    }
+    const page = (data ?? []) as unknown as AgentPlanEntryRow[];
+    rows.push(...page);
+    if (page.length < PAGE_SIZE) break;
+    offset += PAGE_SIZE;
+  }
+  return rows;
+}
+
 /**
  * One plan's identity, read fresh.
  *

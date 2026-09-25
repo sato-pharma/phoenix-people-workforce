@@ -1539,6 +1539,9 @@ import { runPhoenixCrmAmPmWordTests } from "./phoenix-crm-am-pm-words.test.ts";
 import { runPhoenixCrmDoctorPharmaciesTests } from "./phoenix-crm-doctor-pharmacies.test.ts";
 import { runPhoenixCrmLineProductsTests } from "./phoenix-crm-line-products.test.ts";
 import { runPhoenixCrmVoiceNoteTests } from "./phoenix-crm-voice-note.test.ts";
+import { runPhoenixCrmMonthlyPlanTests } from "./phoenix-crm-monthly-plan.test.ts";
+import { runPhoenixCrmPlanFiltersTests } from "./phoenix-crm-plan-filters.test.ts";
+import { runPhoenixCrmPlanCopyTests } from "./phoenix-crm-plan-copy.test.ts";
 import { runCrmCutoverTests } from "./crm-cutover.test.ts";
 import { runCrmUnifyVendorReadsTests } from "./crm-unify-vendor-reads.test.ts";
 import { runPhoenixKpiRulesTests } from "./phoenix-kpi-rules.test.ts";
@@ -5120,6 +5123,21 @@ await runTest(
 await runTest(
   "Phoenix CRM keeps a visit note as the rep's own voice (owner, 2026-09-25: a rep outside a clinic says in twenty seconds what he will not type in two minutes, and in Egyptian Arabic the keyboard is the slow part; this keeps the AUDIO, transcribed by nothing and seen by no speech service, which is the whole difference from the dictation shipped the same night where the audio goes to Google or Apple and what saves is text; the ruling that shapes it is that a recording DATES NOTHING — it can be made in a car an hour later — so phoenix_crm_take_voice returns void where its photo sibling returns the issue time that becomes captured_at, the slot answer carries no time and neither does anything the phone sends; the path is the only thing trusted, the seconds and bytes beside it are labels on a play button and are clamped, dropped entirely when there is no path to describe; and the dictation control no longer says \"Nothing is recorded\", which was true until a recorder was put on the same form)",
   runPhoenixCrmVoiceNoteTests,
+);
+
+await runTest(
+  "Phoenix CRM monthly plan (owner, 2026-09-25: the rep makes ONE monthly plan — a real calendar — and his weekly plans are its weeks; a field-week belongs to the month its Saturday falls in, so a straddling week is counted once; a doctor over his grade norm is a shown deviation, never blocked; the meters read the plan with AM and PM apart, never averaged; the call rate divides by the month's Saturday-to-Wednesday days, AM against 2 and PM against 10, and its weekday set stays equal to the company standard)",
+  runPhoenixCrmMonthlyPlanTests,
+);
+
+await runTest(
+  "Phoenix CRM plan filters (owner, 2026-09-25: while building a plan the rep narrows the doctor list by brick, by AM or PM, and by 'receives on this day between X and Y'; the narrowings are independent and each is met by any of a customer's places; a window reads only with a weekday; in Ramadan the special timings win and fall back to the normal ones)",
+  runPhoenixCrmPlanFiltersTests,
+);
+
+await runTest(
+  "Phoenix CRM copy last month (owner, 2026-09-25: pre-fill the new month from the rep's iReports360 plan, editable, never auto-submitted; only a doctor still on the list is placed, on his old weekdays' editable days, on the list types the day allows, at his first place; the day's cap is honoured, a doctor already on a day is not doubled, and the order is deterministic)",
+  runPhoenixCrmPlanCopyTests,
 );
 
 await runTest(

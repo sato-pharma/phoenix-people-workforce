@@ -7,8 +7,8 @@ import { isPersonalBellCategory } from "../src/lib/notifications/recipients.ts";
 import { defaultTelegramPolicyFor } from "../src/lib/notifications/telegram-governance.ts";
 
 // Owner rule (2026-09-16): Phoenix CRM tells people IN-APP and by TELEGRAM only — a grade or drop
-// request waiting for the district manager, a request decided, a weekly plan waiting for review, a
-// plan approved or returned. Never email. And the Super Admin's try-out entries tell nobody.
+// request waiting for the district manager, a request decided, a weekly OR monthly plan waiting for
+// review, a plan approved or returned. Never email. And the Super Admin's try-out entries tell nobody.
 //
 // Four independent things have to hold, and each notice is only as quiet as the weakest one:
 //   1. the policy row must not ASK for email
@@ -26,6 +26,9 @@ const EVENT_TYPES = [
   "plan_waiting",
   "plan_approved",
   "plan_returned",
+  "monthly_plan_waiting",
+  "monthly_plan_approved",
+  "monthly_plan_returned",
 ];
 
 export function runPhoenixCrmEmailBlockTests() {
@@ -74,7 +77,7 @@ export function runPhoenixCrmEmailBlockTests() {
     assert.ok(existsSync("app/employee-portals/field-crm/page.tsx"), "a notice's link opens a page that exists");
 
     // Every place that notifies passes the entry's test flag through — never a literal.
-    for (const file of ["src/lib/phoenix-crm/server/list.ts", "src/lib/phoenix-crm/server/plans.ts"]) {
+    for (const file of ["src/lib/phoenix-crm/server/list.ts", "src/lib/phoenix-crm/server/plans.ts", "src/lib/phoenix-crm/server/monthly-plans.ts"]) {
       const source = readFileSync(file, "utf8");
       const calls = source.split("notifyPhoenixCrm(").slice(1);
       assert.ok(calls.length > 0, `${file} notifies`);

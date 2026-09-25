@@ -145,3 +145,39 @@ export function monthEndOf(isoDay: string): string {
 export function isMonthKey(value: unknown): value is string {
   return typeof value === "string" && /^\d{4}-(0[1-9]|1[0-2])$/.test(value);
 }
+
+/** "2026-09-16" → "2026-09". */
+export function monthKeyOf(isoDay: string): string {
+  return isoDay.slice(0, 7);
+}
+
+/**
+ * The field-weeks of a month: every Saturday (a week's `week_start`) whose own date falls in the
+ * calendar month. A field-week belongs to the month its Saturday falls in — one month per week, no
+ * double-count — so a week that straddles a month edge sits wholly in the month its Saturday is in.
+ * `monthStart` is any day of the month; the first of the month is used.
+ */
+export function fieldWeeksOfMonth(monthStart: string): string[] {
+  const day1 = monthStartOf(monthStart);
+  const monthKey = monthKeyOf(day1);
+  const firstSaturday = weekdayOfIsoDay(day1) === 6 ? day1 : addDaysIso(fieldWeekStart(day1), 7);
+  const weeks: string[] = [];
+  for (let saturday = firstSaturday; monthKeyOf(saturday) === monthKey; saturday = addDaysIso(saturday, 7)) {
+    weeks.push(saturday);
+  }
+  return weeks;
+}
+
+/**
+ * The months a rep can plan: the month of each week the rep can still plan (calendar.ts
+ * `plannableWeeks`), so month and week stay in step — a month is plannable exactly when it holds a
+ * plannable week. Today's month, and the next once the horizon reaches into it.
+ */
+export function plannableMonths(cairoToday: string, weeksAhead = 3): string[] {
+  const months: string[] = [];
+  for (const week of plannableWeeks(cairoToday, weeksAhead)) {
+    const monthStart = monthStartOf(week);
+    if (!months.includes(monthStart)) months.push(monthStart);
+  }
+  return months;
+}

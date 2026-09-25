@@ -39,6 +39,16 @@ export type {
   SavedPlan,
 } from "@/lib/phoenix-crm/server/plans";
 export type {
+  MonthlyDoctorRow,
+  MonthlyPlannerView,
+  MonthlyPlanSummary,
+  MonthlyReviewRow,
+  MonthlyReviewView,
+  MonthlyTransitionResult,
+  MonthlyWeekView,
+} from "@/lib/phoenix-crm/server/monthly-plans";
+export type { PlanHistoryEntry, PlanHistoryView } from "@/lib/phoenix-crm/server/plan-history";
+export type {
   CoverageReportView,
   ManagerReportEntry,
   ManagerReportRow,

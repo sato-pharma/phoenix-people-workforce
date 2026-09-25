@@ -221,6 +221,10 @@ function settingsFrom(draft: NumbersDraft): PhoenixCrmSettings | null {
       PM: { A: value("PMA"), B: value("PMB"), C: value("PMC") },
       AM: { A: value("AMA"), B: value("AMB"), C: value("AMC") },
     },
+    // The call-rate targets are the fixed golden rule (AM against 2, PM against 10, never averaged),
+    // not a Super-Admin knob — carried through as the constant, exactly as server/settings.ts does.
+    callRateAmTarget: PHOENIX_CRM_DEFAULT_SETTINGS.callRateAmTarget,
+    callRatePmTarget: PHOENIX_CRM_DEFAULT_SETTINGS.callRatePmTarget,
   };
 }
 
