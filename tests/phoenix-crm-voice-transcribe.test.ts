@@ -218,6 +218,20 @@ export function runPhoenixCrmVoiceTranscribeTests() {
   );
   assert.doesNotMatch(service, /FormData|multipart/, `${SERVICE} takes no upload: there is exactly one way audio enters this system, and it is the voice slot`);
 
+  // The window is a cost rule; so is transcribing each recording at most once. The check is an UPDATE that
+  // claims the row — sets transcribed_at only where it is still null — so the SAME path cannot be
+  // resubmitted into a run of paid calls inside its two-hour window, and two requests racing for one path
+  // cannot both bill the service (one row lock). Total transcriptions then sit under the slot ceiling a rep
+  // already lives under. A failure after the claim releases it, so no recording is permanently un-writable.
+  assert.match(service, /\.update\(\{ transcribed_at: new Date\(\)\.toISOString\(\) \}\)/, `${SERVICE} claims the recording for one transcription instead of only reading its slot`);
+  assert.match(service, /\.is\("transcribed_at", null\)/, `${SERVICE} claims only a recording not already written out — the same path cannot be re-charged inside its window`);
+  const claimAt = service.indexOf('.is("transcribed_at", null)');
+  assert.ok(
+    claimAt >= 0 && service.indexOf("downloadVoiceNote(path)") > claimAt,
+    `${SERVICE} claims the single transcription BEFORE it reads the bytes or calls the paid service`,
+  );
+  assert.match(service, /transcribed_at: null/, `${SERVICE} releases the claim on any failure after it, so a read-back miss or a transient outage never burns a recording's one shot`);
+
   // The route spends money at a third party, so it carries a save's refusals even though it reads.
   assert.match(route, /assertSameOriginMutation\(request\)/, `${ROUTE} refuses a cross-site POST — it spends money per request`);
   assert.match(route, /assertPermission\(access, "phoenix_crm", "create"\)/, `${ROUTE} gates the words behind the same permission as entering a visit`);
