@@ -187,6 +187,14 @@ ports (21115–21119) with the real client addresses visible, which Railway does
 device-management server talking to reps' tablets all day does not belong beside the payroll
 database. It is one small dedicated VPS, about $5–6/month, **in Europe** like everything else here.
 
+🔴 **THE BOX MUST RUN THE PHOENIX-BUILT IMAGE, NOT THE STOCK `headwind/hmdm` ONE — there is no
+variable for this and no error that says it.** Lock, lost mode, factory reset and reset-the-screen-lock
+are carried by a small Apache-2.0 `SyncResponseHook` add-on of ours (`infra/headwind-phoenix-actions/`,
+built in by the Dockerfile that extends the pinned `HEADWIND_IMAGE_TAG`). The **tablets** already obey
+all five fields as shipped; the stock free **server** has no way to set them, so on a stock image those
+four routes answer a Headwind refusal and the console reports it faithfully — which reads like a broken
+tablet rather than the wrong image. Everything else on this page works on either image.
+
 | Variable | Description | Default |
 |---|---|---|
 | HEADWIND_MDM_BASE_URL | The company's Headwind server **at its console hostname**, e.g. `https://mdm-console.satopharma.com` — the one behind the Cloudflare Tunnel, not `mdm.satopharma.com`, which is the tablets' own direct name and must stay off Cloudflare's proxy because 31000 is not an HTTP port. Pointing this at the tablets' name works, and quietly puts the API back on the public internet. No trailing slash — one is trimmed either way. Nothing here has a safe default: a guessed address would send an admin password to whoever owns that name | |

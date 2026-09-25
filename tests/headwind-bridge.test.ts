@@ -10,17 +10,67 @@ import {
   HeadwindNotConfiguredError,
   resetHeadwindTokenCache,
 } from "../src/lib/devices/headwind/auth.ts";
+import {
+  headwindActionCatalogue,
+  isHeadwindActionId,
+  takeHeadwindAction,
+  HEADWIND_ACTIONS,
+  HEADWIND_MESSAGE_LIMIT,
+  HeadwindActionError,
+  PHOENIX_ALARM_INTENT,
+  PHOENIX_APP_PACKAGE,
+} from "../src/lib/devices/headwind/actions.ts";
 import { callHeadwind, HeadwindRequestError } from "../src/lib/devices/headwind/client.ts";
 import {
   headwindCommandCatalogue,
+  headwindPendingReason,
   isHeadwindCommandId,
   isHeadwindCommandReady,
   issueHeadwindCommand,
   HEADWIND_COMMANDS,
   HEADWIND_MESSAGE_TYPES,
+  HEADWIND_UNCONFIRMED_REASONS,
   HeadwindCommandInputError,
   HeadwindCommandUnconfirmedError,
 } from "../src/lib/devices/headwind/commands.ts";
+import {
+  configurationBranding,
+  configurationSummary,
+  linkHeadwindApp,
+  moveHeadwindDeviceToConfiguration,
+  setHeadwindBranding,
+  HEADWIND_ICON_SIZES,
+  HeadwindConfigurationError,
+} from "../src/lib/devices/headwind/configurations.ts";
+import {
+  parseHeadwindEnrollmentTemplate,
+  HeadwindEnrollmentError,
+} from "../src/lib/devices/headwind/enrollment.ts";
+import {
+  locationFixesFromPlugin,
+  locateHeadwindDevice,
+  HeadwindLocationError,
+} from "../src/lib/devices/headwind/locations.ts";
+import {
+  uploadHeadwindApp,
+  HEADWIND_MAX_UPLOAD_BYTES,
+  HeadwindUploadError,
+} from "../src/lib/devices/headwind/uploads.ts";
+import {
+  consoleRolesFrom,
+  consoleUsersFrom,
+  createHeadwindConsoleUser,
+  removeHeadwindConsoleUser,
+  HEADWIND_MIN_PASSWORD,
+  HeadwindUserError,
+} from "../src/lib/devices/headwind/users.ts";
+import {
+  headwindWipeScope,
+  wipeHeadwindDevice,
+  HEADWIND_WIPE_APPS,
+  HEADWIND_WIPE_FOLDERS,
+  HeadwindWipeError,
+} from "../src/lib/devices/headwind/wipe.ts";
 import {
   getHeadwindLocation,
   listHeadwindDevices,
@@ -449,14 +499,14 @@ async function runCommandTests() {
     assert.ok(AGENT_ACCEPTS.has(wire), `${id} sends "${wire}", which Headwind's agent does not accept — see PushMessage.java`);
   }
 
-  const unconfirmed = Object.entries(HEADWIND_MESSAGE_TYPES)
+  const notPushed = Object.entries(HEADWIND_MESSAGE_TYPES)
     .filter(([, value]) => value === null)
     .map(([id]) => id)
     .sort();
   assert.deepEqual(
-    unconfirmed,
+    notPushed,
     ["FACTORY_RESET", "LOCATE_NOW", "LOCK"],
-    "🔴 these three are NOT unread names — lock and factory reset are fields of the configuration the agent DOWNLOADS, with no column on the Community server's Configuration or Device to set them, and a position is evidence about a person that must be watched end to end before a button claims it",
+    "🔴 a null here means CARRIED ANOTHER WAY, never 'not built' — lock and factory reset are fields of the configuration the agent DOWNLOADS, and a position rides on the check-in report. None of the three is a push message, and inventing a name for one would answer 200 and reach no tablet",
   );
 
   // Every action in the catalogue has a line in the map, and vice versa: an action with no line would
@@ -472,16 +522,34 @@ async function runCommandTests() {
   assert.equal(isHeadwindCommandId("LOST_MODE"), false, "an action this bridge does not have is refused, never passed through");
   assert.equal(isHeadwindCommandReady("APPLY_SETTINGS"), true);
   assert.equal(isHeadwindCommandReady("REBOOT"), true, "restart is live: the agent's own source names it");
-  assert.equal(isHeadwindCommandReady("LOCK"), false, "lock is not a push message on this server at all");
+
+  // 🔴 THE CORRECTION OF 2026-09-25, PINNED SO IT CANNOT QUIETLY REVERT. These three were greyed on the
+  // tablet panel for a reason that was wrong about WHERE the gap is. The free AGENT has always
+  // implemented lock, the lock message and the factory reset (`hmdm-android` 6.39, `c9221a1f`); it is
+  // the open-source SERVER that has nowhere to write the instruction — and a server we own can be
+  // extended. Reading a `null` wire name as "not ready" is exactly the regression that would grey all
+  // three again, so readiness and the wire-name map are pinned apart.
+  for (const id of ["LOCK", "FACTORY_RESET", "LOCATE_NOW"] as const) {
+    assert.equal(HEADWIND_MESSAGE_TYPES[id], null, `${id} is genuinely not a push message`);
+    assert.equal(isHeadwindCommandReady(id), true, `${id} is carried by another module — not refused`);
+    assert.equal(headwindPendingReason(id), null, `${id} therefore carries no refusal sentence either`);
+  }
+  assert.deepEqual(
+    HEADWIND_UNCONFIRMED_REASONS,
+    {},
+    "and nothing is hard-coded as a limit of the product any more — the one thing that can still stop these is a box built without the add-on, which is decided against the LIVE box in actions.ts rather than asserted here",
+  );
 
   const catalogue = headwindCommandCatalogue();
-  assert.equal(catalogue.length, HEADWIND_COMMANDS.length, "the console is told about every action, including the ones it cannot send");
-  assert.equal(catalogue.filter((entry) => entry.ready).length, 5, "five can be sent today — three more than before the agent source was read");
+  assert.equal(catalogue.length, HEADWIND_COMMANDS.length, "the console is told about every action");
+  assert.equal(
+    catalogue.filter((entry) => entry.ready).length,
+    HEADWIND_COMMANDS.length,
+    "🔴 and every one of them can be carried — the owner's ruling, 2026-09-25, was that a dead button is not an acceptable answer",
+  );
 
-  // 🔴 A REFUSED ACTION CARRIES ITS OWN REASON, AND THE REASONS ARE NOT INTERCHANGEABLE. Lock and
-  // factory reset need a field the free server does not have — waiting changes nothing, and a person
-  // deciding what to do about a stolen tablet has to know that. A live position, by contrast, is
-  // simply not yet watched end to end. Flattening both into "pending" is the regression this pins.
+  // The invariant outlives the current set, which is why it stays a loop: an action that refuses must
+  // say why, and one that works must never carry a refusal sentence beside it.
   for (const entry of catalogue) {
     assert.equal(
       entry.pendingReason === null,
@@ -489,25 +557,36 @@ async function runCommandTests() {
       `${entry.id}: an action that refuses must say why, and one that works must not carry a refusal`,
     );
   }
-  const lockReason = catalogue.find((entry) => entry.id === "LOCK")!.pendingReason!;
-  const locateReason = catalogue.find((entry) => entry.id === "LOCATE_NOW")!.pendingReason!;
-  assert.notEqual(lockReason, locateReason, "the two kinds of refusal do not share one sentence");
-  assert.match(lockReason, /configuration/i, "lock says the server has nowhere to put the instruction");
-  assert.match(locateReason, /check-in/i, "a position says it comes from the tablet's own check-in");
 
-  // 🔴 AN UNCONFIRMED ACTION REFUSES BEFORE IT REACHES THE NETWORK. Not a guess, not a silent drop,
-  // and not a failure blamed on the tablet.
   const untouched = makeFetch({ api: [{ body: { status: "OK" }, status: 200 }] });
-  await assert.rejects(
-    () => issueHeadwindCommand({ command: "LOCK", deviceNumber: "PHX-TAB-0002" }, "B-10", untouched.fetch, ENV),
-    HeadwindCommandUnconfirmedError,
-  );
-  assert.equal(untouched.calls.length, 0, "and nothing at all was sent — no sign-in, no push");
-
   await assert.rejects(
     () => issueHeadwindCommand({ command: "APPLY_SETTINGS", deviceNumber: "   " }, "B-10", untouched.fetch, ENV),
     HeadwindCommandInputError,
     "a command with no tablet named is refused before anything else happens",
+  );
+  assert.equal(untouched.calls.length, 0, "and nothing at all was sent — no sign-in, no push");
+
+  // 🔴 THE DELEGATION IS REAL, NOT A LABEL. `LOCK` is one of the buttons already on the tablet panel, so
+  // the correction had to reach THAT button rather than only a new one beside it. Here the box answers
+  // 404 for the add-on, and the refusal that comes back is the add-on's own sentence — which is how a
+  // console that has not been rebuilt says what would make the button work instead of greying it.
+  const noAddon = makeFetch({
+    api: [
+      { body: { data: { items: [{ id: 7, number: "PHX-TAB-0002" }] }, status: "OK" }, status: 200 },
+      { body: { message: "not found", status: "ERROR" }, status: 404 },
+    ],
+  });
+  await assert.rejects(
+    () => issueHeadwindCommand({ command: "LOCK", deviceNumber: "PHX-TAB-0002" }, "B-10", noAddon.fetch, ENV),
+    (error: unknown) =>
+      error instanceof HeadwindActionError &&
+      /add-on/.test(error.message) &&
+      /tablets themselves already know how to do this/.test(error.message),
+    "a box without the add-on refuses in words that name the fix — and blames the server, not the tablet",
+  );
+  assert.ok(
+    noAddon.calls.some((call) => call.url.includes("/rest/plugins/phoenix-actions/private/status")),
+    "and it ASKED the box rather than assuming either way",
   );
 
   // The wire shape is pinned at the source, because sending it for real needs the database.
@@ -517,6 +596,21 @@ async function runCommandTests() {
   assert.doesNotMatch(commands, /deviceNumbers: \[[^\]]*deviceId/, "and never by the server's row id");
   assert.match(commands, /payload: payloadFor\(/, "the payload is built by the one function that knows it must be a STRING");
   assert.match(commands, /entityType: "headwind_device_command"/, "and every action that lands writes a required audit row");
+
+  // 🔴 THE ORDER INSIDE `issueHeadwindCommand` IS THE WHOLE CORRECTION. Delegation is decided BEFORE the
+  // null-wire-name check; the other way round, all three would refuse again while the code still read as
+  // though it delegated — a regression no message string would reveal.
+  assert.ok(
+    commands.indexOf("const delegate = DELEGATED[def.id]") < commands.indexOf("if (messageType === null)"),
+    "the delegation is decided before the null check, not after it",
+  );
+  assert.match(commands, /await locateHeadwindDevice\(/, "LOCATE_NOW goes to locations.ts, which returns the position WITH ITS AGE");
+  assert.match(commands, /await takeHeadwindAction\(/, "LOCK and FACTORY_RESET go to actions.ts, which asks the live box about the add-on");
+
+  // The refusal machinery is KEPT although nothing uses it today — the next action Phoenix cannot send
+  // has to be listed and explained, and deleting this is how a future `null` becomes a silent no-op.
+  assert.match(commands, /if \(messageType === null\)/, "the guard for an unsendable action survives");
+  assert.match(commands, /throw new HeadwindCommandUnconfirmedError/, "and it throws rather than reporting a success");
 }
 
 function runAppsTests() {
@@ -619,6 +713,493 @@ async function runAppRemovalTests() {
   assert.doesNotMatch(route, /export async function GET/, "reading the app list stays on the fleet route — this one only removes");
 }
 
+/**
+ * Phase 1 — the corporate wipe.
+ *
+ * 🔴 THE LIST IS THE OWNER'S OWN ANSWER AND IS NOT A SETTING. He was asked both questions in writing on
+ * 2026-09-25 and chose the camera roll over the option that would have spared it, knowing field photos
+ * live there. A later pass that "improves" this into a form the console can aim is the regression these
+ * assertions exist to stop — a wipe that can be aimed is a wipe that can be mis-aimed.
+ */
+async function runCorporateWipeTests() {
+  const scope = headwindWipeScope();
+  assert.deepEqual(scope.apps, ["the Phoenix app", "Chrome"], "the apps he chose, in the order they are sent");
+  assert.deepEqual(
+    scope.folders,
+    ["Downloads", "the camera roll, including field photos"],
+    "🔴 and the camera roll says out loud that it takes field photos — the second press has to name what goes, because nothing on the tablet will",
+  );
+
+  // 🔴 THE MANAGEMENT AGENT IS NOT IN THE LIST AND MUST NEVER BE. `clearAppData` on `com.hmdm.launcher`
+  // empties the agent's own store — its server address, its device number, its enrolment — leaving a
+  // tablet that is still device-owned by an app that no longer knows where home is. That is
+  // unrecoverable without physically holding the tablet, in a rep's bag in another governorate.
+  assert.ok(
+    !HEADWIND_WIPE_APPS.some((app) => app.packageName === HEADWIND_AGENT_PACKAGE),
+    "the agent that manages the tablet is never one of the apps cleared",
+  );
+  assert.equal(HEADWIND_WIPE_APPS.length + HEADWIND_WIPE_FOLDERS.length, 4, "four instructions, one per item");
+
+  const untouched = makeFetch({ api: [{ body: { status: "OK" }, status: 200 }] });
+  await assert.rejects(
+    () => wipeHeadwindDevice({ deviceNumber: "   " }, "B-10", untouched.fetch, ENV),
+    (error: unknown) => error instanceof HeadwindWipeError && error.partial === false,
+    "a wipe with no tablet named never left Phoenix, so it is not reported as a half-finished one",
+  );
+  assert.equal(untouched.calls.length, 0, "and nothing was sent — not even a sign-in");
+
+  const gone = makeFetch({ api: [{ body: { data: { items: [] }, status: "OK" }, status: 200 }] });
+  await assert.rejects(
+    () => wipeHeadwindDevice({ deviceNumber: "PHX-TAB-0002" }, "B-10", gone.fetch, ENV),
+    HeadwindCommandInputError,
+    "a tablet that has left the fleet cannot be wiped — resolved against the LIVE list, same as every other action",
+  );
+
+  // The push itself writes an audit row, so the wire shape is pinned at the source instead.
+  const wipe = stripComments(source("src/lib/devices/headwind/wipe.ts"));
+  assert.match(wipe, /messageType: "clearAppData"/, "TYPE_CLEAR_APP_DATA — the agent's own name");
+  assert.match(wipe, /JSON\.stringify\(\{ pkg: app\.packageName \}\)/, "keyed `pkg`, which is the one key the agent reads");
+  assert.match(wipe, /messageType: "purgeDir"/, "and the folders go down purgeDir");
+  // 🔴 THE STRING "1", NOT `true`. The agent tests it with `"1".equals(payload.getString("recursive"))`,
+  // so a boolean there reads as "not 1" — and the purge then quietly skips every subdirectory while
+  // still answering 200. A wipe that reports success and leaves the photos is the worst outcome here.
+  assert.match(wipe, /recursive: "1"/, "recursive is the STRING 1");
+  assert.doesNotMatch(wipe, /recursive: true/, "never the boolean, which the agent reads as 'no'");
+  assert.doesNotMatch(wipe, /\/sdcard|\/storage\//, "paths are relative to the tablet's own external storage, as the agent resolves them");
+  assert.doesNotMatch(wipe, /com\.hmdm\.launcher/, "and the agent's package appears nowhere in the sent list");
+  assert.match(wipe, /entityType: "headwind_device_command"/, "a silent wipe writes a REQUIRED audit row");
+  assert.match(wipe, /completed: false/, "and a half-finished one is audited as half-finished, with what was already sent");
+
+  const route = stripComments(source("app/api/devices/headwind/wipe/route.ts"));
+  assert.match(route, /assertPermission\(access, "company_devices", "approve"\)/, "Super Admin only");
+  assert.match(route, /const csrf = assertSameOriginMutation\(request\);\s*if \(csrf\) return csrf;/);
+  // 🔴 THE SCOPE IS NOT A PARAMETER. If the browser could name the apps and folders, the owner's answer
+  // would become a default rather than the rule, and the two-press confirmation would be naming a list
+  // it does not control.
+  assert.doesNotMatch(route, /body\.(apps|folders|packages|paths)/, "the browser cannot choose what a wipe erases");
+}
+
+/** Phase 2 and Phase 4 — sets of tablet rules, and what the home screen looks like. */
+async function runConfigurationTests() {
+  const summary = configurationSummary({ devicesCount: 12, id: 4, kioskMode: true, name: "  Reps  " } as never);
+  assert.deepEqual(summary, { description: null, deviceCount: 12, id: 4, kioskMode: true, name: "Reps" });
+  const unnamed = configurationSummary({ id: 9, name: "" } as never);
+  assert.equal(unnamed.name, "Configuration 9", "a set of rules with no name is still identifiable, never blank");
+  assert.equal(unnamed.kioskMode, false, "and kiosk is only true when the server says true — never undefined-as-on");
+  assert.equal(configurationSummary({ deviceCount: 3, id: 1, name: "x" } as never).deviceCount, 3, "either spelling of the count is read");
+
+  const branding = configurationBranding({
+    backgroundColor: "#0A527D",
+    desktopHeader: "Phoenix",
+    iconSize: "LARGE",
+    id: 4,
+    kioskMode: true,
+    mainAppId: 17,
+    name: "Reps",
+  } as never);
+  assert.equal(branding.mainAppId, 17, "🔴 mainAppId is the server's APP ID, not a package name — a package string there silently names no app");
+  assert.equal(branding.iconSize, "LARGE");
+  assert.equal(branding.textColor, null, "and a field the server did not send reads as unset, never as an empty string");
+
+  const untouched = makeFetch({ api: [{ body: { status: "OK" }, status: 200 }] });
+  for (const [input, because] of [
+    [{ backgroundColor: "navy", configurationId: 4 }, "a colour word is not a hex colour"],
+    [{ configurationId: 4, textColor: "#FFF" }, "and three digits is not six — the launcher would ignore it"],
+    [{ configurationId: 4, iconSize: "HUGE" }, "an icon size the launcher does not understand is refused rather than sent and ignored"],
+    [{ configurationId: 4 }, "and a form where nothing changed sends nothing to a hundred tablets"],
+    [{ configurationId: "4" as never, desktopHeader: "x" }, "a set of rules has to be named by its id"],
+  ] as const) {
+    await assert.rejects(
+      () => setHeadwindBranding(input as never, "B-10", untouched.fetch, ENV),
+      HeadwindConfigurationError,
+      because,
+    );
+  }
+  await assert.rejects(
+    () => linkHeadwindApp({ action: 5 as never, applicationId: 1, configurationId: 4 }, "B-10", untouched.fetch, ENV),
+    HeadwindConfigurationError,
+    "an app is installed, hidden or removed — a fourth number is refused, not passed through",
+  );
+  await assert.rejects(
+    () => moveHeadwindDeviceToConfiguration({ configurationId: 4, deviceNumber: " " }, "B-10", untouched.fetch, ENV),
+    HeadwindConfigurationError,
+    "and a move with no tablet named",
+  );
+  assert.equal(untouched.calls.length, 0, "every one of those was refused before the network");
+
+  const configs = stripComments(source("src/lib/devices/headwind/configurations.ts"));
+  // 🔴 THE OPAQUE ROUND-TRIP. `PUT /rest/private/configurations` WIPES AND RE-INSERTS the configuration's
+  // applications, settings and files. A hand-built body — even a correct-looking one — therefore empties
+  // the app list of every tablet carrying those rules. The only safe write is the server's own object
+  // with one field changed.
+  assert.match(configs, /const next = \{ \.\.\.current, \.\.\.patch \}/, "the whole object is read back and returned with one field changed");
+  assert.match(configs, /"\/rest\/private\/applications\/configurations"/, "attaching ONE app uses the surgical endpoint, which rewrites nothing else");
+  assert.match(configs, /"\/rest\/private\/web-ui-files\/configurations"/, "and so does attaching one file");
+  // 🔴 A CONFIGURATION OBJECT CARRIES A PLAINTEXT PASSWORD — the Swagger's "MD5 hash" is wrong, the hash
+  // is computed at device-sync time from a plaintext column. So the object must never be logged, and
+  // never put in an audit row whole.
+  assert.doesNotMatch(configs, /console\.(log|info|warn|error|debug)/, "the configuration object is never logged — it carries a plaintext password");
+  assert.doesNotMatch(configs, /newValues: \{[^}]*current/, "and never written into an audit row whole");
+  assert.match(configs, /HEADWIND_ICON_SIZES/, "the icon sizes are the three the launcher understands");
+  assert.deepEqual([...HEADWIND_ICON_SIZES], ["SMALL", "MEDIUM", "LARGE"]);
+  assert.match(configs, /kioskMode/, "the key is kioskMode — `kiosk` is the plausible-looking name the server ignores");
+}
+
+/** Phase 3 — sending an APK or a file up, then putting it in a set of rules. */
+async function runUploadTests() {
+  assert.equal(HEADWIND_MAX_UPLOAD_BYTES, 300 * 1024 * 1024, "300 MB — what fits inside the route's own 300-second ceiling");
+
+  const untouched = makeFetch({ api: [{ body: { status: "OK" }, status: 200 }] });
+  await assert.rejects(
+    () => uploadHeadwindApp({ file: null }, "B-10", untouched.fetch, ENV),
+    HeadwindUploadError,
+    "no file chosen",
+  );
+  await assert.rejects(
+    () => uploadHeadwindApp({ file: new File([], "empty.apk") }, "B-10", untouched.fetch, ENV),
+    HeadwindUploadError,
+    "and a zero-byte file, which uploads fine and installs nothing",
+  );
+  // 🔴 AN .AAB IS THE MISTAKE THAT LOOKS RIGHT. It is what Google Play builds from, it sits beside the
+  // APK in every build output, and a tablet cannot install one. Refusing it here costs a sentence;
+  // letting it through costs a fleet-wide install that silently reaches nothing.
+  await assert.rejects(
+    () => uploadHeadwindApp({ file: new File(["x"], "phoenix.aab") }, "B-10", untouched.fetch, ENV),
+    (error: unknown) => error instanceof HeadwindUploadError && /\.apk/.test(error.message) && /aab/i.test(error.message),
+    "a bundle is refused by name, and the sentence says why it cannot work",
+  );
+
+  const big = new File(["x"], "huge.apk");
+  Object.defineProperty(big, "size", { value: HEADWIND_MAX_UPLOAD_BYTES + 1 });
+  await assert.rejects(
+    () => uploadHeadwindApp({ file: big }, "B-10", untouched.fetch, ENV),
+    (error: unknown) => error instanceof HeadwindUploadError && /300 MB/.test(error.message),
+    "and a file too large to finish is refused before it half-writes itself onto the server",
+  );
+  assert.equal(untouched.calls.length, 0, "none of those reached the network");
+
+  const uploads = stripComments(source("src/lib/devices/headwind/uploads.ts"));
+  // 🔴 THE ENDPOINT IS `/rest/private/web-ui-files`. There is no `/rest/upload` — that is the name the
+  // documentation suggests and the server does not serve.
+  assert.match(uploads, /"\/rest\/private\/web-ui-files"/, "the bytes go to the web-ui-files endpoint");
+  assert.doesNotMatch(uploads, /"\/rest\/upload"/, "never /rest/upload, which does not exist");
+  assert.match(uploads, /form\.append\("file", file, file\.name\)/, "multipart field `file`, as the server reads it");
+  // 🔴 `FormData` IS HANDED TO `callHeadwind` UNTOUCHED. Writing a content type by hand drops the
+  // multipart boundary, and the upload then fails with a shape error rather than a useful one.
+  assert.doesNotMatch(uploads, /multipart\/form-data/, "the content type is never written by hand — the boundary would be lost");
+  assert.match(uploads, /"\/rest\/private\/applications\/android"/, "then the APK is registered as an application");
+  assert.match(uploads, /filePath/, "by the serverPath the upload handed back");
+
+  const route = stripComments(source("app/api/devices/headwind/upload/route.ts"));
+  assert.match(route, /export const maxDuration = 300/, "a multipart route gets its own ceiling, like the ManageEngine one");
+  assert.match(route, /assertPermission\(access, "company_devices", "approve"\)/, "Super Admin only");
+  assert.match(route, /const csrf = assertSameOriginMutation\(request\);\s*if \(csrf\) return csrf;/);
+}
+
+/** Phase 5 — where a tablet is, and where it has been. */
+async function runLocationTests() {
+  assert.deepEqual(locationFixesFromPlugin(null), [], "nothing recorded is an empty list, never a throw");
+  assert.deepEqual(locationFixesFromPlugin("not a page"), [], "and a reply of the wrong shape is read as empty too");
+
+  const when = 1758800000000;
+  const fixes = locationFixesFromPlugin([
+    { deviceBatteryLevel: 61, gpsLat: 30.06, gpsLon: 31.24, latestUpdateTime: when },
+    // 🔴 NULL ISLAND IS NOT A PLACE. The agent reports 0/0 when it has no fix at all, and a console that
+    // plots it puts every unlocated tablet in the Gulf of Guinea — a map that looks broken rather than
+    // one that says nothing is known.
+    { gpsLat: 0, gpsLon: 0, latestUpdateTime: when },
+    { gpsLat: 30.1, gpsLon: null },
+    { gpsLat: "30.2", gpsLon: "31.3" },
+  ]);
+  assert.equal(fixes.length, 1, "one real fix — the zero pair, the half pair and the strings are all dropped");
+  assert.equal(fixes[0].source, "plugin", "🔴 and it says where it came from, because the two sources are never blended");
+  assert.equal(fixes[0].batteryLevel, 61);
+  assert.equal(fixes[0].recordedAt, new Date(when).toISOString(), "the tablet's own moment, kept as an instant rather than a number");
+
+  const untouched = makeFetch({ api: [{ body: { status: "OK" }, status: 200 }] });
+  await assert.rejects(
+    () => locateHeadwindDevice({ deviceNumber: "  " }, "B-10", untouched.fetch, ENV, 0),
+    HeadwindLocationError,
+    "a locate with no tablet named",
+  );
+  assert.equal(untouched.calls.length, 0);
+
+  const gone = makeFetch({ api: [{ body: { data: { items: [] }, status: "OK" }, status: 200 }] });
+  await assert.rejects(
+    () => locateHeadwindDevice({ deviceNumber: "PHX-TAB-0002" }, "B-10", gone.fetch, ENV, 0),
+    HeadwindCommandInputError,
+    "and a tablet that has left the fleet",
+  );
+
+  const locations = stripComments(source("src/lib/devices/headwind/locations.ts"));
+  // 🔴 "LOCATE NOW" IS NOT A PING AND IS NOT SOLD AS ONE. Nothing in Headwind asks a tablet for its
+  // position. What can be done is wake it into a check-in and read back what it sent, WITH ITS AGE.
+  assert.match(locations, /messageType: "configUpdated"/, "the tablet is woken into a check-in — the nearest real thing to a ping");
+  assert.doesNotMatch(locations, /messageType: "locate"/, "there is no locate message, and inventing one answers 200 and reaches nothing");
+  assert.match(locations, /ageSeconds/, "🔴 the age travels with the position — showing a four-day-old fix as 'now' is what sends somebody driving to it");
+  assert.match(locations, /source: "check-in"/, "the fix that always arrives is labelled");
+  assert.match(locations, /source: "plugin"/, "and the plugin's own trail is labelled apart");
+  assert.match(locations, /"\/rest\/plugins\/deviceinfo\/deviceinfo\/private\/search\/dynamic"/, "the deviceinfo history endpoint");
+  assert.match(locations, /sendData: true/, "🔴 which collects nothing until it is switched on — it defaults to FALSE");
+  // 🔴 AN EMPTY HISTORY IS "NOTHING RECORDED", NEVER "THE TABLET DID NOT MOVE". Whether the stock free
+  // agent feeds this plugin at all is unproven until a real tablet does it — `ProUtils` is a stub in the
+  // open-source agent — so the note must say so rather than imply a tablet stayed still.
+  assert.match(locations, /unproven until a tablet does it/, "and the note says plainly that an empty trail may mean the free agent never feeds it");
+  assert.doesNotMatch(locations, /has not moved"/, "it never reports an empty history as a tablet that did not move");
+}
+
+/**
+ * Phases 6 and 7 — lock, lost mode, factory reset, screen-lock reset, the alarm, the message, and the
+ * one action that does not exist for anyone.
+ */
+async function runCustodyActionTests() {
+  assert.equal(isHeadwindActionId("LOCK"), true);
+  assert.equal(isHeadwindActionId("SHUTDOWN"), false, "a near-miss name is refused, never passed through");
+
+  const impossible = HEADWIND_ACTIONS.filter((action) => action.carrier === "impossible");
+  assert.deepEqual(impossible.map((action) => action.id), ["SHUT_DOWN"], "exactly one action is impossible, and it is named");
+
+  // With the add-on on the box, everything except shut down can be carried.
+  const withAddon = makeFetch({ api: [{ body: { data: { ready: true }, status: "OK" }, status: 200 }] });
+  const ready = await headwindActionCatalogue(withAddon.fetch, ENV);
+  assert.equal(ready.length, HEADWIND_ACTIONS.length, "every action is listed, including the one that cannot work");
+  assert.equal(
+    ready.filter((action) => action.available).length,
+    HEADWIND_ACTIONS.length - 1,
+    "all but shut down are available on a box that has the add-on",
+  );
+  const shutDown = ready.find((action) => action.id === "SHUT_DOWN")!;
+  assert.equal(shutDown.available, false);
+  // 🔴 REPORTED AS IMPOSSIBLE, IN WORDS, AND NEVER AS "NOT YET". `PowerManager.shutdown()` is a
+  // signature-level permission — granted only to an app signed with the tablet manufacturer's own key.
+  // No MDM has it on stock Android at any price. A sentence that reads like a pending feature would have
+  // the owner waiting for something that is never coming, and restart is NOT a substitute: a stolen
+  // tablet that restarts comes back on.
+  assert.match(String(shutDown.unavailableReason), /not possible/i, "shut down says it is not possible");
+  assert.doesNotMatch(String(shutDown.unavailableReason), /yet|soon|pending/i, "and never that it is coming");
+  assert.match(String(shutDown.unavailableReason), /manufacturer/i, "and says whose permission it needs, so it is not re-asked every quarter");
+
+  // Without it, the four add-on actions refuse — and the two the Phoenix app carries are UNAFFECTED,
+  // which is the whole reason the alarm and the message were built on our own app instead.
+  const withoutAddon = makeFetch({ api: [{ body: { message: "no such plugin", status: "ERROR" }, status: 404 }] });
+  const degraded = await headwindActionCatalogue(withoutAddon.fetch, ENV);
+  for (const action of degraded) {
+    const expected = action.carrier === "phoenix-app";
+    assert.equal(action.available, expected, `${action.id}: ${action.carrier} actions do not depend on the add-on`);
+    if (action.carrier === "add-on") {
+      assert.match(String(action.unavailableReason), /add-on/, `${action.id} names the add-on`);
+      assert.match(
+        String(action.unavailableReason),
+        /tablets themselves already know how to do this/,
+        `${action.id} says the gap is in the server, not the tablet — the correction this whole build turns on`,
+      );
+    }
+  }
+
+  const untouched = makeFetch({ api: [{ body: { status: "OK" }, status: 200 }] });
+  await assert.rejects(
+    () => takeHeadwindAction({ action: "SHUT_DOWN", deviceNumber: "PHX-TAB-0002" }, "B-10", untouched.fetch, ENV),
+    HeadwindActionError,
+    "shut down refuses before any network call, and permanently",
+  );
+  await assert.rejects(
+    () => takeHeadwindAction({ action: "LOST_MODE_ON", deviceNumber: "PHX-TAB-0002" }, "B-10", untouched.fetch, ENV),
+    (error: unknown) => error instanceof HeadwindActionError && /phone number|return the tablet/.test(error.message),
+    "lost mode with no words would lock a tablet showing nothing — refused, and the sentence says what to type",
+  );
+  await assert.rejects(
+    () =>
+      takeHeadwindAction(
+        { action: "SHOW_MESSAGE", deviceNumber: "PHX-TAB-0002", message: "x".repeat(HEADWIND_MESSAGE_LIMIT + 1) },
+        "B-10",
+        untouched.fetch,
+        ENV,
+      ),
+    (error: unknown) => error instanceof HeadwindActionError && String(HEADWIND_MESSAGE_LIMIT).length > 0 && /characters/.test(error.message),
+    "and words that would run off a 7-inch screen are refused with the count, not silently cut",
+  );
+  await assert.rejects(
+    () => takeHeadwindAction({ action: "NUKE", deviceNumber: "PHX-TAB-0002" }, "B-10", untouched.fetch, ENV),
+    HeadwindActionError,
+    "an action that does not exist",
+  );
+  assert.equal(untouched.calls.length, 0, "none of those reached the network");
+
+  const actions = stripComments(source("src/lib/devices/headwind/actions.ts"));
+  // 🔴 NOT HEADWIND'S MESSAGING PLUGIN, WHICH IS THE OBVIOUS ANSWER AND IS A DEAD END.
+  // `POST /rest/plugins/messaging/private/send` exists in the free build and sends push type
+  // `textMessage` — for which the stock agent has NO handler. It falls to the default branch and is
+  // re-broadcast to plugins, so the message reaches the tablet and nothing draws it.
+  assert.doesNotMatch(actions, /textMessage|plugins\/messaging/, "the messaging plugin is never used — the agent has no handler for it");
+  assert.match(actions, /messageType: "intent"/, "our own words reach our own app through the intent push");
+  assert.match(actions, /pkg: PHOENIX_APP_PACKAGE/, "aimed at the Phoenix app by package");
+  assert.match(actions, /"\/rest\/plugins\/phoenix-actions\/private"/, "and the four custody actions go to the add-on on our own box");
+  assert.match(actions, /status\?\.ready === true/, "🔴 which is ASKED, never assumed — a box rebuilt without it answers 404");
+  assert.match(actions, /entityType: "headwind_device_command"/, "every act writes a REQUIRED audit row");
+  assert.match(actions, /message,/, "and the words themselves are kept in it — they are the point of the act, not a credential");
+
+  // 🔴 THE INTENT NAMES ARE A CONTRACT WITH THE ANDROID BUILD, NOT A STRING THAT CAN BE TIDIED. Change
+  // one here without rebuilding and redistributing the APK and the button reports "sent" while the
+  // tablet does nothing — the exact failure the whole no-dead-buttons ruling exists to avoid. So the
+  // server's two names are pinned against the plugin that registers them.
+  assert.equal(PHOENIX_ALARM_INTENT, `${PHOENIX_APP_PACKAGE}.DEVICE_ALARM`);
+  const plugin = stripComments(source("mobile/plugins/with-phoenix-device-actions.js"));
+  assert.ok(plugin.includes(`const PACKAGE = "${PHOENIX_APP_PACKAGE}"`), "the plugin builds its actions from the same package name");
+  assert.ok(plugin.includes("${PACKAGE}.DEVICE_ALARM"), "and registers the alarm action the server sends");
+  assert.ok(plugin.includes("${PACKAGE}.DEVICE_MESSAGE"), "and the message action");
+  // 🔴 TWO MANIFEST FLAGS ARE LOAD-BEARING, AND BOTH FAIL SILENTLY. An activity that is not exported
+  // cannot be started by the Headwind agent at all — a different app — and one without
+  // CATEGORY_DEFAULT is not matched by an implicit action. Either way the push answers 200 and the
+  // tablet does nothing, which is the exact shape of failure the no-dead-buttons ruling is about.
+  assert.ok(plugin.includes('"android:exported": "true"'), "the activity is exported, or the agent cannot start it");
+  assert.ok(
+    plugin.includes('"android.intent.category.DEFAULT"'),
+    "and carries CATEGORY_DEFAULT, or an implicit action does not match it",
+  );
+  assert.match(plugin, /AudioManager\.STREAM_ALARM/, "the alarm plays on the ALARM stream, so it is heard with the ringer down");
+
+  // A plugin file that exists but is not registered does nothing at all, and nothing else would say so.
+  const appJson = source("mobile/app.json");
+  assert.match(appJson, /with-phoenix-device-actions/, "and the plugin is registered in app.json, or it never runs");
+}
+
+/** Phase 8 — the enrollment code the owner pastes once. */
+function runEnrollmentTests() {
+  const payload = {
+    "android.app.extra.PROVISIONING_ADMIN_EXTRAS_BUNDLE": {
+      "com.hmdm.BASE_URL": "https://mdm-console.satopharma.com",
+      "com.hmdm.CONFIG": "Reps",
+      "com.hmdm.SERVER_PROJECT": "",
+    },
+    "android.app.extra.PROVISIONING_DEVICE_ADMIN_COMPONENT_NAME": "com.hmdm.launcher/.AdminReceiver",
+    "android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_DOWNLOAD_LOCATION": "https://mdm.satopharma.com/files/hmdm.apk",
+    "android.app.extra.PROVISIONING_DEVICE_ADMIN_SIGNATURE_CHECKSUM": "gJD2YwtOiWJHkSMkkIfLRlj-quNqG1fb6v100QmzM9w=",
+  };
+
+  const parsed = parseHeadwindEnrollmentTemplate(`\n  ${JSON.stringify(payload)}  \n`);
+  assert.deepEqual(parsed.facts, {
+    agentPackage: "com.hmdm.launcher",
+    configurationName: "Reps",
+    downloadHost: "mdm.satopharma.com",
+    hasChecksum: true,
+    joinsWifi: false,
+    serverHost: "mdm-console.satopharma.com",
+  });
+  // Stored RE-SERIALISED: what goes in the row is known-parseable JSON rather than whatever the
+  // clipboard carried, and the extras bundle inside is copied through untouched.
+  assert.deepEqual(JSON.parse(parsed.payload), payload, "same keys, same values, normalised whitespace");
+
+  for (const [raw, pattern, because] of [
+    ["", /Paste the enrollment code/, "nothing pasted"],
+    ["hello", /Copy the whole JSON text/, "something that is not JSON at all"],
+    ["[]", /single JSON object/, "a list rather than an object"],
+    [JSON.stringify({ a: 1 }), /PROVISIONING_DEVICE_ADMIN_COMPONENT_NAME/, "no component name, so no tablet would know what to install"],
+    [
+      JSON.stringify({ "android.app.extra.PROVISIONING_DEVICE_ADMIN_COMPONENT_NAME": "com.hmdm.launcher/.AdminReceiver" }),
+      /no download location/,
+      "and no download location, so a factory-fresh tablet would have nothing to fetch",
+    ],
+  ] as const) {
+    assert.throws(
+      () => parseHeadwindEnrollmentTemplate(raw),
+      (error: unknown) => error instanceof HeadwindEnrollmentError && pattern.test(error.message),
+      because,
+    );
+  }
+
+  // 🔴 THE ONE THAT MATTERS MOST: A MANAGEENGINE CODE IS A VALID ANDROID PROVISIONING PAYLOAD. It has a
+  // component name and a download location, so every structural check passes — and a tablet enrolled
+  // with it joins the system being retired, silently, while the card reports success. The `com.hmdm.*`
+  // extras bundle is the only thing that tells the two apart.
+  const foreign = JSON.parse(JSON.stringify(payload)) as Record<string, unknown>;
+  foreign["android.app.extra.PROVISIONING_ADMIN_EXTRAS_BUNDLE"] = { "com.manageengine.SERVER": "https://mdm.manageengine.com" };
+  assert.throws(
+    () => parseHeadwindEnrollmentTemplate(JSON.stringify(foreign)),
+    (error: unknown) =>
+      error instanceof HeadwindEnrollmentError && /com\.hmdm\.BASE_URL/.test(error.message) && /ManageEngine/.test(error.message),
+    "a code for the other system is refused by name, not saved as a Headwind one",
+  );
+
+  const enrollment = stripComments(source("src/lib/devices/headwind/enrollment.ts"));
+  // 🔴 THE PAYLOAD IS A CREDENTIAL — anyone who scans it puts a tablet into the company's fleet with the
+  // agent as device owner. It never reaches an audit row, a log or the ordinary page load.
+  assert.doesNotMatch(enrollment, /newValues: \{[^}]*payload/, "the payload is never written into an audit row");
+  assert.doesNotMatch(enrollment, /console\.(log|info|warn|error|debug)/, "and never logged");
+  assert.match(enrollment, /revealed: true/, "looking at it is itself audited");
+  assert.match(enrollment, /getHeadwindEnrollmentSummary/, "the page load reads facts about the code, not the code");
+
+  const route = stripComments(source("app/api/devices/headwind/enrollment/route.ts"));
+  assert.match(route, /assertPermission\(access, "company_devices", "approve"\)/, "Super Admin only");
+  // 🔴 THE PAGE LOAD MUST NOT CARRY THE CODE. Anyone who scans it enrols a tablet into the company's
+  // fleet with the agent as device owner, so it is handed out only when a person explicitly asks —
+  // which is also what makes the reveal worth an audit row. Sliced to the GET body on purpose: a
+  // whole-file search matches the import and the POST and proves nothing.
+  const getBody = route.slice(
+    route.indexOf("export async function GET"),
+    route.indexOf("export async function POST"),
+  );
+  assert.ok(getBody.length > 0, "the enrollment route has both a GET and a POST, in that order");
+  assert.doesNotMatch(getBody, /(reveal|read)HeadwindEnrollmentQr/, "the page load reads facts about the code, never the code itself");
+  assert.match(route, /payload\.show === true/, "and the code comes back only on an explicit ask");
+}
+
+/** Phase 9 — console logins, which are free and uncapped on our own server. */
+async function runConsoleUserTests() {
+  const roles = consoleRolesFrom([
+    { id: 2, name: "Admin" },
+    { id: 1, name: "Zed" },
+    { id: "x", name: "not a row" },
+    { id: 3 },
+  ]);
+  assert.deepEqual(roles, [{ id: 2, name: "Admin" }, { id: 1, name: "Zed" }], "rows without a number id or a name are dropped, and the rest sort by name");
+
+  const users = consoleUsersFrom(
+    [
+      { email: "   ", id: 5, login: "zoe", name: "Zoe", userRoleId: 2 },
+      { id: 6, login: "amir", userRoleId: 99 },
+      { id: 7 },
+      { login: "noid" },
+      { enabled: false, id: 8, login: "off" },
+    ],
+    roles,
+  );
+  assert.deepEqual(users.map((user) => user.login), ["amir", "off", "zoe"], "a row with no login or no id is not a person");
+  assert.equal(users[2].roleName, "Admin", "a role id is resolved to the name a person reads");
+  assert.equal(users[0].roleName, null, "🔴 and a role the server did not list reads as unknown, never as the first one in the list");
+  assert.equal(users[2].email, null, "a blank email is absent, not an empty string");
+  assert.equal(users[1].enabled, false, "a login switched off says so");
+  assert.equal(users[0].enabled, true, "and one with no flag at all is in use — absent means in use, not off");
+
+  const untouched = makeFetch({ api: [{ body: { status: "OK" }, status: 200 }] });
+  for (const [input, because] of [
+    [{ login: "  ", password: "a-long-enough-password", roleId: 2 }, "no login name"],
+    [{ login: "omar gawish", password: "a-long-enough-password", roleId: 2 }, "a space in a login, which the server would take and nobody could type"],
+    [{ login: "omar", password: "a-long-enough-password", roleId: 1.5 }, "a role that is not a role"],
+    [{ login: "omar", password: "short", roleId: 2 }, "and a password this login could wipe a fleet with"],
+  ] as const) {
+    await assert.rejects(
+      () => createHeadwindConsoleUser(input as never, "B-10", untouched.fetch, ENV),
+      HeadwindUserError,
+      because,
+    );
+  }
+  await assert.rejects(
+    () => removeHeadwindConsoleUser({ login: "omar", userId: Number.NaN }, "B-10", untouched.fetch, ENV),
+    HeadwindUserError,
+    "and a removal with no login named",
+  );
+  assert.equal(untouched.calls.length, 0, "every refusal happened before the network");
+  assert.ok(HEADWIND_MIN_PASSWORD >= 12, "the minimum is set by what this login can do, not by habit");
+
+  const usersSource = stripComments(source("src/lib/devices/headwind/users.ts"));
+  assert.match(usersSource, /newPassword: input\.password/, "the password goes up to the server, plaintext over HTTPS — the server's own contract");
+  // 🔴 AND IT STOPS THERE. Never in the audit row, never in the returned message, never in a log.
+  assert.doesNotMatch(usersSource, /newValues: \{[^}]*[Pp]assword/, "it is never written into an audit row");
+  assert.doesNotMatch(usersSource, /message:[\s\S]{0,200}input\.password/, "nor into the sentence handed back to the browser");
+  assert.doesNotMatch(usersSource, /console\.(log|info|warn|error|debug)/, "nor logged");
+  assert.match(usersSource, /"\/rest\/private\/roles"/, "roles come from the server, never a hard-coded list that drifts");
+}
+
 function runRemoteScreenTests() {
   assert.equal(isRustDeskConfigured({} as NodeJS.ProcessEnv), false);
   assert.equal(isRustDeskConfigured(ENV), true);
@@ -652,11 +1233,25 @@ function runErrorMappingTests() {
     [new HeadwindCommandInputError("say which tablet"), 400, "a mistake in what was sent"],
     [new HeadwindRequestError(500, "the server said no"), 502, "the far end refusing"],
     [new HeadwindAppInputError("say which tablet"), 400, "and an app read with no tablet named"],
+    [new HeadwindWipeError("say which tablet"), 400, "a wipe that never left Phoenix is the caller's own mistake"],
+    [new HeadwindActionError("say which tablet"), 400, "so is an action with nothing named"],
+    [new HeadwindConfigurationError("not a colour"), 400, "and a colour that is not a colour"],
+    [new HeadwindUploadError("that is not an APK"), 400, "and a file that cannot be installed"],
+    [new HeadwindLocationError("say which tablet"), 400, "and a locate with no tablet"],
+    [new HeadwindUserError("password too short"), 400, "and a login that would not be safe"],
+    [new HeadwindEnrollmentError("paste the code"), 400, "and an enrollment code that is not one"],
     [new Error("something else"), 500, "anything else"],
   ];
   for (const [error, status, because] of cases) {
     assert.equal(headwindErrorResponse(error, "fallback").status, status, because);
   }
+
+  // 🔴 A HALF-FINISHED WIPE IS NOT A 400, AND THE DIFFERENCE IS THE POINT OF THE `partial` FLAG. A 400
+  // says the person asked for something impossible; here instructions ARE already on their way to a
+  // tablet and the far end stopped answering. Reading that as the person's mistake is how a log at 4am
+  // tells the wrong story about a tablet somebody still has.
+  const partial = headwindErrorResponse(new HeadwindWipeError("2 of 4 sent", true), "fallback");
+  assert.equal(partial.status, 502, "a wipe that got part-way is the far end's failure, not the caller's");
 }
 
 function runDoorTests() {
@@ -665,6 +1260,16 @@ function runDoorTests() {
     ["/api/devices/headwind", ["GET", "POST"]],
     ["/api/devices/headwind/imei", ["POST"]],
     ["/api/devices/headwind/apps", ["POST"]],
+    // 🔴 EVERY DOOR ADDED FOR THE FULL BUILD, ON THE SAME LOCK. Between them these erase a tablet's
+    // data, factory-reset it, change what a hundred tablets run, hand out a provisioning credential and
+    // create logins that can do all of that again from outside Phoenix. A route missing from the
+    // registry is not refused by anything — `system-navigation.ts` hiding a tile is UX, not a boundary.
+    ["/api/devices/headwind/wipe", ["GET", "POST"]],
+    ["/api/devices/headwind/configurations", ["GET", "POST"]],
+    ["/api/devices/headwind/upload", ["POST"]],
+    ["/api/devices/headwind/actions", ["GET", "POST"]],
+    ["/api/devices/headwind/enrollment", ["GET", "POST"]],
+    ["/api/devices/headwind/users", ["GET", "POST"]],
   ] as const) {
     for (const method of methods) {
       const entry = findAccessRegistryEntry(pattern, method);
@@ -712,6 +1317,11 @@ function runShipsDarkTests() {
   const page = stripComments(source("app/(admin)/devices/tablets/page.tsx"));
   assert.match(page, /const headwindReady = isHeadwindConfigured\(\);/);
   assert.match(page, /\{headwindReady \? <HeadwindFleet \/> : null\}/, "no settings, no section — and no fetch either");
+  // 🔴 ALL THREE SECTIONS, NOT ONE. The enrollment card reads Phoenix's own table rather than the
+  // Headwind box, so it is the one that would happily render with no server at all — and an enrollment
+  // code for a server that does not exist is a code that enrolls a tablet into nothing.
+  assert.match(page, /\{headwindReady \? <HeadwindEnrollment \/> : null\}/, "the enrollment card ships dark with the rest");
+  assert.match(page, /\{headwindReady \? <HeadwindServerSettings \/> : null\}/, "and so do the fleet-wide settings");
   assert.ok(
     page.indexOf("<ManageEngineFleet") < page.indexOf("<HeadwindFleet"),
     "ManageEngine stays above during the changeover: a tablet is in exactly one of the two, and today all of them are in the first",
@@ -722,6 +1332,125 @@ function runShipsDarkTests() {
   assert.doesNotMatch(stripComments(fleet), /stopsAfterTrial|TRIAL_STOP/, "screen viewing and control cost nothing here");
   assert.match(fleet, /FREE_CHIP/, "and they say so in a chip, because colour is never the only signal");
   assert.match(fleet, /PENDING_CHIP/, "an action that cannot be sent yet says so in words too");
+}
+
+/**
+ * The box's own recipe — the one place where a silent, invisible regression is possible.
+ *
+ * 🔴 WHY THIS IS A TEST AND NOT A NOTE. Lock, lost mode, factory reset and reset-the-screen-lock are
+ * carried by our own add-on baked into the image (`infra/headwind-phoenix-actions/`). The tablets obey
+ * those five fields as shipped; the STOCK free server has no way to set them. So flipping this service
+ * back to `image: headwindmdm/hmdm:…` — which is exactly what a tidy-up that "removes an unnecessary
+ * build step" would do — breaks four custody actions on a hundred tablets, with no error anywhere in
+ * this repository and a refusal on the box that reads like a broken tablet. Nothing else would catch it.
+ */
+function runServerImageTests() {
+  const compose = source("docker-compose.headwind.yml");
+  const hmdm = compose.slice(compose.indexOf("\n  hmdm:"), compose.indexOf("\n  hbbs:"));
+  assert.ok(hmdm.includes("  hmdm:"), "the compose file still has an hmdm service to pin");
+
+  assert.match(
+    hmdm,
+    /build:\s*\n\s*context: \.\/infra\/headwind-phoenix-actions\n/,
+    "the tablet server is BUILT from our own Dockerfile — the stock image cannot send lock, lost mode, factory reset or a screen-lock reset",
+  );
+  assert.match(
+    hmdm,
+    /args:\s*\n\s*HEADWIND_IMAGE_TAG: \$\{HEADWIND_IMAGE_TAG\}/,
+    "and it is built against the SAME pinned tag the server runs, or the add-on compiles against one version and runs against another",
+  );
+  assert.doesNotMatch(
+    hmdm,
+    /image: headwindmdm\/hmdm:/,
+    "never back to the stock image: four custody actions would go dark with no error in this repo",
+  );
+
+  // The Dockerfile has to extend the running tag rather than pick one, for the same reason.
+  const dockerfile = source("infra/headwind-phoenix-actions/Dockerfile");
+  assert.match(dockerfile, /ARG HEADWIND_IMAGE_TAG/, "the tag comes in from compose");
+  assert.doesNotMatch(dockerfile, /FROM headwindmdm\/hmdm:latest/, "never `latest` on a hundred company tablets");
+}
+
+/**
+ * The console the owner actually presses — the panel kit, the per-tablet sections and the fleet-wide
+ * ones.
+ *
+ * 🔴 THESE ARE SOURCE PINS, NOT RENDER TESTS, AND THAT IS DELIBERATE. There is no DOM in this suite,
+ * and the things worth guarding here are not what a render would show: that an action out of reach is
+ * a SENTENCE and never a greyed control, that an armed press names what it destroys, that a wipe's
+ * scope cannot be chosen by the browser, and that nothing puts a credential where a credential must
+ * not go. Each of those is a property of the source, and each of them fails silently on a screen.
+ */
+function runConsoleUiTests() {
+  const kit = stripComments(source("src/components/devices/headwind-panel-kit.tsx"));
+  const panel = stripComments(source("src/components/devices/headwind-tablet-panel.tsx"));
+  const settings = stripComments(source("src/components/devices/headwind-server-settings.tsx"));
+  const enrollment = stripComments(source("src/components/devices/headwind-enrollment.tsx"));
+
+  // 🔴 THE GUARANTEE THAT KEEPS ONE TABLET'S FACTS OFF ANOTHER TABLET'S HEADING. The answer is stored
+  // beside the URL it answers, so "loading" is derived during the render that changed the URL. Lose
+  // this and a stale read renders under the wrong tablet — on a custody console, in front of somebody
+  // deciding whether to erase it.
+  assert.match(kit, /const settled = state\.answered && state\.url === url;/, "the read hook keys its answer to its own URL");
+  assert.match(kit, /export function CannotDo\(/, "and the kit owns the 'why not' sentence, so no panel invents its own");
+
+  // ONE copy of the hook. A second would be the one that quietly loses the guarantee above.
+  assert.doesNotMatch(panel, /function useRead</, "the tablet panel imports the read hook rather than keeping a second copy");
+  assert.doesNotMatch(settings, /function useRead</, "and so does the server-settings screen");
+  for (const [name, text] of [["the tablet panel", panel], ["the server settings", settings]] as const) {
+    assert.match(text, /@\/components\/devices\/headwind-panel-kit/, `${name} takes its pieces from the kit`);
+  }
+
+  // 🔴 THE OWNER'S RULING OF 2026-09-25 MADE MECHANICAL: "no, do not build a dead buttons." An action
+  // this box cannot honour renders as a sentence carrying the server's own reason, in the place the
+  // button would have been. A `disabled` control keyed on availability is exactly the shape that is
+  // refused — it invites a press, teaches nothing, and reads as "not built yet" whether the cause is a
+  // box that needs rebuilding or a permission only a manufacturer's signature grants.
+  assert.match(panel, /<CannotDo key=\{action\.id\} label=\{action\.label\} reason=\{action\.unavailableReason \?\? ""\}/, "an unavailable action is a sentence");
+  assert.doesNotMatch(panel, /disabled=\{!?\s*action\.available/, "and never a greyed button");
+  assert.match(panel, /const available = actions\.filter\(\(action\) => action\.available\);/, "only the available ones become buttons");
+
+  // The message counter is a COPY of the server's limit, because importing it would drag the audit
+  // writer into a browser bundle. Pinned together so the two cannot drift apart unnoticed.
+  assert.match(panel, new RegExp(`const MESSAGE_LIMIT = ${HEADWIND_MESSAGE_LIMIT};`), "the console counts to the server's own limit");
+
+  // 🔴 THE WIPE'S SCOPE IS NOT A PARAMETER — the same rule the route is pinned on, at the other end of
+  // the wire. A body that can carry apps or folders is a wipe that can be aimed from a browser.
+  assert.match(panel, /postJson<\{ message: string \}>\("\/api\/devices\/headwind\/wipe", \{ deviceNumber \}\)/, "the wipe body names a tablet and nothing else");
+  assert.doesNotMatch(panel, /apps: \[|folders: \[/, "the browser cannot choose what a wipe erases");
+  // And the second press says out loud what goes, from the server's own list — never "confirm".
+  assert.match(panel, /Press again to erase \$\{erases\.join\(", "\)\} from \$\{deviceNumber\}/, "the armed wipe names the camera roll out loud, because the owner chose the scope that takes field photos");
+  assert.doesNotMatch(panel, /Are you sure|confirm\?/i, "no dialog stands in for saying what happens");
+
+  // 🔴 NOTHING HERE KEEPS A CREDENTIAL ANYWHERE A CREDENTIAL SURVIVES. The enrollment payload and a new
+  // console password both live in component state for as long as they are on screen and nowhere else.
+  for (const [name, text] of [
+    ["the tablet panel", panel],
+    ["the server settings", settings],
+    ["the enrollment card", enrollment],
+  ] as const) {
+    assert.doesNotMatch(text, /localStorage|sessionStorage|document\.cookie/, `${name} stores nothing in the browser`);
+    assert.doesNotMatch(text, /console\.(log|info|warn|error|debug)/, `${name} logs nothing`);
+  }
+  assert.match(enrollment, /requestJson<RevealedTemplate>\("\/api\/devices\/headwind\/enrollment", \{ show: true \}\)/, "the code comes back only when somebody asks for it");
+  assert.doesNotMatch(enrollment, /enrollment\?.*payload|payload=\$\{/, "and never through a URL, which is logged by everything it passes");
+  assert.match(settings, /autoComplete="new-password"/, "a new console password is not offered from a browser's saved logins");
+  assert.match(settings, /\.\.\.NO_USER_PENDING,/, "and the whole form is reset on success, which is what drops it");
+
+  // 🔒 THE SQUARE-EDGE GOLDEN RULE, and the no-ellipsis rule, on every new surface. Both are decided
+  // by a class name, so both regress silently.
+  for (const [name, text] of [
+    ["the panel kit", kit],
+    ["the tablet panel", panel],
+    ["the server settings", settings],
+    ["the enrollment card", enrollment],
+  ] as const) {
+    assert.doesNotMatch(text, /\brounded(-|\b)/, `${name} keeps square corners`);
+    assert.doesNotMatch(text, /\btruncate\b|text-ellipsis|line-clamp/, `${name} wraps text rather than cutting it`);
+    // 🔒 THE FITS-THE-SCREEN GOLDEN RULE. `overflow-x-auto` over a min-width IS the bug it looks like
+    // the fix for — it hides a too-wide layout behind a sideways scroll instead of making it fit.
+    assert.doesNotMatch(text, /overflow-x-auto|min-w-\[/, `${name} fits the screen rather than scrolling sideways`);
+  }
 }
 
 /**
@@ -848,8 +1577,17 @@ export async function runHeadwindBridgeTests() {
   await runCommandTests();
   runAppsTests();
   await runAppRemovalTests();
+  await runCorporateWipeTests();
+  await runConfigurationTests();
+  await runUploadTests();
+  await runLocationTests();
+  await runCustodyActionTests();
+  runEnrollmentTests();
+  await runConsoleUserTests();
   runRemoteScreenTests();
   runErrorMappingTests();
   runDoorTests();
+  runServerImageTests();
+  runConsoleUiTests();
   runShipsDarkTests();
 }

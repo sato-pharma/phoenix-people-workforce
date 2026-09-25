@@ -1,0 +1,631 @@
+"use client";
+
+/**
+ * The company's own tablet server, set from Phoenix — the sets of rules the tablets follow, what goes
+ * onto them, and who can sign in to the server itself.
+ *
+ * WHY THIS IS NOT ON THE FLEET TABLE. Everything here is fleet-wide: a change to a set of rules
+ * reaches every tablet carrying them at its next check-in, and a new console login can reach the whole
+ * fleet. Putting it beneath a single tablet's row would make a company-wide change look like a
+ * per-tablet one.
+ *
+ * 🔴 THE WHOLE CONFIGURATION OBJECT NEVER REACHES THIS COMPONENT. Headwind's configuration carries
+ * the tablet's admin password in clear text — the Swagger says MD5 and the source disagrees — so the
+ * route hands back facts and the home-screen look only. Nothing here can print it, log it or put it in
+ * a URL, because it never has it.
+ *
+ * 🔴 AND A PASSWORD TYPED HERE GOES ONE WAY. The new-login form sends it and drops it: it is not read
+ * back, not returned by any route, and not written into the audit row. There is no "show the password"
+ * anywhere on this page, by design — Headwind cannot give one back either.
+ *
+ * DESIGN IDENTITY is the rest of the Rep Tablets page — slate borders, SQUARE corners, 9px uppercase
+ * micro-labels, wrapped text with nothing truncated, and Cairo times.
+ */
+
+import { Loader2, Upload } from "lucide-react";
+import { useState } from "react";
+
+import {
+  Busy,
+  Done,
+  Failed,
+  MICRO_LABEL,
+  PANEL_ACTION,
+  PANEL_ARMED,
+  PANEL_INPUT,
+  Panel,
+  postJson,
+  useRead,
+} from "@/components/devices/headwind-panel-kit";
+
+const PRIMARY_BUTTON =
+  "inline-flex items-center gap-2 border border-slate-900 bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60";
+
+/** The three the tablet's launcher understands — the same list as `HEADWIND_ICON_SIZES`. */
+const ICON_SIZES = ["SMALL", "MEDIUM", "LARGE"] as const;
+
+type ConfigurationSummary = {
+  id: number;
+  name: string;
+  description: string | null;
+  kioskMode: boolean;
+  deviceCount: number | null;
+};
+
+type Branding = {
+  desktopHeader: string | null;
+  desktopHeaderTemplate: string | null;
+  backgroundColor: string | null;
+  textColor: string | null;
+  backgroundImageUrl: string | null;
+  iconSize: string | null;
+  mainAppId: number | null;
+  kioskMode: boolean;
+};
+
+type ConsoleUser = {
+  id: number;
+  login: string;
+  name: string | null;
+  email: string | null;
+  roleId: number | null;
+  roleName: string | null;
+  enabled: boolean;
+};
+type ConsoleRole = { id: number; name: string };
+
+function failureText(caught: unknown, fallback: string): string {
+  return caught instanceof Error && caught.message ? caught.message : fallback;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────────────────────────
+ * The home screen of one set of rules.
+ * ───────────────────────────────────────────────────────────────────────────────────────────────── */
+
+type BrandingForm = {
+  desktopHeader: string;
+  desktopHeaderTemplate: string;
+  backgroundColor: string;
+  textColor: string;
+  backgroundImageUrl: string;
+  iconSize: string;
+};
+
+type BrandingState = {
+  /** Which set of rules these edits belong to — derived, like every other keyed state here. */
+  configurationId: number;
+  form: BrandingForm | null;
+  busy: boolean;
+  notice: string | null;
+  failure: string | null;
+};
+
+function formOf(branding: Branding): BrandingForm {
+  return {
+    backgroundColor: branding.backgroundColor ?? "",
+    backgroundImageUrl: branding.backgroundImageUrl ?? "",
+    desktopHeader: branding.desktopHeader ?? "",
+    desktopHeaderTemplate: branding.desktopHeaderTemplate ?? "",
+    iconSize: branding.iconSize ?? "",
+    textColor: branding.textColor ?? "",
+  };
+}
+
+function BrandingPanel({ configurationId }: { configurationId: number }) {
+  const read = useRead<{ configuration: ConfigurationSummary; branding: Branding }>(
+    `/api/devices/headwind/configurations?configurationId=${configurationId}`,
+  );
+  const [state, setState] = useState<BrandingState>({
+    busy: false,
+    configurationId,
+    failure: null,
+    form: null,
+    notice: null,
+  });
+
+  const own =
+    state.configurationId === configurationId
+      ? state
+      : { busy: false, configurationId, failure: null, form: null, notice: null };
+  // The server's own values until the first keystroke, then whatever is being typed. Derived during
+  // the render, so switching to another set of rules cannot leave one set's edits in another's boxes.
+  const form = own.form ?? (read.data ? formOf(read.data.branding) : null);
+
+  function set(field: keyof BrandingForm, value: string) {
+    if (!form) return;
+    setState({ ...own, failure: null, form: { ...form, [field]: value }, notice: null });
+  }
+
+  async function save() {
+    if (!form) return;
+    setState({ ...own, busy: true, failure: null, form, notice: null });
+    try {
+      const result = await postJson<{ branding: Branding; message: string }>(
+        "/api/devices/headwind/configurations",
+        { change: "branding", configurationId, ...form },
+      );
+      setState({ ...own, busy: false, failure: null, form: formOf(result.branding), notice: result.message });
+    } catch (caught: unknown) {
+      setState({
+        ...own,
+        busy: false,
+        failure: failureText(caught, "Could not change the look of these tablet rules."),
+        form,
+        notice: null,
+      });
+    }
+  }
+
+  return (
+    <div className="border-t border-slate-100 pt-3">
+      <p className={MICRO_LABEL}>The tablet&rsquo;s home screen</p>
+      {read.loading ? <Busy what="the home-screen settings" /> : null}
+      {read.error ? <Failed message={read.error} /> : null}
+      {own.notice ? <Done message={own.notice} /> : null}
+      {own.failure ? <Failed message={own.failure} /> : null}
+      {form ? (
+        <div className="mt-2 space-y-2">
+          {/*
+            🔴 SAID ON THE PAGE, NOT ONLY IN THE CODE. `kioskMode` puts the agent's own launcher in
+            front and shows only the apps these rules allow — but TRUE pinning is a stub in the free
+            agent, so a determined person can still reach Android's own settings. A tablet handed out
+            in the belief it is sealed, when it is not, is how a "kiosk" costs somebody money.
+          */}
+          <p className="break-words text-[11px] font-semibold text-slate-500">
+            {read.data?.branding.kioskMode
+              ? "These rules put the company's own home screen in front, showing only the apps they allow. It is a managed home screen, not a sealed cage — the free agent does not do true pinning, so someone determined can still reach Android's own settings."
+              : "These rules leave the tablet's ordinary home screen in place. Turning the company home screen on is done in the Headwind console."}
+          </p>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <label className="block min-w-0">
+              <span className={`block ${MICRO_LABEL}`}>Title across the top</span>
+              <input
+                className={`mt-1 ${PANEL_INPUT}`}
+                onChange={(event) => set("desktopHeaderTemplate", event.target.value)}
+                placeholder="Sato Pharma · rep tablet"
+                type="text"
+                value={form.desktopHeaderTemplate}
+              />
+            </label>
+            <label className="block min-w-0">
+              <span className={`block ${MICRO_LABEL}`}>Where the title sits</span>
+              <input
+                className={`mt-1 ${PANEL_INPUT}`}
+                onChange={(event) => set("desktopHeader", event.target.value)}
+                placeholder="TOP"
+                type="text"
+                value={form.desktopHeader}
+              />
+            </label>
+            <label className="block min-w-0">
+              <span className={`block ${MICRO_LABEL}`}>Background colour</span>
+              <input
+                className={`mt-1 ${PANEL_INPUT}`}
+                onChange={(event) => set("backgroundColor", event.target.value)}
+                placeholder="#0A527D"
+                type="text"
+                value={form.backgroundColor}
+              />
+            </label>
+            <label className="block min-w-0">
+              <span className={`block ${MICRO_LABEL}`}>Text colour</span>
+              <input
+                className={`mt-1 ${PANEL_INPUT}`}
+                onChange={(event) => set("textColor", event.target.value)}
+                placeholder="#FFFFFF"
+                type="text"
+                value={form.textColor}
+              />
+            </label>
+            <label className="block min-w-0">
+              <span className={`block ${MICRO_LABEL}`}>Background picture</span>
+              <input
+                className={`mt-1 ${PANEL_INPUT}`}
+                onChange={(event) => set("backgroundImageUrl", event.target.value)}
+                placeholder="https://…/wallpaper.png"
+                type="text"
+                value={form.backgroundImageUrl}
+              />
+            </label>
+            <label className="block min-w-0">
+              <span className={`block ${MICRO_LABEL}`}>Icon size</span>
+              <select
+                className={`mt-1 ${PANEL_INPUT}`}
+                onChange={(event) => set("iconSize", event.target.value)}
+                value={form.iconSize}
+              >
+                <option value="">Leave it as the tablet has it</option>
+                {ICON_SIZES.map((size) => (
+                  <option key={size} value={size}>
+                    {size === "SMALL" ? "Small" : size === "MEDIUM" ? "Medium" : "Large"}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <p className="break-words text-[11px] font-semibold text-slate-500">
+            A box left empty clears that setting on the tablets. Colours are six-digit hex, like
+            <span className="font-mono"> #0A527D</span>.
+          </p>
+          <button className={PANEL_ACTION} disabled={own.busy} onClick={() => void save()} type="button">
+            {own.busy ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> : null}
+            Save the home screen
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────────────────────────
+ * Sending an app or a file onto the tablets.
+ * ───────────────────────────────────────────────────────────────────────────────────────────────── */
+
+type UploadState = { busy: boolean; notice: string | null; failure: string | null };
+
+/**
+ * 🔴 THERE IS NO "INSTALL" INSTRUCTION IN HEADWIND, AND THIS IS WHY THE FORM ASKS FOR A SET OF RULES.
+ * An app arrives on a tablet because it is in the rules that tablet follows, not because a button was
+ * pressed at it. So the upload puts the file on the server AND into these rules in one go; every
+ * tablet carrying them installs it at its next check-in. Leaving the rules out would upload something
+ * that reaches no tablet at all — which looks exactly like success.
+ */
+function UploadPanel({ configurationId }: { configurationId: number }) {
+  const [state, setState] = useState<UploadState>({ busy: false, failure: null, notice: null });
+
+  async function send(form: HTMLFormElement) {
+    const body = new FormData(form);
+    body.set("configurationId", String(configurationId));
+    setState({ busy: true, failure: null, notice: null });
+    try {
+      const response = await fetch("/api/devices/headwind/upload", { body, cache: "no-store", method: "POST" });
+      let payload: unknown = null;
+      try {
+        payload = await response.json();
+      } catch {
+        payload = null;
+      }
+      if (!response.ok) {
+        const failure = (payload ?? {}) as { message?: unknown };
+        throw new Error(
+          typeof failure.message === "string" && failure.message
+            ? failure.message
+            : "The server answered with an error and no explanation.",
+        );
+      }
+      form.reset();
+      setState({ busy: false, failure: null, notice: (payload as { message: string }).message });
+    } catch (caught: unknown) {
+      setState({
+        busy: false,
+        failure: failureText(caught, "Could not send that to the tablet server."),
+        notice: null,
+      });
+    }
+  }
+
+  return (
+    <div className="border-t border-slate-100 pt-3">
+      <p className={MICRO_LABEL}>Put an app or a file on these tablets</p>
+      {state.notice ? <Done message={state.notice} /> : null}
+      {state.failure ? <Failed message={state.failure} /> : null}
+      <form
+        className="mt-2 space-y-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void send(event.currentTarget);
+        }}
+      >
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <label className="block min-w-0">
+            <span className={`block ${MICRO_LABEL}`}>What it is</span>
+            <select className={`mt-1 ${PANEL_INPUT}`} defaultValue="app" name="kind">
+              <option value="app">An Android app (.apk)</option>
+              <option value="file">A file for the tablets to hold</option>
+            </select>
+          </label>
+          <label className="block min-w-0">
+            <span className={`block ${MICRO_LABEL}`}>The file</span>
+            <input className={`mt-1 ${PANEL_INPUT}`} name="file" required type="file" />
+          </label>
+        </div>
+        <p className="break-words text-[11px] font-semibold text-slate-500">
+          An app has to be a <span className="font-mono">.apk</span> — the <span className="font-mono">.aab</span>{" "}
+          bundle Google Play builds from cannot be installed on a tablet. It goes onto every tablet following
+          these rules at its next check-in.
+        </p>
+        <button className={PRIMARY_BUTTON} disabled={state.busy} type="submit">
+          {state.busy ? <Loader2 aria-hidden className="size-4 animate-spin" /> : <Upload aria-hidden className="size-4" />}
+          Send it to the tablets
+        </button>
+      </form>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────────────────────────
+ * The sets of rules.
+ * ───────────────────────────────────────────────────────────────────────────────────────────────── */
+
+function ConfigurationsPanel() {
+  const read = useRead<{ configurations: ConfigurationSummary[] }>("/api/devices/headwind/configurations");
+  const [openId, setOpenId] = useState<number | null>(null);
+
+  const configurations = read.data?.configurations ?? [];
+
+  return (
+    <Panel title="The sets of rules the tablets follow">
+      {read.loading ? <Busy what="the tablet rules" /> : null}
+      {read.error ? <Failed message={read.error} /> : null}
+      {read.data && configurations.length === 0 ? (
+        <p className="text-[11px] font-semibold text-slate-500">
+          The server holds no sets of rules yet. One is made in the Headwind console; every tablet enrolled
+          lands on the one its enrollment code names.
+        </p>
+      ) : null}
+      {configurations.length > 0 ? (
+        <ul className="space-y-2">
+          {configurations.map((configuration) => (
+            <li className="border border-slate-200 px-3 py-2" key={configuration.id}>
+              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                <span className="break-words text-[11px] font-bold text-slate-900">{configuration.name}</span>
+                <span className="text-[11px] font-semibold text-slate-500">
+                  {configuration.deviceCount === null
+                    ? "Tablet count not reported"
+                    : `${configuration.deviceCount} tablet${configuration.deviceCount === 1 ? "" : "s"}`}
+                </span>
+                <span className="border border-slate-300 px-1 text-[8px] font-black uppercase tracking-[0.12em] text-slate-500">
+                  {configuration.kioskMode ? "Company home screen" : "Ordinary home screen"}
+                </span>
+                <button
+                  className={PANEL_ACTION}
+                  onClick={() => setOpenId((current) => (current === configuration.id ? null : configuration.id))}
+                  type="button"
+                >
+                  {openId === configuration.id ? "Close" : "Open"}
+                </button>
+              </div>
+              {configuration.description ? (
+                <p className="mt-0.5 break-words text-[11px] font-semibold text-slate-500">
+                  {configuration.description}
+                </p>
+              ) : null}
+              {openId === configuration.id ? (
+                <div className="mt-2 space-y-3">
+                  <BrandingPanel configurationId={configuration.id} />
+                  <UploadPanel configurationId={configuration.id} />
+                </div>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </Panel>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────────────────────────
+ * Who can sign in to the tablet server.
+ * ───────────────────────────────────────────────────────────────────────────────────────────────── */
+
+type UsersState = {
+  round: number;
+  armed: number | null;
+  busy: boolean;
+  notice: string | null;
+  failure: string | null;
+  login: string;
+  name: string;
+  email: string;
+  password: string;
+  roleId: string;
+};
+
+const NO_USER_PENDING: UsersState = {
+  armed: null,
+  busy: false,
+  email: "",
+  failure: null,
+  login: "",
+  name: "",
+  notice: null,
+  password: "",
+  roleId: "",
+  round: 0,
+};
+
+function UsersPanel() {
+  const [state, setState] = useState<UsersState>(NO_USER_PENDING);
+  const read = useRead<{ users: ConsoleUser[]; roles: ConsoleRole[]; note: string }>(
+    `/api/devices/headwind/users?round=${state.round}`,
+  );
+
+  async function add() {
+    setState({ ...state, busy: true, failure: null, notice: null });
+    try {
+      const result = await postJson<{ message: string }>("/api/devices/headwind/users", {
+        email: state.email || null,
+        login: state.login,
+        name: state.name || null,
+        password: state.password,
+        roleId: Number(state.roleId),
+      });
+      setState({
+        ...NO_USER_PENDING,
+        // 🔴 THE PASSWORD IS DROPPED HERE AND NOWHERE IS IT KEPT. Resetting the whole form is what
+        // takes it out of component state; nothing reads it back, because nothing can.
+        notice: result.message,
+        round: state.round + 1,
+      });
+    } catch (caught: unknown) {
+      setState({
+        ...state,
+        busy: false,
+        failure: failureText(caught, "Could not add that login."),
+        notice: null,
+      });
+    }
+  }
+
+  async function remove(user: ConsoleUser) {
+    if (state.armed !== user.id) {
+      setState({ ...state, armed: user.id, failure: null, notice: null });
+      return;
+    }
+    setState({ ...state, armed: null, busy: true, failure: null, notice: null });
+    try {
+      const result = await postJson<{ message: string }>("/api/devices/headwind/users", {
+        login: user.login,
+        remove: true,
+        userId: user.id,
+      });
+      setState({ ...state, armed: null, busy: false, failure: null, notice: result.message, round: state.round + 1 });
+    } catch (caught: unknown) {
+      setState({
+        ...state,
+        armed: null,
+        busy: false,
+        failure: failureText(caught, "Could not remove that login."),
+        notice: null,
+      });
+    }
+  }
+
+  const users = read.data?.users ?? [];
+  const roles = read.data?.roles ?? [];
+
+  return (
+    <Panel title="Who can sign in to the tablet server">
+      {read.loading ? <Busy what="the logins" /> : null}
+      {read.error ? <Failed message={read.error} /> : null}
+      {state.notice ? <Done message={state.notice} /> : null}
+      {state.failure ? <Failed message={state.failure} /> : null}
+      {read.data ? (
+        <div className="space-y-3">
+          <p className="break-words text-[11px] font-semibold text-slate-500">{read.data.note}</p>
+          {users.length > 0 ? (
+            <ul className="space-y-1">
+              {users.map((user) => (
+                <li className="flex flex-wrap items-baseline gap-x-2 gap-y-1" key={user.id}>
+                  <span className="break-words text-[11px] font-bold text-slate-900">{user.name ?? user.login}</span>
+                  <span className="break-all text-[11px] font-semibold text-slate-500">{user.login}</span>
+                  {user.roleName ? (
+                    <span className="border border-slate-300 px-1 text-[8px] font-black uppercase tracking-[0.12em] text-slate-500">
+                      {user.roleName}
+                    </span>
+                  ) : null}
+                  {user.enabled ? null : (
+                    <span className="border border-amber-500 px-1 text-[8px] font-black uppercase tracking-[0.12em] text-amber-700">
+                      Switched off
+                    </span>
+                  )}
+                  <button
+                    className={state.armed === user.id ? PANEL_ARMED : PANEL_ACTION}
+                    disabled={state.busy}
+                    onClick={() => void remove(user)}
+                    type="button"
+                  >
+                    {state.armed === user.id ? `Press again to remove ${user.login}` : "Remove"}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+
+          <div className="border-t border-slate-100 pt-3">
+            <p className={MICRO_LABEL}>Add a login</p>
+            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <label className="block min-w-0">
+                <span className={`block ${MICRO_LABEL}`}>Sign-in name</span>
+                <input
+                  className={`mt-1 ${PANEL_INPUT}`}
+                  onChange={(event) => setState({ ...state, login: event.target.value })}
+                  placeholder="omar.gawish"
+                  type="text"
+                  value={state.login}
+                />
+              </label>
+              <label className="block min-w-0">
+                <span className={`block ${MICRO_LABEL}`}>Full name</span>
+                <input
+                  className={`mt-1 ${PANEL_INPUT}`}
+                  onChange={(event) => setState({ ...state, name: event.target.value })}
+                  placeholder="Omar Gawish"
+                  type="text"
+                  value={state.name}
+                />
+              </label>
+              <label className="block min-w-0">
+                <span className={`block ${MICRO_LABEL}`}>Email</span>
+                <input
+                  className={`mt-1 ${PANEL_INPUT}`}
+                  onChange={(event) => setState({ ...state, email: event.target.value })}
+                  type="email"
+                  value={state.email}
+                />
+              </label>
+              <label className="block min-w-0">
+                <span className={`block ${MICRO_LABEL}`}>What they can do</span>
+                <select
+                  className={`mt-1 ${PANEL_INPUT}`}
+                  onChange={(event) => setState({ ...state, roleId: event.target.value })}
+                  value={state.roleId}
+                >
+                  <option value="">Choose one</option>
+                  {roles.map((role) => (
+                    <option key={role.id} value={String(role.id)}>
+                      {role.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block min-w-0 sm:col-span-2">
+                <span className={`block ${MICRO_LABEL}`}>Password</span>
+                <input
+                  autoComplete="new-password"
+                  className={`mt-1 ${PANEL_INPUT}`}
+                  onChange={(event) => setState({ ...state, password: event.target.value })}
+                  type="password"
+                  value={state.password}
+                />
+                <span className="mt-0.5 block text-[10px] font-semibold text-slate-400">
+                  Give it to them yourself. It is sent to the tablet server and dropped — this page cannot show
+                  it again, and neither can the server.
+                </span>
+              </label>
+            </div>
+            <button
+              className={`mt-2 ${PANEL_ACTION}`}
+              disabled={state.busy || !state.login.trim() || !state.password || !state.roleId}
+              onClick={() => void add()}
+              type="button"
+            >
+              {state.busy ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> : null}
+              Add this login
+            </button>
+          </div>
+        </div>
+      ) : null}
+    </Panel>
+  );
+}
+
+export function HeadwindServerSettings() {
+  return (
+    <section className="mt-6">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="text-lg font-black text-slate-900">The company tablet server itself</h2>
+        <p className="text-[11px] font-semibold text-slate-500">Fleet-wide &middot; Super Admin only</p>
+      </div>
+      <p className="mt-1 max-w-3xl text-[12px] font-semibold text-slate-600">
+        What every tablet follows, rather than one tablet at a time. A change to a set of rules reaches every
+        tablet carrying them at its next check-in. Extra sign-ins to the server are free and uncapped &mdash;
+        the only limits anywhere in it are the tablet count and the disk.
+      </p>
+      <div className="mt-3 space-y-3">
+        <ConfigurationsPanel />
+        <UsersPanel />
+      </div>
+    </section>
+  );
+}

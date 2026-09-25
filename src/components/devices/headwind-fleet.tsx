@@ -326,12 +326,17 @@ export function HeadwindFleet() {
       </p>
 
       {/*
-        🔴 EACH REFUSED ACTION GIVES ITS OWN REASON, AND THE REASONS ARE NOT THE SAME. One says the
-        free edition of the server has nowhere to put the instruction, which no amount of waiting
-        changes; another says Phoenix will not show a position it has not watched arrive. Rolling
-        them into one "pending" sentence would leave a person deciding about a stolen tablet unable
-        to tell which they are looking at. The sentences come from the server — see
-        `HEADWIND_UNCONFIRMED_REASONS`.
+        🔴 THIS BLOCK IS EMPTY TODAY AND THAT IS THE POINT — every one of the seven actions is
+        carried. Lock, locate and factory reset were the three that were not, and the owner's ruling of
+        2026-09-25 ("do not build a dead button") is why they are: lock and factory reset moved to the
+        Phoenix add-on on our own Headwind box, and locate to `locations.ts`. `HEADWIND_UNCONFIRMED_REASONS`
+        is now `{}`, so `pendingCommands` is empty and nothing below renders.
+
+        IT STAYS ANYWAY, because the honest failure mode is the one it catches: if a future action
+        genuinely cannot be sent, it must appear here as its OWN sentence rather than as a control that
+        greys out. Each reason is different in kind — a box that needs rebuilding is not the same as a
+        permission Android grants only to a manufacturer — and one shared "pending" sentence would leave
+        a person deciding about a stolen tablet unable to tell which they were looking at.
       */}
       {pendingCommands.length > 0 ? (
         <div className="mt-3 flex max-w-3xl flex-col gap-2 border border-slate-200 bg-white px-4 py-3 text-[11px] font-semibold text-slate-600">

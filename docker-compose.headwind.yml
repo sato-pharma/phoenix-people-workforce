@@ -49,7 +49,20 @@ services:
     # manages a hundred company tablets means an upgrade nobody chose can arrive with a restart. The
     # example file explains where to read the current tag; this reads it rather than hard-coding one
     # that may not exist.
-    image: headwindmdm/hmdm:${HEADWIND_IMAGE_TAG}
+    #
+    # 🔴 THIS IS BUILT, NOT PULLED, AND THAT IS THE WHOLE POINT. The Dockerfile in
+    # infra/headwind-phoenix-actions/ EXTENDS the pinned Headwind image with one small Apache-2.0
+    # add-on of ours — a `SyncResponseHook` that sets the five device fields the free agent ALREADY
+    # obeys (lock, lockMessage, factoryReset, passwordReset, reboot) and serves the three confirmation
+    # paths the agent already POSTs to. Nothing on any tablet changes. Pull the stock image instead and
+    # lock, lost mode, factory reset and reset-the-screen-lock answer a refusal that reads like a broken
+    # tablet. `image:` is still named so the built result is tagged and `docker compose up` after a
+    # build does not silently pull over it.
+    build:
+      context: ./infra/headwind-phoenix-actions
+      args:
+        HEADWIND_IMAGE_TAG: ${HEADWIND_IMAGE_TAG}
+    image: phoenix-hmdm:${HEADWIND_IMAGE_TAG}
     restart: unless-stopped
     depends_on:
       db:

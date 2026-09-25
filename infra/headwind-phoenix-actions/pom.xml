@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The Phoenix actions add-on for the company's own Headwind MDM server.
+
+  🔴 THIS IS NOT BUILT BY THE PHOENIX REPOSITORY'S CI. The six required checks are TypeScript and do
+  not see this directory. It is compiled by the Headwind box's own `docker compose build`, against the
+  Headwind jars already inside the pinned image — which is why `hmdm-server` is `provided` scope here
+  rather than downloaded: the versions must be the ones the running server actually has, and pulling a
+  different one from a repository is how a plugin compiles cleanly and then fails to load.
+
+  The version below is a placeholder matched to the image tag at build time by the Dockerfile. If the
+  box is upgraded, this is one of the two places to change (the other is HEADWIND_IMAGE_TAG).
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>com.satopharma.phoenix</groupId>
+  <artifactId>headwind-phoenix-actions</artifactId>
+  <version>1.0.0</version>
+  <packaging>jar</packaging>
+  <name>Phoenix actions for Headwind MDM</name>
+
+  <properties>
+    <maven.compiler.source>11</maven.compiler.source>
+    <maven.compiler.target>11</maven.compiler.target>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <hmdm.version>5.34.1</hmdm.version>
+  </properties>
+
+  <dependencies>
+    <!-- Headwind's own core, already inside the image. `provided` so it is never bundled. -->
+    <dependency>
+      <groupId>com.hmdm</groupId>
+      <artifactId>server</artifactId>
+      <version>${hmdm.version}</version>
+      <scope>provided</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>com.google.inject</groupId>
+      <artifactId>guice</artifactId>
+      <version>4.2.3</version>
+      <scope>provided</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>javax.ws.rs</groupId>
+      <artifactId>javax.ws.rs-api</artifactId>
+      <version>2.1.1</version>
+      <scope>provided</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-annotations</artifactId>
+      <version>2.13.4</version>
+      <scope>provided</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>javax.inject</groupId>
+      <artifactId>javax.inject</artifactId>
+      <version>1</version>
+      <scope>provided</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <finalName>headwind-phoenix-actions</finalName>
+  </build>
+</project>

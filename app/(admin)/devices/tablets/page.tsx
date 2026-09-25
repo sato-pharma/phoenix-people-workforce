@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
 
+import { HeadwindEnrollment } from "@/components/devices/headwind-enrollment";
 import { HeadwindFleet } from "@/components/devices/headwind-fleet";
+import { HeadwindServerSettings } from "@/components/devices/headwind-server-settings";
 import { ManageEngineAppRepository } from "@/components/devices/manageengine-app-repository";
 import { ManageEngineEnrollment } from "@/components/devices/manageengine-enrollment";
 import { ManageEngineFleet } from "@/components/devices/manageengine-fleet";
@@ -49,11 +51,13 @@ export default async function RepTabletsPage() {
   // section above it already says once.
   const manageEngineReady = isManageEngineConfigured();
 
-  // 🔴 THE HEADWIND SECTION SHIPS DARK. It renders ONLY once the company's own Headwind server exists
-  // and its three settings are on Railway; until then this page is byte-for-byte what it is today, so
-  // the whole bridge can be merged to production before the server is built. When the fleet has moved
-  // across, the ManageEngine lines come off exactly the way the Google console did — one line, with
-  // nothing deleted from the repo.
+  // 🔴 THE HEADWIND SECTIONS SHIP DARK — all three of them. They render ONLY once the company's own
+  // Headwind server exists and its three settings are on Railway; until then this page is byte-for-byte
+  // what it is today, so the whole bridge can be merged to production before the server is built. The
+  // enrollment card is gated with the rest even though it reads Phoenix's own table rather than the
+  // Headwind box: a code for a server that does not exist is a code that enrolls a tablet into nothing.
+  // When the fleet has moved across, the ManageEngine lines come off exactly the way the Google console
+  // did — one line, with nothing deleted from the repo.
   const headwindReady = isHeadwindConfigured();
 
   return (
@@ -67,7 +71,9 @@ export default async function RepTabletsPage() {
       {manageEngineReady ? <ManageEngineRepTabletRules /> : null}
       {manageEngineReady ? <ManageEngineAppRepository /> : null}
       <ManageEngineFleet bridgeConfigured={manageEngineReady} />
+      {headwindReady ? <HeadwindEnrollment /> : null}
       {headwindReady ? <HeadwindFleet /> : null}
+      {headwindReady ? <HeadwindServerSettings /> : null}
     </div>
   );
 }

@@ -1,10 +1,17 @@
 import { NextResponse } from "next/server";
 
 import { isForbiddenError } from "@/lib/auth/server";
+import { HeadwindActionError } from "@/lib/devices/headwind/actions";
 import { HeadwindAppInputError } from "@/lib/devices/headwind/apps";
 import { HeadwindNotConfiguredError } from "@/lib/devices/headwind/auth";
 import { HeadwindRequestError } from "@/lib/devices/headwind/client";
 import { HeadwindCommandInputError, HeadwindCommandUnconfirmedError } from "@/lib/devices/headwind/commands";
+import { HeadwindConfigurationError } from "@/lib/devices/headwind/configurations";
+import { HeadwindEnrollmentError } from "@/lib/devices/headwind/enrollment";
+import { HeadwindLocationError } from "@/lib/devices/headwind/locations";
+import { HeadwindUploadError } from "@/lib/devices/headwind/uploads";
+import { HeadwindUserError } from "@/lib/devices/headwind/users";
+import { HeadwindWipeError } from "@/lib/devices/headwind/wipe";
 import { RustDeskNotConfiguredError } from "@/lib/devices/rustdesk/config";
 
 /**
@@ -30,7 +37,22 @@ export function headwindErrorResponse(error: unknown, fallback: string): NextRes
   if (error instanceof HeadwindCommandUnconfirmedError) {
     return NextResponse.json({ message: error.message, notConfirmed: true }, { status: 501 });
   }
-  if (error instanceof HeadwindCommandInputError || error instanceof HeadwindAppInputError) {
+  // 🔴 A PART-SENT WIPE IS THE SERVER'S FAILURE, NOT THE CALLER'S — 502, and it must be read BEFORE
+  // the 400 branch below, because it is the same class with a flag.
+  if (error instanceof HeadwindWipeError && error.partial) {
+    return NextResponse.json({ message: error.message, partial: true }, { status: 502 });
+  }
+  if (
+    error instanceof HeadwindCommandInputError ||
+    error instanceof HeadwindAppInputError ||
+    error instanceof HeadwindWipeError ||
+    error instanceof HeadwindActionError ||
+    error instanceof HeadwindConfigurationError ||
+    error instanceof HeadwindEnrollmentError ||
+    error instanceof HeadwindLocationError ||
+    error instanceof HeadwindUploadError ||
+    error instanceof HeadwindUserError
+  ) {
     return NextResponse.json({ message: error.message }, { status: 400 });
   }
   if (error instanceof HeadwindRequestError) {
