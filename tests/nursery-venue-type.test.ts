@@ -14,6 +14,7 @@ import {
   venueRequiresDistributorCode,
   venueTypeLabel,
 } from "../src/lib/venues/venue-type.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 // The nursery venue type, and the schema hole it closed.
 //
@@ -33,14 +34,7 @@ const ROI = "src/lib/marketing-requests/roi-report-service.ts";
 const MIGRATION = "supabase/migrations/20260823060000_nursery_venue_type.sql";
 
 function code(path: string): string {
-  return readFileSync(path, "utf8")
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .split("\n")
-    .map((line) => {
-      const idx = line.indexOf("//");
-      return idx >= 0 ? line.slice(0, idx) : line;
-    })
-    .join("\n");
+  return stripComments(readFileSync(path, "utf8"));
 }
 
 /**

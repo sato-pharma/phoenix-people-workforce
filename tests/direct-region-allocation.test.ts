@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { stripSqlComments } from "./support/comment-strip.ts";
 
 // Allocating area-less Direct sales across the DM territories inside one SoS region.
 //
@@ -26,7 +27,7 @@ import { join } from "node:path";
 const MIGRATIONS = join(process.cwd(), "supabase/migrations");
 
 function code(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])--[^\n]*/g, "$1");
+  return stripSqlComments(source).replace(/(^|[^:])--[^\n]*/g, "$1");
 }
 
 function readMigration(fragment: string): string {

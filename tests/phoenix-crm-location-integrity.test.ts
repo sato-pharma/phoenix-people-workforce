@@ -13,6 +13,7 @@ import {
   type PhoenixCrmPriorFix,
 } from "../src/lib/phoenix-crm/location-integrity.ts";
 import { parseCapturedFix } from "../src/lib/phoenix-crm/entry-rules.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * Phoenix CRM — the mock-location and GPS-plausibility checks.
@@ -279,7 +280,7 @@ export function runPhoenixCrmLocationIntegrityTests(): void {
       // …or put any of it into words. Comments are stripped first — this file's own explanations are
       // for the next engineer, not for the rep — and then every string the screen could render is
       // checked. A message here is exactly what tells a cheat what to defeat next time.
-      const withoutComments = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+      const withoutComments = stripComments(source);
       const literals = withoutComments.match(/(["'`])(?:\\.|(?!\1)[\s\S])*\1/g) ?? [];
       for (const literal of literals) {
         assert.equal(/mock|fake\s*gps|spoof/i.test(literal), false, `${path} must never say ${literal} to a rep`);

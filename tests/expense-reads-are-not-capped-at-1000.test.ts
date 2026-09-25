@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { fetchAllRows, POSTGREST_PAGE_SIZE } from "../src/lib/outstation/page-all-rows.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * Every expense read must page, because PostgREST's 1,000-row ceiling has NO symptom.
@@ -167,7 +168,7 @@ export async function runExpenseReadsAreNotCappedAt1000Tests() {
   // admin client — the same reason claims-read-flag.ts is kept bare.
   const helper = readSource("../src/lib/outstation/page-all-rows.ts");
   assert.doesNotMatch(
-    helper.replace(/\/\*[\s\S]*?\*\//g, ""),
+    stripComments(helper),
     /^\s*import\s/m,
     "page-all-rows.ts must import nothing",
   );

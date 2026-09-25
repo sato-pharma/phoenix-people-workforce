@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * Every admin landing surface carries an identity — and WHICH one it carries is pinned per surface.
@@ -75,7 +76,7 @@ const STRIP = /<PhoenixIdentityStrip\b/;
  * no file here has and which would fail loudly (a missing assertion) rather than silently.
  */
 function codeOnly(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+  return stripComments(source);
 }
 
 export function runAdminLandingIdentityStripTests() {

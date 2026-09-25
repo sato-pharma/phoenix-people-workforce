@@ -11,6 +11,7 @@ import {
   REBUILT_TABLES,
   RESTORED_TABLES,
 } from "../scripts/lib/source-of-sales-tables.mjs";
+import { stripSqlComments } from "./support/comment-strip.ts";
 
 // The Source of Sales backup and restore (SoS re-measure 2026-09-18, #23). Both scripts kept their
 // own list of seventeen tables, and both left out the fact rollup, the customer directory and
@@ -27,10 +28,6 @@ const CREATED_OUTSIDE_MIGRATIONS = new Set<string>();
 
 function readSource(rel: string): string {
   return readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
-}
-
-function stripSqlComments(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/--[^\n]*/g, "");
 }
 
 /** Every public source_of_sales_* / sos_* table the migrations leave standing, in migration order. */

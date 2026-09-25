@@ -25,6 +25,7 @@ import {
   unpinHrefFromRows,
   type PersonalNavigationLayout,
 } from "../src/lib/navigation/personal-layout.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 // Minimal typed fixture builder — applyPersonalLayout only ever reads `href` and carries the item
 // through by reference, so we synthesise items without real lucide icons (same approach as
@@ -574,9 +575,7 @@ export function runNavigationPersonalLayoutTests() {
     // Strip comments before matching. The route's own header comment explains the rule in prose
     // ("there is no ?hrId=..."), and a pin that reads prose fails on a file that is documenting the
     // very thing it is being checked for — which is exactly what happened when this was written.
-    const route = readFileSync("app/api/navigation/personal-layout/route.ts", "utf8")
-      .replace(/\/\*[\s\S]*?\*\//g, "")
-      .replace(/(^|[^:])\/\/.*$/gm, "$1");
+    const route = stripComments(readFileSync("app/api/navigation/personal-layout/route.ts", "utf8"));
 
     assert.ok(
       !/searchParams|nextUrl\.search|\?hrId=/.test(route),

@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 import { calculatePediaSplitIncentive } from "../src/lib/incentives/pedia-split.ts";
 import { calculateIncentive2026 } from "../src/lib/incentives/scheme-2026.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * The portal Incentive tab for a Pedia seat — the rule it states must be the rule it pays.
@@ -25,7 +26,7 @@ import { calculateIncentive2026 } from "../src/lib/incentives/scheme-2026.ts";
 
 /** Strip comments, so a rule quoted in prose can never satisfy an assertion about the code. */
 function code(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+  return stripComments(source);
 }
 
 /** One top-level function's body: from its declaration to the next one. */

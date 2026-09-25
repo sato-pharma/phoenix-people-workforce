@@ -9,6 +9,7 @@ import {
   weeklyScopeSeesEveryRow,
 } from "../src/lib/sales/weekly/batch-list-scope.ts";
 import type { WeeklyBatch } from "../src/lib/sales/weekly/types.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 // 🔴 THE WEEKLY UPLOAD LIST HANDED THE SFE MANAGER EACH UPLOAD'S STORED TOTALS — found 2026-09-20.
 //
@@ -88,7 +89,7 @@ const BOUNDED: readonly { label: string; scope: WeeklyAccessScope }[] = [
 
 /** Comments out, so an explanation that names a call cannot satisfy or trip a source check. */
 function code(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+  return stripComments(source);
 }
 
 function read(rel: string): string {

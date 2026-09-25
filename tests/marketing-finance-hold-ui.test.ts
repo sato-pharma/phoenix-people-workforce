@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { describeLifecycleStage, loadFinanceHoldBlock } from "@/lib/marketing-requests/case-file-service";
 import { marketingRequestStatusLabel } from "@/lib/marketing-requests/request-status-label";
 import { roiLifecycleStage } from "@/lib/marketing-requests/roi-live-stages";
+import { stripComments } from "./support/comment-strip.ts";
 
 // The finance hold shipped with an API route and NO caller.
 //
@@ -134,10 +135,7 @@ export async function runMarketingFinanceHoldUiTests() {
   // a docblock and on its own comment naming the banned phrase — the question is what RENDERS,
   // not what the file mentions. (Line-comment stripping starts at a line boundary, so a "//" inside
   // a URL literal survives; no assertion here depends on that.)
-  const rendered = component
-    .replace(/\{\/\*[\s\S]*?\*\/\}/g, "")
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/^[ 	]*\/\/.*$/gm, "");
+  const rendered = stripComments(component).replace(/^[ 	]*\/\/.*$/gm, "");
   for (const banned of ["Super Admin", "heldByName", "heldByHrId", "Held by"]) {
     assert.ok(
       !rendered.includes(banned),
@@ -148,7 +146,7 @@ export async function runMarketingFinanceHoldUiTests() {
     join(process.cwd(), "src/lib/marketing-requests/case-file-types.ts"),
     "utf8",
   );
-  const holdTypeCode = holdType.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[ 	]*\/\/.*$/gm, "");
+  const holdTypeCode = stripComments(holdType).replace(/^[ 	]*\/\/.*$/gm, "");
   for (const banned of ["heldByName", "heldByHrId"]) {
     assert.ok(
       !holdTypeCode.includes(banned),
@@ -156,7 +154,7 @@ export async function runMarketingFinanceHoldUiTests() {
         + `database cannot be rendered by a later edit`,
     );
   }
-  const serviceCode = service.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[ 	]*\/\/.*$/gm, "");
+  const serviceCode = stripComments(service).replace(/^[ 	]*\/\/.*$/gm, "");
   assert.ok(
     !serviceCode.includes("finance_reviewer_hr_id"),
     "the loader must not select the holder's id — not selecting it IS the guard",

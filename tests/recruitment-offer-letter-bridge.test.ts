@@ -4,6 +4,7 @@ import { join, sep } from "node:path";
 
 import { buildOfferLetterDraft } from "../src/lib/recruitment/offer-letter-bridge.ts";
 import type { OfferApprovalTrail, OfferTerms } from "../src/lib/recruitment/offer-rules.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * The offer bridge: an approved recruitment offer's terms, carried into the letter composer.
@@ -231,7 +232,7 @@ export function runRecruitmentOfferLetterBridgeTests() {
   // Comments STRIPPED first. The route's own documentation explains that approval is read from
   // `approvedAt` rather than inferred from a stage, and a raw scan matches that sentence - the
   // check then fails on the explanation of why it passes. Prose is not code.
-  const routeCode = route.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  const routeCode = stripComments(route);
   assert.equal(
     /approvedAt|submittedForApprovalAt/.test(routeCode),
     false,

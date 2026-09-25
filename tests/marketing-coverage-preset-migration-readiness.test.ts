@@ -1,17 +1,10 @@
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
+import { stripSqlComments } from "./support/comment-strip.ts";
 
 const MIGRATION_PATH = "supabase/_migrations_archive/pre-baseline-2026-07-11/20260704010000_marketing_coverage_report_preset_kind.sql";
 
 const FORBIDDEN_PROD_PROJECT_REF = "ozucdzovmcqvepbozvqf";
-
-function stripSqlComments(sql: string) {
-  const withoutBlocks = sql.replace(/\/\*[\s\S]*?\*\//g, "");
-  return withoutBlocks
-    .split(/\r?\n/)
-    .map((line) => line.replace(/--.*$/, ""))
-    .join("\n");
-}
 
 export async function runMarketingCoveragePresetMigrationReadinessTests() {
   assert.ok(existsSync(MIGRATION_PATH), `migration file ${MIGRATION_PATH} must exist`);

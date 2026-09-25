@@ -273,6 +273,29 @@ export function stripComments(source: string): string {
 }
 
 /** What the one-liner this module replaces would delete. Exported so the ratchet can measure it. */
+/**
+ * {@link stripComments}, with the blank lines it leaves behind removed.
+ *
+ * For a test that slices a fixed-SIZE window — `code.slice(index, index + 700)` — rather than
+ * matching over the whole file. Blanking a comment in place is what keeps `file:line` honest, but it
+ * also keeps the comment's bytes: a route handler carrying twenty lines of explanation between a
+ * guard and its `status: 403` has them all inside that 700, and the thing the window was measured
+ * to contain falls out of it. The hand-rolled strippers this module replaced collapsed each comment
+ * to a single space, so a window sized against one of those is sized against compacted code.
+ *
+ * Measured 2026-09-25 on `distribution-lists-access`, whose 700-character windows pin five Telegram
+ * gates: folded onto the offset-preserving strip, the first window lost its `403` and the test went
+ * red on code that was perfectly correct. Nothing about the guard had changed — only the padding.
+ *
+ * Line numbers do NOT survive this. Use it to match, never to report a location.
+ */
+export function stripCommentsCompact(source: string): string {
+  return stripComments(source)
+    .split("\n")
+    .filter((line) => line.trim() !== "")
+    .join("\n");
+}
+
 export function naiveBlockStripSpans(source: string): ReadonlyArray<readonly [number, number]> {
   return [...source.matchAll(/\/\*[\s\S]*?\*\//g)].map(
     (m) => [m.index, m.index + m[0].length] as const,
@@ -292,4 +315,243 @@ export function codeEatenByNaiveStrip(source: string): number {
     for (let i = a; i < b; i += 1) if (!real[i]) eaten += 1;
   }
   return eaten;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// The other two languages these tests read
+//
+// `stripComments` above is a JavaScript/TypeScript lexer, and that is the only thing it may be
+// handed. The two rules below exist because a test that strips comments out of SQL or CSS with the
+// JS lexer gets a WRONG answer quietly, in the direction that makes a pin pass for no reason:
+//
+//   SQL   `--` is the line comment and `//` is not. Running SQL through the JS lexer therefore
+//         leaves every `--` comment in place, so commented-out DDL is read as real.
+//   CSS   there is no `//` comment at all, so the JS lexer reads the `//` in an unquoted
+//         `url(https://…)` as a line comment and deletes the rest of that line.
+//
+// Both are scans rather than regexes for the same reason the JS one is: a comment delimiter inside
+// a string is not a comment. Measured over this repo's own 608 migration files on 2026-09-25, the
+// `--[^\n]*` one-liner that 11 tests had each written deletes 3,545 characters of real SQL out of
+// 25 of them — always from inside a string literal, and mostly from the middle of a
+// `COMMENT ON … IS '…'` body. The worst is `20260821100000_crm_plan_entries.sql`, where a table's
+// own 278-character description contains the words ` -- one row per planned call` and the naive
+// strip removes everything from there to the end of the line. The `(^|[^:])` guard several copies
+// carry makes no difference to any of the 25: it was copied across from the JavaScript version,
+// where it is a half-measure against `https://`, and SQL has no `//` for it to guard.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The comment spans a PostgreSQL parser would see: `--` to end of line, and a block comment, which
+ * NESTS in Postgres unlike in JavaScript.
+ *
+ * A `$tag$ … $tag$` body is scanned as CODE, not as a string. That is deliberate: every caller
+ * strips comments so commented-out DDL is never read as real, and a commented-out statement inside
+ * a function body is still commented-out DDL. Single-quoted strings and "quoted identifiers" ARE
+ * strings, and both escape by doubling the quote.
+ *
+ * Unlike the JavaScript scanner, an unterminated `'…'` does NOT recover at the newline: a SQL string
+ * legitimately spans lines, so recovering there would re-open the hole this closes.
+ */
+export function sqlCommentSpans(source: string): ReadonlyArray<readonly [number, number]> {
+  const spans: Array<readonly [number, number]> = [];
+  const n = source.length;
+  let i = 0;
+  let state: "code" | "line" | "block" | "sq" | "dq" | "dollar" = "code";
+  let depth = 0;
+  let start = -1;
+  let tag = "";
+  // Which state a comment or string inside a `$tag$` body returns to when it ends.
+  let resume: "code" | "dollar" = "code";
+
+  while (i < n) {
+    const c = source[i];
+    const d = source[i + 1];
+
+    if (state === "code" || state === "dollar") {
+      if (state === "dollar" && source.startsWith(tag, i)) {
+        state = "code";
+        i += tag.length;
+        continue;
+      }
+      if (c === "-" && d === "-") {
+        resume = state;
+        state = "line";
+        start = i;
+        i += 2;
+        continue;
+      }
+      if (c === "/" && d === "*") {
+        resume = state;
+        state = "block";
+        depth = 1;
+        start = i;
+        i += 2;
+        continue;
+      }
+      if (c === "'") {
+        resume = state;
+        state = "sq";
+        i += 1;
+        continue;
+      }
+      if (c === '"') {
+        resume = state;
+        state = "dq";
+        i += 1;
+        continue;
+      }
+      if (state === "code" && c === "$") {
+        const opener = /^\$[A-Za-z_]\w*\$|^\$\$/.exec(source.slice(i));
+        if (opener) {
+          tag = opener[0];
+          state = "dollar";
+          i += tag.length;
+          continue;
+        }
+      }
+      i += 1;
+      continue;
+    }
+
+    if (state === "line") {
+      if (c === "\n") {
+        spans.push([start, i] as const);
+        state = resume;
+      }
+      i += 1;
+      continue;
+    }
+
+    if (state === "block") {
+      if (c === "/" && d === "*") {
+        depth += 1;
+        i += 2;
+        continue;
+      }
+      if (c === "*" && d === "/") {
+        depth -= 1;
+        i += 2;
+        if (depth === 0) {
+          spans.push([start, i] as const);
+          state = resume;
+        }
+        continue;
+      }
+      i += 1;
+      continue;
+    }
+
+    // "sq" | "dq" — doubling the quote escapes it (`'it''s'`, `"a""b"`).
+    const quote = state === "sq" ? "'" : '"';
+    if (c === quote && d === quote) i += 2;
+    else if (c === quote) {
+      state = resume;
+      i += 1;
+    } else i += 1;
+  }
+
+  if (state === "line" || state === "block") spans.push([start, n] as const);
+  return spans;
+}
+
+/**
+ * `source` with every SQL comment replaced by spaces of the same length.
+ *
+ * Blanked rather than removed, for the reason in this file's header: a `file:line` a test prints
+ * still points at the real line. Reach for this — never a `--` regex — whenever a test reads a
+ * migration, a policy or a function body as text.
+ */
+export function stripSqlComments(source: string): string {
+  const spans = sqlCommentSpans(source);
+  if (spans.length === 0) return source;
+
+  const out: string[] = [];
+  let at = 0;
+  for (const [a, b] of spans) {
+    out.push(source.slice(at, a), " ".repeat(b - a));
+    at = b;
+  }
+  out.push(source.slice(at));
+  return out.join("");
+}
+
+/**
+ * The comment spans a CSS parser would see. Block comments are the whole rule — CSS has no line
+ * comment — and a delimiter inside a `"…"`, `'…'` or unquoted `url(…)` is not one.
+ *
+ * An unquoted `url(https://…)` is why this cannot be {@link stripComments}: that `//` is not a
+ * comment in any stylesheet, and deleting the rest of the line makes a "this declaration must be
+ * present" pin fail on a correct file.
+ */
+export function cssCommentSpans(source: string): ReadonlyArray<readonly [number, number]> {
+  const spans: Array<readonly [number, number]> = [];
+  const n = source.length;
+  let i = 0;
+  let state: "code" | "block" | "sq" | "dq" = "code";
+  let start = -1;
+
+  while (i < n) {
+    const c = source[i];
+    const d = source[i + 1];
+
+    if (state === "code") {
+      if (c === "/" && d === "*") {
+        state = "block";
+        start = i;
+        i += 2;
+        continue;
+      }
+      if (c === "'") {
+        state = "sq";
+        i += 1;
+        continue;
+      }
+      if (c === '"') {
+        state = "dq";
+        i += 1;
+        continue;
+      }
+      i += 1;
+      continue;
+    }
+
+    if (state === "block") {
+      if (c === "*" && d === "/") {
+        spans.push([start, i + 2] as const);
+        state = "code";
+        i += 2;
+        continue;
+      }
+      i += 1;
+      continue;
+    }
+
+    // "sq" | "dq" — recover at the newline, since a CSS string cannot span one unescaped.
+    if (c === "\\") i += 2;
+    else if (c === "\n") {
+      state = "code";
+      i += 1;
+    } else if ((state === "sq" && c === "'") || (state === "dq" && c === '"')) {
+      state = "code";
+      i += 1;
+    } else i += 1;
+  }
+
+  if (state === "block") spans.push([start, n] as const);
+  return spans;
+}
+
+/** `source` with every CSS comment replaced by spaces of the same length. */
+export function stripCssComments(source: string): string {
+  const spans = cssCommentSpans(source);
+  if (spans.length === 0) return source;
+
+  const out: string[] = [];
+  let at = 0;
+  for (const [a, b] of spans) {
+    out.push(source.slice(at, a), " ".repeat(b - a));
+    at = b;
+  }
+  out.push(source.slice(at));
+  return out.join("");
 }

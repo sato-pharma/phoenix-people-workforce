@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { signMatchesClaimedName } from "../src/lib/direct-orders/evidence-check.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Reading the storefront evidence (spec E2).
@@ -146,11 +147,7 @@ export function runDirectOrderEvidenceCheckTests() {
   // Same executable sweep as the invoice reader: strip comments and imports, then check every
   // string and JSX text node the user can actually see.
   const proseOnly = (source: string) =>
-    source
-      .replace(/\/\*[\s\S]*?\*\//g, "")
-      .replace(/^\s*\/\/.*$/gm, "")
-      .replace(/\{\/\*[\s\S]*?\*\/\}/g, "")
-      .replace(/^\s*import[\s\S]*?from\s*"[^"]*";?\s*$/gm, "");
+    stripComments(source).replace(/^\s*import[\s\S]*?from\s*"[^"]*";?\s*$/gm, "");
   const stringLiterals = (source: string): string[] => {
     const out: string[] = [];
     let i = 0;

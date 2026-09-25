@@ -45,6 +45,7 @@ import type {
   HiringPackProfile,
   OffboardingProfile,
 } from "../src/lib/hiring-pack/types.ts";
+import { stripCssComments } from "./support/comment-strip.ts";
 
 /**
  * THE TWO RENEWAL PAPERS — ملحق تجديد سنوي and إخطار بعدم تجديد.
@@ -591,7 +592,7 @@ function testTheMastheadStillMatchesTheContractItAmends(): void {
    */
   const mastheadRules = (html: string): string[] =>
     [...html.matchAll(/\.doc-mast[a-zA-Z_-]*[^{}]*\{[^}]*\}/g)]
-      .map((match) => match[0].replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\s+/g, " ").trim())
+      .map((match) => stripCssComments(match[0]).replace(/\s+/g, " ").trim())
       .sort();
 
   const contractRules = mastheadRules(contract);

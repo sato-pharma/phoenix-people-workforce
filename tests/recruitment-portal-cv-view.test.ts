@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * "View CV" must VIEW the CV, and a failed preview must never be a dead end.
@@ -48,12 +49,6 @@ export async function runRecruitmentPortalCvViewTests(): Promise<void> {
   // Comments are stripped first: the code around this control is deliberately commented, and
   // those comments name "View CV" and "<a>" while explaining the bug. Matching raw source would
   // find the explanation instead of the element and report on prose rather than on behaviour.
-  const stripComments = (source: string): string =>
-    source
-      .replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, "")
-      .replace(/\/\*[\s\S]*?\*\//g, "")
-      .replace(/^[ \t]*\/\/.*$/gm, "");
-
   const renderers = componentFiles
     .map((name) => {
       const source = readFileSync(join(componentsRoot, name), "utf8");

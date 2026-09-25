@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { applyOperationalRegions, usesOrganogramRegions } from "../src/lib/sales/closing-organogram-regions.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 // WHICH REGION A CLOSING ROW SITS IN (owner ruling, 2026-08-07).
 //
@@ -16,7 +17,7 @@ function read(path: string): string {
 
 /** Source with comments stripped, so a rule can never be "satisfied" by prose about it. */
 function code(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  return stripComments(source);
 }
 
 export function runClosingRegionGroupingPerLineTests() {

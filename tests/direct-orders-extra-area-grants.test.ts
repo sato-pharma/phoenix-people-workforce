@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { extraDirectOrderAreaCodes } from "@/lib/direct-orders/extra-area-grants";
+import { stripComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Extra Direct Orders areas — the grant must WIDEN one module and nothing else.
@@ -86,7 +87,7 @@ export function runDirectOrdersExtraAreaGrantTests() {
   // ── Bricks follow the areas, so a new brick needs no edit here ─────────────
   {
     assert.ok(
-      !/brick/i.test(grantSource.replace(/^\s*\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "")),
+      !/brick/i.test(stripComments(grantSource.replace(/^\s*\/\/.*$/gm, ""))),
       "the grant must list AREA codes only — bricks are derived from the granted areas, so listing them would go stale the first time a brick is added",
     );
   }

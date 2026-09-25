@@ -6,6 +6,7 @@ import ExcelJS from "exceljs";
 
 import type { WeeklyAccessScope } from "../src/lib/sales/weekly/access.ts";
 import { buildCombinedReportExport, loadCombinedReportProducts } from "../src/lib/sales/weekly/combined-report.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 // 🔴 THE WEEKLY COMBINED REPORT HAD NO ACCESS SCOPE — found 2026-09-20.
 //
@@ -247,7 +248,7 @@ function columnOf(sheet: ExcelJS.Worksheet, headerRow: number, label: string): n
 
 /** Comments out, so an explanation that names a call cannot satisfy or trip a route check. */
 function code(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+  return stripComments(source);
 }
 
 function assertNoneOf(text: string, names: string[], who: string) {

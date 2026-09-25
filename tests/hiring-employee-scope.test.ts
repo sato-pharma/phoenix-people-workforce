@@ -9,6 +9,7 @@ import {
   hasDepartedEmployment,
   isTerminalEmploymentStatus,
 } from "../src/lib/auth/session-lifecycle.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * Pins who the two hiring screens are about: the people Phoenix currently employs.
@@ -42,7 +43,7 @@ import {
  * that fails the moment somebody explains themselves.
  */
 function codeOnly(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*/g, "");
+  return stripComments(source).replace(/\/\/.*/g, "");
 }
 
 export function runHiringEmployeeScopeTests() {

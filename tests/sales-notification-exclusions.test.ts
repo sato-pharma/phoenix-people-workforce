@@ -6,6 +6,7 @@ import {
   isSalesNotificationExcluded,
   salesNotificationExclusions,
 } from "../src/lib/sales/sales-notification-exclusions.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * ONE LIST DECIDES WHO IS LEFT OUT OF A SALES ANNOUNCEMENT, AND BOTH SENDERS READ IT.
@@ -41,9 +42,7 @@ const WEEKLY_SOURCE = readFileSync(
 
 /** Source with comments stripped, so a rule quoted in prose cannot satisfy a check. */
 function code(source: string): string {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, " ")
-    .replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+  return stripComments(source);
 }
 
 export function runSalesNotificationExclusionsTests() {

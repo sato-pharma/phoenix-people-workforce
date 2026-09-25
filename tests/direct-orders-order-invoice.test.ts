@@ -8,6 +8,7 @@ import {
   planDirectOrderInvoiceClaim,
   shouldRecordInvoiceValidationAtSfeRung,
 } from "@/lib/direct-orders/order-invoice-rules";
+import { stripComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The invoice a rep used, kept with the order (owner, 2026-09-14).
@@ -218,7 +219,7 @@ function screens() {
 
   // D4: never mention how the invoice is read.
   for (const [name, text] of [["detail", detail], ["attach", attach], ["form", form], ["evidence", evidence]] as const) {
-    assert.doesNotMatch(text.replace(/\/\/.*$|\{\/\*[\s\S]*?\*\/\}|\/\*[\s\S]*?\*\//gm, ""), />[^<]*\b(AI|artificial intelligence|model|GPT|Claude)\b[^<]*</, `${name} shows no AI wording`);
+    assert.doesNotMatch(stripComments(text), />[^<]*\b(AI|artificial intelligence|model|GPT|Claude)\b[^<]*</, `${name} shows no AI wording`);
   }
 }
 

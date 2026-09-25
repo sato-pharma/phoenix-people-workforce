@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { stripComments } from "./support/comment-strip.ts";
 
 // Two surfaces that could not honour an area bound, handled in the only honest ways available.
 // (The first, the Sales Analytics Reconciliation page, was retired with that module on 2026-09-17.)
@@ -17,7 +18,7 @@ import { join } from "node:path";
 //    alias resolve to NOTHING — impossible from any writer, not just the one that was fixed.
 
 function code(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])(--|\/\/)[^\n]*/g, "$1");
+  return stripComments(source).replace(/(^|[^:])(--|\/\/)[^\n]*/g, "$1");
 }
 
 export function runAnalyticsAreaScopeV2Tests() {

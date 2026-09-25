@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 
 import { showsAwaitingFinanceMonth } from "../src/lib/direct-orders/types.ts";
 import { resolveMarketingInvoiceObligation } from "../src/lib/marketing-requests/invoice-obligation.ts";
+import { stripComments, stripSqlComments } from "./support/comment-strip.ts";
 
 /**
  * Guards for the Finance Manager's landing dashboard (/admin/finance-command-center).
@@ -57,20 +58,6 @@ function read(path: string): string {
 }
 
 /**
- * Drop `--` line comments. Prose explaining WHY a table is banned must not trip the guard that
- * enforces the ban. Keeps string literals, so predicate assertions can still match them.
- */
-function stripSqlComments(sql: string): string {
-  return sql
-    .split("\n")
-    .map((line) => {
-      const idx = line.indexOf("--");
-      return idx >= 0 ? line.slice(0, idx) : line;
-    })
-    .join("\n");
-}
-
-/**
  * Reduce a migration to the SQL that actually EXECUTES — comments AND single-quoted literals
  * gone. Used only for the banned-table check, because `COMMENT ON FUNCTION ... IS '...'`
  * documents the ban by naming the table, and documentation is not a read. The plpgsql body is
@@ -82,7 +69,7 @@ function executableSql(sql: string): string {
 
 /** Strip `//` and block comments from TS for the same reason. */
 function stripTsComments(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  return stripComments(source);
 }
 
 function testDeductionsComeFromCommittedPayrollOnly() {

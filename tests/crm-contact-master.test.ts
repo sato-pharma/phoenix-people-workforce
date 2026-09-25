@@ -7,6 +7,7 @@ import {
   parseContactMasterRefreshResult,
 } from "../src/lib/crm/contact-master.ts";
 import { contactRecordFromMasterAssignment } from "../src/lib/direct-orders/venue-contact-options.ts";
+import { stripSqlComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The CRM contact master (Phase 2 of the CRM build order).
@@ -28,11 +29,6 @@ import { contactRecordFromMasterAssignment } from "../src/lib/direct-orders/venu
 //   · THE ACTIVITY PASS RUNS ONCE PER DAILY SWEEP — a full visit/plan scan on all twelve slices
 //     would add seconds to every tick under a 30-second scheduler cap.
 // ─────────────────────────────────────────────────────────────────────────────
-
-/** Comments out, string literals kept: the pins below are about SQL, not the prose explaining it. */
-function stripSqlComments(sql: string): string {
-  return sql.replace(/--[^\n]*/g, "");
-}
 
 export function runCrmContactMasterTests() {
   const read = (relativePath: string) => readFileSync(new URL(`../${relativePath}`, import.meta.url), "utf8");

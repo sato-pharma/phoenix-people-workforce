@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { stripComments } from "./support/comment-strip.ts";
 
 // Arabic free text on the outstation screens, and the ONE place block-level `dir="auto"` is wrong.
 //
@@ -35,11 +36,6 @@ const read = (rel: string) => readFileSync(fileURLToPath(new URL(rel, ROOT)), "u
 const ADMIN_SOURCE = read("src/components/outstation/outstation-requests-admin.tsx");
 const PRIMITIVES_SOURCE = read("src/components/outstation/approval-detail-primitives.tsx");
 const SERVICE_SOURCE = read("src/lib/outstation/service.ts");
-
-// Comments in these files name the WRONG fix in order to warn against it, so anything that counts
-// occurrences has to count the code and not the prose.
-const stripComments = (source: string) =>
-  source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 
 export function runOutstationArabicTextDirectionTests() {
   // ── 1. HEADLINE: notes carry direction PER LINE, never on the block ─────────

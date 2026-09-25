@@ -5,6 +5,7 @@ import {
   enforceOutstationRejectionEmailBlock,
   isOutstationRejectionEvent,
 } from "../src/lib/notifications/outstation-rejection-channel-guard.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 function source(path: string) {
   return readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
@@ -24,7 +25,7 @@ function functionSlice(src: string, declaration: string) {
 
 /** Executable code only — the comments explain the rule and must not satisfy or trip a match. */
 function code(slice: string) {
-  return slice.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+  return stripComments(slice);
 }
 
 // Owner rule (2026-09-19): an employee whose expense is REJECTED is told in-app — never by email.

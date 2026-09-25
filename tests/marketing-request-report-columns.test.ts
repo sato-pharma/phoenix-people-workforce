@@ -17,6 +17,7 @@ import {
   weekBreakdown,
   type FullReportRequest,
 } from "../src/lib/marketing-requests/request-report-columns.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // request-report-columns.ts defines what a Marketing Request row IS. It holds no Supabase and no
@@ -281,7 +282,7 @@ export async function runMarketingRequestReportColumnsTests() {
   // record of what went wrong and why it is not coming back — a check that cannot tell prose from
   // code would force that explanation to be deleted to stay green, which is the opposite of what
   // is wanted.
-  const feedCode = feedRoute.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+  const feedCode = stripComments(feedRoute);
   assert.ok(
     feedCode.includes("baseUrl: systemDeployment.productionUrl"),
     "the share feed must build file links from the configured public URL",

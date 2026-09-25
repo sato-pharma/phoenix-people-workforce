@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { stripSqlComments } from "./support/comment-strip.ts";
 
 // Approving a marketing request never recorded the invoice obligation it creates.
 //
@@ -24,7 +25,7 @@ const MIGRATIONS = join(process.cwd(), "supabase/migrations");
 
 /** Strip block and line comments so an assertion can never match the migration's own prose. */
 function code(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])--[^\n]*/g, "$1");
+  return stripSqlComments(source).replace(/(^|[^:])--[^\n]*/g, "$1");
 }
 
 /** Collapse whitespace so an assertion survives reformatting but not a change of meaning. */

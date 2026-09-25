@@ -9,6 +9,7 @@ import {
   buildCombinedReportExport,
   loadCombinedReportProducts,
 } from "../src/lib/sales/weekly/combined-report.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 // 🔴 THE WEEKLY SALES COMBINED REPORT STOPPED READING AT 1,000 PRODUCT ROWS, AND PRINTED ITS TIME IN UTC —
 // found 2026-09-17.
@@ -187,7 +188,7 @@ function columnOf(sheet: ExcelJS.Worksheet, headerRow: number, label: string): n
 
 /** Comments out, so an explanation that names the removed read cannot trip the route check. */
 function code(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+  return stripComments(source);
 }
 
 export async function runWeeklyCombinedReportPagingTests() {

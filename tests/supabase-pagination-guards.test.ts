@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { stripComments } from "./support/comment-strip.ts";
 
 // Silent row loss is this module's most expensive recurring defect:
 //
@@ -36,7 +37,7 @@ const rel = (p: string) => p.slice(process.cwd().length + 1).replace(/\\/g, "/")
  * explanation itself would trip the guard.
  */
 function code(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+  return stripComments(source);
 }
 
 export function runSupabasePaginationGuardsTests() {
@@ -82,9 +83,7 @@ export function runSupabasePaginationGuardsTests() {
       // note in paginated.ts explaining why `fetchAllRowsOrdered` was collapsed into this — is
       // documentation, not a call, and a guard that cannot tell the two apart punishes writing the
       // explanation down.
-      const src = readFileSync(file, "utf8")
-        .replace(/\/\*[\s\S]*?\*\//g, "")
-        .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+      const src = stripComments(readFileSync(file, "utf8"));
       // fetchAllRows( ... ) where the top-level call has no second argument.
       const singleArg = /fetchAllRows(?:<[^>]*>)?\(\s*(?:\(\)\s*=>\s*)?[A-Za-z_$][\w$]*\s*\)/g;
       if (singleArg.test(src)) offenders.push(rel(file));
