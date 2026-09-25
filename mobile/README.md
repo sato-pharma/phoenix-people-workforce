@@ -322,10 +322,13 @@ A refused permission is reported two different ways depending on `canAskAgain`, 
 and allow" and "turn it on in Android Settings" are different instructions and guessing wrong wastes
 the person's time.
 
-**The app asks for the camera and nothing else.** `expo-image-picker`'s config plugin adds
-`RECORD_AUDIO` to the manifest by default; `microphonePermission: false` in `app.json` blocks it.
-This app never records video, and an HR app requesting a microphone it never uses is the kind of
-thing an employee is right to distrust.
+**The app asks for the camera, and — since 2026-09-25 — the microphone, and nothing more.** The
+microphone is for one thing: the spoken visit comment (below). `expo-image-picker`'s config plugin
+would strip `RECORD_AUDIO` when its own `microphonePermission` is `false` — it calls
+`withBlockedPermissions(['RECORD_AUDIO'])`, which wins over anything else that adds the permission —
+so image-picker now carries the same purpose string as `expo-audio`, `RECORD_AUDIO` is declared
+explicitly under `expo.android.permissions`, and both are pinned by
+`tests/mobile-crm-voice-comment.test.ts`. This app still never records video.
 
 🔴 **`camera.ts` on its own is still not the evidence camera.** It returns a bare picture — no time,
 no place, no stamp — and a profile photo needs nothing more. Evidence goes through
@@ -388,6 +391,34 @@ drawing with a single typeface prints empty boxes. It adds a few megabytes to th
 🔴 **Skia and `expo-location` are native modules, so this needs a new build** with a higher
 `versionCode`. There are no over-the-air updates (see above), so a phone on an older build simply
 does not have the departure photo until it installs the new one.
+
+## The spoken visit comment — recorded, then written out
+
+The owner's instruction of 2026-09-25: the microphone on the CRM visit comment must do both halves on
+the app exactly as on the web — keep the recording **and** write what was said into the comment as
+Egyptian Arabic text. The app has no speech engine of its own (React Native has no Web Speech API, and
+there is no free on-device Arabic recogniser), so it takes the path the web already built for Firefox,
+which has the same gap: `CrmSpeakComment` (`src/components/crm/speak-comment.tsx`) records with
+`expo-audio`, then `storeCrmVoiceNote` (`src/lib/crm/voice.ts`) uploads the finished file and asks
+Phoenix's own server to write it out. **The words arrive a few seconds after Stop, never as you talk,
+and the copy says so** — a rep told they appear live watches an empty box and presses Stop thinking it
+failed. It adds no server surface: the two routes are the browser's, `voice/upload-slot` then
+`voice/transcribe`, in that order.
+
+🔴 **The recording is stored first and transcribed second, on purpose.** A speech service that refuses
+then costs the rep only the typing he would have done anyway and never the words he already said — so a
+failed transcription keeps the recording and leaves the comment empty for him to type, rather than
+reporting a failure over a half that worked. The stored note is handed up to the visit form and rides
+the save as `voiceNotePath`/`voiceNoteSeconds`/`voiceNoteBytes`, matching the web; a recording that is
+uploaded but left out of that payload is an orphan in the bucket. All of this is pinned by
+[`tests/mobile-crm-voice-comment.test.ts`](../tests/mobile-crm-voice-comment.test.ts).
+
+**`expo-file-system` is now a dependency, and that is what makes the phone's own upload possible.** The
+photo path goes through the portal's server because this build had no file-system module and `fetch`
+will not stream a `file://` body to a third-party signed URL. SDK 58's `File.upload` with
+`httpMethod: "PUT"` and binary content streams the bytes straight to the slot, so audio uses the
+browser's own direct-to-storage path. 🔴 **This is not a licence to rewrite the photo upload** — that
+route is live, proven and dates a visit; changing it is its own task with its own verification.
 
 ## Notifications
 

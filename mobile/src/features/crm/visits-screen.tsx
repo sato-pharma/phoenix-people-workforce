@@ -17,6 +17,7 @@ import {
   type CrmTone,
 } from "@/components/crm/crm-kit";
 import { CrmLivePhoto } from "@/components/crm/live-photo";
+import { CrmSpeakComment } from "@/components/crm/speak-comment";
 import { ErrorNotice, LoadingScreen, PrimaryButton, SecondaryButton, StatTile } from "@/components/ui";
 import { crmErrorCode, crmErrorMessage, crmGet, crmPost, crmUrl, newClientId } from "@/lib/crm/client";
 import { cairoClock, dayLabelLong, shiftIsoDay } from "@/lib/crm/format";
@@ -31,6 +32,7 @@ import {
   territoryLine,
 } from "@/lib/crm/labels";
 import type { CrmCapturedPhoto } from "@/lib/crm/photo";
+import { appendCrmDictated, type CrmVoiceNote } from "@/lib/crm/voice";
 import { ApiError } from "@/lib/api";
 import { useSession } from "@/lib/session";
 import { hairline, radius, space, type } from "@/theme/tokens";
@@ -574,6 +576,10 @@ function AddVisit({
   const [seniorHrId, setSeniorHrId] = useState<string | null>(null);
   const [products, setProducts] = useState<string[]>([]);
   const [comment, setComment] = useState("");
+  // The recording lives HERE and not inside the microphone control, because the save is what attaches it:
+  // a recording uploaded and left out of the payload is an orphan in the bucket. Beside the photo, and
+  // deliberately not one of its fields — the photo's slot dates the visit and a recording dates nothing.
+  const [voiceNote, setVoiceNote] = useState<CrmVoiceNote | null>(null);
   const [photo, setPhoto] = useState<CrmCapturedPhoto | null>(null);
   const [usePlacePhoto, setUsePlacePhoto] = useState(Boolean(handoff?.photo));
   const [saving, setSaving] = useState(false);
@@ -658,6 +664,9 @@ function AddVisit({
         seniorHrId: kind === "chain" ? who.senior?.hrId ?? null : null,
         products,
         comment: comment.trim() || null,
+        voiceNotePath: voiceNote?.path ?? null,
+        voiceNoteSeconds: voiceNote?.seconds ?? null,
+        voiceNoteBytes: voiceNote?.bytes ?? null,
         photoPath: evidence.path,
         lat: evidence.lat,
         lon: evidence.lon,
@@ -838,6 +847,20 @@ function AddVisit({
           value={comment}
         />
         <Text style={[type.meta, { color: palette.inkSoft }]}>{`${commentLength} of ${VISIT_COMMENT_MAX} characters`}</Text>
+        <CrmSpeakComment
+          disabled={saving}
+          onAppend={(spoken) => {
+            setProblem(null);
+            setComment((current) => appendCrmDictated(current, spoken, VISIT_COMMENT_MAX));
+          }}
+          onChange={(next) => {
+            setProblem(null);
+            setVoiceNote(next);
+          }}
+          seatId={seatId}
+          test={test}
+          value={voiceNote}
+        />
       </CrmSection>
 
       <CrmSection title="5 · Live photo">

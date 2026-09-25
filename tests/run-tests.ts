@@ -1920,6 +1920,7 @@ import { runNativeClientCsrfExemptionTests } from "./native-client-csrf-exemptio
 import { runNativeLoginCsrfCookieTests } from "./native-login-csrf-cookie.test.ts";
 import { runMobileEvidenceStampParityTests } from "./mobile-evidence-stamp-parity.test.ts";
 import { runMobilePushLinkTests } from "./mobile-push-link.test.ts";
+import { runMobileCrmVoiceCommentTests } from "./mobile-crm-voice-comment.test.ts";
 import { runForceLogoutStopsPhoneAppPushTests } from "./force-logout-stops-phone-app-push.test.ts";
 import { runNormalizerInvoiceDayImpossibleYearTests } from "./normalizer-invoice-day-never-an-impossible-year.test.ts";
 import { runNormalizerSoficoExcelSerialDateTests } from "./normalizer-reads-sofico-excel-serial-billing-dates.test.ts";
@@ -6792,6 +6793,11 @@ await runTest(
 await runTest(
   "a tapped notification on the Android app goes where the server's own link says: the portal home and profile open the app's screens, any other Phoenix page (its query kept) opens in the browser, and a link that is not Phoenix's — another host, a look-alike, http, another port, a backslash, a control character, a script, a production link on a staging build — opens nothing; the push context route hands the phone the OneSignal app ID the server sends with",
   runMobilePushLinkTests,
+);
+
+await runTest(
+  "the spoken visit comment on the phone: its append matches the web's output for output, the copy never promises words as you talk (they come after Stop), the recording is stored before it is transcribed so a refused transcription keeps the audio, availability is the free GET not the paid POST, the visit save carries voiceNotePath/Seconds/Bytes so the recording is never orphaned, and RECORD_AUDIO is declared while image-picker no longer blocks it",
+  runMobileCrmVoiceCommentTests,
 );
 
 await runTest(
