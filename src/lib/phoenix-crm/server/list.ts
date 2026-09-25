@@ -14,7 +14,7 @@
  * and tells the people who must act.
  */
 
-import { loadBrickCentroids, resolveBrickForPoint } from "@/lib/crm/brick-geo";
+import { loadBrickCentroids, loadBrickNames, resolveBrickForPoint } from "@/lib/crm/brick-geo";
 import { resolveEvidenceLocation } from "@/lib/evidence/location-service";
 import { notFoundError, validationError } from "@/lib/http/api-errors";
 import { monthStartOf, nextRamadan } from "@/lib/phoenix-crm/calendar";
@@ -109,6 +109,20 @@ export type ListCustomerReference = {
   city: string | null;
   zone: string | null;
   lastVisitedOn: string | null;
+  /**
+   * The brick this customer already sits in, carried over from iReports360 — the "known brick" a
+   * pending customer belongs to BEFORE he is captured. Owner, 2026-09-26: a pending customer is
+   * grouped under this brick rather than an amber "locality not yet mapped" heading, because he does
+   * have a territory — it just has not been confirmed on the spot yet. Null only when iReports360
+   * has no brick for him (in production every carried-over customer has one). The RPC gives the brick
+   * id only; `brickName` and `areaName` are resolved from the Source-of-Sales master through
+   * `loadBrickNames` in `@/lib/crm/brick-geo` — that reach lives outside this walled module, exactly
+   * as brick-from-coordinates does. The owner's rule is that a screen shows names, never the code, so
+   * `brickName` is what the heading uses.
+   */
+  brickId: string | null;
+  brickName: string | null;
+  areaName: string | null;
 };
 
 /**
@@ -574,6 +588,11 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
   }
 
   const referenceByContact = new Map(reference.map((row) => [Number(row.contact_crm_id), row]));
+  // The name and area of every brick iReports360 carries a reference customer in — so a pending
+  // customer groups under his known brick rather than an amber "not yet mapped" heading.
+  const referenceBrickMeta = await loadBrickNames(
+    reference.map((row) => row.brick_id).filter((brickId): brickId is string => Boolean(brickId)),
+  );
 
   const listCustomers: ListCustomer[] = customers.map((row) => {
     const customerId = String(row.id);
@@ -603,7 +622,15 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
       validatedAt: text(row.validated_at),
       validatedByName: validatedBy ? nameOf(names, validatedBy) : null,
       reference: referenceRow
-        ? { address: referenceRow.address, city: referenceRow.city, zone: referenceRow.zone, lastVisitedOn: referenceRow.last_visited_on }
+        ? {
+            address: referenceRow.address,
+            city: referenceRow.city,
+            zone: referenceRow.zone,
+            lastVisitedOn: referenceRow.last_visited_on,
+            brickId: referenceRow.brick_id,
+            brickName: referenceRow.brick_id ? (referenceBrickMeta.get(referenceRow.brick_id)?.brickName ?? null) : null,
+            areaName: referenceRow.brick_id ? (referenceBrickMeta.get(referenceRow.brick_id)?.areaName ?? null) : null,
+          }
         : null,
       droppedReason: dropReasonLabel(droppedReason) ?? droppedReason,
       droppedNote: text(row.dropped_note),

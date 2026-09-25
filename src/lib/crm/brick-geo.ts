@@ -220,6 +220,65 @@ export async function loadBrickCentroids(): Promise<BrickCentroid[]> {
   }
 }
 
+/** The brick's display name and its area's name, resolved from the SoS master by brick id. */
+export type BrickNameMeta = { areaName: string | null; brickName: string };
+
+/**
+ * Brick name and area for a set of brick ids — the "known brick" a customer sits in before any
+ * check-in gives him coordinates. The SoS master gives the name; this is where the code→name
+ * resolution the owner's naming rule requires actually happens.
+ *
+ * It lives in this `src/lib/crm` module, not in a Phoenix CRM caller, on purpose: Phoenix CRM reads
+ * only its own tables, the organogram, people's names and the product list, so any reach into the
+ * Source-of-Sales masters is delegated here, exactly as brick-from-coordinates already is. An active
+ * brick row is preferred where an id carries both an active and a retired one, so the name and area
+ * are the current ones; a retired-only brick still names itself; a brick with no name row resolves to
+ * nothing, and the caller falls back to whatever locality it has. Read-only.
+ */
+export async function loadBrickNames(brickIds: readonly string[]): Promise<Map<string, BrickNameMeta>> {
+  const ids = [...new Set(brickIds)].filter((id): id is string => Boolean(id));
+  if (ids.length === 0) return new Map();
+  const supabase = getSupabaseAdmin();
+  const chunk = <T>(items: readonly T[], size: number): T[][] => {
+    const out: T[][] = [];
+    for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+    return out;
+  };
+
+  const byBrick = new Map<string, { areaCode: string | null; brickName: string }>();
+  for (const part of chunk(ids, 150)) {
+    const { data, error } = await supabase
+      .from("source_of_sales_bricks")
+      .select("brick_id, brick_name, area_code, active")
+      .in("brick_id", part);
+    if (error) throw error;
+    for (const row of (data ?? []) as Array<{ active: boolean | null; area_code: string | null; brick_id: string | null; brick_name: string | null }>) {
+      const name = (row.brick_name ?? "").trim();
+      if (!row.brick_id || !name) continue;
+      // A retired row never overwrites an active one already seen for the same id.
+      if (byBrick.has(row.brick_id) && row.active === false) continue;
+      byBrick.set(row.brick_id, { areaCode: (row.area_code ?? "").trim() || null, brickName: name });
+    }
+  }
+
+  const areaCodes = [...new Set([...byBrick.values()].map((entry) => entry.areaCode).filter((code): code is string => Boolean(code)))];
+  const areaNames = new Map<string, string>();
+  for (const part of chunk(areaCodes, 150)) {
+    const { data, error } = await supabase.from("source_of_sales_areas").select("area_code, area_name").in("area_code", part);
+    if (error) throw error;
+    for (const row of (data ?? []) as Array<{ area_code: string | null; area_name: string | null }>) {
+      const name = (row.area_name ?? "").trim();
+      if (row.area_code && name && !areaNames.has(row.area_code)) areaNames.set(row.area_code, name);
+    }
+  }
+
+  const meta = new Map<string, BrickNameMeta>();
+  for (const [brickId, entry] of byBrick) {
+    meta.set(brickId, { areaName: entry.areaCode ? areaNames.get(entry.areaCode) ?? null : null, brickName: entry.brickName });
+  }
+  return meta;
+}
+
 /**
  * Nearest brick to one coordinate. Returns null when there are no centroids at all, or the point
  * has no usable coordinates. A cheap bounding-box pre-filter (~1.5°, far wider than any plausible
