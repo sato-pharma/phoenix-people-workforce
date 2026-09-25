@@ -131,16 +131,31 @@ and upload that `.apk`:
 eas build --platform android --profile mdm
 ```
 
+🔴 **`mdm` builds for `arm64-v8a` only, and that is deliberate.** The universal APK carried
+native libraries for all four ABIs and reached **152 MB** — which ManageEngine's gateway refused: it
+read the whole body and answered `406 Not Acceptable`, twice, after nine minutes of upload. The
+profile pins the one architecture the fleet runs (`-PreactNativeArchitectures=arm64-v8a`), which drops
+three redundant copies of Hermes and the React Native core.
+
+**The cost is real and belongs in writing: a 32-bit-only tablet cannot install this APK.** Every
+arm64 device can, which is every tablet in this fleet and every Android tablet sold since about 2015.
+The store `production` profile is untouched and still carries every ABI — Google builds the
+per-device APKs from the AAB, so nothing on the public store is narrowed by this.
+
 **Its channel is `production` on purpose, matching the store profile.** An APK built on the `preview`
 channel is a working tablet that silently never receives an `eas update` again, and nothing on the
 device says so. Both artifacts on one channel means one OTA stream reaches the store build and the
 tablets together. Do not "tidy" `mdm` onto its own channel.
 
-**Phoenix cannot do the upload for you, but ManageEngine's API could.** `src/lib/devices/manageengine/apps.ts`
-can list the repository and install, remove or refresh an app on a device — it has **no upload call**.
-ManageEngine does document one (`POST /api/v1/mdm/apps`, "Add an app to MDM server", scope
-`MDMOnDemand.MDMDeviceMgmt.CREATE`), so this is a gap in Phoenix rather than a vendor floor, and it is
-the one worth closing if uploading by hand becomes a habit. Contrast **deleting a device**, which the
+**Phoenix does the upload itself now — this page said it could not, for as long as that was true.**
+`src/lib/devices/manageengine/apps.ts` lists the repository and installs, removes or refreshes an app
+on a device, and since #4391 it also uploads: `uploadManageEngineApp` posts the file to `/emsapi/files`
+(part name `fileName`, header `module: MDM_APP_MGMT`) and registers it with `POST /api/v1/mdm/apps` as
+an enterprise app. The **Rep Tablets** page carries it, in the company app repository panel.
+
+🔴 **Upload through that page, not from a laptop.** The browser's leg ends at Railway, and Railway
+reaches ManageEngine in seconds. A direct upload from this machine put the whole body on the wire for
+nine minutes and was refused at the end of it. Contrast **deleting a device**, which the
 vendor genuinely does not expose — see `src/lib/devices/manageengine/commands.ts`.
 
 ---
