@@ -422,6 +422,16 @@ placing a pinned test in `validate` is stale.
 red without blocking a merge** — never take "pinned by a required check" on trust; read the
 protection API. `pnpm run ci` is opt-in: run it **only when the owner names it**.
 
+🔴 **A LOCAL TYPECHECK IS NOW DENIED MECHANICALLY — `bash-guard.mjs` C8, live 2026-09-25 — in every
+spelling**, including `pnpm/npm/yarn run typecheck`, `npx`/`pnpm exec tsc --noEmit`,
+`node …/typescript/bin/tsc`, `lib/tsc.js`, `.bin/tsc`, a quoted node path, and any script whose body
+resolves to one. It had to become a hook because the rule above did not hold on its own: a reaped
+typecheck prints **nothing** and exits non-zero, which a session cannot tell from a typo, so it tries
+another spelling — **23 of 23 node jobs the memory watchdog killed in its surviving log window were a
+typecheck**, six of them inside ten minutes. `PHX_TYPECHECK_OK=1 <cmd>` (`$env:PHX_TYPECHECK_OK=1;`
+in PowerShell) stands it down for one command you will sit and watch. Pinned by
+`tests/local-typecheck-guard.test.ts`.
+
 Two things are NOT covered by a PR's CI and still need a check immediately before the action:
 **migrations** and **production deploys**. Verifying a UI change in the browser is not validation at
 all — reload and look.
