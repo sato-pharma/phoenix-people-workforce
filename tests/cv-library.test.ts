@@ -18,6 +18,7 @@ import {
 } from "../src/lib/cv/cv-library.ts";
 import { candidateScreeningFacts } from "../src/lib/recruitment/candidate-screening-facts.ts";
 import type { Candidate } from "../src/lib/recruitment/types.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * Pins the CV Database onto the candidate pool.
@@ -206,7 +207,7 @@ export function runCvLibraryTests() {
   const manager = readFileSync("src/components/cv/cv-database-manager.tsx", "utf8");
   // Comments stripped, because the file explains each of these rules in prose and an assertion that
   // can match the explanation of the rule instead of a breach of it can never fail.
-  const managerCode = manager.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+  const managerCode = stripComments(manager);
 
   // The original defect: this page once held its rows in React state, filled only by whatever .xlsx
   // somebody had uploaded that minute, and a reload emptied it. It must never own data again.

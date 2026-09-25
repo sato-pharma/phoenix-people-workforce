@@ -9,6 +9,7 @@ import {
 } from "../src/lib/distribution-lists/access.ts";
 import { refusePrivilegedTemplateChange } from "../src/lib/email-templates/privileged-fields.ts";
 import type { AccessContext } from "../src/lib/auth/permissions.ts";
+import { stripCommentsCompact } from "./support/comment-strip.ts";
 
 /**
  * THE HR BUSINESS PARTNER REACHES THE DISTRIBUTION LISTS, AND ONLY THE HR ONES.
@@ -72,11 +73,16 @@ const SETTINGS = readFileSync(
   "utf8",
 );
 
-/** Source with comments stripped, so a rule described in prose cannot satisfy a check. */
+/**
+ * Source with comments stripped, so a rule described in prose cannot satisfy a check.
+ *
+ * COMPACT, because the Telegram gates below are pinned inside a 700-CHARACTER window. The shared
+ * strip blanks a comment in place so that line numbers survive, which leaves the comment's bytes
+ * sitting between a guard and its `status: 403` — and the local stripper this replaced collapsed
+ * each comment to one space, which is what the 700 was measured against.
+ */
 function code(source: string): string {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, " ")
-    .replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+  return stripCommentsCompact(source);
 }
 
 const as = (role: string): AccessContext =>

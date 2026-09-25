@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { keysetRanges } from "../src/lib/supabase/paginated.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 // AI suggest and Auto-map send a distributor file's customers in groups (20 a request in #3862; since
 // 2026-09-18, 100 a request for the free pass and 60 pharmacies for the AI pass), so everything the
@@ -19,7 +20,7 @@ import { keysetRanges } from "../src/lib/supabase/paginated.ts";
 
 /** Strip comments before asserting on code — the explanations name the calls they replaced. */
 function code(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+  return stripComments(source);
 }
 
 function rangesHolding(ranges: ReturnType<typeof keysetRanges>, id: number): number {

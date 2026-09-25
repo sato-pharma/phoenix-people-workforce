@@ -10,6 +10,7 @@ import {
   hasDoubleDeductionConflict,
   settledElsewhereAmount,
 } from "../src/lib/automated-payroll/conflicts.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * Guards the Part 1 / Part 2 split rule (owner-decided 2026-07-25).
@@ -285,7 +286,6 @@ export function runAutomatedPayrollPart1ScopeTests() {
     new URL("../src/lib/automated-payroll/run-service.ts", import.meta.url),
     "utf8",
   );
-  const stripComments = (text: string) => text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
   const stepEditToPatchBody = stripComments(
     runServiceSource.slice(
       runServiceSource.indexOf("function stepEditToPatch"),

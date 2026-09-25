@@ -10,6 +10,7 @@ import {
 import { candidateRecordSections, type CandidateRecordSection } from "../src/lib/recruitment/candidate-record-fields.ts";
 import { getCvPositionSchema, type CvPositionSchema } from "../src/lib/recruitment/cv-field-schemas.ts";
 import type { Candidate } from "../src/lib/recruitment/types.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // One candidate's own page — pressing a name opens everything on file for that person.
@@ -33,9 +34,7 @@ function read(relativePath: string): string {
 
 /** The source without its comments — the loader's own header says it never calls "the /seen route". */
 function codeOnly(source: string): string {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, (block) => block.replace(/[^\n]/g, " "))
-    .replace(/(^|[^:])\/\/.*$/gm, "$1");
+  return stripComments(source);
 }
 
 function fakeCandidate(overrides: Partial<Candidate> = {}): Candidate {

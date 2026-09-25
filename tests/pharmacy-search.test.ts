@@ -809,7 +809,7 @@ export function runPharmacySearchTests() {
         "so a phone gets cards instead of a sideways-scrolling table",
     );
     assert.ok(
-      !/<table[\s>]/.test(source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "")),
+      !/<table[\s>]/.test(stripComments(source)),
       `src/components/pharmacy-search/${name} must not hand-roll a <table> — <PortalDesktopTable> ` +
         "carries the md: gate that keeps it off a phone",
     );

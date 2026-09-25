@@ -7,11 +7,12 @@ import {
   isSignCountReplay,
   resolveRelyingParty,
 } from "../src/lib/auth/webauthn.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 // Strips comments so an "X must be absent" assertion cannot be tripped by the very comment that
 // explains WHY X is absent. Hit exactly that on the allowCredentials check below on first run.
 function withoutComments(source: string) {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+  return stripComments(source);
 }
 
 function bodyOf(source: string, declaration: string) {

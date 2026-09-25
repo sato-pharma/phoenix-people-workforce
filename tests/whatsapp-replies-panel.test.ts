@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { createAccessContext, phoenixRoles, type PhoenixRole } from "../src/lib/auth/permissions.ts";
 import { canViewWhatsAppOutboundLog } from "../src/lib/recruitment/access.ts";
 import { recruitmentHiringPageItems } from "../src/config/system-navigation.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 // The panel that answers "show me the reply that went out" without anyone running a query.
 //
@@ -139,7 +140,7 @@ export async function runWhatsAppRepliesPanelTests(): Promise<void> {
   );
   // Counted against the CODE, not the prose: the comment above the component names the wrong fix
   // in order to warn against it, and a naive count reads that warning as the defect it describes.
-  const VIEW_CODE = VIEW_SOURCE.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  const VIEW_CODE = stripComments(VIEW_SOURCE);
   assert.equal(
     (VIEW_CODE.match(/dir="auto"/g) ?? []).length,
     1,

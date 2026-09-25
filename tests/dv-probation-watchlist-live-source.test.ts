@@ -5,6 +5,7 @@ import path from "node:path";
 import { dvRequirementMetForRole } from "../src/lib/probation/intelligence/dv-progress-lookup.ts";
 import type { DvProgress } from "../src/lib/probation/intelligence/report-metrics.ts";
 import type { ProbationEvaluatorRole } from "../src/lib/probation/intelligence/types.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * The Double Visit probation watchlist reads the LIVE DV record, not the retired checkbox table.
@@ -164,7 +165,7 @@ export function runDvProbationWatchlistLiveSourceTests() {
     ["src/lib/probation/types.ts", probationTypes],
     ["src/lib/probation/service.ts", probationService],
   ] as const) {
-    const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+    const code = stripComments(source);
     assert.ok(
       !/dv_state/.test(code),
       `${name} projects dv_state again. It is built from employee_probation's DV checkbox columns, ` +

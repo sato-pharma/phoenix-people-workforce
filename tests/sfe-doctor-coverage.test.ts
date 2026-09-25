@@ -14,6 +14,7 @@ import {
 } from "../src/lib/crm/sfe-doctor-coverage.ts";
 import { cairoTodayIso } from "../src/lib/crm/dates.ts";
 import { CAMPAIGN_TYPE } from "../src/lib/crm/visit-types.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 let nextVisitId = 1;
 
@@ -528,7 +529,7 @@ export function runSfeDoctorCoverageTests() {
   // sets today, so the field is always null and the cap bounds nothing that is served. It is kept
   // because the rebuild will turn that flag on, and an uncapped list doubled by a card+row render
   // is precisely how the 16.5 MB happened the first time.
-  const capSource = serviceSource.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  const capSource = stripComments(serviceSource);
   const cap = /DOCTOR_COVERAGE_CALL_LIST_SIZE = (\d+);/.exec(capSource);
   assert.ok(
     cap,

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { stripComments } from "./support/comment-strip.ts";
 
 // Capture gates for the 1 August Phoenix cutover.
 //
@@ -15,14 +16,7 @@ const TYPES = "src/lib/marketing-requests/types.ts";
 const BLOCKERS = "src/lib/marketing-requests/draft-blockers.ts";
 
 function code(path: string): string {
-  return readFileSync(path, "utf8")
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .split("\n")
-    .map((line) => {
-      const idx = line.indexOf("//");
-      return idx >= 0 ? line.slice(0, idx) : line;
-    })
-    .join("\n");
+  return stripComments(readFileSync(path, "utf8"));
 }
 
 /**

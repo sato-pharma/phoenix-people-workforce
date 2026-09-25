@@ -32,8 +32,16 @@ import { codeEatenByNaiveStrip, stripComments } from "./support/comment-strip.ts
  * ratchet that cries wolf is turned off. So this walks stripper → call site → argument → path.
  *
  * That resolution is the fragile part, and a resolver that silently resolves nothing would make
- * this file pass forever while checking nothing. {@link RESOLVED_PAIR_FLOOR} is the guard: 38
- * pairs resolve today, and the floor fails the test long before the resolver degrades to useless.
+ * this file pass forever while checking nothing. Until 2026-09-25 the guard was a floor on the live
+ * pair count: 38 pairs resolved, and fewer than 20 failed the test.
+ *
+ * That floor is gone, because the population it counted is gone. The last inline naive strip under
+ * `tests/` was folded onto {@link stripComments} on 2026-09-25 — 97 JavaScript call sites, 18 SQL
+ * and 2 CSS across 115 files — so the sweep resolves ZERO pairs today and a floor on offenders now
+ * fails on SUCCESS. {@link testTheResolverWalksStripperToPath} replaces it with the pattern the
+ * line-wise half below already uses: the resolver run over fixtures, positives and negatives
+ * alike, which do not expire when the tree is clean. {@link SWEPT_FILE_FLOOR} covers the other way
+ * to check nothing, which is to sweep an empty tree.
  *
  * ## The second shape: a hand-rolled LINE-WISE filter
  *
@@ -68,7 +76,8 @@ import { codeEatenByNaiveStrip, stripComments } from "./support/comment-strip.ts
  * 42-file repair. That list is a budget per file, never a permission — fold one, delete its row.
  *
  * A shape detector whose offender count is meant to reach zero cannot be guarded by a floor on
- * offenders the way {@link RESOLVED_PAIR_FLOOR} guards the resolver. Its guard is
+ * offenders at all. That was the argument for this half first, and 2026-09-25 made it true of the
+ * block half too. Its guard is
  * {@link testTheLineWiseDetectorFiresOnTheShapesItIsNamedFor} instead: every historical spelling as
  * a fixture, three negatives so it is not simply flagging everything, and a live control that runs
  * the detector over this very file's bytes — the one control that cannot pass while the walk, the
@@ -90,9 +99,6 @@ const SANCTIONED = new Set(["tests/support/comment-strip.ts", "tests/comment-str
  * loose: a variant this misses is a variant that escapes the ratchet.
  */
 const NAIVE_STRIP_TEXT = /\\\/\\\*[\s\S]{0,24}?\\\*\\\//;
-
-/** 38 pairs resolve today. A resolver that has quietly stopped working must fail, not pass. */
-const RESOLVED_PAIR_FLOOR = 20;
 
 /**
  * A comment-prefix test applied to one line — `startsWith("//")`, `startsWith("/*")`,
@@ -120,12 +126,16 @@ const JOIN_LOOKAHEAD = 200;
  */
 const MAX_ARGUMENT_CHARS = 2_000;
 
-/** `tests/` holds 1,834 `.ts` files today. A sweep that has stopped reading them must fail. */
+/** `tests/` holds 1,835 `.ts` files today. A sweep that has stopped reading them must fail. */
 const SWEPT_FILE_FLOOR = 1_200;
 
 /**
- * The line-wise strippers that already existed when this check was written — 47 sites in 42 files,
- * measured 2026-09-25, of which #4382 folds 9.
+ * The line-wise strippers that already existed when this check was written — seeded at 47 sites in
+ * 42 files, trimmed to the 25 sites in 23 files the detector actually reads today.
+ *
+ * The 19 rows removed on 2026-09-25 were budgeting sites that no longer exist: #4382 folded nine of
+ * them, and the others were already clean when the list was seeded. A row for an empty file is not
+ * harmless — it silently re-permits the shape in a file that had stopped using it.
  *
  * A BUDGET, not a permission: the number is the most a file may hold, so a file #4382 empties keeps
  * passing whichever order the two land in, while a NEW one anywhere — or a second one in a listed
@@ -133,52 +143,33 @@ const SWEPT_FILE_FLOOR = 1_200;
  * grow. {@link GRANDFATHERED_SITE_BUDGET} makes an addition impossible to make quietly.
  */
 const GRANDFATHERED: ReadonlyMap<string, number> = new Map([
-  ["tests/action-center-row-caps.test.ts", 1],
-  ["tests/admin-filename-cells-never-ellipsise.test.ts", 1],
   ["tests/approvals-hub-row-cap.test.ts", 1],
   ["tests/attendance-exception-row-cap.test.ts", 1],
   ["tests/automated-payroll-crm-leave-fails-closed.test.ts", 1],
   ["tests/automated-payroll-insurance-wage.test.ts", 1],
   ["tests/automated-payroll-leaver-overpayment.test.ts", 1],
-  ["tests/ceo-top-movers-share.test.ts", 1],
   ["tests/closing-summary-fits.test.ts", 1],
   ["tests/crm-live-poller.test.ts", 1],
   ["tests/crm-portal-coverage-populations.test.ts", 1],
-  ["tests/crm-route-map-address-never-ellipsises.test.ts", 1],
   ["tests/crm-visit-type-labels.test.ts", 1],
   ["tests/cv-cabinet-audit-fixes.test.ts", 1],
-  ["tests/decided-for-me-row-caps.test.ts", 1],
   ["tests/deductions-crm-vacation-employment-join.test.ts", 1],
   ["tests/deductions-dsm-no-record.test.ts", 1],
   ["tests/deductions-vacation-ledger-guard.test.ts", 1],
-  ["tests/direct-orders-approval-flow.test.ts", 3],
-  ["tests/direct-orders-collection.test.ts", 1],
   ["tests/direct-orders-desk-shell.test.ts", 1],
-  ["tests/direct-orders-family-basket.test.ts", 2],
   ["tests/direct-orders-second-review-fixes.test.ts", 2],
   ["tests/direct-orders-unresolved-manager-rung.test.ts", 1],
   ["tests/drive-cabinet-folders.test.ts", 1],
-  ["tests/early-birds-board-wraps.test.ts", 1],
-  ["tests/early-birds-fortnight-card-wraps.test.ts", 1],
-  ["tests/employee-directory-stale-bound.test.ts", 1],
   ["tests/normalizer-mapping-truth.test.ts", 1],
   ["tests/outstation-claims-read-flag.test.ts", 2],
   ["tests/outstation-request-name-is-the-employee-record.test.ts", 1],
   ["tests/pharmacy-license-evidence.test.ts", 1],
-  ["tests/portal-chrome-never-clips-text.test.ts", 1],
-  ["tests/portal-home-no-dead-approvals-fetch.test.ts", 1],
-  ["tests/portal-tools-grid-fits-a-phone.test.ts", 1],
   ["tests/recruitment-simplify.test.ts", 1],
   ["tests/repo-doctor-worktree-restore-advice.test.ts", 1],
-  ["tests/sales-command-band-fits-a-laptop.test.ts", 1],
-  ["tests/sales-target-tables-fit-the-screen.test.ts", 1],
-  ["tests/section-card-header-fits-a-phone.test.ts", 1],
-  ["tests/territory-preview-link-controls.test.ts", 1],
-  ["tests/zoomable-photo.test.ts", 1],
 ]);
 
-/** The sum of the budget above on the day it was written. It may fall. It may never rise. */
-const GRANDFATHERED_SITE_BUDGET = 47;
+/** The sum of the budget above. It may fall. It may never rise. Seeded at 47, trimmed to 25. */
+const GRANDFATHERED_SITE_BUDGET = 25;
 
 function walk(dir: string): string[] {
   const out: string[] = [];
@@ -247,24 +238,38 @@ function resolveArgument(argument: string, constants: Map<string, string>): stri
 
 type Pair = { readonly test: string; readonly file: string };
 
+/**
+ * The (test -> stripped source) pairs in ONE file's text.
+ *
+ * Split out from the tree walk on 2026-09-25 so the resolution can be exercised on a fixture. The
+ * live tree no longer contains a single naive stripper, so a run over it proves nothing about
+ * whether this still works — see {@link testTheResolverWalksStripperToPath}.
+ */
+function strippedPairsIn(test: string, source: string): Pair[] {
+  const names = stripperNames(source);
+  if (names.size === 0) return [];
+
+  const pairs = new Map<string, Pair>();
+  const constants = constantPaths(source);
+  for (const name of names) {
+    const calls = new RegExp(`\\b${name}\\s*\\(([^()]*(?:\\([^()]*\\))?[^()]*)\\)`, "g");
+    for (const call of source.matchAll(calls)) {
+      const resolved = resolveArgument(call[1], constants);
+      if (!resolved || !existsSync(resolved)) continue;
+      pairs.set(`${test}::${resolved}`, { test, file: resolved });
+    }
+  }
+
+  return [...pairs.values()];
+}
+
 function resolveStrippedPairs(): Pair[] {
   const pairs = new Map<string, Pair>();
 
   for (const file of walk(TESTS_DIR)) {
     if (SANCTIONED.has(file)) continue;
-
-    const source = readFileSync(file, "utf8");
-    const names = stripperNames(source);
-    if (names.size === 0) continue;
-
-    const constants = constantPaths(source);
-    for (const name of names) {
-      const calls = new RegExp(`\\b${name}\\s*\\(([^()]*(?:\\([^()]*\\))?[^()]*)\\)`, "g");
-      for (const call of source.matchAll(calls)) {
-        const resolved = resolveArgument(call[1], constants);
-        if (!resolved || !existsSync(resolved)) continue;
-        pairs.set(`${file}::${resolved}`, { test: file, file: resolved });
-      }
+    for (const pair of strippedPairsIn(file, readFileSync(file, "utf8"))) {
+      pairs.set(`${pair.test}::${pair.file}`, pair);
     }
   }
 
@@ -360,16 +365,17 @@ function testTheDetectorCatchesTheTrapItIsNamedFor() {
 }
 
 function testNoTestStripsAFileTheStripWouldDamage() {
-  const pairs = resolveStrippedPairs();
+  const files = walk(TESTS_DIR);
 
   assert.ok(
-    pairs.length >= RESOLVED_PAIR_FLOOR,
-    `only ${pairs.length} (test -> stripped source) pairs resolved, below the floor of ` +
-      `${RESOLVED_PAIR_FLOOR}. The resolver has stopped seeing call sites it used to see, so this ` +
-      "ratchet is no longer checking anything. Fix resolveStrippedPairs, do not lower the floor.",
+    files.length >= SWEPT_FILE_FLOOR,
+    `the sweep read only ${files.length} files under ${TESTS_DIR}/, below the floor of ` +
+      `${SWEPT_FILE_FLOOR}. Zero offenders is the expected answer here now, which is exactly why ` +
+      "the walk has to be proved: a sweep that has stopped seeing the tree gives the same answer " +
+      "for the wrong reason. Fix walk(), do not lower the floor.",
   );
 
-  const damaged = pairs
+  const damaged = resolveStrippedPairs()
     .map((pair) => ({ ...pair, eaten: codeEatenByNaiveStrip(readFileSync(pair.file, "utf8")) }))
     .filter((pair) => pair.eaten > 0)
     .sort((a, b) => b.eaten - a.eaten);
@@ -396,6 +402,95 @@ function testNoTestStripsAFileTheStripWouldDamage() {
  * in `tests/` would be silenced within a day, which is the failure mode the resolution above was
  * built to avoid.
  */
+/**
+ * The resolver, shown to walk stripper -> call site -> argument -> path, and to stay quiet on three
+ * things that are not a test stripping a damaged file.
+ *
+ * This is the whole degradation guard for the check above, and it took over from a floor on the
+ * live pair count on 2026-09-25 when that count reached zero. A resolver that quietly resolves
+ * nothing is the failure mode: the `damaged` assertion above would then read an empty list and
+ * report a clean tree forever, whatever `tests/` actually held.
+ *
+ * The positives point at a file the naive strip really does damage, so this also exercises the
+ * existence gate and {@link codeEatenByNaiveStrip} end to end, on the same path the sweep uses.
+ */
+function testTheResolverWalksStripperToPath() {
+  // 53% of this file is deleted by the naive strip (its route patterns open comments). If it is
+  // ever renamed, point the fixtures at another file from the docblock's list — do not delete them.
+  const DAMAGED = "src/config/system-navigation.ts";
+  assert.ok(
+    existsSync(DAMAGED),
+    `${DAMAGED} no longer exists, so these fixtures resolve to nothing and would pass for the ` +
+      "wrong reason. Point them at another file the naive strip damages.",
+  );
+  assert.ok(
+    codeEatenByNaiveStrip(readFileSync(DAMAGED, "utf8")) > 0,
+    `the naive strip no longer damages ${DAMAGED}, so a test stripping it would not be reported ` +
+      "and these fixtures prove nothing. Point them at a file it does damage.",
+  );
+
+  const positives: ReadonlyArray<readonly [string, string]> = [
+    [
+      "a named function called with the path written inline",
+      [
+        "function codeOf(source: string): string {",
+        '  return source.replace(/\\/\\*[\\s\\S]*?\\*\\//g, "");',
+        "}",
+        `const code = codeOf(readFileSync("${DAMAGED}", "utf8"));`,
+      ].join("\n"),
+    ],
+    [
+      "an arrow const called with a path held in another const",
+      [
+        `const NAV = "${DAMAGED}";`,
+        'const codeOf = (source: string) => source.replace(/\\/\\*[\\s\\S]*?\\*\\//g, "");',
+        "const code = codeOf(read(NAV));",
+      ].join("\n"),
+    ],
+  ];
+
+  for (const [what, fixture] of positives) {
+    assert.deepEqual(
+      strippedPairsIn("tests/fixture.test.ts", fixture).map((pair) => pair.file),
+      [DAMAGED],
+      `the resolver must walk ${what} through to the file it strips. It no longer does, so the ` +
+        "sweep above reports a clean tree without looking at one.",
+    );
+  }
+
+  const negatives: ReadonlyArray<readonly [string, string]> = [
+    [
+      "a test that merely NAMES an affected file",
+      `const NAV = "${DAMAGED}";\nassert.match(readFileSync(NAV, "utf8"), /Reps List/);`,
+    ],
+    [
+      "a stripper pointed at a path that does not exist",
+      [
+        "function codeOf(source: string): string {",
+        '  return source.replace(/\\/\\*[\\s\\S]*?\\*\\//g, "");',
+        "}",
+        'const code = codeOf(readFileSync("src/config/no-such-file.ts", "utf8"));',
+      ].join("\n"),
+    ],
+    [
+      "the sanctioned stripper called on the same damaged file",
+      [
+        'import { stripComments } from "./support/comment-strip.ts";',
+        `const code = stripComments(readFileSync("${DAMAGED}", "utf8"));`,
+      ].join("\n"),
+    ],
+  ];
+
+  for (const [what, fixture] of negatives) {
+    assert.deepEqual(
+      strippedPairsIn("tests/fixture.test.ts", fixture),
+      [],
+      `the resolver must not report ${what} — 9 tests reference an affected file and only 2 ever ` +
+        "stripped one, so flagging a mention would have cried wolf 7 times on the first run",
+    );
+  }
+}
+
 function testTheLineWiseDetectorFiresOnTheShapesItIsNamedFor() {
   const positives: ReadonlyArray<readonly [string, string]> = [
     [
@@ -554,6 +649,7 @@ function testNoNewTestStripsCommentsLineWise() {
 
 export function runCommentStripRatchetTests() {
   testTheDetectorCatchesTheTrapItIsNamedFor();
+  testTheResolverWalksStripperToPath();
   testNoTestStripsAFileTheStripWouldDamage();
   testTheLineWiseDetectorFiresOnTheShapesItIsNamedFor();
   testNoNewTestStripsCommentsLineWise();

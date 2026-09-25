@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { stripSqlComments } from "./support/comment-strip.ts";
 
 // CRM phase 6, part 1: the three database objects the cutover (phase 5) left reading the vendor tables
 // directly. Each now reads the unified views, so it keeps working once Phoenix's own visits and plans
@@ -7,10 +8,6 @@ import { readFileSync } from "node:fs";
 
 const MIGRATION = "supabase/migrations/20260914000000_crm_unify_vendor_reads.sql";
 const CONTACT_MASTER_MIGRATION = "supabase/migrations/20260913150000_crm_contact_master.sql";
-
-function stripSqlComments(sql: string): string {
-  return sql.replace(/--[^\n]*/g, "");
-}
 
 /** The whole `create or replace function public.crm_contact_master_refresh(...)` statement. */
 function refreshFunction(sql: string): string {

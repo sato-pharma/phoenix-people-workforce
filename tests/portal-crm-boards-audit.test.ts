@@ -14,6 +14,7 @@ import { DOCTOR_COVERAGE_PORTAL_ROLES, type DoctorCoverageScope } from "../src/l
 import { buildOrgPlacementTree, type OrgTreeNode } from "../src/lib/crm/org-placement.ts";
 import { buildRepsPlansBoard } from "../src/lib/crm/reps-plans.ts";
 import { resolveEmployeePortalNavVisibility } from "../src/lib/employee-portal/navigation.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The defects found by auditing Reps List, Reps Plans and KPIs IN the employee
@@ -133,9 +134,7 @@ const readSource = (path: string) => readFileSync(path, "utf8");
  * from its explanation gets deleted rather than obeyed.
  */
 const readCode = (path: string) =>
-  readSource(path)
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/^\s*\/\/.*$/gm, "");
+  stripComments(readSource(path));
 
 // ── THE REP WHO DID NOTHING ──────────────────────────────────────────────────
 export function runRepsPlansSilentRepTests() {

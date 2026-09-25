@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { cairoDate, cairoDateTime, cairoDateTimeSortable, stableEnGbFormatter, utcDate } from "../src/lib/format/cairo-datetime.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 // React error #418 is a hydration mismatch: the server renders a text node one way, the browser
 // renders it another, so React throws away the server HTML and re-renders the whole tree. React
@@ -44,7 +45,7 @@ const read = (relativePath: string) => fs.readFileSync(path.join(REPO_ROOT, rela
  * the comment a future reader most needs.
  */
 const codeOnly = (source: string) =>
-  source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+  stripComments(source);
 
 const CAIRO_DATETIME_PATH = "src/lib/format/cairo-datetime.ts";
 const PASSWORD_SETUP_FORM_PATH = "src/components/auth/password-setup-form.tsx";

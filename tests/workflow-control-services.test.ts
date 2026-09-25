@@ -26,6 +26,7 @@ import {
   writeWorkflowControlAudit,
 } from "../src/lib/workflow-control/services/audit.ts";
 import { getWorkflowSubflow } from "../src/lib/workflow-control/definitions.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 export function runWorkflowControlServicesTests() {
   const superAdmin = { hrId: "B-10", role: "Super Admin" } as const;
@@ -152,7 +153,7 @@ export function runWorkflowControlServicesTests() {
     ];
     for (const rel of serviceFiles) {
       const raw = readFileSync(new URL(`../${rel}`, import.meta.url), "utf8");
-      const src = raw.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|\s)\/\/.*$/gm, "$1");
+      const src = stripComments(raw).replace(/(^|\s)\/\/.*$/gm, "$1");
       assert.equal(/from\s+["']@\/lib\/supabase\b/.test(src), false, `${rel} must not import @/lib/supabase`);
       assert.equal(/from\s+["']@supabase\/supabase-js["']/.test(src), false, `${rel} must not import @supabase/supabase-js`);
       assert.equal(/\bgetSupabaseAdmin\s*\(/.test(src), false, `${rel} must not call getSupabaseAdmin()`);

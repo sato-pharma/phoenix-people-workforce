@@ -26,6 +26,7 @@ import {
   visibleLevelsForBound,
   type VsTargetBound,
 } from "../src/lib/sales/vs-target-scope.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 const names: VsTargetNames = {
   lineName: (code) => ({ cns: "CNS", pedia: "Pedia", anti_infective: "Anti-infective" })[code] ?? code,
@@ -319,12 +320,10 @@ export function runSalesVsTargetTests() {
   // The figure is worthless if the panel stops reading it, and no unit test can render the dashboard (a
   // .tsx client component this runner cannot load). Pinned by reading the source whole-file, comments
   // stripped, and slicing on the panel's own branch markers rather than a byte window.
-  const dashboardSource = readFileSync(
+  const dashboardSource = stripComments(readFileSync(
     new URL("../src/components/sales/vs-target/vs-target-dashboard.tsx", import.meta.url),
     "utf8",
-  )
-    .replace(/\{\/\*[\s\S]*?\*\/\}/g, "")
-    .replace(/\/\*[\s\S]*?\*\//g, "");
+  ));
   const panelStart = dashboardSource.indexOf("{!data.salesLoaded ? (");
   const panelEnd = dashboardSource.indexOf(") : data.isEmptyScope ? (", panelStart);
   assert.ok(

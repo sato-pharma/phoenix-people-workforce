@@ -5,6 +5,7 @@ import { isHeadOfficeLine } from "../src/lib/sales/access-scope.ts";
 import { pickPortalClosingLine } from "../src/lib/sales/monthly-closing-portal.ts";
 import { assertNotHeadOfficeClosing } from "../src/lib/sales/monthly-closing-publication.ts";
 import { selectClosingLines } from "../src/lib/sales/monthly-distributor-import.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 // Head Office must not be offerable as a Monthly Closing (owner decision, 2026-08-05).
 //
@@ -29,7 +30,7 @@ function read(path: string): string {
 
 /** Source with comments stripped, so a rule can never be "satisfied" by prose about it. */
 function code(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  return stripComments(source);
 }
 
 export function runClosingExcludesHeadOfficeTests() {

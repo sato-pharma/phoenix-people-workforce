@@ -8,6 +8,7 @@ import { OVERPAID_ACK_REQUIRED } from "../src/lib/automated-payroll/run-service.
 import type { DraftRow, PayrollPeriod, RowLifecycle } from "../src/lib/automated-payroll/types.ts";
 import type { EmployeeDirectoryRow } from "../src/lib/employees/employee-directory.ts";
 import type { PayrollSalarySource } from "../src/lib/payroll/salary-source-model.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * Covers `assembleRows()` (builds the canonical payroll row) and `reconcile()`
@@ -319,9 +320,7 @@ export function runAutomatedPayrollAssembleTests() {
   // Strip comments FIRST. Matching the bare function name would also match the
   // explanatory comment inside cancelRun, so removing the real call would still
   // pass — verified: it did. Assert on the executable call only.
-  const cancelBody = cancelBodyRaw
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/\/\/.*$/gm, "");
+  const cancelBody = stripComments(cancelBodyRaw);
   assert.ok(
     cancelBody.includes("await releaseCarryForwardForCancelledRun("),
     "cancelRun must actually CALL releaseCarryForwardForCancelledRun — otherwise cancelling after Part 2 confirm silently forgives recovered debt",

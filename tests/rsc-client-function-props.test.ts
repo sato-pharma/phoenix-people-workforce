@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { stripComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // A server component may never hand a function to a client component.
@@ -84,12 +85,16 @@ function collectSourceFiles(): SourceFile[] {
  * A module is a client module when its first real statement is the "use client" directive.
  * Leading comments and blank lines are allowed before it; anything else means the directive
  * would be inert, and Next treats the file as a server module.
+ *
+ * `stripComments` blanks every comment in place, so the leading ones become blank lines that the
+ * loop below already skips. That also covers the shape the regex here used to miss: a `//` banner
+ * ABOVE a `/* … *\/` docblock left the docblock unanchored, so it was never removed and the
+ * directive underneath read as "anything else".
  */
 function isClientModule(text: string): boolean {
-  const withoutBlockComments = text.replace(/^\s*\/\*[\s\S]*?\*\//, "");
-  for (const rawLine of withoutBlockComments.split("\n")) {
+  for (const rawLine of stripComments(text).split("\n")) {
     const line = rawLine.trim();
-    if (line === "" || line.startsWith("//")) continue;
+    if (line === "") continue;
     return /^["']use client["'];?$/.test(line);
   }
   return false;

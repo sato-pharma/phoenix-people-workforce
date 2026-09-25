@@ -48,6 +48,7 @@ import { join, relative, sep } from "node:path";
 
 import { EDITOR_CSS } from "../src/lib/hiring-pack/paper-editor-css.ts";
 import { PRINT_BANNER_CSS } from "../src/lib/hiring-pack/render-shared.ts";
+import { stripCssComments } from "./support/comment-strip.ts";
 
 // ── The instruments ────────────────────────────────────────────────────────────────────────────
 
@@ -112,9 +113,7 @@ function stylesheetSites(css: string): string[] {
     const at = match.index ?? 0;
     const open = css.lastIndexOf("{", at);
     const previous = Math.max(css.lastIndexOf("}", open), css.lastIndexOf("{", Math.max(open - 1, 0)));
-    const selector = css
-      .slice(previous + 1, open)
-      .replace(/\/\*[\s\S]*?\*\//g, "")
+    const selector = stripCssComments(css.slice(previous + 1, open))
       .trim()
       .replace(/\s+/g, " ");
     sites.push(`${selector} | ${match[1]}: ${match[2].trim()}`);

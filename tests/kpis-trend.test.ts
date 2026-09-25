@@ -18,6 +18,7 @@ import {
   resolveKpiTrendMetric,
   resolveKpiTrendScale,
 } from "../src/lib/crm/kpis-trend-options.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * KPIs board — the Weekly tab (owner, 2026-09-22): call rate, coverage and frequency week by week
@@ -110,7 +111,7 @@ function phoenixRow(overrides: Partial<KpiRepRow> & { judged: number }): KpiRepR
 const read = (path: string) => readFileSync(path, "utf8");
 
 /** The source with its comments removed, so a rule is checked against the code and not the prose explaining it. */
-const codeOf = (source: string) => source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+const codeOf = (source: string) => stripComments(source);
 
 // ── 1. Which columns appear ───────────────────────────────────────────────────────────────────
 

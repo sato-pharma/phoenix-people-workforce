@@ -8,6 +8,7 @@ import {
   resolveVisitTypeLabel,
 } from "../src/lib/crm/visit-types.ts";
 import { describeCrmDay } from "../src/lib/attendance/crm-day-maps.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 // iReports360 documents nine visit-type codes. It also sends seven it never documented, and for
 // every one of those the `visitTypeDescription` it sends is the literal string "Unknown".
@@ -294,9 +295,7 @@ function runCommentSensitiveCodeTests(): void {
  */
 function runVisitTypeSurfaceTests(): void {
   const strip = (source: string): string =>
-    source
-      .replace(/\/\*[\s\S]*?\*\//g, "")
-      .split("\n")
+    stripComments(source).split("\n")
       .filter((line) => !line.trim().startsWith("//") && !line.trim().startsWith("*"))
       .join("\n");
 

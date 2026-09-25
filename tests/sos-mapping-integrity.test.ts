@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { stripComments } from "./support/comment-strip.ts";
 
 // Two ways a mapping edit could quietly make things worse.
 //
@@ -17,7 +18,7 @@ import { join } from "node:path";
 // so these are guards rather than repairs — which is exactly when they are cheapest to add.
 
 function code(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+  return stripComments(source);
 }
 
 const read = (p: string) => code(readFileSync(join(process.cwd(), p), "utf8"));

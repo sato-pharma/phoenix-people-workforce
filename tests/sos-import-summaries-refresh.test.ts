@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { stripSqlComments } from "./support/comment-strip.ts";
 
 // `source_of_sales_import_summaries` is what the Source of Sales DASHBOARD reads. Until
 // 2026-08-30 it had two writers and ZERO update paths: written once from the parsed rows at
@@ -37,10 +38,6 @@ function migrationSource(nameFragment: string): string {
   const file = readdirSync(MIGRATIONS).find((f) => f.includes(nameFragment));
   assert.ok(file, `migration containing "${nameFragment}" must exist`);
   return readFileSync(join(MIGRATIONS, file), "utf8");
-}
-
-function stripSqlComments(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])--[^\n]*/g, "$1");
 }
 
 function walk(dir: string, out: string[] = []): string[] {

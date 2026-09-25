@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * The searchable dropdown stayed open after its field scrolled out of sight.
@@ -17,7 +18,7 @@ import { readFileSync } from "node:fs";
  */
 export function runSearchableSelectHiddenTriggerTests() {
   const source = readFileSync("src/components/ui/searchable-select.tsx", "utf8");
-  const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+  const code = stripComments(source);
 
   // Headline: a page scroll must not be handled by the reposition function alone.
   assert.ok(

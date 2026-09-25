@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { pingDirectOrderSheet } from "../src/lib/direct-orders/sheet-webhook.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The live-sheet push (spec D5e).
@@ -152,7 +153,7 @@ export function runDirectOrderSheetWebhookTests() {
   );
   // Any long base64url run outside a comment is the shape a real token has. This is the check that
   // fires if someone pastes their live token in "just to test it".
-  const codeOnly = scriptSource.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+  const codeOnly = stripComments(scriptSource);
   assert.ok(
     !/["'][A-Za-z0-9_-]{30,}["']/.test(codeOnly),
     "no token-shaped literal may appear in the script — the feed token belongs in a Script Property",

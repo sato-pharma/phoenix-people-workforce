@@ -12,6 +12,7 @@ import {
   getHubCardSections,
   mergeCatalogueSections,
 } from "../src/lib/navigation/hub-card-sections.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * The hub-card catalogue — every page that exists but is NOT in the rail.
@@ -38,7 +39,7 @@ import {
  * no string literal carrying `//` or a comment opener.
  */
 function withoutComments(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  return stripComments(source);
 }
 
 export function runNavigationHubCardCatalogTests() {

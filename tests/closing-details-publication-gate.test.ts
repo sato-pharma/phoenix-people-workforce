@@ -9,6 +9,7 @@ import {
   readsUnpublishedClosings,
   unpublishedClosingMessage,
 } from "../src/lib/sales/closing-details-publication-gate.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 // A MONTH REACHES A PORTAL VIEWER ONLY ONCE THE OWNER PUBLISHES IT.
 //
@@ -31,7 +32,7 @@ function read(relative: string): string {
 
 /** Comment-stripped, so prose describing the gate can never satisfy a pin on the code. */
 function code(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  return stripComments(source);
 }
 
 export function runClosingDetailsPublicationGateTests() {

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { PayrollCrmLeaveUnavailableError } from "../src/lib/automated-payroll/recommend.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * THE PAYROLL VACATION PATH REFUSES ON A FAILED READ — IT NEVER RETURNS AN EMPTY ANSWER.
@@ -26,9 +27,7 @@ import { PayrollCrmLeaveUnavailableError } from "../src/lib/automated-payroll/re
 
 function executableSource(): string {
   const source = readFileSync("src/lib/automated-payroll/recommend.ts", "utf8");
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .split("\n")
+  return stripComments(source).split("\n")
     .filter((line) => !line.trim().startsWith("//"))
     .join("\n");
 }

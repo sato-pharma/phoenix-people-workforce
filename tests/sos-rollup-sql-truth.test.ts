@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { stripSqlComments } from "./support/comment-strip.ts";
 
 // SQL-layer defects behind wrong customer totals and stale attribution. These are DB functions, so
 // the convention here is a source-text assertion over the migration that defines them (the same
@@ -22,7 +23,7 @@ function migrationSource(nameFragment: string): string {
 }
 
 function code(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])--[^\n]*/g, "$1");
+  return stripSqlComments(source).replace(/(^|[^:])--[^\n]*/g, "$1");
 }
 
 export function runSosRollupSqlTruthTests() {

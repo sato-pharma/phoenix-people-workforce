@@ -1,6 +1,7 @@
 import { strict as assert } from "node:assert";
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { stripSqlComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Channels by Rep values a sale the way the monthly closing does.
@@ -25,10 +26,6 @@ import path from "node:path";
 // ─────────────────────────────────────────────────────────────────────────────
 
 const MIGRATIONS = path.join(process.cwd(), "supabase/migrations");
-
-function stripSqlComments(sql: string): string {
-  return sql.replace(/--[^\n]*/g, "");
-}
 
 /** The body of the newest migration that (re)defines `name`, lower-cased and on one line. */
 function newestBody(name: string): { body: string; file: string } {

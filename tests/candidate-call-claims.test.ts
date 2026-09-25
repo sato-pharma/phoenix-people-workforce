@@ -15,6 +15,7 @@ import {
 } from "../src/lib/recruitment/candidate-call-claims.ts";
 import { hiringManagerDecisionLabels } from "../src/lib/recruitment/candidate-status.ts";
 import type { DistrictManagerBoard } from "../src/lib/recruitment/district-manager-folders.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * "On every CV I want the phone number to be hidden, and the download to be blocked of the CV, and
@@ -233,9 +234,7 @@ export async function runCandidateCallClaimTests() {
     // candidate for a manager are the redactors.
     const offenders: string[] = [];
     for (const name of routeFiles) {
-      const source = readFileSync(join(routesRoot, name), "utf8")
-        .replace(/\/\*[\s\S]*?\*\//g, "")
-        .replace(/^[ \t]*\/\/.*$/gm, "");
+      const source = stripComments(readFileSync(join(routesRoot, name), "utf8"));
       for (const body of source.matchAll(/NextResponse\.json\(\{([\s\S]{0,800}?)\}\s*[,)]/g)) {
         const payload = body[1];
         if (/(^|[{,\s])candidates?\s*[,}\s]*$|(^|[{,\s])candidates?\s*,/.test(payload)) {

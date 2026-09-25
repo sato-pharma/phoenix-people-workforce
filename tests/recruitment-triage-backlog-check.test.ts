@@ -10,6 +10,7 @@ import {
   TRIAGE_BACKLOG_OVERDUE_AFTER_DAYS,
   type UntriagedApplicant,
 } from "../src/lib/recruitment/triage-backlog-check.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * The rule that decides when nobody having looked at a CV becomes something worth saying.
@@ -27,7 +28,7 @@ const read = (relative: string) => readFileSync(path.join(process.cwd(), relativ
 // the numbers and name the sibling digests deliberately, and a guard that cannot tell prose from
 // code would force that explanation to be deleted to stay green.
 const withoutComments = (source: string) =>
-  source.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/^[ \t]*\/\/.*$/gm, " ");
+  stripComments(source);
 
 const NOW = new Date("2026-08-29T09:00:00Z");
 

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { stripComments } from "./support/comment-strip.ts";
 
 // A cell the parser cannot read must never become a zero.
 //
@@ -18,7 +19,7 @@ import { join } from "node:path";
 // count.
 
 function code(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+  return stripComments(source);
 }
 
 const read = (p: string) => code(readFileSync(join(process.cwd(), p), "utf8"));

@@ -1,5 +1,6 @@
 import { strict as assert } from "node:assert";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * Phase 3D coverage for the disabled Workflow Control API routes.
@@ -42,7 +43,7 @@ export function runWorkflowControlApiRoutesTests() {
     assert.match(src, /if\s*\(\s*!\s*guard\.ok\s*\)\s*return\s+guard\.response/, `${r.relPath} returns the guard's response on failure`);
 
     // 9. API routes do NOT import Supabase directly.
-    const stripped = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|\s)\/\/.*$/gm, "$1");
+    const stripped = stripComments(src).replace(/(^|\s)\/\/.*$/gm, "$1");
     assert.equal(/from\s+["']@\/lib\/supabase\b/.test(stripped), false, `${r.relPath} must not import @/lib/supabase`);
     assert.equal(/from\s+["']@supabase\/supabase-js["']/.test(stripped), false, `${r.relPath} must not import @supabase/supabase-js`);
     assert.equal(/\bgetSupabaseAdmin\s*\(/.test(stripped), false, `${r.relPath} must not call getSupabaseAdmin()`);
@@ -71,7 +72,7 @@ export function runWorkflowControlApiRoutesTests() {
   assert.match(helpersSrc, /canUseWorkflowDraftEditor/, "guard helper uses Super-Admin gate");
   assert.match(helpersSrc, /resolveAccessContext\s*\(\s*request\s*\)/, "guard helper calls resolveAccessContext(request)");
   // Helper itself is also Supabase-free.
-  const helpersStripped = helpersSrc.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|\s)\/\/.*$/gm, "$1");
+  const helpersStripped = stripComments(helpersSrc).replace(/(^|\s)\/\/.*$/gm, "$1");
   assert.equal(/from\s+["']@\/lib\/supabase\b/.test(helpersStripped), false, "api-helpers must not import @/lib/supabase");
   assert.equal(/\bgetSupabaseAdmin\s*\(/.test(helpersStripped), false, "api-helpers must not call getSupabaseAdmin()");
   assert.equal(/\bfetch\s*\(/.test(helpersStripped), false, "api-helpers must not call fetch()");

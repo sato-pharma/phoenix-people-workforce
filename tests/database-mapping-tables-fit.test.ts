@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 
 import { MASTER_DEFINITIONS, MASTER_KEYS } from "../src/lib/sales/master-data/definitions.ts";
 import { lookupHost, masterRowLayout } from "../src/lib/sales/master-data/row-layout.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * Every table on Sales → Database Mapping, pinned against the owner's FITS-THE-SCREEN golden rule
@@ -29,7 +30,7 @@ const VALIDATION = "src/components/sales/database-validation-tab.tsx";
 
 // Class names in comments are prose, not markup: strip block comments and whole-line comments.
 function withoutComments(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  return stripComments(source);
 }
 
 function assertFits(file: string, expectedTables: number) {

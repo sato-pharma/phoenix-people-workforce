@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { stripSqlComments } from "./support/comment-strip.ts";
 
 const SENSITIVE_KEYWORDS = ["salary", "payroll", "bank", "national id", "passport"];
 
 function stripBlockComments(sql: string) {
-  return sql.replace(/\/\*[\s\S]*?\*\//g, "");
+  return stripSqlComments(sql);
 }
 
 function stripLineComments(sql: string) {

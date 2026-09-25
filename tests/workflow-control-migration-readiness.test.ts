@@ -1,5 +1,6 @@
 import { strict as assert } from "node:assert";
 import { readFileSync, readdirSync } from "node:fs";
+import { stripSqlComments } from "./support/comment-strip.ts";
 
 export function runWorkflowControlMigrationReadinessTests() {
   const migrationsDir = new URL("../supabase/_migrations_archive/pre-baseline-2026-07-11/", import.meta.url);
@@ -24,7 +25,7 @@ export function runWorkflowControlMigrationReadinessTests() {
   }
 
   // Strip comments first; then verify only service_role policies exist.
-  const stripped = sql.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|\s)--.*$/gm, "$1");
+  const stripped = stripSqlComments(sql).replace(/(^|\s)--.*$/gm, "$1");
   const policyClauses = [...stripped.matchAll(/create\s+policy[\s\S]*?to\s+([a-z_]+(?:\s*,\s*[a-z_]+)*)/gi)];
   assert.ok(policyClauses.length >= 5, "at least 5 service_role policies");
   for (const [, roleClause] of policyClauses) {

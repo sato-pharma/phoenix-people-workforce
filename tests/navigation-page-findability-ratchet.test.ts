@@ -5,6 +5,7 @@ import { hrNamespaceRemainder, isHrRewritablePath, toHrNamespacePath } from "@/l
 import { cachedIsDirectory, cachedReaddir, cachedReadFile } from "./support/source-corpus.ts";
 
 import { literalScanFindabilityRecordedRoutes } from "./navigation-reachability-backlog";
+import { stripComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Every nav test in this repo checks the same direction: nav -> route. Given a
@@ -150,10 +151,7 @@ function isRetiredRedirectStub(file: string): boolean {
   } catch {
     return false;
   }
-  const stripped = source
-    .replace(/\/\*[\s\S]*?\*\//g, " ")
-    .replace(/^\s*\/\/.*$/gm, " ")
-    .replace(/^\s*import[^;]*;/gm, " ")
+  const stripped = stripComments(source).replace(/^\s*import[^;]*;/gm, " ")
     .replace(/\s+/g, " ")
     .trim();
   return REDIRECT_STUB_BODY.test(stripped);

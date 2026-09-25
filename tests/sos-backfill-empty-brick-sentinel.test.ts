@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { stripSqlComments } from "./support/comment-strip.ts";
 
 // sos_backfill_import_rows_from_customer_map was a silent no-op since it was first written
 // (20260703090000): its WHERE clause gated on `r.brick_id is null`, but the normalizer's real
@@ -24,7 +25,7 @@ function migrationSource(nameFragment: string): string {
 }
 
 function code(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])--[^\n]*/g, "$1");
+  return stripSqlComments(source).replace(/(^|[^:])--[^\n]*/g, "$1");
 }
 
 export function runSosBackfillEmptyBrickSentinelTests() {

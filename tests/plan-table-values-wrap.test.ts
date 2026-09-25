@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * The Weekly Plan table clipped the value a dropdown was showing.
@@ -18,7 +19,7 @@ import { readFileSync } from "node:fs";
  */
 export function runPlanTableValuesWrapTests() {
   const select = readFileSync("src/components/ui/searchable-select.tsx", "utf8");
-  const code = select.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+  const code = stripComments(select);
 
   // ---------------------------------------------------------------------------
   // Headline: in wrapValue mode the closed input paints NO text, and a sibling

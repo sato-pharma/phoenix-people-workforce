@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { marketingDraftBlockers } from "../src/lib/marketing-requests/draft-blockers.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 // A marketing request must name at least one target venue.
 //
@@ -27,14 +28,7 @@ const SERVICE = "src/lib/marketing-requests/service.ts";
 const PORTAL = "src/components/employee-portal/marketing-request-drafts.tsx";
 
 function code(path: string): string {
-  return readFileSync(path, "utf8")
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .split("\n")
-    .map((line) => {
-      const idx = line.indexOf("//");
-      return idx >= 0 ? line.slice(0, idx) : line;
-    })
-    .join("\n");
+  return stripComments(readFileSync(path, "utf8"));
 }
 
 /**

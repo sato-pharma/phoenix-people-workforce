@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { stripSqlComments } from "./support/comment-strip.ts";
 
 /**
  * The RLS policies on employee_documents and employee_history are pinned, by REPLAYING every
@@ -33,7 +34,7 @@ const PINNED_TABLES = ["employee_documents", "employee_history"];
 
 /** Strip block and line comments so commented-out DDL is never parsed as real. */
 function code(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])--[^\n]*/g, "$1");
+  return stripSqlComments(source).replace(/(^|[^:])--[^\n]*/g, "$1");
 }
 
 /**

@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { customerDetailRow } from "../src/lib/sales/normalizer/customer-details.ts";
 import { teachesFreeSteps } from "../src/lib/sales/normalizer/customer-map-teaching.ts";
 import { pickConfidence } from "../src/lib/sales/normalizer/pick-confidence.ts";
+import { stripSqlComments } from "./support/comment-strip.ts";
 
 // The mapping-truth fixes of 2026-09-18, found while auditing live customer mappings before the 199
 // Pharma Overseas pharmacies were re-mapped ("don't build on the wrong"):
@@ -28,7 +29,7 @@ const MIGRATIONS = join(ROOT, "supabase/migrations");
 
 /** Strip block and line comments so an assertion can never match prose in a migration header. */
 function code(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])--[^\n]*/g, "$1");
+  return stripSqlComments(source).replace(/(^|[^:])--[^\n]*/g, "$1");
 }
 
 /** Collapse whitespace so a predicate split over lines still matches as one phrase. */

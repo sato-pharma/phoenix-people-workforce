@@ -8,6 +8,7 @@ import {
   type ExpiryJudgeableLink,
 } from "../src/lib/recruitment/cv-lifecycle-link-expiry.ts";
 import { permissionGateKeys } from "./support/page-gate-reader.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // THE MANAGEMENT SCREEN FOR THE OWNER'S LIVE CV-LIFECYCLE GOOGLE SHEET.
@@ -57,7 +58,7 @@ function read(relative: string): string {
  * `//` is stripped only when NOT preceded by `:`, so a `https://` inside a string survives.
  */
 function withoutComments(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+  return stripComments(source);
 }
 
 export function runCvLifecycleShareLinksScreenTests() {

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { stripSqlComments } from "./support/comment-strip.ts";
 
 // Three functions re-stamp source_of_sales_import_rows geography from the customer map + brick
 // master. All three built a `target` CTE that computes the CORRECT brick, area and region, wrote
@@ -30,7 +31,7 @@ const MIGRATIONS = join(process.cwd(), "supabase/migrations");
 
 /** Strip block and line comments so an assertion can never match prose in a migration header. */
 function code(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])--[^\n]*/g, "$1");
+  return stripSqlComments(source).replace(/(^|[^:])--[^\n]*/g, "$1");
 }
 
 /** The three functions that re-stamp source_of_sales_import_rows geography. */

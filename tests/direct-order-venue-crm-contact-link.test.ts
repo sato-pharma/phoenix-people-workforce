@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { canManagePharmacyRegistry } from "../src/lib/direct-orders/registry-access.ts";
 import { parseVenueContactId } from "../src/lib/direct-orders/venue-contact-options.ts";
 import type { AccessContext } from "../src/lib/auth/permissions.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // A direct order could not reach the rep's CRM contact list, and no matcher could fix it.
@@ -49,9 +50,7 @@ import type { AccessContext } from "../src/lib/auth/permissions.ts";
 // comment explaining why this picker wraps says the word "truncation". The `[^:]` guard keeps a
 // `https://` URL from reading as the start of a line comment — same shape as the dead-column sweep.
 function stripSourceComments(source: string): string {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/(^|[^:])\/\/[^\n]*/gm, "$1");
+  return stripComments(source);
 }
 
 export function runDirectOrderVenueCrmContactLinkTests() {

@@ -7,6 +7,7 @@ import { cairoDateTime, stableEnGbFormatter } from "../src/lib/format/cairo-date
 import { cairoOffsetMinutes } from "../src/lib/format/cairo-zone.ts";
 import { CAIRO_ZONE_TRANSITIONS } from "../src/lib/format/cairo-zone-transitions.ts";
 import { stableCurrencyFormatter } from "../src/lib/format/stable-currency.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 // The SECOND axis of React hydration error #418, and the one that outlived every fix aimed at the
 // first.
@@ -32,7 +33,7 @@ import { stableCurrencyFormatter } from "../src/lib/format/stable-currency.ts";
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const read = (relativePath: string) => fs.readFileSync(path.join(REPO_ROOT, relativePath), "utf8");
 const codeOnly = (source: string) =>
-  source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+  stripComments(source);
 
 /** Egypt's offset as the engine running this test believes it to be. */
 function engineOffsetMinutes(value: Date): number {
