@@ -427,12 +427,31 @@ function RoiComparisonTable({
   return (
     <AdminTableShell description={description} title={title}>
       <PortalResponsiveDataList
+        breakpoint="lg"
         empty={<PortalEmptyState message="No ROI comparison rows for the current filters." title="No ROI comparison rows" />}
         getKey={(row) => `${title}-${row.value}`}
         items={rows}
         renderCard={(row) => <RoiComparisonRowCard kind={kind} row={row} />}
         renderTable={() => (
-          <PortalDesktopTable className="text-phx-md" minWidth="1180px">
+          <PortalDesktopTable
+            breakpoint="lg"
+            className="text-phx-md"
+            cols={
+              <colgroup>
+                <col className="w-[16%]" />
+                {kind === "product" ? <col className="w-[10%]" /> : null}
+                <col className="w-[8%]" />
+                <col className="w-[8%]" />
+                <col className="w-[8%]" />
+                <col className="w-[9%]" />
+                <col className="w-[9%]" />
+                <col className="w-[9%]" />
+                <col className="w-[8%]" />
+                <col className="w-[8%]" />
+                <col className="w-[12%]" />
+              </colgroup>
+            }
+          >
             <thead className="bg-slate-50 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
               <tr>
                 <th className="border-r border-slate-100 px-3 py-2.5">{kind === "product" ? "Product" : kind === "line" ? "Line" : "Segment"}</th>
@@ -512,12 +531,33 @@ function RequestReportTable({ rows }: { rows: SalesMarketingRequestRow[] }) {
       title="Request ROI decision report"
     >
       <PortalResponsiveDataList
+        breakpoint="lg"
         empty={<PortalEmptyState message="No approved paid requests for the current filters." title="No requests to report" />}
         getKey={(row) => row.id}
         items={rows}
         renderCard={(row) => <RequestRowCard row={row} />}
         renderTable={() => (
-          <PortalDesktopTable className="text-phx-md" minWidth="1480px">
+          <PortalDesktopTable
+            breakpoint="lg"
+            className="text-phx-md"
+            cols={
+              <colgroup>
+                <col className="w-[9%]" />
+                <col className="w-[13%]" />
+                <col className="w-[7%]" />
+                <col className="w-[8%]" />
+                <col className="w-[7%]" />
+                <col className="w-[7%]" />
+                <col className="w-[7%]" />
+                <col className="w-[7%]" />
+                <col className="w-[7%]" />
+                <col className="w-[7%]" />
+                <col className="w-[8%]" />
+                <col className="w-[8%]" />
+                <col className="w-[8%]" />
+              </colgroup>
+            }
+          >
             <thead className="bg-slate-50 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
               <tr>
                 <th className="border-r border-slate-100 px-3 py-2.5">Request</th>
@@ -605,12 +645,31 @@ function CustomerImpactTable({ rows }: { rows: SalesMarketingCustomerImpactRow[]
       title="Customer and pharmacy impact report"
     >
       <PortalResponsiveDataList
+        breakpoint="lg"
         empty={<PortalEmptyState message="No customer impact rows for the current filters." title="No customer impact rows" />}
         getKey={(row) => row.value}
         items={rows}
         renderCard={(row) => <CustomerImpactRowCard row={row} />}
         renderTable={() => (
-          <PortalDesktopTable className="text-phx-md" minWidth="1280px">
+          <PortalDesktopTable
+            breakpoint="lg"
+            className="text-phx-md"
+            cols={
+              <colgroup>
+                <col className="w-[16%]" />
+                <col className="w-[12%]" />
+                <col className="w-[10%]" />
+                <col className="w-[8%]" />
+                <col className="w-[8%]" />
+                <col className="w-[8%]" />
+                <col className="w-[8%]" />
+                <col className="w-[8%]" />
+                <col className="w-[8%]" />
+                <col className="w-[8%]" />
+                <col className="w-[8%]" />
+              </colgroup>
+            }
+          >
             <thead className="bg-slate-50 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
               <tr>
                 <th className="border-r border-slate-100 px-3 py-2.5">Customer / Pharmacy</th>

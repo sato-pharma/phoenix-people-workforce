@@ -188,7 +188,18 @@ export function FieldWorkforceVisitsView({
               </PortalRecordCard>
             )}
             renderTable={() => (
-              <PortalDesktopTable minWidth="720px">
+              <PortalDesktopTable
+                cols={
+                  <colgroup>
+                    <col className="w-[6%]" />
+                    <col className="w-[22%]" />
+                    <col className="w-[18%]" />
+                    <col className="w-[18%]" />
+                    <col className="w-[10%]" />
+                    <col className="w-[26%]" />
+                  </colgroup>
+                }
+              >
                 <thead>
                   <tr className="bg-slate-950 text-left text-xs font-black uppercase tracking-wide text-white">
                     <th className="px-4 py-3">#</th>

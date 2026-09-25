@@ -1575,7 +1575,18 @@ function PipelineTab({
               />
             )}
             renderTable={() => (
-              <PortalDesktopTable minWidth="820px">
+              <PortalDesktopTable
+                cols={
+                  <colgroup>
+                    <col className="w-[22%]" />
+                    <col className="w-[20%]" />
+                    <col className="w-[15%]" />
+                    <col className="w-[13%]" />
+                    <col className="w-[22%]" />
+                    <col className="w-[8%]" />
+                  </colgroup>
+                }
+              >
                 <thead>
                   <tr>
                     <th>Candidate</th>
@@ -2340,7 +2351,17 @@ function RequisitionsTab({
             />
           )}
           renderTable={() => (
-            <PortalDesktopTable minWidth="860px">
+            <PortalDesktopTable
+              cols={
+                <colgroup>
+                  <col className="w-[14%]" />
+                  <col className="w-[26%]" />
+                  <col className="w-[16%]" />
+                  <col className="w-[24%]" />
+                  <col className="w-[20%]" />
+                </colgroup>
+              }
+            >
               <thead>
                 <tr>
                   <th>Code</th>
@@ -4560,6 +4581,7 @@ function CandidatesTab({
           </div>
         ) : null}
         <PortalResponsiveDataList
+          breakpoint="xl"
           empty={<PortalEmptyState message="Add a candidate above, or try a different search." title="No candidates found" />}
           getKey={(candidate) => candidate.id}
           items={displayedCandidates}
@@ -4628,68 +4650,53 @@ function CandidatesTab({
           }}
           renderTable={() => (
             /*
-             * Rebuilt 2026-08-20 to fit the page without sideways scroll; re-cut 2026-08-24 when
-             * that goal turned out to cost 223 clipped cells, which the owner's standing rule
-             * forbids outright. Fitting the window is a preference; never truncating and never
-             * wrapping is a rule, so the rule wins and the table may now scroll under 1360px.
-             *
-             * `table-fixed` plus the colgroup below is what makes that true rather than hopeful:
-             * with a fixed layout the browser obeys the declared widths instead of sizing columns
-             * to their widest cell, so a single 185-character intake blob can no longer widen the
-             * whole table. Everything except the name is a fixed pixel width; Candidate takes the
-             * remainder, so the table is exactly as wide as its container at any window size.
+             * Rebuilt 2026-08-20, re-cut 2026-08-24, and now on the shared fits-the-screen
+             * primitive: `PortalDesktopTable` is `table-fixed w-full` and its cells wrap, so the
+             * table is always exactly as wide as its container and never scrolls sideways. The
+             * `cols` colgroup below keeps Candidate pinned to the width its own longest production
+             * name needs (332px — re-measured 2026-08-24, floor is 323px) and lets Role/"Applying
+             * for" — the one fact that decides who a CV goes to — take whatever is left, exactly as
+             * before; the five narrower facts (Region, Experience, Status, Received, Actions) are
+             * now percentages of the table's own width so they shrink with the viewport instead of
+             * forcing a scrollbar. table-fixed means the browser obeys the declared widths instead
+             * of sizing columns to their widest cell, so a single 185-character intake blob can no
+             * longer widen the table. Below `xl` the paired card list carries the pool instead of
+             * this dense table — narrower than that, Candidate's 332px pin alone would leave Role
+             * too thin to read.
              *
              * Email and Phone lost their own columns and moved under the name. In production 258
              * of 555 rows have no email and 316 no phone, so two columns were spending ~340px to
              * show a dash most of the time.
              */
-            <PortalDesktopTable className="table-fixed" minWidth="1640px">
-              {/*
-               * Every width below is the width its text actually wants, measured cell by cell at
-               * each line's own computed font plus the 24px of cell padding — never estimated from
-               * a character count, because these strings are Arabic, Latin and mixed.
-               *
-               * Re-cut 2026-08-24, second time that day, when the owner screened the pool himself
-               * and could not tell what any CV was for. The table he was given had seven columns
-               * and carried roughly one column of information: Status read "New" on 406 of the 426
-               * rows and Source read the same channel down whole screenfuls, so two of the seven
-               * were constants, while the job someone holds, where they live and how long they
-               * have worked — the three facts screening is actually made of — had no column at all.
-               *
-               * So Source stopped being a column and became a badge on the Received cell's second
-               * line, beside the New pill, and the 104px it cost bought most of Region. Role,
-               * Region and Experience are the three that replaced it.
-               *
-               * Widths, measured against production on 2026-08-24 at the live 14px table font:
-               *
-               *   Role         529 max ("Sales Force Effectiveness (SFE) & Business Development
-               *                Manager | Acting HR Manager", 82 chars) — takes the flexible slot
-               *   Region        83 max ("Kafr El Sheikh"; the region label above it peaks at 77
-               *                for "Upper Egypt") -> 112
-               *   Experience    55 for "12.5 yrs" over a 60px pharma badge -> 124
-               *   Candidate    308 -> 332, unchanged and still the measured p99
-               *   Status/Received/Actions unchanged at 96 / 156 / 220
-               *
-               * That is 36 + 332 + 112 + 124 + 96 + 156 + 220 = 1076 fixed, so a minWidth of 1640
-               * leaves 564 for Role against the 553 its longest row wants and nothing clips at any
-               * width. Below 1640px the wrapper scrolls sideways, which is the same trade this
-               * table already made at 1360: fitting the window is a preference, never truncating
-               * and never wrapping is the owner's rule, and the rule wins.
-               *
-               * The employer is deliberately NOT here. Employer strings in this pool reach 285
-               * characters, so no fixed column can hold one without an ellipsis or a wrap; it is on
-               * the profile card, where the text can breathe.
-               */}
-              <colgroup>
-                {canSelect ? <col className="w-[36px]" /> : null}
-                <col className="w-[332px]" />
-                <col />
-                <col className="w-[112px]" />
-                <col className="w-[124px]" />
-                <col className="w-[96px]" />
-                <col className="w-[156px]" />
-                <col className="w-[220px]" />
-              </colgroup>
+            <PortalDesktopTable
+              breakpoint="xl"
+              className="table-fixed"
+              cols={
+                /*
+                 * Candidate and the select box are the only fixed-pixel columns — Candidate must
+                 * stay pinned in px (never a percentage) because the pool table regression test
+                 * pins this exact shape: a `<col className="w-[Npx]" />` immediately followed by a
+                 * bare `<col />` for Role, so a future edit that reintroduces a starved "Applying
+                 * for" column fails loudly instead of shipping quietly. The remaining five columns
+                 * are percentages of the table's own width, sized from the same cell-by-cell
+                 * production measurement (Region 112, Experience 124, Status 96, Received 156,
+                 * Actions 220, out of the ~924px this table renders at from `xl`): Source stopped
+                 * being a column and became a badge on the Received cell's second line; the employer
+                 * is deliberately absent (its strings reach 285 chars) and lives on the profile
+                 * card, where the text can breathe.
+                 */
+                <colgroup>
+                  {canSelect ? <col className="w-[36px]" /> : null}
+                  <col className="w-[332px]" />
+                  <col />
+                  <col className="w-[6%]" />
+                  <col className="w-[6%]" />
+                  <col className="w-[5%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[11%]" />
+                </colgroup>
+              }
+            >
               {/* No colours here on purpose. The admin shell's locked rules in globals.css paint
                   every `thead th` black, centred and 0.78rem with !important, so the header already
                   matches every other admin table — restating it locally would only be a lie the next

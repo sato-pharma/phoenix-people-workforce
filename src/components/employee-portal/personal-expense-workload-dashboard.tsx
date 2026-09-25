@@ -700,7 +700,20 @@ function UnresolvedTripsPanel({ trips }: { trips: ExpenseRow[] }) {
           </PortalRecordCard>
         )}
         renderTable={() => (
-          <PortalDesktopTable minWidth="720px">
+          <PortalDesktopTable
+            cols={
+              <colgroup>
+                <col className="w-[12%]" />
+                <col className="w-[11%]" />
+                <col className="w-[17%]" />
+                <col className="w-[12%]" />
+                <col className="w-[15%]" />
+                <col className="w-[12%]" />
+                <col className="w-[11%]" />
+                <col className="w-[10%]" />
+              </colgroup>
+            }
+          >
             <thead className="border-b border-slate-200 bg-slate-50 text-phx-xs uppercase tracking-wide text-slate-500">
               <tr>
                 <th className="px-3 py-2 font-semibold">Trip</th>

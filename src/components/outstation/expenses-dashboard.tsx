@@ -272,6 +272,7 @@ function MonthlyComparison({ rows }: { rows: GroupRow[] }) {
       </div>
       <div className="mt-4 overflow-hidden rounded-2xl border border-phx-line bg-white shadow-[0_12px_30px_rgba(15,23,42,0.05)]">
         <PortalResponsiveDataList
+          breakpoint="lg"
           empty={<p className="px-3 py-8 text-center text-sm font-semibold text-slate-400">No months in range.</p>}
           getKey={(row) => row.key}
           items={rows}
@@ -296,7 +297,22 @@ function MonthlyComparison({ rows }: { rows: GroupRow[] }) {
             </PortalRecordCard>
           )}
           renderTable={() => (
-            <PortalDesktopTable minWidth="760px">
+            <PortalDesktopTable
+              breakpoint="lg"
+              cols={
+                <colgroup>
+                  <col className="w-[14%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[12%]" />
+                  <col className="w-[12%]" />
+                  <col className="w-[12%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[12%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[12%]" />
+                </colgroup>
+              }
+            >
             <thead className="bg-phx-paper text-phx-xs uppercase tracking-[0.12em] text-phx-ink-soft">
               <tr>
                 <th className={adminTableHeaderClassName}>Month</th>
@@ -344,6 +360,7 @@ function SpecialistComparison({ rows }: { rows: GroupRow[] }) {
       <p className="mt-1 text-xs text-phx-ink-soft">Compare specialists by trips, total, KM, cost per trip, and cost per KM.</p>
       <div className="mt-4 overflow-hidden rounded-2xl border border-phx-line bg-white shadow-[0_12px_30px_rgba(15,23,42,0.05)]">
         <PortalResponsiveDataList
+          breakpoint="lg"
           empty={<p className="px-3 py-8 text-center text-sm font-semibold text-slate-400">No specialists in range.</p>}
           getKey={(row) => row.key}
           items={rows.slice(0, 50)}
@@ -367,7 +384,23 @@ function SpecialistComparison({ rows }: { rows: GroupRow[] }) {
             </PortalRecordCard>
           )}
           renderTable={() => (
-            <PortalDesktopTable minWidth="860px">
+            <PortalDesktopTable
+              breakpoint="lg"
+              cols={
+                <colgroup>
+                  <col className="w-[18%]" />
+                  <col className="w-[7%]" />
+                  <col className="w-[11%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[11%]" />
+                  <col className="w-[9%]" />
+                  <col className="w-[7%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[9%]" />
+                </colgroup>
+              }
+            >
             <thead className="bg-phx-paper text-phx-xs uppercase tracking-[0.12em] text-phx-ink-soft">
               <tr>
                 <th className={adminTableHeaderClassName}>Specialist</th>

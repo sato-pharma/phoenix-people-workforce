@@ -641,10 +641,12 @@ function pairKeyOf(repKey: string, contactCrmId: number): string {
  * a human-readable name is shown, never a raw code.
  *
  * COST OF THE SWAP, measured the same day: the longest rep label grew from 41 to 70 characters
- * (`"Mohamed Mohamed ElMenshawy Abdelmatty Mohamed Ismail ( Sharkia 3 / C )"`). Every table that
- * renders it therefore holds the name on ONE line and lets `PortalDesktopTable`'s own
- * `overflow-x-auto` take the width — the owner's rule is no ellipsis and no wrap, and a table that
- * scrolls inside its own box satisfies both without the page ever moving sideways.
+ * (`"Mohamed Mohamed ElMenshawy Abdelmatty Mohamed Ismail ( Sharkia 3 / C )"`). A label that long
+ * used to hold on ONE line inside `PortalDesktopTable`'s `overflow-x-auto`, so the table scrolled
+ * sideways rather than wrap — which the fits-the-screen golden rule (AGENTS.md §4) forbids:
+ * "wrapping wins" over both an ellipsis and a horizontal scroll. `PortalDesktopTable` is now
+ * `table-fixed` with a `<colgroup>`, so a long name simply wraps onto a second line inside its own
+ * column and the table never grows wider than `main`.
  */
 function repNameFor(
   repKey: string,

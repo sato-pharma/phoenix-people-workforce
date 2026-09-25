@@ -247,6 +247,7 @@ export function MarketingAllRequests() {
         }
       >
         <PortalResponsiveDataList
+          breakpoint="lg"
           empty={
             !isLoading ? (
               <PortalEmptyState
@@ -267,7 +268,24 @@ export function MarketingAllRequests() {
           items={pagedRows}
           renderCard={(row) => <RequestRowCard row={row} />}
           renderTable={() => (
-            <PortalDesktopTable minWidth="1500px">
+            <PortalDesktopTable
+              breakpoint="lg"
+              cols={
+                <colgroup>
+                  <col className="w-[9%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[13%]" />
+                  <col className="w-[11%]" />
+                  <col className="w-[11%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[8%]" />
+                </colgroup>
+              }
+            >
               <thead className="bg-slate-50 text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500">
                 <tr>
                   <th className="px-4 py-3">Request Code</th>

@@ -890,7 +890,7 @@ function PlanningCalendarDetailsTable({
           title="No detail rows for this day"
         />
       ) : (
-        <div className="divide-y divide-slate-100 border border-slate-200 bg-white md:hidden">
+        <div className="divide-y divide-slate-100 border border-slate-200 bg-white lg:hidden">
           {rows.map((row) => (
             <PortalRecordCard
               accent={detailAccent(row.tone)}
@@ -926,7 +926,23 @@ function PlanningCalendarDetailsTable({
         </div>
       )}
       <div className="border border-slate-200 bg-white">
-        <PortalDesktopTable className="text-xs" minWidth="1120px">
+        <PortalDesktopTable
+          breakpoint="lg"
+          className="text-xs"
+          cols={
+            <colgroup>
+              <col className="w-[8%]" />
+              <col className="w-[13%]" />
+              <col className="w-[12%]" />
+              <col className="w-[13%]" />
+              <col className="w-[10%]" />
+              <col className="w-[13%]" />
+              <col className="w-[8%]" />
+              <col className="w-[10%]" />
+              <col className="w-[13%]" />
+            </colgroup>
+          }
+        >
           <thead>
             <tr className="border-b-2 border-orange-500 bg-slate-950">
               {["Date", "Employee", "Activity", "Region / Location", "Area", "Medical Rep", "Time", "Plan Status", "Conflict Warning"].map((column) => (

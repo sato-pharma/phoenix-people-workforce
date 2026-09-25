@@ -1388,6 +1388,23 @@ html:has(.admin-shell):not(:has(.employee-portal-shell)) {
   font-variant-numeric: tabular-nums;
 }
 
+/* ── PORTAL DESKTOP TABLES FIT, THEY DO NOT SCROLL ─────────────────────────────
+   PortalDesktopTable is `table-fixed w-full` with a per-table <colgroup>, so it
+   can never grow wider than `main`: that is the fits-the-screen golden rule
+   (AGENTS.md §4), and the end of the `overflow-x-auto` over a `min-width` floor
+   that scrolled these sideways at tablet and laptop widths. `table-fixed` holds
+   the table to its columns, but a `whitespace-nowrap` cell would then spill its
+   own box and clip the text. So cells wrap by default here, overriding any nowrap
+   — a long name breaks onto a second line instead of being cut off (wrapping wins
+   over truncation, AGENTS.md §4). Numbers carry no break points, so money and
+   percentages are untouched. Unlayered so it beats Tailwind's `.whitespace-nowrap`
+   in `@layer utilities` without an !important, exactly like the min-width rule
+   further down. */
+[data-portal-desktop-table] :where(td, th) {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 /* A readable row under the cursor, warm, and quiet enough not to fight the
    orange hairline. */
 .admin-shell tbody tr {

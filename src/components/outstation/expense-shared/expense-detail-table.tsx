@@ -233,12 +233,16 @@ export function ExpenseDetailTable({
           );
         }}
         renderTable={() => (
-          <PortalDesktopTable className="table-fixed border-collapse" minWidth="0px">
-          <colgroup>
-            {columns.map((column) => (
-              <col key={column.key} style={column.width ? { width: column.width } : undefined} />
-            ))}
-          </colgroup>
+          <PortalDesktopTable
+            className="table-fixed border-collapse"
+            cols={
+              <colgroup>
+                {columns.map((column) => (
+                  <col key={column.key} style={column.width ? { width: column.width } : undefined} />
+                ))}
+              </colgroup>
+            }
+          >
           <thead>
             <tr className="bg-phx-ink">
               {columns.map((column) => {

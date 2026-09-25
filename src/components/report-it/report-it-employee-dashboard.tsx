@@ -588,7 +588,19 @@ export function ReportItEmployeeDashboard({ initialRows, initialTotal }: Props) 
                 </PortalRecordCard>
               )}
               renderTable={() => (
-                <PortalDesktopTable minWidth="860px">
+                <PortalDesktopTable
+                  cols={
+                    <colgroup>
+                      <col className="w-[12%]" />
+                      <col className="w-[12%]" />
+                      <col className="w-[18%]" />
+                      <col className="w-[10%]" />
+                      <col className="w-[24%]" />
+                      <col className="w-[8%]" />
+                      <col className="w-[16%]" />
+                    </colgroup>
+                  }
+                >
                   <thead>
                     <tr className="bg-slate-900 text-left text-phx-xs font-black uppercase tracking-wide text-white">
                       <th className="px-3 py-2.5">Report #</th>

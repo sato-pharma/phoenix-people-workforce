@@ -689,7 +689,17 @@ export function CvDatabaseManager({ rows }: { rows: CvLibraryRow[] }) {
             </PortalRecordCard>
           )}
           renderTable={() => (
-            <PortalDesktopTable minWidth="1280px">
+            <PortalDesktopTable
+              cols={
+                <colgroup>
+                  <col className="w-[22%]" />
+                  <col className="w-[24%]" />
+                  <col className="w-[20%]" />
+                  <col className="w-[22%]" />
+                  <col className="w-[12%]" />
+                </colgroup>
+              }
+            >
               <thead className="bg-phx-paper text-phx-2xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">
                 <tr>
                   <th className={headCellClassName}>Candidate</th>

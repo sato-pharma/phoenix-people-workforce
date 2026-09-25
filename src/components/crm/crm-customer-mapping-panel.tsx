@@ -351,7 +351,19 @@ export function CrmCustomerMappingPanel({
             </PortalRecordCard>
           )}
           renderTable={() => (
-            <PortalDesktopTable minWidth="900px">
+            <PortalDesktopTable
+              cols={
+                <colgroup>
+                  <col className="w-[9%]" />
+                  <col className="w-[20%]" />
+                  <col className="w-[12%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[27%]" />
+                  <col className="w-[12%]" />
+                </colgroup>
+              }
+            >
               <thead className="bg-slate-900">
                 <tr>
                   <th className="px-3 py-3 text-phx-2xs font-black uppercase tracking-wider text-slate-300">CRM Contact ID</th>

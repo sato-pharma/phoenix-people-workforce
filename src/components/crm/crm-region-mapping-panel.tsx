@@ -369,6 +369,7 @@ export function CrmRegionMappingPanel({
           control and all — AGENTS.md §4. Mirrors CrmUnmappedIdentitiesPanel exactly, as ever. */}
       <div className="border border-slate-200 bg-white">
         <PortalResponsiveDataList
+          breakpoint="lg"
           empty={
             <p className="px-3 py-8 text-center text-sm text-slate-500">
               {rows.length === 0 ? "No unmapped CRM regions — every region maps to a brick." : "No regions match this search."}
@@ -411,7 +412,21 @@ export function CrmRegionMappingPanel({
             </PortalRecordCard>
           )}
           renderTable={() => (
-            <PortalDesktopTable minWidth="1400px">
+            <PortalDesktopTable
+              breakpoint="lg"
+              cols={
+                <colgroup>
+                  <col className="w-[9%]" />
+                  <col className="w-[15%]" />
+                  <col className="w-[12%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[16%]" />
+                  <col className="w-[16%]" />
+                  <col className="w-[12%]" />
+                </colgroup>
+              }
+            >
               <thead className="bg-slate-900">
                 <tr>
                   <th className="px-3 py-3 text-phx-2xs font-black uppercase tracking-wider text-slate-300">CRM Region ID</th>

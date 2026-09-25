@@ -129,7 +129,17 @@ function DoctorsSection({ doctors, radiusKm }: { doctors: NearbyDoctor[]; radius
           </PortalRecordCard>
         )}
         renderTable={() => (
-          <PortalDesktopTable minWidth="720px">
+          <PortalDesktopTable
+            cols={
+              <colgroup>
+                <col className="w-[22%]" />
+                <col className="w-[18%]" />
+                <col className="w-[12%]" />
+                <col className="w-[10%]" />
+                <col className="w-[38%]" />
+              </colgroup>
+            }
+          >
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50">
                 <th className={headerCell}>Doctor</th>
@@ -186,7 +196,17 @@ function HospitalsSection({ hospitals }: { hospitals: NearbyHospital[] }) {
           </PortalRecordCard>
         )}
         renderTable={() => (
-          <PortalDesktopTable minWidth="880px">
+          <PortalDesktopTable
+            cols={
+              <colgroup>
+                <col className="w-[24%]" />
+                <col className="w-[10%]" />
+                <col className="w-[16%]" />
+                <col className="w-[16%]" />
+                <col className="w-[34%]" />
+              </colgroup>
+            }
+          >
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50">
                 <th className={headerCell}>Hospital</th>
@@ -318,7 +338,17 @@ export function PharmacyProfilePanel({
             </PortalRecordCard>
           )}
           renderTable={() => (
-            <PortalDesktopTable minWidth="760px">
+            <PortalDesktopTable
+              cols={
+                <colgroup>
+                  <col className="w-[24%]" />
+                  <col className="w-[20%]" />
+                  <col className="w-[16%]" />
+                  <col className="w-[16%]" />
+                  <col className="w-[24%]" />
+                </colgroup>
+              }
+            >
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50">
                   <th className={headerCell}>Distributor</th>
@@ -371,7 +401,15 @@ export function PharmacyProfilePanel({
               </PortalRecordCard>
             )}
             renderTable={() => (
-              <PortalDesktopTable minWidth="480px">
+              <PortalDesktopTable
+                cols={
+                  <colgroup>
+                    <col className="w-[40%]" />
+                    <col className="w-[30%]" />
+                    <col className="w-[30%]" />
+                  </colgroup>
+                }
+              >
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50">
                     <th className={headerCell}>Period</th>

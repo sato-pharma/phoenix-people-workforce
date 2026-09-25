@@ -459,7 +459,18 @@ export function JobAdvertPanel() {
               </PortalRecordCard>
             )}
             renderTable={() => (
-              <PortalDesktopTable minWidth="860px">
+              <PortalDesktopTable
+                cols={
+                  <colgroup>
+                    <col className="w-[16%]" />
+                    <col className="w-[18%]" />
+                    <col className="w-[12%]" />
+                    <col className="w-[20%]" />
+                    <col className="w-[10%]" />
+                    <col className="w-[24%]" />
+                  </colgroup>
+                }
+              >
                 <thead>
                   <tr className="border-b border-slate-200 text-left text-xs uppercase text-slate-500">
                     <th className="whitespace-nowrap p-2">Channel</th>
@@ -556,7 +567,14 @@ export function JobAdvertPanel() {
               </PortalRecordCard>
             )}
             renderTable={() => (
-              <PortalDesktopTable minWidth="520px">
+              <PortalDesktopTable
+                cols={
+                  <colgroup>
+                    <col className="w-[35%]" />
+                    <col className="w-[65%]" />
+                  </colgroup>
+                }
+              >
                 <thead>
                   <tr className="border-b border-slate-200 text-left text-xs uppercase text-slate-500">
                     <th className="whitespace-nowrap p-2">Handset</th>
@@ -657,7 +675,15 @@ export function JobAdvertPanel() {
               </PortalRecordCard>
             )}
             renderTable={() => (
-              <PortalDesktopTable minWidth="620px">
+              <PortalDesktopTable
+                cols={
+                  <colgroup>
+                    <col className="w-[45%]" />
+                    <col className="w-[25%]" />
+                    <col className="w-[30%]" />
+                  </colgroup>
+                }
+              >
                 <thead>
                   <tr className="border-b border-slate-200 text-left text-xs uppercase text-slate-500">
                     <th className="whitespace-nowrap p-2">Group</th>

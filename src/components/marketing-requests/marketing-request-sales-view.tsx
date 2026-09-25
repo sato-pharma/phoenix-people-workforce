@@ -317,7 +317,20 @@ export function MarketingRequestSalesView({ requestId, viewSalesBasePath }: { re
                   </PortalRecordCard>
                 )}
                 renderTable={() => (
-                  <PortalDesktopTable className="text-phx-md" minWidth="920px">
+                  <PortalDesktopTable
+                    className="text-phx-md"
+                    cols={
+                      <colgroup>
+                        <col className="w-[12%]" />
+                        <col className="w-[18%]" />
+                        <col className="w-[20%]" />
+                        <col className="w-[13%]" />
+                        <col className="w-[19%]" />
+                        <col className="w-[8%]" />
+                        <col className="w-[10%]" />
+                      </colgroup>
+                    }
+                  >
                     <thead className="bg-phx-ink text-phx-2xs font-black uppercase tracking-[0.12em] text-white">
                       <tr>
                         <th className="px-3 py-2.5">

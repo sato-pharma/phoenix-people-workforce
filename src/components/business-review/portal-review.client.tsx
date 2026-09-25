@@ -363,7 +363,21 @@ export function BusinessReviewPortal({
                   </div>
                 )}
                 renderTable={() => (
-                  <PortalDesktopTable minWidth="900px">
+                  <PortalDesktopTable
+                    cols={
+                      <colgroup>
+                        <col className="w-[15%]" />
+                        <col className="w-[14%]" />
+                        <col className="w-[12%]" />
+                        <col className="w-[12%]" />
+                        <col className="w-[9%]" />
+                        <col className="w-[9%]" />
+                        <col className="w-[9%]" />
+                        <col className="w-[11%]" />
+                        <col className="w-[9%]" />
+                      </colgroup>
+                    }
+                  >
                     <thead>
                       <tr className={HEAD}>
                         <th className={TH}>Line</th>
@@ -439,7 +453,22 @@ export function BusinessReviewPortal({
                   </div>
                 )}
                 renderTable={() => (
-                  <PortalDesktopTable minWidth="1040px">
+                  <PortalDesktopTable
+                    cols={
+                      <colgroup>
+                        <col className="w-[18%]" />
+                        {showLines ? <col className="w-[9%]" /> : null}
+                        <col className="w-[12%]" />
+                        <col className="w-[9%]" />
+                        <col className="w-[9%]" />
+                        <col className="w-[12%]" />
+                        <col className="w-[12%]" />
+                        <col className="w-[8%]" />
+                        <col className="w-[9%]" />
+                        <col className="w-[9%]" />
+                      </colgroup>
+                    }
+                  >
                     <thead>
                       <tr className={HEAD}>
                         <th className={TH}>District manager</th>
@@ -536,7 +565,24 @@ export function BusinessReviewPortal({
                 </div>
               )}
               renderTable={() => (
-                <PortalDesktopTable minWidth={`${920 + keyProducts.length * 110}px`}>
+                <PortalDesktopTable
+                  cols={
+                    <colgroup>
+                      <col className="w-[13%]" />
+                      {showLines ? <col className="w-[8%]" /> : null}
+                      <col className="w-[12%]" />
+                      <col className="w-[11%]" />
+                      <col className="w-[8%]" />
+                      <col className="w-[8%]" />
+                      <col className="w-[10%]" />
+                      <col className="w-[10%]" />
+                      {keyProducts.map((product) => (
+                        <col key={product} />
+                      ))}
+                      <col className="w-[8%]" />
+                    </colgroup>
+                  }
+                >
                   <thead>
                     <tr className={HEAD}>
                       <th className={TH}>Area</th>
@@ -617,7 +663,19 @@ export function BusinessReviewPortal({
                   </div>
                 )}
                 renderTable={() => (
-                  <PortalDesktopTable minWidth="860px">
+                  <PortalDesktopTable
+                    cols={
+                      <colgroup>
+                        <col className="w-[22%]" />
+                        {showLines ? <col className="w-[10%]" /> : null}
+                        <col className="w-[14%]" />
+                        <col className="w-[14%]" />
+                        <col className="w-[14%]" />
+                        <col className="w-[14%]" />
+                        <col className="w-[10%]" />
+                      </colgroup>
+                    }
+                  >
                     <thead>
                       <tr className={HEAD}>
                         <th className={TH}>District manager</th>
@@ -675,7 +733,20 @@ export function BusinessReviewPortal({
                 </div>
               )}
               renderTable={() => (
-                <PortalDesktopTable minWidth="860px">
+                <PortalDesktopTable
+                  cols={
+                    <colgroup>
+                      <col className="w-[16%]" />
+                      {showLines ? <col className="w-[9%]" /> : null}
+                      <col className="w-[14%]" />
+                      <col className="w-[13%]" />
+                      <col className="w-[12%]" />
+                      <col className="w-[12%]" />
+                      <col className="w-[12%]" />
+                      <col className="w-[10%]" />
+                    </colgroup>
+                  }
+                >
                   <thead>
                     <tr className={HEAD}>
                       <th className={TH}>Area</th>
@@ -733,7 +804,18 @@ export function BusinessReviewPortal({
                 </div>
               )}
               renderTable={() => (
-                <PortalDesktopTable minWidth="740px">
+                <PortalDesktopTable
+                  cols={
+                    <colgroup>
+                      <col className="w-[20%]" />
+                      {showLines ? <col className="w-[10%]" /> : null}
+                      <col className="w-[18%]" />
+                      <col className="w-[16%]" />
+                      <col className="w-[14%]" />
+                      <col className="w-[14%]" />
+                    </colgroup>
+                  }
+                >
                   <thead>
                     <tr className={HEAD}>
                       <th className={TH}>Area</th>
@@ -794,7 +876,16 @@ export function BusinessReviewPortal({
                 </div>
               )}
               renderTable={() => (
-                <PortalDesktopTable minWidth={`${300 + months.length * 120}px`}>
+                <PortalDesktopTable
+                  cols={
+                    <colgroup>
+                      <col className="w-[18%]" />
+                      {months.map((month) => (
+                        <col key={month} />
+                      ))}
+                    </colgroup>
+                  }
+                >
                   <thead>
                     <tr className={HEAD}>
                       <th className={TH}>Area</th>
@@ -902,7 +993,18 @@ export function BusinessReviewPortal({
                   </div>
                 )}
                 renderTable={() => (
-                  <PortalDesktopTable minWidth="860px">
+                  <PortalDesktopTable
+                    cols={
+                      <colgroup>
+                        <col className="w-[22%]" />
+                        <col className="w-[18%]" />
+                        <col className="w-[14%]" />
+                        <col className="w-[16%]" />
+                        <col className="w-[14%]" />
+                        <col className="w-[14%]" />
+                      </colgroup>
+                    }
+                  >
                     <thead>
                       <tr className={HEAD}>
                         <th className={TH}>Product</th>

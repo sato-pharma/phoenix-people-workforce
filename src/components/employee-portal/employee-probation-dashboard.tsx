@@ -572,8 +572,24 @@ export function EmployeeProbationDashboard({
       </Card>
 
       {/* ---- Desktop Table ---- */}
-      <Card className={`hidden overflow-hidden rounded border border-slate-100 p-0 md:block ${cardShadow}`}>
-        <PortalDesktopTable minWidth="1180px">
+      <Card className={`hidden overflow-hidden rounded border border-slate-100 p-0 lg:block ${cardShadow}`}>
+        <PortalDesktopTable
+          breakpoint="lg"
+          cols={
+            <colgroup>
+              <col className="w-[14%]" />
+              <col className="w-[12%]" />
+              <col className="w-[12%]" />
+              <col className="w-[9%]" />
+              <col className="w-[9%]" />
+              <col className="w-[6%]" />
+              <col className="w-[10%]" />
+              <col className="w-[8%]" />
+              <col className="w-[10%]" />
+              <col className="w-[10%]" />
+            </colgroup>
+          }
+        >
             <thead>
               <tr className="bg-slate-50/80">
                 {[
@@ -727,7 +743,7 @@ export function EmployeeProbationDashboard({
       </Card>
 
       {/* ---- Mobile Card View ---- */}
-      <div className="space-y-0 md:hidden">
+      <div className="space-y-0 lg:hidden">
         <Card className={`divide-y divide-slate-100 overflow-hidden rounded border border-slate-100 p-0 ${cardShadow}`}>
           {filteredRows.length === 0 ? (
             <div className="px-4 py-10 text-center text-sm text-slate-400">

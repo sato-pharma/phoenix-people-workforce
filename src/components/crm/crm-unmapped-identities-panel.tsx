@@ -314,7 +314,20 @@ export function CrmUnmappedIdentitiesPanel({
             </PortalRecordCard>
           )}
           renderTable={() => (
-            <PortalDesktopTable minWidth="1100px">
+            <PortalDesktopTable
+              cols={
+                <colgroup>
+                  <col className="w-[8%]" />
+                  <col className="w-[18%]" />
+                  <col className="w-[12%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[22%]" />
+                  <col className="w-[10%]" />
+                </colgroup>
+              }
+            >
               <thead className="bg-slate-900">
                 <tr>
                   <th className="px-3 py-3 text-phx-2xs font-black uppercase tracking-wider text-slate-300">CRM ID</th>

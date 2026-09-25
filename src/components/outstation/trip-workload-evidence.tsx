@@ -322,7 +322,20 @@ export function TripWorkloadEvidencePanel({
             </PortalRecordCard>
           )}
           renderTable={() => (
-            <PortalDesktopTable className="text-xs" minWidth="0px">
+            <PortalDesktopTable
+              className="text-xs"
+              cols={
+                <colgroup>
+                  <col className="w-[20%]" />
+                  <col className="w-[11%]" />
+                  <col className="w-[11%]" />
+                  <col className="w-[15%]" />
+                  <col className="w-[13%]" />
+                  <col className="w-[14%]" />
+                  <col className="w-[16%]" />
+                </colgroup>
+              }
+            >
           <thead className="bg-slate-50 text-phx-2xs uppercase tracking-[0.1em] text-slate-500">
             <tr>
               <th className="px-3 py-2 font-bold">Day</th>
