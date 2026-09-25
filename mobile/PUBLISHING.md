@@ -30,8 +30,13 @@ native app and the managed-tablet web app cleared that one free step together.
 
 🔴 **Read this row before concluding anything is blocked on the enterprise.** Until 2026-09-25 it
 said "Does not exist", which is how a session came to report the mock-location rollout as waiting on
-a step that had already been taken. What actually remains is step 2 onward below — the iframe, and
-an AAB to put through it.
+a step that had already been taken.
+
+🔴 **And do not stop at this row either — EVERY step below is already built.** The first correction on
+2026-09-25 fixed this table and still told the reader the iframe was unwritten. It was not: the whole
+path shipped on 2026-09-18. **Before reporting any of this as remaining work, open the files named in
+the sequence below and look.** Twice in one night a session reported as missing something that was
+already in the repository, because it trusted this page over the code.
 
 🔴 **Decided 2026-09-18 by the owner: a SHARED `satopharma.com` account** — not a personal Gmail, and
 not an account only one person can reach. Two separate things make that choice hard to undo, and both
@@ -75,11 +80,26 @@ So the sequence is:
 1. ~~Create the enterprise once, with the company Google account, and set
    `ANDROID_MANAGEMENT_ENTERPRISE_NAME` to the binding it returns (`enterprises/LC…`).~~ **Done** —
    `enterprises/LC017auv4o`.
-2. Mint a web token with `PRIVATE_APPS` enabled and embed the iframe in Phoenix. **Not built yet —
-   this is the step the rollout actually waits on.**
-3. Upload the `.aab` from `npm run build:aab` on the Private apps page.
+2. ~~Mint a web token with `PRIVATE_APPS` enabled and embed the iframe in Phoenix.~~ **Done, shipped
+   2026-09-18.** The page is **`/devices/managed-play`**
+   ([`app/(admin)/devices/managed-play/page.tsx`](<../app/(admin)/devices/managed-play/page.tsx>)),
+   drawn by [`managed-play-console.tsx`](../src/components/devices/managed-play-console.tsx), minted
+   by `POST /api/devices/managed-play`, over
+   [`managed-play-iframe.ts`](../src/lib/devices/managed-play-iframe.ts). Gated on
+   `company_devices:approve` — **Super Admin only**, asserted in the route, not just the page. The
+   page also carries the one-time enterprise signup, so it works from an unbound state too. Pinned by
+   `tests/managed-play-iframe.test.ts`.
+3. ~~Upload the `.aab` from `npm run build:aab` on the Private apps page.~~ **The AAB exists** — the
+   first one was built 2026-09-25 (`production` profile, `STORE`, versionCode 1). **The upload itself
+   is the owner's click and is the ONLY step left.**
 4. It auto-approves for the organization and is **typically ready for distribution within about ten
    minutes**.
+
+**Verified on production 2026-09-25**, against the deployed app rather than the source: the page
+answers `307 → /login` unauthenticated, `POST /api/devices/managed-play` answers `403`, and the live
+`Content-Security-Policy` on that page carries `https://apis.google.com` in `script-src` and
+`https://play.google.com` in `frame-src` — the two entries whose absence makes Google's frame fail
+silently with nothing in the console pointing back here.
 
 **Ship an AAB.** Google recommends AABs for private apps; the iframe accepts APKs too, but the
 `production` profile already produces the right artifact.
@@ -197,12 +217,14 @@ this repo can do.
 
 ## What is not verified here
 
-- **The exact iframe embedding flow in Phoenix.** The API surface is confirmed and **no code has been
-  written against it yet** — that is the real remaining work. The authentication question
-  `android-web-app.ts` raises is **answered in practice**: a long-lived `ANDROID_MANAGEMENT_KEY`
-  service-account credential is present in Railway production, so
-  `constraints/iam.disableServiceAccountKeyCreation` was overridden for `phoenix-hr-2026` the same
-  way it was for the Firebase key. Do not re-derive it as a blocker.
+- **A web token actually minting against the live enterprise.** The code, the gate and the CSP are all
+  verified (step 2 above); what no session has watched is Google returning a token for
+  `enterprises/LC017auv4o` and the frame rendering. That needs the production credential, so **the
+  owner opening `/devices/managed-play` is itself the test** — if the private apps page draws, the
+  whole chain works. The authentication question `android-web-app.ts` raises is **answered in
+  practice**: a long-lived `ANDROID_MANAGEMENT_KEY` service-account credential is present in Railway
+  production, so `constraints/iam.disableServiceAccountKeyCreation` was overridden for
+  `phoenix-hr-2026` the same way it was for the Firebase key. Do not re-derive it as a blocker.
 - **Whether a private app is asked for Google Play's Data safety form.** Public apps must fill it in;
   nothing here confirms whether the managed Play iframe asks for it. If it does, the table above is
   the answer.
