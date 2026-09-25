@@ -5971,7 +5971,7 @@ await runTest(
   "worktree removal frees a tip that is on origin under ANOTHER branch's name (confirmed against the remote, fails closed)",
   runWorktreeRemoveRemoteContainmentTests,
 );
-await runTest("no source-pinning test strips comments with a regex that eats the code it pins", runCommentStripRatchetTests);
+await runTest("no source-pinning test strips comments unsafely — a regex that eats the code it pins, or a line filter blind to a comment block", runCommentStripRatchetTests);
 
 await runTest("repo-doctor offers only what --strip-idle will actually reclaim", runRepoDoctorStripIdleOfferTests);
 await runTest(
