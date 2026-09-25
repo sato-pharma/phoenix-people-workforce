@@ -16,6 +16,11 @@
  * early so a call never carries a token that expires mid-flight. The cache is best-effort — a cold
  * server simply mints a fresh one — so nothing breaks if the module is reloaded.
  *
+ * CONCURRENT MINTS ARE DEDUPED. The Rep Tablets page loads four cards at once, each needing a token;
+ * on a cold cache they would mint four in the same instant, and Zoho rate-limits its sign-in
+ * endpoint and refuses the surplus with `Access Denied` — which then showed on every card. A single
+ * in-flight mint is now shared, so a cold page mints ONCE.
+ *
  * DATA CENTRE. The accounts host and the API host both vary by the Zoho data centre the account
  * lives in (.com, .eu, .in, …). Both are env, defaulting to the US hosts; the owner's console URL
  * says which region his tenant is, and the two must match it.
@@ -30,6 +35,27 @@ export class ManageEngineNotConfiguredError extends Error {
     super(message);
     this.name = "ManageEngineNotConfiguredError";
   }
+}
+
+/**
+ * Zoho refused the token exchange for a reason that is NOT the credential — its rate limit on the
+ * sign-in endpoint (returned as `error: "Access Denied"`). The credential is fine and a later call
+ * succeeds on its own, so this must never tell the owner to re-generate anything.
+ */
+export class ManageEngineAuthThrottledError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ManageEngineAuthThrottledError";
+  }
+}
+
+/**
+ * The Zoho `error` codes that mean the CREDENTIAL itself is wrong and a human must re-generate the
+ * Self Client. Everything else Zoho returns — notably `Access Denied`, its throttle — is transient:
+ * the refresh token is valid, the sign-in was rate-limited, and retrying later works.
+ */
+function isCredentialError(code: string): boolean {
+  return /^invalid_(client|code|grant|client_secret|request)$|^unauthorized/i.test(code.trim());
 }
 
 export type ManageEngineAuthConfig = {
@@ -81,21 +107,31 @@ export function isManageEngineConfigured(env: NodeJS.ProcessEnv = process.env): 
 
 type CachedToken = { token: string; expiresAt: number };
 let cached: CachedToken | null = null;
+/** A mint already in flight, shared by every caller until it settles, so a cold page mints once. */
+let pending: Promise<string> | null = null;
 
 type TokenResponse = { access_token?: unknown; expires_in?: unknown; error?: unknown };
 
 /**
  * A valid access token for the MDM API, minted from the refresh token and cached until it nears
- * expiry. `error` in Zoho's body (e.g. `invalid_code`, `invalid_client`) is surfaced plainly rather
- * than left to look like a network failure.
+ * expiry. A genuine credential `error` (e.g. `invalid_code`, `invalid_client`) is surfaced as a
+ * NotConfigured error naming the code; Zoho's transient throttle (`Access Denied`) is surfaced as a
+ * ThrottledError that does NOT ask anyone to re-generate the credential. Concurrent callers share
+ * one in-flight mint.
  */
 export async function getManageEngineAccessToken(
   fetchImpl: typeof fetch = fetch,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<string> {
-  const now = Date.now();
-  if (cached && cached.expiresAt > now) return cached.token;
+  if (cached && cached.expiresAt > Date.now()) return cached.token;
+  if (pending) return pending;
+  pending = mintManageEngineAccessToken(fetchImpl, env).finally(() => {
+    pending = null;
+  });
+  return pending;
+}
 
+async function mintManageEngineAccessToken(fetchImpl: typeof fetch, env: NodeJS.ProcessEnv): Promise<string> {
   const config = manageEngineAuthConfig(env);
   const params = new URLSearchParams({
     client_id: config.clientId,
@@ -119,8 +155,13 @@ export async function getManageEngineAccessToken(
   }
 
   if (typeof payload.error === "string" && payload.error) {
-    throw new ManageEngineNotConfiguredError(
-      `Zoho refused the refresh token (${payload.error}). Re-generate the Self Client credential and set it again.`,
+    if (isCredentialError(payload.error)) {
+      throw new ManageEngineNotConfiguredError(
+        `Zoho refused the refresh token (${payload.error}). Re-generate the Self Client credential and set it again.`,
+      );
+    }
+    throw new ManageEngineAuthThrottledError(
+      `ManageEngine sign-in was rate-limited by Zoho (${payload.error}). The credential is fine — this clears on its own, so reload in a moment.`,
     );
   }
   if (!response.ok || typeof payload.access_token !== "string" || !payload.access_token) {
@@ -128,11 +169,12 @@ export async function getManageEngineAccessToken(
   }
 
   const lifetimeMs = (typeof payload.expires_in === "number" ? payload.expires_in : 3600) * 1000;
-  cached = { expiresAt: now + Math.max(lifetimeMs - EXPIRY_SAFETY_MS, 0), token: payload.access_token };
+  cached = { expiresAt: Date.now() + Math.max(lifetimeMs - EXPIRY_SAFETY_MS, 0), token: payload.access_token };
   return cached.token;
 }
 
 /** Drop the cached access token — for tests, and after a 401 so the next call re-mints. */
 export function resetManageEngineTokenCache(): void {
   cached = null;
+  pending = null;
 }
