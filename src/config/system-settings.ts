@@ -36,9 +36,10 @@ export const systemDeployment = {
 } as const;
 
 export const systemEditingPolicy = {
-  fastCheckScript: "pnpm run check:edit",
-  // No `hardeningScript` counterpart: `check:harden` was retired on 2026-08-18 and CI is the gate.
-  // `pnpm run ci` runs the same steps by hand, but it is opt-in and deliberately not named here.
+  // No `fastCheckScript` and no `hardeningScript`: `check:harden` was retired on 2026-08-18 and
+  // `check:edit` on 2026-09-25 — this repo has outgrown a local `tsc`, which now needs 4.0-4.5 GB of
+  // heap and dies at node's own default on a 16 GB machine. CI is the gate. `pnpm run ci` runs the
+  // same steps by hand, but it is opt-in and deliberately not named here.
   localEditingModeEnv: "NEXT_PUBLIC_PHOENIX_EDITING_MODE",
   protectedAreas: [
     "authentication",
