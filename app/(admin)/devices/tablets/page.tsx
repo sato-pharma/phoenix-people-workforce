@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 
+import { ManageEngineAppRepository } from "@/components/devices/manageengine-app-repository";
 import { ManageEngineEnrollment } from "@/components/devices/manageengine-enrollment";
 import { ManageEngineFleet } from "@/components/devices/manageengine-fleet";
 import { ManageEngineRepTabletRules } from "@/components/devices/manageengine-rep-tablet-rules";
@@ -24,7 +25,9 @@ export const dynamic = "force-dynamic";
  * Google gives a new Cloud project a device quota of ZERO until it approves an application, so a
  * tablet scanning the Google code is refused — "your organization has reached its usage limits" —
  * while the enterprise holds no tablets at all. So the order reads as the work does: enroll through
- * ManageEngine, then the ManageEngine fleet and everything that can be done to a tablet in it, and
+ * ManageEngine, then the two company-wide things a tablet is later put ON — the rules, and the app
+ * repository that every tablet's Apps section can only offer from — then the ManageEngine fleet and
+ * everything that can be done to a tablet in it, and
  * only then Google's console, kept whole and marked as the second path. Nothing Google-side was
  * removed; the day that quota is approved, that console works again exactly as written.
  */
@@ -48,6 +51,7 @@ export default async function RepTabletsPage() {
       />
       <ManageEngineEnrollment />
       {manageEngineReady ? <ManageEngineRepTabletRules /> : null}
+      {manageEngineReady ? <ManageEngineAppRepository /> : null}
       <ManageEngineFleet bridgeConfigured={manageEngineReady} />
       <RepTabletsConsole enterpriseBound={isAndroidManagementConfigured()} />
     </div>

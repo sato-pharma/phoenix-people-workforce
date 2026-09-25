@@ -4,6 +4,7 @@ import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissi
 import { resolveAccessContext } from "@/lib/auth/server";
 import {
   installManageEngineApp,
+  listManageEngineAppRepository,
   ManageEngineAppInputError,
   refreshManageEngineAppStatus,
   removeManageEngineApp,
@@ -14,6 +15,23 @@ import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/**
+ * Everything the company app repository holds — the apps Phoenix is able to send to a tablet.
+ *
+ * A read, gated the same as everything else on this page (`company_devices:approve`, Super Admin
+ * only). It is the list the repository card renders, and the list that tells the owner whether an
+ * upload actually landed.
+ */
+export async function GET(request: Request) {
+  try {
+    const access = await resolveAccessContext(request);
+    await assertPermission(access, "company_devices", "approve");
+    return NextResponse.json({ apps: await listManageEngineAppRepository() });
+  } catch (error) {
+    return manageEngineErrorResponse(error, "Could not read the company app repository.");
+  }
+}
 
 /**
  * Put an app on a rep's tablet, take one off, or ask the tablet for its app list again.

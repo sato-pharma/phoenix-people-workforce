@@ -1395,6 +1395,14 @@ export const accessRegistry = [
   // it carries the same gate and its own REQUIRED audit row (manageengine_device_app). Refreshing the
   // app list is a read wearing a POST — the service writes no row for it.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/manageengine/apps", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
+  // GET is the company app repository — every app ManageEngine holds, which is every app a tablet can
+  // be sent. A read, so no audit row.
+  sessionApi({ methods: ["GET"], pattern: "/api/devices/manageengine/apps", permission: { resource: "company_devices", action: "approve" } }),
+  // Adding an APK to that repository. It reaches NO tablet — an app in the repository is one that CAN
+  // be sent, and sending it is the route above — but it is still a write into the company's fleet
+  // configuration, so it carries the same gate and its own REQUIRED audit row
+  // (manageengine_app_repository). Its body is multipart, which is why it is a route of its own.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/manageengine/apps/upload", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
   // The ManageEngine enrollment template — the QR a factory-fresh tablet scans. GET returns everything
   // ABOUT the template and never the template itself; POST either saves a new one (REQUIRED audit,
   // manageengine_enrollment_template) or, with `show`, hands the saved payload to the page for the one
