@@ -7,6 +7,7 @@ import { listManageEngineProfiles } from "@/lib/devices/manageengine/profiles";
 import {
   buildRepTabletProfile,
   findRepTabletProfile,
+  isPhoenixBuiltRepTabletProfile,
   REP_TABLET_PROFILE_GAPS,
   REP_TABLET_PROFILE_NAME,
   REP_TABLET_PROFILE_SETTINGS,
@@ -38,9 +39,14 @@ export async function GET(request: Request) {
     const existing = findRepTabletProfile(await listManageEngineProfiles());
     return NextResponse.json(
       {
+        // False when the tenant's rule set was built in the ManageEngine console rather than by
+        // Phoenix. The settings below are then what Phoenix WOULD write, not a reading of that
+        // profile, and the card has to say so — claiming otherwise would put this page's word behind
+        // values nobody here has read.
+        builtByPhoenix: isPhoenixBuiltRepTabletProfile(existing),
         exists: existing !== null,
         gaps: REP_TABLET_PROFILE_GAPS,
-        name: REP_TABLET_PROFILE_NAME,
+        name: existing?.name ?? REP_TABLET_PROFILE_NAME,
         profileId: existing?.profileId ?? null,
         settings: REP_TABLET_PROFILE_SETTINGS,
       },

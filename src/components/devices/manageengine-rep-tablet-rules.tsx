@@ -31,6 +31,8 @@ const MICRO_LABEL = "text-[9px] font-black uppercase tracking-[0.14em] text-slat
 type Setting = { rule: string; detail: string };
 type Gap = { rule: string; detail: string };
 type RulesState = {
+  /** False when the tenant's rule set was built in the console: the table is then what Phoenix WOULD write. */
+  builtByPhoenix: boolean;
   exists: boolean;
   name: string;
   profileId: string | null;
@@ -44,6 +46,8 @@ type BuildResult = {
   carriesPasscode: boolean;
   error: string | null;
   name: string;
+  /** Rules this tenant refused to carry — shown in every outcome, never swallowed. */
+  refusedRules: string[];
 };
 
 async function readJson<T>(url: string, body?: unknown): Promise<T> {
@@ -94,22 +98,32 @@ function groupByRule(settings: readonly Setting[]): Array<{ rule: string; detail
 }
 
 function buildOutcome(result: BuildResult): { tone: "good" | "bad"; message: string } {
-  if (!result.created) {
+  // A rule ManageEngine would not take is said in every outcome, good or bad: a rule set that
+  // restricts less than this page lists is worse than one that plainly failed.
+  const refused =
+    result.refusedRules.length > 0
+      ? ` ManageEngine would not take ${result.refusedRules.length === 1 ? "this rule" : "these rules"} on this tenant, so ${result.refusedRules.length === 1 ? "it is" : "they are"} NOT on the tablet: ${result.refusedRules.join(", ")}.`
+      : "";
+  if (!result.created && result.published) {
     return {
-      message: `ManageEngine already holds "${result.name}", so nothing was changed. Open a tablet to put it on that tablet.`,
+      message: `ManageEngine already holds "${result.name}", so nothing was changed. Open a tablet to put it on that tablet.${refused}`,
       tone: "good",
     };
   }
   if (result.published) {
+    const opening = result.created
+      ? `"${result.name}" is built and published in ManageEngine.`
+      : `"${result.name}" was left unfinished by an earlier attempt — it is finished and published now.`;
     return {
-      message: `"${result.name}" is built and published in ManageEngine. Open a tablet and put it on that tablet — building the rules does not apply them to anyone.`,
-      tone: "good",
+      message: `${opening} Open a tablet and put it on that tablet — building the rules does not apply them to anyone.${refused}`,
+      tone: refused ? "bad" : "good",
     };
   }
   return {
-    message:
+    message: `${
       result.error ??
-      `"${result.name}" was created but not published, so it restricts nothing yet. Check it in the ManageEngine console before relying on it.`,
+      `"${result.name}" was created but not published, so it restricts nothing yet. Check it in the ManageEngine console before relying on it.`
+    }${refused}`,
     tone: "bad",
   };
 }
@@ -200,7 +214,14 @@ export function ManageEngineRepTabletRules() {
               {state.exists ? (
                 <span className="inline-flex items-center gap-1.5">
                   <ShieldCheck className="h-4 w-4 text-emerald-700" aria-hidden />
-                  ManageEngine holds these rules as &ldquo;{state.name}&rdquo;.
+                  {state.builtByPhoenix ? (
+                    <>ManageEngine holds these rules as &ldquo;{state.name}&rdquo;.</>
+                  ) : (
+                    <>
+                      ManageEngine holds &ldquo;{state.name}&rdquo;, built in the console rather than by Phoenix — what it
+                      actually restricts is what the console says, not the table below.
+                    </>
+                  )}
                 </span>
               ) : (
                 <>ManageEngine does not hold these rules yet, so no tablet can be put on them.</>

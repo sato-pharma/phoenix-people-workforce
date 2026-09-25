@@ -47,15 +47,21 @@ import {
   getManageEngineProfileState,
   listManageEngineProfiles,
   ManageEngineProfileInputError,
+  profileAssociationBody,
   profilePayloadLabel,
 } from "../src/lib/devices/manageengine/profiles.ts";
 import {
   buildRepTabletProfile,
   findRepTabletProfile,
+  isPhoenixBuiltRepTabletProfile,
+  PASSCODE_PAYLOAD_NAMES,
+  REP_TABLET_PROFILE_ALIASES,
   REP_TABLET_PROFILE_GAPS,
   REP_TABLET_PROFILE_NAME,
   REP_TABLET_PROFILE_SETTINGS,
+  refusedParameterName,
   repTabletProfilePayloadBodies,
+  rulesForFields,
 } from "../src/lib/devices/manageengine/rep-tablet-profile.ts";
 import {
   manageEngineImeisToRecord,
@@ -1111,6 +1117,41 @@ async function runProfileTests() {
   assert.equal(degraded.catalogueError, true, "the catalogue being down is said plainly");
   assert.equal(degraded.applied.length, 1, "and what the tablet carries still shows");
 
+  // 🔴 AN 18-DIGIT PROFILE ID SURVIVES THE REQUEST BODY WHOLE. This is a real failure, not a
+  // hypothetical: the first live association answered `404 Unknown id(s) - [Profile Id
+  // :243158000000124380]` because the body coerced the id through `Number`, and JavaScript stops
+  // being exact at 16 digits — ...389 went out as ...380 and no tablet could be put on any rules.
+  assert.equal(
+    profileAssociationBody("243158000000124389"),
+    '{"profile_ids":[243158000000124389]}',
+    "every digit of a ManageEngine id reaches the API — the one that failed live ended 389, not 380",
+  );
+  assert.ok(
+    !profileAssociationBody("243158000000124389").includes("243158000000124380"),
+    "the rounded id that ManageEngine refused can never be what goes out",
+  );
+  assert.equal(
+    profileAssociationBody("12"),
+    '{"profile_ids":[12]}',
+    "a short id is still sent as a JSON number, which is what the API takes",
+  );
+  assert.equal(
+    profileAssociationBody("not-an-id"),
+    '{"profile_ids":["not-an-id"]}',
+    "anything that is not digits is quoted, so ManageEngine refuses it rather than this code mangling it",
+  );
+  const profilesSource = enrollmentSource("src/lib/devices/manageengine/profiles.ts");
+  assert.doesNotMatch(
+    profilesSource,
+    /Number\(profileId\)/,
+    "the profile id never goes through Number again — that rounding is what broke the live association",
+  );
+  assert.match(
+    profilesSource,
+    /body: profileAssociationBody\(profileId\)/,
+    "and the association body is built by the helper the assertions above pin",
+  );
+
   // Nothing is sent on a change that names no tablet, no rules, or an action that is not one of two.
   for (const [input, why] of [
     [{ action: "associate" as const, deviceId: "", profileId: "12" }, "no tablet"],
@@ -1255,22 +1296,48 @@ async function runRepTabletProfileTests() {
     "9",
     "the company's profile is found however it was capitalised",
   );
+  // 🔴 AND THE OWNER'S OWN NAME IS ONE OF THEM. He built "Rep tablet rules" in the ManageEngine
+  // console before this module existed; matching only the Phoenix name does not see it, so the page
+  // would have offered to build a SECOND rule set beside his, and two profiles on one tablet is how
+  // a fleet ends up half locked.
+  const ownBuild = findRepTabletProfile([{ description: null, name: "Rep tablet rules", payloads: [], profileId: "9" }]);
+  assert.equal(ownBuild?.profileId, "9", "the rule set the owner built in the console is found, not built over");
   assert.equal(
-    findRepTabletProfile([{ description: null, name: "Rep tablet rules", payloads: [], profileId: "9" }]),
-    null,
-    "and a differently named profile is not mistaken for it",
+    isPhoenixBuiltRepTabletProfile(ownBuild),
+    false,
+    "and it is reported as the console's, so the page never claims Phoenix's own values are what it restricts",
   );
+  assert.equal(
+    isPhoenixBuiltRepTabletProfile({ description: null, name: "Phoenix rep tablet", payloads: [], profileId: "9" }),
+    true,
+  );
+  assert.equal(
+    findRepTabletProfile([{ description: null, name: "Alpha", payloads: [], profileId: "9" }]),
+    null,
+    "an unrelated profile is still not mistaken for the company's rules",
+  );
+  assert.equal(REP_TABLET_PROFILE_ALIASES[0], REP_TABLET_PROFILE_NAME, "Phoenix's own name leads, so a tenant holding both answers with the one Phoenix wrote");
 
-  // Pressing build twice is safe: a tenant that already holds it is left alone and nothing is sent.
+  // 🔴 THE PAYLOAD NAMES ARE MEASURED, NOT GUESSED. The live tenant answers `androidpasscodepolicy`
+  // — neither documented spelling — and the read-back that gates publishing recognises only names in
+  // this list, so without the measured one it would refuse a profile that had attached correctly.
+  assert.equal(
+    PASSCODE_PAYLOAD_NAMES[0],
+    "androidpasscodepolicy",
+    "the spelling the company's own tenant uses leads the list",
+  );
+  assert.equal(profilePayloadLabel("androidrestrictionspolicy"), "What the tablet may do", "and it reads as words on the page, never as a code");
+  assert.equal(profilePayloadLabel("androidefrppolicy"), "Factory reset protection");
+
+  // Pressing build twice is safe: a profile already carrying both payloads is left alone.
   resetManageEngineTokenCache();
   const already = makeFetch({
     api: [
       {
         status: 200,
-        body: {
-          profiles: [{ profile_id: 44, profile_name: REP_TABLET_PROFILE_NAME, platform_type: 2, payloads: ["restrictionspolicy"] }],
-        },
+        body: { profiles: [{ profile_id: 44, profile_name: REP_TABLET_PROFILE_NAME, platform_type: 2 }] },
       },
+      { status: 200, body: { payloads: ["androidrestrictionspolicy", "androidpasscodepolicy"] } },
     ],
   });
   const second = await buildRepTabletProfile("B-10", already.fetch, ENV);
@@ -1280,6 +1347,95 @@ async function runRepTabletProfileTests() {
     already.calls.filter((call) => call.init.method === "POST" && !call.url.includes("/oauth/")).length,
     0,
     "and nothing at all is written on that path",
+  );
+
+  // 🔴 A PROFILE AN EARLIER FAILED PRESS LEFT EMPTY IS FINISHED, NOT DECLARED DONE. This is the exact
+  // state the live tenant was left in: "Phoenix rep tablet" created, zero payloads, never published.
+  // Matching on the name alone and returning `published: true` would have stranded it there forever.
+  resetManageEngineTokenCache();
+  const leftover = makeFetch({
+    api: [
+      {
+        status: 200,
+        body: { profiles: [{ profile_id: 44, profile_name: REP_TABLET_PROFILE_NAME, platform_type: 2 }] },
+      },
+      { status: 200, body: { payloads: [] } }, // the empty leftover
+      { status: 200, body: {} }, // restrictions payload attaches
+      { status: 200, body: {} }, // passcode payload attaches
+      { status: 200, body: { payloads: ["androidrestrictionspolicy", "androidpasscodepolicy"] } }, // read back
+      { status: 200, body: {} }, // publish
+    ],
+  });
+  // A completed build ends in a REQUIRED audit row, and there is no database here — so what reached
+  // ManageEngine is what is asserted, and the audit is proved to be the only thing that stopped it,
+  // so a genuine failure earlier in the flow can never hide behind this rejection.
+  await assert.rejects(
+    () => buildRepTabletProfile("B-10", leftover.fetch, ENV),
+    (error: Error) => /audit/i.test(error.message),
+    "the repair runs the whole way through to its audit row",
+  );
+  assert.equal(
+    leftover.calls.some((call) => /\/profiles$/.test(call.url) && call.init.method === "POST"),
+    false,
+    "🔴 no SECOND profile is created beside the empty one already there",
+  );
+  assert.ok(
+    leftover.calls.some((call) => call.url.includes("/profiles/44/payloads/androidrestrictionspolicy")),
+    "the missing payload is attached to the profile that already exists",
+  );
+  assert.ok(
+    leftover.calls.some((call) => call.url.includes("/profiles/44/publish") && call.init.method === "POST"),
+    "and the finished profile is published, rather than left unpublished for good",
+  );
+
+  // 🔴 A FIELD THE TENANT REFUSES IS DROPPED AND NAMED — never swallowed, and never mistaken for a
+  // wrong payload NAME. The live build died here: ManageEngine answered `Invalid parameter
+  // "allow_uninstall_app" detected.` and the old code read that as the wrong spelling, moved to the
+  // next one, failed identically, and reported a field error against a name that was never at fault.
+  assert.equal(refusedParameterName('Invalid parameter "allow_uninstall_app" detected.'), "allow_uninstall_app");
+  assert.equal(refusedParameterName("Unsupported parameter payloaditem detected in the request."), "payloaditem");
+  assert.equal(refusedParameterName("Something else went wrong."), null, "an error naming no field names none");
+  assert.deepEqual(
+    rulesForFields(["allow_uninstall_app"]),
+    ["Only approved apps"],
+    "and a refused field is reported as the RULE it carried, in the words the page already uses",
+  );
+
+  resetManageEngineTokenCache();
+  const fussy = makeFetch({
+    api: [
+      { status: 200, body: { profiles: [] } },
+      { status: 200, body: { profile_id: "243158000000134296" } },
+      { status: 400, body: { error_description: 'Invalid parameter "allow_uninstall_app" detected.' } },
+      { status: 200, body: {} }, // accepted once that field is gone
+      { status: 200, body: {} }, // passcode
+      { status: 200, body: { payloads: ["androidrestrictionspolicy", "androidpasscodepolicy"] } },
+      { status: 200, body: {} }, // publish
+    ],
+  });
+  await assert.rejects(
+    () => buildRepTabletProfile("B-10", fussy.fetch, ENV),
+    (error: Error) => /audit/i.test(error.message),
+    "a refused field does not abort the build — it runs on to its audit row",
+  );
+  assert.ok(
+    fussy.calls.some((call) => call.url.includes("/publish") && call.init.method === "POST"),
+    "the rules the tenant DID take are still published, rather than thrown away over one refusal",
+  );
+  const retried = fussy.calls.filter((call) => call.url.includes("/payloads/androidrestrictionspolicy"));
+  assert.equal(retried.length, 2, "the SAME payload name is asked again — the name was never the problem");
+  assert.ok(
+    !String(retried[1].init.body).includes("allow_uninstall_app"),
+    "and the retry drops only the field ManageEngine named",
+  );
+  assert.ok(
+    String(retried[1].init.body).includes("allow_install_app"),
+    "every other rule survives the retry — one refused field does not cost the rest",
+  );
+  assert.match(
+    enrollmentSource("src/lib/devices/manageengine/rep-tablet-profile.ts"),
+    /refusedRules,?\n/,
+    "and the refused rules are returned to the page, never left in the log alone",
   );
 
   // Source-level guarantees the flow above cannot be asked to prove without writing to ManageEngine.
