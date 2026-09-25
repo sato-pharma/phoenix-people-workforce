@@ -1,6 +1,7 @@
 /**
- * The apps on a rep's tablet — what is installed, what the company can send it, and the two changes
- * a Super Admin can make from Phoenix: put an app on, take an app off.
+ * The apps on a rep's tablet — what is installed, what the company can send it, and the changes a
+ * Super Admin can make from Phoenix: add an APK to the company repository, put an app on a tablet,
+ * take an app off.
  *
  * WHAT ManageEngine DISTINGUISHES, AND WHY IT MATTERS HERE. `GET /devices/{id}/apps` lists what the
  * tablet is carrying. `GET /apps` lists the company's own repository — the store and enterprise apps
@@ -25,7 +26,7 @@
  */
 
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
-import { callManageEngine } from "@/lib/devices/manageengine/client";
+import { callManageEngine, ManageEngineRequestError } from "@/lib/devices/manageengine/client";
 import {
   listManageEngineDevices,
   matchManageEngineToRegister,
@@ -110,6 +111,222 @@ export async function listManageEngineAppRepository(
     .map((record) => normalizeApp(record, true))
     .filter((app): app is ManageEngineApp => app !== null)
     .sort((left, right) => left.name.localeCompare(right.name));
+}
+
+/** The biggest APK Phoenix will carry to ManageEngine. Well past any Phoenix build; a guard, not a limit. */
+export const MAX_APP_UPLOAD_BYTES = 200 * 1024 * 1024;
+
+/** ManageEngine's own enumerations, written out rather than left as bare numbers at the call site. */
+const APP_TYPE_ENTERPRISE = 3;
+const SUPPORTED_DEVICES_BOTH = 3;
+/** The module the file is uploaded FOR. Without it the file lands with no purpose and the app create fails. */
+const FILE_MODULE_APP_MGMT = "MDM_APP_MGMT";
+
+export type UploadedApp = {
+  app: ManageEngineApp | null;
+  /** ManageEngine's id for the uploaded package, kept so a failed create can be chased in the console. */
+  fileId: string;
+  message: string;
+};
+
+export function manageEngineFileId(payload: RawRecord | null): string | null {
+  if (!payload) return null;
+  // The two upload endpoints answer with different spellings — `fileID` from /emsapi/files, `file_id`
+  // from the deprecated one — so both are read rather than assuming which one served the call.
+  return pickString(payload, ["fileID", "file_id", "fileId", "id"]);
+}
+
+/**
+ * Whether a failed upload means "this tenant does not serve that path" — the only case worth
+ * retrying on the older endpoint. A refusal, a rejected token or a file ManageEngine would not take
+ * is the real answer and must surface as itself rather than being asked again somewhere else.
+ */
+export function isMissingEndpointStatus(status: number): boolean {
+  return status === 404 || status === 405 || status === 501;
+}
+
+/** A long id ManageEngine sends back as a string is sent back to it as a number, which is how it types them. */
+function asId(value: string): number | string {
+  return /^\d+$/.test(value) ? Number(value) : value;
+}
+
+/**
+ * Refuse a file that cannot become an app on a rep's tablet, before a byte is uploaded.
+ *
+ * The `.aab` case is called out by name because it is the mistake that will actually be made: the
+ * Play Store build of this app is an `.aab`, it sits beside the APK in the same folder, and
+ * ManageEngine would take it and hand every tablet something that cannot install.
+ */
+export function assertUploadableApk(fileName: string, byteLength: number): void {
+  if (!fileName) throw new ManageEngineAppInputError("Choose the APK file to add.");
+  if (!/\.apk$/i.test(fileName)) {
+    throw new ManageEngineAppInputError(
+      `Only an Android package can be added from here, and "${fileName}" is not one. The rep tablets are Android, so the file must end in .apk — an .aab is a Play Store upload and cannot be installed on a tablet.`,
+    );
+  }
+  if (byteLength === 0) throw new ManageEngineAppInputError("That file is empty, so there is nothing to add.");
+  if (byteLength > MAX_APP_UPLOAD_BYTES) {
+    throw new ManageEngineAppInputError(
+      `That file is ${Math.round(byteLength / (1024 * 1024))} MB, which is past the ${Math.round(MAX_APP_UPLOAD_BYTES / (1024 * 1024))} MB this page carries. Add it in the ManageEngine console instead.`,
+    );
+  }
+}
+
+/**
+ * The body that creates the repository entry once the package is on the server.
+ *
+ * Enterprise, because a self-built APK is by definition not a store listing. Both device sizes, so a
+ * phone-sized device in the fleet is not silently excluded. And `release_label_id` is DELIBERATELY
+ * absent when no channel was chosen: ManageEngine's own documentation says an app with no label
+ * "will be added in default stable channel", which is what is wanted — inventing a channel per
+ * upload would scatter versions of one app across labels nobody chose.
+ */
+export function manageEngineAppCreateBody(input: {
+  fileId: string;
+  appName: string;
+  description?: string | null;
+  releaseLabelId?: string | null;
+  appCategoryId?: string | null;
+}): Record<string, unknown> {
+  const releaseLabelId = input.releaseLabelId?.trim() || null;
+  const appCategoryId = input.appCategoryId?.trim() || null;
+  return {
+    app_file: asId(input.fileId),
+    app_name: input.appName,
+    app_type: APP_TYPE_ENTERPRISE,
+    supported_devices: SUPPORTED_DEVICES_BOTH,
+    ...(appCategoryId ? { app_category_id: asId(appCategoryId) } : {}),
+    ...(releaseLabelId ? { release_label_id: asId(releaseLabelId) } : {}),
+    ...(input.description?.trim() ? { description: input.description.trim() } : {}),
+  };
+}
+
+/**
+ * Put the package bytes on the ManageEngine server and get back the file id the app create needs.
+ *
+ * TWO ENDPOINTS, BECAUSE ONE OF THEM IS BEING RETIRED. `/emsapi/files` is the endpoint ManageEngine
+ * now documents, and it takes a real multipart form whose part is named `fileName`. The older
+ * `/api/v1/mdm/files` takes the raw bytes with the name in a `Content-Disposition` header, and is
+ * marked deprecated — but the deprecation is dated against an On-Premises build, and this tenant is
+ * Cloud, so which of the two a given tenant answers on cannot be known from the documentation. The
+ * new one is tried first and the old one is the fallback, on exactly the statuses that mean "no such
+ * endpoint here" — never on a refusal, which must surface as itself.
+ */
+async function uploadAppPackage(
+  fileName: string,
+  bytes: Uint8Array,
+  fetchImpl: typeof fetch,
+  env: NodeJS.ProcessEnv,
+): Promise<string> {
+  const form = new FormData();
+  form.append("fileName", new Blob([bytes as BlobPart], { type: "application/vnd.android.package-archive" }), fileName);
+
+  const headers: Record<string, string> = { module: FILE_MODULE_APP_MGMT };
+  const customer = env.MANAGEENGINE_MDM_CUSTOMER_ID?.trim();
+  if (customer) headers["X-Customer"] = customer;
+
+  let payload: RawRecord | null = null;
+  try {
+    payload = await callManageEngine<RawRecord>("/emsapi/files", { body: form, headers, method: "POST" }, fetchImpl, env);
+  } catch (error) {
+    const status = error instanceof ManageEngineRequestError ? error.status : 0;
+    if (!isMissingEndpointStatus(status)) throw error;
+    payload = await callManageEngine<RawRecord>(
+      "/api/v1/mdm/files",
+      { body: bytes as BodyInit, headers: { "content-disposition": `filename=${fileName}` }, method: "POST" },
+      fetchImpl,
+      env,
+    );
+  }
+
+  const fileId = manageEngineFileId(payload);
+  if (!fileId) {
+    throw new ManageEngineRequestError(
+      502,
+      "ManageEngine took the file but did not say which id it stored it under, so the app could not be created. Check the App Repository in the ManageEngine console before uploading it again.",
+    );
+  }
+  return fileId;
+}
+
+/**
+ * Add an APK to the company app repository, from Phoenix.
+ *
+ * 🔴 WHAT THIS CLOSES. Until this existed the repository could only be filled in the ManageEngine web
+ * console, so the per-tablet Apps section had nothing to offer and said so — "the company app
+ * repository could not be read, so there is nothing to send from here yet". This is the other half:
+ * the APK goes in from here, and every tablet's Apps section can then send it.
+ *
+ * IT REACHES NO TABLET. Adding an app to the repository installs it on nobody — distribution is the
+ * per-tablet Apps section, one tablet at a time, with its own audit row. That separation is
+ * deliberate: an upload is a safe act, and it should not need the ceremony a wipe needs.
+ *
+ * TWO CALLS, AND THE FIRST CAN LAND WITHOUT THE SECOND. The package is uploaded, then the repository
+ * entry is created from the file id. If the create fails the bytes are already on ManageEngine's
+ * server under that id, so the id is returned with the error rather than dropped — otherwise the
+ * only way to find an orphaned upload is to guess.
+ */
+export async function uploadManageEngineApp(
+  input: {
+    fileName: string;
+    bytes: Uint8Array;
+    appName?: string | null;
+    description?: string | null;
+    releaseLabelId?: string | null;
+    appCategoryId?: string | null;
+  },
+  actor: string,
+  fetchImpl: typeof fetch = fetch,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<UploadedApp> {
+  const fileName = input.fileName.trim();
+  assertUploadableApk(fileName, input.bytes.byteLength);
+
+  const appName = input.appName?.trim() || fileName.replace(/\.apk$/i, "");
+  const fileId = await uploadAppPackage(fileName, input.bytes, fetchImpl, env);
+
+  const created = await callManageEngine<RawRecord>(
+    "/api/v1/mdm/apps",
+    {
+      body: JSON.stringify(
+        manageEngineAppCreateBody({
+          appCategoryId: input.appCategoryId,
+          appName,
+          description: input.description,
+          fileId,
+          releaseLabelId: input.releaseLabelId,
+        }),
+      ),
+      method: "POST",
+    },
+    fetchImpl,
+    env,
+  );
+
+  const app = normalizeApp(created, true);
+
+  await writeRequiredAuditLog({
+    actorLoginId: actor,
+    entityId: app?.appId ?? fileId,
+    entityType: "manageengine_app_repository",
+    newValues: {
+      appId: app?.appId ?? null,
+      appName,
+      bytes: input.bytes.byteLength,
+      change: "UPLOAD",
+      fileId,
+      fileName,
+      version: app?.version ?? null,
+    },
+    oldValues: null,
+    summary: `Added ${appName} to the company app repository`,
+  });
+
+  return {
+    app,
+    fileId,
+    message: `${appName} is in the company app repository. It is on no tablet yet — open a tablet below and send it from that tablet's Apps section.`,
+  };
 }
 
 export type DeviceAppsState = {

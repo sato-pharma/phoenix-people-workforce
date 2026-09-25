@@ -282,7 +282,15 @@ function AppsSection({ deviceId }: { deviceId: string }) {
             value={chosen}
           >
             <option value="">
-              {available.length === 0 ? "Every app in the company repository is already on it" : "Choose an app"}
+              {available.length > 0
+                ? "Choose an app"
+                : // Nothing to offer has two quite different causes, and saying the wrong one sends the
+                  // owner to the wrong place: an EMPTY repository is fixed above this table, on the page
+                  // itself; a full one that this tablet already carries is fixed nowhere, because it is
+                  // not broken.
+                  (state?.installed ?? []).some((app) => app.managed)
+                  ? "Every app in the company repository is already on it"
+                  : "The company repository holds no apps yet — add one above"}
             </option>
             {available.map((app) => (
               <option key={app.appId} value={app.appId}>

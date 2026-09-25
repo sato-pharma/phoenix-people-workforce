@@ -86,6 +86,11 @@ export type AuditEntityType =
   // until somebody changes it back. REQUIRED audit, written after ManageEngine has accepted the
   // change, naming the tablet by its custody asset tag and the app by its own name.
   | "manageengine_device_app"
+  // An APK added to the COMPANY app repository (2026-09-25) — kept apart from the row above because
+  // it reaches no tablet: it decides what the company is ABLE to send, not what any rep is carrying.
+  // REQUIRED audit all the same, written after ManageEngine has created the repository entry, naming
+  // the app, the file and its size. Distribution is the row above, per tablet, with its own row.
+  | "manageengine_app_repository"
   // A rule set — ManageEngine calls it a profile — put on a rep's tablet or taken off it
   // (2026-09-25). This is the ManageEngine half of what the Android Management policy did: it
   // changes what the tablet is ALLOWED to do, its screen lock and kiosk pinning included, so it

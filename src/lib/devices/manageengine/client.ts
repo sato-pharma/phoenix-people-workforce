@@ -58,7 +58,11 @@ async function once<T>(path: string, init: RequestInit, fetchImpl: typeof fetch,
     headers: {
       accept: "application/json",
       authorization: `Zoho-oauthtoken ${token}`,
-      ...(init.body ? { "content-type": "application/json" } : {}),
+      // 🔴 A MULTIPART BODY MUST NOT CARRY A CONTENT-TYPE FROM HERE. `fetch` writes
+      // `multipart/form-data; boundary=…` itself, and the boundary is the only thing that tells the
+      // far end where each part starts — stamping `application/json` over it hands ManageEngine a
+      // body it cannot parse, which is how the app upload would have failed on its first byte.
+      ...(init.body && !(init.body instanceof FormData) ? { "content-type": "application/json" } : {}),
       ...(init.headers ?? {}),
     },
   });

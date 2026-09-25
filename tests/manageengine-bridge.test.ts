@@ -12,9 +12,14 @@ import {
   ManageEngineRequestError,
 } from "../src/lib/devices/manageengine/client.ts";
 import {
+  assertUploadableApk,
   getManageEngineDeviceApps,
   installManageEngineApp,
+  isMissingEndpointStatus,
+  MAX_APP_UPLOAD_BYTES,
   ManageEngineAppInputError,
+  manageEngineAppCreateBody,
+  manageEngineFileId,
   removeManageEngineApp,
 } from "../src/lib/devices/manageengine/apps.ts";
 import {
@@ -662,6 +667,101 @@ async function runDeviceAppsTests() {
   );
 }
 
+// ---------------------------------------------------------------------------------------------
+// Adding an APK to the company app repository
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * WHAT THIS PINS, AND WHY EACH ONE IS HERE RATHER THAN LEFT TO A HUMAN.
+ *
+ * 🔴 THE CONTENT-TYPE. `callManageEngine` stamps `application/json` on anything with a body — which
+ * is right for every other call in the bridge and fatal for this one. A multipart body's boundary is
+ * written by `fetch` into the content-type, and overwriting it hands ManageEngine a body it cannot
+ * parse. The failure would look like ManageEngine refusing the file, so nobody would look here.
+ *
+ * THE FALLBACK IS NARROW ON PURPOSE. ManageEngine documents `/emsapi/files` as the endpoint and the
+ * older `/api/v1/mdm/files` as deprecated — but the deprecation is dated against an On-Premises
+ * build and this tenant is Cloud, so only the tenant can say which it serves. Retrying on a 404 is
+ * right; retrying on a refusal would upload the file twice and hide the reason.
+ *
+ * THE CREATE BODY IS ASSERTED KEY BY KEY because every one of its values is a decision: Enterprise
+ * over a store type, both device sizes, and NO release label — ManageEngine's own documentation says
+ * a label-less app lands in the default stable channel, which is the wanted behaviour.
+ */
+async function runAppRepositoryUploadTests() {
+  // A body that is not FormData still gets JSON, as every other bridge call relies on.
+  resetManageEngineTokenCache();
+  const jsonStub = makeFetch({ api: [{ status: 200, body: {} }] });
+  await callManageEngine("/api/v1/mdm/apps", { body: "{}", method: "POST" }, jsonStub.fetch, ENV);
+  const jsonHeaders = jsonStub.calls.at(-1)!.init.headers as Record<string, string>;
+  assert.equal(jsonHeaders["content-type"], "application/json", "an ordinary body is still declared as JSON");
+
+  // 🔴 A multipart body carries NO content-type from the client — fetch writes it, boundary and all.
+  resetManageEngineTokenCache();
+  const formStub = makeFetch({ api: [{ status: 200, body: { fileID: "9911" } }] });
+  const form = new FormData();
+  form.append("fileName", new Blob([new Uint8Array([1, 2, 3])]), "phoenix.apk");
+  await callManageEngine("/emsapi/files", { body: form, method: "POST" }, formStub.fetch, ENV);
+  const formCall = formStub.calls.at(-1)!;
+  const formHeaders = formCall.init.headers as Record<string, string>;
+  assert.equal(
+    formHeaders["content-type"],
+    undefined,
+    "a multipart upload must not be stamped as JSON — the boundary fetch writes is the only thing that parses it",
+  );
+  assert.ok(formCall.init.body instanceof FormData, "the form itself reaches fetch, not a serialization of it");
+
+  // Both spellings of the file id are read, because the two upload endpoints differ.
+  assert.equal(manageEngineFileId({ fileID: "77" }), "77", "the /emsapi/files spelling is read");
+  assert.equal(manageEngineFileId({ file_id: 88 }), "88", "the deprecated endpoint's spelling is read");
+  assert.equal(manageEngineFileId(null), null, "no payload is no file id, not a crash");
+
+  // The fallback fires only where the endpoint is absent — never on a refusal.
+  for (const status of [404, 405, 501]) {
+    assert.equal(isMissingEndpointStatus(status), true, `HTTP ${status} means the tenant does not serve that path`);
+  }
+  for (const status of [400, 401, 403, 406, 413, 500, 502]) {
+    assert.equal(isMissingEndpointStatus(status), false, `HTTP ${status} is a real answer and is not retried elsewhere`);
+  }
+
+  // Nothing is uploaded that cannot become an app on a tablet.
+  assert.throws(() => assertUploadableApk("", 10), ManageEngineAppInputError, "no file is refused");
+  assert.throws(
+    () => assertUploadableApk("phoenix.aab", 10),
+    /\.aab is a Play Store upload/,
+    "the Play Store bundle sitting beside the APK is refused by name",
+  );
+  assert.throws(() => assertUploadableApk("phoenix.apk", 0), /empty/, "an empty file is refused");
+  assert.throws(
+    () => assertUploadableApk("phoenix.apk", MAX_APP_UPLOAD_BYTES + 1),
+    ManageEngineAppInputError,
+    "a file past the carried size is refused before a byte is sent",
+  );
+  assert.doesNotThrow(() => assertUploadableApk("Phoenix-Workforce.APK", 42), "the extension check ignores case");
+
+  // The create body — every value is a decision, so every value is pinned.
+  const body = manageEngineAppCreateBody({ appName: "Phoenix Workforce", fileId: "91273987129" });
+  assert.equal(body.app_type, 3, "an APK built here is an Enterprise app, never a store listing");
+  assert.equal(body.supported_devices, 3, "both device sizes, so a phone in the fleet is not excluded");
+  assert.equal(body.app_file, 91273987129, "a numeric file id is sent as a number, which is how ManageEngine types it");
+  assert.equal(body.app_name, "Phoenix Workforce", "the name reaches ManageEngine as given");
+  assert.ok(
+    !("release_label_id" in body),
+    "no channel was chosen, so none is invented — ManageEngine puts a label-less app in the default stable channel",
+  );
+  assert.ok(!("description" in body), "an absent description is absent, not an empty string");
+
+  const labelled = manageEngineAppCreateBody({
+    appName: "Phoenix",
+    description: "  the field app  ",
+    fileId: "abc-123",
+    releaseLabelId: "12345",
+  });
+  assert.equal(labelled.release_label_id, 12345, "a chosen channel is sent, numerically");
+  assert.equal(labelled.app_file, "abc-123", "a non-numeric file id is sent unchanged rather than coerced to NaN");
+  assert.equal(labelled.description, "the field app", "the description is trimmed");
+}
+
 function runErrorMappingTests() {
   const status = (error: unknown) => (manageEngineErrorResponse(error, "fallback") as { status: number }).status;
   assert.equal(status(new Error("forbidden: nope")), 403, "a forbidden error maps to 403");
@@ -1216,6 +1316,10 @@ function runParityDoorTests() {
   for (const [pattern, methods] of [
     ["/api/devices/manageengine/imei", ["POST"]],
     ["/api/devices/manageengine/profiles", ["GET", "POST"]],
+    // Reading the company app repository, and adding an APK to it. The upload reaches no tablet, but
+    // it writes into the company's fleet configuration, so it stands behind the same door as the rest.
+    ["/api/devices/manageengine/apps", ["GET", "POST"]],
+    ["/api/devices/manageengine/apps/upload", ["POST"]],
   ] as const) {
     for (const method of methods) {
       const entry = findAccessRegistryEntry(pattern, method);
@@ -1520,6 +1624,7 @@ export async function runManageEngineBridgeTests() {
   await runDeviceDetailTests();
   await runDeviceDetailPlainWordsTests();
   await runDeviceAppsTests();
+  await runAppRepositoryUploadTests();
   runCommandCatalogTests();
   runErrorMappingTests();
   runEnrollmentTemplateTests();
