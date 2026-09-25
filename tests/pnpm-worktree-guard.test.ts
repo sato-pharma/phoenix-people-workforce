@@ -56,9 +56,13 @@ function runGuard(
   command: string,
   options: { tool?: string; projectDir?: string } = {},
 ): Decision {
-  const env = { ...process.env, PHX_TYPECHECK_OK: "1" };
+  const env = { ...process.env };
   delete env.CLAUDE_PROJECT_DIR;
   if (options.projectDir) env.CLAUDE_PROJECT_DIR = options.projectDir;
+  // Set AFTER the spread, never inside it: adding a property to the object literal makes TypeScript
+  // infer a fresh anonymous type from the spread, which drops ProcessEnv's index signature, and the
+  // `delete` above then stops compiling. It cost a red `typecheck` on #4380.
+  env.PHX_TYPECHECK_OK = "1";
 
   const payload = JSON.stringify({
     tool_name: options.tool ?? "Bash",
