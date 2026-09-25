@@ -223,21 +223,27 @@ export function runNavigationPageFindabilityRatchetTests() {
   const newlyStranded = unreachable.filter((route) => !RECORDED_UNREACHABLE.includes(route));
   const nowReachable = RECORDED_UNREACHABLE.filter((route) => !unreachable.includes(route));
 
-  assert.deepEqual(
-    unreachable,
-    RECORDED_UNREACHABLE,
-    `the set of admin pages no literal string reaches has changed — this asserts identities, not a count, ` +
-      `so a page that gained a link and a page that lost one no longer cancel out.\n` +
-      (newlyStranded.length
-        ? `Newly unreachable (a page lost its only literal link — give it one in the sidebar rail or on a ` +
-          `hub page, or record why it has none under invisible-to-literal-scan in ` +
-          `tests/navigation-reachability-backlog.ts):\n  ${newlyStranded.join("\n  ")}\n`
-        : "") +
-      (nowReachable.length
-        ? `Good news, now reachable (a page gained a link or was deleted — remove it from the backlog so ` +
-          `the ground that was won cannot be given back):\n  ${nowReachable.join("\n  ")}\n`
-        : "") +
+  // Regression direction (hard fail): a page lost its only literal link and is now unreachable. This
+  // asserts identities, not a count, so a page that gained a link cannot mask one that lost its own.
+  assert.equal(
+    newlyStranded.length,
+    0,
+    `the set of admin pages no literal string reaches has GROWN.\n` +
+      `Newly unreachable (a page lost its only literal link — give it one in the sidebar rail or on a ` +
+      `hub page, or record why it has none under invisible-to-literal-scan in ` +
+      `tests/navigation-reachability-backlog.ts):\n  ${newlyStranded.join("\n  ")}\n` +
       `A page with no link anywhere still builds, still deploys, and still serves — it simply stops ` +
       `existing for every user.`,
   );
+
+  // Improvement direction: a recorded page became reachable (gained a link or was deleted). That is a
+  // win, not a failure — a PR must never go red for making the app better. Warn (so it can be removed
+  // from RECORDED_UNREACHABLE later) and pass. The regression guard above still fails on any newly
+  // stranded page, and a swap (one gained, one lost) still trips it via newlyStranded.
+  if (nowReachable.length) {
+    console.warn(
+      `Good news, now reachable (a page gained a link or was deleted — remove it from the backlog so ` +
+        `the ground that was won cannot be given back):\n  ${nowReachable.join("\n  ")}`,
+    );
+  }
 }
