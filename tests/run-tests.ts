@@ -1534,6 +1534,7 @@ import { runPhoenixCrmPendingCustomerTests } from "./phoenix-crm-pending-custome
 import { runPhoenixCrmCustomerListBoardTests } from "./phoenix-crm-customer-list-board.test.ts";
 import { runPhoenixCrmDoctorsDirectoryTests } from "./phoenix-crm-doctors-directory.test.ts";
 import { runPhoenixCrmPlaceLocationFrozenTests } from "./phoenix-crm-place-location-frozen.test.ts";
+import { runPhoenixCrmRetiredPilotRedirectTests } from "./phoenix-crm-retired-pilot-redirect.test.ts";
 import { runPhoenixCrmLocationIntegrityTests } from "./phoenix-crm-location-integrity.test.ts";
 import { runPhoenixCrmPortalSidebarTests } from "./phoenix-crm-portal-sidebar.test.ts";
 import { runPhoenixCrmAmPmWordTests } from "./phoenix-crm-am-pm-words.test.ts";
@@ -5086,6 +5087,11 @@ await runTest(
 await runTest(
   "Phoenix CRM's captured location is frozen and separated (owner, 2026-09-23: \"the capture location is never editable and its separated when captured to brick area region clean addresss and raw location\" — the phone sends no address, zone or brick and has no box to type one into; the server resolves the clean address, the part of town, the brick with its distance, the area and the region from the captured coordinates; and the database's edit path writes only the place's name and its days and hours)",
   runPhoenixCrmPlaceLocationFrozenTests,
+);
+
+await runTest(
+  "The retired Phoenix CRM pilot forwards to the live field app (owner, 2026-09-25 — /employee-portals/phoenix-crm and /admin/phoenix-crm render nothing and land on the field app's tab doing the same work: Visits → visits, Planning → plan, KPIs → reports; the rep's notices open the field app)",
+  runPhoenixCrmRetiredPilotRedirectTests,
 );
 
 await runTest(

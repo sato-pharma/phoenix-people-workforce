@@ -102,9 +102,9 @@ const TWIN_RULES: readonly TwinRule[] = [
   // Doctor lists (CRM phase 7): the SFE Manager and administrator edit on the admin page; reps ask and
   // managers answer on the portal page.
   { from: "/admin/doctor-list-changes", to: "/employee-portals/visits/doctor-list" },
-  // Phoenix CRM (the owner, 2026-09-14): Visits, Planning, KPIs and the pilot roster. The old Visits for
-  // Reps page redirects to the admin Phoenix CRM page, which forwards a portal viewer from there.
-  { from: "/admin/phoenix-crm", to: "/employee-portals/phoenix-crm", carryQuery: ["tab", "month"] },
+  // The retired 2026-09-14 Phoenix CRM pilot (the owner, 2026-09-25). Its portal page is only a
+  // forward now: it maps the pilot's tab (planning → plan, kpis → reports) and lands on the field app.
+  { from: "/admin/phoenix-crm", to: "/employee-portals/phoenix-crm", carryQuery: ["tab"] },
   // Phoenix CRM, the clean module (the owner, 2026-09-16): customer lists, weekly plans, visits and
   // reports. Only the tab crosses, as the admin page's own preservedQuery does.
   { from: "/admin/field-crm", to: "/employee-portals/field-crm", carryQuery: ["tab"] },

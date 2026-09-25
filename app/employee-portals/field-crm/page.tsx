@@ -20,7 +20,7 @@ export const dynamic = "force-dynamic";
 
 // Phoenix CRM (the owner, 2026-09-16): the field force's customer lists, weekly plans, visits and
 // reports, built clean in Phoenix. The admin shell twin is /admin/field-crm. The pilot at
-// /employee-portals/phoenix-crm is a different, older module.
+// /employee-portals/phoenix-crm, the retired pilot, forwards here.
 export default async function PhoenixCrmPortalPage({
   searchParams,
 }: {
