@@ -55,19 +55,37 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 const TRANSCRIBE_WINDOW_MS = 2 * 60 * 60 * 1000;
 
 /**
- * The domain words the decoder is biased towards, as preceding context.
+ * 🔴 THE ONE PLACE THE DIALECT IS SET. The rep speaks Egyptian Arabic and the owner read the first
+ * results back on 2026-09-25: "very, very, very weak in Arabic … it dictate in Khaliji." There is NO
+ * dialect field to fix that with — `ar-EG`, `arz` and `egy` are each refused with HTTP 400 "unsupported
+ * language" (probed against the live API that day; only `ar` is accepted), so do not go looking for one.
  *
- * Whisper's `prompt` is NOT an instruction — it is text the model is told came just before this audio, so
- * anything imperative written here is transcribed into the answer rather than obeyed. It is therefore a
- * bare list of the ARABIC product spellings, which is exactly the class of word a general Arabic model
- * has never heard and substitutes the nearest real word for. Latin spellings are left out deliberately:
- * seeding them makes the model answer a wholly Arabic sentence in Latin script.
+ * What steers it is this string, because Whisper's `prompt` is not an instruction but text the model is
+ * told came IMMEDIATELY BEFORE this audio — and a decoder continuing an Egyptian sentence keeps writing
+ * Egyptian. So the sample below is a plain Egyptian visit note, carrying the words that mark the dialect
+ * in writing rather than in sound: دلوقتي، شويه، اللي، مش، عشان، هيكتب، المره الجايه. Nothing here is an
+ * instruction, because an instruction written here is transcribed into the comment rather than obeyed.
  *
- * The model caps this at 224 tokens and drops the rest silently, so it stays the canonical name of each
- * product and none of the field's misspellings — those are `correctDictatedProducts`'s job, after the
- * fact, where a wrong guess can be measured against a corpus instead of biasing a decoder invisibly.
+ * THE SAMPLE COMES LAST, AFTER THE PRODUCT NAMES, AND THAT ORDER IS THE POINT. The closest preceding text
+ * is the strongest influence, and dialect is what was wrong; ending on a comma-separated list instead
+ * biases the answer towards writing a list. The product names still come first because they are the class
+ * of word a general Arabic model has never heard and silently replaces with the nearest ordinary word,
+ * and the 224-token cap drops the END of a prompt — so at this size (well inside the cap, pinned by
+ * tests/phoenix-crm-voice-transcribe.test.ts) both halves survive, and if anything ever has to go it is
+ * the sample, whose absence costs dialect, not the names, whose absence costs the only part of a comment
+ * anyone reads it for. Latin spellings stay out: seeding them makes the model answer a wholly Arabic
+ * sentence in Latin script.
+ *
+ * 🔴 AND IT MUST NEVER READ LIKE A REAL VISIT THAT HAPPENED. On a quiet recording the decoder hands this
+ * text straight back instead of transcribing (`stripPromptEcho` in `@/lib/ai/groq-transcription`), so
+ * every claim in it is one that can surface in a comment as something a doctor supposedly said. It names
+ * no doctor, no clinic, no area, no quantity and no order — nothing that could be read as a fact about
+ * anybody. Keep it that way: a vivid, specific sample is a better steer and a worse lie.
  */
-export const TRANSCRIPTION_PROMPT = `زيارة طبيب. ${PRODUCT_VOCABULARY.map((entry) => entry.arabic).join("، ")}.`;
+const EGYPTIAN_SAMPLE =
+  "زيارة دلوقتي في العيادة وقعدت معاه شويه وكلمته عن المنتجات، وقال لي إنه هيكتب للأطفال، وإن اللي عنده لسه مش خلص. المره الجايه هعدي عليه تاني عشان الطلب.";
+
+export const TRANSCRIPTION_PROMPT = `${PRODUCT_VOCABULARY.map((entry) => entry.arabic).join("، ")}. ${EGYPTIAN_SAMPLE}`;
 
 export type VoiceTranscription = { text: string };
 
