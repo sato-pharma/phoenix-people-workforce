@@ -1303,6 +1303,7 @@ import { runMigrationGrandfatherStalenessTests } from "./migration-grandfather-s
 import { runStagingMigrationApplierTests } from "./staging-migration-applier.test.ts";
 import { runAutomatedPayrollRejectedExpensesTests } from "./automated-payroll-rejected-expenses.test.ts";
 import { runAutomatedPayrollExpenseStepApprovedOnlyTests } from "./automated-payroll-expense-step-approved-only.test.ts";
+import { runDuplicateExpenseHoldTests } from "./duplicate-expense-hold.test.ts";
 import { runAutomatedPayrollExpenseResyncTests } from "./automated-payroll-expense-resync.test.ts";
 import { runAutomatedPayrollExpenseGapsTests } from "./automated-payroll-expense-gaps.test.ts";
 import { runAutomatedPayrollHeldInReportsTests } from "./automated-payroll-held-in-reports.test.ts";
@@ -4302,6 +4303,7 @@ await runTest(
 );
 await runTest("automated payroll rejected expenses (an HR rejection must not be reimbursed; pending still flows)", runAutomatedPayrollRejectedExpensesTests);
 await runTest("automated payroll expense step proposes only approved trips, and surfaces the undecided ones", runAutomatedPayrollExpenseStepApprovedOnlyTests);
+await runTest("the duplicate-claim hold: one trip claimed twice is proposed once, shown, and still payable", runDuplicateExpenseHoldTests);
 await runTest("automated payroll expense resync (an approval changed after the step was confirmed must reach payroll)", runAutomatedPayrollExpenseResyncTests);
 await runTest(
   "automated payroll: outstation money never leaves the payroll picture without a word",

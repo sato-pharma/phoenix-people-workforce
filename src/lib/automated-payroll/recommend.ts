@@ -41,6 +41,11 @@ import {
   resolveLeaverBasis,
 } from "./leaver-basis.ts";
 import { expenseApprovalState } from "@/lib/outstation/approval-state";
+import {
+  findDuplicateExpenseHolds,
+  heldDuplicateTotal,
+  type DuplicateExpenseHold,
+} from "@/lib/automated-payroll/duplicate-expense-hold";
 import { payableExpenseAmount } from "@/lib/outstation/payable";
 import { isPayrollIneligibleEmployee } from "@/lib/payroll/eligibility.ts";
 import { roundCurrency } from "@/lib/payroll/money";
@@ -1076,13 +1081,24 @@ export function buildExpenseStepRows(
     //
     // HR's reduced amount still wins on an approved trip: payableExpenseAmount is the one rule
     // every payout path shares, and an untouched row reimburses the claim exactly.
+
+    // THE DUPLICATE-CLAIM HOLD. The same shape as the undecided money above, for the same
+    // reason: an extra copy of a trip already in this run is held OUT of the proposed figure and
+    // SHOWN, never dropped and never refused. Ahmed Mohamed Ahmed Mohamed Heikal was reimbursed
+    // 351.00 twice for one trip to As Satamuni because nothing compared a row against the rows
+    // beside it; duplicate-expense-hold.ts carries the account and the measurement.
+    const duplicateHolds = findDuplicateExpenseHolds(trips);
     let value = 0;
     let awaitingDecision = 0;
     for (const trip of trips) {
+      // One bucket per trip. A held copy is not also counted as awaiting a decision: the hold IS
+      // the decision it is waiting for, and counting it twice would overstate what is outstanding.
+      if (duplicateHolds.has(trip.tripId)) continue;
       const payable = payableExpenseAmount(trip.approvedAmount, trip.total);
       if (trip.hrApproved) value = roundCurrency(value + payable);
       else awaitingDecision = roundCurrency(awaitingDecision + payable);
     }
+    const onHoldDuplicate = heldDuplicateTotal(trips, duplicateHolds);
 
     const tripDates = trips.map((trip) => trip.expenseDate).filter(Boolean).sort();
     const tripEndDates = trips.map((trip) => trip.toDate || trip.expenseDate).filter(Boolean).sort();
@@ -1100,8 +1116,11 @@ export function buildExpenseStepRows(
       // What this employee has waiting that the figure above does NOT include. Zero for anyone
       // whose trips are all decided, which is the state HR is working towards.
       "Awaiting Decision": awaitingDecision,
+      // Extra copies of a trip already counted in the figure above. Zero for every employee in
+      // every payout run Phoenix has had but one, so a non-zero here is worth opening.
+      "On Hold — Duplicate": onHoldDuplicate,
     };
-    row.details = tripDetailRows(trips);
+    row.details = tripDetailRows(trips, duplicateHolds);
     row.recommended = { expenses: value };
     row.values = { expenses: pick(draft?.expenses, value) };
     row.reasons = { expensesNote: draft?.expensesNote ?? "" };
@@ -1143,7 +1162,10 @@ export function buildExpenseStepRows(
  * The breakdown a row expands into, one line per trip. Shared by a payroll row and a row outside the run,
  * so the two can never describe the same trip differently.
  */
-function tripDetailRows(trips: PayoutExpenseTrip[]): NonNullable<StepRow["details"]> {
+function tripDetailRows(
+  trips: PayoutExpenseTrip[],
+  duplicateHolds: Map<string, DuplicateExpenseHold> = new Map(),
+): NonNullable<StepRow["details"]> {
   return trips.map((trip) => ({
     Dates: formatDateRange(trip.expenseDate, trip.toDate),
     From: trip.fromLocation || "—",
@@ -1164,6 +1186,9 @@ function tripDetailRows(trips: PayoutExpenseTrip[]): NonNullable<StepRow["detail
     "HR Approved": trip.hrApproved ? "Yes" : trip.hrStatus || "Not yet approved",
     Description: trip.description || "—",
     "Trip ID": trip.tripId || "—",
+    // Plain words when this trip is an extra copy of another in the same run, and a dash when it
+    // is not, so the column reads the same on every line rather than appearing only on a bad one.
+    "On Hold": duplicateHolds.get(trip.tripId)?.reason ?? "—",
   }));
 }
 
@@ -1179,13 +1204,19 @@ function tripDetailRows(trips: PayoutExpenseTrip[]): NonNullable<StepRow["detail
  * on the sheet. `saveStep` and `confirmStep` both skip read-only rows; the note says what to do instead.
  */
 function expenseRowOutsideRun(trips: PayoutExpenseTrip[]): StepRow {
+  // The duplicate-claim hold applies here too, and for a reason beyond consistency: this row's
+  // note is a statement of what is still OWED outside payroll, so a duplicated trip counted into
+  // it would be an overstatement in the one place someone reads to settle up by hand.
+  const duplicateHolds = findDuplicateExpenseHolds(trips);
   let approved = 0;
   let awaitingDecision = 0;
   for (const trip of trips) {
+    if (duplicateHolds.has(trip.tripId)) continue;
     const payable = payableExpenseAmount(trip.approvedAmount, trip.total);
     if (trip.hrApproved) approved = roundCurrency(approved + payable);
     else awaitingDecision = roundCurrency(awaitingDecision + payable);
   }
+  const onHoldDuplicate = heldDuplicateTotal(trips, duplicateHolds);
   const hrId = trips.find((trip) => trip.hrId)?.hrId ?? "";
   const name = trips.find((trip) => trip.specialist)?.specialist ?? "";
   const tripDates = trips.map((trip) => trip.expenseDate).filter(Boolean).sort();
@@ -1204,16 +1235,22 @@ function expenseRowOutsideRun(trips: PayoutExpenseTrip[]): StepRow {
         ? formatDateRange(tripDates[0], tripEndDates[tripEndDates.length - 1] ?? tripDates[tripDates.length - 1])
         : "—",
       "Awaiting Decision": awaitingDecision,
+      "On Hold — Duplicate": onHoldDuplicate,
     },
     values: {},
     recommended: {},
     reason: null,
     onHold: false,
-    details: tripDetailRows(trips),
+    details: tripDetailRows(trips, duplicateHolds),
     readOnly: true,
     readOnlyNote:
       `Not in this month's payroll run, so nothing here is paid: ${egp(approved)} approved and ` +
-      `${egp(awaitingDecision)} awaiting decision. Pay it outside payroll, or put them back in the run.`,
+      `${egp(awaitingDecision)} awaiting decision` +
+      (onHoldDuplicate > 0
+        ? `, plus ${egp(onHoldDuplicate)} held as a duplicate of a trip already counted here — ` +
+          `check the two before settling it`
+        : "") +
+      `. Pay it outside payroll, or put them back in the run.`,
   };
 }
 
