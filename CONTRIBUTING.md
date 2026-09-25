@@ -43,8 +43,9 @@ No AWS CLI is required. The `aws-…` strings throughout the repo are the Supaba
 1. Clone the repo and run `pnpm install`.
 2. Copy `.env.example` to `.env.local` and fill in the required environment variables.
 3. Start the dev server with `pnpm run dev` (Turbopack on macOS/Linux; webpack on Windows for stability).
-4. Edit freely — do not run checks between edits. `pnpm run check:edit` (typecheck only) is
-   available mid-task if you want a fast sanity read, but it is optional.
+4. Edit freely — do not run checks between edits, typecheck included. `check:edit` is retired as an
+   editing habit: on a 16 GB machine a cold `tsc` over this repo needs 4.0–4.5 GB of heap and OOMs at
+   node's own default, so it costs minutes and usually returns nothing.
 5. When the task is finished, **push and let CI answer**. There is no local full gate to run — the
    PR runs lint, typecheck, tests and build itself, and a red one blocks the merge.
 6. Never push a broken build.

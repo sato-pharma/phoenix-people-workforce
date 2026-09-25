@@ -74,11 +74,9 @@ To also enable dev auth headers (`x-phoenix-role`, `x-phoenix-hr-id`), set `PHOE
 
 ## Quality Gates
 
-Fast inner loop (typecheck only):
-
-```bash
-pnpm run check:edit
-```
+There is no local inner loop — `check:edit` was retired on 2026-09-25 because a cold `tsc` over this
+repo needs 4.0–4.5 GB of heap and OOMs at node's own default on a 16 GB machine. Push the branch and
+read the PR's `typecheck` check.
 
 The whole gate in one command (lint + typecheck + test + build):
 

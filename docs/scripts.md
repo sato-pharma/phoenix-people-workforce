@@ -27,7 +27,7 @@ All scripts are defined in `package.json`. This document classifies them by purp
 
 | Script | Purpose | Safety | Notes |
 |---|---|---|---|
-| `pnpm run check:edit` | Fast editing gate (typecheck only) | Safe | Inner loop during development |
+| `pnpm run check:edit` | A `typecheck` alias | **Retired 2026-09-25** | Not an inner loop any more — a cold `tsc` over this repo needs 4.0–4.5 GB of heap and OOMs at node's own default on a 16 GB machine. The PR's `typecheck` check is the answer |
 | `pnpm run ci` | The whole gate in one command | Safe | lint + typecheck + test + build. **Not a pre-push ritual** — CI is the gate; run this only before a migration or a production deploy, which CI never sees |
 
 ## Database / RLS Validation Scripts

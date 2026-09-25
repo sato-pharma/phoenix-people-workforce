@@ -18,15 +18,23 @@ All commands run from the repo root.
 | Dev server (auto: webpack on Windows) | `pnpm run dev` |
 | Production build | `pnpm run build` |
 | Lint | `pnpm run lint` |
-| Typecheck | `pnpm run typecheck` |
+| Typecheck — **CI's job, not yours** (see below) | `pnpm run typecheck` |
 | Unit/integration tests | `pnpm run test` |
-| Fast editing gate (typecheck only) | `pnpm run check:edit` |
 | Whole gate, by hand — **only when the owner names it** | `pnpm run ci` |
 
 **CI is the gate. Do not run a local full validation** — no "quick subset" of lint + typecheck
 before pushing, no `pnpm run ci` as a pre-push ritual. Push the branch and let the PR's six
 required checks answer. Migrations and production deploys are the two things CI never sees. Full
 rule, the retired `check:harden`, and the per-change matrix: [AGENTS.md §7](AGENTS.md).
+
+🔴 **A local typecheck is no longer a "fast editing gate" — it does not fit on the owner's machine,
+and `check:edit` is retired as an editing habit.** Measured 2026-09-25: a cold `tsc` needs 4.0–4.5 GB
+of heap and OOMs at node's own 4.1 GB default after 155 s, and `mem-watchdog.ps1` then reaps it as
+the largest node job — **18 killed in 3 days, 18 of the 19 node kills in that window**, each printing
+nothing, so the session simply ran it again. Raising `--max-old-space-size` makes it the FIRST victim
+(4096, 5120, 6144 and 7168 were all tried, all reaped). It grew with the repo: 5,065 → 6,048
+`.ts/.tsx` files in 13 days, CI's own cold run 125 s → 183 s. **Push the branch — the PR's
+`typecheck` check is cold, clean and ~3 min.**
 
 ## The two rules that apply to every change
 
