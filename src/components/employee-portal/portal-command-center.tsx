@@ -1054,7 +1054,7 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
     pendingVacationCount,
     pendingExcuseCount,
     pendingCountsAvailable,
-    leaveEntitlementDays,
+    leaveDaysRemaining,
     mrSalesAchievement,
     monthlySalesTrend,
     mrFieldKpis,
@@ -1323,8 +1323,8 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
           <RepPanel title="Your record">
             <dl className="grid grid-cols-2 gap-px bg-slate-200 sm:grid-cols-3">
               <RepFact
-                label="Annual leave balance"
-                value={leaveEntitlementDays != null ? `${leaveEntitlementDays} days` : "Not recorded"}
+                label="Annual leave left"
+                value={leaveDaysRemaining != null ? `${leaveDaysRemaining} days` : "Not recorded"}
               />
               {serviceDuration && <RepFact label="Employment duration" value={serviceDuration} />}
               {daysUntilRenewal != null && (

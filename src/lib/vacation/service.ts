@@ -5821,6 +5821,43 @@ export async function getVacationReportData(access: AccessContext, filters: Vaca
 }
 
 /**
+ * One employee's remaining annual leave — entitlement minus every approved paid day already taken
+ * in their current balance period — computed through buildEmployeeEligibilityRows, the SAME
+ * entitlement-row math the Vacation Report's Entitlements tab reduces to for that employee. Never
+ * duplicate this subtraction elsewhere (e.g. a portal home tile): call this instead, so the two
+ * screens can never disagree.
+ *
+ * Reads systemAccessContext's own all-visibility row set rather than the caller's AccessContext —
+ * this is "what does employeeHrId have left", not "what can the viewer see" — then narrows to that
+ * one employee in memory. loadAllVacationRequestRowsCached and getEmployeeDirectory are both
+ * request-deduped/TTL-cached, so calling this from a landing page adds no new round trip beyond
+ * what the report page already pays.
+ */
+export async function getEmployeeAnnualLeaveBalanceDays(employeeHrId: string | null | undefined): Promise<number | null> {
+  const directory = await getEmployeeDirectory();
+  const employee = findEmployeeByHrId(directory, employeeHrId);
+  if (!employee) return null;
+
+  const visibleHrIds = buildVisibleHrIdSet([employee]);
+  const scopedRows = (await fetchVacationReportRowsFromDatabase({
+    access: systemAccessContext,
+    filters: {},
+    visibleEmployeeHrIds: visibleHrIds,
+  }))
+    .map((row) => mapVacationRow(row))
+    .filter((row) => hrIdsMatch(row.employeeHrId, employee.hrId));
+
+  const [eligibilityRow] = buildEmployeeEligibilityRows({
+    allScopedRows: scopedRows,
+    employees: [employee],
+    filters: {},
+    today: currentCairoDateOnlyIso(),
+  });
+
+  return eligibilityRow?.annualBalanceDays ?? null;
+}
+
+/**
  * The Leave approval counts the executive landing pages show — identical to
  * `getVacationReportData(access, { status: "all" }).dashboard.{pendingByStage,overdueBySla}`.
  *

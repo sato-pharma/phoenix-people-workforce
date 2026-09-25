@@ -932,6 +932,7 @@ import { runVacationOverlapWarningsTests } from "./vacation-overlap-warnings.tes
 import { runVacationReportFilterEquivalenceTests } from "./vacation-report-filter-equivalence.test.ts";
 import { runVacationBalanceReservesPendingTests } from "./vacation-balance-reserves-pending.test.ts";
 import { runVacationEntitlementsBalanceIgnoresFiltersTests } from "./vacation-entitlements-balance-ignores-filters.test.ts";
+import { runPortalHomeAnnualLeaveLeftTests } from "./portal-home-annual-leave-left.test.ts";
 import { runCsrfRouteCoverageTests } from "./csrf-route-coverage.test.ts";
 import { runContractRenewalHardeningTests } from "./contract-renewal-hardening.test.ts";
 import { runCronAuthSingleGuardTests } from "./cron-auth-single-guard.test.ts";
@@ -3776,6 +3777,11 @@ await runTest(
   "vacation balance reserves submitted-but-undecided leave for DISPLAY only (pricing stays "
   + "approved-only so payroll and deductions are untouched)",
   runVacationBalanceReservesPendingTests,
+);
+await runTest(
+  "portal home Medical Rep tile shows annual leave LEFT (entitlement minus taken, via "
+  + "getEmployeeAnnualLeaveBalanceDays/buildEmployeeEligibilityRows), not the raw entitlement",
+  runPortalHomeAnnualLeaveLeftTests,
 );
 await runTest("csrf route coverage", runCsrfRouteCoverageTests);
 await runTest("contract renewal hardening", runContractRenewalHardeningTests);
