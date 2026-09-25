@@ -50,9 +50,18 @@ import {
   profilePayloadLabel,
 } from "../src/lib/devices/manageengine/profiles.ts";
 import {
+  buildRepTabletProfile,
+  findRepTabletProfile,
+  REP_TABLET_PROFILE_GAPS,
+  REP_TABLET_PROFILE_NAME,
+  REP_TABLET_PROFILE_SETTINGS,
+  repTabletProfilePayloadBodies,
+} from "../src/lib/devices/manageengine/rep-tablet-profile.ts";
+import {
   manageEngineImeisToRecord,
   manageEngineTabletsToRegister,
 } from "../src/lib/devices/manageengine/register-sync.ts";
+import { REP_TABLET_RULES } from "../src/lib/devices/tablet-policy.ts";
 import { findAccessRegistryEntry } from "../src/lib/security/access-registry.ts";
 import type { RegisterTablet } from "../src/lib/devices/managed-tablets.ts";
 
@@ -1156,13 +1165,16 @@ function runParityDoorTests() {
   const sync = enrollmentSource("src/lib/devices/manageengine/register-sync.ts");
   assert.match(sync, /source: "manageengine"/, "and the ManageEngine path passes its own");
 
-  // 🔴 Phoenix never authors a profile's contents — see profiles.ts. A POST or PUT to /profiles would
-  // be exactly that, and the restriction keys are undocumented, so a guess would restrict nothing.
+  // 🔴 THE ASSOCIATION MODULE never authors a profile's contents. Building the company's rules lives
+  // in rep-tablet-profile.ts, and the two stay apart so that changing WHO follows a rule set can
+  // never quietly change WHAT it says. (An earlier version of this comment said the restriction keys
+  // were undocumented. They are not — see rep-tablet-profile.ts — but the separation is still why
+  // this assertion is here.)
   const profiles = enrollmentSource("src/lib/devices/manageengine/profiles.ts");
   assert.doesNotMatch(
     profiles,
     /restrictionspolicy["']\s*:|payloaditems|\/profiles["'],\s*\{\s*body/,
-    "Phoenix never writes a profile's contents — only which tablet carries which of the company's own",
+    "association never writes a profile's contents — only which tablet carries which of the company's own",
   );
   assert.match(profiles, /devices\/\$\{encodeURIComponent\(deviceId\)\}\/profiles/, "it associates against the device endpoint");
   assert.match(profiles, /entityType: "manageengine_device_profile"/, "and every change is an audited act on a real tablet");
@@ -1172,6 +1184,136 @@ function runParityDoorTests() {
   assert.match(autoRegister, /manageengine:/, "ManageEngine is a door into the same register entry, with its own note");
   assert.match(sync, /registerTablet\(facts, "manageengine"/, "through the same registerTablet the Google half calls");
   assert.doesNotMatch(sync, /createDevice\(/, "never a second way of creating a register entry that could drift");
+}
+
+/**
+ * The company's rep tablet profile — the rules Phoenix writes into ManageEngine.
+ *
+ * 🔴 THE VALUES ARE THE WHOLE TEST. ManageEngine's restriction fields disagree about which number
+ * means "no": `allow_factory_reset` restricts with 0, `allow_camera` restricts with 2, and
+ * `allow_disabling_gps` wants 5 for always-on out of 4/5/6. A value copied from the field above it
+ * publishes a profile that restricts NOTHING while the page says the tablet is locked down, and
+ * nobody would see it until a rep factory-reset a tablet. Each one below is pinned to its own
+ * documented row.
+ */
+async function runRepTabletProfileTests() {
+  const bodies = repTabletProfilePayloadBodies();
+
+  assert.equal(bodies.restrictions.allow_factory_reset, 0, "0 restricts a factory reset — 1 would ALLOW it");
+  assert.equal(bodies.restrictions.allow_non_market_apps, 0, "0 restricts side-loading — 1 would ALLOW it");
+  assert.equal(bodies.restrictions.allow_developer_mode, 0, "0 restricts developer mode — 1 would ALLOW it");
+  assert.equal(bodies.restrictions.allow_install_app, 0, "0 stops the rep installing unapproved apps");
+  assert.equal(bodies.restrictions.allow_uninstall_app, 0, "0 stops the company's apps being removed");
+  assert.equal(
+    bodies.restrictions.allow_play_protect_monitoring,
+    1,
+    "this field is the other way round: 1 is always on, 0 leaves Play Protect to the rep",
+  );
+  assert.equal(
+    bodies.restrictions.allow_disabling_gps,
+    5,
+    "location takes 4, 5 or 6 — 5 is always on, 6 would force it OFF and 4 would leave it to the rep",
+  );
+  assert.equal(bodies.passcode.scope_for_passcode, 0, "the screen lock covers the device, not a work container");
+  assert.equal(bodies.passcode.passcode_type, 1, "1 is a pattern or better — the lightest thing that is still a lock");
+
+  // 🔴 Any value here WIPES the tablet when a rep mistypes his PIN. Google's policy sets none, and
+  // neither does this. Its absence is the rule.
+  assert.equal(
+    "max_failed_attempts" in bodies.passcode,
+    false,
+    "max_failed_attempts is never sent — ManageEngine's own row says the device is completely wiped",
+  );
+
+  // Samsung-only fields would put a rule on the page that a Lenovo tablet never receives.
+  for (const field of ["allow_mock_location", "allow_safe_mode", "allow_usb_debug", "allow_google_backup"]) {
+    assert.equal(field in bodies.restrictions, false, `${field} is Samsung-only — the fleet is Lenovo, so it is not sent`);
+  }
+
+  // Nothing here is invented: every rule carried, and every rule declared uncarryable, is one of the
+  // eight the owner already approved on Google's half.
+  const approved = new Set(REP_TABLET_RULES.map((rule) => rule.title));
+  for (const setting of REP_TABLET_PROFILE_SETTINGS) {
+    assert.ok(approved.has(setting.rule), `'${setting.rule}' is one of the rep tablet rules, not a new rule`);
+  }
+  for (const gap of REP_TABLET_PROFILE_GAPS) {
+    assert.ok(approved.has(gap.rule), `'${gap.rule}' is a rule that exists, honestly reported as uncarryable`);
+  }
+  const covered = new Set([
+    ...REP_TABLET_PROFILE_SETTINGS.map((setting) => setting.rule),
+    ...REP_TABLET_PROFILE_GAPS.map((gap) => gap.rule),
+  ]);
+  assert.equal(
+    covered.size,
+    approved.size,
+    "every rule on Google's half is either carried or named as a gap — none is silently dropped",
+  );
+
+  // The profile is matched by name, whatever case the console shows it in.
+  assert.equal(
+    findRepTabletProfile([{ description: null, name: " phoenix REP tablet ", payloads: [], profileId: "9" }])?.profileId,
+    "9",
+    "the company's profile is found however it was capitalised",
+  );
+  assert.equal(
+    findRepTabletProfile([{ description: null, name: "Rep tablet rules", payloads: [], profileId: "9" }]),
+    null,
+    "and a differently named profile is not mistaken for it",
+  );
+
+  // Pressing build twice is safe: a tenant that already holds it is left alone and nothing is sent.
+  resetManageEngineTokenCache();
+  const already = makeFetch({
+    api: [
+      {
+        status: 200,
+        body: {
+          profiles: [{ profile_id: 44, profile_name: REP_TABLET_PROFILE_NAME, platform_type: 2, payloads: ["restrictionspolicy"] }],
+        },
+      },
+    ],
+  });
+  const second = await buildRepTabletProfile("B-10", already.fetch, ENV);
+  assert.equal(second.created, false, "a tenant that already holds the profile is not given a second one");
+  assert.equal(second.profileId, "44");
+  assert.equal(
+    already.calls.filter((call) => call.init.method === "POST" && !call.url.includes("/oauth/")).length,
+    0,
+    "and nothing at all is written on that path",
+  );
+
+  // Source-level guarantees the flow above cannot be asked to prove without writing to ManageEngine.
+  const source = enrollmentSource("src/lib/devices/manageengine/rep-tablet-profile.ts");
+  assert.match(source, /platform_type: ANDROID_PLATFORM/, "the profile is created for Android, not iOS");
+  assert.match(source, /readProfilePayloads\(profileId/, "the payloads are READ BACK from ManageEngine after the write");
+  assert.match(
+    source,
+    /if \(carriesRestrictions && carriesPasscode\) \{[\s\S]{0,200}\/publish/,
+    "🔴 and the profile is published ONLY once both payloads are proved present",
+  );
+  assert.match(source, /entityType: "manageengine_profile"/, "building the rules is its own audited act");
+  assert.doesNotMatch(
+    source,
+    /devices\/\$\{[^}]*\}\/profiles|associate/,
+    "building the rules never puts them on a tablet — that is a separate, separately audited act",
+  );
+
+  // The route takes nothing from the browser, and is Super Admin only on both verbs.
+  const route = enrollmentSource("app/api/devices/manageengine/rep-tablet-profile/route.ts");
+  assert.doesNotMatch(route, /request\.json\(/, "the browser can ask for the company's rules and never say what is in them");
+  assert.match(route, /assertSameOriginMutation/, "and the build is same-origin only");
+  for (const method of ["GET", "POST"] as const) {
+    const entry = findAccessRegistryEntry("/api/devices/manageengine/rep-tablet-profile", method);
+    assert.deepEqual(
+      entry?.permission,
+      { action: "approve", resource: "company_devices" },
+      `${method} on the rep tablet profile is Super Admin only`,
+    );
+    if (method === "POST") {
+      assert.equal(entry?.csrf.required, true);
+      assert.equal(entry?.audit.required, true, "building the company's rules writes a REQUIRED audit row");
+    }
+  }
 }
 
 export async function runManageEngineBridgeTests() {
@@ -1188,5 +1330,6 @@ export async function runManageEngineBridgeTests() {
   await runManufacturerTests();
   runRegisterSyncTests();
   await runProfileTests();
+  await runRepTabletProfileTests();
   runParityDoorTests();
 }

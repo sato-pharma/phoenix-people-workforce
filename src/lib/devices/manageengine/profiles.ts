@@ -4,19 +4,21 @@
  * WHAT GOOGLE'S HALF DID, AND WHAT THE EQUIVALENT IS HERE. On the Android Management API the rules
  * are a POLICY Phoenix itself writes (`tablet-policy.ts`), pushed to every enrolled tablet, with the
  * page showing which tablets have fallen behind the current version. ManageEngine calls the same
- * thing a PROFILE, and the difference that decides this module's shape is where it is authored: a
- * profile's contents are built in ManageEngine's console, and its REST API exposes creating and
- * publishing one but does NOT document the Android restriction payload's own field names.
+ * thing a PROFILE, and this module drives which tablet carries which of them.
  *
- * 🔴 SO PHOENIX NEVER WRITES A PROFILE'S CONTENTS, AND MUST NOT START. Guessing a restriction's key
- * would publish a profile that silently restricts nothing while this page says a tablet is locked
- * down — the worst possible failure for a screen whose whole job is telling the owner what a tablet
- * in a rep's hands can do. The same decision the enrollment template took: the payload is authored
- * in ManageEngine, and Phoenix drives WHICH tablet carries WHICH of the company's own profiles.
+ * 🔴 AN EARLIER VERSION OF THIS COMMENT SAID MANAGEENGINE DOES NOT DOCUMENT THE ANDROID RESTRICTION
+ * FIELD NAMES, AND THAT WAS WRONG. They are documented in full — `ANDROID_RESTRICTIONS_POLICY`,
+ * payload_id 186 — and `rep-tablet-profile.ts` now builds the company's own profile from them. What
+ * that note got right is the danger: the fields disagree about which number means "no", so a value
+ * copied from a neighbouring field publishes a profile that restricts nothing while this page says a
+ * tablet is locked down. That is why every value there is quoted from its own documented row, and why
+ * a profile is never published until its payloads have been read back.
  *
- * WHAT THIS MODULE THEREFORE DOES. Reads the company's Android profiles, reads which of them a
- * tablet is carrying (and whether ManageEngine has actually applied it), and puts one on or takes one
- * off — each write audited by asset tag, because it changes what a tablet in the field permits.
+ * WHAT THIS MODULE DOES. Reads the company's Android profiles, reads which of them a tablet is
+ * carrying (and whether ManageEngine has actually applied it), and puts one on or takes one off —
+ * each write audited by asset tag, because it changes what a tablet in the field permits. BUILDING
+ * the rep tablet profile lives next door, in `rep-tablet-profile.ts`; the two are separate because
+ * creating the rules and deciding who follows them are separate acts.
  */
 
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
