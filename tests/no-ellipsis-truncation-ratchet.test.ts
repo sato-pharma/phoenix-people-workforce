@@ -208,8 +208,13 @@ import { stripComments } from "./support/comment-strip.ts";
  * tables that are now `table-fixed` with a percentage `<colgroup>`, so the text wraps inside its
  * own column and the row grows taller instead of the page growing wider: exactly the trade the
  * owner's rule names, where truncation and horizontal scroll collide and wrapping wins.
+ *
+ * 175 -> 174 on 2026-09-25: the Monthly Closing Details panel's own distributor column, which
+ * showed the raw code and now shows the master's NAME (closing-details-panel.tsx) — a name is
+ * longer than a code and an ellipsis on it is exactly the cut the owner's rule forbids, so the
+ * `truncate` there became `break-words`.
  */
-const BASELINE = 175;
+const BASELINE = 174;
 
 const ROOTS = ["app", "src"];
 
