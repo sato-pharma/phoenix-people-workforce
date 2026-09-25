@@ -162,7 +162,7 @@ export function runMarketingFieldCaptureGapsTests() {
   );
 
   // ── 1c. The nudge follows the badge ────────────────────────────────────────────────────────
-  const directory = [{ areaId: null, hrId: "HR-100" }];
+  const directory = [{ areaId: null, hrId: "HR-100", role: "District Manager" as const }];
   const backfilledBesideInferred = groupFieldCaptureBacklog(
     [
       customer({
@@ -188,14 +188,15 @@ export function runMarketingFieldCaptureGapsTests() {
   );
 
   // ── 2. A leaver is not an owner ────────────────────────────────────────────────────────────
-  // The active directory the nudge is given. HR-LEFT (a rep) and HR-GONE (a district manager) have
-  // resigned, so they are absent from it — the loader passes `getEmployeeDirectoryRows()`, which
-  // returns active employees only.
+  // The active directory the nudge is given. HR-LEFT and HR-GONE have resigned, so they are absent
+  // from it — the loader passes `getEmployeeDirectoryRows()`, which returns active employees only.
+  // Everyone still here is a manager: since 2026-09-25 a Medical Rep is excluded from the nudge the
+  // same way a leaver is, so the recipients here are all District/Regional Managers.
   const activeDirectory = [
-    { areaId: null, hrId: "HR-100" },
-    { areaId: null, hrId: "HR-900" },
-    { areaId: 7, hrId: "HR-701" },
-    { areaId: 7, hrId: "HR-702" },
+    { areaId: null, hrId: "HR-100", role: "District Manager" as const },
+    { areaId: null, hrId: "HR-900", role: "Regional Manager" as const },
+    { areaId: 7, hrId: "HR-701", role: "District Manager" as const },
+    { areaId: 7, hrId: "HR-702", role: "District Manager" as const },
   ];
 
   const leaverWithActiveManager = groupFieldCaptureBacklog(
@@ -205,7 +206,7 @@ export function runMarketingFieldCaptureGapsTests() {
   assert.deepEqual(
     leaverWithActiveManager.owners.map((owner) => owner.hrId),
     ["HR-900"],
-    "a rep who has left is never nudged — the customer falls through to the active manager named on it",
+    "an owner who has left is never nudged — the customer falls through to the active manager named on it",
   );
   assert.equal(leaverWithActiveManager.owners[0].customers[0].routedVia, "manager");
   assert.equal(leaverWithActiveManager.totals.unassignedCustomers, 0);
@@ -247,25 +248,25 @@ export function runMarketingFieldCaptureGapsTests() {
     "a row naming only a manager who has left falls through to the territory too",
   );
 
-  // Controls: the fix must not route a working rep's customers away.
+  // Controls: the fix must not route an active, eligible owner's customers away.
   const activeOwner = groupFieldCaptureBacklog(
     [customer({ areaId: 7, managerHrId: "HR-900", ownerHrId: "HR-100" })],
     activeDirectory,
   );
-  assert.deepEqual(activeOwner.owners.map((owner) => owner.hrId), ["HR-100"], "an active rep is still chased first");
+  assert.deepEqual(activeOwner.owners.map((owner) => owner.hrId), ["HR-100"], "an active eligible owner is still chased first");
   assert.equal(activeOwner.owners[0].customers[0].routedVia, "owner");
 
   const casing = groupFieldCaptureBacklog(
     [customer({ ownerHrId: "hr-100" })],
-    [{ areaId: null, hrId: "Hr-100" }],
+    [{ areaId: null, hrId: "Hr-100", role: "District Manager" as const }],
   );
   assert.deepEqual(
     casing.owners.map((owner) => owner.hrId),
     ["HR-100"],
-    "hr_id casing differs between tables — a case mismatch must never make a working rep look like a leaver",
+    "hr_id casing differs between tables — a case mismatch must never make an active owner look like a leaver",
   );
 
-  const legacyAlias = groupFieldCaptureBacklog([customer({ ownerHrId: "AAA" })], [{ areaId: null, hrId: "AA" }]);
+  const legacyAlias = groupFieldCaptureBacklog([customer({ ownerHrId: "AAA" })], [{ areaId: null, hrId: "AA", role: "District Manager" as const }]);
   assert.deepEqual(
     legacyAlias.owners.map((owner) => owner.hrId),
     ["AA"],
