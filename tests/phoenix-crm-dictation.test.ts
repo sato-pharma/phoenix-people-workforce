@@ -106,29 +106,14 @@ export function runPhoenixCrmDictationTests() {
 
   // ── The rep is told where his voice goes, on the control itself ───────────────────────────────
   // Recognition is not on the phone: Chrome streams the audio to Google and Safari to Apple, and a
-  // visit comment carries doctor names and what was said about competitors. The owner ruled that
-  // processing acceptable AND ruled on where the rep is told — offered the privacy page on
-  // 2026-09-25, he chose the microphone: "add the processor line to the dictation mic, not the
-  // privacy page". This pins the decision so a later tidy-up cannot quietly drop it.
-  const dictate = readFileSync("src/components/phoenix-crm/dictate.tsx", "utf8");
-  // Cut out the notice the rep actually READS, and assert against that rather than against the file.
-  // The file is not the screen: the comment above this paragraph explains the decision and names
-  // Google, Apple, Chrome and Safari itself, so a check over the whole file passes happily while the
-  // rendered line has stopped naming anyone. Measured — deleting "Apple's on Safari" from the
-  // paragraph left a file-wide check green.
-  const notice = /Your voice is sent to the browser[\s\S]*?<\/p>/.exec(dictate)?.[0];
-  assert.ok(
-    notice,
-    "the microphone tells the rep his voice leaves the phone — the owner put this notice on the control rather than on a privacy page, because the rep reads it where he decides to speak",
-  );
-  for (const processor of ["Google", "Apple", "Chrome", "Safari"]) {
-    assert.match(
-      notice,
-      new RegExp(processor),
-      `the rendered notice names ${processor} — "sent to a third party" tells the rep nothing he can act on, and naming the processor is the whole point of saying it`,
-    );
-  }
-  // And the decision is recorded where the next session will hit it first.
+  // visit comment carries the names of the customers seen and what was said about competitors. The
+  // owner ruled that processing acceptable AND ruled on where the rep is told — offered the privacy
+  // page on 2026-09-25, he chose the microphone: "add the processor line to the dictation mic, not
+  // the privacy page".
+  //
+  // The NOTICE ITSELF is pinned in tests/phoenix-crm-speak.test.ts, beside the one control that now
+  // renders it. What is pinned here is the decision, recorded in this module's header — the place the
+  // next session reading about dictation hits first.
   const dictation = readFileSync("src/lib/phoenix-crm/dictation.ts", "utf8");
   assert.match(
     dictation,

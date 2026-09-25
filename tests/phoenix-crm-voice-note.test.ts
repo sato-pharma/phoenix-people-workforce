@@ -24,16 +24,17 @@ import { stripComments } from "./support/comment-strip.ts";
 //   2. THE PATH IS THE ONLY THING TRUSTED. Seconds and bytes are labels on a play button, so they are
 //      clamped rather than believed — and they are dropped entirely when there is no path to describe,
 //      which is what stops a payload with figures and no recording reaching the database at all.
-//   3. THE TWO CONTROLS SAY WHAT THEY ARE. The dictation helper text read "Nothing is recorded" and was
-//      true until a recorder was put on the same form. A sentence that quietly became false is worse
-//      than no sentence: the rep reads it while deciding whether to speak.
+//   3. THE HALVES DO NOT FEED EACH OTHER. Since 2026-09-25 both run from ONE button (owner: "I speak
+//      once and this speaking appears in the field as a text and saved as a record. Both."), so the
+//      wording that kept them apart is no longer two sentences on two controls — it is one control
+//      saying which of the two to believe. The words come from the engine listening live; the stored
+//      audio is read by nothing. Pinned structurally below, and in words in phoenix-crm-speak.test.ts.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const RECORDER = "src/lib/phoenix-crm/voice-recorder.ts";
 const SERVER = "src/lib/phoenix-crm/server/voice-notes.ts";
-const CONTROL = "src/components/phoenix-crm/voice-note.tsx";
+const CONTROL = "src/components/phoenix-crm/speak.tsx";
 const PLAYER = "src/components/phoenix-crm/voice-playback.tsx";
-const DICTATE = "src/components/phoenix-crm/dictate.tsx";
 const FORM = "src/components/phoenix-crm/visits-tab.tsx";
 
 function recording(over: { seconds?: number; bytes?: number; mimeType?: string } = {}) {
@@ -164,11 +165,30 @@ export function runPhoenixCrmVoiceNoteTests() {
   assert.match(recorder, /recorder\.state\s*!==\s*"inactive"/, `${RECORDER} stops a PAUSED recorder too — a backgrounded tab pauses rather than stops, and "nothing to stop" is what leaves the mic open`);
   assert.match(control, /recorder\.current\?\.cancel\(\)/, `${CONTROL} releases the microphone when the screen goes`);
 
-  // ── Nothing transcribes it, and nothing says it does ──────────────────────────
+  // ── Nothing transcribes the RECORDING, and nothing says it does ───────────────
+  // The control is deliberately NOT in this sweep any more: since the two halves were merged onto one
+  // button it hosts the speech engine itself, so a "no recogniser here" check over it would be red for
+  // a correct file. What must stay true is that the path the AUDIO travels — recorder, server, player —
+  // never meets one, which is what makes "no speech service ever reads the recording" a fact about the
+  // code rather than a sentence on a screen.
   assert.doesNotMatch(
-    stripComments(readFileSync(SERVER, "utf8")) + recorder + control + player,
+    stripComments(readFileSync(SERVER, "utf8")) + recorder + player,
     /SpeechRecognition|webkitSpeech|transcri/i,
-    "the voice note never reaches a speech engine — that is the whole difference from dictation",
+    "the stored recording never reaches a speech engine — that is what the text half is not a transcript OF",
+  );
+
+  // And inside the one control the halves stay apart: the engine hands back TEXT, which goes to the
+  // comment, and the recorder hands back a stored PATH, which goes to the payload. Neither is derived
+  // from the other, so a bug can lose a half — never turn one into the other.
+  assert.match(
+    control,
+    /onFinal:\s*\(text\)\s*=>\s*\{\s*onAppend\(text\)/,
+    `${CONTROL} sends the engine's words to the comment and nothing else`,
+  );
+  assert.match(
+    control,
+    /onChange\(\{\s*path:\s*slot\.path/,
+    `${CONTROL} sends the recording to the payload as the stored path — never as text`,
   );
 
   // ── A note nobody can play is a write-only feature ────────────────────────────
@@ -207,9 +227,13 @@ export function runPhoenixCrmVoiceNoteTests() {
   // for "this is where they were" is the visual half of the rule the database keeps structurally.
   assert.doesNotMatch(form, /<CrmPhotoThumb[\s\S]{0,200}?voiceNote/, `${FORM} never hands a voice path to the photo thumb`);
 
-  // ── The two controls do not describe each other ───────────────────────────────
-  // "Nothing is recorded" was true of the dictation button until a recorder was put on the same form.
-  const dictate = readFileSync(DICTATE, "utf8");
-  assert.doesNotMatch(dictate, /Nothing is recorded/, "the dictation helper text no longer claims nothing on this form records");
-  assert.match(dictate, /what saves is the text, not your voice/, "it says what dictation saves, next to a control that saves the voice");
+  // ── There is ONE control, and the form mounts it once ─────────────────────────
+  // The owner asked for one option, not two sitting together. Two mounts would be the old shape back
+  // by accident, and each one opens its own microphone.
+  assert.equal(
+    [...form.matchAll(/<CrmSpeak\b/g)].length,
+    1,
+    `${FORM} mounts one spoken-comment control — the owner asked for a single button, and a second one would open a second microphone`,
+  );
+  assert.doesNotMatch(form, /<CrmDictate\b|<CrmVoiceNote\b/, `${FORM} no longer carries the two controls the one replaced`);
 }

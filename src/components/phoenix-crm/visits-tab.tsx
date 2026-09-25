@@ -20,8 +20,7 @@ import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Plus, Search } from "lucide-react";
 
 import { crmPost, crmUrl, errorCodeOf, messageOf, newClientId, useCrmGet } from "@/components/phoenix-crm/api";
-import { CrmDictate } from "@/components/phoenix-crm/dictate";
-import { CrmVoiceNote, type VoiceNoteValue } from "@/components/phoenix-crm/voice-note";
+import { CrmSpeak, type VoiceNoteValue } from "@/components/phoenix-crm/speak";
 import { CrmVoiceNotePlayer } from "@/components/phoenix-crm/voice-playback";
 import { cairoClock, cairoStamp, dayLabelLong, plural, shiftIsoDay } from "@/components/phoenix-crm/format";
 import {
@@ -1230,11 +1229,19 @@ function AddVisit({
             value={comment}
           />
         </CrmField>
-        {/* The cap is applied here, not by the textarea: `maxLength` constrains TYPING and does
-            nothing to a programmatic append, so a long dictation would push the field past
-            VISIT_COMMENT_MAX and the server would refuse the save. */}
-        <CrmDictate disabled={saving} onAppend={(spoken) => setComment((current) => appendDictated(current, spoken, VISIT_COMMENT_MAX))} />
-        <CrmVoiceNote disabled={saving} onChange={setVoiceNote} seatId={seatId} test={test} value={voiceNote} />
+        {/* ONE control, both outcomes (owner, 2026-09-25): the rep speaks once, the words are written
+            here as they settle and the audio is kept with the visit. The cap is applied here, not by
+            the textarea: `maxLength` constrains TYPING and does nothing to a programmatic append, so a
+            long spoken comment would push the field past VISIT_COMMENT_MAX and the server would refuse
+            the save. The text is the engine's live reading, never a transcript of the stored audio. */}
+        <CrmSpeak
+          disabled={saving}
+          onAppend={(spoken) => setComment((current) => appendDictated(current, spoken, VISIT_COMMENT_MAX))}
+          onChange={setVoiceNote}
+          seatId={seatId}
+          test={test}
+          value={voiceNote}
+        />
       </CrmBlock>
 
       <CrmBlock className="border-t border-slate-100" title="6 · Live photo">

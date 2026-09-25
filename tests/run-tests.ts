@@ -1946,6 +1946,7 @@ import { runMilestoneEnhancementsTests, runMilestonePrintHistoryAndPagingTests }
 import { runFitsTheScreenRatchetTests } from "./fits-the-screen-ratchet.test.ts";
 import { runSquareEdgePortalRatchetTests } from "./square-edge-portal-ratchet.test.ts";
 import { runPhoenixCrmDictationTests } from "./phoenix-crm-dictation.test.ts";
+import { runPhoenixCrmSpeakTests } from "./phoenix-crm-speak.test.ts";
 import { runPhoenixCrmDictationCorrectTests } from "./phoenix-crm-dictation-correct.test.ts";
 import { runPhoenixCrmDictationCorpusTests } from "./phoenix-crm-dictation-corpus.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
@@ -6934,6 +6935,10 @@ await runTest(
 await runTest(
   "Phoenix CRM Arabic dictation: the engine is asked for ar-EG, support fails closed where there is no speech engine, a dictated phrase APPENDS and never replaces, the cap is applied in the append because maxLength does not constrain a programmatic write, and \"aborted\"/\"no-speech\" stay silent while a blocked microphone names the settings",
   runPhoenixCrmDictationTests,
+);
+await runTest(
+  "Phoenix CRM one spoken-comment control (owner, 2026-09-25 — \"I speak once and this speaking appears in the field as a text and saved as a record. Both.\"): one press runs both halves off one microphone, every sentence the rep reads is a pure function so it can only promise what the browser actually has, the processor notice stays on the control naming Google/Apple/Chrome/Safari, and the TEXT IS NEVER CALLED A TRANSCRIPT OF THE RECORDING — the engine's live reading can mishear where the stored audio, which no speech service ever touches, cannot",
+  runPhoenixCrmSpeakTests,
 );
 await runTest(
   "Phoenix CRM dictation product correction: the lexicon is built from 136,983 real old-CRM comments, an Arabic clitic is preserved while only the stem is respelled, each token is corrected in its OWN script, and the corrector REFUSES to touch ordinary Arabic, a rep's short form, or a token equally near two products — because inventing a drug name in a clinical note is the expensive direction of the error",
