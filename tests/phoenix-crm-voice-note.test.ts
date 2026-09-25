@@ -192,10 +192,18 @@ export function runPhoenixCrmVoiceNoteTests() {
   // And inside the one control the halves stay apart: the engine hands back TEXT, which goes to the
   // comment, and the recorder hands back a stored PATH, which goes to the payload. Neither is derived
   // from the other, so a bug can lose a half — never turn one into the other.
+  // The settled phrase reaches the comment UNCHANGED — the only thing that may sit in front of it is the
+  // bookkeeping that records a phrase arrived at all, which is what decides whether the recording still has
+  // to be written out (`shouldWriteFromRecording`). It may never rewrite, filter or withhold the text.
   assert.match(
     control,
-    /onFinal:\s*\(text\)\s*=>\s*\{\s*onAppend\(text\)/,
-    `${CONTROL} sends the engine's words to the comment and nothing else`,
+    /onFinal:\s*\(text\)\s*=>\s*\{[^}]*onAppend\(text\)/,
+    `${CONTROL} sends the engine's words to the comment, whole and unaltered`,
+  );
+  assert.doesNotMatch(
+    control.slice(control.indexOf("onFinal:"), control.indexOf("onError:")),
+    /onAppend\((?!text\))/,
+    `${CONTROL} appends the phrase itself, never a version of it built inside the callback`,
   );
   assert.match(
     control,

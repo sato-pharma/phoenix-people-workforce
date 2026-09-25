@@ -97,10 +97,36 @@ export function isSilentRecognitionError(code: string): boolean {
 }
 
 /**
+ * The engine EXISTS but cannot do this language — Firefox 157's Parakeet answers exactly this for `ar-EG`.
+ *
+ * Kept apart from the messages below because the caller ACTS on it rather than showing it: it says the
+ * browser's own engine is out, which is a fact about the browser and not something the rep can fix. Where
+ * a recording is running the caller hands it to the server path instead (`shouldWriteFromRecording` in
+ * `../speak.ts`) and says nothing, so the words still arrive — a few seconds after he stops instead of
+ * while he talks. Only where that handover cannot run does the sentence below reach him.
+ *
+ * 🔴 IT ARRIVES AFTER `start()` HAS ALREADY SUCCEEDED. Firefox 157 constructs a recogniser, accepts
+ * `ar-EG`, starts, and only then fires this — so no capability check taken before speaking can see it.
+ * That is why the decision to write the recording out is made from what HAPPENED, not from what the
+ * browser appeared to have.
+ */
+export function isEngineLanguageError(code: string): boolean {
+  return code === "language-not-supported";
+}
+
+/**
  * What to show for an error that is worth showing. Every message ends by naming the way out, because
  * dictation is an accelerator and typing is always still open.
+ *
+ * 🔴 THE `language-not-supported` SENTENCE IS THE NO-HANDOVER ONE, and it must stay that way. Where the
+ * recording CAN be written out the caller shows nothing at all and lets "Writing out the words" speak for
+ * itself, so the only time these words reach a rep is when nothing else is coming — which is exactly when
+ * promising him words from the recording would be a lie. Do not soften it into "the words will arrive".
  */
 export function dictationErrorMessage(code: string): string {
+  if (isEngineLanguageError(code)) {
+    return "This browser cannot write Arabic while you talk. Type the comment instead — the recording is still saved.";
+  }
   if (code === "not-allowed" || code === "service-not-allowed") {
     return "The microphone is blocked for Phoenix. Allow it for this site in the phone's settings, or type the comment instead.";
   }
@@ -147,7 +173,15 @@ export type DictationCallbacks = {
   onInterim: (text: string) => void;
   /** Fires once a phrase settles. Appended — never used to replace what is already there. */
   onFinal: (text: string) => void;
-  onError: (message: string) => void;
+  /**
+   * The rep-facing sentence AND the engine's own code.
+   *
+   * The code is passed because one of them is not a failure to report but a branch to take:
+   * `language-not-supported` means this engine is out and the recording must be written out instead
+   * (`isEngineLanguageError`). Handing back only the message forced the caller to match on English
+   * prose to find that out, which is how a wording change becomes a silent regression.
+   */
+  onError: (message: string, code: string) => void;
   onEnd: () => void;
 };
 
@@ -184,7 +218,7 @@ export function startDictation(callbacks: DictationCallbacks): DictationHandle |
 
   recognition.onerror = (event) => {
     if (isSilentRecognitionError(event.error)) return;
-    callbacks.onError(dictationErrorMessage(event.error));
+    callbacks.onError(dictationErrorMessage(event.error), event.error);
   };
 
   recognition.onend = () => callbacks.onEnd();
