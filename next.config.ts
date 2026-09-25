@@ -60,7 +60,11 @@ const contentSecurityPolicy = [
   // its own REST calls, and its permission-prompt UI). If the browser console ever shows
   // a CSP violation for a different OneSignal subdomain, add it here too.
   "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://maps.googleapis.com https://maps.gstatic.com https://routes.googleapis.com https://cdn.onesignal.com https://api.onesignal.com https://onesignal.com",
-  "media-src 'self' blob:",
+  // https://*.supabase.co: a saved CRM visit voice note plays from a signed Supabase Storage URL set
+  // directly as an <audio src> (src/components/phoenix-crm/voice-playback.tsx). connect-src already
+  // allows Supabase, but an <audio> element's source is governed by media-src, not connect-src, so
+  // without this the note is blocked from playing back. blob: stays for locally captured previews.
+  "media-src 'self' blob: https://*.supabase.co",
   "worker-src 'self' blob:",
   "object-src 'none'",
   "base-uri 'self'",
@@ -183,10 +187,17 @@ const securityHeaders = [
   // Site-wide on purpose, not scoped to those routes: a permissions policy is fixed when the DOCUMENT
   // loads, and App Router navigation never loads a new one, so a rep who opens the portal and taps
   // through to Submit Expense would still carry the landing page's camera=(). `self` keeps
-  // third-party frames locked out. microphone stays () — nothing here records audio.
+  // third-party frames locked out.
+  //
+  // microphone=(self), NOT microphone=(): the Phoenix CRM visit form records a voice note and runs
+  // ar-EG dictation (src/components/phoenix-crm/speak.tsx, shipped 2026-09-25), so the app DOES record
+  // audio now. The empty allowlist made every browser refuse getUserMedia before any prompt — the exact
+  // camera=() failure above, replayed for the mic: the owner saw "microphone blocked for Phoenix" in
+  // Chrome even with the site permission granted, because a document-level policy of () overrides the
+  // site/OS permission entirely. `self` (not `*`) keeps third-party frames out, same as camera.
   {
     key: "Permissions-Policy",
-    value: "camera=(self), microphone=(), geolocation=(self), payment=()",
+    value: "camera=(self), microphone=(self), geolocation=(self), payment=()",
   },
   {
     key: "Cross-Origin-Opener-Policy",

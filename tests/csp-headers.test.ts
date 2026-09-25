@@ -137,7 +137,11 @@ function runPermissionsPolicyTests() {
     "(self)",
     "camera must be (self): camera=() makes Chromium refuse getUserMedia, which kills the outstation arrival/departure photos and the storefront and venue photos.",
   );
-  assert.equal(directives.get("microphone"), "()", "microphone must stay () — nothing in the app records audio.");
+  assert.equal(
+    directives.get("microphone"),
+    "(self)",
+    "microphone must be (self): the CRM visit form records a voice note and runs ar-EG dictation (src/components/phoenix-crm/speak.tsx), and microphone=() makes every browser refuse getUserMedia before any prompt — the owner saw 'microphone blocked for Phoenix' in Chrome with the site permission granted.",
+  );
   assert.equal(directives.get("geolocation"), "(self)", "geolocation must stay (self) — every evidence capture stamps GPS.");
   assert.equal(directives.get("payment"), "()", "payment must stay ().");
 }
