@@ -12,6 +12,20 @@
  * mode on and off are `POST /api/v1/mdm/devices/{id}/actions/{action}`. The two wipes are the same
  * shape: `corporate_wipe` removes company management and data; `complete_wipe` is a full factory
  * reset. Both are destructive and the UI double-confirms them.
+ *
+ * 🔴 NEITHER WIPE RETIRES A TABLET, AND THE OWNER HIT THAT TWICE IN ONE NIGHT. On 2026-09-24 he ran
+ * `corporate_wipe` on PHX-TAB-0002 at 23:51 Cairo and again at 03:07, expecting a tablet he could
+ * enrol from scratch, and got neither: `corporate_wipe` un-manages the tablet but leaves it SET UP,
+ * so it never returns to the welcome screen and cannot scan a fresh QR — only `complete_wipe` does
+ * that. The wording below now says so at the point of the click.
+ *
+ * 🔴 AND MANAGEENGINE HAS NO DELETE-DEVICE ENDPOINT — do not try to build one. Their documented
+ * `/api/v1/mdm/devices` surface is GET list, GET/PUT one device, the summary/certificate/restriction
+ * /firmware/location reads, profile and app add-remove, and `POST …/actions/{action}`; there is no
+ * method that removes the DEVICE RECORD (checked against the published API reference 2026-09-25).
+ * So a wiped tablet stays in the fleet list until somebody deletes it in the ManageEngine console by
+ * hand. That console step is the vendor's floor, not a gap in Phoenix — say so rather than promising
+ * to automate it.
  */
 
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
@@ -158,7 +172,7 @@ export const MANAGEENGINE_COMMANDS: readonly ManageEngineCommandDef[] = [
   {
     action: "corporate_wipe",
     description:
-      "Removes company management and its apps and data, and leaves the rep's own device otherwise intact. Use it to un-manage a tablet without erasing everything.",
+      "Removes company management and its apps and data, and leaves the rep's own device otherwise intact. Use it to un-manage a tablet without erasing everything. It does NOT reset the tablet: it stays set up, so it cannot scan a fresh enrollment code afterwards. To start a tablet clean, use Full factory reset instead.",
     destructive: true,
     id: "CORPORATE_WIPE",
     label: "Remove company data",
@@ -167,7 +181,7 @@ export const MANAGEENGINE_COMMANDS: readonly ManageEngineCommandDef[] = [
   {
     action: "complete_wipe",
     description:
-      "Factory-resets the tablet — everything on it is erased and it must be enrolled again. Use it for a stolen tablet, or one being retired.",
+      "Factory-resets the tablet — everything on it is erased and it comes back at the welcome screen, ready to be enrolled again. Use it for a stolen tablet, or one being retired and started clean. Its entry stays in the ManageEngine fleet list until somebody deletes it in the ManageEngine console.",
     destructive: true,
     id: "COMPLETE_WIPE",
     label: "Full factory reset",
@@ -216,9 +230,15 @@ function resultMessage(def: ManageEngineCommandDef, subject: string): string {
     case "DISABLE_LOST_MODE":
       return `${subject} is out of lost mode and unlocked.`;
     case "CORPORATE_WIPE":
-      return `${subject} is being un-managed: company apps and data are being removed.`;
+      return (
+        `${subject} is being un-managed: company apps and data are being removed. It is NOT reset — ` +
+        "it stays set up as it is, so it cannot scan a fresh enrollment code. Use Full factory reset to start it clean."
+      );
     case "COMPLETE_WIPE":
-      return `${subject} is being factory-reset. It needs to be enrolled again to come back.`;
+      return (
+        `${subject} is being factory-reset. It comes back at the welcome screen and needs to be enrolled again. ` +
+        "Its entry stays in the ManageEngine fleet list — delete it in the ManageEngine console, which is the only place that can."
+      );
     default:
       return `${subject}: done.`;
   }
