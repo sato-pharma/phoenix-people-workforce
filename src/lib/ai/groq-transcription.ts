@@ -10,7 +10,7 @@
  * plan, and the owner's instruction on 2026-09-25 was "un browsers must be text and audio".
  *
  * WHY GROQ AND NOT OPENAI. The owner's cost constraint the same day, in his words: "I don't want it to
- * use it open AI or find a free way to use it in it." Groq serves `whisper-large-v3-turbo` on a free tier
+ * use it open AI or find a free way to use it in it." Groq serves both Whisper models on a free tier
  * and charges by the audio hour above it, and only the engine-less browsers ever reach this path — the
  * Chrome, Edge, Safari and Android majority keep using the browser's own free engine and never call here.
  * A minute is the recording cap, so a rep's whole day of notes is minutes of audio. **This file must
@@ -28,6 +28,11 @@
  * clinical note as something a doctor supposedly said, so `isHallucinatedTranscript` drops the whole
  * answer rather than hand back a sentence nobody spoke. Dropping it costs the rep the typing he would
  * have done anyway; keeping it puts a fabricated claim in a record no one knows to doubt.
+ *
+ * AND IT REFUSES ITS OWN PROMPT BACK. On a quiet recording the decoder's most natural continuation of the
+ * preceding text IS the preceding text, so it returns the prompt. `stripPromptEcho` takes those words out
+ * before anything else looks at the answer — see its own comment for why that became mandatory the moment
+ * the prompt started carrying a sample Egyptian sentence instead of a bare list of product names.
  */
 
 import { recordAiCall } from "@/lib/observability/ai-metrics";
@@ -37,17 +42,37 @@ import { logError } from "@/lib/observability/log";
 const GROQ_TRANSCRIPTION_URL = "https://api.groq.com/openai/v1/audio/transcriptions";
 
 /**
- * The turbo model, not `whisper-large-v3`. Same weights distilled to 4 decoder layers: several times
- * faster and a fraction of the price per audio hour, for a small accuracy cost that is far below the gap
- * between "some Arabic text to correct" and "an empty comment", which is the real comparison here.
+ * 🔴 THE FULL MODEL, NOT `whisper-large-v3-turbo`, AND THAT IS THE OWNER'S OWN FINDING — DO NOT PUT TURBO
+ * BACK TO MAKE THIS FASTER OR CHEAPER.
+ *
+ * Turbo shipped here first, reasoning that its accuracy cost was small next to the gap between "some
+ * Arabic text to correct" and "an empty comment". That reasoning held for the presence of text and was
+ * wrong about the KIND of text. He recorded Egyptian Arabic on 2026-09-25 and read the result back:
+ * "very, very, very weak in Arabic … it dictate in Khaliji." Turbo is the same weights with the decoder
+ * distilled from 32 layers to 4, and a decoder is exactly where dialect lives — it is the half that
+ * chooses which Arabic to spell the sounds as. Cutting it to an eighth costs little on English and costs
+ * dialect first, so the distilled model falls back to the Arabic it saw most, which is not Egyptian.
+ *
+ * The full model is on the same free tier and served by the same key (verified against
+ * `/openai/v1/models` on the production key, 2026-09-25: `whisper-large-v3`, active). It is slower —
+ * seconds, not tens of seconds, on a recording capped at one minute — and dearer per audio hour above the
+ * free tier, against a whole company's use measured in minutes of audio a day. A rep reads the words back
+ * before he saves them, so speed buys nothing that being right does not buy more of.
  */
-export const GROQ_TRANSCRIPTION_MODEL = "whisper-large-v3-turbo";
+export const GROQ_TRANSCRIPTION_MODEL = "whisper-large-v3";
 
 /**
  * `ar`, NOT `ar-EG`. This is an ISO-639-1 language, not a BCP-47 locale, and a locale tag is rejected —
- * the same string `DICTATION_LANG` carries for the browser engine would fail here. Whisper has no
- * dialect selector; naming the language stops it guessing Persian or Urdu from the first seconds and
- * stops it silently translating to English, which it does when the field is left off.
+ * the same string `DICTATION_LANG` carries for the browser engine would fail here. Naming the language
+ * stops it guessing Persian or Urdu from the first seconds and stops it silently translating to English,
+ * which it does when the field is left off.
+ *
+ * 🔴 IT IS NOT A DIALECT SELECTOR AND THERE IS NO SUCH FIELD — `ar-EG`, `arz` and `egy` are all refused,
+ * so an Egyptian answer cannot be asked for here however the string is spelled. Trying is the obvious
+ * first move when a rep reports Gulf Arabic back and it ends in a rejected request, not a better one.
+ * Dialect is steered by the `prompt` instead — see `TRANSCRIPTION_PROMPT` in
+ * `src/lib/phoenix-crm/server/voice-transcribe.ts` — because the prompt is read as text that came just
+ * before this audio, and a decoder continuing an Egyptian sentence keeps writing Egyptian.
  */
 export const GROQ_TRANSCRIPTION_LANGUAGE = "ar";
 
@@ -127,6 +152,49 @@ export function isHallucinatedTranscript(text: string): boolean {
   const commonest = Math.max(...counts.values());
   // Two thirds of a sentence being one word is not emphasis, it is a stuck decoder.
   return commonest >= 8 && commonest / words.length >= 0.66;
+}
+
+/**
+ * The sentences of a prompt that are long enough to recognise if they come back.
+ *
+ * Four words is the floor because the prompt also carries a comma-separated list of product names, and a
+ * rep really does say two or three product names in a row — removing a short run would delete his own
+ * words. A whole four-word sentence of the prompt appearing verbatim in the answer is not that.
+ */
+function promptSentences(prompt: string): string[] {
+  return prompt
+    .split(/[.!?؟\n]+/)
+    .map((sentence) => sentence.replace(/\s+/g, " ").trim())
+    .filter((sentence) => sentence.split(" ").filter(Boolean).length >= 4);
+}
+
+/**
+ * Remove any part of the prompt the decoder read back to us instead of transcribing.
+ *
+ * 🔴 THIS IS THE COST OF STEERING THE DIALECT AND IT IS NOT OPTIONAL. Whisper's `prompt` is text the model
+ * believes came immediately before this audio, so on a quiet or unclear recording it does the most natural
+ * thing available and simply CONTINUES it — or repeats it. That was survivable while the prompt was a bare
+ * list of product names: an echo arrived looking like a list, which nobody would mistake for a comment.
+ * Since the prompt carries a sample Egyptian visit sentence (which is what makes the answer Egyptian
+ * rather than Gulf), an echo arrives looking exactly like a real visit note about a real doctor — a
+ * fabricated clinical claim, in fluent Egyptian, in the one field managers read.
+ *
+ * So the same words are taken back out. Matching is on whitespace-collapsed text only: if the model hands
+ * the sentence back with added diacritics the match is missed, which leaves the OLD failure mode rather
+ * than creating a new one, and `isHallucinatedTranscript` still sees whatever remains.
+ */
+export function stripPromptEcho(text: string, prompt?: string): string {
+  if (!prompt) return text.replace(/\s+/g, " ").trim();
+  let remaining = text.replace(/\s+/g, " ").trim();
+  for (const sentence of promptSentences(prompt)) {
+    for (;;) {
+      const at = remaining.indexOf(sentence);
+      if (at < 0) break;
+      remaining = `${remaining.slice(0, at)} ${remaining.slice(at + sentence.length)}`;
+    }
+  }
+  // Punctuation the removed sentence was sitting inside would otherwise be all that is left.
+  return remaining.replace(/\s+/g, " ").replace(/^[\s.,،؛:!?؟-]+|[\s،؛:-]+$/g, "").trim();
 }
 
 function messageFor(code: GroqTranscriptionCode): string {
@@ -239,7 +307,11 @@ export async function transcribeWithGroq(request: GroqTranscriptionRequest): Pro
   }
 
   const parsed = (await response.json().catch(() => null)) as { text?: unknown } | null;
-  const text = typeof parsed?.text === "string" ? parsed.text.replace(/\s+/g, " ").trim() : "";
+  const answered = typeof parsed?.text === "string" ? parsed.text : "";
+  // The prompt comes back out BEFORE the hallucination guard runs, in that order on purpose: an echoed
+  // Egyptian sentence is fluent, unrepetitive and about a doctor, so the guard would pass it — and once it
+  // has been taken out, whatever is left is judged on its own, including "nothing".
+  const text = stripPromptEcho(answered, request.prompt);
   if (!text || isHallucinatedTranscript(text)) {
     // Counted as a failure on purpose. A silent note is ordinary and costs nothing, but a hallucination
     // reaching here means the guard above earned its place, and the row is the only way anyone sees it.

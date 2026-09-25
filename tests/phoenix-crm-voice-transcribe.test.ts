@@ -7,6 +7,7 @@ import {
   groqTranscriptionMessage,
   GroqTranscriptionError,
   isHallucinatedTranscript,
+  stripPromptEcho,
 } from "../src/lib/ai/groq-transcription.ts";
 import { DICTATION_LANG } from "../src/lib/phoenix-crm/dictation.ts";
 import { PRODUCT_VOCABULARY } from "../src/lib/phoenix-crm/dictation-vocabulary.ts";
@@ -25,10 +26,16 @@ import { stripComments } from "./support/comment-strip.ts";
 // is written out server-side instead.
 //
 // AND WHY IT IS NOT OPENAI. His cost ruling the same day, in his words: "I don't want it to use it open
-// AI or find a free way to use it in it." Groq serves whisper-large-v3-turbo on a free tier, and only the
+// AI or find a free way to use it in it." Groq serves the Whisper models on a free tier, and only the
 // engine-less browsers ever reach this path — the Chrome, Edge, Safari and Android majority keep using
 // the browser's own engine and never call it. The request below is OpenAI-SHAPED, which is exactly why
 // the assertions here are about what it must never be pointed at.
+//
+// AND WHICH ARABIC IT WRITES. He recorded Egyptian and read the answer back the same day: "very, very,
+// very weak in Arabic … it dictate in Khaliji." There is no dialect field to fix that with — `ar-EG`,
+// `arz` and `egy` are each refused HTTP 400 "unsupported language" by the live API — so the fix is the
+// FULL model plus an Egyptian sample in the prompt, and both are pinned below along with the price of the
+// second one: a prompt the decoder can hand back instead of transcribing.
 //
 // WHAT IS PINNED, and each line is a way this goes wrong while every screen still renders:
 //
@@ -84,7 +91,12 @@ export function runPhoenixCrmVoiceTranscribeTests() {
     "it is NOT the browser engine's ar-EG: that is a BCP-47 locale and this API rejects it, so sharing one constant between the two engines would break whichever one was changed second",
   );
   assert.match(client, /form\.set\("language", GROQ_TRANSCRIPTION_LANGUAGE\)/, `${CLIENT} always names the language — omitted, Whisper translates Arabic speech into fluent ENGLISH text, which reads as a working feature`);
-  assert.equal(GROQ_TRANSCRIPTION_MODEL, "whisper-large-v3-turbo", "the turbo model: several times faster and a fraction of the price, for a gap far smaller than the one between some text and no text");
+  // 🔴 The FULL model, and the owner's own finding is why. Turbo shipped here first on the reasoning that
+  // its accuracy cost was small next to "some text vs no text" — true about the PRESENCE of text and wrong
+  // about its KIND. Turbo is the same weights with the decoder distilled 32 layers to 4, and the decoder is
+  // where dialect lives: it chooses which Arabic to spell the sounds as. He read the result back as Khaliji.
+  assert.equal(GROQ_TRANSCRIPTION_MODEL, "whisper-large-v3", "the FULL model, not turbo — the distilled decoder is what wrote his Egyptian speech back as Gulf Arabic, and it is on the same free tier");
+  assert.notEqual(GROQ_TRANSCRIPTION_MODEL, "whisper-large-v3-turbo", "turbo is faster and cheaper and must not come back for either reason: a rep reads the words before saving, so speed buys nothing that being right does not buy more of");
   assert.match(client, /form\.set\("temperature", TEMPERATURE\)/, `${CLIENT} pins the temperature — sampling is what turns an unclear second into an invented sentence`);
 
   // ── 3. Canned and looping output is dropped ───────────────────────────────────
@@ -122,6 +134,68 @@ export function runPhoenixCrmVoiceTranscribeTests() {
     assert.ok(!TRANSCRIPTION_PROMPT.includes(entry.latin), `the prompt does NOT carry ${entry.latin} in Latin — seeding it makes the model answer an Arabic sentence in Latin script`);
   }
   assert.ok(!/\b(transcribe|write|correct|please|do not)\b/i.test(TRANSCRIPTION_PROMPT), "the prompt gives no instructions — it cannot be instructed, and an instruction written there is transcribed into the comment");
+
+  // ── The prompt is also the ONLY dialect control there is ──────────────────────
+  // He speaks Egyptian and got Gulf Arabic back. `language` cannot fix it (`ar-EG`, `arz` and `egy` are
+  // each refused HTTP 400 by the live API), so the steer is a sample of Egyptian text the decoder is told
+  // came just before the audio — a decoder continuing an Egyptian sentence keeps writing Egyptian.
+  for (const marker of ["دلوقتي", "شويه", "اللي", "مش", "عشان", "هيكتب"]) {
+    assert.ok(
+      TRANSCRIPTION_PROMPT.includes(marker),
+      `the prompt carries the Egyptian marker ${marker} — these are the words that mark the dialect in WRITING, which is the only thing a prompt can influence`,
+    );
+  }
+  const sampleAt = TRANSCRIPTION_PROMPT.indexOf("دلوقتي");
+  const lastProductAt = Math.max(...PRODUCT_VOCABULARY.map((entry) => TRANSCRIPTION_PROMPT.indexOf(entry.arabic)));
+  assert.ok(
+    sampleAt > lastProductAt,
+    "the Egyptian sample comes LAST, after the product names: the closest preceding text is the strongest influence and dialect is what was wrong, while ending on a comma-separated list biases the answer towards writing a list",
+  );
+  // The 224-token cap drops the END of a prompt silently. Arabic runs about three tokens a word, so this
+  // budget keeps both halves inside it with room to spare — and if the cap is ever reached it is the
+  // sample that goes, not the product names, which is the whole reason for the order above.
+  assert.ok(
+    TRANSCRIPTION_PROMPT.length <= 400,
+    `the prompt stays well inside the 224-token cap (${TRANSCRIPTION_PROMPT.length} characters) — over it the model drops the tail with no error, and the tail is the dialect steer`,
+  );
+  // 🔴 It can be handed back verbatim instead of transcribed, so every claim in it can surface in a comment
+  // as something a doctor supposedly said. It therefore states nothing about anybody.
+  assert.doesNotMatch(TRANSCRIPTION_PROMPT, /\d/, "the prompt names no quantity — an echoed number in a visit comment is an order nobody placed");
+  assert.doesNotMatch(TRANSCRIPTION_PROMPT, /[A-Za-z]/, "the prompt is wholly Arabic — Latin in it makes the model answer an Arabic sentence in Latin script");
+  assert.doesNotMatch(TRANSCRIPTION_PROMPT, /دكتور |د\.|عيادة د/, "the prompt names no doctor: a vivid, specific sample is a better steer and a worse lie");
+
+  // ── And the prompt is taken back OUT of the answer ────────────────────────────
+  // On a quiet recording the decoder's most natural continuation of the preceding text IS the preceding
+  // text. That was survivable while the prompt was a bare product list — an echo looked like a list. An
+  // echoed Egyptian visit sentence looks exactly like a real note about a real doctor.
+  assert.equal(
+    stripPromptEcho("زيارة دلوقتي في العيادة وقعدت معاه شويه", "زيارة دلوقتي في العيادة وقعدت معاه شويه"),
+    "",
+    "the prompt handed straight back leaves nothing — and nothing is the correct answer, because nothing was said",
+  );
+  assert.equal(
+    stripPromptEcho(`${TRANSCRIPTION_PROMPT} الدكتور طلب عينات`, TRANSCRIPTION_PROMPT),
+    "الدكتور طلب عينات",
+    "an echo followed by real speech keeps the real speech and drops the echo",
+  );
+  assert.equal(
+    stripPromptEcho("الدكتور طلب عينات تيبوفورتين", TRANSCRIPTION_PROMPT),
+    "الدكتور طلب عينات تيبوفورتين",
+    "a real comment naming a product is untouched — the product names are in the prompt, and removing a rep's own words is the failure this guard must not become",
+  );
+  assert.equal(stripPromptEcho("  زيارة   كويسة  ", undefined), "زيارة كويسة", "with no prompt it still collapses whitespace, the way the answer was always normalised");
+  assert.equal(
+    stripPromptEcho("قابلت الدكتور وقال تيبوفورتين، لاكتو كتير", TRANSCRIPTION_PROMPT),
+    "قابلت الدكتور وقال تيبوفورتين، لاكتو كتير",
+    "two product names in a row are a real thing a rep says: only a whole four-word-plus sentence of the prompt is removed, never a short run",
+  );
+  assert.match(client, /export function stripPromptEcho/, `${CLIENT} owns the echo guard — the prompt and the answer meet in one place`);
+  const stripAt = client.indexOf("stripPromptEcho(answered, request.prompt)");
+  const guardAt = client.indexOf("isHallucinatedTranscript(text)");
+  assert.ok(
+    stripAt >= 0 && guardAt > stripAt,
+    `${CLIENT} strips the echo BEFORE judging the answer: an echoed Egyptian sentence is fluent, unrepetitive and about a doctor, so the hallucination guard would pass it through`,
+  );
 
   // The same corrector the live engine's words go through. A general Arabic model has never heard
   // "تيبوفورتين" either, so the failure it fixes is identical and the fix must not be duplicated.
