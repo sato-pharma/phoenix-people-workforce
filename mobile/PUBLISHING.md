@@ -22,11 +22,16 @@ One thing, and it is free:
 
 | Thing | What it is | Cost | Status today |
 | --- | --- | --- | --- |
-| **The enterprise** | Sato Pharma's own managed Google Play organization. Employees' devices enrol into it, and the app is published to it. | Free | **Does not exist.** `ANDROID_MANAGEMENT_ENTERPRISE_NAME` is set nowhere — not in the environment, not in the docs. |
+| **The enterprise** | Sato Pharma's own managed Google Play organization. Employees' devices enrol into it, and the app is published to it. | Free | ✅ **Exists since 2026-09-24** — `ANDROID_MANAGEMENT_ENTERPRISE_NAME = enterprises/LC017auv4o` in Railway production, alongside `ANDROID_MANAGEMENT_PROJECT_ID = phoenix-hr-2026` and an `ANDROID_MANAGEMENT_KEY` service-account credential. |
 
-That is the whole prerequisite. It is the same enterprise
+That is the whole prerequisite, and it is **met**. It is the same enterprise
 [`src/lib/devices/android-web-app.ts`](../src/lib/devices/android-web-app.ts) already needs, so the
-native app and the managed-tablet web app wait on one free step between them, not two.
+native app and the managed-tablet web app cleared that one free step together.
+
+🔴 **Read this row before concluding anything is blocked on the enterprise.** Until 2026-09-25 it
+said "Does not exist", which is how a session came to report the mock-location rollout as waiting on
+a step that had already been taken. What actually remains is step 2 onward below — the iframe, and
+an AAB to put through it.
 
 🔴 **Decided 2026-09-18 by the owner: a SHARED `satopharma.com` account** — not a personal Gmail, and
 not an account only one person can reach. Two separate things make that choice hard to undo, and both
@@ -67,9 +72,11 @@ and `PRIVATE_APPS` is one of its values, described as *"The private apps page"*,
 
 So the sequence is:
 
-1. Create the enterprise once, with the company Google account, and set
-   `ANDROID_MANAGEMENT_ENTERPRISE_NAME` to the binding it returns (`enterprises/LC…`).
-2. Mint a web token with `PRIVATE_APPS` enabled and embed the iframe in Phoenix.
+1. ~~Create the enterprise once, with the company Google account, and set
+   `ANDROID_MANAGEMENT_ENTERPRISE_NAME` to the binding it returns (`enterprises/LC…`).~~ **Done** —
+   `enterprises/LC017auv4o`.
+2. Mint a web token with `PRIVATE_APPS` enabled and embed the iframe in Phoenix. **Not built yet —
+   this is the step the rollout actually waits on.**
 3. Upload the `.aab` from `npm run build:aab` on the Private apps page.
 4. It auto-approves for the organization and is **typically ready for distribution within about ten
    minutes**.
@@ -150,6 +157,15 @@ module (`disableLocation: true` in `app.json`), so notifications add no location
 🔴 **The departure photo added native modules** (`expo-location`, `@shopify/react-native-skia`), so
 it reaches a phone only in a new binary with a higher `versionCode` — there is no over-the-air path.
 
+**But reading MORE from a module already installed does not need a binary, and assuming otherwise
+costs a wasted build.** `runtimeVersion` is `{"policy": "fingerprint"}`, so the test is mechanical:
+if the fingerprint is unchanged, `eas update` lands on the binaries already out there. The
+mock-location flag (2026-09-25, #4366) reads `LocationObject.mocked` off the object `expo-location`
+already returns — no new module, **Android fingerprint `15a5625f…` identical to the 2026-09-23
+update**, and `mobile-ota.yml` shipped it to both channels automatically three seconds after the
+merge. **Compare the two fingerprints before concluding a rebuild is needed:**
+`eas update:list --branch production --json`.
+
 ---
 
 ## What no session will do
@@ -181,11 +197,12 @@ this repo can do.
 
 ## What is not verified here
 
-- **The exact iframe embedding flow in Phoenix.** The API surface is confirmed; no code has been
-  written against it yet, and `android-web-app.ts` documents an open question about how it
-  authenticates in production — the Google Cloud org policy
-  (`constraints/iam.disableServiceAccountKeyCreation`) blocks long-lived service-account keys, and
-  that applies here too.
+- **The exact iframe embedding flow in Phoenix.** The API surface is confirmed and **no code has been
+  written against it yet** — that is the real remaining work. The authentication question
+  `android-web-app.ts` raises is **answered in practice**: a long-lived `ANDROID_MANAGEMENT_KEY`
+  service-account credential is present in Railway production, so
+  `constraints/iam.disableServiceAccountKeyCreation` was overridden for `phoenix-hr-2026` the same
+  way it was for the Firebase key. Do not re-derive it as a blocker.
 - **Whether a private app is asked for Google Play's Data safety form.** Public apps must fill it in;
   nothing here confirms whether the managed Play iframe asks for it. If it does, the table above is
   the answer.
