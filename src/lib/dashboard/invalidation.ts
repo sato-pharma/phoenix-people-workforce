@@ -60,6 +60,17 @@ export const VACATION_REPORT_ROWS_CACHE_TAG = "vacation-report-rows";
 /** Modules whose changes move a figure on the Finance Command Center. */
 const FINANCE_DASHBOARD_MODULES: ExecutiveDashboardModule[] = ["payroll", "expenses", "leave"];
 
+/**
+ * Modules whose changes move a seat in `au_v_org_tree` — a hire or seat edit, a resignation/decline
+ * that vacates a seat, or a workflow (probation, contract renewal) that reseats someone. The CRM org
+ * tree reads (src/lib/crm/org-placement-data.ts, src/lib/phoenix-crm/server/org.ts) cache that view
+ * under the same "sos-reference" tag as the SoS reference masters, so every one of these write paths
+ * already called this function with one of these modules — the tag just never got busted. Without
+ * this the org tree only self-heals after its 300s TTL: a hire, an exit or a re-seat is invisible to
+ * the CRM sync panel's scope resolution for up to five minutes.
+ */
+const ORG_TREE_MODULES: ExecutiveDashboardModule[] = ["employees", "vacancies", "resignations"];
+
 export function invalidateExecutiveDashboardCache(
   reason: string,
   modules: ExecutiveDashboardModule[] = [],
@@ -91,6 +102,12 @@ export function invalidateExecutiveDashboardCache(
     // on you", five minutes of staleness is five minutes of a queue he thinks he has cleared.
     if (uniqueModules.some((module) => FINANCE_DASHBOARD_MODULES.includes(module))) {
       revalidateTag(FINANCE_DASHBOARD_CACHE_TAG, "max");
+    }
+    // An organogram-affecting change also invalidates the cached org tree — it shares "sos-reference"
+    // with the sales reference masters, so a hire, seat move or exit shows up immediately instead of
+    // waiting out the cache's 300s TTL.
+    if (uniqueModules.some((module) => ORG_TREE_MODULES.includes(module))) {
+      revalidateTag("sos-reference", "max");
     }
   } catch (error) {
     console.warn("Executive dashboard route revalidation failed.", {
