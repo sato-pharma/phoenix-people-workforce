@@ -69,12 +69,14 @@ const TRANSCRIBE_WINDOW_MS = 2 * 60 * 60 * 1000;
  * THE SAMPLE COMES LAST, AFTER THE PRODUCT NAMES, AND THAT ORDER IS THE POINT. The closest preceding text
  * is the strongest influence, and dialect is what was wrong; ending on a comma-separated list instead
  * biases the answer towards writing a list. The product names still come first because they are the class
- * of word a general Arabic model has never heard and silently replaces with the nearest ordinary word,
- * and the 224-token cap drops the END of a prompt — so at this size (well inside the cap, pinned by
- * tests/phoenix-crm-voice-transcribe.test.ts) both halves survive, and if anything ever has to go it is
- * the sample, whose absence costs dialect, not the names, whose absence costs the only part of a comment
- * anyone reads it for. Latin spellings stay out: seeding them makes the model answer a wholly Arabic
- * sentence in Latin script.
+ * of word a general Arabic model has never heard and silently replaces with the nearest ordinary word.
+ * The 224-token cap keeps the FINAL tokens of a prompt and drops the ones at the START — the tokens
+ * furthest from the audio — so over the cap it is the product names, at the head, that would be lost, not
+ * the sample. The order does NOT protect them; the only thing that does is keeping the whole prompt well
+ * inside the cap, which it is (pinned by tests/phoenix-crm-voice-transcribe.test.ts), so both halves
+ * survive at this size and the order is a pure dialect optimisation. If the vocabulary ever grows the
+ * length is what has to be watched, not the ordering. Latin spellings stay out: seeding them makes the
+ * model answer a wholly Arabic sentence in Latin script.
  *
  * 🔴 AND IT MUST NEVER READ LIKE A REAL VISIT THAT HAPPENED. On a quiet recording the decoder hands this
  * text straight back instead of transcribing (`stripPromptEcho` in `@/lib/ai/groq-transcription`), so

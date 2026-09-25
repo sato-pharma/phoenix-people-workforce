@@ -37,6 +37,7 @@
 
 import { recordAiCall } from "@/lib/observability/ai-metrics";
 import { logError } from "@/lib/observability/log";
+import { foldArabicLetters } from "@/lib/phoenix-crm/dictation-correct";
 
 /** Written out, never read from AI_BASE_URL — see the header. */
 const GROQ_TRANSCRIPTION_URL = "https://api.groq.com/openai/v1/audio/transcriptions";
@@ -169,6 +170,27 @@ function promptSentences(prompt: string): string[] {
 }
 
 /**
+ * A word reduced to what survives a re-transcription, so an answer word can be compared to a prompt word.
+ *
+ * The decoder rarely echoes the prompt to the character. It prints or drops the vowel marks (tashkeel),
+ * flattens أ/إ/آ/ٱ to a bare ا, writes ة as ه and ى as ي, reaches for the Persian چ/ڤ/گ where Arabic has
+ * no letter for the sound, and loses the comma a listed word was sitting against. None of that is a
+ * different word, yet every one of it defeats an exact match — which is how an echo used to slip past.
+ * Folding those differences away lets the comparison see the word, not its spelling on the day. The letter
+ * folds ARE `foldArabicLetters` from `../phoenix-crm/dictation-correct` — the very function product matching
+ * uses — so an echo can never be spelled in a way that matching folds but this does not, and a fold added
+ * there reaches here with no second edit. Only the diacritic range and the edge-punctuation strip are this
+ * guard's own: the decoder's tashkeel range is wider than a pasted word's, and a listed word arrives glued
+ * to its comma.
+ */
+const ECHO_DIACRITICS = /[ؐ-ًؚ-ٰٟۖ-ۭـ]/g;
+const ECHO_EDGE_PUNCT = /^[.,،؛:!?؟-]+|[.,،؛:!?؟-]+$/g;
+
+function normalizeEchoWord(word: string): string {
+  return foldArabicLetters(word.replace(ECHO_DIACRITICS, "").replace(ECHO_EDGE_PUNCT, ""));
+}
+
+/**
  * Remove any part of the prompt the decoder read back to us instead of transcribing.
  *
  * 🔴 THIS IS THE COST OF STEERING THE DIALECT AND IT IS NOT OPTIONAL. Whisper's `prompt` is text the model
@@ -179,22 +201,44 @@ function promptSentences(prompt: string): string[] {
  * rather than Gulf), an echo arrives looking exactly like a real visit note about a real doctor — a
  * fabricated clinical claim, in fluent Egyptian, in the one field managers read.
  *
- * So the same words are taken back out. Matching is on whitespace-collapsed text only: if the model hands
- * the sentence back with added diacritics the match is missed, which leaves the OLD failure mode rather
- * than creating a new one, and `isHallucinatedTranscript` still sees whatever remains.
+ * So the same words are taken back out, and the match is on WORDS, not on an exact substring. An exact
+ * match missed every echo the decoder reworded even slightly — a diacritic added, ة written as ه, a single
+ * word swapped (هيكتب for بيكتب) — and left the fabricated sentence standing. Instead each prompt sentence
+ * is compared word for word, after `normalizeEchoWord` folds spelling away, against every window of its own
+ * length in the answer, and a window is dropped when it matches on all but a small share of its words. The
+ * four-word floor (`promptSentences`) and the near-exact threshold keep this off a real comment — a rep's
+ * own words do not coincidentally match all-but-one of a whole prompt sentence in order — while catching
+ * the reworded echo a character diff let through. Whatever remains is judged on its own by
+ * `isHallucinatedTranscript`.
  */
 export function stripPromptEcho(text: string, prompt?: string): string {
-  if (!prompt) return text.replace(/\s+/g, " ").trim();
-  let remaining = text.replace(/\s+/g, " ").trim();
+  const collapsed = text.replace(/\s+/g, " ").trim();
+  if (!prompt) return collapsed;
+
+  const words = collapsed.split(" ").filter(Boolean);
   for (const sentence of promptSentences(prompt)) {
-    for (;;) {
-      const at = remaining.indexOf(sentence);
-      if (at < 0) break;
-      remaining = `${remaining.slice(0, at)} ${remaining.slice(at + sentence.length)}`;
+    const sentenceWords = sentence.split(" ").filter(Boolean).map(normalizeEchoWord);
+    const span = sentenceWords.length;
+    if (span < 4) continue;
+    // A fifth of a long sentence may differ (a stray word, a dropped one), but a four-word sentence still
+    // allows one — a single substituted word is exactly the echo an exact match already lost.
+    const allowed = Math.max(1, Math.floor(span / 5));
+    for (let i = 0; i + span <= words.length; ) {
+      let mismatches = 0;
+      for (let j = 0; j < span && mismatches <= allowed; j++) {
+        if (normalizeEchoWord(words[i + j]) !== sentenceWords[j]) mismatches++;
+      }
+      if (mismatches <= allowed) words.splice(i, span);
+      else i++;
     }
   }
-  // Punctuation the removed sentence was sitting inside would otherwise be all that is left.
-  return remaining.replace(/\s+/g, " ").replace(/^[\s.,،؛:!?؟-]+|[\s،؛:-]+$/g, "").trim();
+
+  // Punctuation the removed sentence was sitting inside would otherwise be all that is left. The LEADING
+  // class strips a terminal . ! ? ؟ too, since a removed echo at the head can leave one dangling and a real
+  // comment never opens on one; the TRAILING class does NOT, so a rep's own «...مهتم؟» or «...تمام.» keeps
+  // its final mark. Echo removal is word-based — a terminal mark glued to the last echo word leaves with
+  // that word — so there is no dangling trailing remnant to clean, only a real comment's ending to keep.
+  return words.join(" ").replace(/^[\s.,،؛:!?؟-]+|[\s،؛:-]+$/g, "").trim();
 }
 
 function messageFor(code: GroqTranscriptionCode): string {

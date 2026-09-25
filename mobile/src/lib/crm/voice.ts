@@ -105,8 +105,14 @@ export function describeMissingCrmMicrophone(access: CrmMicAccess): string {
 export type CrmVoiceNote = { path: string; seconds: number; bytes: number };
 
 export type CrmVoiceOutcome =
-  /** Stored. `text` is what the speech service made of it, empty when it could not or would not. */
-  | { status: "stored"; note: CrmVoiceNote; text: string }
+  /**
+   * Stored. `text` is what the speech service made of it, empty when it could not or would not.
+   * `transcriptionError` tells the two empty cases apart: null when the recording was genuinely silent,
+   * and the sentence to show the rep when the speech service itself failed or could not be reached. The
+   * recording is safe either way, so neither is a `failed` — but the screen must not blame silence for a
+   * service that was down.
+   */
+  | { status: "stored"; note: CrmVoiceNote; text: string; transcriptionError: string | null }
   /** Nothing was stored. The recording is lost and the message says what to do. */
   | { status: "failed"; message: string }
   /** The server stopped accepting this session. The caller signs out. */
@@ -177,10 +183,14 @@ export async function storeCrmVoiceNote(input: {
   // failed recording, and reporting it as one would teach the rep to record again for no reason.
   try {
     const text = await crmPost<string>("/api/phoenix-crm/voice/transcribe", "text", { path: slot.path }, token);
-    return { note, status: "stored", text: typeof text === "string" ? text.trim() : "" };
+    return { note, status: "stored", text: typeof text === "string" ? text.trim() : "", transcriptionError: null };
   } catch (error) {
     if (error instanceof ApiError && error.isSessionExpired) return { status: "session-expired" };
-    return { note, status: "stored", text: "" };
+    // The recording is saved; only the words failed. Carry the reason out instead of dropping it — the
+    // route's own message already says whether nothing was made out or the service was unavailable, and
+    // both end by naming typing as the way on. Reporting it as silence would send the rep to listen for
+    // words that a downed service, not a quiet clinic, is why he never got.
+    return { note, status: "stored", text: "", transcriptionError: crmErrorMessage(error) };
   }
 }
 
