@@ -21,18 +21,9 @@ import { Plus, Search } from "lucide-react";
 import { RepsListTiles } from "@/components/crm/reps-list-board";
 import { RepsListContacts } from "@/components/crm/reps-list-tables";
 import { useCrmGet } from "@/components/phoenix-crm/api";
+import { CustomerListBoard } from "@/components/phoenix-crm/customer-list-board";
 import { cairoStamp, countText, dayLabelWithYear, plural } from "@/components/phoenix-crm/format";
-import {
-  customerMetaText,
-  monthStanding,
-  monthVisitsText,
-  PENDING_PILL,
-  pendingVisitsText,
-  placeName,
-  referenceAddressText,
-  referenceLastVisitText,
-  territoryLine,
-} from "@/components/phoenix-crm/labels";
+import { placeName, territoryLine } from "@/components/phoenix-crm/labels";
 import { CustomerScreen } from "@/components/phoenix-crm/list-customer";
 import {
   AddPlaceScreen,
@@ -42,7 +33,6 @@ import {
   GradeScreen,
   listBoardUrl,
   listUrl,
-  placesDaysText,
   SavedScreen,
   ValidateScreen,
   type ListNotice,
@@ -56,8 +46,6 @@ import { RequestCard, sortRequests } from "@/components/phoenix-crm/request-card
 import {
   CrmBlock,
   CrmButton,
-  CrmCard,
-  CrmCardsOnPhone,
   CrmChoice,
   CrmEmpty,
   CrmField,
@@ -68,10 +56,7 @@ import {
   CrmPill,
   CrmStat,
   CrmStatGrid,
-  CrmTable,
   crmInputClassName,
-  crmTdClassName,
-  crmThClassName,
 } from "@/components/phoenix-crm/ui";
 import type { PendingValidate, PendingVisit } from "@/components/phoenix-crm/visits-tab";
 import type { RepsListContact } from "@/lib/crm/reps-list";
@@ -97,11 +82,6 @@ const LIST_TYPES: readonly PhoenixCrmListType[] = ["AM", "PM"];
 function matchesQuery(query: string, parts: ReadonlyArray<string | null>): boolean {
   if (!query) return true;
   return parts.some((part) => part !== null && part.toLowerCase().includes(query));
-}
-
-function byTypeThenName<T extends { listType: PhoenixCrmListType; name: string }>(left: T, right: T): number {
-  if (left.listType !== right.listType) return left.listType.localeCompare(right.listType);
-  return left.name.localeCompare(right.name);
 }
 
 function countByType<T extends { listType: PhoenixCrmListType }>(rows: ReadonlyArray<T>): Record<PhoenixCrmListType, number> {
@@ -521,10 +501,11 @@ function ListHome({
         <CrmChoice columns={3} label="Which part of the list" onChange={setSection} options={sectionOptions} value={current} />
       </CrmBlock>
 
-      {/* The board brings its own six filters — brick, list, grade, specialty, activity and a search
-          box — so this pair is hidden there rather than sitting above them doing the same job with
-          different words. Two search boxes on one screen is a question about which one is live. */}
-      {current !== "requests" && current !== "board" ? (
+      {/* Only the Timetable reads this pair now. The board and the three customer parts (To validate,
+          Customers, Left the list) each carry their own filter row — brick, list, grade, specialty,
+          activity and a search box — so this shared pair would be a second search box asking which one
+          is live. The Timetable is a weekly grid, not a customer list, so it keeps the simple pair. */}
+      {current === "timetable" ? (
         <CrmBlock className="border-t border-slate-100">
           <div className="grid min-w-0 gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] md:items-end">
             <CrmField htmlFor="phoenix-crm-list-search" label="Find a customer">
@@ -563,22 +544,11 @@ function ListHome({
       ) : null}
 
       {current === "validate" ? (
-        <PendingSection
-          customers={pending.filter((customer) => typeMatches(customer.listType) && customerMatches(needle, customer)).sort(byTypeThenName)}
-          filtered={Boolean(needle) || typeFilter !== "all"}
-          onOpen={onOpen}
-          onStartVisit={onVisitCustomer}
-          view={view}
-        />
+        <PendingSection customers={pending} onOpen={onOpen} onStartVisit={onVisitCustomer} view={view} />
       ) : null}
 
       {current === "customers" ? (
-        <CustomersSection
-          customers={active.filter((customer) => typeMatches(customer.listType) && customerMatches(needle, customer)).sort(byTypeThenName)}
-          filtered={Boolean(needle) || typeFilter !== "all"}
-          onOpen={onOpen}
-          view={view}
-        />
+        <CustomersSection customers={active} onOpen={onOpen} onStartVisit={onVisitCustomer} view={view} />
       ) : null}
 
       {current === "timetable" ? (
@@ -597,16 +567,7 @@ function ListHome({
 
       {current === "requests" ? <RequestsSection onChanged={onRequestChanged} seatId={seatId} test={test} view={view} /> : null}
 
-      {current === "left" ? (
-        <LeftSection
-          customers={dropped
-            .filter((customer) => typeMatches(customer.listType) && customerMatches(needle, customer))
-            .sort((left, right) => right.statusChangedAt.localeCompare(left.statusChangedAt))}
-          filtered={Boolean(needle) || typeFilter !== "all"}
-          onOpen={onOpen}
-          view={view}
-        />
-      ) : null}
+      {current === "left" ? <LeftSection customers={dropped} onOpen={onOpen} view={view} /> : null}
     </CrmPanel>
   );
 }
@@ -813,13 +774,11 @@ function ReadinessBlock({ pending, view }: { pending: ReadonlyArray<ListCustomer
  */
 function PendingSection({
   customers,
-  filtered,
   onOpen,
   onStartVisit,
   view,
 }: {
   customers: ReadonlyArray<ListCustomer>;
-  filtered: boolean;
   onOpen: (screen: ListScreen) => void;
   onStartVisit?: (customer: ListCustomer) => void;
   view: TerritoryListView;
@@ -827,207 +786,90 @@ function PendingSection({
   if (customers.length === 0) {
     return (
       <div className="border-t border-slate-100">
-        {filtered ? (
-          <CrmEmpty message="Clear the search or show all customers." title="No customer to validate matches" />
-        ) : (
-          <CrmEmpty message="Every customer carried over from iReports360 is validated or has left the list." title="Every customer is validated" />
-        )}
+        <CrmEmpty
+          message="Every customer carried over from iReports360 is validated or has left the list."
+          title="Every customer is validated"
+        />
       </div>
     );
   }
 
-  const actions = (customer: ListCustomer) => (
-    <>
-      {view.canEdit && customer.referenceContactCrmId !== null ? (
-        <CrmButton onClick={() => onOpen({ name: "validate", contactCrmId: customer.referenceContactCrmId as number })} size="sm" variant="primary">
-          Validate
-        </CrmButton>
-      ) : null}
-      {view.canEdit && onStartVisit ? (
-        <CrmButton onClick={() => onStartVisit(customer)} size="sm">
-          Add a visit
-        </CrmButton>
-      ) : null}
-      <CrmButton onClick={() => onOpen({ name: "customer", customerId: customer.customerId })} size="sm">
-        Open
-      </CrmButton>
-    </>
-  );
-
-  const pills = (customer: ListCustomer) => (
-    <>
-      <CrmPill tone="orange">{PENDING_PILL}</CrmPill>
-      {customer.pendingDropRequestId ? <CrmPill tone="warn">Drop waiting</CrmPill> : null}
-    </>
-  );
-
   return (
-    <div className="border-t border-slate-100">
-      <CrmCardsOnPhone>
-        {customers.map((customer) => (
-          <CrmCard
-            accent={customer.pendingDropRequestId ? "border-l-slate-300" : "border-l-amber-500"}
-            actions={actions(customer)}
-            key={customer.customerId}
-            meta={customerMetaText(customer)}
-            status={pills(customer)}
-            title={customer.name}
-          >
-            <p className="break-words text-xs font-semibold leading-5 text-slate-600">
-              {referenceAddressText(customer.reference) ?? "No address in iReports360"}
-            </p>
-            <p className="break-words text-xs font-semibold leading-5 text-slate-500">
-              Last visit in iReports360: {referenceLastVisitText(customer.reference)}
-            </p>
-            <p className="break-words text-xs font-semibold leading-5 text-slate-500">{pendingVisitsText(customer.visitsThisMonth)}</p>
-          </CrmCard>
-        ))}
-      </CrmCardsOnPhone>
-      <CrmTable columns={["30%", "26%", "16%", "28%"]}>
-        <thead>
-          <tr>
-            <th className={crmThClassName} scope="col">
-              Customer
-            </th>
-            <th className={crmThClassName} scope="col">
-              Address in iReports360
-            </th>
-            <th className={crmThClassName} scope="col">
-              This month
-            </th>
-            <th className={crmThClassName} scope="col">
-              <span className="sr-only">Actions</span>
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {customers.map((customer) => (
-            <tr key={customer.customerId}>
-              <td className={crmTdClassName}>
-                <p className="font-black text-slate-950">{customer.name}</p>
-                <p className="mt-0.5 text-xs text-slate-500">{customerMetaText(customer)}</p>
-                <div className="mt-1 flex flex-wrap gap-1">{pills(customer)}</div>
-              </td>
-              <td className={crmTdClassName}>{referenceAddressText(customer.reference) ?? "—"}</td>
-              <td className={crmTdClassName}>
-                <p>{pendingVisitsText(customer.visitsThisMonth)}</p>
-                <p className="mt-1 text-xs text-slate-500">Last visit in iReports360: {referenceLastVisitText(customer.reference)}</p>
-              </td>
-              <td className={crmTdClassName}>
-                <div className="flex flex-wrap gap-2">{actions(customer)}</div>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </CrmTable>
-    </div>
-  );
-}
-
-function CustomerPills({ customer }: { customer: ListCustomer }) {
-  const standing = monthStanding(customer.visitsThisMonth, customer.target);
-  return (
-    <>
-      <CrmPill tone={standing.tone}>{standing.label}</CrmPill>
-      {customer.origin === "new" ? <CrmPill tone="orange">New customer</CrmPill> : null}
-      {customer.pendingGradeRequestId ? (
-        <CrmPill tone="info">{customer.pendingGrade ? `Grade ${customer.pendingGrade} proposed` : "Grade proposed"}</CrmPill>
-      ) : null}
-      {customer.pendingDropRequestId ? <CrmPill tone="warn">Drop waiting</CrmPill> : null}
-    </>
+    <CustomerListBoard
+      customers={customers}
+      exportTitle="To validate"
+      repName={view.territory.repName ?? view.territory.name}
+      rowActions={(customer) => (
+        <>
+          {view.canEdit && customer.referenceContactCrmId !== null ? (
+            <CrmButton
+              onClick={() => onOpen({ name: "validate", contactCrmId: customer.referenceContactCrmId as number })}
+              size="sm"
+              variant="primary"
+            >
+              Validate
+            </CrmButton>
+          ) : null}
+          {view.canEdit && onStartVisit ? (
+            <CrmButton onClick={() => onStartVisit(customer)} size="sm">
+              Add a visit
+            </CrmButton>
+          ) : null}
+          <CrmButton onClick={() => onOpen({ name: "customer", customerId: customer.customerId })} size="sm">
+            Open
+          </CrmButton>
+        </>
+      )}
+      variant="pending"
+    />
   );
 }
 
 function CustomersSection({
   customers,
-  filtered,
   onOpen,
+  onStartVisit,
   view,
 }: {
   customers: ReadonlyArray<ListCustomer>;
-  filtered: boolean;
   onOpen: (screen: ListScreen) => void;
+  onStartVisit?: (customer: ListCustomer) => void;
   view: TerritoryListView;
 }) {
   if (customers.length === 0) {
     return (
       <div className="border-t border-slate-100">
-        {filtered ? (
-          <CrmEmpty message="Clear the search or show all customers." title="No customer matches" />
-        ) : (
-          <CrmEmpty
-            message={
-              view.canEdit
-                ? "A customer shows here once validated at the clinic with a live photo, the location and the days and hours."
-                : "A customer shows here once the rep validates it at the clinic."
-            }
-            title="No customers validated yet"
-          />
-        )}
+        <CrmEmpty
+          message={
+            view.canEdit
+              ? "A customer shows here once validated at the clinic with a live photo, the location and the days and hours."
+              : "A customer shows here once the rep validates it at the clinic."
+          }
+          title="No customers validated yet"
+        />
       </div>
     );
   }
 
-  const open = (customer: ListCustomer) => onOpen({ name: "customer", customerId: customer.customerId });
-
   return (
-    <div className="border-t border-slate-100">
-      <ul className="divide-y divide-slate-100 md:hidden">
-        {customers.map((customer) => (
-          <li key={customer.customerId}>
-            <button className="block w-full min-w-0 px-4 py-3.5 text-left transition hover:bg-slate-50" onClick={() => open(customer)} type="button">
-              <span className="block break-words text-sm font-black text-slate-950">{customer.name}</span>
-              <span className="mt-0.5 block break-words text-xs font-semibold text-slate-500">{customerMetaText(customer)}</span>
-              <span className="mt-1.5 flex flex-wrap gap-1">
-                <CustomerPills customer={customer} />
-              </span>
-              <span className="mt-1.5 block break-words text-xs font-semibold leading-5 text-slate-600">{placesDaysText(customer)}</span>
-              <span className="mt-0.5 block text-xs font-semibold text-slate-500">{monthVisitsText(customer.visitsThisMonth, customer.target)}</span>
-            </button>
-          </li>
-        ))}
-      </ul>
-      <CrmTable columns={["32%", "36%", "20%", "12%"]}>
-        <thead>
-          <tr>
-            <th className={crmThClassName} scope="col">
-              Customer
-            </th>
-            <th className={crmThClassName} scope="col">
-              Places and days
-            </th>
-            <th className={crmThClassName} scope="col">
-              This month
-            </th>
-            <th className={crmThClassName} scope="col">
-              <span className="sr-only">Open</span>
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {customers.map((customer) => (
-            <tr key={customer.customerId}>
-              <td className={crmTdClassName}>
-                <p className="font-black text-slate-950">{customer.name}</p>
-                <p className="mt-0.5 text-xs text-slate-500">{customerMetaText(customer)}</p>
-              </td>
-              <td className={crmTdClassName}>{placesDaysText(customer)}</td>
-              <td className={crmTdClassName}>
-                <div className="flex flex-wrap gap-1">
-                  <CustomerPills customer={customer} />
-                </div>
-                <p className="mt-1 text-xs text-slate-500">{monthVisitsText(customer.visitsThisMonth, customer.target)}</p>
-              </td>
-              <td className={crmTdClassName}>
-                <CrmButton onClick={() => open(customer)} size="sm">
-                  Open
-                </CrmButton>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </CrmTable>
-    </div>
+    <CustomerListBoard
+      customers={customers}
+      exportTitle="Customers"
+      repName={view.territory.repName ?? view.territory.name}
+      rowActions={(customer) => (
+        <>
+          {view.canEdit && onStartVisit ? (
+            <CrmButton onClick={() => onStartVisit(customer)} size="sm">
+              Add a visit
+            </CrmButton>
+          ) : null}
+          <CrmButton onClick={() => onOpen({ name: "customer", customerId: customer.customerId })} size="sm">
+            Open
+          </CrmButton>
+        </>
+      )}
+      variant="active"
+    />
   );
 }
 
@@ -1210,54 +1052,42 @@ function RequestsSection({
 
 function LeftSection({
   customers,
-  filtered,
   onOpen,
   view,
 }: {
   customers: ReadonlyArray<ListCustomer>;
-  filtered: boolean;
   onOpen: (screen: ListScreen) => void;
   view: TerritoryListView;
 }) {
   if (customers.length === 0) {
     return (
       <div className="border-t border-slate-100">
-        {filtered ? (
-          <CrmEmpty message="Clear the search or show all customers." title="No customer matches" />
-        ) : (
-          <CrmEmpty message="A customer shows here after the district manager approves its drop." title="No customer has left the list" />
-        )}
+        <CrmEmpty message="A customer shows here after the district manager approves its drop." title="No customer has left the list" />
       </div>
     );
   }
   return (
-    <div className="divide-y divide-slate-100 border-t border-slate-100">
-      {customers.map((customer) => (
-        <CrmCard
-          actions={
-            <>
-              {view.canEdit ? (
-                <CrmButton onClick={() => onOpen({ name: "restore", customerId: customer.customerId, from: "list" })} size="sm" variant="primary">
-                  Bring back to the list
-                </CrmButton>
-              ) : null}
-              <CrmButton onClick={() => onOpen({ name: "customer", customerId: customer.customerId })} size="sm">
-                Open
-              </CrmButton>
-            </>
-          }
-          key={customer.customerId}
-          meta={customerMetaText(customer)}
-          title={customer.name}
-        >
-          <p className="break-words text-xs font-semibold leading-5 text-slate-700">
-            <span className="font-black text-slate-800">Reason: </span>
-            {customer.droppedReason ?? "Not recorded"}
-          </p>
-          {customer.droppedNote ? <p className="whitespace-pre-line break-words text-xs font-semibold leading-5 text-slate-600">{customer.droppedNote}</p> : null}
-          <p className="break-words text-xs font-semibold leading-5 text-slate-500">Left the list {cairoStamp(customer.statusChangedAt)}</p>
-        </CrmCard>
-      ))}
-    </div>
+    <CustomerListBoard
+      customers={customers}
+      exportTitle="Left the list"
+      repName={view.territory.repName ?? view.territory.name}
+      rowActions={(customer) => (
+        <>
+          {view.canEdit ? (
+            <CrmButton
+              onClick={() => onOpen({ name: "restore", customerId: customer.customerId, from: "list" })}
+              size="sm"
+              variant="primary"
+            >
+              Bring back to the list
+            </CrmButton>
+          ) : null}
+          <CrmButton onClick={() => onOpen({ name: "customer", customerId: customer.customerId })} size="sm">
+            Open
+          </CrmButton>
+        </>
+      )}
+      variant="dropped"
+    />
   );
 }

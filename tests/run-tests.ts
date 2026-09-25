@@ -1523,6 +1523,7 @@ import { runPhoenixCrmRulesTests } from "./phoenix-crm-rules.test.ts";
 import { runPhoenixCrmEmailBlockTests } from "./phoenix-crm-email-block.test.ts";
 import { runPhoenixCrmBoundaryTests } from "./phoenix-crm-boundary.test.ts";
 import { runPhoenixCrmPendingCustomerTests } from "./phoenix-crm-pending-customers.test.ts";
+import { runPhoenixCrmCustomerListBoardTests } from "./phoenix-crm-customer-list-board.test.ts";
 import { runPhoenixCrmDoctorsDirectoryTests } from "./phoenix-crm-doctors-directory.test.ts";
 import { runPhoenixCrmPlaceLocationFrozenTests } from "./phoenix-crm-place-location-frozen.test.ts";
 import { runPhoenixCrmPortalSidebarTests } from "./phoenix-crm-portal-sidebar.test.ts";
@@ -5036,6 +5037,11 @@ await runTest(
 await runTest(
   "Phoenix CRM's carried-over customers (owner, 2026-09-22: a customer not validated yet is planned and visited like anyone else, with no place and no days and hours; his visits count in NOTHING — coverage, plan against actual and the manager's report all filter on the customer being validated, on both sides; validating makes the visits already saved against him count, with no backfill, and happens once; the name is corrected later, on its own; and the rep's list never refuses a plan again)",
   runPhoenixCrmPendingCustomerTests,
+);
+
+await runTest(
+  "Phoenix CRM's list parts share the board's grouping (owner, 2026-09-25: \"make all the list tabs have the same features and tweaks\" — To validate, Customers and Left the list group by brick in the same appearance order the colour is keyed off, keep unmapped localities apart and named, order territories before gaps, and filter on grade, specialty, list, this-month activity and a free search)",
+  runPhoenixCrmCustomerListBoardTests,
 );
 
 await runTest(
