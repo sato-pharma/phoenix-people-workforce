@@ -351,6 +351,13 @@ async function runDeviceTests() {
   assert.equal(location.longitude, 31.25);
   assert.equal(location.address, "Cairo");
   assert.equal(location.locatedAt, new Date(1_700_000_000_000).toISOString());
+  // The read hits the live `/locations` endpoint, never the async `/locations_with_address` export
+  // that answered 400 in production ("Mandatory parameter export_batch_id is not present").
+  const locateUrl = located.calls.find((call) => !call.url.includes("/oauth/"))?.url ?? "";
+  assert.ok(
+    locateUrl.endsWith("/locations"),
+    `the position is read from /locations, not ${locateUrl.split("/mdm/devices/")[1] ?? locateUrl}`,
+  );
 }
 
 function runCommandCatalogTests() {
@@ -482,18 +489,27 @@ async function runDeviceDetailTests() {
   assert.equal(commands[0].status, "Sent", "a word status passes through");
   assert.equal(commands[1].status, "Done", "a numeric status is named");
 
-  // A fresh locate asks first, then reads — and a refused request still returns the older position.
+  // The Locate button reads the last position the tablet reported, from `/locations` — a single
+  // GET, no async `/locations_with_address` export (which returned 400 on both verbs in production).
   resetManageEngineTokenCache();
   const refreshed = makeFetch({
     api: [
-      { status: 403, body: { error_description: "no licence for that" } },
       { status: 200, body: { locations: [{ latitude: 30.1, longitude: 31.3, address: "Giza" }] } },
     ],
   });
   const fresh = await requestManageEngineLocation("111", refreshed.fetch, ENV);
-  assert.equal(fresh.address, "Giza", "a refused request still falls through to the last known position");
-  const methods = refreshed.calls.filter((call) => !call.url.includes("/oauth/")).map((call) => call.init.method ?? "GET");
-  assert.deepEqual(methods, ["POST", "GET"], "the position is requested, then read");
+  assert.equal(fresh.latitude, 30.1, "the reported position is read back");
+  assert.equal(fresh.longitude, 31.3);
+  const apiCalls = refreshed.calls.filter((call) => !call.url.includes("/oauth/"));
+  assert.deepEqual(
+    apiCalls.map((call) => call.init.method ?? "GET"),
+    ["GET"],
+    "the position is a single read, not an export request",
+  );
+  assert.ok(
+    (apiCalls[0]?.url ?? "").endsWith("/locations"),
+    "the read hits /locations, never the /locations_with_address export",
+  );
 }
 
 /**
