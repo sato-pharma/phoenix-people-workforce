@@ -1,4 +1,4 @@
-package com.satopharma.phoenix.headwind;
+package com.hmdm.plugins.phoenix.rest;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -15,24 +15,19 @@ import javax.ws.rs.Produces;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 
+import com.hmdm.plugins.phoenix.PhoenixActionStore;
+
 /**
- * What Phoenix calls, and what the tablet calls back.
+ * What Phoenix calls to queue an instruction.
  *
- * Two surfaces, and they are deliberately different in who may reach them:
+ * 🔴 THE PATH IS PART OF A THREE-WAY CONTRACT. `/plugins/phoenix-actions` here must match the plugin
+ * id in `PhoenixPluginConfigurationImpl` and the filter path in `PhoenixRestModule`. Change one and
+ * the other two answer 404 — which looks exactly like an add-on that never loaded, and sends the
+ * next reader to the wrong place entirely.
  *
- *   **/private/** — Phoenix, with the JWT it already holds, behind the same Cloudflare Access headers
- *   as the rest of the console. This is where an action is queued.
- *
- *   **/public/** — the TABLET, unauthenticated, because the agent posts its confirmations without a
- *   token. 🔴 That is not a hole being opened here: those exact paths are what the stock agent
- *   already POSTs to (`/rest/plugins/devicereset/public/{number}`, `/reboot/{number}`,
- *   `/password/{number}`) and the open-source server simply 404s them today. The most an anonymous
- *   caller can do with them is close a row early — it can queue nothing, read nothing and reach no
- *   tablet.
- *
- * 🔴 SERVING THE CONFIRMATIONS IS WHY THIS IS WORTH BUILDING RATHER THAN FAKING. Without them the
- * console can only say an instruction was SENT. With them it can say the tablet said it DID it — and
- * on a console whose buttons erase tablets, those are not the same sentence.
+ * Reachable only through the JWT, Auth and private-IP filters registered in `PhoenixRestModule`, with
+ * the console itself behind Cloudflare Access. The tablet's own confirmations are a separate,
+ * deliberately unauthenticated resource — see `DeviceResetConfirmResource`.
  */
 @Singleton
 @Path("/plugins/phoenix-actions")

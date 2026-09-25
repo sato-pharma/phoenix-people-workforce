@@ -174,17 +174,66 @@ already resolve here before you start" trap that the rented-box path carried.
 🔴 **`FORCE_RECONFIGURE` is not set here.** It re-runs the whole first-time configuration. If the very
 first deploy fails its setup, add it as `1`, redeploy **once**, then delete the variable again.
 
-### 4.3 The name, and the one thing that is unproven
+### 4.3 The name, the port, and reading a deploy honestly
 
 1. **Settings → Networking → Custom Domain** → `mdm.satopharma.com`. Railway gives a CNAME target;
    add it in Cloudflare with the **proxy OFF** (grey cloud, "DNS only"), because Railway terminates
    TLS itself and an orange cloud in front of it is a second terminator nobody asked for.
-2. 🔴 **Railway asks which port the container listens on, and the honest answer today is that it is
-   unproven.** Under `PROTOCOL=http` Headwind's Tomcat does not use 443, and the value is expected to
-   be **8080** — but *expected* is not *seen*. **Read it from the first deploy's own logs** (Tomcat
-   prints the connector it started) and set it from that. This is the one value in this document that
-   was written from reasoning rather than from something observed, and it is marked so deliberately:
-   a wrong port here looks like a dead server, not like a setting.
+2. ✅ **The port is 8080 — no longer reasoning, read from the container's own startup log**
+   (2026-09-26): `Initializing ProtocolHandler ["http-nio-8080"]`, `Starting ProtocolHandler
+   ["http-nio-8080"]`, `Server startup in [5417] milliseconds`. Set the custom domain to that port.
+3. ⚠️ **Tomcat also fails to start an HTTPS connector on every boot, and that is harmless:**
+   `Failed to initialize component [Connector["https-openssl-nio-8443"]]` →
+   `java.io.FileNotFoundException: /usr/local/tomcat/ssl/hmdm.jks (No such file or directory)`. The
+   stock image expects a keystore that only its own certbot flow creates. Tomcat logs it `SEVERE`,
+   continues, and starts 8080 anyway — and Railway terminates TLS at its edge, so 8443 is not wanted
+   here. **Do not go looking for a certificate to satisfy it.**
+
+#### 🔴 Railway's green tick watches the CONTAINER, not the application
+
+Builds four and five were both reported `SUCCESS` by Railway — and green on the PR — while the
+server served nothing at all. The container was up; Tomcat's *context* had failed. Railway cannot
+tell those apart, and neither can the PR.
+
+Worse, **Tomcat writes web-application failures to `logs/localhost.<date>.log` inside the container**,
+which on Railway nobody can open: Railway captures stdout only, and `railway ssh` first wants an SSH
+key registered on the account. So the one line naming the cause was being written to a file that does
+not leave the box. The image now appends `java.util.logging.ConsoleHandler` to
+`org.apache.catalina.core.ContainerBase.[Catalina].[localhost].handlers` in `conf/logging.properties`
+(a duplicate key later in a `java.util.logging` file wins, so it appends rather than editing), which
+puts that log on stdout permanently. It reads like noise someone would tidy away later — it is the
+only reason the next failure will be diagnosable, and `tests/headwind-bridge.test.ts` pins it.
+
+**So a deploy is proven by the log, never by the tick:** look for `Server startup in [...]` with **no**
+`Context [] startup failed` after it.
+
+✅ **That is what the sixth build shows** (2026-09-26, commit `04fbaff7f`):
+`Deployment of deployment descriptor [/usr/local/tomcat/conf/Catalina/localhost/ROOT.xml] has
+finished`, then `Starting ProtocolHandler ["http-nio-8080"]` and `Server startup in [5795]
+milliseconds` — with `filterStart`, `Context [] startup failed`, `ClassReader` and
+`ResourceConfig.scanClasses` all **absent** from the whole log, and
+`Phoenix actions add-on: table ready.` present. The only `SEVERE` left is the harmless 8443 keystore
+above.
+
+🔴 **Still unproven, and it needs a published name:** that the server answers an HTTP request. The
+service has **no domain yet** (`serviceDomains: []`), and Railway's private network is reachable only
+from another service in the same project, so there is nothing to `curl`. The first request is
+therefore part of step 1 of this section, not something that could be checked ahead of it.
+
+⚠️ **And when you read those logs through Railway's GraphQL API rather than the CLI: the session
+token in `~/.railway/config.json` lives ONE HOUR** (`user.tokenExpiresAt`). A watcher that reads it
+once at start-up dies mid-poll with `"message": "Not Authorized"` on a query that worked ten minutes
+earlier — which reads exactly like a permissions problem and is not one. Re-read the file each call,
+and refresh it by shelling out to any authenticated CLI command (`railway whoami` is the cheapest);
+the CLI spends the refresh token and rewrites the file.
+
+🔴 **And the trap that cost those two builds: the add-on must compile to Java 8 bytecode.** Headwind
+runs **Jersey 2.25.1**, which scans every jar in `WEB-INF/lib` for `@Path` using a repackaged **ASM 5**.
+ASM 5 reads class files up to major 52 and throws a bare `IllegalArgumentException` — no message, no
+class name — on anything newer; Java 11 emits major 55. A jar it cannot read does not merely fail to
+load: Jersey aborts the whole scan, the `HMDMApplication` filter fails to start, and Tomcat kills the
+entire context. Every one of Headwind's own 255 classes is major 52, measured from the WAR. `pom.xml`
+carries `<maven.compiler.release>8</maven.compiler.release>` and the account of why.
 
 ### 4.4 🔴 The push channel, and what is genuinely lost
 
@@ -422,6 +471,57 @@ five fields for a tablet that has one, a small private REST surface Phoenix call
 already holds, and **the three confirmation endpoints the agent already POSTs to and the open-source
 server answers 404 for**. Serving those is what turns *sent* into *witnessed* — the pending row is
 marked done only when the tablet says it did it.
+
+#### 🔴 Five things about that add-on that are not guessable, and were read out of the WAR
+
+Measured 2026-09-26 from `hmdm-5.40.1-os.war` itself — the shipped bytecode, not the project's
+published source or its documentation, which differ from it in every place that mattered here. The
+first four, got wrong, produce **a green build, a clean start, no log line, and four buttons in
+Phoenix that silently do nothing**; the fifth takes the entire server down while Railway still
+reports `SUCCESS`. All five are pinned in `tests/headwind-bridge.test.ts`.
+
+1. 🔴 **The add-on lives in `com.hmdm.plugins.phoenix`, and that is a requirement, not a courtesy.**
+   `com.hmdm.plugin.PluginList` discovers plugins with
+   `new ClassGraph().enableAllInfo().whitelistPackages("com.hmdm").scan()`. A class outside that
+   subtree is **invisible to the scan** — there is no list to add to and no descriptor file to write.
+   The first draft of this add-on lived in `com.satopharma.phoenix.headwind` and would never have
+   been constructed. It is the package every shipped Headwind plugin uses, for the same reason.
+2. 🔴 **What the scan looks for is an implementation of `PluginConfiguration`, and nothing else.** A
+   bare Guice module in the jar is picked up by **nothing**. `PhoenixPluginConfigurationImpl` is the
+   single reason any of the rest exists; delete it and the jar loads and does nothing.
+3. 🔴 **The sync hook must be a MULTIBINDING.** `SyncResource` injects `Set<SyncResponseHook>`, and
+   Guice fills a `Set` only from a `Multibinder`. A plain `bind(SyncResponseHook.class).to(…)` binds
+   a key nothing injects: it starts cleanly, the set stays empty, and the hook is never called.
+4. 🔴 **`PluginAccessFilter` is DELIBERATELY not on our private path, and the cost is written down.**
+   Every shipped Headwind plugin filters through it; it refuses any user without a per-customer
+   permission row in Headwind's own `plugins` table. This add-on does not write that row, so the
+   filter would refuse **every** caller — including the only account that exists. What we lose by
+   omitting it: any authenticated Headwind user can call these endpoints, rather than only one
+   holding a plugin permission. The path is still behind `JWTFilter`, `AuthFilter` and
+   `PrivateIPFilter`, and behind Cloudflare Access on top of that.
+5. 🔴 **The jar must be Java 8 bytecode, and getting this wrong kills the WHOLE server, not the
+   add-on.** Headwind runs **Jersey 2.25.1**, whose `ResourceConfig.scanClasses` reads every jar in
+   `WEB-INF/lib` looking for `@Path` through a repackaged **ASM 5**. ASM 5 refuses anything above
+   major 52 with a bare `IllegalArgumentException` — no message, no class name — and Java 11 emits
+   major 55. Jersey then aborts the scan, the `HMDMApplication` filter fails to start, and Tomcat
+   kills the context: `Context [] startup failed`. **Every one of Headwind's own 255 classes is major
+   52** (common, platform, jwt, messaging and the 73 loose classes in `WEB-INF/classes`, without an
+   exception), so matching them is the requirement. `pom.xml` uses
+   `<maven.compiler.release>8</maven.compiler.release>` rather than `source`/`target`, because those
+   two compile old syntax against the **JDK 11** class library — a Java 11-only method then resolves
+   at build time and `NoSuchMethodError`s in production. Builds four and five were both lost to this,
+   green the whole way.
+
+**And one string that is a wire contract in three places at once.** The plugin id `phoenix-actions`
+is the `<id>` in `/rest/plugins/<id>/private/…`, which is (a) what `getPluginId()` returns, (b) the
+path the filters in `PhoenixRestModule` are registered against, and (c) the URL Phoenix calls.
+Change it in one place and the other two give a **404 that looks exactly like an add-on which failed
+to load**.
+
+One thing the interface does *not* have, which the web copy of it does: **`SyncResponseInt` declares
+no `getDeviceId()`** — 66 getters, and not that one. The tablet is identified only by the `int
+deviceId` the hook is handed, which is Headwind's own `devices.id`; the store joins `devices` on it
+to reach the device number the agent posts back.
 
 Where each action stands:
 

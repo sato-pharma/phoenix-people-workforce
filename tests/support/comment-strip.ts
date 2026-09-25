@@ -572,3 +572,93 @@ export function cssCommentSpans(source: string): ReadonlyArray<readonly [number,
 export function stripCssComments(source: string): string {
   return blankSpans(source, cssCommentSpans(source));
 }
+
+/**
+ * The comment spans a shell — or a Dockerfile, a YAML file, an `.env` — would see: `#` to end of
+ * line, and only where `#` STARTS a word.
+ *
+ * The fourth language here, and it is on this module for the reason the header gives rather than in
+ * the one test that first wanted it. A Dockerfile pinned with the JavaScript lexer is read wrong in
+ * the direction that makes a pin pass for nothing: `#` is not a JS comment, so every line of
+ * explanation survives the strip and a "must not appear" guard matches the PROSE SAYING IT MUST NOT
+ * APPEAR. `infra/headwind-phoenix-actions/Dockerfile` is exactly that shape — its header quotes the
+ * two wrong paths at length precisely so nobody rewrites them.
+ *
+ * Two rules a `^\s*#` filter gets wrong, both of which appear in this repo's own infra files:
+ *
+ *   - A trailing comment after real code (`RUN chmod +x /x   # windows`) is a comment and the filter
+ *     keeps the whole line.
+ *   - `#` INSIDE a word is not a comment — a URL fragment, a `sed` expression, a colour. The filter
+ *     is safe there only because it never looks; a regex that drops from `#` to end of line is not.
+ *
+ * Quoting is scanned for the same reason as the other three: `echo "# not a comment"` is not one.
+ * Single quotes take no escapes in sh, double quotes do.
+ */
+export function hashCommentSpans(source: string): ReadonlyArray<readonly [number, number]> {
+  const spans: Array<readonly [number, number]> = [];
+  const n = source.length;
+  let i = 0;
+  let state: "code" | "comment" | "sq" | "dq" = "code";
+  let start = -1;
+
+  while (i < n) {
+    const c = source[i];
+
+    if (state === "code") {
+      if (c === "\\") {
+        i += 2;
+        continue;
+      }
+      if (c === "'") {
+        state = "sq";
+        i += 1;
+        continue;
+      }
+      if (c === '"') {
+        state = "dq";
+        i += 1;
+        continue;
+      }
+      // Only at the start of a word: line start, or after whitespace.
+      if (c === "#" && (i === 0 || /\s/.test(source[i - 1]!))) {
+        state = "comment";
+        start = i;
+        i += 1;
+        continue;
+      }
+      i += 1;
+      continue;
+    }
+
+    if (state === "comment") {
+      if (c === "\n") {
+        spans.push([start, i] as const);
+        state = "code";
+      }
+      i += 1;
+      continue;
+    }
+
+    if (state === "sq") {
+      // No escapes inside single quotes in sh — the next `'` always ends it.
+      if (c === "'") state = "code";
+      i += 1;
+      continue;
+    }
+
+    // "dq"
+    if (c === "\\") i += 2;
+    else if (c === '"') {
+      state = "code";
+      i += 1;
+    } else i += 1;
+  }
+
+  if (state === "comment" && start >= 0) spans.push([start, n] as const);
+  return spans;
+}
+
+/** `source` with every `#` comment replaced by spaces, and its newlines kept — {@link blankSpans}. */
+export function stripHashComments(source: string): string {
+  return blankSpans(source, hashCommentSpans(source));
+}

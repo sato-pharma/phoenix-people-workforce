@@ -1,4 +1,4 @@
-package com.satopharma.phoenix.headwind;
+package com.hmdm.plugins.phoenix.rest;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -13,6 +13,8 @@ import javax.ws.rs.PathParam;
 import javax.ws.rs.Produces;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
+
+import com.hmdm.plugins.phoenix.PhoenixActionStore;
 
 /**
  * The paths the stock Headwind agent already POSTs to after it acts — and which the open-source
@@ -31,12 +33,10 @@ import javax.ws.rs.core.Response;
  * that believes a wipe landed. So the console still shows the tablet's own last check-in time beside
  * it, and a confirmation without a check-in is visible as the odd thing it is.
  *
- * 🔴 BOTH SPELLINGS ARE SERVED, AND THAT IS DELIBERATE RATHER THAN CARELESS. The agent's exact paths
- * for reboot and password could not be pinned from source with the certainty the factory-reset one
- * could — `/rest/plugins/devicereset/public/reboot/{number}` and a sibling `/rest/plugins/reboot/...`
- * are both plausible readings. Serving both costs nothing and removes a silent failure where the
- * tablet confirms into a 404 and the row never closes. When the pilot shows which one arrives, the
- * other can go.
+ * 🔴 ALL THREE PATHS SIT UNDER `/plugins/devicereset/public/`, WHICH IS THE AGENT'S SPELLING AND NOT
+ * THIS ADD-ON'S. It is the one place in the add-on where the URL is not ours to choose — the tablet
+ * decides it, and the server either answers there or the confirmation is lost. `PhoenixRestModule`
+ * registers the public filter on that same prefix for exactly this reason.
  */
 @Singleton
 @Path("/plugins/devicereset")
