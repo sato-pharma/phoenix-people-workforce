@@ -127,6 +127,20 @@ export type ManageEngineDevice = {
   /** The id every remote-command path is built from: `/api/v1/mdm/devices/{deviceId}/…` */
   deviceId: string;
   name: string;
+  /**
+   * The maker, where ManageEngine names one — it goes onto the custody-register entry a tablet
+   * creates for itself.
+   *
+   * 🔴 `product_name` IS NOT READ AS THE MAKER HERE, THOUGH THE DOCUMENTATION SAYS IT IS.
+   * ManageEngine's device API documentation gives `"product_name": "samsung"`, but this tenant's
+   * live `GET /api/v1/mdm/devices` (captured 2026-09-24, pinned in the device tests) sends
+   * `"product_name": "TB328XU"` — a Lenovo MODEL number, beside `device_name`
+   * "it.satopharma_TB328XU". Live reality outranks the documented example, so `product_name` stays a
+   * model candidate and the maker is taken only from a key that cannot mean anything else. This
+   * tenant names no maker at all, and a null maker on a register entry is the truthful answer —
+   * putting a model number in the maker column would not be.
+   */
+  manufacturer: string | null;
   model: string | null;
   serialNumber: string | null;
   imei: string | null;
@@ -153,6 +167,7 @@ function normalizeDevice(record: RawRecord): ManageEngineDevice | null {
     isAndroid: platformLabel(record).isAndroid,
     lastContactAt: lastContactIso(record),
     lostMode,
+    manufacturer: pickString(record, ["manufacturer", "vendor", "make", "oem", "brand"]),
     model: pickString(record, ["model", "model_name", "device_model", "product_name"]),
     name: pickString(record, ["device_name", "name", "friendly_name"]) ?? deviceId,
     osVersion: pickString(record, ["os_version", "osversion", "product_version"]),
@@ -192,15 +207,24 @@ export async function listManageEngineDevices(
     .filter((device): device is ManageEngineDevice => device !== null);
 }
 
-/** The register entry a ManageEngine device belongs to, by serial then IMEI, or null. */
-export function matchManageEngineToRegister(
+/**
+ * The register entry a ManageEngine device belongs to, and HOW it was recognised.
+ *
+ * The how matters for exactly one decision: copying the IMEI the tablet reports onto its register
+ * entry. An entry matched BY that IMEI already holds it, and an entry matched by nothing else has
+ * not been confirmed by anything the tablet itself carries — only a SERIAL match says "this row is
+ * certainly this tablet", which is the same bar the Google half sets before it writes an IMEI.
+ */
+export type ManageEngineRegisterMatch = { entry: RegisterTablet; bySerial: boolean };
+
+export function matchManageEngineToRegisterDetailed(
   device: ManageEngineDevice,
   register: readonly RegisterTablet[],
-): RegisterTablet | null {
+): ManageEngineRegisterMatch | null {
   const serial = normalizeSerial(device.serialNumber);
   if (serial) {
     const entry = register.find((candidate) => normalizeSerial(candidate.serialNumber) === serial);
-    if (entry) return entry;
+    if (entry) return { bySerial: true, entry };
   }
   const imei = normalizeImei(device.imei);
   if (imei) {
@@ -208,9 +232,17 @@ export function matchManageEngineToRegister(
       const registered = normalizeImei(candidate.imei);
       return registered !== null && imeisMatch(registered, imei);
     });
-    if (entry) return entry;
+    if (entry) return { bySerial: false, entry };
   }
   return null;
+}
+
+/** The register entry a ManageEngine device belongs to, by serial then IMEI, or null. */
+export function matchManageEngineToRegister(
+  device: ManageEngineDevice,
+  register: readonly RegisterTablet[],
+): RegisterTablet | null {
+  return matchManageEngineToRegisterDetailed(device, register)?.entry ?? null;
 }
 
 export type ManageEngineLocation = {

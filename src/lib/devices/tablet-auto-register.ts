@@ -1,16 +1,24 @@
 /**
  * Tablets that put themselves into the custody register — nobody types a serial number.
  *
- * TWO DOORS, ONE REGISTER ENTRY (owner, 2026-09-18: "connect the tablet to my device and Phoenix
- * auto register, no manual work"; he asked for both):
+ * THREE DOORS, ONE REGISTER ENTRY (owner, 2026-09-18: "connect the tablet to my device and Phoenix
+ * auto register, no manual work"; he asked for all of them):
  *
  *   1. ENROLLMENT. A tablet that scans an "Any rep tablet" code and matches nothing in the register
  *      is added the next time the Rep Tablets page asks Google for the fleet, with the serial, IMEI,
  *      maker and model Google reports for it.
  *   2. USB. Plugged into the Super Admin's computer, the tablet's USB descriptor carries its serial
  *      number; the page reads it through WebUSB (no Developer mode, no cable driver) and adds it.
+ *   3. MANAGEENGINE. A tablet that scans the ManageEngine template code is added the next time the
+ *      Rep Tablets page asks ManageEngine for the fleet — the same door as (1), through the vendor
+ *      the company actually enrolls on while Google's device-owner quota is still nil (owner,
+ *      2026-09-25: "do everything Google was going to do").
  *
- * Either way the tablet gets the next `PHX-TAB-0001`-style asset tag (the owner's choice), numbered
+ * WHICH DOOR A TABLET CAME THROUGH ONLY CHANGES THE NOTE ON ITS ENTRY. The tag, the identity checks
+ * and the `in_stock` landing are deliberately one code path: the same tablet must not be describable
+ * two different ways depending on which console noticed it first.
+ *
+ * Whichever door, the tablet gets the next `PHX-TAB-0001`-style asset tag (the owner's choice), numbered
  * in the order tablets arrive, and lands `in_stock` — handing it to a rep is still Device Custody's
  * signed issue, which this module never does.
  *
@@ -113,9 +121,17 @@ const TAG_RACE_RETRIES = 5;
  * Add one tablet to the register under the next free tag, or return the entry that already has it.
  * `register` is the caller's current read; it is re-read only when another writer took the tag.
  */
+export type TabletRegistrationSource = "enrollment" | "usb" | "manageengine";
+
+const SOURCE_NOTES: Readonly<Record<TabletRegistrationSource, string>> = {
+  enrollment: "Added automatically when the tablet enrolled on the rep tablet rules.",
+  manageengine: "Added automatically when the tablet enrolled in ManageEngine on the company's code.",
+  usb: "Added automatically when the tablet was plugged into Phoenix by USB.",
+};
+
 export async function registerTablet(
   facts: TabletFacts,
-  source: "enrollment" | "usb",
+  source: TabletRegistrationSource,
   actor: string,
   register: RegisterTablet[],
 ): Promise<RegisteredTablet> {
@@ -137,10 +153,7 @@ export async function registerTablet(
           imei: facts.imei,
           manufacturer: facts.manufacturer,
           model: facts.model,
-          note:
-            source === "usb"
-              ? "Added automatically when the tablet was plugged into Phoenix by USB."
-              : "Added automatically when the tablet enrolled on the rep tablet rules.",
+          note: SOURCE_NOTES[source],
           serialNumber: facts.serialNumber,
         },
         actor,

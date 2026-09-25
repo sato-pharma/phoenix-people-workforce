@@ -21,7 +21,7 @@
  */
 
 import { ChevronDown, ChevronRight, Loader2, MapPin } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ManageEngineTabletPanel } from "@/components/devices/manageengine-tablet-panel";
 import { cairoDateTime } from "@/lib/format/cairo-datetime";
@@ -36,6 +36,7 @@ const DANGER_ARMED = "border-rose-700 bg-rose-700 text-white hover:bg-rose-800";
 type FleetRow = {
   deviceId: string;
   name: string;
+  manufacturer: string | null;
   model: string | null;
   serialNumber: string | null;
   imei: string | null;
@@ -50,9 +51,32 @@ type FleetRow = {
   holderJobTitle: string | null;
   unregistered: boolean;
 };
-type FleetState = { rows: FleetRow[]; registerError: boolean };
+type FleetState = {
+  rows: FleetRow[];
+  registerError: boolean;
+  autoRegistered: string[];
+  autoRegisterError: string | null;
+  imeisToRecord: number;
+};
 type LocationResult = { latitude: number | null; longitude: number | null; address: string | null; locatedAt: string | null };
 type CommandResult = { command: string; assetTag: string | null; message: string };
+type ImeiRecordResult = {
+  recorded: Array<{ assetTag: string; imei: string }>;
+  alreadyRecorded: string[];
+  failed: Array<{ assetTag: string; message: string }>;
+};
+
+function imeiCopiedText(result: ImeiRecordResult): string | null {
+  const tags = result.recorded.map((entry) => entry.assetTag);
+  if (tags.length === 0) return null;
+  if (tags.length === 1) return `Copied ${tags[0]}'s IMEI into the custody register, as the tablet reports it.`;
+  return `Copied the IMEIs of ${tags.slice(0, -1).join(", ")} and ${tags[tags.length - 1]} into the custody register, as the tablets report them.`;
+}
+
+function imeiFailedText(result: ImeiRecordResult): string | null {
+  if (result.failed.length === 0) return null;
+  return result.failed.map((entry) => `${entry.assetTag}: ${entry.message}`).join(" · ");
+}
 
 class RequestFailure extends Error {
   readonly setupRequired: boolean;
@@ -160,6 +184,30 @@ export function ManageEngineFleet({ bridgeConfigured }: { bridgeConfigured: bool
     };
   }, [bridgeConfigured, load]);
 
+  // An IMEI a tablet reports that its register entry does not hold yet is copied in by the page
+  // itself, so nobody types fifteen digits off a Settings screen — the Google console has done this
+  // since 2026-09-18 and this is its ManageEngine twin. ONCE PER VISIT: a copy that fails is shown,
+  // never retried in a loop. The ref only stops the page asking twice; what it shows comes from
+  // state, and every setState here is inside a callback.
+  const imeiAsked = useRef(false);
+  const [imeiNotice, setImeiNotice] = useState<string | null>(null);
+  const [imeiError, setImeiError] = useState<string | null>(null);
+  const pendingImeis = data?.imeisToRecord ?? 0;
+
+  useEffect(() => {
+    if (pendingImeis === 0 || imeiAsked.current) return;
+    imeiAsked.current = true;
+    void requestJson<ImeiRecordResult>("/api/devices/manageengine/imei", {})
+      .then((result) => {
+        setImeiNotice(imeiCopiedText(result));
+        setImeiError(imeiFailedText(result));
+        return load(() => true);
+      })
+      .catch((caught: unknown) => {
+        setImeiError(messageOf(caught, "Could not copy the tablets' IMEIs into the custody register."));
+      });
+  }, [load, pendingImeis]);
+
   const runCommand = useCallback(
     async (row: FleetRow, command: string, destructive: boolean) => {
       const key = `${row.deviceId}:${command}`;
@@ -249,6 +297,27 @@ export function ManageEngineFleet({ bridgeConfigured }: { bridgeConfigured: bool
       {data?.registerError ? (
         <div className="mt-4 border border-amber-300 bg-amber-50 px-4 py-3 text-[12px] font-semibold text-amber-900">
           The custody register could not be read, so holders are not shown — the fleet and its actions still work.
+        </div>
+      ) : null}
+
+      {data && data.autoRegistered.length > 0 ? (
+        <p className="mt-4 border border-emerald-300 bg-emerald-50 px-4 py-3 text-[12px] font-semibold text-emerald-900">
+          Added to the custody register by themselves: {data.autoRegistered.join(", ")}.
+        </p>
+      ) : null}
+      {data?.autoRegisterError ? (
+        <div className="mt-4 border border-amber-300 bg-amber-50 px-4 py-3 text-[12px] font-semibold text-amber-900">
+          {data.autoRegisterError}
+        </div>
+      ) : null}
+      {imeiNotice ? (
+        <p className="mt-4 border border-emerald-300 bg-emerald-50 px-4 py-3 text-[12px] font-semibold text-emerald-900">
+          {imeiNotice}
+        </p>
+      ) : null}
+      {imeiError ? (
+        <div className="mt-4 border border-amber-300 bg-amber-50 px-4 py-3 text-[12px] font-semibold text-amber-900">
+          {imeiError}
         </div>
       ) : null}
 
@@ -343,7 +412,9 @@ function TabletCell({ row }: { row: FleetRow }) {
       ) : (
         <p className="break-words text-[12px] font-black text-amber-700">Not in the custody register</p>
       )}
-      <p className="mt-0.5 break-words text-[11px] font-semibold text-slate-500">{row.model ?? row.name}</p>
+      <p className="mt-0.5 break-words text-[11px] font-semibold text-slate-500">
+        {[row.manufacturer, row.model].filter(Boolean).join(" ") || row.name}
+      </p>
       {row.serialNumber ? (
         <p className="mt-0.5 break-words text-[11px] font-bold text-slate-700" dir="ltr">
           S/N {row.serialNumber}
