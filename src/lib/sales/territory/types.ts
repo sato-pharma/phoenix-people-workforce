@@ -155,6 +155,8 @@ export type TerritorySyncReport = {
 /** Last-sync metadata for the read-only freshness badge on the drilldown page. */
 export type TerritorySyncStatus = {
   lastSyncedAt: string | null;
+  /** A display name (or "the automated nightly sync" / "a colleague") — never the raw login/HR id
+   *  behind the sync, per the owner's names-not-codes rule. Resolved server-side. */
   lastSyncedBy: string | null;
   lastRestampedRows: number | null;
   lastAllReconciled: boolean | null;

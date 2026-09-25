@@ -1,5 +1,6 @@
 import { writeAuditLog } from "@/lib/admin/audit";
 import { invalidateSalesDashboardCache } from "@/lib/dashboard/invalidation";
+import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { shiftPeriod } from "@/lib/sales/periods";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -243,6 +244,32 @@ export async function syncTerritoryData(input: {
 }
 
 /**
+ * Resolve an audit actor's login id to a human name for display (owner rule: names, never codes
+ * or IDs, in chat or UI) — never the raw `actor_login_id` itself. The nightly job's own actor
+ * (scheduled-sync.ts's `SCHEDULED_TERRITORY_SYNC_ACTOR`) is a "system:"-prefixed login with no
+ * employee behind it at all, so that case is named explicitly rather than looked up.
+ */
+async function resolveSyncActorDisplayName(loginId: string | null): Promise<string | null> {
+  if (!loginId) return null;
+  if (loginId.startsWith("system:")) return "the automated nightly sync";
+
+  const supabase = getSupabaseAdmin();
+  const { data } = await supabase.from("app_auth_users").select("name,hr_id").eq("login_id", loginId).maybeSingle();
+  const row = data as { name?: string | null; hr_id?: string | null } | null;
+  if (row?.name) return row.name;
+
+  const hrId = row?.hr_id ?? null;
+  if (hrId) {
+    const directory = await getEmployeeDirectory().catch(() => null);
+    const employee = directory?.employees.find((e) => e.hrId.trim().toLowerCase() === hrId.trim().toLowerCase());
+    if (employee?.displayName) return employee.displayName;
+  }
+
+  // A real account ran this, we just cannot name it — never fall through to the raw login/HR id.
+  return "a colleague";
+}
+
+/**
  * The last-sync metadata behind the drilldown's read-only freshness badge — sourced from the
  * audit trail the sync itself writes, so it needs no extra table.
  */
@@ -264,7 +291,7 @@ export async function getTerritorySyncStatus(): Promise<TerritorySyncStatus> {
   const reconciled = values.all_reconciled;
   return {
     lastSyncedAt: row.created_at ?? null,
-    lastSyncedBy: row.actor_login_id ?? null,
+    lastSyncedBy: await resolveSyncActorDisplayName(row.actor_login_id ?? null),
     lastRestampedRows: typeof restamped === "number" ? restamped : null,
     lastAllReconciled: typeof reconciled === "boolean" ? reconciled : null,
   };

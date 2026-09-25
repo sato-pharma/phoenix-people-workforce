@@ -69,11 +69,16 @@ function summaryDetail(line: LineSummary): string {
 }
 
 /**
- * Territory data sync. On the admin console `canRun` is true and this renders the working button;
- * on the manager-facing drilldown page `canRun` is false, so managers see the read-only freshness
- * state and a disabled button (the sync mutates shared production data — Super-Admin only).
+ * Territory data sync. `canRun` is true for every role the Territory Drilldown page serves — the
+ * sync is corrective and idempotent (only rows whose brick actually moved are written), so by
+ * owner decision a Medical Rep may press it same as Super Admin (app/employee-portals/
+ * territory-drilldown/page.tsx and the sync route's own `assertSyncOperator` agree). What differs
+ * by role is `showReconciliation`: the per-line reconciliation chips below cover EVERY line the
+ * sync touched, not just the viewer's own, so only a viewer who already sees every line company-
+ * wide (Super Admin, CEO — see isTerritoryLinePickerRole) sees them; everyone else still sees the
+ * freshness badge and the button.
  */
-export function TerritorySyncPanel({ canRun }: { canRun: boolean }) {
+export function TerritorySyncPanel({ canRun, showReconciliation }: { canRun: boolean; showReconciliation: boolean }) {
   const [status, setStatus] = useState<TerritorySyncStatus | null>(null);
   const [report, setReport] = useState<TerritorySyncReport | null>(null);
   const [busy, setBusy] = useState(false);
@@ -199,26 +204,30 @@ export function TerritorySyncPanel({ canRun }: { canRun: boolean }) {
           <p className="mt-1 text-slate-500 dark:text-slate-400">
             Re-stamped {report.restampedRows.toLocaleString()} row(s) · rebuilt {report.refreshedBatches} batch(es) · {(report.durationMs / 1000).toFixed(1)}s
           </p>
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {lineSummaries.map((line) => (
-              <span
-                key={line.officialLine}
-                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 ${
-                  line.mismatched === 0 && line.geographyChecked
-                    ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
-                    : "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300"
-                }`}
-              >
-                {line.mismatched === 0 && line.geographyChecked ? (
-                  <CheckCircle2 className="h-3 w-3" />
-                ) : (
-                  <AlertTriangle className="h-3 w-3" />
-                )}
-                {line.officialLine}
-                {summaryDetail(line)}
-              </span>
-            ))}
-          </div>
+          {showReconciliation && (
+            // Every line the sync touched, not just the viewer's own — gated to roles that already
+            // see every line company-wide (see the component doc comment above).
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {lineSummaries.map((line) => (
+                <span
+                  key={line.officialLine}
+                  className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 ${
+                    line.mismatched === 0 && line.geographyChecked
+                      ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
+                      : "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300"
+                  }`}
+                >
+                  {line.mismatched === 0 && line.geographyChecked ? (
+                    <CheckCircle2 className="h-3 w-3" />
+                  ) : (
+                    <AlertTriangle className="h-3 w-3" />
+                  )}
+                  {line.officialLine}
+                  {summaryDetail(line)}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
