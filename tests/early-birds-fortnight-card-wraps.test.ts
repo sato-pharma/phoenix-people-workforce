@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * The Stars of the Fortnight band must WRAP on a phone — it may never be pinned to one line.
@@ -31,15 +32,6 @@ import { readFileSync } from "node:fs";
  */
 
 const CARD = "src/components/early-birds/early-bird-of-the-fortnight-card.tsx";
-
-/** Drop block comments and whole-line `//` comments. Never touches a `//` inside a string. */
-function stripComments(source: string): string {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .split("\n")
-    .filter((line) => !line.trim().startsWith("//"))
-    .join("\n");
-}
 
 export function runEarlyBirdsFortnightCardWrapsTests() {
   const code = stripComments(readFileSync(CARD, "utf8"));

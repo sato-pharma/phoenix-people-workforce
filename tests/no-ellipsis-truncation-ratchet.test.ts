@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 
 import { cachedIsDirectory, cachedReaddir, cachedReadFile } from "./support/source-corpus.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Standing owner rule: "Never truncate text with an ellipsis and never let text
@@ -216,27 +217,6 @@ const ROOTS = ["app", "src"];
 const CLASS_STRING_WITH_TRUNCATION =
   /["'`][^"'`\n]*\b(?:truncate|text-ellipsis|line-clamp-\d+)\b[^"'`\n]*["'`]/;
 const ANY_TRUNCATION_TOKEN = /\b(?:truncate|text-ellipsis|line-clamp-\d+)\b/;
-
-/**
- * Remove comments before counting, so a class only counts where it is APPLIED.
- *
- * A backtick has to stay in the delimiter set above, because a template literal is
- * how a good half of these class strings are actually written
- * (`` className={`flex truncate ${x}`} ``). That makes a markdown code span in a
- * JSDoc block indistinguishable from a real class string on a line-by-line read —
- * which is the whole defect. Stripping the comment first is what separates them;
- * narrowing the delimiters would only trade false positives for false negatives.
- *
- * Newlines are preserved so the `file:line` reported for a real violation still
- * points at its real line: a block comment keeps its line breaks and loses
- * everything else. The `[^:]` guard keeps a `https://…` URL from reading as the
- * start of a line comment and swallowing the rest of the line with it.
- */
-function stripComments(source: string): string {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, (block) => block.replace(/[^\n]/g, " "))
-    .replace(/(^|[^:])\/\/.*$/gm, "$1");
-}
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const entry of cachedReaddir(dir)) {

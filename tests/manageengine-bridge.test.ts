@@ -1093,6 +1093,47 @@ async function runProfileTests() {
   const state = await getManageEngineProfileState("me-1", perDevice.fetch, ENV);
   assert.deepEqual(state.applied.map((profile) => profile.name), ["Rep tablet rules"]);
   assert.equal(state.applied[0].status, "Applied", "ManageEngine's own word on whether the tablet took it");
+
+  // 🔴 AND THAT WORD IS NEVER A CODE. Measured on the live tenant while a profile landed on
+  // PHX-TAB-0002: `status` read "18" on the way and "6" once applied, with the sentence itself in
+  // `localized_remarks`. A page that prints 18 at somebody is telling them nothing.
+  resetManageEngineTokenCache();
+  const coded = makeFetch({
+    api: [
+      {
+        status: 200,
+        body: {
+          profiles: [
+            {
+              profile_id: 12,
+              profile_name: "Rep tablet rules",
+              platform_type: 2,
+              status: "6",
+              localized_remarks: "Successfully applied the policy",
+            },
+            { profile_id: 13, profile_name: "Alpha", platform_type: 2, status: "18" },
+            { profile_id: 14, profile_name: "Beta", platform_type: 2, status: "97" },
+          ],
+        },
+      },
+      { status: 500, body: { error_description: "catalogue down" } },
+    ],
+  });
+  const worded = await getManageEngineProfileState("me-1", coded.fetch, ENV);
+  assert.equal(
+    worded.applied[0].status,
+    "Successfully applied the policy",
+    "ManageEngine's own sentence is preferred over its code",
+  );
+  assert.equal(worded.applied[1].status, "On its way to the tablet", "and a code with no sentence is put into words");
+  assert.equal(
+    worded.applied[2].status,
+    null,
+    "🔴 an unmapped code is answered with no status at all — never with the raw number",
+  );
+  for (const profile of worded.applied) {
+    assert.ok(profile.status === null || !/^\d+$/.test(profile.status), `a bare code never reaches the page (${profile.name})`);
+  }
   assert.equal(state.applied[0].appliedAt, new Date(1_758_000_000_000).toISOString(), "and when, as an instant the page shows in Cairo time");
   assert.deepEqual(
     state.available.map((profile) => profile.name),

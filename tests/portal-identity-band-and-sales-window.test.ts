@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 
 import { salesWindowLabel, splitDepartedRoster } from "../src/lib/employee-portal/home-snapshot.ts";
 import type { EmployeeDirectoryRow } from "../src/lib/employees/employee-directory.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Three owner rules stated on 2026-09-03, pinned so a later edit cannot quietly undo any of them.
@@ -61,11 +62,6 @@ const ROLE_CENTER_ROOT = /<div className="mx-auto w-full space-y-[^"]*" dir="aut
  */
 const LANDING_BLOCKS =
   /<(PortalIdentityBand|IdentityCard|ProfileIntelBar|PlanAdherenceDashboardCard|PortalContextBar|PendingActions|GlanceStrip|QuickActions|SectionHead|KeycardGrid|RankingPanel|DashboardsGrid|ActionStrip|NationalKeycards|RegionKeycards)\b/g;
-
-/** Comments are prose about the rule; they must not be able to satisfy or fail it. */
-function stripComments(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[ \t]*\/\/.*$/gm, "");
-}
 
 function read(path: string): string {
   return readFileSync(path, "utf8");

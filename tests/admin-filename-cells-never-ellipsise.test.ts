@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * Two admin tables ellipsised an uploaded file's name and offered no way to read the rest of it.
@@ -36,16 +37,6 @@ import { readFileSync } from "node:fs";
 
 const PAYROLL = "src/components/payroll/dashboard/payroll-history.tsx";
 const SALES_IMPORT = "src/components/sales/sales-import-workspace.tsx";
-
-/** Drop block comments and whole-line `//` comments. Kept deliberately simple: see the note in
- * tests/portal-chrome-never-clips-text.test.ts about a brace-aware variant eating a whole component. */
-function stripComments(source: string): string {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .split("\n")
-    .filter((line) => !line.trim().startsWith("//"))
-    .join("\n");
-}
 
 function tokens(className: string): string[] {
   return className.split(/\s+/).filter(Boolean);

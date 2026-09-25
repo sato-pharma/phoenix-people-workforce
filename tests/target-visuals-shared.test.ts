@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { stripComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The two TARGET modules draw the same figure the same way.
@@ -61,14 +62,6 @@ const OWNED = [
 
 function read(relative: string): string {
   return readFileSync(new URL(relative, import.meta.url), "utf8");
-}
-
-/**
- * Comments are stripped before the fork scan, so the prose above — which names the primitives
- * it is describing — cannot fail the build it exists to explain.
- */
-function stripComments(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 }
 
 export function runTargetVisualsSharedTests() {

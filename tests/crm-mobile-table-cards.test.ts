@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { stripComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Every CRM board must be desktop-table / mobile-cards. No exceptions, module-wide.
@@ -42,16 +43,6 @@ const DESKTOP_GATES = [/data-portal-desktop-table/, /\bmd:block\b/, /\bmd:table\
 
 /** How a file may render its mobile half. The primitive emits the `md:hidden` card list itself. */
 const MOBILE_CARD_PATHS = [/\bPortalResponsiveDataList\b/, /\bmd:hidden\b/];
-
-/**
- * Comments are stripped before any match, so an explanatory note that mentions
- * `overflow-x-auto` or a `<table>` that no longer exists cannot fail a build. This is the
- * reason the test disagrees with a naive grep, and it is deliberate — several of these
- * files carry a comment describing exactly what they used to do.
- */
-function stripComments(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-}
 
 function tableOffsets(source: string): number[] {
   const offsets: number[] = [];

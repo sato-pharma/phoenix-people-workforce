@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * The GPS route map ellipsised a check-in's ADDRESS — the one line on that card that says where the
@@ -22,14 +23,6 @@ import { readFileSync } from "node:fs";
  */
 
 const ROUTE_MAP = "src/components/field-workforce-compliance/field-workforce-route-map.tsx";
-
-function stripComments(source: string): string {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .split("\n")
-    .filter((line) => !line.trim().startsWith("//") && !line.trim().startsWith("*"))
-    .join("\n");
-}
 
 export function runCrmRouteMapAddressTests() {
   const source = stripComments(readFileSync(ROUTE_MAP, "utf8"));

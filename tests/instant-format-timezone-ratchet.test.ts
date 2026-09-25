@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 
 import { cachedIsDirectory, cachedReaddir, cachedReadFile } from "./support/source-corpus.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Standing owner rule: "Report every time in Africa/Cairo local time, never raw UTC."
@@ -91,18 +92,6 @@ const TIME_FIELD = /\b(?:hour|minute|second|timeStyle|hour12|hourCycle)\s*:/;
  * supplies the zone exactly as surely as `timeZone: "Africa/Cairo"` does.
  */
 const TIME_ZONE = /\btimeZone\b/;
-
-/**
- * Blank comments before measuring, so a sentence describing the rule is never
- * counted as breaking it. Newlines survive, so every file:line reported below
- * still points at its real line. The `[^:]` guard keeps `https://…` from reading
- * as the start of a line comment and swallowing the rest of the line with it.
- */
-function stripComments(source: string): string {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, (block) => block.replace(/[^\n]/g, " "))
-    .replace(/(^|[^:])\/\/.*$/gm, "$1");
-}
 
 /**
  * True only when the directive is the file's FIRST real line, which is the only
