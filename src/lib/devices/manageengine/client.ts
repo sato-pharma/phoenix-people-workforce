@@ -56,13 +56,17 @@ async function once<T>(path: string, init: RequestInit, fetchImpl: typeof fetch,
     ...init,
     cache: "no-store",
     headers: {
-      accept: "application/json",
       authorization: `Zoho-oauthtoken ${token}`,
-      // 🔴 A MULTIPART BODY MUST NOT CARRY A CONTENT-TYPE FROM HERE. `fetch` writes
-      // `multipart/form-data; boundary=…` itself, and the boundary is the only thing that tells the
-      // far end where each part starts — stamping `application/json` over it hands ManageEngine a
-      // body it cannot parse, which is how the app upload would have failed on its first byte.
-      ...(init.body && !(init.body instanceof FormData) ? { "content-type": "application/json" } : {}),
+      // 🔴 A MULTIPART FILE UPLOAD CARRIES NEITHER `accept: application/json` NOR a `content-type`
+      // FROM HERE, and both omissions are load-bearing. `fetch` writes the real
+      // `multipart/form-data; boundary=…` itself, and stamping `application/json` over it destroys the
+      // boundary the far end parses by. Less obviously, `/emsapi/files` REFUSES an upload that also
+      // asks for `accept: application/json` — it answers `406 Not Acceptable`, reading the whole body
+      // first — yet returns the file JSON perfectly well when Accept is absent. Measured against the
+      // live Cloud tenant on 2026-09-25: same 57-byte part, `accept: application/json` → 406, no
+      // Accept header → 200 with the `fileID`. So a JSON body gets both headers, a FormData body gets
+      // neither, and a caller may still override via `init.headers`.
+      ...(init.body instanceof FormData ? {} : { accept: "application/json", "content-type": "application/json" }),
       ...(init.headers ?? {}),
     },
   });
