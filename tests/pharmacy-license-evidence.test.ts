@@ -1,6 +1,8 @@
 import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 
+import { stripComments } from "./support/comment-strip.ts";
+
 import {
   loadMarketingPharmacyLicensesByPharmacyIds,
   MARKETING_EVIDENCE_BUCKET,
@@ -319,13 +321,7 @@ export async function runPharmacyLicenseEvidenceTests() {
     );
     // Comment lines are dropped before the check: the parser's own comment quotes the old pattern
     // in order to explain it, and that explanation must not read as the pattern coming back.
-    const parserCode = parserSource
-      .split("\n")
-      .filter((line) => {
-        const trimmed = line.trim();
-        return !trimmed.startsWith("//") && !trimmed.startsWith("*") && !trimmed.startsWith("/*");
-      })
-      .join("\n");
+    const parserCode = stripComments(parserSource);
     assert.doesNotMatch(
       parserCode,
       /\[a-zA-Z0-9\+\/=/,

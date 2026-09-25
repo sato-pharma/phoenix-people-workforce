@@ -40,6 +40,13 @@ function codeOnly(source: string): string {
 
 export function runRepoDoctorWorktreeRestoreAdviceTests() {
   const doctor = codeOnly(read("scripts/repo-doctor.mjs"));
+  // stripComments blanks a comment to spaces in place — where the old line filter deleted comment
+  // lines outright — so every reported file:line stays true. A proximity window over the source is
+  // therefore diluted by any explanatory comment between two phrases: the five-line note above the
+  // completion message pushes "path entries reclaimed" and its `--repair` hint past 400 bytes even
+  // though no CODE separates them. Collapse whitespace runs so the windows below count code
+  // distance, the way they did when comments were removed.
+  const doctorCode = doctor.replace(/\s+/g, " ");
 
   // ── 1. Every mention in real output is a prohibition, never an instruction ──
   {
@@ -59,12 +66,12 @@ export function runRepoDoctorWorktreeRestoreAdviceTests() {
   // list. These assert the correct advice is present, in the offer and in the completion line.
   {
     assert.match(
-      doctor,
+      doctorCode,
       /Run with --strip-idle[\s\S]{0,200}new-session\.mjs --repair/,
       "the --strip-idle offer must say how to restore a stripped worktree",
     );
     assert.match(
-      doctor,
+      doctorCode,
       /path entries reclaimed[\s\S]{0,400}new-session\.mjs --repair/,
       "the post-strip completion line must say how to restore — it is the line that gets copied",
     );

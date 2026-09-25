@@ -63,9 +63,10 @@ import { codeEatenByNaiveStrip, stripComments } from "./support/comment-strip.ts
  * flagging it needs the file resolved, whereas a line filter tracks no block state anywhere — every
  * one of them is one multi-line comment away from the same failure, whatever it is pointed at.
  *
- * Measured 2026-09-25: 47 such call sites in 42 test files, of which #4382 folds 9. The rest are
- * listed in {@link GRANDFATHERED}, so this lands green and stops the 43rd rather than waiting for a
- * 42-file repair. That list is a budget per file, never a permission — fold one, delete its row.
+ * Measured 2026-09-25: 47 such call sites in 42 test files. All are now folded onto
+ * {@link stripComments} — #4382 took 9, #4388 took 13, and this change took the remaining 25 — so
+ * {@link GRANDFATHERED} is empty and its budget is 0. The detector now permits zero: the next
+ * line-wise stripper anywhere fails on its very first site.
  *
  * A shape detector whose offender count is meant to reach zero cannot be guarded by a floor on
  * offenders the way {@link RESOLVED_PAIR_FLOOR} guards the resolver. Its guard is
@@ -124,61 +125,18 @@ const MAX_ARGUMENT_CHARS = 2_000;
 const SWEPT_FILE_FLOOR = 1_200;
 
 /**
- * The line-wise strippers that already existed when this check was written — 47 sites in 42 files,
- * measured 2026-09-25, of which #4382 folds 9.
+ * The line-wise strippers that existed when this check was written — 47 sites in 42 files, measured
+ * 2026-09-25 — are now ALL folded onto {@link stripComments} (#4382, #4388, and the change that
+ * emptied this list). Nothing remains to grandfather.
  *
- * A BUDGET, not a permission: the number is the most a file may hold, so a file #4382 empties keeps
- * passing whichever order the two land in, while a NEW one anywhere — or a second one in a listed
- * file — fails. Fold a file onto `stripComments` and delete its row; nothing here is allowed to
- * grow. {@link GRANDFATHERED_SITE_BUDGET} makes an addition impossible to make quietly.
+ * It stays a BUDGET, not a permission: an empty list with a budget of 0 means no test may strip
+ * comments line-wise anywhere, so the detector below fails on the very first new site. The list may
+ * only shrink — it is already empty — and {@link GRANDFATHERED_SITE_BUDGET} may never rise.
  */
-const GRANDFATHERED: ReadonlyMap<string, number> = new Map([
-  ["tests/action-center-row-caps.test.ts", 1],
-  ["tests/admin-filename-cells-never-ellipsise.test.ts", 1],
-  ["tests/approvals-hub-row-cap.test.ts", 1],
-  ["tests/attendance-exception-row-cap.test.ts", 1],
-  ["tests/automated-payroll-crm-leave-fails-closed.test.ts", 1],
-  ["tests/automated-payroll-insurance-wage.test.ts", 1],
-  ["tests/automated-payroll-leaver-overpayment.test.ts", 1],
-  ["tests/ceo-top-movers-share.test.ts", 1],
-  ["tests/closing-summary-fits.test.ts", 1],
-  ["tests/crm-live-poller.test.ts", 1],
-  ["tests/crm-portal-coverage-populations.test.ts", 1],
-  ["tests/crm-route-map-address-never-ellipsises.test.ts", 1],
-  ["tests/crm-visit-type-labels.test.ts", 1],
-  ["tests/cv-cabinet-audit-fixes.test.ts", 1],
-  ["tests/decided-for-me-row-caps.test.ts", 1],
-  ["tests/deductions-crm-vacation-employment-join.test.ts", 1],
-  ["tests/deductions-dsm-no-record.test.ts", 1],
-  ["tests/deductions-vacation-ledger-guard.test.ts", 1],
-  ["tests/direct-orders-approval-flow.test.ts", 3],
-  ["tests/direct-orders-collection.test.ts", 1],
-  ["tests/direct-orders-desk-shell.test.ts", 1],
-  ["tests/direct-orders-family-basket.test.ts", 2],
-  ["tests/direct-orders-second-review-fixes.test.ts", 2],
-  ["tests/direct-orders-unresolved-manager-rung.test.ts", 1],
-  ["tests/drive-cabinet-folders.test.ts", 1],
-  ["tests/early-birds-board-wraps.test.ts", 1],
-  ["tests/early-birds-fortnight-card-wraps.test.ts", 1],
-  ["tests/employee-directory-stale-bound.test.ts", 1],
-  ["tests/normalizer-mapping-truth.test.ts", 1],
-  ["tests/outstation-claims-read-flag.test.ts", 2],
-  ["tests/outstation-request-name-is-the-employee-record.test.ts", 1],
-  ["tests/pharmacy-license-evidence.test.ts", 1],
-  ["tests/portal-chrome-never-clips-text.test.ts", 1],
-  ["tests/portal-home-no-dead-approvals-fetch.test.ts", 1],
-  ["tests/portal-tools-grid-fits-a-phone.test.ts", 1],
-  ["tests/recruitment-simplify.test.ts", 1],
-  ["tests/repo-doctor-worktree-restore-advice.test.ts", 1],
-  ["tests/sales-command-band-fits-a-laptop.test.ts", 1],
-  ["tests/sales-target-tables-fit-the-screen.test.ts", 1],
-  ["tests/section-card-header-fits-a-phone.test.ts", 1],
-  ["tests/territory-preview-link-controls.test.ts", 1],
-  ["tests/zoomable-photo.test.ts", 1],
-]);
+const GRANDFATHERED: ReadonlyMap<string, number> = new Map([]);
 
-/** The sum of the budget above on the day it was written. It may fall. It may never rise. */
-const GRANDFATHERED_SITE_BUDGET = 47;
+/** The sum of the budget above. Seeded at 47; every site is now folded, so it is 0. It may never rise. */
+const GRANDFATHERED_SITE_BUDGET = 0;
 
 function walk(dir: string): string[] {
   const out: string[] = [];

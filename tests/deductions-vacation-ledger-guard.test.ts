@@ -1,6 +1,8 @@
 import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 
+import { stripComments } from "./support/comment-strip.ts";
+
 import {
   clipLeaveToMonth,
   excludeAlreadyClaimedVacationDays,
@@ -202,11 +204,7 @@ export async function runDeductionsVacationLedgerGuardTests(): Promise<void> {
   // comments that would satisfy a raw-text match.
   {
     const source = readFileSync("src/lib/deductions/connectors/vacation.ts", "utf8");
-    const code = source
-      .replace(/\/\*[\s\S]*?\*\//g, "")
-      .split("\n")
-      .filter((line) => !line.trim().startsWith("//"))
-      .join("\n");
+    const code = stripComments(source);
 
     assert.match(
       code,

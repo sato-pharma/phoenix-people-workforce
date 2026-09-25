@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { stripComments } from "./support/comment-strip.ts";
+
 /**
  * A manager the employee directory does not carry must produce a rung that SAYS it is broken.
  *
@@ -74,10 +76,7 @@ export async function runDirectOrderUnresolvedManagerRungTests() {
   // name it, and an assertion that cannot tell a comment from a call site is one that gets
   // "fixed" by deleting the explanation. (Same trap as the finish_draft guard in
   // direct-orders-second-review-fixes.test.ts.)
-  const code = body
-    .split("\n")
-    .filter((line) => !line.trim().startsWith("//"))
-    .join("\n");
+  const code = stripComments(body);
   assert.doesNotMatch(
     code,
     /resolveReportingSeatHrId|pendingManagerReplacementForHrId/,
