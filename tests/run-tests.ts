@@ -1956,6 +1956,7 @@ import { runPhoenixCrmDictationTests } from "./phoenix-crm-dictation.test.ts";
 import { runPhoenixCrmSpeakTests } from "./phoenix-crm-speak.test.ts";
 import { runPhoenixCrmDictationCorrectTests } from "./phoenix-crm-dictation-correct.test.ts";
 import { runPhoenixCrmDictationCorpusTests } from "./phoenix-crm-dictation-corpus.test.ts";
+import { runTerritorySyncPanelRoleScopingTests } from "./territory-sync-panel-role-scoping.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -6972,6 +6973,10 @@ await runTest(
 await runTest(
   "Phoenix CRM dictation, measured against the corpus: the corrector is run over every word the field force writes near a product name, with the number of words it changes pinned exactly — so a widened vocabulary goes red with the old count and the new one side by side, rather than silently rewriting more of a clinical record. No competitor's drug and no token carrying a dose is ever touched, and the only thing it can emit is a canonical product name behind the rep's own prefix",
   runPhoenixCrmDictationCorpusTests,
+);
+await runTest(
+  "territory sync panel: lastSyncedBy is resolved to a name (never the raw login/HR id, with a system: actor and an unresolvable one both named in words), and the per-line reconciliation chips are gated behind showReconciliation — derived from isTerritoryLinePickerRole (Super Admin, CEO) — while canRun stays unconditional for every Territory Drilldown role",
+  runTerritorySyncPanelRoleScopingTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
