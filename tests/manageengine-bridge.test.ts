@@ -985,6 +985,33 @@ function runEnrollmentDoorTests() {
     "the Google console component stays in the repo, whole",
   );
 
+  // The free-trial split (owner asked, 2026-09-25): the two remote-troubleshooting features — and
+  // ONLY those two — are marked as stopping when the trial falls back to the free edition, and the
+  // page carries a colour key that says so. Screen sharing is ManageEngine's paid add-on; every other
+  // action keeps working on the free edition.
+  const fleet = enrollmentSource("src/components/devices/manageengine-fleet.tsx");
+  assert.match(
+    fleet,
+    /\{\s*id:\s*"REMOTE_VIEW"[^}]*stopsAfterTrial:\s*true/,
+    "View the screen is marked as stopping after the free trial (remote-troubleshooting add-on)",
+  );
+  assert.match(
+    fleet,
+    /\{\s*id:\s*"REMOTE_CONTROL"[^}]*stopsAfterTrial:\s*true/,
+    "Take control is marked as stopping after the free trial (remote-troubleshooting add-on)",
+  );
+  assert.equal(
+    (fleet.match(/stopsAfterTrial:\s*true/g) ?? []).length,
+    2,
+    "exactly the two screen-sharing features stop after the trial — nothing else is marked paid",
+  );
+  assert.doesNotMatch(
+    fleet,
+    /\{\s*id:\s*"LOCK"[^}]*stopsAfterTrial/,
+    "Lock keeps working on the free edition — it is never marked paid",
+  );
+  assert.match(fleet, /After the free trial ends/, "the fleet shows a colour key for what stops after the trial");
+
   for (const file of [
     "src/lib/devices/manageengine/enrollment.ts",
     "app/api/devices/manageengine/enrollment/route.ts",
