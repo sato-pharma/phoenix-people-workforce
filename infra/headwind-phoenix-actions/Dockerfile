@@ -204,4 +204,27 @@ RUN set -eu; \
 COPY phoenix-entrypoint.sh /phoenix-entrypoint.sh
 # chmod because the repository is checked out on Windows, where the executable bit does not survive.
 RUN chmod +x /phoenix-entrypoint.sh
+
+# 🔴 THIS STAGE RUNS AS ROOT — THE BASE IMAGE'S OWN DESIGN, NOT AN OVERSIGHT HERE. `headwindmdm/hmdm`
+# (github.com/h-mdm/hmdm-docker, built on `tomcat:9-jdk11-temurin-jammy`) carries no USER directive at
+# any layer it ships, and its own `/docker-entrypoint.sh` — which phoenix-entrypoint.sh hands off to —
+# writes across paths that are not ours to promise stable: $CATALINA_HOME/work (cache/files/plugins/
+# logs, and Tomcat's own logs/temp), webapps/ROOT.war and the webapp it unpacks there, conf/Catalina/
+# localhost/ROOT.xml, ssl/hmdm.{p12,jks} when PROTOCOL=https, and — unconditionally, every single
+# start — /opt/java/openjdk/conf/security/java.security, a JDK file entirely outside Tomcat's own
+# tree. Retrofitting a non-root USER means chowning all of that inside a third-party image whose
+# internal layout can change under an upstream tag bump, and the only way to know it still boots is an
+# actual container run — which this task has no safe way to rehearse (no local Docker daemon here, and
+# a merge to this Dockerfile ships straight to the live MDM console on the next Railway deploy; see
+# railway.toml). An unverified guess risks a device-management server that will not start, which is a
+# worse outcome for the fleet than this finding.
+#
+# What actually bounds the blast radius here: PROTOCOL=http on Railway means TLS terminates at
+# Railway's edge and no certificate or private key material ever reaches this container (§4.2 of
+# docs/devices/headwind-rustdesk.md); the connectors it binds (8080/8443, this image's server.xml) are
+# all unprivileged ports, so root buys no capability a non-root user would have lacked; and
+# railway.toml pins `numReplicas = 1` with `restartPolicyType = "ON_FAILURE"` to limit what a
+# compromised process could do before it is noticed. Revisit this if h-mdm/hmdm-docker ever ships its
+# own non-root support upstream.
+# nosemgrep: dockerfile.security.missing-user-entrypoint.missing-user-entrypoint
 ENTRYPOINT ["/phoenix-entrypoint.sh"]
