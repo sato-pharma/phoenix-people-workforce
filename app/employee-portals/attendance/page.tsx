@@ -5,12 +5,10 @@ import { EmployeePortalPageShell } from "@/components/employee-portal/enterprise
 import { getEmployeeAttendanceData } from "@/lib/attendance/employee-attendance";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { addDaysToDateOnly } from "@/lib/date-only";
+import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 
 export const dynamic = "force-dynamic";
-
-function dateKey(date: Date) {
-  return date.toISOString().slice(0, 10);
-}
 
 export default async function EmployeeAttendancePage() {
   const access = await resolveAccessContextFromPage();
@@ -23,10 +21,10 @@ export default async function EmployeeAttendancePage() {
     redirect("/employee-portals");
   }
 
-  const dateTo = dateKey(new Date());
-  const thirtyDaysAgo = new Date();
-  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-  const dateFrom = dateKey(thirtyDaysAgo);
+  // The Cairo calendar day, not the server's UTC one: between midnight and 03:00 Cairo the UTC date
+  // is still yesterday, which silently dropped the current day from "the last 30 days".
+  const dateTo = currentCairoDateOnlyIso();
+  const dateFrom = addDaysToDateOnly(dateTo, -30) ?? dateTo;
 
   let initialData = null;
   let initialError: string | null = null;
@@ -49,12 +47,12 @@ export default async function EmployeeAttendancePage() {
 
   return (
     <EmployeePortalPageShell
-      badge="Attendance"
+      badge="Leave & HR"
       title="My Attendance"
       description="Your attendance records for the last 30 days. Dispute any record you believe is incorrect."
     >
       {initialError && (
-        <p className="mb-4 rounded border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <p className="border border-rose-200 bg-rose-50 px-4 py-3 text-phx-md font-semibold text-rose-800">
           {initialError}
         </p>
       )}

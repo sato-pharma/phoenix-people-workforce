@@ -209,28 +209,29 @@ function PhotoLightbox({
       ref={dialogRef}
       role="dialog"
     >
-      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-white/10 px-3 py-2 sm:px-5 sm:py-3">
-        {/* The owner's rule: never truncate with an ellipsis and never let a label wrap. The
-            caption is given the room it needs and the toolbar keeps its own width. */}
-        <p className="overflow-hidden whitespace-nowrap text-phx-sm font-black text-white/90 sm:text-sm">
+      <div className="flex shrink-0 items-start justify-between gap-3 border-b border-white/10 px-3 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))] sm:px-5 sm:pb-3 sm:pt-3">
+        {/* Never an ellipsis, and never clipped: beside a 200px toolbar a phone leaves the caption
+            about 120px, so "Customer · Place · date" WRAPS (where the two rules collide, wrapping
+            wins). The toolbar keeps its own width. */}
+        <p className="min-w-0 flex-1 break-words py-2 text-phx-sm font-black leading-snug text-white/90 sm:text-sm" dir="auto">
           {caption ?? alt}
         </p>
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="flex shrink-0 items-center gap-0.5 sm:gap-1">
           <button
             aria-label="Zoom out"
-            className="p-2 text-white/70 transition hover:bg-white/10 hover:text-white disabled:opacity-30"
+            className="inline-flex h-10 w-10 items-center justify-center text-white/70 transition hover:bg-white/10 hover:text-white disabled:opacity-30"
             disabled={scale <= MIN_SCALE}
             onClick={() => zoomByButton(-1)}
             type="button"
           >
             <Minus className="h-4 w-4" />
           </button>
-          <span className="min-w-[3.5rem] text-center text-phx-sm font-black tabular-nums text-white/80">
+          <span className="hidden min-w-[3.5rem] text-center text-phx-sm font-black tabular-nums text-white/80 sm:inline">
             {zoomLabel}
           </span>
           <button
             aria-label="Zoom in"
-            className="p-2 text-white/70 transition hover:bg-white/10 hover:text-white disabled:opacity-30"
+            className="inline-flex h-10 w-10 items-center justify-center text-white/70 transition hover:bg-white/10 hover:text-white disabled:opacity-30"
             disabled={scale >= MAX_SCALE}
             onClick={() => zoomByButton(1)}
             type="button"
@@ -239,7 +240,7 @@ function PhotoLightbox({
           </button>
           <button
             aria-label="Reset zoom"
-            className="p-2 text-white/70 transition hover:bg-white/10 hover:text-white disabled:opacity-30"
+            className="inline-flex h-10 w-10 items-center justify-center text-white/70 transition hover:bg-white/10 hover:text-white disabled:opacity-30"
             disabled={scale === MIN_SCALE && offset.x === 0 && offset.y === 0}
             onClick={reset}
             type="button"
@@ -248,7 +249,7 @@ function PhotoLightbox({
           </button>
           <button
             aria-label="Close photo"
-            className="p-2 text-white/70 transition hover:bg-white/10 hover:text-white"
+            className="inline-flex h-10 w-10 items-center justify-center text-white/70 transition hover:bg-white/10 hover:text-white"
             onClick={onClose}
             type="button"
           >
@@ -287,7 +288,7 @@ function PhotoLightbox({
         />
       </div>
 
-      <p className="shrink-0 border-t border-white/10 px-3 py-2 text-center text-phx-xs font-semibold text-white/50 sm:px-5">
+      <p className="shrink-0 border-t border-white/10 px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 text-center text-phx-xs font-semibold text-white/50 sm:px-5 sm:pb-2">
         Pinch or scroll to zoom · drag to move · double-tap to fit
       </p>
     </div>

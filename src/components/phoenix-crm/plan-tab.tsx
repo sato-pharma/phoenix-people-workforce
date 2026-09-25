@@ -1041,7 +1041,9 @@ function SaveBar({
             <p className="break-words text-xs font-semibold leading-5 text-slate-500">The plan goes back to what was last saved.</p>
           ) : (
             <>
-              {changes ? <p className="break-words text-xs font-semibold leading-5 text-slate-500">{changes}</p> : null}
+              {/* The itemised change list waits for a wider screen: on a phone this bar and the bottom
+                  navigation already take a third of the height, and "Unsaved changes" says enough. */}
+              {changes ? <p className="hidden break-words text-xs font-semibold leading-5 text-slate-500 sm:block">{changes}</p> : null}
               {goneText ? <p className="break-words text-xs font-semibold leading-5 text-slate-500">{goneText}</p> : null}
             </>
           )}
@@ -1234,6 +1236,35 @@ function WeekScreen({
         </CrmBlock>
       ) : null}
 
+      {/* The days come straight after the week: they are what the rep opens this screen to work on,
+          and on a phone the status and the totals below would otherwise push them a screen down. */}
+      <CrmBlock className="border-t border-slate-100" title="Days">
+        {view.canEdit && view.customers.length === 0 ? (
+          <CrmNote className="mb-3" tone="info">
+            <span className="block">No validated customers yet. Customers validated on the List tab can be placed here.</span>
+            {onOpenList ? (
+              <span className="mt-2 block">
+                <CrmButton onClick={onOpenList} size="sm">
+                  Open the list
+                </CrmButton>
+              </span>
+            ) : null}
+          </CrmNote>
+        ) : null}
+        <div className="grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+          {states.map((state) => (
+            <DayCard
+              key={state.day.date}
+              onOpen={() => onOpenDay(state.day.date)}
+              rules={view.rules}
+              showSpread={showSpread}
+              state={state}
+              today={view.cairoToday}
+            />
+          ))}
+        </div>
+      </CrmBlock>
+
       {/* Owner, 2026-09-22: information, never a refusal — the week is planned whatever the list holds. */}
       {view.pendingCount > 0 ? (
         <CrmBlock className="border-t border-slate-100">
@@ -1266,9 +1297,10 @@ function WeekScreen({
       </CrmBlock>
 
       <CrmBlock className="border-t border-slate-100" title="This week">
+        {/* AM first, as every sentence and the Day screen say it; the figures are unchanged. */}
         <CrmStatGrid>
-          <CrmStat label="PM" note="Placed across the week" value={countText(totals.PM)} />
           <CrmStat label="AM" note="Placed across the week" value={countText(totals.AM)} />
+          <CrmStat label="PM" note="Placed across the week" value={countText(totals.PM)} />
           <CrmStat label="Days planned" note="Saturday to Thursday morning" value={`${plannedDays} of ${states.length}`} />
           <CrmStat
             label="On a day off"
@@ -1277,33 +1309,6 @@ function WeekScreen({
             value={countText(offDay)}
           />
         </CrmStatGrid>
-      </CrmBlock>
-
-      <CrmBlock className="border-t border-slate-100" title="Days">
-        {view.canEdit && view.customers.length === 0 ? (
-          <CrmNote className="mb-3" tone="info">
-            <span className="block">No validated customers yet. Customers validated on the List tab can be placed here.</span>
-            {onOpenList ? (
-              <span className="mt-2 block">
-                <CrmButton onClick={onOpenList} size="sm">
-                  Open the list
-                </CrmButton>
-              </span>
-            ) : null}
-          </CrmNote>
-        ) : null}
-        <div className="grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-3">
-          {states.map((state) => (
-            <DayCard
-              key={state.day.date}
-              onOpen={() => onOpenDay(state.day.date)}
-              rules={view.rules}
-              showSpread={showSpread}
-              state={state}
-              today={view.cairoToday}
-            />
-          ))}
-        </div>
       </CrmBlock>
 
       {view.canEdit ? (
@@ -1709,42 +1714,46 @@ function DayScreen({
         ) : null}
       </CrmBlock>
 
-      <CrmBlock className="border-t border-slate-100" title={`On this day · ${pairText(state.counts, day)}`}>
-        {state.rows.length === 0 ? (
-          <p className="text-sm font-medium text-slate-500">
-            {state.editing ? "Nobody is placed on this day yet. Add customers below." : "Nothing was planned on this day."}
-          </p>
-        ) : (
-          <div className="grid min-w-0 gap-2">
-            {state.rows.map((row) => (
-              <PlannedRow
-                editing={state.editing}
-                idPrefix={idPrefix}
-                key={row.customerId}
-                locked={locked}
-                onReason={(exceptionType, exceptionNote) => onReason(day.date, row.customerId, exceptionType, exceptionNote)}
-                onRemove={() => onRemove(day.date, row.customerId)}
-                row={row}
-                showSpread={showSpread}
-                weekdayName={weekdayName}
-              />
-            ))}
-          </div>
-        )}
-      </CrmBlock>
+      {/* From `md` the day and the customers to add sit side by side, so a tablet reads both at once
+          rather than scrolling between them. Only while editing — a day read back is one column. */}
+      <div className={cn("min-w-0", state.editing && "md:grid md:grid-cols-2")}>
+        <CrmBlock className="border-t border-slate-100" title={`On this day · ${pairText(state.counts, day)}`}>
+          {state.rows.length === 0 ? (
+            <p className="text-sm font-medium text-slate-500">
+              {state.editing ? "Nobody is placed on this day yet. Choose them under Add customers." : "Nothing was planned on this day."}
+            </p>
+          ) : (
+            <div className="grid min-w-0 gap-2">
+              {state.rows.map((row) => (
+                <PlannedRow
+                  editing={state.editing}
+                  idPrefix={idPrefix}
+                  key={row.customerId}
+                  locked={locked}
+                  onReason={(exceptionType, exceptionNote) => onReason(day.date, row.customerId, exceptionType, exceptionNote)}
+                  onRemove={() => onRemove(day.date, row.customerId)}
+                  row={row}
+                  showSpread={showSpread}
+                  weekdayName={weekdayName}
+                />
+              ))}
+            </div>
+          )}
+        </CrmBlock>
 
-      {state.editing ? (
-        <AddCustomers
-          counts={state.counts}
-          day={day}
-          idPrefix={idPrefix}
-          key={day.date}
-          locked={locked}
-          onAdd={(items) => onAdd(day.date, items)}
-          rows={state.rows}
-          view={view}
-        />
-      ) : null}
+        {state.editing ? (
+          <AddCustomers
+            counts={state.counts}
+            day={day}
+            idPrefix={idPrefix}
+            key={day.date}
+            locked={locked}
+            onAdd={(items) => onAdd(day.date, items)}
+            rows={state.rows}
+            view={view}
+          />
+        ) : null}
+      </div>
     </CrmPanel>
   );
 }
@@ -1964,8 +1973,9 @@ function AddCustomers({
     />
   );
 
+  // Beside "On this day" from `md` (see DayScreen), so the rule between them is drawn on this side.
   return (
-    <CrmBlock className="border-t border-slate-100" title="Add customers">
+    <CrmBlock className="border-t border-slate-100 md:border-l" title="Add customers">
       <p className="break-words text-sm font-semibold leading-6 text-slate-600">
         {morning
           ? `Room for ${countText(remaining.AM)} more AM on this morning.`
@@ -1987,7 +1997,9 @@ function AddCustomers({
                 <CrmChoice columns={3} label="Show" onChange={(next) => filterBy(() => setTypeFilter(next))} options={typeOptions} value={typeFilter} />
               </CrmField>
             )}
-            <div className={cn("grid min-w-0 gap-3", areaOptions.length > 1 ? "md:grid-cols-[minmax(0,1fr)_minmax(0,18rem)] md:items-end" : undefined)}>
+            {/* Search and zone share a row only on the widest screens: from `md` this block is half
+                the day screen, and an 18rem select beside the search would crush it. */}
+            <div className={cn("grid min-w-0 gap-3", areaOptions.length > 1 ? "2xl:grid-cols-[minmax(0,1fr)_minmax(0,18rem)] 2xl:items-end" : undefined)}>
               <CrmField htmlFor={searchId} label="Find a customer">
                 <div className="relative min-w-0">
                   <Search aria-hidden className="pointer-events-none absolute left-3 top-3.5 h-4 w-4 text-slate-400" />

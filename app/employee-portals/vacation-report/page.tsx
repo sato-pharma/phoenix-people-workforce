@@ -64,7 +64,7 @@ export default async function EmployeePortalVacationReportPage({
 
   return (
     <EmployeePortalPageShell
-      badge="Leave Management"
+      badge="Leave & HR"
       description="Review leave entitlements and vacation requests within your visible employee portal scope."
       title="Vacation Report"
     >

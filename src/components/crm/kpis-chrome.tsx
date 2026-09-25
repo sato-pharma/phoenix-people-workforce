@@ -114,7 +114,10 @@ const DEPTH_HAIR = "shadow-[0_1px_2px_rgba(15,23,42,0.05)]";
 // ── Shared class strings ──────────────────────────────────────────────────────────────────────
 
 export const PANEL = "border border-slate-200 bg-white";
-export const CAPTION = "text-phx-2xs text-slate-500";
+// One step larger BELOW `sm` only (11px on a phone, 10px from 640px up). Every table on this board
+// renders from `md`, where the `sm:` size applies, so the measured desktop tables
+// (tests/kpis-board-tables-fit.test.ts) are unchanged; only the phone cards and captions grow.
+export const CAPTION = "text-phx-xs text-slate-500 sm:text-phx-2xs";
 export const TH = "px-3 py-2.5 text-left text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500";
 export const TD = "px-3 py-3 align-top text-sm text-slate-700";
 export const NUM = "px-3 py-3 align-top text-sm font-semibold tabular-nums text-slate-900";
@@ -228,7 +231,7 @@ export function KpiTile({
   return (
     <div className={`relative overflow-hidden border border-slate-200 bg-white px-4 pb-3.5 pt-4 ${DEPTH}`}>
       <span aria-hidden className={`pointer-events-none absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r ${cap}`} />
-      <p className="text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-400">{label}</p>
+      <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400 sm:text-phx-3xs">{label}</p>
       <p className={`mt-1 text-[1.7rem] font-black leading-none tabular-nums ${tone ? tone.text : "text-slate-900"}`}>
         {value}
       </p>
@@ -300,8 +303,8 @@ export function KpiPodiumCard({
     <div className={`relative overflow-hidden border border-slate-200 bg-white ${DEPTH}`}>
       <span aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-orange-400 to-orange-500" />
       <div className="border-b border-slate-200 bg-gradient-to-b from-slate-50 to-white px-3 py-2">
-        <p className="text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-600">{title}</p>
-        <p className="mt-0.5 text-phx-3xs leading-4 text-slate-400">{hint}</p>
+        <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-600 sm:text-phx-3xs">{title}</p>
+        <p className="mt-0.5 text-phx-2xs leading-4 text-slate-400 sm:text-phx-3xs">{hint}</p>
       </div>
       {entries.length === 0 ? (
         <p className="px-3 py-3 text-phx-2xs text-slate-500">
@@ -321,7 +324,7 @@ export function KpiPodiumCard({
                 <span className="block text-phx-xs font-bold leading-4 text-slate-900" dir="auto">
                   {entry.repName}
                 </span>
-                <span className="block text-phx-3xs leading-4 text-slate-500">{entry.caption}</span>
+                <span className="block text-phx-2xs leading-4 text-slate-500 sm:text-phx-3xs">{entry.caption}</span>
               </span>
               <span className="shrink-0 text-base font-black tabular-nums text-slate-900">
                 {entry.value}
@@ -414,8 +417,11 @@ export function KpiRepName({
         <span className="block font-semibold leading-5 text-slate-900" dir="auto">
           {name || "Unnamed rep"}
         </span>
-        {where ? <span className="block text-phx-3xs leading-4 text-slate-500">{where}</span> : null}
-        {!where && jobTitle ? <span className="block text-phx-3xs leading-4 text-slate-500">{jobTitle}</span> : null}
+        {/* Phone-only step up; from `sm` (and so in every desktop table) it is the measured 9px. */}
+        {where ? <span className="block text-phx-2xs leading-4 text-slate-500 sm:text-phx-3xs">{where}</span> : null}
+        {!where && jobTitle ? (
+          <span className="block text-phx-2xs leading-4 text-slate-500 sm:text-phx-3xs">{jobTitle}</span>
+        ) : null}
       </span>
     </span>
   );

@@ -17,7 +17,7 @@
  * The palette, the square edges and the 1px rules are copied verbatim so the two read as one board.
  */
 
-import { useCallback, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useId, useMemo, useState, type ReactNode } from "react";
 
 import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
 import { TableSearchInput } from "@/components/ui/sortable-table";
@@ -70,9 +70,14 @@ const BRICK_TINTS = [
 ] as const;
 type BrickTint = (typeof BRICK_TINTS)[number];
 
-const LABEL_CLASS = "block text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400";
+/**
+ * The board's field-surface controls (reps-list-tables.tsx, FIELD_*_CLASS): a thumb's 44px on a phone
+ * and 36px from `md`, labels at the house 10px floor, and a square edge written out because a phone's
+ * native select draws its own.
+ */
+const LABEL_CLASS = "block text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-400";
 const SELECT_CLASS =
-  "h-9 w-full border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400";
+  "h-11 w-full rounded-none border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400 md:h-9";
 
 /** Which part of the list this is drawing — it decides the row's detail line, its pills and headers. */
 export type CustomerListVariant = "pending" | "active" | "dropped";
@@ -129,7 +134,7 @@ function GroupHeading({
   return (
     <button
       aria-expanded={!collapsed}
-      className={`flex w-full flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-y px-5 py-2.5 text-left ${tone}`}
+      className={`flex w-full flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-y px-4 py-2.5 text-left sm:px-5 ${tone}`}
       onClick={onToggle}
       type="button"
     >
@@ -225,6 +230,10 @@ export function CustomerListBoard({
   const [speciality, setSpeciality] = useState("");
   const [activity, setActivity] = useState("");
   const [query, setQuery] = useState("");
+  // Phones only: whether the filter row is unfolded. Shut by default, as on the board — the toggle
+  // names how many filters are on, so a narrowed list never passes for the whole one.
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const filtersId = useId();
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
   const toggleGroup = useCallback((key: string) => {
     setCollapsed((prev) => {
@@ -282,10 +291,26 @@ export function CustomerListBoard({
     })),
   );
 
+  const filtersOn = [brick, listType, activity, grade, speciality, needle].filter(Boolean).length;
+
   return (
-    <div className="space-y-3 border-t border-slate-100 p-5">
+    <div className="space-y-3 border-t border-slate-100 px-4 py-5 sm:px-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="flex flex-wrap items-end gap-3">
+        {/* On a phone the filter row folds behind this one toggle, which says how many filters are
+            on; from `md` up the row is always open and the toggle is gone. */}
+        <button
+          aria-controls={filtersId}
+          aria-expanded={filtersOpen}
+          className="flex min-h-11 min-w-0 flex-1 items-center justify-between gap-2 rounded-none border border-slate-200 bg-white px-3 text-left text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-600 md:hidden"
+          onClick={() => setFiltersOpen((open) => !open)}
+          type="button"
+        >
+          <span className="min-w-0 break-words">{filtersOn > 0 ? `Filters · ${filtersOn} on` : "Filters"}</span>
+          <GroupCaret open={filtersOpen} />
+        </button>
+        {/* `hidden` and `flex` are never written together: which of two display utilities wins is
+            the stylesheet's order, not the class list's. */}
+        <div className={filtersOpen ? "flex flex-wrap items-end gap-3" : "hidden flex-wrap items-end gap-3 md:flex"} id={filtersId}>
           <label className="block w-full sm:w-56">
             <span className={LABEL_CLASS}>Brick</span>
             <select className={`mt-1 ${SELECT_CLASS}`} onChange={(event) => setBrick(event.target.value)} value={brick}>
@@ -335,12 +360,17 @@ export function CustomerListBoard({
               ))}
             </select>
           </label>
-          <TableSearchInput
-            onChange={setQuery}
-            onClear={() => setQuery("")}
-            placeholder="Search customer, specialty or address…"
-            value={query}
-          />
+          <label className="block w-full sm:w-64">
+            <span className={LABEL_CLASS}>Search</span>
+            <TableSearchInput
+              className="mt-1"
+              onChange={setQuery}
+              onClear={() => setQuery("")}
+              placeholder="Customer, specialty or address"
+              size="md"
+              value={query}
+            />
+          </label>
         </div>
         <ExportXlsxButton
           columns={[
@@ -447,7 +477,8 @@ export function CustomerListBoard({
                               <p className="mt-1 text-xs text-slate-500">{monthText(customer, variant)}</p>
                             </td>
                             <td className={crmTdClassName}>
-                              <div className="flex flex-wrap gap-1.5">{rowActions(customer)}</div>
+                              {/* Stacked, each the column's full width — the board's Actions column does the same. */}
+                              <div className="grid gap-1.5 [&>button]:w-full">{rowActions(customer)}</div>
                             </td>
                           </tr>
                         ))}

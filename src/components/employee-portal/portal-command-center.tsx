@@ -871,15 +871,16 @@ function RepTile({
   return (
     <div className="flex min-w-0 flex-col border border-slate-200 bg-white">
       <div aria-hidden="true" className={`h-0.5 w-full ${rail ?? "bg-slate-300"}`} />
-      <div className="flex flex-1 flex-col p-3">
+      {/* A container, so what fits in the tile is decided by the TILE's width, not the window's. */}
+      <div className="@container flex flex-1 flex-col p-3">
         <div className="flex items-baseline gap-2">
-          <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500">{label}</span>
+          <span className="text-phx-2xs font-bold uppercase tracking-[0.1em] text-slate-500">{label}</span>
           {meta && (
-            <span className="ml-auto text-[9px] font-bold uppercase tracking-[0.08em] text-slate-400">{meta}</span>
+            <span className="ml-auto whitespace-nowrap text-phx-3xs font-bold uppercase tracking-[0.08em] text-slate-400">{meta}</span>
           )}
         </div>
         <div className="mt-2">{children}</div>
-        {hint && <p className="mt-auto pt-2 text-[11px] leading-snug text-slate-500">{hint}</p>}
+        {hint && <p className="mt-auto pt-2 text-phx-xs leading-snug text-slate-500">{hint}</p>}
       </div>
     </div>
   );
@@ -895,7 +896,7 @@ function RepPercent({ pct, note }: { pct: number; note?: React.ReactNode }) {
         <span className={`text-[21px] font-bold leading-none tracking-[-0.01em] tabular-nums ${tone.text}`}>
           {rounded}
         </span>
-        <span className="text-[11px] font-bold text-slate-400">%</span>
+        <span className="text-phx-xs font-bold text-slate-400">%</span>
         {note && <span className="ml-auto">{note}</span>}
       </div>
       <div className="relative mt-2 h-1.5 w-full bg-slate-100">
@@ -927,8 +928,8 @@ function RepFrequencyBreakdown({ exact, above, below }: { exact: number; above: 
     <dl className="mt-2.5 space-y-1 border-t border-slate-100 pt-2">
       {rows.map((r) => (
         <div className="flex items-baseline justify-between gap-2" key={r.label}>
-          <dt className={`text-[11px] font-bold uppercase tracking-[0.08em] ${r.tone}`}>{r.label}</dt>
-          <dd className={`text-[14px] font-bold tabular-nums ${r.tone}`}>{r.value}</dd>
+          <dt className={`text-phx-xs font-bold uppercase tracking-[0.08em] ${r.tone}`}>{r.label}</dt>
+          <dd className={`text-phx-base font-bold tabular-nums ${r.tone}`}>{r.value}</dd>
         </div>
       ))}
     </dl>
@@ -963,15 +964,16 @@ function RepCallHalf({
     <div className="relative min-w-0 pl-3">
       <div aria-hidden="true" className={`absolute inset-y-0 left-0 w-0.5 ${tone?.rail ?? "bg-slate-300"}`} />
       <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
-        <span className="w-7 shrink-0 text-[12px] font-black tracking-[0.06em] text-slate-900">{code}</span>
+        <span className="w-7 shrink-0 text-phx-sm font-black tracking-[0.06em] text-slate-900">{code}</span>
         <span className={`text-[26px] font-bold leading-none tracking-[-0.02em] tabular-nums ${tone?.text ?? "text-slate-700"}`}>
           {rate.toFixed(1)}
         </span>
-        <span className="text-[12px] font-semibold tabular-nums text-slate-500">
+        <span className="text-phx-sm font-semibold tabular-nums text-slate-500">
           {target != null ? `of ${target}` : "no target"}
         </span>
-        {/* Hidden where the tile is narrowest (phone, and the 4-up row from lg to xl). */}
-        <span className="ml-auto hidden text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400 sm:inline lg:hidden xl:inline">
+        {/* Only where the tile itself has room for it (a container query on RepTile's body): the
+            window's width said nothing about the tile once the sidebar opened at lg. */}
+        <span className="ml-auto hidden text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400 @[13rem]:inline">
           {label}
         </span>
       </p>
@@ -993,7 +995,7 @@ function RepPanel({ title, right, children }: { title: string; right?: React.Rea
   return (
     <section className="min-w-0 border border-slate-200 bg-white">
       <header className="flex items-center gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2">
-        <h2 className="text-[11px] font-bold uppercase tracking-[0.09em] text-slate-600">{title}</h2>
+        <h2 className="text-phx-xs font-bold uppercase tracking-[0.09em] text-slate-600">{title}</h2>
         {right && <div className="ml-auto">{right}</div>}
       </header>
       {children}
@@ -1020,13 +1022,14 @@ function RepNeedRow({
   return (
     <div className="flex items-center gap-3 border-b border-slate-200 px-3 py-2.5 last:border-b-0">
       <span aria-hidden="true" className={`w-1 self-stretch ${rail}`} />
-      <span className="min-w-[28px] text-[18px] font-bold leading-none tabular-nums text-slate-900">{count}</span>
+      <span className="min-w-[28px] text-phx-xl font-bold leading-none tabular-nums text-slate-900">{count}</span>
       <span className="min-w-0 flex-1">
-        <span className="block text-[13px] font-semibold leading-snug text-slate-900">{headline}</span>
-        <span className="mt-0.5 block text-[11px] leading-snug tabular-nums text-slate-500">{detail}</span>
+        <span className="block break-words text-phx-md font-semibold leading-snug text-slate-900">{headline}</span>
+        <span className="mt-0.5 block break-words text-phx-xs leading-snug tabular-nums text-slate-500">{detail}</span>
       </span>
+      {/* 40px tall on a phone — it is the one thing on this row a thumb has to hit. */}
       <Link
-        className="shrink-0 border border-slate-300 px-2 py-1 text-[11px] font-bold uppercase tracking-[0.06em] text-slate-700 transition hover:border-orange-400 hover:bg-orange-50 hover:text-orange-800"
+        className="inline-flex min-h-10 shrink-0 items-center border border-slate-300 px-3 text-phx-xs font-bold uppercase tracking-[0.06em] text-slate-700 transition hover:border-orange-400 hover:bg-orange-50 hover:text-orange-800 sm:min-h-8"
         href={href}
       >
         {cta}
@@ -1036,18 +1039,24 @@ function RepNeedRow({
 }
 
 function RepFact({ label, value, tone }: { label: string; value: string; tone?: string }) {
+  // `grow` on a fixed basis: two to a row on a phone, three from `sm`, and the last fact in a short
+  // row stretches to fill it. The facts are optional (no double visit in 90 days, no renewal date),
+  // and on a fixed grid an odd count left a solid grey cell — the "empty square" the owner banned.
   return (
-    <div className="min-w-0 bg-white px-3 py-2">
-      <dt className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">{label}</dt>
-      <dd className={`mt-0.5 text-[13px] font-bold tabular-nums ${tone ?? "text-slate-900"}`}>{value}</dd>
+    <div className="min-w-0 grow basis-[calc(50%-1px)] bg-white px-3 py-2 sm:basis-[calc(33.333%-1px)]">
+      <dt className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">{label}</dt>
+      <dd className={`mt-0.5 break-words text-phx-md font-bold tabular-nums ${tone ?? "text-slate-900"}`}>{value}</dd>
     </div>
   );
 }
 
+// Each label names the page it opens exactly as the sidebar does, so a rep never lands somewhere
+// called something else: "/crm" is the sidebar's "CRM" (the rep's "My Visits" is /visits), and a
+// rep's Source of Sales is his pharmacy lists, not a sales dashboard.
 const REP_TOOLS: { href: string; label: string }[] = [
-  { href: "/employee-portals/crm", label: "My visits" },
+  { href: "/employee-portals/crm", label: "CRM" },
   { href: "/employee-portals/kpis", label: "My KPIs" },
-  { href: "/employee-portals/source-of-sales", label: "Sales dashboard" },
+  { href: "/employee-portals/source-of-sales", label: "Source of Sales" },
   { href: "/employee-portals/coaching", label: "My coaching reports" },
   { href: "/employee-portals/incentive", label: "My incentive" },
   { href: "/employee-portals/vacation-request", label: "Vacation request" },
@@ -1122,261 +1131,288 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
 
       {/* Four measurements, no ornament. Coverage and frequency stand apart on purpose: they
           disagree by design — production has run 68% coverage against 39% frequency in one month —
-          and any blend of them hides exactly the gap they exist to expose. */}
-      <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-        <RepTile
-          hint={achValue ? `${egp(achValue.salesValue)} of ${egp(achValue.targetValue)}` : "No month uploaded"}
-          label="Achievement"
-          meta={achMonth}
-          rail={achPct !== null ? repTone(achPct).rail : undefined}
-        >
-          {achPct !== null ? (
-            <RepPercent
-              note={
-                achDelta !== null ? (
+          and any blend of them hides exactly the gap they exist to expose.
+          Four across only when THIS row is at least 48rem wide (a container query on the wrapper):
+          `lg:` fired at a 1024px window whose content was ~636px once the sidebar opened, leaving
+          each tile ~127px — "SEP 2026" broke in two and "10.2 of 10" wrapped. */}
+      <div className="@container">
+        <div className="grid grid-cols-2 gap-2 @3xl:grid-cols-4">
+          <RepTile
+            hint={achValue ? `${egp(achValue.salesValue)} of ${egp(achValue.targetValue)}` : "No month uploaded"}
+            label="Achievement"
+            meta={achMonth}
+            rail={achPct !== null ? repTone(achPct).rail : undefined}
+          >
+            {achPct !== null ? (
+              <RepPercent
+                note={
+                  achDelta !== null ? (
+                    <span
+                      className={`text-phx-xs font-bold tabular-nums ${achDelta >= 0 ? "text-emerald-700" : "text-rose-600"}`}
+                    >
+                      {achDelta >= 0 ? `+${achDelta}` : achDelta} pts
+                    </span>
+                  ) : null
+                }
+                pct={achPct}
+              />
+            ) : (
+              <p className="text-phx-md font-semibold text-slate-400">No sales uploaded</p>
+            )}
+          </RepTile>
+
+          <RepTile
+            hint={
+              kpis?.hasMeasurablePlan
+                ? `${kpis.visitedDoctors} of ${kpis.plannedDoctors} doctors seen`
+                : "No doctors planned"
+            }
+            label="Coverage"
+            meta={shortPeriod(kpis?.monthLabel)}
+            rail={kpis?.hasMeasurablePlan ? repTone(kpis.coveragePct).rail : undefined}
+          >
+            {kpis?.hasMeasurablePlan ? (
+              <RepPercent pct={kpis.coveragePct} />
+            ) : (
+              <p className="text-phx-md font-semibold text-slate-400">No plan to score</p>
+            )}
+          </RepTile>
+
+          {/* AM and PM, apart, each against its own target and its own bar. Never averaged, and never
+              printed with a slash between them — he read "1.63 / 6.57" as one number over another.
+              Pharmacy joined 2026-09-05, separate again — see PHARMACY_CALL_RATE_TARGET for why it
+              carries no bar and no "of N". */}
+          <RepTile
+            hint={
+              kpis?.noGpsFeed
+                ? "Calls logged, but no GPS check-in reached the CRM to prove them"
+                : kpis?.hasCallRate
+                  ? `${kpis.kpiRules === "phoenix" ? "Visits" : "Verified calls"} per day · ${kpis.workingDays} working days`
+                  : "No calls logged"
+            }
+            label="Call rate"
+            meta={shortPeriod(kpis?.monthLabel)}
+            rail="bg-sky-500"
+          >
+            {/* Ruling A1 (owner, 2026-09-21): the proved rates are blank, not zero, when no GPS
+                check-in reached the CRM at all — so the tile says that rather than drawing three 0.00s. */}
+            {kpis?.noGpsFeed ? (
+              <p className="text-phx-md font-semibold text-slate-400">No GPS feed</p>
+            ) : kpis?.hasCallRate ? (
+              <div className="space-y-2.5">
+                <RepCallHalf code="AM" label="Morning" rate={kpis.amRate ?? 0} target={kpis.amTarget} />
+                <RepCallHalf code="PM" label="Afternoon" rate={kpis.pmRate ?? 0} target={kpis.pmTarget} />
+                <RepCallHalf code="PH" label="Pharmacy" rate={kpis.pharmacyRate ?? 0} target={kpis.pharmacyTarget} />
+              </div>
+            ) : (
+              <p className="text-phx-md font-semibold text-slate-400">Nothing logged yet</p>
+            )}
+          </RepTile>
+
+          <RepTile
+            hint={
+              kpis?.hasMeasurablePlan
+                ? `${kpis.onPlanDoctors} of ${kpis.plannedDoctors} at planned frequency`
+                : "No doctors planned"
+            }
+            label="Frequency"
+            meta={shortPeriod(kpis?.monthLabel)}
+            rail={kpis?.hasMeasurablePlan ? repTone(kpis.frequencyPct).rail : undefined}
+          >
+            {kpis?.hasMeasurablePlan ? (
+              <>
+                <RepPercent pct={kpis.frequencyPct} />
+                <RepFrequencyBreakdown
+                  above={kpis.overDoctors}
+                  below={kpis.underDoctors}
+                  exact={kpis.onPlanDoctors}
+                />
+              </>
+            ) : (
+              <p className="text-phx-md font-semibold text-slate-400">No plan to score</p>
+            )}
+          </RepTile>
+        </div>
+      </div>
+
+      {/* Same reason: two columns only when the row itself has the width for them. */}
+      <div className="@container">
+        <div className="grid gap-2 @3xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+          <div className="min-w-0 space-y-2">
+            {closed.length > 0 && (
+              <RepPanel
+                right={
+                  <span className="text-right text-phx-2xs font-semibold uppercase tracking-[0.08em] text-slate-400">
+                    {noTarget.length > 0
+                      ? `${noTarget.map((t) => monthShort(t.month)).join(", ")} — no target set`
+                      : "Uploaded months"}
+                  </span>
+                }
+                title="Achievement by month"
+              >
+                {/* The % label rides ON its bar (absolute, above it) instead of sharing the column with
+                    it. When the label took ~19px of a 118px column, every bar at 84%+ of the scale was
+                    squeezed to the same ~99px: 85%, 95% and 100% looked identical, and a 100% month
+                    stopped short of the dashed 100% line drawn on the same scale. */}
+                <div className="px-3 pb-3 pt-6">
+                  <div className="relative flex h-[98px] items-end gap-2">
+                    {/* The 100% line, positioned on the same scale as the bars. */}
+                    <div
+                      aria-hidden="true"
+                      className="pointer-events-none absolute inset-x-0 border-t border-dashed border-slate-300"
+                      style={{ bottom: `${(100 / trendMax) * 100}%` }}
+                    />
+                    <span
+                      aria-hidden="true"
+                      className="pointer-events-none absolute right-0 text-phx-3xs font-bold tabular-nums text-slate-400"
+                      style={{ bottom: `calc(${(100 / trendMax) * 100}% + 2px)` }}
+                    >
+                      100%
+                    </span>
+                    {closed.map((t) => {
+                      const pct = Math.max(0, Math.round(t.achievementPercent));
+                      const isLatest =
+                        latestClosed != null && t.year === latestClosed.year && t.month === latestClosed.month;
+                      return (
+                        <div className="flex h-full min-w-0 flex-1 flex-col justify-end" key={`bar-${t.year}-${t.month}`}>
+                          {/* Capped width: with only two scorable months, full-width bars read as
+                              slabs rather than as a chart. */}
+                          <div
+                            className={`relative mx-auto w-full max-w-[84px] ${repTone(pct).fill} ${isLatest ? "outline outline-1 outline-slate-900" : ""}`}
+                            style={{ height: `${Math.max(2, Math.min(100, (pct / trendMax) * 100))}%` }}
+                          >
+                            <p
+                              className={`absolute inset-x-0 bottom-full mb-1 text-center text-phx-2xs font-bold tabular-nums ${isLatest ? "text-slate-900" : "text-slate-500"}`}
+                            >
+                              {pct}%
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="mt-1.5 flex gap-2 border-t border-slate-200 pt-1.5">
+                    {closed.map((t) => (
+                      <div className="min-w-0 flex-1 text-center" key={`lab-${t.year}-${t.month}`}>
+                        <p className="text-phx-2xs font-bold tracking-[0.04em] text-slate-600">{monthShort(t.month)}</p>
+                        <p className="text-phx-3xs uppercase tracking-[0.04em] text-slate-400">
+                          {egpCompact(t.salesValue)}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </RepPanel>
+            )}
+
+            <RepPanel
+              right={
+                pendingCountsAvailable ? (
                   <span
-                    className={`text-[11px] font-bold tabular-nums ${achDelta >= 0 ? "text-emerald-700" : "text-rose-600"}`}
+                    className={`border px-1.5 py-px text-phx-2xs font-bold uppercase tracking-[0.06em] tabular-nums ${openCount > 0 ? "border-orange-300 bg-orange-50 text-orange-800" : "border-emerald-300 bg-emerald-50 text-emerald-800"}`}
                   >
-                    {achDelta >= 0 ? `+${achDelta}` : achDelta} pts
+                    {openCount} open
                   </span>
                 ) : null
               }
-              pct={achPct}
-            />
-          ) : (
-            <p className="text-[13px] font-semibold text-slate-400">No sales uploaded</p>
-          )}
-        </RepTile>
-
-        <RepTile
-          hint={
-            kpis?.hasMeasurablePlan
-              ? `${kpis.visitedDoctors} of ${kpis.plannedDoctors} doctors seen`
-              : "No doctors planned"
-          }
-          label="Coverage"
-          meta={shortPeriod(kpis?.monthLabel)}
-          rail={kpis?.hasMeasurablePlan ? repTone(kpis.coveragePct).rail : undefined}
-        >
-          {kpis?.hasMeasurablePlan ? (
-            <RepPercent pct={kpis.coveragePct} />
-          ) : (
-            <p className="text-[13px] font-semibold text-slate-400">No plan to score</p>
-          )}
-        </RepTile>
-
-        {/* AM and PM, apart, each against its own target and its own bar. Never averaged, and never
-            printed with a slash between them — he read "1.63 / 6.57" as one number over another.
-            Pharmacy joined 2026-09-05, separate again — see PHARMACY_CALL_RATE_TARGET for why it
-            carries no bar and no "of N". */}
-        <RepTile
-          hint={
-            kpis?.noGpsFeed
-              ? "Calls logged, but no GPS check-in reached the CRM to prove them"
-              : kpis?.hasCallRate
-                ? `${kpis.kpiRules === "phoenix" ? "Visits" : "Verified calls"} per day · ${kpis.workingDays} working days`
-                : "No calls logged"
-          }
-          label="Call rate"
-          meta={shortPeriod(kpis?.monthLabel)}
-          rail="bg-sky-500"
-        >
-          {/* Ruling A1 (owner, 2026-09-21): the proved rates are blank, not zero, when no GPS
-              check-in reached the CRM at all — so the tile says that rather than drawing three 0.00s. */}
-          {kpis?.noGpsFeed ? (
-            <p className="text-[13px] font-semibold text-slate-400">No GPS feed</p>
-          ) : kpis?.hasCallRate ? (
-            <div className="space-y-2.5">
-              <RepCallHalf code="AM" label="Morning" rate={kpis.amRate ?? 0} target={kpis.amTarget} />
-              <RepCallHalf code="PM" label="Afternoon" rate={kpis.pmRate ?? 0} target={kpis.pmTarget} />
-              <RepCallHalf code="PH" label="Pharmacy" rate={kpis.pharmacyRate ?? 0} target={kpis.pharmacyTarget} />
-            </div>
-          ) : (
-            <p className="text-[13px] font-semibold text-slate-400">Nothing logged yet</p>
-          )}
-        </RepTile>
-
-        <RepTile
-          hint={
-            kpis?.hasMeasurablePlan
-              ? `${kpis.onPlanDoctors} of ${kpis.plannedDoctors} at planned frequency`
-              : "No doctors planned"
-          }
-          label="Frequency"
-          meta={shortPeriod(kpis?.monthLabel)}
-          rail={kpis?.hasMeasurablePlan ? repTone(kpis.frequencyPct).rail : undefined}
-        >
-          {kpis?.hasMeasurablePlan ? (
-            <>
-              <RepPercent pct={kpis.frequencyPct} />
-              <RepFrequencyBreakdown
-                above={kpis.overDoctors}
-                below={kpis.underDoctors}
-                exact={kpis.onPlanDoctors}
-              />
-            </>
-          ) : (
-            <p className="text-[13px] font-semibold text-slate-400">No plan to score</p>
-          )}
-        </RepTile>
-      </div>
-
-      <div className="grid gap-2 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
-        <div className="min-w-0 space-y-2">
-          {closed.length > 0 && (
-            <RepPanel
-              right={
-                <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-400">
-                  {noTarget.length > 0
-                    ? `${noTarget.map((t) => monthShort(t.month)).join(", ")} — no target set`
-                    : "Uploaded months"}
-                </span>
-              }
-              title="Achievement by month"
+              title="Needs you"
             >
-              <div className="px-3 pb-3 pt-4">
-                <div className="relative flex h-[118px] items-end gap-2">
-                  {/* The 100% line, positioned on the same scale as the bars. */}
-                  <div
-                    aria-hidden="true"
-                    className="pointer-events-none absolute inset-x-0 border-t border-dashed border-slate-300"
-                    style={{ bottom: `${(100 / trendMax) * 100}%` }}
-                  />
-                  <span
-                    aria-hidden="true"
-                    className="pointer-events-none absolute right-0 text-[9px] font-bold tabular-nums text-slate-400"
-                    style={{ bottom: `calc(${(100 / trendMax) * 100}% + 2px)` }}
-                  >
-                    100%
-                  </span>
-                  {closed.map((t) => {
-                    const pct = Math.max(0, Math.round(t.achievementPercent));
-                    const isLatest =
-                      latestClosed != null && t.year === latestClosed.year && t.month === latestClosed.month;
-                    return (
-                      <div className="flex h-full min-w-0 flex-1 flex-col justify-end" key={`bar-${t.year}-${t.month}`}>
-                        <p
-                          className={`mb-1 text-center text-[10px] font-bold tabular-nums ${isLatest ? "text-slate-900" : "text-slate-500"}`}
-                        >
-                          {pct}%
-                        </p>
-                        {/* Capped width: with only two scorable months, full-width bars read as
-                            slabs rather than as a chart. */}
-                        <div
-                          className={`mx-auto w-full max-w-[84px] ${repTone(pct).fill} ${isLatest ? "outline outline-1 outline-slate-900" : ""}`}
-                          style={{ height: `${Math.max(2, Math.min(100, (pct / trendMax) * 100))}%` }}
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
-                <div className="mt-1.5 flex gap-2 border-t border-slate-200 pt-1.5">
-                  {closed.map((t) => (
-                    <div className="min-w-0 flex-1 text-center" key={`lab-${t.year}-${t.month}`}>
-                      <p className="text-[10px] font-bold tracking-[0.04em] text-slate-600">{monthShort(t.month)}</p>
-                      <p className="text-[9px] uppercase tracking-[0.04em] text-slate-400">
-                        {egpCompact(t.salesValue)}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </RepPanel>
-          )}
-
-          <RepPanel
-            right={
-              pendingCountsAvailable ? (
-                <span
-                  className={`border px-1.5 py-px text-[10px] font-bold uppercase tracking-[0.06em] tabular-nums ${openCount > 0 ? "border-orange-300 bg-orange-50 text-orange-800" : "border-emerald-300 bg-emerald-50 text-emerald-800"}`}
-                >
-                  {openCount} open
-                </span>
-              ) : null
-            }
-            title="Needs you"
-          >
-            {!pendingCountsAvailable ? (
-              <p className="px-3 py-3 text-[12px] font-semibold text-slate-400">Requests unavailable — not zero</p>
-            ) : openCount === 0 ? (
-              <p className="px-3 py-3 text-[12px] font-semibold text-emerald-700">
-                Nothing open — no requests waiting, no doctor missed
-              </p>
-            ) : (
-              <>
-                {totalPending > 0 && (
-                  <RepNeedRow
-                    count={totalPending}
-                    cta="Track"
-                    detail={`${pendingVacationCount} vacation · ${pendingExcuseCount} excuse`}
-                    headline="Requests waiting on your manager"
-                    href="/employee-portals/approvals-hub"
-                    rail="bg-amber-500"
-                  />
-                )}
-                {missedDoctors > 0 && kpis && (
-                  <RepNeedRow
-                    count={missedDoctors}
-                    cta="Open"
-                    detail={`${kpis.visitedDoctors} of ${kpis.plannedDoctors} covered · ${kpis.monthLabel}`}
-                    headline="Planned doctors not seen yet"
-                    href="/employee-portals/kpis"
-                    rail="bg-orange-500"
-                  />
-                )}
-              </>
-            )}
-          </RepPanel>
-
-          <RepPanel title="Your record">
-            <dl className="grid grid-cols-2 gap-px bg-slate-200 sm:grid-cols-3">
-              <RepFact
-                label="Annual leave left"
-                value={leaveDaysRemaining != null ? `${leaveDaysRemaining} days` : "Not recorded"}
-              />
-              {serviceDuration && <RepFact label="Employment duration" value={serviceDuration} />}
-              {daysUntilRenewal != null && (
-                <RepFact
-                  label="Until contract renewal"
-                  tone={daysUntilRenewal <= 30 ? "text-rose-700" : daysUntilRenewal <= 60 ? "text-amber-700" : undefined}
-                  value={`${daysUntilRenewal} days`}
-                />
-              )}
-              {doubleVisitPulse && (
+              {!pendingCountsAvailable ? (
+                <p className="px-3 py-3 text-phx-sm font-semibold text-slate-400">Requests unavailable — not zero</p>
+              ) : openCount === 0 ? (
+                <p className="px-3 py-3 text-phx-sm font-semibold text-emerald-700">
+                  Nothing open — no requests waiting, no doctor missed
+                </p>
+              ) : (
                 <>
-                  <RepFact label="Double visits this month" value={String(doubleVisitPulse.dvsThisMonth)} />
-                  <RepFact label="Double visits, 90 days" value={String(doubleVisitPulse.dvsLast90Days)} />
-                  {doubleVisitPulse.daysSinceLastDv != null && (
-                    <RepFact
-                      label="Last double visit"
-                      value={doubleVisitPulse.daysSinceLastDv === 0 ? "Today" : `${doubleVisitPulse.daysSinceLastDv} days ago`}
+                  {/* Each kind goes to the page that actually lists it. "Track" used to open the
+                      approvals hub, which drops leave and excuse requests from every tab — a dead end
+                      — and the count includes requests already with HR, so the heading no longer
+                      says "your manager". */}
+                  {pendingVacationCount > 0 && (
+                    <RepNeedRow
+                      count={pendingVacationCount}
+                      cta="Track"
+                      detail="With your manager or HR"
+                      headline={pendingVacationCount === 1 ? "Vacation request in approval" : "Vacation requests in approval"}
+                      href="/employee-portals/vacation-report?tab=requests"
+                      rail="bg-amber-500"
+                    />
+                  )}
+                  {pendingExcuseCount > 0 && (
+                    <RepNeedRow
+                      count={pendingExcuseCount}
+                      cta="Track"
+                      detail="With your manager or HR"
+                      headline={pendingExcuseCount === 1 ? "Excuse in approval" : "Excuses in approval"}
+                      href="/employee-portals/excuses"
+                      rail="bg-amber-500"
+                    />
+                  )}
+                  {missedDoctors > 0 && kpis && (
+                    <RepNeedRow
+                      count={missedDoctors}
+                      cta="Open"
+                      detail={`${kpis.visitedDoctors} of ${kpis.plannedDoctors} covered · ${kpis.monthLabel}`}
+                      headline="Planned doctors not seen yet"
+                      href="/employee-portals/kpis"
+                      rail="bg-orange-500"
                     />
                   )}
                 </>
               )}
-            </dl>
-          </RepPanel>
-        </div>
+            </RepPanel>
 
-        <div className="min-w-0 space-y-2">
-          {/* The rep's own landing page is the whole point of the competition — this is where he
-              sees who is currently the star and what it would take to be next. */}
-          <EarlyBirdOfTheFortnightCard stars={earlyBirdStars} />
+            <RepPanel title="Your record">
+              <dl className="flex flex-wrap gap-px bg-slate-200">
+                <RepFact
+                  label="Annual leave left"
+                  value={leaveDaysRemaining != null ? `${leaveDaysRemaining} days` : "Not recorded"}
+                />
+                {serviceDuration && <RepFact label="Employment duration" value={serviceDuration} />}
+                {daysUntilRenewal != null && (
+                  <RepFact
+                    label="Until contract renewal"
+                    tone={daysUntilRenewal <= 30 ? "text-rose-700" : daysUntilRenewal <= 60 ? "text-amber-700" : undefined}
+                    value={`${daysUntilRenewal} days`}
+                  />
+                )}
+                {doubleVisitPulse && (
+                  <>
+                    <RepFact label="Double visits this month" value={String(doubleVisitPulse.dvsThisMonth)} />
+                    <RepFact label="Double visits, 90 days" value={String(doubleVisitPulse.dvsLast90Days)} />
+                    {doubleVisitPulse.daysSinceLastDv != null && (
+                      <RepFact
+                        label="Last double visit"
+                        value={doubleVisitPulse.daysSinceLastDv === 0 ? "Today" : `${doubleVisitPulse.daysSinceLastDv} days ago`}
+                      />
+                    )}
+                  </>
+                )}
+              </dl>
+            </RepPanel>
+          </div>
 
-          <RepPanel title="My tools">
-            <nav>
-              {REP_TOOLS.map((tool) => (
-                <Link
-                  className="flex items-center gap-2 border-b border-slate-200 px-3 py-2 text-[12px] font-medium text-slate-800 transition last:border-b-0 hover:bg-orange-50 hover:text-orange-800"
-                  href={tool.href}
-                  key={tool.href}
-                >
-                  {tool.label}
-                  <ArrowRight aria-hidden="true" className="ml-auto h-3.5 w-3.5 shrink-0 text-orange-600" />
-                </Link>
-              ))}
-            </nav>
-          </RepPanel>
+          <div className="min-w-0 space-y-2">
+            {/* The rep's own landing page is the whole point of the competition — this is where he
+                sees who is currently the star and what it would take to be next. */}
+            <EarlyBirdOfTheFortnightCard stars={earlyBirdStars} />
+
+            <RepPanel title="My tools">
+              <nav>
+                {REP_TOOLS.map((tool) => (
+                  <Link
+                    className="flex min-h-11 items-center gap-2 border-b border-slate-200 px-3 py-2 text-phx-sm font-medium text-slate-800 transition last:border-b-0 hover:bg-orange-50 hover:text-orange-800 lg:min-h-9"
+                    href={tool.href}
+                    key={tool.href}
+                  >
+                    {tool.label}
+                    <ArrowRight aria-hidden="true" className="ml-auto h-3.5 w-3.5 shrink-0 text-orange-600" />
+                  </Link>
+                ))}
+              </nav>
+            </RepPanel>
+          </div>
         </div>
       </div>
     </div>

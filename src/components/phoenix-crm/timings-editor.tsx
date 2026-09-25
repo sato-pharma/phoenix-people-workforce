@@ -88,14 +88,19 @@ function SeasonTimings({
           <span className="flex min-w-0 flex-1 flex-wrap gap-1.5">
             {day.windows.map((timing) => (
               <span
-                className="inline-flex max-w-full items-center gap-1 border border-slate-200 bg-slate-50 py-1 pl-2 pr-1 text-xs font-bold text-slate-800"
+                className={cn(
+                  "inline-flex max-w-full items-center gap-1 border border-slate-200 bg-slate-50 pl-2 text-xs font-bold text-slate-800",
+                  // With a remove button the chip is the button's height; read only, it keeps its padding.
+                  onRemove ? "py-0 pr-0" : "py-1 pr-1",
+                )}
                 key={`${timing.startMinute}-${timing.endMinute ?? "open"}`}
               >
                 <span className="break-words">{formatTimingWindow(timing)}</span>
                 {onRemove ? (
+                  // 40px: the rep takes an hour off at the clinic door, with a thumb.
                   <button
                     aria-label={`Remove ${PHOENIX_CRM_WEEKDAY_NAMES[day.weekday]} ${formatTimingWindow(timing)}`}
-                    className="inline-flex h-6 w-6 shrink-0 items-center justify-center text-slate-500 hover:bg-slate-200 hover:text-slate-900 disabled:opacity-40"
+                    className="inline-flex h-10 w-10 shrink-0 items-center justify-center text-slate-500 hover:bg-slate-200 hover:text-slate-900 disabled:opacity-40"
                     disabled={disabled}
                     onClick={() => onRemove(timing)}
                     type="button"
@@ -264,9 +269,10 @@ export function TimingsEditor({
         </div>
 
         <div className="grid grid-cols-2 gap-2">
+          {/* `appearance-none`, as on the date inputs: without it iOS draws its own rounded control. */}
           <CrmField htmlFor={`${idPrefix}-start`} label="From">
             <input
-              className={crmInputClassName}
+              className={cn(crmInputClassName, "appearance-none")}
               disabled={disabled}
               id={`${idPrefix}-start`}
               onChange={(event) => setStart(event.target.value)}
@@ -277,7 +283,7 @@ export function TimingsEditor({
           </CrmField>
           <CrmField htmlFor={`${idPrefix}-end`} label="To (if known)">
             <input
-              className={crmInputClassName}
+              className={cn(crmInputClassName, "appearance-none")}
               disabled={disabled}
               id={`${idPrefix}-end`}
               onChange={(event) => setEnd(event.target.value)}

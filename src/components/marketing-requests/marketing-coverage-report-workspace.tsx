@@ -31,11 +31,11 @@ import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary
 import { RoiMultiSelect } from "@/components/marketing-requests/roi-multi-select";
 import { CoverageKpiCard } from "@/components/marketing-requests/coverage-kpi-card";
 import {
-  PortalDesktopTable,
   PortalRecordCard,
   PortalRecordFields,
   PortalResponsiveDataList,
 } from "@/components/employee-portal/portal-primitives";
+import { cairoDateTime, utcDate } from "@/lib/format/cairo-datetime";
 import {
   computeFacetedCoverageDimensions,
   pruneCoverageFilterState,
@@ -86,10 +86,47 @@ function formatPeriod(period: string | null): string {
     timeZone: "UTC",
   });
 }
+// An INSTANT, so it is shown on the Cairo clock — the reader's own device zone used to decide it.
 function formatExportTimestamp(iso: string): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return iso;
-  return date.toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
+  return cairoDateTime(iso);
+}
+// A DATE-ONLY `pay_date` column, so UTC (see formatPeriod above) — "15 Jul 2026", never "2026-07-15".
+function formatPayDate(payDate: string | null): string {
+  return payDate ? utcDate(payDate) : "—";
+}
+/** Who asked. A missing name reads "Unknown" — never the raw HR ID behind it. */
+function requesterLabel(row: { requesterName: string | null }): string {
+  return row.requesterName?.trim() || "Unknown";
+}
+
+/**
+ * The table shell every table here shares: desktop and tablet only (phones get cards), and
+ * `table-fixed` over a percentage `<colgroup>`, so the columns divide the container's width and no
+ * long name or figure can push the page sideways. It replaces PortalDesktopTable, whose default
+ * was a 980px minimum width inside a sideways scroller — the pattern the fits-the-screen rule bans.
+ */
+function FittedTable({
+  children,
+  className,
+  widths,
+}: {
+  children: React.ReactNode;
+  className?: string;
+  /** Percentages, left to right; they must add up to 100. */
+  widths: number[];
+}) {
+  return (
+    <div className="hidden md:block">
+      <table className={cn("w-full table-fixed border-collapse text-left text-sm", className)} data-portal-desktop-table>
+        <colgroup>
+          {widths.map((width, index) => (
+            <col key={index} style={{ width: `${width}%` }} />
+          ))}
+        </colgroup>
+        {children}
+      </table>
+    </div>
+  );
 }
 
 const ROLLUP_DIMENSION_LABELS: Record<CoverageRollupDimension, string> = {
@@ -148,6 +185,10 @@ const ROI_STATUS_OPTIONS: Array<{ value: MarketingRoiResultStatus; label: string
 
 type EngineState = "ready" | "loading" | "loaded" | "error";
 
+/** Request · Requester and customer · Cost and required · Actual and coverage · Result · expand. */
+const REQUEST_TABLE_WIDTHS = [19, 29, 16, 16, 14, 6];
+const REQUEST_TABLE_COLUMN_COUNT = REQUEST_TABLE_WIDTHS.length;
+
 export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmin: boolean }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -179,6 +220,14 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
   function requestSortArrow(key: RequestSortKey) {
     if (requestSort.key !== key) return "↕";
     return requestSort.direction === "asc" ? "↑" : "↓";
+  }
+  /** One header's sort control. Merged columns carry one per figure, so nothing lost its sort. */
+  function sortButton(key: RequestSortKey, label: string) {
+    return (
+      <button type="button" onClick={() => toggleRequestSort(key)} className="inline-flex items-center gap-1 font-black">
+        {label} {requestSortArrow(key)}
+      </button>
+    );
   }
   function cachePharmacies(requestId: string, pharmacies: MarketingCoveragePharmacyRow[]) {
     setPharmacyCache((prev) => {
@@ -570,7 +619,7 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
                   if (filters.payDateFrom || filters.payDateTo) {
                     chips.push({
                       key: "payDate",
-                      label: `Pay date: ${filters.payDateFrom ?? "…"}–${filters.payDateTo ?? "…"}`,
+                      label: `Pay date: ${filters.payDateFrom ? formatPayDate(filters.payDateFrom) : "…"}–${filters.payDateTo ? formatPayDate(filters.payDateTo) : "…"}`,
                       onClear: () => {
                         const next = { ...filters, payDateFrom: null, payDateTo: null };
                         startFilterTransition(() => setFilters(next));
@@ -765,17 +814,21 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
             <Flame className="h-4 w-4 shrink-0 text-amber-600" />
             <span className="font-black uppercase tracking-wide text-amber-700">Highest spend, zero attributed sales:</span>
             <span className="font-bold">{outlier.requestCode}</span>
-            <span className="text-amber-700">{outlier.requesterName ?? outlier.requesterHrId}</span>
+            <span className="min-w-0 break-words text-amber-700">{requesterLabel(outlier)}</span>
             <span className="ml-auto font-black tabular-nums">{money(outlier.estimatedCost)} EGP</span>
           </button>
         ) : null}
 
         {/* ── Premium KPI band ─────────────────────────────────────────────── */}
-        {/* Sticky just below the topbar (sticky top-0 z-20, ~72–88px tall incl. padding —
-            src/components/layout/topbar.tsx:58) so context never scrolls away; z-10 keeps
-            it under the topbar, and the opaque background stops table rows showing through. */}
+        {/* Pinned under the top bar ONLY from `xl` (1280px), where the ten cards are two rows of
+            five and the band is short. Below that it scrolls with the page: stacked one per row
+            on a phone it was ~1,060px tall — taller than the screen — so pinning it covered the
+            breakdown and the whole request list, which then scrolled underneath it unseen, and at
+            tablet width it still hid half the screen. z-10 keeps it under the top bar (sticky
+            top-0 z-20), and the opaque background stops table rows showing through. Two cards to
+            a row on a phone, three on a tablet, five on a desktop. */}
         {kpi ? (
-          <section className="sticky top-[68px] z-10 grid grid-cols-1 gap-3 bg-phx-paper py-2 sm:top-20 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+          <section className="grid grid-cols-2 gap-2 bg-phx-paper py-2 sm:grid-cols-3 sm:gap-3 lg:grid-cols-5 xl:sticky xl:top-20 xl:z-10">
             <CoverageKpiCard tone="slate" icon={<PackageSearch className="h-5 w-5" />} label="Requests" value={kpi.requestCount.toLocaleString("en-US")} />
             <CoverageKpiCard tone="orange" icon={<CircleDollarSign className="h-5 w-5" />} label="Total cost (EGP)" value={money(kpi.totalEstimatedCost)} />
             <CoverageKpiCard tone="orange" icon={<Target className="h-5 w-5" />} label="Required ROI (EGP)" value={money(kpi.totalRequiredRoi)} />
@@ -841,40 +894,41 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
                 />
               )}
               renderTable={() => (
-                <PortalDesktopTable minWidth="960px">
+                // Eleven columns MERGED to six so the table fits a tablet (768px) and a laptop with
+                // the sidebar open without scrolling sideways — every figure is still here, and
+                // every one still sorts from its own header button.
+                <FittedTable widths={REQUEST_TABLE_WIDTHS}>
                   <thead>
                     <tr className="border-b border-phx-line bg-slate-900 text-left text-phx-xs font-black uppercase tracking-wide text-white">
                       <th className="px-2 py-2.5">
-                        <button type="button" onClick={() => toggleRequestSort("requestCode")} className="inline-flex items-center gap-1 font-black">Request {requestSortArrow("requestCode")}</button>
+                        <span className="inline-flex flex-wrap gap-x-2 gap-y-0.5">
+                          {sortButton("requestCode", "Request")}
+                          {sortButton("status", "Status")}
+                          {sortButton("payDate", "Pay date")}
+                        </span>
                       </th>
                       <th className="px-2 py-2.5">
-                        <button type="button" onClick={() => toggleRequestSort("requesterName")} className="inline-flex items-center gap-1 font-black">Requester {requestSortArrow("requesterName")}</button>
-                      </th>
-                      <th className="px-2 py-2.5">
-                        <button type="button" onClick={() => toggleRequestSort("customerName")} className="inline-flex items-center gap-1 font-black">Customer {requestSortArrow("customerName")}</button>
-                      </th>
-                      <th className="px-2 py-2.5">
-                        <button type="button" onClick={() => toggleRequestSort("status")} className="inline-flex items-center gap-1 font-black">Status {requestSortArrow("status")}</button>
-                      </th>
-                      <th className="px-2 py-2.5">
-                        <button type="button" onClick={() => toggleRequestSort("payDate")} className="inline-flex items-center gap-1 font-black">Pay date {requestSortArrow("payDate")}</button>
+                        <span className="inline-flex flex-wrap gap-x-2 gap-y-0.5">
+                          {sortButton("requesterName", "Requester")}
+                          {sortButton("customerName", "Customer")}
+                        </span>
                       </th>
                       <th className="px-2 py-2.5 text-right">
-                        <button type="button" onClick={() => toggleRequestSort("estimatedCost")} className="inline-flex items-center gap-1 font-black">Cost {requestSortArrow("estimatedCost")}</button>
+                        <span className="inline-flex flex-wrap justify-end gap-x-2 gap-y-0.5">
+                          {sortButton("estimatedCost", "Cost")}
+                          {sortButton("requiredRoiValue", "Required")}
+                        </span>
                       </th>
                       <th className="px-2 py-2.5 text-right">
-                        <button type="button" onClick={() => toggleRequestSort("requiredRoiValue")} className="inline-flex items-center gap-1 font-black">Required {requestSortArrow("requiredRoiValue")}</button>
+                        <span className="inline-flex flex-wrap justify-end gap-x-2 gap-y-0.5">
+                          {sortButton("actualSalesValue", "Actual")}
+                          {sortButton("actualCoverageRatio", "Coverage")}
+                        </span>
                       </th>
-                      <th className="px-2 py-2.5 text-right">
-                        <button type="button" onClick={() => toggleRequestSort("actualSalesValue")} className="inline-flex items-center gap-1 font-black">Actual {requestSortArrow("actualSalesValue")}</button>
-                      </th>
-                      <th className="px-2 py-2.5 text-right">
-                        <button type="button" onClick={() => toggleRequestSort("actualCoverageRatio")} className="inline-flex items-center gap-1 font-black">Coverage {requestSortArrow("actualCoverageRatio")}</button>
-                      </th>
+                      <th className="px-2 py-2.5">{sortButton("resultStatus", "Result")}</th>
                       <th className="px-2 py-2.5">
-                        <button type="button" onClick={() => toggleRequestSort("resultStatus")} className="inline-flex items-center gap-1 font-black">Result {requestSortArrow("resultStatus")}</button>
+                        <span className="sr-only">Target pharmacies</span>
                       </th>
-                      <th className="px-2 py-2.5" />
                     </tr>
                   </thead>
                   <tbody>
@@ -890,7 +944,7 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
                       />
                     ))}
                   </tbody>
-                </PortalDesktopTable>
+                </FittedTable>
               )}
             />
           </section>
@@ -972,9 +1026,10 @@ function CoverageBreakdownPanel({
                   if (event.key === "Enter" || event.key === " ") onFilterDimension("distributor", [row.distributorCode]);
                 }}
               >
+                {/* The distributor by NAME; its code is shown only when no name is on file. */}
                 <PortalRecordCard
                   className="cursor-pointer transition hover:bg-orange-50/40"
-                  meta={`${row.distributorCode} · ${row.requestCount.toLocaleString("en-US")} request${row.requestCount === 1 ? "" : "s"}`}
+                  meta={`${row.requestCount.toLocaleString("en-US")} request${row.requestCount === 1 ? "" : "s"}`}
                   title={row.distributorName ?? row.distributorCode}
                 >
                   <PortalRecordFields
@@ -987,7 +1042,7 @@ function CoverageBreakdownPanel({
               </div>
             )}
             renderTable={() => (
-              <PortalDesktopTable minWidth="560px">
+              <FittedTable widths={[40, 16, 22, 22]}>
                 <thead>
                   <tr className="border-b border-phx-line bg-slate-900 text-left text-phx-xs font-black uppercase tracking-wide text-white">
                     <th className="px-3 py-2.5">Distributor</th>
@@ -1008,17 +1063,14 @@ function CoverageBreakdownPanel({
                       }}
                       className="cursor-pointer border-b border-phx-paper-2 transition hover:bg-orange-50/40"
                     >
-                      <td className="whitespace-nowrap px-3 py-2 font-bold text-slate-900">
-                        {row.distributorName ?? row.distributorCode}
-                        <span className="ml-1.5 text-phx-xs font-semibold text-slate-400">({row.distributorCode})</span>
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-700">{row.requestCount.toLocaleString("en-US")}</td>
-                      <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-700">{money(row.allocatedCost)}</td>
-                      <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-700">{money(row.allocatedRequiredRoi)}</td>
+                      <td className="break-words px-3 py-2 font-bold text-slate-900">{row.distributorName ?? row.distributorCode}</td>
+                      <td className="break-words px-3 py-2 text-right tabular-nums text-slate-700">{row.requestCount.toLocaleString("en-US")}</td>
+                      <td className="break-words px-3 py-2 text-right tabular-nums text-slate-700">{money(row.allocatedCost)}</td>
+                      <td className="break-words px-3 py-2 text-right tabular-nums text-slate-700">{money(row.allocatedRequiredRoi)}</td>
                     </tr>
                   ))}
                 </tbody>
-              </PortalDesktopTable>
+              </FittedTable>
             )}
           />
         ) : (
@@ -1064,7 +1116,9 @@ function CoverageBreakdownPanel({
               );
             }}
             renderTable={() => (
-              <PortalDesktopTable minWidth="720px">
+              // "Behind" and "No data" share one column (the two counts side by side, in their
+              // own colours) — seven columns did not fit a laptop with the sidebar open.
+              <FittedTable widths={[30, 12, 16, 16, 12, 14]}>
                 <thead>
                   <tr className="border-b border-phx-line bg-slate-900 text-left text-phx-xs font-black uppercase tracking-wide text-white">
                     <th className="px-3 py-2.5">{ROLLUP_DIMENSION_LABELS[dimension]}</th>
@@ -1072,8 +1126,7 @@ function CoverageBreakdownPanel({
                     <th className="px-3 py-2.5 text-right">Cost</th>
                     <th className="px-3 py-2.5 text-right">Actual</th>
                     <th className="px-3 py-2.5 text-right">Coverage</th>
-                    <th className="px-3 py-2.5 text-right">Behind</th>
-                    <th className="px-3 py-2.5 text-right">No data</th>
+                    <th className="px-3 py-2.5 text-right">Behind · No data</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1100,18 +1153,21 @@ function CoverageBreakdownPanel({
                           filterable ? "cursor-pointer hover:bg-orange-50/40" : "opacity-70",
                         )}
                       >
-                        <td className="whitespace-nowrap px-3 py-2 font-bold text-slate-900">{row.label}</td>
-                        <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-700">{row.requestCount.toLocaleString("en-US")}</td>
-                        <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-700">{money(row.totalCost)}</td>
-                        <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums font-semibold text-slate-900">{money(row.totalActualValue)}</td>
-                        <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-700">{percent(row.coverageRatio)}</td>
-                        <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-amber-700">{row.behindCount.toLocaleString("en-US")}</td>
-                        <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-500">{row.noDataCount.toLocaleString("en-US")}</td>
+                        <td className="break-words px-3 py-2 font-bold text-slate-900">{row.label}</td>
+                        <td className="break-words px-3 py-2 text-right tabular-nums text-slate-700">{row.requestCount.toLocaleString("en-US")}</td>
+                        <td className="break-words px-3 py-2 text-right tabular-nums text-slate-700">{money(row.totalCost)}</td>
+                        <td className="break-words px-3 py-2 text-right tabular-nums font-semibold text-slate-900">{money(row.totalActualValue)}</td>
+                        <td className="break-words px-3 py-2 text-right tabular-nums text-slate-700">{percent(row.coverageRatio)}</td>
+                        <td className="break-words px-3 py-2 text-right tabular-nums">
+                          <span className="text-amber-700">{row.behindCount.toLocaleString("en-US")}</span>
+                          <span className="text-slate-300"> · </span>
+                          <span className="text-slate-500">{row.noDataCount.toLocaleString("en-US")}</span>
+                        </td>
                       </tr>
                     );
                   })}
                 </tbody>
-              </PortalDesktopTable>
+              </FittedTable>
             )}
           />
         )}
@@ -1128,7 +1184,7 @@ function CoverageBreakdownPanel({
               <PortalRecordCard
                 meta={`${point.requestCount.toLocaleString("en-US")} request${point.requestCount === 1 ? "" : "s"}`}
                 status={<span className="whitespace-nowrap text-sm font-black text-slate-900">{percent(point.coverageRatio)}</span>}
-                title={point.month}
+                title={formatPeriod(point.month)}
               >
                 <PortalRecordFields
                   fields={[
@@ -1139,7 +1195,7 @@ function CoverageBreakdownPanel({
               </PortalRecordCard>
             )}
             renderTable={() => (
-              <PortalDesktopTable minWidth="560px">
+              <FittedTable widths={[28, 16, 20, 20, 16]}>
                 <thead>
                   <tr className="text-left text-phx-xs font-black uppercase tracking-wide text-slate-400">
                     <th className="px-3 py-1.5">Month</th>
@@ -1152,15 +1208,15 @@ function CoverageBreakdownPanel({
                 <tbody>
                   {trend.map((point) => (
                     <tr key={point.month} className="border-t border-phx-paper-2">
-                      <td className="whitespace-nowrap px-3 py-1.5 font-bold text-slate-900">{point.month}</td>
-                      <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-slate-700">{point.requestCount.toLocaleString("en-US")}</td>
-                      <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-slate-700">{money(point.totalCost)}</td>
-                      <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums font-semibold text-slate-900">{money(point.totalActualValue)}</td>
-                      <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-slate-700">{percent(point.coverageRatio)}</td>
+                      <td className="break-words px-3 py-1.5 font-bold text-slate-900">{formatPeriod(point.month)}</td>
+                      <td className="break-words px-3 py-1.5 text-right tabular-nums text-slate-700">{point.requestCount.toLocaleString("en-US")}</td>
+                      <td className="break-words px-3 py-1.5 text-right tabular-nums text-slate-700">{money(point.totalCost)}</td>
+                      <td className="break-words px-3 py-1.5 text-right tabular-nums font-semibold text-slate-900">{money(point.totalActualValue)}</td>
+                      <td className="break-words px-3 py-1.5 text-right tabular-nums text-slate-700">{percent(point.coverageRatio)}</td>
                     </tr>
                   ))}
                 </tbody>
-              </PortalDesktopTable>
+              </FittedTable>
             )}
           />
         </div>
@@ -1265,37 +1321,35 @@ function PharmacyDrilldownPanel({
         const pharmacyExpanded = expandedPharmacyCode === pharmacy.pharmacyCode;
         return (
           <div key={pharmacy.pharmacyCode} className="rounded-none border border-slate-200 bg-white">
-            <div
-              role="button"
-              tabIndex={0}
-              onClick={() => setExpandedPharmacyCode((current) => (current === pharmacy.pharmacyCode ? null : pharmacy.pharmacyCode))}
-              onKeyDown={(event) => {
-                if (event.key !== "Enter" && event.key !== " ") return;
-                setExpandedPharmacyCode((current) => (current === pharmacy.pharmacyCode ? null : pharmacy.pharmacyCode));
-              }}
-              className="flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 transition hover:bg-orange-50/40"
-            >
-              <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 text-slate-400 transition", pharmacyExpanded ? "rotate-180" : "")} />
-              <span className="whitespace-nowrap text-sm font-semibold text-slate-900">{pharmacy.pharmacyName}</span>
-              <span className="whitespace-nowrap text-xs font-medium text-slate-500">({pharmacy.pharmacyCode})</span>
-              <span className="text-slate-300">·</span>
-              <span className="whitespace-nowrap text-sm text-slate-700">{pharmacy.distributorName ?? "Unknown distributor"}</span>
-              <span className="ml-auto flex items-center gap-2">
-                <span className={cn("whitespace-nowrap text-sm font-bold tabular-nums", pharmacy.hasSalesRows ? "text-emerald-700" : "text-slate-400")}>
+            {/* The toggle is a real <button> and the "Full sales history" link sits BESIDE it, not
+                inside it — a link nested in a clickable row is two controls a screen reader and a
+                keyboard cannot tell apart. Names wrap (never clipped by the card's edge). */}
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 transition hover:bg-orange-50/40">
+              <button
+                type="button"
+                aria-expanded={pharmacyExpanded}
+                onClick={() => setExpandedPharmacyCode((current) => (current === pharmacy.pharmacyCode ? null : pharmacy.pharmacyCode))}
+                className="flex min-h-10 min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1 text-left md:min-h-0"
+              >
+                <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 text-slate-400 transition", pharmacyExpanded ? "rotate-180" : "")} />
+                <span className="min-w-0 break-words text-sm font-semibold text-slate-900">{pharmacy.pharmacyName}</span>
+                <span className="min-w-0 break-words text-xs font-medium text-slate-500">({pharmacy.pharmacyCode})</span>
+                <span className="text-slate-300">·</span>
+                <span className="min-w-0 break-words text-sm text-slate-700">{pharmacy.distributorName ?? "Unknown distributor"}</span>
+                <span className={cn("ml-auto whitespace-nowrap text-sm font-bold tabular-nums", pharmacy.hasSalesRows ? "text-emerald-700" : "text-slate-400")}>
                   {money(pharmacy.salesValue)} EGP
                 </span>
-                {isSuperAdmin && pharmacy.parentDistributorCode ? (
-                  <a
-                    href={`/sales/customer-directory/${encodeURIComponent(pharmacy.parentDistributorCode)}/${encodeURIComponent(pharmacy.pharmacyCode)}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    onClick={(event) => event.stopPropagation()}
-                    className="inline-flex items-center gap-1 whitespace-nowrap rounded-none border border-slate-300 px-2 py-1 text-phx-xs font-bold text-slate-700 transition hover:border-phx-accent hover:text-phx-accent"
-                  >
-                    <ExternalLink className="h-3 w-3" /> Full sales history
-                  </a>
-                ) : null}
-              </span>
+              </button>
+              {isSuperAdmin && pharmacy.parentDistributorCode ? (
+                <a
+                  href={`/sales/customer-directory/${encodeURIComponent(pharmacy.parentDistributorCode)}/${encodeURIComponent(pharmacy.pharmacyCode)}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 whitespace-nowrap rounded-none border border-slate-300 px-2 py-1 text-phx-xs font-bold text-slate-700 transition hover:border-phx-accent hover:text-phx-accent"
+                >
+                  <ExternalLink className="h-3 w-3" /> Full sales history
+                </a>
+              ) : null}
             </div>
             {pharmacyExpanded ? (
               <div className="border-t border-slate-200 bg-slate-50 px-3 py-2">
@@ -1314,7 +1368,7 @@ function PharmacyDrilldownPanel({
                     </PortalRecordCard>
                   )}
                   renderTable={() => (
-                    <PortalDesktopTable className="text-phx-sm" minWidth="480px">
+                    <FittedTable className="text-phx-sm" widths={[40, 24, 14, 22]}>
                       <thead>
                         <tr className="text-left text-phx-2xs font-black uppercase tracking-wide text-slate-400">
                           <th className="px-2 py-1">Product</th>
@@ -1326,14 +1380,14 @@ function PharmacyDrilldownPanel({
                       <tbody>
                         {pharmacy.salesDetail.map((sale, index) => (
                           <tr key={`${sale.productCode}-${sale.invoicePeriod}-${index}`} className="border-t border-slate-200">
-                            <td className="whitespace-nowrap px-2 py-1 font-semibold text-slate-900">{sale.productName}</td>
-                            <td className="whitespace-nowrap px-2 py-1 text-slate-600">{formatPeriod(sale.invoicePeriod)}</td>
-                            <td className="whitespace-nowrap px-2 py-1 text-right tabular-nums text-slate-700">{sale.qty.toLocaleString("en-US")}</td>
-                            <td className="whitespace-nowrap px-2 py-1 text-right tabular-nums font-bold text-emerald-700">{money(sale.value)}</td>
+                            <td className="break-words px-2 py-1 font-semibold text-slate-900">{sale.productName}</td>
+                            <td className="break-words px-2 py-1 text-slate-600">{formatPeriod(sale.invoicePeriod)}</td>
+                            <td className="break-words px-2 py-1 text-right tabular-nums text-slate-700">{sale.qty.toLocaleString("en-US")}</td>
+                            <td className="break-words px-2 py-1 text-right tabular-nums font-bold text-emerald-700">{money(sale.value)}</td>
                           </tr>
                         ))}
                       </tbody>
-                    </PortalDesktopTable>
+                    </FittedTable>
                   )}
                 />
               </div>
@@ -1375,43 +1429,54 @@ function RequestAccordionRow({
         onKeyDown={(event) => {
           if (event.key === "Enter" || event.key === " ") onToggle();
         }}
-        className="cursor-pointer border-b border-[rgba(249,115,22,0.22)] align-middle transition hover:bg-orange-50/40"
+        aria-expanded={expanded}
+        className="cursor-pointer border-b border-[rgba(249,115,22,0.22)] align-top transition hover:bg-orange-50/40"
       >
-        <td className="whitespace-nowrap px-2 py-2.5 font-bold text-slate-900">{row.requestCode}</td>
-        <td className="px-2 py-2.5">
-          <span className="block whitespace-nowrap font-bold text-slate-900">{row.requesterName ?? row.requesterHrId}</span>
-          <span className="block whitespace-nowrap text-xs text-slate-400">
+        {/* Request · status · pay date */}
+        <td className="break-words px-2 py-2.5">
+          <span className="block font-bold text-slate-900">{row.requestCode}</span>
+          <span className="mt-1 block text-slate-600">
+            {STATUS_BADGE_CLASS[row.status] ? (
+              <span className={cn("inline-flex rounded-none border px-2 py-0.5 text-phx-xs font-bold", STATUS_BADGE_CLASS[row.status])}>
+                {STATUS_LABELS[row.status] ?? row.status}
+              </span>
+            ) : (
+              <span className="text-phx-xs font-semibold">{STATUS_LABELS[row.status] ?? row.status}</span>
+            )}
+          </span>
+          <span className="mt-1 block text-xs text-slate-500">Paid {row.payDate ? formatPayDate(row.payDate) : "not yet"}</span>
+        </td>
+        {/* Requester (with location and tier) · customer */}
+        <td className="break-words px-2 py-2.5">
+          <span className="block font-bold text-slate-900">{requesterLabel(row)}</span>
+          <span className="block text-xs text-slate-400">
             {locationLabel}
             {row.requesterTier ? <span className="ml-1.5 font-semibold">({row.requesterTier})</span> : null}
           </span>
+          <span className="mt-1 block text-slate-700">{row.customerName}</span>
         </td>
-        <td className="whitespace-nowrap px-2 py-2.5 text-slate-700">{row.customerName}</td>
-        <td className="whitespace-nowrap px-2 py-2.5 text-slate-600">
-          {STATUS_BADGE_CLASS[row.status] ? (
-            <span className={cn("inline-flex rounded-none border px-2 py-0.5 text-phx-xs font-bold", STATUS_BADGE_CLASS[row.status])}>
-              {STATUS_LABELS[row.status] ?? row.status}
-            </span>
-          ) : (
-            STATUS_LABELS[row.status] ?? row.status
-          )}
+        {/* Cost · required */}
+        <td className="break-words px-2 py-2.5 text-right tabular-nums">
+          <span className="block text-slate-700">{money(row.estimatedCost)}</span>
+          <span className="block text-xs text-slate-500">{money(row.requiredRoiValue)} required</span>
         </td>
-        <td className="whitespace-nowrap px-2 py-2.5 text-slate-600">{row.payDate ?? "—"}</td>
-        <td className="whitespace-nowrap px-2 py-2.5 text-right tabular-nums text-slate-700">{money(row.estimatedCost)}</td>
-        <td className="whitespace-nowrap px-2 py-2.5 text-right tabular-nums text-slate-700">{money(row.requiredRoiValue)}</td>
-        <td className="whitespace-nowrap px-2 py-2.5 text-right tabular-nums font-semibold text-slate-900">{money(row.actualSalesValue)}</td>
-        <td className="whitespace-nowrap px-2 py-2.5 text-right tabular-nums text-slate-700">{percent(row.actualCoverageRatio)}</td>
-        <td className="whitespace-nowrap px-2 py-2.5">
+        {/* Actual · coverage */}
+        <td className="break-words px-2 py-2.5 text-right tabular-nums">
+          <span className="block font-semibold text-slate-900">{money(row.actualSalesValue)}</span>
+          <span className="block text-xs text-slate-500">{percent(row.actualCoverageRatio)} covered</span>
+        </td>
+        <td className="break-words px-2 py-2.5">
           <span className={cn("inline-flex rounded-none border px-2 py-0.5 text-phx-xs font-bold", RESULT_BADGE_CLASS[row.resultStatus])}>
             {ROI_RESULT_STATUS_LABEL[row.resultStatus]}
           </span>
         </td>
-        <td className="whitespace-nowrap px-2 py-2.5 text-right">
-          <ChevronDown className={cn("h-4 w-4 text-slate-400 transition", expanded ? "rotate-180" : "")} />
+        <td className="px-2 py-2.5 text-right">
+          <ChevronDown aria-hidden="true" className={cn("ml-auto h-4 w-4 text-slate-400 transition", expanded ? "rotate-180" : "")} />
         </td>
       </tr>
       {expanded ? (
         <tr className="border-b border-[rgba(249,115,22,0.22)] bg-slate-50">
-          <td colSpan={11} className="px-3 py-3">
+          <td colSpan={REQUEST_TABLE_COLUMN_COUNT} className="px-3 py-3">
             <PharmacyDrilldownPanel error={error} isSuperAdmin={isSuperAdmin} loading={loading} pharmacies={pharmacies} />
           </td>
         </tr>
@@ -1446,71 +1511,63 @@ function RequestAccordionCard({
 
   const locationLabel = [row.line, row.region, row.areaName].filter(Boolean).join(" / ") || "—";
 
+  // The card itself is NOT a button any more. It used to be one, with the whole drill-down — each
+  // pharmacy's own toggle and the "Full sales history" link — nested inside it: controls inside a
+  // control, which a screen reader cannot separate and which needed stopPropagation to work at all.
+  // One real <button> now opens and closes the drill-down, and the drill-down sits beside it.
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={onToggle}
-      onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") onToggle();
-      }}
-    >
-      <PortalRecordCard
-        accent={RESULT_ACCENT[row.resultStatus]}
-        className="cursor-pointer transition hover:bg-orange-50/40"
-        meta={
-          <>
-            <span className="block font-bold text-slate-700">{row.requesterName ?? row.requesterHrId}</span>
-            <span className="block text-slate-400">
-              {locationLabel}
-              {row.requesterTier ? <span className="ml-1.5 font-semibold">({row.requesterTier})</span> : null}
-            </span>
-          </>
-        }
-        status={
-          <span className="inline-flex items-center gap-1.5">
-            <span className={cn("inline-flex whitespace-nowrap rounded-none border px-2 py-0.5 text-phx-xs font-bold", RESULT_BADGE_CLASS[row.resultStatus])}>
-              {ROI_RESULT_STATUS_LABEL[row.resultStatus]}
-            </span>
-            <ChevronDown className={cn("h-4 w-4 shrink-0 text-slate-400 transition", expanded ? "rotate-180" : "")} />
+    <PortalRecordCard
+      accent={RESULT_ACCENT[row.resultStatus]}
+      meta={
+        <>
+          <span className="block break-words font-bold text-slate-700">{requesterLabel(row)}</span>
+          <span className="block break-words text-slate-400">
+            {locationLabel}
+            {row.requesterTier ? <span className="ml-1.5 font-semibold">({row.requesterTier})</span> : null}
           </span>
-        }
-        title={row.requestCode}
+        </>
+      }
+      status={
+        <span className={cn("inline-flex whitespace-nowrap rounded-none border px-2 py-0.5 text-phx-xs font-bold", RESULT_BADGE_CLASS[row.resultStatus])}>
+          {ROI_RESULT_STATUS_LABEL[row.resultStatus]}
+        </span>
+      }
+      title={row.requestCode}
+    >
+      <PortalRecordFields
+        fields={[
+          { label: "Customer", value: row.customerName },
+          {
+            label: "Status",
+            value: STATUS_BADGE_CLASS[row.status] ? (
+              <span className={cn("inline-flex rounded-none border px-2 py-0.5 text-phx-xs font-bold", STATUS_BADGE_CLASS[row.status])}>
+                {STATUS_LABELS[row.status] ?? row.status}
+              </span>
+            ) : (
+              STATUS_LABELS[row.status] ?? row.status
+            ),
+          },
+          { label: "Pay date", value: formatPayDate(row.payDate) },
+          { label: "Cost (EGP)", value: money(row.estimatedCost) },
+          { label: "Required ROI (EGP)", value: money(row.requiredRoiValue) },
+          { label: "Actual sales (EGP)", value: money(row.actualSalesValue) },
+          { label: "Coverage", value: percent(row.actualCoverageRatio) },
+        ]}
+      />
+      <button
+        type="button"
+        aria-expanded={expanded}
+        onClick={onToggle}
+        className="mt-3 flex min-h-10 w-full items-center justify-between gap-2 rounded-none border border-slate-200 bg-white px-3 text-left text-phx-sm font-bold text-slate-700 transition hover:border-phx-accent-line hover:bg-orange-50/40 hover:text-phx-accent"
       >
-        <PortalRecordFields
-          fields={[
-            { label: "Customer", value: row.customerName },
-            {
-              label: "Status",
-              value: STATUS_BADGE_CLASS[row.status] ? (
-                <span className={cn("inline-flex rounded-none border px-2 py-0.5 text-phx-xs font-bold", STATUS_BADGE_CLASS[row.status])}>
-                  {STATUS_LABELS[row.status] ?? row.status}
-                </span>
-              ) : (
-                STATUS_LABELS[row.status] ?? row.status
-              ),
-            },
-            { label: "Pay date", value: row.payDate ?? "—" },
-            { label: "Cost (EGP)", value: money(row.estimatedCost) },
-            { label: "Required ROI (EGP)", value: money(row.requiredRoiValue) },
-            { label: "Actual sales (EGP)", value: money(row.actualSalesValue) },
-            { label: "Coverage", value: percent(row.actualCoverageRatio) },
-          ]}
-        />
-        {expanded ? (
-          // Stops clicks/keydowns inside the drill-down (expanding a pharmacy, following the
-          // "Full sales history" link) from bubbling up to this card's own onToggle above —
-          // the desktop row doesn't need this since its drill-down lives in a sibling <tr>,
-          // not nested inside the same clickable element.
-          <div
-            className="mt-3 border-t border-slate-100 pt-3"
-            onClick={(event) => event.stopPropagation()}
-            onKeyDown={(event) => event.stopPropagation()}
-          >
-            <PharmacyDrilldownPanel error={error} isSuperAdmin={isSuperAdmin} loading={loading} pharmacies={pharmacies} />
-          </div>
-        ) : null}
-      </PortalRecordCard>
-    </div>
+        {expanded ? "Hide target pharmacies" : "Show target pharmacies"}
+        <ChevronDown aria-hidden="true" className={cn("h-4 w-4 shrink-0 text-slate-400 transition", expanded ? "rotate-180" : "")} />
+      </button>
+      {expanded ? (
+        <div className="mt-3 border-t border-slate-100 pt-3">
+          <PharmacyDrilldownPanel error={error} isSuperAdmin={isSuperAdmin} loading={loading} pharmacies={pharmacies} />
+        </div>
+      ) : null}
+    </PortalRecordCard>
   );
 }

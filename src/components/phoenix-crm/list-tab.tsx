@@ -22,7 +22,7 @@ import { RepsListTiles } from "@/components/crm/reps-list-board";
 import { RepsListContacts } from "@/components/crm/reps-list-tables";
 import { useCrmGet } from "@/components/phoenix-crm/api";
 import { CustomerListBoard } from "@/components/phoenix-crm/customer-list-board";
-import { cairoStamp, countText, dayLabelWithYear, plural } from "@/components/phoenix-crm/format";
+import { cairoStamp, countText, dayLabel, dayLabelWithYear, plural } from "@/components/phoenix-crm/format";
 import { placeName, territoryLine } from "@/components/phoenix-crm/labels";
 import { CustomerScreen } from "@/components/phoenix-crm/list-customer";
 import {
@@ -664,8 +664,10 @@ function BoardSection({
       );
     }
     const pending = customer.status === "pending";
+    // Side by side on a phone card, where the row is wide. In the table's Actions column they stack,
+    // each the column's full width, so three buttons read as one tidy list instead of a ragged pile.
     return (
-      <div className="flex flex-wrap gap-1.5">
+      <div className="flex flex-wrap gap-1.5 md:grid md:[&>button]:w-full">
         {/* Validate only where there is something to validate and the viewer is the rep. A manager
             reading his rep's list sees Open alone, which is exactly what he can do. */}
         {pending && view.canEdit && customer.referenceContactCrmId !== null ? (
@@ -694,12 +696,12 @@ function BoardSection({
       {/* THE WINDOW, PRINTED ABOVE THE NUMBERS IT SCORES — the same sentence the board prints, for
           the same reason: on the 2nd of a month almost every contact is legitimately unvisited, and
           "Not visited 84" with no window under it reads as a collapse in coverage. */}
-      <p className="px-5 pt-4 text-phx-2xs font-semibold text-slate-500">
+      <p className="px-4 pt-4 text-phx-2xs font-semibold text-slate-500 sm:px-5">
         {board.activityAvailable
-          ? `Visits and plan counted from ${board.activityMonth}-01 to ${board.activityAsOf} Cairo.`
+          ? `Visits and plan counted from ${dayLabel(`${board.activityMonth}-01`)} to ${dayLabelWithYear(board.activityAsOf)} Cairo.`
           : "The plan and visits for this month could not be read, so no activity is shown beside the contacts. The list below is complete and unaffected by that."}
       </p>
-      <RepsListTiles board={board} list={board.list} />
+      <RepsListTiles board={board} gutter="px-4 sm:px-5" list={board.list} />
       <RepsListContacts
         activityAvailable={board.activityAvailable}
         activityMonthLabel={board.activityMonthLabel}
@@ -937,7 +939,9 @@ function TimetableSection({
                 aria-label={PHOENIX_CRM_WEEKDAY_NAMES[option]}
                 className={cn(
                   "min-h-10 rounded-none border px-1 text-sm font-black transition",
-                  option === day ? "border-orange-500 bg-orange-600 text-white" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300",
+                  // One day of seven is a choice, so it wears the choice buttons' selected look — the
+                  // solid orange is for toggles where several can be on at once.
+                  option === day ? "border-orange-500 bg-orange-50 text-orange-800" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300",
                 )}
                 key={option}
                 onClick={() => setWeekday(option)}

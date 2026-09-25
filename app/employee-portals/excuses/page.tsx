@@ -56,7 +56,7 @@ export default async function EmployeeExcusesPage() {
 
   return (
     <EmployeePortalPageShell
-      badge="Leave Management"
+      badge="Leave & HR"
       description="Submit a morning or afternoon 2-hour excuse, send it to your direct manager, and track the monthly usage from one focused workspace."
       title="Excuses"
     >

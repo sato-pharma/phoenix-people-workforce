@@ -74,6 +74,13 @@
             "command": "DIR=\"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}\"; node \"$DIR/.claude/hooks/memory-index-guard.mjs\" \"$DIR\" 2>/dev/null || true",
             "shell": "bash",
             "statusMessage": "Checking memory index budget"
+          },
+          {
+            "type": "command",
+            "command": "DIR=\"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}\"; if [ \"${CLAUDE_CODE_REMOTE:-}\" = \"true\" ] && [ -f \"$DIR/.claude/hooks/session-start-remote.sh\" ]; then bash \"$DIR/.claude/hooks/session-start-remote.sh\" || true; fi",
+            "shell": "bash",
+            "timeout": 1200,
+            "statusMessage": "Preparing the cloud session (Node, pnpm, dependencies)"
           }
         ]
       }

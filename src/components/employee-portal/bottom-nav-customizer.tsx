@@ -35,25 +35,33 @@ export function BottomNavCustomizer({
     setSelected([...pinnedHrefs, href]);
   }
 
+  // PINNING IS A PHONE SETTING. Pins are saved per device and the bottom bar they feed is itself
+  // `lg:hidden`, so on a desktop a pin changed nothing anyone could see. From lg up this card is
+  // just the directory of destinations: the pin buttons, the "Always" anchors and the pin
+  // instructions are all phone-only.
   return (
-    <Card className="rounded border border-slate-200 bg-white p-5 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-6 lg:col-span-2">
+    <Card className="rounded border border-slate-200 bg-white p-5 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-6 xl:col-span-2">
       <div className="mb-1 flex flex-wrap items-center gap-2">
         <span className="inline-flex rounded border border-orange-200 bg-orange-50 px-2.5 py-0.5 text-phx-xs font-semibold uppercase tracking-wider text-orange-600">
           Quick Navigation
         </span>
-        <span className="inline-flex items-center gap-1 text-phx-xs font-medium text-slate-400">
+        <span className="inline-flex items-center gap-1 text-phx-xs font-medium text-slate-400 lg:hidden">
           <Smartphone className="h-3.5 w-3.5" />
           Pin shortcuts to your mobile bottom bar
         </span>
       </div>
       <p className="mb-4 text-xs text-slate-500">
-        All your destinations are below. Pin up to {MAX_BOTTOM_NAV_CUSTOM} to the phone bottom bar
-        ({pinnedSet.size}/{MAX_BOTTOM_NAV_CUSTOM} pinned). <span className="font-semibold">Home</span> and{" "}
-        <span className="font-semibold">Profile</span> always stay there. Tap a tile to open it.
+        All your destinations are below.{" "}
+        <span className="lg:hidden">
+          Pin up to {MAX_BOTTOM_NAV_CUSTOM} to the phone bottom bar ({pinnedSet.size}/{MAX_BOTTOM_NAV_CUSTOM} pinned).{" "}
+          <span className="font-semibold">Home</span> and <span className="font-semibold">Profile</span> always stay
+          there.{" "}
+        </span>
+        Tap a tile to open it.
       </p>
 
-      {/* Fixed anchors */}
-      <div className="mb-3 flex flex-wrap gap-2">
+      {/* Fixed anchors — about the phone bottom bar, so phone-only like the pins. */}
+      <div className="mb-3 flex flex-wrap gap-2 lg:hidden">
         {[HOME_ENTRY, PROFILE_ENTRY].map((entry) => {
           const Icon = entry.icon;
           return (
@@ -69,7 +77,7 @@ export function BottomNavCustomizer({
         })}
         {pinnedSet.size > 0 ? (
           <button
-            className="inline-flex items-center gap-1.5 rounded border border-slate-200 px-2.5 py-1.5 text-xs font-bold text-slate-500 transition-colors hover:border-orange-300 hover:text-orange-600"
+            className="inline-flex min-h-10 items-center gap-1.5 rounded border border-slate-200 px-2.5 py-1.5 text-xs font-bold text-slate-500 transition-colors hover:border-orange-300 hover:text-orange-600"
             onClick={() => setSelected([])}
             type="button"
           >
@@ -106,7 +114,7 @@ export function BottomNavCustomizer({
               <button
                 aria-label={isPinned ? `Unpin ${entry.fullLabel}` : `Pin ${entry.fullLabel}`}
                 aria-pressed={isPinned}
-                className={`shrink-0 rounded p-1.5 transition-colors ${
+                className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded transition-colors lg:hidden ${
                   isPinned
                     ? "text-orange-600 hover:bg-orange-100"
                     : disabled

@@ -26,9 +26,10 @@ export default async function PortalMakeItHappenPage({
   const sp = await searchParams;
   const data = await buildMakeItHappenWorkspace(access, { kind: sp.kind, period: sp.period, rep: sp.rep });
 
+  // Badge and title are the sidebar's own section and label.
   return (
     <EmployeePortalPageShell
-      badge="Field Performance"
+      badge="Sales"
       description="Plan the units that reach your target, product by product."
       errorBoundaryTitle="Make It Happen unavailable"
       title="Make It Happen"

@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 
+import { formatPeriod } from "@/components/sales/target-visuals";
 import { cn } from "@/lib/utils";
 import { isSyntheticDirectArea } from "@/lib/sales/closing-direct-area";
 import { formatNumber, formatPercent } from "@/lib/sales/format";
@@ -88,13 +89,9 @@ function Tile({ label, tone, children }: { label: string; tone?: string; childre
 function ProductCard({ column, cell }: { column: MonthlyClosingColumn; cell: MonthlyClosingCell }) {
   return (
     <div className="group border border-slate-200 bg-white p-4 transition-shadow hover:border-[#fbcfa8] hover:shadow-[0_12px_30px_rgba(249,115,22,0.12)]">
+      {/* The product by name only: its code is a raw ID a rep never needs (names, never codes). */}
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-sm font-bold text-slate-900">{column.productName}</p>
-          <span className="text-phx-2xs font-semibold uppercase tracking-[0.14em] text-slate-400">
-            {column.productCode}
-          </span>
-        </div>
+        <p className="min-w-0 break-words text-sm font-bold text-slate-900">{column.productName}</p>
         <span className={cn("shrink-0 text-lg font-black leading-none tabular-nums", achTone(cell.achievement))}>
           {achText(cell.achievement)}
         </span>
@@ -107,8 +104,8 @@ function ProductCard({ column, cell }: { column: MonthlyClosingColumn; cell: Mon
       <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
         <Tile label="Units">{unitsText(cell.salesUnits)}</Tile>
         <Tile label="Value">{valueText(cell.salesValue)}</Tile>
-        <Tile label="Tgt Units" tone="text-orange-900">{unitsText(cell.targetUnits)}</Tile>
-        <Tile label="Tgt Value" tone="text-orange-900">{valueText(cell.targetValue)}</Tile>
+        <Tile label="Target units" tone="text-orange-900">{unitsText(cell.targetUnits)}</Tile>
+        <Tile label="Target value" tone="text-orange-900">{valueText(cell.targetValue)}</Tile>
       </div>
     </div>
   );
@@ -126,7 +123,8 @@ function AreaBlock({
   period: string | null;
 }) {
   const total = area.rowTotal;
-  const context = [area.areaCode, line, period].filter(Boolean).join(" · ");
+  // Line and month in words ("Pedia · Aug 2026") — never the area code or a raw "2026-08".
+  const context = [line, period ? formatPeriod(period) : null].filter(Boolean).join(" · ");
   const overTarget = total.achievement !== null && total.achievement >= 1;
   return (
     <section className="overflow-hidden border border-slate-200 bg-white shadow-[0_18px_44px_rgba(15,23,42,0.10)]">
@@ -135,8 +133,9 @@ function AreaBlock({
         <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
           <div className="min-w-0">
             <span className="text-phx-2xs font-bold uppercase tracking-[0.24em] text-[#F97316]">Your area</span>
-            <p className="mt-1 text-xl font-black leading-tight text-white">{area.areaName}</p>
-            <span className="text-phx-2xs font-semibold uppercase tracking-[0.16em] text-slate-500">{context}</span>
+            <p className="mt-1 break-words text-xl font-black leading-tight text-white">{area.areaName}</p>
+            {/* slate-400, not 500: 10px slate-500 on the #0B0B0B hero is about 4:1, under AA for small text. */}
+            <span className="text-phx-2xs font-semibold uppercase tracking-[0.16em] text-slate-400">{context}</span>
           </div>
           <div className="text-right">
             <span className="text-phx-2xs font-bold uppercase tracking-[0.18em] text-slate-400">Achievement</span>

@@ -3,7 +3,9 @@
 import { ChevronRight, Loader2, MapPin } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { formatEgp } from "@/components/sales/target-visuals";
 import { cn } from "@/lib/utils";
+import { periodProseLabel } from "@/lib/sales/periods";
 import type {
   TerritoryAreaNode,
   TerritoryBlockNode,
@@ -15,10 +17,14 @@ import type {
 import { PharmacyTrendSparkline } from "./pharmacy-trend-sparkline";
 import type { UseTerritoryTreeResult } from "./use-territory-tree";
 
-function formatEgp(value: number): string {
-  if (value >= 1_000_000) return `EGP ${(value / 1_000_000).toFixed(2)}M`;
-  if (value >= 1_000) return `EGP ${(value / 1_000).toFixed(1)}K`;
-  return `EGP ${value.toFixed(0)}`;
+/** "12 pharmacies" / "1 pharmacy" — a pharmacy count is spelled out, never abbreviated (AGENTS.md §4). */
+function pharmacyCount(count: number): string {
+  return `${count} ${count === 1 ? "pharmacy" : "pharmacies"}`;
+}
+
+/** A block by its name; the code only when the block has no description on file. */
+function blockLabel(block: TerritoryBlockNode): string {
+  return block.blockName || block.blockCode;
 }
 
 function PharmacyCard({ pharmacy }: { pharmacy: TerritoryPharmacy }) {
@@ -47,15 +53,15 @@ function PharmacyCard({ pharmacy }: { pharmacy: TerritoryPharmacy }) {
           {pharmacy.months.map((month) => (
             <span
               className={cn(
-                "rounded px-1.5 py-0.5 text-phx-3xs font-black",
+                "rounded px-1.5 py-0.5 text-phx-2xs font-black",
                 month.hasSales
                   ? "bg-orange-50 text-orange-700 ring-1 ring-orange-200"
                   : "bg-slate-50 text-slate-400 ring-1 ring-slate-200",
               )}
               key={month.period}
-              title={month.period}
+              title={periodProseLabel(month.period)}
             >
-              {month.period.slice(5)}
+              {periodProseLabel(month.period).slice(0, 3)}
             </span>
           ))}
         </div>
@@ -89,21 +95,19 @@ function BrickBranch({
       >
         <span aria-hidden className="absolute inset-y-0 left-0 w-1 bg-slate-300" />
         {/* Line 1: the brick name gets the FULL row width, always — never squeezed by the
-            code/stats, which move to their own line below. Wraps rather than truncates. */}
+            stats, which move to their own line below. Wraps rather than truncates. The brick is
+            named, never shown by its ID. */}
         <span className="flex items-center gap-2">
           <ChevronRight className={cn("h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform", open && "rotate-90 text-orange-500")} />
           <span className="min-w-0 flex-1 break-words text-phx-sm font-bold leading-snug text-slate-900">
             {brick.brickName}
           </span>
         </span>
-        <span className="flex items-center justify-between gap-2 pl-[22px]">
-          <span className="shrink-0 text-phx-2xs font-mono font-semibold text-slate-400">{brick.brickId}</span>
-          {pharmacies ? (
-            <span className="shrink-0 text-phx-2xs font-black tabular-nums text-slate-500">
-              {pharmacies.length} PHs · {formatEgp(total)}
-            </span>
-          ) : null}
-        </span>
+        {pharmacies ? (
+          <span className="break-words pl-[22px] text-phx-2xs font-black tabular-nums text-slate-500">
+            {pharmacyCount(pharmacies.length)} · {formatEgp(total)}
+          </span>
+        ) : null}
       </button>
       {open ? (
         <ul className="ml-4 mt-2 space-y-2 border-l-2 border-orange-200/80 pl-4" role="group">
@@ -148,7 +152,7 @@ function BlockLane({
   const blockTotal = pharmaciesByBrick ? brickStats.reduce((sum, stat) => sum + stat.total, 0) : null;
 
   return (
-    <div className="min-w-[260px] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_2px_12px_rgba(15,23,42,0.06)]">
+    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_2px_12px_rgba(15,23,42,0.06)]">
       <button
         aria-expanded={open}
         className="flex w-full items-center gap-2.5 bg-gradient-to-br from-slate-800 to-slate-950 px-3 py-2.5 text-left text-white"
@@ -156,13 +160,13 @@ function BlockLane({
         type="button"
       >
         <span className="min-w-0 flex-1">
-          <span className="block text-phx-3xs font-black uppercase tracking-[0.14em] text-orange-300">Block</span>
-          <span className="block truncate text-phx-base font-black leading-snug">{block.blockCode}</span>
+          <span className="block text-phx-2xs font-black uppercase tracking-[0.14em] text-orange-300">Block</span>
+          <span className="block break-words text-phx-base font-black leading-snug">{blockLabel(block)}</span>
         </span>
         <span className="shrink-0 text-right text-phx-2xs font-black tabular-nums text-white/80">
           <span className="block">
             {bricks.length} brick{bricks.length === 1 ? "" : "s"}
-            {blockPharmacyCount !== null ? ` · ${blockPharmacyCount} PHs` : ""}
+            {blockPharmacyCount !== null ? ` · ${pharmacyCount(blockPharmacyCount)}` : ""}
           </span>
           <span className="block text-white">{blockTotal !== null ? formatEgp(blockTotal) : "—"}</span>
         </span>
@@ -247,14 +251,14 @@ function AreaRoot({
       : null;
   const totalValue = state.status === "loaded" ? state.payload.totalValue : null;
   const reconciled = state.status === "loaded" ? state.payload.reconciled : null;
-  const pharmacyCount =
+  const pharmacyTotal =
     state.status === "loaded"
       ? state.payload.bricks.reduce((sum, brick) => sum + brick.pharmacies.length, 0)
       : null;
 
   return (
     <div className="flex flex-col items-center">
-      <div className="min-w-[240px] max-w-md rounded-xl border border-slate-900 bg-gradient-to-br from-slate-800 to-slate-950 px-5 py-3.5 text-center text-white shadow-[0_16px_36px_rgba(15,23,42,0.35)]">
+      <div className="w-full max-w-md rounded-xl border border-slate-900 bg-gradient-to-br from-slate-800 to-slate-950 px-5 py-3.5 text-center text-white shadow-[0_16px_36px_rgba(15,23,42,0.35)]">
         <div className="flex items-center justify-center gap-1.5 text-phx-2xs font-black uppercase tracking-[0.16em] text-orange-300">
           <MapPin className="h-3.5 w-3.5" />
           Your area
@@ -270,7 +274,7 @@ function AreaRoot({
           ) : totalValue !== null ? (
             <>
               {blocks.length} block{blocks.length === 1 ? "" : "s"}
-              {pharmacyCount !== null ? ` · ${pharmacyCount} PHs` : ""}
+              {pharmacyTotal !== null ? ` · ${pharmacyCount(pharmacyTotal)}` : ""}
               {" · "}
               {formatEgp(totalValue)}
               {reconciled ? <span className="ml-1 text-emerald-300">· Reconciled ✓</span> : null}
@@ -312,7 +316,7 @@ function AreaLane({
     state.status === "loaded"
       ? new Map(state.payload.bricks.map((brick) => [brick.brickId, brick.pharmacies]))
       : null;
-  const pharmacyCount =
+  const pharmacyTotal =
     state.status === "loaded"
       ? state.payload.bricks.reduce((sum, brick) => sum + brick.pharmacies.length, 0)
       : null;
@@ -340,7 +344,7 @@ function AreaLane({
         <span className="break-words pl-[22px] text-phx-base font-black leading-snug">{area.areaName}</span>
         <span className="pl-[22px] text-phx-2xs font-black tabular-nums text-white/80">
           {blocks.length} block{blocks.length === 1 ? "" : "s"}
-          {pharmacyCount !== null ? ` · ${pharmacyCount} PHs` : ""}
+          {pharmacyTotal !== null ? ` · ${pharmacyCount(pharmacyTotal)}` : ""}
           {state.status === "loaded" ? (
             <>
               {" · "}
@@ -546,8 +550,10 @@ export function TerritoryTreeDesktop({ tree }: { tree: UseTerritoryTreeResult })
         </p>
       );
     }
+    // No overflow-x-auto and no width floor on a rep's own tree (fits-the-screen rule): it opens at
+    // 768px, where its column is at least ~586px, and every card in it wraps rather than widening.
     return (
-      <div className="space-y-10 overflow-x-auto rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-8 sm:px-6">
+      <div className="space-y-10 rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-8 sm:px-6">
         {skeleton.areas.map((area) => (
           <AreaRoot
             area={area}

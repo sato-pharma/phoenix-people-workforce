@@ -13,6 +13,7 @@ import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees
 import { phoenixCrmEntryAvailable } from "@/lib/phoenix-crm/server/page";
 import { isWithinManagerHierarchy, reportsToManagerSeat } from "@/lib/workforce/hierarchy-resolver";
 import { fetchMyCheckins, fetchMyDoubleVisits, fetchMyVisits, fetchTeamVisits } from "@/lib/employee-portal/my-crm-visits";
+import { logPortalFailure } from "@/lib/observability/portal-logging";
 import type {
   MyCrmCheckinRow,
   MyCrmDoubleVisitRow,
@@ -80,7 +81,9 @@ export default async function MyVisitsPage() {
   let doubleVisits: MyCrmDoubleVisitRow[] = [];
   let checkins: MyCrmCheckinRow[] = [];
   let teamVisits: TeamCrmVisitRow[] = [];
-  let loadError: string | null = null;
+  // A load failure is LOGGED, and the rep reads a sentence — never `error.message`, which on this path
+  // is a Supabase or PostgREST string (the same fix the KPIs page carries).
+  let loadFailed = false;
   try {
     [visits, doubleVisits, checkins] = await Promise.all([
       fetchMyVisits(hrId, window),
@@ -88,7 +91,8 @@ export default async function MyVisitsPage() {
       fetchMyCheckins(hrId, window),
     ]);
   } catch (error) {
-    loadError = error instanceof Error ? error.message : "Visit data failed to load.";
+    logPortalFailure({ hrId, module: "visits", role: access.role, route: "/employee-portals/visits" }, error);
+    loadFailed = true;
   }
 
   // Team Visits — a manager's own people. Resolved HERE, never inside the CRM helper: fetchTeamVisits
@@ -117,8 +121,9 @@ export default async function MyVisitsPage() {
   const showNativeLinks = phoenixCrm || vacationDays.show || doctorList.show;
 
   return (
+    // One badge for the whole Field Activity group: the sidebar section's own title.
     <EmployeePortalPageShell
-      badge="Visits"
+      badge="Field Activity"
       description={
         teamVisits.length > 0
           ? "Your own field visits, double visits, GPS check-ins — and your team's visits — from the last 90 days."
@@ -127,7 +132,7 @@ export default async function MyVisitsPage() {
       title="My Visits"
     >
       {showNativeLinks ? (
-        <div className="mb-4 flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2">
           {phoenixCrm ? (
             <Link className={buttonVariants({ variant: "default" })} href="/employee-portals/field-crm">
               Phoenix CRM
@@ -151,8 +156,11 @@ export default async function MyVisitsPage() {
           ) : null}
         </div>
       ) : null}
-      {loadError ? (
-        <p className="mb-4 rounded border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{loadError}</p>
+      {loadFailed ? (
+        <p className="border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
+          Your visits could not load just now. This is a loading problem, not an empty record — refresh the page in a
+          minute.
+        </p>
       ) : null}
       <MyVisitsWorkspace
         checkins={checkins}

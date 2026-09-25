@@ -487,8 +487,8 @@ function VisitsSection({
       ) : null}
       <CrmBlock>
         <CrmStatGrid>
-          <CrmStat label="PM visits" note={kindsNote(pm, "No PM visited")} value={countText(pm.visits)} />
           <CrmStat label="AM visits" note={kindsNote(am, "No AM visited")} value={countText(am.visits)} />
+          <CrmStat label="PM visits" note={kindsNote(pm, "No PM visited")} value={countText(pm.visits)} />
           <CrmStat label="Reps who visited" note={periodText(report.period)} value={countText(reps)} />
           <CrmStat label="Rep days with visits" note="Each rep's days with a visit, added up" value={countText(repDays)} />
         </CrmStatGrid>
@@ -673,8 +673,8 @@ function PlanSection({
       ) : null}
       <CrmBlock>
         <CrmStatGrid>
-          {keptStat(pm, "PM", "No PM planned")}
           {keptStat(am, "AM", "No AM planned")}
+          {keptStat(pm, "PM", "No PM planned")}
           <CrmStat label="Missed" note="Planned, and not visited on the day" value={amPmText(am.missed, pm.missed)} />
           <CrmStat label="Off the plan" note="Visited, and not planned for that day" value={amPmText(am.unplanned, pm.unplanned)} />
         </CrmStatGrid>
@@ -793,10 +793,10 @@ function CoverageSection({
       ) : null}
       <CrmBlock>
         <CrmStatGrid>
-          <CrmStat label="PM coverage" note={coverageNote(pm, "PM")} value={percentText(pm.coveragePct)} />
           <CrmStat label="AM coverage" note={coverageNote(am, "AM")} value={percentText(am.coveragePct)} />
-          <CrmStat label="PM frequency" note={frequencyNote(pm, "PM")} value={percentText(pm.frequencyPct)} />
+          <CrmStat label="PM coverage" note={coverageNote(pm, "PM")} value={percentText(pm.coveragePct)} />
           <CrmStat label="AM frequency" note={frequencyNote(am, "AM")} value={percentText(am.frequencyPct)} />
+          <CrmStat label="PM frequency" note={frequencyNote(pm, "PM")} value={percentText(pm.frequencyPct)} />
         </CrmStatGrid>
       </CrmBlock>
       <ReportList
@@ -1023,6 +1023,8 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
   const [period, setPeriod] = useState<Period>(() => presetPeriod("this_month", cairoToday));
   const [month, setMonth] = useState(() => cairoToday.slice(0, 7));
   const [includeTest, setIncludeTest] = useState(test);
+  // Phones only: the filters fold to a one-line summary, so the figures are not a screen further down.
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const view = scope.data;
   const today = view?.cairoToday ?? cairoToday;
@@ -1095,6 +1097,22 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
   });
   const currentMonth = today.slice(0, 7);
 
+  // The folded filters, in one line: "This month · Tue 1 Sept – Fri 25 Sept 2026 · Pedia · Faisal".
+  // Days that cannot be read keep the filters open, since the fix is inside them.
+  const filtersId = `${idPrefix}-filters`;
+  const showFilters = filtersOpen || Boolean(problem);
+  const presetLabel = preset ? (PRESETS.find((option) => option.value === preset)?.label ?? null) : null;
+  const chosenLine = lineCode ? (view.lines.find((line) => line.lineCode === lineCode)?.lineName ?? null) : null;
+  const chosenTerritory = seatId ? (lineTerritories.find((territory) => territory.seatId === seatId)?.name ?? null) : null;
+  const filterSummary = [
+    activeSection === "coverage" ? monthLabel(month) : presetLabel,
+    activeSection === "coverage" ? null : periodText(period),
+    chosenLine,
+    chosenTerritory,
+  ]
+    .filter((part): part is string => Boolean(part))
+    .join(" · ");
+
   return (
     <CrmPanel
       actions={
@@ -1110,8 +1128,19 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
         <CrmChoice columns={view.hasManagers ? 4 : 3} label="Report" onChange={setSection} options={sectionOptions} value={activeSection} />
       </CrmBlock>
 
-      <CrmBlock className="border-t border-slate-100" title="Filters">
-        <div className="grid min-w-0 gap-3">
+      <CrmBlock
+        actions={
+          problem ? null : (
+            <CrmButton aria-controls={filtersId} aria-expanded={showFilters} className="md:hidden" onClick={() => setFiltersOpen((open) => !open)} size="sm">
+              {showFilters ? "Done" : "Change"}
+            </CrmButton>
+          )
+        }
+        className="border-t border-slate-100"
+        title="Filters"
+      >
+        {showFilters ? null : <p className="break-words text-sm font-semibold leading-6 text-slate-700 md:hidden">{filterSummary}</p>}
+        <div className={cn("min-w-0 gap-3", showFilters ? "grid" : "hidden md:grid")} id={filtersId}>
           {activeSection === "coverage" ? (
             <CrmField className="md:max-w-md" htmlFor={`${idPrefix}-month`} label="Month">
               <CrmSelect id={`${idPrefix}-month`} onChange={(event) => setMonth(event.target.value)} value={month}>

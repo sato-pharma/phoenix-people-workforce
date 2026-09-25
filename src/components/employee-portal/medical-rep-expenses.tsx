@@ -18,17 +18,22 @@ import {
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { PortalDesktopTable } from "@/components/employee-portal/portal-primitives";
+import {
+  PortalEmptyState,
+  PortalSection,
+  PortalSegmentedTabs,
+} from "@/components/employee-portal/portal-primitives";
 import { Input } from "@/components/ui/input";
 import { LoadingSpinner } from "@/components/ui/loading-state";
 import type { OutstationExpenseRequest } from "@/lib/outstation/types";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { todayInCairo } from "@/lib/date-only";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
+import { cn } from "@/lib/utils";
 
 
-type ActiveTab = "submit" | "input";
+type ActiveTab = "submit" | "history";
 type ExpenseStatusFilter = "all" | "submitted" | "approved" | "declined";
 type ExpenseOrder = "newest" | "oldest" | "highest_total" | "lowest_total" | "destination";
 
@@ -107,10 +112,12 @@ function ReadOnlyField({
   icon: LucideIcon;
   value: string;
 }) {
+  // Wraps, never clips: a home address or a long name does not fit a ~240px phone field on one line,
+  // and the card around it is overflow-hidden, so a one-line value was cut off mid-word.
   return (
-    <div className="flex min-h-12 min-w-0 items-center gap-2 rounded-none border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-800">
+    <div className="flex min-h-12 min-w-0 items-center gap-2 rounded-none border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-800">
       <Icon className="h-4 w-4 shrink-0 text-orange-500" />
-      <span className="min-w-0 whitespace-nowrap" dir="auto">{value}</span>
+      <span className="min-w-0 break-words" dir="auto">{value}</span>
     </div>
   );
 }
@@ -134,6 +141,14 @@ function requestFromLabel(request: OutstationExpenseRequest) {
     .join(" - ");
 
   return value || "Residence";
+}
+
+function tripDatesLabel(request: OutstationExpenseRequest) {
+  return `${formatDate(request.tripStartDate)} – ${formatDate(request.tripEndDate)}`;
+}
+
+function countLabel(count: number, singular: string, plural: string) {
+  return `${count} ${count === 1 ? singular : plural}`;
 }
 
 function requestTimestamp(request: OutstationExpenseRequest) {
@@ -188,18 +203,18 @@ async function downloadExpenseWorkbook(rows: OutstationExpenseRequest[], fallbac
   const url = window.URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `phoenix-medical-rep-expenses-${new Date().toISOString().slice(0, 10)}.xlsx`;
+  // Cairo's calendar day, not UTC's: between midnight and 02:59 Cairo the UTC date is still yesterday.
+  link.download = `phoenix-medical-rep-expenses-${todayInCairo()}.xlsx`;
   link.click();
   window.URL.revokeObjectURL(url);
 }
 
+/** The house segmented-tab button (the same look as the Phoenix CRM space tabs). */
 function tabButtonClassName(active: boolean) {
-  return [
-    "flex min-h-12 flex-1 items-center justify-center gap-2 rounded-none px-4 text-sm font-black transition",
-    active
-      ? "bg-orange-500 text-white shadow-[0_14px_28px_rgba(249,115,22,0.24)]"
-      : "bg-white text-slate-600 hover:bg-slate-50",
-  ].join(" ");
+  return cn(
+    "flex min-h-10 min-w-0 items-center justify-center gap-2 rounded px-3 py-2 text-center text-sm font-bold leading-tight transition",
+    active ? "bg-white text-orange-700 shadow-sm" : "text-slate-600 hover:bg-white/70",
+  );
 }
 
 export function MedicalRepExpensesWorkspace({
@@ -326,7 +341,7 @@ export function MedicalRepExpensesWorkspace({
       setAttachments([]);
       setFileInputKey((value) => value + 1);
       setMessage("Expense submitted.");
-      setActiveTab("input");
+      setActiveTab("history");
     } catch {
       setMessage("Unable to submit expense.");
     } finally {
@@ -336,24 +351,27 @@ export function MedicalRepExpensesWorkspace({
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-2 rounded-none border border-slate-200 bg-slate-100/70 p-2 shadow-[0_18px_42px_rgba(15,23,42,0.08)] sm:grid-cols-2">
+      {/* Two tabs side by side at every width — they fit a 360px phone, so they never stack. */}
+      <PortalSegmentedTabs className="grid grid-cols-2">
         <button
+          aria-pressed={activeTab === "submit"}
           className={tabButtonClassName(activeTab === "submit")}
           onClick={() => setActiveTab("submit")}
           type="button"
         >
-          <ReceiptText className="h-4 w-4" />
+          <ReceiptText className="h-4 w-4 shrink-0" />
           Submit Expense
         </button>
         <button
-          className={tabButtonClassName(activeTab === "input")}
-          onClick={() => setActiveTab("input")}
+          aria-pressed={activeTab === "history"}
+          className={tabButtonClassName(activeTab === "history")}
+          onClick={() => setActiveTab("history")}
           type="button"
         >
-          <FileSpreadsheet className="h-4 w-4" />
-          Expense Input
+          <FileSpreadsheet className="h-4 w-4 shrink-0" />
+          History
         </button>
-      </div>
+      </PortalSegmentedTabs>
 
       {message ? (
         <div className="rounded-none border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 shadow-sm">
@@ -362,30 +380,22 @@ export function MedicalRepExpensesWorkspace({
       ) : null}
 
       {activeTab === "submit" ? (
-        <Card className="overflow-hidden rounded-none border border-slate-200 bg-white p-0 shadow-[0_24px_60px_rgba(15,23,42,0.09)]">
+        <PortalSection
+          actions={<Badge variant="neutral">Traveling only</Badge>}
+          eyebrow="Submit Expense"
+          title="Traveling request"
+        >
           <form aria-busy={isSubmitting} onSubmit={submitExpense}>
-            <div className="border-b border-slate-100 bg-gradient-to-r from-white via-orange-50/60 to-white p-6 sm:p-8">
-              <div className="flex flex-wrap items-center justify-between gap-4">
-                <div>
-                  <p className="text-xs font-black uppercase tracking-[0.18em] text-orange-600">
-                    Submit Expense
-                  </p>
-                  <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-950">
-                    Traveling request
-                  </h2>
-                </div>
-                <Badge variant="neutral">Traveling only</Badge>
-              </div>
-            </div>
-
-            <div className="grid gap-5 p-6 sm:p-8 lg:grid-cols-6">
-              <div className="lg:col-span-3">
+            {/* md, not lg: a tablet (768–1023px) has room for the paired fields, and the same grid
+                already fits the ~636px content column at 1024px with the sidebar open. */}
+            <div className="grid gap-5 p-4 sm:p-6 md:grid-cols-6">
+              <div className="md:col-span-3">
                 <Field label="Employee">
                   <ReadOnlyField icon={ReceiptText} value={employeeName} />
                 </Field>
               </div>
 
-              <div className="lg:col-span-3">
+              <div className="md:col-span-3">
                 <Field label="From">
                   <ReadOnlyField
                     icon={MapPin}
@@ -394,19 +404,19 @@ export function MedicalRepExpensesWorkspace({
                 </Field>
               </div>
 
-              <div className="lg:col-span-2">
+              <div className="md:col-span-2">
                 <Field label="Type">
                   <ReadOnlyField icon={FileText} value="Traveling" />
                 </Field>
               </div>
 
-              <div className="lg:col-span-4">
+              <div className="md:col-span-4">
                 <Field label="Attachment">
                   <label className="flex min-h-12 cursor-pointer items-center justify-center gap-2 rounded-none border border-dashed border-orange-300 bg-orange-50 px-4 text-sm font-bold text-orange-700 transition hover:bg-orange-100">
                     <Upload className="h-4 w-4" />
                     <span className="whitespace-nowrap">
                       {attachments.length > 0
-                        ? `${attachments.length} file(s) selected`
+                        ? `${countLabel(attachments.length, "file", "files")} selected`
                         : "Upload ticket"}
                     </span>
                     <input
@@ -424,7 +434,7 @@ export function MedicalRepExpensesWorkspace({
                 </Field>
               </div>
 
-              <div className="lg:col-span-3">
+              <div className="md:col-span-3">
                 <Field label="From Date">
                   <Input
                     className="h-12 rounded-none border-slate-200 bg-white"
@@ -436,7 +446,7 @@ export function MedicalRepExpensesWorkspace({
                 </Field>
               </div>
 
-              <div className="lg:col-span-3">
+              <div className="md:col-span-3">
                 <Field label="To Date">
                   <Input
                     className="h-12 rounded-none border-slate-200 bg-white"
@@ -449,7 +459,7 @@ export function MedicalRepExpensesWorkspace({
                 </Field>
               </div>
 
-              <div className="lg:col-span-3">
+              <div className="md:col-span-3">
                 <Field label="Go Ticket Amount">
                   <Input
                     className="h-12 rounded-none border-slate-200 bg-white"
@@ -463,7 +473,7 @@ export function MedicalRepExpensesWorkspace({
                 </Field>
               </div>
 
-              <div className="lg:col-span-3">
+              <div className="md:col-span-3">
                 <Field label="Return Ticket Amount">
                   <Input
                     className="h-12 rounded-none border-slate-200 bg-white"
@@ -477,7 +487,7 @@ export function MedicalRepExpensesWorkspace({
                 </Field>
               </div>
 
-              <div className="lg:col-span-6">
+              <div className="md:col-span-6">
                 <Field label="To">
                   <Input
                     className="h-12 rounded-none border-slate-200 bg-white"
@@ -489,7 +499,7 @@ export function MedicalRepExpensesWorkspace({
                 </Field>
               </div>
 
-              <div className="lg:col-span-6">
+              <div className="md:col-span-6">
                 <Field label="Note">
                   <textarea
                     className="min-h-40 w-full rounded-none border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20"
@@ -501,44 +511,46 @@ export function MedicalRepExpensesWorkspace({
                 </Field>
               </div>
 
-              {/* AM · PM · Pharmacies, three figures apart (the golden rule) — a third of the row each. */}
-              <div className="lg:col-span-2">
+              {/* AM · PM · Pharmacies, three figures apart (the golden rule) — a third of the row each.
+                  The placeholder is short because a third of the row is ~185px at 1024px with the
+                  sidebar open; where the figures come from is the sentence under the three. */}
+              <div className="md:col-span-2">
                 <Field label="AM Visits">
                   <Input
                     className="h-12 rounded-none border-slate-200 bg-slate-50"
                     disabled
-                    placeholder="Auto from Double Visit Analytics"
+                    placeholder="Filled automatically"
                     readOnly
                     value={amWorkload}
                   />
                 </Field>
               </div>
 
-              <div className="lg:col-span-2">
+              <div className="md:col-span-2">
                 <Field label="PM Visits">
                   <Input
                     className="h-12 rounded-none border-slate-200 bg-slate-50"
                     disabled
-                    placeholder="Auto from Double Visit Analytics"
+                    placeholder="Filled automatically"
                     readOnly
                     value={pmWorkload}
                   />
                 </Field>
               </div>
 
-              <div className="lg:col-span-2">
+              <div className="md:col-span-2">
                 <Field label="Pharmacy Visits">
                   <Input
                     className="h-12 rounded-none border-slate-200 bg-slate-50"
                     disabled
-                    placeholder="Auto from Double Visit Analytics"
+                    placeholder="Filled automatically"
                     readOnly
                     value=""
                   />
                 </Field>
               </div>
 
-              <div className="lg:col-span-6">
+              <div className="md:col-span-6">
                 <p className="text-xs font-semibold text-slate-500">
                   Workload is resolved automatically from the official published Double Visit Analytics snapshot after submission,
                   as three figures: AM, PM and Pharmacies.
@@ -546,7 +558,7 @@ export function MedicalRepExpensesWorkspace({
               </div>
 
               {!canSubmit ? (
-                <div className="lg:col-span-6">
+                <div className="md:col-span-6">
                   <div className="rounded-none border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
                     Residence must be configured before this request can be submitted.
                   </div>
@@ -554,13 +566,13 @@ export function MedicalRepExpensesWorkspace({
               ) : null}
             </div>
 
-            <div className="flex flex-wrap items-center justify-between gap-4 border-t border-slate-100 bg-slate-50 px-6 py-5 sm:px-8">
+            <div className="flex flex-wrap items-center justify-between gap-4 border-t border-slate-100 bg-slate-50 px-4 py-4 sm:px-6">
               <div className="flex min-w-0 items-center gap-3 text-base font-black text-slate-800">
                 <CalendarDays className="h-5 w-5 shrink-0 text-orange-500" />
                 <span>Total: {egp(ticketTotal)}</span>
               </div>
               <Button
-                className="min-h-12 min-w-[220px] gap-2 rounded-none bg-orange-500 px-6 text-white hover:bg-orange-600"
+                className="min-h-12 w-full gap-2 rounded-none bg-orange-500 px-6 text-white hover:bg-orange-600 sm:w-auto sm:min-w-[220px]"
                 disabled={!canSend}
                 type="submit"
               >
@@ -569,41 +581,35 @@ export function MedicalRepExpensesWorkspace({
               </Button>
             </div>
           </form>
-        </Card>
+        </PortalSection>
       ) : (
-        <Card className="overflow-hidden rounded-none border border-slate-200 bg-white p-0 shadow-[0_24px_60px_rgba(15,23,42,0.09)]">
-          <div className="border-b border-slate-100 p-5 sm:p-6">
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <div>
-                <p className="text-xs font-black uppercase tracking-[0.18em] text-orange-600">
-                  Expense Input
-                </p>
-                <h2 className="mt-1 text-2xl font-black text-slate-950">
-                  Submitted expense rows
-                </h2>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="neutral">{filteredRequests.length} row(s)</Badge>
-                <Badge variant="neutral">{egp(filteredTotal)}</Badge>
-                <Button
-                  className="min-h-10 gap-2 rounded-none border border-slate-200 bg-white px-4 text-slate-700 hover:bg-slate-50"
-                  onClick={() => void downloadExpenseWorkbook(filteredRequests, employeeName)}
-                  type="button"
-                >
-                  <Download className="h-4 w-4" />
-                  Download Excel
-                </Button>
-              </div>
+        <PortalSection
+          actions={
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="neutral">{countLabel(filteredRequests.length, "claim", "claims")}</Badge>
+              <Badge variant="neutral">{egp(filteredTotal)}</Badge>
+              <Button
+                className="min-h-10 gap-2 rounded-none border border-slate-200 bg-white px-4 text-slate-700 hover:bg-slate-50"
+                onClick={() => void downloadExpenseWorkbook(filteredRequests, employeeName)}
+                type="button"
+              >
+                <Download className="h-4 w-4" />
+                Download Excel
+              </Button>
             </div>
-
-            <div className="mt-5 grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px_220px]">
+          }
+          eyebrow="History"
+          title="Your submitted claims"
+        >
+          <div className="border-b border-slate-100 p-4 sm:p-6">
+            <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px_220px]">
               <label className="relative block min-w-0">
-                <span className="sr-only">Free filter</span>
+                <span className="sr-only">Search claims</span>
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <Input
                   className="h-11 rounded-none border-slate-200 bg-white pl-9"
                   onChange={(event) => setQuery(event.target.value)}
-                  placeholder="Free filter by employee, request, destination, note"
+                  placeholder="Search by request, destination or note"
                   value={query}
                 />
               </label>
@@ -624,7 +630,7 @@ export function MedicalRepExpensesWorkspace({
               </label>
 
               <label className="relative block min-w-0">
-                <span className="sr-only">Order rows</span>
+                <span className="sr-only">Order claims</span>
                 <ArrowUpDown className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <SearchableSelect
                   className="h-11 w-full appearance-none rounded-none border border-slate-200 bg-white px-9 text-sm font-bold text-slate-700 outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20"
@@ -641,124 +647,143 @@ export function MedicalRepExpensesWorkspace({
             </div>
           </div>
 
-          <PortalDesktopTable className="divide-y divide-orange-100" minWidth="1240px">
-              <thead className="bg-slate-900 text-xs font-black uppercase tracking-[0.14em] text-white">
-                <tr>
-                  <th className="px-4 py-3">Request</th>
-                  <th className="px-4 py-3">Employee Name</th>
-                  <th className="px-4 py-3">Date</th>
-                  <th className="px-4 py-3">From</th>
-                  <th className="px-4 py-3">To</th>
-                  <th className="px-4 py-3 text-right">Go</th>
-                  <th className="px-4 py-3 text-right">Return</th>
-                  <th className="px-4 py-3 text-right">Total</th>
-                  <th className="px-4 py-3">Attachment</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3">Note</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-orange-100 bg-white">
+          {filteredRequests.length === 0 ? (
+            requests.length === 0 ? (
+              <PortalEmptyState
+                message="Claims you send from the Submit Expense tab will show here."
+                title="No claims yet"
+              />
+            ) : (
+              <PortalEmptyState
+                message="Nothing matches these filters. Clear the search or choose another status."
+                title="No matching claims"
+              />
+            )
+          ) : (
+            <>
+              {/* Desktop and tablet: a fixed five-column table that divides the card's width, so no
+                  address, destination or note can push it sideways — they wrap inside their column.
+                  Merged, never shrunk: dates with the route, and Go / Return / Total stacked in one
+                  cell. No employee column: every claim here is the viewer's own. */}
+              <div className="hidden md:block">
+                <table className="w-full table-fixed border-collapse text-left text-sm">
+                  <colgroup>
+                    <col className="w-[19%]" />
+                    <col className="w-[28%]" />
+                    <col className="w-[19%]" />
+                    <col className="w-[10%]" />
+                    <col className="w-[24%]" />
+                  </colgroup>
+                  <thead className="bg-slate-900 text-xs font-black uppercase tracking-[0.14em] text-white">
+                    <tr>
+                      <th className="px-3 py-3">Request</th>
+                      <th className="px-3 py-3">Trip</th>
+                      <th className="px-3 py-3">Tickets</th>
+                      <th className="px-3 py-3">Files</th>
+                      <th className="px-3 py-3">Note</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-orange-100 bg-white">
+                    {filteredRequests.map((request) => (
+                      <tr className="align-top transition hover:bg-orange-50/40" key={getRequestKey(request)}>
+                        <td className="px-3 py-3">
+                          <p className="break-words font-mono text-xs font-bold text-slate-600">MR-{request.id}</p>
+                          <Badge className="mt-1.5" variant={statusVariant(request.status)}>
+                            {normalizeStatus(request.status)}
+                          </Badge>
+                        </td>
+                        <td className="px-3 py-3">
+                          <p className="break-words font-semibold text-slate-900">{tripDatesLabel(request)}</p>
+                          <p className="mt-1 break-words font-medium text-slate-700">
+                            <span dir="auto">{requestFromLabel(request)}</span>
+                            <span aria-hidden="true" className="px-1 text-orange-500">→</span>
+                            <span className="sr-only"> to </span>
+                            <span className="font-semibold text-slate-900" dir="auto">
+                              {request.toLabel || "N/A"}
+                            </span>
+                          </p>
+                        </td>
+                        <td className="px-3 py-3">
+                          <dl className="space-y-1">
+                            <div className="flex flex-wrap items-baseline justify-between gap-x-2">
+                              <dt className="text-xs font-semibold text-slate-500">Go</dt>
+                              <dd className="min-w-0 break-words font-semibold tabular-nums text-slate-800">
+                                {egp(request.goTicketAmount)}
+                              </dd>
+                            </div>
+                            <div className="flex flex-wrap items-baseline justify-between gap-x-2">
+                              <dt className="text-xs font-semibold text-slate-500">Return</dt>
+                              <dd className="min-w-0 break-words font-semibold tabular-nums text-slate-800">
+                                {egp(request.returnTicketAmount)}
+                              </dd>
+                            </div>
+                            <div className="flex flex-wrap items-baseline justify-between gap-x-2 border-t border-slate-100 pt-1">
+                              <dt className="text-xs font-bold text-slate-600">Total</dt>
+                              <dd className="min-w-0 break-words font-black tabular-nums text-slate-950">
+                                {egp(requestTotal(request))}
+                              </dd>
+                            </div>
+                          </dl>
+                        </td>
+                        <td className="px-3 py-3 font-semibold tabular-nums text-slate-700">
+                          {request.attachmentCount}
+                        </td>
+                        <td className="break-words px-3 py-3 font-medium text-slate-700" dir="auto">
+                          {request.notes || "-"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="space-y-3 p-4 md:hidden">
                 {filteredRequests.map((request) => (
-                  <tr className="transition hover:bg-orange-50/40" key={getRequestKey(request)}>
-                    <td className="px-4 py-3 font-mono text-xs font-bold text-slate-600">
-                      MR-{request.id}
-                    </td>
-                    <td className="max-w-[240px] whitespace-nowrap px-4 py-3 font-semibold text-slate-900">
-                      {request.employeeName || employeeName}
-                    </td>
-                    <td className="px-4 py-3 font-semibold text-slate-800">
-                      {formatDate(request.tripStartDate)}
-                    </td>
-                    <td className="max-w-[220px] whitespace-nowrap px-4 py-3 font-medium text-slate-700" dir="auto">
-                      {requestFromLabel(request)}
-                    </td>
-                    <td className="max-w-[260px] whitespace-nowrap px-4 py-3 font-semibold text-slate-900" dir="auto">
-                      {request.toLabel || "N/A"}
-                    </td>
-                    <td className="px-4 py-3 text-right font-semibold text-slate-800">
-                      {egp(request.goTicketAmount)}
-                    </td>
-                    <td className="px-4 py-3 text-right font-semibold text-slate-800">
-                      {egp(request.returnTicketAmount)}
-                    </td>
-                    <td className="px-4 py-3 text-right font-black text-slate-950">
-                      {egp(requestTotal(request))}
-                    </td>
-                    <td className="px-4 py-3 font-medium text-slate-700">
-                      {request.attachmentCount} file(s)
-                    </td>
-                    <td className="px-4 py-3">
-                      <Badge variant={statusVariant(request.status)}>
+                  <div
+                    className="rounded-none border border-slate-200 bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.06)]"
+                    key={`${getRequestKey(request)}-mobile`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="font-mono text-xs font-bold text-slate-500">MR-{request.id}</p>
+                        <p className="mt-1 break-words font-black text-slate-950" dir="auto">
+                          {request.toLabel || "N/A"}
+                        </p>
+                      </div>
+                      <Badge className="shrink-0" variant={statusVariant(request.status)}>
                         {normalizeStatus(request.status)}
                       </Badge>
-                    </td>
-                    <td className="max-w-[260px] whitespace-nowrap px-4 py-3 font-medium text-slate-700">
-                      {request.notes || "-"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-          </PortalDesktopTable>
-
-          <div className="space-y-3 p-4 md:hidden">
-            {filteredRequests.map((request) => (
-              <div
-                className="rounded-none border border-slate-200 bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.06)]"
-                key={`${getRequestKey(request)}-mobile`}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <p className="font-mono text-xs font-bold text-slate-500">MR-{request.id}</p>
-                    <p className="mt-1 font-black text-slate-950">
-                      {request.employeeName || employeeName}
-                    </p>
-                    <p className="mt-1 text-sm font-semibold text-slate-700" dir="auto">
-                      {request.toLabel || "N/A"}
-                    </p>
+                    </div>
+                    <p className="mt-2 text-sm font-medium text-slate-600">{tripDatesLabel(request)}</p>
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+                      <p className="text-slate-600">
+                        Go: <span className="font-bold text-slate-950">{egp(request.goTicketAmount)}</span>
+                      </p>
+                      <p className="text-slate-600">
+                        Return:{" "}
+                        <span className="font-bold text-slate-950">{egp(request.returnTicketAmount)}</span>
+                      </p>
+                      <p className="text-slate-600">
+                        Total:{" "}
+                        <span className="font-bold text-slate-950">
+                          {egp(requestTotal(request))}
+                        </span>
+                      </p>
+                      <p className="text-slate-600">
+                        Files: <span className="font-bold text-slate-950">{request.attachmentCount}</span>
+                      </p>
+                    </div>
+                    {request.notes ? (
+                      <p className="mt-3 break-words text-sm font-medium text-slate-700" dir="auto">
+                        {request.notes}
+                      </p>
+                    ) : null}
                   </div>
-                  <Badge variant={statusVariant(request.status)}>
-                    {normalizeStatus(request.status)}
-                  </Badge>
-                </div>
-                <p className="mt-2 text-sm font-medium text-slate-600">
-                  {formatDate(request.tripStartDate)} - {formatDate(request.tripEndDate)}
-                </p>
-                <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
-                  <p className="text-slate-600">
-                    Go: <span className="font-bold text-slate-950">{egp(request.goTicketAmount)}</span>
-                  </p>
-                  <p className="text-slate-600">
-                    Return:{" "}
-                    <span className="font-bold text-slate-950">{egp(request.returnTicketAmount)}</span>
-                  </p>
-                  <p className="text-slate-600">
-                    Total:{" "}
-                    <span className="font-bold text-slate-950">
-                      {egp(requestTotal(request))}
-                    </span>
-                  </p>
-                  <p className="text-slate-600">
-                    Files: <span className="font-bold text-slate-950">{request.attachmentCount}</span>
-                  </p>
-                </div>
-                {request.notes ? (
-                  <p className="mt-3 text-sm font-medium text-slate-700">{request.notes}</p>
-                ) : null}
+                ))}
               </div>
-            ))}
-            {filteredRequests.length === 0 ? (
-              <p className="px-3 py-6 text-sm font-medium text-slate-600">
-                No expense rows match the current filters.
-              </p>
-            ) : null}
-          </div>
-
-          {filteredRequests.length === 0 ? (
-            <div className="hidden px-5 py-10 text-sm font-semibold text-slate-600 md:block">
-              No expense rows match the current filters.
-            </div>
-          ) : null}
-        </Card>
+            </>
+          )}
+        </PortalSection>
       )}
     </div>
   );

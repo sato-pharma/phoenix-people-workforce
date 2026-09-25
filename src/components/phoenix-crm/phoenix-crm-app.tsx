@@ -65,13 +65,18 @@ const TAB_LABELS: Record<TabKey, string> = {
  * Phones fit three tabs a row (two rows for five or six, three for seven); wider screens fit every tab
  * on one row. Seven is the Super Admin's full set — four a row from `sm` keeps the labels on one line
  * until there is room for all seven, rather than shrinking the type (the fits-the-screen rule).
+ *
+ * Five — a rep's own set — is three over two on a phone with NO empty cell: a six-track grid where the
+ * first three tabs take two tracks each and the last two take three. The spans are scoped to phones
+ * (`max-sm:`) rather than reset at `sm`, because an `:nth-child` rule outranks a plain child rule and
+ * a reset would lose to it.
  */
 const TAB_COLUMNS: Record<number, string> = {
   1: "grid-cols-1",
   2: "grid-cols-2",
   3: "grid-cols-3",
   4: "grid-cols-4",
-  5: "grid-cols-3 sm:grid-cols-5",
+  5: "grid-cols-6 sm:grid-cols-5 max-sm:[&>*:nth-child(-n+3)]:col-span-2 max-sm:[&>*:nth-child(n+4)]:col-span-3",
   6: "grid-cols-3 sm:grid-cols-6",
   7: "grid-cols-3 sm:grid-cols-4 lg:grid-cols-7",
 };
@@ -597,6 +602,7 @@ export function PhoenixCrmApp({
           key={`doctors|${test}`}
           onOpenList={openTerritoryList}
           openableSeatIds={overview.territories.map((territory) => territory.seatId)}
+          reach={viewer.isRep ? (viewer.isManager ? "own-and-beneath" : "own") : "beneath"}
           test={test}
         />
       );

@@ -15,7 +15,7 @@
  */
 
 import { useState } from "react";
-import { Loader2, Play } from "lucide-react";
+import { Play } from "lucide-react";
 
 import { crmPost } from "@/components/phoenix-crm/api";
 import { CrmButton } from "@/components/phoenix-crm/ui";
@@ -53,7 +53,8 @@ export function CrmVoiceNotePlayer({ path, seconds }: { path: string; seconds: n
       ) : (
         <div className="mt-1">
           <CrmButton busy={loading} disabled={loading} onClick={open} size="sm">
-            {loading ? <Loader2 aria-hidden className="h-4 w-4 shrink-0 animate-spin" /> : <Play aria-hidden className="h-4 w-4 shrink-0" />}
+            {/* While opening, the button draws its own spinner (`busy`); a second one here doubled it. */}
+            {loading ? null : <Play aria-hidden className="h-4 w-4 shrink-0" />}
             {loading ? "Opening" : "Play"}
           </CrmButton>
           {failed ? <p className="mt-1 break-words text-xs font-medium leading-5 text-rose-700">The note could not be opened. Try again.</p> : null}

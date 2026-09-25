@@ -46,10 +46,21 @@ export default async function EmployeePortalRoiTrackerPage() {
     redirect("/employee-portals");
   }
 
+  // The header speaks to the tabs this viewer actually has. The ROI tab no longer draws a second
+  // hero of its own under this one, so its one-line summary lives here.
+  const roiSummary = "Money in flight: the stage each campaign is at, who is holding it, and the month its return can be judged.";
+  const coverageSummary = "Open any request's target pharmacies and their realized sales.";
+  const description =
+    canSeeRoi && canSeeCoverage
+      ? `${roiSummary} Switch to Coverage to open any request's target pharmacies and their realized sales — two views of the same campaigns.`
+      : canSeeRoi
+        ? roiSummary
+        : coverageSummary;
+
   return (
     <EmployeePortalPageShell
       badge="Marketing"
-      description="Track the realized return on approved marketing spend, then switch to Coverage to expand any request to its target pharmacies and their realized sales — two views of the same campaigns."
+      description={description}
       title="ROI Tracker"
     >
       <RoiTrackerTabs

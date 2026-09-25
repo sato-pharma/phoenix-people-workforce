@@ -10,8 +10,10 @@ import {
 import {
   AlertCircle,
   ArrowDown,
+  ArrowRight,
   ArrowUp,
   ArrowUpDown,
+  CalendarDays,
   CheckCircle2,
   ChevronDown,
   Download,
@@ -25,6 +27,7 @@ import {
   Trash2,
   XCircle,
 } from "lucide-react";
+import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { AdminCallout, AdminPageHero } from "@/components/admin/admin-design-system";
@@ -123,6 +126,17 @@ function adminVacationFormFromRow(row: VacationRequestRecord): AdminVacationForm
 
 function formatDays(days: number) {
   return `${Number(days.toFixed(2))}`;
+}
+
+/**
+ * The timeline's event type is a stored code (`manager_approved`, `hr_rejected`). The owner's rule is
+ * human-readable text everywhere, never a raw code, so the code is spoken as words — the sentence
+ * above it (`event.message`) already carries the detail.
+ */
+function timelineEventLabel(eventType: string) {
+  const words = eventType.replace(/[_-]+/g, " ").trim().toLowerCase();
+  if (!words) return "";
+  return (words.charAt(0).toUpperCase() + words.slice(1)).replace(/\bhr\b/gi, "HR");
 }
 
 // DATE-ONLY (leave start/end days, `date` columns — formatDateTime below takes a real instant), which
@@ -862,6 +876,132 @@ function EntitlementCard({ row }: { row: VacationEmployeeEligibilityRow }) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════ */
+/* ─── Own-leave panel (a viewer whose scope is only themselves) ────── */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+function SelfLeaveFact({ label, value, tone }: { label: string; value: string; tone?: string }) {
+  return (
+    <div className="min-w-0 bg-white px-3 py-2.5">
+      <dt className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">{label}</dt>
+      <dd className={cn("mt-0.5 break-words text-phx-md font-bold text-slate-900", tone)}>{value}</dd>
+    </div>
+  );
+}
+
+/**
+ * The Entitlements tab for a viewer who can see nobody but themselves — every Medical Rep, and any
+ * employee without a team. The team report it replaces for them (five population counters, an
+ * eligibility distribution drawn over one person, a nine-column register holding one row, and an
+ * Employee and a Manager column that always named the same two people) answered no question an
+ * employee asks about their own leave. This answers the three they do: how many days are left, can
+ * I use them yet, and where are my requests. Every figure is the same row the table printed.
+ */
+function SelfLeaveBalancePanel({
+  requestHref,
+  requestsHref,
+  row,
+}: {
+  requestHref: string;
+  requestsHref: string;
+  row: VacationEmployeeEligibilityRow | null;
+}) {
+  if (!row) {
+    return (
+      <div className="rounded-sm border border-slate-200 bg-white px-4 py-8 text-center shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
+        <CalendarDays className="mx-auto h-6 w-6 text-slate-300" />
+        <p className="mt-3 text-phx-md font-bold text-slate-900">Your leave balance is not available yet</p>
+        <p className="mx-auto mt-1 max-w-md text-phx-sm font-medium leading-5 text-slate-500">
+          HR needs your employee record complete before it can be calculated. Ask them through Request Support.
+        </p>
+      </div>
+    );
+  }
+
+  const hasEntitlement = row.annualEntitlementDays > 0;
+  const usedPct = hasEntitlement ? Math.min((row.annualUsedDays / row.annualEntitlementDays) * 100, 100) : 0;
+  const remainPct = 100 - usedPct;
+  const tone = !hasEntitlement
+    ? { bar: "from-slate-400 to-slate-300", rail: "bg-slate-300", text: "text-slate-700" }
+    : remainPct >= 60
+      ? { bar: "from-emerald-600 to-emerald-300", rail: "bg-emerald-500", text: "text-emerald-700" }
+      : remainPct >= 30
+        ? { bar: "from-amber-500 to-amber-300", rail: "bg-amber-500", text: "text-amber-700" }
+        : { bar: "from-rose-600 to-rose-300", rail: "bg-rose-500", text: "text-rose-700" };
+  const daysUntilEligible = row.eligibilityStatus === "first_six_months" ? (row.daysUntilEligibility ?? 0) : 0;
+
+  return (
+    <div className="grid gap-2 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
+      <section className="min-w-0 rounded-sm border border-slate-200 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
+        <div aria-hidden="true" className={cn("h-0.5 w-full", tone.rail)} />
+        <div className="p-4 sm:p-5">
+          <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">Annual leave left</p>
+          <p className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+            <span className={cn("text-phx-3xl font-extrabold leading-none tracking-[-0.04em] tabular-nums", tone.text)}>
+              {formatDays(row.annualBalanceDays)}
+            </span>
+            <span className="text-phx-md font-bold text-slate-500">
+              {row.annualBalanceDays === 1 ? "day" : "days"}
+            </span>
+          </p>
+          <div className="mt-4">
+            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-500">
+              <span>Used {formatDays(row.annualUsedDays)}</span>
+              <span>of {formatDays(row.annualEntitlementDays)} this leave year</span>
+            </div>
+            <div className="mt-1 h-2 w-full overflow-hidden rounded-sm bg-slate-100">
+              <div className={cn("h-full bg-gradient-to-r transition-all duration-500", tone.bar)} style={{ width: `${usedPct}%` }} />
+            </div>
+          </div>
+          <div className="mt-4 grid gap-2 sm:grid-cols-2">
+            <Link
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-sm bg-orange-500 px-4 text-phx-sm font-bold text-white transition hover:bg-orange-600"
+              href={requestHref}
+            >
+              <CalendarDays className="h-3.5 w-3.5" />
+              Request vacation
+            </Link>
+            <Link
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-sm border border-slate-200 bg-white px-4 text-phx-sm font-bold text-slate-700 transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700"
+              href={requestsHref}
+            >
+              My requests
+              <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      <section className="min-w-0 rounded-sm border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.04)] sm:p-5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">Eligibility</p>
+          <Badge variant={eligibilityBadgeVariant(row.eligibilityStatus)}>
+            {eligibilityStatusLabel(row.eligibilityStatus)}
+          </Badge>
+        </div>
+        {daysUntilEligible > 0 ? (
+          <p className="mt-2 text-phx-md font-bold leading-5 text-amber-700">
+            {daysUntilEligible} {daysUntilEligible === 1 ? "day" : "days"} until you can take paid annual leave
+          </p>
+        ) : null}
+        <dl className="mt-3 grid grid-cols-2 gap-px border border-slate-100 bg-slate-100">
+          <SelfLeaveFact label="Hire date" value={formatDate(row.hireDate)} />
+          <SelfLeaveFact label="Six months on" value={formatDate(row.sixMonthAnniversary)} />
+          <SelfLeaveFact label="Days since hire" value={row.daysSinceHire != null ? String(row.daysSinceHire) : "-"} />
+          <SelfLeaveFact label="Manager" value={row.managerName ?? "Not assigned"} />
+        </dl>
+        {row.reviewFlags.length > 0 ? (
+          <div className="mt-3 flex flex-wrap gap-1">
+            {row.reviewFlags.map((flag) => (
+              <Badge key={flag} variant="warning">{flag}</Badge>
+            ))}
+          </div>
+        ) : null}
+      </section>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
 /* ─── Request Mobile Card ──────────────────────────────────────────── */
 /* ═══════════════════════════════════════════════════════════════════ */
 
@@ -869,6 +1009,7 @@ function RequestCard({
   actingId,
   canAdminManage,
   canReviewAttachments,
+  selfView = false,
   viewerHrId,
   onDecide,
   onDelete,
@@ -880,6 +1021,12 @@ function RequestCard({
   actingId: string | null;
   canAdminManage: boolean;
   canReviewAttachments: boolean;
+  /**
+   * The viewer is reading their OWN requests (see isSelfView in VacationReportInner). The card then
+   * leads with the dates — the thing that identifies a request to the person who made it — instead
+   * of their own name and HR ID repeated on every card.
+   */
+  selfView?: boolean;
   viewerHrId: string | null;
   onDecide: (row: VacationRequestRecord, decision: "approve" | "reject") => void;
   onDelete: (row: VacationRequestRecord) => void;
@@ -888,17 +1035,29 @@ function RequestCard({
   onReview: (row: VacationRequestRecord) => void;
   row: VacationRequestRecord;
 }) {
+  const dateRange = row.startDate === row.endDate ? formatDate(row.startDate) : `${formatDate(row.startDate)} to ${formatDate(row.endDate)}`;
   return (
     <div className="rounded-sm border border-slate-200 bg-white p-3 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <p className="text-phx-md font-bold text-slate-900">{row.employeeName}</p>
-          <p className="mt-0.5 text-phx-xs font-medium text-slate-500">
-            {row.requestCode}
-          </p>
-          <p className="mt-0.5 text-phx-xs font-medium text-slate-500">
-            {[row.departmentName, row.lineName].filter(Boolean).join(" / ") || "-"}
-          </p>
+          {selfView ? (
+            <>
+              <p className="text-phx-md font-bold text-slate-900">{dateRange}</p>
+              <p className="mt-0.5 text-phx-xs font-medium text-slate-500">
+                {vacationTypeLabel(row.vacationType)} · {vacationDayPartLabel(row.dayPart)} · {row.requestCode}
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="text-phx-md font-bold text-slate-900">{row.employeeName}</p>
+              <p className="mt-0.5 text-phx-xs font-medium text-slate-500">
+                {row.requestCode}
+              </p>
+              <p className="mt-0.5 text-phx-xs font-medium text-slate-500">
+                {[row.departmentName, row.lineName].filter(Boolean).join(" / ") || "-"}
+              </p>
+            </>
+          )}
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1">
           <Badge variant={statusBadgeVariant(row.status)}>{dynamicStatusLabel(row)}</Badge>
@@ -906,36 +1065,58 @@ function RequestCard({
         </div>
       </div>
 
-      <div className="mt-2.5 grid grid-cols-2 gap-2">
-        <div>
-          <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">Type</p>
-          <p className="mt-0.5 text-phx-sm font-semibold text-slate-700">{vacationTypeLabel(row.vacationType)}</p>
-          <p className="text-phx-xs font-medium text-slate-500">{vacationDayPartLabel(row.dayPart)}</p>
+      {selfView ? (
+        <div className="mt-2.5 grid grid-cols-2 gap-2">
+          <div>
+            <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">Duration</p>
+            <p className="mt-0.5 text-phx-sm font-extrabold text-slate-900">
+              {formatDays(row.durationDays)} {row.durationDays === 1 ? "day" : "days"}
+            </p>
+          </div>
+          <div>
+            <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">Balance</p>
+            <p className="mt-0.5 text-phx-sm font-semibold text-slate-700">
+              {formatDays(row.balanceBeforeDays)} <span className="text-slate-400">&rarr;</span>{" "}
+              <span className="font-bold text-slate-900">{formatDays(row.balanceAfterDays)}</span>
+            </p>
+          </div>
         </div>
-        <div>
-          <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">Duration</p>
-          <p className="mt-0.5 text-phx-sm font-extrabold text-slate-900">{formatDays(row.durationDays)} days</p>
-        </div>
-      </div>
+      ) : (
+        <>
+          <div className="mt-2.5 grid grid-cols-2 gap-2">
+            <div>
+              <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">Type</p>
+              <p className="mt-0.5 text-phx-sm font-semibold text-slate-700">{vacationTypeLabel(row.vacationType)}</p>
+              <p className="text-phx-xs font-medium text-slate-500">{vacationDayPartLabel(row.dayPart)}</p>
+            </div>
+            <div>
+              <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">Duration</p>
+              <p className="mt-0.5 text-phx-sm font-extrabold text-slate-900">{formatDays(row.durationDays)} days</p>
+            </div>
+          </div>
 
-      <div className="mt-2 grid grid-cols-2 gap-2">
-        <div>
-          <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">From</p>
-          <p className="mt-0.5 text-phx-sm font-semibold text-slate-700">{formatDate(row.startDate)}</p>
-        </div>
-        <div>
-          <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">To</p>
-          <p className="mt-0.5 text-phx-sm font-semibold text-slate-700">{formatDate(row.endDate)}</p>
-        </div>
-      </div>
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <div>
+              <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">From</p>
+              <p className="mt-0.5 text-phx-sm font-semibold text-slate-700">{formatDate(row.startDate)}</p>
+            </div>
+            <div>
+              <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">To</p>
+              <p className="mt-0.5 text-phx-sm font-semibold text-slate-700">{formatDate(row.endDate)}</p>
+            </div>
+          </div>
+        </>
+      )}
 
-      <div className="mt-2">
-        <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">Balance</p>
-        <p className="mt-0.5 text-phx-sm font-semibold text-slate-700">
-          {formatDays(row.balanceBeforeDays)} <span className="text-slate-400">&rarr;</span>{" "}
-          <span className="font-bold text-slate-900">{formatDays(row.balanceAfterDays)}</span>
-        </p>
-      </div>
+      {selfView ? null : (
+        <div className="mt-2">
+          <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">Balance</p>
+          <p className="mt-0.5 text-phx-sm font-semibold text-slate-700">
+            {formatDays(row.balanceBeforeDays)} <span className="text-slate-400">&rarr;</span>{" "}
+            <span className="font-bold text-slate-900">{formatDays(row.balanceAfterDays)}</span>
+          </p>
+        </div>
+      )}
 
       {row.paymentStatus === "partial" ? (
         <p className="mt-1.5 text-phx-xs font-bold text-amber-700">
@@ -958,9 +1139,9 @@ function RequestCard({
         </p>
       ) : null}
 
-      <div className="mt-2 flex items-center justify-between text-phx-xs font-medium text-slate-500">
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 text-phx-xs font-medium text-slate-500">
         <span>Submitted {formatDateTime(row.createdAt)}</span>
-        {row.managerName ? <span>Mgr: {row.managerName}</span> : null}
+        {row.managerName ? <span>Manager: {row.managerName}</span> : null}
       </div>
       {(row.slaStatus.isOverdue || row.overlapWarnings.length > 0) ? (
         <div className="mt-2 flex flex-wrap gap-1">
@@ -1149,6 +1330,11 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
   const canExport = Boolean(initialData?.canExport);
   const canReviewAttachments = Boolean(initialData?.canReviewAttachments);
   const viewerHrId = initialData?.viewerHrId ?? null;
+  // A viewer whose visible scope holds nobody but themselves — every Medical Rep, and any employee
+  // without a team — is reading their OWN leave, not reviewing a population. `options.employees` is
+  // built from the viewer's access scope, never from the active filters, so a manager who filters
+  // down to one person keeps the report. Admins always keep it.
+  const isSelfView = Boolean(initialData) && !canAdminManage && (options?.employees.length ?? 0) <= 1;
   const showEntitlementsTab = activeTab === "entitlements";
   const showRequestsTab = activeTab === "requests";
   const addVacationTypeOptions = VACATION_TYPES.filter((option) => option.value !== "sick" && option.value !== "compensatory");
@@ -1433,18 +1619,23 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
   /* ─── Tab Items ─────────────────────────────────────────────────── */
   /* ═══════════════════════════════════════════════════════════════ */
 
-  const tabItems = [
+  const tabItems: { count: number | null; label: string; value: VacationReportTab }[] = [
     {
-      count: employeeEligibility.length,
-      label: "Leave Entitlements",
+      // A count of one row — the viewer — says nothing, so the own-leave tab carries none.
+      count: isSelfView ? null : employeeEligibility.length,
+      label: isSelfView ? "My Balance" : "Leave Entitlements",
       value: "entitlements" as const,
     },
     {
       count: rows.length,
-      label: "Master Requests",
+      label: isSelfView ? "My Requests" : "Master Requests",
       value: "requests" as const,
     },
   ];
+  const selfRequestsHref = buildReportUrl("requests", new URLSearchParams());
+  const vacationRequestHref = pathname?.startsWith("/employee-portals")
+    ? "/employee-portals/vacation-request"
+    : "/leave-management/vacation-request";
 
   /* ═══════════════════════════════════════════════════════════════ */
   /* ─── Render ───────────────────────────────────────────────────── */
@@ -1551,8 +1742,11 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
           </div>
         ) : null}
 
+        {/* Two equal columns on a phone, never a sideways-scrolling strip: `overflow-x-auto` over
+            nowrap tabs is the pattern the fits-the-screen rule names. A label that outgrows its half
+            wraps inside the tab. From `sm` the strip is the content-width row it always was. */}
         <div
-          className="flex w-full gap-0.5 overflow-x-auto rounded-sm border border-slate-200 bg-slate-50 p-0.5"
+          className="grid w-full grid-cols-2 gap-0.5 rounded-sm border border-slate-200 bg-slate-50 p-0.5 sm:flex"
           role="tablist"
           aria-label="Vacation report tabs"
         >
@@ -1562,7 +1756,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
               <button
                 aria-selected={active}
                 className={cn(
-                  "flex h-9 shrink-0 items-center gap-2 whitespace-nowrap rounded-sm px-3 text-phx-md font-bold transition",
+                  "flex min-h-9 items-center justify-center gap-2 rounded-sm px-3 py-1 text-center text-phx-md font-bold leading-tight transition sm:shrink-0 sm:whitespace-nowrap",
                   active ? "bg-white text-orange-600 shadow-sm" : "text-slate-500 hover:bg-white/70 hover:text-slate-700",
                 )}
                 key={tab.value}
@@ -1571,38 +1765,48 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                 onClick={() => switchTab(tab.value)}
               >
                 {tab.label}
-                <span className={cn(
-                  "inline-flex h-5 min-w-5 items-center justify-center rounded-sm px-1 text-phx-2xs font-bold",
-                  active ? "bg-orange-100 text-orange-700" : "bg-slate-200 text-slate-600",
-                )}>
-                  {tab.count}
-                </span>
+                {tab.count !== null ? (
+                  <span className={cn(
+                    "inline-flex h-5 min-w-5 items-center justify-center rounded-sm px-1 text-phx-2xs font-bold",
+                    active ? "bg-orange-100 text-orange-700" : "bg-slate-200 text-slate-600",
+                  )}>
+                    {tab.count}
+                  </span>
+                ) : null}
               </button>
             );
           })}
         </div>
 
         {/* ── Filters ────────────────────────────────────────────── */}
+        {/* Own-leave viewers get no filter panel on their balance (one row, nothing to narrow) and
+            only Status / Type / dates on their requests: the employee, manager, department and line
+            pickers each offer exactly one value to someone whose scope is themselves. */}
+        {isSelfView && showEntitlementsTab ? null : (
         <FilterPanel filterCount={activeFilterCount} onApply={applyFilters}>
-          <label className="space-y-1.5 xs:col-span-2">
-            <span className={labelClass}>Search</span>
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-              <Input
-                className="rounded-sm pl-9"
-                placeholder="Name, HR ID, department..."
-                value={filters.search}
-                onChange={(event) => updateFilter("search", event.target.value)}
-              />
-            </div>
-          </label>
+          {isSelfView ? null : (
+            <label className="space-y-1.5 xs:col-span-2">
+              <span className={labelClass}>Search</span>
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                <Input
+                  className="rounded-sm pl-9"
+                  placeholder="Name, HR ID, department..."
+                  value={filters.search}
+                  onChange={(event) => updateFilter("search", event.target.value)}
+                />
+              </div>
+            </label>
+          )}
 
           {showRequestsTab ? (
             <>
-              <label className="space-y-1.5">
-                <span className={labelClass}>Request ID</span>
-                <Input className="rounded-sm" placeholder="VAC-XXXX" value={filters.requestId} onChange={(event) => updateFilter("requestId", event.target.value)} />
-              </label>
+              {isSelfView ? null : (
+                <label className="space-y-1.5">
+                  <span className={labelClass}>Request ID</span>
+                  <Input className="rounded-sm" placeholder="VAC-XXXX" value={filters.requestId} onChange={(event) => updateFilter("requestId", event.target.value)} />
+                </label>
+              )}
               <label className="space-y-1.5">
                 <span className={labelClass}>Status</span>
                 <SearchableSelect className={selectClass} value={filters.status} onChange={(event) => updateFilter("status", event.target.value)}>
@@ -1610,13 +1814,15 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                   {VACATION_STATUSES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                 </SearchableSelect>
               </label>
-              <label className="space-y-1.5">
-                <span className={labelClass}>Payment</span>
-                <SearchableSelect className={selectClass} value={filters.paymentStatus} onChange={(event) => updateFilter("paymentStatus", event.target.value)}>
-                  <option value="all">All payment</option>
-                  {VACATION_PAYMENT_STATUSES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                </SearchableSelect>
-              </label>
+              {isSelfView ? null : (
+                <label className="space-y-1.5">
+                  <span className={labelClass}>Payment</span>
+                  <SearchableSelect className={selectClass} value={filters.paymentStatus} onChange={(event) => updateFilter("paymentStatus", event.target.value)}>
+                    <option value="all">All payment</option>
+                    {VACATION_PAYMENT_STATUSES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </SearchableSelect>
+                </label>
+              )}
               <label className="space-y-1.5">
                 <span className={labelClass}>Type</span>
                 <SearchableSelect className={selectClass} value={filters.vacationType} onChange={(event) => updateFilter("vacationType", event.target.value)}>
@@ -1627,34 +1833,38 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
             </>
           ) : null}
 
-          <label className="space-y-1.5">
-            <span className={labelClass}>Employee</span>
-            <SearchableSelect className={selectClass} value={filters.employee} onChange={(event) => updateFilter("employee", event.target.value)}>
-              <option value="">All employees</option>
-              {(options?.employees ?? []).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-            </SearchableSelect>
-          </label>
-          <label className="space-y-1.5">
-            <span className={labelClass}>Manager</span>
-            <SearchableSelect className={selectClass} value={filters.manager} onChange={(event) => updateFilter("manager", event.target.value)}>
-              <option value="">All managers</option>
-              {(options?.managers ?? []).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-            </SearchableSelect>
-          </label>
-          <label className="space-y-1.5">
-            <span className={labelClass}>Department</span>
-            <SearchableSelect className={selectClass} value={filters.department} onChange={(event) => updateFilter("department", event.target.value)}>
-              <option value="">All departments</option>
-              {(options?.departments ?? []).map((option) => <option key={option} value={option}>{option}</option>)}
-            </SearchableSelect>
-          </label>
-          <label className="space-y-1.5">
-            <span className={labelClass}>Line</span>
-            <SearchableSelect className={selectClass} value={filters.line} onChange={(event) => updateFilter("line", event.target.value)}>
-              <option value="">All lines</option>
-              {(options?.lines ?? []).map((option) => <option key={option} value={option}>{option}</option>)}
-            </SearchableSelect>
-          </label>
+          {isSelfView ? null : (
+            <>
+              <label className="space-y-1.5">
+                <span className={labelClass}>Employee</span>
+                <SearchableSelect className={selectClass} value={filters.employee} onChange={(event) => updateFilter("employee", event.target.value)}>
+                  <option value="">All employees</option>
+                  {(options?.employees ?? []).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </SearchableSelect>
+              </label>
+              <label className="space-y-1.5">
+                <span className={labelClass}>Manager</span>
+                <SearchableSelect className={selectClass} value={filters.manager} onChange={(event) => updateFilter("manager", event.target.value)}>
+                  <option value="">All managers</option>
+                  {(options?.managers ?? []).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </SearchableSelect>
+              </label>
+              <label className="space-y-1.5">
+                <span className={labelClass}>Department</span>
+                <SearchableSelect className={selectClass} value={filters.department} onChange={(event) => updateFilter("department", event.target.value)}>
+                  <option value="">All departments</option>
+                  {(options?.departments ?? []).map((option) => <option key={option} value={option}>{option}</option>)}
+                </SearchableSelect>
+              </label>
+              <label className="space-y-1.5">
+                <span className={labelClass}>Line</span>
+                <SearchableSelect className={selectClass} value={filters.line} onChange={(event) => updateFilter("line", event.target.value)}>
+                  <option value="">All lines</option>
+                  {(options?.lines ?? []).map((option) => <option key={option} value={option}>{option}</option>)}
+                </SearchableSelect>
+              </label>
+            </>
+          )}
 
           {showRequestsTab ? (
             <>
@@ -1685,12 +1895,21 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
             </>
           ) : null}
         </FilterPanel>
+        )}
 
         {/* ══════════════════════════════════════════════════════════ */}
         {/* ── ENTITLEMENTS TAB ──────────────────────────────────── */}
         {/* ══════════════════════════════════════════════════════════ */}
 
-        {showEntitlementsTab ? (
+        {showEntitlementsTab && isSelfView ? (
+          <SelfLeaveBalancePanel
+            requestHref={vacationRequestHref}
+            requestsHref={selfRequestsHref}
+            row={employeeEligibility[0] ?? null}
+          />
+        ) : null}
+
+        {showEntitlementsTab && !isSelfView ? (
           <div className="space-y-3">
             {/* Metric cards */}
             {!initialData ? (
@@ -1886,6 +2105,33 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
               <div className="grid gap-2 xs:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
                 {[0, 1, 2, 3, 4].map((i) => <MetricCardSkeleton key={i} />)}
               </div>
+            ) : isSelfView ? (
+              <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+                <MetricCard
+                  description="Waiting on your manager or HR."
+                  label="Pending"
+                  tone="orange"
+                  value={summary?.pending ?? 0}
+                />
+                <MetricCard
+                  description="Approved by HR."
+                  label="Approved"
+                  tone="emerald"
+                  value={summary?.approved ?? 0}
+                />
+                <MetricCard
+                  description="Rejected by your manager or HR."
+                  label="Rejected"
+                  tone="rose"
+                  value={summary?.rejected ?? 0}
+                />
+                <MetricCard
+                  description={`${formatDays(summary?.paidDays ?? 0)} paid · ${formatDays(summary?.unpaidDays ?? 0)} unpaid`}
+                  label="Days requested"
+                  tone="violet"
+                  value={formatDays((summary?.paidDays ?? 0) + (summary?.unpaidDays ?? 0))}
+                />
+              </div>
             ) : (
               <div className="grid gap-2 xs:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
                 <MetricCard
@@ -1921,7 +2167,9 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
               </div>
             )}
 
-            {dashboard ? (
+            {/* HR's operating view (queue by stage, SLA breaches, evidence backlog, the daily SLA
+                run). None of it is about the viewer's own requests, so an own-leave viewer skips it. */}
+            {dashboard && !isSelfView ? (
               <div className="grid gap-2 md:grid-cols-4">
                 <div className="rounded-sm border border-slate-200 bg-white p-3">
                   <p className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500">Pending by stage</p>
@@ -1947,7 +2195,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
             ) : null}
 
             {/* Distribution bars */}
-            {summary ? (
+            {summary && !isSelfView ? (
               <div className="grid gap-2 md:grid-cols-2">
                 <StatusDistributionBar
                   approved={summary.approved}
@@ -2050,7 +2298,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                     <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-orange-600">
                       {canAdminManage ? "Master ledger" : "Request history"}
                     </p>
-                    <h3 className="mt-1 text-base font-extrabold text-slate-900">Vacation requests</h3>
+                    <h3 className="mt-1 text-base font-extrabold text-slate-900">{isSelfView ? "My vacation requests" : "Vacation requests"}</h3>
                   </div>
                   <div className="flex items-center gap-2">
                     <Badge className="w-fit border border-slate-200 bg-slate-50 px-2.5 py-1 text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-600">
@@ -2085,10 +2333,13 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                 </div>
               </div>
 
-              {/* Desktop table (xl+). table-fixed + colgroup so the 12 source fields fit as
-                  7 merged columns with no sideways scroll; cards carry every narrower viewport
-                  below. Columns are MERGED, not shrunk, and raw HR IDs are dropped from display
-                  (names only) — the employee/manager HR IDs stay in the CSV/XLSX exports and search. */}
+              {/* Desktop table (xl+). An own-leave viewer never gets it: its Employee and Manager
+                  columns name the same two people on every row — the cards below serve every width.
+                  For everyone else: table-fixed + colgroup so the 12 source fields fit as merged
+                  columns with no sideways scroll; cards carry every narrower viewport below. Columns
+                  are MERGED, not shrunk, and raw HR IDs are dropped from display (names only) — the
+                  employee/manager HR IDs stay in the CSV/XLSX exports and search. */}
+              {isSelfView ? null : (
               <div className="hidden xl:block">
                 <table className="w-full table-fixed border-collapse text-left text-phx-sm">
                   <colgroup>
@@ -2249,12 +2500,14 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                 </table>
                 <PaginationControls page={requestPage} pageSize={PAGE_SIZE} total={sortedRequests.length} onPageChange={setRequestPage} />
               </div>
+              )}
 
-              {/* Card view (< xl) */}
-              <div className="block xl:hidden space-y-2 p-3">
+              {/* Card view (< xl) — and every width for an own-leave viewer, two cards a row from
+                  `lg` so a laptop is not one long column. */}
+              <div className={isSelfView ? "grid gap-2 p-3 lg:grid-cols-2" : "block xl:hidden space-y-2 p-3"}>
                 {paginatedRequests.length === 0 ? (
-                  <p className="py-6 text-center text-phx-md font-medium text-slate-500">
-                    No vacation requests found.
+                  <p className="py-6 text-center text-phx-md font-medium text-slate-500 lg:col-span-2">
+                    {isSelfView ? "You have no vacation requests yet." : "No vacation requests found."}
                   </p>
                 ) : (
                   paginatedRequests.map((row) => (
@@ -2263,6 +2516,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                       actingId={actingId}
                       canAdminManage={canAdminManage}
                       canReviewAttachments={canReviewAttachments}
+                      selfView={isSelfView}
                       viewerHrId={viewerHrId}
                       onDecide={decide}
                       onDelete={deleteAdminRequest}
@@ -2273,7 +2527,9 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                     />
                   ))
                 )}
-                <PaginationControls page={requestPage} pageSize={PAGE_SIZE} total={sortedRequests.length} onPageChange={setRequestPage} />
+                <div className={isSelfView ? "lg:col-span-2" : undefined}>
+                  <PaginationControls page={requestPage} pageSize={PAGE_SIZE} total={sortedRequests.length} onPageChange={setRequestPage} />
+                </div>
               </div>
             </div>
           </div>
@@ -2339,7 +2595,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                     {timeline.map((event) => (
                       <div className="border-l-2 border-orange-200 pl-3" key={event.id}>
                         <p className="text-phx-sm font-black text-slate-900">{event.message}</p>
-                        <p className="mt-0.5 text-phx-xs font-semibold text-slate-500">{formatDateTime(event.createdAt)} / {event.eventType}</p>
+                        <p className="mt-0.5 text-phx-xs font-semibold text-slate-500">{formatDateTime(event.createdAt)} · {timelineEventLabel(event.eventType)}</p>
                       </div>
                     ))}
                     {timeline.length === 0 ? <p className="text-sm font-semibold text-slate-500">No timeline events recorded yet.</p> : null}

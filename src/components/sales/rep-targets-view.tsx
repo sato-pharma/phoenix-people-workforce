@@ -5,11 +5,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, ArrowRight, CalendarClock, CalendarRange, Info, Package } from "lucide-react";
 
+import { PortalEmptyState } from "@/components/employee-portal/portal-primitives";
 import { CountUpNumber } from "@/components/ui/count-up";
 import {
   AchievementMeter,
   AchievementRing,
-  BandChoice,
   BandStat,
   CommandBand,
   LABEL_CLASS,
@@ -61,7 +61,7 @@ type RepTargetsViewProps = {
 };
 
 const OUTLINE_ACTION_CLASS =
-  "inline-flex h-8 items-center gap-1.5 border border-slate-200 bg-white px-3 text-phx-xs font-bold text-slate-700 transition-colors hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-orange-500";
+  "inline-flex h-10 items-center gap-1.5 border border-slate-200 bg-white px-3 text-phx-xs font-bold text-slate-700 transition-colors hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-orange-500 lg:h-8";
 
 const CARD_FACT_CLASS = "flex flex-wrap items-baseline justify-between gap-x-2";
 
@@ -104,11 +104,16 @@ function unitsLabel(units: number | null): string {
   return units == null ? "—" : plural(units, "unit", "units");
 }
 
+/**
+ * Wraps rather than spills: "AWAITING CLOSING" is ~130px of tracked capitals, and a month tile's inner
+ * width is 113–120px on a phone and 104–112px on a 100%-scale laptop, so a nowrap chip ran over the
+ * tile's border — and past the card's edge in the last column.
+ */
 function StatusChip({ status }: { status: RepTargetsMonthStatus }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center whitespace-nowrap border px-1.5 py-0.5 text-phx-2xs font-black uppercase tracking-[0.12em]",
+        "inline-flex max-w-full items-center whitespace-normal border px-1.5 py-0.5 text-left text-phx-2xs font-black uppercase leading-tight tracking-[0.12em]",
         STATUS_CHIP_CLASS[status],
       )}
     >
@@ -305,14 +310,16 @@ export function RepTargetsView({
     }
   }
 
+  // 132px, the ring every sibling sales page draws. The aside's rule is `sm:` only: below sm the
+  // aside wraps under the ring, where a left rule would hang beside nothing.
   const ring =
     published && hasTarget ? (
-      <AchievementRing value={totals.achievementValue} size={150} stroke={13} label="Achievement" premium />
+      <AchievementRing value={totals.achievementValue} size={132} stroke={13} label="Achievement" premium />
     ) : undefined;
 
   const aside =
     published && hasTarget && totals.productsAtTarget != null ? (
-      <div className="border-l border-slate-100 pl-6">
+      <div className="sm:border-l sm:border-slate-100 sm:pl-6">
         <p className={LABEL_CLASS}>At target</p>
         <p className="mt-1 whitespace-nowrap text-2xl font-black tabular-nums text-slate-900">
           {`${formatNumber(totals.productsAtTarget)} of ${formatNumber(totals.targetedProducts)}`}
@@ -323,18 +330,11 @@ export function RepTargetsView({
       </div>
     ) : undefined;
 
-  const footer =
-    data.months.length > 1 ? (
-      <BandChoice
-        label="Month"
-        options={data.months.map((month) => ({ value: month.period, label: formatPeriod(month.period) }))}
-        selected={data.period}
-        onSelect={navigate}
-      />
-    ) : undefined;
-
+  // No month chip strip in the band: the "Month by month" tiles below already pick the month, with
+  // the target and status of each, so a second row of up to 15 chips only repeated them.
+  // No page inset either: every other sales page sits flush in the page frame.
   return (
-    <div className={cn("space-y-4 p-3 transition-opacity sm:p-4", isPending ? "opacity-60" : undefined)} aria-busy={isPending}>
+    <div className={cn("space-y-4 transition-opacity", isPending ? "opacity-60" : undefined)} aria-busy={isPending}>
       <CommandBand
         surface="portal"
         kicker="Field Performance · Your targets"
@@ -343,17 +343,15 @@ export function RepTargetsView({
         stats={stats}
         ring={ring}
         aside={aside}
-        footer={footer}
         besideFrom="xl"
       />
 
       {data.isEmptyScope ? (
-        <div className={cn(SURFACE_CLASS, "px-4 py-12 text-center")}>
-          <p className="text-sm font-bold text-slate-900">No targets are assigned to you yet.</p>
-          <p className="mx-auto mt-1.5 max-w-xl text-xs leading-5 text-slate-500">
-            Your targets appear here once an area is assigned to you and its targets are loaded. If an area should
-            already be yours, raise it with your District Manager.
-          </p>
+        <div className={SURFACE_CLASS}>
+          <PortalEmptyState
+            title="No targets are assigned to you yet."
+            message="Your targets appear here once an area is assigned to you and its targets are loaded. If an area should already be yours, raise it with your District Manager."
+          />
         </div>
       ) : (
         <>
@@ -405,11 +403,14 @@ export function RepTargetsView({
 
           {data.months.length > 0 ? (
             <SectionCard
+              surface="portal"
               title="Month by month"
               subtitle="Your target each month, and your achievement once its closing is published"
               icon={CalendarRange}
             >
-              <div className="grid grid-cols-2 gap-2 p-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+              {/* Four to a row only from xl and six only from 2xl: beside the portal sidebar a tile at
+                  lg:4 / xl:6 was 104–112px inside, too narrow for its status chip on one line. */}
+              <div className="grid grid-cols-2 gap-2 p-3 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6">
                 {data.months.map((month) => (
                   <MonthTile
                     key={month.period}
@@ -449,19 +450,18 @@ function ProductsSection({
 
   if (data.products.length === 0) {
     return (
-      <SectionCard title="Your products" subtitle={monthLong} icon={Package} actions={actions}>
-        <div className="px-4 py-10 text-center">
-          <p className="text-sm font-bold text-slate-900">{`No target is loaded for ${monthLong} yet.`}</p>
-          <p className="mx-auto mt-1.5 max-w-xl text-xs leading-5 text-slate-500">
-            Targets are loaded a quarter at a time. This page fills in on its own as soon as yours arrive.
-          </p>
-        </div>
+      <SectionCard surface="portal" title="Your products" subtitle={monthLong} icon={Package} actions={actions}>
+        <PortalEmptyState
+          title={`No target is loaded for ${monthLong} yet.`}
+          message="Targets are loaded a quarter at a time. This page fills in on its own as soon as yours arrive."
+        />
       </SectionCard>
     );
   }
 
   return (
     <SectionCard
+      surface="portal"
       title="Your products"
       subtitle={
         published
@@ -548,131 +548,146 @@ function ProductsSection({
           by MERGING — each money cell carries its units beneath it — never by scrolling sideways.
           The footer totals VALUE only; a units total across products would add unlike things. */}
       <div className="hidden md:block">
-        <table className="w-full table-fixed border-collapse text-sm" data-portal-desktop-table>
-          {published ? (
+        {published ? (
+          // 26/16/16/18/24 of the 619px this table gets beside the portal sidebar at a 1024px screen
+          // (display scale 100%): Achievement needs ~138px for its header and padding, and 24% is 149.
+          // tests/sales-target-tables-fit-the-screen.test.ts holds the arithmetic.
+          <table className="w-full table-fixed border-collapse text-sm" data-portal-desktop-table>
             <colgroup>
-              <col style={{ width: "30%" }} />
-              <col style={{ width: "17%" }} />
-              <col style={{ width: "17%" }} />
+              <col style={{ width: "26%" }} />
               <col style={{ width: "16%" }} />
-              <col style={{ width: "20%" }} />
+              <col style={{ width: "16%" }} />
+              <col style={{ width: "18%" }} />
+              <col style={{ width: "24%" }} />
             </colgroup>
-          ) : (
+            <thead>
+              <tr className={`text-left ${TABLE_HEAD_CLASS}`}>
+                <th className="px-4 py-2.5">Product</th>
+                <th className="px-3 py-2.5 text-right">Target</th>
+                <th className="px-3 py-2.5 text-right">Sales</th>
+                <th className="px-3 py-2.5 text-right">Gap</th>
+                <th className="px-4 py-2.5 text-right">Achievement</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.products.map((product) => (
+                <tr className={TABLE_ROW_CLASS} key={product.key}>
+                  <ProductNameCell product={product} />
+                  <td className="px-3 py-3 text-right align-top tabular-nums">
+                    <p className="font-bold text-sky-600">{product.targetValue == null ? "—" : formatEgpFull(product.targetValue)}</p>
+                    {product.targetUnits != null ? (
+                      <p className="text-phx-xs text-slate-500">{unitsLabel(product.targetUnits)}</p>
+                    ) : null}
+                  </td>
+                  <td className="px-3 py-3 text-right align-top tabular-nums">
+                    <p className="font-bold text-slate-900">{product.actualValue == null ? "—" : formatEgpFull(product.actualValue)}</p>
+                    {product.actualUnits != null ? (
+                      <p className="text-phx-xs text-slate-500">{unitsLabel(product.actualUnits)}</p>
+                    ) : null}
+                  </td>
+                  <td className="px-3 py-3 text-right align-top tabular-nums">
+                    <GapText product={product} />
+                  </td>
+                  <td className="px-4 py-3 align-top">
+                    <AchievementMeter value={product.achievementValue} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="border-t-2 border-slate-200 bg-slate-50/70">
+                <AllProductsCell />
+                <td className="px-3 py-3 text-right align-top font-black tabular-nums text-sky-600">
+                  {formatEgpFull(totals.targetValue)}
+                </td>
+                <td className="px-3 py-3 text-right align-top font-black tabular-nums text-slate-900">
+                  {formatEgpFull(totals.actualValue ?? 0)}
+                </td>
+                <td className="px-3 py-3 text-right align-top tabular-nums">
+                  {totals.gapValue == null ? (
+                    <span className="text-slate-400">—</span>
+                  ) : (
+                    <span className={cn("font-black", achievementTone(totals.achievementValue))}>
+                      {totals.gapValue === 0
+                        ? "On target"
+                        : `${totals.gapValue < 0 ? "Short by" : "Above by"} ${formatEgp(Math.abs(totals.gapValue))}`}
+                    </span>
+                  )}
+                </td>
+                <td className="px-4 py-3 align-top">
+                  <AchievementMeter value={totals.achievementValue} />
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        ) : (
+          <table className="w-full table-fixed border-collapse text-sm" data-portal-desktop-table>
             <colgroup>
               <col style={{ width: "50%" }} />
               <col style={{ width: "22%" }} />
               <col style={{ width: "28%" }} />
             </colgroup>
-          )}
-          <thead>
-            <tr className={`text-left ${TABLE_HEAD_CLASS}`}>
-              <th className="px-4 py-2.5">Product</th>
-              {published ? (
-                <>
-                  <th className="px-3 py-2.5 text-right">Target</th>
-                  <th className="px-3 py-2.5 text-right">Sales</th>
-                  <th className="px-3 py-2.5 text-right">Gap</th>
-                  <th className="px-4 py-2.5 text-right">Achievement</th>
-                </>
-              ) : (
-                <>
-                  <th className="px-3 py-2.5 text-right">Target units</th>
-                  <th className="px-4 py-2.5 text-right">Target value</th>
-                </>
-              )}
-            </tr>
-          </thead>
-          <tbody>
-            {data.products.map((product) => (
-              <tr className={TABLE_ROW_CLASS} key={product.key}>
-                <td className="px-4 py-3 align-top">
-                  <p className="break-words font-bold text-slate-900">{product.productName}</p>
-                  {product.hasTarget ? (
-                    <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
-                      <span className="block w-24 shrink-0">
-                        <ProportionBar fraction={product.targetShare ?? 0} color={TARGET_COLOR} />
-                      </span>
-                      <span className="min-w-0 text-phx-xs text-slate-500">{`${formatPct(product.targetShare)} of your target`}</span>
-                    </div>
-                  ) : (
-                    <p className="text-phx-xs font-semibold text-amber-700">No target this month</p>
-                  )}
-                </td>
-                {published ? (
-                  <>
-                    <td className="px-3 py-3 text-right align-top tabular-nums">
-                      <p className="font-bold text-sky-600">{product.targetValue == null ? "—" : formatEgpFull(product.targetValue)}</p>
-                      {product.targetUnits != null ? (
-                        <p className="text-phx-xs text-slate-500">{unitsLabel(product.targetUnits)}</p>
-                      ) : null}
-                    </td>
-                    <td className="px-3 py-3 text-right align-top tabular-nums">
-                      <p className="font-bold text-slate-900">{product.actualValue == null ? "—" : formatEgpFull(product.actualValue)}</p>
-                      {product.actualUnits != null ? (
-                        <p className="text-phx-xs text-slate-500">{unitsLabel(product.actualUnits)}</p>
-                      ) : null}
-                    </td>
-                    <td className="px-3 py-3 text-right align-top tabular-nums">
-                      <GapText product={product} />
-                    </td>
-                    <td className="px-4 py-3 align-top">
-                      <AchievementMeter value={product.achievementValue} />
-                    </td>
-                  </>
-                ) : (
-                  <>
-                    <td className="px-3 py-3 text-right align-top tabular-nums text-slate-700">
-                      {product.targetUnits == null ? "—" : formatNumber(product.targetUnits)}
-                    </td>
-                    <td className="px-4 py-3 text-right align-top font-bold tabular-nums text-sky-600">
-                      {product.targetValue == null ? "—" : formatEgpFull(product.targetValue)}
-                    </td>
-                  </>
-                )}
+            <thead>
+              <tr className={`text-left ${TABLE_HEAD_CLASS}`}>
+                <th className="px-4 py-2.5">Product</th>
+                <th className="px-3 py-2.5 text-right">Target units</th>
+                <th className="px-4 py-2.5 text-right">Target value</th>
               </tr>
-            ))}
-          </tbody>
-          <tfoot>
-            <tr className="border-t-2 border-slate-200 bg-slate-50/70">
-              <td className="px-4 py-3 align-top">
-                <p className="font-black text-slate-900">All products</p>
-                <p className="text-phx-xs text-slate-500">in value — units differ from product to product</p>
-              </td>
-              {published ? (
-                <>
-                  <td className="px-3 py-3 text-right align-top font-black tabular-nums text-sky-600">
-                    {formatEgpFull(totals.targetValue)}
+            </thead>
+            <tbody>
+              {data.products.map((product) => (
+                <tr className={TABLE_ROW_CLASS} key={product.key}>
+                  <ProductNameCell product={product} />
+                  <td className="px-3 py-3 text-right align-top tabular-nums text-slate-700">
+                    {product.targetUnits == null ? "—" : formatNumber(product.targetUnits)}
                   </td>
-                  <td className="px-3 py-3 text-right align-top font-black tabular-nums text-slate-900">
-                    {formatEgpFull(totals.actualValue ?? 0)}
+                  <td className="px-4 py-3 text-right align-top font-bold tabular-nums text-sky-600">
+                    {product.targetValue == null ? "—" : formatEgpFull(product.targetValue)}
                   </td>
-                  <td className="px-3 py-3 text-right align-top tabular-nums">
-                    {totals.gapValue == null ? (
-                      <span className="text-slate-400">—</span>
-                    ) : (
-                      <span className={cn("font-black", achievementTone(totals.achievementValue))}>
-                        {totals.gapValue === 0
-                          ? "On target"
-                          : `${totals.gapValue < 0 ? "Short by" : "Above by"} ${formatEgp(Math.abs(totals.gapValue))}`}
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 align-top">
-                    <AchievementMeter value={totals.achievementValue} />
-                  </td>
-                </>
-              ) : (
-                <>
-                  <td className="px-3 py-3" />
-                  <td className="px-4 py-3 text-right align-top font-black tabular-nums text-sky-600">
-                    {formatEgpFull(totals.targetValue)}
-                  </td>
-                </>
-              )}
-            </tr>
-          </tfoot>
-        </table>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="border-t-2 border-slate-200 bg-slate-50/70">
+                <AllProductsCell />
+                <td className="px-3 py-3" />
+                <td className="px-4 py-3 text-right align-top font-black tabular-nums text-sky-600">
+                  {formatEgpFull(totals.targetValue)}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        )}
       </div>
     </SectionCard>
+  );
+}
+
+/** A product's first desktop cell: its name, and its share of the rep's target where it has one. */
+function ProductNameCell({ product }: { product: RepTargetsProduct }) {
+  return (
+    <td className="px-4 py-3 align-top">
+      <p className="break-words font-bold text-slate-900">{product.productName}</p>
+      {product.hasTarget ? (
+        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="block w-24 shrink-0">
+            <ProportionBar fraction={product.targetShare ?? 0} color={TARGET_COLOR} />
+          </span>
+          <span className="min-w-0 text-phx-xs text-slate-500">{`${formatPct(product.targetShare)} of your target`}</span>
+        </div>
+      ) : (
+        <p className="text-phx-xs font-semibold text-amber-700">No target this month</p>
+      )}
+    </td>
+  );
+}
+
+/** The footer's first cell. Totals are VALUE only — units differ from product to product. */
+function AllProductsCell() {
+  return (
+    <td className="px-4 py-3 align-top">
+      <p className="font-black text-slate-900">All products</p>
+      <p className="text-phx-xs text-slate-500">in value — units differ from product to product</p>
+    </td>
   );
 }

@@ -14,7 +14,8 @@
 // Only the dormant My List view component and its unused scope resolver were removed.
 import { redirect } from "next/navigation";
 
-import { EmployeePortalEmptyState } from "@/components/employee-portal/enterprise-shell";
+import { EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
+import { PortalEmptyState, PortalSection } from "@/components/employee-portal/portal-primitives";
 import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { canAccessDoctorList, canAccessMyList } from "@/lib/crm/doctor-list-access";
@@ -31,11 +32,16 @@ export default async function PortalMyListPage() {
   if (canAccessDoctorList(access) && !canAccessMyList(access)) redirect("/employee-portals/reps-list");
 
   if (!canAccessMyList(access) || !(await canAccess(access, "crm_visits", "read"))) {
+    // Said inside the portal shell, so the refusal carries a header like every other portal page.
     return (
-      <EmployeePortalEmptyState
-        message="My List is available to medical reps with CRM access — it now lives in Phoenix CRM's List tab."
-        title="My List Unavailable"
-      />
+      <EmployeePortalPageShell badge="Field Activity" title="My List">
+        <PortalSection>
+          <PortalEmptyState
+            message="My List is available to medical reps with CRM access — it now lives in Phoenix CRM's List tab."
+            title="My List Unavailable"
+          />
+        </PortalSection>
+      </EmployeePortalPageShell>
     );
   }
 

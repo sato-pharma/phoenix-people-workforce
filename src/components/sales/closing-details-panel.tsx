@@ -1,9 +1,10 @@
 "use client";
 
 import { AlertTriangle, Download, Loader2, RefreshCw, Search, ShieldAlert } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { AdminCallout, AdminStatCard } from "@/components/admin/admin-design-system";
+import { PortalMetricCard } from "@/components/employee-portal/portal-primitives";
 import { PaginationControls } from "@/components/ui/pagination-controls";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 // Value import, so it must come from the leaf: monthly-closing-details.ts reaches getSupabaseAdmin
@@ -30,7 +31,30 @@ type Props = {
   period: string | null;
   /** Portal mounts pass false — only CEO / Super Admin ever see the toggle. */
   showConfidentialToggle?: boolean;
+  /**
+   * Which shell draws the panel. "admin" (the default) keeps the admin shell's stat cards and
+   * callouts byte-identical; "portal" draws the same figures with the employee portal's own
+   * PortalMetricCard and callout, so no admin-only 8px label reaches a portal page. Look only —
+   * the rows, filters and export are the same in both.
+   */
+  surface?: "admin" | "portal";
 };
+
+type CalloutTone = "danger" | "neutral";
+
+/** A notice in the panel's own shell: the admin callout, or the portal's quieter left-rail note. */
+function Callout({ surface, tone, children }: { surface: "admin" | "portal"; tone: CalloutTone; children: ReactNode }) {
+  if (surface === "admin") return <AdminCallout tone={tone}>{children}</AdminCallout>;
+  const toneClassName =
+    tone === "danger"
+      ? "border-rose-200 border-l-rose-500 bg-rose-50 text-rose-800"
+      : "border-slate-200 border-l-slate-400 bg-slate-50 text-slate-700";
+  return (
+    <div className={`flex items-start gap-3 border border-l-[3px] px-4 py-3 text-sm font-medium leading-6 ${toneClassName}`}>
+      {children}
+    </div>
+  );
+}
 
 const numberFmt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 const valueFmt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2, minimumFractionDigits: 2 });
@@ -45,7 +69,7 @@ function fmtValue(value: number) {
 const selectClassName =
   "h-10 w-full rounded-2xl border border-phx-line bg-phx-paper px-3 text-sm font-semibold text-phx-ink outline-none transition focus:border-phx-accent-line focus:ring-4 focus:ring-phx-accent/10 disabled:opacity-60";
 
-export function ClosingDetailsPanel({ line, period, showConfidentialToggle = false }: Props) {
+export function ClosingDetailsPanel({ line, period, showConfidentialToggle = false, surface = "admin" }: Props) {
   const [data, setData] = useState<NamedClosingDetailsResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
@@ -194,10 +218,10 @@ export function ClosingDetailsPanel({ line, period, showConfidentialToggle = fal
   if (!line || !period) {
     return (
       <div className="p-4 md:p-5">
-        <AdminCallout tone="neutral">
-          <AlertTriangle className="mt-0.5 h-4 w-4" />
+        <Callout surface={surface} tone="neutral">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <p>Pick a line and month to see the detailed sales rows behind the closing.</p>
-        </AdminCallout>
+        </Callout>
       </div>
     );
   }
@@ -205,10 +229,10 @@ export function ClosingDetailsPanel({ line, period, showConfidentialToggle = fal
   if (error) {
     return (
       <div className="p-4 md:p-5">
-        <AdminCallout tone="danger">
-          <AlertTriangle className="mt-0.5 h-4 w-4" />
-          <p>{error}</p>
-        </AdminCallout>
+        <Callout surface={surface} tone="danger">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <p className="min-w-0 break-words">{error}</p>
+        </Callout>
       </div>
     );
   }
@@ -216,13 +240,13 @@ export function ClosingDetailsPanel({ line, period, showConfidentialToggle = fal
   if (data?.outOfScope) {
     return (
       <div className="p-4 md:p-5">
-        <AdminCallout tone="neutral">
-          <ShieldAlert className="mt-0.5 h-4 w-4" />
+        <Callout surface={surface} tone="neutral">
+          <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
           <p>
             This line is outside your scope, so no rows are shown. This is an access boundary, not an
             empty month.
           </p>
-        </AdminCallout>
+        </Callout>
       </div>
     );
   }
@@ -245,15 +269,56 @@ export function ClosingDetailsPanel({ line, period, showConfidentialToggle = fal
 
       {exportError ? (
         <div className="px-4 md:px-5">
-          <AdminCallout tone="danger">
-            <AlertTriangle className="mt-0.5 h-4 w-4" />
-            <p>{exportError}</p>
-          </AdminCallout>
+          <Callout surface={surface} tone="danger">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <p className="min-w-0 break-words">{exportError}</p>
+          </Callout>
         </div>
       ) : null}
 
       {/* ── Reconciliation summary — what is and is not inside the headline ── */}
-      {recon ? (
+      {recon && surface === "portal" ? (
+        // The same four figures, words and order as the admin cards below, drawn with the portal's
+        // own left-rail stat card. The admin shell's violet has no portal accent: amber carries it.
+        <div className="grid grid-cols-1 gap-3 px-4 sm:grid-cols-2 xl:grid-cols-4 md:px-5">
+          <PortalMetricCard
+            accent="emerald"
+            icon={RefreshCw}
+            label="In closing"
+            note={`${fmtUnits(recon.includedInClosing.rows)} distributor + ${fmtUnits(recon.excludedDirect.rows)} direct rows`}
+            value={fmtValue(recon.closingHeadline.salesValue)}
+          />
+          <PortalMetricCard
+            accent="sky"
+            icon={RefreshCw}
+            label="of which Direct"
+            note={
+              recon.excludedDirect.rows > 0
+                ? `${fmtUnits(recon.excludedDirect.rows)} booked Direct Orders rows, at their deal value`
+                : "No direct orders booked into this month"
+            }
+            value={fmtValue(recon.excludedDirect.salesValue)}
+          />
+          <PortalMetricCard
+            accent={recon.missingClientCode.rows > 0 ? "amber" : "emerald"}
+            icon={ShieldAlert}
+            label="No client code"
+            note={
+              recon.missingClientCode.rows > 0
+                ? `${fmtUnits(recon.missingClientCode.rows)} counted rows with no traceable outlet`
+                : "Every row traces to a customer"
+            }
+            value={fmtUnits(recon.missingClientCode.units)}
+          />
+          <PortalMetricCard
+            accent={recon.unmappedBricks.rows + recon.areaMismatches.rows > 0 ? "amber" : "emerald"}
+            icon={AlertTriangle}
+            label="Data quality"
+            note={`${fmtUnits(recon.unmappedBricks.rows)} unmapped bricks · ${fmtUnits(recon.areaMismatches.rows)} area mismatches`}
+            value={fmtUnits(recon.unmappedBricks.rows + recon.areaMismatches.rows)}
+          />
+        </div>
+      ) : recon ? (
         <div className="grid grid-cols-1 gap-3 px-4 sm:grid-cols-2 xl:grid-cols-4 md:px-5">
           {/* The closing headline is BOTH channels added — distributor sell-out plus the direct
               orders Finance booked into the month. Showing the distributor half alone here read
@@ -304,15 +369,15 @@ export function ClosingDetailsPanel({ line, period, showConfidentialToggle = fal
 
       {recon && recon.missingClientCode.rows > 0 ? (
         <div className="px-4 md:px-5">
-          <AdminCallout tone="neutral">
-            <ShieldAlert className="mt-0.5 h-4 w-4" />
+          <Callout surface={surface} tone="neutral">
+            <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
             <p>
               {fmtUnits(recon.missingClientCode.rows)} rows carrying{" "}
               {fmtUnits(recon.missingClientCode.units)} units have no client code. They <strong>are</strong>{" "}
               counted in the headline, but the sale cannot be traced back to an outlet — worth fixing
               at the distributor sheet, not a reason to doubt the total.
             </p>
-          </AdminCallout>
+          </Callout>
         </div>
       ) : null}
 
@@ -435,10 +500,10 @@ export function ClosingDetailsPanel({ line, period, showConfidentialToggle = fal
         </div>
       ) : !data || data.rows.length === 0 ? (
         <div className="p-4 md:p-5">
-          <AdminCallout tone="neutral">
-            <AlertTriangle className="mt-0.5 h-4 w-4" />
+          <Callout surface={surface} tone="neutral">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             <p>No rows match these filters.</p>
-          </AdminCallout>
+          </Callout>
         </div>
       ) : (
         <>
@@ -456,71 +521,79 @@ export function ClosingDetailsPanel({ line, period, showConfidentialToggle = fal
   );
 }
 
-/** Desktop: a real table. Hidden on small screens — see DetailCards. */
+/**
+ * Desktop and tablet: a real table. Hidden on phones — see DetailCards.
+ *
+ * Four columns, fitted by MERGING, never by an ellipsis (owner rule: where no-ellipsis and
+ * no-horizontal-scroll collide, wrapping wins). As eight columns, 1024px with the portal sidebar open
+ * left the table about 634px: the distributor code was cut to one letter, the customer to ~120px,
+ * and a page-total value spilled into the column beside it. So the brick, area and distributor ride
+ * under the customer, and whether the row is in the closing rides under its value. The amber row
+ * tint still marks every row outside the headline.
+ */
 function DetailTable({ rows, totals }: { rows: NamedClosingDetailRow[]; totals: ClosingDetailsTotals }) {
   return (
     <div className="hidden md:block">
       <table className="w-full table-fixed border-collapse text-left text-xs">
+        <colgroup>
+          <col className="w-[42%]" />
+          <col className="w-[24%]" />
+          <col className="w-[14%]" />
+          <col className="w-[20%]" />
+        </colgroup>
         <thead>
           <tr className="bg-[#0B0B0B] text-white">
-            <th className="w-[9%] px-3 py-2 font-bold">Distributor</th>
-            <th className="w-[11%] px-3 py-2 font-bold">Area</th>
-            <th className="w-[14%] px-3 py-2 font-bold">Brick</th>
-            <th className="w-[21%] px-3 py-2 font-bold">Customer</th>
-            <th className="w-[16%] px-3 py-2 font-bold">Product</th>
-            <th className="w-[9%] px-3 py-2 text-right font-bold">Units</th>
-            <th className="w-[11%] px-3 py-2 text-right font-bold">Value</th>
-            <th className="w-[9%] px-3 py-2 font-bold">In Closing</th>
+            <th className="px-3 py-2 font-bold">Customer</th>
+            <th className="px-3 py-2 font-bold">Product</th>
+            <th className="px-2 py-2 text-right font-bold">Units</th>
+            <th className="px-3 py-2 text-right font-bold">Value</th>
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
-            <tr
-              className={`border-b border-slate-100 ${countsInClosingHeadline(row) ? "" : "bg-amber-50/70"}`}
-              key={row.id}
-            >
-              {/* The NAME, never the code (owner rule). It wraps rather than truncates: a name cut to
-                  an ellipsis is the other thing this column must never do. Blank on a row with no
-                  distributor — a Main Stores row — by design; see closing-details-distributor-names.ts. */}
-              <td className="break-words px-3 py-2 font-semibold text-slate-700">{row.distributorName}</td>
-              <td className="truncate px-3 py-2 text-slate-700" title={`${row.areaName} (${row.areaCode})`}>
-                {row.areaName}
-              </td>
-              <td className="truncate px-3 py-2 text-slate-600" title={`${row.brickName} (${row.brickId})`}>
-                {row.brickName || row.brickId}
-                {row.brickUnmapped ? <span className="ml-1 text-rose-600">·unmapped</span> : null}
-                {row.areaMismatch ? <span className="ml-1 text-violet-600">·area≠</span> : null}
-              </td>
-              <td className="truncate px-3 py-2 text-slate-600" title={row.clientName}>
-                {row.clientName || <span className="text-slate-400">— no customer —</span>}
-              </td>
-              <td className="truncate px-3 py-2 text-slate-600">{row.productName}</td>
-              <td className="px-3 py-2 text-right tabular-nums text-slate-700">{fmtUnits(row.qty)}</td>
-              <td className="px-3 py-2 text-right font-semibold tabular-nums text-slate-800">{fmtValue(row.salesValue)}</td>
-              {/* "In Closing" answers whether this row's money is in the headline. A direct row is
-                  in it — it reaches the grid from the Direct Orders module rather than as an
-                  invoice line, which is what the "direct" label says. Only a confidential product
-                  is genuinely out. */}
-              <td className="px-3 py-2">
-                {countsInClosingHeadline(row) ? (
-                  <span className="font-bold text-emerald-700">
-                    {row.isDirect ? "Yes · direct" : "Yes"}
-                  </span>
-                ) : (
-                  <span className="font-semibold text-amber-700">{row.exclusions.join(", ")}</span>
-                )}
-              </td>
-            </tr>
-          ))}
+          {rows.map((row) => {
+            const counted = countsInClosingHeadline(row);
+            // The distributor NAME, never its code (owner rule); blank on a Main Stores row, by design.
+            const place = [row.brickName || row.brickId, row.areaName, row.distributorName].filter(Boolean).join(" · ");
+            return (
+              <tr className={`border-b border-slate-100 align-top ${counted ? "" : "bg-amber-50/70"}`} key={row.id}>
+                <td className="px-3 py-2">
+                  <p className="break-words font-semibold text-slate-800">
+                    {row.clientName || <span className="text-slate-400">— no customer —</span>}
+                  </p>
+                  <p className="mt-0.5 break-words text-phx-2xs text-slate-500">
+                    {place}
+                    {row.brickUnmapped ? <span className="ml-1 text-rose-600">·unmapped</span> : null}
+                    {row.areaMismatch ? <span className="ml-1 text-violet-600">·area≠</span> : null}
+                  </p>
+                </td>
+                <td className="break-words px-3 py-2 text-slate-600">{row.productName}</td>
+                <td className="px-2 py-2 text-right tabular-nums text-slate-700">{fmtUnits(row.qty)}</td>
+                {/* Whether this row's money is in the headline. A direct row is in it — it reaches the
+                    grid from the Direct Orders module rather than as an invoice line, which is what
+                    the "direct" label says. Only a confidential product is genuinely out. */}
+                <td className="px-3 py-2 text-right">
+                  <p className="font-semibold tabular-nums text-slate-800">{fmtValue(row.salesValue)}</p>
+                  {counted ? (
+                    <p className="mt-0.5 break-words text-phx-2xs font-bold text-emerald-700">
+                      {row.isDirect ? "In closing · direct" : "In closing"}
+                    </p>
+                  ) : (
+                    <p className="mt-0.5 break-words text-phx-2xs font-semibold text-amber-700">
+                      {`Excluded: ${row.exclusions.join(", ")}`}
+                    </p>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
         <tfoot>
           <tr className="bg-[#FDE7C7] font-bold text-slate-900">
-            <td className="px-3 py-2" colSpan={5}>
+            <td className="break-words px-3 py-2" colSpan={2}>
               Page + filter total ({fmtUnits(totals.rows)} rows)
             </td>
-            <td className="px-3 py-2 text-right tabular-nums">{fmtUnits(totals.units)}</td>
+            <td className="px-2 py-2 text-right tabular-nums">{fmtUnits(totals.units)}</td>
             <td className="px-3 py-2 text-right tabular-nums">{fmtValue(totals.salesValue)}</td>
-            <td className="px-3 py-2" />
           </tr>
         </tfoot>
       </table>
@@ -538,13 +611,13 @@ function DetailCards({ rows }: { rows: NamedClosingDetailRow[] }) {
           key={row.id}
         >
           <div className="flex items-start justify-between gap-2">
-            <p className="text-sm font-bold text-slate-900">{row.clientName || "— no customer —"}</p>
-            <span className="max-w-[45%] break-words text-right text-xs font-bold text-slate-500">{row.distributorName}</span>
+            <p className="min-w-0 break-words text-sm font-bold text-slate-900">{row.clientName || "— no customer —"}</p>
+            <span className="max-w-[45%] shrink-0 break-words text-right text-xs font-bold text-slate-500">{row.distributorName}</span>
           </div>
-          <p className="mt-0.5 text-xs text-slate-500">
+          <p className="mt-0.5 break-words text-xs text-slate-500">
             {row.areaName} · {row.brickName || row.brickId}
           </p>
-          <p className="mt-1 text-xs font-semibold text-slate-700">{row.productName}</p>
+          <p className="mt-1 break-words text-xs font-semibold text-slate-700">{row.productName}</p>
           <dl className="mt-2 grid grid-cols-2 gap-2 text-xs">
             <div>
               <dt className="text-phx-2xs font-bold uppercase text-slate-400">Units</dt>

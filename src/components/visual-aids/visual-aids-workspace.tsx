@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
 import {
   ArrowLeft,
   ArrowRight,
@@ -32,6 +33,9 @@ import { VISUAL_AID_MAX_BYTES, VISUAL_AID_MIME_TYPES, type VisualAidMimeType } f
  */
 
 /* ────────────────────────────────── types ────────────────────────────────── */
+
+/** Never notifies: the store below only answers "is this the browser yet?" (see the viewer mount). */
+const emptySubscribe = () => () => {};
 
 type VisualAid = {
   id: string;
@@ -310,25 +314,38 @@ function VisualAidViewer({ aid, onClose }: { aid: VisualAid; onClose: () => void
       else if (event.key === "Escape") onClose();
     };
     window.addEventListener("keydown", onKey);
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    // The lock goes on <html>, not <body>: the shell sets `html { overflow-x: clip }`, which makes the
+    // VIEWPORT the scroller, so `body.style.overflow` locked nothing and the page scrolled on under
+    // the flyer.
+    const root = document.documentElement;
+    const previousOverflow = root.style.overflow;
+    root.style.overflow = "hidden";
     return () => {
       window.removeEventListener("keydown", onKey);
-      document.body.style.overflow = previousOverflow;
+      root.style.overflow = previousOverflow;
     };
   }, [go, onClose]);
 
   return (
+    // Portalled to <body> by the workspace (see the mount below), so `fixed inset-0` really is the
+    // SCREEN. z-[300] clears the portal header (z-30) and bottom nav (z-40); the safe-area padding
+    // keeps the Close button and the page arrows clear of a notch or a home bar.
     <div
       aria-label={aid.title}
       aria-modal="true"
-      className="fixed inset-0 z-[80] flex flex-col bg-black text-white"
+      className="fixed inset-0 z-[300] flex flex-col bg-black text-white"
       role="dialog"
+      style={{
+        paddingBottom: "env(safe-area-inset-bottom)",
+        paddingLeft: "env(safe-area-inset-left)",
+        paddingRight: "env(safe-area-inset-right)",
+        paddingTop: "env(safe-area-inset-top)",
+      }}
     >
       <div className="flex min-w-0 items-center justify-between gap-3 border-b border-white/15 px-3 py-2 sm:px-4">
         <div className="min-w-0">
           <p className="break-words text-phx-sm font-black">{aid.title}</p>
-          <p className="break-words text-phx-3xs font-bold uppercase tracking-[0.12em] text-white/60">
+          <p className="break-words text-phx-xs font-bold uppercase tracking-[0.12em] text-white/60">
             {aid.lineName}
             {aid.productName ? ` · ${aid.productName}` : ""}
             {` · Page ${page} of ${pageCount}`}
@@ -336,7 +353,7 @@ function VisualAidViewer({ aid, onClose }: { aid: VisualAid; onClose: () => void
         </div>
         <button
           aria-label="Close"
-          className="inline-flex h-10 w-10 shrink-0 items-center justify-center border border-white/25 text-white"
+          className="inline-flex h-11 w-11 shrink-0 items-center justify-center border border-white/25 text-white"
           onClick={onClose}
           type="button"
         >
@@ -567,12 +584,12 @@ function AidCard({ aid, onOpen }: { aid: VisualAid; onOpen: (aid: VisualAid) => 
         <Icon aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-phx-accent" />
         <span className="min-w-0 break-words text-phx-sm font-black text-phx-ink">{aid.title}</span>
       </span>
-      <span className="break-words text-phx-3xs font-bold uppercase tracking-[0.12em] text-phx-ink-faint">
+      <span className="break-words text-phx-xs font-bold uppercase tracking-[0.12em] text-phx-ink-faint">
         {aid.lineName}
         {aid.productName ? ` · ${aid.productName}` : ""}
         {` · ${pagesLabel(aid)}`}
       </span>
-      <span className="text-phx-3xs font-medium text-phx-ink-faint">Added {cairoDate(aid.uploadedAt)}</span>
+      <span className="text-phx-xs font-medium text-phx-ink-faint">Added {cairoDate(aid.uploadedAt)}</span>
     </button>
   );
 }
@@ -587,6 +604,12 @@ export function VisualAidsWorkspace() {
   const [confirmRetire, setConfirmRetire] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [lineFilter, setLineFilter] = useState<string>("all");
+  // The viewer is portalled to <body>, and only once this is the browser. It used to render INLINE,
+  // inside the page-transition wrapper, whose `transform` and `filter` make it the containing block
+  // for anything `position: fixed` beneath it — so the "full screen" flyer filled only the page
+  // column, sat under the header and the bottom nav, and put its Close button above the screen if the
+  // rep had scrolled down to a card. Same trap and same fix as plans-workspace.tsx.
+  const mounted = useSyncExternalStore(emptySubscribe, () => true, () => false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -795,7 +818,7 @@ export function VisualAidsWorkspace() {
         </>
       ) : null}
 
-      {open ? <VisualAidViewer aid={open} onClose={() => setOpen(null)} /> : null}
+      {open && mounted ? createPortal(<VisualAidViewer aid={open} onClose={() => setOpen(null)} />, document.body) : null}
     </div>
   );
 }

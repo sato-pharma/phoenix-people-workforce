@@ -57,10 +57,17 @@ export const CHART_TOOLTIP_CLASS =
 /** Small uppercase label above a figure. */
 export const LABEL_CLASS = "text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500";
 
-/** A selectable chip or tab: solid orange when selected, quiet white otherwise. */
-export function chipClass(selected: boolean): string {
+/**
+ * A selectable chip or tab: solid orange when selected, quiet white otherwise.
+ *
+ * `surface="portal"` makes it a 40px tap target below lg — at `py-1` the chip is about 26px, under a
+ * phone's tap floor — and lets it drop back to its own height from lg. The default ("sales") returns
+ * exactly the class string it always has, so every admin-shell chip is unchanged.
+ */
+export function chipClass(selected: boolean, surface: "sales" | "portal" = "sales"): string {
   return cn(
     "border px-3 py-1 text-xs font-bold transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-orange-500",
+    surface === "portal" && "min-h-10 lg:min-h-0",
     selected
       ? "border-orange-500 bg-orange-500 text-white shadow-[0_2px_8px_rgba(249,115,22,0.25)]"
       : "border-slate-200 bg-white text-slate-600 hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700",
@@ -300,6 +307,15 @@ export function AchievementMeter({ value, align = "right" }: { value: number | n
   );
 }
 
+type SectionCardProps = {
+  title: string;
+  subtitle?: string;
+  icon: LucideIcon;
+  children: React.ReactNode;
+  actions?: React.ReactNode;
+  className?: string;
+};
+
 export function SectionCard({
   title,
   subtitle,
@@ -307,14 +323,23 @@ export function SectionCard({
   children,
   actions,
   className,
-}: {
-  title: string;
-  subtitle?: string;
-  icon: LucideIcon;
-  children: React.ReactNode;
-  actions?: React.ReactNode;
-  className?: string;
+  surface = "sales",
+}: SectionCardProps & {
+  /**
+   * "sales" (default) is the module's compact card header — the admin-shell look, unchanged.
+   * "portal" gives the header the employee-portal section scale (PortalSection's 18–20px title and
+   * 14px description) so the sales pages read as one portal identity, the way CommandBand's
+   * `surface="portal"` already does for the page header. Same wrapping rules, same square edges.
+   */
+  surface?: "sales" | "portal";
 }) {
+  if (surface === "portal") {
+    return (
+      <PortalSectionCard title={title} subtitle={subtitle} icon={Icon} actions={actions} className={className}>
+        {children}
+      </PortalSectionCard>
+    );
+  }
   return (
     <section className={cn("flex flex-col", SURFACE_CLASS, className)}>
       {/*
@@ -337,6 +362,31 @@ export function SectionCard({
                 clip a long title instead of wrapping it. */}
             <h2 className="text-phx-md font-black tracking-tight text-slate-900">{title}</h2>
             {subtitle ? <p className="text-phx-xs text-slate-500">{subtitle}</p> : null}
+          </div>
+        </div>
+        {actions ? <div className="max-w-full">{actions}</div> : null}
+      </header>
+      <div className="flex-1">{children}</div>
+    </section>
+  );
+}
+
+/**
+ * SectionCard's employee-portal header. Declared AFTER SectionCard on purpose: the pinning tests
+ * read the first card header in this file, and that stays the measured admin one. This header keeps
+ * every rule those tests hold — it wraps, its actions are never `shrink-0`, its title never nowraps.
+ */
+function PortalSectionCard({ title, subtitle, icon: Icon, children, actions, className }: SectionCardProps) {
+  return (
+    <section className={cn("flex flex-col", SURFACE_CLASS, className)}>
+      <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 border-b border-slate-100 bg-white px-4 py-4 sm:px-5">
+        <div className="flex min-w-0 items-start gap-3">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center bg-orange-50 text-orange-600 ring-1 ring-inset ring-orange-100">
+            <Icon className="h-4 w-4" />
+          </span>
+          <div className="min-w-0">
+            <h2 className="break-words text-lg font-black leading-tight tracking-tight text-slate-950 sm:text-xl">{title}</h2>
+            {subtitle ? <p className="mt-1 break-words text-sm font-medium leading-6 text-slate-500">{subtitle}</p> : null}
           </div>
         </div>
         {actions ? <div className="max-w-full">{actions}</div> : null}
@@ -404,7 +454,12 @@ export function CommandBand({
           // Premium (owner, 2026-09-21): each card earns depth from a subtle white→slate gradient, a
           // gradient orange accent rail on its left edge, a two-layer shadow and a small hover lift.
           // Square edges throughout — the fit logic above is untouched.
-          <div className="flex flex-wrap gap-3.5 [&>div]:relative [&>div]:flex-1 [&>div]:basis-[13rem] [&>div]:overflow-hidden [&>div]:border [&>div]:border-slate-200/80 [&>div]:border-l-[3px] [&>div]:border-l-orange-500 [&>div]:bg-gradient-to-b [&>div]:from-white [&>div]:to-slate-50/70 [&>div]:px-4 [&>div]:py-3.5 [&>div]:shadow-[0_1px_2px_rgba(15,23,42,0.04),0_10px_28px_rgba(15,23,42,0.06)] [&>div]:transition-transform [&>div]:duration-200 hover:[&>div]:-translate-y-0.5">
+          //
+          // And NO `overflow-hidden` on the cards: it makes each card a scroll container, whose
+          // minimum flex width drops to 0, so the nowrap figure stopped setting the floor and the
+          // cards packed at their 13rem basis and CUT the money — "EGP 1,234,567" on a 768px tablet,
+          // "EGP 486,000" on Make It Happen at 1280px. Nothing inside a card needs clipping.
+          <div className="flex flex-wrap gap-3.5 [&>div]:relative [&>div]:flex-1 [&>div]:basis-[13rem] [&>div]:border [&>div]:border-slate-200/80 [&>div]:border-l-[3px] [&>div]:border-l-orange-500 [&>div]:bg-gradient-to-b [&>div]:from-white [&>div]:to-slate-50/70 [&>div]:px-4 [&>div]:py-3.5 [&>div]:shadow-[0_1px_2px_rgba(15,23,42,0.04),0_10px_28px_rgba(15,23,42,0.06)] [&>div]:transition-transform [&>div]:duration-200 hover:[&>div]:-translate-y-0.5">
             {stats}
           </div>
         ) : null}
@@ -497,11 +552,14 @@ export function BandChoice({
   options,
   selected,
   onSelect,
+  surface = "sales",
 }: {
   label: string;
   options: ReadonlyArray<{ value: string; label: string }>;
   selected: string;
   onSelect: (value: string) => void;
+  /** "portal" gives the chips their phone tap height; see chipClass. The default is the admin chip. */
+  surface?: "sales" | "portal";
 }) {
   return (
     <>
@@ -514,7 +572,7 @@ export function BandChoice({
           type="button"
           aria-pressed={option.value === selected}
           onClick={() => onSelect(option.value)}
-          className={cn("whitespace-nowrap", chipClass(option.value === selected))}
+          className={cn("whitespace-nowrap", chipClass(option.value === selected, surface))}
         >
           {option.label}
         </button>

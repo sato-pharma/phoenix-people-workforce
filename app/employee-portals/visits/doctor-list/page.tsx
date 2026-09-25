@@ -17,7 +17,7 @@ export default async function DoctorListPage() {
 
   return (
     <EmployeePortalPageShell
-      badge="Visits"
+      badge="Field Activity"
       description="A rep's AM and PM doctor lists. A rep asks for a change and his manager approves or refuses it."
       title="Doctor List"
     >
