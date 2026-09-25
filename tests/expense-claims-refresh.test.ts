@@ -245,4 +245,71 @@ export async function runExpenseClaimsRefreshTests() {
       `${newest.name} must set its own statement_timeout — authenticator caps statements at 8s, and only on the HTTP path`,
     );
   }
+
+  // ONE accepted request with no `outstation_expenses` row takes the whole mirror down, and the
+  // hold text that explains it must not send the reader to repair a row that is absent ON PURPOSE.
+  //
+  // `expense_claims_approved_needs_decision` is `status <> 'approved' OR decided_at IS NOT NULL`.
+  // The rebuild reads `status` from outstation_expense_requests and `decided_at` from
+  // outstation_expenses, across a LEFT JOIN — so an accepted request with no expense row emits
+  // approved + NULL, and because the rebuild is one transaction that single row aborts the rebuild
+  // for every employee. It happened on 2026-09-19: request 111 (B-118 Amgad Ibrahim) had been
+  // accepted by B-10 the evening before and HELD OUT OF PAYROLL in the same action, the hourly job
+  // failed 23514 from then on, and cron-job.org disabled job 8350207 after the repeated failures —
+  // so the mirror stayed frozen for five more days after the fallback shipped.
+  //
+  // A gate-held acceptance HAS no expense row by design: `service.ts` says so in as many words
+  // ("the evidence gate is holding the trip out of payroll, so there is no row to carry either"),
+  // and outstation_expenses is the row payroll pays from. The first wording of this hold told the
+  // reader to "Repair the missing expense row" unconditionally, which in that case means creating
+  // the payroll row for a trip the gate is deliberately holding out. So this pins both halves: the
+  // fallback that keeps the rebuild alive, and the branch that keeps the advice truthful.
+  {
+    const migrationsDir = new URL("../supabase/migrations/", import.meta.url);
+    const newest = readdirSync(migrationsDir)
+      .filter((name) => name.endsWith(".sql"))
+      .sort()
+      .map((name) => ({ name, sql: readFileSync(new URL(name, migrationsDir), "utf8") }))
+      .filter((file) => file.sql.includes("function public.phx_refresh_expense_claims"))
+      .pop();
+
+    assert(newest, "at least one migration must define phx_refresh_expense_claims");
+
+    assert(
+      newest.sql.includes("coalesce(e.approved_at, r.updated_at)"),
+      `${newest.name} drops the decided-at fallback — an accepted request with no outstation_expenses row then emits approved with a NULL decided_at, and expense_claims_approved_needs_decision aborts the whole rebuild`,
+    );
+
+    // Read the sentence the way a reader gets it, not the way the file lays it out. The hold text
+    // is built from adjacent SQL string literals joined by `||` and wrapped across lines, so a
+    // substring search over the raw source misses every phrase that happens to straddle a join —
+    // and a test that can only see unwrapped phrases pins the line breaks, not the meaning.
+    // Collapsing literal-to-literal concatenation first assembles what lands in the column.
+    //
+    // Comment lines are dropped before that, for the reason the statement_timeout check above
+    // learned the hard way: this migration's header QUOTES the old wording while explaining why it
+    // was wrong, so a scan over the whole file finds "Repair the missing expense row" in the prose
+    // and reads the branches in the wrong order — measured, it failed on the very file it pins.
+    const assembled = newest.sql
+      .split("\n")
+      .filter((line) => !line.trim().startsWith("--"))
+      .join("\n")
+      .replace(/'\s*\|\|\s*'/g, "");
+
+    const gatePendingBranch = assembled.indexOf("HELD OUT OF PAYROLL in the same action");
+    const repairAdvice = assembled.indexOf("Repair the missing expense row");
+
+    assert(
+      gatePendingBranch !== -1,
+      `${newest.name} no longer names the gate hold: a trip whose evidence or workload gate is still pending has no outstation_expenses row BY DESIGN, and the hold text has to say so`,
+    );
+    assert(
+      assembled.includes("Do NOT create that row by hand"),
+      `${newest.name} must warn against creating the missing expense row by hand — it is what payroll pays from, and the gate is holding the trip out on purpose`,
+    );
+    assert(
+      repairAdvice === -1 || gatePendingBranch < repairAdvice,
+      `${newest.name} puts "Repair the missing expense row" ahead of the gate-pending branch, so a held acceptance is told to create the payroll row the gate is withholding`,
+    );
+  }
 }
