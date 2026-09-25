@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import {
   getManageEngineAccessToken,
   isManageEngineConfigured,
+  ManageEngineAuthThrottledError,
   ManageEngineNotConfiguredError,
   resetManageEngineTokenCache,
 } from "../src/lib/devices/manageengine/auth.ts";
@@ -168,6 +169,35 @@ function runAuthTests() {
     assert.equal(await getManageEngineAccessToken(ok.fetch, ENV), "tok-abc", "the access token is returned");
     assert.equal(await getManageEngineAccessToken(ok.fetch, ENV), "tok-abc", "the second ask is served from cache");
     assert.equal(ok.calls.length, 1, "the cached token is reused — Zoho is called once");
+
+    // Concurrent asks on a cold cache share ONE in-flight mint — the four cards that load together
+    // must not each hit Zoho, which is what tripped its rate limit and showed "Access Denied".
+    resetManageEngineTokenCache();
+    const shared = makeFetch({ token: [{ status: 200, body: { access_token: "tok-shared", expires_in: 3600 } }] });
+    const [first, second] = await Promise.all([
+      getManageEngineAccessToken(shared.fetch, ENV),
+      getManageEngineAccessToken(shared.fetch, ENV),
+    ]);
+    assert.equal(first, "tok-shared");
+    assert.equal(second, "tok-shared");
+    assert.equal(
+      shared.calls.filter((call) => call.url.includes("/oauth/v2/token")).length,
+      1,
+      "two concurrent asks mint once, not twice",
+    );
+
+    // Zoho's throttle ("Access Denied") is transient, not a dead credential: a ThrottledError whose
+    // message never tells the owner to re-generate the Self Client.
+    resetManageEngineTokenCache();
+    const throttled = makeFetch({ token: [{ status: 200, body: { error: "Access Denied" } }] });
+    await assert.rejects(
+      () => getManageEngineAccessToken(throttled.fetch, ENV),
+      (error: unknown) =>
+        error instanceof ManageEngineAuthThrottledError &&
+        /rate-limited/i.test((error as Error).message) &&
+        !/re-generate/i.test((error as Error).message),
+      "Access Denied is surfaced as a transient throttle, never as a credential to re-generate",
+    );
   })();
 }
 
