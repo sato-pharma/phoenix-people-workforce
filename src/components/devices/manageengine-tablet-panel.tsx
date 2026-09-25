@@ -527,7 +527,10 @@ function HistorySection({ deviceId }: { deviceId: string }) {
       ) : (
         <ul className="mt-2 space-y-2">
           {commands.slice(0, 20).map((command, index) => (
-            <li className="border-b border-slate-100 pb-2" key={command.commandId ?? `${command.name}-${index}`}>
+            // ManageEngine can return two history rows with the SAME command id (verified live
+            // 2026-09-25: ids …130013 appeared twice for one tablet), so the id alone is not a
+            // unique key — React would drop one row. The index makes every key distinct.
+            <li className="border-b border-slate-100 pb-2" key={`${command.commandId ?? command.name}-${index}`}>
               <p className="break-words text-[12px] font-bold text-slate-900">{command.name}</p>
               <p className="break-words text-[11px] font-semibold text-slate-500">
                 {[command.issuedAt ? cairoDateTime(command.issuedAt) : null, command.status, command.remarks]
