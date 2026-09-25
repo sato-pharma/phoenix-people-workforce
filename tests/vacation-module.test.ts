@@ -434,7 +434,20 @@ export function runVacationModuleTests() {
     /vacationRequestDisplayId/,
     "The report must read the stored request_code, never the uuid-derived VR- code: it collapsed 547 live vacations onto 414 values, so 239 of them shared an id with another request.",
   );
-  assert.match(vacationReportSource, />HR ID</);
+  // The manager/HR report shows human-readable names, never raw HR IDs (owner rule: "names, never
+  // codes or IDs, in the UI"). The desktop tables no longer carry an "HR ID" column or print
+  // row.managerHrId / row.employeeHrId next to a name; the HR id survives in the CSV/XLSX export
+  // headers ("HR ID") and in server-side search. So: no `>HR ID<` heading, and no raw manager HR id
+  // rendered under a name.
+  assert.doesNotMatch(vacationReportSource, />HR ID</);
+  assert.doesNotMatch(vacationReportSource, /\{row\.managerHrId \?\? ""\}/);
+  assert.match(vacationReportSource, /HR ID/, "the HR ID must stay in the CSV export header");
+  // Fits-the-screen golden rule: the tables use table-fixed + a colgroup and only render from the
+  // breakpoint where they truly fit (xl), with cards below — never overflow-x-auto over a min-width.
+  assert.match(vacationReportSource, /table-fixed/);
+  assert.match(vacationReportSource, /<colgroup>/);
+  assert.match(vacationReportSource, /hidden xl:block/);
+  assert.match(vacationReportSource, /block xl:hidden/);
   assert.match(vacationReportSource, />From</);
   assert.match(vacationReportSource, />To</);
   assert.match(vacationReportSource, /SortableHeader/);

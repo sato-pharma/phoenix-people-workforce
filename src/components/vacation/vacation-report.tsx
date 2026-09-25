@@ -804,7 +804,7 @@ function EntitlementCard({ row }: { row: VacationEmployeeEligibilityRow }) {
         <div className="min-w-0 flex-1">
           <p className="text-phx-md font-bold text-slate-900">{row.displayName}</p>
           <p className="mt-0.5 text-phx-xs font-medium text-slate-500">
-            {row.hrId} {[row.departmentName, row.lineName].filter(Boolean).join(" / ") ? ` · ${[row.departmentName, row.lineName].filter(Boolean).join(" / ")}` : ""}
+            {[row.departmentName, row.lineName].filter(Boolean).join(" / ") || "-"}
           </p>
         </div>
         <Badge variant={eligibilityBadgeVariant(row.eligibilityStatus)}>
@@ -894,7 +894,7 @@ function RequestCard({
         <div className="min-w-0 flex-1">
           <p className="text-phx-md font-bold text-slate-900">{row.employeeName}</p>
           <p className="mt-0.5 text-phx-xs font-medium text-slate-500">
-            {row.employeeHrId} · {row.requestCode}
+            {row.requestCode}
           </p>
           <p className="mt-0.5 text-phx-xs font-medium text-slate-500">
             {[row.departmentName, row.lineName].filter(Boolean).join(" / ") || "-"}
@@ -1134,7 +1134,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
   const [requestPage, setRequestPage] = useState(0);
 
   /* ── Sort state ──────────────────────────────────── */
-  const [entitlementSort, setEntitlementSort] = useState<EntitlementSortKey>("hrId");
+  const [entitlementSort, setEntitlementSort] = useState<EntitlementSortKey>("fullName");
   const [entitlementSortDir, setEntitlementSortDir] = useState<SortDirection>("asc");
   const [requestSort, setRequestSort] = useState<RequestSortKey>("createdAt");
   const [requestSortDir, setRequestSortDir] = useState<SortDirection>("desc");
@@ -1779,16 +1779,24 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                 </div>
               </div>
 
-              {/* Desktop table (md+) */}
-              <div className="hidden md:block overflow-x-auto">
-                <table className="w-full border-collapse text-left text-phx-sm">
+              {/* Desktop table (xl+). table-fixed + colgroup so every column shares the
+                  available width and the table never scrolls sideways — cards carry every
+                  narrower viewport below. Columns are MERGED, not shrunk, and raw HR IDs are
+                  gone from display (names only); the HR ID stays in the CSV export and search. */}
+              <div className="hidden xl:block">
+                <table className="w-full table-fixed border-collapse text-left text-phx-sm">
+                  <colgroup>
+                    <col className="w-[26%]" />
+                    <col className="w-[17%]" />
+                    <col className="w-[15%]" />
+                    <col className="w-[16%]" />
+                    <col className="w-[14%]" />
+                    <col className="w-[12%]" />
+                  </colgroup>
                   <thead className="bg-slate-50 text-phx-2xs font-bold uppercase tracking-[0.10em] text-slate-500">
                     <tr>
-                      <SortableHeader active={entitlementSort === "hrId"} direction={entitlementSortDir} sortKey="hrId" onSort={toggleEntitlementSort}>HR ID</SortableHeader>
                       <SortableHeader active={entitlementSort === "fullName"} direction={entitlementSortDir} sortKey="fullName" onSort={toggleEntitlementSort}>Employee</SortableHeader>
-                      <th className="border-b border-r border-slate-100 px-3 py-2.5">Hire Date</th>
-                      <SortableHeader active={entitlementSort === "daysSinceHire"} direction={entitlementSortDir} sortKey="daysSinceHire" onSort={toggleEntitlementSort}>Since Hire</SortableHeader>
-                      <th className="border-b border-r border-slate-100 px-3 py-2.5">6-Mo Date</th>
+                      <SortableHeader active={entitlementSort === "daysSinceHire"} direction={entitlementSortDir} sortKey="daysSinceHire" onSort={toggleEntitlementSort}>Hire &amp; tenure</SortableHeader>
                       <th className="border-b border-r border-slate-100 px-3 py-2.5">Eligibility</th>
                       <SortableHeader active={entitlementSort === "annualBalanceDays"} direction={entitlementSortDir} sortKey="annualBalanceDays" onSort={toggleEntitlementSort}>Balance</SortableHeader>
                       <th className="border-b border-r border-slate-100 px-3 py-2.5">Manager</th>
@@ -1797,16 +1805,17 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {paginatedEntitlements.map((row) => (
-                      <tr key={row.hrId} className="bg-white transition hover:bg-emerald-50/30">
-                        <td className="border-r border-slate-100 px-3 py-2.5 font-mono text-phx-sm font-bold text-slate-900">{row.hrId}</td>
+                      <tr key={row.hrId} className="bg-white align-top transition hover:bg-emerald-50/30">
                         <td className="border-r border-slate-100 px-3 py-2.5">
-                          <p className="font-bold text-slate-900">{row.displayName}</p>
-                          <p className="mt-0.5 text-phx-xs font-medium text-slate-500">{[row.departmentName, row.lineName].filter(Boolean).join(" / ") || "-"}</p>
+                          <p className="break-words font-bold text-slate-900">{row.displayName}</p>
+                          <p className="mt-0.5 break-words text-phx-xs font-medium text-slate-500">{[row.departmentName, row.lineName].filter(Boolean).join(" / ") || "-"}</p>
                           <p className="text-phx-xs text-slate-400">{row.employmentStatus ?? "-"}</p>
                         </td>
-                        <td className="border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-700">{formatDate(row.hireDate)}</td>
-                        <td className="border-r border-slate-100 px-3 py-2.5 text-center font-bold text-slate-800">{row.daysSinceHire ?? "-"}</td>
-                        <td className="border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-700">{formatDate(row.sixMonthAnniversary)}</td>
+                        <td className="border-r border-slate-100 px-3 py-2.5">
+                          <p className="font-semibold text-slate-700">{formatDate(row.hireDate)}</p>
+                          <p className="mt-0.5 text-phx-xs font-medium text-slate-500">{row.daysSinceHire ?? "-"} days since hire</p>
+                          <p className="text-phx-xs text-slate-400">6-mo: {formatDate(row.sixMonthAnniversary)}</p>
+                        </td>
                         <td className="border-r border-slate-100 px-3 py-2.5">
                           <Badge variant={eligibilityBadgeVariant(row.eligibilityStatus)}>
                             {eligibilityStatusLabel(row.eligibilityStatus)}
@@ -1822,8 +1831,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                           </p>
                         </td>
                         <td className="border-r border-slate-100 px-3 py-2.5">
-                          <p className="font-semibold text-slate-700">{row.managerName ?? "-"}</p>
-                          <p className="text-phx-xs text-slate-400">{row.managerHrId ?? ""}</p>
+                          <p className="break-words font-semibold text-slate-700">{row.managerName ?? "-"}</p>
                         </td>
                         <td className="px-3 py-2.5">
                           {row.reviewFlags.length > 0 ? (
@@ -1840,7 +1848,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                     ))}
                     {paginatedEntitlements.length === 0 ? (
                       <tr>
-                        <td className="border-b border-slate-100 px-4 py-8 text-center text-phx-md font-medium text-slate-500" colSpan={9}>
+                        <td className="border-b border-slate-100 px-4 py-8 text-center text-phx-md font-medium text-slate-500" colSpan={6}>
                           No active employees matched the current filters.
                         </td>
                       </tr>
@@ -1850,8 +1858,8 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                 <PaginationControls page={entitlementPage} pageSize={PAGE_SIZE} total={sortedEntitlements.length} onPageChange={setEntitlementPage} />
               </div>
 
-              {/* Mobile card view (< md) */}
-              <div className="block md:hidden space-y-2 p-3">
+              {/* Card view (< xl) */}
+              <div className="block xl:hidden space-y-2 p-3">
                 {paginatedEntitlements.length === 0 ? (
                   <p className="py-6 text-center text-phx-md font-medium text-slate-500">
                     No active employees matched the current filters.
@@ -2077,63 +2085,76 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                 </div>
               </div>
 
-              {/* Desktop table (md+) */}
-              <div className="hidden md:block overflow-x-auto">
-                <table className="w-full border-collapse text-left text-phx-sm">
+              {/* Desktop table (xl+). table-fixed + colgroup so the 12 source fields fit as
+                  7 merged columns with no sideways scroll; cards carry every narrower viewport
+                  below. Columns are MERGED, not shrunk, and raw HR IDs are dropped from display
+                  (names only) — the employee/manager HR IDs stay in the CSV/XLSX exports and search. */}
+              <div className="hidden xl:block">
+                <table className="w-full table-fixed border-collapse text-left text-phx-sm">
+                  <colgroup>
+                    <col className="w-[11%]" />
+                    <col className="w-[15%]" />
+                    <col className="w-[14%]" />
+                    <col className="w-[12%]" />
+                    <col className="w-[13%]" />
+                    <col className="w-[12%]" />
+                    <col className="w-[9%]" />
+                    <col className="w-[14%]" />
+                  </colgroup>
                   <thead className="bg-slate-50 text-phx-2xs font-bold uppercase tracking-[0.10em] text-slate-500">
                     <tr>
-                      <th className="border-b border-r border-slate-100 px-3 py-2.5">ID</th>
+                      <SortableHeader active={requestSort === "createdAt"} direction={requestSortDir} sortKey="createdAt" onSort={toggleRequestSort}>Request</SortableHeader>
                       <SortableHeader active={requestSort === "employeeName"} direction={requestSortDir} sortKey="employeeName" onSort={toggleRequestSort}>Employee</SortableHeader>
                       <th className="border-b border-r border-slate-100 px-3 py-2.5">Type</th>
-                      <SortableHeader active={requestSort === "startDate"} direction={requestSortDir} sortKey="startDate" onSort={toggleRequestSort}>From</SortableHeader>
-                      <th className="border-b border-r border-slate-100 px-3 py-2.5">To</th>
-                      <SortableHeader active={requestSort === "durationDays"} direction={requestSortDir} sortKey="durationDays" onSort={toggleRequestSort}>Days</SortableHeader>
-                      <th className="border-b border-r border-slate-100 px-3 py-2.5">Balance</th>
-                      <th className="border-b border-r border-slate-100 px-3 py-2.5">Payment</th>
+                      <SortableHeader active={requestSort === "startDate"} direction={requestSortDir} sortKey="startDate" onSort={toggleRequestSort}>Dates</SortableHeader>
+                      <th className="border-b border-r border-slate-100 px-3 py-2.5">Balance &amp; pay</th>
                       <SortableHeader active={requestSort === "status"} direction={requestSortDir} sortKey="status" onSort={toggleRequestSort}>Status</SortableHeader>
-                      <SortableHeader active={requestSort === "createdAt"} direction={requestSortDir} sortKey="createdAt" onSort={toggleRequestSort}>Submitted</SortableHeader>
                       <th className="border-b border-r border-slate-100 px-3 py-2.5">Manager</th>
                       <th className="border-b border-slate-100 px-3 py-2.5">{canAdminManage ? "Decision / Admin" : "Decision"}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {paginatedRequests.map((row) => (
-                      <tr key={row.id} className="bg-white transition hover:bg-orange-50/30">
+                      <tr key={row.id} className="bg-white align-top transition hover:bg-orange-50/30">
                         <td className="border-r border-slate-100 px-3 py-2.5">
-                          <span className="font-mono text-phx-xs font-bold text-slate-800" title={row.id}>{row.requestCode}</span>
-                          <p className="mt-0.5 text-phx-2xs font-medium text-slate-400">{row.employeeHrId}</p>
+                          <span className="break-words font-mono text-phx-xs font-bold text-slate-800" title={row.id}>{row.requestCode}</span>
+                          <p className="mt-0.5 text-phx-2xs font-medium text-slate-400">{formatDateTime(row.createdAt)}</p>
                         </td>
                         <td className="border-r border-slate-100 px-3 py-2.5">
-                          <p className="font-bold text-slate-900">{row.employeeName}</p>
-                          <p className="mt-0.5 text-phx-xs font-medium text-slate-500">{[row.departmentName, row.lineName].filter(Boolean).join(" / ") || "-"}</p>
+                          <p className="break-words font-bold text-slate-900">{row.employeeName}</p>
+                          <p className="mt-0.5 break-words text-phx-xs font-medium text-slate-500">{[row.departmentName, row.lineName].filter(Boolean).join(" / ") || "-"}</p>
                         </td>
                         <td className="border-r border-slate-100 px-3 py-2.5">
-                          <p className="font-semibold text-slate-800">{vacationTypeLabel(row.vacationType)}</p>
+                          <p className="break-words font-semibold text-slate-800">{vacationTypeLabel(row.vacationType)}</p>
                           <p className="text-phx-xs text-slate-500">{vacationDayPartLabel(row.dayPart)}</p>
                           {row.vacationType === "compensatory" ? (
                             <div className="mt-1.5 rounded-sm border border-orange-100 bg-orange-50/70 px-2 py-1.5 text-phx-2xs font-semibold leading-4 text-orange-900">
-                              <p>{row.compensatoryEventName ?? "Event"}</p>
-                              <p className="text-orange-700">{[row.compensatoryEventDate, row.compensatoryEventLocation].filter(Boolean).join(" / ")}</p>
+                              <p className="break-words">{row.compensatoryEventName ?? "Event"}</p>
+                              <p className="break-words text-orange-700">{[row.compensatoryEventDate, row.compensatoryEventLocation].filter(Boolean).join(" / ")}</p>
                               <VacationAttachmentLinks canReviewAttachments={canReviewAttachments} row={row} />
                             </div>
                           ) : null}
                           {row.vacationType === "sick" ? <VacationAttachmentLinks canReviewAttachments={canReviewAttachments} row={row} /> : null}
                           {row.vacationType === "other" && row.notes ? (
-                            <p className="mt-1.5 rounded-sm border border-amber-100 bg-amber-50/70 px-2 py-1.5 text-phx-2xs font-semibold leading-4 text-amber-900">{row.notes}</p>
+                            <p className="mt-1.5 break-words rounded-sm border border-amber-100 bg-amber-50/70 px-2 py-1.5 text-phx-2xs font-semibold leading-4 text-amber-900">{row.notes}</p>
                           ) : null}
                         </td>
-                        <td className="border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-700">{formatDate(row.startDate)}</td>
-                        <td className="border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-700">{formatDate(row.endDate)}</td>
-                        <td className="border-r border-slate-100 px-3 py-2.5 text-center font-bold text-slate-900">{formatDays(row.durationDays)}</td>
-                        <td className="border-r border-slate-100 px-3 py-2.5 whitespace-nowrap text-slate-700">
-                          <span className="font-semibold">{formatDays(row.balanceBeforeDays)}</span>
-                          <span className="mx-1 text-slate-400">&rarr;</span>
-                          <span className="font-bold text-slate-900">{formatDays(row.balanceAfterDays)}</span>
+                        <td className="border-r border-slate-100 px-3 py-2.5">
+                          <p className="font-semibold text-slate-700">{formatDate(row.startDate)}</p>
+                          <p className="text-phx-xs text-slate-400">to {formatDate(row.endDate)}</p>
+                          <p className="mt-0.5 text-phx-sm font-bold text-slate-900">{formatDays(row.durationDays)} days</p>
                         </td>
                         <td className="border-r border-slate-100 px-3 py-2.5">
-                          <Badge variant={paymentBadgeVariant(row.paymentStatus)}>
-                            {paymentStatusLabel(row.paymentStatus)}
-                          </Badge>
+                          <p className="break-words text-slate-700">
+                            <span className="font-semibold">{formatDays(row.balanceBeforeDays)}</span>
+                            <span className="mx-1 text-slate-400">&rarr;</span>
+                            <span className="font-bold text-slate-900">{formatDays(row.balanceAfterDays)}</span>
+                          </p>
+                          <div className="mt-1">
+                            <Badge variant={paymentBadgeVariant(row.paymentStatus)}>
+                              {paymentStatusLabel(row.paymentStatus)}
+                            </Badge>
+                          </div>
                           {row.paymentStatus === "partial" ? (
                             <p className="mt-1 text-phx-2xs font-bold text-amber-700">
                               {formatDays(row.paidDurationDays)} paid / {formatDays(row.unpaidDurationDays)} unpaid
@@ -2150,11 +2171,9 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                             <p className="mt-1 text-phx-2xs font-bold text-amber-700">{row.overlapWarnings.length} warning(s)</p>
                           ) : null}
                         </td>
-                        <td className="border-r border-slate-100 px-3 py-2.5 font-medium text-slate-600">{formatDateTime(row.createdAt)}</td>
                         <td className="border-r border-slate-100 px-3 py-2.5">
-                          <p className="font-semibold text-slate-700">{row.managerName ?? "-"}</p>
-                          <p className="text-phx-xs text-slate-400">{row.managerHrId ?? ""}</p>
-                          {row.managerOfManagerName ? <p className="mt-0.5 text-phx-2xs text-slate-400">MoM: {row.managerOfManagerName}</p> : null}
+                          <p className="break-words font-semibold text-slate-700">{row.managerName ?? "-"}</p>
+                          {row.managerOfManagerName ? <p className="mt-0.5 break-words text-phx-2xs text-slate-400">MoM: {row.managerOfManagerName}</p> : null}
                         </td>
                         <td className="px-3 py-2.5">
                           <button
@@ -2221,7 +2240,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                     ))}
                     {paginatedRequests.length === 0 ? (
                       <tr>
-                        <td className="border-b border-slate-100 px-4 py-8 text-center text-phx-md font-medium text-slate-500" colSpan={12}>
+                        <td className="border-b border-slate-100 px-4 py-8 text-center text-phx-md font-medium text-slate-500" colSpan={8}>
                           No vacation requests found.
                         </td>
                       </tr>
@@ -2231,8 +2250,8 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                 <PaginationControls page={requestPage} pageSize={PAGE_SIZE} total={sortedRequests.length} onPageChange={setRequestPage} />
               </div>
 
-              {/* Mobile card view (< md) */}
-              <div className="block md:hidden space-y-2 p-3">
+              {/* Card view (< xl) */}
+              <div className="block xl:hidden space-y-2 p-3">
                 {paginatedRequests.length === 0 ? (
                   <p className="py-6 text-center text-phx-md font-medium text-slate-500">
                     No vacation requests found.

@@ -4633,26 +4633,36 @@ function buildReportOptions(rows: VacationRequestRecord[], employees?: EmployeeD
   const unique = (values: Array<string | null | undefined>) =>
     Array.from(new Set(values.map((value) => text(value)).filter(Boolean))).sort((a, b) => a.localeCompare(b));
 
+  // Owner rule: human-readable names, never raw codes/IDs, in the UI. The picker value stays the
+  // HR id (that is what the filter matches on), but the visible label is the name — disambiguated by
+  // department/line for namesakes, not by a raw HR id. The free-text search box still matches HR id
+  // server-side, and the CSV/XLSX exports still carry it.
+  const employeeLabel = (name: string | null | undefined, department?: string | null, line?: string | null) => {
+    const context = [department, line].map((value) => text(value)).filter(Boolean).join(" / ");
+    const displayName = text(name) || "Unnamed employee";
+    return context ? `${displayName} — ${context}` : displayName;
+  };
+
   const employeeOptions = employees
     ? employees
         .filter((employee) => employee.hrId)
-        .map((employee) => ({ label: `${employee.displayName} (${employee.hrId})`, value: employee.hrId }))
+        .map((employee) => ({ label: employeeLabel(employee.displayName, employee.departmentName, employee.lineName), value: employee.hrId }))
         .sort((left, right) => left.label.localeCompare(right.label))
     : Array.from(
-        new Map(rows.map((row) => [row.employeeHrId, { label: `${row.employeeName} (${row.employeeHrId})`, value: row.employeeHrId }])).values(),
+        new Map(rows.map((row) => [row.employeeHrId, { label: employeeLabel(row.employeeName, row.departmentName, row.lineName), value: row.employeeHrId }])).values(),
       ).sort((left, right) => left.label.localeCompare(right.label));
 
   const managerSource = employees
     ? employees
         .filter((employee) => employee.managerHrId)
         .map((employee) => ({
-          label: `${employee.managerName ?? employee.managerHrId} (${employee.managerHrId})`,
+          label: text(employee.managerName) || (employee.managerHrId ?? ""),
           value: employee.managerHrId ?? "",
         }))
     : rows
         .filter((row) => row.managerHrId)
         .map((row) => ({
-          label: `${row.managerName ?? row.managerHrId} (${row.managerHrId})`,
+          label: text(row.managerName) || (row.managerHrId ?? ""),
           value: row.managerHrId ?? "",
         }));
   const managers = Array.from(new Map(managerSource.map((manager) => [manager.value, manager])).values())
