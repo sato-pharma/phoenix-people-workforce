@@ -10,9 +10,15 @@
  *   - a visit saved far from the validated place still saves, flagged for the manager;
  *   - the Super Admin's visits are test entries, left out of every report.
  *
- * The visit's date and time are the server's (when the photo's upload slot was issued), never the
+ * The visit's date and time are the server's (when the PHOTO's upload slot was issued), never the
  * phone's. One visit a customer a day per territory. A retry of the same visit (the phone keeps the
  * visit's id until it is saved) returns the saved visit instead of a second one.
+ *
+ * A visit may also carry a spoken note (owner, 2026-09-25), and the emphasis above is why it is worth
+ * saying here: the note is audio the rep recorded, kept as audio and never transcribed, and it dates
+ * NOTHING. A photo is taken where the camera is; a recording can be made in a car an hour later. So
+ * the photo's slot gives `captured_at` and the voice slot gives nothing at all — phoenix_crm_take_voice
+ * returns void, which is what stops a later edit here reaching for its issue time out of habit.
  */
 
 import { validationError } from "@/lib/http/api-errors";
@@ -83,6 +89,9 @@ export type VisitRow = {
   productAvailability: Record<string, ProductAvailability>;
   comment: string | null;
   photoPath: string;
+  /** The spoken note, if the rep left one. Null is the normal case: a visit never required one. */
+  voiceNotePath: string | null;
+  voiceNoteSeconds: number | null;
   locationFlag: VisitLocationFlag;
   locationLabel: string;
   clockOff: boolean;
@@ -90,7 +99,8 @@ export type VisitRow = {
 
 const VISIT_COLUMNS =
   "id, visit_date, captured_at, customer_id, list_type, kind, rep_hr_id, manager_hr_id, senior_hr_id, entered_by_hr_id, products, " +
-  "comment, pharmacy_name, product_availability, photo_path, accuracy_meters, distance_meters, location_flag, device_skew_minutes, " +
+  "comment, pharmacy_name, product_availability, photo_path, voice_note_path, voice_note_seconds, " +
+  "accuracy_meters, distance_meters, location_flag, device_skew_minutes, " +
   "customer:phoenix_crm_customers!customer_id(name)";
 
 function visitKind(value: unknown): PhoenixCrmVisitKind {
@@ -136,6 +146,8 @@ function mapVisitRow(row: Row, names: PeopleNames): VisitRow {
     productAvailability: parseProductAvailability(row.product_availability),
     comment: textOrNull(row.comment),
     photoPath: String(row.photo_path),
+    voiceNotePath: textOrNull(row.voice_note_path),
+    voiceNoteSeconds: numberOrNull(row.voice_note_seconds),
     locationFlag: flag,
     locationLabel: visitLocationLabel(flag, numberOrNull(row.distance_meters), numberOrNull(row.accuracy_meters)),
     clockOff: skew !== null && Math.abs(skew) > DEVICE_CLOCK_TOLERANCE_MINUTES,
@@ -465,6 +477,11 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown): Promise
       comment: visit.comment,
       photo_path: visit.photoPath,
       reuse_place_photo: reusePlacePhoto,
+      // The spoken note, when the rep recorded one. It is passed beside the photo and it is not one:
+      // no term of the visit's date reads it, and phoenix_crm_take_voice returns void so that none can.
+      voice_note_path: visit.voiceNotePath,
+      voice_note_seconds: visit.voiceNoteSeconds,
+      voice_note_bytes: visit.voiceNoteBytes,
       lat: visit.lat,
       lon: visit.lon,
       accuracy_meters: visit.accuracyMeters,

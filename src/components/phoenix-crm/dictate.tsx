@@ -127,7 +127,8 @@ export function CrmDictate({
             {label}
           </CrmButton>
           <p className="mt-1.5 break-words text-xs font-medium leading-5 text-slate-500">
-            Speak and it is written into the comment. Nothing is recorded — what saves is the text.
+            Speak and it is written into the comment — what saves is the text, not your voice. To save the
+            voice itself, use Record a voice note below.
           </p>
         </div>
       )}

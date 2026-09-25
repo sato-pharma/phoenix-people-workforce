@@ -21,6 +21,8 @@ import { ChevronLeft, ChevronRight, Plus, Search } from "lucide-react";
 
 import { crmPost, crmUrl, errorCodeOf, messageOf, newClientId, useCrmGet } from "@/components/phoenix-crm/api";
 import { CrmDictate } from "@/components/phoenix-crm/dictate";
+import { CrmVoiceNote, type VoiceNoteValue } from "@/components/phoenix-crm/voice-note";
+import { CrmVoiceNotePlayer } from "@/components/phoenix-crm/voice-playback";
 import { cairoClock, cairoStamp, dayLabelLong, plural, shiftIsoDay } from "@/components/phoenix-crm/format";
 import {
   customerMetaText,
@@ -276,6 +278,10 @@ function VisitDetails({ visit }: { visit: VisitRow }) {
           <span dir="auto">{visit.comment}</span>
         </p>
       ) : null}
+      {/* The note sits beside the comment because that is what it is — the same thing said rather than
+          typed. It is NOT beside the photo, which is where the eye goes for evidence of presence: a
+          recording can be made in a car afterwards and proves nothing about where anybody stood. */}
+      {visit.voiceNotePath ? <CrmVoiceNotePlayer path={visit.voiceNotePath} seconds={visit.voiceNoteSeconds} /> : null}
       <p className="break-words">{visit.locationLabel}</p>
       {enteredByOther(visit) ? <p className="break-words">Entered by {visit.enteredByName}</p> : null}
     </div>
@@ -365,6 +371,11 @@ function VisitTable({ visits }: { visits: ReadonlyArray<VisitRow> }) {
                   <span className="mt-1 block whitespace-pre-line text-xs text-slate-500" dir="auto">
                     {visit.comment}
                   </span>
+                ) : null}
+                {visit.voiceNotePath ? (
+                  <div className="mt-1.5">
+                    <CrmVoiceNotePlayer path={visit.voiceNotePath} seconds={visit.voiceNoteSeconds} />
+                  </div>
                 ) : null}
               </td>
               <td className={crmTdClassName}>
@@ -822,6 +833,8 @@ function AddVisit({
   const [openFamilies, setOpenFamilies] = useState<Set<string>>(() => new Set());
   const [comment, setComment] = useState("");
   const [photo, setPhoto] = useState<CapturedPhoto | null>(null);
+  // The spoken note, already uploaded by the control. Null is the normal case: it was never required.
+  const [voiceNote, setVoiceNote] = useState<VoiceNoteValue | null>(null);
   const [usePlacePhoto, setUsePlacePhoto] = useState(Boolean(handoff?.photo));
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -935,6 +948,11 @@ function AddVisit({
         productAvailability: availability,
         comment: comment.trim() || null,
         photoPath: evidence.path,
+        // Beside the photo and deliberately not one of its fields: the photo's slot dates the visit
+        // and this one dates nothing, so it carries no time of its own.
+        voiceNotePath: voiceNote?.path ?? null,
+        voiceNoteSeconds: voiceNote?.seconds ?? null,
+        voiceNoteBytes: voiceNote?.bytes ?? null,
         lat: evidence.lat,
         lon: evidence.lon,
         accuracyMeters: evidence.accuracyMeters,
@@ -975,6 +993,11 @@ function AddVisit({
       } else if (code && code.startsWith("phoenix_crm_photo_")) {
         releaseCapturedPhoto(photo);
         setPhoto(null);
+      } else if (code && code.startsWith("phoenix_crm_voice_")) {
+        // The slot was already spent, has expired, or never received the audio. Keeping the note would
+        // send the rep into the same refusal on every press of Save; dropping it lets them record again.
+        // The photo is deliberately left alone — the visit itself is still good.
+        setVoiceNote(null);
       } else if (code === "phoenix_crm_id_conflict") {
         visitIdRef.current = null;
       } else if (
@@ -1211,6 +1234,7 @@ function AddVisit({
             nothing to a programmatic append, so a long dictation would push the field past
             VISIT_COMMENT_MAX and the server would refuse the save. */}
         <CrmDictate disabled={saving} onAppend={(spoken) => setComment((current) => appendDictated(current, spoken, VISIT_COMMENT_MAX))} />
+        <CrmVoiceNote disabled={saving} onChange={setVoiceNote} seatId={seatId} test={test} value={voiceNote} />
       </CrmBlock>
 
       <CrmBlock className="border-t border-slate-100" title="6 · Live photo">

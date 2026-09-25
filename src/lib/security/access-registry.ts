@@ -712,6 +712,14 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/photos/upload", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
   // A read sent as a POST (a batch of photo paths does not belong in a URL); it writes nothing.
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/photos/sign", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: true }),
+  // The voice note's upload slot: whoever may enter this territory's visits may attach a recording to
+  // one, so the gate is the same "create" as the photo's. It is deliberately its own route rather than
+  // a purpose on photos/upload-slot — a recording is not evidence of presence, and the photo path is
+  // the one that dates a visit by the slot it issued.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/voice/upload-slot", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
+  // Playback, on the photo's own pattern: a read sent as a POST, writing nothing. It is audited because
+  // hearing what a rep said on a call is a disclosure of the same kind as seeing where they stood.
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/voice/sign", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: true }),
   // The place stamp burned into a live photo (address, brick, area, coordinates). Same gate as taking
   // the photo; it resolves and returns, persisting nothing, so audit is classified but not required.
   sessionApi({ audit: { classification: "access-read", required: false }, methods: ["POST"], pattern: "/api/phoenix-crm/location", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),

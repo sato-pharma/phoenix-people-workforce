@@ -194,7 +194,35 @@ export type VisitDraft = CapturedFix & {
   productAvailability: Record<string, ProductAvailability>;
   comment: string | null;
   photoPath: string;
+  /**
+   * An optional spoken note, kept as audio and transcribed never.
+   *
+   * Null on most visits, and the visit saves either way — the note is a convenience, not evidence. It
+   * is deliberately NOT part of `CapturedFix`: a fix is where and when somebody was, and a recording
+   * can be made in a car an hour later, which is the whole reason it dates nothing.
+   */
+  voiceNotePath: string | null;
+  voiceNoteSeconds: number | null;
+  voiceNoteBytes: number | null;
 };
+
+/** The recorder caps at 60s; the column allows 120, so a long note is clamped rather than refused. */
+const VOICE_NOTE_SECONDS_MAX = 120;
+const VOICE_NOTE_BYTES_MAX = 2 * 1024 * 1024;
+
+/**
+ * The duration and size the phone reported, clamped rather than trusted.
+ *
+ * Neither is evidence and neither gates the save — they are what the review screen prints beside the
+ * play button, so a wrong one is a wrong label, not a wrong visit. What IS authoritative is the path,
+ * and only the database can settle that: `phoenix_crm_take_voice` refuses a path this person was not
+ * issued, so a forged one fails at the save with a named code rather than being guessed at here.
+ */
+function clampVoiceNumber(raw: unknown, max: number): number | null {
+  const value = Math.round(Number(raw));
+  if (!Number.isFinite(value) || value < 1) return null;
+  return Math.min(value, max);
+}
 
 /**
  * The pharmacy stock answers the phone sent: an object of product → "has"/"missing". Anything else — a
@@ -244,6 +272,10 @@ export function parseVisitDraft(raw: unknown): EntryRuleResult<VisitDraft> {
   const fix = parseCapturedFix(body);
   if (!fix.ok) return fix;
 
+  // All three travel together or none does: a path with no numbers would print an empty player, and
+  // numbers with no path would print a duration for a recording nobody can hear.
+  const voiceNotePath = cleanText(body.voiceNotePath, 200);
+
   return {
     ok: true,
     value: {
@@ -257,6 +289,9 @@ export function parseVisitDraft(raw: unknown): EntryRuleResult<VisitDraft> {
       productAvailability,
       comment: commentText || null,
       photoPath,
+      voiceNotePath,
+      voiceNoteSeconds: voiceNotePath ? clampVoiceNumber(body.voiceNoteSeconds, VOICE_NOTE_SECONDS_MAX) : null,
+      voiceNoteBytes: voiceNotePath ? clampVoiceNumber(body.voiceNoteBytes, VOICE_NOTE_BYTES_MAX) : null,
     },
   };
 }
