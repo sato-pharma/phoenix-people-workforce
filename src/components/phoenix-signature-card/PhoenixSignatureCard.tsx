@@ -91,48 +91,23 @@ export function PhoenixSignatureCard({
         style={{ height: "150px", background: "#fdf8f3", boxShadow: "0 6px 24px rgba(16,35,61,0.12)" }}
         aria-label="Employee identity banner"
       >
-        {/* Photo — left-anchored, full height, fades right */}
-        {photoSrc ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={photoSrc}
-            alt={`${name} portrait`}
-            style={{
-              position: "absolute",
-              left: 0,
-              top: 0,
-              height: "100%",
-              width: "38%",
-              objectFit: "cover",
-              objectPosition: "center top",
-              maskImage: "linear-gradient(to right, black 55%, transparent 95%)",
-              WebkitMaskImage: "linear-gradient(to right, black 55%, transparent 95%)",
-              zIndex: 2,
-            }}
-          />
-        ) : (
-          <div
-            style={{
-              position: "absolute",
-              left: 0,
-              top: 0,
-              height: "100%",
-              width: "38%",
-              background: "#f8efe5",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: "2.5rem",
-              fontWeight: 900,
-              color: "#f47b20",
-              maskImage: "linear-gradient(to right, black 55%, transparent 95%)",
-              WebkitMaskImage: "linear-gradient(to right, black 55%, transparent 95%)",
-              zIndex: 2,
-            }}
-          >
-            {name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]).join("").toUpperCase() || "EM"}
-          </div>
-        )}
+        {/* Photo — the SAME framed portrait as desktop, resized to the banner so
+            the face stays centred and fully in frame instead of being cropped by
+            a fading strip. Its own container-type keeps the border and glow in
+            proportion to the smaller size. */}
+        <div
+          style={{
+            position: "absolute",
+            left: "16px",
+            top: "50%",
+            transform: "translateY(-50%)",
+            width: "94px",
+            zIndex: 4,
+            containerType: "inline-size",
+          }}
+        >
+          <EmployeePortrait src={photoSrc} alt={`${name} portrait`} name={name} />
+        </div>
 
         {/* Warm gradient overlay */}
         <div
@@ -166,7 +141,7 @@ export function PhoenixSignatureCard({
         <div
           style={{
             position: "absolute",
-            left: "36%",
+            left: "124px",
             top: 0,
             right: 0,
             bottom: "38px",
@@ -174,7 +149,7 @@ export function PhoenixSignatureCard({
             display: "flex",
             flexDirection: "column",
             justifyContent: "center",
-            paddingLeft: "3%",
+            paddingLeft: "10px",
             paddingRight: "5%",
           }}
         >
