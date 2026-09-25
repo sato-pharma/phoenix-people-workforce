@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { stripComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Every outstation surface must be desktop-table / mobile-cards, module-wide.
@@ -44,15 +45,6 @@ const DESKTOP_GATES = [/\bmd:block\b/, /\bmd:table\b/];
 
 /** How a file may render its mobile half. The primitive emits the `md:hidden` card list itself. */
 const MOBILE_CARD_PATHS = [/\bPortalResponsiveDataList\b/, /\bmd:hidden\b/];
-
-/**
- * Comments are stripped before matching, so a note explaining what a file USED to do — several
- * of these carry one — cannot fail the build by mentioning `overflow-x-auto` or a `<table>`
- * that no longer exists.
- */
-function stripComments(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-}
 
 function tableOffsets(source: string): number[] {
   const offsets: number[] = [];

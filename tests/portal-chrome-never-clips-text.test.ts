@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * Three places in the portal chrome that CLIPPED text rather than wrapping it, and one that broke a
@@ -36,23 +37,26 @@ const LAYOUT = "src/components/employee-portal/employee-portal-layout.tsx";
 const MM = "src/components/employee-portal/dashboards/marketing-manager-command-center.tsx";
 const COMMAND = "src/components/employee-portal/portal-command-center.tsx";
 
-/**
- * Drop block comments and whole-line `//` comments; a JSX comment collapses to a harmless `{}`.
- * Deliberately NOT a brace-aware rule: one written as an opening brace, newline, then a block
- * comment also matches a FUNCTION BODY brace, and the lazy quantifier then swallows everything
- * up to the next comment close — which ate a whole component here and made the GlanceStrip
- * assertion below read the wrong element entirely.
- */
-function stripComments(source: string): string {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .split("\n")
-    .filter((line) => !line.trim().startsWith("//"))
-    .join("\n");
-}
-
 function tokens(className: string): string[] {
   return className.split(/\s+/).filter(Boolean);
+}
+
+/**
+ * One component's body, from its `export function` to the next top-level `export` (or the end).
+ *
+ * Deliberately NOT a fixed character window. Both windows here used to be one — 1200 and 1600 —
+ * and a byte count silently depends on how the comment stripper REPRESENTS a comment: the local
+ * stripper this file used to carry deleted comment text outright, so 1600 characters reached much
+ * further into the component than they do now that comments are blanked to spaces in place. The
+ * QuickActions class string then straddled the cut and the assertion read "the item no longer
+ * opens flex min-h-[48px]" about a file that had not changed at all.
+ */
+function componentBody(source: string, name: string): string {
+  const start = source.indexOf(`export function ${name}`);
+  if (start === -1) return "";
+  const rest = source.slice(start + `export function ${name}`.length);
+  const next = rest.search(/\nexport (?:function|const|default|async) /);
+  return source.slice(start, next === -1 ? undefined : start + `export function ${name}`.length + next);
 }
 
 export function runPortalChromeNeverClipsTextTests() {
@@ -113,7 +117,7 @@ export function runPortalChromeNeverClipsTextTests() {
     -1,
     `${COMMAND}: GlanceStrip is gone — this test is pinning a component that no longer exists.`,
   );
-  const strip = command.slice(stripStart, stripStart + 1200);
+  const strip = componentBody(command, "GlanceStrip");
   const grid = strip.match(/<div className="([^"]*grid[^"]*)"/);
   assert.ok(grid, `${COMMAND}: GlanceStrip no longer opens with a literal grid className.`);
   const gridTokens = tokens(grid[1]);
@@ -140,7 +144,7 @@ export function runPortalChromeNeverClipsTextTests() {
     -1,
     `${COMMAND}: QuickActions is gone — this test is pinning a component that no longer exists.`,
   );
-  const actions = command.slice(actionsStart, actionsStart + 1600);
+  const actions = componentBody(command, "QuickActions");
 
   const row = actions.match(/<div className="([^"]*)">/);
   assert.ok(row, `${COMMAND}: QuickActions no longer opens with a literal className.`);

@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import type { AssembledRow } from "../src/lib/automated-payroll/assemble.ts";
 import { reconcile } from "../src/lib/automated-payroll/reconcile.ts";
 import type { SalaryValidationRow } from "../src/lib/payroll/salary-import.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * Four guards that did not guard.
@@ -95,16 +96,6 @@ function buildRow(overrides: {
     bankName: "FAB",
     bankAccount: "1",
   };
-}
-
-function stripComments(text: string): string {
-  return text
-    .split("\n")
-    .map((line) => {
-      const at = line.indexOf("//");
-      return at === -1 ? line : line.slice(0, at);
-    })
-    .join("\n");
 }
 
 export function runAutomatedPayrollGuardsThatGuardTests() {

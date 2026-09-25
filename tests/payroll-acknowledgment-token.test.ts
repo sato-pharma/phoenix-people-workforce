@@ -8,6 +8,7 @@ import {
   issueAcknowledgmentToken,
   PayrollAcknowledgmentRequiredError,
 } from "../src/lib/automated-payroll/acknowledgment-token.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * YOU CANNOT ACKNOWLEDGE A WARNING YOU WERE NEVER SHOWN (audit finding 53).
@@ -30,16 +31,6 @@ import {
 
 function source(relativePath: string): string {
   return readFileSync(fileURLToPath(new URL(`../${relativePath}`, import.meta.url)), "utf8");
-}
-
-function stripComments(text: string): string {
-  return text
-    .split("\n")
-    .map((line) => {
-      const at = line.indexOf("//");
-      return at === -1 ? line : line.slice(0, at);
-    })
-    .join("\n");
 }
 
 const RUN = "run-2026-09";

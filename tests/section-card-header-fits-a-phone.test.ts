@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * On a 375px phone, two of the six "Performance breakdown" tabs on /sales/vs-target were
@@ -34,16 +35,6 @@ import { readFileSync } from "node:fs";
 
 const SECTION_CARD = "src/components/sales/target-visuals.tsx";
 const VS_TARGET = "src/components/sales/vs-target/vs-target-dashboard.tsx";
-
-/** Drop block comments and whole-line `//` comments. Deliberately not brace-aware: see the note in
- * tests/portal-chrome-never-clips-text.test.ts about a brace-aware variant eating a component. */
-function stripComments(source: string): string {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .split("\n")
-    .filter((line) => !line.trim().startsWith("//"))
-    .join("\n");
-}
 
 function tokens(className: string): string[] {
   return className.split(/\s+/).filter(Boolean);

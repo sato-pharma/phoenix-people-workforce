@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * At 1024px the sales page header squeezed its own headline into a column narrower than the title.
@@ -36,16 +37,6 @@ const COMMAND_BAND = "src/components/sales/target-visuals.tsx";
 const TARGETS_WORKSPACE = "src/components/sales/targets-workspace.tsx";
 const VS_TARGET = "src/components/sales/vs-target/vs-target-dashboard.tsx";
 const SOURCE_ROOTS = ["src", "app"];
-
-/** Drop block comments and whole-line `//` comments. Deliberately not brace-aware: see the note in
- * tests/portal-chrome-never-clips-text.test.ts about a brace-aware variant eating a component. */
-function stripComments(source: string): string {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .split("\n")
-    .filter((line) => !line.trim().startsWith("//"))
-    .join("\n");
-}
 
 function tokens(className: string): string[] {
   return className.split(/\s+/).filter(Boolean);

@@ -12,6 +12,7 @@ import {
   TRANSITION_CLAIM_LAPSE_MINUTES,
   transitionInProgress,
 } from "../src/lib/automated-payroll/transition-claim.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * ONE TRANSITION AT A TIME, AND A PART 2 THAT ASKS ABOUT PEOPLE WHO VANISHED.
@@ -27,16 +28,6 @@ import {
  * the wizard sends every acknowledgement already given, because the buttons used to send only their own
  * flag and a month raising two gates looped between the prompts.
  */
-
-function stripComments(text: string): string {
-  return text
-    .split("\n")
-    .map((line) => {
-      const at = line.indexOf("//");
-      return at === -1 ? line : line.slice(0, at);
-    })
-    .join("\n");
-}
 
 function bodyOf(source: string, signature: string): string {
   const start = source.indexOf(signature);

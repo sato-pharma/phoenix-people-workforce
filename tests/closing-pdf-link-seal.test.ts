@@ -14,6 +14,7 @@ import {
   type SealedClosingSelection,
 } from "../src/lib/sales/closing-pdf-link-seal.ts";
 import { canRevealClosingSource } from "../src/lib/sales/closing-source-mask.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * ANYONE WHO RECEIVES THE CLOSING CAN EXPORT ITS PDF (owner, 2026-09-14).
@@ -28,16 +29,6 @@ import { canRevealClosingSource } from "../src/lib/sales/closing-source-mask.ts"
 
 function source(relativePath: string): string {
   return readFileSync(fileURLToPath(new URL(`../${relativePath}`, import.meta.url)), "utf8");
-}
-
-function stripComments(text: string): string {
-  return text
-    .split("\n")
-    .map((line) => {
-      const at = line.indexOf("//");
-      return at === -1 ? line : line.slice(0, at);
-    })
-    .join("\n");
 }
 
 const SECRET = "closing-pdf-link-seal-test-secret";

@@ -8,6 +8,7 @@ import type { AssembledRow } from "../src/lib/automated-payroll/assemble.ts";
 import { buildFinanceSheetWorkbook } from "../src/lib/automated-payroll/exports/finance-sheet.ts";
 import type { MonthlySalaryRun } from "../src/lib/automated-payroll/types.ts";
 import { escapeLikePattern } from "../src/lib/payroll/payslip-center.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * FOUR SCREENS THAT SAID NOTHING, AND ONE THAT SAID A CODE.
@@ -31,16 +32,6 @@ import { escapeLikePattern } from "../src/lib/payroll/payslip-center.ts";
 
 function source(relativePath: string): string {
   return readFileSync(fileURLToPath(new URL(`../${relativePath}`, import.meta.url)), "utf8");
-}
-
-function stripComments(text: string): string {
-  return text
-    .split("\n")
-    .map((line) => {
-      const at = line.indexOf("//");
-      return at === -1 ? line : line.slice(0, at);
-    })
-    .join("\n");
 }
 
 const run: MonthlySalaryRun = {

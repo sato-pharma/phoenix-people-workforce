@@ -3,6 +3,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 
 import { PORTAL_HOME, portalTwinRules, resolvePortalTwin } from "../src/lib/navigation/portal-twins.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // A portal-mode viewer lands on the portal twin of what they asked for.
@@ -48,12 +49,6 @@ const RULES_WITHOUT_A_PAGE_DECLARATION = new Set([
   "/leave-management/vacation-report -> /employee-portals/vacation-report",
   "/leave-management/vacation-request -> /employee-portals/vacation-request",
 ]);
-
-function stripComments(source: string): string {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, (block) => block.replace(/[^\n]/g, " "))
-    .replace(/(^|[^:])\/\/.*$/gm, "$1");
-}
 
 function walkPages(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {

@@ -32,6 +32,24 @@
  *
  * `tests/comment-strip-ratchet.test.ts` fails if any test strips one of the 39. Reach for
  * {@link stripComments} and the question never arises.
+ *
+ * ## Why it is a lexer and not a brace-aware rule
+ *
+ * The obvious improvement — treat an opening brace followed by a block comment as a JSX comment and
+ * drop the pair — is worse, and `tests/portal-chrome-never-clips-text.test.ts` recorded the damage
+ * before this module existed: that shape also matches a FUNCTION BODY brace, and the lazy quantifier
+ * then swallows everything up to the next comment close. It ate a whole component, and the assertion
+ * below it went on to read the wrong element entirely. Scanning for string and template state costs
+ * nothing extra and cannot do that.
+ *
+ * ## Why comments are blanked rather than removed
+ *
+ * A comment becomes the same number of spaces, so every offset and line number in the stripped text
+ * still matches the file on disk and a `file:line` a test prints is the real one. The cost is that a
+ * byte-counted window around an offset no longer means what it did when a stripper deleted comment
+ * text: on 2026-09-25 the 640 bytes before a table in `hr-shell-mobile-tables.test.ts` came back 639
+ * whitespace, and its `hidden md:block` gate fell outside the window. Measure such a window in
+ * non-whitespace characters, not bytes.
  */
 
 /**

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 
 import { cachedIsDirectory, cachedReaddir, cachedReadFile } from "./support/source-corpus.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // A QUEUED notification's dedupe key must not be built from the date it is
@@ -102,17 +103,6 @@ const DERIVED_DATE =
 
 /** A schedule value that is really "now" — an immediate send with a date column. */
 const NOW_EXPR = /\bnow\b|new Date\(|Date\.now\(|cairoToday|todayDateOnly|todayIso/i;
-
-/**
- * Blank comments before measuring, so a sentence describing the anti-pattern is
- * never counted as one. Newlines survive, so every file:line stays accurate.
- * The `[^:]` guard stops `https://…` reading as a line comment.
- */
-function stripComments(source: string): string {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, (block) => block.replace(/[^\n]/g, " "))
-    .replace(/(^|[^:])\/\/.*$/gm, "$1");
-}
 
 /**
  * Replace the INTERIOR of every string and template literal with spaces,

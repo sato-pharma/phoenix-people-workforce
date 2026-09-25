@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { mayServeStaleDirectory, STALE_CACHE_MAX_AGE } from "../src/lib/employees/employee-directory.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TWO defects, one of which compounded.
@@ -27,16 +28,6 @@ import { mayServeStaleDirectory, STALE_CACHE_MAX_AGE } from "../src/lib/employee
 // ─────────────────────────────────────────────────────────────────────────────
 
 const MODULE_URL = new URL("../src/lib/employees/employee-directory.ts", import.meta.url);
-
-function stripComments(source: string): string {
-  return source
-    .split("\n")
-    .filter((line) => {
-      const t = line.trim();
-      return !t.startsWith("//") && !t.startsWith("*") && !t.startsWith("/*");
-    })
-    .join("\n");
-}
 
 export async function runEmployeeDirectoryStaleBoundTests() {
   const now = 1_800_000_000_000;

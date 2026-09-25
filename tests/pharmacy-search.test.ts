@@ -16,6 +16,7 @@ import { sameVenueSiblings } from "../src/lib/pharmacy-search/profile.ts";
 import { resolveTerritory, type TerritoryReference } from "../src/lib/pharmacy-search/reference.ts";
 import { PHOENIX_PROFILE_ID_PREFIX, phoenixCodeFromProfileId } from "../src/lib/pharmacy-search/types.ts";
 import { __testables as searchTestables } from "../src/lib/pharmacy-search/search.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Pharmacy Search — the search box that answers "where is this pharmacy" from our own tables and,
@@ -36,11 +37,6 @@ const {
   registryHits,
   sanitizeForOrFilter,
 } = searchTestables;
-
-/** Source-scanning assertions read CODE, never prose — a comment explaining a rule is not a breach. */
-function stripComments(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-}
 
 function reference(): TerritoryReference {
   return {

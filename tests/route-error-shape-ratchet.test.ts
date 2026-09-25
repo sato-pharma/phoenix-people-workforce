@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
+import { stripComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Mossy-ocean A5 · route error-shape ratchet.
@@ -59,18 +60,6 @@ const LOCAL_JSON_ERROR_DEF =
   /^\s*(?:async\s+)?function\s+jsonError\b|^\s*const\s+jsonError\s*=/;
 /** Cheap pre-filter so we only line-scan files that mention it at all. */
 const ANY_JSON_ERROR_TOKEN = /\bjsonError\b/;
-
-/**
- * Remove comments before counting, so a definition only counts where it is real
- * code. Block comments keep their newlines (so reported file:line stays accurate)
- * and lose everything else; the `[^:]` guard keeps a `https://…` URL from reading
- * as the start of a line comment. Same helper shape as the sibling ratchets.
- */
-function stripComments(source: string): string {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, (block) => block.replace(/[^\n]/g, " "))
-    .replace(/(^|[^:])\/\/.*$/gm, "$1");
-}
 
 // Collect every route handler file (a file named route.ts under app/).
 function collectRouteFiles(dir: string, out: string[] = []): string[] {

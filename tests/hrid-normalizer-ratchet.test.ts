@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 
 import { cachedIsDirectory, cachedReaddir, cachedReadFile } from "./support/source-corpus.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // One canonical HR_ID normaliser, src/lib/hr-id.ts. Everything else should call
@@ -105,17 +106,6 @@ const DEF_RE = new RegExp(
 
 /** An inline case/space normalisation performed in the function's own body. */
 const INLINE_NORM = /\.trim\(\)|\.toUpperCase\(\)|\.toLowerCase\(\)/;
-
-/**
- * Blank comments before measuring, so a sentence describing the anti-pattern is
- * never counted as one. Newlines survive, so every file:line stays accurate. The
- * `[^:]` guard stops `https://…` reading as a line comment.
- */
-function stripComments(source: string): string {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, (block) => block.replace(/[^\n]/g, " "))
-    .replace(/(^|[^:])\/\/.*$/gm, "$1");
-}
 
 /**
  * Extract a function's body given the index just past the `(` that opens its

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * The Early Birds BOARD must wrap, and must keep square corners.
@@ -64,15 +65,6 @@ const BOARD_FILES = [HALL_OF_FAME, WINNER_PANEL, RACE_PANEL, REP_TABLE, SWITCHER
 const SMALL_FILES = [CONTROLS, REP_LINK];
 
 const ALL_FILES = [...BOARD_FILES, ...SMALL_FILES];
-
-/** Drop block comments and whole-line `//` comments. Never touches a `//` inside a string. */
-function stripComments(source: string): string {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .split("\n")
-    .filter((line) => !line.trim().startsWith("//"))
-    .join("\n");
-}
 
 /**
  * Every class token actually applied in a file — from both `className="…"` and the template-literal

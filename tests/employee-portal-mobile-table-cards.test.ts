@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { stripComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Every portal `<table>` a phone can reach must be desktop-only, with cards beside it.
@@ -50,18 +51,6 @@ const CONVERTED = [
 
 function read(relative: string): string {
   return readFileSync(new URL(relative, import.meta.url), "utf8");
-}
-
-/**
- * Opening `<table` tags only — never the word inside a comment or a string. Matched on the
- * tag character that follows the name, so `<table>` and `<table className=…>` both count
- * while the prose "was a nested `<table>` until 2026-08-16" in a doc comment does not…
- * except that it would, so comments are stripped first. That stripping is the reason this
- * test disagrees with a naive grep, and it is deliberate: an explanatory comment about a
- * table that no longer exists must not be able to fail a build.
- */
-function stripComments(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 }
 
 function tableOffsets(source: string): number[] {

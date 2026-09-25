@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * A grid of PremiumNavTiles must be SINGLE-COLUMN on a phone. Two columns cannot hold one.
@@ -42,15 +43,6 @@ import { readFileSync } from "node:fs";
  */
 
 const CENTER = "src/components/employee-portal/portal-command-center.tsx";
-
-/** Drop block comments (JSX `{/* … *\/}` included) and whole-line `//` comments. */
-function stripComments(source: string): string {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .split("\n")
-    .filter((line) => !line.trim().startsWith("//"))
-    .join("\n");
-}
 
 const tokensOf = (classAttr: string) => new Set(classAttr.split(/\s+/).filter(Boolean));
 

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { stripComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The Action Center's "decisions I made" history read ten tables, and every one of them ended in
@@ -24,17 +25,6 @@ import { readFileSync } from "node:fs";
 // ─────────────────────────────────────────────────────────────────────────────
 
 const SERVICE_URL = new URL("../src/lib/action-center/service.ts", import.meta.url);
-
-/** Drop comment lines: the prose in this file quotes the removed limits, and a naive match would fire on the explanation. */
-function stripComments(source: string): string {
-  return source
-    .split("\n")
-    .filter((line) => {
-      const t = line.trim();
-      return !t.startsWith("//") && !t.startsWith("*") && !t.startsWith("/*");
-    })
-    .join("\n");
-}
 
 /** The `await Promise.allSettled([ … ])` block inside getMyApprovalHistory. */
 function historyQueryBlock(code: string): string {

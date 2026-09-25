@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { stripComments } from "./support/comment-strip.ts";
 
 // `direct_order_pharmacies.distributor_code` and `.distributor_customer_code` are dead columns:
 // empty on every production row, and read by nothing — not `mapPharmacyRow()`, not any view, not
@@ -22,13 +23,6 @@ function walkSourceFiles(directory: string): string[] {
     if (entry.isDirectory()) return walkSourceFiles(fullPath);
     return /\.tsx?$/.test(entry.name) ? [fullPath] : [];
   });
-}
-
-// The pin is about CODE, not prose — the source comment that explains why these columns are dead
-// has to name them. Strip comments first so documenting the trap can never fail the sweep. The
-// `[^:]` guard keeps a `https://` URL from being read as the start of a line comment.
-function stripComments(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/gm, "$1");
 }
 
 // `.from("direct_order_pharmacies") … .insert({ … })` — the object literal only, stopping at its

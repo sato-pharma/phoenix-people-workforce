@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { hrNavigationSections } from "@/config/system-navigation";
+import { stripComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Every page an HR seat can open must work on a phone.
@@ -85,11 +86,6 @@ const EXEMPT: Record<string, string> = {
     "sits in an overflow-x-auto. Scrolling a comparison grid sideways is the expected gesture.",
 };
 
-/** Comments are stripped before any match, so a note that MENTIONS a pattern cannot satisfy it. */
-function stripComments(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-}
-
 function read(file: string): string {
   return readFileSync(ROOT + file, "utf8");
 }
@@ -156,9 +152,35 @@ function tableOffsets(source: string): number[] {
   return offsets;
 }
 
+/**
+ * A window around `offset` measured in CODE characters — anything that is not whitespace.
+ *
+ * All three windows below used to be byte counts, and a byte count silently depends on how the
+ * comment stripper REPRESENTS a comment. The local stripper this file used to carry DELETED comment
+ * text, so a 640-byte lookback was 640 bytes of code; `stripComments` blanks a comment to spaces in
+ * place instead, to keep every reported `file:line` pointing at its real line. Measured on
+ * 2026-09-25, the 640 characters before the table in `hr-calendar.tsx` and
+ * `probation-dashboard-view.tsx` were then **639 whitespace** — a comment block sits directly above
+ * both — so the window held no code at all, found no `hidden md:block`, and the sweep reported two
+ * correctly gated tables as unfitted on a phone. Counting code restores the budgets' original
+ * meaning and cannot be diluted again.
+ */
+function codeWindow(source: string, offset: number, back: number, forward: number): string {
+  let start = offset;
+  for (let seen = 0; start > 0 && seen < back; ) {
+    start -= 1;
+    if (!/\s/.test(source[start])) seen += 1;
+  }
+  let end = offset;
+  for (let seen = 0; end < source.length && seen < forward; end += 1) {
+    if (!/\s/.test(source[end])) seen += 1;
+  }
+  return source.slice(start, end);
+}
+
 /** The widest `min-w-[Npx]` on the table tag or in the 400 characters of wrapper before it. */
 function declaredMinWidth(source: string, offset: number): number {
-  const window = source.slice(Math.max(0, offset - 400), offset + 260);
+  const window = codeWindow(source, offset, 400, 260);
   let widest = 0;
   for (const match of window.matchAll(/min-w-\[(\d+)px\]/g)) {
     widest = Math.max(widest, Number(match[1]));
@@ -183,7 +205,7 @@ function declaredMinWidth(source: string, offset: number): number {
  * zero quoted strings, and reading only the first one scores every such table 0.
  */
 function columnCount(source: string, offset: number): number {
-  const head = source.slice(offset, offset + 4000);
+  const head = codeWindow(source, offset, 0, 4000);
   const end = head.indexOf("</thead>");
   const block = end === -1 ? head.slice(0, 1500) : head.slice(0, end);
 
@@ -206,7 +228,7 @@ function isWide(source: string, offset: number): boolean {
 }
 
 function isDesktopGated(source: string, offset: number): boolean {
-  const window = source.slice(Math.max(0, offset - 640), offset + 200);
+  const window = codeWindow(source, offset, 640, 200);
   return DESKTOP_GATES.some((gate) => gate.test(window));
 }
 
