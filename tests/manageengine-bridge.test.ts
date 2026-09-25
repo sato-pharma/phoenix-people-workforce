@@ -443,7 +443,7 @@ async function runDeviceDetailTests() {
   assert.equal(commands[0].name, "Locked", "the newest command comes first, named in words");
   assert.equal(commands[1].name, "Removed company data", "an internal command name never reaches the screen");
   assert.equal(commands[0].status, "Sent", "a word status passes through");
-  assert.equal(commands[1].status, "Acknowledged", "a numeric status is named");
+  assert.equal(commands[1].status, "Done", "a numeric status is named");
 
   // A fresh locate asks first, then reads — and a refused request still returns the older position.
   resetManageEngineTokenCache();
@@ -457,6 +457,100 @@ async function runDeviceDetailTests() {
   assert.equal(fresh.address, "Giza", "a refused request still falls through to the last known position");
   const methods = refreshed.calls.filter((call) => !call.url.includes("/oauth/")).map((call) => call.init.method ?? "GET");
   assert.deepEqual(methods, ["POST", "GET"], "the position is requested, then read");
+}
+
+/**
+ * The detail panel in the owner's own words — measured against the payload production really sent.
+ *
+ * Every shape below was read off PHX-TAB-0002 on the live tenant on 25 September 2026, the first time
+ * the panel was opened, and every assertion here failed then: epochs printed as thirteen digits,
+ * sizes as bare decimals, vendor enums as numbers, ManageEngine's "--" as a value, and the command
+ * remarks with their HTML tags showing. AGENTS.md §4: names, never codes.
+ */
+async function runDeviceDetailPlainWordsTests() {
+  const detail = normalizeDeviceDetail("999", {
+    added_time: "1790189748534",
+    agent_version: "26.09.01",
+    available_device_capacity: 46.52,
+    device_capacity: 51.17,
+    eas_device_identifier: "ba6e95686dc422e1",
+    imei: "865569071549107",
+    location_settings: { location_radius: 0, tracking_status: 1 },
+    managed_status: 2,
+    manufacturer: "Lenovo",
+    os_name: "S",
+    os_version: "12",
+    owned_by: "1",
+    platform_type: "2",
+    privacy_settings: { fetch_location: 0, fetch_wifi_ssid: 2 },
+    processor_core_count: 8,
+    purchase_price: "0.0",
+    remarks: "dc.mdm.db.agent.enroll.agent_enroll_finished",
+    total_ram_memory: 3539.391,
+    warranty_expiration_date: "0",
+    warranty_number: "--",
+  });
+
+  const headline = new Map(detail.headline.map((fact) => [fact.label, fact.value]));
+  assert.equal(headline.get("Operating system"), "Android 12", "the platform is a word, never a letter or a code");
+  assert.equal(headline.has("Owned by"), false, "ownership as a bare number is not shown at all");
+
+  const facts = new Map(detail.sections.flatMap((section) => section.facts).map((fact) => [fact.label, fact.value]));
+  assert.equal(facts.get("Added time"), new Date(1_790_189_748_534).toISOString(), "an epoch sent as a STRING is a moment");
+  assert.equal(facts.get("Device capacity"), "51.2 GB", "storage carries the unit ManageEngine measured it in");
+  assert.equal(facts.get("Available device capacity"), "46.5 GB", "so does the free space");
+  assert.equal(facts.get("Total RAM memory"), "3539.4 MB", "memory is megabytes, not a bare decimal");
+  assert.equal(facts.get("IMEI"), "865569071549107", "an IMEI keeps every digit, ungrouped");
+  assert.equal(facts.get("Agent version"), "26.09.01", "a version is not mistaken for a resource code");
+  assert.equal(facts.get("Processor core count"), "8", "a real count is still a number");
+  assert.equal(facts.get("Manufacturer"), "Lenovo", "a plain fact is untouched");
+
+  for (const gone of [
+    ["Managed status", "a vendor enum"],
+    ["Platform type", "a vendor enum"],
+    ["EAS device identifier", "an identifier"],
+    ["Warranty number", "ManageEngine's -- placeholder"],
+    ["Warranty expiration date", "a date sent as zero"],
+    ["Purchase price", "a price sent as zero"],
+    ["Remarks", "a resource key"],
+    ["OS name", "Android's one-letter release code"],
+  ] as const) {
+    assert.equal(facts.has(gone[0]), false, `${gone[1]} never reaches the screen`);
+  }
+
+  const titles = detail.sections.map((section) => section.title);
+  assert.ok(!titles.includes("Privacy settings"), "ManageEngine's own collection settings are not tablet facts");
+  assert.ok(!titles.includes("Location settings"), "nor are its location settings");
+
+  // The history's remarks are HTML. They must arrive as words, with the markup left behind.
+  resetManageEngineTokenCache();
+  const marked = makeFetch({
+    api: [
+      {
+        status: 200,
+        body: {
+          commands: [
+            {
+              added_time: 1_790_000_000_000,
+              command_id: "c9",
+              command_name: "corporate_wipe",
+              command_status: "1",
+              remarks:
+                '<label class="eventlogbold">Corporate Wipe</label> command for <label class="eventlogbold">it.satopharma_TB328XU</label> is initiated from server',
+            },
+          ],
+        },
+      },
+    ],
+  });
+  const [wipe] = await getManageEngineCommandHistory("111", marked.fetch, ENV);
+  assert.equal(
+    wipe.remarks,
+    "Corporate Wipe command for it.satopharma_TB328XU is initiated from server",
+    "a remark arrives as words, never with its tags showing",
+  );
+  assert.ok(!(wipe.remarks ?? "").includes("<"), "no markup survives into the screen");
+  assert.equal(wipe.status, "Waiting for the tablet", "a status sent as a STRING of digits is named");
 }
 
 /** The apps on a tablet, the company repository, and which of the two an app came from. */
@@ -551,6 +645,7 @@ export async function runManageEngineBridgeTests() {
   await runClientTests();
   await runDeviceTests();
   await runDeviceDetailTests();
+  await runDeviceDetailPlainWordsTests();
   await runDeviceAppsTests();
   runCommandCatalogTests();
   runErrorMappingTests();
