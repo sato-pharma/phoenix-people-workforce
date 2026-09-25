@@ -22,7 +22,8 @@ import { stripComments } from "./support/comment-strip.ts";
  *      region, product" lost 20px and read "…region, produc".
  *   3. portal-command-center.tsx — GlanceStrip went to three columns at `sm:` (a 640px WINDOW) while
  *      `main` was 608px, leaving the label 75px: "plans awaiting approval", one word per line, three
- *      lines deep. Re-keyed to the strip's OWN width with a container query.
+ *      lines deep. Re-keyed to the strip's OWN width with a container query — which, with `@container`
+ *      on the grid itself, never fired at all until 2026-09-25 (see the wrapper assertion below).
  *   4. portal-command-center.tsx — QuickActions. Not a clip: a fixed `grid-cols-2` gave every
  *      action 172px at 375px, so "Review Marketing Requests" wrapped three lines deep, one word
  *      per line. Re-shaped so a label wider than half the row claims the whole row, while short
@@ -118,15 +119,31 @@ export function runPortalChromeNeverClipsTextTests() {
     `${COMMAND}: GlanceStrip is gone — this test is pinning a component that no longer exists.`,
   );
   const strip = componentBody(command, "GlanceStrip");
-  const grid = strip.match(/<div className="([^"]*grid[^"]*)"/);
-  assert.ok(grid, `${COMMAND}: GlanceStrip no longer opens with a literal grid className.`);
+  const grid = strip.match(/<div className="([^"]*\bgrid\b[^"]*)"/);
+  assert.ok(grid, `${COMMAND}: GlanceStrip no longer renders a grid with a literal className.`);
   const gridTokens = tokens(grid[1]);
   assert.ok(
-    gridTokens.includes("@container") && gridTokens.includes("@2xl:grid-cols-3"),
-    `${COMMAND}: GlanceStrip's grid is "${grid[1]}" — it needs "@container" and "@2xl:grid-cols-3". ` +
+    gridTokens.includes("@2xl:grid-cols-3"),
+    `${COMMAND}: GlanceStrip's grid is "${grid[1]}" — it needs "@2xl:grid-cols-3". ` +
       `Three columns must be keyed to the STRIP's own width: at a 640px window "sm:grid-cols-3" ` +
       `fired while main was 608px, leaving the label 75px and breaking "plans awaiting approval" ` +
       `one word per line.`,
+  );
+  // The query and the container must be DIFFERENT elements. An element's own `@2xl:` resolves
+  // against its nearest ANCESTOR container, never itself — so "@container … @2xl:grid-cols-3" on one
+  // div looked past itself, found no container anywhere up the portal, and the strip stayed a single
+  // 1408px column at a 1440px window (measured 2026-09-25). It had passed this test for three weeks.
+  assert.ok(
+    !gridTokens.includes("@container"),
+    `${COMMAND}: GlanceStrip's grid is "${grid[1]}" — it carries "@container" itself, so its own ` +
+      `"@2xl:grid-cols-3" queries an ANCESTOR, finds none, and the strip never leaves one column. ` +
+      `Put "@container" on a wrapper div around the grid.`,
+  );
+  const wrapped = strip.match(/<div className="([^"]*)">\s*<div className="[^"]*\bgrid\b[^"]*">/);
+  assert.ok(
+    wrapped && tokens(wrapped[1]).includes("@container"),
+    `${COMMAND}: GlanceStrip's grid is not the direct child of a "@container" wrapper. Without one ` +
+      `the grid's "@2xl:grid-cols-3" has no container to measure and stays one column at every width.`,
   );
   const viewportCols = gridTokens.filter((token) => /^(sm|md|lg|xl|2xl):grid-cols-/.test(token));
   assert.deepEqual(
