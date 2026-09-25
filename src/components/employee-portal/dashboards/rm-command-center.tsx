@@ -224,7 +224,7 @@ export function RmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSnap
     pendingVacationCount,
     pendingExcuseCount,
     pendingCountsAvailable,
-    leaveEntitlementDays,
+    leaveDaysRemaining,
     plansAwaitingManagerApproval,
     plansCountAvailable,
     rmRegional,
@@ -334,8 +334,8 @@ export function RmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSnap
           },
           {
             icon: CalendarDays,
-            value: leaveEntitlementDays != null ? `${leaveEntitlementDays} days` : "—",
-            label: "leave balance",
+            value: leaveDaysRemaining != null ? `${leaveDaysRemaining} days` : "—",
+            label: "annual leave left",
             href: "/employee-portals/vacation-request",
           },
         ]}

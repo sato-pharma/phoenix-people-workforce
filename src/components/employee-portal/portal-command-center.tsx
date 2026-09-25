@@ -1391,7 +1391,7 @@ function StandardCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
     pendingVacationCount,
     pendingExcuseCount,
     pendingCountsAvailable,
-    leaveEntitlementDays,
+    leaveDaysRemaining,
     mrSalesAchievement,
     role,
     plansAwaitingManagerApproval,
@@ -1450,8 +1450,8 @@ function StandardCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
               ]),
           {
             icon: CalendarDays,
-            value: leaveEntitlementDays != null ? `${leaveEntitlementDays} days` : "—",
-            label: "leave balance",
+            value: leaveDaysRemaining != null ? `${leaveDaysRemaining} days` : "—",
+            label: "annual leave left",
             href: "/employee-portals/vacation-request",
           },
           // NO PAYSLIP TILE: payslip data (amount OR month) must never render on any
