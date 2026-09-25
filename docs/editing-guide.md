@@ -39,15 +39,14 @@ Keep access control in server-side permission checks too. Sidebar visibility imp
 
 ## Editing Mode
 
-During active editing, use the fast local gate:
+During active editing, run **nothing** locally. `check:edit` was a `pnpm run typecheck` alias and is
+retired as an editing habit: on the owner's 16 GB machine a cold `tsc` now needs 4.0–4.5 GB of heap,
+OOMs at node's own 4.1 GB default after 155 s, and is then reaped by `mem-watchdog.ps1` as the
+largest node job — 18 killed in three days, each printing nothing, so the session ran it again.
+Raising `--max-old-space-size` only makes it the first victim. Keep editing; the PR's `typecheck`
+check is cold, clean and ~3 minutes.
 
-```bash
-pnpm run check:edit
-```
-
-This keeps TypeScript honest without forcing every existing lint/test hardening rule to pass after each small UI move.
-
-For a commit, push, or PR there is nothing further to run locally — the PR's required checks are the
+For a commit, push, or PR there is nothing to run locally — the PR's required checks are the
 gate. Before a **migration or a production deploy**, which CI never sees, run the whole gate once by
 hand:
 

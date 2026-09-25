@@ -36,8 +36,8 @@ Key topics covered:
 ## Workflow Summary
 
 - Use the working branch (never push directly to `main`)
-- CI is the gate: push and let the PR's checks answer, rather than running a full validation
-  locally first (`check:edit` is an optional fast typecheck mid-task)
+- CI is the gate: push and let the PR's checks answer, rather than running anything locally first —
+  a local typecheck included, since this repo has outgrown one (`check:edit` retired 2026-09-25)
 - Explain changes before executing them
 - Ask for approval before destructive operations
 - Follow the domain-first architecture rule (business logic in `src/lib/<domain>/`)
