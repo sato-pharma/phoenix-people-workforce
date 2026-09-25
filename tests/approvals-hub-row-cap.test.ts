@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { stripComments } from "./support/comment-strip.ts";
 import {
   APPROVALS_PAGE_SIZE,
   MAX_APPROVALS_HUB_ROWS,
@@ -175,13 +176,7 @@ export async function runApprovalsHubRowCapTests() {
   // Comment lines are stripped first: the prose in this repo quotes the removed limits, and a
   // naive match would fire on the explanation rather than on a real call.
   const service = readFileSync(new URL("../src/lib/approvals-hub/service.ts", import.meta.url), "utf8");
-  const code = service
-    .split("\n")
-    .filter((line) => {
-      const t = line.trim();
-      return !t.startsWith("//") && !t.startsWith("*") && !t.startsWith("/*");
-    })
-    .join("\n");
+  const code = stripComments(service);
   assert.doesNotMatch(
     code,
     /\.limit\(/,

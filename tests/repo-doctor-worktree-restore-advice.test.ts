@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { stripComments } from "./support/comment-strip.ts";
+
 // repo-doctor must never tell anyone to run `pnpm install` in a worktree.
 //
 // `--strip-idle` deletes `node_modules` and `.next` from idle worktrees, and both its offer and its
@@ -33,13 +35,7 @@ const read = (p: string) => readFileSync(join(process.cwd(), p), "utf8");
  * caught it only because it was checked before trusting a single red.
  */
 function codeOnly(source: string): string {
-  return source
-    .split(/\r?\n/)
-    .filter((line) => {
-      const t = line.trim();
-      return !(t.startsWith("//") || t.startsWith("*") || t.startsWith("/*"));
-    })
-    .join("\n");
+  return stripComments(source);
 }
 
 export function runRepoDoctorWorktreeRestoreAdviceTests() {

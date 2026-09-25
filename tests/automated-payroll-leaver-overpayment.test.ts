@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 
+import { stripComments } from "./support/comment-strip.ts";
+
 import { assembleParts, freezeFirstPart, type EffectiveSalary } from "../src/lib/automated-payroll/split.ts";
 import { computeResignationSettlement } from "../src/lib/payroll/copilot/proration.ts";
 
@@ -222,10 +224,7 @@ export function runAutomatedPayrollLeaverOverpaymentTests() {
   const offenders: string[] = [];
   for (const root of roots) {
     for (const file of walkTypeScript(root)) {
-      const code = readFileSync(file, "utf8")
-        .split("\n")
-        .filter((line) => !line.trim().startsWith("//") && !line.trim().startsWith("*"))
-        .join("\n");
+      const code = stripComments(readFileSync(file, "utf8"));
       if (code.includes("unpaidDaysInSpan")) offenders.push(file);
     }
   }

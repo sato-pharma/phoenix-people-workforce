@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { stripComments } from "./support/comment-strip.ts";
+
 import {
   CRM_VACATION_EMPLOYMENT_JOIN_FROM,
   resolveCrmVacationEmployee,
@@ -90,11 +92,7 @@ export function runDeductionsCrmVacationEmploymentJoinTests() {
   );
 
   // ---- the connector actually routes through the resolver --------------------------------------
-  const source = readFileSync("src/lib/deductions/connectors/vacation.ts", "utf8")
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .split("\n")
-    .filter((line) => !line.trim().startsWith("//"))
-    .join("\n");
+  const source = stripComments(readFileSync("src/lib/deductions/connectors/vacation.ts", "utf8"));
   assert.ok(
     source.includes("resolveCrmVacationEmployee({"),
     "collectCrmSubmittedUnpaidVacationDays must attribute each -4 day through resolveCrmVacationEmployee",

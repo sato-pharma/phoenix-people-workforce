@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { stripComments } from "./support/comment-strip.ts";
+
 import { PayrollCrmLeaveUnavailableError } from "../src/lib/automated-payroll/recommend.ts";
 
 /**
@@ -26,11 +28,7 @@ import { PayrollCrmLeaveUnavailableError } from "../src/lib/automated-payroll/re
 
 function executableSource(): string {
   const source = readFileSync("src/lib/automated-payroll/recommend.ts", "utf8");
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .split("\n")
-    .filter((line) => !line.trim().startsWith("//"))
-    .join("\n");
+  return stripComments(source);
 }
 
 function between(code: string, startMarker: string, endMarker: string): string {

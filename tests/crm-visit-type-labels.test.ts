@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { stripComments } from "./support/comment-strip.ts";
+
 import {
   CRM_VISIT_TYPE_FILTER_CODES,
   CRM_VISIT_TYPE_OPTIONS,
@@ -293,12 +295,7 @@ function runCommentSensitiveCodeTests(): void {
  * satisfy its own assertions (AGENTS.md §2.1).
  */
 function runVisitTypeSurfaceTests(): void {
-  const strip = (source: string): string =>
-    source
-      .replace(/\/\*[\s\S]*?\*\//g, "")
-      .split("\n")
-      .filter((line) => !line.trim().startsWith("//") && !line.trim().startsWith("*"))
-      .join("\n");
+  const strip = (source: string): string => stripComments(source);
 
   const view = strip(readFileSync("src/components/field-workforce-compliance/field-workforce-visits-view.tsx", "utf8"));
   assert.ok(

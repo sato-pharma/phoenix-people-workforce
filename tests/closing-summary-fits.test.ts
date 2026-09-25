@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
+import { stripComments } from "./support/comment-strip.ts";
+
 import {
   buildClosingFamilySummary,
   pivotClosingSummaryByFamily,
@@ -42,13 +44,7 @@ const COMPONENT_RAW = readFileSync(
  * min-width floor" — so a check against the raw text matches its own prose and fails on a file that
  * is correct. Caught exactly that way on the first run.
  */
-const COMPONENT = COMPONENT_RAW
-  .split(/\r?\n/)
-  .filter((line) => {
-    const trimmed = line.trimStart();
-    return !trimmed.startsWith("//") && !trimmed.startsWith("*") && !trimmed.startsWith("/*");
-  })
-  .join("\n");
+const COMPONENT = stripComments(COMPONENT_RAW);
 
 const cell = (
   salesValue: number,
