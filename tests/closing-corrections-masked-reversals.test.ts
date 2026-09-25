@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import { COMPANY_DIRECT_LABEL, groupClosingCorrections } from "../src/lib/sales/closing-corrections.ts";
 import type { ClosingCorrectionRow } from "../src/lib/sales/closing-corrections.ts";
+import { stripSqlComments } from "./support/comment-strip.ts";
 
 // A TAKE-BACK IS MATCHED PHARMACY BY PHARMACY, SO THE MONTH'S OTHER SALES CANNOT HIDE IT, AND A
 // SAME-MONTH CORRECTION NEVER COUNTS.
@@ -51,14 +52,9 @@ function correctionsMigration(): string {
   return readFileSync(new URL(defining[defining.length - 1]!, MIGRATIONS_URL), "utf8");
 }
 
-/** SQL with comment lines stripped and whitespace collapsed. */
+/** SQL with comments stripped and whitespace collapsed. */
 function statementsOf(sql: string): string {
-  return sql
-    .split("\n")
-    .filter((line) => !line.trimStart().startsWith("--"))
-    .join("\n")
-    .toLowerCase()
-    .replace(/\s+/g, " ");
+  return stripSqlComments(sql).toLowerCase().replace(/\s+/g, " ");
 }
 
 /** The text of one CTE, from its name to the next top-level CTE or the final select. */

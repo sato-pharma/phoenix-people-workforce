@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { stripSqlComments } from "./support/comment-strip.ts";
 
 /**
  * expense_claims may be READ by `authenticated`, and only under the rule its predecessors used.
@@ -23,10 +24,7 @@ export async function runExpenseClaimsSelectRlsTests() {
     new URL("../supabase/migrations/20260812213000_expense_claims_select_rls.sql", import.meta.url),
     "utf8",
   );
-  const code = sql
-    .split("\n")
-    .filter((line) => !line.trim().startsWith("--"))
-    .join("\n");
+  const code = stripSqlComments(sql);
 
   // ── SELECT only. The switch that caused the incident is a READ switch. ─────
   assert.match(code, /grant select on public\.expense_claims to authenticated/i, "the read grant must be here");

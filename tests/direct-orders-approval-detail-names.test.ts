@@ -24,6 +24,7 @@ import {
   type AreaRepSeatRow,
 } from "../src/lib/employees/area-rep-resolver.ts";
 import type { DirectOrderApprovalDetail, DirectOrderRequest } from "../src/lib/direct-orders/types.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * Slice a top-level declaration out of a source file by its REAL end — the next top-level
@@ -1133,10 +1134,7 @@ export function runDirectOrdersApprovalDetailNamesTests() {
     // Comments stripped first. An assertion that cannot tell a comment from a call site is one that
     // gets "fixed" by deleting the explanation — the docblock on the basePath prop says the literal
     // out loud precisely so nobody puts it back.
-    const adminListCode = adminList
-      .split("\n")
-      .filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line))
-      .join("\n");
+    const adminListCode = stripComments(adminList);
     assert.doesNotMatch(
       adminListCode,
       /"\/admin\/direct-orders/,

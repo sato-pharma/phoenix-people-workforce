@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { stripSqlComments } from "./support/comment-strip.ts";
 
 // A FACTORY-PRICE EDIT THAT RESTATES A SETTLED CLOSING MUST SAY SO — AND MUST STILL BE ALLOWED.
 //
@@ -41,13 +42,9 @@ function priceAuditMigration(): string {
   return matches.join("\n");
 }
 
-/** SQL with comment lines removed — the file explains at length what it deliberately does NOT do. */
+/** SQL with comments removed — the file explains at length what it deliberately does NOT do. */
 function statementsOf(sql: string): string {
-  return sql
-    .toLowerCase()
-    .split("\n")
-    .filter((line) => !line.trimStart().startsWith("--"))
-    .join("\n");
+  return stripSqlComments(sql).toLowerCase();
 }
 
 export async function runFactoryPriceRestatementAuditTests(): Promise<void> {

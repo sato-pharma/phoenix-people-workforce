@@ -3,6 +3,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { groupClosingCorrections } from "../src/lib/sales/closing-corrections.ts";
+import { stripSqlComments } from "./support/comment-strip.ts";
 
 // "RETURNS BIGGER THAN THE MONTH'S SALES" MUST BE THE CLOSING'S CELL, NOT ONE DISTRIBUTOR'S SHARE.
 //
@@ -51,13 +52,9 @@ function correctionsMigration(): string {
   return readFileSync(new URL(defining[defining.length - 1]!, MIGRATIONS_URL), "utf8");
 }
 
-/** SQL with comment lines stripped — this migration documents the old bug at length. */
+/** SQL with comments stripped — this migration documents the old bug at length. */
 function statementsOf(sql: string): string {
-  return sql
-    .split("\n")
-    .filter((line) => !line.trimStart().startsWith("--"))
-    .join("\n")
-    .toLowerCase();
+  return stripSqlComments(sql).toLowerCase();
 }
 
 export async function runClosingCorrectionsCellTests(): Promise<void> {

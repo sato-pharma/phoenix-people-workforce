@@ -455,24 +455,51 @@ export function sqlCommentSpans(source: string): ReadonlyArray<readonly [number,
 }
 
 /**
- * `source` with every SQL comment replaced by spaces of the same length.
+ * `source` with the given spans blanked, keeping every newline inside them.
  *
- * Blanked rather than removed, for the reason in this file's header: a `file:line` a test prints
- * still points at the real line. Reach for this — never a `--` regex — whenever a test reads a
- * migration, a policy or a function body as text.
+ * A dropped character becomes a space and a dropped NEWLINE STAYS A NEWLINE, so both offsets and
+ * line numbers survive — the same rule {@link stripComments} uses.
+ *
+ * Shared on 2026-09-25 because the SQL and CSS strippers did not follow it: each replaced a whole
+ * span with `" ".repeat(b - a)`, which flattens a multi-line `/* … *\/` comment onto one line and
+ * moves every line after it up. Measured on a 4-line fixture: SQL and CSS both returned 3 lines
+ * where the JS stripper returned 4. Both docblocks promised the opposite, and 20 more SQL call
+ * sites were folded onto them the same day — a promise that is read and relied on has to be true.
  */
-export function stripSqlComments(source: string): string {
-  const spans = sqlCommentSpans(source);
+function blankSpans(source: string, spans: ReadonlyArray<readonly [number, number]>): string {
   if (spans.length === 0) return source;
 
   const out: string[] = [];
   let at = 0;
   for (const [a, b] of spans) {
-    out.push(source.slice(at, a), " ".repeat(b - a));
+    out.push(
+      source.slice(at, a),
+      source
+        .slice(a, b)
+        .split("\n")
+        .map((line) => " ".repeat(line.length))
+        .join("\n"),
+    );
     at = b;
   }
   out.push(source.slice(at));
   return out.join("");
+}
+
+/**
+ * `source` with every SQL comment replaced by spaces, and its newlines kept.
+ *
+ * Blanked rather than removed, for the reason in this file's header: a `file:line` a test prints
+ * still points at the real line. Reach for this — never a `--` regex — whenever a test reads a
+ * migration, a policy or a function body as text.
+ *
+ * A `--` filter is not a weaker version of this, it is a different thing: it drops a line only when
+ * the line STARTS with the marker, so a trailing comment after real code and every line of a
+ * `/* … *\/` block survive it. Measured across the 608 migrations on 2026-09-25, that left 2,653
+ * non-space characters of comment text standing in 34 files, each of them prose a pin can match.
+ */
+export function stripSqlComments(source: string): string {
+  return blankSpans(source, sqlCommentSpans(source));
 }
 
 /**
@@ -541,17 +568,7 @@ export function cssCommentSpans(source: string): ReadonlyArray<readonly [number,
   return spans;
 }
 
-/** `source` with every CSS comment replaced by spaces of the same length. */
+/** `source` with every CSS comment replaced by spaces, and its newlines kept — {@link blankSpans}. */
 export function stripCssComments(source: string): string {
-  const spans = cssCommentSpans(source);
-  if (spans.length === 0) return source;
-
-  const out: string[] = [];
-  let at = 0;
-  for (const [a, b] of spans) {
-    out.push(source.slice(at, a), " ".repeat(b - a));
-    at = b;
-  }
-  out.push(source.slice(at));
-  return out.join("");
+  return blankSpans(source, cssCommentSpans(source));
 }

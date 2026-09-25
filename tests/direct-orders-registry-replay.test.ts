@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
+import { stripSqlComments } from "./support/comment-strip.ts";
 
 /**
  * THE MIGRATION CHAIN MUST REPLAY FROM SCRATCH.
@@ -100,12 +101,9 @@ export async function runDirectOrderRegistryReplayTests() {
 
   for (const file of files) {
     const sql = readFileSync(new URL(file, dir), "utf8");
-    // Strip line comments so prose mentioning a status name cannot be mistaken for a declaration —
+    // Strip comments so prose mentioning a status name cannot be mistaken for a declaration —
     // several of these files discuss 'held' and 'expired' at length in their headers.
-    const code = sql
-      .split("\n")
-      .filter((line) => !line.trim().startsWith("--"))
-      .join("\n");
+    const code = stripSqlComments(sql);
     if (!code.includes("workflow_registry_modules")) continue;
     if (!code.includes("'direct_orders'")) continue; // another module's migration
     filesTouchingModule += 1;

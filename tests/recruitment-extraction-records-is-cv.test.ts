@@ -8,6 +8,7 @@ import {
   RULE_ONLY_EXTRACTION_MODEL,
 } from "../src/lib/recruitment/cv-extraction.ts";
 import type { StoredCvExtraction } from "../src/lib/recruitment/cv-extraction-fields.ts";
+import { stripSqlComments } from "./support/comment-strip.ts";
 
 function read(relativePath: string): string {
   return readFileSync(path.join(process.cwd(), relativePath), "utf8");
@@ -111,10 +112,7 @@ export function runRecruitmentExtractionRecordsIsCvTests() {
   // this one's necessarily contains the words "default" and "backfill" while explaining why it has
   // neither — matching raw text fails on the explanation while still passing a real `default false`
   // in a comment-free file, i.e. exactly backwards.
-  const ddl = migration
-    .split("\n")
-    .filter((line) => !line.trimStart().startsWith("--"))
-    .join("\n");
+  const ddl = stripSqlComments(migration);
   assert.match(
     ddl,
     /add column if not exists is_cv boolean;/,

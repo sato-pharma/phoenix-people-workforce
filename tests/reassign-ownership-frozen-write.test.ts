@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { stripSqlComments } from "./support/comment-strip.ts";
 
 /**
  * `phx_reassign_replacement_ownership` must never write the frozen `sales_records` table.
@@ -28,11 +29,7 @@ export function runReassignOwnershipFrozenWriteTests() {
     bodyStart !== -1 && bodyEnd > bodyStart,
     "could not locate the function body — the migration must define phx_reassign_replacement_ownership between `as $function$` and `$function$;`",
   );
-  const body = migration
-    .slice(bodyStart, bodyEnd)
-    .split("\n")
-    .filter((line) => !line.trim().startsWith("--"))
-    .join("\n");
+  const body = stripSqlComments(migration.slice(bodyStart, bodyEnd));
 
   // HEADLINE INVARIANT. p_effective_date is sourced from employee_resignations.effective_date for
   // the person being replaced, and that date is routinely in the past — production holds 20

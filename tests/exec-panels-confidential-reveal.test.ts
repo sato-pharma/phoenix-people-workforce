@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { stripSqlComments } from "./support/comment-strip.ts";
 
 // THE CONFIDENTIAL REVEAL MUST REACH THE PANELS, OR THE FOOTER IS LYING.
 //
@@ -57,10 +58,7 @@ function testMigrationRemovesTheUnconditionalPredicate() {
   assert.ok(sql.includes("function public.phx_exec_customers"), "migration must redefine phx_exec_customers");
 
   // The unconditional literal must appear ONLY in the explanatory comment, never in a where clause.
-  const executable = sql
-    .split("\n")
-    .filter((line) => !line.trim().startsWith("--"))
-    .join("\n");
+  const executable = stripSqlComments(sql);
   assert.ok(
     !executable.includes(RESTRICTED_PREDICATE),
     "the unconditional restricted-product predicate must not survive in executable SQL — it " +

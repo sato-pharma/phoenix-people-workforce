@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { stripSqlComments } from "./support/comment-strip.ts";
 
 /**
  * Deleting a sales import batch must never destroy the frozen `sales_records` rows underneath it.
@@ -74,12 +75,9 @@ export function runSalesBatchDeleteGuardTests() {
     "supabase/migrations/20260814162700_sales_records_batch_fk_restrict.sql",
     "utf8",
   ).toLowerCase();
-  // Strip `--` comment lines first. The header explains the CASCADE problem in prose, and matching
+  // Strip the comments first. The header explains the CASCADE problem in prose, and matching
   // that prose would test the commentary rather than the statement that actually runs.
-  const migrationSql = migrationFile
-    .split("\n")
-    .filter((line) => !line.trim().startsWith("--"))
-    .join("\n");
+  const migrationSql = stripSqlComments(migrationFile);
 
   assert.match(
     migrationSql,

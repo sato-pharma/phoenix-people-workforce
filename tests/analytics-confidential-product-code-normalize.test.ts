@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { stripSqlComments } from "./support/comment-strip.ts";
 
 // Reported finding: analytics.sos_fact, analytics.weekly_fact, and analytics.dim_products (the
 // views backing the /employee-portals/sales-analytics dashboards) excluded the confidential
@@ -17,12 +18,9 @@ export function runAnalyticsConfidentialProductCodeNormalizeTests() {
     "supabase/migrations/20260719153000_phx_analytics_confidential_normalize_product_code.sql",
     "utf8",
   );
-  // Strip SQL line comments so the header's explanatory quote of the OLD, buggy pattern doesn't
+  // Strip SQL comments so the header's explanatory quote of the OLD, buggy pattern doesn't
   // trip the "no unnormalized exclusion remains" guard below — only the live SQL body is checked.
-  const sqlBody = migration
-    .split("\n")
-    .filter((line) => !line.trimStart().startsWith("--"))
-    .join("\n");
+  const sqlBody = stripSqlComments(migration);
 
   const normalizedExclusion = /upper\(btrim\(COALESCE\((f|r)\.product_code, ''::text\)\)\) <> ALL \(ARRAY\['LA003'::text, 'LA004'::text, 'SS001'::text\]\)/;
 
