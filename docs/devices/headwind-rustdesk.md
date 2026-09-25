@@ -179,9 +179,13 @@ first deploy fails its setup, add it as `1`, redeploy **once**, then delete the 
 1. **Settings → Networking → Custom Domain** → `mdm.satopharma.com`. Railway gives a CNAME target;
    add it in Cloudflare with the **proxy OFF** (grey cloud, "DNS only"), because Railway terminates
    TLS itself and an orange cloud in front of it is a second terminator nobody asked for.
-2. ✅ **The port is 8080 — no longer reasoning, read from the container's own startup log**
-   (2026-09-26): `Initializing ProtocolHandler ["http-nio-8080"]`, `Starting ProtocolHandler
-   ["http-nio-8080"]`, `Server startup in [5417] milliseconds`. Set the custom domain to that port.
+2. ✅ **The port is 8080, and both custom domains are now SET to it** (2026-09-26, via
+   `railway domain update <host> --port 8080 --service phoenix-headwind --environment production`).
+   Read from the container's own startup log: `Initializing ProtocolHandler ["http-nio-8080"]`,
+   `Starting ProtocolHandler ["http-nio-8080"]`, `Server startup in [5417] milliseconds`. Both
+   domains had been left at Railway's default guess of **8443** since they were added on
+   2026-09-25 — nothing was listening there (see point 3), so neither hostname answered at all
+   until this was fixed.
 3. ⚠️ **Tomcat also fails to start an HTTPS connector on every boot, and that is harmless:**
    `Failed to initialize component [Connector["https-openssl-nio-8443"]]` →
    `java.io.FileNotFoundException: /usr/local/tomcat/ssl/hmdm.jks (No such file or directory)`. The
@@ -319,6 +323,26 @@ the path; there is no second option to weigh.
 none is needed. Railway already publishes the service on a public hostname; Access goes in front of
 that hostname. It is the same protection with three fewer moving parts: no connector to install, no
 service to keep running, no loopback certificate to wave past with `noTLSVerify`.
+
+🔴 **NEITHER HOSTNAME HAS A CERTIFICATE YET, AND THE CAUSE IS ONE STEP BEFORE PROXY MODE —
+missing ownership-verification TXT records.** Found 2026-09-26, after fixing the port above:
+`railway domain status <host>` reads `Verified: no`, `Certificate status:
+CERTIFICATE_STATUS_TYPE_VALIDATING_OWNERSHIP` for **both** `mdm.satopharma.com` and
+`mdm-console.satopharma.com`, and neither of the TXT records Railway asks for exists in Cloudflare
+at all (`nslookup -type=TXT` on both returns nothing, not even a stale value) — so this is not the
+grey/orange-cloud ordering mistake below, it is that the verification record was never created in
+the first place. Nothing proxy-related blocks a TXT lookup; Railway simply cannot finish issuing a
+certificate for a domain it cannot confirm ownership of, and every HTTPS request to either hostname
+fails at the TLS handshake until this is added. Add both, in Cloudflare, **DNS only** (a TXT record
+is never proxied):
+
+| Record | Value |
+|---|---|
+| `_railway-verify.mdm.satopharma.com` TXT | `railway-verify=3d1ad21c6d65300892b8e58913c23ce008afaa9f087f009bf58fb6e28b5b75b3` |
+| `_railway-verify.mdm-console.satopharma.com` TXT | `railway-verify=c0e5991c2a09312710ba50cc662a6a92cf9b7fcc12367bf2285e8f36a837864a` |
+
+`railway domain status <host>` turns `Verified: yes` once Cloudflare answers; re-run
+`railway domain certificate retry <host>` if the certificate does not then issue on its own.
 
 🔴 **TWO HOSTNAMES ON ONE SERVICE, AND ONLY ONE OF THEM IS PROXIED.** Both are added under Railway →
 `phoenix-headwind` → Settings → Networking → Custom Domain:
