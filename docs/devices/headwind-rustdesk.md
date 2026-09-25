@@ -2,7 +2,7 @@
 
 The company's rep tablets are managed from Phoenix, at **Rep Tablets** (`/devices/tablets`, Super
 Admin only). This document is about the **server behind that page**: what it is, why it exists, how
-the box is built, how a tablet moves onto it, and what is honestly not finished yet.
+it is stood up, how a tablet moves onto it, and what is honestly not finished yet.
 
 ---
 
@@ -17,10 +17,13 @@ a hundred tablets** over time, so the free edition is a dead end and the paid on
 **Headwind MDM Community** is open source, self-hosted, and has **no managed-device limit at all**.
 It does the things the fleet actually needs — a managed home screen, silent app installation and
 removal, per-group rules, and (with the small Phoenix add-on in §6.1) lock, lost mode, factory reset
-and screen-lock reset. **RustDesk** supplies the remote screen, also free, also self-hosted.
+and screen-lock reset. **RustDesk** supplies the remote screen, also free.
 
-Together they run on **one small dedicated machine at about $5–6 a month**, and Phoenix stays the
-single place anybody looks.
+🔴 **Neither of them costs a new machine.** Headwind runs on **Railway**, beside the Phoenix app, on
+a bill the company already pays and in the region it already uses; RustDesk uses **its own free EU
+relay**, which is end-to-end encrypted and therefore carries nothing it could read. Phoenix stays
+the single place anybody looks. §3 and §4 are the whole of it, and §4.5 is why there is no relay to
+build.
 
 > 🔴 **CORRECTED 2026-09-25, AND THE OLD VERSION OF THIS BOX WAS WRONG IN BOTH DIRECTIONS.** It said
 > the vendor's [version-comparison table](https://h-mdm.com/headwind-mdm-version-comparison/) shows
@@ -61,9 +64,14 @@ onto every tablet on a set of rules; hold the enrollment code and redraw it; add
 to the tablet server itself; and hand the Super Admin a one-click remote-screen target.
 
 **Phoenix does not carry the video.** A screen session runs between the RustDesk desktop app on the
-Super Admin's own computer and the tablet, through the company's relay. Phoenix hands over three
-facts — which tablet, which relay, the relay's public key — and stops. Putting a rep's screen through
-the Phoenix web app is neither needed nor wanted.
+Super Admin's own computer and the tablet, through whichever relay the fleet is set to — **RustDesk's
+own by default, the company's if one is ever configured (§4.5)**. Phoenix hands over which tablet,
+and the relay's address and public key when there is a private one to name, and stops. Putting a
+rep's screen through the Phoenix web app is neither needed nor wanted.
+
+🔴 **The default relay is not a weaker option, and the page says so in words rather than implying
+it.** RustDesk is NaCl end-to-end encrypted: the relay moves ciphertext it holds no key for. A
+private relay buys **custody and an SLA**, not privacy.
 
 🔴 **The screen-session password is never part of any of this.** RustDesk's link scheme accepts a
 password in the query string and it is never used: a URL is logged by browsers, by proxies and by
@@ -87,190 +95,206 @@ one-line change, exactly the way Google's console did: taken off the page, kept 
 
 | | |
 |---|---|
-| The machine | ~$5–6/month (Hetzner CX22, or a DigitalOcean $6 droplet) — **in Europe**, like everything else here |
+| The machine | **None rented.** Headwind runs on Railway — already paid for, already `europe-west4` — as one more service beside the app. It costs that service's own usage, on a bill the company already receives |
 | Headwind MDM Community | Free, no device cap |
-| RustDesk server | Free, no device cap |
+| RustDesk relay | **Free, and no server at all** — RustDesk's own EU relay (§4.5) |
 | A domain name for it | Already owned (`satopharma.com`) |
-| **Total** | **~$5–6/month**, against roughly $3,000–5,000/year for the paid alternative |
+| **Total** | **A few dollars a month of existing Railway usage**, against roughly $3,000–5,000/year for the paid alternative |
+
+🔴 **This replaced a rented VPS on 2026-09-25, at the owner's instruction, and the reason is worth
+keeping.** The plan was one ~$5–6/month box in Europe running Headwind and RustDesk together. It
+cost an evening across three providers — Hetzner's verification refuses Egyptian customers and takes
+no PayPal, and OVH split an account across two regions that do not share a sign-in — and it bought
+nothing the company did not already have. Railway was already paid for and already in Europe, and
+RustDesk's public relay is **NaCl end-to-end encrypted**, so it carries ciphertext it cannot read.
+Self-hosting the relay buys custody and an SLA. It does not buy secrecy, because the secrecy was
+never the relay's to give.
 
 ---
 
-## 4. Building the box
+## 4. Standing it up on Railway
 
-Everything below happens **once**, on the server, by the owner. Nothing in Phoenix or in CI does any
-of it.
+Everything below happens **once**, in the Railway dashboard, by the owner. Nothing in Phoenix or in
+CI does any of it, and there is no machine to rent, no SSH key, no firewall and no Let's Encrypt.
 
-### 4.1 The machine and the names
+🔴 **Why the owner and not a session.** Creating a Railway service is a money move and a production
+one: `railway service source connect` is **not** environment-scoped, and on 2026-09-16 it repointed
+**production** while being run with `--environment staging`. So every step here is his click, with
+the exact values written out. A session prepares; it does not press.
 
-1. Create one small VPS — 2 vCPU, 4 GB RAM, 40 GB disk is comfortable — **in a European region**.
-   Ubuntu 24.04 LTS.
-2. Point two names at its IP address, as **A records with Cloudflare's proxy OFF** (grey cloud, "DNS
-   only"):
-   - `mdm.satopharma.com` → the box itself: Headwind's own hostname, its certificate, and the
-     tablets' check-in channel
-   - `relay.satopharma.com` → the RustDesk relay
+### 4.1 The service and its database
 
-   🔴 **Both must stay DNS-only, and this is not a detail.** Cloudflare's proxy carries HTTP ports
-   and nothing else, and it hides the real address behind its own. The tablets talk to
-   `mdm.satopharma.com` on **31000**, and RustDesk uses **21115–21119** including UDP — none of which
-   the proxy carries. Turning the orange cloud on for either name takes the whole fleet offline, and
-   it looks like the server has died rather than like a DNS setting.
-3. A **third** name is added later, in §4.6, for the console and Phoenix's API calls:
-   `mdm-console.satopharma.com`. It is the only one that goes through Cloudflare, and it is created
-   by `cloudflared` itself — do not add it by hand now.
-4. 🔴 **Wait until `mdm.satopharma.com` actually resolves to the box before starting anything.**
-   Headwind asks Let's Encrypt for its certificate **on first start**, and a name that does not
-   resolve there fails that request and leaves the server without HTTPS — which then needs the
-   first-time configuration re-run to fix.
+In the **existing** Phoenix Railway project — the one already serving
+`phoenix-hr.satopharma.com` — so that the region is inherited and stays `europe-west4`:
 
-### 4.2 The firewall
+1. **New → Database → Add PostgreSQL.** Name it `headwind-db`. Headwind's own documentation is
+   explicit that a database *inside* the application container does not work, so this is a real
+   separate service, exactly as it was a separate container before.
+2. **New → GitHub Repo → `Gawish-1997/phoenix-people-workforce`.** Name the service
+   `phoenix-headwind`.
+3. On that service, **Settings → Build**:
+   - **Root Directory** = `infra/headwind-phoenix-actions`
+   - **Builder** = Dockerfile *(it should pick this up from
+     [`railway.toml`](../../infra/headwind-phoenix-actions/railway.toml); confirm rather than assume)*
+4. 🔴 **Settings → Build → Watch Paths = `infra/headwind-phoenix-actions/**`.** Without it, **every
+   merge to `main` rebuilds and restarts the MDM server** — a hundred tablets lose their check-in
+   channel for the length of a build, forty-six times a day, for changes that have nothing to do
+   with them.
 
-Open only these:
+🔴 **The image is BUILT, not pulled, and that is the whole point.** The Dockerfile extends the pinned
+Headwind image with the small Apache-2.0 add-on that carries lock, lost mode, factory reset and
+reset-the-screen-lock (§6.1). On the stock image those four answer a refusal that reads like a broken
+tablet rather than like the wrong image. The tag is pinned to a default in the Dockerfile — Railway
+passes no build args, so a bare `ARG` with no default would resolve to `headwindmdm/hmdm:` and fail.
 
-| Port | Protocol | What it is for |
-|---|---|---|
-| 22 | TCP | Your own SSH — **restrict it to your IP if you can** |
-| 80 | TCP | Let's Encrypt's own check, on first start and at every renewal. Headwind has no certificate without it |
-| 443 | TCP | Headwind's HTTPS. 🔴 **After §4.6 this is the tablets' port, not the console's** — Phoenix and the browser reach the console through the tunnel instead, and `cloudflared` needs nothing open here because it dials outward from inside the box |
-| 31000 | TCP | The tablets' own check-in channel to Headwind. **Not** the console |
-| 21115–21119 | TCP | RustDesk: ID/rendezvous, relay, and the web client port |
-| 21116 | **UDP** | RustDesk's ID service. 🔴 **The one everybody forgets** — without UDP, sessions still work but every one of them is slow, because the direct connection can never be negotiated and everything falls back to the relay |
+### 4.2 The variables
 
-### 4.3 Bringing it up
+On `phoenix-headwind` → **Variables**. `${{...}}` is Railway's own reference syntax — it reads the
+value from the Postgres service rather than copying a password into a second place:
 
-Copy [`docker-compose.headwind.yml`](../../docker-compose.headwind.yml),
-[`.env.headwind.example`](../../.env.headwind.example) **and the whole
-[`infra/headwind-phoenix-actions/`](../../infra/headwind-phoenix-actions/) folder** to the box, keeping
-the folder beside the compose file — that path is the build context. Then:
+| Variable | Value |
+|---|---|
+| `HEADWIND_IMAGE_TAG` | `0.1.9` |
+| `PROTOCOL` | `http` |
+| `BASE_DOMAIN` | `mdm.satopharma.com` |
+| `ADMIN_EMAIL` | the address the first admin account is created for |
+| `SQL_HOST` | `${{headwind-db.PGHOST}}` |
+| `SQL_PORT` | `${{headwind-db.PGPORT}}` |
+| `SQL_BASE` | `${{headwind-db.PGDATABASE}}` |
+| `SQL_USER` | `${{headwind-db.PGUSER}}` |
+| `SQL_PASS` | `${{headwind-db.PGPASSWORD}}` |
 
-```bash
-cp .env.headwind.example .env.headwind
-# fill it in: the two image tags, ADMIN_EMAIL, BASE_DOMAIN, SQL_PASS
-docker compose --env-file .env.headwind -f docker-compose.headwind.yml up -d --build
-```
+🔴 **`PROTOCOL=http` is what makes Railway possible at all, and it is Headwind's own supported
+setting, not a workaround.** Its published Docker README documents `http` for exactly this case — an
+external SSL terminator in front — and tells you to leave the certbot section out. Railway terminates
+TLS at its edge, so the server behind it speaks plain HTTP and never asks Let's Encrypt for
+anything. That single variable removes the certificate, the renewal, port 80 and the "the name must
+already resolve here before you start" trap that the rented-box path carried.
 
-🔴 **`--build`, and the `infra/` folder, are not optional extras.** The `hmdm` service is *built*, not
-pulled: the Dockerfile extends the pinned Headwind image with the small Apache-2.0 add-on that carries
-lock, lost mode, factory reset and reset-the-screen-lock (§6.1). Bring the box up on the stock image and
-those four answer a refusal that reads like a broken tablet rather than the wrong image. Confirm it is
-in, from the box:
+🔴 **`FORCE_RECONFIGURE` is not set here.** It re-runs the whole first-time configuration. If the very
+first deploy fails its setup, add it as `1`, redeploy **once**, then delete the variable again.
 
-```bash
-curl -s -H "Authorization: Bearer $JWT" \
-  https://mdm.<domain>/rest/plugins/phoenix-actions/private/status
-```
+### 4.3 The name, and the one thing that is unproven
 
-`{"ready":true}` is the add-on answering. Anything else — 404 included — means Phoenix will report those
-four as unavailable, with the reason, instead of offering a button that cannot work.
+1. **Settings → Networking → Custom Domain** → `mdm.satopharma.com`. Railway gives a CNAME target;
+   add it in Cloudflare with the **proxy OFF** (grey cloud, "DNS only"), because Railway terminates
+   TLS itself and an orange cloud in front of it is a second terminator nobody asked for.
+2. 🔴 **Railway asks which port the container listens on, and the honest answer today is that it is
+   unproven.** Under `PROTOCOL=http` Headwind's Tomcat does not use 443, and the value is expected to
+   be **8080** — but *expected* is not *seen*. **Read it from the first deploy's own logs** (Tomcat
+   prints the connector it started) and set it from that. This is the one value in this document that
+   was written from reasoning rather than from something observed, and it is marked so deliberately:
+   a wrong port here looks like a dead server, not like a setting.
 
-🔴 **Pin both image tags before the first run.** Read the current published tag from
-[hub.docker.com/r/headwindmdm/hmdm](https://hub.docker.com/r/headwindmdm/hmdm) and
-[hub.docker.com/r/rustdesk/rustdesk-server](https://hub.docker.com/r/rustdesk/rustdesk-server) and
-write them into `.env.headwind`. `latest` on a server managing a hundred company tablets means an
-upgrade nobody chose can arrive with the next restart.
+### 4.4 🔴 The push channel, and what is genuinely lost
 
-Notes that are not obvious:
+**Railway allows one HTTP domain per service and no second port.** The rented box published **two**:
+443 for the console and the tablets' sync, and **31000** for Headwind's own push channel — the
+server's way of *waking* a tablet immediately rather than waiting for it to call in.
 
-- **Headwind needs an external PostgreSQL.** Its own documentation says a database on localhost does
-  not work, which is why the compose file runs Postgres as its own service with a health check the
-  Headwind container waits on. A Headwind container that starts against a database that is merely
-  *listening* fails its first-time configuration and then needs `FORCE_RECONFIGURE` to try again.
-- **RustDesk runs on `network_mode: host`, and that is not a shortcut.** Behind Docker's NAT the
-  hole-punching that keeps sessions *off* the relay stops working, and every session becomes slow.
-- `FORCE_RECONFIGURE` stays **empty**. Set it to `1` for exactly one restart if the very first
-  configuration failed, then empty it again. On a working server it would re-run first-time setup.
+So on Railway, **31000 is not published, and push is not available**. What that costs, stated
+plainly:
 
-### 4.4 Reading the two values Phoenix needs
+- **Nothing is lost.** Every command — lock, wipe, lost mode, install, the lot — still reaches the
+  tablet, because the agent applies them from the configuration it downloads at check-in.
+- **What changes is *when*.** A command lands at the tablet's next scheduled check-in instead of
+  within seconds. That interval is Headwind's own setting, and it is the knob to turn if the delay
+  matters.
+- 🔴 **It is therefore an SLA question, not a capability one** — and it is the second real reason
+  (after the relay, §4.5) that the company might one day want its own box. Both are written down
+  rather than discovered during an incident.
 
-```bash
-# The RustDesk relay's PUBLIC key — public by design; the app needs it to verify the relay.
-cat rustdesk-data/id_ed25519.pub
-```
+🔴 **Unproven, and must be read from the pilot rather than assumed:** whether the stock agent tolerates
+an unreachable push port quietly, or logs an error on every attempt. It is expected to fall back
+silently. Watch PHX-TAB-0002's own logs on the pilot and write the answer here.
 
-The Headwind admin login is the one created on first start from `ADMIN_EMAIL`. **Give Phoenix its own
-admin account on the server**, not a person's, so the Headwind side's own audit trail reads as
-"Phoenix" rather than as the owner.
+### 4.5 The remote screen — there is nothing to stand up
 
-### 4.5 Turning it on in Phoenix
+🔴 **RustDesk uses its own free relay, and that is a decision, not a gap.** Taken 2026-09-25 by the
+owner. Two facts carry it:
 
-Set these on Railway (production), then let it redeploy:
+- **RustDesk is NaCl end-to-end encrypted.** The relay carries ciphertext it has no key for. Running
+  your own buys **custody and an SLA — it does not buy secrecy**, because the secrecy was never the
+  relay's to give.
+- **Railway cannot host it anyway.** The relay needs **21115–21119 TCP plus 21116 UDP**, and Railway
+  allows one TCP proxy port per service and **no UDP at all**. The UDP port is the hole-punching that
+  keeps sessions peer-to-peer; without it every session falls back to the relay and is slow. That is
+  a platform limit, not a configuration one.
+
+So there is nothing to create, and in Phoenix **`RUSTDESK_RELAY_HOST` and `RUSTDESK_PUBLIC_KEY` are
+left EMPTY**. 🔴 **Empty is the working setting, not a missing one** — the code reads both-empty as
+"the public relay" and works. The only shape it refuses is **half** of a private relay: one set and
+the other not, which would point a client at a relay it cannot verify, and that does not fail
+loudly — it quietly connects somewhere else and nobody notices.
+
+The day the company wants its own relay, it wants a box, and
+[`docker-compose.headwind.yml`](../../docker-compose.headwind.yml) plus
+[`.env.headwind.example`](../../.env.headwind.example) are kept in the repository for exactly that —
+unchanged, and labelled as the optional path.
+
+### 4.6 Turning it on in Phoenix
+
+Set these on the **Phoenix app's** Railway service (production) — not on `phoenix-headwind` — then
+let it redeploy:
 
 ```
 HEADWIND_MDM_BASE_URL=https://mdm-console.satopharma.com
 HEADWIND_MDM_LOGIN=<Phoenix's own admin login>
 HEADWIND_MDM_PASSWORD=<its password, in plain text — Phoenix hashes it>
-RUSTDESK_RELAY_HOST=relay.satopharma.com
-RUSTDESK_PUBLIC_KEY=<the contents of id_ed25519.pub>
 ```
 
-🔴 **`HEADWIND_MDM_BASE_URL` is the CONSOLE hostname, not the tablets' one.** Phoenix reaches the
-server the same way a person does — through the tunnel — so it is `mdm-console.satopharma.com` here,
-while the tablets and the relay keep the two names in §4.1. Pointing this at `mdm.satopharma.com`
-would work, and would quietly put the API back on the public internet the tunnel was added to take
-it off.
+**Give Phoenix its own admin account on the Headwind server**, not a person's, so the Headwind side's
+own audit trail reads as "Phoenix" rather than as the owner. The first admin account is the one
+created on first start from `ADMIN_EMAIL`; extra logins are free and uncapped (§6.8).
 
-Two more settings follow in §4.6 — the Cloudflare Access service token, without which Phoenix cannot
-get through the tunnel at all. Full descriptions, and why the password is sent hashed:
-[environment.md](../environment.md), "Headwind MDM + RustDesk".
+🔴 **`HEADWIND_MDM_BASE_URL` is the CONSOLE hostname, not the tablets' one** — see §4.7. Pointing it
+at `mdm.satopharma.com` would work, and would quietly put the API back on the public internet that
+§4.7 exists to take it off.
 
-### 4.6 Locking down the console — Cloudflare Tunnel
+🔴 **Nothing about RustDesk goes here.** Both variables stay unset; §4.5 is why. Full descriptions of
+all five, and why the Headwind password is sent hashed: [environment.md](../environment.md),
+"Headwind MDM + RustDesk".
+
+Two more settings follow in §4.7 — the Cloudflare Access service token, without which Phoenix cannot
+reach the console at all.
+
+### 4.7 Locking down the console — Cloudflare Access
 
 🔴 **Headwind Community has no two-factor sign-in** — that is a paid tier. The admin console would
 otherwise sit on the public internet with one password in front of it, and that password
-factory-resets tablets. **The owner's decision (2026-09-25): the console goes behind a Cloudflare
-Tunnel**, so nobody reaches the login page at all without first signing in to Cloudflare. This is
+factory-resets tablets. **The owner's decision (2026-09-25): the console goes behind Cloudflare
+Access**, so nobody reaches the login page at all without first signing in to Cloudflare. This is
 the path; there is no second option to weigh.
 
-🔴 **THE TUNNEL GOES ON ITS OWN HOSTNAME, NEVER ON `mdm.satopharma.com`.** `cloudflared tunnel route
-dns` replaces whatever that name points at with a proxied CNAME to Cloudflare — and Cloudflare's
-proxy carries HTTP ports only. Run it against the tablets' own name and **every tablet in the fleet
-goes dark at its next check-in**, because 31000 no longer reaches the box at all. It is the obvious
-command to type and it is the wrong one. `mdm.satopharma.com` stays a plain A record to the box; the
-console gets `mdm-console.satopharma.com`.
+**On Railway there is no tunnel and no `cloudflared` daemon** — there is no box to run one on, and
+none is needed. Railway already publishes the service on a public hostname; Access goes in front of
+that hostname. It is the same protection with three fewer moving parts: no connector to install, no
+service to keep running, no loopback certificate to wave past with `noTLSVerify`.
 
-**On the box**, once the stack is up:
+🔴 **TWO HOSTNAMES ON ONE SERVICE, AND ONLY ONE OF THEM IS PROXIED.** Both are added under Railway →
+`phoenix-headwind` → Settings → Networking → Custom Domain:
 
-```bash
-# Cloudflare's own connector. Install, then sign in with the browser it opens.
-curl -fsSL https://pkg.cloudflare.com/cloudflared-stable-linux-amd64.deb -o cloudflared.deb
-sudo dpkg -i cloudflared.deb
-cloudflared tunnel login
+| Hostname | Cloudflare | Behind Access | Who uses it |
+|---|---|---|---|
+| `mdm.satopharma.com` | **proxy OFF** (grey cloud) | **no** | the tablets, at every check-in |
+| `mdm-console.satopharma.com` | proxy **ON** (orange cloud) | **yes** | the owner's browser, and Phoenix |
 
-cloudflared tunnel create phoenix-mdm
-# 🔴 mdm-console, NOT mdm — see above.
-cloudflared tunnel route dns phoenix-mdm mdm-console.satopharma.com
-```
+🔴 **NEVER PUT ACCESS ON `mdm.satopharma.com`. It is the obvious-looking simplification — one
+hostname, one rule — and it takes the whole fleet dark at its next check-in.** A tablet has no
+Cloudflare identity and never will; Access would answer its sync with a sign-in page, and a hundred
+tablets would go quiet at once while the server itself looked perfectly healthy. The two hostnames
+exist for exactly this reason.
 
-Then `/etc/cloudflared/config.yml` — the tunnel speaks to Headwind over the box's own loopback, so
-nothing has to be opened to the world for it. The origin certificate is the one Let's Encrypt issued
-for `mdm.satopharma.com`, so it will not match this hostname; that is what `noTLSVerify` is for, and
-it is safe here because the connection never leaves the machine:
+**The order matters, and getting it wrong looks like a broken certificate:** add
+`mdm-console.satopharma.com` to Railway **grey-cloud first**, wait until Railway reports the
+certificate issued, and only then turn the orange cloud on. Railway's own certificate request cannot
+complete through Cloudflare's proxy. Once it is proxied, set that hostname's **SSL/TLS mode to Full
+(strict)** — Flexible would send plaintext to the origin, which is precisely the thing being
+prevented.
 
-```yaml
-tunnel: phoenix-mdm
-credentials-file: /root/.cloudflared/<the tunnel id>.json
-ingress:
-  - hostname: mdm-console.satopharma.com
-    service: https://localhost:443
-    originRequest:
-      noTLSVerify: true
-  - service: http_404
-```
-
-```bash
-sudo cloudflared service install
-sudo systemctl enable --now cloudflared
-```
-
-In the Cloudflare dashboard, **Zero Trust → Access → Applications**, add
+Then, in the Cloudflare dashboard, **Zero Trust → Access → Applications**, add
 `mdm-console.satopharma.com` with a policy allowing the owner's own address (and anyone else who is
 to administer tablets).
-
-🔴 **Port 31000 stays open directly, and the tablets depend on that.** The tunnel covers the console
-and Phoenix's API calls, on the console hostname only. The tablets check in on 31000 and have no
-Cloudflare identity — putting that channel behind Access would take the whole fleet offline. Ports
-80 and 443 stay open too: 80 for the certificate Headwind renews, 443 for the tablets. `cloudflared`
-needs neither, since it dials outward.
 
 **Then give Phoenix a way through, because Phoenix is not a person.** Access answers anything
 without a Cloudflare session with its own HTML sign-in page — including every call Phoenix makes.
@@ -284,9 +308,9 @@ HEADWIND_MDM_ACCESS_CLIENT_SECRET=<its Client Secret — shown once, at creation
 ```
 
 Phoenix sends them as `CF-Access-Client-Id` / `CF-Access-Client-Secret` on the sign-in and on every
-call after it. Leave both unset and nothing changes — that is the shape for a server with no tunnel.
-Set only one and Phoenix refuses to call at all, naming the missing half, rather than spending an
-afternoon on a reply that was never Headwind's.
+call after it. Leave both unset and nothing changes — that is the shape for a server with no Access
+in front of it. Set only one and Phoenix refuses to call at all, naming the missing half, rather than
+spending an afternoon on a reply that was never Headwind's.
 
 🔴 **There is deliberately no exception rule for `/rest/*`, and one must never be added.** It is the
 obvious-looking simplification — let the API through unauthenticated and only the browser console is
@@ -296,14 +320,22 @@ the front door and leave the back one open.
 
 Use a long unique password for the Headwind admin account regardless, and do not reuse the owner's.
 
-### 4.7 Backups
+### 4.8 Backups
 
-🔴 **Two things, or the fleet is unrecoverable:**
+🔴 **One thing, and the fleet is unrecoverable without it: the `headwind-db` Postgres service.** It
+holds every tablet, its configuration, its rules and its history. Railway takes its own backups of a
+Postgres service — **check on the service that they are actually enabled and note the retention**,
+rather than assuming, and **take one by hand before any image-tag change**.
 
-- the `headwind-db` volume — every tablet, its rules and its history;
-- `rustdesk-data` — the relay's key pair. Losing it means re-pairing **every** tablet by hand.
+🔴 **The relay key pair is no longer a thing that can be lost, and that is a real gain from §4.5.**
+On the rented box, losing `rustdesk-data` meant re-pairing **every** tablet by hand. On the public
+relay there is no key pair to hold, so there is nothing to lose. The day the company takes the relay
+in-house, that risk comes back with it — it is written into
+[`docker-compose.headwind.yml`](../../docker-compose.headwind.yml) where it belongs.
 
-A provider snapshot of the whole box covers both. **Take one before any upgrade.**
+🔴 **Railway's backups are NOT Phoenix's backups, and this one has no PITR either.** It is a separate
+Postgres service from the payroll database, deliberately — a device-management server talking to reps'
+tablets all day does not belong beside payroll — so nothing about Supabase's backup story covers it.
 
 ---
 
@@ -329,7 +361,7 @@ seen working. This is the pilot, and two of its steps are genuinely uncertain (�
 9. In Phoenix, confirm: the tablet appears in the Headwind section; it has **added itself to the
    custody register** under `PHX-TAB-0002`; **View the screen** and **Take control** both work.
 
-### 5.1 The two things that might not work first time
+### 5.1 The things that might not work first time
 
 🔴 **Android 13+ "Restricted Settings" blocks accessibility for side-loaded apps.** Apps installed
 through the **session-based** package installer — which is how a device owner installs silently — are
@@ -338,10 +370,17 @@ verified on the pilot tablet, never assumed.** If it does not, the fallback is a
 manual toggle per tablet (Settings → Apps → RustDesk → ⋮ → Allow restricted settings, then grant the
 accessibility service) — annoying, not a blocker.
 
-🔴 **Baking the relay address and key into the client** is cleanest with RustDesk Pro's custom-client
-builder, which the free path does not have. On Android the fallback is the app's **Deploy prompt**,
-or entering the relay in the app's settings once per tablet during step 7 above — which is already a
-per-tablet step, so it costs nothing extra.
+✅ **The relay no longer has to be entered on each tablet at all.** This used to be the second
+uncertain step: RustDesk cannot be pre-seeded on Android — there is no `--config`, the QR payload
+carries only `host` and `key`, and `RustDesk2.toml` lives in private storage — so a private relay
+meant typing it into the app on all hundred tablets, or paying for the custom-client builder. On
+RustDesk's own relay (§4.5) the app is already pointed at it out of the box, and step 7 is reduced
+to reading the ID. **It comes back the day the company takes the relay in-house**, and that is part
+of that decision's cost.
+
+🔴 **Whether Headwind's push channel being unavailable on Railway is quiet or noisy is unproven
+(§4.4).** Commands still arrive — at the next check-in rather than in seconds. Watch this tablet's
+own log during the pilot and write the answer into §4.4.
 
 ---
 
@@ -419,9 +458,10 @@ any tablet signed into a company Google account. It has no API, so it is a brows
 it means nobody is without those four for a single day of this build.
 
 🔴 **The add-on is Java and is OUTSIDE the six required CI checks**, which are TypeScript. It is built
-by the box's own `docker compose build`. Its Phoenix side is ordinary TypeScript and is covered
-normally. Anything the add-on has not been seen to do on a real tablet is reported as unproven, never
-as working.
+by **Railway**, from the Dockerfile, when the `phoenix-headwind` service deploys (§4.1) — so a green
+PR says nothing at all about it, and the first proof it compiles is that deploy. Its Phoenix side is
+ordinary TypeScript and is covered normally. Anything the add-on has not been seen to do on a real
+tablet is reported as unproven, never as working.
 
 ### 6.2 Erasing the company's data without erasing the tablet
 
@@ -596,6 +636,11 @@ enrolment:
 3. **Settings → Recording**, turn recording on if the session should keep one.
 4. Note the tablet's RustDesk ID into its custody-register entry — that is the one Phoenix needs.
 
+✅ **No relay address or key is typed at any point**, because the fleet is on RustDesk's own relay
+(§4.5) and the app already points there. That was the *fifth* per-tablet step in the rented-box plan,
+and it is the one that came back a hundred times. It returns the day the company takes the relay
+in-house.
+
 ---
 
 ## 6A. The consolidated list, and what is still the owner's step
@@ -610,7 +655,7 @@ this PR. Amber = built and unproven until a real tablet runs it. Red = impossibl
 | 3 | Open a tablet: everything the server holds, the apps, the history | 🟢 Built |
 | 4 | Apply settings · restart · pause kiosk · resume kiosk | 🟢 Built |
 | 5 | Remove an app from a tablet, silently, two presses | 🟢 Built |
-| 6 | Remote screen view and control, free, through our own relay | 🟡 Built — input under Android 13's Restricted Settings is unproven until the pilot |
+| 6 | Remote screen view and control, free, through RustDesk's own EU relay (§4.5) | 🟡 Built — input under Android 13's Restricted Settings is unproven until the pilot |
 | 7 | **Corporate wipe** — Phoenix + Chrome data, Downloads + camera roll | 🟢 Built (§6.2) |
 | 8 | **Sets of rules**: list, read, move a tablet, attach an app or a file | 🟢 Built (§6.3, §6.6) |
 | 9 | **Install an app / send a file** to every tablet on a set of rules | 🟢 Built (§6.3) |
@@ -619,26 +664,33 @@ this PR. Amber = built and unproven until a real tablet runs it. Red = impossibl
 | 12 | **Movement history**, every row naming its source | 🟡 Built — whether the free agent feeds the plugin is unproven (§6.5) |
 | 13 | **Show a message on a tablet**, the owner's own words | 🟡 Built — needs the new Phoenix APK on the tablet |
 | 14 | **Ring the alarm** | 🟡 Built — needs the new Phoenix APK; under Do Not Disturb it plays at whatever volume is set |
-| 15 | **Lock** | 🟡 Built — needs the add-on on the box |
-| 16 | **Lost mode on / off**, with his words on the lock screen | 🟡 Built — needs the add-on on the box |
-| 17 | **Factory reset** | 🟡 Built — needs the add-on on the box |
-| 18 | **Reset the screen lock** | 🟡 Built — needs the add-on on the box |
+| 15 | **Lock** | 🟡 Built — needs the add-on, which the Railway service builds in (§4.1) |
+| 16 | **Lost mode on / off**, with his words on the lock screen | 🟡 Built — needs the add-on, which the Railway service builds in (§4.1) |
+| 17 | **Factory reset** | 🟡 Built — needs the add-on, which the Railway service builds in (§4.1) |
+| 18 | **Reset the screen lock** | 🟡 Built — needs the add-on, which the Railway service builds in (§4.1) |
 | 19 | **Enrollment code** held and redrawn, never minted | 🟢 Built (§6.7) |
 | 20 | **Extra console sign-ins**, free and uncapped | 🟢 Built (§6.8) |
 | 21 | RustDesk per-tablet settings | 🟢 Documented (§6.9) — Android cannot be pre-seeded, so it is four taps per tablet |
 | 22 | A chat toggle for RustDesk | 🔴 **No such key exists.** Chat is built in and has no switch — a toggle would be a dead button |
 | 23 | **Shut down** | 🔴 **Impossible on stock Android, at any price.** Signature-level permission, manufacturer only. Reboot is not a substitute (§6.1) |
 
-**Still the owner's own steps, and only these:**
+**Still the owner's own steps, and only these.** 🔴 **Shorter than it was on 2026-09-25 — there is no
+box to rent, no card to enter, no SSH key, no firewall, no `docker compose`, no `cloudflared` and no
+relay:**
 
-1. Create the ~$5–6/month box (§4.1).
-2. Add the `mdm` and `relay` A records with the **proxy off** — the orange cloud takes the whole fleet
-   dark (§4.1).
-3. Run the one `docker compose` command, **built from the Phoenix image** so the add-on is in it
-   (`infra/headwind-phoenix-actions/`).
-4. Set the `HEADWIND_MDM_*` variables on Railway (§4.5).
-5. Approve the merge.
-6. Run the pilot on PHX-TAB-0002.
+1. In the existing Railway project: add a **PostgreSQL** service, and a service from this repo with
+   **Root Directory `infra/headwind-phoenix-actions`** and **Watch Paths** set (§4.1).
+2. Set its variables — the nine in §4.2, `PROTOCOL=http` among them.
+3. Add the two hostnames (§4.3, §4.7): `mdm.satopharma.com` **grey cloud** for the tablets, and
+   `mdm-console.satopharma.com` **grey first, then orange**, behind a Cloudflare Access application.
+   🔴 Never put Access on the tablets' hostname — it takes the whole fleet dark.
+4. Set the port Railway asks for from **the first deploy's own logs** (§4.3) — it is the one value
+   here nobody has yet seen.
+5. Set the `HEADWIND_MDM_*` variables on the **Phoenix app's** service (§4.6), plus the two Access
+   token values. 🔴 **Nothing RustDesk** — both its variables stay empty, and empty is the working
+   setting.
+6. Approve the merge.
+7. Run the pilot on PHX-TAB-0002.
 
 ---
 
@@ -655,12 +707,13 @@ this PR. Amber = built and unproven until a real tablet runs it. Red = impossibl
 | The enrollment code Phoenix holds and redraws | `src/lib/devices/headwind/enrollment.ts` |
 | Extra console sign-ins | `src/lib/devices/headwind/users.ts` |
 | Resolving a device number against the live fleet, once, for every mutation | `src/lib/devices/headwind/target.ts` |
-| Relay settings and the connect target | `src/lib/devices/rustdesk/` |
+| Relay settings and the connect target — **empty means RustDesk's own relay, and that is the working setting** | `src/lib/devices/rustdesk/` |
 | Routes (Super Admin only, `company_devices:approve`) | `app/api/devices/headwind/` — `actions/`, `configurations/`, `enrollment/`, `upload/`, `users/`, `wipe/` |
 | The four cards on Rep Tablets | `src/components/devices/headwind-enrollment.tsx`, `headwind-fleet.tsx`, `headwind-tablet-panel.tsx`, `headwind-server-settings.tsx` |
 | The one `useRead` every panel shares, and `CannotDo` | `src/components/devices/headwind-panel-kit.tsx` |
-| The server itself | `docker-compose.headwind.yml`, `.env.headwind.example` |
-| 🔴 The add-on that carries lock, lost mode, factory reset and password reset — **Java, outside the six CI checks**, built by the box's own `docker compose build` | `infra/headwind-phoenix-actions/` |
+| **The server as it actually runs** — the Railway service's build settings | `infra/headwind-phoenix-actions/railway.toml` |
+| The optional self-hosted box, kept for the day the company wants its own relay (§4.5) | `docker-compose.headwind.yml`, `.env.headwind.example` |
+| 🔴 The add-on that carries lock, lost mode, factory reset and password reset — **Java, outside the six CI checks**, built by Railway from the Dockerfile | `infra/headwind-phoenix-actions/` |
 | The alarm and on-screen message on the tablet itself | `mobile/plugins/with-phoenix-device-actions.js` |
 | The enrollment template's table | `supabase/migrations/20260925193000_headwind_enrollment_template.sql` |
 | Tests | `tests/headwind-bridge.test.ts` |

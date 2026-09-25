@@ -98,7 +98,9 @@ type FleetState = {
 type LocationResult = { latitude: number | null; longitude: number | null; address: string | null; locatedAt: string | null };
 type CommandResult = { command: string; assetTag: string | null; message: string };
 type ScreenTarget = {
-  target: { rustDeskId: string; connectUrl: string; relayHost: string; mode: string } | null;
+  // 🔴 `relayLabel`, never `relayHost` — the host is null on RustDesk's public relay and a toast
+  // built from it reads "through null". The label is always a phrase.
+  target: { rustDeskId: string; connectUrl: string; relayLabel: string; mode: string } | null;
   reason: string | null;
 };
 type ImeiRecordResult = {
@@ -293,8 +295,8 @@ export function HeadwindFleet() {
         ...previous,
         [row.deviceNumber]:
           mode === "control"
-            ? `Opening control of ${row.assetTag ?? row.name} in the RustDesk app, through ${result.target!.relayHost}.`
-            : `Opening the screen of ${row.assetTag ?? row.name} in the RustDesk app, through ${result.target!.relayHost}.`,
+            ? `Opening control of ${row.assetTag ?? row.name} in the RustDesk app, through ${result.target!.relayLabel}.`
+            : `Opening the screen of ${row.assetTag ?? row.name} in the RustDesk app, through ${result.target!.relayLabel}.`,
       }));
       window.location.href = result.target.connectUrl;
     } catch (caught) {
@@ -378,8 +380,9 @@ export function HeadwindFleet() {
 
       {data && !data.remoteScreenReady && rows.length > 0 ? (
         <div className="mt-4 border border-slate-200 bg-white px-4 py-3 text-[12px] font-semibold text-slate-600">
-          Screen viewing and control are not switched on yet — they need the company&rsquo;s own relay. Everything else
-          on this list works without it.
+          Screen viewing and control are off because the company&rsquo;s own relay is only half set up — one of its two
+          settings is missing. Clear both to go back to RustDesk&rsquo;s public relay, or set both. Everything else on
+          this list works either way.
         </div>
       ) : null}
 
@@ -611,8 +614,8 @@ function FleetActions({
           onClick={() => onScreen(row, mode)}
           title={
             remoteScreenReady
-              ? "Opens in the RustDesk app on this computer, through the company's own relay"
-              : "Needs the company's own relay to be switched on"
+              ? "Opens in the RustDesk app on this computer, through the relay this fleet is set to"
+              : "Off until the company's own relay is set fully, or cleared back to the public one"
           }
           type="button"
         >

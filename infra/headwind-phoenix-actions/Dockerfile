@@ -5,19 +5,30 @@
 # the add-on silently compiled against one version and ran against another — and the failure mode of
 # that is a hook that loads and does nothing.
 #
-# The service is `hmdm` in docker-compose.headwind.yml, which points its build context here:
+# TWO THINGS BUILD THIS, AND ONLY ONE OF THEM PASSES A BUILD ARG.
+#
+#  1. Railway — the way it actually runs (see railway.json beside this file). Railway builds a
+#     Dockerfile from the repository and does NOT pass docker-compose's build args, which is why the
+#     ARG below carries a DEFAULT. Without one the FROM line resolves to `headwindmdm/hmdm:` and the
+#     build dies on a line that looks like a typo.
+#  2. docker-compose.headwind.yml — the optional self-hosted path, for anyone who later wants to own
+#     the RustDesk relay as well. It passes the tag explicitly and overrides the default.
 #
 #   docker compose --env-file .env.headwind -f docker-compose.headwind.yml build hmdm
 #   docker compose --env-file .env.headwind -f docker-compose.headwind.yml up -d hmdm
 #
-# Then confirm, from the box:
+# Then confirm, against wherever it runs:
 #   curl -s -H "Authorization: Bearer $JWT" \
-#     https://mdm.<domain>/rest/plugins/phoenix-actions/private/status
+#     https://<host>/rest/plugins/phoenix-actions/private/status
 # `{"ready":true}` means Phoenix will offer lock, lost mode, factory reset and screen-lock reset.
 # Anything else — 404 included — means it will not, and the console says so in words rather than
 # offering a button that cannot work.
 
-ARG HEADWIND_IMAGE_TAG
+# 🔴 A PINNED DEFAULT, AND NEVER `latest`. The warning above is about an upgrade nobody chose
+# arriving with a restart, and `latest` is exactly that. A pinned default is the opposite: it is one
+# known version, written down, that a reader can compare against what is running. Bump it
+# deliberately, together with HEADWIND_IMAGE_TAG in .env.headwind.example, never as a drive-by.
+ARG HEADWIND_IMAGE_TAG=0.1.9
 FROM headwindmdm/hmdm:${HEADWIND_IMAGE_TAG} AS headwind
 
 # ── Build the add-on against the jars that are actually in that image ─────────────────────────────
