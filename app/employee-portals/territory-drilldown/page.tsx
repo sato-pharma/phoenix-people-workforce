@@ -69,22 +69,23 @@ export default async function TerritoryDrilldownPage({
 
   return (
     <EmployeePortalPageShell
-      badge="Sales Operations"
-      description="Region down to the pharmacies buying — expand any block to see exactly where your number comes from, by name, never by code."
-      errorBoundaryTitle="Territory drilldown unavailable"
-      title="Territory & Sales Drilldown"
+      badge="Sales"
+      description="From your region down to the pharmacies buying. Open any block to see where your number comes from, by name."
+      errorBoundaryTitle="Sales Drilldown unavailable"
+      title="Sales Drilldown"
     >
-      <div className="mb-4">
-        {/* Every role that can open this page is a Territory Drilldown role, and by owner decision
-            all of them may run the (corrective, idempotent) sync — so the button is always live
-            here. The per-line reconciliation chips are narrower: they cover every line the sync
-            touched, not just this viewer's own, so only a role that already sees every line
-            company-wide (the line-picker roles, same as showLinePicker above) gets to see them. */}
-        <TerritorySyncPanel canRun showReconciliation={isTerritoryLinePickerRole(access.role)} />
-      </div>
       <Suspense fallback={<DashboardSkeleton chartCount={1} kpiCount={0} />}>
         <TerritoryDrilldownContent access={access} selectedLine={selectedLine} />
       </Suspense>
+      {/* Under the tree, not above it: the page opens on the viewer's own territory, and the data
+          sync is the housekeeping beneath it. Every role that can open this page is a Territory
+          Drilldown role, and by owner decision all of them may run the (corrective, idempotent)
+          sync — so the button is always live here. The per-line reconciliation chips are narrower:
+          they cover every line the sync touched, not just this viewer's own, so only a role that
+          already sees every line company-wide (the line-picker roles) gets to see them. */}
+      <div className="mt-4">
+        <TerritorySyncPanel canRun showReconciliation={isTerritoryLinePickerRole(access.role)} />
+      </div>
     </EmployeePortalPageShell>
   );
 }

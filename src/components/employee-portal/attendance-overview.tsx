@@ -1,11 +1,15 @@
 "use client";
 
 import { Fragment, useState, useTransition } from "react";
-import { CalendarCheck, Clock, MessageSquare, RefreshCw, ShieldCheck } from "lucide-react";
+import { AlarmClock, CheckCircle2, Clock, MessageSquare, RefreshCw, ShieldCheck, UserX } from "lucide-react";
 
+import {
+  PortalEmptyState,
+  PortalMetricCard,
+  PortalSection,
+} from "@/components/employee-portal/portal-primitives";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import type { EmployeeAttendanceData } from "@/lib/attendance/employee-attendance";
 
 type Props = {
@@ -29,15 +33,8 @@ function statusBadge(status: string) {
   return <Badge variant="danger">{status}</Badge>;
 }
 
-function StatCard({ label, value, sub }: { label: string; sub?: string; value: string | number }) {
-  return (
-    <div className="rounded border border-slate-200 bg-white p-4 text-center shadow-[0_4px_14px_rgba(15,23,42,0.04)]">
-      <div className="text-2xl font-black tabular-nums text-slate-900">{value}</div>
-      <div className="mt-1 text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">{label}</div>
-      {sub && <div className="mt-0.5 text-phx-xs font-semibold text-orange-600">{sub}</div>}
-    </div>
-  );
-}
+const disputeTextareaClass =
+  "w-full border border-orange-300 bg-white px-3 py-2 text-phx-md text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-400/30";
 
 export function AttendanceOverview({ hrId, initialData }: Props) {
   const [data, setData] = useState<EmployeeAttendanceData>(initialData);
@@ -113,237 +110,247 @@ export function AttendanceOverview({ hrId, initialData }: Props) {
       });
   }
 
+  const showDeductionCol = rows.some((r) => r.deductionConfirmed);
+  const colSpanTotal = showDeductionCol ? 6 : 5;
+  const disputePlaceholder =
+    "Why should this record be reconsidered? For example an official visit, or a problem with the device.";
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-sm text-muted-foreground">
-            Showing last 30 days &middot; {rows.length} day{rows.length !== 1 ? "s" : ""} recorded
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-phx-md font-semibold text-slate-600">
+            Last 30 days &middot; {rows.length} day{rows.length !== 1 ? "s" : ""} recorded
           </p>
           {pendingDisputes > 0 && (
-            <p className="mt-1 text-xs text-orange-600 font-medium">
-              {pendingDisputes} dispute{pendingDisputes !== 1 ? "s" : ""} pending HR review
+            <p className="mt-0.5 text-phx-sm font-bold text-orange-700">
+              {pendingDisputes} dispute{pendingDisputes !== 1 ? "s" : ""} waiting for HR review
             </p>
           )}
         </div>
-        <Button size="sm" variant="outline" onClick={refresh} disabled={isPending}>
-          <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+        <Button className="min-h-10 gap-1.5" disabled={isPending} onClick={refresh} size="sm" variant="outline">
+          <RefreshCw className={`h-3.5 w-3.5 ${isPending ? "animate-spin" : ""}`} />
           Refresh
         </Button>
       </div>
 
-      <Card>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <StatCard label="Complete" value={summary.completeDays} />
-          <StatCard label="Late / Early" value={summary.lateDays} />
-          <StatCard label="Short / Absent" value={summary.absentDays + summary.shortDays} />
-          <StatCard label="Exceptions" value={summary.exceptionDays} sub="approved" />
-        </div>
-      </Card>
+      <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+        <PortalMetricCard accent="emerald" icon={CheckCircle2} label="Complete" value={summary.completeDays} />
+        <PortalMetricCard accent="amber" icon={AlarmClock} label="Late / early" value={summary.lateDays} />
+        <PortalMetricCard accent="rose" icon={UserX} label="Short / absent" value={summary.absentDays + summary.shortDays} />
+        <PortalMetricCard accent="sky" icon={ShieldCheck} label="Exceptions" note="Approved by HR" value={summary.exceptionDays} />
+      </div>
 
-      {rows.length === 0 ? (
-        <Card>
-          <div className="py-10 text-center text-muted-foreground">
-            <CalendarCheck className="mx-auto mb-3 h-8 w-8 opacity-30" />
-            <p className="text-sm">No attendance records found for this period.</p>
-          </div>
-        </Card>
-      ) : (
-        <Card>
-          {/* Mobile: premium card list (tables are desktop-only) */}
-          <div className="space-y-2.5 md:hidden">
-            {rows.map((row) => {
-              const dispute = disputes[row.rawDate];
-              const disputeAlreadyPending = pendingDisputes > 0 && !dispute;
-              return (
-                <div className="rounded border border-border bg-background p-3" key={row.rawDate}>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-mono text-xs font-semibold">{row.date}</span>
-                    {statusBadge(row.status)}
-                  </div>
-                  <dl className="mt-2.5 grid grid-cols-3 gap-2 text-xs">
-                    <div>
-                      <dt className="text-phx-2xs font-medium uppercase tracking-wide text-muted-foreground">In</dt>
-                      <dd className="mt-0.5 font-medium">{row.firstPunch || "—"}</dd>
+      <PortalSection eyebrow="Daily record" title="Punches by day">
+        {rows.length === 0 ? (
+          <PortalEmptyState
+            message="Nothing was recorded for you in the last 30 days."
+            title="No attendance records"
+          />
+        ) : (
+          <>
+            {/* Phone: one card per day. */}
+            <div className="divide-y divide-slate-100 md:hidden">
+              {rows.map((row) => {
+                const dispute = disputes[row.rawDate];
+                const disputeAlreadyPending = pendingDisputes > 0 && !dispute;
+                return (
+                  <div className="px-4 py-3" key={row.rawDate}>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-phx-md font-bold tabular-nums text-slate-900">{row.date}</span>
+                      {statusBadge(row.status)}
                     </div>
-                    <div>
-                      <dt className="text-phx-2xs font-medium uppercase tracking-wide text-muted-foreground">Out</dt>
-                      <dd className="mt-0.5 font-medium">{row.lastPunch || "—"}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-phx-2xs font-medium uppercase tracking-wide text-muted-foreground">Hours</dt>
-                      <dd className="mt-0.5 font-mono font-medium">{row.timeLong || "—"}</dd>
-                    </div>
-                  </dl>
-                  {row.deductionConfirmed && (
-                    <p className="mt-2 text-xs font-medium text-red-600">
-                      Deduction: -{row.deductionDays} day{row.deductionDays !== "1" ? "s" : ""}
-                    </p>
-                  )}
-                  {row.deductionConfirmed && !row.hasException && !dispute && !disputeAlreadyPending && (
-                    <Button
-                      className="mt-2 h-8 w-full text-xs"
-                      onClick={() => openDispute(row.rawDate, row.date)}
-                      size="sm"
-                      variant="outline"
-                    >
-                      <MessageSquare className="mr-1 h-3 w-3" />
-                      Dispute
-                    </Button>
-                  )}
-                  {dispute?.submitted && (
-                    <span className="mt-2 flex items-center gap-1 text-xs font-medium text-orange-600">
-                      <ShieldCheck className="h-3 w-3" />
-                      Pending review
-                    </span>
-                  )}
-                  {dispute && !dispute.submitted && (
-                    <div className="mt-2">
-                      <textarea
-                        className="w-full rounded border border-orange-300 bg-white px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-orange-400"
-                        onChange={(e) => updateDisputeReason(row.rawDate, e.target.value)}
-                        placeholder="Describe why this record should be reconsidered (e.g. official visit, technical issue with device)…"
-                        rows={2}
-                        value={dispute.reason}
-                      />
-                      <div className="mt-2 flex gap-2">
-                        <Button
-                          className="flex-1 bg-orange-600 text-white hover:bg-orange-700"
-                          disabled={dispute.submitting}
-                          onClick={() => submitDispute(row.rawDate, hrId)}
-                          size="sm"
-                        >
-                          {dispute.submitting ? "Sending…" : "Submit"}
-                        </Button>
-                        <Button
-                          className="flex-1"
-                          onClick={() => cancelDispute(row.rawDate)}
-                          size="sm"
-                          variant="outline"
-                        >
-                          Cancel
-                        </Button>
+                    <dl className="mt-2.5 grid grid-cols-3 gap-2">
+                      <div className="min-w-0 border border-slate-100 bg-slate-50 px-2.5 py-2">
+                        <dt className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">In</dt>
+                        <dd className="mt-0.5 text-phx-md font-bold tabular-nums text-slate-800">{row.firstPunch || "—"}</dd>
                       </div>
-                      {dispute.error && <p className="mt-1 text-xs text-red-600">{dispute.error}</p>}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+                      <div className="min-w-0 border border-slate-100 bg-slate-50 px-2.5 py-2">
+                        <dt className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">Out</dt>
+                        <dd className="mt-0.5 text-phx-md font-bold tabular-nums text-slate-800">{row.lastPunch || "—"}</dd>
+                      </div>
+                      <div className="min-w-0 border border-slate-100 bg-slate-50 px-2.5 py-2">
+                        <dt className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">Hours</dt>
+                        <dd className="mt-0.5 text-phx-md font-bold tabular-nums text-slate-800">{row.timeLong || "—"}</dd>
+                      </div>
+                    </dl>
+                    {row.deductionConfirmed && (
+                      <p className="mt-2 text-phx-sm font-bold text-rose-700">
+                        Deduction: {row.deductionDays} day{row.deductionDays !== "1" ? "s" : ""}
+                      </p>
+                    )}
+                    {row.deductionConfirmed && !row.hasException && !dispute && !disputeAlreadyPending && (
+                      <Button
+                        className="mt-2 min-h-10 w-full gap-1.5"
+                        onClick={() => openDispute(row.rawDate, row.date)}
+                        size="sm"
+                        variant="outline"
+                      >
+                        <MessageSquare className="h-3.5 w-3.5" />
+                        Dispute this day
+                      </Button>
+                    )}
+                    {dispute?.submitted && (
+                      <span className="mt-2 flex items-center gap-1 text-phx-sm font-bold text-orange-700">
+                        <ShieldCheck className="h-3.5 w-3.5" />
+                        Waiting for HR review
+                      </span>
+                    )}
+                    {dispute && !dispute.submitted && (
+                      <div className="mt-2">
+                        <textarea
+                          className={disputeTextareaClass}
+                          onChange={(e) => updateDisputeReason(row.rawDate, e.target.value)}
+                          placeholder={disputePlaceholder}
+                          rows={3}
+                          value={dispute.reason}
+                        />
+                        <div className="mt-2 grid grid-cols-2 gap-2">
+                          <Button
+                            className="min-h-10 bg-orange-600 text-white hover:bg-orange-700"
+                            disabled={dispute.submitting}
+                            onClick={() => submitDispute(row.rawDate, hrId)}
+                            size="sm"
+                          >
+                            {dispute.submitting ? "Sending…" : "Send dispute"}
+                          </Button>
+                          <Button
+                            className="min-h-10"
+                            onClick={() => cancelDispute(row.rawDate)}
+                            size="sm"
+                            variant="outline"
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                        {dispute.error && <p className="mt-1 text-phx-sm font-semibold text-rose-700">{dispute.error}</p>}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
 
-          {/* Desktop: full table */}
-          <div className="hidden overflow-x-auto md:block">
-            {(() => {
-              const showDeductionCol = rows.some((r) => r.deductionConfirmed);
-              const colSpanTotal = showDeductionCol ? 7 : 6;
-              return (
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-border">
-                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Date</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">In</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Out</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Hours</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Status</th>
-                      {showDeductionCol && (
-                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Deduction</th>
-                      )}
-                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground"></th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {rows.map((row) => {
-                      const dispute = disputes[row.rawDate];
-                      const disputeAlreadyPending = pendingDisputes > 0 && !dispute;
-                      return (
-                        <Fragment key={row.rawDate}>
-                          <tr className="hover:bg-muted/30">
-                            <td className="px-4 py-3 font-mono text-xs">{row.date}</td>
-                            <td className="px-4 py-3 text-xs">
-                              {row.firstPunch ? (
-                                <span className="flex items-center gap-1">
-                                  <Clock className="h-3 w-3 text-muted-foreground" />
-                                  {row.firstPunch}
-                                </span>
-                              ) : "—"}
-                            </td>
-                            <td className="px-4 py-3 text-xs">{row.lastPunch || "—"}</td>
-                            <td className="px-4 py-3 font-mono text-xs">{row.timeLong || "—"}</td>
-                            <td className="px-4 py-3">{statusBadge(row.status)}</td>
-                            {showDeductionCol && (
-                              <td className="px-4 py-3 text-xs">
-                                {row.deductionConfirmed ? (
-                                  <span className="font-medium text-red-600">-{row.deductionDays} day{row.deductionDays !== "1" ? "s" : ""}</span>
-                                ) : (
-                                  <span className="text-muted-foreground">—</span>
-                                )}
-                              </td>
+            {/* Tablet and desktop: one table that fits its column at every width — fixed layout
+                and a colgroup, no min-width and no sideways scroll (the fits-the-screen rule). */}
+            <div className="hidden md:block">
+              <table className="w-full table-fixed text-left text-phx-md">
+                <colgroup>
+                  <col className="w-[22%]" />
+                  <col className="w-[18%]" />
+                  <col className="w-[13%]" />
+                  <col className="w-[17%]" />
+                  {showDeductionCol ? <col className="w-[12%]" /> : null}
+                  <col className={showDeductionCol ? "w-[18%]" : "w-[30%]"} />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th className="px-3 py-2.5">Date</th>
+                    <th className="px-3 py-2.5">In · Out</th>
+                    <th className="px-3 py-2.5">Hours</th>
+                    <th className="px-3 py-2.5">Status</th>
+                    {showDeductionCol && <th className="px-3 py-2.5">Deduction</th>}
+                    <th className="px-3 py-2.5">
+                      <span className="sr-only">Actions</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {rows.map((row) => {
+                    const dispute = disputes[row.rawDate];
+                    const disputeAlreadyPending = pendingDisputes > 0 && !dispute;
+                    return (
+                      <Fragment key={row.rawDate}>
+                        <tr className="bg-white transition hover:bg-orange-50/30">
+                          <td className="px-3 py-2.5 font-bold tabular-nums text-slate-900">{row.date}</td>
+                          <td className="px-3 py-2.5 tabular-nums text-slate-700">
+                            {row.firstPunch ? (
+                              <span className="flex flex-wrap items-center gap-x-1">
+                                <Clock className="h-3 w-3 shrink-0 text-slate-400" />
+                                {row.firstPunch}
+                                <span className="text-slate-400">·</span>
+                                {row.lastPunch || "—"}
+                              </span>
+                            ) : (
+                              "—"
                             )}
-                            <td className="px-4 py-3">
-                              {row.deductionConfirmed && !row.hasException && !dispute && !disputeAlreadyPending && (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="h-7 text-xs"
-                                  onClick={() => openDispute(row.rawDate, row.date)}
-                                >
-                                  <MessageSquare className="mr-1 h-3 w-3" />
-                                  Dispute
-                                </Button>
-                              )}
-                              {dispute?.submitted && (
-                                <span className="flex items-center gap-1 text-xs text-orange-600 font-medium">
-                                  <ShieldCheck className="h-3 w-3" />
-                                  Pending review
+                          </td>
+                          <td className="px-3 py-2.5 tabular-nums text-slate-700">{row.timeLong || "—"}</td>
+                          <td className="px-3 py-2.5">{statusBadge(row.status)}</td>
+                          {showDeductionCol && (
+                            <td className="px-3 py-2.5">
+                              {row.deductionConfirmed ? (
+                                <span className="font-bold text-rose-700">
+                                  {row.deductionDays} day{row.deductionDays !== "1" ? "s" : ""}
                                 </span>
+                              ) : (
+                                <span className="text-slate-400">—</span>
                               )}
+                            </td>
+                          )}
+                          <td className="px-3 py-2.5">
+                            {row.deductionConfirmed && !row.hasException && !dispute && !disputeAlreadyPending && (
+                              <Button
+                                className="h-8 gap-1"
+                                onClick={() => openDispute(row.rawDate, row.date)}
+                                size="sm"
+                                variant="outline"
+                              >
+                                <MessageSquare className="h-3 w-3" />
+                                Dispute
+                              </Button>
+                            )}
+                            {dispute?.submitted && (
+                              <span className="flex items-center gap-1 text-phx-sm font-bold text-orange-700">
+                                <ShieldCheck className="h-3 w-3 shrink-0" />
+                                Waiting for HR
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                        {dispute && !dispute.submitted && (
+                          <tr>
+                            <td className="bg-orange-50/50 px-3 py-3" colSpan={colSpanTotal}>
+                              <div className="flex flex-col gap-2 lg:flex-row lg:items-start">
+                                <textarea
+                                  className={`${disputeTextareaClass} lg:flex-1`}
+                                  onChange={(e) => updateDisputeReason(row.rawDate, e.target.value)}
+                                  placeholder={disputePlaceholder}
+                                  rows={2}
+                                  value={dispute.reason}
+                                />
+                                <div className="flex gap-2 lg:flex-col">
+                                  <Button
+                                    className="flex-1 bg-orange-600 text-white hover:bg-orange-700"
+                                    disabled={dispute.submitting}
+                                    onClick={() => submitDispute(row.rawDate, hrId)}
+                                    size="sm"
+                                  >
+                                    {dispute.submitting ? "Sending…" : "Send dispute"}
+                                  </Button>
+                                  <Button
+                                    className="flex-1"
+                                    onClick={() => cancelDispute(row.rawDate)}
+                                    size="sm"
+                                    variant="outline"
+                                  >
+                                    Cancel
+                                  </Button>
+                                </div>
+                              </div>
+                              {dispute.error && <p className="mt-1 text-phx-sm font-semibold text-rose-700">{dispute.error}</p>}
                             </td>
                           </tr>
-                          {dispute && !dispute.submitted && (
-                            <tr key={`${row.rawDate}-dispute`}>
-                              <td colSpan={colSpanTotal} className="bg-orange-50/50 px-4 py-3">
-                                <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
-                                  <textarea
-                                    className="flex-1 rounded border border-orange-300 bg-white px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-orange-400"
-                                    placeholder="Describe why this record should be reconsidered (e.g. official visit, technical issue with device)…"
-                                    rows={2}
-                                    value={dispute.reason}
-                                    onChange={(e) => updateDisputeReason(row.rawDate, e.target.value)}
-                                  />
-                                  <div className="flex gap-2 sm:flex-col">
-                                    <Button
-                                      size="sm"
-                                      className="flex-1 bg-orange-600 text-white hover:bg-orange-700"
-                                      disabled={dispute.submitting}
-                                      onClick={() => submitDispute(row.rawDate, hrId)}
-                                    >
-                                      {dispute.submitting ? "Sending…" : "Submit"}
-                                    </Button>
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      className="flex-1"
-                                      onClick={() => cancelDispute(row.rawDate)}
-                                    >
-                                      Cancel
-                                    </Button>
-                                  </div>
-                                </div>
-                                {dispute.error && <p className="mt-1 text-xs text-red-600">{dispute.error}</p>}
-                              </td>
-                            </tr>
-                          )}
-                        </Fragment>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              );
-            })()}
-          </div>
-        </Card>
-      )}
+                        )}
+                      </Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </PortalSection>
     </div>
   );
 }

@@ -166,13 +166,21 @@ export function RepsListListBody({
  */
 export function RepsListTiles({
   board,
+  gutter = "px-5",
   list,
 }: {
   board: Pick<RepsListBoard, "activityAvailable" | "activityMonthLabel" | "activityUnvisited">;
+  /**
+   * The side padding, so the tiles line up with the blocks around them. Reps List keeps its own
+   * `px-5`; Phoenix CRM passes its `px-4 sm:px-5`, or the tiles sit 4px off its left edge on a phone.
+   */
+  gutter?: string;
   list: RepsListForRep;
 }) {
+  // Six a row from `md`: a tablet (768–1023px) has more room than a 1024px screen with the sidebar
+  // open, so it gets the same row rather than three narrower ones.
   return (
-    <div className="grid grid-cols-2 gap-2 px-5 pt-3 sm:grid-cols-3 lg:grid-cols-6">
+    <div className={`grid grid-cols-2 gap-2 pt-3 sm:grid-cols-3 md:grid-cols-6 ${gutter}`}>
       {/* The list names are the CRM's own and the owner's own — PM list, AM list,
           Pharmacist. The sub-line carries each one's share rather than a description,
           because naming what a list "is" invents a meaning the CRM never stated.

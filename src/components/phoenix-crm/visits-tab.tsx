@@ -22,7 +22,7 @@ import { ChevronLeft, ChevronRight, Plus, Search } from "lucide-react";
 import { crmPost, crmUrl, errorCodeOf, messageOf, newClientId, useCrmGet } from "@/components/phoenix-crm/api";
 import { CrmSpeak, type VoiceNoteValue } from "@/components/phoenix-crm/speak";
 import { CrmVoiceNotePlayer } from "@/components/phoenix-crm/voice-playback";
-import { cairoClock, cairoStamp, dayLabelLong, plural, shiftIsoDay } from "@/components/phoenix-crm/format";
+import { cairoClock, cairoStamp, countText, dayLabelLong, plural, shiftIsoDay } from "@/components/phoenix-crm/format";
 import {
   customerMetaText,
   listText,
@@ -123,6 +123,9 @@ function reuseWindowOver(validatedAtMs: number): boolean {
 /** The sentence describeDayWindows gives a place that does not receive on the day. */
 const NOT_RECEIVING = "Does not receive this day";
 
+/** Customers the Add Visit picker shows at a time. */
+const PICKER_PAGE = 25;
+
 const LOCATION_PILL: Record<VisitLocationFlag, { label: string; tone: PillTone }> = {
   ok: { label: "At the place", tone: "good" },
   far: { label: "Far from the place", tone: "warn" },
@@ -202,7 +205,7 @@ function AvailabilityRow({
         <button
           aria-pressed={answer === "has"}
           className={cn(
-            "min-h-9 min-w-0 break-words rounded-none border px-3 py-1 text-sm font-black transition disabled:cursor-not-allowed disabled:opacity-50",
+            "min-h-11 min-w-0 break-words rounded-none border px-3 py-1 text-sm font-black transition disabled:cursor-not-allowed disabled:opacity-50",
             answer === "has" ? "border-emerald-600 bg-emerald-600 text-white" : "border-slate-200 bg-white text-slate-600 hover:border-emerald-300",
           )}
           disabled={disabled}
@@ -214,7 +217,7 @@ function AvailabilityRow({
         <button
           aria-pressed={answer === "missing"}
           className={cn(
-            "min-h-9 min-w-0 break-words rounded-none border px-3 py-1 text-sm font-black transition disabled:cursor-not-allowed disabled:opacity-50",
+            "min-h-11 min-w-0 break-words rounded-none border px-3 py-1 text-sm font-black transition disabled:cursor-not-allowed disabled:opacity-50",
             answer === "missing" ? "border-rose-500 bg-rose-500 text-white" : "border-slate-200 bg-white text-slate-600 hover:border-rose-300",
           )}
           disabled={disabled}
@@ -307,9 +310,14 @@ function VisitCard({ visit }: { visit: VisitRow }) {
   );
 }
 
+/**
+ * Five columns totalling 100%. The photo rides in the Customer cell, under the name, rather than in a
+ * column of its own: a 10% column could not hold a 56px thumbnail at 1024px with the sidebar open, and
+ * the fits-the-screen rule fits by merging columns, never by squeezing what is in them.
+ */
 function VisitTable({ visits }: { visits: ReadonlyArray<VisitRow> }) {
   return (
-    <CrmTable columns={["11%", "21%", "22%", "22%", "14%", "10%"]}>
+    <CrmTable columns={["11%", "25%", "22%", "26%", "16%"]}>
       <thead>
         <tr>
           <th className={crmThClassName} scope="col">
@@ -327,9 +335,6 @@ function VisitTable({ visits }: { visits: ReadonlyArray<VisitRow> }) {
           <th className={crmThClassName} scope="col">
             Location
           </th>
-          <th className={crmThClassName} scope="col">
-            Photo
-          </th>
         </tr>
       </thead>
       <tbody>
@@ -344,6 +349,14 @@ function VisitTable({ visits }: { visits: ReadonlyArray<VisitRow> }) {
               <td className={crmTdClassName}>
                 <span className="block font-black text-slate-900">{visit.customerName}</span>
                 <span className="mt-0.5 block text-xs text-slate-500">{listText(visit.listType)}</span>
+                <div className="mt-2">
+                  <CrmPhotoThumb
+                    alt={`Visit photo: ${visit.customerName}`}
+                    caption={`${visit.customerName} · ${cairoStamp(visit.capturedAt)}`}
+                    className="h-14 w-14"
+                    path={visit.photoPath}
+                  />
+                </div>
               </td>
               <td className={crmTdClassName}>
                 {people.map((person) => (
@@ -382,14 +395,6 @@ function VisitTable({ visits }: { visits: ReadonlyArray<VisitRow> }) {
                   <LocationPills visit={visit} />
                 </span>
                 <span className="mt-1 block text-xs text-slate-500">{visit.locationLabel}</span>
-              </td>
-              <td className={crmTdClassName}>
-                <CrmPhotoThumb
-                  alt={`Visit photo: ${visit.customerName}`}
-                  caption={`${visit.customerName} · ${cairoStamp(visit.capturedAt)}`}
-                  className="h-14 w-14"
-                  path={visit.photoPath}
-                />
               </td>
             </tr>
           );
@@ -575,20 +580,21 @@ export function VisitsTab({
         <>
           {day.error ? <CrmLoadError message={day.error} onRetry={day.reload} /> : null}
           <CrmBlock>
+            {/* AM first, as every sentence and the Day screen say it; the figures are unchanged. */}
             <CrmStatGrid>
-              <CrmStat label="PM visited" note={plural(figures.pairedPm, "double or chain visit", "double or chain visits")} value={figures.pm} />
               <CrmStat label="AM visited" note={plural(figures.pairedAm, "double or chain visit", "double or chain visits")} value={figures.am} />
-              <CrmStat
-                label="PM flagged"
-                note="Far from the place or weak location"
-                tone={figures.flaggedPm > 0 ? "warn" : "neutral"}
-                value={figures.flaggedPm}
-              />
+              <CrmStat label="PM visited" note={plural(figures.pairedPm, "double or chain visit", "double or chain visits")} value={figures.pm} />
               <CrmStat
                 label="AM flagged"
                 note="Far from the place or weak location"
                 tone={figures.flaggedAm > 0 ? "warn" : "neutral"}
                 value={figures.flaggedAm}
+              />
+              <CrmStat
+                label="PM flagged"
+                note="Far from the place or weak location"
+                tone={figures.flaggedPm > 0 ? "warn" : "neutral"}
+                value={figures.flaggedPm}
               />
             </CrmStatGrid>
           </CrmBlock>
@@ -646,6 +652,9 @@ function CustomerPicker({
 }) {
   const [query, setQuery] = useState("");
   const [listType, setListType] = useState<"all" | PhoenixCrmListType>("all");
+  // A page at a time, as the planner's suggestions are: a territory's whole list is hundreds of
+  // buttons, and today's plan (which sorts first) is what the rep is almost always looking for.
+  const [limit, setLimit] = useState(PICKER_PAGE);
   const needle = query.trim().toLowerCase();
   const shown = customers.filter(
     (customer) =>
@@ -653,6 +662,7 @@ function CustomerPicker({
       (!needle || customer.name.toLowerCase().includes(needle) || (customer.speciality ?? "").toLowerCase().includes(needle)),
   );
   const planned = customers.filter((customer) => customer.plannedToday).length;
+  const left = shown.length - limit;
 
   return (
     <div className="grid min-w-0 gap-3">
@@ -662,7 +672,10 @@ function CustomerPicker({
           aria-label="Search customers"
           className={cn(crmInputClassName, "appearance-none pl-9")}
           disabled={disabled}
-          onChange={(event) => setQuery(event.target.value)}
+          onChange={(event) => {
+            setQuery(event.target.value);
+            setLimit(PICKER_PAGE);
+          }}
           placeholder="Search by name or speciality"
           type="search"
           value={query}
@@ -671,7 +684,10 @@ function CustomerPicker({
       <CrmChoice
         columns={3}
         label="Which customers"
-        onChange={setListType}
+        onChange={(next) => {
+          setListType(next);
+          setLimit(PICKER_PAGE);
+        }}
         options={[
           { value: "all", label: "All" },
           { value: "PM", label: "PM" },
@@ -684,7 +700,7 @@ function CustomerPicker({
         <p className="border border-dashed border-slate-200 px-3 py-4 text-center text-sm font-semibold text-slate-500">No customer matches.</p>
       ) : (
         <ul className="grid gap-1.5">
-          {shown.map((customer) => {
+          {shown.slice(0, limit).map((customer) => {
             const selected = customer.customerId === selectedId;
             return (
               <li key={customer.customerId}>
@@ -721,6 +737,15 @@ function CustomerPicker({
           })}
         </ul>
       )}
+      {/* The same words as every "show more" in the module (CrmShowMore); inline here, because the
+          picker already sits inside the step's padded block. */}
+      {left > 0 ? (
+        <div>
+          <CrmButton onClick={() => setLimit((current) => current + PICKER_PAGE)} size="sm">
+            Show {countText(Math.min(PICKER_PAGE, left))} more of the {countText(left)} left
+          </CrmButton>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1248,7 +1273,7 @@ function AddVisit({
         {placePhoto ? (
           <div className="grid gap-2">
             <span className="block w-full overflow-hidden rounded-none border border-slate-200 bg-slate-950">
-              <ZoomablePhoto alt="The photo taken to validate this customer" className="block max-h-[50vh] w-full object-contain" src={placePhoto.previewUrl} />
+              <ZoomablePhoto alt="The photo taken to validate this customer" className="block max-h-[50svh] w-full object-contain" src={placePhoto.previewUrl} />
             </span>
             <p className="break-words text-xs font-semibold text-slate-600">{placePhoto.locationLabel}</p>
             <CrmNote tone="info">The photo you took to validate this customer stands for this visit when you save within 30 minutes of validating.</CrmNote>

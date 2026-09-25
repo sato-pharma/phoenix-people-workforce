@@ -36,7 +36,20 @@ const DEFAULT_EXTRA_TABS: ReadonlyArray<CrmExtraTab> = [
 /** One tab bar for the whole CRM hub — raw datasets + the two derived views — so switching between
  * "look at the raw mirror" and "resolve an identity" / "review recovered chains" never hides the
  * other destinations. Lives above whichever content the page renders for the active tab. */
-export function CrmTabBar({ active, extraTabs = DEFAULT_EXTRA_TABS }: { active: CrmActiveTab; extraTabs?: ReadonlyArray<CrmExtraTab> }) {
+export function CrmTabBar({
+  active,
+  extraTabs = DEFAULT_EXTRA_TABS,
+  surface = "admin",
+}: {
+  active: CrmActiveTab;
+  extraTabs?: ReadonlyArray<CrmExtraTab>;
+  /**
+   * `portal` (the employee-portal CRM only) lays the tabs on an even GRID — two across on a phone,
+   * four from `sm` — with no icon on each. Eight bordered buttons that all carried the same database
+   * icon wrapped into four to six ragged rows on a phone. `admin` (the default) is unchanged.
+   */
+  surface?: "admin" | "portal";
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -64,6 +77,31 @@ export function CrmTabBar({ active, extraTabs = DEFAULT_EXTRA_TABS }: { active: 
       params.set("dataset", tab);
     }
     startTransition(() => router.push(`${pathname}?${params.toString()}`));
+  }
+
+  if (surface === "portal") {
+    return (
+      <div className="grid grid-cols-2 border-l border-t border-slate-200 bg-white sm:grid-cols-4">
+        {[...CRM_MASTER_DATASETS, ...extraTabs].map((tab) => {
+          const isActive = activeDisplay === tab.id;
+          const isLoading = isPending && pendingTab === tab.id;
+          return (
+            <button
+              aria-pressed={isActive}
+              className={`flex min-h-10 min-w-0 items-center justify-center gap-1.5 border-b border-r border-slate-200 px-2 py-2 text-center text-xs font-bold transition ${
+                isActive ? "bg-orange-600 text-white" : "bg-white text-slate-600 hover:bg-slate-50"
+              }`}
+              key={tab.id}
+              onClick={() => switchTo(tab.id)}
+              type="button"
+            >
+              {isLoading ? <Loader2 aria-hidden="true" className="h-3.5 w-3.5 shrink-0 animate-spin" /> : null}
+              <span className="min-w-0 break-words">{tab.label}</span>
+            </button>
+          );
+        })}
+      </div>
+    );
   }
 
   return (

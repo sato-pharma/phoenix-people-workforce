@@ -10,6 +10,7 @@ import { runSalesExportGeneratedStampCairoTests } from "./sales-export-generated
 import { runExportEmailGeneratedStampCairoTests } from "./export-email-generated-stamp-cairo.test.ts";
 import { runEmployee360VisitClassificationTests } from "./employee-360-visit-classification.test.ts";
 import { runEmployee360DoubleVisitCountTests } from "./employee-360-double-visit-count.test.ts";
+import { runEmployee360PeriodCairoTests } from "./employee-360-period-cairo.test.ts";
 import { runErrorMonitorNewIssueDiffTests } from "./error-monitor-new-issue-diff.test.ts";
 import { runOutstationReviewMapRasterTests } from "./outstation-review-map-raster.test.ts";
 import { runErrorMonitorDerivedStatusTests } from "./error-monitor-derived-status.test.ts";
@@ -934,6 +935,7 @@ import { runVacationReportFilterEquivalenceTests } from "./vacation-report-filte
 import { runVacationBalanceReservesPendingTests } from "./vacation-balance-reserves-pending.test.ts";
 import { runVacationEntitlementsBalanceIgnoresFiltersTests } from "./vacation-entitlements-balance-ignores-filters.test.ts";
 import { runPortalHomeAnnualLeaveLeftTests } from "./portal-home-annual-leave-left.test.ts";
+import { runPortalHomeAnnualLeaveLeftRmStandardTests } from "./portal-home-annual-leave-left-rm-standard.test.ts";
 import { runCsrfRouteCoverageTests } from "./csrf-route-coverage.test.ts";
 import { runContractRenewalHardeningTests } from "./contract-renewal-hardening.test.ts";
 import { runCronAuthSingleGuardTests } from "./cron-auth-single-guard.test.ts";
@@ -1532,6 +1534,7 @@ import { runPhoenixCrmPendingCustomerTests } from "./phoenix-crm-pending-custome
 import { runPhoenixCrmCustomerListBoardTests } from "./phoenix-crm-customer-list-board.test.ts";
 import { runPhoenixCrmDoctorsDirectoryTests } from "./phoenix-crm-doctors-directory.test.ts";
 import { runPhoenixCrmPlaceLocationFrozenTests } from "./phoenix-crm-place-location-frozen.test.ts";
+import { runPhoenixCrmRetiredPilotRedirectTests } from "./phoenix-crm-retired-pilot-redirect.test.ts";
 import { runPhoenixCrmLocationIntegrityTests } from "./phoenix-crm-location-integrity.test.ts";
 import { runPhoenixCrmPortalSidebarTests } from "./phoenix-crm-portal-sidebar.test.ts";
 import { runPhoenixCrmAmPmWordTests } from "./phoenix-crm-am-pm-words.test.ts";
@@ -1747,6 +1750,7 @@ import { runWeeklySalesFitsTheScreenTests } from "./weekly-sales-fits-the-screen
 
 import { runEarlyBirdsFortnightCardWrapsTests } from "./early-birds-fortnight-card-wraps.test.ts";
 import { runEarlyBirdsBoardWrapsTests } from "./early-birds-board-wraps.test.ts";
+import { runMyVisitsTablesFitTests } from "./my-visits-tables-fit.test.ts";
 import { runPortalChromeNeverClipsTextTests } from "./portal-chrome-never-clips-text.test.ts";
 import { runShellChromeOverflowsTests } from "./shell-chrome-overflows.test.ts";
 import { runPortalRailScrollsNeverSquashesTests } from "./portal-rail-scrolls-never-squashes.test.ts";
@@ -3787,6 +3791,11 @@ await runTest(
   + "getEmployeeAnnualLeaveBalanceDays/buildEmployeeEligibilityRows), not the raw entitlement",
   runPortalHomeAnnualLeaveLeftTests,
 );
+await runTest(
+  "portal home RM and Standard (DSM/NSM/etc.) tiles also show annual leave LEFT via "
+  + "leaveDaysRemaining, not the raw entitlement — PmGpmCommandCenter keeps its own",
+  runPortalHomeAnnualLeaveLeftRmStandardTests,
+);
 await runTest("csrf route coverage", runCsrfRouteCoverageTests);
 await runTest("contract renewal hardening", runContractRenewalHardeningTests);
 await runTest(
@@ -5083,6 +5092,11 @@ await runTest(
 );
 
 await runTest(
+  "The retired Phoenix CRM pilot forwards to the live field app (owner, 2026-09-25 — /employee-portals/phoenix-crm and /admin/phoenix-crm render nothing and land on the field app's tab doing the same work: Visits → visits, Planning → plan, KPIs → reports; the rep's notices open the field app)",
+  runPhoenixCrmRetiredPilotRedirectTests,
+);
+
+await runTest(
   "Phoenix CRM catches a mock location app silently (owner, 2026-09-25: \"close this hole without reps knowing\" — Android's own mock-provider flag plus server-side replay, physics, jitter and precision checks; an honest rep in one building all morning is never flagged, a confessed mock location still SAVES with no message of any kind, and no rep-facing screen reads the verdict)",
   runPhoenixCrmLocationIntegrityTests,
 );
@@ -5958,6 +5972,10 @@ await runTest("stars of the fortnight card wraps on a phone (no whitespace-nowra
 await runTest(
   "early birds board wraps and stays square (winner names break, no fixed-width hall-of-fame column, no rounded corner)",
   runEarlyBirdsBoardWrapsTests,
+);
+await runTest(
+  "My Visits fits the screen (Medical Rep portal): four desktop tables are w-full table-fixed with a colgroup matching their heads and totalling 100%, never PortalDesktopTable's min-width scroll box, every cell wraps, and the tab strip is an equal grid with the label over its count — no whitespace-nowrap, no ellipsis, no Customer column, the UTC date pin kept",
+  runMyVisitsTablesFitTests,
 );
 await runTest(
   "portal chrome never clips text (header role label, MM intel tiles, GlanceStrip columns)",
@@ -6974,6 +6992,10 @@ await runTest(
 await runTest(
   "Phoenix CRM dictation, measured against the corpus: the corrector is run over every word the field force writes near a product name, with the number of words it changes pinned exactly — so a widened vocabulary goes red with the old count and the new one side by side, rather than silently rewriting more of a clinical record. No competitor's drug and no token carrying a dose is ever touched, and the only thing it can emit is a canonical product name behind the rep's own prefix",
   runPhoenixCrmDictationCorpusTests,
+);
+await runTest(
+  "Employee 360 period resolution follows the Cairo calendar (today, This month, quarter and YTD all resolve off currentCairoDateOnlyIso, not the server's UTC clock)",
+  runEmployee360PeriodCairoTests,
 );
 await runTest(
   "territory sync panel: lastSyncedBy is resolved to a name (never the raw login/HR id, with a system: actor and an unresolvable one both named in words), and the per-line reconciliation chips are gated behind showReconciliation — derived from isTerritoryLinePickerRole (Super Admin, CEO) — while canRun stays unconditional for every Territory Drilldown role",

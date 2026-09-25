@@ -26,7 +26,9 @@ import {
   CalendarClock,
   CalendarDays,
   Car,
+  CheckCircle2,
   ClipboardList,
+  Clock,
   Eye,
   EyeOff,
   Info,
@@ -55,6 +57,13 @@ import { cardHoverClass } from "@/components/ui/motion";
 import {
   PayrollPayslipsSection,
 } from "@/components/employee-portal/dashboard/payroll-payslips-section";
+import {
+  PortalEmptyState,
+  PortalMetricCard,
+  PortalRecordCard,
+  PortalSection,
+  PortalSkeleton,
+} from "@/components/employee-portal/portal-primitives";
 import { SalesPerformanceSection } from "@/components/employee-portal/dashboard/sales-performance-section";
 import { formatDateOnly } from "@/lib/date-only";
 import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
@@ -1002,7 +1011,7 @@ function IncentiveSalaryVisibilityToggle({
     <button
       aria-label={label}
       aria-pressed={isSalaryVisible}
-      className="inline-flex h-8 w-8 items-center justify-center rounded border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-600 focus-visible:outline-2 focus-visible:outline-orange-500 focus-visible:outline-offset-1"
+      className="inline-flex h-10 w-10 items-center justify-center rounded border border-slate-200 bg-white text-slate-500 sm:h-8 sm:w-8 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-600 focus-visible:outline-2 focus-visible:outline-orange-500 focus-visible:outline-offset-1"
       onClick={onToggleSalaryVisibility}
       title={label}
       type="button"
@@ -1052,7 +1061,7 @@ function IncentiveSimulatorCard({
 
   return (
     <Card className="rounded border border-slate-200 bg-white shadow-[0_8px_20px_rgba(15,23,42,0.04)]">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 sm:px-5">
         <div className="flex items-center gap-2">
           <span className="h-1.5 w-1.5 rounded-sm bg-orange-500" />
           <h3 className="text-phx-lg font-bold tracking-tight text-slate-900">Simulate Achievement</h3>
@@ -1063,7 +1072,7 @@ function IncentiveSimulatorCard({
         />
       </div>
 
-      <div className="space-y-4 p-5">
+      <div className="space-y-4 p-4 sm:p-5">
         {/* Slider */}
         <div>
           <div className="flex items-center justify-between">
@@ -1173,7 +1182,7 @@ function IncentivePayoutCurveChart({
 
   return (
     <Card className="rounded border border-slate-200 bg-white shadow-[0_8px_20px_rgba(15,23,42,0.04)]">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 sm:px-5">
         <div className="flex items-center gap-2">
           <span className="h-1.5 w-1.5 rounded-sm bg-orange-500" />
           <h3 className="text-phx-lg font-bold tracking-tight text-slate-900">Performance Payout Curve</h3>
@@ -1617,7 +1626,7 @@ function PediaIncentiveSimulatorCard({
 
   return (
     <Card className="rounded border border-slate-200 bg-white shadow-[0_8px_20px_rgba(15,23,42,0.04)]">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 sm:px-5">
         <div className="flex items-center gap-2">
           <span className="h-1.5 w-1.5 rounded-sm bg-orange-500" />
           <h3 className="text-phx-lg font-bold tracking-tight text-slate-900">Simulate Achievement</h3>
@@ -1628,7 +1637,7 @@ function PediaIncentiveSimulatorCard({
         />
       </div>
 
-      <div className="space-y-4 p-5">
+      <div className="space-y-4 p-4 sm:p-5">
         <p className="rounded border border-slate-100 bg-slate-50/60 px-3 py-2 text-phx-xs leading-relaxed text-slate-500">
           Your two halves are scored separately, so move both. One month of basic salary is paid on
           your Sato achievement and one month on your total achievement.
@@ -1974,7 +1983,7 @@ export function EmployeePortalIncentivePage({ data }: { data: MedicalRepPortalDa
           scored on five months while a colleague is scored on six. Saying so, with the month named,
           is the difference between a provisional figure and a wrong promise. */}
       {data.sales.incentiveWindowNotice ? (
-        <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-phx-md font-semibold text-amber-900">
+        <div className="rounded border border-amber-300 bg-amber-50 px-4 py-3 text-phx-md font-semibold text-amber-900">
           {data.sales.incentiveWindowNotice}
         </div>
       ) : null}
@@ -2814,49 +2823,18 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [alertNotDelivered, setAlertNotDelivered] = useState(false);
   const [recentRequests, setRecentRequests] = useState<SupportRequestRow[]>([]);
   const [isLoadingRequests, setIsLoadingRequests] = useState(true);
   const successTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const draftRestoredRef = useRef(false);
 
-  const hrTeam: {
-    id: string;
-    name: string;
-    role: string;
-    summary: string;
-    accent: string;
-    email: string;
-    whatsapp: string;
-  }[] = [
-    {
-      accent: "border-l-orange-400",
-      email: "hr-support@phoenix.local",
-      id: "hr-support",
-      name: "HR Support Desk",
-      role: "General HR support",
-      summary: "Policy questions, profile issues, and HR process support.",
-      whatsapp: "201000000001",
-    },
-    {
-      accent: "border-l-sky-400",
-      email: "talent-support@phoenix.local",
-      id: "talent-support",
-      name: "Talent Support Desk",
-      role: "Recruitment & onboarding",
-      summary: "Onboarding status, hiring requests, and talent coordination.",
-      whatsapp: "201000000002",
-    },
-    {
-      accent: "border-l-emerald-400",
-      email: "ops-support@phoenix.local",
-      id: "ops-support",
-      name: "Operations Support Desk",
-      role: "Workplace & office support",
-      summary: "Office coordination, workplace requests, and operational help.",
-      whatsapp: "201000000003",
-    },
-  ];
+  // There used to be three "support desks" here, each with an Email and a WhatsApp button. Their
+  // addresses were placeholders on a non-existent domain and a dummy phone number — a rep who
+  // tapped one wrote to nobody. Every request goes through the form below instead: it is saved,
+  // HR is alerted in-app, by email and on Telegram, and the rep can follow it in the list.
+  // (Pinned by tests/employee-portal-navigation.test.ts.)
 
   /* -------- Load recent requests on mount -------- */
   useEffect(() => {
@@ -3000,6 +2978,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitError(null);
+    setAlertNotDelivered(false);
     setIsSubmitting(true);
     try {
       const response = await fetch("/api/support/requests", {
@@ -3021,6 +3000,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
       const payload = (await response.json().catch(() => ({}))) as {
         item?: SupportRequestRow;
         message?: string;
+        notification?: { recipientCount?: number };
       };
       if (!response.ok) {
         throw new Error(
@@ -3030,6 +3010,9 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
       if (payload.item) {
         setRecentRequests((prev) => [payload.item as SupportRequestRow, ...prev]);
       }
+      // The request is saved either way; say so plainly when no one could be alerted, rather
+      // than letting the rep believe HR already has it in front of them.
+      setAlertNotDelivered(payload.notification?.recipientCount === 0);
       setShowSuccess(true);
       setCategory("");
       setSubcategory("");
@@ -3044,7 +3027,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
           // ignore
         }
       }
-      successTimeoutRef.current = setTimeout(() => setShowSuccess(false), 4000);
+      successTimeoutRef.current = setTimeout(() => setShowSuccess(false), 6000);
     } catch (error) {
       setSubmitError(
         error instanceof Error
@@ -3056,180 +3039,61 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
     }
   };
 
-  const getStatusTone = (status: string) => {
-    switch (status) {
-      case "In Progress":
-        return "bg-amber-50 text-amber-700";
-      case "Resolved":
-        return "bg-emerald-50 text-emerald-700";
-      case "Closed":
-        return "bg-slate-100 text-slate-600";
-      case "Pending":
-        return "bg-sky-50 text-sky-700";
-      default:
-        return "bg-slate-100 text-slate-600";
-    }
-  };
-
+  const openCount = recentRequests.filter((request) => request.status === "Pending" || request.status === "In Progress").length;
+  const resolvedCount = recentRequests.filter((request) => request.status === "Resolved" || request.status === "Closed").length;
   const lastTicket = recentRequests[0] ?? null;
   const descriptionCount = description.length;
   const descriptionOverSoftLimit = descriptionCount > DESCRIPTION_SOFT_LIMIT;
 
-  const cardShadow = "shadow-[0_1px_3px_rgba(15,23,42,0.06)]";
   const inputClass =
-    "h-10 w-full rounded border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-orange-300 focus:shadow-[0_0_0_3px_rgba(249,115,22,0.08)]";
-  const labelClass = "text-phx-2xs font-semibold uppercase tracking-wider text-slate-500";
+    "h-11 w-full rounded border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-orange-300 focus:shadow-[0_0_0_3px_rgba(249,115,22,0.08)] sm:h-10";
+  const labelClass = "text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500";
 
   return (
     <div className="space-y-5" dir="auto">
-      {/* ---- Insights strip (response time / channels / hours) ---- */}
-      <Card
-        className={`overflow-hidden rounded border border-slate-100 p-0 print:break-inside-avoid ${cardShadow}`}
-      >
-        <div className="grid grid-cols-1 divide-x divide-y divide-slate-100 sm:grid-cols-3">
-          <div className="border-l-2 border-l-emerald-400 px-4 py-3">
-            <p className={labelClass}>Avg response time</p>
-            <p className="mt-1 text-base font-bold text-slate-800">~ 4 hours</p>
-            <p className="mt-0.5 text-phx-xs text-slate-500">During office hours</p>
-          </div>
-          <div className="border-l-2 border-l-sky-400 px-4 py-3">
-            <p className={labelClass}>Channels open</p>
-            <p className="mt-1 text-base font-bold text-slate-800">{hrTeam.length}</p>
-            <p className="mt-0.5 text-phx-xs text-slate-500">HR support desks</p>
-          </div>
-          <div className="border-l-2 border-l-orange-400 px-4 py-3">
-            <p className={labelClass}>Office hours</p>
-            <p className="mt-1 text-base font-bold text-slate-800">Sun&ndash;Thu</p>
-            <p className="mt-0.5 text-phx-xs text-slate-500">9:00 AM &mdash; 5:00 PM</p>
-          </div>
-        </div>
-      </Card>
-
-      <div className="grid gap-5 lg:grid-cols-2">
-        {/* ---- HR Channels ---- */}
-        <Card
-          className={`overflow-hidden rounded border border-slate-100 p-0 ${cardShadow}`}
-        >
-          <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3 sm:px-5">
-            <div className="flex items-center gap-2">
-              <span aria-hidden className="h-1.5 w-1.5 rounded-sm bg-orange-500" />
-              <div>
-                <h2 className="text-sm font-bold text-slate-800">HR Support Channels</h2>
-                <p className="mt-0.5 text-phx-xs text-slate-500">
-                  Pick the right desk for your request
-                </p>
-              </div>
-            </div>
-            <span className="rounded bg-orange-50 px-2 py-1 text-phx-2xs font-bold uppercase tracking-wider text-orange-600">
-              {hrTeam.length}
+      {/* ---- The rep's own tickets, in numbers (every panel prints a measurement) ---- */}
+      <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+        <PortalMetricCard
+          accent="sky"
+          icon={Clock}
+          label="Open"
+          note="Waiting for HR or in progress"
+          value={isLoadingRequests ? "—" : openCount}
+        />
+        <PortalMetricCard
+          accent="emerald"
+          icon={CheckCircle2}
+          label="Resolved"
+          note="Answered and closed"
+          value={isLoadingRequests ? "—" : resolvedCount}
+        />
+        <PortalMetricCard
+          accent="orange"
+          icon={Send}
+          label="Sent"
+          note="Your requests on record"
+          value={isLoadingRequests ? "—" : recentRequests.length}
+        />
+        <PortalMetricCard
+          accent="slate"
+          icon={CalendarClock}
+          label="Last sent"
+          note={lastTicket ? lastTicket.status : "No request yet"}
+          value={
+            <span className="text-base leading-tight">
+              {lastTicket ? formatRequestDate(lastTicket.createdAt) : "—"}
             </span>
-          </div>
+          }
+        />
+      </div>
 
-          <div className="divide-y divide-slate-100">
-            {hrTeam.length > 0 ? (
-              hrTeam.map((member) => (
-                <div
-                  className={`border-l-2 px-4 py-3 transition hover:bg-slate-50/60 sm:px-5 ${member.accent}`}
-                  key={member.id}
-                >
-                  <div className="flex items-start gap-3">
-                    <span
-                      aria-hidden
-                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded bg-slate-100 text-phx-xs font-bold text-slate-700"
-                    >
-                      {member.name
-                        .split(" ")
-                        .slice(0, 2)
-                        .map((n) => n[0])
-                        .join("")
-                        .toUpperCase()}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-phx-md font-semibold text-slate-900">
-                        {member.name}
-                      </p>
-                      <p className="mt-0.5 text-phx-xs font-medium text-slate-500">
-                        {member.role}
-                      </p>
-                      <p className="mt-1 text-phx-xs leading-relaxed text-slate-500">
-                        {member.summary}
-                      </p>
-                      {/* Quick-action chips */}
-                      <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                        <button
-                          aria-label={`Use support form for ${member.name}`}
-                          className="inline-flex h-7 items-center gap-1 rounded bg-orange-500 px-2 text-phx-xs font-semibold text-white shadow-sm transition hover:bg-orange-600"
-                          onClick={() => {
-                            setCategory("HR Request");
-                            setSubject(`${member.name} request`);
-                          }}
-                          type="button"
-                        >
-                          <Send className="h-3 w-3" />
-                          Use form
-                        </button>
-                        <a
-                          aria-label={`Email ${member.name}`}
-                          className="inline-flex h-7 items-center gap-1 rounded border border-slate-200 bg-white px-2 text-phx-xs font-semibold text-slate-700 shadow-sm transition hover:border-orange-200 hover:text-orange-600"
-                          href={`mailto:${member.email}?subject=${encodeURIComponent(
-                            `Phoenix Workforce - ${employeeName}`,
-                          )}`}
-                          rel="noopener noreferrer"
-                        >
-                          Email
-                        </a>
-                        <a
-                          aria-label={`WhatsApp ${member.name}`}
-                          className="inline-flex h-7 items-center gap-1 rounded border border-slate-200 bg-white px-2 text-phx-xs font-semibold text-emerald-700 shadow-sm transition hover:border-emerald-300 hover:bg-emerald-50"
-                          href={`https://wa.me/${member.whatsapp}?text=${encodeURIComponent(
-                            `Hello ${member.name}, this is ${employeeName} (Phoenix Workforce).`,
-                          )}`}
-                          rel="noopener noreferrer"
-                          target="_blank"
-                        >
-                          WhatsApp
-                        </a>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <div className="flex flex-col items-center justify-center px-4 py-10 text-center">
-                <p className="text-phx-sm font-semibold uppercase tracking-wider text-slate-400">
-                  No HR contacts available
-                </p>
-                <p className="mt-1 text-phx-sm text-slate-500">
-                  Please use the support form for inquiries.
-                </p>
-              </div>
-            )}
-          </div>
-
-          <div className="border-t border-slate-100 bg-slate-50/60 px-4 py-2.5 text-phx-xs text-slate-500 sm:px-5">
-            For urgent HR matters, use the support form so the request is tracked inside Phoenix Workforce.
-          </div>
-        </Card>
-
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
         {/* ---- Request Form ---- */}
-        <Card
-          className={`overflow-hidden rounded border border-slate-100 p-0 ${cardShadow}`}
+        <PortalSection
+          description="Tell HR what you need. Your draft is kept on this device until you send it."
+          eyebrow="New request"
+          title="Request Support"
         >
-          <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3 sm:px-5">
-            <div className="flex items-center gap-2">
-              <span aria-hidden className="h-1.5 w-1.5 rounded-sm bg-orange-500" />
-              <div>
-                <h2 className="text-sm font-bold text-slate-800">Request Support</h2>
-                <p className="mt-0.5 text-phx-xs text-slate-500">
-                  We get back to you as soon as possible
-                </p>
-              </div>
-            </div>
-            <span className="hidden whitespace-nowrap rounded bg-slate-100 px-2 py-1 text-phx-2xs font-bold uppercase tracking-wider text-slate-600 sm:inline-block">
-              {employeeName}
-            </span>
-          </div>
-
           <form
             aria-busy={isSubmitting}
             className="space-y-4 px-4 py-4 sm:px-5 sm:py-5"
@@ -3238,61 +3102,69 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
             {showSuccess && (
               <div
                 aria-live="polite"
-                className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-phx-sm font-semibold text-emerald-800"
+                className="flex items-start gap-2 rounded border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-phx-sm font-semibold text-emerald-800"
                 role="status"
               >
-                Request submitted successfully.
+                <CheckCircle2 aria-hidden className="mt-0.5 h-4 w-4 shrink-0" />
+                <span className="min-w-0 break-words">
+                  Request submitted successfully.
+                  {alertNotDelivered
+                    ? " HR could not be alerted automatically, but your request is saved and waiting in their queue."
+                    : " HR has been alerted and you can follow it below."}
+                </span>
               </div>
             )}
             {submitError && (
               <div
                 aria-live="polite"
-                className="rounded border border-rose-200 bg-rose-50 px-3 py-2 text-phx-sm font-semibold text-rose-700"
+                className="rounded border border-rose-200 bg-rose-50 px-3 py-2.5 text-phx-sm font-semibold text-rose-700"
                 role="status"
               >
-                {submitError}
+                <span className="break-words">{submitError}</span>
               </div>
             )}
 
-            <label className="block">
-              <span className={`mb-1.5 block ${labelClass}`}>Category</span>
-              <SearchableSelect
-                aria-label="Support category"
-                className={inputClass}
-                onChange={(e) => handleCategoryChange(e.target.value)}
-                required
-                value={category}
-              >
-                <option value="">Select a category</option>
-                <option value="Payslip & Earnings">Payslip & Earnings</option>
-                <option value="System Issue">System Issue</option>
-                <option value="HR Request">HR Request</option>
-                <option value="Other">Other</option>
-              </SearchableSelect>
-            </label>
-
-            {/* Conditional sub-category - only when "HR Request" is selected */}
-            {category === "HR Request" && (
+            <div className="grid gap-4 sm:grid-cols-2">
               <label className="block">
-                <span className={`mb-1.5 block ${labelClass}`}>
-                  HR Request type
-                </span>
+                <span className={`mb-1.5 block ${labelClass}`}>Category</span>
                 <SearchableSelect
-                  aria-label="HR request subcategory"
+                  aria-label="Support category"
                   className={inputClass}
-                  onChange={(e) => setSubcategory(e.target.value)}
+                  onChange={(e) => handleCategoryChange(e.target.value)}
                   required
-                  value={subcategory}
+                  value={category}
                 >
-                  <option value="">Select an HR request type</option>
-                  {hrRequestSubcategories.map((opt) => (
-                    <option key={opt} value={opt}>
-                      {opt}
-                    </option>
-                  ))}
+                  <option value="">Select a category</option>
+                  <option value="Payslip & Earnings">Payslip & Earnings</option>
+                  <option value="System Issue">System Issue</option>
+                  <option value="HR Request">HR Request</option>
+                  <option value="Other">Other</option>
                 </SearchableSelect>
               </label>
-            )}
+
+              {/* Conditional sub-category - only when "HR Request" is selected */}
+              {category === "HR Request" ? (
+                <label className="block">
+                  <span className={`mb-1.5 block ${labelClass}`}>
+                    HR Request type
+                  </span>
+                  <SearchableSelect
+                    aria-label="HR request subcategory"
+                    className={inputClass}
+                    onChange={(e) => setSubcategory(e.target.value)}
+                    required
+                    value={subcategory}
+                  >
+                    <option value="">Select an HR request type</option>
+                    {hrRequestSubcategories.map((opt) => (
+                      <option key={opt} value={opt}>
+                        {opt}
+                      </option>
+                    ))}
+                  </SearchableSelect>
+                </label>
+              ) : null}
+            </div>
 
             <label className="block">
               <span className={`mb-1.5 block ${labelClass}`}>Subject</span>
@@ -3307,11 +3179,11 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
             </label>
 
             <label className="block">
-              <div className="mb-1.5 flex items-center justify-between">
+              <div className="mb-1.5 flex items-center justify-between gap-2">
                 <span className={labelClass}>Description</span>
                 <span
                   aria-live="polite"
-                  className={`text-phx-2xs font-semibold ${
+                  className={`text-phx-2xs font-semibold tabular-nums ${
                     descriptionOverSoftLimit ? "text-rose-600" : "text-slate-400"
                   }`}
                 >
@@ -3320,13 +3192,13 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
               </div>
               <textarea
                 aria-label="Support description"
-                className={`w-full resize-none rounded border bg-white px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-orange-300 focus:shadow-[0_0_0_3px_rgba(249,115,22,0.08)] ${
+                className={`w-full resize-y rounded border bg-white px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-orange-300 focus:shadow-[0_0_0_3px_rgba(249,115,22,0.08)] ${
                   descriptionOverSoftLimit ? "border-rose-300" : "border-slate-200"
                 }`}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Describe your issue or request in detail..."
                 required
-                rows={4}
+                rows={5}
                 value={description}
               />
               {descriptionOverSoftLimit && (
@@ -3352,38 +3224,40 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
               />
               <button
                 aria-label="Choose files to attach"
-                className="flex w-full cursor-pointer flex-col items-center justify-center rounded border border-dashed border-slate-300 bg-slate-50/40 px-3 py-3 text-center transition hover:border-orange-300 hover:bg-slate-50/80"
+                className="flex min-h-16 w-full cursor-pointer flex-col items-center justify-center rounded border border-dashed border-slate-300 bg-slate-50/40 px-3 py-3 text-center transition hover:border-orange-300 hover:bg-slate-50/80"
                 onClick={() => fileInputRef.current?.click()}
                 type="button"
               >
                 <Upload className="mb-1 h-4 w-4 text-slate-400" />
-                <p className="text-phx-xs font-medium text-slate-600">
-                  Click to choose files or drop them here
+                <p className="text-phx-xs font-semibold text-slate-600">
+                  Tap to choose files
                 </p>
                 <p className="text-phx-2xs text-slate-400">
                   Max 10 MB each &middot; up to 10 files &middot; PDF, PNG, JPG
                 </p>
               </button>
               {attachments.length > 0 && (
-                <ul className="mt-2 flex flex-wrap gap-1.5">
+                <ul className="mt-2 grid gap-1.5">
                   {attachments.map((file) => (
                     <li
-                      className="inline-flex items-center gap-1.5 rounded border border-orange-200 bg-orange-50 px-2 py-1 text-phx-xs font-medium text-orange-800"
+                      className="flex min-w-0 items-center gap-2 rounded border border-orange-200 bg-orange-50 py-1 pl-2.5 pr-1 text-phx-xs font-medium text-orange-800"
                       key={`${file.name}-${file.size}`}
                     >
-                      <span className="whitespace-nowrap" title={file.name}>
+                      {/* A phone camera's file name is one unbroken token; it breaks anywhere
+                          rather than pushing the row past the card. */}
+                      <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">
                         {file.name}
                       </span>
-                      <span className="text-phx-2xs text-orange-600">
+                      <span className="shrink-0 text-phx-2xs tabular-nums text-orange-600">
                         {formatFileSize(file.size)}
                       </span>
                       <button
                         aria-label={`Remove ${file.name}`}
-                        className="text-orange-500 transition hover:text-orange-700"
+                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center text-orange-500 transition hover:bg-orange-100 hover:text-orange-700"
                         onClick={() => removeAttachment(file.name, file.size)}
                         type="button"
                       >
-                        <X aria-hidden className="h-3.5 w-3.5" />
+                        <X aria-hidden className="h-4 w-4" />
                       </button>
                     </li>
                   ))}
@@ -3393,7 +3267,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
 
             <Button
               aria-label="Submit support request"
-              className="h-10 w-full rounded text-sm font-semibold"
+              className="h-11 w-full rounded text-sm font-semibold"
               disabled={isSubmitting}
               type="submit"
             >
@@ -3407,130 +3281,111 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
               )}
             </Button>
           </form>
-        </Card>
+        </PortalSection>
+
+        {/* ---- What happens next (replaces the placeholder "desks") ---- */}
+        <PortalSection eyebrow="How it works" title="What happens next">
+          <ol className="divide-y divide-slate-100">
+            {[
+              {
+                body: "Pick a category and describe what you need. Attach a document or a screenshot if it helps.",
+                title: "You send the request",
+              },
+              {
+                body: "HR is alerted the moment it is saved, in the app, by email and on Telegram.",
+                title: "HR picks it up",
+              },
+              {
+                body: "Its status changes here from Pending to In Progress, then Resolved. Check back any time.",
+                title: "You follow it here",
+              },
+            ].map((step, index) => (
+              <li className="flex gap-3 px-4 py-3.5 sm:px-5" key={step.title}>
+                <span
+                  aria-hidden
+                  className="flex h-8 w-8 shrink-0 items-center justify-center bg-slate-900 text-phx-sm font-black tabular-nums text-orange-300"
+                >
+                  {index + 1}
+                </span>
+                <div className="min-w-0">
+                  <p className="text-phx-md font-bold text-slate-900">{step.title}</p>
+                  <p className="mt-0.5 break-words text-phx-sm leading-relaxed text-slate-500">{step.body}</p>
+                </div>
+              </li>
+            ))}
+          </ol>
+          <div className="border-t border-slate-100 bg-slate-50/60 px-4 py-3 text-phx-xs font-semibold text-slate-500 sm:px-5">
+            For anything urgent, still send it here, so the request is tracked and nothing is lost.
+          </div>
+        </PortalSection>
       </div>
 
-      {/* ---- Last Ticket (pinned) - only when at least one exists ---- */}
-      {lastTicket && (
-        <Card
-          className={`overflow-hidden rounded border border-slate-100 p-0 ${cardShadow}`}
-        >
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-slate-50/40 px-4 py-2 sm:px-5">
-            <span className="rounded bg-orange-50 px-2 py-1 text-phx-2xs font-bold uppercase tracking-wider text-orange-600">
-              Your latest ticket
-            </span>
-            <span
-              className={`inline-flex rounded px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wider ${getStatusTone(lastTicket.status)}`}
-            >
-              {lastTicket.status}
-            </span>
-          </div>
-          <div className="border-l-2 border-l-orange-400 px-4 py-3 sm:px-5">
-            <p className="text-phx-md font-bold text-slate-900">
-              {lastTicket.subject}
-            </p>
-            <p className="mt-0.5 text-phx-xs text-slate-500">
-              {lastTicket.category}
-              {lastTicket.subcategory ? ` / ${lastTicket.subcategory}` : ""} /{" "}
-              {formatRequestDate(lastTicket.createdAt)}
-            </p>
-            <p className="mt-2 whitespace-nowrap text-phx-sm leading-relaxed text-slate-600">
-              {lastTicket.description}
-            </p>
-            {lastTicket.attachments.length > 0 && (
-              <p className="mt-1.5 text-phx-2xs font-semibold uppercase tracking-wider text-slate-400">
-                {lastTicket.attachments.length} attachment
-                {lastTicket.attachments.length === 1 ? "" : "s"}
-              </p>
-            )}
-          </div>
-        </Card>
-      )}
-
       {/* ---- Recent Requests ---- */}
-      <Card
-        className={`overflow-hidden rounded border border-slate-100 p-0 ${cardShadow}`}
-      >
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3 sm:px-5">
-          <div className="flex items-center gap-2">
-            <span aria-hidden className="h-1.5 w-1.5 rounded-sm bg-orange-500" />
-            <div>
-              <h2 className="text-sm font-bold text-slate-800">Recent Requests</h2>
-              <p className="mt-0.5 text-phx-xs text-slate-500">
-                Track your support history
-              </p>
-            </div>
-          </div>
-          {recentRequests.length > 0 && (
-            <span className="rounded bg-slate-100 px-2 py-1 text-phx-2xs font-bold uppercase tracking-wider text-slate-600">
-              {recentRequests.length}
+      <PortalSection
+        actions={
+          recentRequests.length > 0 ? (
+            <span className="bg-slate-900 px-2.5 py-1 text-phx-xs font-bold uppercase tracking-wide text-slate-100 tabular-nums">
+              {recentRequests.length} {recentRequests.length === 1 ? "request" : "requests"}
             </span>
-          )}
-        </div>
-
+          ) : null
+        }
+        description="Track your support history"
+        eyebrow="History"
+        title="Recent Requests"
+      >
         {isLoadingRequests ? (
-          <div className="flex flex-col items-center justify-center px-4 py-10 text-center">
-            <p className="text-phx-sm font-semibold uppercase tracking-wider text-slate-400">
-              Loading...
-            </p>
+          <div className="space-y-2 px-4 py-4 sm:px-5" aria-busy="true">
+            <span className="sr-only">Loading...</span>
+            <PortalSkeleton className="h-12 w-full" />
+            <PortalSkeleton className="h-12 w-full" />
           </div>
         ) : recentRequests.length === 0 ? (
-          <div className="flex flex-col items-center justify-center px-4 py-10 text-center">
-            <p className="text-phx-sm font-semibold uppercase tracking-wider text-slate-400">
-              No recent requests
-            </p>
-            <p className="mt-1 max-w-sm text-phx-sm text-slate-500">
-              Your support history will appear here after your first request.
-            </p>
-          </div>
+          <PortalEmptyState
+            message="Your support history will appear here after your first request."
+            title="No recent requests"
+          />
         ) : (
           <>
-            {/* Desktop table */}
-            <div className="hidden overflow-x-auto md:block">
-              <table className="w-full text-left text-sm">
-                <thead className="border-b border-slate-100 bg-slate-50/60">
+            {/* Tablet and desktop: fixed layout and a colgroup — fits its column at every width,
+                with no sideways scroll (the fits-the-screen rule). No raw request ID: a rep
+                recognises a request by its subject and date. */}
+            <div className="hidden md:block">
+              <table className="w-full table-fixed text-left text-phx-md">
+                <colgroup>
+                  <col className="w-[44%]" />
+                  <col className="w-[22%]" />
+                  <col className="w-[14%]" />
+                  <col className="w-[20%]" />
+                </colgroup>
+                <thead>
                   <tr>
-                    <th className="px-4 py-2 text-phx-2xs font-semibold uppercase tracking-wider text-slate-500">
-                      Request ID
-                    </th>
-                    <th className="px-4 py-2 text-phx-2xs font-semibold uppercase tracking-wider text-slate-500">
-                      Subject
-                    </th>
-                    <th className="px-4 py-2 text-phx-2xs font-semibold uppercase tracking-wider text-slate-500">
-                      Category
-                    </th>
-                    <th className="px-4 py-2 text-phx-2xs font-semibold uppercase tracking-wider text-slate-500">
-                      Status
-                    </th>
-                    <th className="px-4 py-2 text-phx-2xs font-semibold uppercase tracking-wider text-slate-500">
-                      Date
-                    </th>
+                    <th className="px-3 py-2.5">Subject</th>
+                    <th className="px-3 py-2.5">Category</th>
+                    <th className="px-3 py-2.5">Status</th>
+                    <th className="px-3 py-2.5">Sent</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 bg-white">
                   {recentRequests.map((request) => (
-                    <tr
-                      className="transition hover:bg-orange-50/30"
-                      key={request.id}
-                    >
-                      <td className="px-4 py-2.5 font-mono text-phx-2xs font-semibold text-slate-600">
-                        {request.id.slice(0, 8)}
+                    <tr className="align-top transition hover:bg-orange-50/30" key={request.id}>
+                      <td className="px-3 py-2.5">
+                        <p className="break-words font-semibold text-slate-900">{request.subject}</p>
+                        {request.description ? (
+                          <p className="mt-0.5 whitespace-pre-line break-words text-phx-sm leading-relaxed text-slate-500">
+                            {request.description}
+                          </p>
+                        ) : null}
                       </td>
-                      <td className="px-4 py-2.5 text-phx-sm font-semibold text-slate-800">
-                        {request.subject}
-                      </td>
-                      <td className="px-4 py-2.5 text-phx-sm text-slate-600">
+                      <td className="break-words px-3 py-2.5 text-slate-600">
                         {request.category}
-                        {request.subcategory ? ` / ${request.subcategory}` : ""}
+                        {request.subcategory ? (
+                          <span className="block text-phx-sm text-slate-400">{request.subcategory}</span>
+                        ) : null}
                       </td>
-                      <td className="px-4 py-2.5">
-                        <span
-                          className={`inline-flex rounded px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wider ${getStatusTone(request.status)}`}
-                        >
-                          {request.status}
-                        </span>
+                      <td className="px-3 py-2.5">
+                        <SupportStatusChip status={request.status} />
                       </td>
-                      <td className="px-4 py-2.5 text-phx-sm text-slate-600">
+                      <td className="px-3 py-2.5 tabular-nums text-slate-600">
                         {formatRequestDate(request.createdAt)}
                       </td>
                     </tr>
@@ -3539,38 +3394,56 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
               </table>
             </div>
 
-            {/* Mobile stacked cards */}
+            {/* Phone: one card per request. */}
             <div className="divide-y divide-slate-100 md:hidden">
               {recentRequests.map((request) => (
-                <div
-                  className="border-l-2 border-l-orange-400 px-4 py-3"
+                <PortalRecordCard
+                  accent={supportStatusAccent(request.status)}
                   key={request.id}
+                  meta={`${request.category}${request.subcategory ? ` · ${request.subcategory}` : ""} · ${formatRequestDate(request.createdAt)}`}
+                  status={<SupportStatusChip status={request.status} />}
+                  title={request.subject}
                 >
-                  <div className="flex items-start justify-between gap-2">
-                    <p className="font-mono text-phx-2xs font-semibold text-slate-600">
-                      {request.id.slice(0, 8)}
+                  {request.description ? (
+                    <p className="whitespace-pre-line break-words text-phx-sm leading-relaxed text-slate-600">
+                      {request.description}
                     </p>
-                    <span
-                      className={`inline-flex rounded px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wider ${getStatusTone(request.status)}`}
-                    >
-                      {request.status}
-                    </span>
-                  </div>
-                  <p className="mt-1 text-phx-md font-semibold text-slate-800">
-                    {request.subject}
-                  </p>
-                  <p className="mt-0.5 text-phx-xs text-slate-500">
-                    {request.category}
-                    {request.subcategory ? ` / ${request.subcategory}` : ""} /{" "}
-                    {formatRequestDate(request.createdAt)}
-                  </p>
-                </div>
+                  ) : null}
+                  {request.attachments.length > 0 ? (
+                    <p className="mt-1.5 text-phx-2xs font-bold uppercase tracking-wider text-slate-400">
+                      {request.attachments.length} attachment{request.attachments.length === 1 ? "" : "s"}
+                    </p>
+                  ) : null}
+                </PortalRecordCard>
               ))}
             </div>
           </>
         )}
-      </Card>
+      </PortalSection>
     </div>
+  );
+}
+
+function supportStatusAccent(status: string): "sky" | "amber" | "emerald" | "slate" {
+  if (status === "Pending") return "sky";
+  if (status === "In Progress") return "amber";
+  if (status === "Resolved") return "emerald";
+  return "slate";
+}
+
+function SupportStatusChip({ status }: { status: string }) {
+  const tone =
+    status === "In Progress"
+      ? "border-amber-200 bg-amber-50 text-amber-700"
+      : status === "Resolved"
+        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+        : status === "Pending"
+          ? "border-sky-200 bg-sky-50 text-sky-700"
+          : "border-slate-200 bg-slate-100 text-slate-600";
+  return (
+    <span className={`inline-flex whitespace-nowrap rounded border px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wider ${tone}`}>
+      {status}
+    </span>
   );
 }
 
@@ -4527,14 +4400,21 @@ export function MedicalRepSalesPage({ data }: { data: MedicalRepPortalData }) {
   );
 }
 
-export function MedicalRepPayrollPage({ data }: { data: MedicalRepPortalData }) {
+export function MedicalRepPayrollPage({
+  data,
+  surface = "workspace",
+}: {
+  data: MedicalRepPortalData;
+  /** "employee-portal" draws the section header as a portal toolbar; the admin shell keeps its own. */
+  surface?: "employee-portal" | "workspace";
+}) {
   if (data.empty.profile) {
     return <EmptyStateCard message="Your employee profile is not linked yet. Please contact HR." title="Profile Not Linked" />;
   }
 
   return (
     <>
-      <PayrollPayslipsSection data={data} />
+      <PayrollPayslipsSection data={data} surface={surface} />
     </>
   );
 }

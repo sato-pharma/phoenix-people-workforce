@@ -1049,6 +1049,15 @@ html:has(.admin-shell) {
   border-radius: 0 !important;
 }
 
+/* RULE 1b — the native audio player. Chrome and Safari draw <audio controls> as a rounded pill
+   from the browser's own shadow tree, which carries no class for RULE 1 to match — the CRM's
+   voice notes were the one rounded shape left on a rep's screen. */
+.employee-portal-shell audio,
+.employee-portal-shell audio::-webkit-media-controls-enclosure,
+.employee-portal-shell audio::-webkit-media-controls-panel {
+  border-radius: 0 !important;
+}
+
 /* RULE 2 — TABLES. Flat black header bar (same as the shell chrome) + a thin
    light-orange hairline on every cell (rows AND columns) for a tidy, uniform grid. */
 .employee-portal-shell table {

@@ -8,6 +8,7 @@ import {
   PortalRecordCard,
   PortalRecordFields,
   PortalSection,
+  PortalSkeleton,
   portalInputClassName,
 } from "@/components/employee-portal/portal-primitives";
 import { Button } from "@/components/ui/button";
@@ -156,7 +157,11 @@ export function NativeVisitVacationDaysWorkspace() {
     return loadError ? (
       <p className="border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{loadError}</p>
     ) : (
-      <p className="px-1 py-2 text-sm text-slate-500">Loading vacation-day requests</p>
+      <div aria-busy="true" className="grid min-w-0 gap-4">
+        <span className="sr-only">Loading vacation-day requests</span>
+        <PortalSkeleton className="h-28 w-full" />
+        <PortalSkeleton className="h-40 w-full" />
+      </div>
     );
   }
 
@@ -186,8 +191,9 @@ export function NativeVisitVacationDaysWorkspace() {
           <div className="grid min-w-0 gap-4 px-4 py-4 sm:px-5">
             <label className="grid gap-1">
               <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">Day</span>
+              {/* One date needs no full-width bar on a desk; a phone keeps the whole width. */}
               <input
-                className={portalInputClassName}
+                className={`${portalInputClassName} sm:max-w-xs`}
                 onChange={(event) => setVisitDate(event.target.value)}
                 type="date"
                 value={visitDate}

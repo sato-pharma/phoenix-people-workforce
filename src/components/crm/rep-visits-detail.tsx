@@ -172,12 +172,19 @@ export function RepVisitsDetail({
   monthLabel,
   rows,
   summary,
+  surface = "admin",
 }: {
   /** How many CRM regions have been tied to a brick. Zero means the whole column is still waiting. */
   mappedRegions: number;
   monthLabel: string;
   rows: RepVisitRow[];
   summary: RepVisitsSummary;
+  /**
+   * `portal` drops the "map them in CRM → Region Mapping" instruction: that screen is /admin/crm, which
+   * has no portal twin, so a rep or a field manager was sent to a link that could not open for him.
+   * The fact itself — how many calls sit in an unmapped region — is still said. `admin` is unchanged.
+   */
+  surface?: "admin" | "portal";
 }) {
   // OWNER'S RULE, 2026-08-28: vacations and visits are separated. A public holiday, a leave day, a
   // meeting or a training day arrives down the same CRM feed as a call — same date, same AM/PM flag,
@@ -244,6 +251,11 @@ export function RepVisitsDetail({
             {summary.unmappedTerritory.toLocaleString("en-US")} of these calls sit in a CRM region that is not tied to a
             Phoenix brick yet, so their area and region cannot be resolved.
           </p>
+          {surface === "portal" ? (
+            <p className="mt-1 text-phx-xs text-amber-800">
+              The place is still named on every row — it is the brick, area and region behind it that are missing.
+            </p>
+          ) : (
           <p className="mt-1 text-phx-xs text-amber-800">
             {mappedRegions === 0
               ? "No CRM region has been mapped at all so far."
@@ -255,13 +267,16 @@ export function RepVisitsDetail({
             </Link>{" "}
             and this column resolves everywhere, for every rep and every month.
           </p>
+          )}
         </div>
       ) : null}
 
       <div className="border border-slate-200 bg-white">
         <div className="space-y-3 p-5">
           <div className="flex flex-wrap items-center justify-between gap-2">
+            {/* Given a width: bare, it sized to about 180px and cut its own placeholder short. */}
             <TableSearchInput
+              className="w-full sm:w-80"
               onChange={table.setQuery}
               onClear={table.clearQuery}
               placeholder="Search doctor, clinic, speciality, place…"

@@ -85,6 +85,15 @@ const zoneLabels: Record<CoachingPerformanceZone, string> = {
   yellow_zone: "Yellow Zone / Needs Improvement",
 };
 
+// A rep reads words, never the stored code ("reviewed_by_employee"). Same wording as the list.
+const statusLabels: Record<string, string> = {
+  cancelled: "Cancelled",
+  draft: "Draft",
+  locked: "Locked",
+  reviewed_by_employee: "Reviewed",
+  submitted: "Submitted",
+};
+
 const zoneClassNames: Record<CoachingPerformanceZone, string> = {
   critical_red: "border-rose-200 bg-rose-50 text-rose-700",
   excellence_zone: "border-sky-200 bg-sky-50 text-sky-700",
@@ -114,13 +123,19 @@ function formatDateTime(value: string | null | undefined) {
   if (!value) return "Not available";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
+  // Cairo time, whatever the phone's own zone is set to (the owner reads every time in Cairo).
   return new Intl.DateTimeFormat("en-US", {
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
     month: "short",
+    timeZone: "Africa/Cairo",
     year: "numeric",
   }).format(date);
+}
+
+function statusLabel(status: string) {
+  return statusLabels[status] ?? status.replace(/_/g, " ");
 }
 
 function formatScore(value: number | string | null | undefined) {
@@ -240,7 +255,7 @@ function DetailPill({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded border border-slate-100 bg-slate-50/90 px-4 py-3">
       <p className="text-phx-2xs font-semibold uppercase tracking-wider text-slate-500">{label}</p>
-      <p className="mt-1 text-sm font-bold text-slate-900">{value}</p>
+      <p className="mt-1 break-words text-sm font-bold text-slate-900">{value}</p>
     </div>
   );
 }
@@ -354,7 +369,7 @@ function ReviewHeroHeader({
         <span aria-hidden="true" className={`absolute inset-x-0 bottom-0 ${pageHeaderRuleClassName}`} />
         <div className="relative min-w-0 space-y-1.5 pl-3.5">
           <span aria-hidden="true" className={pageHeaderRailClassName} />
-          <p className="inline-flex rounded border border-orange-200 bg-orange-50 px-2 py-0.5 text-[11px] font-bold uppercase tracking-[0.18em] text-orange-700">
+          <p className="inline-flex rounded border border-orange-200 bg-orange-50 px-2 py-0.5 text-phx-xs font-bold uppercase tracking-[0.18em] text-orange-700">
             {reportNumber}
           </p>
           <h2 className={pageHeaderTitleClassName}>Field Coaching Review</h2>
@@ -371,7 +386,7 @@ function ReviewHeroHeader({
         <DetailPill label="Coaching date" value={formatDate(coachingDate)} />
         <DetailPill label="Coach" value={formatEmployeeDisplayName(coachName, coachHrId)} />
         <DetailPill label="Coach role" value={coachRole || "Coach"} />
-        <DetailPill label="Status" value={status.replace(/_/g, " ")} />
+        <DetailPill label="Status" value={statusLabel(status)} />
       </div>
     </Card>
   );
@@ -460,14 +475,14 @@ export function EmployeeCoachingReview({ allowAcknowledgment = true, initialDeta
       <div className="grid gap-3 sm:gap-5 xl:grid-cols-[minmax(0,1.3fr)_minmax(280px,0.7fr)]">
         <Card className="rounded border border-slate-200 bg-white p-4 shadow-[0_4px_24px_rgba(15,23,42,0.06)] sm:p-6">
           <div className="flex flex-wrap items-start justify-between gap-3 sm:gap-4">
-            <div>
+            <div className="min-w-0">
               <p className="text-phx-2xs font-semibold uppercase tracking-wider text-orange-600">Employee context</p>
-              <h3 className="mt-2 text-xl font-black tracking-[-0.03em] text-slate-900 sm:text-2xl">
+              {/* The name only — never the raw HR ID on a rep's screen (owner rule). */}
+              <h3 className="mt-2 break-words text-xl font-black tracking-[-0.03em] text-slate-900 sm:text-2xl">
                 {formatEmployeeDisplayName(summary?.medicalRepName, report.medical_rep_hr_id)}
               </h3>
-              <p className="mt-1 text-sm font-medium text-slate-500">HR ID: {report.medical_rep_hr_id}</p>
             </div>
-            <div className="flex h-9 w-9 items-center justify-center rounded bg-orange-50 text-orange-600">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded bg-orange-50 text-orange-600">
               <UserRound className="h-4 w-4" />
             </div>
           </div>
@@ -518,8 +533,8 @@ export function EmployeeCoachingReview({ allowAcknowledgment = true, initialDeta
                 <div className="grid gap-2">
                   {detail.scoreResult.categorySubtotals.map((cat) => (
                     <div className="flex items-center justify-between gap-3 rounded border border-slate-100 bg-slate-50/60 px-3 py-2" key={cat.category}>
-                      <span className="text-xs font-semibold text-slate-700">{cat.label}</span>
-                      <span className={cn("rounded border px-2 py-0.5 text-phx-xs font-bold", categoryColorClass(cat.percent))}>
+                      <span className="min-w-0 break-words text-xs font-semibold text-slate-700">{cat.label}</span>
+                      <span className={cn("shrink-0 rounded border px-2 py-0.5 text-phx-xs font-bold tabular-nums", categoryColorClass(cat.percent))}>
                         {Math.round(cat.percent)}%
                       </span>
                     </div>
@@ -555,11 +570,11 @@ export function EmployeeCoachingReview({ allowAcknowledgment = true, initialDeta
             return (
               <div className="rounded border border-slate-200/80 bg-slate-50/70 p-3 sm:p-4" key={group.category}>
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <span className="flex h-7 w-7 items-center justify-center rounded bg-slate-900 text-xs font-bold text-orange-300">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-slate-900 text-xs font-bold text-orange-300">
                       {categoryLetters[group.category]}
                     </span>
-                    <div>
+                    <div className="min-w-0">
                       <p className="text-sm font-bold text-slate-900">{group.label}</p>
                       <p className="text-phx-xs font-medium text-slate-500">{group.items.length} scoring items</p>
                     </div>
@@ -580,13 +595,15 @@ export function EmployeeCoachingReview({ allowAcknowledgment = true, initialDeta
                         className="rounded border border-slate-200/70 bg-white px-3 py-2.5 sm:px-4 sm:py-3"
                         key={item.key}
                       >
-                        <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center">
-                          <div>
-                            <p className="text-sm font-semibold text-slate-800">{item.label}</p>
+                        {/* Label left, score right at every width — on a phone the score used to
+                            drop under the label and stretch into a full-width bar. */}
+                        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
+                          <div className="min-w-0">
+                            <p className="break-words text-sm font-semibold text-slate-800">{item.label}</p>
                             <p className="mt-0.5 text-phx-xs font-medium text-slate-400">Point {item.displayOrder}</p>
                           </div>
                           <span className={cn(
-                            "inline-flex h-8 min-w-12 items-center justify-center rounded px-3 text-sm font-bold ring-1",
+                            "inline-flex h-8 min-w-12 items-center justify-center whitespace-nowrap rounded px-3 text-sm font-bold tabular-nums ring-1",
                             scoreColorClass(score),
                           )}>
                             {score ?? "-"} / 5
@@ -604,7 +621,9 @@ export function EmployeeCoachingReview({ allowAcknowledgment = true, initialDeta
       </Card>
 
       {/* ── Feedback Blocks ────────────────────────────────────────── */}
-      <div className="grid gap-3 sm:gap-4 lg:grid-cols-3">
+      {/* Three across only from xl: at 1024px with the sidebar open the column is ~636px, and
+          three ~200px columns of running prose read as a word-per-line list. */}
+      <div className="grid gap-3 sm:gap-4 xl:grid-cols-3">
         <FeedbackBlock label="Overall Area of Development" text={report.area_of_development} />
         <FeedbackBlock label="Overall Strength Points" text={report.strength_points} />
         <FeedbackBlock label="General Remarks" text={report.general_remarks} />
@@ -637,10 +656,10 @@ export function EmployeeCoachingReview({ allowAcknowledgment = true, initialDeta
           </div>
         ) : canAcknowledge ? (
           <div className="mt-5 space-y-4">
-            <label className="flex gap-3 rounded border border-slate-200 bg-slate-50/80 p-4">
+            <label className="flex cursor-pointer gap-3 rounded border border-slate-200 bg-slate-50/80 p-4">
               <input
                 checked={checked}
-                className="mt-1 h-4 w-4 rounded border-slate-300 text-orange-600 focus:ring-orange-500"
+                className="mt-0.5 h-5 w-5 shrink-0 rounded border-slate-300 text-orange-600 focus:ring-orange-500"
                 disabled={isSubmitting}
                 onChange={(event) => setChecked(event.target.checked)}
                 type="checkbox"
@@ -650,7 +669,7 @@ export function EmployeeCoachingReview({ allowAcknowledgment = true, initialDeta
               </span>
             </label>
             <Button
-              className="rounded bg-slate-900 px-5 py-2.5 text-sm font-bold text-white shadow-[0_2px_12px_rgba(15,23,42,0.10)] hover:bg-orange-600"
+              className="min-h-11 w-full rounded bg-slate-900 px-5 py-2.5 text-sm font-bold text-white shadow-[0_2px_12px_rgba(15,23,42,0.10)] hover:bg-orange-600 sm:w-auto"
               disabled={!checked || isSubmitting}
               onClick={handleAcknowledge}
               type="button"
@@ -681,7 +700,7 @@ export function EmployeeCoachingReview({ allowAcknowledgment = true, initialDeta
                 : "border-rose-200 bg-rose-50 text-rose-800",
             )}
           >
-            {message.tone === "success" ? <CheckCircle2 className="mt-0.5 h-4 w-4" /> : <AlertCircle className="mt-0.5 h-4 w-4" />}
+            {message.tone === "success" ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" /> : <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />}
             <span>{message.text}</span>
           </div>
         ) : null}

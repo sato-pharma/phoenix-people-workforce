@@ -8,6 +8,8 @@ import {
   PortalRecordCard,
   PortalRecordFields,
   PortalSection,
+  PortalSegmentedTabs,
+  PortalSkeleton,
   portalInputClassName,
 } from "@/components/employee-portal/portal-primitives";
 import { Button } from "@/components/ui/button";
@@ -80,6 +82,37 @@ function changeFields(row: ContactListChangeRow, withRep: boolean) {
 
 type EditTarget = { entry: ContactListEntry; action: "remove" | "regrade" };
 
+/** Where a send result belongs: "add" for the "Add a doctor" form, else the entryKey of the list row
+ * whose editor sent it. */
+type FormScope = string;
+
+function entryKey(entry: Pick<ContactListEntry, "contactCrmId" | "listType">) {
+  return `${entry.contactCrmId}-${entry.listType}`;
+}
+
+/**
+ * A send result, printed INSIDE the form that sent it. It used to sit at the top of the page, while
+ * the rep submits from a row editor or from "Add a doctor" further down — so on a phone the answer
+ * to "did my request go?" was a screen and a half above his thumb, and he never saw it.
+ */
+function FormMessage({ error, note }: { error: string | null; note: string | null }) {
+  if (!error && !note) return null;
+  return (
+    <div className="grid min-w-0 gap-2">
+      {error ? (
+        <p className="break-words border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
+          {error}
+        </p>
+      ) : null}
+      {note ? (
+        <p className="break-words border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800" role="status">
+          {note}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 export function ContactListWorkspace() {
   const [view, setView] = useState<ContactListView | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -101,9 +134,13 @@ export function ContactListWorkspace() {
   const [addGrade, setAddGrade] = useState<ContactListGrade | "">("");
   const [addReason, setAddReason] = useState("");
 
+  // The AM and PM lists are shown one at a time, each with its own count — never one merged list.
+  const [listShift, setListShift] = useState<ContactListShift>("AM");
+
   const [formBusy, setFormBusy] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [formNote, setFormNote] = useState<string | null>(null);
+  const [formScope, setFormScope] = useState<FormScope | null>(null);
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
   const [rowError, setRowError] = useState<Record<string, string>>({});
@@ -139,10 +176,11 @@ export function ContactListWorkspace() {
   const mayChange = Boolean(view?.inForce && view.rep && (view.canRequest || view.canEditDirectly));
   const sendLabel = direct ? "Apply now" : "Send to my manager";
 
-  async function sendChange(change: Record<string, unknown>) {
+  async function sendChange(change: Record<string, unknown>, scope: FormScope) {
     setFormBusy(true);
     setFormError(null);
     setFormNote(null);
+    setFormScope(scope);
     try {
       if (direct) {
         await post({ action: "apply", change: { ...change, repHrId: view?.rep?.hrId } }, "Could not change the list.");
@@ -161,13 +199,16 @@ export function ContactListWorkspace() {
 
   async function submitEdit() {
     if (!editing) return;
-    const saved = await sendChange({
-      action: editing.action,
-      contactCrmId: editing.entry.contactCrmId,
-      grade: editing.action === "regrade" ? editGrade : null,
-      listType: editing.entry.listType,
-      reason: editReason,
-    });
+    const saved = await sendChange(
+      {
+        action: editing.action,
+        contactCrmId: editing.entry.contactCrmId,
+        grade: editing.action === "regrade" ? editGrade : null,
+        listType: editing.entry.listType,
+        reason: editReason,
+      },
+      entryKey(editing.entry),
+    );
     if (saved) {
       setEditing(null);
       setEditGrade("");
@@ -177,14 +218,17 @@ export function ContactListWorkspace() {
   }
 
   async function submitAdd() {
-    const saved = await sendChange({
-      action: "add",
-      contactCrmId: chosen && !describeNew ? chosen.contactCrmId : null,
-      grade: addGrade,
-      listType: addList,
-      newContact: describeNew ? { address: newAddress, name: newName, speciality: newSpeciality } : null,
-      reason: addReason,
-    });
+    const saved = await sendChange(
+      {
+        action: "add",
+        contactCrmId: chosen && !describeNew ? chosen.contactCrmId : null,
+        grade: addGrade,
+        listType: addList,
+        newContact: describeNew ? { address: newAddress, name: newName, speciality: newSpeciality } : null,
+        reason: addReason,
+      },
+      "add",
+    );
     if (saved) {
       setChosen(null);
       setResults(null);
@@ -201,6 +245,8 @@ export function ContactListWorkspace() {
 
   async function runSearch() {
     setFormError(null);
+    setFormNote(null);
+    setFormScope("add");
     try {
       const response = await fetch(`${ENDPOINT}?search=${encodeURIComponent(searchTerm.trim())}`, { cache: "no-store" });
       const body = (await response.json().catch(() => null)) as { doctors?: ContactListSearchResult[]; message?: string } | null;
@@ -226,11 +272,11 @@ export function ContactListWorkspace() {
 
   const shownEntries = useMemo(() => {
     const term = filter.trim().toLowerCase();
-    const entries = view?.entries ?? [];
+    const entries = (view?.entries ?? []).filter((entry) => entry.listType === listShift);
     return term
       ? entries.filter((entry) => `${entry.name} ${entry.speciality ?? ""}`.toLowerCase().includes(term))
       : entries;
-  }, [filter, view?.entries]);
+  }, [filter, listShift, view?.entries]);
 
   const refresh = (
     <Button onClick={() => void load(repHrId)} size="sm" type="button" variant="outline">
@@ -243,7 +289,11 @@ export function ContactListWorkspace() {
     return loadError ? (
       <p className="border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{loadError}</p>
     ) : (
-      <p className="px-1 py-2 text-sm text-slate-500">Loading the doctor list</p>
+      <div aria-busy="true" className="grid min-w-0 gap-4">
+        <span className="sr-only">Loading the doctor list</span>
+        <PortalSkeleton className="h-28 w-full" />
+        <PortalSkeleton className="h-48 w-full" />
+      </div>
     );
   }
 
@@ -251,6 +301,10 @@ export function ContactListWorkspace() {
   const answered = view.toDecide.filter((row) => !row.canDecide);
   const amCount = view.entries.filter((entry) => entry.listType === "AM").length;
   const pmCount = view.entries.filter((entry) => entry.listType === "PM").length;
+  // A row-editor result whose row is no longer on screen (a direct removal, or a filter) still has to
+  // land somewhere the viewer is looking: the top of the list section it came from.
+  const rowScopeHidden =
+    formScope !== null && formScope !== "add" && !shownEntries.some((entry) => entryKey(entry) === formScope);
 
   return (
     <div className="grid min-w-0 gap-4">
@@ -274,6 +328,7 @@ export function ContactListWorkspace() {
                 setEditing(null);
                 setFormNote(null);
                 setFormError(null);
+                setFormScope(null);
                 setRepHrId(event.target.value);
               }}
               value={repHrId}
@@ -289,11 +344,6 @@ export function ContactListWorkspace() {
         </PortalSection>
       ) : null}
 
-      {formError ? <p className="border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{formError}</p> : null}
-      {formNote ? (
-        <p className="border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{formNote}</p>
-      ) : null}
-
       {view.rep ? (
         <PortalSection
           actions={refresh}
@@ -303,21 +353,56 @@ export function ContactListWorkspace() {
           title={view.canRequest ? "My doctor list" : "Doctor list"}
         >
           <div className="grid min-w-0 gap-3 px-4 py-4 sm:px-5">
+            {/* AM · PM, two lists and two counts, never one merged figure. AM first. */}
+            <PortalSegmentedTabs className="grid grid-cols-2">
+              {CONTACT_LIST_SHIFTS.map((shift) => {
+                const active = listShift === shift;
+                return (
+                  <button
+                    aria-pressed={active}
+                    className={`min-h-10 min-w-0 px-2 py-2 text-center transition ${
+                      active ? "bg-orange-600 text-white shadow-sm" : "text-slate-600 hover:bg-white"
+                    }`}
+                    key={shift}
+                    onClick={() => {
+                      setListShift(shift);
+                      setEditing(null);
+                    }}
+                    type="button"
+                  >
+                    <span className="block break-words text-xs font-black leading-tight">{`${shift} list`}</span>
+                    <span className={`mt-0.5 block text-sm font-black tabular-nums ${active ? "text-white" : "text-slate-900"}`}>
+                      {shift === "AM" ? amCount : pmCount}
+                    </span>
+                  </button>
+                );
+              })}
+            </PortalSegmentedTabs>
+            {rowScopeHidden ? <FormMessage error={formError} note={formNote} /> : null}
             {view.entries.length > 0 ? (
               <input
-                aria-label="Find a doctor on the list"
+                aria-label={`Find a doctor on the ${listShift} list`}
                 className={portalInputClassName}
                 onChange={(event) => setFilter(event.target.value)}
-                placeholder="Find a doctor on the list"
+                placeholder={`Find a doctor on the ${listShift} list`}
                 value={filter}
               />
             ) : null}
             {view.entries.length === 0 ? (
               <PortalEmptyState message="No doctor is on this rep's AM or PM list." title="The list is empty" />
+            ) : shownEntries.length === 0 ? (
+              <PortalEmptyState
+                message={
+                  filter.trim()
+                    ? `No doctor on the ${listShift} list matches that name.`
+                    : `No doctor is on this rep's ${listShift} list.`
+                }
+                title={`Nothing on the ${listShift} list`}
+              />
             ) : (
               <div className="grid gap-px bg-slate-100">
                 {shownEntries.map((entry) => {
-                  const key = `${entry.contactCrmId}-${entry.listType}`;
+                  const key = entryKey(entry);
                   const isEditing =
                     editing?.entry.contactCrmId === entry.contactCrmId && editing.entry.listType === entry.listType;
                   return (
@@ -342,6 +427,7 @@ export function ContactListWorkspace() {
                                 setEditing({ action: "regrade", entry });
                                 setEditGrade("");
                                 setEditReason("");
+                                setFormScope(null);
                               }}
                               size="sm"
                               type="button"
@@ -354,6 +440,7 @@ export function ContactListWorkspace() {
                                 setEditing({ action: "remove", entry });
                                 setEditGrade("");
                                 setEditReason("");
+                                setFormScope(null);
                               }}
                               size="sm"
                               type="button"
@@ -410,6 +497,7 @@ export function ContactListWorkspace() {
                           </div>
                         </div>
                       ) : null}
+                      {formScope === key ? <FormMessage error={formError} note={formNote} /> : null}
                     </div>
                   );
                 })}
@@ -562,6 +650,7 @@ export function ContactListWorkspace() {
                 value={addReason}
               />
             </label>
+            {formScope === "add" ? <FormMessage error={formError} note={formNote} /> : null}
             <div>
               <Button
                 disabled={

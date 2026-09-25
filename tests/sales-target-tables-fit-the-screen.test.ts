@@ -48,11 +48,20 @@ import { stripComments } from "./support/comment-strip.ts";
 
 const WORKSPACE = "src/components/sales/targets-workspace.tsx";
 const DASHBOARD = "src/components/sales/vs-target/vs-target-dashboard.tsx";
+const REP_TARGETS = "src/components/sales/rep-targets-view.tsx";
 const VISUALS = "src/components/sales/target-visuals.tsx";
 
 /** Rendered widths of the narrowest state each table appears in (portal, 1024px viewport, scale 100%). */
 const TARGETS_NARROWEST_TABLE_PX = 572;
 const VS_TARGET_NARROWEST_TABLE_PX = 619;
+/**
+ * The Medical Rep's own Targets table (RepTargetsView, /employee-portals/targets as a rep), published
+ * month. It sits in a bordered section card straight in the 621px page — the same 619px as Sales vs
+ * Target. Until 2026-09-25 the view also padded itself by 16px a side, which left the table 587px and
+ * its Achievement column 117px for a header needing 138px (the audit that added this check); the
+ * padding went with it, and the columns were re-split 30/17/17/16/20 -> 26/16/16/18/24.
+ */
+const REP_TARGETS_NARROWEST_TABLE_PX = 619;
 
 type Need = { px: number; what: string; midWord?: true };
 
@@ -77,6 +86,19 @@ const VS_TARGET_NEEDS: Record<string, Need> = {
   Target: { px: 66.4, what: 'the company\'s target "12,536,082"' },
   Achievement: { px: 101, what: 'the "ACHIEVEMENT" header' },
   "vs {priorLabel}": { px: 86.7, what: 'the growth pill "+1569.9%"' },
+};
+/**
+ * A rep's figures are one territory's, so the company's eight-digit totals above never reach this table.
+ * Its widest money is taken as a seven-digit figure, "9,999,999" — worked out from the measured
+ * "13,087,666" (72.3px for eight digits and two commas, the same bold 14px tabular figures) rather than
+ * measured on its own: seven digits and two commas are 64.3px. Wider than the "TARGET" header (53.3px),
+ * so the figure is what binds Target and Sales. A figure can break at the space after "EGP", never inside.
+ */
+const REP_TARGETS_NEEDS: Record<string, Need> = {
+  Product: { px: 77.6, what: 'the product name "Dopaminect"', midWord: true },
+  Target: { px: 64.3, what: 'a seven-digit target "9,999,999"' },
+  Sales: { px: 64.3, what: 'a seven-digit sales figure "9,999,999"' },
+  Achievement: { px: 100.9, what: 'the "ACHIEVEMENT" header' },
 };
 
 /**
@@ -169,7 +191,8 @@ function checkTable({
   tablePx: number;
   needs: Record<string, Need>;
   expectColumns: number;
-  expectedColSpan: RegExp;
+  /** The drill-down row's colSpan. Omitted for a table that has no drill-down row. */
+  expectedColSpan?: RegExp;
 }) {
   const source = stripComments(read(file));
   const { block, wrapper } = achievementTable(source, file);
@@ -229,12 +252,14 @@ function checkTable({
   );
 
   // 4. The expanded drill-down row spans exactly the table. A stale colSpan adds a phantom column.
-  assert.match(
-    block,
-    expectedColSpan,
-    `${file}: the drill-down row's colSpan no longer equals the ${expectColumns} columns. A colSpan wider than the ` +
-      `table creates an implicit extra column that takes width from the real ones.`,
-  );
+  if (expectedColSpan) {
+    assert.match(
+      block,
+      expectedColSpan,
+      `${file}: the drill-down row's colSpan no longer equals the ${expectColumns} columns. A colSpan wider than the ` +
+        `table creates an implicit extra column that takes width from the real ones.`,
+    );
+  }
   return { source, block };
 }
 
@@ -301,4 +326,30 @@ export function runSalesTargetTablesFitTheScreenTests() {
     `${DASHBOARD}: the "no target" amount is printed outside the Sales cell too — once is the merge, twice is a ` +
       `column coming back.`,
   );
+
+  // ── A Medical Rep's own Targets table, published month ──────────────────────────────────────────
+  // No drill-down row. Its merge: each money cell carries its units beneath it, so there is no units
+  // column — and the view must not pad the table back into the 587px it had.
+  const repTargets = checkTable({
+    file: REP_TARGETS,
+    tablePx: REP_TARGETS_NARROWEST_TABLE_PX,
+    expectColumns: 5,
+    needs: REP_TARGETS_NEEDS,
+  });
+  const repTargetCell = repTargets.block.match(/<td className="[^"]*">(?:(?!<td )[\s\S])*?product\.targetValue(?:(?!<td )[\s\S])*?<\/td>/);
+  assert.ok(repTargetCell, `${REP_TARGETS}: no desktop cell renders product.targetValue.`);
+  assert.ok(
+    repTargetCell[0].includes("product.targetUnits"),
+    `${REP_TARGETS}: the Target cell no longer carries its units. Units ride under the value — a units column of ` +
+      `its own does not fit the 1024px portal.`,
+  );
+  const repRoot = repTargets.source.match(/<div className=\{cn\("([^"]*)", isPending/);
+  assert.ok(repRoot, `${REP_TARGETS}: the view's root no longer builds its class from cn("…", isPending …). Re-point this check.`);
+  for (const token of tokens(repRoot[1])) {
+    assert.ok(
+      !/^(?:[a-z0-9]+:)?p[xy]?-/.test(token),
+      `${REP_TARGETS}: the view's root carries "${token}". Padding there narrows the table below the ${REP_TARGETS_NARROWEST_TABLE_PX}px ` +
+        `this test measures — at 587px the Achievement header ran out of its cell.`,
+    );
+  }
 }

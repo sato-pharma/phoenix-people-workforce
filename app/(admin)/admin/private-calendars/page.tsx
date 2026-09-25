@@ -295,7 +295,14 @@ export default async function AdminPrivateCalendarsPage({ searchParams }: PagePr
               &larr; Back to list
             </a>
           </div>
-          <PrivateCalendar initialWorkspace={workspace} todayIso={currentCairoDateOnlyIso(now)} viewerHrId={access.hrId} />
+          {/* The admin desk keeps the source trace (system, table, record ID) and HR IDs, which an
+              employee's own calendar no longer prints. */}
+          <PrivateCalendar
+            initialWorkspace={workspace}
+            showDeskDetail
+            todayIso={currentCairoDateOnlyIso(now)}
+            viewerHrId={access.hrId}
+          />
         </div>
       )}
 

@@ -45,7 +45,14 @@ export function runEmployeePortalNavigationTests() {
     "Employee portal source should not contain mojibake in UI text, comments, or fallback strings.",
   );
   assert.doesNotMatch(dashboardSource, /href="#"/, "Employee portal dashboard must not ship dead hash links.");
-  assert.match(dashboardSource, /Phoenix Workforce - \$\{employeeName\}/);
+  // Request Support once offered three "desks" whose Email / WhatsApp buttons pointed at placeholder
+  // addresses (hr-support@phoenix.local, wa.me/201000000001…) — a rep who tapped one wrote to nobody.
+  // Every request now goes through the tracked form; no placeholder contact may come back.
+  assert.doesNotMatch(
+    dashboardSource,
+    /@phoenix\.local|wa\.me\/20100000000/,
+    "Request Support must not offer placeholder HR contacts; requests go through the tracked form.",
+  );
   assert.match(dashboardSource, /Loading\.\.\./);
   assert.match(layoutSource, /searchMatches/);
   assert.match(layoutSource, /navigateToSearchResult/);

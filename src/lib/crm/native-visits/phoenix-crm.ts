@@ -72,7 +72,8 @@ import { forbiddenError, validationError } from "@/lib/http/api-errors";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
-const PHOENIX_CRM_URL = "/employee-portals/phoenix-crm";
+// The pilot's own page is retired (the owner, 2026-09-25); its notifications open the live field app.
+const PHOENIX_CRM_URL = "/employee-portals/field-crm";
 
 type PilotRep = { row: EmployeeDirectoryRow; startsOn: string };
 

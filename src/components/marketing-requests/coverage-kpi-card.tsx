@@ -88,8 +88,11 @@ export function CoverageKpiCard({
             }
           : undefined
       }
+      // Phones (below `sm`, 640px) sit two cards to a row, which leaves ~140px inside each: the
+      // padding tightens, the icon steps aside and the figure drops one size so a seven-digit
+      // amount still fits on its line. From `sm` up the card is exactly what it was.
       className={cn(
-        "relative overflow-hidden rounded-none border border-slate-200/90 bg-white/95 p-5 shadow-[0_16px_40px_rgba(15,23,42,0.06)] transition-all duration-300 ease-out hover:-translate-y-1 hover:bg-white hover:shadow-[0_24px_52px_rgba(15,23,42,0.14)] hover:scale-[1.01]",
+        "relative overflow-hidden rounded-none border border-slate-200/90 bg-white/95 p-3 shadow-[0_16px_40px_rgba(15,23,42,0.06)] transition-all duration-300 ease-out hover:-translate-y-1 hover:bg-white hover:shadow-[0_24px_52px_rgba(15,23,42,0.14)] hover:scale-[1.01] sm:p-5",
         toneClasses.border,
         interactive && "cursor-pointer",
         active && "ring-2 ring-offset-1",
@@ -97,15 +100,16 @@ export function CoverageKpiCard({
       )}
     >
       <div className={cn("pointer-events-none absolute -right-8 -top-10 h-32 w-32 rounded-none blur-3xl", toneClasses.bg)} />
-      <div className="relative flex items-start justify-between gap-4">
+      <div className="relative flex items-start justify-between gap-2 sm:gap-4">
         <div className="min-w-0 space-y-1.5">
-          <p className="text-phx-2xs font-black uppercase tracking-[0.15em] text-slate-400">{label}</p>
-          <div className="text-2xl font-black tracking-tight text-slate-900">{value}</div>
-          {description ? <p className="text-xs font-semibold leading-5 text-slate-500">{description}</p> : null}
+          {/* Wraps, never clips: "DISTINCT PHARMACIES" in tracked capitals is wider than a phone card. */}
+          <p className="min-w-0 break-words text-phx-2xs font-black uppercase tracking-[0.15em] text-slate-400">{label}</p>
+          <div className="break-words text-xl font-black tracking-tight text-slate-900 sm:text-2xl">{value}</div>
+          {description ? <p className="break-words text-xs font-semibold leading-5 text-slate-500">{description}</p> : null}
         </div>
         <div
           className={cn(
-            "flex h-11 w-11 shrink-0 items-center justify-center rounded-none bg-gradient-to-br p-2.5 ring-1 transition-transform duration-300 hover:scale-110",
+            "hidden h-11 w-11 shrink-0 items-center justify-center rounded-none bg-gradient-to-br p-2.5 ring-1 transition-transform duration-300 hover:scale-110 sm:flex",
             toneClasses.icon,
           )}
         >

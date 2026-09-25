@@ -52,7 +52,9 @@ export function PortalSection({
               </div>
             ) : null}
           </div>
-          {actions ? <div className="flex shrink-0 flex-wrap gap-2">{actions}</div> : null}
+          {/* No `shrink-0`: it pins the box at its full content width, which makes the inner
+              flex-wrap inert and lets a row of actions push past a narrow card. */}
+          {actions ? <div className="flex flex-wrap gap-2 sm:justify-end">{actions}</div> : null}
         </div>
       ) : null}
       {children}
@@ -133,12 +135,14 @@ export function PortalMetricCard({
             <Icon className="h-3.5 w-3.5" />
           </span>
         ) : null}
-        <p className="min-w-0 whitespace-nowrap text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">
+        {/* Wraps, never clips (fits-the-screen rule): two cards to a 375px row leave a label
+            about 110px, and "SHORT / ABSENT" in tracked capitals needs more than that. */}
+        <p className="min-w-0 break-words text-phx-2xs font-black uppercase leading-tight tracking-[0.14em] text-slate-500">
           {label}
         </p>
       </div>
-      <p className="mt-2 text-2xl font-black leading-none text-slate-950">{value}</p>
-      {note ? <p className="mt-1 text-xs font-semibold text-slate-500">{note}</p> : null}
+      <p className="mt-2 break-words text-2xl font-black leading-none tabular-nums text-slate-950">{value}</p>
+      {note ? <p className="mt-1 break-words text-xs font-semibold text-slate-500">{note}</p> : null}
     </div>
   );
 }
@@ -150,10 +154,12 @@ export function PortalSegmentedTabs({
   children: ReactNode;
   className?: string;
 }) {
+  // Wraps onto a second row rather than scrolling sideways behind a hidden scrollbar — a tab
+  // the rep cannot see is a tab he does not know exists (fits-the-screen rule).
   return (
     <div
       className={cn(
-        "flex w-full gap-1 overflow-x-auto rounded border border-slate-200 bg-slate-50 p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+        "flex w-full flex-wrap gap-1 rounded border border-slate-200 bg-slate-50 p-1",
         className,
       )}
     >

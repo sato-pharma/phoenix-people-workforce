@@ -15,7 +15,8 @@
 // rep a key belongs to.
 import { redirect } from "next/navigation";
 
-import { EmployeePortalEmptyState, EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
+import { EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
+import { PortalEmptyState, PortalSection } from "@/components/employee-portal/portal-primitives";
 import { RepVisitsPageBody, type RepVisitsPageQuery } from "@/components/crm/rep-visits-page";
 import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
@@ -35,13 +36,18 @@ export default async function PortalKpiRepVisitsPage({ params, searchParams }: P
 
   if (resolveNavigationMode(access) !== "employee-portal") redirect("/overview");
 
-  // The KPIs page's own gate and its own sentence — this page is a row of that board, opened.
+  // The KPIs page's own gate and its own sentence — this page is a row of that board, opened. Said
+  // inside the portal shell, under the same header the page would have carried.
   if (!canSeeDoctorCoverage(access.role) || !(await canAccess(access, "crm_visits", "read"))) {
     return (
-      <EmployeePortalEmptyState
-        message="KPIs is available to field seats with CRM access — it shows the call rate, coverage and frequency of the reps in your reach, and a medical rep's own three measures."
-        title="KPIs Unavailable"
-      />
+      <EmployeePortalPageShell badge="CRM" title="KPIs">
+        <PortalSection>
+          <PortalEmptyState
+            message="KPIs is available to field seats with CRM access — it shows the call rate, coverage and frequency of the reps in your reach, and a medical rep's own three measures."
+            title="KPIs Unavailable"
+          />
+        </PortalSection>
+      </EmployeePortalPageShell>
     );
   }
 
@@ -54,7 +60,7 @@ export default async function PortalKpiRepVisitsPage({ params, searchParams }: P
       description="Every call this rep recorded in the window the board was read on, classified by the same rule the rate uses."
       title="KPIs"
     >
-      <RepVisitsPageBody access={access} basePath={PORTAL_KPIS_PATH} query={query} repParam={repParam} />
+      <RepVisitsPageBody access={access} basePath={PORTAL_KPIS_PATH} query={query} repParam={repParam} surface="portal" />
     </EmployeePortalPageShell>
   );
 }

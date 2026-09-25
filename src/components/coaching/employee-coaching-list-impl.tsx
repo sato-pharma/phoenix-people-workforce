@@ -44,7 +44,6 @@ import { getCoachingScoreColor as getScoreColor } from "@/lib/coaching/landing-i
 import { cn, formatEmployeeDisplayName } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
-  PortalDesktopTable,
   PortalRecordCard,
   PortalRecordFields,
   PortalResponsiveDataList,
@@ -561,13 +560,14 @@ function PeriodFilterPanel({
         onClick={() => setOpen(!open)}
         type="button"
       >
-        <Calendar className="h-3.5 w-3.5" />
-        <span className="max-w-[200px] truncate">{label}</span>
+        <Calendar className="h-3.5 w-3.5 shrink-0" />
+        {/* Wraps, never an ellipsis (owner rule): a long period label goes to a second line. */}
+        <span className="min-w-0 text-left leading-tight">{label}</span>
         {activeCount > 0 ? <span className="flex h-4.5 min-w-[18px] items-center justify-center bg-orange-600 px-1 text-phx-2xs font-bold text-white">{activeCount}</span> : null}
         <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", open && "rotate-180")} />
       </button>
       {open ? (
-        <div ref={panelRef} className="absolute left-0 top-full z-30 mt-1 w-72 border border-slate-200 bg-white p-4 shadow-lg sm:w-80" role="dialog" aria-label="Period filter">
+        <div ref={panelRef} className="absolute left-0 top-full z-30 mt-1 w-72 max-w-[calc(100vw-2rem)] border border-slate-200 bg-white p-4 shadow-lg sm:w-80" role="dialog" aria-label="Period filter">
           {/* Quick presets */}
           <div className="mb-3 flex flex-wrap gap-1.5">
             {presets.map((p) => (
@@ -691,8 +691,8 @@ function CoachingRadarChart({ data, wide = false }: { data: { dimension: string;
               {data.map((d) => (
                 <div key={d.dimension}>
                   <div className="flex items-center justify-between gap-3">
-                    <span className="whitespace-nowrap text-phx-xs font-semibold text-slate-600">{d.dimension}</span>
-                    <span className="whitespace-nowrap text-sm font-bold tabular-nums" style={{ color: getScoreColor(d.value) }}>{d.value.toFixed(1)}%</span>
+                    <span className="min-w-0 break-words text-phx-xs font-semibold text-slate-600">{d.dimension}</span>
+                    <span className="shrink-0 whitespace-nowrap text-sm font-bold tabular-nums" style={{ color: getScoreColor(d.value) }}>{d.value.toFixed(1)}%</span>
                   </div>
                   <div className="mt-1.5 h-1.5 w-full overflow-hidden bg-slate-100">
                     <div className="h-full transition-all duration-300" style={{ width: `${Math.min(100, Math.max(0, d.value))}%`, backgroundColor: getScoreColor(d.value) }} />
@@ -732,14 +732,7 @@ function MobileReportCard({ report, isTeamMode }: { isTeamMode: boolean; report:
     <PortalRecordCard
       accent={zoneAccent(report.performanceZone)}
       title={<span className="text-orange-600">{report.reportNumber}</span>}
-      meta={
-        isTeamMode ? (
-          <>
-            {formatEmployeeDisplayName(report.medicalRepName)}
-            {report.medicalRepHrId ? <span className="text-slate-400"> · {report.medicalRepHrId}</span> : null}
-          </>
-        ) : undefined
-      }
+      meta={isTeamMode ? formatEmployeeDisplayName(report.medicalRepName) : undefined}
       status={
         // Score + zone are the most important glance-value, so they take the
         // card's status slot instead of sitting in the label/value field grid.
@@ -810,23 +803,50 @@ function ReportsTable({
     row?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }, [focusedRow]);
 
-  const thCls = "border-b border-r border-slate-200 bg-slate-50 px-3 py-2.5 text-phx-2xs font-semibold uppercase tracking-wider text-slate-400 last:border-r-0";
-  const tdCls = "border-b border-r border-slate-100 px-3 py-2.5 last:border-r-0";
+  const thCls = "px-3 py-2.5";
+  const tdCls = "border-b border-r border-slate-100 px-3 py-2.5 align-top last:border-r-0";
 
+  // FITS THE SCREEN (owner's golden rule). This was PortalDesktopTable over a 860px (1040px in team
+  // mode) min-width inside `overflow-x-auto` — the exact pattern the rule names — and the table
+  // shows from `md`, where the column is ~736px, and ~636px from `lg` once the sidebar opens. So the
+  // columns are MERGED rather than squeezed: Score carries its zone underneath, Status carries the
+  // acknowledgement, and a fixed layout with a colgroup holds the table to its column at every width.
   return (
     <div aria-label="Coaching reports" className="hidden md:block" onKeyDown={handleKeyDown} role="grid" tabIndex={0}>
-      <PortalDesktopTable minWidth={isTeamMode ? "1040px" : "860px"}>
+      <table className="w-full table-fixed border-collapse text-left text-sm" data-portal-desktop-table>
+        <colgroup>
+          {isTeamMode ? (
+            <>
+              <col className="w-[15%]" />
+              <col className="w-[19%]" />
+              <col className="w-[13%]" />
+              <col className="w-[17%]" />
+              <col className="w-[13%]" />
+              <col className="w-[13%]" />
+              <col className="w-[10%]" />
+            </>
+          ) : (
+            <>
+              <col className="w-[18%]" />
+              <col className="w-[16%]" />
+              <col className="w-[22%]" />
+              <col className="w-[16%]" />
+              <col className="w-[17%]" />
+              <col className="w-[11%]" />
+            </>
+          )}
+        </colgroup>
         <thead>
           <tr>
             <th className={thCls}>Report</th>
             {isTeamMode ? <th className={thCls}>Medical Rep</th> : null}
             <th className={thCls}>Date</th>
             <th className={thCls}>Coach</th>
-            <th className={cn(thCls, "text-right")}>Score</th>
-            <th className={thCls}>Zone</th>
+            <th className={thCls}>Score</th>
             <th className={thCls}>Status</th>
-            <th className={thCls}>Ack</th>
-            <th className={cn(thCls, "w-[70px]")}></th>
+            <th className={thCls}>
+              <span className="sr-only">Open</span>
+            </th>
           </tr>
         </thead>
         <tbody ref={tbodyRef}>
@@ -836,28 +856,41 @@ function ReportsTable({
               key={report.reportId}
               aria-selected={idx === focusedRow}
             >
-              <td className={cn(tdCls, "whitespace-nowrap font-bold text-orange-600")}>{report.reportNumber}</td>
+              <td className={cn(tdCls, "break-words font-bold text-orange-600")}>{report.reportNumber}</td>
               {isTeamMode ? (
-                <td className={tdCls}>
-                  <p className="font-semibold text-slate-900">{formatEmployeeDisplayName(report.medicalRepName)}</p>
-                  <p className="text-phx-xs text-slate-400">{report.medicalRepHrId}</p>
+                <td className={cn(tdCls, "break-words font-semibold text-slate-900")}>
+                  {formatEmployeeDisplayName(report.medicalRepName)}
                 </td>
               ) : null}
-              <td className={cn(tdCls, "whitespace-nowrap text-slate-700")}>{formatDate(report.coachingDate)}</td>
-              <td className={cn(tdCls, "text-slate-700")}>{report.coachName || "—"}</td>
-              <td className={cn(tdCls, "whitespace-nowrap text-right font-bold")} style={{ color: getScoreColor(report.finalScorePercent) }}>{formatPct(report.finalScorePercent)}</td>
-              <td className={tdCls}><ZoneBadge zone={report.performanceZone} /></td>
-              <td className={tdCls}><StatusBadge status={report.status} /></td>
-              <td className={tdCls}><AckBadge acknowledged={report.acknowledged} /></td>
+              <td className={cn(tdCls, "text-slate-700")}>{formatDate(report.coachingDate)}</td>
+              <td className={cn(tdCls, "break-words text-slate-700")}>{report.coachName || "—"}</td>
+              <td className={tdCls}>
+                <p className="font-bold tabular-nums" style={{ color: getScoreColor(report.finalScorePercent) }}>
+                  {formatPct(report.finalScorePercent)}
+                </p>
+                <div className="mt-1">
+                  <ZoneBadge zone={report.performanceZone} />
+                </div>
+              </td>
+              <td className={tdCls}>
+                <div className="flex flex-col items-start gap-1">
+                  <StatusBadge status={report.status} />
+                  <AckBadge acknowledged={report.acknowledged} />
+                </div>
+              </td>
               <td className={cn(tdCls, "text-center")}>
-                <Link className="inline-flex items-center gap-1 border border-slate-200 bg-white px-2.5 py-1.5 text-phx-xs font-semibold text-slate-700 hover:border-orange-300 hover:text-orange-600" href={`/employee-portals/coaching/${report.reportId}`}>
-                  View <ArrowUpRight className="h-3 w-3" />
+                <Link
+                  aria-label={`Open coaching report ${report.reportNumber}`}
+                  className="inline-flex items-center gap-1 border border-slate-200 bg-white px-2 py-1.5 text-phx-xs font-semibold text-slate-700 hover:border-orange-300 hover:text-orange-600"
+                  href={`/employee-portals/coaching/${report.reportId}`}
+                >
+                  View <ArrowUpRight className="h-3 w-3 shrink-0" />
                 </Link>
               </td>
             </tr>
           ))}
         </tbody>
-      </PortalDesktopTable>
+      </table>
     </div>
   );
 }

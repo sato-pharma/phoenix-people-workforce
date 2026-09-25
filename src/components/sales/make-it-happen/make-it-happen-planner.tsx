@@ -29,6 +29,7 @@ import {
   X,
 } from "lucide-react";
 
+import { PortalEmptyState } from "@/components/employee-portal/portal-primitives";
 import {
   AchievementMeter,
   AchievementRing,
@@ -155,7 +156,7 @@ const SCENARIO_STYLE: Record<PlanScenario["key"], { frame: string; kicker: strin
   stretch: { frame: "border-t-amber-500", kicker: "text-amber-600" },
 };
 
-const SELECT = cn(FIELD, "h-8 w-full appearance-none px-2 text-xs font-bold text-slate-700");
+const SELECT = cn(FIELD, "h-10 w-full appearance-none px-2 text-xs font-bold text-slate-700 lg:h-8");
 
 function toggle(list: string[], value: string): string[] {
   return list.includes(value) ? list.filter((item) => item !== value) : [...list, value];
@@ -451,55 +452,85 @@ export function MakeItHappenPlanner({
         : { icon: Target, frame: "border-l-sky-500 bg-sky-50/40", kicker: "text-sky-700", iconTone: "text-sky-500" };
   const CoachIcon = coachTone.icon;
 
+  const bandSubtitle = `${data.periodLabel} · ${data.viewingRep ? data.viewingRep.name : data.scopeLabel}`;
+  const bandStats = (
+    <>
+      <BandStat
+        label="Target"
+        value={data.totals.targetValue == null ? "—" : formatEgpFull(data.totals.targetValue)}
+        note={data.totals.targetValue == null ? "No target set for this period" : undefined}
+      />
+      <BandStat label="Sold so far" tone="sky" value={formatEgpFull(data.totals.gradedValue)} note="Closed months only" />
+      <BandStat
+        label="Your forecast"
+        tone="amber"
+        value={formatEgpFull(forecastTotal)}
+        note={openForForecast ? `${monthsText(monthsLeft)} left to forecast` : "Every month of this period is closed"}
+      />
+      {gapValue != null ? (
+        <BandStat
+          label={gapValue > 0 ? "Still to target" : "Above target by"}
+          value={formatEgpFull(Math.abs(gapValue))}
+          note={gapValue > 0 ? "After sales so far and your forecast" : "Sales so far plus your forecast"}
+        />
+      ) : null}
+    </>
+  );
+  const bandFooter = (
+    <>
+      <BandChoice
+        surface={surface}
+        label="Plan by"
+        options={PERIOD_KINDS}
+        selected={data.periodKind}
+        onSelect={(kind) => router.push(href({ kind }))}
+      />
+      <span aria-hidden className="mx-1 hidden h-4 w-px bg-slate-200 sm:inline-block" />
+      <BandChoice
+        surface={surface}
+        label="Period"
+        options={data.offered[data.periodKind]}
+        selected={data.periodKey}
+        onSelect={(period) => router.push(href({ period, rep: data.viewingRep?.key ?? null }))}
+      />
+    </>
+  );
+
   return (
     <div className="space-y-4">
-      <CommandBand
-        surface={surface}
-        kicker={kicker}
-        title="Make It Happen"
-        subtitle={`${data.periodLabel} · ${data.viewingRep ? data.viewingRep.name : data.scopeLabel}`}
-        stats={
-          <>
-            <BandStat
-              label="Target"
-              value={data.totals.targetValue == null ? "—" : formatEgpFull(data.totals.targetValue)}
-              note={data.totals.targetValue == null ? "No target set for this period" : undefined}
-            />
-            <BandStat label="Sold so far" tone="sky" value={formatEgpFull(data.totals.gradedValue)} note="Closed months only" />
-            <BandStat
-              label="Your forecast"
-              tone="amber"
-              value={formatEgpFull(forecastTotal)}
-              note={openForForecast ? `${monthsText(monthsLeft)} left to forecast` : "Every month of this period is closed"}
-            />
-            {gapValue != null ? (
-              <BandStat
-                label={gapValue > 0 ? "Still to target" : "Above target by"}
-                value={formatEgpFull(Math.abs(gapValue))}
-                note={gapValue > 0 ? "After sales so far and your forecast" : "Sales so far plus your forecast"}
-              />
-            ) : null}
-          </>
-        }
-        ring={<AchievementRing value={overallPct} label="Forecast" premium={surface === "portal"} />}
-        footer={
-          <>
-            <BandChoice
-              label="Plan by"
-              options={PERIOD_KINDS}
-              selected={data.periodKind}
-              onSelect={(kind) => router.push(href({ kind }))}
-            />
-            <span aria-hidden className="mx-1 hidden h-4 w-px bg-slate-200 sm:inline-block" />
-            <BandChoice
-              label="Period"
-              options={data.offered[data.periodKind]}
-              selected={data.periodKey}
-              onSelect={(period) => router.push(href({ period, rep: data.viewingRep?.key ?? null }))}
-            />
-          </>
-        }
-      />
+      {surface === "portal" ? (
+        // The portal lays the ring out in a panel of its own, where a lone ring sat in a full-width
+        // strip; the aside gives it the same companion figure Sales vs Target and Targets carry. The
+        // admin band below is unchanged — its ring sits beside the headline and needs no aside.
+        <CommandBand
+          surface="portal"
+          besideFrom="xl"
+          kicker={kicker}
+          title="Make It Happen"
+          subtitle={bandSubtitle}
+          stats={bandStats}
+          ring={<AchievementRing value={overallPct} size={132} stroke={13} label="Forecast" premium />}
+          aside={
+            <div>
+              <p className={LABEL_CLASS}>Months left</p>
+              <p className="mt-1 whitespace-nowrap text-2xl font-black tabular-nums text-slate-900">{formatNumber(monthsLeft)}</p>
+              <p className="mt-1 max-w-[13rem] text-phx-xs leading-4 text-slate-500">
+                {openForForecast ? `still open to forecast in ${data.periodLabel}` : "every month of this period is closed"}
+              </p>
+            </div>
+          }
+          footer={bandFooter}
+        />
+      ) : (
+        <CommandBand
+          kicker={kicker}
+          title="Make It Happen"
+          subtitle={bandSubtitle}
+          stats={bandStats}
+          ring={<AchievementRing value={overallPct} label="Forecast" />}
+          footer={bandFooter}
+        />
+      )}
 
       {data.viewingRep ? (
         <div className={cn(SURFACE_CLASS, "flex flex-wrap items-center justify-between gap-2 border-l-[3px] border-l-sky-500 px-4 py-3 text-sm")}>
@@ -519,7 +550,15 @@ export function MakeItHappenPlanner({
         </div>
       ) : null}
 
-      {data.isEmptyScope ? (
+      {data.isEmptyScope && surface === "portal" ? (
+        // The portal's one empty panel (PortalEmptyState), shared by every sales page; same wording.
+        <section className={SURFACE_CLASS}>
+          <PortalEmptyState
+            title={`There are no sales or targets to plan for ${data.periodLabel} in your scope.`}
+            message="Pick another period above, or check back once a target is loaded."
+          />
+        </section>
+      ) : data.isEmptyScope ? (
         <section className={cn(SURFACE_CLASS, "flex flex-col items-center px-5 py-10 text-center")}>
           <span className="flex h-12 w-12 items-center justify-center bg-orange-50 text-orange-600 ring-1 ring-inset ring-orange-100">
             <Target className="h-6 w-6" />
@@ -530,7 +569,9 @@ export function MakeItHappenPlanner({
       ) : (
         <>
           <section className={cn(SURFACE_CLASS, "border-l-[3px] border-l-orange-500 px-4 py-4 sm:px-6")}>
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            {/* Side by side from xl, not lg: beside the portal sidebar a 1024px screen left the text
+                about 430px and wrapped the Make It Happen button under itself. */}
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
               <div className="min-w-0">
                 <p className="text-sm font-black text-slate-900">
                   {openForForecast
@@ -546,7 +587,7 @@ export function MakeItHappenPlanner({
                     {PACE_RULES.map((rule) => (
                       <li
                         key={rule}
-                        className="inline-flex items-center gap-1.5 border border-slate-200 bg-slate-50/70 px-2 py-1 text-[11px] font-bold text-slate-700"
+                        className="inline-flex items-center gap-1.5 border border-slate-200 bg-slate-50/70 px-2 py-1 text-phx-xs font-bold text-slate-700"
                       >
                         <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-orange-500" />
                         {rule}
@@ -564,7 +605,7 @@ export function MakeItHappenPlanner({
                           <button
                             key={preset}
                             aria-pressed={selected}
-                            className={cn(chipClass(selected), "h-8 px-2.5 font-black tabular-nums")}
+                            className={cn(chipClass(selected, surface), "h-10 px-2.5 font-black tabular-nums lg:h-8")}
                             onClick={() => setGoalInput(String(preset))}
                             type="button"
                           >
@@ -581,7 +622,7 @@ export function MakeItHappenPlanner({
                           aria-label="Achievement goal, percent of target"
                           className={cn(
                             FIELD,
-                            "h-8 w-full pl-2 pr-6 text-right text-sm font-black tabular-nums",
+                            "h-10 w-full pl-2 pr-6 text-right text-sm font-black tabular-nums lg:h-8",
                             goalPct == null && "border-red-500 text-red-700 hover:border-red-500",
                           )}
                           inputMode="numeric"
@@ -636,7 +677,7 @@ export function MakeItHappenPlanner({
               >
                 <CoachIcon className={cn("mt-0.5 h-5 w-5 shrink-0", coachTone.iconTone)} />
                 <div className="min-w-0">
-                  <p className={cn("text-[10px] font-black uppercase tracking-[0.2em]", coachTone.kicker)}>Phoenix&apos;s plan</p>
+                  <p className={cn("text-phx-2xs font-black uppercase tracking-[0.2em]", coachTone.kicker)}>Phoenix&apos;s plan</p>
                   <p className="mt-0.5 break-words text-sm font-semibold leading-6 text-slate-800">{coach.message}</p>
                 </div>
               </div>
@@ -660,11 +701,11 @@ export function MakeItHappenPlanner({
                         )}
                       >
                         <div className="flex flex-wrap items-center justify-between gap-2">
-                          <p className={cn("text-[10px] font-black uppercase tracking-[0.18em]", style.kicker)}>
+                          <p className={cn("text-phx-2xs font-black uppercase tracking-[0.18em]", style.kicker)}>
                             Scenario {scenario.number}
                           </p>
                           {inUse ? (
-                            <span className="border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-700">
+                            <span className="border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-emerald-700">
                               In your forecast
                             </span>
                           ) : null}
@@ -716,6 +757,7 @@ export function MakeItHappenPlanner({
           </section>
 
           <FilterBar
+            surface={surface}
             busy={busy}
             exportStatus={exportStatus}
             filters={filters}
@@ -743,6 +785,7 @@ export function MakeItHappenPlanner({
               .filter((entry) => entry.rows.length > 0)
               .map((entry) => (
                 <LineSection
+                  surface={surface}
                   key={entry.line.lineCode}
                   forecastValue={lineForecasts.get(entry.line.lineCode) ?? 0}
                   invalid={isInvalid}
@@ -755,10 +798,11 @@ export function MakeItHappenPlanner({
               ))
           )}
 
-          {data.reps.length > 0 ? <TeamSection data={data} href={href} /> : null}
+          {data.reps.length > 0 ? <TeamSection data={data} href={href} surface={surface} /> : null}
 
           <div className="scroll-mt-6" id="make-it-happen-saved-plans">
             <SectionCard
+              surface={surface}
               icon={BookmarkCheck}
               subtitle={
                 data.viewingRep
@@ -837,7 +881,7 @@ export function MakeItHappenPlanner({
                           <p className="flex flex-wrap items-center gap-2 break-words text-sm font-bold text-slate-900">
                             <span className="min-w-0 break-words">{plan.name}</span>
                             {active ? (
-                              <span className="border border-orange-200 bg-white px-1.5 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] text-orange-700">
+                              <span className="border border-orange-200 bg-white px-1.5 py-0.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-orange-700">
                                 Open now
                               </span>
                             ) : null}
@@ -865,7 +909,17 @@ export function MakeItHappenPlanner({
           </div>
 
           {openForForecast && hasUnits ? (
-            <div className="sticky bottom-0 z-20 border border-slate-200 border-t-[3px] border-t-orange-500 bg-white px-4 py-3 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] sm:px-6">
+            // Below lg the portal's fixed bottom nav (z-40, 60px + the safe area) covered the bottom of
+            // this bar — on a 375px phone its Save plan / Clear row. In the portal it stops above the
+            // nav; it stays `sticky`, never `fixed`, because the page-transition wrapper keeps its
+            // transform and a fixed bar would anchor to the page, not the screen. The admin shell has
+            // no bottom nav, so it keeps `bottom-0`.
+            <div
+              className={cn(
+                "sticky z-20 border border-slate-200 border-t-[3px] border-t-orange-500 bg-white px-4 py-3 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] sm:px-6",
+                surface === "portal" ? "bottom-[calc(env(safe-area-inset-bottom,0px)+4.25rem)] lg:bottom-0" : "bottom-0",
+              )}
+            >
               <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
                 <div className="flex min-w-0 flex-wrap items-center gap-x-6 gap-y-2">
                   <div>
@@ -884,12 +938,12 @@ export function MakeItHappenPlanner({
                     </span>
                   </div>
                   {data.canSave && isDirty ? (
-                    <span className="inline-flex items-center gap-1.5 border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-bold text-amber-700">
+                    <span className="inline-flex items-center gap-1.5 border border-amber-200 bg-amber-50 px-2 py-1 text-phx-xs font-bold text-amber-700">
                       <CircleAlert className="h-3.5 w-3.5 shrink-0" />
                       Not saved yet
                     </span>
                   ) : data.canSave && activePlanId ? (
-                    <span className="inline-flex items-center gap-1.5 border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-bold text-emerald-700">
+                    <span className="inline-flex items-center gap-1.5 border border-emerald-200 bg-emerald-50 px-2 py-1 text-phx-xs font-bold text-emerald-700">
                       <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
                       Saved
                     </span>
@@ -947,6 +1001,7 @@ function GapToTarget({ gap, units }: { gap: number | null; units: number | null 
 }
 
 function FilterBar({
+  surface,
   lines,
   filters,
   onFilters,
@@ -956,6 +1011,7 @@ function FilterBar({
   exportStatus,
   onExport,
 }: {
+  surface: "sales" | "portal";
   lines: LinePlanGroup[];
   filters: PlannerFilters;
   onFilters: (next: PlannerFilters) => void;
@@ -994,7 +1050,7 @@ function FilterBar({
               <button
                 key={option.value}
                 aria-pressed={selected}
-                className={cn(chipClass(selected), "inline-flex items-center gap-1.5 px-2.5")}
+                className={cn(chipClass(selected, surface), "inline-flex items-center gap-1.5 px-2.5")}
                 onClick={() => set({ [key]: toggle(filters[key], option.value) })}
                 type="button"
               >
@@ -1034,7 +1090,7 @@ function FilterBar({
     return (
       <button
         aria-busy={busy === format}
-        className={cn(SECONDARY_BUTTON, "inline-flex h-8 items-center gap-1.5 px-3 text-xs font-black", FOCUS_RING)}
+        className={cn(SECONDARY_BUTTON, "inline-flex h-10 items-center gap-1.5 px-3 text-xs font-black lg:h-8", FOCUS_RING)}
         disabled={busy !== null}
         onClick={() => onExport(format)}
         type="button"
@@ -1049,16 +1105,38 @@ function FilterBar({
     );
   };
 
+  // The portal header matches SectionCard's `surface="portal"` scale, so this card reads as one with
+  // the line sections and Saved plans below it. The admin header is unchanged.
+  const portal = surface === "portal";
+
   return (
     <section className={SURFACE_CLASS}>
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
-        <div className="flex min-w-0 flex-1 basis-64 items-center gap-2.5">
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center bg-orange-50 text-orange-600 ring-1 ring-inset ring-orange-100">
-            <SlidersHorizontal className="h-3.5 w-3.5" />
+      <header
+        className={cn(
+          "flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4",
+          portal ? "py-4 sm:px-5" : "py-3",
+        )}
+      >
+        <div className={cn("flex min-w-0 flex-1 basis-64 gap-2.5", portal ? "items-start gap-3" : "items-center")}>
+          <span
+            className={cn(
+              "flex shrink-0 items-center justify-center bg-orange-50 text-orange-600 ring-1 ring-inset ring-orange-100",
+              portal ? "h-9 w-9" : "h-7 w-7",
+            )}
+          >
+            <SlidersHorizontal className={portal ? "h-4 w-4" : "h-3.5 w-3.5"} />
           </span>
           <div className="min-w-0">
-            <h2 className="text-phx-md font-black tracking-tight text-slate-900">Filter and export</h2>
-            <p className="break-words text-phx-xs text-slate-500">
+            <h2
+              className={
+                portal
+                  ? "break-words text-lg font-black leading-tight tracking-tight text-slate-950 sm:text-xl"
+                  : "text-phx-md font-black tracking-tight text-slate-900"
+              }
+            >
+              Filter and export
+            </h2>
+            <p className={portal ? "mt-1 break-words text-sm font-medium leading-6 text-slate-500" : "break-words text-phx-xs text-slate-500"}>
               Showing {formatNumber(shownRows)} of {formatNumber(totalRows)} products. The totals above always cover the whole plan;
               a file holds exactly what you see here.
             </p>
@@ -1067,7 +1145,7 @@ function FilterBar({
         <div className="flex flex-wrap items-center gap-2">
           {active ? (
             <button
-              className={cn(SECONDARY_BUTTON, "inline-flex h-8 items-center gap-1.5 px-3 text-xs font-bold", FOCUS_RING)}
+              className={cn(SECONDARY_BUTTON, "inline-flex h-10 items-center gap-1.5 px-3 text-xs font-bold lg:h-8", FOCUS_RING)}
               onClick={() => onFilters({ ...NO_PLANNER_FILTERS, sort: filters.sort })}
               type="button"
             >
@@ -1085,7 +1163,7 @@ function FilterBar({
             <span className="sr-only">Find a product or family</span>
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
             <input
-              className={cn(FIELD, "h-8 w-full pl-8 pr-2 text-sm")}
+              className={cn(FIELD, "h-10 w-full pl-8 pr-2 text-sm lg:h-8")}
               maxLength={80}
               onChange={(event) => set({ search: event.target.value })}
               placeholder="Find a product or family"
@@ -1126,7 +1204,7 @@ function TrendBadge({ trend }: { trend: TrendReading }) {
   return (
     <span
       className={cn(
-        "inline-flex max-w-full items-center gap-1 border px-1.5 py-0.5 text-[10px] font-black uppercase tracking-[0.08em]",
+        "inline-flex max-w-full items-center gap-1 border px-1.5 py-0.5 text-phx-2xs font-black uppercase tracking-[0.08em]",
         style.className,
       )}
     >
@@ -1193,6 +1271,7 @@ function UnitsHint({
 }
 
 function LineSection({
+  surface,
   line,
   rows,
   totalRows,
@@ -1201,6 +1280,7 @@ function LineSection({
   invalid,
   onUnits,
 }: {
+  surface: "sales" | "portal";
   line: LinePlanGroup;
   rows: FilteredRow[];
   totalRows: number;
@@ -1247,6 +1327,7 @@ function LineSection({
 
   return (
     <SectionCard
+      surface={surface}
       actions={
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
           <span>
@@ -1458,7 +1539,9 @@ function LineSection({
 function TeamSection({
   data,
   href,
+  surface,
 }: {
+  surface: "sales" | "portal";
   data: MakeItHappenWorkspace;
   href: (params: { kind?: string; period?: string; rep?: string | null }) => string;
 }) {
@@ -1492,6 +1575,7 @@ function TeamSection({
 
   return (
     <SectionCard
+      surface={surface}
       icon={Users}
       subtitle="At current pace is where each person lands if their own trend simply continues. On track is 100% or more, close is 80 to 99%. Open anyone to see and plan their products."
       title="Your team"
@@ -1504,7 +1588,7 @@ function TeamSection({
               <button
                 key={option.value}
                 aria-pressed={selected}
-                className={cn(chipClass(selected), "inline-flex items-center gap-1.5 px-2.5")}
+                className={cn(chipClass(selected, surface), "inline-flex items-center gap-1.5 px-2.5")}
                 onClick={() => setBucket(option.value)}
                 type="button"
               >
@@ -1520,7 +1604,7 @@ function TeamSection({
             <span className="sr-only">Find a person</span>
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
             <input
-              className={cn(FIELD, "h-8 w-full pl-8 pr-2 text-sm")}
+              className={cn(FIELD, "h-10 w-full pl-8 pr-2 text-sm lg:h-8")}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Find a person"
               type="search"
@@ -1532,7 +1616,7 @@ function TeamSection({
               <button
                 key={option.value}
                 aria-pressed={sort === option.value}
-                className={cn(chipClass(sort === option.value), "h-8 px-2.5")}
+                className={cn(chipClass(sort === option.value, surface), "h-10 px-2.5 lg:h-8")}
                 onClick={() => setSort(option.value)}
                 type="button"
               >

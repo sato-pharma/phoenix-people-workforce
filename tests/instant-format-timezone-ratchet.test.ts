@@ -70,7 +70,9 @@ import { stripComments } from "./support/comment-strip.ts";
 // (my-visits-workspace, double-visit-report-workspace) do NOT move this number and should not be
 // expected to — both already named timeZone: "UTC" deliberately and were counted as zoned. Their
 // bug was the en-GB month abbreviation, which this ratchet does not measure.
-const CLIENT_BASELINE = 11;
+// Lowered 11 -> 9 in the Medical Rep portal polish (2026-09-25): two unzoned client stamps in the
+// rep's deductions and ROI screens now format in Africa/Cairo, as every time the owner reads is.
+const CLIENT_BASELINE = 9;
 
 /**
  * Not a baseline — a rule. A server-rendered instant with no zone is wrong in

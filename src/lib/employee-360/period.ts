@@ -2,8 +2,12 @@
 //
 // Pure date logic (no DB). The page reads searchParams, resolves the current
 // window and an equal-length immediately-preceding window (for period-over-period
-// deltas), and passes both to the data layer. All dates are UTC YYYY-MM-DD to
-// match the visit/check-in fetchers.
+// deltas), and passes both to the data layer. All dates are date-only YYYY-MM-DD
+// strings, anchored to Africa/Cairo (never the runtime's UTC clock), to match the
+// visit/check-in fetchers.
+
+import { addDaysToDateOnly, parseDateOnly } from "@/lib/date-only";
+import { currentCairoDateOnlyIso, currentCairoDateParts } from "@/lib/i18n/format";
 
 import type { Employee360Window } from "./service";
 
@@ -42,33 +46,39 @@ export const PERIOD_PRESETS: { key: PeriodKey; label: string }[] = [
   { key: "ytd", label: "Year to date" },
 ];
 
-function iso(d: Date): string {
-  return d.toISOString().slice(0, 10);
+// addDaysToDateOnly returns null only for an unparsable input; every call site here
+// passes a string this module itself produced (Cairo "today" or another date-only
+// string derived from it), so a null is a bug in this file, not a runtime input.
+function addDaysStrict(value: string, days: number): string {
+  const result = addDaysToDateOnly(value, days);
+  if (!result) {
+    throw new Error(`period.ts: could not add ${days} day(s) to "${value}"`);
+  }
+  return result;
 }
-function fromIso(s: string): Date {
-  return new Date(`${s}T00:00:00Z`);
-}
-function addDays(s: string, delta: number): string {
-  const d = fromIso(s);
-  d.setUTCDate(d.getUTCDate() + delta);
-  return iso(d);
-}
+
 function daysInclusive(from: string, to: string): number {
-  return Math.round((fromIso(to).getTime() - fromIso(from).getTime()) / 86400000) + 1;
+  const f = parseDateOnly(from);
+  const t = parseDateOnly(to);
+  if (!f || !t) return 0;
+  return Math.round((t.getTime() - f.getTime()) / 86400000) + 1;
 }
+
 function isValidIso(s: string | undefined): s is string {
-  return !!s && /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(fromIso(s).getTime());
+  return !!s && /^\d{4}-\d{2}-\d{2}$/.test(s) && parseDateOnly(s) !== null;
 }
+
 function firstParam(v: string | string[] | undefined): string | undefined {
   return Array.isArray(v) ? v[0] : v;
 }
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 function pretty(from: string, to: string): string {
-  const f = fromIso(from);
-  const t = fromIso(to);
-  const fLbl = `${MONTHS[f.getUTCMonth()]} ${f.getUTCDate()}`;
-  const tLbl = `${MONTHS[t.getUTCMonth()]} ${t.getUTCDate()}, ${t.getUTCFullYear()}`;
+  const f = parseDateOnly(from);
+  const t = parseDateOnly(to);
+  if (!f || !t) return `${from} – ${to}`;
+  const fLbl = `${MONTHS[f.getMonth()]} ${f.getDate()}`;
+  const tLbl = `${MONTHS[t.getMonth()]} ${t.getDate()}, ${t.getFullYear()}`;
   return `${fLbl} – ${tLbl}`;
 }
 
@@ -76,8 +86,11 @@ export function resolvePeriod(
   searchParams: Record<string, string | string[] | undefined>,
   now: Date = new Date(),
 ): ResolvedPeriod {
-  const today = iso(now);
-  const year = now.getUTCFullYear();
+  // Anchor "today" and the current calendar year/month to Africa/Cairo, not the
+  // server's UTC clock — between 00:00 and ~03:00 Cairo time (EEST, UTC+3) a UTC
+  // read is still on yesterday's date, or last month on the 1st.
+  const today = currentCairoDateOnlyIso(now);
+  const { year, month } = currentCairoDateParts(now); // month is 1-indexed
   const rawKey = firstParam(searchParams.preset) as PeriodKey | undefined;
   const fromParam = firstParam(searchParams.from);
   const toParam = firstParam(searchParams.to);
@@ -95,19 +108,19 @@ export function resolvePeriod(
     to = today;
     switch (key) {
       case "last30":
-        from = addDays(today, -29);
+        from = addDaysStrict(today, -29);
         break;
       case "last90":
-        from = addDays(today, -89);
+        from = addDaysStrict(today, -89);
         break;
       case "last180":
-        from = addDays(today, -179);
+        from = addDaysStrict(today, -179);
         break;
       case "thisMonth":
-        from = `${year}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-01`;
+        from = `${year}-${String(month).padStart(2, "0")}-01`;
         break;
       case "thisQuarter": {
-        const q = Math.floor(now.getUTCMonth() / 3);
+        const q = Math.floor((month - 1) / 3);
         from = `${year}-${String(q * 3 + 1).padStart(2, "0")}-01`;
         break;
       }
@@ -119,8 +132,8 @@ export function resolvePeriod(
   }
 
   const length = daysInclusive(from, to);
-  const prevTo = addDays(from, -1);
-  const prevFrom = addDays(prevTo, -(length - 1));
+  const prevTo = addDaysStrict(from, -1);
+  const prevFrom = addDaysStrict(prevTo, -(length - 1));
 
   const currentLabelBase =
     key === "ytd" ? `${year} year-to-date` : PERIOD_PRESETS.find((p) => p.key === key)?.label ?? "Custom period";

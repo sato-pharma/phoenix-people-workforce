@@ -26,7 +26,7 @@ function preservedQuery(params: Record<string, string | string[] | undefined>) {
 }
 
 // Phoenix CRM in the admin shell (the owner, 2026-09-16). The employee portal twin is
-// /employee-portals/field-crm. The pilot at /admin/phoenix-crm is a different, older module.
+// /employee-portals/field-crm. The retired pilot at /admin/phoenix-crm forwards here.
 export default async function AdminPhoenixCrmFieldPage({
   searchParams,
 }: {

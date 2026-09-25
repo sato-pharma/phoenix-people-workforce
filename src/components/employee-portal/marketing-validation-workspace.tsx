@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import {
   AlertTriangle,
   Camera,
@@ -24,9 +25,11 @@ import {
 import {
   buildEvidenceStampLines,
   fetchEvidenceLocation,
+  formatEvidenceDateTime,
   readEvidenceLocationStamp,
   resolveEvidenceLocationStamp,
 } from "@/components/outstation/evidence-watermark";
+import { PortalRecordFields } from "@/components/employee-portal/portal-primitives";
 import { NotFieldValidatedBadge } from "@/components/marketing-requests/not-field-validated-badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -547,16 +550,17 @@ function pendingBlockReason(rows: MarketingValidationReportRow[]): string {
 }
 
 /**
- * The same finding as `pendingBlockReason`, short enough to sit in a table cell on one line.
+ * The same finding as `pendingBlockReason`, short enough to sit in a table cell.
  *
- * The owner's standing rule is that nothing in the UI wraps or truncates, so the prose explanation
- * lives once in the tab's banner and each row carries only this chip.
+ * The prose explanation lives once in the tab's banner and each row carries only this short label.
+ * Text is never cut with an ellipsis; where that collides with the no-sideways-scroll rule, WRAPPING
+ * WINS (the old "never wrap" rule is superseded), so a long label wraps inside its cell.
  */
 function pendingBlockLabel(rows: MarketingValidationReportRow[]): string {
   const customerShort = rows.some((row) => row.customer.evidenceStatus !== "complete");
   const pharmacyShort = rows.some((row) => row.pharmacy.evidenceStatus !== "complete");
-  // 22 characters — deliberately shorter than the longest label already here ("Customer capture
-  // incomplete", 26), so the chip cannot become the thing that makes a row wrap.
+  // 22 characters — deliberately no longer than the longest label already here ("Customer capture
+  // incomplete", 26), so the column stays narrow.
   if (hasGovernorateHold(rows) && !customerShort && !pharmacyShort) return "Code location mismatch";
   if (customerShort && pharmacyShort) return "Both captures incomplete";
   if (customerShort) return "Customer capture incomplete";
@@ -737,6 +741,14 @@ function buildValidatedPharmacyDetails(rows: MarketingValidationReportRow[]) {
 
 /* --------------------------------------------------------------------- Sub-components --------------------------------------------------------------------- */
 
+/**
+ * The size of every capture control (GPS, Photo, camera Start / Capture / Confirm, the licence
+ * buttons, the venue-type answer): 44px tall and sharing its row on a phone, where it is pressed
+ * with a thumb standing in the street — they were 28–32px — and back to the compact 32px from `sm`
+ * (640px) up, where a mouse is the pointer.
+ */
+const CAPTURE_BUTTON_SIZE = "h-11 flex-1 sm:h-8 sm:flex-none";
+
 function Field({
   children,
   label,
@@ -763,7 +775,7 @@ function ReadOnlyCaptureValue({
   placeholder: string;
   value: string;
 }) {
-  const captureClassName = "w-full rounded-sm border border-slate-200 bg-slate-50 px-3.5 text-phx-md font-semibold text-slate-700 outline-none";
+  const captureClassName = "w-full rounded-none border border-slate-200 bg-slate-50 px-3.5 text-phx-md font-semibold text-slate-700 outline-none";
 
   if (multiline) {
     return (
@@ -780,7 +792,7 @@ function ReadOnlyCaptureValue({
   return (
     <Input
       aria-readonly="true"
-      className="h-10 cursor-default rounded-sm border-slate-200 bg-slate-50 text-phx-md font-semibold text-slate-700"
+      className="h-10 cursor-default rounded-none border-slate-200 bg-slate-50 text-phx-md font-semibold text-slate-700"
       placeholder={placeholder}
       readOnly
       value={value}
@@ -799,25 +811,39 @@ function SelectField({
   onChange: (value: string) => void;
   value: string;
 }) {
+  // `wrapValue`: the chosen value wraps onto as many lines as it needs instead of being cut on one
+  // — a long distributor or employee name in a phone-width field was showing ~54px of itself.
   return (
     <SearchableSelect
-      className="h-10 w-full rounded-sm border border-slate-200 bg-white px-3 text-phx-md font-semibold text-slate-800 outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-100 disabled:cursor-not-allowed disabled:opacity-50"
+      className="h-10 w-full rounded-none border border-slate-200 bg-white px-3 text-phx-md font-semibold text-slate-800 outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-100 disabled:cursor-not-allowed disabled:opacity-50"
       disabled={disabled}
       onChange={(event) => onChange(event.target.value)}
       value={value}
+      wrapValue
     >
       {children}
     </SearchableSelect>
   );
 }
 
+/** Raw status keys, in words — a badge never shows "sfe_validated" or "admin approved" in snake form. */
+const VALIDATION_STATUS_LABEL: Record<MarketingValidationStatus, string> = {
+  admin_approved: "Admin approved",
+  pending: "Pending",
+  rejected: "Rejected",
+  sfe_validated: "SFE validated",
+  system_validated: "System validated",
+};
+
 function MetricCard({
   accent,
+  className,
   icon: Icon,
   label,
   value,
 }: {
   accent: "green" | "amber" | "blue" | "red";
+  className?: string;
   icon: typeof CheckCircle2;
   label: string;
   value: number;
@@ -836,14 +862,16 @@ function MetricCard({
   };
 
   return (
-    <div className={`rounded-sm border border-slate-200 border-l-[3px] px-3.5 py-3 ${accentStyles[accent]}`}>
-      <div className="flex items-center gap-2">
+    <div className={`min-w-0 rounded-none border border-slate-200 border-l-[3px] px-3.5 py-3 ${accentStyles[accent]} ${className ?? ""}`}>
+      <div className="flex min-w-0 items-center gap-2">
         <Icon className={`h-3.5 w-3.5 shrink-0 ${iconStyles[accent]}`} />
-        <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">
+        {/* Wraps, never runs past the card: "SYSTEM VALIDATED" in tracked capitals is wider than
+            a card on a narrow row. */}
+        <p className="min-w-0 break-words text-phx-2xs font-black uppercase leading-tight tracking-[0.14em] text-slate-500">
           {label}
         </p>
       </div>
-      <p className="mt-1.5 text-[22px] font-black leading-none text-slate-900">{value}</p>
+      <p className="mt-1.5 text-phx-xl font-black leading-none text-slate-900">{value}</p>
     </div>
   );
 }
@@ -867,9 +895,11 @@ function PharmacySourceTab({
   disabled?: boolean;
   onClick: () => void;
 }) {
+  // Wraps rather than clips: two tabs share a phone row (~105px each at 375px), and "Validate New
+  // Venue" needs ~120px — it used to be cut off mid-word at every width under ~400px.
   return (
     <button
-      className={`min-h-9 overflow-hidden whitespace-nowrap rounded-sm px-3 text-phx-sm font-bold transition ${
+      className={`min-h-10 break-words rounded-none px-3 py-1.5 text-phx-sm font-bold leading-tight transition md:min-h-9 ${
         active
           ? "bg-orange-500 text-white shadow-[0_4px_12px_rgba(249,115,22,0.25)]"
           : disabled
@@ -908,7 +938,7 @@ function ReusablePharmacyPicker({
 
   if (options.length === 0) {
     return (
-      <div className="rounded-sm border border-slate-200 bg-white px-3.5 py-3 text-phx-sm font-semibold text-slate-500">
+      <div className="rounded-none border border-slate-200 bg-white px-3.5 py-3 text-phx-sm font-semibold text-slate-500">
         No validated pharmacies yet. Validate one on the other tab and it will be here next time —
         for you and for your colleagues in the same area.
       </div>
@@ -919,10 +949,11 @@ function ReusablePharmacyPicker({
     <div className="space-y-3">
       <Field label="Venue Already Validated">
         <SearchableSelect
-          className="h-10 w-full rounded-sm border-slate-200 bg-white text-phx-md"
+          className="h-10 w-full rounded-none border-slate-200 bg-white text-phx-md"
           onValueChange={onSelect}
           placeholder="Search by venue name, code, or area"
           value={selectedId}
+          wrapValue
         >
           <option value="">Choose a venue</option>
           {options.map((option) => (
@@ -941,21 +972,27 @@ function ReusablePharmacyPicker({
       </Field>
 
       {selected ? (
-        <div className="space-y-2.5 rounded-sm border border-orange-200 bg-orange-50/40 px-3.5 py-3">
-          <div className="overflow-x-auto">
-            <p className="whitespace-nowrap text-phx-md font-black text-slate-900">
+        <div className="min-w-0 space-y-2.5 rounded-none border border-orange-200 bg-orange-50/40 px-3.5 py-3">
+          {/* Wraps — it used to be one nowrap line scrolling sideways inside a ~220px box on a
+              phone. Where "never cut off" and "never scroll sideways" collide, wrapping wins. */}
+          <div className="min-w-0 space-y-2">
+            <p className="break-words text-phx-md font-black text-slate-900">
               {selected.displayName || selected.pharmacyCode}
             </p>
-            <p className="mt-0.5 whitespace-nowrap text-phx-xs font-semibold text-slate-600">
-              {[
-                selected.pharmacyCode,
-                [selected.areaName, selected.governorateName].filter(Boolean).join(", "),
-                selected.isOwn ? "Validated by you" : `Validated by ${selected.ownerName ?? "a colleague"}`,
-                selected.linkedCustomerCount === 1
-                  ? "Serving 1 customer"
-                  : `Serving ${selected.linkedCustomerCount} customers`,
-              ].filter(Boolean).join(" · ")}
-            </p>
+            <PortalRecordFields
+              fields={[
+                { label: "Code", value: selected.pharmacyCode || "—" },
+                {
+                  label: "Area",
+                  value: [selected.areaName, selected.governorateName].filter(Boolean).join(", ") || "Not captured",
+                },
+                { label: "Validated by", value: selected.isOwn ? "You" : selected.ownerName ?? "A colleague" },
+                {
+                  label: "Serving",
+                  value: selected.linkedCustomerCount === 1 ? "1 customer" : `${selected.linkedCustomerCount} customers`,
+                },
+              ]}
+            />
           </div>
 
           <div className="space-y-1.5">
@@ -973,14 +1010,12 @@ function ReusablePharmacyPicker({
               </p>
             ) : null}
             {selected.vendorCodes.map((code) => (
-              <div className="overflow-x-auto" key={code.distributorCodeId}>
-                <p className="whitespace-nowrap text-phx-sm font-semibold text-slate-700">
-                  {code.distributorName} — {code.distributorPharmacyCode}
-                  {code.referenceStatus === "matched" ? null : (
-                    <span className="ml-2 font-bold text-amber-700">Sales not trackable</span>
-                  )}
-                </p>
-              </div>
+              <p className="min-w-0 break-words text-phx-sm font-semibold text-slate-700" key={code.distributorCodeId}>
+                {code.distributorName} — {code.distributorPharmacyCode}
+                {code.referenceStatus === "matched" ? null : (
+                  <span className="ml-2 font-bold text-amber-700">Sales not trackable</span>
+                )}
+              </p>
             ))}
           </div>
 
@@ -1013,7 +1048,8 @@ function TabButton({
 }) {
   return (
     <button
-      className={`min-h-9 rounded-sm px-4 text-phx-md font-bold transition ${
+      aria-pressed={active}
+      className={`min-h-10 min-w-0 break-words rounded-none px-2 py-1.5 text-phx-md font-bold leading-tight transition sm:px-4 md:min-h-9 ${
         active
           ? "bg-orange-500 text-white shadow-[0_4px_12px_rgba(249,115,22,0.25)]"
           : "border border-slate-200 bg-white text-slate-600 hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
@@ -1036,8 +1072,8 @@ function StatusBadge({ status }: { status: MarketingValidationStatus }) {
   };
 
   return (
-    <span className={`inline-flex items-center rounded-sm border px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide ${styles[variant]}`}>
-      {status.replace(/_/g, " ")}
+    <span className={`inline-flex items-center rounded-none border px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide ${styles[variant]}`}>
+      {VALIDATION_STATUS_LABEL[status] ?? "Unknown"}
     </span>
   );
 }
@@ -1045,7 +1081,7 @@ function StatusBadge({ status }: { status: MarketingValidationStatus }) {
 /** Marks a customer a Super Admin validated at the desk, so it is never mistaken for a field capture. */
 function AdminValidatedBadge() {
   return (
-    <span className="inline-flex items-center rounded-sm border border-sky-200 bg-sky-50 px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide text-sky-700">
+    <span className="inline-flex items-center rounded-none border border-sky-200 bg-sky-50 px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide text-sky-700">
       Admin validated
     </span>
   );
@@ -1060,7 +1096,7 @@ function AdminValidatedBadge() {
  */
 function UntrackedCodeBadge() {
   return (
-    <span className="inline-flex items-center rounded-sm border border-amber-200 bg-amber-50 px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide text-amber-700">
+    <span className="inline-flex items-center rounded-none border border-amber-200 bg-amber-50 px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide text-amber-700">
       Sales not trackable
     </span>
   );
@@ -1151,8 +1187,8 @@ function PharmacyLicensePanel({
     <div
       className={
         fillsTheGap && !license
-          ? "rounded-sm border border-amber-200 bg-amber-50/60 p-3"
-          : "rounded-sm border border-slate-200 bg-slate-50 p-3"
+          ? "rounded-none border border-amber-200 bg-amber-50/60 p-3"
+          : "rounded-none border border-slate-200 bg-slate-50 p-3"
       }
     >
       <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">
@@ -1179,7 +1215,7 @@ function PharmacyLicensePanel({
       />
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <Button
-          className="h-8 gap-1.5 rounded-sm border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-700 hover:bg-slate-50"
+          className={`${CAPTURE_BUTTON_SIZE} gap-1.5 rounded-none border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-700 hover:bg-slate-50`}
           onClick={() => cameraRef.current?.click()}
           type="button"
         >
@@ -1187,17 +1223,17 @@ function PharmacyLicensePanel({
           Photograph
         </Button>
         <Button
-          className="h-8 gap-1.5 rounded-sm border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-700 hover:bg-slate-50"
+          className={`${CAPTURE_BUTTON_SIZE} gap-1.5 rounded-none border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-700 hover:bg-slate-50`}
           onClick={() => fileRef.current?.click()}
           type="button"
         >
           <Paperclip className="h-3.5 w-3.5" />
           Choose file
         </Button>
-        <span className="text-phx-xs font-medium text-slate-400 whitespace-nowrap">JPEG, PNG or PDF · up to 5 MB</span>
+        <span className="text-phx-xs font-medium text-slate-400">JPEG, PNG or PDF · up to 5 MB</span>
       </div>
       {license ? (
-        <div className="mt-2 rounded-sm border border-emerald-200 bg-emerald-50 px-3 py-2">
+        <div className="mt-2 rounded-none border border-emerald-200 bg-emerald-50 px-3 py-2">
           <div className="flex items-center justify-between gap-2">
             <span className="min-w-0 break-all text-phx-sm font-bold leading-snug text-emerald-900" dir="auto">
               {license.fileName}
@@ -1245,14 +1281,14 @@ function CapturePanel({
   const hasPhoto = Boolean(capture.photoName && capture.photoCapturedAt);
 
   return (
-    <div className="rounded-sm border border-slate-200 bg-slate-50 p-3">
+    <div className="rounded-none border border-slate-200 bg-slate-50 p-3">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <p className="text-phx-md font-bold text-slate-800">{label}</p>
           {/* Address and territory, one per line. The coordinate pair stays on the photo and in
               the record — on screen it only ever answered a question nobody asked. */}
           {hasLocation && capture.locationLines.length > 0 ? (
-            <div className="mt-0.5 space-y-0.5 text-phx-sm font-medium text-slate-500">
+            <div className="mt-0.5 space-y-0.5 break-words text-phx-sm font-medium text-slate-500">
               {capture.locationLines.slice(0, 2).map((line, index) => (
                 <p key={`${index}-${line}`}>{line}</p>
               ))}
@@ -1265,7 +1301,7 @@ function CapturePanel({
         </div>
         <div className="flex shrink-0 gap-2">
           <Button
-            className="h-8 gap-1.5 rounded-sm border border-orange-200 bg-white px-3 text-phx-sm font-bold text-orange-700 hover:bg-orange-50"
+            className={`${CAPTURE_BUTTON_SIZE} gap-1.5 rounded-none border border-orange-200 bg-white px-3 text-phx-sm font-bold text-orange-700 hover:bg-orange-50`}
             disabled={isCapturing}
             onClick={onCaptureLocation}
             type="button"
@@ -1274,7 +1310,7 @@ function CapturePanel({
             GPS
           </Button>
           <Button
-            className="h-8 gap-1.5 rounded-sm border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-700 hover:bg-slate-50"
+            className={`${CAPTURE_BUTTON_SIZE} gap-1.5 rounded-none border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-700 hover:bg-slate-50`}
             disabled={!hasLocation}
             onClick={onOpenCamera}
             type="button"
@@ -1285,22 +1321,26 @@ function CapturePanel({
         </div>
       </div>
       <div className="mt-2.5 flex flex-wrap gap-1.5">
-        <span className={`inline-flex items-center rounded-sm border px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide ${hasLocation ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
+        <span className={`inline-flex items-center rounded-none border px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide ${hasLocation ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
           {hasLocation ? "Location captured" : "Location required"}
         </span>
-        <span className={`inline-flex items-center rounded-sm border px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide ${hasPhoto ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
+        <span className={`inline-flex items-center rounded-none border px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide ${hasPhoto ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
           {hasPhoto ? "Live photo captured" : "Live photo required"}
         </span>
       </div>
       {capture.photoDataUrl ? (
-        <div className="mt-2.5 overflow-hidden rounded-sm border border-slate-200 bg-slate-900">
+        <div className="mt-2.5 overflow-hidden rounded-none border border-slate-200 bg-slate-900">
           <ZoomablePhoto
             alt={`${label} captured evidence`}
             caption={`${label} · captured evidence`}
             className="h-36 w-full object-contain"
             src={capture.photoDataUrl}
           />
-          <p className="bg-white px-3 py-1.5 text-phx-xs font-semibold text-slate-500">{capture.photoCapturedAt}</p>
+          {/* On the Cairo clock, the same time the stamp burned into the photo reads — it used to be
+              the raw UTC ISO string ("2026-09-25T11:02:14.311Z"). */}
+          <p className="bg-white px-3 py-1.5 text-phx-xs font-semibold text-slate-500">
+            {capture.photoCapturedAt ? formatEvidenceDateTime(capture.photoCapturedAt) : null}
+          </p>
         </div>
       ) : null}
     </div>
@@ -1417,7 +1457,7 @@ function PlaceSearchPanel({
   }
 
   return (
-    <div className="rounded-sm border border-sky-200 bg-sky-50/60 p-3">
+    <div className="rounded-none border border-sky-200 bg-sky-50/60 p-3">
       <div className="flex items-center gap-2">
         <MapPin className="h-3.5 w-3.5 shrink-0 text-sky-600" />
         <p className="text-phx-md font-bold text-slate-800">{label}</p>
@@ -1438,24 +1478,24 @@ function PlaceSearchPanel({
 
       <div className="relative mt-2.5">
         <Input
-          className="h-10 rounded-sm border-slate-200 bg-white text-phx-md"
+          className="h-10 rounded-none border-slate-200 bg-white text-phx-md"
           onChange={(event) => runSearch(event.target.value)}
           placeholder="Search address or place"
           value={query}
         />
         {suggestions.length > 0 ? (
-          <div className="absolute left-0 right-0 top-full z-30 mt-1 max-h-60 overflow-auto rounded-sm border border-slate-200 bg-white shadow-[0_16px_36px_rgba(15,23,42,0.14)]">
+          <div className="absolute left-0 right-0 top-full z-30 mt-1 max-h-60 overflow-y-auto rounded-none border border-slate-200 bg-white shadow-[0_16px_36px_rgba(15,23,42,0.14)]">
             {suggestions.map((suggestion) => (
               <button
-                className="flex w-full flex-col items-start gap-0.5 border-b border-slate-100 px-3 py-2 text-left transition last:border-b-0 hover:bg-orange-50"
+                className="flex min-h-10 w-full flex-col items-start gap-0.5 border-b border-slate-100 px-3 py-2 text-left transition last:border-b-0 hover:bg-orange-50"
                 disabled={isResolving}
                 key={suggestion.placeId}
                 onClick={() => void choosePlace(suggestion)}
                 type="button"
               >
-                <span className="text-phx-md font-bold text-slate-800">{suggestion.primaryText}</span>
+                <span className="max-w-full break-words text-phx-md font-bold text-slate-800">{suggestion.primaryText}</span>
                 {suggestion.secondaryText ? (
-                  <span className="text-phx-xs font-medium text-slate-500">{suggestion.secondaryText}</span>
+                  <span className="max-w-full break-words text-phx-xs font-medium text-slate-500">{suggestion.secondaryText}</span>
                 ) : null}
               </button>
             ))}
@@ -1465,7 +1505,7 @@ function PlaceSearchPanel({
 
       <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
         <span
-          className={`inline-flex items-center rounded-sm border px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide ${
+          className={`inline-flex items-center rounded-none border px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide ${
             hasLocation
               ? "border-emerald-200 bg-emerald-50 text-emerald-700"
               : "border-amber-200 bg-amber-50 text-amber-700"
@@ -1500,28 +1540,37 @@ function ValidatedPharmaciesModal({
     return () => document.removeEventListener("keydown", handleKey);
   }, [onClose]);
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label={`Venues linked to ${group.customerName}`}>
-      <div className="max-h-[88vh] w-full max-w-3xl overflow-hidden rounded-sm border border-slate-200 bg-white shadow-2xl" ref={focusTrapRef}>
+  // Portalled to <body>, like every overlay in the portal: the page-transition wrapper keeps a
+  // `transform`, so a `fixed` box left inside it anchors to the PAGE (not the screen) and paints
+  // under the phone's bottom navigation (z-40). z-[300] sits above it, beside the photo viewer.
+  if (typeof document === "undefined") return null;
+  return createPortal(
+    <div
+      aria-label={`Venues linked to ${group.customerName}`}
+      aria-modal="true"
+      className="fixed inset-0 z-[300] flex items-center justify-center bg-slate-950/70 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur-sm"
+      role="dialog"
+    >
+      <div className="max-h-[88dvh] w-full max-w-3xl overflow-hidden rounded-none border border-slate-200 bg-white shadow-2xl" ref={focusTrapRef}>
         <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-5 py-4">
           <div className="min-w-0">
             <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-orange-600">Linked venues</p>
-            <h3 className="mt-1 text-lg font-black text-slate-900">{group.customerName}</h3>
+            <h3 className="mt-1 break-words text-lg font-black text-slate-900">{group.customerName}</h3>
           </div>
           <Button
-            className="h-8 rounded-sm border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-700 hover:bg-slate-50"
+            className="h-10 shrink-0 rounded-none border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-700 hover:bg-slate-50 sm:h-8"
             onClick={onClose}
             type="button"
           >
             Close
           </Button>
         </div>
-        <div className="max-h-[65vh] overflow-auto p-4">
-          {/* Mobile card view < 480px */}
+        <div className="max-h-[65dvh] overflow-y-auto p-4">
+          {/* Phone card view — below `md` (768px) */}
           <div className="block md:hidden">
             <div className="space-y-3">
               {pharmacies.map((pharmacy) => (
-                <div className="rounded-sm border border-slate-200 bg-white p-3" key={pharmacy.id}>
+                <div className="rounded-none border border-slate-200 bg-white p-3" key={pharmacy.id}>
                   <p className="text-phx-md font-bold text-slate-900">{pharmacy.name}</p>
                   {pharmacy.suspectedWholesaler ? (
                     <p className="mt-1.5 border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-phx-sm font-semibold text-amber-800">
@@ -1530,19 +1579,19 @@ function ValidatedPharmaciesModal({
                     </p>
                   ) : null}
                   <div className="mt-2 space-y-1 text-phx-sm">
-                    <div className="flex justify-between">
-                      <span className="font-medium text-slate-500">Area</span>
-                      <span className="font-semibold text-slate-700">{pharmacy.area || "Not captured"}</span>
+                    <div className="flex justify-between gap-2">
+                      <span className="shrink-0 font-medium text-slate-500">Area</span>
+                      <span className="min-w-0 break-words text-right font-semibold text-slate-700">{pharmacy.area || "Not captured"}</span>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="font-medium text-slate-500">Governorate</span>
-                      <span className="font-semibold text-slate-700">{pharmacy.governorate || "Not captured"}</span>
+                    <div className="flex justify-between gap-2">
+                      <span className="shrink-0 font-medium text-slate-500">Governorate</span>
+                      <span className="min-w-0 break-words text-right font-semibold text-slate-700">{pharmacy.governorate || "Not captured"}</span>
                     </div>
                   </div>
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     {pharmacy.vendorCodes.map((line) => (
                       <span
-                        className="rounded-sm border border-slate-200 bg-slate-50 px-2 py-1 text-phx-xs font-semibold text-slate-700"
+                        className="min-w-0 break-words rounded-none border border-slate-200 bg-slate-50 px-2 py-1 text-phx-xs font-semibold text-slate-700"
                         key={line.id}
                       >
                         {line.distributorName}: <span className="font-mono">{line.code}</span>
@@ -1553,10 +1602,17 @@ function ValidatedPharmaciesModal({
               ))}
             </div>
           </div>
-          {/* Desktop table view */}
+          {/* Desktop and tablet table view — `md` (768px) and up. Fixed columns, so a long venue
+              name or a row of vendor codes wraps inside its cell instead of widening the table. */}
           <div className="hidden md:block">
-            <div className="overflow-hidden rounded-sm border border-slate-200">
-              <table className="w-full border-collapse text-left">
+            <div className="overflow-hidden rounded-none border border-slate-200">
+              <table className="w-full table-fixed border-collapse text-left">
+                <colgroup>
+                  <col style={{ width: "34%" }} />
+                  <col style={{ width: "18%" }} />
+                  <col style={{ width: "18%" }} />
+                  <col style={{ width: "30%" }} />
+                </colgroup>
                 <thead className="bg-slate-50 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
                   <tr>
                     <th className="border-r border-slate-100 px-3 py-2.5">Venue</th>
@@ -1568,7 +1624,7 @@ function ValidatedPharmaciesModal({
                 <tbody className="bg-white text-phx-md">
                   {pharmacies.map((pharmacy) => (
                     <tr className="border-t border-slate-100" key={pharmacy.id}>
-                      <td className="border-r border-slate-100 px-3 py-2.5 font-bold text-slate-900">
+                      <td className="break-words border-r border-slate-100 px-3 py-2.5 font-bold text-slate-900">
                         {pharmacy.name}
                         {pharmacy.suspectedWholesaler ? (
                           <span className="mt-1 block border border-amber-200 bg-amber-50 px-2 py-1 text-phx-xs font-semibold text-amber-800">
@@ -1577,13 +1633,13 @@ function ValidatedPharmaciesModal({
                           </span>
                         ) : null}
                       </td>
-                      <td className="border-r border-slate-100 px-3 py-2.5 font-medium text-slate-700">{pharmacy.area || "Not captured"}</td>
-                      <td className="border-r border-slate-100 px-3 py-2.5 font-medium text-slate-700">{pharmacy.governorate || "Not captured"}</td>
+                      <td className="break-words border-r border-slate-100 px-3 py-2.5 font-medium text-slate-700">{pharmacy.area || "Not captured"}</td>
+                      <td className="break-words border-r border-slate-100 px-3 py-2.5 font-medium text-slate-700">{pharmacy.governorate || "Not captured"}</td>
                       <td className="px-3 py-2.5">
                         <div className="flex flex-wrap gap-1.5">
                           {pharmacy.vendorCodes.map((line) => (
                             <span
-                              className="rounded-sm border border-slate-200 bg-slate-50 px-2 py-1 text-phx-xs font-semibold text-slate-600"
+                              className="min-w-0 break-words rounded-none border border-slate-200 bg-slate-50 px-2 py-1 text-phx-xs font-semibold text-slate-600"
                               key={line.id}
                             >
                               {line.distributorName}: <span className="font-mono">{line.code}</span>
@@ -1599,7 +1655,8 @@ function ValidatedPharmaciesModal({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -1770,91 +1827,114 @@ function LiveCameraModal({
     onCapture(pendingPhoto.dataUrl, pendingPhoto.capturedAt);
   }
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="Live timestamped photo capture">
-      <div className="w-full max-w-xl overflow-hidden rounded-sm border border-slate-200 bg-white shadow-2xl" ref={focusTrapRef}>
-        <div className="border-b border-slate-100 px-5 py-3">
-          <p className="text-phx-md font-bold text-slate-900">Live timestamped photo</p>
-          <p className="mt-0.5 text-phx-sm font-medium text-slate-500">{message}</p>
-          {hasLocationStamp ? (
-            <p className="mt-1.5 text-phx-xs font-semibold text-slate-600 whitespace-nowrap">{capture.address}</p>
-          ) : null}
-        </div>
-        <div className="bg-slate-900">
-          {pendingPhoto ? (
-            <ZoomablePhoto
-              alt={`${targetLabel} stamped live evidence preview`}
-              caption={`${targetLabel} · stamped live evidence`}
-              className="max-h-[70vh] w-full object-contain"
-              src={pendingPhoto.dataUrl}
+  // Portalled to <body> at z-[300]: left inside the page it anchored to the page-transition wrapper
+  // (which keeps a `transform`), not to the screen, and painted under the phone's bottom navigation.
+  //
+  // On a phone it is a bottom sheet that SCROLLS — the old centred box could not, so on a ~640px
+  // screen the stamped photo pushed Confirm off the bottom. The outer layer scrolls and the inner
+  // one is `min-h-full`, so a sheet taller than the screen grows downward and every part of it can
+  // be reached. The live preview is `object-contain` — `object-cover` cropped a portrait camera
+  // into a 16:9 strip, so what the rep saw was not what the capture kept.
+  if (typeof document === "undefined") return null;
+  return createPortal(
+    <div
+      aria-label="Live timestamped photo capture"
+      aria-modal="true"
+      className="fixed inset-0 z-[300] overflow-y-auto bg-slate-950/70 backdrop-blur-sm"
+      role="dialog"
+    >
+      <div className="flex min-h-full items-end justify-center sm:items-center sm:p-4">
+        <div className="w-full max-w-xl rounded-none border border-slate-200 bg-white shadow-2xl" ref={focusTrapRef}>
+          <div className="border-b border-slate-100 px-5 py-3">
+            <p className="text-phx-md font-bold text-slate-900">Live timestamped photo</p>
+            <p className="mt-0.5 text-phx-sm font-medium text-slate-500">{message}</p>
+            {hasLocationStamp ? (
+              <p className="mt-1.5 break-words text-phx-xs font-semibold text-slate-600">{capture.address}</p>
+            ) : null}
+          </div>
+          <div className="bg-slate-900">
+            {pendingPhoto ? (
+              <ZoomablePhoto
+                alt={`${targetLabel} stamped live evidence preview`}
+                caption={`${targetLabel} · stamped live evidence`}
+                className="max-h-[55dvh] w-full object-contain"
+                src={pendingPhoto.dataUrl}
+              />
+            ) : null}
+            {/* Stays mounted (only hidden) while the stamped photo is reviewed, so Re-take returns
+                to a LIVE preview — unmounting it dropped the stream and left a black box. */}
+            <video
+              className={pendingPhoto ? "hidden" : "h-[55dvh] w-full object-contain sm:aspect-video sm:h-auto"}
+              muted
+              playsInline
+              ref={videoRef}
             />
-          ) : (
-            <video className="aspect-video w-full object-cover" muted playsInline ref={videoRef} />
-          )}
-        </div>
-        <div className="flex flex-wrap items-center justify-end gap-2 bg-slate-50 px-4 py-3">
-          <Button
-            className="h-8 rounded-sm border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-700 hover:bg-slate-50"
-            onClick={onClose}
-            type="button"
-          >
-            Cancel
-          </Button>
-          {pendingPhoto ? (
-            <>
-              <Button
-                className="h-8 gap-1.5 rounded-sm border border-orange-200 bg-white px-3 text-phx-sm font-bold text-orange-700 hover:bg-orange-50"
-                onClick={() => {
-                  setPendingPhoto(null);
-                  setMessage("Camera ready");
-                }}
-                type="button"
-              >
-                Re-take
-              </Button>
-              <Button
-                className="h-8 gap-1.5 rounded-sm bg-orange-500 px-3 text-phx-sm font-bold text-white hover:bg-orange-600"
-                onClick={confirmPhoto}
-                type="button"
-              >
-                Confirm Photo
-              </Button>
-            </>
-          ) : (
-            <>
-              <Button
-                className="h-8 gap-1.5 rounded-sm border border-orange-200 bg-white px-3 text-phx-sm font-bold text-orange-700 hover:bg-orange-50"
-                disabled={isStarting}
-                onClick={startCamera}
-                type="button"
-              >
-                {isStarting ? <LoadingSpinner /> : <Camera className="h-3.5 w-3.5" />}
-                {cameraReady ? "Restart" : "Start Camera"}
-              </Button>
-              <Button
-                className="h-8 gap-1.5 rounded-sm bg-orange-500 px-3 text-phx-sm font-bold text-white hover:bg-orange-600"
-                disabled={!cameraReady || !hasLocationStamp}
-                onClick={captureFrame}
-                type="button"
-              >
-                <Camera className="h-3.5 w-3.5" />
-                Capture
-              </Button>
-            </>
-          )}
+          </div>
+          <div className="flex flex-wrap items-center justify-end gap-2 bg-slate-50 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:pb-3">
+            <Button
+              className={`${CAPTURE_BUTTON_SIZE} rounded-none border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-700 hover:bg-slate-50`}
+              onClick={onClose}
+              type="button"
+            >
+              Cancel
+            </Button>
+            {pendingPhoto ? (
+              <>
+                <Button
+                  className={`${CAPTURE_BUTTON_SIZE} gap-1.5 rounded-none border border-orange-200 bg-white px-3 text-phx-sm font-bold text-orange-700 hover:bg-orange-50`}
+                  onClick={() => {
+                    setPendingPhoto(null);
+                    setMessage("Camera ready");
+                  }}
+                  type="button"
+                >
+                  Re-take
+                </Button>
+                <Button
+                  className={`${CAPTURE_BUTTON_SIZE} gap-1.5 rounded-none bg-orange-500 px-3 text-phx-sm font-bold text-white hover:bg-orange-600`}
+                  onClick={confirmPhoto}
+                  type="button"
+                >
+                  Confirm Photo
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button
+                  className={`${CAPTURE_BUTTON_SIZE} gap-1.5 rounded-none border border-orange-200 bg-white px-3 text-phx-sm font-bold text-orange-700 hover:bg-orange-50`}
+                  disabled={isStarting}
+                  onClick={startCamera}
+                  type="button"
+                >
+                  {isStarting ? <LoadingSpinner /> : <Camera className="h-3.5 w-3.5" />}
+                  {cameraReady ? "Restart" : "Start Camera"}
+                </Button>
+                <Button
+                  className={`${CAPTURE_BUTTON_SIZE} gap-1.5 rounded-none bg-orange-500 px-3 text-phx-sm font-bold text-white hover:bg-orange-600`}
+                  disabled={!cameraReady || !hasLocationStamp}
+                  onClick={captureFrame}
+                  type="button"
+                >
+                  <Camera className="h-3.5 w-3.5" />
+                  Capture
+                </Button>
+              </>
+            )}
+          </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
 /* --------------------------------------------------------------------- Skeleton Loader --------------------------------------------------------------------- */
 
-function MetricSkeleton() {
+function MetricSkeleton({ className }: { className?: string }) {
   return (
-    <div className="animate-pulse rounded-sm border border-slate-200 border-l-[3px] border-l-slate-300 px-3.5 py-3">
-      <div className="h-3 w-24 rounded-sm bg-slate-200" />
-      <div className="mt-3 h-6 w-12 rounded-sm bg-slate-200" />
+    <div className={`animate-pulse rounded-none border border-slate-200 border-l-[3px] border-l-slate-300 px-3.5 py-3 ${className ?? ""}`}>
+      <div className="h-3 w-24 rounded-none bg-slate-200" />
+      <div className="mt-3 h-6 w-12 rounded-none bg-slate-200" />
     </div>
   );
 }
@@ -1863,9 +1943,9 @@ function TableSkeleton() {
   return (
     <div className="space-y-2 p-4">
       {[1, 2, 3].map((i) => (
-        <div className="animate-pulse rounded-sm border border-slate-100 bg-slate-50 p-3" key={i}>
-          <div className="h-4 w-3/4 rounded-sm bg-slate-200" />
-          <div className="mt-2 h-3 w-1/2 rounded-sm bg-slate-200" />
+        <div className="animate-pulse rounded-none border border-slate-100 bg-slate-50 p-3" key={i}>
+          <div className="h-4 w-3/4 rounded-none bg-slate-200" />
+          <div className="mt-2 h-3 w-1/2 rounded-none bg-slate-200" />
         </div>
       ))}
     </div>
@@ -2741,7 +2821,7 @@ export function MarketingValidationWorkspace() {
     <div className="space-y-4" dir="auto">
       {/* --------- Offline Indicator --------- */}
       {hasMounted && (!isOnline || queueLength > 0) && (
-        <div className="flex items-center gap-2 rounded-sm border border-amber-200 bg-amber-50 px-3.5 py-2 text-phx-sm font-semibold text-amber-800">
+        <div className="flex items-center gap-2 rounded-none border border-amber-200 bg-amber-50 px-3.5 py-2 text-phx-sm font-semibold text-amber-800">
           <WifiOff className="h-3.5 w-3.5 shrink-0" />
           {!isOnline
             ? "You are offline. Submissions will be queued and synced automatically."
@@ -2751,13 +2831,13 @@ export function MarketingValidationWorkspace() {
 
       {/* --------- Recovered Draft --------- */}
       {hasMounted && draftNotice ? (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-sm border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-phx-md font-semibold text-amber-800">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-none border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-phx-md font-semibold text-amber-800">
           <span className="flex min-w-0 items-start gap-2">
             <History className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             {draftNotice}
           </span>
           <button
-            className="shrink-0 rounded-sm border border-amber-300 bg-white px-2.5 py-1 text-phx-sm font-semibold text-amber-800 hover:bg-amber-100"
+            className="shrink-0 rounded-none border border-amber-300 bg-white px-2.5 py-1 text-phx-sm font-semibold text-amber-800 hover:bg-amber-100"
             onClick={discardRecoveredDraft}
             type="button"
           >
@@ -2768,13 +2848,13 @@ export function MarketingValidationWorkspace() {
 
       {/* --------- Offline Submissions That Aged Out --------- */}
       {hasMounted && expiredCount > 0 ? (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-sm border border-red-200 bg-red-50 px-3.5 py-2.5 text-phx-md font-semibold text-red-800">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-none border border-red-200 bg-red-50 px-3.5 py-2.5 text-phx-md font-semibold text-red-800">
           <span className="flex min-w-0 items-start gap-2">
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             {`${expiredCount} offline submission${expiredCount > 1 ? "s were" : " was"} waiting to sync but the live photo and location on ${expiredCount > 1 ? "them are" : "it is"} now too old to count as evidence of the visit. Capture ${expiredCount > 1 ? "them" : "it"} again.`}
           </span>
           <button
-            className="shrink-0 rounded-sm border border-red-300 bg-white px-2.5 py-1 text-phx-sm font-semibold text-red-800 hover:bg-red-100"
+            className="shrink-0 rounded-none border border-red-300 bg-white px-2.5 py-1 text-phx-sm font-semibold text-red-800 hover:bg-red-100"
             onClick={dismissExpired}
             type="button"
           >
@@ -2784,30 +2864,15 @@ export function MarketingValidationWorkspace() {
       ) : null}
 
       {/* --------- Summary Metrics --------- */}
-      <div className="rounded-sm border border-slate-200 bg-white p-3 shadow-sm sm:p-4">
-        <div className="flex items-center justify-between gap-3">
-          <div className="grid flex-1 grid-cols-2 gap-2 xs:grid-cols-4">
-            {isLoading ? (
-              <>
-                <MetricSkeleton />
-                <MetricSkeleton />
-                <MetricSkeleton />
-                <MetricSkeleton />
-                <MetricSkeleton />
-              </>
-            ) : (
-              <>
-                <MetricCard accent="green" icon={CheckCircle2} label="System Validated" value={workspace.summary.system_validated} />
-                <MetricCard accent="blue" icon={UserCheck} label="SFE Validated" value={workspace.summary.sfe_validated} />
-                {/* Blue like SFE: both are a person's decision. Green stays the evidence gate alone. */}
-                <MetricCard accent="blue" icon={ShieldCheck} label="Admin Approved" value={workspace.summary.admin_approved} />
-                <MetricCard accent="amber" icon={Clock} label="Pending" value={workspace.summary.pending} />
-                <MetricCard accent="red" icon={ShieldX} label="Rejected" value={workspace.summary.rejected} />
-              </>
-            )}
-          </div>
+      {/* Five cards: 2 · 3 · 5 across. The fifth spans the whole row on a phone rather than sitting
+          alone at half width, and the refresh button has its own header row — beside the grid it
+          took width the labels needed. */}
+      <div className="rounded-none border border-slate-200 bg-white p-3 shadow-sm sm:p-4">
+        <div className="mb-2.5 flex items-center justify-between gap-3">
+          <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">Validation summary</p>
           <button
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm border border-slate-200 bg-white text-slate-600 transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-600"
+            aria-label="Refresh data"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-none border border-slate-200 bg-white text-slate-600 transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-600 md:h-9 md:w-9"
             onClick={() => {
               setIsLoading(true);
               setMessage(null);
@@ -2819,9 +2884,29 @@ export function MarketingValidationWorkspace() {
             {isLoading ? <LoadingSpinner /> : <RefreshCcw className="h-3.5 w-3.5" />}
           </button>
         </div>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+          {isLoading ? (
+            <>
+              <MetricSkeleton />
+              <MetricSkeleton />
+              <MetricSkeleton />
+              <MetricSkeleton />
+              <MetricSkeleton className="col-span-2 sm:col-span-1" />
+            </>
+          ) : (
+            <>
+              <MetricCard accent="green" icon={CheckCircle2} label="System Validated" value={workspace.summary.system_validated} />
+              <MetricCard accent="blue" icon={UserCheck} label="SFE Validated" value={workspace.summary.sfe_validated} />
+              {/* Blue like SFE: both are a person's decision. Green stays the evidence gate alone. */}
+              <MetricCard accent="blue" icon={ShieldCheck} label="Admin Approved" value={workspace.summary.admin_approved} />
+              <MetricCard accent="amber" icon={Clock} label="Pending" value={workspace.summary.pending} />
+              <MetricCard accent="red" className="col-span-2 sm:col-span-1" icon={ShieldX} label="Rejected" value={workspace.summary.rejected} />
+            </>
+          )}
+        </div>
         {/* Mini summary bar */}
         {!isLoading && (totalValidated + workspace.summary.pending + workspace.summary.rejected) > 0 && (
-          <div className="mt-3 flex h-2 w-full overflow-hidden rounded-sm bg-slate-100">
+          <div className="mt-3 flex h-2 w-full overflow-hidden rounded-none bg-slate-100">
             {totalValidated > 0 && (
               <div
                 className="bg-gradient-to-r from-emerald-600 to-emerald-400 transition-all duration-500"
@@ -2845,34 +2930,44 @@ export function MarketingValidationWorkspace() {
       </div>
 
       {/* --------- Tab Buttons --------- */}
-      <div className="flex gap-2 rounded-sm border border-slate-200 bg-white p-1.5">
+      {/* An equal-width grid, so the tabs share the row at every width instead of each label
+          breaking onto three lines below ~500px. A phone reads the short labels; from `sm` up the
+          full ones. */}
+      <div
+        className={`grid gap-2 rounded-none border border-slate-200 bg-white p-1.5 ${
+          pendingGroups.length > 0 ? "grid-cols-3" : "grid-cols-2"
+        }`}
+      >
         <TabButton active={activeTab === "validation"} onClick={() => setActiveTab("validation")}>
-          Validate Customer
+          <span className="sm:hidden">Validate</span>
+          <span className="hidden sm:inline">Validate Customer</span>
         </TabButton>
         <TabButton active={activeTab === "validated"} onClick={() => setActiveTab("validated")}>
-          Validated ({validatedGroups.length})
+          <span className="sm:hidden">Validated · {validatedGroups.length}</span>
+          <span className="hidden sm:inline">Validated ({validatedGroups.length})</span>
         </TabButton>
         {pendingGroups.length > 0 ? (
           <TabButton active={activeTab === "pending"} onClick={() => setActiveTab("pending")}>
-            Not Usable Yet ({pendingGroups.length})
+            <span className="sm:hidden">Not usable · {pendingGroups.length}</span>
+            <span className="hidden sm:inline">Not Usable Yet ({pendingGroups.length})</span>
           </TabButton>
         ) : null}
       </div>
 
       {/* --------- Alert Messages --------- */}
       {message ? (
-        <div className={`rounded-sm border px-3.5 py-2.5 text-phx-md font-semibold ${messageState?.tone === "success" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-800"}`}>
+        <div className={`rounded-none border px-3.5 py-2.5 text-phx-md font-semibold ${messageState?.tone === "success" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-800"}`}>
           {message}
         </div>
       ) : null}
 
       {/* --------- Validation Form Tab --------- */}
       {activeTab === "validation" ? (
-        <Card className="overflow-hidden rounded-sm border border-slate-200 bg-white p-0 shadow-sm">
+        <Card className="overflow-hidden rounded-none border border-slate-200 bg-white p-0 shadow-sm">
           <form aria-busy={isSaving} onSubmit={submitValidation}>
             <div className="border-b border-slate-100 bg-gradient-to-r from-white via-orange-50/40 to-white px-4 py-4 sm:px-5">
               <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm bg-orange-50 text-orange-600 ring-1 ring-orange-100">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-none bg-orange-50 text-orange-600 ring-1 ring-orange-100">
                   <ClipboardCheck className="h-4 w-4" />
                 </div>
                 <div>
@@ -2890,7 +2985,7 @@ export function MarketingValidationWorkspace() {
             {workspace.canValidateOnBehalf ? (
               <div className="border-b border-slate-100 bg-sky-50/50 px-4 py-4 sm:px-5">
                 <div className="flex items-center gap-2.5">
-                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-sm bg-white text-sky-600 ring-1 ring-sky-100">
+                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-none bg-white text-sky-600 ring-1 ring-sky-100">
                     <ShieldCheck className="h-3.5 w-3.5" />
                   </div>
                   <div className="min-w-0">
@@ -2898,8 +2993,8 @@ export function MarketingValidationWorkspace() {
                     <p className="text-phx-md font-bold text-slate-800">Validate on behalf of an employee</p>
                   </div>
                 </div>
-                <div className="mt-3 grid gap-3 lg:grid-cols-6">
-                  <div className="lg:col-span-3">
+                <div className="mt-3 grid gap-3 md:grid-cols-6">
+                  <div className="md:col-span-3">
                     <Field label="Employee">
                       <SelectField onChange={setOnBehalfHrId} value={onBehalfHrId}>
                         <option value="">Not on behalf — validate as myself</option>
@@ -2911,9 +3006,9 @@ export function MarketingValidationWorkspace() {
                       </SelectField>
                     </Field>
                   </div>
-                  <div className="lg:col-span-3">
+                  <div className="md:col-span-3">
                     <Field label="What this does">
-                      <div className="flex min-h-10 items-center rounded-sm border border-slate-200 bg-white px-3.5 py-2">
+                      <div className="flex min-h-10 items-center rounded-none border border-slate-200 bg-white px-3.5 py-2">
                         <p className="text-phx-sm font-semibold text-slate-600">
                           {onBehalfEmployee
                             ? `Customer is owned by ${onBehalfEmployee.name} and appears in their marketing request list.`
@@ -2925,10 +3020,10 @@ export function MarketingValidationWorkspace() {
                 </div>
                 {isDeskMode ? (
                   <div className="mt-2.5 flex flex-wrap gap-1.5">
-                    <span className="inline-flex items-center rounded-sm border border-sky-200 bg-white px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide text-sky-700">
+                    <span className="inline-flex items-center rounded-none border border-sky-200 bg-white px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide text-sky-700">
                       Desk mode — map search, no live photo
                     </span>
-                    <span className="inline-flex items-center rounded-sm border border-slate-200 bg-white px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide text-slate-600">
+                    <span className="inline-flex items-center rounded-none border border-slate-200 bg-white px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide text-slate-600">
                       Saved as admin validated
                     </span>
                   </div>
@@ -2939,12 +3034,12 @@ export function MarketingValidationWorkspace() {
             <div className="space-y-4 p-4 sm:p-5">
               {customers.map((customer, customerIndex) => (
                 <div
-                  className="overflow-hidden rounded-sm border border-slate-200 bg-white"
+                  className="overflow-hidden rounded-none border border-slate-200 bg-white"
                   key={customer.key}
                 >
                   <div className="flex items-center justify-between gap-3 border-b border-slate-100 bg-slate-50/70 px-3 py-2.5 sm:px-4">
                     <div className="flex min-w-0 items-center gap-2.5">
-                      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-sm bg-white text-orange-600 ring-1 ring-orange-100">
+                      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-none bg-white text-orange-600 ring-1 ring-orange-100">
                         <UserCheck className="h-3.5 w-3.5" />
                       </div>
                       <p className="min-w-0 text-phx-md font-bold text-slate-800">
@@ -2954,7 +3049,7 @@ export function MarketingValidationWorkspace() {
                     </div>
                     <button
                       aria-label="Remove customer"
-                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-sm border border-slate-200 bg-white text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
+                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-none border border-slate-200 bg-white text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 sm:h-7 sm:w-7"
                       disabled={customers.length === 1}
                       onClick={() =>
                         setCustomers((current) =>
@@ -2982,8 +3077,8 @@ export function MarketingValidationWorkspace() {
                     </div>
                   ) : null}
 
-                  <div className="grid gap-4 p-3 sm:p-4 lg:grid-cols-6">
-                    <div className="lg:col-span-2">
+                  <div className="grid gap-4 p-3 sm:p-4 md:grid-cols-6">
+                    <div className="md:col-span-2">
                       <Field label="Customer Type">
                         <SelectField
                           disabled={Boolean(customer.existingCustomerId)}
@@ -2998,10 +3093,10 @@ export function MarketingValidationWorkspace() {
                         </SelectField>
                       </Field>
                     </div>
-                    <div className="lg:col-span-4">
+                    <div className="md:col-span-4">
                       <Field label="Customer Name">
                         <Input
-                          className="h-10 rounded-sm border-slate-200 bg-white text-phx-md disabled:cursor-not-allowed disabled:opacity-60"
+                          className="h-10 rounded-none border-slate-200 bg-white text-phx-md disabled:cursor-not-allowed disabled:opacity-60"
                           disabled={Boolean(customer.existingCustomerId)}
                           onChange={(event) => updateCustomer(customer.key, { name: event.target.value })}
                           placeholder="Customer name"
@@ -3012,7 +3107,7 @@ export function MarketingValidationWorkspace() {
                     {/* A customer whose own evidence is complete is here for its venue only. The server
                         never writes that row, so its capture, phone and speciality are not offered. */}
                     {customer.customerComplete ? null : (<>
-                    <div className={customer.type === "other" ? "lg:col-span-2" : "lg:col-span-3"}>
+                    <div className={customer.type === "other" ? "md:col-span-2" : "md:col-span-3"}>
                       <Field label="Speciality">
                         <SelectField
                           onChange={(value) => updateCustomer(customer.key, { speciality: value })}
@@ -3028,10 +3123,10 @@ export function MarketingValidationWorkspace() {
                       </Field>
                     </div>
                     {customer.type === "other" ? (
-                      <div className="lg:col-span-2">
+                      <div className="md:col-span-2">
                         <Field label="Other Type">
                           <Input
-                            className="h-10 rounded-sm border-slate-200 bg-white text-phx-md"
+                            className="h-10 rounded-none border-slate-200 bg-white text-phx-md"
                             onChange={(event) => updateCustomer(customer.key, { otherType: event.target.value })}
                             placeholder="Describe customer type"
                             value={customer.otherType}
@@ -3039,10 +3134,10 @@ export function MarketingValidationWorkspace() {
                         </Field>
                       </div>
                     ) : null}
-                    <div className={customer.type === "other" ? "lg:col-span-2" : "lg:col-span-3"}>
+                    <div className={customer.type === "other" ? "md:col-span-2" : "md:col-span-3"}>
                       <Field label="Phone">
                         <Input
-                          className="h-10 rounded-sm border-slate-200 bg-white text-phx-md"
+                          className="h-10 rounded-none border-slate-200 bg-white text-phx-md"
                           onChange={(event) => updateCustomer(customer.key, { mobile: event.target.value })}
                           placeholder="Mobile number"
                           type="tel"
@@ -3050,17 +3145,17 @@ export function MarketingValidationWorkspace() {
                         />
                       </Field>
                     </div>
-                    <div className="lg:col-span-3">
+                    <div className="md:col-span-3">
                       <Field label={isDeskMode ? "Area (Map)" : "Area (GPS)"}>
                         <ReadOnlyCaptureValue placeholder={isDeskMode ? "From map search" : "From GPS"} value={customer.area} />
                       </Field>
                     </div>
-                    <div className="lg:col-span-3">
+                    <div className="md:col-span-3">
                       <Field label={isDeskMode ? "Governorate (Map)" : "Governorate (GPS)"}>
                         <ReadOnlyCaptureValue placeholder={isDeskMode ? "From map search" : "From GPS"} value={customer.governorate} />
                       </Field>
                     </div>
-                    <div className="lg:col-span-6">
+                    <div className="md:col-span-6">
                       <Field label={isDeskMode ? "Address (Map)" : "Address (GPS)"}>
                         <ReadOnlyCaptureValue
                           multiline
@@ -3069,7 +3164,7 @@ export function MarketingValidationWorkspace() {
                         />
                       </Field>
                     </div>
-                    <div className="lg:col-span-6">
+                    <div className="md:col-span-6">
                       {isDeskMode ? (
                         <PlaceSearchPanel
                           capture={customer.capture}
@@ -3090,21 +3185,22 @@ export function MarketingValidationWorkspace() {
 
                     {/* Pharmacy section divider — scoped to THIS customer.
                         `min-w-0` here is the same load-bearing fix as on the pharmacy cards below:
-                        without it this grid item sizes to its own min-content (the nowrap sentence,
-                        ~335px) and overflows a 330px phone track, and the customer card's
-                        `overflow-hidden` then clips the sentence mid-word. The sentence itself
-                        scrolls inside `overflow-x-auto` rather than ellipsing — owner's rule:
-                        never wrap, never truncate. */}
-                    <div className="min-w-0 lg:col-span-6">
+                        a grid item sizes to its own min-content unless told otherwise, so without it
+                        one long unbreakable line would widen the whole phone track and the customer
+                        card's `overflow-hidden` would clip it mid-word. The sentence WRAPS — text is
+                        never cut with an ellipsis, and where that collides with the no-sideways-scroll
+                        rule, wrapping wins (the old "never wrap" rule is superseded; it used to
+                        scroll sideways inside its own `overflow-x-auto` box below ~400px). */}
+                    <div className="min-w-0 md:col-span-6">
                       <div className="flex flex-col gap-3 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
-                        <div className="min-w-0 overflow-x-auto">
-                          <p className="whitespace-nowrap text-phx-2xs font-black uppercase tracking-[0.14em] text-orange-600">Venue Validation</p>
-                          <p className="mt-0.5 whitespace-nowrap text-phx-sm font-medium text-slate-500">
+                        <div className="min-w-0 break-words">
+                          <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-orange-600">Venue Validation</p>
+                          <p className="mt-0.5 text-phx-sm font-medium text-slate-500">
                             Capture a new venue, or attach one you already validated.
                           </p>
                         </div>
                         <Button
-                          className="h-8 shrink-0 gap-1.5 rounded-sm border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-700 hover:bg-slate-50"
+                          className="h-10 shrink-0 gap-1.5 rounded-none border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-700 hover:bg-slate-50 sm:h-8"
                           onClick={() =>
                             updateCustomer(customer.key, {
                               pharmacies: [...customer.pharmacies, newPharmacyLine(defaultDistributorId)],
@@ -3119,25 +3215,26 @@ export function MarketingValidationWorkspace() {
                     </div>
 
                     {/* `min-w-0` on each pharmacy card is load-bearing on mobile. A grid item's
-                        automatic minimum size is its min-content width, and the reused-pharmacy
-                        detail card is deliberately `whitespace-nowrap` (owner's rule: never wrap,
-                        never ellipsis). Without it the card's widest line — "Validated by <full
-                        name>" — sized the whole single-column track to ~618px on a 390px phone and
-                        pushed the tab row off screen. With it the track stays at the viewport width
-                        and the card's own `overflow-x-auto` scrolls instead. */}
+                        automatic minimum size is its min-content width: when the reused-pharmacy
+                        detail card was one `whitespace-nowrap` line, its widest line — "Validated by
+                        <full name>" — sized the whole single-column track to ~618px on a 390px phone
+                        and pushed the tab row off screen. That detail now WRAPS (text is never cut
+                        off, and where that collides with the no-sideways-scroll rule, wrapping wins —
+                        the old "never wrap" rule is superseded), and `min-w-0` stays so that no long
+                        unbreakable value can ever size the track past the screen again. */}
                     {customer.pharmacies.map((pharmacy, index) => (
-                      <div className="min-w-0 lg:col-span-6" key={pharmacy.key}>
-                        <div className="rounded-sm border border-slate-200 bg-slate-50/50 p-3 sm:p-4">
+                      <div className="min-w-0 md:col-span-6" key={pharmacy.key}>
+                        <div className="rounded-none border border-slate-200 bg-slate-50/50 p-3 sm:p-4">
                           <div className="mb-3 flex items-center justify-between gap-3">
                             <div className="flex items-center gap-2.5">
-                              <div className="flex h-7 w-7 items-center justify-center rounded-sm bg-white text-orange-600 ring-1 ring-orange-100">
+                              <div className="flex h-7 w-7 items-center justify-center rounded-none bg-white text-orange-600 ring-1 ring-orange-100">
                                 <Store className="h-3.5 w-3.5" />
                               </div>
                               <p className="text-phx-md font-bold text-slate-800">Venue {index + 1}</p>
                             </div>
                             <button
                               aria-label="Remove venue"
-                              className="flex h-7 w-7 items-center justify-center rounded-sm border border-slate-200 bg-white text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
+                              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-none border border-slate-200 bg-white text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 sm:h-7 sm:w-7"
                               disabled={customer.pharmacies.length === 1}
                               onClick={() =>
                                 updateCustomer(customer.key, {
@@ -3191,7 +3288,7 @@ export function MarketingValidationWorkspace() {
                               pharmacy.existingPharmacyId,
                               isDeskMode,
                             ) ? (
-                              <div className="space-y-2 rounded-sm border border-amber-200 bg-amber-50/60 p-3">
+                              <div className="space-y-2 rounded-none border border-amber-200 bg-amber-50/60 p-3">
                                 <p className="text-phx-xs font-bold text-amber-800">
                                   This shop has no complete field proof on file. If you are standing in front of it,
                                   capture its GPS and live sign photo now and the record is completed for everyone.
@@ -3235,28 +3332,28 @@ export function MarketingValidationWorkspace() {
                             })()}
                           </div>
                           ) : (
-                          <div className="grid gap-3 lg:grid-cols-6">
-                            <div className="lg:col-span-2">
+                          <div className="grid gap-3 md:grid-cols-6">
+                            <div className="md:col-span-2">
                               <Field label="Pharmacy Name">
                                 <Input
-                                  className="h-10 rounded-sm border-slate-200 bg-white text-phx-md"
+                                  className="h-10 rounded-none border-slate-200 bg-white text-phx-md"
                                   onChange={(event) => updatePharmacy(customer.key, pharmacy.key, { name: event.target.value })}
                                   placeholder="Name"
                                   value={pharmacy.name}
                                 />
                               </Field>
                             </div>
-                            <div className="lg:col-span-2">
+                            <div className="md:col-span-2">
                               <Field label={isDeskMode ? "Area (Map)" : "Area (GPS)"}>
                                 <ReadOnlyCaptureValue placeholder={isDeskMode ? "From map search" : "From GPS"} value={pharmacy.area} />
                               </Field>
                             </div>
-                            <div className="lg:col-span-2">
+                            <div className="md:col-span-2">
                               <Field label={isDeskMode ? "Governorate (Map)" : "Governorate (GPS)"}>
                                 <ReadOnlyCaptureValue placeholder={isDeskMode ? "From map search" : "From GPS"} value={pharmacy.governorate} />
                               </Field>
                             </div>
-                            <div className="lg:col-span-6">
+                            <div className="md:col-span-6">
                               <Field label={isDeskMode ? "Address (Map)" : "Address (GPS)"}>
                                 <ReadOnlyCaptureValue
                                   multiline
@@ -3265,7 +3362,7 @@ export function MarketingValidationWorkspace() {
                                 />
                               </Field>
                             </div>
-                            <div className="lg:col-span-6">
+                            <div className="md:col-span-6">
                               {isDeskMode ? (
                                 <PlaceSearchPanel
                                   capture={pharmacy.capture}
@@ -3288,7 +3385,7 @@ export function MarketingValidationWorkspace() {
                                 />
                               )}
                             </div>
-                            <div className="lg:col-span-6">
+                            <div className="md:col-span-6">
                               <div className="space-y-2.5">
                                 {/* Same box and same padding in both states — only the border and
                                     fill change, so answering the question does not shift the row
@@ -3296,8 +3393,8 @@ export function MarketingValidationWorkspace() {
                                 <div
                                   className={
                                     venueTypeIsAnswered(pharmacy.venueType)
-                                      ? "rounded-sm border border-transparent p-2"
-                                      : "rounded-sm border border-orange-300 bg-orange-50/60 p-2"
+                                      ? "rounded-none border border-transparent p-2"
+                                      : "rounded-none border border-orange-300 bg-orange-50/60 p-2"
                                   }
                                 >
                                   <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">
@@ -3306,10 +3403,11 @@ export function MarketingValidationWorkspace() {
                                   <div className="mt-1.5 flex items-center gap-2">
                                     {VENUE_TYPES.map((venueType) => (
                                       <Button
+                                        aria-pressed={pharmacy.venueType === venueType}
                                         className={
                                           pharmacy.venueType === venueType
-                                            ? "h-7 rounded-sm border border-orange-300 bg-orange-50 px-2.5 text-phx-xs font-bold text-orange-700"
-                                            : "h-7 rounded-sm border border-slate-200 bg-white px-2.5 text-phx-xs font-bold text-slate-600 hover:bg-slate-50"
+                                            ? `${CAPTURE_BUTTON_SIZE} rounded-none border border-orange-300 bg-orange-50 px-2.5 text-phx-xs font-bold text-orange-700`
+                                            : `${CAPTURE_BUTTON_SIZE} rounded-none border border-slate-200 bg-white px-2.5 text-phx-xs font-bold text-slate-600 hover:bg-slate-50`
                                         }
                                         key={venueType}
                                         onClick={() => updatePharmacy(customer.key, pharmacy.key, { venueType })}
@@ -3342,7 +3440,7 @@ export function MarketingValidationWorkspace() {
                                     Vendor Codes
                                   </p>
                                   <Button
-                                    className="h-7 gap-1.5 rounded-sm border border-slate-200 bg-white px-2.5 text-phx-xs font-bold text-slate-600 hover:bg-slate-50"
+                                    className="h-10 gap-1.5 rounded-none border border-slate-200 bg-white px-2.5 text-phx-xs font-bold text-slate-600 hover:bg-slate-50 sm:h-7"
                                     onClick={() =>
                                       updatePharmacy(customer.key, pharmacy.key, {
                                         vendorCodes: [...pharmacy.vendorCodes, newVendorCodeLine(defaultDistributorId)],
@@ -3358,7 +3456,10 @@ export function MarketingValidationWorkspace() {
                                   const codeCheck = codeChecks[line.key];
                                   return (
                                   <div key={line.key}>
-                                    <div className="grid grid-cols-[1fr_1fr_32px] gap-2">
+                                    {/* Phone: distributor + remove on one row, the code on its own full-width
+                                        row below (the old three-across row left ~54px of the distributor's
+                                        name visible at 360px). From `sm` up: distributor · code · remove. */}
+                                    <div className="grid grid-cols-[minmax(0,1fr)_40px] gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_40px]">
                                       <SelectField
                                         disabled={workspace.distributors.length === 0}
                                         onChange={(value) => {
@@ -3375,7 +3476,7 @@ export function MarketingValidationWorkspace() {
                                         ))}
                                       </SelectField>
                                       <Input
-                                        className="h-10 rounded-sm border-slate-200 bg-white text-phx-md"
+                                        className="order-last col-span-2 h-10 rounded-none border-slate-200 bg-white text-phx-md sm:order-none sm:col-span-1"
                                         onChange={(event) => {
                                           const nextCode = event.target.value;
                                           updateVendorCode(customer.key, pharmacy.key, line.key, { distributorCode: nextCode });
@@ -3386,7 +3487,7 @@ export function MarketingValidationWorkspace() {
                                       />
                                       <button
                                         aria-label="Remove vendor"
-                                        className="flex h-10 w-full items-center justify-center rounded-sm border border-slate-200 bg-white text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
+                                        className="flex h-10 w-full items-center justify-center rounded-none border border-slate-200 bg-white text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
                                         disabled={pharmacy.vendorCodes.length === 1}
                                         onClick={() =>
                                           updatePharmacy(customer.key, pharmacy.key, {
@@ -3462,7 +3563,7 @@ export function MarketingValidationWorkspace() {
               ))}
 
               <Button
-                className="h-10 w-full gap-2 rounded-sm border border-dashed border-orange-300 bg-orange-50/40 text-phx-md font-bold text-orange-700 hover:bg-orange-50"
+                className="h-10 w-full gap-2 rounded-none border border-dashed border-orange-300 bg-orange-50/40 text-phx-md font-bold text-orange-700 hover:bg-orange-50"
                 onClick={() => setCustomers((current) => [...current, newCustomerLine(defaultDistributorId)])}
                 type="button"
               >
@@ -3471,17 +3572,18 @@ export function MarketingValidationWorkspace() {
               </Button>
 
               {duplicateCustomerName ? (
-                <div className="rounded-sm border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-phx-sm font-semibold text-amber-800">
+                <div className="rounded-none border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-phx-sm font-semibold text-amber-800">
                   “{duplicateCustomerName}” is entered twice. Each customer must appear once per submission.
                 </div>
               ) : null}
             </div>
 
             <div className="flex flex-col gap-3 border-t border-slate-100 bg-slate-50/50 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-              <div className="flex items-center gap-2 text-phx-md font-bold text-slate-700">
+              <div className="flex min-w-0 items-center gap-2 text-phx-md font-bold text-slate-700">
                 <ShieldCheck className="h-4 w-4 shrink-0 text-orange-500" />
-                <span className="whitespace-nowrap">
-                  {customers.length} customer{customers.length === 1 ? "" : "s"} · {totalPharmacyCount} pharmacy row{totalPharmacyCount === 1 ? "" : "s"} ready
+                {/* Wraps: one nowrap line (~290px) was cut off by the form card's edge at 360px. */}
+                <span className="min-w-0 break-words">
+                  {customers.length} customer{customers.length === 1 ? "" : "s"} · {totalPharmacyCount} venue{totalPharmacyCount === 1 ? "" : "s"} ready
                 </span>
               </div>
               <div className="flex flex-col gap-1.5 sm:items-end">
@@ -3489,7 +3591,7 @@ export function MarketingValidationWorkspace() {
                   <p className="text-phx-sm font-semibold text-amber-700">{missingRequirement}</p>
                 ) : null}
                 <Button
-                  className="h-10 min-w-[180px] gap-2 rounded-sm bg-orange-500 px-5 text-phx-md font-bold text-white shadow-sm hover:bg-orange-600"
+                  className="h-10 w-full gap-2 rounded-none bg-orange-500 px-5 text-phx-md font-bold text-white shadow-sm hover:bg-orange-600 sm:w-auto"
                   disabled={!canSave}
                   type="submit"
                 >
@@ -3502,18 +3604,18 @@ export function MarketingValidationWorkspace() {
         </Card>
       ) : activeTab === "pending" ? (
         /* --------- Not Usable Yet Tab --------- */
-        <Card className="rounded-sm border border-slate-200 bg-white p-4 shadow-sm">
+        <Card className="rounded-none border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-amber-600">Not Usable Yet</p>
               <h2 className="mt-1 text-lg font-black tracking-tight text-slate-900">Captured but not in your request list</h2>
             </div>
-            <span className="inline-flex items-center rounded-sm border border-amber-200 bg-amber-50 px-2.5 py-1 text-phx-xs font-bold text-amber-700">
+            <span className="inline-flex items-center rounded-none border border-amber-200 bg-amber-50 px-2.5 py-1 text-phx-xs font-bold text-amber-700">
               {pendingGroups.length} customers
             </span>
           </div>
 
-          <div className="mt-3 flex items-start gap-2 rounded-sm border border-amber-200 bg-amber-50 px-3.5 py-2.5">
+          <div className="mt-3 flex items-start gap-2 rounded-none border border-amber-200 bg-amber-50 px-3.5 py-2.5">
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
             <p className="text-phx-sm font-semibold leading-relaxed text-amber-800">
               Saved, but not yet usable in marketing requests. Tap Capture Evidence to add the missing photo and
@@ -3525,24 +3627,25 @@ export function MarketingValidationWorkspace() {
             <TableSkeleton />
           ) : (
             <>
-              {/* Mobile card view < 480px */}
+              {/* Phone card view — below `md` (768px) */}
               <div className="mt-4 block md:hidden">
                 <div className="space-y-2">
                   {pendingGroups.map((group) => {
                     const customer = group.rows[0]?.customer;
                     const pharmaciesForCustomer = buildValidatedPharmacyDetails(group.rows);
                     return (
-                      <div className="rounded-sm border border-amber-200 bg-white p-3" key={group.key}>
+                      <div className="rounded-none border border-amber-200 bg-white p-3" key={group.key}>
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
-                            <p className="text-phx-md font-bold text-slate-900">{group.customerName}</p>
+                            <p className="break-words text-phx-md font-bold text-slate-900">{group.customerName}</p>
                             <div className="mt-1 flex flex-wrap items-center gap-2">
                               <span className="text-phx-xs font-medium capitalize text-slate-500">{group.customerType}</span>
                               <StatusBadge status={group.status} />
                             </div>
                           </div>
                           <button
-                            className="flex h-7 shrink-0 items-center gap-1 rounded-sm border border-orange-200 bg-orange-50 px-2 text-phx-xs font-bold text-orange-700"
+                            aria-label={`${pharmaciesForCustomer.length} venues linked to ${group.customerName}`}
+                            className="flex h-10 min-w-10 shrink-0 items-center justify-center gap-1 rounded-none border border-orange-200 bg-orange-50 px-2 text-phx-xs font-bold text-orange-700"
                             onClick={() => setSelectedValidatedCustomerKey(group.key)}
                             type="button"
                           >
@@ -3552,17 +3655,17 @@ export function MarketingValidationWorkspace() {
                         </div>
                         <div className="mt-2 space-y-1 text-phx-sm">
                           <div className="flex justify-between gap-2">
-                            <span className="font-medium text-slate-500">Blocked by</span>
-                            <span className="font-semibold text-amber-700">{pendingBlockLabel(group.rows)}</span>
+                            <span className="shrink-0 font-medium text-slate-500">Blocked by</span>
+                            <span className="min-w-0 break-words text-right font-semibold text-amber-700">{pendingBlockLabel(group.rows)}</span>
                           </div>
                           <div className="flex justify-between gap-2">
-                            <span className="font-medium text-slate-500">Area</span>
-                            <span className="font-semibold text-slate-700">{customer?.extractedAreaName || customer?.regionName || "Not captured"}</span>
+                            <span className="shrink-0 font-medium text-slate-500">Area</span>
+                            <span className="min-w-0 break-words text-right font-semibold text-slate-700">{customer?.extractedAreaName || customer?.regionName || "Not captured"}</span>
                           </div>
                         </div>
                         {pendingHasCapturableGap(group.rows) ? (
                           <button
-                            className="mt-2.5 flex h-8 w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-sm border border-orange-300 bg-orange-600 px-2 text-phx-sm font-bold text-white transition hover:bg-orange-700"
+                            className="mt-2.5 flex h-10 w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-none border border-orange-300 bg-orange-600 px-2 text-phx-sm font-bold text-white transition hover:bg-orange-700"
                             onClick={() => startCompletingCustomer(group)}
                             type="button"
                           >
@@ -3576,9 +3679,9 @@ export function MarketingValidationWorkspace() {
                 </div>
               </div>
 
-              {/* Desktop table view >= 480px */}
+              {/* Desktop and tablet table view — `md` (768px) and up */}
               <div className="mt-4 hidden md:block">
-                <div className="overflow-hidden rounded-sm border border-slate-200">
+                <div className="overflow-hidden rounded-none border border-slate-200">
                   <table className="w-full border-collapse text-left">
                     <thead className="bg-slate-50 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
                       <tr>
@@ -3612,7 +3715,7 @@ export function MarketingValidationWorkspace() {
                             </td>
                             <td className="border-r border-slate-100 px-3 py-2.5 text-center">
                               <button
-                                className="inline-flex h-7 min-w-7 items-center justify-center gap-1 rounded-sm border border-orange-200 bg-orange-50 px-2 text-phx-sm font-bold text-orange-700 transition hover:bg-orange-100"
+                                className="inline-flex h-7 min-w-7 items-center justify-center gap-1 rounded-none border border-orange-200 bg-orange-50 px-2 text-phx-sm font-bold text-orange-700 transition hover:bg-orange-100"
                                 onClick={() => setSelectedValidatedCustomerKey(group.key)}
                                 type="button"
                               >
@@ -3625,7 +3728,7 @@ export function MarketingValidationWorkspace() {
                             <td className="px-3 py-2.5 text-center">
                               {pendingHasCapturableGap(group.rows) ? (
                                 <button
-                                  className="inline-flex h-7 items-center justify-center gap-1.5 whitespace-nowrap rounded-sm border border-orange-300 bg-orange-600 px-2.5 text-phx-sm font-bold text-white transition hover:bg-orange-700"
+                                  className="inline-flex h-7 items-center justify-center gap-1.5 whitespace-nowrap rounded-none border border-orange-300 bg-orange-600 px-2.5 text-phx-sm font-bold text-white transition hover:bg-orange-700"
                                   onClick={() => startCompletingCustomer(group)}
                                   type="button"
                                 >
@@ -3648,13 +3751,13 @@ export function MarketingValidationWorkspace() {
         </Card>
       ) : (
         /* --------- Validated Customers Tab --------- */
-        <Card className="rounded-sm border border-slate-200 bg-white p-4 shadow-sm">
+        <Card className="rounded-none border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-orange-600">Validated Customers</p>
               <h2 className="mt-1 text-lg font-black tracking-tight text-slate-900">Ready customer list</h2>
             </div>
-            <span className="inline-flex items-center rounded-sm border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-phx-xs font-bold text-emerald-700">
+            <span className="inline-flex items-center rounded-none border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-phx-xs font-bold text-emerald-700">
               {validatedGroups.length} customers
             </span>
           </div>
@@ -3663,7 +3766,7 @@ export function MarketingValidationWorkspace() {
             <TableSkeleton />
           ) : (
             <>
-              {/* Mobile card view < 480px */}
+              {/* Phone card view — below `md` (768px) */}
               <div className="mt-4 block md:hidden">
                 {validatedGroups.length === 0 ? (
                   <p className="py-6 text-center text-phx-md font-medium text-slate-500">No validated customers yet.</p>
@@ -3673,10 +3776,10 @@ export function MarketingValidationWorkspace() {
                       const customer = group.rows[0]?.customer;
                       const pharmaciesForCustomer = buildValidatedPharmacyDetails(group.rows);
                       return (
-                        <div className="rounded-sm border border-slate-200 bg-white p-3" key={group.key}>
+                        <div className="rounded-none border border-slate-200 bg-white p-3" key={group.key}>
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0">
-                              <p className="text-phx-md font-bold text-slate-900">{group.customerName}</p>
+                              <p className="break-words text-phx-md font-bold text-slate-900">{group.customerName}</p>
                               <div className="mt-1 flex flex-wrap items-center gap-2">
                                 <span className="text-phx-xs font-medium capitalize text-slate-500">{group.customerType}</span>
                                 <StatusBadge status={group.status} />
@@ -3686,7 +3789,8 @@ export function MarketingValidationWorkspace() {
                               </div>
                             </div>
                             <button
-                              className="flex h-7 shrink-0 items-center gap-1 rounded-sm border border-orange-200 bg-orange-50 px-2 text-phx-xs font-bold text-orange-700"
+                              aria-label={`${pharmaciesForCustomer.length} venues linked to ${group.customerName}`}
+                            className="flex h-10 min-w-10 shrink-0 items-center justify-center gap-1 rounded-none border border-orange-200 bg-orange-50 px-2 text-phx-xs font-bold text-orange-700"
                               onClick={() => setSelectedValidatedCustomerKey(group.key)}
                               type="button"
                             >
@@ -3695,13 +3799,13 @@ export function MarketingValidationWorkspace() {
                             </button>
                           </div>
                           <div className="mt-2 space-y-1 text-phx-sm">
-                            <div className="flex justify-between">
-                              <span className="font-medium text-slate-500">Area</span>
-                              <span className="font-semibold text-slate-700">{customer?.extractedAreaName || customer?.regionName || "Not captured"}</span>
+                            <div className="flex justify-between gap-2">
+                              <span className="shrink-0 font-medium text-slate-500">Area</span>
+                              <span className="min-w-0 break-words text-right font-semibold text-slate-700">{customer?.extractedAreaName || customer?.regionName || "Not captured"}</span>
                             </div>
-                            <div className="flex justify-between">
-                              <span className="font-medium text-slate-500">Governorate</span>
-                              <span className="font-semibold text-slate-700">{customer?.extractedGovernorateName || "Not captured"}</span>
+                            <div className="flex justify-between gap-2">
+                              <span className="shrink-0 font-medium text-slate-500">Governorate</span>
+                              <span className="min-w-0 break-words text-right font-semibold text-slate-700">{customer?.extractedGovernorateName || "Not captured"}</span>
                             </div>
                           </div>
                         </div>
@@ -3711,9 +3815,9 @@ export function MarketingValidationWorkspace() {
                 )}
               </div>
 
-              {/* Desktop table view >= 480px */}
+              {/* Desktop and tablet table view — `md` (768px) and up */}
               <div className="mt-4 hidden md:block">
-                <div className="overflow-hidden rounded-sm border border-slate-200">
+                <div className="overflow-hidden rounded-none border border-slate-200">
                   <table className="w-full border-collapse text-left">
                     <thead className="bg-slate-50 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
                       <tr>
@@ -3749,7 +3853,7 @@ export function MarketingValidationWorkspace() {
                             </td>
                             <td className="px-3 py-2.5 text-center">
                               <button
-                                className="inline-flex h-7 min-w-7 items-center justify-center gap-1 rounded-sm border border-orange-200 bg-orange-50 px-2 text-phx-sm font-bold text-orange-700 transition hover:bg-orange-100"
+                                className="inline-flex h-7 min-w-7 items-center justify-center gap-1 rounded-none border border-orange-200 bg-orange-50 px-2 text-phx-sm font-bold text-orange-700 transition hover:bg-orange-100"
                                 onClick={() => setSelectedValidatedCustomerKey(group.key)}
                                 type="button"
                               >

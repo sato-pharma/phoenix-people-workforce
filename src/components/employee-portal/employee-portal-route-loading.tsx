@@ -1,24 +1,64 @@
+"use client";
+
+import { usePathname } from "next/navigation";
+
+/**
+ * Where the loading screen is showing decides its header, so the placeholder matches the page
+ * about to replace it:
+ *
+ *   - the portal LANDING (`/employee-portals`) has no page header at all — the identity band is
+ *     its first thing — so the skeleton draws none;
+ *   - every other portal page opens under the navy command header, so the skeleton draws a navy
+ *     block in its place instead of the white glass one it used to, which flashed a look no
+ *     portal page has;
+ *   - anything else (the admin shell's leave-management route renders this too) keeps the
+ *     original glass header, byte for byte.
+ */
+function isPortalPath(pathname: string) {
+  return (
+    pathname === "/employee-portals" ||
+    pathname.startsWith("/employee-portals/") ||
+    pathname === "/payslips" ||
+    pathname.startsWith("/payslips/") ||
+    pathname.startsWith("/employee/")
+  );
+}
+
 export function EmployeePortalRouteLoading() {
+  const pathname = usePathname() ?? "";
+  const portal = isPortalPath(pathname);
+  const landing = pathname === "/employee-portals";
+
   return (
     <div aria-live="polite" className="employee-portal-route-loading space-y-6" role="status">
       <span className="sr-only">Loading employee portal page</span>
 
-      <section className="relative isolate overflow-hidden rounded border border-white/80 bg-white/86 p-5 shadow-[0_22px_54px_rgba(15,23,42,0.08)] backdrop-blur-xl sm:p-6">
-        <div className="pointer-events-none absolute -right-20 -top-24 h-56 w-56 rounded-full bg-orange-200/45 blur-3xl" />
-        <div className="pointer-events-none absolute -bottom-24 left-1/4 h-52 w-52 rounded-full bg-sky-200/35 blur-3xl" />
-        <div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-          <div className="space-y-3">
-            <div className="employee-portal-skeleton h-4 w-32 rounded" />
-            <div className="employee-portal-skeleton h-9 w-[min(82vw,440px)] rounded" />
-            <div className="employee-portal-skeleton h-4 w-[min(72vw,560px)] rounded" />
+      {!portal ? (
+        <section className="relative isolate overflow-hidden rounded border border-white/80 bg-white/86 p-5 shadow-[0_22px_54px_rgba(15,23,42,0.08)] backdrop-blur-xl sm:p-6">
+          <div className="pointer-events-none absolute -right-20 -top-24 h-56 w-56 rounded-full bg-orange-200/45 blur-3xl" />
+          <div className="pointer-events-none absolute -bottom-24 left-1/4 h-52 w-52 rounded-full bg-sky-200/35 blur-3xl" />
+          <div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+            <div className="space-y-3">
+              <div className="employee-portal-skeleton h-4 w-32 rounded" />
+              <div className="employee-portal-skeleton h-9 w-[min(82vw,440px)] rounded" />
+              <div className="employee-portal-skeleton h-4 w-[min(72vw,560px)] rounded" />
+            </div>
+            <div className="grid grid-cols-3 gap-2 sm:gap-3">
+              <div className="employee-portal-skeleton h-12 w-20 rounded sm:w-28" />
+              <div className="employee-portal-skeleton h-12 w-20 rounded sm:w-28" />
+              <div className="employee-portal-skeleton h-12 w-20 rounded sm:w-28" />
+            </div>
           </div>
-          <div className="grid grid-cols-3 gap-2 sm:gap-3">
-            <div className="employee-portal-skeleton h-12 w-20 rounded sm:w-28" />
-            <div className="employee-portal-skeleton h-12 w-20 rounded sm:w-28" />
-            <div className="employee-portal-skeleton h-12 w-20 rounded sm:w-28" />
-          </div>
-        </div>
-      </section>
+        </section>
+      ) : landing ? null : (
+        // The same frame as EmployeePortalPageShell's command header: navy, square, one badge,
+        // a title and a line of description — as SHARES of the width, never fixed pixels.
+        <section className="rounded-sm border border-slate-800 bg-[#08111f] px-4 py-4 sm:px-5 sm:py-5 lg:px-6">
+          <div className="h-5 w-full max-w-[8rem] animate-pulse bg-white/10" />
+          <div className="mt-3 h-8 w-full max-w-[20rem] animate-pulse bg-white/15" />
+          <div className="mt-2 h-4 w-full max-w-[32rem] animate-pulse bg-white/10" />
+        </section>
+      )}
 
       <section className="grid gap-4 md:grid-cols-3">
         {[0, 1, 2].map((item) => (
