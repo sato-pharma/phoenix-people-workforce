@@ -23,6 +23,8 @@ import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmSettings, PhoenixCr
 export type PlannerPlace = {
   placeId: string;
   label: string | null;
+  /** The clean street address resolved at capture, shown while the rep builds his plan. */
+  address: string | null;
   lat: number;
   lon: number;
   brick: string | null;
@@ -54,6 +56,8 @@ export type DaySuggestion = {
   placeId: string | null;
   pending: boolean;
   placeLabel: string | null;
+  /** The place's clean street address, so the rep sees exactly where the visit lands. */
+  address: string | null;
   name: string;
   listType: PhoenixCrmListType;
   grade: PhoenixCrmGrade | null;
@@ -126,6 +130,7 @@ export function suggestForDay(input: {
         placeId: null,
         pending: true,
         placeLabel: null,
+        address: null,
         name: customer.name,
         listType: customer.listType,
         grade: customer.grade,
@@ -171,6 +176,7 @@ export function suggestForDay(input: {
         placeId: place.placeId,
         pending: false,
         placeLabel: place.label,
+        address: place.address,
         name: customer.name,
         listType: customer.listType,
         grade: customer.grade,

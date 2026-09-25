@@ -23,7 +23,7 @@
 
 import type { ReactNode } from "react";
 import { useEffect, useId, useRef, useState } from "react";
-import { ArrowLeft, Plus, Search } from "lucide-react";
+import { ArrowLeft, MapPin, Plus, Search } from "lucide-react";
 
 import { crmPost, crmUrl, errorCodeOf, messageOf, useCrmGet } from "@/components/phoenix-crm/api";
 import { cairoStamp, countText, dayLabel, dayLabelLong, plural, weekLabel } from "@/components/phoenix-crm/format";
@@ -1897,7 +1897,7 @@ function AddCustomers({
 }) {
   const [typeFilter, setTypeFilter] = useState<"all" | PhoenixCrmListType>("all");
   const [query, setQuery] = useState("");
-  const [area, setArea] = useState("");
+  const [brickFilter, setBrickFilter] = useState("");
   const [fromTime, setFromTime] = useState("");
   const [toTime, setToTime] = useState("");
   const [showOff, setShowOff] = useState(false);
@@ -1914,7 +1914,7 @@ function AddCustomers({
   const dayName = dayLabel(day.date);
   const morning = !day.listTypes.includes("PM");
   const searchId = `${idPrefix}-search-${day.date}`;
-  const areaId = `${idPrefix}-area-${day.date}`;
+  const brickId = `${idPrefix}-brick-${day.date}`;
   const placed = rows.filter((row) => row.gone === null).map((row) => ({ customerId: row.customerId, placeId: row.placeId }));
   // A customer not validated yet has no place, and is offered exactly like anyone else: the rep plans
   // him and validates him at the door. Only a validated customer whose places are all gone drops out.
@@ -1929,14 +1929,16 @@ function AddCustomers({
     PM: Math.max(0, view.rules.pmDailyCap - counts.PM),
   };
 
-  const areaOptions: Array<{ value: string; label: string }> = [];
+  // A dedicated brick filter (owner, 2026-09-25): the rep narrows the list to one brick while he
+  // plans. Only the bricks the offered customers actually sit in, each once, named as captured.
+  const brickOptions: Array<{ value: string; label: string }> = [];
   for (const suggestion of all) {
-    for (const raw of [suggestion.zone, suggestion.brick]) {
-      const value = normalizeArea(raw);
-      if (raw !== null && value !== null && !areaOptions.some((option) => option.value === value)) areaOptions.push({ value, label: raw.trim() });
+    const value = normalizeArea(suggestion.brick);
+    if (suggestion.brick !== null && value !== null && !brickOptions.some((option) => option.value === value)) {
+      brickOptions.push({ value, label: `Brick ${suggestion.brick.trim()}` });
     }
   }
-  areaOptions.sort((left, right) => left.label.localeCompare(right.label));
+  brickOptions.sort((left, right) => left.label.localeCompare(right.label));
 
   // Every weekday each customer receives on, across all his places — so the "Receives on" filter can
   // narrow to doctors who receive on any chosen day even while one single day is being planned.
@@ -1970,7 +1972,7 @@ function AddCustomers({
         [suggestion.name, suggestion.speciality, suggestion.placeLabel, suggestion.zone, suggestion.brick].some(
           (part) => part !== null && part.toLowerCase().includes(needle),
         )) &&
-      (!area || normalizeArea(suggestion.zone) === area || normalizeArea(suggestion.brick) === area) &&
+      (!brickFilter || normalizeArea(suggestion.brick) === brickFilter) &&
       (!specialityFilter || suggestion.speciality === specialityFilter) &&
       (gradeFilter === "" || suggestion.grade === gradeFilter) &&
       (dayFilter.size === 0 || [...(receivingDaysByCustomer.get(suggestion.customerId) ?? [])].some((weekday) => dayFilter.has(weekday))) &&
@@ -1980,7 +1982,7 @@ function AddCustomers({
   const receiving = shown.filter((suggestion) => suggestion.receives);
   const notReceiving = shown.filter((suggestion) => !suggestion.receives);
   const filtered =
-    needle !== "" || area !== "" || typeFilter !== "all" || windowActive || specialityFilter !== "" || gradeFilter !== "" || dayFilter.size > 0 || unvisitedOnly;
+    needle !== "" || brickFilter !== "" || typeFilter !== "all" || windowActive || specialityFilter !== "" || gradeFilter !== "" || dayFilter.size > 0 || unvisitedOnly;
   const bulk = pickWithinCaps(receiving, remaining);
   const receivingCustomers = distinctCustomers(receiving);
 
@@ -2064,9 +2066,9 @@ function AddCustomers({
                 <CrmChoice columns={3} label="Show" onChange={(next) => filterBy(() => setTypeFilter(next))} options={typeOptions} value={typeFilter} />
               </CrmField>
             )}
-            {/* Search and zone share a row only on the widest screens: from `md` this block is half
+            {/* Search and brick share a row only on the widest screens: from `md` this block is half
                 the day screen, and an 18rem select beside the search would crush it. */}
-            <div className={cn("grid min-w-0 gap-3", areaOptions.length > 1 ? "2xl:grid-cols-[minmax(0,1fr)_minmax(0,18rem)] 2xl:items-end" : undefined)}>
+            <div className={cn("grid min-w-0 gap-3", brickOptions.length > 1 ? "2xl:grid-cols-[minmax(0,1fr)_minmax(0,18rem)] 2xl:items-end" : undefined)}>
               <CrmField htmlFor={searchId} label="Find a customer">
                 <div className="relative min-w-0">
                   <Search aria-hidden className="pointer-events-none absolute left-3 top-3.5 h-4 w-4 text-slate-400" />
@@ -2084,18 +2086,18 @@ function AddCustomers({
                   />
                 </div>
               </CrmField>
-              {areaOptions.length > 1 ? (
-                <CrmField htmlFor={areaId} label="Zone or brick">
+              {brickOptions.length > 1 ? (
+                <CrmField htmlFor={brickId} label="Brick">
                   <CrmSelect
-                    id={areaId}
+                    id={brickId}
                     onChange={(event) => {
                       const next = event.target.value;
-                      filterBy(() => setArea(next));
+                      filterBy(() => setBrickFilter(next));
                     }}
-                    value={area}
+                    value={brickFilter}
                   >
-                    <option value="">Every zone and brick</option>
-                    {areaOptions.map((option) => (
+                    <option value="">Every brick</option>
+                    {brickOptions.map((option) => (
                       <option key={option.value} value={option.value}>
                         {option.label}
                       </option>
@@ -2371,6 +2373,12 @@ function SuggestionRow({
               </>
             )}
           </p>
+          {!suggestion.pending && suggestion.address ? (
+            <p className="mt-1 flex min-w-0 items-start gap-1 text-xs font-semibold leading-5 text-slate-600">
+              <MapPin aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
+              <span className="min-w-0 break-words">{suggestion.address}</span>
+            </p>
+          ) : null}
           {!suggestion.pending && otherDays.length > 0 ? (
             <div className="mt-1.5 flex max-w-full flex-wrap items-center gap-1">
               <span className="text-xs font-semibold text-slate-500">Also receives</span>

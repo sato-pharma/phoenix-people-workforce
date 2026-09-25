@@ -247,6 +247,7 @@ export async function loadMonthlyPlanner(
       places: (placesByCustomer.get(customerId) ?? []).map((place) => ({
         placeId: place.placeId,
         label: place.label,
+        address: place.address,
         lat: place.lat,
         lon: place.lon,
         brick: place.brickName,
