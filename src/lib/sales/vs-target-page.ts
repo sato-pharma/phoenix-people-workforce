@@ -157,6 +157,26 @@ function lineLabel(code: string): string {
 }
 
 /**
+ * The name resolvers for one dashboard build. Pure, and exported so the period-aware area lookup
+ * can be pinned without a database: `getMergedAreaName` reads its dated merge rules (Fayoum/Beni
+ * Suef, Ismailia/Suez) against the CALLER's period, never "now" — the bug this closure exists to
+ * avoid is building it before `period` is resolved and defaulting the lookup to today's month.
+ */
+export function buildVsTargetNames(
+  activeLine: string | null,
+  period: string,
+  areaNames: ReadonlyMap<string, string>,
+  employeeNames: ReadonlyMap<string, string>,
+): VsTargetNames {
+  return {
+    lineName: lineLabel,
+    regionName: (code) => regionNameOf(code) || "Unassigned region",
+    areaName: (code) => getMergedAreaName(activeLine, code, period) ?? areaNames.get(code) ?? "Unassigned area",
+    employeeName: (hrId) => employeeNames.get(hrId) ?? "Unnamed employee",
+  };
+}
+
+/**
  * Build the whole payload for one viewer and one period.
  *
  * `period` is validated against the dashboard window; anything invalid or pre-floor
@@ -238,13 +258,6 @@ export async function buildVsTargetDashboard(
   const distinctLines = new Set(scopedAll.map((r) => r.lineCode).filter(Boolean));
   const activeLine = distinctLines.size === 1 ? [...distinctLines][0] : null;
 
-  const names: VsTargetNames = {
-    lineName: lineLabel,
-    regionName: (code) => regionNameOf(code) || "Unassigned region",
-    areaName: (code) => getMergedAreaName(activeLine, code) ?? areaNames.get(code) ?? "Unassigned area",
-    employeeName: (hrId) => employeeNames.get(hrId) ?? "Unnamed employee",
-  };
-
   // Land on the newest PUBLISHED month that has sales in this viewer's scope. "Has any row
   // with an actual" is not the same question and is not safe to ask: one direct order booked
   // into a month whose Monthly Closing has not been published is enough to make that month
@@ -253,6 +266,11 @@ export async function buildVsTargetDashboard(
   // owner publishes it.
   const period = explicitPeriod ?? pickLandingPeriod(scopedAllRaw, publishedKeys, current);
   const priorPeriod = priorPeriodOf(period);
+
+  // Built only now that `period` is known — see buildVsTargetNames. `rows` and `priorRows` below
+  // share this one closure, so both months of one dashboard read the SAME landing period's name —
+  // exactly how rollupByArea folds them into a single node.
+  const names = buildVsTargetNames(activeLine, period, areaNames, employeeNames);
 
   const rawRowsForPeriod = scopedAllRaw.filter((row) => row.period === period);
   // A company fact, not a scope fact: the month's Monthly Closing has either been published
@@ -303,7 +321,7 @@ export async function buildVsTargetDashboard(
     areas: areaNodes,
     reps: repNodes,
     managers: levels.rep ? rollupByDm(rows, priorRows, names) : [],
-    products: rollupByProduct(rows, priorRows, (code) => productNames.get(code.toUpperCase()) ?? code),
+    products: rollupByProduct(rows, priorRows, (code) => productNames.get(code.toUpperCase()) ?? "Unnamed product"),
     leaders: { ...rankByAchievement(leaderNodes, 5), level: leaderLevel },
     trend: buildTrend(scopedAll, trendPeriods),
     trendIsMeaningful: loadedPeriodCount > 1,

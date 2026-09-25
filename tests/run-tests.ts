@@ -1393,6 +1393,7 @@ import { runWorkflowRegistryRetargetGuardTests } from "./workflow-registry-retar
 
 
 import { runSalesVsTargetTests } from "./sales-vs-target.test.ts";
+import { runVsTargetPageAreaMergePeriodTests } from "./vs-target-page-area-merge-period.test.ts";
 import { runMakeItHappenTests } from "./make-it-happen.test.ts";
 import { runBrickDrilldownFollowsTheAreaMergeTests } from "./brick-drilldown-follows-the-area-merge.test.ts";
 import { runAchievementCountsUnmappedTests } from "./achievement-counts-unmapped.test.ts";
@@ -4399,6 +4400,7 @@ await runTest("outstation departure-photo resend (the one action that deliberate
 await runTest("outstation manager workload rollup (a DM's ride-alongs are already his; an NSM reaches one hop but only on the days he was actually out with that DM; a shared rep counts once)", runOutstationWorkloadRollupTests);
 
 await runTest("sales vs target (no target reads as null not 0%, July 2026 has no prior period, and a medical rep is bounded to their own rows not their whole line)", runSalesVsTargetTests);
+await runTest("Sales vs Target and the portal Targets manager branch name a merged area from the PERIOD on screen, never today's month (an August Anti Infective OT2 row must not read 'Ismailia and Suez'), and the product roll-up falls back to 'Unnamed product' rather than a raw code", runVsTargetPageAreaMergePeriodTests);
 await runTest("make it happen (units only, value and % derived; history from July 2026; growth may continue but never above the best month, a plateau stays flat, a decline is never inflated, under three closed months the average caps it; an unreachable target is said honestly; eight roles only, a PM plans their own products)", runMakeItHappenTests);
 await runTest("brick drill-down follows the Fayoum/Beni Suef area merge (per line)", runBrickDrilldownFollowsTheAreaMergeTests);
 await runTest(
