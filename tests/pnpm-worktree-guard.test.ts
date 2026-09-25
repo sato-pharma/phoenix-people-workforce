@@ -105,7 +105,11 @@ function makeRepo(): { primary: string; worktree: string; cleanup: () => void } 
           dev: "node scripts/dev-server.mjs",
           test: "node --experimental-strip-types tests/run-tests.ts",
           typecheck: "tsc --noEmit --pretty false",
-          "check:edit": "pnpm run typecheck",
+          // A fixture stand-in for the repo's real one-hop scripts (`master-map:sync`, the
+          // `:preview` pairs). `check:edit` used to be the plainest example and was deleted from
+          // package.json on 2026-09-25 — the guard resolves whatever scripts exist, so the shape
+          // is what this pins, not that one name.
+          "typecheck:alias": "pnpm run typecheck",
           ci: "pnpm run typecheck && pnpm run test && pnpm run build",
         },
       },
@@ -271,8 +275,8 @@ export function runPnpmWorktreeGuardTests() {
     // ── A replacement must never itself contain pnpm ────────────────────────────────────────────
     // `ci` is `pnpm run typecheck && pnpm run test && …`. Resolving it naively produced a "Run
     // instead" line still carrying pnpm calls — an instruction that lands the session straight
-    // back in this deny, which is worse than saying nothing. Same trap for the one-hop
-    // `check:edit`, which MUST resolve through to the real command rather than to another pnpm.
+    // back in this deny, which is worse than saying nothing. Same trap for a one-hop alias, which
+    // MUST resolve through to the real command rather than to another pnpm.
     {
       const chain = runGuard(worktree, "pnpm run ci").reason;
       assert.ok(chain.includes("No node-direct equivalent"), `an unresolvable chain must say so.\n${chain}`);
@@ -281,7 +285,7 @@ export function runPnpmWorktreeGuardTests() {
         `the deny must not hand back a command that is itself pnpm.\n${chain}`,
       );
 
-      const oneHop = runGuard(worktree, "pnpm run check:edit").reason;
+      const oneHop = runGuard(worktree, "pnpm run typecheck:alias").reason;
       assert.ok(
         oneHop.includes("node node_modules/typescript/bin/tsc --noEmit --pretty false"),
         `a script that is one \`pnpm run <other>\` must resolve through to the real command.\n${oneHop}`,

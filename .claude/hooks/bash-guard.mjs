@@ -235,8 +235,8 @@ function scriptAdvice(script, root, seen = new Set()) {
   const first = body.split(/\s+/)[0];
   if (first === 'node') return body;
 
-  // A script that is itself ONE `pnpm run <other>` (check:edit, master-map:sync, the :preview
-  // pairs) resolves through to the real command. The tail must hold no separator: `ci` is
+  // A script that is itself ONE `pnpm run <other>` (master-map:sync, the :preview pairs)
+  // resolves through to the real command. The tail must hold no separator: `ci` is
   // `pnpm run check:routes && pnpm run check:migrations && …`, and a greedy tail turned that into
   // a "run instead" line that still had nine pnpm calls in it.
   const passthrough = /^pnpm\s+run\s+([\w:.-]+)\s*([^\n|&;]*)$/.exec(body);
