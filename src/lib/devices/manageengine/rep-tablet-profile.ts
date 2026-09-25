@@ -59,16 +59,24 @@ export const REP_TABLET_PROFILE_DESCRIPTION =
   "The rules every Phoenix company tablet follows. Built by Phoenix from the rep tablet rules — change it here rather than in the console, so the two cannot drift apart.";
 
 /**
- * The two payload names, as ManageEngine's own Android sections print them.
+ * The payload names — MEASURED first, documented after.
  *
- * The docs name the Android payloads in capitals (`ANDROID_RESTRICTIONS_POLICY`) while every example
- * URL uses the lower-case iOS spelling (`restrictionspolicy`), and which one an Android profile takes
- * cannot be settled from this side — the credentials are Railway's, not this machine's. Both are
- * therefore tried, in the documented order, and the read-back decides which was right. Neither is a
- * guess: they are the two spellings ManageEngine itself publishes.
+ * 🔴 THE FIRST NAME IN EACH LIST IS THE ONE THE COMPANY'S OWN TENANT USES, read back on 2026-09-25
+ * from the profile the owner built in the console himself: `androidrestrictionspolicy`,
+ * `androidpasscodepolicy`, `androidefrppolicy`. NEITHER spelling this file first shipped with was
+ * among them. The docs name the Android payloads in capitals (`ANDROID_RESTRICTIONS_POLICY`) while
+ * every example URL uses the lower-case iOS spelling (`restrictionspolicy`), and the live tenant
+ * answers with a third form again. So the measured name leads and the two documented ones stay
+ * behind it: the read-back that decides whether a profile may be published can only recognise a
+ * payload whose name is in this list, and with neither real spelling present it would have refused
+ * to publish a profile whose payloads had attached perfectly well.
  */
-export const RESTRICTIONS_PAYLOAD_NAMES = ["ANDROID_RESTRICTIONS_POLICY", "restrictionspolicy"] as const;
-export const PASSCODE_PAYLOAD_NAMES = ["ANDROID_PASSCODE_POLICY", "passcodepolicy"] as const;
+export const RESTRICTIONS_PAYLOAD_NAMES = [
+  "androidrestrictionspolicy",
+  "ANDROID_RESTRICTIONS_POLICY",
+  "restrictionspolicy",
+] as const;
+export const PASSCODE_PAYLOAD_NAMES = ["androidpasscodepolicy", "ANDROID_PASSCODE_POLICY", "passcodepolicy"] as const;
 
 export type RepTabletProfileSetting = {
   /** The rule this carries, in the words `REP_TABLET_RULES` already shows for Google's half. */
@@ -207,9 +215,30 @@ function sameProfileName(left: string, right: string): boolean {
   return left.trim().toLowerCase() === right.trim().toLowerCase();
 }
 
-/** The company's rep tablet profile, if the tenant already holds one under that name. */
+/**
+ * The names a rep tablet rule set already goes by in this tenant.
+ *
+ * 🔴 THE SECOND NAME IS THE OWNER'S OWN, and leaving it out would have been a real defect: he built
+ * "Rep tablet rules" in the ManageEngine console before this module existed — screen lock, no factory
+ * reset, location always on, approved apps only, no side-loaded apps, camera kept for invoices — and
+ * a search for the Phoenix name alone does not see it. The page would then have offered to build a
+ * SECOND rule set beside his, and two profiles on one tablet is how a fleet ends up half locked.
+ * Phoenix's own name leads, so a tenant holding both is answered with the one Phoenix wrote.
+ */
+export const REP_TABLET_PROFILE_ALIASES = [REP_TABLET_PROFILE_NAME, "Rep tablet rules"] as const;
+
+/** The company's rep tablet rule set, if the tenant already holds one under any of those names. */
 export function findRepTabletProfile(profiles: readonly ManageEngineProfile[]): ManageEngineProfile | null {
-  return profiles.find((profile) => sameProfileName(profile.name, REP_TABLET_PROFILE_NAME)) ?? null;
+  for (const name of REP_TABLET_PROFILE_ALIASES) {
+    const match = profiles.find((profile) => sameProfileName(profile.name, name));
+    if (match) return match;
+  }
+  return null;
+}
+
+/** True when the rule set found is the one Phoenix writes, rather than one built in the console. */
+export function isPhoenixBuiltRepTabletProfile(profile: ManageEngineProfile | null): boolean {
+  return profile !== null && sameProfileName(profile.name, REP_TABLET_PROFILE_NAME);
 }
 
 function payloadNamesFrom(payload: RawRecord): string[] {
@@ -253,10 +282,30 @@ async function readProfilePayloads(
 }
 
 /**
- * Add one payload, trying each documented spelling of its name until ManageEngine accepts one.
+ * The field ManageEngine refused, out of its own error sentence, or null when it named none.
  *
- * A 404 or a 400 on the first spelling means that name is not what this tenant calls the payload, so
- * the next is tried. Any other failure is that payload failing, and is reported as itself.
+ * 🔴 ITS WORDS, MEASURED AGAINST THE LIVE TENANT: `Invalid parameter "allow_uninstall_app" detected.`
+ * It names ONE field per answer, so the only way to learn the set it will take is to drop that one
+ * and ask again.
+ */
+export function refusedParameterName(message: string): string | null {
+  const match = /(?:invalid|unsupported) parameter\s*["'`]?([A-Za-z0-9_]+)["'`]?/i.exec(message);
+  return match ? match[1] : null;
+}
+
+/**
+ * Add one payload — trying each spelling of its NAME, and dropping any FIELD the tenant refuses.
+ *
+ * 🔴 THE TWO FAILURES LOOK IDENTICAL AND ARE NOT, AND CONFUSING THEM IS WHAT BROKE THE FIRST REAL
+ * BUILD. Both come back as a 400. An unknown payload NAME means try the next spelling; a refused
+ * FIELD means the name was right and the body was not. The old code answered both by moving to the
+ * next spelling — which failed the same way — and reported that second failure, so the page showed a
+ * field error against a name that had never been the problem.
+ *
+ * ManageEngine names one refused field per answer, so a refused field is dropped and the SAME name
+ * asked again, at most once per field. WHAT IS DROPPED IS NEVER SWALLOWED: every refused field comes
+ * back to the caller and onto the page as a rule this tenant will not carry. A profile that quietly
+ * restricts less than the page claims is the one failure this whole module exists to prevent.
  */
 async function addPayload(
   profileId: string,
@@ -264,24 +313,39 @@ async function addPayload(
   body: Record<string, number>,
   fetchImpl: typeof fetch,
   env: NodeJS.ProcessEnv,
-): Promise<{ usedName: string | null; error: string | null }> {
+): Promise<{ usedName: string | null; error: string | null; refused: string[] }> {
   let lastError: string | null = null;
+  const refused: string[] = [];
   for (const name of names) {
-    try {
-      await callManageEngine(
-        `/api/v1/mdm/profiles/${encodeURIComponent(profileId)}/payloads/${encodeURIComponent(name)}`,
-        { body: JSON.stringify(body), method: "POST" },
-        fetchImpl,
-        env,
-      );
-      return { error: null, usedName: name };
-    } catch (caught) {
-      const status = caught instanceof ManageEngineRequestError ? caught.status : 0;
-      lastError = caught instanceof Error ? caught.message : String(caught);
-      if (status !== 400 && status !== 404) return { error: lastError, usedName: null };
+    const remaining: Record<string, number> = { ...body };
+    // Each pass either succeeds or removes exactly one key, so this cannot outlast the body.
+    for (let attempt = 0; attempt <= Object.keys(body).length; attempt += 1) {
+      if (Object.keys(remaining).length === 0) {
+        return { error: "ManageEngine refused every setting in this payload.", refused, usedName: null };
+      }
+      try {
+        await callManageEngine(
+          `/api/v1/mdm/profiles/${encodeURIComponent(profileId)}/payloads/${encodeURIComponent(name)}`,
+          { body: JSON.stringify(remaining), method: "POST" },
+          fetchImpl,
+          env,
+        );
+        return { error: null, refused, usedName: name };
+      } catch (caught) {
+        const status = caught instanceof ManageEngineRequestError ? caught.status : 0;
+        lastError = caught instanceof Error ? caught.message : String(caught);
+        const bad = refusedParameterName(lastError);
+        if (bad && bad in remaining) {
+          delete remaining[bad];
+          refused.push(bad);
+          continue; // The name was right — ask again without the field it will not take.
+        }
+        if (status !== 400 && status !== 404) return { error: lastError, refused, usedName: null };
+        break; // Not a field problem, so this spelling is wrong: try the next one.
+      }
     }
   }
-  return { error: lastError, usedName: null };
+  return { error: lastError, refused, usedName: null };
 }
 
 export type RepTabletProfileResult = {
@@ -295,16 +359,34 @@ export type RepTabletProfileResult = {
   carriesPasscode: boolean;
   /** True only when both payloads were proved present and the publish succeeded. */
   published: boolean;
+  /** The rules this tenant refused to carry, in the owner's words — never silently dropped. */
+  refusedRules: string[];
   /** What went wrong, in one sentence, when it did. */
   error: string | null;
 };
 
+/** The rules behind a set of ManageEngine field names, in the words the page already uses. */
+export function rulesForFields(fields: readonly string[]): string[] {
+  const rules = new Set<string>();
+  for (const field of fields) {
+    const setting = REP_TABLET_PROFILE_SETTINGS.find((candidate) => candidate.field === field);
+    rules.add(setting ? setting.rule : field);
+  }
+  return [...rules];
+}
+
 /**
  * Build the rep tablet profile in ManageEngine, and publish it only once its payloads are proved.
  *
- * IDEMPOTENT BY NAME. A tenant that already holds "Phoenix rep tablet" is left exactly as it is and
- * the existing profile is returned — this must be safe to press twice, because the page offers it
- * whenever the profile is missing and two Super Admin tabs are one refresh apart.
+ * SAFE TO PRESS TWICE, AND IT REPAIRS WHAT A FAILED PRESS LEFT BEHIND. 🔴 The first real build did
+ * fail, and the old idempotence was the trap: it saw the name, declared the profile already built and
+ * published, and returned — so the EMPTY profile that failure left in the tenant could never be
+ * finished, and the page would have gone on reporting a rule set that restricts nothing as done. The
+ * existing profile's payloads are read instead, and only a profile already carrying both is left
+ * alone; one missing a payload is finished and published on this press.
+ *
+ * A PROFILE THE CONSOLE BUILT IS NEVER TOUCHED. The owner's own "Rep tablet rules" is returned as it
+ * stands — Phoenix repairs what Phoenix wrote, and never edits his.
  *
  * IT DOES NOT PUT THE PROFILE ON ANY TABLET. Creating the rules and deciding which tablet carries
  * them are two separate acts, and the second one is the Rules section on a tablet, one tablet at a
@@ -317,7 +399,9 @@ export async function buildRepTabletProfile(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<RepTabletProfileResult> {
   const existing = findRepTabletProfile(await listManageEngineProfiles(fetchImpl, env));
-  if (existing) {
+
+  // The owner's own console-built rule set is his: reported, never rewritten.
+  if (existing && !isPhoenixBuiltRepTabletProfile(existing)) {
     return {
       carriesPasscode: true,
       carriesRestrictions: true,
@@ -326,26 +410,47 @@ export async function buildRepTabletProfile(
       name: existing.name,
       profileId: existing.profileId,
       published: true,
+      refusedRules: [],
     };
   }
 
-  const created = await callManageEngine<RawRecord>(
-    "/api/v1/mdm/profiles",
-    {
-      body: JSON.stringify({
-        platform_type: ANDROID_PLATFORM,
-        profile_description: REP_TABLET_PROFILE_DESCRIPTION,
-        profile_name: REP_TABLET_PROFILE_NAME,
-        scope: DEVICE_SCOPE,
-      }),
-      method: "POST",
-    },
-    fetchImpl,
-    env,
-  );
-  const rawId = created.profile_id ?? created.profileId ?? created.id;
-  const profileId =
-    typeof rawId === "string" && rawId.trim() ? rawId.trim() : typeof rawId === "number" ? String(rawId) : null;
+  // A Phoenix profile already carrying both payloads is finished — nothing to do.
+  if (existing) {
+    const already = await readProfilePayloads(existing.profileId, fetchImpl, env);
+    if (carriesPayload(already, RESTRICTIONS_PAYLOAD_NAMES) && carriesPayload(already, PASSCODE_PAYLOAD_NAMES)) {
+      return {
+        carriesPasscode: true,
+        carriesRestrictions: true,
+        created: false,
+        error: null,
+        name: existing.name,
+        profileId: existing.profileId,
+        published: true,
+        refusedRules: [],
+      };
+    }
+  }
+
+  let profileId = existing?.profileId ?? null;
+  if (!profileId) {
+    const created = await callManageEngine<RawRecord>(
+      "/api/v1/mdm/profiles",
+      {
+        body: JSON.stringify({
+          platform_type: ANDROID_PLATFORM,
+          profile_description: REP_TABLET_PROFILE_DESCRIPTION,
+          profile_name: REP_TABLET_PROFILE_NAME,
+          scope: DEVICE_SCOPE,
+        }),
+        method: "POST",
+      },
+      fetchImpl,
+      env,
+    );
+    const rawId = created.profile_id ?? created.profileId ?? created.id;
+    profileId =
+      typeof rawId === "string" && rawId.trim() ? rawId.trim() : typeof rawId === "number" ? String(rawId) : null;
+  }
   if (!profileId) {
     throw new ManageEngineProfileInputError(
       "ManageEngine created the profile but named no profile_id, so its rules could not be added. Open the console and check what was created before pressing this again.",
@@ -359,6 +464,8 @@ export async function buildRepTabletProfile(
   const present = await readProfilePayloads(profileId, fetchImpl, env);
   const carriesRestrictions = carriesPayload(present, RESTRICTIONS_PAYLOAD_NAMES);
   const carriesPasscode = carriesPayload(present, PASSCODE_PAYLOAD_NAMES);
+
+  const refusedRules = rulesForFields([...restrictions.refused, ...passcode.refused]);
 
   let published = false;
   let error: string | null = null;
@@ -388,6 +495,9 @@ export async function buildRepTabletProfile(
       passcodePayloadName: passcode.usedName,
       profileName: REP_TABLET_PROFILE_NAME,
       published,
+      // Named in the audit row too: a rule the tenant would not take is a change in what a tablet
+      // in the field permits, and it must be findable later without re-reading this page.
+      refusedFields: [...restrictions.refused, ...passcode.refused],
       restrictionsPayloadName: restrictions.usedName,
       settings: REP_TABLET_PROFILE_SETTINGS.map((setting) => `${setting.field}=${setting.value}`),
     },
@@ -400,10 +510,12 @@ export async function buildRepTabletProfile(
   return {
     carriesPasscode,
     carriesRestrictions,
-    created: true,
+    // False when this press finished a profile an earlier failed press had left empty.
+    created: existing === null,
     error,
     name: REP_TABLET_PROFILE_NAME,
     profileId,
     published,
+    refusedRules,
   };
 }

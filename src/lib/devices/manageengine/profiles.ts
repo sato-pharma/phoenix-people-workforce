@@ -69,6 +69,9 @@ function pickNumber(record: RawRecord, keys: readonly string[]): number | null {
  * as words and this map can be extended when a new one is seen.
  */
 const PAYLOAD_LABELS: Readonly<Record<string, string>> = {
+  androidefrppolicy: "Factory reset protection",
+  androidpasscodepolicy: "Screen lock",
+  androidrestrictionspolicy: "What the tablet may do",
   appconfigpolicy: "App settings",
   applockpolicy: "Kiosk mode",
   browserpolicy: "Browser",
@@ -228,6 +231,21 @@ export async function getManageEngineProfileState(
   };
 }
 
+/**
+ * The association body, with the profile id's own digits — NEVER through a `Number`.
+ *
+ * 🔴 THIS COST A FAILED ASSOCIATION AGAINST THE LIVE TENANT. ManageEngine ids are 18 digits, and
+ * JavaScript's numbers stop being exact at 16: `Number("243158000000124389")` is 243158000000124380,
+ * so the API answered `404 Unknown id(s) - [Profile Id :243158000000124380]` and no tablet could be
+ * put on any rules at all. An id of all digits is written into the JSON as itself — still a JSON
+ * number, which is what the API wants, but with every digit intact, since nothing here parses it.
+ * Anything else is quoted, so a malformed id is refused by ManageEngine rather than mangled here.
+ */
+export function profileAssociationBody(profileId: string): string {
+  const literal = /^\d+$/.test(profileId) ? profileId : JSON.stringify(profileId);
+  return `{"profile_ids":[${literal}]}`;
+}
+
 export type ManageEngineProfileChange = { assetTag: string | null; message: string };
 
 /**
@@ -281,7 +299,7 @@ export async function changeManageEngineProfile(
   await callManageEngine(
     `/api/v1/mdm/devices/${encodeURIComponent(deviceId)}/profiles`,
     {
-      body: JSON.stringify({ profile_ids: [Number.isFinite(Number(profileId)) ? Number(profileId) : profileId] }),
+      body: profileAssociationBody(profileId),
       method: input.action === "associate" ? "POST" : "DELETE",
     },
     fetchImpl,
