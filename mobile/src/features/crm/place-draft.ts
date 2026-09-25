@@ -43,6 +43,7 @@ export function placePayload(photo: CrmCapturedPhoto, draft: PlaceDraftState): P
     lon: photo.lon,
     accuracyMeters: photo.accuracyMeters,
     deviceCapturedAt: photo.deviceCapturedAt,
+    deviceMocked: photo.deviceMocked,
     label: draft.label.trim() || null,
     timings: timingsToDrafts(draft.timings),
   };

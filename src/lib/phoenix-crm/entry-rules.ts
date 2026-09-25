@@ -91,6 +91,16 @@ export type CapturedFix = {
   accuracyMeters: number | null;
   /** The phone's clock when the photo was taken, compared with the server's on save. */
   deviceCapturedAt: string | null;
+  /**
+   * Android's own mark on a fix that came from a mock provider — a "Fake GPS" app — as
+   * `expo-location` reports it. Null where the question cannot be asked: the web, and iOS.
+   *
+   * NOTHING IS REFUSED ON THIS (owner, 2026-09-25). It is recorded silently and read only by the
+   * Super Admin's integrity board; the rep's save behaves exactly as it always did. A build could of
+   * course be patched to stop sending it, which is why it is one signal among several and the others
+   * are computed on the server — see src/lib/phoenix-crm/location-integrity.ts.
+   */
+  deviceMocked: boolean | null;
 };
 
 export function parseCapturedFix(raw: Record<string, unknown>): EntryRuleResult<CapturedFix> {
@@ -101,6 +111,9 @@ export function parseCapturedFix(raw: Record<string, unknown>): EntryRuleResult<
   // perfect 0 m fix and shown to the manager as "within 0 m". A blank accuracy is unknown.
   const accuracy = readAccuracyInput(raw.accuracyMeters);
   const deviceCapturedAt = typeof raw.deviceCapturedAt === "string" && !Number.isNaN(Date.parse(raw.deviceCapturedAt)) ? raw.deviceCapturedAt : null;
+  // Strictly a boolean or nothing. A body that omits it — an older build, the web, iOS — is
+  // "not asked", never "clean", and is never refused for the omission.
+  const deviceMocked = typeof raw.deviceMocked === "boolean" ? raw.deviceMocked : null;
   return {
     ok: true,
     value: {
@@ -108,6 +121,7 @@ export function parseCapturedFix(raw: Record<string, unknown>): EntryRuleResult<
       lon: Number(raw.lon),
       accuracyMeters: accuracy !== null && accuracy >= 0 ? Math.round(accuracy * 10) / 10 : null,
       deviceCapturedAt,
+      deviceMocked,
     },
   };
 }

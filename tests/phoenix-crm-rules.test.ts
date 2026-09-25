@@ -512,6 +512,9 @@ function runEntryRuleTests() {
     lon: 31.23,
     accuracyMeters: 12.3,
     deviceCapturedAt: "2026-10-03T15:00:00Z",
+    // Absent from this payload, so it parses to "not asked" — never to false. An older build that
+    // never sends the field must not read as a device proven clean.
+    deviceMocked: null,
   });
   for (const accuracyMeters of [-5, "abc", null, undefined]) {
     assert.equal(valueOf(parseCapturedFix({ lat: 30.05, lon: 31.23, accuracyMeters })).accuracyMeters, null, `accuracy ${String(accuracyMeters)} is unknown`);
@@ -536,6 +539,10 @@ function runEntryRuleTests() {
       lon: 31.23,
       accuracyMeters: 9,
       deviceCapturedAt: null,
+      // The phone reports Android's mock-provider flag alongside the fix; this payload carries none,
+      // so it reads "could not ask" rather than "clean". It is part of the captured fix, not of the
+      // draft's editable fields — the rep still names only the place.
+      deviceMocked: null,
       label: "Clinic 2",
       photoPath: "seat/photo.jpg",
       timings: [{ weekday: 6, startMinute: 1080, endMinute: null, season: "normal" }],

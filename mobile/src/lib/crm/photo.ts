@@ -50,6 +50,11 @@ export type CrmCapturedPhoto = {
   lon: number;
   accuracyMeters: number | null;
   deviceCapturedAt: string;
+  /**
+   * Whether Android said this reading came from a mock provider. Carried to the save and nowhere
+   * else: no screen reads it, and none may (owner, 2026-09-25 — the rep is never told).
+   */
+  deviceMocked: boolean | null;
   /** The single-line place label the stamp resolved, for the "at …" caption under the photo. */
   locationLabel: string;
 };
@@ -176,6 +181,7 @@ export async function captureCrmPhoto(input: {
       photo: {
         accuracyMeters: fix.accuracyMeters,
         deviceCapturedAt: capturedAt,
+        deviceMocked: fix.mocked,
         lat: fix.latitude,
         locationLabel: location.label,
         lon: fix.longitude,

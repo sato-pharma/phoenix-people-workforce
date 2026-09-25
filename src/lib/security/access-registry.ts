@@ -677,6 +677,10 @@ export const accessRegistry = [
   // a manager above it; a grade, drop or plan decision by its reviewing manager only (the SFE Manager
   // may only return a plan); scope runs downward only; the Super Admin's writes are test entries.
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/overview", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
+  // Location integrity evidence — read-only, and narrowed a SECOND time inside the service to the
+  // Super Admin alone. The `phoenix_crm.update` permission here is the outer gate only: every other
+  // holder of it is refused by the service, because a rep must never learn this board exists.
+  sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/integrity", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: false }),
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/visits", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/visits", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/visits/form", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: false }),

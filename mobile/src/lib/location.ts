@@ -36,7 +36,25 @@ export type LocationAccess =
 export type LocationUnavailableReason = "location_off" | "timeout" | "position_unavailable";
 
 export type LocationFix =
-  | { status: "fixed"; accuracyMeters: number | null; latitude: number; longitude: number }
+  | {
+      status: "fixed";
+      accuracyMeters: number | null;
+      latitude: number;
+      longitude: number;
+      /**
+       * Android's own mark on a reading that came from a mock provider — a "Fake GPS" app. The OS
+       * sets it, so it catches every such app, including ones nobody has heard of and ones renamed
+       * to hide, and it never names one — which is why no list of package names is kept anywhere.
+       *
+       * Null means the question could not be asked, NOT that the reading is clean: iOS has no mock
+       * provider to report. The server treats null as "not asked" and never as "honest".
+       *
+       * NOTHING IN THE APP REACTS TO THIS (owner, 2026-09-25). It travels with the capture and is
+       * read only by the Super Admin; the person holding the phone sees no message, no delay and no
+       * difference of any kind. Do not add one.
+       */
+      mocked: boolean | null;
+    }
   | { status: "no-permission" }
   /** Location is switched off on the phone, or the phone gave no reading within the time allowed. */
   | { status: "unavailable"; reason: LocationUnavailableReason };
@@ -105,6 +123,8 @@ export async function readCurrentPosition(access: LocationAccess): Promise<Locat
       accuracyMeters: typeof accuracy === "number" && Number.isFinite(accuracy) ? accuracy : null,
       latitude,
       longitude,
+      // `mocked` is Android-only and absent on iOS, so anything that is not a boolean stays null.
+      mocked: typeof position.mocked === "boolean" ? position.mocked : null,
       status: "fixed",
     };
   } catch {

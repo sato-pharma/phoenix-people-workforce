@@ -663,6 +663,7 @@ function AddVisit({
         lon: evidence.lon,
         accuracyMeters: evidence.accuracyMeters,
         deviceCapturedAt: evidence.deviceCapturedAt,
+        deviceMocked: evidence.deviceMocked,
         ...(placePhoto ? { reusePlacePhoto: true } : {}),
       },
     };
