@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { stripComments } from "./support/comment-strip.ts";
 
 // The Territory drilldown's per-pharmacy monthly trend bar must plot VALUE, never a units
 // total. A units total is only meaningful for one product_code — summing the units of two
@@ -12,17 +13,6 @@ import path from "node:path";
 // product a pharmacy bought that month. This pins the three source points so a later edit that
 // repoints the bar back to a summed-units field goes red. The per-product tooltip keeps showing
 // units, because each tooltip line is a SINGLE product and its units are valid.
-
-function stripComments(src: string): string {
-  return src
-    .replace(/\/\*[\s\S]*?\*\//g, " ") // block comments (incl. JSDoc)
-    .split("\n")
-    .map((line) => {
-      const idx = line.indexOf("//");
-      return idx >= 0 ? line.slice(0, idx) : line;
-    })
-    .join("\n");
-}
 
 function readCode(rel: string): string {
   return stripComments(readFileSync(path.join(process.cwd(), rel), "utf8"));

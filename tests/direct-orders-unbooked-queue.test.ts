@@ -8,6 +8,7 @@ import {
   parseDirectOrderReportFilters,
 } from "../src/lib/direct-orders/report-filters.ts";
 import type { DirectOrderReportRow } from "../src/lib/direct-orders/types.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * The Finance Manager's unbooked-direct-orders queue — badge, filter, and on-screen escalation.
@@ -42,22 +43,6 @@ const REPORT_PAGE_PATH = "app/(admin)/admin/direct-orders/(desks)/report/page.ts
 
 function read(path: string): string {
   return readFileSync(path, "utf8");
-}
-
-/**
- * Source with comments removed — block, JSX (`{/* … *​/}`) and whole-line `//`.
- *
- * Same reason finance-command-center.test.ts strips SQL comments: the prose explaining WHY
- * something was removed necessarily QUOTES the thing that was removed, so a "must not appear"
- * guard reading raw source fails on its own documentation. Only whole-line `//` is stripped, so a
- * `//` inside a URL or string literal survives.
- */
-function stripComments(source: string): string {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .split("\n")
-    .filter((line) => !/^\s*\/\//.test(line))
-    .join("\n");
 }
 
 /** Minimal row — only the four fields the filter actually reads. */

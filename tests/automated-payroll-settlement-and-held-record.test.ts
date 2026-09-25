@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { stripComments } from "./support/comment-strip.ts";
+
 /**
  * Two rules about money leaving the system, both structural, both previously unguarded.
  *
@@ -39,23 +41,13 @@ export function runAutomatedPayrollSettlementAndHeldRecordTests() {
   // nothing to do with payroll — or, worse in a differently-shaped test, pass vacuously.
   const source = readFileSync(path, "utf8").replace(/\r\n/g, "\n");
 
-  /**
-   * Strip `//` line comments before asserting on structure.
-   *
-   * Not defensive noise — this caught a real vacuous assertion while this file was being written.
-   * The check that the audit detail carries `held` passed with `held: heldRecord` deleted, because
-   * the comment above it reads "who was held this month". A source-scanning test that reads its own
-   * explanatory prose is checking nothing, which is the same trap the additive-import guard records.
-   */
-  function stripComments(text: string): string {
-    return text
-      .split("\n")
-      .map((line) => {
-        const at = line.indexOf("//");
-        return at === -1 ? line : line.slice(0, at);
-      })
-      .join("\n");
-  }
+  // Comments are stripped before asserting on structure — not defensive noise. This caught a real
+  // vacuous assertion while this file was being written: the check that the audit detail carries
+  // `held` passed with `held: heldRecord` deleted, because the comment above it reads "who was held
+  // this month". A source-scanning test that reads its own explanatory prose is checking nothing.
+  // `stripComments` is the shared one (tests/support/comment-strip.ts); the private version here
+  // truncated each line at its first `//`, which also cut every `https://` in the file in half and
+  // saw no block comment at all.
 
   /** One function's body, from its signature to the next top-level closing brace. */
   function bodyOf(name: string): string {

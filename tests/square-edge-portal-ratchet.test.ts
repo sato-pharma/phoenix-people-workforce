@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
+import { stripComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Standing owner rule (AGENTS.md §4, THE SQUARE-EDGE GOLDEN RULE): "no round or
@@ -96,12 +97,6 @@ function appliesARadius(line: string): boolean {
     const tokens = literal.match(ROUNDED_TOKEN) ?? [];
     return tokens.some((t) => t !== "rounded-none" && !/^rounded-\[0/.test(t));
   });
-}
-
-function stripComments(source: string): string {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, (block) => block.replace(/[^\n]/g, " "))
-    .replace(/(^|[^:])\/\/.*$/gm, "$1");
 }
 
 function walk(dir: string, out: string[] = []): string[] {

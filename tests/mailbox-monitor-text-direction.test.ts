@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { stripComments } from "./support/comment-strip.ts";
 
 // The mailbox monitor renders Arabic free text that arrives live over IMAP — sender names, subjects,
 // IMAP folder names and the message body itself. None of it is stored in Phoenix, so there is no
@@ -8,15 +9,6 @@ import path from "node:path";
 // where this class of defect lives. Measured at 375px on 2026-08-30, not inferred from source.
 
 const FILE = path.join(process.cwd(), "src/components/admin/mailbox-monitor-dashboard.tsx");
-
-// The comments in that file NAME the wrong fix in order to warn the next session off it, so counting
-// occurrences without stripping them would read the warning as the code.
-function stripComments(source: string): string {
-  return source
-    .replace(/\{\/\*[\s\S]*?\*\/\}/g, "")
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/^\s*\/\/.*$/gm, "");
-}
 
 export function runMailboxMonitorTextDirectionTests() {
   const raw = readFileSync(FILE, "utf8");

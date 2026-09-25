@@ -17,6 +17,7 @@ import {
   type PersonalNavigationLayout,
 } from "../src/lib/navigation/personal-layout.ts";
 import { resolveShellNavigationMode } from "../src/lib/navigation/shell-mode.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The navigation-layout editor arranges the catalogue the viewer's OWN shell renders from.
@@ -40,22 +41,6 @@ import { resolveShellNavigationMode } from "../src/lib/navigation/shell-mode.ts"
 // So this file pins three things: the rule that resolves the mode, the premise that makes a wrong
 // mode silent rather than loud, and the page actually asking for its own mode.
 // ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Strip comments before asserting on source.
- *
- * Every string pinned below is also spelled out in the prose that explains the fix -- including the
- * hardcoded call this file exists to forbid. Asserting against raw source would let a session
- * restore the hardcode, keep the comment, and stay green; and the "must NOT contain" assertion
- * would fail against a file that merely DESCRIBES the old defect. That trap has fired in this repo
- * before, where an overflow-x-auto assertion matched the comment forbidding it.
- */
-function stripComments(source: string): string {
-  return source
-    .replace(/\{\/\*[\s\S]*?\*\/\}/g, "")
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/^[ \t]*\/\/.*$/gm, "");
-}
 
 function accessFor(role: PhoenixRole): AccessContext {
   return { hrId: "a-1", loginId: "a-1", role, scope: scopeForRole(role), source: "session" };
