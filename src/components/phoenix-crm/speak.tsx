@@ -56,8 +56,10 @@ import { Mic, Square, Trash2 } from "lucide-react";
 
 import { CrmButton, CrmNote } from "@/components/phoenix-crm/ui";
 import { crmPost, messageOf, useCrmGet } from "@/components/phoenix-crm/api";
-import { startDictation, type DictationHandle } from "@/lib/phoenix-crm/dictation";
+import { reportClientError } from "@/lib/error-monitor/report-client-error";
+import { isEngineLanguageError, startDictation, type DictationHandle } from "@/lib/phoenix-crm/dictation";
 import {
+  shouldWriteFromRecording,
   speakAccuracyLine,
   speakAgainLine,
   speakBlockedMessage,
@@ -151,14 +153,20 @@ export function CrmSpeak({
   const browser = useSyncExternalStore(subscribeToNothing, readHalves, noHalvesOnServer);
 
   /**
-   * Only a browser with no engine of its own has to ask, and it asks because the copy under the button is
-   * a PROMISE: "the words are written when you stop" with nothing configured behind it is the sentence a
-   * rep finds out about at a clinic door. A definite `false` is the only answer that changes anything — a
-   * failed or pending probe leaves the optimistic reading, so the promise never flickers between engines.
+   * EVERY browser that can record asks, not only the ones with no engine of their own.
+   *
+   * 🔴 It used to ask only when `browser.text === "server"`, and that is half of why the owner got a
+   * recording and an empty comment on Firefox ("DIDNT WROITE", 2026-09-25). A browser whose engine exists
+   * but cannot write Arabic reads as "live", so it never asked, so it never knew a fallback was available
+   * to hand the recording to. The answer is needed wherever a recording might have to be written out —
+   * which is any browser holding a recorder.
+   *
+   * A definite `false` is still the only answer that changes the promise: a failed or pending probe leaves
+   * the optimistic reading, so the copy never flickers between engines while it is in flight.
    */
-  const probe = useCrmGet<{ available: boolean }>(browser.text === "server" ? TRANSCRIBE_URL : null, "transcription");
-  const halves: SpeakHalves =
-    browser.text === "server" && probe.data?.available === false ? { ...browser, text: "none" } : browser;
+  const probe = useCrmGet<{ available: boolean }>(browser.audio ? TRANSCRIBE_URL : null, "transcription");
+  const serverAvailable = probe.data?.available !== false;
+  const halves: SpeakHalves = browser.text === "server" && !serverAvailable ? { ...browser, text: "none" } : browser;
   /** Pulled out as a plain string so `store` can depend on it without depending on an object identity. */
   const engine = halves.text;
 
@@ -175,6 +183,17 @@ export function CrmSpeak({
   const dictation = useRef<DictationHandle | null>(null);
   // The cap fires from the ticker, so `stop` must be reachable from a callback created before it.
   const stopRef = useRef<() => void>(() => {});
+  /**
+   * Whether this browser's own engine actually put a phrase in the comment during this recording.
+   *
+   * 🔴 THE ONE FACT THAT DECIDES WHETHER THE RECORDING IS WRITTEN OUT, and the thing that was missing when
+   * the owner got a recording and an empty comment ("DIDNT WROITE", 2026-09-25). The engine's EXISTENCE was
+   * being trusted instead, and Firefox 157 has one that cannot do Arabic.
+   *
+   * A ref, not state: `store` reads it at the instant the recording closes and must see what really
+   * happened, not a value from the render that started it.
+   */
+  const wroteLive = useRef(false);
 
   /**
    * Hand the microphone back, both halves, without waiting for the upload.
@@ -244,12 +263,17 @@ export function CrmSpeak({
         setUploading(false);
       }
 
-      // The words, on a browser that could not write them while he spoke. Deliberately a SECOND block
+      // The words, on a browser that did not write them while he spoke. Deliberately a SECOND block
       // after the upload has landed and the note is already on screen: the recording is safe by the time
       // anything is asked of a speech service, so a refusal here costs him the typing he would have done
       // anyway and can never cost him what he recorded. `stored` null means the upload failed and its own
       // sentence is already showing — there is nothing to transcribe and nothing to add to it.
-      if (!stored || engine !== "server") return;
+      //
+      // 🔴 THE TEST IS WHAT HAPPENED, NOT WHAT THE BROWSER HAS. This read `engine !== "server"` and shipped
+      // the hole the owner found: a Firefox whose engine exists but cannot write Arabic reads as "live", so
+      // the recording it had just stored was never sent anywhere. `shouldWriteFromRecording` asks whether
+      // words actually arrived — never re-narrow it back to a capability check.
+      if (!shouldWriteFromRecording({ storedPath: stored, serverAvailable, wroteLive: wroteLive.current })) return;
       setTranscribing(true);
       try {
         const written = await crmPost<string>(TRANSCRIBE_URL, { path: stored }, "text");
@@ -262,7 +286,7 @@ export function CrmSpeak({
         setTranscribing(false);
       }
     },
-    [engine, onAppend, onChange, seatId, test],
+    [onAppend, onChange, seatId, serverAvailable, test],
   );
 
   const stop = useCallback(async () => {
@@ -285,6 +309,9 @@ export function CrmSpeak({
   async function start() {
     setError(null);
     setElapsed(0);
+    // Per recording, not per session: the rep who dictated one visit in Chrome's engine and then hit a
+    // browser update that broke it must not carry the first recording's success into the second.
+    wroteLive.current = false;
 
     // The recorder first: it answers the permission prompt, and the speech engine then opens its own
     // capture against a microphone the rep has already allowed.
@@ -308,15 +335,35 @@ export function CrmSpeak({
       speech = startDictation({
         onInterim: setInterim,
         onFinal: (text) => {
+          // Only a phrase with something in it counts as having written. An engine that settles on empty
+          // string has produced nothing the rep can read, and the recording must still be written out.
+          if (text.trim()) wroteLive.current = true;
           onAppend(text);
           setInterim("");
         },
-        onError: (message) => {
+        onError: (message, code) => {
           // A failure of the speech half never stops the recording: the rep is mid-sentence and the
           // audio is the half that cannot mishear him. The panel closes only when nothing is left open.
           dictation.current = null;
           setInterim("");
-          setError(message);
+
+          // 🔴 THE HANDOVER. `language-not-supported` is not a failure to report — it is this browser
+          // saying its engine is out, which Firefox 157 does a moment AFTER `start()` succeeded. Where a
+          // recorder is running and the server path is there, the words are still coming, so the rep is
+          // told nothing: he sees "Writing out the words" a few seconds after Stop, and `store` above does
+          // it. Showing an error here is what made the owner's comment box stay empty with no explanation.
+          const handingOver = isEngineLanguageError(code) && Boolean(recorder.current) && serverAvailable;
+          if (handingOver) {
+            // So the panel stops promising words as he talks — it said "writing as you talk" until now.
+            setStarted((was) => ({ ...was, text: "server" }));
+            // One breadcrumb, because this failure was invisible from the server: the request was never
+            // made, so `/admin/error-monitor` had nothing at all to show while the owner waited.
+            reportClientError({
+              context: `speak=handover engineCode=${code} recorder=1 serverAvailable=1`,
+              error: new Error("Browser speech engine has no Arabic — writing the recording out instead"),
+            });
+          } else setError(message);
+
           if (!recorder.current) setListening(false);
         },
         onEnd: () => {

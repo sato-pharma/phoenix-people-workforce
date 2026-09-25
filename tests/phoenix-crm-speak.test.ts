@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import {
+  shouldWriteFromRecording,
   speakAccuracyLine,
   speakAgainLine,
   speakBlockedMessage,
@@ -59,6 +60,7 @@ import { stripComments } from "./support/comment-strip.ts";
 
 const CONTROL = "src/components/phoenix-crm/speak.tsx";
 const FORM = "src/components/phoenix-crm/visits-tab.tsx";
+const MODULE = "src/lib/phoenix-crm/speak.ts";
 
 const BOTH: SpeakHalves = { text: "live", audio: true };
 const TEXT_ONLY: SpeakHalves = { text: "live", audio: false };
@@ -107,6 +109,48 @@ export function runPhoenixCrmSpeakTests() {
     "and with the server path unconfigured the button stops promising words, rather than promising them and failing after every recording",
   );
   assert.equal(speakTextEngine({ audio: false, live: false, serverTranscription: false }), "none");
+
+  // ── Whether the RECORDING is written out, decided from what happened ──────────
+  // 🔴 THE BUG THE OWNER FOUND IN THE FIRST HOUR. The control used to decide this from `speakTextEngine`
+  // above — a capability read taken before he spoke — and Firefox 157 defeats it: it ships a recogniser
+  // backed by NVIDIA's Parakeet, which has no Arabic, so the engine is DETECTED, `start()` SUCCEEDS, and
+  // `language-not-supported` arrives asynchronously afterwards. The browser read as "live", so the
+  // recording it had just stored was never sent anywhere, and his comment stayed empty: "DIDNT WROITE".
+  //
+  // So the question changed from "what does this browser HAVE" to "what actually happened". Having an
+  // engine is not being able to write Arabic, and the only proof is a phrase in the comment.
+  assert.equal(
+    shouldWriteFromRecording({ storedPath: "crm/voice/a.webm", serverAvailable: true, wroteLive: false }),
+    true,
+    "a recording is stored, the server path is there, and not one word was written — this is Firefox, and this is the case that must never be skipped again",
+  );
+  assert.equal(
+    shouldWriteFromRecording({ storedPath: "crm/voice/a.webm", serverAvailable: true, wroteLive: true }),
+    false,
+    "a live engine that wrote even one phrase is believed, so a working Chrome never pays for a second reading of the same speech",
+  );
+  assert.equal(
+    shouldWriteFromRecording({ storedPath: null, serverAvailable: true, wroteLive: false }),
+    false,
+    "no stored recording means the upload failed and its own sentence is already on screen — there is no file to send and nothing to add to it",
+  );
+  assert.equal(
+    shouldWriteFromRecording({ storedPath: "crm/voice/a.webm", serverAvailable: false, wroteLive: false }),
+    false,
+    "and with no speech service configured nothing is attempted, rather than every recording ending in a refusal the rep can do nothing about",
+  );
+  // It takes no engine name, and that is deliberate: a browser with NO engine and a browser with a useless
+  // one are the same case here — neither wrote anything — so the control has one transcription path rather
+  // than two. A second path is how one of the two keeps the stale rule.
+  // Not named `module`: Next's lint refuses that identifier anywhere in the repo.
+  const wording = stripComments(readFileSync(MODULE, "utf8"));
+  const decisionAt = wording.indexOf("export function shouldWriteFromRecording");
+  assert.ok(decisionAt > 0, `${MODULE} exports the decision`);
+  assert.doesNotMatch(
+    wording.slice(decisionAt, wording.indexOf("export function speakSupported")),
+    /"live"|"server"|"none"/,
+    "the decision names no engine at all — a browser with NO engine and a browser with a useless one are the same case here, and re-admitting an engine name is how the capability check creeps back in",
+  );
 
   // ── The button promises exactly what this browser will do ─────────────────────
   // The failure this prevents: a rep on Firefox presses a button promising his words will be written,
@@ -179,16 +223,26 @@ export function runPhoenixCrmSpeakTests() {
       `the notice names ${processor} — "sent to a third party" tells the rep nothing he can act on, and naming the processor is the whole point of saying it`,
     );
   }
-  assert.match(
+  // 🔴 THE RETIRED PROMISE. This branch used to say the stored recording is read by NO speech service,
+  // and that sentence is now FALSE: since the handover was added a browser can start on its own engine,
+  // write nothing, and have its recording sent to Groq after all. A privacy promise that holds only on the
+  // happy path is the worst copy this notice can carry, so the condition is named instead of hidden.
+  assert.doesNotMatch(
     notice,
     /no speech service ever reads it/,
-    "and it separates the two halves: the live stream is processed, the stored recording is not — saying only the first would read as though the file goes to Google too",
+    "the live branch no longer promises the stored recording is read by nothing — the handover can send it, so that promise is retired and must not come back",
   );
+  assert.match(
+    notice,
+    /if this browser writes no words at all, it is sent to Groq/,
+    "it names the condition under which the stored file DOES leave — a rep on Firefox reads this line and it is his case",
+  );
+  assert.match(notice, /stored by Phoenix/, "…while still saying where the recording normally lives");
   assert.match(speakProcessorLine(TEXT_ONLY) ?? "", /Google's on Chrome/, "the notice does not depend on the recorder being there");
   assert.doesNotMatch(
     speakProcessorLine(TEXT_ONLY) ?? "",
-    /no speech service ever reads it/,
-    "with no recording there is no stored file to exempt, and a sentence about one would be describing something that does not exist",
+    /Groq|recording/,
+    "with no recorder there is no stored file at all, so neither the second processor nor the recording is mentioned — a sentence about a file that will never exist is noise at the moment he decides to speak",
   );
   assert.equal(
     speakProcessorLine(AUDIO_ONLY),
@@ -205,8 +259,8 @@ export function runPhoenixCrmSpeakTests() {
   assert.match(serverNotice, /sends the recording/, "it says the RECORDING is what is sent — that is what happens here, and it is different from the live engine");
   assert.doesNotMatch(
     serverNotice,
-    /no speech service ever reads it/,
-    "it must NEVER claim the stored file is read by nothing: on this engine the stored file is exactly what is read, and that sentence is the live branch's, not this one's",
+    /no speech service ever reads it|writes no words at all/,
+    "it must NEVER claim the stored file is read by nothing, and never borrow the live branch's CONDITION either: on this engine the file is read every time, unconditionally",
   );
   assert.doesNotMatch(serverNotice, /Google|Apple/, "and it does not name the browser engines that this browser does not have");
 
@@ -307,6 +361,49 @@ export function runPhoenixCrmSpeakTests() {
     `${CONTROL} counts the server engine as the text half only where a recorder is actually running to produce the file it needs`,
   );
 
+  // ── THE HANDOVER: what the owner's empty comment box cost ──────────────────────
+  // A capability check chose the engine and nothing verified it. Firefox 157's recogniser exists, starts,
+  // and only then says it has no Arabic — so the browser read as "live", the recording was stored, and it
+  // was never sent to be written out. Four things keep that from happening again, and each is here because
+  // its absence was part of the failure.
+  //
+  // 1. EVERY recording-capable browser asks whether the server path is there. It used to ask only where
+  //    the browser had no engine of its own, which is why the one that had a useless engine never knew a
+  //    fallback existed to hand its recording to.
+  assert.match(
+    control,
+    /useCrmGet<\{ available: boolean \}>\(browser\.audio \? TRANSCRIBE_URL : null/,
+    `${CONTROL} asks whether the words can be written out wherever a recording might have to be — not only where the browser admits it has no engine`,
+  );
+  // 2. Whether a phrase actually landed is remembered, and only a phrase with something in it counts.
+  assert.match(control, /if \(text\.trim\(\)\) wroteLive\.current = true;/, `${CONTROL} counts only a phrase with words in it as having written`);
+  assert.match(control, /wroteLive\.current = false;/, `${CONTROL} forgets the last recording's success — per recording, never per session`);
+  // 3. The transcription is decided from that, not from the engine name. This is the assertion that would
+  //    have gone red on the code the owner tried.
+  assert.match(
+    control,
+    /shouldWriteFromRecording\(\{ storedPath: stored, serverAvailable, wroteLive: wroteLive\.current \}\)/,
+    `${CONTROL} writes the recording out on what HAPPENED — a capability check here is exactly the bug the owner hit`,
+  );
+  assert.doesNotMatch(
+    control,
+    /engine !== "server"/,
+    `${CONTROL} no longer gates the words on the engine it guessed before he spoke — that line is what left his comment empty`,
+  );
+  // 4. The language failure hands over silently instead of showing a dead end. The rep sees "Writing out
+  //    the words" a few seconds after Stop; an error message there is what made it look broken.
+  assert.match(
+    control,
+    /isEngineLanguageError\(code\) && Boolean\(recorder\.current\) && serverAvailable/,
+    `${CONTROL} treats "this engine has no Arabic" as a branch to take, not a failure to report`,
+  );
+  assert.match(
+    control,
+    /setStarted\(\(was\) => \(\{ \.\.\.was, text: "server" \}\)\)/,
+    `${CONTROL} stops the open panel promising words as he talks the moment it learns they are not coming that way`,
+  );
+  assert.match(control, /reportClientError\(\{/, `${CONTROL} leaves one breadcrumb — the failure made no request, so the error monitor had nothing at all to show while the owner waited`);
+
   // ── The microphone is opened once and handed back on every exit ───────────────
   // A live track is a microphone the phone still considers in use, and the OS says so in the status bar
   // long after the form thinks it has finished. Both halves hold one, so both are released together.
@@ -358,8 +455,8 @@ export function runPhoenixCrmSpeakTests() {
   assert.ok(transcribeAt > storedAt, `${CONTROL} asks for the words only after the recording is stored`);
   assert.match(
     control,
-    /if \(!stored \|\| engine !== "server"\) return;/,
-    `${CONTROL} sends nothing to a speech service when the upload failed, and nothing at all on a browser with its own engine`,
+    /if \(!shouldWriteFromRecording\(/,
+    `${CONTROL} sends nothing to a speech service when the upload failed, and nothing where the words already arrived`,
   );
   assert.match(
     control,

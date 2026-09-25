@@ -5,6 +5,7 @@ import {
   dictationErrorMessage,
   DICTATION_LANG,
   isDictationSupported,
+  isEngineLanguageError,
   isSilentRecognitionError,
 } from "../src/lib/phoenix-crm/dictation.ts";
 import { VISIT_COMMENT_MAX } from "../src/lib/phoenix-crm/entry-rules.ts";
@@ -89,6 +90,31 @@ export function runPhoenixCrmDictationTests() {
   assert.equal(isSilentRecognitionError("not-allowed"), false, "a blocked microphone is the ONE error the rep must be told about");
   assert.equal(isSilentRecognitionError("network"), false, "an unknown error is shown rather than swallowed");
 
+  // ── The engine that EXISTS and cannot do Arabic ────────────────────────────────────────────────
+  // Firefox 157 ships a recogniser backed by NVIDIA's Parakeet, whose language list has no Arabic. It
+  // constructs, it accepts `ar-EG`, `start()` SUCCEEDS, and only then does this code arrive — so no
+  // capability check taken before the rep speaks can see it. The owner met this within the hour of the
+  // first ship ("DIDNT WROITE", 2026-09-25): his words were recorded and his comment stayed empty.
+  //
+  // It is kept apart from the silent set and from the messages because the caller ACTS on it: the
+  // recording is written out by the server instead, and the rep is told nothing at all.
+  assert.equal(isEngineLanguageError("language-not-supported"), true, "the one code that means this browser's own engine is out for Arabic");
+  assert.equal(isEngineLanguageError("not-allowed"), false, "a blocked microphone is not an engine that lacks the language — it is the rep's to fix, and no handover would help");
+  assert.equal(isEngineLanguageError("network"), false);
+  assert.equal(
+    isSilentRecognitionError("language-not-supported"),
+    false,
+    "it is NOT silent: where the recording cannot be written out the rep must still be told his words are not coming",
+  );
+
+  // And the sentence is the NO-HANDOVER one. Where the recording can be written out the caller shows
+  // nothing and lets "Writing out the words" speak for itself, so these words only ever reach a rep when
+  // nothing else is coming — which is exactly when promising him words from the recording would be a lie.
+  const languageMessage = dictationErrorMessage("language-not-supported");
+  assert.match(languageMessage, /cannot write Arabic while you talk/, "it names what this browser cannot do, rather than reading as a failure he caused");
+  assert.match(languageMessage, /type the comment instead/i, "and names the way out, because on this path nothing else will fill the comment");
+  assert.match(languageMessage, /recording is still saved/, "while saying the half that DID work is safe — the recording is what he actually said");
+
   assert.match(
     dictationErrorMessage("not-allowed"),
     /settings/,
@@ -124,5 +150,19 @@ export function runPhoenixCrmDictationTests() {
     dictation,
     /the owner's call, and it is still open/,
     "the sentence that called it open is gone, not just contradicted further down",
+  );
+
+  // The engine's own code reaches the caller, not only the rep-facing sentence. Handing back the message
+  // alone forced the component to match on English prose to find the handover case, which is how a
+  // reworded sentence becomes a silent regression in the one path the owner already caught once.
+  assert.match(
+    dictation,
+    /callbacks\.onError\(dictationErrorMessage\(event\.error\), event\.error\)/,
+    "startDictation passes the engine's code beside the sentence, so the caller branches on the code",
+  );
+  assert.match(
+    dictation,
+    /onError: \(message: string, code: string\) => void/,
+    "…and the callback's type says so, rather than leaving the second argument undocumented",
   );
 }
