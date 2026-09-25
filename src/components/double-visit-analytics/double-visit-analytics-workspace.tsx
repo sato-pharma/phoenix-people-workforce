@@ -1161,6 +1161,7 @@ export function DoubleVisitAnalyticsWorkspace({
                 </div>
               </div>
               <PortalResponsiveDataList
+                breakpoint="lg"
                 empty={
                   <PortalEmptyState
                     title="No double-visitors"
@@ -1173,7 +1174,24 @@ export function DoubleVisitAnalyticsWorkspace({
                   <LeaderboardCard row={row} rank={index + 1} maxDvs={leaderboardMaxDvs} onOpen={openManager} />
                 )}
                 renderTable={() => (
-                  <PortalDesktopTable minWidth="980px">
+                  <PortalDesktopTable
+                    breakpoint="lg"
+                    cols={
+                      <colgroup>
+                        <col className="w-[4%]" />
+                        <col className="w-[16%]" />
+                        <col className="w-[8%]" />
+                        <col className="w-[12%]" />
+                        <col className="w-[8%]" />
+                        <col className="w-[8%]" />
+                        <col className="w-[8%]" />
+                        <col className="w-[9%]" />
+                        <col className="w-[9%]" />
+                        <col className="w-[9%]" />
+                        <col className="w-[9%]" />
+                      </colgroup>
+                    }
+                  >
                     <thead className="sticky top-0 bg-slate-50 text-xs font-black uppercase tracking-wide text-slate-500">
                       <tr>
                         <th className="px-3 py-3">#</th>
@@ -1385,6 +1403,7 @@ export function DoubleVisitAnalyticsWorkspace({
                     <p className="text-sm text-slate-500">Visits = total calls; Days = distinct dates; Visits/Day shows intensity (e.g. 29 visits across 6 days). Resigned-rep territories are listed separately below.</p>
                   </div>
                   <PortalResponsiveDataList
+                    breakpoint="lg"
                     empty={
                       <PortalEmptyState
                         title="No visits recorded"
@@ -1402,7 +1421,22 @@ export function DoubleVisitAnalyticsWorkspace({
                     )}
                     renderTable={() => (
                       <div className="max-h-[480px] overflow-y-auto">
-                        <PortalDesktopTable minWidth="760px">
+                        <PortalDesktopTable
+                          breakpoint="lg"
+                          cols={
+                            <colgroup>
+                              <col className="w-[18%]" />
+                              <col className="w-[16%]" />
+                              <col className="w-[8%]" />
+                              <col className="w-[10%]" />
+                              <col className="w-[16%]" />
+                              <col className="w-[8%]" />
+                              <col className="w-[8%]" />
+                              <col className="w-[8%]" />
+                              <col className="w-[8%]" />
+                            </colgroup>
+                          }
+                        >
                           <thead className="sticky top-0 bg-slate-50 text-xs font-black uppercase tracking-wide text-slate-500">
                             <tr>
                               <th className="px-3 py-3">MR</th>
@@ -1468,7 +1502,19 @@ export function DoubleVisitAnalyticsWorkspace({
                       renderCard={(row) => <VacantTerritoryCard row={row} />}
                       renderTable={() => (
                         <div className="max-h-[320px] overflow-y-auto">
-                          <PortalDesktopTable minWidth="560px">
+                          <PortalDesktopTable
+                            cols={
+                              <colgroup>
+                                <col className="w-[28%]" />
+                                <col className="w-[12%]" />
+                                <col className="w-[12%]" />
+                                <col className="w-[12%]" />
+                                <col className="w-[12%]" />
+                                <col className="w-[12%]" />
+                                <col className="w-[12%]" />
+                              </colgroup>
+                            }
+                          >
                             <thead className="sticky top-0 bg-slate-50 text-xs font-black uppercase tracking-wide text-slate-500">
                               <tr>
                                 <th className="px-3 py-3">Territory (as recorded)</th>
@@ -1549,6 +1595,7 @@ export function DoubleVisitAnalyticsWorkspace({
             </span>
           </div>
           <PortalResponsiveDataList
+            breakpoint="lg"
             empty={
               <PortalEmptyState
                 title={mrSearch ? "No matches" : "No MRs"}
@@ -1571,7 +1618,23 @@ export function DoubleVisitAnalyticsWorkspace({
               );
             }}
             renderTable={() => (
-              <PortalDesktopTable minWidth="920px">
+              <PortalDesktopTable
+                breakpoint="lg"
+                cols={
+                  <colgroup>
+                    <col className="w-[4%]" />
+                    <col className="w-[18%]" />
+                    <col className="w-[11%]" />
+                    <col className="w-[14%]" />
+                    <col className="w-[9%]" />
+                    <col className="w-[9%]" />
+                    <col className="w-[11%]" />
+                    <col className="w-[6%]" />
+                    <col className="w-[10%]" />
+                    <col className="w-[8%]" />
+                  </colgroup>
+                }
+              >
                 <thead className="sticky top-0 bg-slate-50 text-xs font-black uppercase tracking-wide text-slate-500">
                   <tr>
                     <th className="w-8 px-3 py-3" />
@@ -1624,7 +1687,16 @@ export function DoubleVisitAnalyticsWorkspace({
               items={dashboard.trend}
               renderCard={(week) => <TrendCard week={week} />}
               renderTable={() => (
-                <PortalDesktopTable minWidth="680px">
+                <PortalDesktopTable
+                  cols={
+                    <colgroup>
+                      <col className="w-[28%]" />
+                      <col className="w-[22%]" />
+                      <col className="w-[28%]" />
+                      <col className="w-[22%]" />
+                    </colgroup>
+                  }
+                >
                   <thead className="bg-slate-50 text-xs font-black uppercase tracking-wide text-slate-500">
                     <tr>
                       <th className="px-3 py-3">Week Of</th>
@@ -1659,7 +1731,18 @@ export function DoubleVisitAnalyticsWorkspace({
               items={dashboard.neglectedMrs}
               renderCard={(score) => <NeglectedMrCard score={score} onOpen={focusMr} />}
               renderTable={() => (
-                <PortalDesktopTable minWidth="760px">
+                <PortalDesktopTable
+                  cols={
+                    <colgroup>
+                      <col className="w-[24%]" />
+                      <col className="w-[20%]" />
+                      <col className="w-[12%]" />
+                      <col className="w-[12%]" />
+                      <col className="w-[16%]" />
+                      <col className="w-[16%]" />
+                    </colgroup>
+                  }
+                >
                   <thead className="bg-slate-50 text-xs font-black uppercase tracking-wide text-slate-500">
                     <tr>
                       <th className="px-3 py-3">MR</th>

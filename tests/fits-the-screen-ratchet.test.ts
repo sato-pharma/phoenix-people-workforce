@@ -147,8 +147,19 @@ import { stripComments } from "./support/comment-strip.ts";
  * to the Medical Rep's AreaRoot above; lanes now stack/wrap under the parent's own width instead
  * of scrolling sideways. (RegionRoot, RegionsRoot and AreaLane never carried `overflow-x-auto`
  * themselves — only the two outer wrapper `<div>`s in `TerritoryTreeDesktop` did.)
+ *
+ * 238 -> 237 on 2026-09-25 (#4400): `PortalDesktopTable`, the shared employee-portal table
+ * primitive (`src/components/employee-portal/portal-primitives.tsx`), was itself the one site
+ * still carrying `overflow-x-auto` over a `min-width` floor — every one of its ~80 callers across
+ * 40 files inherited the scroll from this single spot rather than writing their own. The primitive
+ * is now `w-full table-fixed`, with a global `[data-portal-desktop-table] :where(td, th)` wrap rule
+ * in `app/globals.css`, so it fits `main` and wraps instead of scrolling — fixing every caller at
+ * once, which is why 80 usages collapsed this count by exactly one site, not eighty. This entry and
+ * the Medical Rep / Territory Drilldown entries above landed on separate branches in parallel and
+ * touch disjoint sites, so the merged count is the two lines' sum of drops (254 -> 238 -> 237), not
+ * independently recomputed from either branch alone.
  */
-const BASELINE = 238;
+const BASELINE = 237;
 
 /**
  * app/ and src/components/ are where UI class strings live. src/lib/ is excluded on

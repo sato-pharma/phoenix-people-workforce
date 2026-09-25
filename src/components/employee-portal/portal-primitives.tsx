@@ -265,34 +265,76 @@ export function PortalRecordFields({
   );
 }
 
+/** Where the desktop table starts showing; below it the paired mobile card list carries the data. */
+export type PortalTableBreakpoint = "md" | "lg" | "xl";
+
+/** The desktop table shows from `breakpoint`; the mobile card list is hidden from the same width. */
+export const portalTableShowClassName: Record<PortalTableBreakpoint, string> = {
+  lg: "hidden lg:block",
+  md: "hidden md:block",
+  xl: "hidden xl:block",
+};
+export const portalTableCardHideClassName: Record<PortalTableBreakpoint, string> = {
+  lg: "lg:hidden",
+  md: "md:hidden",
+  xl: "xl:hidden",
+};
+
 export function PortalDesktopTable({
+  breakpoint = "md",
   children,
   className,
+  cols,
   maxHeight,
-  minWidth = "980px",
 }: {
+  /**
+   * Where the desktop table appears. Default `md`. Raise to `lg`/`xl` only for a table with so
+   * many columns it would be unreadably dense at a narrower `main`; the paired mobile card list
+   * (pass the same breakpoint to `PortalResponsiveDataList`) then covers everything below it.
+   */
+  breakpoint?: PortalTableBreakpoint;
   children: ReactNode;
   className?: string;
   /**
-   * Caps the wrapper and makes it scroll, which is what a `sticky top-0` header cell needs in
-   * order to have anything to stick against: sticky resolves against the nearest scrollport, and
-   * an uncapped wrapper is exactly as tall as its content, so the PAGE does the vertical
-   * scrolling and the header sails away with it. Passing this does not freeze a header on its
-   * own — the `<th>`s still have to say `sticky top-0` themselves.
+   * A `<colgroup>` sizing the columns as percentages, e.g.
+   * `<colgroup><col className="w-[40%]" /><col className="w-[20%]" />…</colgroup>`. The table is
+   * `table-fixed`, so these proportions — not the content — decide the widths, and long cells
+   * wrap instead of forcing the table wider than `main`. Omit only for a table whose columns are
+   * happy equal-width.
+   */
+  cols?: ReactNode;
+  /**
+   * Caps the wrapper and makes it scroll VERTICALLY, which is what a `sticky top-0` header cell
+   * needs in order to have anything to stick against: sticky resolves against the nearest
+   * scrollport, and an uncapped wrapper is exactly as tall as its content, so the PAGE does the
+   * scrolling and the header sails away with it. Passing this does not freeze a header on its own
+   * — the `<th>`s still have to say `sticky top-0` themselves. It never scrolls horizontally: the
+   * `table-fixed` layout already keeps the table inside `main`.
    */
   maxHeight?: string;
+  /**
+   * @deprecated No longer used. The table used to carry a `min-width` floor inside an
+   * `overflow-x-auto` wrapper, which scrolled sideways at tablet and laptop widths — the exact
+   * thing the fits-the-screen golden rule forbids. It is now `table-fixed w-full`, so it fits
+   * `main` by wrapping. Size the columns with `cols` instead. Accepted only so existing callers
+   * keep compiling; passing it does nothing.
+   */
   minWidth?: string;
 }) {
   return (
     <div
-      className={maxHeight ? "hidden overflow-auto md:block" : "hidden overflow-x-auto md:block"}
+      className={
+        maxHeight
+          ? `${portalTableShowClassName[breakpoint]} overflow-y-auto`
+          : portalTableShowClassName[breakpoint]
+      }
       style={maxHeight ? { maxHeight } : undefined}
     >
       <table
-        className={cn("w-full border-collapse text-left text-sm", className)}
+        className={cn("w-full table-fixed border-collapse text-left text-sm", className)}
         data-portal-desktop-table
-        style={{ minWidth }}
       >
+        {cols}
         {children}
       </table>
     </div>
@@ -339,12 +381,18 @@ export function PortalStackingCell({
 }
 
 export function PortalResponsiveDataList<T>({
+  breakpoint = "md",
   empty,
   getKey,
   items,
   renderCard,
   renderTable,
 }: {
+  /**
+   * Where the desktop table takes over from the cards. Must match the `breakpoint` passed to the
+   * `PortalDesktopTable` that `renderTable` returns, or a band of widths would show neither.
+   */
+  breakpoint?: PortalTableBreakpoint;
   empty: ReactNode;
   getKey: (item: T, index: number) => string;
   items: T[];
@@ -353,9 +401,15 @@ export function PortalResponsiveDataList<T>({
 }) {
   if (items.length === 0) return <>{empty}</>;
 
+  // The `?? "md:hidden"` is a real fallback, not dead code: other tests trust this component's
+  // NAME alone as proof a table has a mobile card path (see hr-shell-mobile-tables.test.ts), so
+  // if `portalTableCardHideClassName` were ever edited to drop a key, the card list must still
+  // default to gating at `md` rather than rendering un-hidden at every width.
+  const cardHideClassName = portalTableCardHideClassName[breakpoint] ?? "md:hidden";
+
   return (
     <>
-      <div className="divide-y divide-slate-100 md:hidden">
+      <div className={cn("divide-y divide-slate-100", cardHideClassName)}>
         {items.map((item, index) => (
           <div key={getKey(item, index)}>{renderCard(item, index)}</div>
         ))}

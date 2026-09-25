@@ -181,7 +181,20 @@ export function CustomersByAreaTable({
           </div>
         )}
         renderTable={() => (
-          <PortalDesktopTable minWidth="860px">
+          <PortalDesktopTable
+            cols={
+              <colgroup>
+                <col className="w-[16%]" />
+                {showLine && <col className="w-[10%]" />}
+                <col className="w-[14%]" />
+                {months.map((m) => (
+                  <col key={m} />
+                ))}
+                {months.length > 1 && <col className="w-[10%]" />}
+                <col className="w-[12%]" />
+              </colgroup>
+            }
+          >
             <thead>
               <tr className="border-b border-border">
                 <th className={TH}>Area</th>
@@ -274,7 +287,24 @@ export function RoleActivityTable({ roles }: { roles: ReviewRoleRow[] }) {
           </div>
         )}
         renderTable={() => (
-          <PortalDesktopTable minWidth="980px">
+          <PortalDesktopTable
+            cols={
+              <colgroup>
+                <col className="w-[14%]" />
+                <col />
+                <col />
+                <col />
+                <col />
+                <col />
+                <col />
+                <col />
+                <col />
+                <col />
+                <col />
+                <col />
+              </colgroup>
+            }
+          >
             <thead>
               <tr className="border-b border-border">
                 <th className={TH}>Role</th>
@@ -375,7 +405,21 @@ export function PeopleActivityTable({ people, limit = 40 }: { people: ReviewPers
           </div>
         )}
         renderTable={() => (
-          <PortalDesktopTable minWidth="900px">
+          <PortalDesktopTable
+            cols={
+              <colgroup>
+                <col className="w-[5%]" />
+                <col className="w-[20%]" />
+                <col className="w-[15%]" />
+                <col />
+                <col />
+                <col />
+                <col />
+                <col />
+                <col />
+              </colgroup>
+            }
+          >
             <thead>
               <tr className="border-b border-border">
                 <th className={TH}>#</th>

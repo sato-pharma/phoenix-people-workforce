@@ -372,7 +372,19 @@ export function MarketingControlWorkspace() {
             );
           })}
         </div>
-        <PortalDesktopTable minWidth="980px">
+        <PortalDesktopTable
+          cols={
+            <colgroup>
+              <col className="w-[10%]" />
+              <col className="w-[20%]" />
+              <col className="w-[24%]" />
+              <col className="w-[8%]" />
+              <col className="w-[14%]" />
+              <col className="w-[10%]" />
+              <col className="w-[14%]" />
+            </colgroup>
+          }
+        >
             <thead className="bg-slate-50 text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500">
               <tr>
                 <th className="px-4 py-3">Code</th>
@@ -599,7 +611,20 @@ export function MarketingControlWorkspace() {
             );
           })}
         </div>
-        <PortalDesktopTable minWidth="1120px">
+        <PortalDesktopTable
+          cols={
+            <colgroup>
+              <col className="w-[8%]" />
+              <col className="w-[20%]" />
+              <col className="w-[15%]" />
+              <col className="w-[17%]" />
+              <col className="w-[10%]" />
+              <col className="w-[10%]" />
+              <col className="w-[8%]" />
+              <col className="w-[12%]" />
+            </colgroup>
+          }
+        >
             <thead className="bg-slate-50 text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500">
               <tr>
                 <th className="px-4 py-3">Seq</th>

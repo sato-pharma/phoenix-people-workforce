@@ -611,7 +611,19 @@ export function MarketingRequestHistory() {
             items={[...pagedRows]}
             renderCard={(row) => <HistoryMobileCard row={row} />}
             renderTable={() => (
-              <PortalDesktopTable minWidth="1040px">
+              <PortalDesktopTable
+                cols={
+                  <colgroup>
+                    <col className="w-[12%]" />
+                    <col className="w-[20%]" />
+                    <col className="w-[12%]" />
+                    <col className="w-[22%]" />
+                    <col className="w-[10%]" />
+                    <col className="w-[12%]" />
+                    <col className="w-[12%]" />
+                  </colgroup>
+                }
+              >
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50">
                     {["Request", "Customer", "Outcome", "Final response", "Value", "Decided", ""].map(

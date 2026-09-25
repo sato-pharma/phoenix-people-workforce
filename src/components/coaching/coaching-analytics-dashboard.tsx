@@ -741,7 +741,17 @@ function CoverageTables({ comparison }: { comparison: CoachingTrainingManagerCom
           renderCard={(row) => <AreaCoverageCard row={row} />}
           renderTable={() => (
             <div className="max-h-[440px] overflow-auto">
-              <PortalDesktopTable minWidth="100%">
+              <PortalDesktopTable
+                cols={
+                  <colgroup>
+                    <col className="w-[30%]" />
+                    <col className="w-[12%]" />
+                    <col className="w-[13%]" />
+                    <col className="w-[12%]" />
+                    <col className="w-[33%]" />
+                  </colgroup>
+                }
+              >
                 <thead className="sticky top-0 z-10 bg-white">
                   <tr>
                     <th className="px-3 py-2.5">Area</th>
@@ -813,7 +823,17 @@ function CoverageTables({ comparison }: { comparison: CoachingTrainingManagerCom
           renderCard={(row) => <RepComparisonCard row={row} />}
           renderTable={() => (
             <div className="max-h-[440px] overflow-auto">
-              <PortalDesktopTable minWidth="100%">
+              <PortalDesktopTable
+                cols={
+                  <colgroup>
+                    <col className="w-[24%]" />
+                    <col className="w-[16%]" />
+                    <col className="w-[18%]" />
+                    <col className="w-[18%]" />
+                    <col className="w-[24%]" />
+                  </colgroup>
+                }
+              >
                 <thead className="sticky top-0 z-10 bg-white">
                   <tr>
                     <th className="px-3 py-2.5">Medical Rep</th>
@@ -1033,7 +1053,16 @@ export function CoachingAnalyticsDashboard({
                 renderCard={(row) => <SkillIndexCard row={row} />}
                 renderTable={() => (
                   <div className="max-h-[420px] overflow-auto">
-                    <PortalDesktopTable minWidth="100%">
+                    <PortalDesktopTable
+                      cols={
+                        <colgroup>
+                          <col className="w-[40%]" />
+                          <col className="w-[15%]" />
+                          <col className="w-[30%]" />
+                          <col className="w-[15%]" />
+                        </colgroup>
+                      }
+                    >
                       <thead className="sticky top-0 z-10 bg-white">
                         <tr>
                           <th className="px-3 py-2.5">Parameter</th>
@@ -1088,7 +1117,17 @@ export function CoachingAnalyticsDashboard({
                 renderCard={(row) => <ParameterDetailCard row={row} />}
                 renderTable={() => (
                   <div className="max-h-[420px] overflow-auto">
-                    <PortalDesktopTable minWidth="100%">
+                    <PortalDesktopTable
+                      cols={
+                        <colgroup>
+                          <col className="w-[28%]" />
+                          <col className="w-[24%]" />
+                          <col className="w-[12%]" />
+                          <col className="w-[16%]" />
+                          <col className="w-[20%]" />
+                        </colgroup>
+                      }
+                    >
                       <thead className="sticky top-0 z-10 bg-white">
                         <tr>
                           <th className="px-3 py-2.5">Parameter</th>
@@ -1119,12 +1158,29 @@ export function CoachingAnalyticsDashboard({
           {/* Per-rep detail */}
           <ReportSection title="Per-Rep Coaching Detail" hint="open a rep to view the latest report">
             <PortalResponsiveDataList
+              breakpoint="lg"
               empty={<TableEmptyNotice>No per-rep coaching rows are available for the current filters.</TableEmptyNotice>}
               getKey={(row) => `${row.hrId}-${row.lastCoachingDate ?? "none"}`}
               items={repRows}
               renderCard={(row) => <RepDetailCard coachingReportBase={coachingReportBase} row={row} />}
               renderTable={() => (
-                <PortalDesktopTable minWidth="100%">
+                <PortalDesktopTable
+                  breakpoint="lg"
+                  cols={
+                    <colgroup>
+                      <col className="w-[16%]" />
+                      <col className="w-[12%]" />
+                      <col className="w-[10%]" />
+                      <col className="w-[8%]" />
+                      <col className="w-[8%]" />
+                      <col className="w-[8%]" />
+                      <col className="w-[8%]" />
+                      <col className="w-[8%]" />
+                      <col className="w-[10%]" />
+                      <col className="w-[12%]" />
+                    </colgroup>
+                  }
+                >
                   <thead>
                     <tr>
                       <th className="px-3 py-2.5">Medical Rep</th>

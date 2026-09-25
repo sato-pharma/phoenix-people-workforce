@@ -958,7 +958,20 @@ function ChainWatchList({
           />
         )}
         renderTable={() => (
-          <PortalDesktopTable minWidth="900px">
+          <PortalDesktopTable
+            cols={
+              <colgroup>
+                <col className="w-[10%]" />
+                <col className="w-[16%]" />
+                <col className="w-[13%]" />
+                <col className="w-[10%]" />
+                <col className="w-[18%]" />
+                <col className="w-[12%]" />
+                <col className="w-[11%]" />
+                <col className="w-[10%]" />
+              </colgroup>
+            }
+          >
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50">
                 {["Request", "Customer", "Raised by", "Value", "Now with", "Position", "In system", ""].map(

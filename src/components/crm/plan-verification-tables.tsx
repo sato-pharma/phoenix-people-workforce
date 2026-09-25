@@ -258,9 +258,21 @@ export function PlanListTable({
           </PortalRecordCard>
         )}
         renderTable={() => (
-          <PortalDesktopTable className="text-xs" minWidth="1240px">
-            {/* 1080 -> 1240: the Action column now carries two buttons, and the owner's standing rule
-                is that nothing wraps. The table side-scrolls instead. */}
+          <PortalDesktopTable
+            className="text-xs"
+            cols={
+              <colgroup>
+                <col className="w-[22%]" />
+                <col className="w-[16%]" />
+                <col className="w-[10%]" />
+                <col className="w-[13%]" />
+                <col className="w-[15%]" />
+                <col className="w-[24%]" />
+              </colgroup>
+            }
+          >
+            {/* The Action column carries two buttons, so it gets the widest share after the rep name;
+                the table is table-fixed and wraps to fit main rather than side-scrolling. */}
             <thead>
               <tr className="bg-slate-900 text-left">
                 <SortableTh className={THEAD} label="Medical rep" onSort={table.toggleSort} sort={table.sort} sortKey="repName" />
@@ -427,7 +439,16 @@ export function PlanMissingRepsTable({
           </PortalRecordCard>
         )}
         renderTable={() => (
-          <PortalDesktopTable className="text-xs" minWidth="720px">
+          <PortalDesktopTable
+            className="text-xs"
+            cols={
+              <colgroup>
+                <col className="w-[45%]" />
+                <col className="w-[30%]" />
+                <col className="w-[25%]" />
+              </colgroup>
+            }
+          >
             <thead>
               <tr className="bg-slate-900 text-left">
                 <SortableTh className={THEAD} label="Medical rep" onSort={table.toggleSort} sort={table.sort} sortKey="name" />
@@ -626,7 +647,26 @@ export function PlanDoctorsTable({ kind, plan, rows }: { kind: PlanKind; plan: P
           </PortalRecordCard>
         )}
         renderTable={() => (
-          <PortalDesktopTable className="text-xs" minWidth="1180px">
+          <PortalDesktopTable
+            className="text-xs"
+            cols={
+              <colgroup>
+                {kind === "weekly" ? (
+                  <>
+                    <col className="w-[9%]" />
+                    <col className="w-[8%]" />
+                  </>
+                ) : (
+                  <col className="w-[13%]" />
+                )}
+                <col className="w-[20%]" />
+                <col className="w-[8%]" />
+                <col className="w-[15%]" />
+                <col className="w-[13%]" />
+                <col className="w-[27%]" />
+              </colgroup>
+            }
+          >
             <thead>
               <tr className="bg-slate-900 text-left">
                 {kind === "weekly" ? (
@@ -668,9 +708,9 @@ export function PlanDoctorsTable({ kind, plan, rows }: { kind: PlanKind; plan: P
                   <td className={`px-3 py-2 font-black ${gradeClass(row.grade)}`}>{row.grade ?? "—"}</td>
                   <td className="px-3 py-2 text-slate-600">{row.speciality ?? "Unspecified"}</td>
                   <td className="px-3 py-2 text-slate-400">{row.region ?? "—"}</td>
-                  {/* Same treatment as tab one: the address is long, genuinely needed, and never
-                      truncated or wrapped (owner's standing rule) — the table side-scrolls, which
-                      is what minWidth is for. */}
+                  {/* Same treatment as tab one: the address is long and genuinely needed, and is
+                      never truncated with an ellipsis (owner's standing rule) — its column gets the
+                      widest share of the table-fixed colgroup and long values wrap to fit main. */}
                   <td className={`px-3 py-2 ${row.address ? "text-slate-600" : "text-slate-400"}`}>
                     {addressText(row)}
                   </td>

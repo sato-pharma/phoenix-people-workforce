@@ -598,13 +598,30 @@ export function DoubleVisitReportWorkspace({
             or a Campaign/other activity. Both count toward totals — this column and filter are for visibility, not exclusion.
           </p>
           <PortalResponsiveDataList
+            breakpoint="lg"
             empty={<PortalEmptyState title="No visits found" message="No visits match these filters." />}
             getKey={(row, index) => `${row.doubleVisitorHrId}-${row.visitedHrId}-${row.activityDate}-${index}`}
             items={logPageRows}
             renderCard={(row) => <LogVisitCard row={row} />}
             renderTable={() => (
               <div className="max-h-[70vh] overflow-auto">
-                <PortalDesktopTable minWidth="1180px">
+                <PortalDesktopTable
+                  breakpoint="lg"
+                  cols={
+                    <colgroup>
+                      <col className="w-[10%]" />
+                      <col className="w-[15%]" />
+                      <col className="w-[12%]" />
+                      <col className="w-[14%]" />
+                      <col className="w-[10%]" />
+                      <col className="w-[10%]" />
+                      <col className="w-[9%]" />
+                      <col className="w-[8%]" />
+                      <col className="w-[6%]" />
+                      <col className="w-[6%]" />
+                    </colgroup>
+                  }
+                >
                   <thead className={STICKY_HEAD}>
                     <tr>
                       <SortHeader label="Date" sortKey="date" activeKey={logSort.sortKey} dir={logSort.dir} onSort={logSort.onSort} />
@@ -654,7 +671,16 @@ export function DoubleVisitReportWorkspace({
             renderCard={(row) => <NeverVisitedCard row={row} />}
             renderTable={() => (
               <div className="max-h-[70vh] overflow-auto">
-                <PortalDesktopTable minWidth="680px">
+                <PortalDesktopTable
+                  cols={
+                    <colgroup>
+                      <col className="w-[32%]" />
+                      <col className="w-[28%]" />
+                      <col className="w-[20%]" />
+                      <col className="w-[20%]" />
+                    </colgroup>
+                  }
+                >
                   <thead className={STICKY_HEAD}>
                     <tr>
                       <SortHeader label="Name" sortKey="name" activeKey={neverVisitedSort.sortKey} dir={neverVisitedSort.dir} onSort={neverVisitedSort.onSort} />
@@ -697,7 +723,17 @@ export function DoubleVisitReportWorkspace({
             renderCard={(row) => <ProbationCard row={row} viewerHrId={viewerHrId} />}
             renderTable={() => (
               <div className="max-h-[70vh] overflow-auto">
-                <PortalDesktopTable minWidth="720px">
+                <PortalDesktopTable
+                  cols={
+                    <colgroup>
+                      <col className="w-[28%]" />
+                      <col className="w-[18%]" />
+                      <col className="w-[20%]" />
+                      <col className="w-[17%]" />
+                      <col className="w-[17%]" />
+                    </colgroup>
+                  }
+                >
                   <thead className={STICKY_HEAD}>
                     <tr>
                       <SortHeader label="Name" sortKey="name" activeKey={probationSort.sortKey} dir={probationSort.dir} onSort={probationSort.onSort} />

@@ -494,6 +494,7 @@ export function MarketingCustomerDatabase() {
         title="Customer, venue, and vendor rows"
       >
         <PortalResponsiveDataList
+          breakpoint="lg"
           empty={
             !isLoading ? (
               <PortalEmptyState
@@ -510,7 +511,33 @@ export function MarketingCustomerDatabase() {
           items={pagedRows}
           renderCard={(row) => <CustomerRowCard row={row} />}
           renderTable={() => (
-            <PortalDesktopTable minWidth="1800px">
+            <PortalDesktopTable
+              breakpoint="lg"
+              cols={
+                <colgroup>
+                  <col className="w-[5%]" />
+                  <col className="w-[4%]" />
+                  <col className="w-[7%]" />
+                  <col className="w-[4%]" />
+                  <col className="w-[5%]" />
+                  <col className="w-[5%]" />
+                  <col className="w-[7%]" />
+                  <col className="w-[5%]" />
+                  <col className="w-[4%]" />
+                  <col className="w-[7%]" />
+                  <col className="w-[4%]" />
+                  <col className="w-[5%]" />
+                  <col className="w-[7%]" />
+                  <col className="w-[4%]" />
+                  <col className="w-[4%]" />
+                  <col className="w-[4%]" />
+                  <col className="w-[5%]" />
+                  <col className="w-[4%]" />
+                  <col className="w-[4%]" />
+                  <col className="w-[6%]" />
+                </colgroup>
+              }
+            >
             <thead className="bg-slate-50 text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500">
               <tr>
                 <th className="px-4 py-3">Customer Type</th>

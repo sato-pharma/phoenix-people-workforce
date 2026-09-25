@@ -273,7 +273,20 @@ export function ValidatedCustomerRegister() {
               </PortalRecordCard>
             )}
             renderTable={() => (
-              <PortalDesktopTable minWidth="1120px">
+              <PortalDesktopTable
+                cols={
+                  <colgroup>
+                    <col className="w-[20%]" />
+                    <col className="w-[13%]" />
+                    <col className="w-[13%]" />
+                    <col className="w-[12%]" />
+                    <col className="w-[14%]" />
+                    <col className="w-[11%]" />
+                    <col className="w-[10%]" />
+                    <col className="w-[7%]" />
+                  </colgroup>
+                }
+              >
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50 text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500">
                     <th className="whitespace-nowrap px-4 py-3">Customer</th>

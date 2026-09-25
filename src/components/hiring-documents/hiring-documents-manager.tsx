@@ -1047,7 +1047,18 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
             {/* Capped so the four headings below have a scrollport to stick against. A short
                 document list is shorter than the cap, so it neither scrolls nor freezes — the
                 header only pins itself once the list is long enough to need it. */}
-            <PortalDesktopTable className="text-sm" maxHeight="70vh" minWidth="100%">
+            <PortalDesktopTable
+                className="text-sm"
+                cols={
+                  <colgroup>
+                    <col className="w-[30%]" />
+                    <col className="w-[40%]" />
+                    <col className="w-[12%]" />
+                    <col className="w-[18%]" />
+                  </colgroup>
+                }
+                maxHeight="70vh"
+              >
                 <thead>
                   <tr>
                     <th className={`${frozenHeaderClassName} z-30`} style={frozenHeaderStyle}>Document</th>

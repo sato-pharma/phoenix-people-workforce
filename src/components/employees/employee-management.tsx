@@ -2298,7 +2298,20 @@ export function EmployeeManagement({
                 frozen anything: sticky resolves against the nearest scrollport, and the wrapper
                 had no height cap, so the PAGE did the vertical scrolling and the header went with
                 it. The cap is what makes the existing intent real. */}
-            <PortalDesktopTable maxHeight="70vh" minWidth="1200px">
+            <PortalDesktopTable
+              cols={
+                <colgroup>
+                  <col className="w-[24%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[16%]" />
+                  <col className="w-[14%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[16%]" />
+                  <col className="w-[10%]" />
+                </colgroup>
+              }
+              maxHeight="70vh"
+            >
               <thead>
                 <tr className="text-phx-xs font-bold uppercase tracking-wider text-phx-ink-soft">
                   <th className={frozenHeaderCellClassName} style={frozenHeaderCellStyle}>Employee Information</th>

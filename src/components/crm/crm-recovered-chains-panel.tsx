@@ -127,7 +127,18 @@ export function CrmRecoveredChainsPanel({ chains }: { chains: DoubleVisitRecover
             </PortalRecordCard>
           )}
           renderTable={() => (
-            <PortalDesktopTable minWidth="960px">
+            <PortalDesktopTable
+              cols={
+                <colgroup>
+                  <col className="w-[12%]" />
+                  <col className="w-[22%]" />
+                  <col className="w-[28%]" />
+                  <col className="w-[15%]" />
+                  <col className="w-[15%]" />
+                  <col className="w-[8%]" />
+                </colgroup>
+              }
+            >
               <thead className="bg-slate-900">
                 <tr>
                   <th className="px-3 py-3 text-left text-phx-2xs font-black uppercase tracking-wider text-slate-300">Date</th>

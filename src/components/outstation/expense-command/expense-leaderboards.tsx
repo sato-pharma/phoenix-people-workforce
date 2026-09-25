@@ -63,9 +63,18 @@ export function ExpenseLeaderboards({
           </button>
         )}
         renderTable={() => (
-          // minWidth 0: this table was `w-full` with no minimum before the split, and forcing one
-          // now would introduce a sideways scroll on a narrow desktop that never had one.
-          <PortalDesktopTable className="border-collapse" minWidth="0px">
+          <PortalDesktopTable
+            className="border-collapse"
+            cols={
+              <colgroup>
+                <col className="w-[8%]" />
+                <col className="w-[34%]" />
+                <col className="w-[14%]" />
+                <col className="w-[20%]" />
+                <col className="w-[24%]" />
+              </colgroup>
+            }
+          >
             <thead>
               <tr className="bg-phx-ink text-white">
                 <th className={`${HEAD_CELL} text-left`}>#</th>

@@ -414,6 +414,7 @@ export function ContractRenewal({ initialData, initialError }: Props) {
           }
         />
         <PortalResponsiveDataList
+          breakpoint="lg"
           items={filtered}
           getKey={(row, index) => `${row.hr_id}-${index}`}
           empty={
@@ -468,7 +469,23 @@ export function ContractRenewal({ initialData, initialError }: Props) {
             );
           }}
           renderTable={() => (
-            <PortalDesktopTable minWidth="820px" className="text-xs">
+            <PortalDesktopTable
+              breakpoint="lg"
+              className="text-xs"
+              cols={
+                <colgroup>
+                  <col className="w-[8%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[20%]" />
+                  <col className="w-[16%]" />
+                  <col className="w-[9%]" />
+                  <col className="w-[9%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[10%]" />
+                </colgroup>
+              }
+            >
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50/90">
                   {["HR ID", "CRM ID", "Full Name", "Job Title", "Line", "Area", "Hire Date", "Renewal Date", "Status"].map((col) => (
@@ -487,9 +504,9 @@ export function ContractRenewal({ initialData, initialError }: Props) {
                       <td className={cn(tableCellClassName, "max-w-[82px] break-words font-mono text-text-secondary")}>{row.crm_id || "-"}</td>
                       {/*
                         The WhatsApp action lives INSIDE the employee cell rather than in a column of
-                        its own. This table is a PortalDesktopTable with a 820px min-width floor, so a
-                        tenth column pushes it further past the viewport — and the fits-the-screen rule
-                        says fit by MERGING columns, never by adding one and letting it scroll.
+                        its own. This table is a table-fixed PortalDesktopTable sized to the viewport,
+                        so a tenth column would only steal width from the others — and the
+                        fits-the-screen rule says fit by MERGING columns, never by adding one.
                       */}
                       <td className={cn(tableCellClassName, "break-words font-semibold text-text")}>
                         <span className="flex items-center gap-1.5">

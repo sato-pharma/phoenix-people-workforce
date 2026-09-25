@@ -258,7 +258,12 @@ export async function runRecruitmentCandidatePoolTableTests() {
   // Received 60px. The first cut of this table gave Candidate 443px and Applying-for 140px — so
   // the one fact that decides who a CV goes to was the only starved column, and every longer role
   // read "Personnel and Recruitment Speci…". The flexible slot belongs to it.
-  const colgroup = workspace.slice(workspace.indexOf("<colgroup>"), workspace.indexOf("</colgroup>"));
+  // Anchored on the candidate pool table's own rebuild comment, not the file's first `<colgroup>`
+  // — the fits-the-screen conversion (2026-09-25) gave the two sibling tables in this same file
+  // (Applications, Requisitions) their own `cols` colgroups too, so "first colgroup in the file"
+  // stopped meaning "the candidate pool's colgroup".
+  const poolSection = workspace.slice(workspace.indexOf("Rebuilt 2026-08-20, re-cut 2026-08-24"));
+  const colgroup = poolSection.slice(poolSection.indexOf("<colgroup>"), poolSection.indexOf("</colgroup>"));
   // The shape is the invariant; the pin's exact number is re-measured whenever the table is
   // re-cut (280px on 2026-08-21, 332px on 2026-08-24 once the clipped cells were counted per
   // column rather than assumed). Pinning the figure itself only turns a deliberate width change

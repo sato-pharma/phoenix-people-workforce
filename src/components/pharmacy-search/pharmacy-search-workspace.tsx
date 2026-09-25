@@ -351,7 +351,19 @@ export function PharmacySearchWorkspace() {
               </button>
             )}
             renderTable={() => (
-              <PortalDesktopTable minWidth="960px">
+              <PortalDesktopTable
+                cols={
+                  <colgroup>
+                    <col className="w-[20%]" />
+                    <col className="w-[12%]" />
+                    <col className="w-[12%]" />
+                    <col className="w-[12%]" />
+                    <col className="w-[14%]" />
+                    <col className="w-[10%]" />
+                    <col className="w-[20%]" />
+                  </colgroup>
+                }
+              >
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50">
                     <th className={headerCell}>Pharmacy</th>

@@ -180,7 +180,21 @@ export function BrickCoverageRepTable({
           </PortalRecordCard>
         )}
         renderTable={() => (
-          <PortalDesktopTable className="text-xs" minWidth="1040px">
+          <PortalDesktopTable
+            className="text-xs"
+            cols={
+              <colgroup>
+                <col className="w-[18%]" />
+                <col className="w-[11%]" />
+                <col className="w-[16%]" />
+                <col className="w-[14%]" />
+                <col className="w-[13%]" />
+                <col className="w-[10%]" />
+                <col className="w-[9%]" />
+                <col className="w-[9%]" />
+              </colgroup>
+            }
+          >
             <thead>
               <tr className="bg-slate-900 text-left">
                 <SortableTh className={THEAD} label="Rep" onSort={table.toggleSort} sort={table.sort} sortKey="repName" />
@@ -288,7 +302,18 @@ export function BrickCoverageBlindSpotTable({ monthLabel, rows }: { monthLabel: 
           </PortalRecordCard>
         )}
         renderTable={() => (
-          <PortalDesktopTable className="text-xs" minWidth="820px">
+          <PortalDesktopTable
+            className="text-xs"
+            cols={
+              <colgroup>
+                <col className="w-[24%]" />
+                <col className="w-[26%]" />
+                <col className="w-[22%]" />
+                <col className="w-[14%]" />
+                <col className="w-[14%]" />
+              </colgroup>
+            }
+          >
             <thead>
               <tr className="bg-slate-900 text-left">
                 <SortableTh className={THEAD} label="Rep" onSort={table.toggleSort} sort={table.sort} sortKey="repName" />
@@ -346,7 +371,17 @@ export function BrickCoverageUnmeasuredTable({ rows }: { month: string; rows: Br
           </PortalRecordCard>
         )}
         renderTable={() => (
-          <PortalDesktopTable className="text-xs" minWidth="760px">
+          <PortalDesktopTable
+            className="text-xs"
+            cols={
+              <colgroup>
+                <col className="w-[24%]" />
+                <col className="w-[16%]" />
+                <col className="w-[26%]" />
+                <col className="w-[34%]" />
+              </colgroup>
+            }
+          >
             <thead>
               <tr className="bg-slate-900 text-left">
                 <th className={THEAD}>Rep</th>
@@ -396,7 +431,16 @@ export function BrickCoverageVacancyTable({ rows }: { rows: CoverageFilterVacanc
           </PortalRecordCard>
         )}
         renderTable={() => (
-          <PortalDesktopTable className="text-xs" minWidth="620px">
+          <PortalDesktopTable
+            className="text-xs"
+            cols={
+              <colgroup>
+                <col className="w-[40%]" />
+                <col className="w-[30%]" />
+                <col className="w-[30%]" />
+              </colgroup>
+            }
+          >
             <thead>
               <tr className="bg-slate-900 text-left">
                 <th className={THEAD}>Territory</th>
