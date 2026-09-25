@@ -14,7 +14,7 @@ import {
 } from "@/components/sales/target-visuals";
 import type { MonthPaceResult, MonthPaceRow } from "@/lib/sales/sos-month-pace";
 import type { PortalPharmacyActionsPayload } from "@/lib/sales/sos-pharmacy-actions-loader";
-import type { BrickUniverseEntry, CrossSellItem, PharmacyActionItem } from "@/lib/sales/sos-pharmacy-actions";
+import type { BrickUniverseEntry, CrossSellItem, PharmacyActionItem, PharmacyAreaSummary } from "@/lib/sales/sos-pharmacy-actions";
 
 // "Where my sales come from" — the pharmacy action lists and the weekly month pace, above the
 // distributor dashboard. Every rule is computed server-side (sos-pharmacy-actions.ts); this file
@@ -70,6 +70,19 @@ const TABS: { key: TabKey; label: string; hint: (earlier: number) => string }[] 
 ];
 
 const PAGE_SIZE = 10;
+
+/** An area the picker offers (from the weekly pace) with nothing in the closing: every figure is zero. */
+const EMPTY_AREA: PharmacyAreaSummary = {
+  counts: { activePharmacies: 0, stopped: 0, dropping: 0, newPharmacies: 0, crossSell: 0, untappedBricks: 0 },
+  valueAtStake: { stopped: 0, dropping: 0, newPharmacies: 0 },
+  latestTotals: { total: 0, pharmacies: 0, mainStores: 0, wholesalerShares: 0, noCustomerCode: 0 },
+  stopped: [],
+  dropping: [],
+  newPharmacies: [],
+  top: [],
+  crossSell: [],
+  untappedBricks: [],
+};
 
 const BAND_KICKER = "Sales Operations";
 const BAND_TITLE = "Source of Sales";
@@ -481,13 +494,16 @@ export function PortalSosPharmacyActions({ subtitle }: { subtitle: string }) {
     );
   }
 
-  const inArea = <T extends { areaCode: string }>(list: T[]): T[] => (area ? list.filter((item) => item.areaCode === area) : list);
+  // Every count and every EGP figure on the band, the tiles and the tie-back line comes from ONE
+  // source: the whole result, or the server's per-area summary when an area is picked. Never count
+  // one and sum the other — the lists are capped, so a client-side sum undercounts.
+  const scope: PharmacyAreaSummary | null = actions ? (area ? actions.byArea?.[area] ?? EMPTY_AREA : actions) : null;
 
   const renderList = (): ReactNode => {
     if (!actions) return null;
     const more = (total: number) => <ShowMore onMore={() => setShown((current) => current + PAGE_SIZE)} shown={Math.min(shown, total)} total={total} />;
     if (tab === "crossSell") {
-      const list = inArea(actions.crossSell);
+      const list = scope?.crossSell ?? [];
       const columns: Column<CrossSellItem>[] = [
         { label: "Latest closing", width: "18%", align: "right", render: (item) => formatEgp(item.latestValue) },
         {
@@ -517,7 +533,7 @@ export function PortalSosPharmacyActions({ subtitle }: { subtitle: string }) {
       );
     }
     if (tab === "untappedBricks") {
-      const list = inArea(actions.untappedBricks).map((brick: BrickUniverseEntry) => ({ ...brick, key: brick.brickId }));
+      const list = (scope?.untappedBricks ?? []).map((brick: BrickUniverseEntry) => ({ ...brick, key: brick.brickId }));
       const lead: Column<(typeof list)[number]> = {
         label: "Brick",
         width: "60%",
@@ -532,7 +548,7 @@ export function PortalSosPharmacyActions({ subtitle }: { subtitle: string }) {
       );
     }
 
-    const list = inArea(actions[tab]);
+    const list = scope?.[tab as "stopped" | "dropping" | "newPharmacies" | "top"] ?? [];
     const latest: Column<PharmacyActionItem> = { label: "Latest closing", width: "18%", align: "right", render: (item) => formatEgp(item.latestValue) };
     const earlier = actions.priorPeriods.length;
     const average: Column<PharmacyActionItem> = {
@@ -563,10 +579,11 @@ export function PortalSosPharmacyActions({ subtitle }: { subtitle: string }) {
 
   const activeTab = TABS.find((entry) => entry.key === tab) ?? TABS[0];
   const countOf = (key: TabKey): number => {
-    if (!actions) return 0;
-    return inArea(actions[key] as { areaCode: string }[]).length;
+    if (!scope) return 0;
+    return key === "top" ? scope.counts.activePharmacies : scope.counts[key];
   };
-  const totals = actions?.latestTotals;
+  const totals = scope?.latestTotals;
+  const stake = scope?.valueAtStake ?? EMPTY_AREA.valueAtStake;
   const tieBack = totals
     ? [
         `pharmacies ${formatEgp(totals.pharmacies)}`,
@@ -587,13 +604,13 @@ export function PortalSosPharmacyActions({ subtitle }: { subtitle: string }) {
       <BandStat
         label="Buying pharmacies"
         note={`${formatEgp(totals?.pharmacies ?? 0)} in the latest closing`}
-        value={String(actions.counts.activePharmacies)}
+        value={String(countOf("top"))}
       />
       <BandStat
         label="Value at stake"
-        note={`${formatEgp(actions.valueAtStake.stopped)} stopped · ${formatEgp(actions.valueAtStake.dropping)} dropping`}
+        note={`${formatEgp(stake.stopped)} stopped · ${formatEgp(stake.dropping)} dropping`}
         tone="amber"
-        value={formatEgp(actions.valueAtStake.stopped + actions.valueAtStake.dropping)}
+        value={formatEgp(stake.stopped + stake.dropping)}
       />
     </>
   ) : undefined;
@@ -628,7 +645,7 @@ export function PortalSosPharmacyActions({ subtitle }: { subtitle: string }) {
                   icon={Ban}
                   label="Stopped buying"
                   onClick={() => selectTab("stopped")}
-                  sub={`${formatEgp(actions.valueAtStake.stopped)} a month before`}
+                  sub={`${formatEgp(stake.stopped)} a month before`}
                   value={String(countOf("stopped"))}
                 />
                 <Tile
@@ -637,7 +654,7 @@ export function PortalSosPharmacyActions({ subtitle }: { subtitle: string }) {
                   icon={TrendingDown}
                   label="Dropping 30%+"
                   onClick={() => selectTab("dropping")}
-                  sub={`${formatEgp(actions.valueAtStake.dropping)} below average`}
+                  sub={`${formatEgp(stake.dropping)} below average`}
                   value={String(countOf("dropping"))}
                 />
                 <Tile
@@ -646,7 +663,7 @@ export function PortalSosPharmacyActions({ subtitle }: { subtitle: string }) {
                   icon={UserPlus}
                   label="New this closing"
                   onClick={() => selectTab("newPharmacies")}
-                  sub={`${formatEgp(actions.valueAtStake.newPharmacies)} in their first month`}
+                  sub={`${formatEgp(stake.newPharmacies)} in their first month`}
                   value={String(countOf("newPharmacies"))}
                 />
                 <Tile
@@ -656,7 +673,7 @@ export function PortalSosPharmacyActions({ subtitle }: { subtitle: string }) {
                   label="Buying pharmacies"
                   onClick={() => selectTab("top")}
                   sub={`${formatEgp(totals?.pharmacies ?? 0)} in the latest closing`}
-                  value={String(actions.counts.activePharmacies)}
+                  value={String(countOf("top"))}
                 />
               </div>
 
