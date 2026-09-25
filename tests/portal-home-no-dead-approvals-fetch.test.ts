@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { stripComments } from "./support/comment-strip.ts";
+
 // ─────────────────────────────────────────────────────────────────────────────
 // The portal home snapshot used to fetch a number nobody rendered.
 //
@@ -34,18 +36,8 @@ const DASHBOARDS = [
   "../src/components/employee-portal/dashboards/rm-command-center.tsx",
 ];
 
-/** Drop comment lines: the prose in the module names both removed symbols on purpose. */
-function stripComments(source: string): string {
-  return source
-    .split("\n")
-    .filter((line) => {
-      const t = line.trim();
-      return !t.startsWith("//") && !t.startsWith("*") && !t.startsWith("/*") && !t.startsWith("{/*");
-    })
-    .join("\n");
-}
-
 export async function runPortalHomeNoDeadApprovalsFetchTests() {
+  // Comments off: the prose above this module's own code names both removed symbols on purpose.
   const snapshot = stripComments(readFileSync(SNAPSHOT_URL, "utf8"));
 
   // ── The landing page must not fetch the approvals feed at all ─────────────

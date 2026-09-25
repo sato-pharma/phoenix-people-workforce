@@ -20,6 +20,7 @@ import {
 } from "../src/lib/direct-orders/approval-flow.ts";
 import { directOrderReportRowCells } from "../src/lib/direct-orders/report-columns.ts";
 import type { DirectOrderReportRow, DirectOrderStepState } from "../src/lib/direct-orders/types.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 function steps(...defs: Array<Partial<DirectOrderStepState> & { order: number; status: DirectOrderStepState["status"] }>): DirectOrderStepState[] {
   return defs.map((d) => ({
@@ -385,10 +386,7 @@ export function runDirectOrdersApprovalFlowTests() {
     );
     // Exactly one call site for the pricing helper: inside the basket resolver. Comments stripped,
     // because the helper is discussed by name in several docblocks that must stay readable.
-    const serviceCode = serviceSource
-      .split("\n")
-      .filter((line) => !line.trim().startsWith("//") && !line.trim().startsWith("*"))
-      .join("\n");
+    const serviceCode = stripComments(serviceSource);
     const pricingCalls = serviceCode.match(/await resolveDirectOrderPricing\(/g) ?? [];
     assert.equal(
       pricingCalls.length,
@@ -603,13 +601,7 @@ export function runDirectOrdersApprovalFlowTests() {
     ] as const;
     for (const [rel, what] of files) {
       const source = readFileSync(new URL(rel, import.meta.url), "utf8");
-      const code = source
-        .split(/\r?\n/)
-        .filter((line) => {
-          const t = line.trim();
-          return !t.startsWith("//") && !t.startsWith("*") && !t.startsWith("/*") && !t.startsWith("{/*");
-        })
-        .join("\n");
+      const code = stripComments(source);
       assert.doesNotMatch(
         code,
         /factoryPrice|factory_price|Factory price/i,
@@ -687,10 +679,7 @@ export function runDirectOrdersApprovalFlowTests() {
     const reverseBody = serviceSource.slice(reverseIdx, serviceSource.indexOf("\n}", reverseIdx));
     // Comment lines are stripped before the negative assertion: the fix's own explanatory comment
     // quotes the bad `.join(",")` call, and a raw source match cannot tell prose from code.
-    const reverseCode = reverseBody
-      .split("\n")
-      .filter((line) => !line.trim().startsWith("//") && !line.trim().startsWith("*"))
-      .join("\n");
+    const reverseCode = stripComments(reverseBody);
     assert.ok(
       !/\.join\(","\)/.test(reverseCode),
       "reverseDirectOrder must not join role holders into one comma-separated pseudo recipient",

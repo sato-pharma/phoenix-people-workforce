@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { formatTopMoverShare, topMoverShareBasis } from "../src/lib/ceo/top-mover-share.ts";
+import { stripComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The CEO Command Center's top-movers tables state a Share % the CEO reads and acts on. It was
@@ -96,13 +97,7 @@ export async function runCeoTopMoversShareTests() {
     new URL("../src/components/admin/ceo-top-movers-table.tsx", import.meta.url),
     "utf8",
   );
-  const code = component
-    .split("\n")
-    .filter((line) => {
-      const t = line.trim();
-      return !t.startsWith("//") && !t.startsWith("*") && !t.startsWith("/*") && !t.startsWith("{/*");
-    })
-    .join("\n");
+  const code = stripComments(component);
   assert.doesNotMatch(
     code,
     /table\.rows\.reduce/,
