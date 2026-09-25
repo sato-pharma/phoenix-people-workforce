@@ -54,7 +54,49 @@ export type ManageEngineCommandRecord = {
 };
 
 /** Identifiers are how a command finds the tablet, never something to read on a screen. */
-const HIDDEN_KEY_PATTERN = /(^|_)(id|ids|udid|uuid|guid|token|key|secret|password)$/i;
+const HIDDEN_KEY_PATTERN = /(^|_)(id|ids|udid|uuid|guid|identifier|token|key|secret|password)$/i;
+
+/**
+ * Keys whose value is one of ManageEngine's own numbered enums.
+ *
+ * "Platform type 2" and "Managed status 2" are codes, and AGENTS.md §4 says names, never codes. The
+ * honest answer is not to guess at a meaning the vendor has not published: these are dropped, and
+ * the facts they stand for are already on the screen in words — the fleet row names the platform and
+ * says whether the tablet is managed, and the headline names who owns it.
+ */
+const VENDOR_CODE_KEYS: ReadonlySet<string> = new Set([
+  "agent_type",
+  "cellular_technology",
+  "efrp_status",
+  "hardware_encryption_caps",
+  "managed_status",
+  "model_type",
+  "notification_service_type",
+  "platform_type",
+  "provisioning_mode",
+  "purchase_type",
+]);
+
+/**
+ * Nested objects that describe ManageEngine's OWN configuration rather than the tablet.
+ *
+ * `privacy_settings` and `location_settings` arrive as two dozen bare 0/1/2 flags — what the MDM is
+ * permitted to collect, decided in the ManageEngine console, not anything about the device in the
+ * rep's hands. Shown here they were two screens of unreadable codes on a page whose whole purpose is
+ * to answer "what is going on with this tablet".
+ */
+const SETTINGS_OBJECT_KEYS: ReadonlySet<string> = new Set(["privacy_settings", "location_settings"]);
+
+/** What ManageEngine sends instead of leaving a field out: nothing worth a row on the screen. */
+const PLACEHOLDER_VALUES: ReadonlySet<string> = new Set(["--", "-", "---", "n/a", "na", "null", "undefined", "none"]);
+
+/**
+ * A resource key such as `dc.mdm.db.agent.enroll.agent_enroll_finished` — a code, not a sentence.
+ *
+ * It must START with a letter, which is what keeps a version number out: `agent_version` arrives as
+ * "26.09.01", three dotted segments like the code above and a fact worth reading.
+ */
+const RESOURCE_CODE_PATTERN = /^[a-z][a-z0-9_]*(\.[a-z0-9_]+){2,}$/;
 
 /** Words that are read as themselves, not sentence-cased, when a key is turned into a label. */
 const ACRONYMS: Readonly<Record<string, string>> = {
@@ -119,6 +161,30 @@ function formatNumber(value: number): string {
   return Number.isInteger(value) ? value.toLocaleString("en-US") : String(value);
 }
 
+/** A key that names a moment, whatever the value turns out to be. */
+function namesAMoment(key: string): boolean {
+  return /(time|date|_at|seen|stamp)/i.test(key);
+}
+
+/**
+ * A size with the unit ManageEngine measured it in.
+ *
+ * Both are the vendor's own units and neither is labelled in the payload: storage arrives in
+ * gigabytes (`device_capacity: 51.17` on a 64 GB tablet) and memory in megabytes
+ * (`total_ram_memory: 3539.391` on a 4 GB tablet). Unlabelled they read as bare numbers, which is
+ * how "46.52" ended up on the screen meaning 46 and a half gigabytes free.
+ */
+function sizeUnit(key: string): "GB" | "MB" | null {
+  if (/(ram|memory)/i.test(key)) return "MB";
+  if (/(capacity|space|storage)/i.test(key)) return "GB";
+  return null;
+}
+
+/** A key whose value is a measured quantity — a moment, a size or a sum of money. */
+function isQuantitative(key: string): boolean {
+  return namesAMoment(key) || sizeUnit(key) !== null || /price|cost|amount/i.test(key);
+}
+
 /**
  * A battery reading as a percentage, whichever way ManageEngine sends it.
  *
@@ -146,11 +212,25 @@ function formatValue(key: string, value: unknown): string | null {
     if (!Number.isFinite(value)) return null;
     if (value === -1) return null; // ManageEngine's "not known" for a numeric field.
     if (looksLikeEpochMs(key, value)) return new Date(value).toISOString();
-    return formatNumber(value);
+    // A date or a price that came back as zero is a field nobody filled in, not the year 1970 and
+    // not a tablet that cost nothing. `warranty_expiration_date: 0` was reaching the screen as "0".
+    if (value === 0 && (namesAMoment(key) || /price|cost|amount/i.test(key))) return null;
+    const unit = sizeUnit(key);
+    return unit ? `${formatNumber(Math.round(value * 10) / 10)} ${unit}` : formatNumber(value);
   }
   if (typeof value === "string") {
     const trimmed = value.trim();
     if (!trimmed || trimmed === "-1") return null;
+    if (PLACEHOLDER_VALUES.has(trimmed.toLowerCase())) return null;
+    // ManageEngine sends plenty of numbers as strings, epochs among them — `added_time` arrives as
+    // "1790189748682", which printed as thirteen raw digits. A numeric string goes back through the
+    // number path ONLY where the key says it is a quantity: an IMEI is fifteen digits and must stay
+    // exactly as it is, never grouped into "865,569,071,549,107".
+    if (/^-?\d+(\.\d+)?$/.test(trimmed) && isQuantitative(key)) return formatValue(key, Number(trimmed));
+    if (RESOURCE_CODE_PATTERN.test(trimmed)) return null; // A vendor resource key, not a sentence.
+    // Android's own release letter — "S" for 12. The headline says "Android 12"; a row reading
+    // "OS name: S" adds nothing a person can use.
+    if (/(^|_)os_name$/i.test(key) && trimmed.length <= 2) return null;
     return trimmed;
   }
   if (Array.isArray(value)) {
@@ -168,6 +248,7 @@ function factsFrom(record: RawRecord, skipKeys: ReadonlySet<string> = new Set())
   for (const [key, value] of Object.entries(record)) {
     if (skipKeys.has(key)) continue;
     if (HIDDEN_KEY_PATTERN.test(key)) continue;
+    if (VENDOR_CODE_KEYS.has(key.toLowerCase())) continue;
     if (value !== null && typeof value === "object" && !Array.isArray(value)) continue;
     const formatted = formatValue(key, value);
     if (formatted === null) continue;
@@ -230,6 +311,28 @@ const HEADLINE_SOURCE_KEYS = [
 ] as const;
 
 /**
+ * The platform as a person says it — "Android", never "S" and never "2".
+ *
+ * ManageEngine answers `os_name` with Android's own one-letter release code ("S" for 12), which read
+ * on the screen as "Operating system: S 12". `platform_type` carries the same fact as a number, and
+ * the fleet table already turns that number into a word; this reads it the same way so the two
+ * surfaces cannot disagree. An unrecognised value is shown as it came rather than guessed at.
+ */
+function platformWord(record: RawRecord, os: RawRecord | null): string | null {
+  const named = pickString(record, ["platform_type_name"]);
+  if (named) return named;
+  const raw = pickString(record, ["platform_type", "platform", "device_platform"]);
+  const normalized = raw?.toLowerCase() ?? "";
+  if (normalized === "2" || normalized.includes("android")) return "Android";
+  if (normalized === "1" || normalized.includes("ios")) return "iOS";
+  if (normalized === "3" || normalized.includes("windows")) return "Windows";
+  const osName = pickString(record, ["os_name"]) ?? (os ? pickString(os, ["os_name", "name"]) : null);
+  // A one or two letter answer is Android's release letter, not the name of anything.
+  if (osName && osName.length > 2) return osName;
+  return raw && raw.length > 2 ? raw : null;
+}
+
+/**
  * The facts a person looks for first, in reading order: what it is, who owns it, how charged, how
  * full, and what it runs.
  */
@@ -239,14 +342,16 @@ function headlineFacts(record: RawRecord): DeviceFact[] {
   if (model) facts.push({ label: "Model", value: model });
 
   const os = nested(record, "os");
-  const osName = pickString(record, ["os_name", "platform_type_name"]) ?? (os ? pickString(os, ["os_name", "name"]) : null);
   const osVersion = pickString(record, ["os_version"]) ?? (os ? pickString(os, ["os_version", "version"]) : null);
-  if (osName || osVersion) {
-    facts.push({ label: "Operating system", value: [osName, osVersion].filter(Boolean).join(" ") });
+  const platform = platformWord(record, os);
+  if (platform || osVersion) {
+    facts.push({ label: "Operating system", value: [platform, osVersion].filter(Boolean).join(" ") });
   }
 
+  // Ownership is a word or it is nothing: ManageEngine also answers this as a bare 1 or 2, and the
+  // row above already says in plain words who holds the tablet and that the company owns it.
   const ownedBy = pickString(record, ["owned_by", "ownership", "ownedby"]);
-  if (ownedBy) facts.push({ label: "Owned by", value: ownedBy });
+  if (ownedBy && !/^\d+$/.test(ownedBy)) facts.push({ label: "Owned by", value: ownedBy });
 
   const battery = batteryPercent(record.battery_level);
   if (battery !== null) facts.push({ label: "Battery", value: `${battery}%` });
@@ -273,6 +378,7 @@ export function normalizeDeviceDetail(deviceId: string, payload: RawRecord): Man
 
   for (const [key, value] of Object.entries(record)) {
     if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+    if (SETTINGS_OBJECT_KEYS.has(key.toLowerCase())) continue;
     const facts = factsFrom(value as RawRecord);
     if (facts.length === 0) continue;
     sections.push({ facts, title: humanizeKey(key) });
@@ -329,14 +435,50 @@ export function commandLabel(name: string): string {
   return COMMAND_NAME_LABELS[key] ?? humanizeKey(name);
 }
 
+/** The documented status codes; anything else is left unlabelled rather than guessed at. */
+const COMMAND_STATUS_LABELS: Readonly<Record<string, string>> = {
+  "1": "Waiting for the tablet",
+  "2": "Sent to the tablet",
+  "3": "Done",
+  "4": "Failed",
+};
+
 function commandStatusLabel(value: unknown): string | null {
-  if (typeof value === "string" && value.trim()) return humanizeKey(value.trim());
-  if (typeof value === "number" && Number.isFinite(value)) {
-    // The documented status codes; anything else is left unlabelled rather than guessed at.
-    const byCode: Readonly<Record<string, string>> = { "1": "Waiting", "2": "Sent", "3": "Acknowledged", "4": "Failed" };
-    return byCode[String(value)] ?? null;
+  // The status arrives as a STRING of digits, not a number — read as a word it printed as a bare
+  // "1" beside every command in the history.
+  if (typeof value === "string" && value.trim()) {
+    const trimmed = value.trim();
+    return COMMAND_STATUS_LABELS[trimmed] ?? (/^\d+$/.test(trimmed) ? null : humanizeKey(trimmed));
   }
+  if (typeof value === "number" && Number.isFinite(value)) return COMMAND_STATUS_LABELS[String(value)] ?? null;
   return null;
+}
+
+/**
+ * ManageEngine's remarks are HTML, not text.
+ *
+ * The command history answers with markup inside the sentence — `<label class="eventlogbold">Corporate
+ * Wipe</label> command for …` — which reached the screen with its tags showing. React escapes what it
+ * renders, correctly, so the fix belongs here: take the words out of the markup and leave the markup
+ * behind. Nothing is rendered as HTML anywhere; this only ever produces plain text.
+ */
+function plainText(value: string): string {
+  const withoutTags = value.replace(/<[^>]*>/g, " ");
+  const decoded = withoutTags
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#0?39;|&apos;/gi, "'");
+  return decoded.replace(/\s+/g, " ").trim();
+}
+
+/** A remark as plain words, or nothing at all when the markup was all there was. */
+function remarkText(value: string | null): string | null {
+  if (!value) return null;
+  const text = plainText(value);
+  return text ? text : null;
 }
 
 function commandIso(record: RawRecord): string | null {
@@ -379,7 +521,7 @@ export async function getManageEngineCommandHistory(
         commandId: pickString(record, ["command_id"]),
         issuedAt: commandIso(record),
         name: commandLabel(name),
-        remarks: pickString(record, ["remarks", "error_description", "description"]),
+        remarks: remarkText(pickString(record, ["remarks", "error_description", "description"])),
         status: commandStatusLabel(record.command_status ?? record.status),
       } satisfies ManageEngineCommandRecord;
     })
