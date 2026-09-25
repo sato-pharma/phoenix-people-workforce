@@ -1422,6 +1422,12 @@ export const accessRegistry = [
   // browser can ask for the copy but never say what it copies. Each IMEI written carries its own
   // REQUIRED audit row (company_device).
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/headwind/imei", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
+  // Taking one app off one Headwind-managed tablet (`uninstallApp`). 🔴 The removal is SILENT on the
+  // tablet — the agent is the device owner, so nothing prompts the rep — which is why it sits on the
+  // same Super Admin gate as the remote actions and carries its own REQUIRED audit row naming the
+  // tablet and the package (headwind_device_command). Reading what is installed is the fleet route's
+  // ?view=apps; this route only removes. The management app itself is refused in the service.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/headwind/apps", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
   // Visual Aids (owner, 2026-09-18). A rep and his DM, RM and NSM read the ACTIVE aids of their own
   // line — the line check lives in src/lib/visual-aids/service.ts, below the permission. Marketing
   // Manager, GPM and Super Admin upload (create) and retire or replace (update); nobody deletes. The

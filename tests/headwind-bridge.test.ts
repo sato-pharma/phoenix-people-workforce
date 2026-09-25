@@ -29,7 +29,13 @@ import {
   type HeadwindDevice,
 } from "../src/lib/devices/headwind/devices.ts";
 import { headwindErrorResponse } from "../src/lib/devices/headwind/http.ts";
-import { installedAppsFromInfo, HeadwindAppInputError } from "../src/lib/devices/headwind/apps.ts";
+import {
+  installedAppsFromInfo,
+  isAndroidPackageName,
+  removeHeadwindApp,
+  HEADWIND_AGENT_PACKAGE,
+  HeadwindAppInputError,
+} from "../src/lib/devices/headwind/apps.ts";
 import { headwindImeisToRecord, headwindTabletsToRegister } from "../src/lib/devices/headwind/register-sync.ts";
 import { isRustDeskConfigured, rustDeskPackageName, RustDeskNotConfiguredError } from "../src/lib/devices/rustdesk/config.ts";
 import { rustDeskTarget } from "../src/lib/devices/rustdesk/session.ts";
@@ -416,21 +422,41 @@ function runRegisterSyncTests() {
 }
 
 async function runCommandTests() {
-  // 🔴 THE MAP IS THE WHOLE SURFACE OF THE UNKNOWN. Exactly two message types are published by
-  // Headwind; every other action is `null` until it is read off the live server's own API list. This
-  // pin exists so that filling one in is a deliberate act with a test behind it, and so that nobody
-  // can quietly invent a wire name — a guessed name produces a button that answers 200 and reaches
-  // nothing, which on a custody console is worse than no button at all.
-  assert.equal(HEADWIND_MESSAGE_TYPES.APPLY_SETTINGS, "configUpdated", "documented: re-read your settings");
-  assert.equal(HEADWIND_MESSAGE_TYPES.WAKE_REMOTE_APP, "runApp", "documented: start this app");
+  // 🔴 EVERY NAME HERE IS READ OFF HEADWIND'S OWN AGENT SOURCE, AND NONE IS A GUESS. The agent's
+  // `PushMessage.java` declares the literal strings it accepts and `PushNotificationProcessor.java`
+  // says what each one does, both public. A name outside that set produces a button that answers 200
+  // and reaches no tablet — worse than no button on a custody console — so the exact set is pinned.
+  assert.equal(HEADWIND_MESSAGE_TYPES.APPLY_SETTINGS, "configUpdated", "TYPE_CONFIG_UPDATED: re-read your whole configuration");
+  assert.equal(HEADWIND_MESSAGE_TYPES.WAKE_REMOTE_APP, "runApp", "TYPE_RUN_APP: start this package");
+  assert.equal(HEADWIND_MESSAGE_TYPES.REBOOT, "reboot", "TYPE_REBOOT → Utils.reboot() → dpm.reboot()");
+  assert.equal(HEADWIND_MESSAGE_TYPES.PAUSE_KIOSK, "exitKiosk", "TYPE_EXIT_KIOSK, a TEMPORARY exit");
+  assert.equal(
+    HEADWIND_MESSAGE_TYPES.RESUME_KIOSK,
+    "configUpdated",
+    "there is no enterKiosk — the temporary exit ends when the agent re-reads its configuration, so resuming IS the config update",
+  );
+
+  // 🔴 EVERY NAME MUST BE ONE THE AGENT ACTUALLY ACCEPTS. This is the guard against a plausible-looking
+  // invention: `lockDevice`, `factoryReset` and `locate` all read like real names and are not in the
+  // agent's dispatcher at all.
+  const AGENT_ACCEPTS = new Set([
+    "configUpdating", "configUpdated", "runApp", "broadcast", "uninstallApp", "deleteFile", "purgeDir",
+    "deleteDir", "permissiveMode", "runCommand", "reboot", "exitKiosk", "clearDownloadHistory", "intent",
+    "grantPermissions", "adminPanel", "clearAppData",
+  ]);
+  for (const [id, wire] of Object.entries(HEADWIND_MESSAGE_TYPES)) {
+    if (wire === null) continue;
+    assert.ok(AGENT_ACCEPTS.has(wire), `${id} sends "${wire}", which Headwind's agent does not accept — see PushMessage.java`);
+  }
+
   const unconfirmed = Object.entries(HEADWIND_MESSAGE_TYPES)
     .filter(([, value]) => value === null)
     .map(([id]) => id)
     .sort();
   assert.deepEqual(
     unconfirmed,
-    ["FACTORY_RESET", "LOCATE_NOW", "LOCK", "PAUSE_KIOSK", "REBOOT", "RESUME_KIOSK"],
-    "these six are real features of the Community edition whose WIRE NAME is not published — confirm each against the live server's Swagger before writing it in",
+    ["FACTORY_RESET", "LOCATE_NOW", "LOCK"],
+    "🔴 these three are NOT unread names — lock and factory reset are fields of the configuration the agent DOWNLOADS, with no column on the Community server's Configuration or Device to set them, and a position is evidence about a person that must be watched end to end before a button claims it",
   );
 
   // Every action in the catalogue has a line in the map, and vice versa: an action with no line would
@@ -445,17 +471,35 @@ async function runCommandTests() {
   assert.equal(isHeadwindCommandId("REBOOT"), true);
   assert.equal(isHeadwindCommandId("LOST_MODE"), false, "an action this bridge does not have is refused, never passed through");
   assert.equal(isHeadwindCommandReady("APPLY_SETTINGS"), true);
-  assert.equal(isHeadwindCommandReady("REBOOT"), false);
+  assert.equal(isHeadwindCommandReady("REBOOT"), true, "restart is live: the agent's own source names it");
+  assert.equal(isHeadwindCommandReady("LOCK"), false, "lock is not a push message on this server at all");
 
   const catalogue = headwindCommandCatalogue();
   assert.equal(catalogue.length, HEADWIND_COMMANDS.length, "the console is told about every action, including the ones it cannot send");
-  assert.equal(catalogue.filter((entry) => entry.ready).length, 2, "and exactly two can be sent today");
+  assert.equal(catalogue.filter((entry) => entry.ready).length, 5, "five can be sent today — three more than before the agent source was read");
+
+  // 🔴 A REFUSED ACTION CARRIES ITS OWN REASON, AND THE REASONS ARE NOT INTERCHANGEABLE. Lock and
+  // factory reset need a field the free server does not have — waiting changes nothing, and a person
+  // deciding what to do about a stolen tablet has to know that. A live position, by contrast, is
+  // simply not yet watched end to end. Flattening both into "pending" is the regression this pins.
+  for (const entry of catalogue) {
+    assert.equal(
+      entry.pendingReason === null,
+      entry.ready,
+      `${entry.id}: an action that refuses must say why, and one that works must not carry a refusal`,
+    );
+  }
+  const lockReason = catalogue.find((entry) => entry.id === "LOCK")!.pendingReason!;
+  const locateReason = catalogue.find((entry) => entry.id === "LOCATE_NOW")!.pendingReason!;
+  assert.notEqual(lockReason, locateReason, "the two kinds of refusal do not share one sentence");
+  assert.match(lockReason, /configuration/i, "lock says the server has nowhere to put the instruction");
+  assert.match(locateReason, /check-in/i, "a position says it comes from the tablet's own check-in");
 
   // 🔴 AN UNCONFIRMED ACTION REFUSES BEFORE IT REACHES THE NETWORK. Not a guess, not a silent drop,
   // and not a failure blamed on the tablet.
   const untouched = makeFetch({ api: [{ body: { status: "OK" }, status: 200 }] });
   await assert.rejects(
-    () => issueHeadwindCommand({ command: "REBOOT", deviceNumber: "PHX-TAB-0002" }, "B-10", untouched.fetch, ENV),
+    () => issueHeadwindCommand({ command: "LOCK", deviceNumber: "PHX-TAB-0002" }, "B-10", untouched.fetch, ENV),
     HeadwindCommandUnconfirmedError,
   );
   assert.equal(untouched.calls.length, 0, "and nothing at all was sent — no sign-in, no push");
@@ -469,7 +513,7 @@ async function runCommandTests() {
   // The wire shape is pinned at the source, because sending it for real needs the database.
   const commands = stripComments(source("src/lib/devices/headwind/commands.ts"));
   assert.match(commands, /"\/rest\/private\/push"/, "every action goes down the one push endpoint");
-  assert.match(commands, /deviceNumbers: \[device\.deviceNumber\]/, "addressed by device NUMBER — an id would reach nothing and report success");
+  assert.match(commands, /deviceNumbers: \[target\.deviceNumber\]/, "addressed by device NUMBER — an id would reach nothing and report success");
   assert.doesNotMatch(commands, /deviceNumbers: \[[^\]]*deviceId/, "and never by the server's row id");
   assert.match(commands, /payload: payloadFor\(/, "the payload is built by the one function that knows it must be a STRING");
   assert.match(commands, /entityType: "headwind_device_command"/, "and every action that lands writes a required audit row");
@@ -480,16 +524,99 @@ function runAppsTests() {
     applications: [
       { name: "RustDesk", pkg: "com.carriez.flutter_hbb", version: "1.2.3" },
       { packageName: "com.phoenix.reps" },
+      { name: "Headwind MDM", pkg: HEADWIND_AGENT_PACKAGE },
       { name: "no package at all" },
     ],
   });
   const apps = installedAppsFromInfo(info, rustDeskPackageName(ENV));
-  assert.equal(apps.length, 2, "an app with no package cannot be acted on and is dropped");
+  assert.equal(apps.length, 3, "an app with no package cannot be acted on and is dropped");
   const rustdesk = apps.find((app) => app.packageName === "com.carriez.flutter_hbb")!;
   assert.equal(rustdesk.isRemoteScreenApp, true, "the screen-sharing app is marked so a tablet missing it is obvious");
   assert.equal(apps.find((app) => app.packageName === "com.phoenix.reps")!.name, "com.phoenix.reps", "an unnamed app reads as its package, never as blank");
   assert.deepEqual(installedAppsFromInfo("{not json", "x"), [], "an unreadable blob is an empty list, never a throw");
   assert.deepEqual(installedAppsFromInfo({ applications: "nope" }, "x"), []);
+
+  // 🔴 THE SERVER MARKS THE MANAGEMENT APP, NOT THE BROWSER. The console hides the Remove button on
+  // whatever this flag says, so if it were computed in the component the button and the guard that
+  // actually stops the push could drift apart — and the drift would only show the day somebody
+  // removed the agent from a tablet in a rep's bag.
+  assert.equal(
+    apps.find((app) => app.packageName === HEADWIND_AGENT_PACKAGE)!.isManagementApp,
+    true,
+    "the agent that manages the tablet is marked by the server",
+  );
+  assert.equal(rustdesk.isManagementApp, false, "and nothing else is");
+
+  assert.equal(HEADWIND_AGENT_PACKAGE, "com.hmdm.launcher", "the agent's own applicationId, one flavour, no suffix");
+  assert.equal(isAndroidPackageName("com.carriez.flutter_hbb"), true);
+  assert.equal(isAndroidPackageName("nodots"), false, "a package name has at least two segments");
+  assert.equal(isAndroidPackageName("9lives.app"), false, "a segment starts with a letter");
+  assert.equal(isAndroidPackageName("com.a b"), false, "and carries no spaces");
+}
+
+/**
+ * Taking one app off one tablet.
+ *
+ * 🔴 THIS WAS REPORTED AS BLOCKED ON A SERVER THAT DID NOT EXIST, AND IT NEVER WAS. `uninstallApp` is
+ * one of the seventeen names Headwind's own agent declares, and its payload is a single `pkg` key —
+ * readable in public the whole time. The tests below pin the wire shape against that source.
+ */
+async function runAppRemovalTests() {
+  // 🔴 THE MANAGEMENT APP IS REFUSED BEFORE ANYTHING IS SENT. Removing the agent does not produce an
+  // unmanaged tablet; it produces a tablet that can never be managed again without a factory reset by
+  // hand, on a device in a rep's bag in another governorate.
+  const untouched = makeFetch({ api: [{ body: { status: "OK" }, status: 200 }] });
+  await assert.rejects(
+    () => removeHeadwindApp({ deviceNumber: "PHX-TAB-0002", packageName: HEADWIND_AGENT_PACKAGE }, "B-10", untouched.fetch, ENV),
+    HeadwindAppInputError,
+    "the app that manages the tablet is never removed",
+  );
+  await assert.rejects(
+    () => removeHeadwindApp({ deviceNumber: "PHX-TAB-0002", packageName: "not a package" }, "B-10", untouched.fetch, ENV),
+    HeadwindAppInputError,
+    "and a typo is refused rather than pushed — uninstallApp on a package the tablet lacks is a silent 200",
+  );
+  await assert.rejects(
+    () => removeHeadwindApp({ deviceNumber: "  ", packageName: "com.phoenix.reps" }, "B-10", untouched.fetch, ENV),
+    HeadwindAppInputError,
+    "and a removal with no tablet named",
+  );
+  assert.equal(untouched.calls.length, 0, "none of those reached the network at all — not even a sign-in");
+
+  // 🔴 THE WIRE SHAPE, AGAINST THE AGENT'S OWN DISPATCHER. `payload.getString("pkg")` is what the
+  // agent reads, and the payload is a STRING containing JSON, not a JSON object.
+  const sent = makeFetch({
+    api: [
+      { body: { data: { items: [{ id: 7, number: "PHX-TAB-0002" }] }, status: "OK" }, status: 200 },
+      { body: { status: "OK" }, status: 200 },
+    ],
+  });
+  // 🔴 ONE SENTENCE FOR "THAT TABLET IS GONE", WHICHEVER ACTION ASKED. The resolver is shared with the
+  // remote actions, so a removal and a restart cannot come to disagree about what a missing tablet is;
+  // both map to 400 in `headwindErrorResponse`.
+  await assert.rejects(
+    () => removeHeadwindApp({ deviceNumber: "PHX-TAB-0003", packageName: "com.phoenix.reps" }, "B-10", sent.fetch, ENV),
+    HeadwindCommandInputError,
+    "a tablet that has left the fleet cannot be acted on — the removal is resolved against the LIVE list",
+  );
+
+  // The push itself needs the custody register, so its exact body is pinned at the source instead.
+  const apps = stripComments(source("src/lib/devices/headwind/apps.ts"));
+  assert.match(apps, /messageType: "uninstallApp"/, "TYPE_UNINSTALL_APP — the agent's own name for it");
+  assert.match(apps, /payload: JSON\.stringify\(\{ pkg: packageName \}\)/, "a STRING containing JSON, keyed `pkg`, which is the one key the agent reads");
+  assert.match(apps, /deviceNumbers: \[target\.deviceNumber\]/, "addressed by device NUMBER, never by the server's row id");
+  assert.match(apps, /entityType: "headwind_device_command"/, "and a silent removal writes a REQUIRED audit row");
+  assert.match(apps, /packageName \}/, "which names the package, so the audit says what was taken off");
+
+  // 🔴 THE ROUTE MAY NOT BECOME A SECOND INSTALL PATH BY GUESSWORK. There is no `installApp` message
+  // on this server: an app arrives because it is in the tablet's configuration. A name invented here
+  // would answer 200 and install nothing.
+  assert.doesNotMatch(apps, /messageType: "installApp"/, "there is no installApp message to send");
+
+  const route = stripComments(source("app/api/devices/headwind/apps/route.ts"));
+  assert.match(route, /assertPermission\(access, "company_devices", "approve"\)/, "Super Admin only, on the route");
+  assert.match(route, /const csrf = assertSameOriginMutation\(request\);\s*if \(csrf\) return csrf;/);
+  assert.doesNotMatch(route, /export async function GET/, "reading the app list stays on the fleet route — this one only removes");
 }
 
 function runRemoteScreenTests() {
@@ -537,6 +664,7 @@ function runDoorTests() {
   for (const [pattern, methods] of [
     ["/api/devices/headwind", ["GET", "POST"]],
     ["/api/devices/headwind/imei", ["POST"]],
+    ["/api/devices/headwind/apps", ["POST"]],
   ] as const) {
     for (const method of methods) {
       const entry = findAccessRegistryEntry(pattern, method);
@@ -719,6 +847,7 @@ export async function runHeadwindBridgeTests() {
   runRegisterSyncTests();
   await runCommandTests();
   runAppsTests();
+  await runAppRemovalTests();
   runRemoteScreenTests();
   runErrorMappingTests();
   runDoorTests();

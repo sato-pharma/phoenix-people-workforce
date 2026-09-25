@@ -45,8 +45,8 @@ costs sixty. That is the whole reason this is happening now.
 **Phoenix does:** read the fleet and match it to the custody register; add a newly enrolled tablet to
 the register by itself under the next `PHX-TAB-nnnn` tag; copy the IMEI a tablet reports onto its
 register entry; open a tablet to show what the server holds about it, what is installed on it, and
-what Phoenix has done to it; send the remote actions it can send; and hand the Super Admin a
-one-click remote-screen target.
+what Phoenix has done to it; send the remote actions it can send; take an app off a tablet silently
+(§6.3); and hand the Super Admin a one-click remote-screen target.
 
 **Phoenix does not carry the video.** A screen session runs between the RustDesk desktop app on the
 Super Admin's own computer and the tablet, through the company's relay. Phoenix hands over three
@@ -321,39 +321,88 @@ per-tablet step, so it costs nothing extra.
 
 This section exists so nobody discovers these by pressing a button.
 
-### 6.1 Six actions are listed, greyed, and refuse
+### 6.1 Three actions are listed, greyed, and refuse — down from six
 
-Headwind publishes exactly **two** push message types: `configUpdated` (re-read your settings) and
-`runApp` (start this app). Everything else its own web panel can do — **restart, lock, factory reset,
-kiosk on, kiosk off, and a live position ping** — is real and present in Community, but **the word
-Phoenix must send down the channel for each is not in any public document**.
+🔴 **The first version of this section said six actions were waiting on the live server's Swagger
+page. That was wrong, and it was wrong in the most ordinary way: Headwind is open source, and the
+answer was public the whole time.** Headwind's *website* documents two push message types. Its
+**agent** — the thing that actually obeys them — declares every name it accepts as a literal string:
 
-Guessing one would produce a button that answers `200 OK` and reaches no tablet at all, which on a
-custody console is worse than no button. So each of the six:
+| | |
+|---|---|
+| The names | [`hmdm-android` · `app/src/main/java/com/hmdm/launcher/json/PushMessage.java`](https://github.com/h-mdm/hmdm-android/blob/master/app/src/main/java/com/hmdm/launcher/json/PushMessage.java) |
+| What each does | [`…/worker/PushNotificationProcessor.java`](https://github.com/h-mdm/hmdm-android/blob/master/app/src/main/java/com/hmdm/launcher/worker/PushNotificationProcessor.java) |
 
-- is **shown** on the tablet's row, not hidden;
-- is **greyed with a "Pending" chip** and says why in plain words;
-- **refuses before anything is sent** (`501`), never reports a success.
+The full set is `configUpdating`, `configUpdated`, `runApp`, `broadcast`, `uninstallApp`,
+`deleteFile`, `purgeDir`, `deleteDir`, `permissiveMode`, `runCommand`, `reboot`, `exitKiosk`,
+`clearDownloadHistory`, `intent`, `grantPermissions`, `adminPanel`, `clearAppData`. **Three of the
+six resolved from that list with no server involved:**
 
-**The fix is one line each.** They live as `null` in `HEADWIND_MESSAGE_TYPES` in
-`src/lib/devices/headwind/commands.ts` — a single isolated map, the whole surface of this unknown.
-Once the server is up, its **own Swagger UI at `https://mdm.satopharma.com/swagger/ui/index.html`**
-names them. Write the name on its line and that action is live; nothing else in the codebase changes.
+- **Restart** → `reboot` — the agent calls `dpm.reboot()`.
+- **Pause kiosk** → `exitKiosk` — a *temporary* exit.
+- **Resume kiosk** → `configUpdated` — there is no `enterKiosk`; the temporary exit ends when the
+  agent re-reads its configuration, so resuming *is* the config update.
 
-### 6.2 Five ManageEngine actions may have no Headwind equal
+**The three still refusing are a different thing entirely, and no Swagger page will fix them:**
 
-**Ring the alarm · shut down · reset the screen lock · lost mode on/off · corporate (partial) wipe.**
-These exist on the ManageEngine page today and have **no documented Headwind equivalent**. They are
-named here rather than quietly dropped. Confirm each against the live Swagger; any that genuinely has
-no equivalent is reported as gone, in words, on the page.
+- **Lock** and **full factory reset** — the agent *does* carry `lock`, `lockMessage` and
+  `factoryReset`, but as fields of the configuration it **downloads** (`ServerConfig.java`), never as
+  messages it can be sent. And the Community server's own `Configuration` and `Device` records
+  (`hmdm-server`, `common/…/persistence/domain/`) have **no column for either** — so no REST call in
+  this edition sets them. This is a missing server-side field, not a missing name.
+- **Locate now** — a position rides along in the tablet's own report rather than answering a message
+  of its own. It stays refusing until the round trip is watched on a real tablet: a position is
+  evidence about where a person was, and a stale one presented as "now" is worse than no button.
 
-### 6.3 Apps are read-only for now
+Each of the three is still **shown** on the row, **greyed with a "Pending" chip** that says why, and
+**refuses before anything is sent** (`501`) rather than reporting a success that reached nothing.
+
+### 6.2 The five ManageEngine actions with no Headwind equal — now answered from the source
+
+These five exist on the ManageEngine page today. Reading the agent's dispatcher settles each of them
+without a server, so they are no longer "may have no equivalent" but a decided list:
+
+| ManageEngine action | On Headwind |
+|---|---|
+| Ring the alarm | **No equivalent.** Nothing in the agent plays a sound. `intent` could open something on screen, which is not the same thing and would be dishonest to label as ringing |
+| Shut down | **No equivalent.** The agent implements `reboot` and nothing else; a power-off would need `runCommand` with root or an AOSP build we do not have |
+| Reset the screen lock | **No equivalent.** No message clears a passcode |
+| Lost mode on / off | **Blocked the same way as Lock** (§6.1) — the agent carries `lock` and `lockMessage`, which is lost mode in substance, but the Community server has no field to set them |
+| Corporate (partial) wipe | **Buildable today.** `clearAppData` (per package) plus `deleteFile` / `deleteDir` / `purgeDir` together are a partial wipe in substance: the company apps' data and the company folders, leaving the tablet working. Not built yet, and not blocked |
+
+Anything that genuinely has no equivalent is reported as gone, in words, on the page — never quietly
+dropped from the list of things this console can do.
+
+### 6.3 Apps: removal is built; installing goes through the configuration
 
 Headwind Community installs and removes apps **silently** — one of the reasons it was the right
-server. But it does so by changing the tablet's **configuration**, and the REST paths for editing a
-configuration's app list are not published either. So Phoenix **shows** what is installed (that rides
-along in the device record and costs no extra request) and does not yet send or remove. Same fix,
-same Swagger step.
+server. Phoenix **shows** what is installed (it rides along in the device record and costs no extra
+request) and **removes** an app from the tablet's own row.
+
+**Removal** is `uninstallApp`, one of the seventeen names the agent declares. Its payload is a single
+key — `payload.getString("pkg")` — and the agent hands it to `InstallUtils.silentUninstallApplication()`,
+which needs device-owner rights and therefore never prompts the rep. On the page it is two presses,
+and the second one **names the package** rather than saying "confirm": since nothing asks the rep,
+this console is the only place a mistake can be caught. Every removal writes a required audit row
+naming the tablet and the package.
+
+🔴 **The management app has no Remove button, and the server refuses it even if one were forged.**
+`com.hmdm.launcher` *is* the agent. Taking it off does not leave an unmanaged tablet — it leaves a
+tablet that can only be brought back by factory-resetting it **by hand**, which means physically
+having it. The flag the button reads (`isManagementApp`) is computed on the server, beside the
+refusal, so the two cannot drift apart.
+
+🔴 **"Sent" is not "gone".** The push endpoint accepts the message and hands it on; whether the
+package was there, and whether the tablet was awake, shows in the app list at its **next check-in**.
+The sentence Phoenix shows says exactly that, because a custody console that reports a removal it did
+not witness is how a tablet gets written off as clean while the app is still on it.
+
+**Installing is the half that is not built, and it is not an unknown either.** There is no
+`installApp` message: on Headwind an app arrives because it is in the tablet's **configuration**, so
+installing means editing a configuration's app list (`ConfigurationResource`,
+`/rest/private/configurations`) and then nudging the tablet with `configUpdated`. That belongs in
+`configurations.ts`, which is the next piece of work — not in a second guess at a push name that does
+not exist.
 
 ### 6.4 The command history is Phoenix's own record
 

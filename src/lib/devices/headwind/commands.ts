@@ -13,18 +13,22 @@
  * `messageType`, a `payload` — 🔴 A STRING CONTAINING JSON, NOT A JSON OBJECT, which is Headwind's
  * documented wire format and not a mistake to "fix" — and the device numbers to send it to.
  *
- * 🔴 AND THIS IS THE ONE HONEST GAP IN THE BRIDGE. Headwind publishes exactly TWO message types:
- * `configUpdated` (re-read your settings now) and `runApp` (start this app). Everything else its web
- * panel can do — reboot, lock, factory reset, kiosk on and off, a live position ping — is real and
- * present in the Community edition, but the WORD to send down this channel for each is not in any
- * public document. Guessing one would produce a button that reports success and does nothing, which
- * is the worst possible outcome on a custody console.
+ * 🔴 THE WIRE NAMES ARE READ OFF HEADWIND'S OWN SOURCE, NOT OFF ITS WEBSITE. Headwind's *documentation*
+ * names exactly two message types — `configUpdated` and `runApp` — which is why an earlier pass here
+ * left six actions sitting `null` "until the live server's Swagger page can be read". That was the
+ * wrong place to look: Headwind is open source, and the Android agent that receives these messages
+ * declares every name it accepts as a literal string, in public, today. Three of those six were
+ * resolved from it with no server involved at all.
  *
- * SO AN UNCONFIRMED ACTION IS LISTED, NOT HIDDEN, AND REFUSES RATHER THAN PRETENDS. Its wire name
- * lives as `null` in `HEADWIND_MESSAGE_TYPES` below — the single map that is the whole surface of
- * this unknown — the console shows it greyed with the reason in plain words, and the route answers
- * 501. When the server is up, its own Swagger UI (`/swagger/ui/index.html`) names them; filling a
- * line in that map is then the entire fix, with no other file touched.
+ * 🔴 NEVER PARK AN UNKNOWN ON A BOX THAT HAS NOT BEEN BUILT WHEN THE CODE THAT ANSWERS IT IS PUBLIC.
+ * That is the rule this file exists to carry.
+ *
+ * AN ACTION THAT STILL CANNOT BE SENT IS LISTED, NOT HIDDEN, AND REFUSES RATHER THAN PRETENDS. Its
+ * wire name is `null` in `HEADWIND_MESSAGE_TYPES` below, `HEADWIND_UNCONFIRMED_REASONS` says WHY in
+ * one sentence a non-engineer can act on, the console greys the button and shows that sentence, and
+ * the route answers 501. The reasons differ and the console must not flatten them: lock and factory
+ * reset need a server-side field the Community edition does not have, while a live position only
+ * needs one round trip watched on a real tablet.
  */
 
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
@@ -59,26 +63,80 @@ export type HeadwindCommandId =
   | "FACTORY_RESET";
 
 /**
- * 🔴 THE ONE PLACE THE UNKNOWN LIVES — the `messageType` each action sends down `/rest/private/push`.
+ * The `messageType` each action sends down `/rest/private/push`.
  *
- * A string is a name confirmed against Headwind's published push documentation. A `null` is an action
- * whose name is NOT published and has not been read off this server's own Swagger yet: it is offered
- * to nobody, refused with a plain sentence, and fixed by writing the name on its line here. Nothing
- * else in the codebase needs to change when one is confirmed — that is why this map is isolated.
+ * 🔴 THESE ARE READ OFF HEADWIND'S OWN SOURCE, NOT GUESSED, AND NOT WAITED FOR. Headwind's *website*
+ * documents only two push types, which is why an earlier pass here left six of these `null` "until
+ * the live server's Swagger could be read". That was the wrong place to look: **Headwind is open
+ * source**, and the agent that receives these messages declares every name it accepts, as literal
+ * strings, in public. The authority is the agent, because the agent is what obeys:
+ *
+ *   github.com/h-mdm/hmdm-android
+ *     app/src/main/java/com/hmdm/launcher/json/PushMessage.java          — the literal wire strings
+ *     app/src/main/java/com/hmdm/launcher/worker/PushNotificationProcessor.java — what each one does
+ *
+ * The full set the agent accepts is: configUpdating, configUpdated, runApp, broadcast, uninstallApp,
+ * deleteFile, purgeDir, deleteDir, permissiveMode, runCommand, reboot, exitKiosk, clearDownloadHistory,
+ * intent, grantPermissions, adminPanel, clearAppData. Anything not in that list is not a push message
+ * on this server, whatever a panel button looks like.
+ *
+ * A `null` still means "Phoenix will not send this": the action is listed, greyed, and refuses with a
+ * plain sentence rather than reporting a success that reached no tablet. What is now different is that
+ * a `null` here is a statement about the SERVER, not about our reading — see `LOCK` and `FACTORY_RESET`.
  */
 export const HEADWIND_MESSAGE_TYPES: Readonly<Record<HeadwindCommandId, string | null>> = {
-  // Documented: "When the admin updates the configuration in the web panel, a message of type
-  // configUpdated (no payload) is sent to each device having that configuration."
+  // `PushMessage.TYPE_CONFIG_UPDATED`. The agent re-reads its whole configuration, which is also how
+  // every setting-driven change lands — so this is the "do it now" nudge behind several actions.
   APPLY_SETTINGS: "configUpdated",
-  // Documented: "When the plugin needs to start a mobile agent remotely, a message of type runApp is
-  // sent to a device", with a payload naming the package.
+  // `PushMessage.TYPE_RUN_APP` → `runApplication(context, payload)`, payload naming the package.
   WAKE_REMOTE_APP: "runApp",
+  // `PushMessage.TYPE_REBOOT` → `Utils.reboot()` → `dpm.reboot(adminComponentName)`. No payload.
+  REBOOT: "reboot",
+  // `PushMessage.TYPE_EXIT_KIOSK` → broadcasts `ACTION_EXIT_KIOSK`. No payload.
+  PAUSE_KIOSK: "exitKiosk",
+  // There is no `enterKiosk`: `exitKiosk` is a TEMPORARY exit, and kiosk mode is restored when the
+  // agent next reads its configuration. So resuming is the config update — the same message, a
+  // different sentence to the person pressing it.
+  RESUME_KIOSK: "configUpdated",
+  // 🔴 NOT A PUSH MESSAGE ON THIS SERVER, AND NOT AN UNKNOWN EITHER. The agent does carry `lock`,
+  // `lockMessage` and `factoryReset` — but as fields of the configuration it DOWNLOADS
+  // (`ServerConfig.java`), not as messages it can be sent. And the Community server's own
+  // `Configuration` and `Device` records (hmdm-server, `common/.../persistence/domain/`) have no
+  // column for either, so there is no REST call in this edition that sets them. Writing a name here
+  // would not make these work; they need a server-side field that does not exist. Left refusing, and
+  // §6 of the runbook says so in words.
   FACTORY_RESET: null,
-  LOCATE_NOW: null,
   LOCK: null,
-  PAUSE_KIOSK: null,
-  REBOOT: null,
-  RESUME_KIOSK: null,
+  // Location rides along in the device's own report rather than answering a message of its own. Left
+  // refusing until the round trip is watched on a real tablet — a position is evidence about where a
+  // person was, and a stale one presented as "now" is worse than no button.
+  LOCATE_NOW: null,
+};
+
+/**
+ * Why an action still refuses, in one sentence the person pressing it can act on.
+ *
+ * 🔴 THE TWO REASONS ARE NOT THE SAME AND THE CONSOLE MUST NOT FLATTEN THEM INTO "PENDING". One says
+ * the Community server has nowhere to put the instruction — waiting will not change it, and the
+ * answer is a paid edition or a different mechanism. The other says Phoenix will not show a position
+ * it has not yet watched arrive. A person deciding what to do about a stolen tablet needs to know
+ * which of those they are looking at.
+ */
+export const HEADWIND_UNCONFIRMED_REASONS: Readonly<Partial<Record<HeadwindCommandId, string>>> = {
+  FACTORY_RESET:
+    "The company's server cannot send this. On the Headwind agent a factory reset is a setting the " +
+    "tablet reads out of its configuration, not an instruction that can be sent to it — and the free " +
+    "edition's configuration has no such setting to switch on. A tablet is wiped by hand from the " +
+    "server's own console, or on the tablet itself.",
+  LOCATE_NOW:
+    "The tablet reports where it is with its regular check-in rather than answering a question. " +
+    "Phoenix shows the position from that last check-in, and will not put a “now” button on the " +
+    "screen until the round trip has been watched on a real tablet — a stale position shown as a live " +
+    "one is worse than none.",
+  LOCK:
+    "The company's server cannot send this. On the Headwind agent the lock is a setting the tablet " +
+    "reads out of its configuration, not an instruction that can be sent to it — and the free " +
+    "edition's configuration has no such setting to switch on.",
 };
 
 export type HeadwindCommandDef = {
@@ -166,9 +224,28 @@ export function isHeadwindCommandReady(id: HeadwindCommandId): boolean {
   return HEADWIND_MESSAGE_TYPES[id] !== null;
 }
 
-/** The catalogue as the console renders it: every action, each saying whether it can be sent yet. */
-export function headwindCommandCatalogue(): Array<HeadwindCommandDef & { ready: boolean }> {
-  return HEADWIND_COMMANDS.map((def) => ({ ...def, ready: isHeadwindCommandReady(def.id) }));
+/** Why this action refuses, or null when it can be sent. Never a bare "pending" — see the map above. */
+export function headwindPendingReason(id: HeadwindCommandId): string | null {
+  if (isHeadwindCommandReady(id)) return null;
+  return (
+    HEADWIND_UNCONFIRMED_REASONS[id] ??
+    "Phoenix will not send this action to the company's server yet, so the button is refused rather " +
+      "than reporting a success that reached no tablet."
+  );
+}
+
+/**
+ * The catalogue as the console renders it: every action, each saying whether it can be sent yet and,
+ * when it cannot, why — so a greyed button explains itself instead of reading as "not built".
+ */
+export function headwindCommandCatalogue(): Array<
+  HeadwindCommandDef & { ready: boolean; pendingReason: string | null }
+> {
+  return HEADWIND_COMMANDS.map((def) => ({
+    ...def,
+    pendingReason: headwindPendingReason(def.id),
+    ready: isHeadwindCommandReady(def.id),
+  }));
 }
 
 export type HeadwindCommandResult = {
@@ -212,15 +289,50 @@ function payloadFor(id: HeadwindCommandId, env: NodeJS.ProcessEnv): string {
   return "";
 }
 
+export type HeadwindActionTarget = {
+  deviceNumber: string;
+  deviceName: string;
+  /** The custody asset tag where the tablet is in the register — what a person is shown and audited. */
+  assetTag: string | null;
+  /** The asset tag, falling back to the server's name for the tablet. Never blank. */
+  subject: string;
+};
+
+/**
+ * Resolve the tablet an action is about to reach, against the LIVE fleet.
+ *
+ * 🔴 EVERY ACTION GOES THROUGH HERE, AND THERE IS EXACTLY ONE COPY OF IT ON PURPOSE. Two things it
+ * guarantees are easy to lose in a second copy: an action cannot be aimed at a tablet that has left
+ * the fleet, and the audit row names the tablet by the asset tag a person would recognise rather than
+ * by a server row number.
+ *
+ * 🔴 AND THE PUSH IS ADDRESSED BY DEVICE NUMBER, NEVER BY THE SERVER'S ROW ID. `deviceNumbers` is a
+ * list and `/rest/private/push` answers 200 whether or not anything in it matched, so an id sent
+ * there would report a success that reached no tablet at all.
+ */
+export async function resolveHeadwindActionTarget(
+  deviceNumber: string,
+  fetchImpl: typeof fetch = fetch,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<HeadwindActionTarget> {
+  const [devices, register] = await Promise.all([
+    listHeadwindDevices(fetchImpl, env),
+    getDeviceRegisterData().catch(() => ({ devices: [] as Awaited<ReturnType<typeof getDeviceRegisterData>>["devices"] })),
+  ]);
+  const device = devices.find((candidate) => candidate.deviceNumber === deviceNumber);
+  if (!device) {
+    throw new HeadwindCommandInputError(
+      "That tablet is not in the Headwind fleet any more. Reload the page and try again from its row.",
+    );
+  }
+  const assetTag = matchHeadwindToRegister(device, register.devices)?.assetTag ?? null;
+  return { assetTag, deviceName: device.name, deviceNumber: device.deviceNumber, subject: assetTag ?? device.name };
+}
+
 /**
  * Run one remote action against one Headwind-managed tablet.
  *
- * Resolves the device from the live fleet (so the action cannot hit one that is gone and the audit
- * names the real tablet), pushes the documented message, then writes the required audit row.
- *
- * 🔴 THE PUSH IS ADDRESSED BY DEVICE NUMBER, NEVER BY THE SERVER'S ROW ID. `deviceNumbers` is a list
- * and the endpoint answers 200 whether or not anything in it matched, so an id sent here would report
- * a success that reached no tablet at all.
+ * Resolves the device from the live fleet, pushes the message, then writes the required audit row.
  */
 export async function issueHeadwindCommand(
   input: { deviceNumber: string; command: HeadwindCommandId },
@@ -236,33 +348,17 @@ export async function issueHeadwindCommand(
 
   const messageType = HEADWIND_MESSAGE_TYPES[def.id];
   if (messageType === null) {
-    throw new HeadwindCommandUnconfirmedError(
-      `"${def.label}" is not connected yet. The company's Headwind server can do it, but the exact name ` +
-        "Phoenix must send for it is not published — it is read once off the server's own API list and " +
-        "written into HEADWIND_MESSAGE_TYPES. Until then this button is deliberately refused rather than " +
-        "reporting a success that never reached the tablet.",
-    );
+    throw new HeadwindCommandUnconfirmedError(`"${def.label}" is refused. ${headwindPendingReason(def.id)}`);
   }
 
-  const [devices, register] = await Promise.all([
-    listHeadwindDevices(fetchImpl, env),
-    getDeviceRegisterData().catch(() => ({ devices: [] as Awaited<ReturnType<typeof getDeviceRegisterData>>["devices"] })),
-  ]);
-  const device = devices.find((candidate) => candidate.deviceNumber === deviceNumber);
-  if (!device) {
-    throw new HeadwindCommandInputError(
-      "That tablet is not in the Headwind fleet any more. Reload the page and try again from its row.",
-    );
-  }
-  const assetTag = matchHeadwindToRegister(device, register.devices)?.assetTag ?? null;
-  const subject = assetTag ?? device.name;
+  const target = await resolveHeadwindActionTarget(deviceNumber, fetchImpl, env);
 
   await callHeadwind(
     "/rest/private/push",
     {
       body: JSON.stringify({
         broadcast: false,
-        deviceNumbers: [device.deviceNumber],
+        deviceNumbers: [target.deviceNumber],
         messageType,
         payload: payloadFor(def.id, env),
       }),
@@ -274,12 +370,12 @@ export async function issueHeadwindCommand(
 
   await writeRequiredAuditLog({
     actorLoginId: actor,
-    entityId: device.deviceNumber,
+    entityId: target.deviceNumber,
     entityType: "headwind_device_command",
-    newValues: { assetTag, command: def.id, deviceName: device.name, messageType },
+    newValues: { assetTag: target.assetTag, command: def.id, deviceName: target.deviceName, messageType },
     oldValues: null,
-    summary: `${def.pastTense} ${assetTag ?? device.name}`,
+    summary: `${def.pastTense} ${target.subject}`,
   });
 
-  return { assetTag, command: def.id, message: resultMessage(def, subject) };
+  return { assetTag: target.assetTag, command: def.id, message: resultMessage(def, target.subject) };
 }
