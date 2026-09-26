@@ -406,6 +406,27 @@ Railway's secret store and is then forgotten — there is no copy to leak from a
 history, and if you need it later you reveal it in Railway or run the script again with `--reset`.
 Pinned by `tests/headwind-bridge.test.ts`, including that no line which prints may carry a password.
 
+#### 🔴 THE TOKEN COMES BACK AS `id_token`, AT THE TOP LEVEL, WITH NO ENVELOPE — THE FAULT THAT COST A NIGHT
+
+Measured against production on 2026-09-26, with the service's own injected variables:
+
+```
+POST https://mdm.satopharma.com/rest/public/jwt/login
+  ->  HTTP 200  application/json   { "id_token": "<195 chars>" }
+      no status, no message, no data
+```
+
+Phoenix read `data.authToken`, `data.token`, a bare `data` string and a top-level `token` — **and not
+`id_token`**. So a sign-in that SUCCEEDED was reported as *"The Headwind server refused the Phoenix
+sign-in — check HEADWIND_MDM_LOGIN and HEADWIND_MDM_PASSWORD"*, and the account, the password, the
+hostname and the hash form were each searched in turn for a fault none of them had. **The server's own
+audit log recorded every one of those attempts as `errorCode=0`.** With `id_token` read,
+`GET /rest/private/users/roles` answers 200 and lists `Admin · User · Observer`.
+
+🔴 **The lesson is bigger than the key name: when a page says a credential was refused and the server
+says `errorCode=0`, believe the server and go looking at the REPLY SHAPE.** Never narrow the candidate
+list in `tokenFromLogin` to one spelling; pinned by `tests/headwind-bridge.test.ts`.
+
 #### 🔴 THE PASSWORD GOES ON THE WIRE AS **UPPER-CASE** MD5
 
 Read from the console the live server serves — the authoritative client, not the documentation:

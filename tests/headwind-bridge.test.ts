@@ -238,6 +238,24 @@ async function runAuthTests() {
   await Promise.all([getHeadwindToken(cold.fetch, ENV), getHeadwindToken(cold.fetch, ENV), getHeadwindToken(cold.fetch, ENV)]);
   assert.equal(cold.calls.length, 1, "three cold callers mint once between them");
 
+  // 🔴 THE SHAPE THIS SERVER ACTUALLY ANSWERS IN, AND THE ONE FAULT THAT COST A WHOLE NIGHT.
+  // Measured against production on 2026-09-26 with the service's own injected variables:
+  // `POST /rest/public/jwt/login` returns HTTP 200, application/json, `{ id_token: "<195 chars>" }` —
+  // no `status`, no `message`, no `data`. `tokenFromLogin` did not look at `id_token`, so a sign-in
+  // that SUCCEEDED was reported as "the Headwind server refused the Phoenix sign-in — check
+  // HEADWIND_MDM_LOGIN and HEADWIND_MDM_PASSWORD". The account, the password, the hostname and the
+  // hash form were each searched for a fault none of them had, while the server's own audit log
+  // recorded every one of those attempts as errorCode=0. With id_token read, the token works:
+  // GET /rest/private/users/roles answers 200 and lists Admin · User · Observer.
+  resetHeadwindTokenCache();
+  const bareIdToken = makeFetch({ login: [{ body: { id_token: "jwt-id-token" }, status: 200 }] });
+  assert.equal(
+    await getHeadwindToken(bareIdToken.fetch, ENV),
+    "jwt-id-token",
+    "a top-level id_token with no envelope at all is the token — this server's real shape",
+  );
+  resetHeadwindTokenCache();
+
   // Other token spellings some builds answer with, and a refusal.
   for (const body of [{ data: "jwt-bare" }, { token: "jwt-bare" }, { data: { jwt: "jwt-bare" } }]) {
     resetHeadwindTokenCache();
@@ -2276,6 +2294,11 @@ function runBootstrapScriptTests() {
   // means "no such login". It does not: on the jwt.login path a wrong password and a login that does
   // not exist both answer `2`. Reading it the other way told the owner an account that demonstrably
   // existed — `update.user` had logged it with `id: 2` and role `Admin` — had never been created.
+  assert.match(
+    book,
+    /THE TOKEN COMES BACK AS `id_token`, AT THE TOP LEVEL/,
+    "the runbook records the reply shape that made a successful sign-in read as a refusal all night",
+  );
   assert.match(
     book,
     /DOES NOT MEAN "NO SUCH LOGIN"/,
