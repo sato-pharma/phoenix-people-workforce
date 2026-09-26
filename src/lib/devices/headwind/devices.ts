@@ -136,7 +136,7 @@ export type HeadwindDevice = {
   platformLabel: string;
 };
 
-function normalizeDevice(record: RawRecord): HeadwindDevice | null {
+function normalizeDevice(record: RawRecord, configurationNames: Map<string, string> = new Map()): HeadwindDevice | null {
   const info = deviceInfo(record);
   const deviceNumber = pickString(record, ["number", "deviceNumber", "deviceId"]);
   if (!deviceNumber) return null;
@@ -150,7 +150,14 @@ function normalizeDevice(record: RawRecord): HeadwindDevice | null {
     batteryCharging: pickBoolean(info, ["batteryCharging", "charging", "isCharging"]),
     batteryLevel: pickNumber(info, ["batteryLevel", "battery"]),
     configurationId: pickString(record, ["configurationId", "configId"]),
-    configurationName: pickString(record, ["configName", "configurationName", "configuration"]),
+    // 🔴 THE NAME IS NOT ON THE DEVICE RECORD, IT IS IN THE REPLY'S SIBLING MAP. A row in the live list
+    // carries only `configurationId, description, groups, id, lastUpdate, number, statusCode` — so every
+    // tablet read "no rules" on the fleet page while sitting on `Rep tablets`, because the name lives in
+    // `data.configurations[<id>].name`, beside the devices rather than inside them.
+    configurationName:
+      pickString(record, ["configName", "configurationName", "configuration"]) ??
+      configurationNames.get(pickString(record, ["configurationId", "configId"]) ?? "") ??
+      null,
     deviceId: pickString(record, ["id"]) ?? deviceNumber,
     deviceNumber,
     // 🔴 "Enrolled" IS A FACT HERE, NOT A DEFAULT. Headwind's device list holds only devices whose
@@ -208,6 +215,30 @@ export function deviceRecordsFromSearch(payload: unknown): RawRecord[] {
 }
 
 /**
+ * The configuration names the same reply carries beside the devices, by configuration id.
+ *
+ * 🔴 A DEVICE ROW DOES NOT NAME ITS OWN CONFIGURATION. The live list hands back
+ * `configurationId, description, groups, id, lastUpdate, number, statusCode` and nothing else, with the
+ * names in a sibling map — `data.configurations["3"] = {id, name, applications, files}`. Read only the
+ * device, and every tablet on the fleet page shows no rules at all.
+ */
+export function configurationNamesFromSearch(payload: unknown): Map<string, string> {
+  const names = new Map<string, string>();
+  if (!payload || typeof payload !== "object") return names;
+  const map = (payload as RawRecord).configurations;
+  if (!map || typeof map !== "object" || Array.isArray(map)) return names;
+  for (const [key, value] of Object.entries(map as RawRecord)) {
+    if (!value || typeof value !== "object") continue;
+    const name = pickString(value as RawRecord, ["name"]);
+    const id = pickString(value as RawRecord, ["id"]) ?? key;
+    if (!name) continue;
+    names.set(key, name);
+    names.set(id, name);
+  }
+  return names;
+}
+
+/**
  * Every device the company's Headwind server manages, normalized.
  *
  * 🔴 THE PAGE SIZE IS DELIBERATELY LARGER THAN THE FLEET WILL EVER BE. Headwind's search is paged and
@@ -226,8 +257,9 @@ export async function listHeadwindDevices(
     fetchImpl,
     env,
   );
+  const configurationNames = configurationNamesFromSearch(payload);
   return deviceRecordsFromSearch(payload)
-    .map((record) => normalizeDevice(record))
+    .map((record) => normalizeDevice(record, configurationNames))
     .filter((device): device is HeadwindDevice => device !== null);
 }
 

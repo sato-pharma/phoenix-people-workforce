@@ -72,6 +72,7 @@ import {
   HeadwindWipeError,
 } from "../src/lib/devices/headwind/wipe.ts";
 import {
+  configurationNamesFromSearch,
   deviceRecordsFromSearch,
   getHeadwindLocation,
   listHeadwindDevices,
@@ -479,7 +480,7 @@ async function runDeviceTests() {
         {
           body: {
             data: {
-              configurations: { "3": { applications: [] } },
+              configurations: { "3": { applications: [], files: [], id: 3, name: "Rep tablets" } },
               devices: {
                 items: [{ configurationId: 3, id: 11, lastUpdate: 0, number: "PHX-TAB-0002" }],
                 totalItemsCount: 2,
@@ -495,6 +496,17 @@ async function runDeviceTests() {
   );
   assert.equal(nested.length, 1, "the fleet reads the page Headwind nests under `devices`");
   assert.equal(nested[0]?.deviceNumber, "PHX-TAB-0002", "and the tablet keeps its number through the nesting");
+  // 🔴 AND THE RULES IT SITS ON COME FROM THE SIBLING MAP, NOT FROM THE DEVICE ROW. A live row carries
+  // only `configurationId, description, groups, id, lastUpdate, number, statusCode`, so reading the
+  // device alone showed every tablet with no configuration at all — measured against the live server,
+  // where PHX-TAB-0002 sits on `Rep tablets` and read `null`.
+  assert.equal(nested[0]?.configurationName, "Rep tablets", "the configuration's NAME is read from the reply's own map");
+  assert.equal(nested[0]?.configurationId, "3");
+  const names = configurationNamesFromSearch({ configurations: { "3": { applications: [], id: 3, name: "Rep tablets" } } });
+  assert.equal(names.get("3"), "Rep tablets", "by the map's key");
+  assert.equal(names.size, 1, "and the id and the key are the same entry when they agree");
+  assert.equal(configurationNamesFromSearch({ configurations: [] }).size, 0, "an array is not a map of configurations");
+  assert.equal(configurationNamesFromSearch(null).size, 0, "and nothing at all is no names");
 
   // The unwrapper on every shape it has to survive, so neither half of the fix can be dropped alone.
   assert.equal(deviceRecordsFromSearch({ devices: { items: [{ number: "A" }] } }).length, 1, "the live nested page");
@@ -2400,6 +2412,26 @@ function runBootstrapScriptTests() {
     book,
     /`deviceLimit = 3` does NOT cap the fleet/,
     "and that the customer record's limit is not the fleet's limit — measured, so nobody raises it in a panic at tablet four",
+  );
+
+  // 🔴 A PUT THAT REPORTS `OK` AND CHANGES NOTHING is the worst shape a write can have, and this server
+  // has one. `baseUrl` — and an application's absolute URL with it — is recomputed on read from the
+  // install-time protocol, so both writes answered `HTTP 200 status=OK` and both values came back http.
+  // The runbook has to carry that, or the next session reads the OK as done and moves on.
+  assert.match(
+    book,
+    /`baseUrl` is NOT writable/,
+    "the runbook records that the base URL cannot be written through the configuration endpoint",
+  );
+  assert.match(
+    book,
+    /read the value back, never trust the `OK`/,
+    "and says what to do about a write that reports success and changes nothing",
+  );
+  assert.match(
+    book,
+    /`newServerUrl = https:\/\/mdm\.satopharma\.com` on configuration 3/,
+    "and names what was set instead, so nobody re-attempts the write that cannot work",
   );
 }
 
