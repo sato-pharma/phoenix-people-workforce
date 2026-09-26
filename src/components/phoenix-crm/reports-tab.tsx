@@ -397,48 +397,55 @@ function visitLines(report: VisitsReportView, territories: ReadonlyArray<ReportT
   return lines;
 }
 
-/** "2 double · 1 chain · 1 far from the place"; null when none of those happened. */
-function visitKindsText(counts: VisitCounts): string | null {
+/**
+ * "2 double · 1 chain · 1 far from the place"; null when none of those happened.
+ *
+ * 🔴 `canSeeLocations` gates the LAST of the three, and the Reports tab is open to a rep on his own
+ * territory. A tally of his own distances is a count of flags — exactly what Golden Rule #1 keeps off
+ * his screen (owner, 2026-09-26) — while the same figure is the manager's whole point. The same
+ * predicate already decides who may open the place-vs-actual section, so the two can never disagree.
+ */
+function visitKindsText(counts: VisitCounts, canSeeLocations: boolean): string | null {
   const parts = [
     counts.doubleVisits > 0 ? `${countText(counts.doubleVisits)} double` : null,
     counts.chainVisits > 0 ? `${countText(counts.chainVisits)} chain` : null,
-    counts.farVisits > 0 ? `${countText(counts.farVisits)} far from the place` : null,
+    canSeeLocations && counts.farVisits > 0 ? `${countText(counts.farVisits)} far from the place` : null,
   ].filter((part): part is string => part !== null);
   return parts.length > 0 ? parts.join(" · ") : null;
 }
 
 /** The kinds, and the Super Admin's test visits among the figures when they are counted. */
-function visitDetailText(counts: VisitCounts, includeTest: boolean): string | null {
-  const parts = [visitKindsText(counts), includeTest && counts.testVisits > 0 ? `${countText(counts.testVisits)} test` : null].filter(
+function visitDetailText(counts: VisitCounts, includeTest: boolean, canSeeLocations: boolean): string | null {
+  const parts = [visitKindsText(counts, canSeeLocations), includeTest && counts.testVisits > 0 ? `${countText(counts.testVisits)} test` : null].filter(
     (part): part is string => part !== null,
   );
   return parts.length > 0 ? parts.join(" · ") : null;
 }
 
 /** "12 visits · 2 double · 1 far from the place", or "No visits". */
-function visitCountsText(counts: VisitCounts | null, includeTest: boolean): string {
+function visitCountsText(counts: VisitCounts | null, includeTest: boolean, canSeeLocations: boolean): string {
   if (!counts || counts.visits === 0) return "No visits";
-  const detail = visitDetailText(counts, includeTest);
+  const detail = visitDetailText(counts, includeTest, canSeeLocations);
   return detail ? `${plural(counts.visits, "visit", "visits")} · ${detail}` : plural(counts.visits, "visit", "visits");
 }
 
-function visitDayLine(listType: "AM" | "PM", counts: VisitCounts, includeTest: boolean): string {
-  return `${listType}: ${counts.visits === 0 ? "no visits" : visitCountsText(counts, includeTest)}`;
+function visitDayLine(listType: "AM" | "PM", counts: VisitCounts, includeTest: boolean, canSeeLocations: boolean): string {
+  return `${listType}: ${counts.visits === 0 ? "no visits" : visitCountsText(counts, includeTest, canSeeLocations)}`;
 }
 
 /** Every day of the period (a Friday only when someone visited), doctors and accounts on their own lines. */
-function visitDayLines(row: RepVisitRow, period: Period, includeTest: boolean): DayLine[] {
+function visitDayLines(row: RepVisitRow, period: Period, includeTest: boolean, canSeeLocations: boolean): DayLine[] {
   const byDate = new Map(row.days.map((day) => [day.date, day]));
   return daysOf(period).flatMap((date): DayLine[] => {
     const day = byDate.get(date);
     if (!day || (day.am.visits === 0 && day.pm.visits === 0)) {
       return weekdayOfIsoDay(date) === FRIDAY ? [] : [{ date, lines: ["No visits"], muted: true }];
     }
-    return [{ date, lines: [visitDayLine("PM", day.pm, includeTest), visitDayLine("AM", day.am, includeTest)] }];
+    return [{ date, lines: [visitDayLine("PM", day.pm, includeTest, canSeeLocations), visitDayLine("AM", day.am, includeTest, canSeeLocations)] }];
   });
 }
 
-function visitCell(counts: VisitCounts | null, includeTest: boolean) {
+function visitCell(counts: VisitCounts | null, includeTest: boolean, canSeeLocations: boolean) {
   if (!counts || counts.visits === 0) {
     return (
       <td className={crmTdClassName}>
@@ -446,7 +453,7 @@ function visitCell(counts: VisitCounts | null, includeTest: boolean) {
       </td>
     );
   }
-  const detail = visitDetailText(counts, includeTest);
+  const detail = visitDetailText(counts, includeTest, canSeeLocations);
   return (
     <td className={crmTdClassName}>
       <p className="font-black text-slate-950">{plural(counts.visits, "visit", "visits")}</p>
@@ -456,11 +463,14 @@ function visitCell(counts: VisitCounts | null, includeTest: boolean) {
 }
 
 function VisitsSection({
+  canSeeLocations,
   idPrefix,
   resource,
   territories,
   today,
 }: {
+  /** Whether a count of distances is this viewer's to read — a rep's is not (Golden Rule #1). */
+  canSeeLocations: boolean;
   idPrefix: string;
   resource: CrmResource<VisitsReportView>;
   territories: ReadonlyArray<ReportTerritory>;
@@ -475,7 +485,8 @@ function VisitsSection({
   const repDays = repRows.reduce((sum, row) => sum + row.visitDays, 0);
   const oneDay = report.period.from === report.period.to;
   const kindsNote = (counts: VisitCounts, noneVisited: string) =>
-    visitKindsText(counts) ?? (counts.visits === 0 ? noneVisited : "No double, chain or far visit");
+    visitKindsText(counts, canSeeLocations) ??
+    (counts.visits === 0 ? noneVisited : canSeeLocations ? "No double, chain or far visit" : "No double or chain visit");
 
   return (
     <>
@@ -519,8 +530,8 @@ function VisitsSection({
           <CrmCard meta={line.repName} title={line.territoryName}>
             <CrmFacts
               facts={[
-                { label: "PM", value: visitCountsText(line.row?.pm ?? null, report.includeTest) },
-                { label: "AM", value: visitCountsText(line.row?.am ?? null, report.includeTest) },
+                { label: "PM", value: visitCountsText(line.row?.pm ?? null, report.includeTest, canSeeLocations) },
+                { label: "AM", value: visitCountsText(line.row?.am ?? null, report.includeTest, canSeeLocations) },
               ]}
             />
             {oneDay ? null : (
@@ -533,7 +544,7 @@ function VisitsSection({
             )}
             {!oneDay && open && line.row ? (
               <div className="mt-3">
-                <DayList days={visitDayLines(line.row, report.period, report.includeTest)} today={today} />
+                <DayList days={visitDayLines(line.row, report.period, report.includeTest, canSeeLocations)} today={today} />
               </div>
             ) : null}
           </CrmCard>
@@ -545,13 +556,13 @@ function VisitsSection({
               <p className="mt-0.5 text-xs text-slate-500">{line.repName}</p>
             </td>
             {oneDay ? null : <td className={crmTdClassName}>{line.row ? plural(line.row.visitDays, "day", "days") : "—"}</td>}
-            {visitCell(line.row?.pm ?? null, report.includeTest)}
-            {visitCell(line.row?.am ?? null, report.includeTest)}
+            {visitCell(line.row?.pm ?? null, report.includeTest, canSeeLocations)}
+            {visitCell(line.row?.am ?? null, report.includeTest, canSeeLocations)}
             {oneDay ? null : <td className={crmTdClassName}>{line.row ? <DaysToggle onToggle={onToggle} open={open} /> : null}</td>}
           </>
         )}
         renderOpen={
-          oneDay ? undefined : (line) => (line.row ? <DayList days={visitDayLines(line.row, report.period, report.includeTest)} today={today} /> : null)
+          oneDay ? undefined : (line) => (line.row ? <DayList days={visitDayLines(line.row, report.period, report.includeTest, canSeeLocations)} today={today} /> : null)
         }
         searchWords={(line) => [line.territoryName, line.repName]}
         words={{ ...LIST_WORDS, title: "By territory and rep", with: "With visits", without: "No visits" }}
@@ -1138,7 +1149,7 @@ function LocationsSection({
             searchLabel: "Find a visit",
             searchPlaceholder: "Customer, rep, territory or place",
             title: "Farthest first",
-            with: "Flagged",
+            with: "Away from it",
             without: "At the place",
           }}
         />
@@ -1385,7 +1396,7 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
           <CrmEmpty message="Pick a quick choice above, or change the first or last day." title="Choose the days to read" />
         </div>
       ) : activeSection === "visits" ? (
-        <VisitsSection idPrefix={idPrefix} resource={visits} territories={chosen} today={today} />
+        <VisitsSection canSeeLocations={view.canSeeLocations} idPrefix={idPrefix} resource={visits} territories={chosen} today={today} />
       ) : activeSection === "plan" ? (
         <PlanSection idPrefix={idPrefix} resource={plan} territories={chosen} today={today} />
       ) : activeSection === "coverage" ? (

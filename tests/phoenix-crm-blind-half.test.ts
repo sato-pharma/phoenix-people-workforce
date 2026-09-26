@@ -56,12 +56,13 @@ const REP_FACING_PURE_EXCLUDED = new Set(["location-integrity.ts"]);
  * Text, not raw source: `deviceMocked` is a payload key the phone must forward or the evidence never
  * reaches the server, and forwarding is fine. Putting it into words is not.
  *
- * `flagged` is deliberately NOT here yet — the visit screen still says "AM flagged" today, and it
- * leaves in the same step that softens the distance line into the owner's polite sign. Add it there,
- * with the change, so this test is never red on `main`.
+ * `flagged` joined on 2026-09-26, with the owner's polite sign. The two "AM flagged / PM flagged"
+ * tiles and the sentence "the visit is saved with this flag" left the rep's app that day: a COUNT of
+ * flags is the scoreboard he must never be shown of himself, and the word is how it creeps back.
  */
 const SILENT_WORDS: ReadonlyArray<RegExp> = [
   /\bintegrity\b/i,
+  /\bflagg?ed\b/i,
   /\bmock\b/i,
   /fake\s*gps/i,
   /\bspoof/i,
@@ -69,6 +70,23 @@ const SILENT_WORDS: ReadonlyArray<RegExp> = [
   /\bcheat/i,
   /app that changes the location/i,
 ];
+
+/**
+ * The two tabs inside the shared component tree that a rep is NEVER served.
+ *
+ * `overview.ts` decides `tabs.team` and `tabs.settings` server-side — team needs manager seats or a
+ * company basis, settings is the Super Admin's — and `phoenix-crm-app.tsx` renders only the tabs the
+ * server allowed. They are excluded from the WORD check alone, because a manager's own queue may say
+ * "nothing flagged" and the Super Admin's settings screen has to explain what the threshold does.
+ *
+ * Everything else still applies to them: neither may import a silent module or name a silent table.
+ * Keep this list at two. A third entry is a sign that a rep-facing screen is being argued into an
+ * exception, which is exactly how the rule dies.
+ */
+const NEVER_SERVED_TO_A_REP = new Set([
+  "src/components/phoenix-crm/team-tab.tsx",
+  "src/components/phoenix-crm/settings-tab.tsx",
+]);
 
 /** Columns that exist only to be judged. A rep-facing type naming one is the defect. */
 const SILENT_COLUMNS: ReadonlyArray<string> = [];
@@ -157,10 +175,16 @@ export function runPhoenixCrmBlindHalfTests(): void {
   }
   repFacing.push(...purePhoenixCrmFiles());
 
+  // The exclusion list must name real files, or a rename turns it into a silent hole.
+  for (const path of NEVER_SERVED_TO_A_REP) {
+    assert.ok(repFacing.includes(path), `${path} is excluded from the word check but is not in the sweep — the exclusion has gone stale`);
+  }
+
   const problems: string[] = [];
 
   // ── 1 · No silent word reaches a rep, in a string OR in the markup ──────────────────────────────
   for (const path of repFacing) {
+    if (NEVER_SERVED_TO_A_REP.has(path)) continue;
     const source = read(path);
     for (const text of [...literalsOf(source), ...jsxTextOf(source)]) {
       for (const word of SILENT_WORDS) {

@@ -128,16 +128,27 @@ const NOT_RECEIVING = "Does not receive this day";
 /** Customers the Add Visit picker shows at a time. */
 const PICKER_PAGE = 25;
 
+/**
+ * The pill on the rep's own visit — the owner's polite sign, 2026-09-26.
+ *
+ * Neutral, never amber. An alarm colour on a rep's own day is a count of offences he cannot act on,
+ * and the usual cause of a distance is a place saved from the wrong doorway, not a rep in the wrong
+ * clinic. The sentence beside it (`visit.locationLabel`) carries the metres.
+ */
 const LOCATION_PILL: Record<VisitLocationFlag, { label: string; tone: PillTone }> = {
   ok: { label: "At the place", tone: "good" },
-  far: { label: "Far from the place", tone: "warn" },
-  weak_gps: { label: "Weak location", tone: "warn" },
+  far: { label: "Take care", tone: "neutral" },
+  weak_gps: { label: "Location was rough", tone: "neutral" },
   no_place: { label: "No place to compare", tone: "neutral" },
 };
 
-function isFlagged(flag: VisitLocationFlag): boolean {
-  return flag === "far" || flag === "weak_gps";
-}
+/*
+ * There is no `isFlagged` here any more, and no count of one anywhere on the rep's screen (2026-09-26).
+ * The two "AM flagged / PM flagged" tiles are gone, the saved note no longer reads "the visit is
+ * saved with this flag", and the word itself does not appear in the app — pinned by
+ * tests/phoenix-crm-blind-half.test.ts. The evidence is UNCHANGED and still reaches the Super Admin
+ * and the SFE Manager in full. What left is the scoreboard he was being shown of himself.
+ */
 
 // ── A day's visits ──────────────────────────────────────────────────────────────────────────────
 
@@ -159,14 +170,12 @@ function dayFigures(visits: ReadonlyArray<VisitRow>) {
     visits.filter((visit) => visit.listType === listType && match(visit)).length;
   const any = () => true;
   const paired = (visit: VisitRow) => visit.kind !== "single";
-  const flagged = (visit: VisitRow) => isFlagged(visit.locationFlag);
+
   return {
     pm: count("PM", any),
     am: count("AM", any),
     pairedPm: count("PM", paired),
     pairedAm: count("AM", paired),
-    flaggedPm: count("PM", flagged),
-    flaggedAm: count("AM", flagged),
   };
 }
 
@@ -309,7 +318,7 @@ function VisitDetails({ visit }: { visit: VisitRow }) {
 function VisitCard({ visit }: { visit: VisitRow }) {
   return (
     <CrmCard
-      accent={isFlagged(visit.locationFlag) ? "border-l-amber-500" : "border-l-orange-500"}
+      accent="border-l-orange-500"
       meta={`${cairoClock(visit.capturedAt)} · ${listText(visit.listType)} · ${visit.kindLabel}`}
       status={<LocationPills visit={visit} />}
       title={visit.customerName}
@@ -435,9 +444,11 @@ function SavedNote({ onValidate, saved }: { onValidate: (() => void) | null; sav
       This visit was already saved, at {cairoClock(visit.capturedAt)}.
     </CrmNote>
   ) : (
-    <CrmNote title={`Visit saved: ${customerName}`} tone={isFlagged(visit.locationFlag) ? "warn" : "good"}>
+    <CrmNote title={`Visit saved: ${customerName}`} tone="good">
       {cairoClock(visit.capturedAt)} · {visit.locationLabel}
-      {isFlagged(visit.locationFlag) ? ". The visit is saved with this flag." : ""}
+      {/* The tone stays "good" whatever the distance says: the visit IS saved, and it counts. The
+          sentence above carries the owner's polite sign; "the visit is saved with this flag" left
+          on 2026-09-26 — it told a rep he had been marked, which is the one thing he is never told. */}
       {/* The server's own verdict, not what he chose on the first step — so a rep who picked Planned
           for a doctor his plan no longer holds finds out here rather than a month later. */}
       {visit.unplannedNote ? <span className="mt-1 block">{visit.unplannedNote}</span> : null}
@@ -603,18 +614,6 @@ export function VisitsTab({
             <CrmStatGrid>
               <CrmStat label="AM visited" note={plural(figures.pairedAm, "double or chain visit", "double or chain visits")} value={figures.am} />
               <CrmStat label="PM visited" note={plural(figures.pairedPm, "double or chain visit", "double or chain visits")} value={figures.pm} />
-              <CrmStat
-                label="AM flagged"
-                note="Far from the place or weak location"
-                tone={figures.flaggedAm > 0 ? "warn" : "neutral"}
-                value={figures.flaggedAm}
-              />
-              <CrmStat
-                label="PM flagged"
-                note="Far from the place or weak location"
-                tone={figures.flaggedPm > 0 ? "warn" : "neutral"}
-                value={figures.flaggedPm}
-              />
             </CrmStatGrid>
           </CrmBlock>
           {visits.length === 0 ? (

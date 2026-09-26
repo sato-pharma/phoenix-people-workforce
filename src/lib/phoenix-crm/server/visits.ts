@@ -69,11 +69,25 @@ const KIND_LABEL: Record<PhoenixCrmVisitKind, string> = {
   chain: "Chain visit",
 };
 
+/**
+ * What the REP reads on his own visit — the owner's polite sign, 2026-09-26.
+ *
+ * His words: "a polite small sign telling him take care, take care, you are away from the saved
+ * location by, for example, five hundred meters". Care, with the distance in it, and nothing that
+ * reads as a count or a verdict. "Far from", "flag" and "signal" are gone: the old wording told a
+ * rep standing in the right clinic that he had done something wrong, when the usual cause is a place
+ * saved from the wrong doorway months ago.
+ *
+ * A weak reading is about the PHONE, not about him, and is worded as such.
+ *
+ * The manager's place-vs-actual report is untouched and still says everything, in metres — this is
+ * the rep's own screen only.
+ */
 export function visitLocationLabel(flag: VisitLocationFlag, distanceMeters: number | null, accuracyMeters: number | null): string {
-  if (flag === "far") return `Far from the validated place (${formatDistance(distanceMeters)})`;
-  if (flag === "weak_gps") return `Weak location signal (accuracy ${formatDistance(accuracyMeters)})`;
-  if (flag === "no_place") return "No place saved yet to compare with";
-  return distanceMeters === null ? "At the validated place" : `At the validated place (${formatDistance(distanceMeters)})`;
+  if (flag === "far") return `Take care — about ${formatDistance(distanceMeters)} from this customer's saved place`;
+  if (flag === "weak_gps") return `The phone was not sure where it was (within ${formatDistance(accuracyMeters)})`;
+  if (flag === "no_place") return "No place saved for this customer yet";
+  return distanceMeters === null ? "At the saved place" : `At the saved place (${formatDistance(distanceMeters)})`;
 }
 
 // ── A territory's visits ────────────────────────────────────────────────────────────────────────
