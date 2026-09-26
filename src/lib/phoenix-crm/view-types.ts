@@ -67,5 +67,6 @@ export type {
   VisitLocationRow,
   VisitsReportView,
 } from "@/lib/phoenix-crm/server/reports";
+export type { ExceptionsView } from "@/lib/phoenix-crm/server/exceptions";
 export type { PhotoSlot } from "@/lib/phoenix-crm/server/photos";
 export type { PhoenixCrmSettingsView, SettingsLine, SettingsRamadan } from "@/lib/phoenix-crm/server/admin-settings";
