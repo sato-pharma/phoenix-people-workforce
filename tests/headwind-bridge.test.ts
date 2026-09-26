@@ -2272,10 +2272,14 @@ function runBootstrapScriptTests() {
     /THE PASSWORD GOES ON THE WIRE AS \*\*UPPER-CASE\*\* MD5/,
     "and records that the hash is upper-case, read from the console the live server serves",
   );
+  // 🔴 THIS PIN GUARDED A FALSE FACT UNTIL 2026-09-26. It required the runbook to say `errorCode=2`
+  // means "no such login". It does not: on the jwt.login path a wrong password and a login that does
+  // not exist both answer `2`. Reading it the other way told the owner an account that demonstrably
+  // existed — `update.user` had logged it with `id: 2` and role `Admin` — had never been created.
   assert.match(
     book,
-    /\*\*no such login\*\* — `userId=null`/,
-    "and the errorCode table, so a `2` is never mistaken for a password problem again",
+    /DOES NOT MEAN "NO SUCH LOGIN"/,
+    "the runbook refuses the reading that a 2 proves the account is missing, because that cost an hour",
   );
 }
 

@@ -420,15 +420,29 @@ wrong" against a password that is right. `headwindPasswordHash` upper-cases, and
 every sign-in, with an `errorCode` whose meanings were measured here on 2026-09-26 (a deliberately
 nonexistent login for `2`, the owner's own mistyped admin password for `1`):
 
-| `errorCode` | what it means | what to do |
+| action | `errorCode` | what it means |
 | --- | --- | --- |
-| `0` | signed in, `userId` set | nothing — it works |
-| `1` | the account exists, the hash did not match | the password, **or** the hash FORM (upper-case, above) |
-| `2` | **no such login** — `userId=null` | create the account; the password is irrelevant until then |
+| `jwt.login` (Phoenix) | `0` | signed in |
+| `jwt.login` (Phoenix) | `2` | **the sign-in was refused — and that is ALL it tells you** |
+| `user.login` (console) | `0` / `1` | signed in / refused |
+| `update.user` (console) | `0` | the edit was saved |
 
-**A `2` is not a password problem, and every minute spent re-typing a password against one is wasted.**
-Phoenix's own page cannot tell them apart — both arrive as an HTML 401 — so the log is where the answer
-is. The hostname to read is `phoenix-headwind`, not the Phoenix app.
+🔴 **`2` DOES NOT MEAN "NO SUCH LOGIN", AND READING IT THAT WAY COST AN HOUR ON 2026-09-26.** A
+session probed six spellings of the login, got `2` for every one, and told the owner the account had
+never been created — while the audit log's own `update.user` line showed it created 90 seconds earlier
+with `login: "phoenix"`, `id: 2`, role `Admin`. On the `jwt.login` path a wrong password and a login
+that does not exist both answer `2`; only the console's `user.login` separates them. **Never conclude
+an account is missing from a `2`.**
+
+**What the log DOES answer, and nothing else does:** the `update.user` line carries the whole user
+record as JSON — `login`, `id`, `userRole`, `allDevicesAvailable`, `allConfigAvailable`,
+`passwordReset`, `twoFactor`, `lastLoginFail`. Read that, not the error code, to know what the account
+actually is. The service to read is `phoenix-headwind`, never the Phoenix app.
+
+🔴 **AND A PASSWORD CHANGED IN THE CONSOLE DOES NOT REACH RAILWAY.** The console's edit screen sends
+`newPassword` on every save, so saving the user for any reason — a role tweak, clearing
+`passwordReset` — can replace the password Phoenix is still sending. That is what a fresh `2` after a
+working `0` means: the two sides have drifted, not that anything is broken.
 
 🔴 **AND IF THE SIGN-IN IS REFUSED, THE REPLY IS AN HTML PAGE, NOT JSON — WHICH IS NOT EVIDENCE OF
 CLOUDFLARE.** Measured 2026-09-26 against this very server: `POST /rest/public/jwt/login` with a login
