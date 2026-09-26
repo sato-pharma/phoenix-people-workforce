@@ -1399,8 +1399,20 @@ html:has(.admin-shell):not(:has(.employee-portal-shell)) {
    over truncation, AGENTS.md §4). Numbers carry no break points, so money and
    percentages are untouched. Unlayered so it beats Tailwind's `.whitespace-nowrap`
    in `@layer utilities` without an !important, exactly like the min-width rule
-   further down. */
-[data-portal-desktop-table] :where(td, th) {
+   further down.
+
+   `[data-wide-report]` OPTS OUT, and exactly one table takes it: the CRM Master
+   grid on /admin/crm (src/components/crm/crm-master-table.tsx). That one is not a
+   fitted table at all — it is a 44-column raw mirror of the vendor feed with its
+   own synced top and bottom scrollbars, and the owner ruled on 2026-09-26 that its
+   sideways scroll is ACCEPTED because the report is genuinely that wide. Wrapping
+   it did not make it fit: it made every header 227px of vertical text and every
+   row 525px tall, because an auto-layout table holding 44 columns inside `w-full`
+   has nowhere to put the text but downwards. Every other table carrying
+   `data-portal-desktop-table` is `table-fixed` with a <colgroup>, where wrapping IS
+   the fit — so a new wide, scrolling report takes this attribute rather than
+   deleting the rule. Pinned by tests/crm-master-wide-report-nowrap.test.ts. */
+[data-portal-desktop-table]:not([data-wide-report]) :where(td, th) {
   white-space: normal;
   overflow-wrap: anywhere;
 }

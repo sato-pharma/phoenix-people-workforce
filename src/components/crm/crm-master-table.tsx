@@ -1223,8 +1223,21 @@ export function CrmMasterTable({
             >
               {/* `hidden md:block` on the wrapper is the gate that works in BOTH shells; the
                   data attribute adds the portal shell's own max-width:767px display:none on top
-                  (enterprise-shell.tsx) and marks the tag itself as desktop-only. */}
-              <table className="w-full border-collapse text-left text-xs" data-portal-desktop-table ref={tableRef}>
+                  (enterprise-shell.tsx) and marks the tag itself as desktop-only.
+
+                  `data-wide-report` is the OPT-OUT from the global portal-table wrap rule in
+                  app/globals.css. Every other table wearing `data-portal-desktop-table` is
+                  `table-fixed` and wraps to fit; this one is the raw 44-column mirror whose
+                  sideways scroll the owner accepted on 2026-09-26 (that is what the synced top
+                  scrollbar above is for). Without the opt-out the rule beat every
+                  `whitespace-nowrap` below and the report rendered with 227px-tall headers of
+                  vertical text over 525px-tall rows. */}
+              <table
+                className="w-full border-collapse text-left text-xs"
+                data-portal-desktop-table
+                data-wide-report
+                ref={tableRef}
+              >
                 <thead className="sticky top-0 z-10">
                   <tr className="border-b border-slate-200 bg-slate-100 text-slate-500">
                     {data.columns.map((col) => (
