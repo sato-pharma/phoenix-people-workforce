@@ -1,0 +1,138 @@
+"use client";
+
+// Edit the details of an interview already on the calendar — the owner, 2026-09-26: "I want to be
+// able to edit or add or remove information … I forgot to add a WhatsApp number … now I can't add
+// it", and "choose the interviewer for historical interviews".
+//
+// It changes only WHO, never WHEN or WHERE: the interviewer, and — for someone from outside Phoenix
+// kept on the calendar — their name, phone and e-mail. It touches no date, time, platform or Zoom
+// meeting, so it works on a PAST interview the Move pop-up would refuse (that one only offers days
+// still to come). Moving an interview stays the job of Move.
+
+import { Loader2, Save } from "lucide-react";
+import { useState } from "react";
+
+import { Action } from "@/components/recruitment/workstation/workstation-look";
+import type { InterviewBooking } from "@/lib/recruitment/interview-calendar-types";
+
+import { type CalendarApi, reasonText } from "./calendar-api";
+import { CalendarDialog, ErrorLine } from "./calendar-dialog";
+import { InterviewerPicker, type ChosenInterviewer } from "./interviewer-picker";
+
+const inputClass = "mt-1 block w-full border border-slate-200 px-2 py-1.5 text-[13px] text-slate-800 focus:border-orange-500 focus:outline-none";
+
+export function EditInterviewDetailsDialog({
+  api,
+  booking,
+  onClose,
+  onSaved,
+}: {
+  api: CalendarApi;
+  booking: InterviewBooking;
+  onClose: () => void;
+  onSaved: (booking: InterviewBooking) => void;
+}) {
+  // Someone from outside Phoenix kept on the calendar: their contact details live on the booking, so
+  // they are editable here. A Recruitment candidate's live on their candidate record instead.
+  const isExternal = !booking.candidateId;
+  const [interviewer, setInterviewer] = useState<ChosenInterviewer | null>(
+    booking.interviewerHrId ? { hrId: booking.interviewerHrId, name: booking.interviewerName ?? booking.interviewerHrId } : null,
+  );
+  const [name, setName] = useState(isExternal ? booking.candidateName : "");
+  const [phone, setPhone] = useState(booking.externalPhone ?? "");
+  const [email, setEmail] = useState(booking.externalEmail ?? "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const problem = isExternal && name.trim().length < 2 ? "Write the person's name." : null;
+
+  async function save() {
+    if (problem) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const body: Record<string, unknown> = { interviewerHrId: interviewer?.hrId ?? null };
+      if (isExternal) body.external = { email: email.trim(), name: name.trim(), phone: phone.trim() };
+      const data = await api.patch(`/bookings/${encodeURIComponent(booking.id)}`, body);
+      onSaved(data.booking as InterviewBooking);
+      onClose();
+    } catch (reason) {
+      setError(reasonText(reason, "The details could not be saved."));
+      setBusy(false);
+    }
+  }
+
+  return (
+    <CalendarDialog
+      eyebrow="Edit details"
+      footer={
+        <>
+          <p className="min-w-0 text-[12px] text-slate-600">
+            {error ? <span className="font-semibold text-red-700">{error}</span> : problem ? problem : "Only who is interviewed and who conducts it — not the time or place."}
+          </p>
+          <div className="flex shrink-0 justify-end gap-2">
+            <Action onClick={onClose} size="md" tone="quiet">
+              Cancel
+            </Action>
+            <Action disabled={busy || problem !== null} onClick={() => void save()} size="md" tone="primary">
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              Save
+            </Action>
+          </div>
+        </>
+      }
+      onClose={onClose}
+      sub={booking.candidateName}
+      title="Edit details"
+      width="sm"
+      z={240}
+    >
+      <div className="flex flex-col gap-4">
+        {isExternal ? (
+          <div className="flex flex-col gap-2.5">
+            <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">Person from outside</p>
+            <label className="block">
+              <span className="text-[12px] font-bold text-slate-700">Name</span>
+              <input autoComplete="off" className={inputClass} maxLength={200} onChange={(event) => setName(event.target.value)} value={name} />
+            </label>
+            <div className="grid gap-2.5 sm:grid-cols-2">
+              <label className="block">
+                <span className="text-[12px] font-bold text-slate-700">Phone / WhatsApp (optional)</span>
+                <input
+                  autoComplete="off"
+                  className={inputClass}
+                  dir="ltr"
+                  inputMode="tel"
+                  maxLength={40}
+                  onChange={(event) => setPhone(event.target.value)}
+                  placeholder="01xxxxxxxxx"
+                  value={phone}
+                />
+              </label>
+              <label className="block">
+                <span className="text-[12px] font-bold text-slate-700">E-mail (optional)</span>
+                <input
+                  autoComplete="off"
+                  className={inputClass}
+                  inputMode="email"
+                  maxLength={200}
+                  onChange={(event) => setEmail(event.target.value)}
+                  value={email}
+                />
+              </label>
+            </div>
+          </div>
+        ) : (
+          <p className="border-l-[3px] border-l-slate-300 bg-slate-50 px-3 py-2 text-[12px] text-slate-600">
+            This person is a Recruitment candidate — their name, phone and e-mail are changed on their candidate record.
+          </p>
+        )}
+
+        <div>
+          <p className="mb-1 text-[12px] font-bold text-slate-700">Interviewer (optional)</p>
+          <InterviewerPicker api={api} onChange={setInterviewer} value={interviewer} />
+        </div>
+      </div>
+    </CalendarDialog>
+  );
+}

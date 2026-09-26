@@ -33,6 +33,7 @@ import {
   LogIn,
   Mail,
   MessageSquarePlus,
+  Pencil,
   Phone,
   Plus,
   RefreshCw,
@@ -93,6 +94,7 @@ import { cn } from "@/lib/utils";
 import { calendarApi, reasonText, type CalendarApi } from "./calendar-api";
 import { CalendarDialog, ErrorLine } from "./calendar-dialog";
 import { CellDialog } from "./cell-dialog";
+import { EditInterviewDetailsDialog } from "./edit-details-dialog";
 import { MonthPicker, cursorFor, type MonthCursor } from "./month-picker";
 import { InterviewShareDialog } from "./interview-share-dialog";
 import { RequestInterviewDialog } from "./request-interview-dialog";
@@ -1155,6 +1157,7 @@ function InterviewPanel({
   zoomConnected: boolean;
 }) {
   const [moving, setMoving] = useState(false);
+  const [editing, setEditing] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [busy, setBusy] = useState<"cancel" | "zoom" | "note" | "outcome" | null>(null);
   const [outcomeNote, setOutcomeNote] = useState<string | null>(null);
@@ -1407,6 +1410,10 @@ function InterviewPanel({
           </div>
         ) : (
           <div className="flex flex-wrap gap-2">
+            <Action onClick={() => setEditing(true)} tone="quiet">
+              <Pencil className="h-3.5 w-3.5" />
+              Edit details
+            </Action>
             <Action onClick={() => setMoving(true)} tone="quiet">
               <CalendarDays className="h-3.5 w-3.5" />
               Move
@@ -1472,6 +1479,15 @@ function InterviewPanel({
           </div>
         ) : null}
       </section>
+
+      {editing ? (
+        <EditInterviewDetailsDialog
+          api={api}
+          booking={booking}
+          onClose={() => setEditing(false)}
+          onSaved={onChanged}
+        />
+      ) : null}
 
       {moving ? (
         <ScheduleInterviewDialog

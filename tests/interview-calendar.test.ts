@@ -1031,4 +1031,25 @@ function runWiringTests() {
   const cellDialog = stripComments(read("src/components/recruitment/interview-calendar/cell-dialog.tsx"));
   assert.match(cellDialog, /<InterviewerPicker\b/, "the cell booking offers an interviewer picker");
   assert.match(cellDialog, /interviewerHrId:\s*interviewer\?\.hrId\s*\?\?\s*null/, "and it sends the chosen interviewer with the booking, external candidate included");
+
+  // Editing an interview already on the calendar (owner, 2026-09-26): change the interviewer — on a
+  // PAST interview too — and add/fix the outside person's name, phone and e-mail (the forgotten
+  // WhatsApp number). It is a details-only edit: the domain touches no time, place or Zoom meeting,
+  // so it needs no bookable window and the Move pop-up's future-only day grid does not stand in the
+  // way. An external person's contact lives on the booking; a Recruitment candidate's does not, so
+  // the edit is refused there.
+  const domainSrc = stripComments(read("src/lib/recruitment/interview-calendar.ts"));
+  const updateFn = domainSrc.slice(domainSrc.indexOf("export async function updateInterviewBooking"));
+  assert.match(updateFn.slice(0, updateFn.indexOf("{", updateFn.indexOf("zoomConfig"))), /external\?:\s*unknown/, "updateInterviewBooking accepts an external contact patch");
+  assert.match(updateFn, /const detailsOnly =/, "a details-only edit path exists so a past interview can be edited");
+  assert.match(updateFn, /resolveExternalContactPatch\(row, patch\.external\)/, "external contact is resolved on update");
+  assert.match(domainSrc, /function resolveExternalContactPatch[\s\S]*?row\.candidate_id[\s\S]*?candidate record/, "a Recruitment candidate's contact is not edited on the booking");
+  const patchRoute = stripComments(read("app/api/recruitment/interview-calendar/bookings/[id]/route.ts"));
+  assert.match(patchRoute, /external:\s*body\.external/, "the PATCH route forwards the external contact patch");
+  const editDialog = stripComments(read("src/components/recruitment/interview-calendar/edit-details-dialog.tsx"));
+  assert.match(editDialog, /<InterviewerPicker\b/, "the edit dialog offers the interviewer picker");
+  assert.match(editDialog, /interviewerHrId:\s*interviewer\?\.hrId\s*\?\?\s*null/, "the edit dialog sends the chosen (or cleared) interviewer");
+  assert.match(editDialog, /body\.external = \{/, "the edit dialog sends the outside person's name, phone and e-mail");
+  const viewSrc = stripComments(read("src/components/recruitment/interview-calendar/interview-calendar-view.tsx"));
+  assert.match(viewSrc, /<EditInterviewDetailsDialog\b/, "the interview panel opens the edit dialog");
 }
