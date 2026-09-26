@@ -1559,6 +1559,8 @@ import { runPhoenixCrmSamplesTests } from "./phoenix-crm-samples.test.ts";
 import { runPhoenixCrmVisitDwellTests } from "./phoenix-crm-visit-dwell.test.ts";
 import { runPhoenixCrmExceptionsTests } from "./phoenix-crm-exceptions.test.ts";
 import { runPhoenixCrmDailyDigestTests } from "./phoenix-crm-daily-digest.test.ts";
+import { runPhoenixCrmMobileManagerTests } from "./phoenix-crm-mobile-manager.test.ts";
+import { runPhoenixCrmMobileMirrorsTests } from "./phoenix-crm-mobile-mirrors.test.ts";
 import { runPhoenixCrmLocationIntegrityTests } from "./phoenix-crm-location-integrity.test.ts";
 import { runPhoenixCrmPortalSidebarTests } from "./phoenix-crm-portal-sidebar.test.ts";
 import { runPhoenixCrmAmPmWordTests } from "./phoenix-crm-am-pm-words.test.ts";
@@ -5212,6 +5214,16 @@ await runTest(
 await runTest(
   "Phoenix CRM shows a manager only what needs him (B2 — owner, 2026-09-26: a territory with NOTHING WRONG IS ABSENT, so there is no green row and an empty board is the good outcome; ONE kind per territory, worst first, so a vacant seat is not also blamed for having no plan; \"never started\" is nothing touched at all, never a rep who is merely behind; an undated line keeps the 30-day grace forever rather than accusing anyone on a date nobody set; AM and PM are judged APART and never averaged; the day kind speaks only about a day that has ENDED, never today; and the whole board is four reads, through the countable view, touching no integrity evidence)",
   runPhoenixCrmExceptionsTests,
+);
+
+await runTest(
+  "Phoenix CRM lets a manager decide from the car (B3 — owner's plan, Phase 3: the phone carries Team and \"Needs you\" and NOT the rest of Reports, because a phone is where he decides and the browser is where he studies; every sub-tab is built from the server's own `overview.tabs` and never from `viewer.isManager`, which an acting DM and the SFE Manager both disprove; the board rides on `tabs.team` and never on `tabs.reports`, which is true for a MEDICAL REP; the three decisions post through the existing routes with the version they were read at, and a Return or a Refuse cannot be sent without the note the rep reads; and nothing on the board acts)",
+  runPhoenixCrmMobileManagerTests,
+);
+
+await runTest(
+  "Phoenix CRM's phone mirrors are compared with their originals, not trusted (B3: `mobile/` is its own TypeScript project and cannot import the web module, so the size limits and the shape of the overview are transcribed BY HAND and nothing checked them — a drifted cap lets the rep type 200 characters the server then cuts to 120 with no error anywhere, and a tab added to PhoenixCrmTabs but not to the phone's mirror reads as `undefined`, which is falsy, so the sub-tab silently never appears; every constant is resolved by NAME across the four web files that legitimately hold one, and the two `tabs` literals must carry identical keys)",
+  runPhoenixCrmMobileMirrorsTests,
 );
 
 await runTest(
