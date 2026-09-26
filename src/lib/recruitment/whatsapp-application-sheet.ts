@@ -59,6 +59,15 @@ export type ApplicationSheet = {
   form: ApplicationForm;
   /** Every question they answered, in the order the bot asked it. */
   entries: ApplicationSheetEntry[];
+  /**
+   * Did this person apply over WhatsApp at all? True for a real conversation (the WhatsApp Applicants
+   * download and the calendar's). False when the sheet is built for a candidate who never used WhatsApp
+   * — the screening page's "Download application" reaches every CV now (owner, 2026-09-26) — and then
+   * the "WhatsApp questions and answers" section and its outcome line are left off, and the sheet is a
+   * plain Job application form filled from the record. Defaults true, so every existing caller is
+   * unchanged.
+   */
+  hasWhatsApp: boolean;
   /** Whether they reached the end, and if not, where they stopped. One sentence. */
   outcome: string;
   finished: boolean;
@@ -92,8 +101,11 @@ export function buildApplicationSheet(input: {
   candidate: ApplicationCandidate | null;
   cvLine: string;
   now: Date;
+  /** False for a candidate who never applied on WhatsApp; the Q&A section is then left off. Defaults true. */
+  hasWhatsApp?: boolean;
 }): ApplicationSheet {
   const { candidate, contact, cvLine, now, row, titleLabel } = input;
+  const hasWhatsApp = input.hasWhatsApp ?? true;
   const jobTitle = clean(row.typedTitle) ?? titleLabel;
 
   const entries: ApplicationSheetEntry[] = [
@@ -129,6 +141,7 @@ export function buildApplicationSheet(input: {
     entries,
     finished: row.finished,
     form: buildApplicationForm({ candidate, contact, jobTitle, row }),
+    hasWhatsApp,
     jobTitle,
     name: row.name,
     outcome,
@@ -328,14 +341,18 @@ export function buildApplicationSheetHtml(sheet: ApplicationSheet, markDataUri: 
     )
     .join("");
 
+  // The document names itself for what it is: a WhatsApp application when there was a conversation, else a
+  // plain Job application built from the record. Everything above this line is identical either way.
+  const docLabel = sheet.hasWhatsApp ? "WhatsApp application" : "Job application";
+
   return `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>${escapeHtml(`${sheet.name} — WhatsApp application`)}</title>
+<html lang="en"><head><meta charset="utf-8"><title>${escapeHtml(`${sheet.name} — ${docLabel}`)}</title>
 <style>${SHEET_CSS}</style></head>
 <body>
 <div class="sheet">
   <header class="lh">
     <div class="lh__mark">${markDataUri ? `<img src="${markDataUri}" alt="">` : ""}</div>
-    <div class="lh__id"><strong>Sato Pharma</strong><span dir="ltr">Recruitment · WhatsApp application</span></div>
+    <div class="lh__id"><strong>Sato Pharma</strong><span dir="ltr">Recruitment · ${escapeHtml(docLabel)}</span></div>
   </header>
   <div class="lh__rule"></div>
   <div class="sheet__body">
@@ -357,9 +374,13 @@ export function buildApplicationSheetHtml(sheet: ApplicationSheet, markDataUri: 
     ${references}
     <h2>${escapeHtml(form.heardAbout.label)}</h2>
     <div class="grid">${fieldHtml(form.heardAbout, { bare: true, wide: true })}</div>
-    <h2>WhatsApp questions and answers</h2>
+    ${
+      sheet.hasWhatsApp
+        ? `<h2>WhatsApp questions and answers</h2>
     <table class="qa"><tbody>${rows}</tbody></table>
-    <p class="outcome${sheet.finished ? "" : " outcome--open"}" dir="auto">${escapeHtml(sheet.outcome)}</p>
+    <p class="outcome${sheet.finished ? "" : " outcome--open"}" dir="auto">${escapeHtml(sheet.outcome)}</p>`
+        : ""
+    }
   </div>
   <footer class="sheet__foot">
     <span dir="auto">${escapeHtml(sheet.cvLine)}</span>
