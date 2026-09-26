@@ -59,6 +59,7 @@ import {
   readInterviewOutcome,
   resolveCalendarRole,
   roleMeets,
+  seesWholeInterviewCalendar,
   sessionSlotStarts,
   type DueZoomInterview,
   type InterviewBooking,
@@ -200,6 +201,10 @@ export async function resolveInterviewCalendarRole(access: AccessContext): Promi
   if (!access.hrId) return null;
   const shared = resolveCalendarRole({ isOwner, shareLevel: shareLevelFor(await loadShareRows(), access.hrId) });
   if (shared) return shared;
+  // The CEO reads the WHOLE calendar (owner, 2026-09-26) — as a Viewer, above the own-only tier, so
+  // mayReadBooking serves him every interview, not only the ones he was chosen for. A share he holds
+  // (checked just above) still wins if it is higher; his seat still lets him request an interview.
+  if (seesWholeInterviewCalendar(access)) return "viewer";
   if (await isChosenInterviewer(access)) return "interviewer";
   // A District Manager or above, or HR, holds the calendar as a requester by their seat — so it shows
   // in their sidebar and they can ask for an interview even before any booking names them.
