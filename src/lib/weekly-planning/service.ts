@@ -120,6 +120,7 @@ import {
   isClosedEmployeePlanStatus,
   isDistrictManagerPlanSubmitter,
   isDistrictManagerPlanTitle,
+  isPastPlanWeek,
   isWeeklyMonthlyPlanEligibleTitle,
   planPeriodMove,
   planRequiredSlotsByDate,
@@ -132,6 +133,7 @@ import {
   type PlanSlot,
   type PlanWorkweek,
 } from "@/lib/weekly-planning/plan-v1";
+import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 
 export type PlanHeaderRow = {
   ceo_decision_at: string | null;
@@ -150,6 +152,7 @@ export type PlanHeaderRow = {
   manager_decision_comment: string | null;
   manager_hr_id: string | null;
   manager_name: string | null;
+  off_window_flagged: boolean | null;
   parent_plan_id: string | null;
   period_end_date: string;
   period_key: string;
@@ -371,6 +374,9 @@ export type EmployeePlan = {
   // getEmployeePlansWorkspace); other mapPlan() callers leave this undefined and
   // consumers should fall back to managerName.
   managerDisplayName?: string | null;
+  // True when this weekly plan was filed for a week that had already begun or elapsed at creation
+  // (the wrong-week guard, owner 2026-09-26). A review marker only — never blocks anything.
+  offWindowFlagged: boolean;
   periodEndDate: string;
   periodKey: string;
   periodStartDate: string;
@@ -572,6 +578,7 @@ function mapPlan(row: PlanHeaderRow): EmployeePlan {
       .sort((a, b) => `${a.activityDate}-${a.sortOrder}`.localeCompare(`${b.activityDate}-${b.sortOrder}`)),
     managerHrId: row.manager_hr_id,
     managerName: row.manager_name,
+    offWindowFlagged: Boolean(row.off_window_flagged),
     periodEndDate: row.period_end_date,
     periodKey: row.period_key,
     periodStartDate: row.period_start_date,
@@ -3434,6 +3441,16 @@ export async function createEmployeePlan(access: AccessContext, input: {
   });
   const period = buildEmployeePlanPeriod(input.planKind, input.anchorDate, workweek);
   await assertNoActivePlanForSamePeriod(employee.hrId, input.planKind, period);
+  // Wrong-week guard (owner, 2026-09-26): a weekly plan filed for a week that had already begun or
+  // elapsed is flagged for review. Never a block — the plan is created normally; the flag only
+  // makes an off-window plan visible to the owner and reviewers. Weekly only; set once here.
+  const offWindowFlagged =
+    input.planKind === "weekly" &&
+    isPastPlanWeek({
+      periodStartDate: period.periodStartDate,
+      todayIso: currentCairoDateOnlyIso(),
+      workweek,
+    });
   const items = normalizeItems(
     input.items,
     period.periodStartDate,
@@ -3476,6 +3493,7 @@ export async function createEmployeePlan(access: AccessContext, input: {
       },
       manager_hr_id: employee.managerHrId,
       manager_name: employee.managerName,
+      off_window_flagged: offWindowFlagged,
       period_end_date: period.periodEndDate,
       period_key: period.periodKey,
       period_start_date: period.periodStartDate,

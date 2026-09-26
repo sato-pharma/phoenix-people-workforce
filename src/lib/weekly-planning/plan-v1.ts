@@ -416,6 +416,27 @@ export function buildEmployeePlanPeriod(
 }
 
 /**
+ * Whether a chosen WEEKLY plan period starts before the week that contains `todayIso` — i.e. the
+ * planner is filing for a week that has already begun or fully elapsed. This is the "off-window"
+ * signal behind the wrong-week guard (owner, 2026-09-26): the Plan-week dropdown no longer
+ * auto-selects a week, and if the person deliberately picks a past week the builder asks once and
+ * the plan is FLAGGED — never blocked.
+ *
+ * Both sides are week START dates derived through buildEmployeePlanPeriod for the SAME workweek, so
+ * a plan for the current week — even one filed on its last working day — is never off-window; only
+ * a strictly earlier week is. Monthly plans have no such notion; callers guard on kind before
+ * asking. Pure and date-only (UTC arithmetic), so no timezone enters the comparison.
+ */
+export function isPastPlanWeek(input: {
+  periodStartDate: string;
+  todayIso: string;
+  workweek: PlanWorkweek;
+}): boolean {
+  const currentWeekStart = buildEmployeePlanPeriod("weekly", input.todayIso, input.workweek).periodStartDate;
+  return input.periodStartDate < currentWeekStart;
+}
+
+/**
  * Whole days from one YYYY-MM-DD to another. Both sides are date-only and parsed as UTC, so no
  * timezone ever enters the arithmetic and the result is exact.
  */
