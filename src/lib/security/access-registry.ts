@@ -660,6 +660,9 @@ export const accessRegistry = [
   // so it was an address a curious rep could probe for nothing in return. Deleting it is strictly
   // more blind than widening it: a URL that 404s because it was never built is indistinguishable
   // from one that 404s because he is not the audience. Do not re-add it without a real client.
+  // The rep's own day, as he works it. A read only — entering a visit is the visits route's job, and
+  // this screen only hands it the customer.
+  sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/today", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/visits", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/visits", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/visits/form", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: false }),

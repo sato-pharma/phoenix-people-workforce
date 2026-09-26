@@ -1543,6 +1543,7 @@ import { runPhoenixCrmRetiredPilotRedirectTests } from "./phoenix-crm-retired-pi
 import { runPhoenixCrmBlindHalfTests } from "./phoenix-crm-blind-half.test.ts";
 import { runPhoenixCrmLineNotOpenTests } from "./phoenix-crm-line-not-open.test.ts";
 import { runPhoenixCrmBrickGroupsTests } from "./phoenix-crm-brick-groups.test.ts";
+import { runPhoenixCrmTodayTests } from "./phoenix-crm-today.test.ts";
 import { runPhoenixCrmLastVisitProductsTests } from "./phoenix-crm-last-visit-products.test.ts";
 import { runPhoenixCrmLocationIntegrityTests } from "./phoenix-crm-location-integrity.test.ts";
 import { runPhoenixCrmPortalSidebarTests } from "./phoenix-crm-portal-sidebar.test.ts";
@@ -5153,6 +5154,11 @@ await runTest(
 await runTest(
   "Phoenix CRM lays a rep's day out as a route, by brick (A3 — owner, 2026-09-26, \"every brick be highlighted, the doctors in the same bricks are highlighted with the same colour\": one shared helper for the planned day, the candidate list and the phone; \"faisal\" and \"Faisal \" are ONE brick; a day he will DRIVE keeps its order while a list he SEARCHES is alphabetical; customers with no place yet are one group and always last; the phone answers exactly as the browser does; and the brick heading carries no spread flag, which stays the manager's)",
   runPhoenixCrmBrickGroupsTests,
+);
+
+await runTest(
+  "Phoenix CRM opens on the rep's own day (A2 — owner, 2026-09-26, \"very easy very simple\": today's stops in the order he will drive them, a visited stop KEEPS ITS PLACE so the list never reshuffles between two doors, an off-plan visit sits beside the day and never inside it, AM and PM are four figures that are never summed, an empty day says why in his own terms, a manager with a real decision waiting still lands on Team first, and nothing on the screen carries a distance, an accuracy or a flag)",
+  runPhoenixCrmTodayTests,
 );
 
 await runTest(

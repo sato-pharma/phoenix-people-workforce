@@ -138,6 +138,7 @@ const ROUTE_GATES: RouteGate[] = [
   // caller — the board is a server component reading the service directly — so it was an address and
   // nothing else. The list below is asserted against the handlers on disk, so this absence is itself
   // checked: re-adding the route without a gate fails, and adding a gate without the route fails.
+  get("today"),
   get("reports"),
   post("photos/upload-slot", "create"),
   // The native app's live photo: the phone sends the stamped JPEG as a base64 data URL and the server

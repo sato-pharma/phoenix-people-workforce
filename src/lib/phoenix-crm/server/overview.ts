@@ -21,6 +21,8 @@ import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export type PhoenixCrmTabs = {
+  /** The rep's own day — the tab the app opens on (A2). Same reach as Visits. */
+  today: boolean;
   visits: boolean;
   list: boolean;
   plan: boolean;
@@ -136,6 +138,7 @@ export async function loadPhoenixCrmOverview(viewer: PhoenixCrmViewer): Promise<
     .sort((left, right) => left.name.localeCompare(right.name));
   const hasScope = viewer.isSuperAdmin || scope.length > 0;
   const tabs: PhoenixCrmTabs = {
+    today: hasScope,
     visits: hasScope,
     list: hasScope,
     plan: viewer.isSuperAdmin || ownSeatIds.length > 0,
