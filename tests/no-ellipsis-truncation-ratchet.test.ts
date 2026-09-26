@@ -226,8 +226,19 @@ import { stripComments } from "./support/comment-strip.ts";
  * feed's person and module. The online list is now a `table-fixed` desktop table with a
  * percentage `<colgroup>` beside a mobile card list, and the navigation row wraps instead of
  * cutting, so the four became `break-words` with no horizontal scroll bought in exchange.
+ *
+ * 147 -> 144 on 2026-09-26: the Monthly Closing screen's three remaining cuts, found by measuring
+ * `scrollWidth > clientWidth` in a real browser at 1440px against production data rather than by
+ * reading source. Two were the area filter's own options — "Dokki - Mohandseen - Bolak (GZ2)" lost
+ * 32px and "Imbaba - Imbaba Centers (GZ3)" 14px, which is the worst place to cut a name, since
+ * that list IS how an area is chosen — and the third was the closing matrix's area-name cell,
+ * where "Dokki - Mohandseen - Bolak" needed 200px in a 196px column and rendered as "…Bola…".
+ * The filter options now wrap onto a second line; the matrix column went 196 -> 208 so today's
+ * longest name still sits on one line, with `break-words` behind it as the guarantee for
+ * tomorrow's. No horizontal scroll was bought in exchange: that grid already scrolls sideways by
+ * the owner's own ruling, and no row on it grew taller (33px and 36px before and after).
  */
-const BASELINE = 147;
+const BASELINE = 144;
 
 const ROOTS = ["app", "src"];
 
