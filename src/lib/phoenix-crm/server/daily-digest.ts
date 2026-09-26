@@ -25,10 +25,9 @@
  * the day and silence the real one.
  */
 
-import { formatPhoenixLongDate } from "@/lib/i18n/format";
+import { currentCairoDateOnlyIso, formatPhoenixLongDate } from "@/lib/i18n/format";
 import { createSystemNotificationForRecipients } from "@/lib/notifications/system";
 import { logError } from "@/lib/observability/log";
-import { currentCairoDateOnlyIso } from "@/lib/time/cairo";
 import { planPhoenixCrmDigest, type DigestRecipient, type PhoenixCrmDigest } from "@/lib/phoenix-crm/digest-rules";
 import { lastFinishedFieldDay } from "@/lib/phoenix-crm/exceptions";
 import {
