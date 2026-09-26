@@ -109,8 +109,10 @@ type StubResponse = { status: number; body: unknown };
  * and answers each from a per-endpoint queue (last entry repeats). No network, no DB.
  *
  * A `body` that IS an `Error` is thrown out of `json()` rather than returned — that is how a reply
- * which is not JSON at all reaches the code under test, and it is the exact shape a Cloudflare Access
- * sign-in page arrives in: an HTML page where an answer was expected.
+ * which is not JSON at all reaches the code under test. TWO different doors send one: a Cloudflare
+ * Access sign-in page, and (measured 2026-09-26) Headwind's own Tomcat error page when it refuses a
+ * sign-in. They are indistinguishable from here, which is why the code decides between them by
+ * whether a service token is configured rather than by the shape of the reply.
  */
 function makeFetch(config: { login?: StubResponse[]; api?: StubResponse[] }): {
   fetch: typeof fetch;
@@ -1892,8 +1894,8 @@ async function runCloudflareAccessTests() {
     "and the sign-in is one of the calls that carried them",
   );
 
-  // 🔴 A REPLY THAT IS NOT JSON IS CLOUDFLARE, NOT HEADWIND — and the error has to say so, or an
-  // afternoon goes on the admin password of a server that is answering fine.
+  // A reply that is not JSON, WHEN A SERVICE TOKEN IS SET, is most likely Access's own sign-in page —
+  // and the error has to say so, or an afternoon goes on the admin password of a server answering fine.
   resetHeadwindTokenCache();
   const signInPage = makeFetch({ login: [{ body: new Error("not json"), status: 403 }] });
   await assert.rejects(
@@ -1903,6 +1905,26 @@ async function runCloudflareAccessTests() {
       /HEADWIND_MDM_ACCESS_CLIENT_ID/.test(error.message) &&
       /not JSON/.test(error.message),
     "a sign-in page names the Cloudflare door first, not the Headwind password",
+  );
+
+  // 🔴 AND THE OTHER WAY ROUND, WHICH THIS CODE HAD BACKWARDS UNTIL 2026-09-26. The comment here used
+  // to read "a reply that is not JSON IS Cloudflare, not Headwind", and the error message said so
+  // unconditionally. Measured against the live server the same day: `POST /rest/public/jwt/login` with
+  // a login that does not exist, no Cloudflare anywhere in the path, answers a TOMCAT HTML 401 error
+  // page — `sendError`, not JSON. So the ordinary wrong-password case produced the Cloudflare
+  // sentence, and pointed the reader at two variables that were not set on the service at all. With NO
+  // service token configured there is nothing but Headwind in the path, so the credential is the only
+  // thing left to name — and the Access variables must NOT be named, or the advice is a dead end.
+  resetHeadwindTokenCache();
+  const tomcatErrorPage = makeFetch({ login: [{ body: new Error("<!doctype html> HTTP Status 401"), status: 401 }] });
+  await assert.rejects(
+    () => getHeadwindToken(tomcatErrorPage.fetch, ENV),
+    (error: unknown) =>
+      error instanceof HeadwindNotConfiguredError &&
+      /HEADWIND_MDM_LOGIN and HEADWIND_MDM_PASSWORD/.test(error.message) &&
+      /Tomcat/.test(error.message) &&
+      !/HEADWIND_MDM_ACCESS_CLIENT_ID/.test(error.message),
+    "with no service token set, an HTML refusal names the LOGIN and PASSWORD and never sends the reader to Cloudflare variables that do not exist",
   );
 
   // And the secret is never in what a person or a log is shown.
@@ -1926,6 +1948,20 @@ async function runCloudflareAccessTests() {
     runbook,
     /no exception rule for `\/rest\/\*`/,
     "and refuses that exception in writing — it is the obvious-looking simplification, and it would leave the API that factory-resets tablets open",
+  );
+  // 🔴 THE ONE PLAUSIBLE FAILURE OF THE OWNER'S LAST STEP HAD ITS ADVICE POINTING AT A DEAD END.
+  // A refused sign-in comes back as an HTML page, and both the code and the runbook used to read that
+  // as Cloudflare — while no service token is set on the service at all. The runbook has to carry the
+  // measurement, not just the fixed behaviour, or the next reader re-derives it from the symptom.
+  assert.match(
+    runbook,
+    /Tomcat HTML 401/,
+    "the runbook records that a refused Headwind sign-in answers an HTML error page, so a non-JSON reply is never read as proof of Cloudflare",
+  );
+  assert.match(
+    runbook,
+    /never through `railway variables --stdin`, which stores a BOM INSIDE the value/,
+    "and warns how to type the two credentials, because a BOM no screen displays would fail every sign-in with a password that looks correct",
   );
   // 🔴 REWORDED 2026-09-25 WHEN THE SERVER MOVED TO RAILWAY, AND THE DANGER IT GUARDS IS UNCHANGED.
   // This used to read `31000 stays open directly`, because the rented box published the tablets'

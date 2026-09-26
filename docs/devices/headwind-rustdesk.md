@@ -380,6 +380,20 @@ own audit trail reads as "Phoenix" rather than as the owner. Extra logins are fr
 (§6.8). The account that already exists is the seeded `admin`, which is **not** created from
 `ADMIN_EMAIL` and arrives with a default password — §4.2's 🔴 block, and deal with that before this.
 
+🔴 **Set them on `phoenix-people-workforce` / `production`, and type them into Railway's own field —
+never through `railway variables --stdin`, which stores a BOM INSIDE the value** (§2.3). A leading
+byte no screen displays would make every sign-in fail while the password looked perfectly correct.
+
+🔴 **AND IF THE SIGN-IN IS REFUSED, THE REPLY IS AN HTML PAGE, NOT JSON — WHICH IS NOT EVIDENCE OF
+CLOUDFLARE.** Measured 2026-09-26 against this very server: `POST /rest/public/jwt/login` with a login
+that does not exist, and no Cloudflare anywhere in the path, answers a **Tomcat HTML 401** error page.
+Phoenix's own diagnostic used to read that as an Access sign-in page and tell the reader to check
+`HEADWIND_MDM_ACCESS_CLIENT_ID` and `HEADWIND_MDM_ACCESS_CLIENT_SECRET` — **two variables that are not
+set on the service at all**, so the one plausible failure of this step sent whoever hit it to a dead
+end. It now decides by whether a service token is configured: with none, it names
+`HEADWIND_MDM_LOGIN` and `HEADWIND_MDM_PASSWORD` and says the page came from Headwind's own Tomcat.
+Pinned in `tests/headwind-bridge.test.ts`.
+
 #### 🔴 WHY THE TABLETS' HOSTNAME, AND A CORRECTION TO WHAT THIS SECTION USED TO SAY
 
 This section used to instruct `https://mdm-console.satopharma.com` and warn that `mdm.satopharma.com`

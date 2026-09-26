@@ -209,15 +209,25 @@ async function mintHeadwindToken(fetchImpl: typeof fetch, env: NodeJS.ProcessEnv
   const token = response.ok ? tokenFromLogin(payload) : null;
   if (!token) {
     const said = typeof payload.message === "string" && payload.message ? ` (${payload.message})` : "";
-    // 🔴 A REPLY THAT IS NOT JSON AT ALL IS ALMOST ALWAYS CLOUDFLARE, NOT HEADWIND. With the console
-    // behind a tunnel, an Access sign-in PAGE comes back instead of an answer — so the credential
-    // being checked is the wrong one, and a session told to check the admin password would spend the
-    // afternoon on a server that is perfectly healthy. Say which door actually shut.
+    // 🔴 A NON-JSON REPLY IS NOT EVIDENCE OF CLOUDFLARE. This branch used to say it was, and it was
+    // measured wrong on 2026-09-26: `POST /rest/public/jwt/login` on the live server, with a login
+    // that does not exist and no Cloudflare anywhere in the path, answers a TOMCAT HTML 401 error
+    // page. So an ordinary wrong password produces exactly the reply this code called "what an Access
+    // sign-in page looks like", and it sent the reader to two variables that are not even set.
+    // What DOES separate the two doors is whether a service token is configured at all: with none,
+    // nothing but Headwind can be answering, so the credential is the only thing left to check.
+    const accessConfigured = Object.keys(headwindAccessHeaders(env)).length > 0;
+    const credentialAdvice = ` Check HEADWIND_MDM_LOGIN and HEADWIND_MDM_PASSWORD against the admin account on ${config.baseUrl}.`;
     const wrongDoor = answeredJson
-      ? ` Check HEADWIND_MDM_LOGIN and HEADWIND_MDM_PASSWORD against the admin account on ${config.baseUrl}.`
-      : " The reply was not JSON at all, which is what a Cloudflare Access sign-in page looks like from here:" +
-        " check HEADWIND_MDM_ACCESS_CLIENT_ID and HEADWIND_MDM_ACCESS_CLIENT_SECRET first, and only then" +
-        " the Headwind admin login.";
+      ? credentialAdvice
+      : accessConfigured
+        ? " The reply was not JSON at all, and with a Cloudflare Access service token set here that is" +
+          " what its sign-in page looks like from this side: check HEADWIND_MDM_ACCESS_CLIENT_ID and" +
+          " HEADWIND_MDM_ACCESS_CLIENT_SECRET first, and only then the Headwind admin login."
+        : " The reply was not JSON at all, which is ALSO what Headwind's own Tomcat sends when it" +
+          " refuses a sign-in — measured on this server, a login that does not exist comes back as an" +
+          " HTML 401 page. No Cloudflare Access service token is set, so nothing else is in the path." +
+          credentialAdvice;
     throw new HeadwindNotConfiguredError(
       `The Headwind server refused the Phoenix sign-in${said}.${wrongDoor} (HTTP ${response.status}.)`,
     );
