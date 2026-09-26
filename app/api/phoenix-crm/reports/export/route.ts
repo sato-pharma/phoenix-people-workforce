@@ -57,6 +57,7 @@ export async function GET(request: Request) {
       from: search.get("from"),
       to: search.get("to"),
       month: search.get("month"),
+      compare: search.get("compare"),
     };
     const includeTest = viewer.isSuperAdmin && search.get("includeTest") === "true";
     const managerSections = readsTeamReports(viewer);

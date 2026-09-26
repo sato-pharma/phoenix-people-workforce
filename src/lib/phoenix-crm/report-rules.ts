@@ -11,6 +11,7 @@
  *   - A day-by-day report reads at most a month at a time.
  */
 
+import { addDaysIso } from "@/lib/crm/dates";
 import { isIsoDay, isMonthKey, monthEndOf, monthStartOf } from "@/lib/phoenix-crm/calendar";
 import { sharePercent } from "@/lib/phoenix-crm/coverage";
 import type { PhoenixCrmListType } from "@/lib/phoenix-crm/types";
@@ -60,6 +61,81 @@ export function resolveReportPeriod(input: { from: unknown; to: unknown; cairoTo
   if (fromRaw > to) return { ok: false, error: "The first day is after the last day." };
   if (daysInPeriod(fromRaw, to) > REPORT_MAX_DAYS) return { ok: false, error: `Choose at most ${REPORT_MAX_DAYS} days.` };
   return { ok: true, value: { from: fromRaw, to } };
+}
+
+// ── Comparison (C3) ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * What a figure is read AGAINST.
+ *
+ *   - `off`      the figure alone — the default, and what every reader had until now.
+ *   - `previous` the same LENGTH of days immediately before this period: "did we improve?"
+ *   - `peers`    the AVERAGE PER TERRITORY across the viewer's whole scope, over the same days.
+ *
+ * 🔴 **Peer mode is an anonymous average and never a league table.** It answers "is this territory
+ * behind the rest of my district", which is a management question, and refuses to answer "who is
+ * worst", which is a different question wearing the same clothes. No name, no rank and no "3rd of
+ * 12" ever leaves this module: a board that ranks named people turns a manager's read into something
+ * the field force learns to game, and the owner has not asked for one.
+ *
+ * Manager-only in v1 — a rep shown "the average" is being shown his colleagues' work in aggregate,
+ * the same disclosure the place-vs-actual report withholds from him (owner, 2026-09-26).
+ */
+export type ComparisonMode = "off" | "previous" | "peers";
+
+export function isComparisonMode(value: unknown): value is ComparisonMode {
+  return value === "off" || value === "previous" || value === "peers";
+}
+
+/**
+ * The same LENGTH of days immediately before a period.
+ *
+ * Length, not "the previous calendar month": the period a manager picks is usually a part-month — the
+ * 1st to today — and reading eleven worked days against a whole thirty-day month would show every
+ * territory collapsing. Same number of days, ending the day before this period starts.
+ */
+export function previousPeriod(period: ReportPeriod): ReportPeriod {
+  const days = daysInPeriod(period.from, period.to);
+  const to = addDaysIso(period.from, -1);
+  return { from: addDaysIso(to, -(days - 1)), to };
+}
+
+export type Delta = {
+  /** What the figure is read against. Null when there is nothing to read it against. */
+  baseline: number | null;
+  /** now − baseline; null when there is no baseline. */
+  change: number | null;
+  /**
+   * The change as a percentage of the baseline, one decimal — null when the baseline is 0.
+   *
+   * 🔴 A rise from zero has NO percentage, and inventing one ("+100%", "new") is how a board starts
+   * shouting about a rep who made one visit. The change itself is still there and still true.
+   */
+  changePct: number | null;
+  /** Worked out here so no screen has to read a sign and get it wrong. */
+  direction: "up" | "down" | "same";
+};
+
+export function delta(now: number, baseline: number | null): Delta {
+  if (baseline === null) return { baseline: null, change: null, changePct: null, direction: "same" };
+  const change = now - baseline;
+  return {
+    baseline,
+    change,
+    changePct: baseline === 0 ? null : Math.round((change / baseline) * 1000) / 10,
+    direction: change > 0 ? "up" : change < 0 ? "down" : "same",
+  };
+}
+
+/**
+ * The average per territory, for peer mode.
+ *
+ * Divided by the number of TERRITORIES, never by the number that happen to have a figure: a territory
+ * with no visits is part of its district's average, and dropping it would flatter the whole set and
+ * make every working rep look merely average. No territories has no average — null, not 0.
+ */
+export function averagePerTerritory(total: number, territories: number): number | null {
+  return territories <= 0 ? null : Math.round((total / territories) * 10) / 10;
 }
 
 export type ReportMonth = { month: string; monthStart: string; monthEnd: string; inProgress: boolean };
