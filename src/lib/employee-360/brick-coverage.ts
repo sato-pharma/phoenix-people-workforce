@@ -42,10 +42,17 @@ import { scopeForRole } from "@/lib/auth/permissions";
 import { cairoTodayIso } from "@/lib/crm/dates";
 import { getRepsListBrickPlacement, type RepsListGroup } from "@/lib/crm/reps-list";
 import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
+import {
+  loadAreaBrickMaster,
+  loadClosingBrickSales,
+  upperCode,
+  type BrickMasterRow,
+  type BrickSalesRow,
+} from "@/lib/sales/closing-brick-sales";
 import { withoutMaskedSourceRows } from "@/lib/sales/closing-source-mask";
 import { lineName } from "@/lib/sales/monthly-targets";
 import { SALES_HISTORY_FLOOR, isValidVsTargetPeriod, loadUploadedPeriodsInRange } from "@/lib/sales/vs-target";
-import { getSupabaseAdmin, rpcAll } from "@/lib/supabase/server";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { loadEmployee360HireMonths } from "./sales-canonical";
 import type { Employee360Window } from "./service";
@@ -143,10 +150,11 @@ export function resolveBrickSalesMonths(input: {
   return latest ? { months: [latest], fallback: true } : { months: [], fallback: false };
 }
 
-export type BrickMasterRow = { brickId: string; brickName: string; areaCode: string; current: boolean };
-export type BrickSalesRow = { distributorCode: string; areaCode: string; brickId: string; value: number };
+// Re-exported so this file stays the import site its own tests and callers already use; the
+// declarations moved to @/lib/sales/closing-brick-sales with the loaders (C2a, 2026-09-27).
+export type { BrickMasterRow, BrickSalesRow };
 
-const upper = (value: string | null | undefined) => String(value ?? "").trim().toUpperCase();
+const upper = upperCode;
 
 /**
  * Join the area's bricks, the closing's brick sales and the rep's list groups. PURE — the fixtures
@@ -339,70 +347,6 @@ async function loadRepTerritory(hrId: string): Promise<RepTerritory | null> {
     if (!areas.has(code)) areas.set(code, (row.area_name ?? "").trim());
   }
   return { lineCode, areas: [...areas].map(([areaCode, areaName]) => ({ areaCode, areaName })) };
-}
-
-/** Every brick of these areas, whatever its state, so a brick that sold before it was ended still names itself. */
-async function loadAreaBrickMaster(areaCodes: readonly string[], extraBrickIds: readonly string[]): Promise<BrickMasterRow[]> {
-  const supabase = getSupabaseAdmin();
-  const today = cairoTodayIso();
-  const toRow = (row: {
-    active: boolean | null;
-    area_code: string | null;
-    brick_id: string | null;
-    brick_name: string | null;
-    effective_to: string | null;
-  }): BrickMasterRow | null =>
-    row.brick_id
-      ? {
-          brickId: row.brick_id,
-          brickName: (row.brick_name ?? "").trim(),
-          areaCode: upper(row.area_code),
-          current: row.active !== false && (!row.effective_to || row.effective_to >= today),
-        }
-      : null;
-
-  const out = new Map<string, BrickMasterRow>();
-  const { data, error } = await supabase
-    .from("source_of_sales_bricks")
-    .select("brick_id, brick_name, area_code, active, effective_to")
-    .in("area_code", [...areaCodes]);
-  if (error) throw new Error(error.message);
-  for (const raw of data ?? []) {
-    const row = toRow(raw as Parameters<typeof toRow>[0]);
-    if (row && !out.has(row.brickId)) out.set(row.brickId, row);
-  }
-
-  // A brick the closing booked to one of these areas while its master row sits elsewhere (a
-  // hand-split customer) still needs its name. Chunked: PostgREST zeroes a long `.in()` silently.
-  const missing = extraBrickIds.filter((id) => id && !out.has(id));
-  for (let from = 0; from < missing.length; from += 50) {
-    const { data: extra, error: extraError } = await supabase
-      .from("source_of_sales_bricks")
-      .select("brick_id, brick_name, area_code, active, effective_to")
-      .in("brick_id", missing.slice(from, from + 50));
-    if (extraError) throw new Error(extraError.message);
-    for (const raw of extra ?? []) {
-      const row = toRow(raw as Parameters<typeof toRow>[0]);
-      if (row && !out.has(row.brickId)) out.set(row.brickId, row);
-    }
-  }
-  return [...out.values()];
-}
-
-/** The closing's brick grain for one line and month. */
-async function loadClosingBrickSales(line: string, period: string): Promise<BrickSalesRow[]> {
-  const rows = await rpcAll<Record<string, unknown>>(
-    getSupabaseAdmin(),
-    "phx_closing_brick",
-    { p_line: line, p_period: period },
-    ["distributor_code", "region_code", "area_code", "brick_id"],
-  );
-  return rows.map((row) => ({
-    distributorCode: String(row.distributor_code ?? ""),
-    areaCode: String(row.area_code ?? ""),
-    brickId: String(row.brick_id ?? ""),
-    value: Number(row.value ?? 0) || 0,
-  }));
 }
 
 /**

@@ -407,6 +407,10 @@ const LATER_MIGRATIONS = [
   // The visit's own stopwatch — two silent columns, and save_visit again. Last among the save_visit
   // replacers, and it restates the revoke/grant pair for the same reason the two above it do.
   "supabase/migrations/20260926234500_phoenix_crm_visit_dwell.sql",
+  // Coverage against sales, per brick (C2). ONE brand-new function and nothing else — no table, no
+  // column, no view, and it replaces nothing, so where it sits in this list cannot disturb the
+  // save_visit ordering above it.
+  "supabase/migrations/20260927003000_phoenix_crm_report_brick_coverage.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */

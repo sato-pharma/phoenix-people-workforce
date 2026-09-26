@@ -47,10 +47,13 @@ import {
   crmTdClassName,
   crmThClassName,
   type CrmChoiceOption,
+  type PillTone,
 } from "@/components/phoenix-crm/ui";
 import { fieldWeekStart, isIsoDay, monthStartOf, weekdayOfIsoDay } from "@/lib/phoenix-crm/calendar";
+import type { BrickCoverageStatus } from "@/lib/phoenix-crm/brick-report";
 import { daysInPeriod, REPORT_MAX_DAYS, type CoverageCell, type PlanCounts, type VisitCounts } from "@/lib/phoenix-crm/report-rules";
 import type {
+  BrickCoverageView,
   CoverageReportView,
   ExceptionsView,
   ManagerReportEntry,
@@ -68,7 +71,7 @@ import type {
 } from "@/lib/phoenix-crm/view-types";
 import { cn } from "@/lib/utils";
 
-type ReportSection = "exceptions" | "visits" | "plan" | "coverage" | "managers" | "locations";
+type ReportSection = "exceptions" | "visits" | "plan" | "coverage" | "bricks" | "managers" | "locations";
 type PeriodPreset = "today" | "yesterday" | "this_week" | "last_week" | "this_month" | "last_month";
 type Period = { from: string; to: string };
 type Presence = "all" | "with" | "without";
@@ -1263,6 +1266,124 @@ function ExceptionsSection({ idPrefix, resource }: { idPrefix: string; resource:
   );
 }
 
+const BRICK_STATUS: Record<BrickCoverageStatus, { label: string; tone: PillTone; accent: string }> = {
+  "sales-no-list": { label: "Sells here, nobody on the list", tone: "bad", accent: "border-l-rose-500" },
+  "list-no-sales": { label: "On the list, no sales booked", tone: "warn", accent: "border-l-amber-500" },
+  covered: { label: "Covered", tone: "good", accent: "border-l-emerald-500" },
+  idle: { label: "Neither", tone: "neutral", accent: "border-l-slate-300" },
+};
+
+/**
+ * Coverage against what the closing booked ON each brick (C2).
+ *
+ * 🔴 **The caveat is printed, always, and it comes from the server.** Brick sales never add up to the
+ * area's closing figure — a wholesaler's sales spread over its city's areas, El Qema's warehouse stock
+ * spread over the country, the Office allocation and direct orders are all credited to the area
+ * without belonging to any one brick. The sentence is `report.caveat`, one fixed constant, precisely
+ * so this screen cannot soften it and a second screen cannot word it differently.
+ *
+ * AM and PM are two columns and never one. Rows are ordered by what needs a manager first: a brick the
+ * line sells into with nobody on the rep's list, then one on the list with nothing booked.
+ */
+function BricksSection({ idPrefix, resource }: { idPrefix: string; resource: CrmResource<BrickCoverageView> }) {
+  const report = resource.data;
+  if (!report) return <SectionWaiting error={resource.error} label="Reading coverage against sales" onRetry={resource.reload} />;
+  const { summary } = report;
+
+  return (
+    <>
+      <RefreshFailed error={resource.error} />
+      <CrmBlock className="border-t border-slate-100" title="Across the bricks you reach">
+        <CrmStatGrid>
+          <CrmStat label="Bricks" note="On either side" value={countText(summary.bricks)} />
+          <CrmStat
+            label="Sells here, nobody on the list"
+            note="The row to act on"
+            tone={summary.salesNoList > 0 ? "warn" : "good"}
+            value={countText(summary.salesNoList)}
+          />
+          <CrmStat label="On the list, no sales" note="New ground, or lost" value={countText(summary.listNoSales)} />
+          <CrmStat label="Covered" note="Sells and is called on" value={countText(summary.covered)} />
+        </CrmStatGrid>
+        <p className="mt-3 break-words text-xs font-semibold leading-5 text-slate-500">
+          {report.salesMonths.length === 0
+            ? "No distributor file has landed for these months yet, so no brick shows sales. Files arrive across the first two weeks."
+            : `Sales are the months whose distributor files have landed: ${report.salesMonths.join(", ")}.`}
+        </p>
+        <CrmNote className="mt-3" tone="warn">
+          {report.caveat}
+        </CrmNote>
+      </CrmBlock>
+      {report.rows.length === 0 ? (
+        <div className="border-t border-slate-100">
+          <CrmEmpty
+            message="A brick shows here once a place is captured in it, or the closing books sales to it."
+            title="No bricks to compare yet"
+          />
+        </div>
+      ) : (
+        <ReportList
+          columns={["26%", "20%", "18%", "18%", "18%"]}
+          explain="Worst first: a brick the line sells into with nobody on the list, then a brick on the list with nothing booked. AM and PM are counted apart, and a brick's sales are never the area's figure."
+          hasData={(row) => row.customers > 0 || row.sales > 0}
+          headers={["Brick", "Territory", "AM", "PM", "Booked on it"]}
+          idPrefix={`${idPrefix}-bricks`}
+          items={report.rows}
+          keyOf={(row) => `${row.seatId}|${row.brickId ?? "none"}`}
+          renderCard={(row) => (
+            <CrmCard
+              accent={BRICK_STATUS[row.status].accent}
+              meta={[row.territoryName, row.areaName].filter(Boolean).join(" · ")}
+              status={<CrmPill tone={BRICK_STATUS[row.status].tone}>{BRICK_STATUS[row.status].label}</CrmPill>}
+              title={row.brickName}
+            >
+              <div className="grid min-w-0 gap-1 text-xs font-semibold leading-5 text-slate-600">
+                <p className="break-words">
+                  {`${countText(row.amVisited)} of ${countText(row.am)} AM · ${countText(row.pmVisited)} of ${countText(row.pm)} PM called on`}
+                </p>
+                <p className="break-words font-black text-slate-800">
+                  {`${countText(row.visits)} visits · ${countText(row.sales)} booked on this brick`}
+                </p>
+              </div>
+            </CrmCard>
+          )}
+          renderCells={(row) => (
+            <>
+              <td className={crmTdClassName}>
+                <p className="break-words font-black text-slate-950">{row.brickName}</p>
+                <p className="mt-0.5 break-words text-xs text-slate-500">{BRICK_STATUS[row.status].label}</p>
+              </td>
+              <td className={crmTdClassName}>
+                <p className="break-words">{row.territoryName}</p>
+                {row.areaName ? <p className="mt-0.5 break-words text-xs text-slate-500">{row.areaName}</p> : null}
+              </td>
+              <td className={crmTdClassName}>
+                <p className="break-words">{`${countText(row.amVisited)} of ${countText(row.am)}`}</p>
+              </td>
+              <td className={crmTdClassName}>
+                <p className="break-words">{`${countText(row.pmVisited)} of ${countText(row.pm)}`}</p>
+              </td>
+              <td className={crmTdClassName}>
+                <p className="break-words">{countText(row.sales)}</p>
+              </td>
+            </>
+          )}
+          searchWords={(row) => [row.brickName, row.territoryName, row.areaName]}
+          words={{
+            all: "All",
+            noneMatch: "No brick matches",
+            searchLabel: "Find a brick",
+            searchPlaceholder: "Brick, territory or area",
+            title: "Worst first",
+            with: "Has a list or sales",
+            without: "Neither",
+          }}
+        />
+      )}
+    </>
+  );
+}
+
 // ── The tab ─────────────────────────────────────────────────────────────────────────────────────
 
 const SECTION_TITLES: Record<ReportSection, string> = {
@@ -1270,6 +1391,7 @@ const SECTION_TITLES: Record<ReportSection, string> = {
   visits: "Visits per day",
   plan: "Plan against actual",
   coverage: "Coverage and frequency",
+  bricks: "Coverage against sales",
   managers: "Double and chain visits",
   locations: "Where the visit was saved",
 };
@@ -1301,7 +1423,7 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
   const chosen = seatId ? lineTerritories.filter((territory) => territory.seatId === seatId) : lineTerritories;
   const activeSection: ReportSection =
     (section === "managers" && view && !view.hasManagers) ||
-    ((section === "locations" || section === "exceptions") && view && !view.canSeeLocations)
+    ((section === "locations" || section === "exceptions" || section === "bricks") && view && !view.canSeeLocations)
       ? "visits"
       : section;
   const withTest = Boolean(view?.canIncludeTest) && includeTest;
@@ -1326,7 +1448,8 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
   const managers = useCrmGet<ManagerReportView>(sectionUrl("managers"), "report");
   const locations = useCrmGet<VisitLocationReportView>(sectionUrl("locations"), "report");
   const exceptions = useCrmGet<ExceptionsView>(sectionUrl("exceptions"), "report");
-  const active = { coverage, exceptions, locations, managers, plan, visits }[activeSection];
+  const bricks = useCrmGet<BrickCoverageView>(sectionUrl("bricks"), "report");
+  const active = { bricks, coverage, exceptions, locations, managers, plan, visits }[activeSection];
 
   if (!view) {
     return (
@@ -1372,6 +1495,8 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
     { value: "visits", label: SECTION_TITLES.visits, note: "AM and PM apart" },
     { value: "plan", label: SECTION_TITLES.plan, note: "Visited or missed, day by day" },
     { value: "coverage", label: SECTION_TITLES.coverage, note: "The list, month by month" },
+    // Same gate again: a board comparing bricks ACROSS a team is the manager's (owner, 2026-09-26).
+    ...(view.canSeeLocations ? [{ value: "bricks" as const, label: SECTION_TITLES.bricks, note: "Per brick, with the caveat" }] : []),
     ...(view.hasManagers ? [{ value: "managers" as const, label: SECTION_TITLES.managers, note: "Per manager" }] : []),
     // Managers, SFE and the Super Admin only — and the server refuses it too, so the chip is not the
     // gate (system-navigation hiding a link is UX; the boundary is server side).
@@ -1529,6 +1654,8 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
         <CoverageSection idPrefix={idPrefix} resource={coverage} />
       ) : activeSection === "exceptions" ? (
         <ExceptionsSection idPrefix={idPrefix} resource={exceptions} />
+      ) : activeSection === "bricks" ? (
+        <BricksSection idPrefix={idPrefix} resource={bricks} />
       ) : activeSection === "locations" ? (
         <LocationsSection idPrefix={idPrefix} resource={locations} />
       ) : (

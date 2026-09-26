@@ -5,6 +5,7 @@ import { resolveAccessContext } from "@/lib/auth/server";
 import { validationError } from "@/lib/http/api-errors";
 import { resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { phoenixCrmFailure, searchOf } from "@/lib/phoenix-crm/server/http";
+import { loadBrickCoverageReport } from "@/lib/phoenix-crm/server/brick-report";
 import { loadExceptionsBoard } from "@/lib/phoenix-crm/server/exceptions";
 import {
   loadCoverageReport,
@@ -30,6 +31,10 @@ export const dynamic = "force-dynamic";
 //   exceptions the few territories that need a manager today — a territory with nothing wrong is
 //             ABSENT, so this is the one section whose usefulness is what it LEAVES OUT. Same gate as
 //             locations (readsTeamReports) and nothing on it acts.
+//   bricks    coverage against what the closing booked ON each brick (C2). The CRM half is computed
+//             natively from the places captured in this module; the sales half comes through the
+//             shared closing loader with the EL QEMA MASK applied in the service, never here. Same
+//             gate again, and the view carries a fixed caveat: brick sales never sum to the area.
 // Filters: seatId, lineCode, from, to, month, includeTest (the Super Admin's only). Scope runs
 // downward only and is applied in the service.
 export async function GET(request: Request) {
@@ -55,6 +60,7 @@ export async function GET(request: Request) {
     else if (section === "managers") report = await loadManagerReport(viewer, filters);
     else if (section === "locations") report = await loadVisitLocationReport(viewer, filters);
     else if (section === "exceptions") report = await loadExceptionsBoard(viewer, { test: filters.includeTest });
+    else if (section === "bricks") report = await loadBrickCoverageReport(viewer, filters);
     else throw validationError("Choose a report.");
     return NextResponse.json({ report, section, success: true });
   } catch (error) {
