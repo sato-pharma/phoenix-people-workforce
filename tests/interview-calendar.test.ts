@@ -233,7 +233,7 @@ function runInterviewerAccessTests() {
   // the gate alone would hand an interviewer the whole calendar and every candidate's CV. A NEW "view"
   // site fails the count until somebody decides how it guards the rows.
   const domain = stripComments(read("src/lib/recruitment/interview-calendar.ts"));
-  assert.equal(domain.split('requireCalendarAccess(caller, "view"').length - 1, 12, "twelve view sites, each guarded below");
+  assert.equal(domain.split('requireCalendarAccess(caller, "view"').length - 1, 13, "thirteen view sites, each guarded below");
   const guarded: Array<[string, RegExp]> = [
     ["listInterviewCalendarWeek", /mayReadBooking\(caller, row\)[\s\S]*mayReadSessions\(/],
     ["listInterviewCalendarDay", /mayReadBooking\(caller, row\)[\s\S]*mayReadSessions\(/],
@@ -243,6 +243,8 @@ function runInterviewerAccessTests() {
     ["setInterviewOutcome", /mayReadBooking\(caller, row\)/],
     ["resolveInterviewMeeting", /mayReadSessions\([\s\S]*mayReadBooking\(caller, row\)/],
     ["getInterviewExternalCv", /mayReadBooking\(caller, row\)/],
+    // A scorecard is filed only by someone ON the interview — the lead or a panel member.
+    ["saveInterviewScorecard", /isInterviewAttendee\(caller, row\)/],
   ];
   for (const [name, pattern] of guarded) assert.match(functionBody(domain, name), pattern, `${name} guards the rows an interviewer may read`);
   const onCalendar = domain.slice(domain.indexOf("async function assertCandidateOnCalendar"));
@@ -704,6 +706,8 @@ function booking(overrides: Partial<InterviewBooking> & Pick<InterviewBooking, "
     panelists: [],
     area: null,
     line: null,
+    scorecards: [],
+    canScoreInterview: false,
     notes: null,
     canSetOutcome: false,
     outcome: null,
@@ -924,6 +928,7 @@ function runWiringTests() {
     "recordInterviewWhatsAppOpened(caller",
     "listDueZoomInterviews(caller",
     "setInterviewOutcome(caller",
+    "saveInterviewScorecard(caller",
     // The two-step request flow (interview-requests.ts). Each entry point resolves the caller and
     // checks a right before it touches a row — pinned in tests/interview-requests.test.ts.
     "listMyInterviewRequests(caller",
@@ -1149,4 +1154,23 @@ function runWiringTests() {
   const orgMigration = read("supabase/migrations/20260926155000_ats_interview_area_line.sql");
   assert.match(orgMigration, /add column if not exists interview_area text/, "the migration adds the area column");
   assert.match(orgMigration, /add column if not exists interview_line text/, "the migration adds the line column");
+
+  // Interview scorecards (owner, 2026-09-26, Tier 2): each interviewer files their OWN rating 1-5 +
+  // verdict; shown side by side; only someone ON the interview may file or see them (never a guest);
+  // it complements the outcome and moves nothing. New service-role-only table.
+  const scoreDomain = stripComments(read("src/lib/recruitment/interview-calendar.ts"));
+  assert.match(scoreDomain, /export async function saveInterviewScorecard\(/, "an interviewer can file a scorecard");
+  assert.match(scoreDomain, /Only the interviewer or a panel member can score/, "only someone on the interview may score");
+  assert.match(scoreDomain, /rating < 1 \|\| rating > 5/, "the rating is 1 to 5");
+  assert.match(scoreDomain, /function isInterviewAttendee\(/, "attendance decides who may score and see scorecards");
+  assert.match(scoreDomain, /seesScorecards \? \(scorecardsByBooking\.get\(row\.id\) \?\? \[\]\) : \[\]/, "scorecards are hidden from anyone who is neither on the interview nor a booker (so never a guest)");
+  const scoreRoute = stripComments(read("app/api/recruitment/interview-calendar/bookings/[id]/scorecard/route.ts"));
+  assert.match(scoreRoute, /saveInterviewScorecard\(caller/, "the scorecard route files through the domain gate");
+  assert.match(scoreRoute, /assertSameOriginMutation\(request\)/, "and refuses a cross-site write first");
+  assert.match(viewSrc, /<ScorecardPanel\b/, "the interview panel shows the scorecards");
+  const scoreMigration = read("supabase/migrations/20260926165000_ats_interview_scorecards.sql");
+  assert.match(scoreMigration, /create table if not exists public\.ats_interview_scorecards/, "the migration creates the scorecards table");
+  assert.match(scoreMigration, /rating between 1 and 5/, "with a 1-5 rating check");
+  assert.match(scoreMigration, /unique \(booking_id, evaluator_hr_id\)/, "one scorecard per interviewer per interview");
+  assert.match(scoreMigration, /revoke all on table public\.ats_interview_scorecards from anon, authenticated/, "and it is service-role only");
 }

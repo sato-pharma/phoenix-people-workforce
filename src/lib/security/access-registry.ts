@@ -1202,6 +1202,8 @@ export const accessRegistry = [
   sessionApi({ methods: ["POST"], pattern: "/api/recruitment/interview-calendar/bookings/*/comments", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ methods: ["POST"], pattern: "/api/recruitment/interview-calendar/bookings/*/zoom", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ methods: ["PATCH"], pattern: "/api/recruitment/interview-calendar/bookings/*/outcome", permission: null, guard: "domain-helper", csrfRequired: true }),
+  // The panel's scorecards: an interviewer files their OWN rating + verdict (saveInterviewScorecard checks they are on the interview).
+  sessionApi({ methods: ["POST"], pattern: "/api/recruitment/interview-calendar/bookings/*/scorecard", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ methods: ["GET", "POST"], pattern: "/api/recruitment/interview-calendar/bookings/*/invitations", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ methods: readOnly, pattern: "/api/recruitment/interview-calendar/zoom-due", permission: null, guard: "domain-helper" }),
   sessionApi({ methods: readOnly, pattern: "/api/recruitment/interview-calendar/candidates/*/files", permission: null, guard: "domain-helper" }),

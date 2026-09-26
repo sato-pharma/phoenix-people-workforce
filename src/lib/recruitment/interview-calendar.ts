@@ -55,6 +55,7 @@ import {
   interviewOutcomeCandidateEffect,
   interviewOutcomeLabels,
   isInterviewPlatform,
+  isInterviewVerdict,
   readInterviewOutcome,
   resolveCalendarRole,
   roleMeets,
@@ -62,6 +63,8 @@ import {
   type DueZoomInterview,
   type InterviewBooking,
   type InterviewBookingComment,
+  type InterviewScorecard,
+  type InterviewVerdict,
   type InterviewCalendarAccessLevel,
   type InterviewCalendarLinkGrant,
   type InterviewCalendarNeed,
@@ -106,6 +109,7 @@ const BOOKINGS = "ats_interview_bookings";
 const SESSIONS = "ats_interview_sessions";
 const SHARES = "ats_interview_calendar_shares";
 const COMMENTS = "ats_interview_booking_comments";
+const SCORECARDS = "ats_interview_scorecards";
 const LINKS = "ats_interview_calendar_links";
 const POLLS = "ats_interview_zoom_polls";
 
@@ -573,6 +577,74 @@ async function loadComments(bookingIds: readonly string[]): Promise<CommentRow[]
   return rows;
 }
 
+type ScorecardRow = { booking_id: string; evaluator_hr_id: string; rating: number; verdict: string; comment: string | null; updated_at: string };
+
+async function loadScorecards(bookingIds: readonly string[]): Promise<ScorecardRow[]> {
+  const rows: ScorecardRow[] = [];
+  for (let index = 0; index < bookingIds.length; index += 50) {
+    const { data, error } = await recruitmentDb()
+      .from(SCORECARDS)
+      .select("booking_id,evaluator_hr_id,rating,verdict,comment,updated_at")
+      .in("booking_id", bookingIds.slice(index, index + 50))
+      .order("updated_at", { ascending: true });
+    if (error) throw error;
+    rows.push(...((data ?? []) as ScorecardRow[]));
+  }
+  return rows;
+}
+
+/** Is this caller ON the interview — the lead, or one of the panel — so they may file their own scorecard? */
+function isInterviewAttendee(caller: InterviewCalendarCaller, row: { interviewer_hr_id: string | null; panelist_hr_ids?: string[] | null }): boolean {
+  if (!isSignedInCaller(caller.access)) return false;
+  const viewer = canonicalHrIdKey(caller.access.hrId);
+  if (!viewer) return false;
+  return viewer === canonicalHrIdKey(row.interviewer_hr_id) || isOnPanel(viewer, row.panelist_hr_ids);
+}
+
+function asInterviewVerdict(value: string): InterviewVerdict {
+  return isInterviewVerdict(value) ? value : "no";
+}
+
+/**
+ * File (or update) the signed-in caller's OWN scorecard for an interview: an overall rating 1-5 and a
+ * verdict, plus an optional note. Only someone ON the interview — the lead or a panel member — may,
+ * and only their own row (owner, 2026-09-26). It records an opinion; it moves nothing in Recruitment.
+ */
+export async function saveInterviewScorecard(
+  caller: InterviewCalendarCaller,
+  bookingId: string,
+  input: { rating?: unknown; verdict?: unknown; comment?: unknown },
+): Promise<InterviewBooking> {
+  const row = await loadBookingRow(bookingId);
+  requireCalendarAccess(caller, "view", weekOfInstant(row.starts_at));
+  if (!isInterviewAttendee(caller, row)) {
+    throw new Error("Only the interviewer or a panel member can score this interview.");
+  }
+  const rating = Number(input.rating);
+  if (!Number.isInteger(rating) || rating < 1 || rating > 5) throw new Error("Give a rating from 1 to 5.");
+  if (typeof input.verdict !== "string" || !isInterviewVerdict(input.verdict)) throw new Error("Choose a verdict.");
+  const commentText = typeof input.comment === "string" ? input.comment.trim() : "";
+  if (commentText.length > 2000) throw new Error("Keep the note under 2000 characters.");
+  const evaluator = hrIdForStorage(caller.access.hrId);
+  if (!evaluator) throw new Error("Sign in to Phoenix to score an interview.");
+  const { error } = await recruitmentDb()
+    .from(SCORECARDS)
+    .upsert(
+      {
+        booking_id: row.id,
+        comment: commentText || null,
+        evaluator_hr_id: evaluator,
+        rating,
+        updated_at: new Date().toISOString(),
+        verdict: input.verdict,
+      },
+      { onConflict: "booking_id,evaluator_hr_id" },
+    );
+  if (error) throw error;
+  const [booking] = await hydrate([row], caller);
+  return booking;
+}
+
 function asPlatform(value: string): InterviewPlatform {
   return isInterviewPlatform(value) ? value : "in_office";
 }
@@ -611,10 +683,11 @@ function mapSession(row: SessionRow, people: Map<string, InterviewCalendarPerson
 
 async function hydrate(rows: readonly BookingRow[], caller: InterviewCalendarCaller, now: Date = new Date()): Promise<InterviewBooking[]> {
   if (rows.length === 0) return [];
-  const [candidates, comments, sessions] = await Promise.all([
+  const [candidates, comments, sessions, scorecards] = await Promise.all([
     loadCandidates(rows.map((row) => row.candidate_id ?? "")),
     loadComments(rows.map((row) => row.id)),
     loadSessionsById(rows.map((row) => row.session_id ?? "")),
+    loadScorecards(rows.map((row) => row.id)),
   ]);
   const people = await loadPeople([
     ...rows.map((row) => row.created_by_hr_id),
@@ -622,8 +695,26 @@ async function hydrate(rows: readonly BookingRow[], caller: InterviewCalendarCal
     ...rows.flatMap((row) => row.panelist_hr_ids ?? []),
     ...rows.map((row) => row.outcome_set_by_hr_id),
     ...comments.map((comment) => comment.author_hr_id),
+    ...scorecards.map((scorecard) => scorecard.evaluator_hr_id),
   ]);
   const viewerKey = canonicalHrIdKey(caller.access.hrId);
+
+  // The panel's evaluations. Sensitive — shown only to those who can book (owner/editor/HR) or to
+  // someone who is themselves ON the interview; never to a not-signed-in share-link guest.
+  const scorecardsByBooking = new Map<string, InterviewScorecard[]>();
+  for (const scorecard of scorecards) {
+    const list = scorecardsByBooking.get(scorecard.booking_id) ?? [];
+    list.push({
+      comment: scorecard.comment?.trim() || null,
+      evaluatorHrId: hrIdForStorage(scorecard.evaluator_hr_id) ?? scorecard.evaluator_hr_id,
+      evaluatorName: personName(people, scorecard.evaluator_hr_id) ?? "An interviewer",
+      mine: Boolean(viewerKey) && canonicalHrIdKey(scorecard.evaluator_hr_id) === viewerKey,
+      rating: Number(scorecard.rating),
+      updatedAt: scorecard.updated_at,
+      verdict: asInterviewVerdict(scorecard.verdict),
+    });
+    scorecardsByBooking.set(scorecard.booking_id, list);
+  }
 
   const commentsByBooking = new Map<string, InterviewBookingComment[]>();
   for (const comment of comments) {
@@ -649,11 +740,17 @@ async function hydrate(rows: readonly BookingRow[], caller: InterviewCalendarCal
     const external = !row.candidate_id;
     // An outside person's phone and e-mail go only to those who can book: the people arranging it.
     const reveal = external && roleMeets(effectiveCalendarRole(caller, weekStartFor(dateKey)), "book");
+    // Scorecards: this viewer may FILE one only if they are on the interview; they SEE them if they
+    // can book (owner/editor/HR) or are on it. A guest sees none.
+    const canScore = isInterviewAttendee(caller, row);
+    const seesScorecards = canScore || roleMeets(effectiveCalendarRole(caller, weekStartFor(dateKey)), "book");
     return {
       bookedByName: personName(people, row.created_by_hr_id),
       candidateId: row.candidate_id ? String(row.candidate_id) : null,
       candidateJobTitle: candidate?.applied_for_job_title?.trim() || null,
       candidateName: candidate?.full_name?.trim() || row.external_name?.trim() || "Unnamed candidate",
+      canScoreInterview: canScore,
+      scorecards: seesScorecards ? (scorecardsByBooking.get(row.id) ?? []) : [],
       comments: commentsByBooking.get(row.id) ?? [],
       createdAt: row.created_at,
       dateKey,

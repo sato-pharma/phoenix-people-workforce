@@ -103,6 +103,7 @@ import { InterviewRequestPanels } from "./requests-inbox";
 import { ScheduleInterviewDialog } from "./schedule-interview-dialog";
 import { SessionDialog } from "./session-dialog";
 import { InvitationPanel } from "./invitation-panel";
+import { ScorecardPanel } from "./scorecard-panel";
 import { ZoomAutoOpen } from "./zoom-auto-open";
 import { ZoomMeetingPanels, type MeetingTarget } from "./zoom-panels";
 
@@ -1470,6 +1471,8 @@ function InterviewPanel({
           <InvitationPanel api={api} bookingId={booking.id} key={`${booking.id}:${booking.updatedAt}`} />
         </section>
       ) : null}
+
+      <ScorecardPanel api={api} booking={booking} onChanged={onChanged} />
 
       <section aria-label="Notes" className="border-t border-slate-200 pt-3">
         <p className="mb-2 text-[12px] font-bold uppercase tracking-[0.06em] text-slate-700">
