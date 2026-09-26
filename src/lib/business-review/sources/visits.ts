@@ -134,6 +134,16 @@ export type VisitAgentFact = {
   customersAm: Set<number>;
   customersPm: Set<number>;
   customersPharmacy: Set<number>;
+  /**
+   * What this agent's list is made of, by the vendor's own `speciality` value: the distinct
+   * contacts under each, and the visits to them.
+   *
+   * Tallies rather than rows, because a district merges its reps and a line merges its districts —
+   * carrying every visit row that far would be the same data an order of magnitude larger. The
+   * classification happens at the far end, in `specialty-mix.ts`, against the ONE authority.
+   */
+  specialityContacts: Map<string, Set<number>>;
+  specialityVisits: Map<string, number>;
   /** Rows per classifier label, so the activity mix can be rolled up per area, district and line
    *  instead of only company-wide — a mix is only useful next to the team it describes. */
   byLabel: Map<string, number>;
@@ -296,6 +306,8 @@ export async function loadVisitFacts(window: ReviewWindow): Promise<VisitsLoad> 
         customersAm: new Set<number>(),
         customersPm: new Set<number>(),
         customersPharmacy: new Set<number>(),
+        specialityContacts: new Map<string, Set<number>>(),
+        specialityVisits: new Map<string, number>(),
         byLabel: new Map<string, number>(),
       };
       agents.set(agentKey, agent);
@@ -313,6 +325,27 @@ export async function loadVisitFacts(window: ReviewWindow): Promise<VisitsLoad> 
       if (countBucket === "AM") agent.customersAm.add(contactId);
       else if (countBucket === "PM") agent.customersPm.add(contactId);
       else agent.customersPharmacy.add(contactId);
+    }
+
+    // What the list is made of. The vendor's value VERBATIM and trimmed — classification happens
+    // once, at the far end, against the one authority in contact-taxonomy.ts. Normalising or
+    // bucketing here would be a second opinion, and the second opinion is what once scored
+    // "Contract" and "Health Insurance" as doctors.
+    //
+    // Only FIELD rows: an admin row is not a call on anybody, and counting it would put a doctor in
+    // the list on the strength of paperwork. A row with no contact still contributes its VISIT,
+    // because it is real fieldwork; it just cannot name a customer.
+    if (isField) {
+      const speciality = String(row.speciality ?? "").trim();
+      agent.specialityVisits.set(speciality, (agent.specialityVisits.get(speciality) ?? 0) + 1);
+      if (contactId != null) {
+        let ids = agent.specialityContacts.get(speciality);
+        if (!ids) {
+          ids = new Set<number>();
+          agent.specialityContacts.set(speciality, ids);
+        }
+        ids.add(contactId);
+      }
     }
 
     if (!isCrmDoubleVisitRow(row)) continue;

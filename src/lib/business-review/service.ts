@@ -32,17 +32,22 @@ import { gunzip, gzip } from "node:zlib";
 import { unstable_cache } from "next/cache";
 
 import { calculateIncentive2026 } from "@/lib/incentives/scheme-2026";
+import type { SourceMaskViewer } from "@/lib/sales/closing-source-mask";
 import { loadAchievementCacheStamp } from "@/lib/sales/vs-target";
 
 import {
   availableReviewPeriods,
   loadReviewBundle,
+  OFFICIAL_LINE,
+  REVIEW_LINE_CODES,
   REVIEW_SOURCE_NOTICE,
   REVIEW_THRESHOLDS,
   type ReviewBundle,
   type ReviewLine,
 } from "./canonical";
+import type { ReviewCoverage } from "./coverage";
 import { resolveReviewWindow, type ReviewWindow, type WindowResolution } from "./period";
+import { loadClosingDetailFacts, type ClosingDetailLoad } from "./sources/closing-detail";
 import type { AreaSummary, DmSummary, ProductRow, ReviewCompany, ReviewDataset } from "./types";
 import {
   DEFAULT_REVIEW_VIEW,
@@ -53,7 +58,7 @@ import {
 } from "./review-views";
 
 export type { ReviewLine, ReviewWindow };
-export { availableReviewPeriods, REVIEW_SOURCE_NOTICE, REVIEW_THRESHOLDS };
+export { availableReviewPeriods, REVIEW_LINE_CODES, REVIEW_SOURCE_NOTICE, REVIEW_THRESHOLDS };
 export type BusinessReview = ReviewBundle;
 
 // The view switcher's option list lives in ./review-views.ts (a dependency-free module) for the
@@ -145,6 +150,34 @@ export async function loadBusinessReview(input?: {
     return { review: await loadReviewBundle(window, adjustment), resolution, available };
   }
   return { review: await unpackBundle(packed), resolution, available };
+}
+
+/**
+ * The closing's customer-grain rows for this window — brick, customer and channel.
+ *
+ * 🔴 NOT CACHED, AND THAT IS THE POINT. `loadBusinessReview` above is wrapped in
+ * `unstable_cache` keyed on the window and the achievement stamp and NOTHING ABOUT THE VIEWER,
+ * because every figure in that bundle is the same for everyone who may open the page. These rows
+ * are not: El Qema's are removed for everyone but the Super Admin. One Super Admin request
+ * populating a shared entry that a district manager is then served would leak the source through a
+ * concentration share, which is exactly what the mask exists to prevent. A line's customer list
+ * also runs to thousands of rows a month, and a >2MB `unstable_cache` entry throws in development,
+ * uncatchably, only there.
+ *
+ * Cut to the FIGURE window, never the requested one — a month whose distributor files have not
+ * landed is held out of every other figure on the page, and letting it into this one would put a
+ * brick on a chart the achievement beside it does not know about.
+ */
+export async function loadReviewConcentration(input: {
+  coverage: Pick<ReviewCoverage, "figureWindow">;
+  viewer: SourceMaskViewer;
+}): Promise<ClosingDetailLoad> {
+  const periods = input.coverage.figureWindow?.periods ?? [];
+  return loadClosingDetailFacts({
+    figurePeriods: periods,
+    lines: REVIEW_LINES.map(({ id }) => ({ lineCode: REVIEW_LINE_CODES[id], officialLine: OFFICIAL_LINE[id] })),
+    viewer: input.viewer,
+  });
 }
 
 // ─────────────────────────────── views over the bundle ───────────────────────────────

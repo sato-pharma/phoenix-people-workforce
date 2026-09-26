@@ -22,6 +22,8 @@ import type { VisitCountSplit } from "@/lib/crm/visit-count-buckets";
 
 import type { ReviewCoverage } from "./coverage";
 import type { ReviewWindow } from "./period";
+import type { ConcentrationFacts } from "./concentration";
+import type { SpecialtyMix } from "./specialty-mix";
 import type { ReviewPersonRow, ReviewRoleRow } from "./sources/roles";
 
 export type { CoverageStatus, ReviewCoverage, ReviewSourceId, SourceCoverage } from "./coverage";
@@ -85,6 +87,15 @@ export type AreaSummary = {
   byMonth: Record<string, Slice>;
   /** Distinct medical reps who carried sales in this area during the window. */
   reps: number;
+  /**
+   * WHICH reps, normalised the way every other HR id comparison in Phoenix is — upper case, so a
+   * plain `.eq` against mixed-case ids cannot silently under-return.
+   *
+   * `reps` has always been the SIZE of this set. Surfacing the set itself is what lets a medical
+   * rep be scoped to his own areas (owner ruling, 2026-09-26) without a second query, and what
+   * lets a rep row sit beside the achievement of the territory he actually stands in.
+   */
+  repHrIds: string[];
 
   // ── Live field activity for the reps placed in this area, month by month ──
   visits: number;
@@ -159,6 +170,12 @@ export type DmSummary = {
   customersAm: number;
   customersPm: number;
   customersPharmacy: number;
+  /**
+   * What this district's visited list is made of — the owner's "how many specialties per the
+   * district manager list", 2026-09-26. A UNION over its reps: a doctor two of them visited is one
+   * doctor here, never two.
+   */
+  specialityMix: SpecialtyMix;
 };
 
 export type ProductRow = {
@@ -284,6 +301,14 @@ export type ReviewMeta = {
 
 export type ReviewDataset = {
   meta: ReviewMeta;
+  /**
+   * Where this line's money came from — brick spread, customer concentration, channel split.
+   *
+   * NULL when the caller did not ask for it, and null is not zero: the customer-grain read is a
+   * separate round trip per line and month, so it is opt-in (see `withConcentration`). A surface
+   * that renders a zero here would claim this line sold through no bricks at all.
+   */
+  concentration: ConcentrationFacts | null;
   /**
    * Activity by role and by person, SCOPED TO THIS LINE.
    *

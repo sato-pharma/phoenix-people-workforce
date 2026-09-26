@@ -93,6 +93,7 @@ import {
   type ReviewOverlays,
   type UnplacedTotals,
 } from "./sources/rollup";
+/** The import sheets' own spelling of the three lines, for the closing's RPCs. */
 import {
   ROLES_ORIGIN,
   buildRoleFacts,
@@ -144,6 +145,16 @@ export const REVIEW_THRESHOLDS = { repFailBelow: 20, dsmFailBelow: 50 } as const
 
 /** Review line id → the line_code the canonical engine uses. */
 const LINE_CODE: Record<ReviewLine, string> = { pedia: "pedia", cns: "cns", anti: "anti_infective" };
+/**
+ * Review line id → `source_of_sales_fact_rollup.official_line`, which is what the closing's own
+ * RPCs match on. A THIRD spelling of the same three lines, and deliberately not folded into
+ * `LINE_CODE`: that one is the canonical engine's key and this one is the import sheets'. Verified
+ * against production 2026-09-26 — the distinct values are "CNS", "Pedia", "Anti Infective" and
+ * "Head Office", the last of which the review does not cover.
+ */
+export const OFFICIAL_LINE: Record<ReviewLine, string> = { pedia: "Pedia", cns: "CNS", anti: "Anti Infective" };
+/** The same three, as the canonical engine keys them. Exported for the concentration loader. */
+export const REVIEW_LINE_CODES: Record<ReviewLine, string> = LINE_CODE;
 const REVIEW_LINE_ORDER: { id: ReviewLine; label: string }[] = [
   { id: "pedia", label: "Pedia" },
   { id: "cns", label: "CNS" },
@@ -386,6 +397,15 @@ function buildAreas(line: ReviewLine, rows: AchievementRow[], ctx: BuildContext)
       }
 
       const allProducts = sliceOf(totalRows(areaRows, graded));
+      // One set, used for both the COUNT and the membership test. Upper-cased because HR ids reach
+      // this code from three systems in mixed case and a raw comparison has hidden 28% of rows.
+      const areaRepHrIds = [
+        ...new Set(
+          areaRows
+            .map((r) => String(r.repHrId ?? "").trim().toUpperCase())
+            .filter((id) => id.length > 0),
+        ),
+      ].sort();
       const byMonth = monthlySlices(areaRows, periods, graded);
       const overlay = isUnattributed ? ctx.overlays.area(null, null) : ctx.overlays.area(lineCode, areaKey);
 
@@ -406,7 +426,8 @@ function buildAreas(line: ReviewLine, rows: AchievementRow[], ctx: BuildContext)
         products,
         trend: monthlySales(includeRows, periods),
         byMonth,
-        reps: new Set(areaRows.map((r) => r.repHrId).filter(Boolean)).size,
+        reps: areaRepHrIds.length,
+        repHrIds: areaRepHrIds,
         visits: overlay.visits,
         visitSplit: overlay.visitSplit,
         regularVisits: overlay.regularVisits,
@@ -497,6 +518,9 @@ function buildDms(line: ReviewLine, rows: AchievementRow[], areas: AreaSummary[]
         customersAm: overlay.customersAm,
         customersPm: overlay.customersPm,
         customersPharmacy: overlay.customersPharmacy,
+        // A UNION over this district's reps, sealed by the overlay: a doctor two of them visited
+        // is one doctor here. Summing their mixes would double him.
+        specialityMix: overlay.specialityMix,
       } satisfies DmSummary;
     })
     .sort((a, b) => b.allProducts.sales - a.allProducts.sales);
@@ -786,6 +810,9 @@ function buildDataset(
   const visitingReps = activity.perRep.size;
 
   return {
+    // Overwritten by the loader when the customer-grain read was asked for. Null is the honest
+    // default: this builder has no access to that source and must not imply an empty one.
+    concentration: null,
     roles: roleFacts.roles,
     people: roleFacts.people,
     meta: {
@@ -1026,6 +1053,24 @@ function buildCompany(
     people: roles.people,
   };
 }
+
+/**
+ * 🔴 THE CUSTOMER-GRAIN LOAD IS DELIBERATELY NOT AN OPTION HERE, AND MUST NOT BECOME ONE.
+ *
+ * This bundle is wrapped in `unstable_cache`, keyed on the window, the adjustment and the
+ * achievement stamp — and on NOTHING ABOUT THE VIEWER, because every figure in it is the same for
+ * everyone who may open the page. The closing's customer-grain rows are not: El Qema's are removed
+ * for everyone but the Super Admin. Putting them inside this bundle would let one Super Admin
+ * request populate a cache entry that a district manager is then served, leaking the source through
+ * a concentration share.
+ *
+ * It would also be the wrong SIZE. A line's customer list runs to thousands of rows per month, and
+ * a >2MB `unstable_cache` entry throws in development, uncatchably, only there.
+ *
+ * So the rows are loaded per request instead, beside the cached bundle, by
+ * `loadReviewConcentration` in service.ts. That function takes the viewer, and the page attaches
+ * the result to whatever scope it is rendering.
+ */
 
 export type ReviewBundle = {
   window: ReviewWindow;

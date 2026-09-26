@@ -138,6 +138,11 @@ function agentFact(partial: Partial<VisitAgentFact> & { period: string; agentHrI
     customersAm: new Set<number>(),
     customersPm: new Set<number>(partial.customers ?? []),
     customersPharmacy: new Set<number>(),
+    // The list's make-up. Default it to one unnamed bucket carrying this fixture's own visits and
+    // customers, which is what the reader answers for a contact the vendor gave no speciality —
+    // so a fixture that says nothing about specialties still adds up to the same totals.
+    specialityContacts: new Map<string, Set<number>>([["", new Set<number>(partial.customers ?? [])]]),
+    specialityVisits: new Map<string, number>([["", partial.fieldVisits ?? 0]]),
     byLabel: new Map<string, number>(),
     ...partial,
   };

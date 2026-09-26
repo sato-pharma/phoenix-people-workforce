@@ -116,6 +116,25 @@ export type ReviewPersonRow = {
   activeMonths: number;
   /** Field visits per active month — never per window month, which would punish a March joiner. */
   avgPerActiveMonth: number;
+  /**
+   * DISTINCT customers reached in each month of the window — the owner's "in July this person got
+   * 200 unique customers, in August 250" (2026-09-26).
+   *
+   * A UNION PER MONTH, and the months must never be added together: the same doctor seen in July
+   * and again in August is one customer in each and one customer in the window. The plain
+   * "customers" field above is the window's own union and is the only honest total.
+   */
+  customersByMonth: Record<string, number>;
+  /**
+   * The district this person's own month-by-month attribution placed them in most often, and its
+   * area — so a rep can be shown beside the territory he actually stood in.
+   *
+   * MOST OFTEN, not last: a rep who moved districts mid-window belongs to the one he did the work
+   * in, and taking the latest would move his whole window's activity onto a district he joined in
+   * the final month. Null for anyone the attribution never placed.
+   */
+  dmSeatId: string | null;
+  areaCode: string | null;
 };
 
 /** One scope's tables: the company's, or one line's. */
@@ -234,6 +253,10 @@ type PersonAcc = {
   outstationClaimed: number;
   marketingRequests: number;
   months: Set<string>;
+  customersByMonth: Map<string, Set<number>>;
+  /** How many field visits this person made while placed in each district seat / area. */
+  seatVisits: Map<string, number>;
+  areaVisits: Map<string, number>;
 };
 
 type RoleAcc = {
@@ -343,6 +366,7 @@ function collect(input: RoleFactsInput, lineCode: string | null): RoleFacts {
         ridesLed: 0, reps: new Set(), customers: new Set(),
         outstationClaimed: 0, marketingRequests: 0,
         months: new Set(),
+        customersByMonth: new Map(), seatVisits: new Map(), areaVisits: new Map(),
       };
       people.set(key, acc);
     }
@@ -386,6 +410,26 @@ function collect(input: RoleFactsInput, lineCode: string | null): RoleFacts {
       for (const id of fact.customersPharmacy) acc.customersPharmacy.add(id);
     }
     if (fact.fieldVisits > 0 || fact.adminRows > 0) person.months.add(fact.period);
+
+    // The month's own customers, as a SET: this is the one figure that must not be added across
+    // months, so it is never stored as a count until the very end.
+    if (fact.customers.size > 0) {
+      let month = person.customersByMonth.get(fact.period);
+      if (!month) {
+        month = new Set<number>();
+        person.customersByMonth.set(fact.period, month);
+      }
+      for (const id of fact.customers) month.add(id);
+    }
+
+    // Where he stood, weighted by the work he did there — see `dmSeatId` on the row.
+    const placed = attribution.place(fact.agentHrId, fact.period);
+    if (placed?.dmSeatId) {
+      person.seatVisits.set(placed.dmSeatId, (person.seatVisits.get(placed.dmSeatId) ?? 0) + fact.fieldVisits);
+    }
+    if (placed?.areaCode) {
+      person.areaVisits.set(placed.areaCode, (person.areaVisits.get(placed.areaCode) ?? 0) + fact.fieldVisits);
+    }
     if (fact.fieldVisits > 0) {
       role.fieldVisitsByMonth.set(fact.period, (role.fieldVisitsByMonth.get(fact.period) ?? 0) + fact.fieldVisits);
     }
@@ -459,6 +503,22 @@ function collect(input: RoleFactsInput, lineCode: string | null): RoleFacts {
     }
   }
 
+  /**
+   * The key this person did the most field work under. Ties break on the key itself so the answer
+   * is stable across renders rather than depending on Map insertion order.
+   */
+  const busiest = (counts: Map<string, number>): string | null => {
+    let best: string | null = null;
+    let bestCount = -1;
+    for (const [key, count] of counts) {
+      if (count > bestCount || (count === bestCount && best != null && key < best)) {
+        best = key;
+        bestCount = count;
+      }
+    }
+    return best;
+  };
+
   // ── Person rows ──
   let unknownPeople = 0;
   const personRows: ReviewPersonRow[] = [...people.values()].map((acc) => {
@@ -486,6 +546,11 @@ function collect(input: RoleFactsInput, lineCode: string | null): RoleFacts {
       marketingRequests: acc.marketingRequests,
       activeMonths,
       avgPerActiveMonth: activeMonths > 0 ? round2(acc.fieldVisits / activeMonths) : 0,
+      customersByMonth: Object.fromEntries(
+        input.window.periods.map((period) => [period, acc.customersByMonth.get(period)?.size ?? 0]),
+      ),
+      dmSeatId: busiest(acc.seatVisits),
+      areaCode: busiest(acc.areaVisits),
     };
   });
   personRows.sort((a, b) => b.fieldVisits + b.ridesLed - (a.fieldVisits + a.ridesLed));
