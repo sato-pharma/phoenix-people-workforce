@@ -2981,6 +2981,68 @@ AGENTS.md §4 kept "A reply that asks nothing of him needs none" until 2026-09-1
 the user-level rule loaded into every session (`~/.claude/CLAUDE.md`), and a session reading §4 alone
 would drop the line. §4 now carries the 2026-09-18 form.
 
+## Golden rule #1 — the rep's app is easy, and it is blind — owner rule, 2026-09-26
+
+Set after a general discussion of what a medical-rep CRM should be. He stopped the work to make this
+a rule before anything else is built, and called it "golden rule number one". His words:
+
+> "the CRM usage for him must be number one very easy very easy and very simple … number two never
+> show the medical rep that this system is here to catch him, make everything silent to him. He does
+> his normal work very easy very normally … never informed of any violation or any other thing. But
+> every violation is then recorded in the admin and the SFE account. But never show a medical rep
+> anything."
+
+**It outranks every other Phoenix CRM rule.** Where a control and this rule collide, this rule wins
+and the control moves out of the rep's sight rather than being softened or explained to him.
+
+### The two halves
+
+**EASY.** A planned visit is taps and a photo — never typing. Nothing is asked twice. No field
+exists that the server can derive, and today it derives the date (server clock), the place, the
+brick, the area, the region and the visit type. Any new step in the rep's day is a change to his
+working life and needs the owner's word before it ships, however reasonable it looks in a diff.
+
+**BLIND.** Every integrity signal — the Android `mocked` flag, coordinate replay, impossible travel,
+zero jitter, accuracy, coordinate precision, distance from the saved place, duplicate photo,
+behavioural pattern — is recorded and readable **only by the Super Admin and the SFE Manager**. The
+rep gets no warning, no badge, no padlock, no refusal, and no wording anywhere in his app that a
+check exists at all. A flag never changes a number or a word on his own screens: his day must look
+identical whether or not he tripped one.
+
+### The boundary, which is the part that will be got wrong
+
+The test is **whose work it is**, not whether the information is about him:
+
+| His, and stays visible | Never his |
+| --- | --- |
+| His plan, his day, his list | Any integrity flag or its existence |
+| His targets and his own standing | The distance between where he stood and the saved place, AS A JUDGEMENT |
+| An approval **he** asked for (an off-plan visit he raised, a grade request) | A review opened **about** him |
+| A refusal of something he submitted, in plain words | The reason a check fired |
+
+An approval workflow he started is not policing and stays visible — he must be able to see that the
+off-plan visit he raised is with his manager, or he will raise it twice. A review he did not ask for
+is never shown.
+
+### Two live collisions this rule creates, both put to the owner
+
+1. **The "Far from the place" line on the rep's own visit.** Ruled KEEP earlier the same day — "it
+   is honest help" — on the reasoning that a rep with a wrong saved place should be able to see it.
+   Golden rule #1 says the opposite. Not changed pending his word; if it goes, the honest-help case
+   is served instead by letting him **correct the place**, which is work of his, rather than by
+   showing him a distance that reads as an accusation.
+2. **The integrity board's audience.** The 2026-09-25 rule made `/admin/phoenix-crm/integrity`
+   **Super Admin only**, deliberately — "the fewer people who can open the board, the longer it keeps
+   working". This rule adds the **SFE Manager**. That is a widening of an earlier decision, made
+   knowingly, and is recorded here so no later session reads it as drift.
+
+### What it does not license
+
+It is not a reason to hide a genuine refusal. If a save is rejected because a required field is
+missing, the rep is told plainly what to do — silence about *checks* is never silence about *his own
+work failing*. And thresholds stay set so an honest rep cannot trip them: a false positive accuses a
+real person of fraud, which is worse than a missed catch.
+
 ## The visit type, the off-plan approval and the monthly plan's due date — owner rulings, 2026-09-26
 
 He described the whole cycle he wants a medical rep to live in and asked, first, whether it was
