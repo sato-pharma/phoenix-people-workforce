@@ -82,6 +82,11 @@ import {
 } from "../src/lib/devices/headwind/devices.ts";
 import { headwindErrorResponse } from "../src/lib/devices/headwind/http.ts";
 import {
+  normalizeRemoteScreenId,
+  setHeadwindRemoteScreenId,
+  HeadwindRemoteScreenIdError,
+} from "../src/lib/devices/headwind/remote-screen-id.ts";
+import {
   installedAppsFromInfo,
   isAndroidPackageName,
   removeHeadwindApp,
@@ -2435,6 +2440,126 @@ function runBootstrapScriptTests() {
   );
 }
 
+/* ─────────────────────────────────────────────────────────────────────────────────────────────────
+ * The remote screen ID — the one number in the whole tablet setup that a person types.
+ * ───────────────────────────────────────────────────────────────────────────────────────────────── */
+
+async function runRemoteScreenIdTests() {
+  resetHeadwindTokenCache();
+
+  // RustDesk shows its ID grouped as `123 456 789`. The spaces are its own formatting, so they are
+  // stripped rather than refused — a person copying what is on the tablet's screen is not making a typo.
+  assert.equal(normalizeRemoteScreenId("123 456 789"), "123456789");
+  assert.equal(normalizeRemoteScreenId("  123456789  "), "123456789");
+
+  // Nothing reaches the network until the value could possibly be an ID.
+  const untouched = makeFetch({ api: [{ body: { status: "OK" }, status: 200 }] });
+  for (const [bad, why] of [
+    ["12345", "five characters is not an ID — RustDesk's own are nine or ten"],
+    ["+20 100 123 4567", "a phone number pasted by mistake"],
+    ["the id is on the tablet", "a sentence"],
+    ["123456789; drop", "anything carrying punctuation"],
+  ] as const) {
+    await assert.rejects(
+      () => setHeadwindRemoteScreenId({ deviceNumber: "PHX-TAB-0002", remoteScreenId: bad }, "B-10", untouched.fetch, ENV),
+      HeadwindRemoteScreenIdError,
+      why,
+    );
+  }
+  await assert.rejects(
+    () => setHeadwindRemoteScreenId({ deviceNumber: "  ", remoteScreenId: "123456789" }, "B-10", untouched.fetch, ENV),
+    HeadwindRemoteScreenIdError,
+    "and an ID with no tablet named",
+  );
+  assert.equal(untouched.calls.length, 0, "none of those reached the network at all — not even a sign-in");
+
+  // 🔴 RESOLVED AGAINST THE LIVE LIST, THROUGH THE NESTED PAGE. The reply shape is the one the real
+  // server sends, so this test fails if the unwrapper is ever narrowed back to the flat shape.
+  resetHeadwindTokenCache();
+  const gone = makeFetch({
+    api: [{ body: { data: { configurations: {}, devices: { items: [{ id: 7, number: "PHX-TAB-0002" }] } }, status: "OK" }, status: 200 }],
+  });
+  await assert.rejects(
+    () => setHeadwindRemoteScreenId({ deviceNumber: "PHX-TAB-0009", remoteScreenId: "123456789" }, "B-10", gone.fetch, ENV),
+    HeadwindRemoteScreenIdError,
+    "a tablet that is not on the server cannot be given an ID",
+  );
+
+  // The value already stored is not written again — no PUT, no audit row, and it says so plainly.
+  resetHeadwindTokenCache();
+  const same = makeFetch({
+    api: [
+      {
+        body: { data: { devices: { items: [{ custom1: "123456789", id: 7, number: "PHX-TAB-0002" }] } }, status: "OK" },
+        status: 200,
+      },
+    ],
+  });
+  const unchanged = await setHeadwindRemoteScreenId(
+    { deviceNumber: "PHX-TAB-0002", remoteScreenId: "123 456 789" },
+    "B-10",
+    same.fetch,
+    ENV,
+  );
+  assert.equal(unchanged.remoteScreenId, "123456789");
+  assert.match(unchanged.message, /already carries remote screen ID 123456789/);
+  assert.equal(
+    same.calls.filter((call) => call.init.method === "PUT").length,
+    0,
+    "the same value is not written again",
+  );
+
+  // 🔴 THE ONE THAT MATTERS: A `status: OK` THAT CHANGED NOTHING IS REPORTED AS A FAILURE. This server
+  // has a PUT that answers OK and leaves the value alone — `baseUrl`, measured 2026-09-26 — so the
+  // write is read back, and a success is claimed only when the server holds what was asked for.
+  resetHeadwindTokenCache();
+  const lied = makeFetch({
+    api: [
+      { body: { data: { devices: { items: [{ id: 7, number: "PHX-TAB-0002" }] } }, status: "OK" }, status: 200 },
+      { body: { status: "OK" }, status: 200 },
+      { body: { data: { devices: { items: [{ id: 7, number: "PHX-TAB-0002" }] } }, status: "OK" }, status: 200 },
+    ],
+  });
+  await assert.rejects(
+    () => setHeadwindRemoteScreenId({ deviceNumber: "PHX-TAB-0002", remoteScreenId: "123456789" }, "B-10", lied.fetch, ENV),
+    (error: unknown) =>
+      error instanceof HeadwindRemoteScreenIdError &&
+      /accepted the change and then still reports no remote screen ID/.test(error.message) &&
+      /Nothing has been recorded/.test(error.message),
+    "an OK that did not take is a failure with the reason, never a green message",
+  );
+  assert.equal(lied.calls.filter((call) => call.init.method === "PUT").length, 1, "it tried exactly once");
+
+  // The write itself carries the register-free parts at source: the opaque round-trip, the audit row.
+  const writer = stripComments(source("src/lib/devices/headwind/remote-screen-id.ts"));
+  assert.match(writer, /\{ \.\.\.device, custom1: next \}/, "an OPAQUE round-trip — a hand-built body drops the tablet's groups");
+  assert.match(writer, /entityType: "headwind_device_command"/, "and the change writes a REQUIRED audit row");
+  assert.match(writer, /oldValues: \{ remoteScreenId: previous \}/, "naming what it was before, so a wrong ID can be traced");
+
+  // The route is the security boundary, like every other write in this bridge.
+  const route = stripComments(source("app/api/devices/headwind/remote-id/route.ts"));
+  assert.match(route, /const csrf = assertSameOriginMutation\(request\);\s*if \(csrf\) return csrf;/);
+  assert.match(route, /assertPermission\(access, "company_devices", "approve"\)/, "Super Admin only, on the server");
+  assert.match(route, /payload\.remoteScreenId === "string"/, "and the ID comes from the body, never from the URL");
+
+  // And it is declared, with its CSRF and audit obligations, where the coverage test can see it.
+  const registry = source("src/lib/security/access-registry.ts");
+  assert.match(
+    registry,
+    /pattern: "\/api\/devices\/headwind\/remote-id", permission: \{ resource: "company_devices", action: "approve" \}, csrfRequired: true/,
+    "the route is in the access registry with the same gate as the rest of the bridge",
+  );
+
+  // 🔴 THE FIELD IS TYPED IN PHOENIX BECAUSE THE CONSOLE CANNOT DRAW IT — and the row above the panel
+  // has to catch up, or a saved ID sits beside a row still reading that there is none.
+  const panel = stripComments(source("src/components/devices/headwind-tablet-panel.tsx"));
+  assert.match(panel, /"\/api\/devices\/headwind\/remote-id"/, "the panel posts to the route");
+  assert.match(panel, /onSaved\?\.\(\)/, "and tells the fleet to read itself again once it has saved");
+  const fleet = stripComments(source("src/components/devices/headwind-fleet.tsx"));
+  assert.match(fleet, /remoteScreenId=\{row\.rustDeskId\}/, "the fleet hands the panel the ID the tablet already has");
+  assert.match(fleet, /onRemoteScreenIdSaved=\{props\.onRefresh\}/, "and refreshes the row when the panel saves one");
+}
+
 export async function runHeadwindBridgeTests() {
   await runAuthTests();
   await runCloudflareAccessTests();
@@ -2445,6 +2570,7 @@ export async function runHeadwindBridgeTests() {
   await runCommandTests();
   runAppsTests();
   await runAppRemovalTests();
+  await runRemoteScreenIdTests();
   await runCorporateWipeTests();
   await runConfigurationTests();
   await runUploadTests();

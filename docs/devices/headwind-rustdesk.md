@@ -905,9 +905,11 @@ Do **PHX-TAB-0002 first, alone**, and only move the rest once every step has bee
 6. Open RustDesk on the tablet once, read the **ID** it shows, and set an **unattended-access password**
    (RustDesk → ⋮ → Settings → Security → Unattended access). Grant the **"RustDesk Input"**
    accessibility service (§5.1) — without it a session can watch the tablet but not touch it.
-7. Put that ID in the **first custom field** of the tablet's record in Headwind. That is where Phoenix
-   reads it from — deliberately no second list to keep in step. 🔴 **That field is invisible in the
-   console today** (§5.2), so until it is named the ID goes in through the API.
+7. Type that ID into Phoenix: `/devices/tablets` → open the tablet's row → **Remote screen ID** →
+   *Record the ID of `PHX-TAB-0003`*. It is stored in Headwind's own first custom field, so there is no
+   second list to keep in step, and the row above the panel updates itself once it saves. 🔴 **Do not go
+   looking for that field in the Headwind console — it cannot be drawn there** (§5.2). Clearing the box
+   clears the ID, which is what a re-enrolled tablet needs, because RustDesk gives it a new one.
 8. In Phoenix — `https://phoenix-hr.satopharma.com/devices/tablets` — confirm: the tablet is in the
    **Headwind** section, it has **added itself to the custody register** under its number, and **View
    the screen** and **Take control** both work.
@@ -979,12 +981,22 @@ missing, the agent ignored the field and the permanent fix is to write `base.url
 `hmdm.properties` from `infra/headwind-phoenix-actions`, which rebuilds and restarts the fleet's server
 and is therefore its own decision.
 
-🔴 **The field the RustDesk ID belongs in cannot be shown in the console.** `custom1` — which Phoenix
-reads and displays as *Remote screen ID* — only appears in the device dialog when
-`settings.customPropertyName1` is set, and it is `null`; the Community console's own settings screens
-read that name but never set it. So the ID goes in through the API until it is named, and the clean fix
-is a **Remote screen ID** input on the tablet's card in Phoenix, which writes it through the bridge that
-already exists.
+🔴 **The field the RustDesk ID belongs in cannot be shown in the console — so it is typed in Phoenix.**
+`custom1` — which Phoenix reads and displays as *Remote screen ID* — only appears in Headwind's device
+dialog when `settings.customPropertyName1` is set. It is `null` here, and the Community console's own
+settings screens **read** that name without ever setting it, so the one number a screen session is aimed
+at had nowhere a person could put it.
+
+✅ **Built 2026-09-26: a *Remote screen ID* box on the tablet's own panel** (`/devices/tablets` → open a
+row), writing `custom1` through `POST /api/devices/headwind/remote-id` — Super Admin only, same-origin,
+with a required audit row naming the tablet, the old ID and the new one. It still lives in Headwind, so
+there is no second list. Two things it does on purpose: an **empty box clears** the ID, because a
+re-enrolled tablet gets a new one from RustDesk and a stale number aims sessions at a device that no
+longer answers; and the write is **read back before success is reported**, because this server has a PUT
+that answers `OK` and changes nothing (above). A spelling that is not an ID is refused with what to do
+instead, rather than stored for a screen session to fail on later — and stripping RustDesk's own digit
+grouping is done **only when what is left is all digits**, or a sentence typed into the box would
+collapse into a plausible-looking custom ID and be saved.
 
 ✅ **The customer record's `deviceLimit = 3` does NOT cap the fleet.** It reads like a hard ceiling three
 tablets in. Measured instead of assumed: three throwaway rows were created past it (five in total, all

@@ -501,7 +501,105 @@ function AppsPanel({ deviceNumber }: { deviceNumber: string }) {
   );
 }
 
-export function HeadwindTabletPanel({ deviceNumber }: { deviceNumber: string }) {
+/* ─────────────────────────────────────────────────────────────────────────────────────────────────
+ * The remote screen ID — the one number in the whole setup that a person has to type.
+ * ───────────────────────────────────────────────────────────────────────────────────────────────── */
+
+type RemoteScreenIdState = {
+  deviceNumber: string;
+  value: string;
+  busy: boolean;
+  notice: string | null;
+  failure: string | null;
+};
+
+/**
+ * 🔴 THIS SECTION EXISTS BECAUSE THE HEADWIND CONSOLE CANNOT SHOW THE FIELD. The ID lives in
+ * Headwind's `custom1` — deliberately, so there is no second list to keep in step — and the Community
+ * console only draws its custom inputs when `settings.customPropertyName1` is named. It is `null` on
+ * this server, and no screen in that console sets it, so the one number a screen session is aimed at
+ * had nowhere it could be typed. It is typed here.
+ */
+function RemoteScreenIdPanel({
+  deviceNumber,
+  current,
+  onSaved,
+}: {
+  deviceNumber: string;
+  current: string | null;
+  onSaved?: () => void;
+}) {
+  const fresh = (): RemoteScreenIdState => ({
+    busy: false,
+    deviceNumber,
+    failure: null,
+    notice: null,
+    value: current ?? "",
+  });
+  const [state, setState] = useState<RemoteScreenIdState>(fresh);
+  // Derived during the render, never reset in an effect — the same rule the other panels follow, and
+  // for the same reason: a number half-typed for one tablet must not follow the panel onto another
+  // rep's, where pressing Record would aim screen sessions at the wrong device.
+  const own = state.deviceNumber === deviceNumber ? state : fresh();
+
+  async function save() {
+    setState({ ...own, busy: true, failure: null, notice: null });
+    try {
+      const result = await postJson<{ message: string; remoteScreenId: string | null }>(
+        "/api/devices/headwind/remote-id",
+        { deviceNumber, remoteScreenId: own.value },
+      );
+      setState({ ...own, busy: false, failure: null, notice: result.message, value: result.remoteScreenId ?? "" });
+      onSaved?.();
+    } catch (caught: unknown) {
+      setState({
+        ...own,
+        busy: false,
+        failure: failureText(caught, "Could not record the tablet's remote screen ID."),
+        notice: null,
+      });
+    }
+  }
+
+  return (
+    <Panel title="Remote screen ID">
+      <p className="break-words text-[11px] font-semibold text-slate-500">
+        Open RustDesk on the tablet and copy the number it shows at the top. It is what <em>View the screen</em> and{" "}
+        <em>Take control</em> are aimed at, and it changes every time the tablet is re-enrolled. Leave it empty to
+        clear it — better no ID than one pointing at a tablet that no longer answers.
+      </p>
+      <div className="mt-2 flex flex-wrap items-end gap-2">
+        <label className="min-w-0 flex-1 basis-40">
+          <span className={`block ${MICRO_LABEL}`}>What RustDesk shows on the tablet</span>
+          <input
+            className={`mt-1 ${PANEL_INPUT}`}
+            inputMode="numeric"
+            onChange={(event) => setState({ ...own, failure: null, notice: null, value: event.target.value })}
+            placeholder="123 456 789"
+            type="text"
+            value={own.value}
+          />
+        </label>
+        <button className={PANEL_ACTION} disabled={own.busy} onClick={() => void save()} type="button">
+          {own.busy ? <Loader2 aria-hidden className="h-3 w-3 animate-spin" /> : null}
+          {current ? `Change the ID of ${deviceNumber}` : `Record the ID of ${deviceNumber}`}
+        </button>
+      </div>
+      {own.notice ? <Done message={own.notice} /> : null}
+      {own.failure ? <Failed message={own.failure} /> : null}
+    </Panel>
+  );
+}
+
+export function HeadwindTabletPanel({
+  deviceNumber,
+  remoteScreenId = null,
+  onRemoteScreenIdSaved,
+}: {
+  deviceNumber: string;
+  remoteScreenId?: string | null;
+  onRemoteScreenIdSaved?: () => void;
+}) {
   const query = encodeURIComponent(deviceNumber);
   const detail = useRead<DeviceDetail>(`/api/devices/headwind?deviceNumber=${query}&view=detail`);
   const history = useRead<{ commands: CommandRecord[] }>(`/api/devices/headwind?deviceNumber=${query}&view=history`);
@@ -531,6 +629,8 @@ export function HeadwindTabletPanel({ deviceNumber }: { deviceNumber: string }) 
           )
         ) : null}
       </Panel>
+
+      <RemoteScreenIdPanel current={remoteScreenId} deviceNumber={deviceNumber} onSaved={onRemoteScreenIdSaved} />
 
       <ActionsPanel deviceNumber={deviceNumber} />
 

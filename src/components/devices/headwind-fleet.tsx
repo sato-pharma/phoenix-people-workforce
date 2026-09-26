@@ -227,6 +227,17 @@ export function HeadwindFleet() {
       });
   }, [load, pendingImeis]);
 
+  /**
+   * One reload the panels can ask for by name.
+   *
+   * The remote screen ID is typed in the panel underneath a row and displayed IN that row, so without
+   * this the row would keep showing "no screen ID" beside a panel that had just saved one — two true
+   * halves of the same screen disagreeing, which on a custody console reads as a failed write.
+   */
+  const refresh = useCallback(() => {
+    void load(() => true);
+  }, [load]);
+
   const runCommand = useCallback(
     async (row: FleetRow, command: string, destructive: boolean) => {
       const key = `${row.deviceNumber}:${command}`;
@@ -445,6 +456,7 @@ export function HeadwindFleet() {
                     notice={notices[row.deviceNumber]}
                     onCommand={runCommand}
                     onLocate={locate}
+                    onRefresh={refresh}
                     onScreen={openScreen}
                     onToggle={toggleOpen}
                     open={openDeviceNumber === row.deviceNumber}
@@ -471,6 +483,7 @@ export function HeadwindFleet() {
                 notice={notices[row.deviceNumber]}
                 onCommand={runCommand}
                 onLocate={locate}
+                onRefresh={refresh}
                 onScreen={openScreen}
                 onToggle={toggleOpen}
                 open={openDeviceNumber === row.deviceNumber}
@@ -503,6 +516,8 @@ type BlockProps = {
   onLocate: (row: FleetRow) => void;
   onScreen: (row: FleetRow, mode: "view" | "control") => void;
   onToggle: (row: FleetRow) => void;
+  /** Read the fleet again — a remote screen ID recorded in the panel has to reach the row above it. */
+  onRefresh: () => void;
 };
 
 function TabletCell({ row }: { row: FleetRow }) {
@@ -711,7 +726,13 @@ function FleetRowBlock(props: BlockProps) {
           <FleetActions {...props} />
           {notice ? <p className="mt-2 break-words text-[11px] font-bold text-emerald-800">{notice}</p> : null}
           {error ? <p className="mt-2 break-words text-[11px] font-bold text-rose-700">{error}</p> : null}
-          {open ? <HeadwindTabletPanel deviceNumber={row.deviceNumber} /> : null}
+          {open ? (
+            <HeadwindTabletPanel
+              deviceNumber={row.deviceNumber}
+              onRemoteScreenIdSaved={props.onRefresh}
+              remoteScreenId={row.rustDeskId}
+            />
+          ) : null}
         </div>
       </div>
     );
@@ -734,7 +755,13 @@ function FleetRowBlock(props: BlockProps) {
           <FleetActions {...props} />
           {notice ? <p className="mt-2 break-words text-[11px] font-bold text-emerald-800">{notice}</p> : null}
           {error ? <p className="mt-2 break-words text-[11px] font-bold text-rose-700">{error}</p> : null}
-          {open ? <HeadwindTabletPanel deviceNumber={row.deviceNumber} /> : null}
+          {open ? (
+            <HeadwindTabletPanel
+              deviceNumber={row.deviceNumber}
+              onRemoteScreenIdSaved={props.onRefresh}
+              remoteScreenId={row.rustDeskId}
+            />
+          ) : null}
         </td>
       </tr>
     </>
