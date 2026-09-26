@@ -73,7 +73,6 @@ export const JOB_SCHEDULES: readonly JobScheduleDeclaration[] = [
   // land in, so a slower clock would skip interviews. Off every other job's minutes so a red execution
   // names one job. Must match scripts/cronjob-sync.mjs exactly.
   { slug: "phoenix-interview-reminders", kind: "cron", schedule: "3,13,23,33,43,53 * * * *", graceSeconds: 1 * HOUR },
-  { slug: "phoenix-interview-digest", kind: "cron", schedule: "0 8 * * 0", graceSeconds: 6 * HOUR },
   // 06:55 Cairo, every day — before the field day starts, and on :55 so a red execution names one
   // job. Daily rather than field-days-only: the job runs on a Friday too and simply finds the
   // Thursday before, which is what keeps its heartbeat a straight daily one. Must match

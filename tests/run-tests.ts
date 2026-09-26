@@ -699,6 +699,7 @@ import { runBusinessReviewPreviousWindowTests } from "./business-review-previous
 import { runBusinessReviewSpecialtyMixTests } from "./business-review-specialty-mix.test.ts";
 import { runBusinessReviewClosingDetailTests } from "./business-review-closing-detail.test.ts";
 import { runBusinessReviewPackModelTests } from "./business-review-pack-model.test.ts";
+import { runBusinessReviewPackPptxTests } from "./business-review-pack-pptx.test.ts";
 import { runMonthlySalesRunTests } from "./monthly-sales-run.test.ts";
 import { runSosHeaderDetectionTests } from "./sos-header-detection.test.ts";
 import { runSalesStrictConformanceTests } from "./sales-strict-conformance.test.ts";
@@ -1915,7 +1916,6 @@ import { runInterviewCalendarTests } from "./interview-calendar.test.ts";
 import { runInterviewCalendarApplicationTests } from "./interview-calendar-application.test.ts";
 import { runScreeningDownloadApplicationTests } from "./screening-download-application.test.ts";
 import { runInterviewReminderTests } from "./interview-reminders.test.ts";
-import { runInterviewDigestTests } from "./interview-digest.test.ts";
 import { runInterviewTier3Tests } from "./interview-tier3.test.ts";
 import { runInterviewRequestTests } from "./interview-requests.test.ts";
 import { runInterviewInvitationTests } from "./interview-invitation.test.ts";
@@ -4494,6 +4494,11 @@ await runTest(
   "business review pack model (what goes in the exported file: every honesty rule the screen carries travels with its section, so a pack read in a meeting still says the achievement beside a rep is his AREA's and that the monthly customer columns do not sum to the window; a section with nothing to say is dropped rather than exported blank; ticked-but-never-loaded is not the same as loaded-and-empty; the route resolves scope from the SESSION and never from a line or seat parameter; and neither renderer derives a figure of its own)",
   runBusinessReviewPackModelTests,
 );
+
+await runTest(
+  "business review pack pptx (the EMITTED deck, not the source that wrote it: a .pptx is a zip of XML parts and PowerPoint's failure mode is total, so one unescaped ampersand or one relationship pointing at nothing refuses the whole presentation naming none of it; every part declared, every r:id resolving, hostile names escaped, the twelve-row cap both enforced and admitted on the slide, the honesty notes travelling into the file, AM · PM · Pharmacies keeping its middle dots, the house palette and square corners in the artifact, and no PPTX dependency creeping in)",
+  runBusinessReviewPackPptxTests,
+);
 await runTest(
   "business review closing detail (the customer-grain source: a direct order is direct whoever bought it, a warehouse buying from a distributor is a wholesaler row decided by the one channel authority, El Qema is masked on the RAW rows before anything is derived from them, the load is cut to the figure window, and the module reads the closing's own aggregate RPC rather than re-grouping raw import rows)",
   runBusinessReviewClosingDetailTests,
@@ -6745,10 +6750,6 @@ await runTest(
   runInterviewReminderTests,
 );
 
-await runTest(
-  "the weekly interview digest summarizes the week to the Super Admin(s) only, in-app + Telegram, never e-mail and never the CEO, once per week by its key, and is wired to the Sunday-08:00-Cairo cron",
-  runInterviewDigestTests,
-);
 
 await runTest(
   "Tier 3: the lead interviewer confirms/declines (a declined lead is dropped from reminders and a reassignment clears the answer), an outside candidate's CV is replaced after booking, every change is kept in a per-interview history, and the routes, registry and migration are wired",
