@@ -64,7 +64,16 @@ comment on column public.phoenix_crm_day_activities.half_day is
 create index if not exists phoenix_crm_day_activities_seat_idx
   on public.phoenix_crm_day_activities (seat_id, activity_date desc);
 
+-- The same four statements, in the same order, as every other table in this module. The order
+-- matters: revoking from public also strips service_role, which is a member of it, so the grant that
+-- follows is mandatory rather than decorative. And the `drop policy if exists` is not decoration
+-- either — without it this file cannot be REPLAYED. Staging's ledger and its schema are not one
+-- thing: the table, the index and this policy were already live on cifwmndunmlxjhyjugxa with no
+-- ledger row to say so, so the nightly "Apply Migrations to Staging" job replayed the file and died
+-- on `policy … already exists` — the one statement here with no guard on it, while `create table if
+-- not exists` and `create index if not exists` passed straight through.
 alter table public.phoenix_crm_day_activities enable row level security;
+drop policy if exists phoenix_crm_day_activities_service_role on public.phoenix_crm_day_activities;
 create policy phoenix_crm_day_activities_service_role
   on public.phoenix_crm_day_activities for all to service_role using (true) with check (true);
 revoke all on table public.phoenix_crm_day_activities from public, anon, authenticated;
