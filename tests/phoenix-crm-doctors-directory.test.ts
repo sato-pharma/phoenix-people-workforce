@@ -98,7 +98,12 @@ function runTabTests() {
 
   // A key the content switch does not know renders the Plan tab, quietly and wrongly.
   assert.match(app, /if \(key === "doctors"\) \{/, "the page draws the Doctors tab rather than falling through to the planner");
-  assert.match(app, /type HoldingTab = Exclude<TabKey, "reports" \| "doctors">;/, "the Doctors tab holds no unsaved work, so it is never kept aside");
+  // The RULE is that Doctors is excluded, not that exactly two tabs are. Pinning the whole union made
+  // this test the thing that broke when Today — another read that holds nothing — was added in A2
+  // (2026-09-26), which is a false failure: it said "Doctors holds unsaved work now", and it did not.
+  const holding = /type HoldingTab = Exclude<TabKey, ([^>]+)>;/.exec(app);
+  assert.ok(holding, "HoldingTab is still declared by excluding the tabs that hold nothing");
+  assert.match(holding[1], /"doctors"/, "the Doctors tab holds no unsaved work, so it is never kept aside");
 
   // The server decides the tab, and a directory role gets it without holding a seat: a Training
   // Manager has no territory in the organogram and would otherwise be shown a closed module.

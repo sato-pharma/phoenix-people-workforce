@@ -216,7 +216,7 @@ async function loadVisitRows(seatId: string, isTest: boolean, date: string): Pro
 }
 
 /** Whether the viewer may enter this territory's visits (territoryForVisit, answered for a screen). */
-function canEnterVisits(viewer: PhoenixCrmViewer, seatId: string, isTest: boolean): boolean {
+export function canEnterVisits(viewer: PhoenixCrmViewer, seatId: string, isTest: boolean): boolean {
   try {
     territoryForVisit(viewer, seatId, isTest);
     return true;
@@ -444,6 +444,50 @@ async function loadLastVisitProducts(
     lineProducts,
     VISIT_PRODUCTS_MAX,
   );
+}
+
+/**
+ * A day's visits, mapped — for any screen that needs to know who was seen today.
+ *
+ * The Today screen reads this rather than the raw rows, so one visit reads the same on both screens
+ * and a change to `mapVisitRow` cannot leave the two disagreeing about a name.
+ */
+export async function loadVisitRowsForDay(seatId: string, isTest: boolean, date: string): Promise<VisitRow[]> {
+  const rows = await loadVisitRows(seatId, isTest, date);
+  const names = await loadPeopleNames(visitPeople(rows));
+  return rows.map((row) => mapVisitRow(row, names));
+}
+
+/**
+ * The customers on a SENT plan for one day, and whether a sent plan exists at all.
+ *
+ * `plannedCustomerIds` answers only the first half, and the Today screen needs the second: "no plan
+ * sent yet" and "a sent plan with nobody on today" are different sentences to a rep, and showing the
+ * wrong one sends him to the wrong screen.
+ */
+export async function plannedCustomersOn(
+  seatId: string,
+  isTest: boolean,
+  date: string,
+): Promise<{ hasPlan: boolean; customerIds: string[] }> {
+  const supabase = getSupabaseAdmin();
+  const { data: plan, error } = await supabase
+    .from("phoenix_crm_plans")
+    .select("id")
+    .eq("seat_id", seatId)
+    .eq("is_test", isTest)
+    .eq("week_start", fieldWeekStart(date))
+    .in("status", ["submitted", "approved"])
+    .maybeSingle();
+  throwIfError(error);
+  if (!plan) return { hasPlan: false, customerIds: [] };
+  const items = await supabase
+    .from("phoenix_crm_plan_items")
+    .select("customer_id")
+    .eq("plan_id", String((plan as Row).id))
+    .eq("plan_date", date);
+  throwIfError(items.error);
+  return { hasPlan: true, customerIds: ((items.data ?? []) as Row[]).map((row) => String(row.customer_id)) };
 }
 
 export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unknown; test: unknown }): Promise<VisitFormView> {

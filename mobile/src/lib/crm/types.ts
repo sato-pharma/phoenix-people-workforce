@@ -42,6 +42,8 @@ export type CrmOverview = {
   };
   cairoToday: string;
   tabs: {
+    /** The rep's own day — the sub-tab the app opens on (A2). */
+    today: boolean;
     visits: boolean;
     list: boolean;
     plan: boolean;
@@ -397,4 +399,36 @@ export type PlacePayload = {
   deviceMocked: boolean | null;
   label: string | null;
   timings: TimingDraftPayload[];
+};
+
+/**
+ * Today — the rep's day, as he works it. The narrow mirror of `TodayView`
+ * (src/lib/phoenix-crm/server/today.ts); only the fields this screen reads.
+ *
+ * Nothing here is a distance, an accuracy or a flag, and nothing may be added that is. This screen is
+ * his own work: his plan, his day, his two targets.
+ */
+export type CrmTodayStop = {
+  customerId: string;
+  name: string;
+  listType: CrmListType;
+  speciality: string | null;
+  brick: string | null;
+  placeLabel: string | null;
+  todayWindows: string;
+  startMinute: number | null;
+  done: boolean;
+  doneAt: string | null;
+};
+
+export type CrmTodayView = {
+  territory: TerritorySummary;
+  isTest: boolean;
+  date: string;
+  target: { am: number; pm: number };
+  canAdd: boolean;
+  emptyReason: string | null;
+  stops: CrmTodayStop[];
+  alsoVisited: Array<{ customerId: string; name: string; listType: CrmListType; doneAt: string }>;
+  counts: { plannedAm: number; plannedPm: number; doneAm: number; donePm: number };
 };

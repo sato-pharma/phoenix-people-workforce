@@ -8,6 +8,7 @@ import { ErrorNotice, LoadingScreen } from "@/components/ui";
 import { useCrm } from "@/lib/crm/client";
 import { ListScreen } from "@/features/crm/list-screen";
 import { PlanScreen } from "@/features/crm/plan-screen";
+import { TodayScreen } from "@/features/crm/today-screen";
 import { VisitsScreen } from "@/features/crm/visits-screen";
 import type { PendingValidate, PendingVisit } from "@/features/crm/handoff";
 import { hairline, radius, space, type } from "@/theme/tokens";
@@ -29,9 +30,9 @@ import type { CrmOverview, TerritorySummary } from "@/lib/crm/types";
  * hidden, so the whole screen is the entry the rep is standing at the door to finish.
  */
 
-type SubTab = "visits" | "list" | "plan";
+type SubTab = "today" | "visits" | "list" | "plan";
 
-const SUB_TAB_LABEL: Record<SubTab, string> = { visits: "Visits", list: "List", plan: "Plan" };
+const SUB_TAB_LABEL: Record<SubTab, string> = { today: "Today", visits: "Visits", list: "List", plan: "Plan" };
 
 function seatOf(overview: CrmOverview, chosen: string | null): string | null {
   const options = overview.territories;
@@ -89,6 +90,9 @@ export default function PhoenixCrmScreen() {
   const seatId = seatOf(overview, chosenSeat);
 
   const subTabs: SubTab[] = [
+    // A2: the app opens on his day. Built from `overview.tabs` alone — the server decides who gets
+    // which tab, and the phone must never re-derive that from a role.
+    ...(overview.tabs.today ? (["today"] as const) : []),
     ...(overview.tabs.visits ? (["visits"] as const) : []),
     ...(overview.tabs.list ? (["list"] as const) : []),
     ...(overview.tabs.plan ? (["plan"] as const) : []),
@@ -195,6 +199,21 @@ export default function PhoenixCrmScreen() {
     <View style={{ backgroundColor: palette.paper, flex: 1, paddingTop: insets.top }}>
       {working ? null : chrome}
       <View style={{ flex: 1 }}>
+        {overview.tabs.today ? (
+          <View style={{ display: activeTab === "today" ? "flex" : "none", flex: activeTab === "today" ? 1 : 0 }}>
+            <TodayScreen
+              key={`today|${seatId}|${test}`}
+              onAddVisit={(customerId, customerName) => {
+                // The module's existing hand-off, one press earlier: Add Visit opens with the customer
+                // already chosen, so this is not a new step in his day.
+                setPendingVisit({ customerId, customerName, photo: null, seatId, test, validatedAtMs: Date.now() });
+                setTab("visits");
+              }}
+              seatId={seatId}
+              test={test}
+            />
+          </View>
+        ) : null}
         {overview.tabs.visits ? (
           <View style={{ display: activeTab === "visits" || visitsWorking ? "flex" : "none", flex: activeTab === "visits" ? 1 : 0 }}>
             <VisitsScreen

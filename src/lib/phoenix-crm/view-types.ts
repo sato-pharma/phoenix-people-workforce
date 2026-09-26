@@ -28,6 +28,7 @@ export type {
   ValidateResult,
 } from "@/lib/phoenix-crm/server/list";
 export type { DoctorDirectoryRow, DoctorDirectoryView } from "@/lib/phoenix-crm/server/doctors";
+export type { TodayView } from "@/lib/phoenix-crm/server/today";
 export type { TeamRequest, TeamTerritoryRow, TeamUnplannedVisit, TeamView } from "@/lib/phoenix-crm/server/team";
 export type { UnplannedVisitView } from "@/lib/phoenix-crm/server/unplanned";
 export type {
