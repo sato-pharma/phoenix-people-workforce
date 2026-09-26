@@ -57,6 +57,13 @@ export type PhoenixCrmOverview = {
   closedMessage: string | null;
 };
 
+/** Seats, once each, in the order first seen. */
+function dedupeSeats(seats: readonly OrgSeat[]): OrgSeat[] {
+  const seen = new Map<string, OrgSeat>();
+  for (const seat of seats) if (!seen.has(seat.seatId)) seen.set(seat.seatId, seat);
+  return [...seen.values()];
+}
+
 function closedMessage(viewer: PhoenixCrmViewer): string | null {
   if (viewer.isSuperAdmin || viewer.scopeTerritories.length > 0) return null;
   // A directory role holds no territory (the Training Manager has no seat in the organogram) and
@@ -155,7 +162,11 @@ export async function loadPhoenixCrmOverview(viewer: PhoenixCrmViewer): Promise<
     territories,
     ownSeatIds,
     visitSeatIds: visitSeats.map((seat) => seat.seatId),
-    waiting: viewer.waitingTerritories.map((seat) => ({
+    // His own territories waiting for their line, AND the ones beneath him — a manager whose whole
+    // district is on an unopened line has to read the date too, or the module simply looks broken to
+    // him (it did, to a CNS district manager, on 2026-09-26). Deduped by seat, because an acting DM
+    // holds a rep seat that is also inside his own scope.
+    waiting: dedupeSeats([...viewer.waitingTerritories, ...viewer.waitingScopeTerritories]).map((seat) => ({
       territory: describeTerritory(viewer.org, seat, names),
       message: lineOpeningText(viewer, seat),
     })),

@@ -1539,6 +1539,8 @@ import { runPhoenixCrmCustomerListBoardTests } from "./phoenix-crm-customer-list
 import { runPhoenixCrmDoctorsDirectoryTests } from "./phoenix-crm-doctors-directory.test.ts";
 import { runPhoenixCrmPlaceLocationFrozenTests } from "./phoenix-crm-place-location-frozen.test.ts";
 import { runPhoenixCrmRetiredPilotRedirectTests } from "./phoenix-crm-retired-pilot-redirect.test.ts";
+import { runPhoenixCrmBlindHalfTests } from "./phoenix-crm-blind-half.test.ts";
+import { runPhoenixCrmLineNotOpenTests } from "./phoenix-crm-line-not-open.test.ts";
 import { runPhoenixCrmLocationIntegrityTests } from "./phoenix-crm-location-integrity.test.ts";
 import { runPhoenixCrmPortalSidebarTests } from "./phoenix-crm-portal-sidebar.test.ts";
 import { runPhoenixCrmAmPmWordTests } from "./phoenix-crm-am-pm-words.test.ts";
@@ -5123,6 +5125,16 @@ await runTest(
 await runTest(
   "Phoenix CRM catches a mock location app silently (owner, 2026-09-25: \"close this hole without reps knowing\" — Android's own mock-provider flag plus server-side replay, physics, jitter and precision checks; an honest rep in one building all morning is never flagged, a confessed mock location still SAVES with no message of any kind, and no rep-facing screen reads the verdict)",
   runPhoenixCrmLocationIntegrityTests,
+);
+
+await runTest(
+  "PHOENIX CRM GOLDEN RULE #1, the BLIND half (owner, 2026-09-26: \"never make the medical rep feel that the system is here to catch him … never informed of any violation … recorded in the admin and the SFE account\" — the rep-facing surface is DERIVED and swept rather than listed, JSX text is read as well as string literals, no rep-callable route reaches the evidence, every reader of it is declared, the board's audience is one predicate naming the Super Admin and the SFE Manager, and it refuses with a 404 because a 403 naming the board is itself the disclosure)",
+  runPhoenixCrmBlindHalfTests,
+);
+
+await runTest(
+  "Phoenix CRM says a line is not open instead of vanishing (2026-09-26 — a District Manager whose whole district sits on an unopened line used to get no sidebar row, no page and no word at all, because `scopeTerritories` is already filtered to open lines; the viewer now carries the waiting half of his own scope, the overview hands him the dated sentence, and someone holding no seat anywhere still gets nothing)",
+  runPhoenixCrmLineNotOpenTests,
 );
 
 await runTest(

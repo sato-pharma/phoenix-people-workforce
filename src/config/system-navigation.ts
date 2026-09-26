@@ -4117,17 +4117,18 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     // could have made. Nothing to confuse with /admin/crm-integrity above, which is the iReports360
     // vendor feed's data quality; this one is about whether a rep was where he said he was.
     //
-    // THE SUPER ADMIN'S ALONE, and the narrow role list is the point rather than tidiness: the rep
-    // is never told he was flagged (his own app shows nothing at all), so the fewer people who can
-    // open the board, the longer it keeps working. The enforcing gates are `phoenix_crm:update` on
-    // /api/phoenix-crm/integrity and `viewer.isSuperAdmin` inside the service AND the page — this
-    // card only decides whether the link is drawn.
+    // THE SUPER ADMIN'S AND THE SFE MANAGER'S (owner, 2026-09-26, Golden Rule #1: "every violation
+    // is then recorded in the admin and the SFE account"). The narrow role list is still the point
+    // rather than tidiness: the rep is never told he was flagged — his own app shows nothing at all —
+    // so the fewer people who can open the board, the longer it keeps working. The enforcing gate is
+    // `canReadIntegrityBoard` inside the service AND the page; this card only draws the link. There
+    // is no API route to gate any more: it had no caller and was deleted the same day.
     href: "/admin/phoenix-crm/integrity",
     icon: ShieldAlert,
     label: "Location Integrity",
     description: "Visits and validated places whose position does not hold up — checked on every capture, shown to no rep.",
-    permissions: [{ resource: "phoenix_crm", action: "update" }],
-    roles: ["Super Admin"],
+    permissions: [{ resource: "phoenix_crm", action: "read" }],
+    roles: ["Super Admin", "SFE Manager"],
   },
   // Reps Plans had its own card here until 2026-09-21, when the owner merged it into Reps List
   // ("merge the 2 modules into 1 module WHICH REPS LIST"). The board is now the Call rate tab of the

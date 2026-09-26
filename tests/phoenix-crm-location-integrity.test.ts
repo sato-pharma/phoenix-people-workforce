@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 
 import {
   CONSTANT_ACCURACY_MIN_FIXES,
@@ -13,7 +12,6 @@ import {
   type PhoenixCrmPriorFix,
 } from "../src/lib/phoenix-crm/location-integrity.ts";
 import { parseCapturedFix } from "../src/lib/phoenix-crm/entry-rules.ts";
-import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * Phoenix CRM — the mock-location and GPS-plausibility checks.
@@ -254,51 +252,17 @@ export function runPhoenixCrmLocationIntegrityTests(): void {
     if (junk.ok) assert.equal(junk.value.deviceMocked, null);
   }
 
-  // ── THE OWNER'S RULE: the rep is never told ───────────────────────────────────────────────────
+  // ── THE OWNER'S RULE: the rep is never told ───────────────────────────────────────────
   //
-  // Checked against the source rather than described in a comment, because this is the one property
-  // a later change could quietly break while every other test still passed. If a rep-facing screen
-  // ever starts reading the verdict, this fails.
-
-  {
-    const repFacingSources = [
-      "src/components/phoenix-crm/visits-tab.tsx",
-      "src/components/phoenix-crm/list-tab.tsx",
-      "src/components/phoenix-crm/list-screens.tsx",
-      "src/components/phoenix-crm/live-photo-capture.tsx",
-      "src/components/phoenix-crm/phoenix-crm-app.tsx",
-      "mobile/src/features/crm/visits-screen.tsx",
-    ];
-    for (const path of repFacingSources) {
-      const source = readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
-      // A rep-facing screen may FORWARD the phone's flag in a payload — `mobile/.../visits-screen.tsx`
-      // has to, or the evidence never reaches the server. What it may never do is read the verdict…
-      assert.equal(source.includes("location-integrity"), false, `${path} must not import the integrity checks`);
-      assert.equal(source.includes("integrity-board"), false, `${path} must not reach the board`);
-      assert.equal(/\bintegrity\b/i.test(source), false, `${path} must not mention integrity to a rep`);
-
-      // …or put any of it into words. Comments are stripped first — this file's own explanations are
-      // for the next engineer, not for the rep — and then every string the screen could render is
-      // checked. A message here is exactly what tells a cheat what to defeat next time.
-      const withoutComments = stripComments(source);
-      const literals = withoutComments.match(/(["'`])(?:\\.|(?!\1)[\s\S])*\1/g) ?? [];
-      for (const literal of literals) {
-        assert.equal(/mock|fake\s*gps|spoof/i.test(literal), false, `${path} must never say ${literal} to a rep`);
-        // And it must never name the countermeasure to switch off — telling the one person you caught
-        // to "turn off any app that changes the location" is the exact tip the silent rule forbids.
-        assert.equal(/app that changes the location/i.test(literal), false, `${path} must never tell a rep to turn off a location-changing app: ${literal}`);
-      }
-    }
-
-    // The evidence itself is read by exactly one module, and that module is Super Admin gated.
-    const board = readFileSync(new URL("../src/lib/phoenix-crm/server/integrity-board.ts", import.meta.url), "utf8");
-    assert.ok(board.includes("isSuperAdmin"), "the board must check Super Admin itself, not only at the route");
-
-    // And the check can never cost a rep his visit: it returns void and swallows its own errors.
-    const runner = readFileSync(new URL("../src/lib/phoenix-crm/server/location-integrity.ts", import.meta.url), "utf8");
-    assert.ok(runner.includes("Promise<void>"), "judgeCapture must return nothing");
-    assert.ok(runner.includes("catch"), "judgeCapture must swallow its own failures");
-  }
+  // Moved to `tests/phoenix-crm-blind-half.test.ts` on 2026-09-26, and WIDENED there.
+  //
+  // It lived here as a hard-coded list of six rep-facing files, which is a guard that cannot grow:
+  // the seventh screen anyone writes is born unchecked, and the module is about to gain several.
+  // The replacement DERIVES the surface by sweeping the rep-facing roots, so a new screen is covered
+  // the moment it exists, and it reads JSX text as well as string literals — a word typed straight
+  // into the markup went past the old guard entirely.
+  //
+  // Do not re-add the list here. One guard, one place, and it grows by itself.
 
   console.log("phoenix-crm location integrity: OK");
 }

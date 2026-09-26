@@ -4,12 +4,13 @@ import { Eye, ShieldAlert, Users } from "lucide-react";
 import { AdminCallout, AdminPageHero, AdminStatCard, AdminTableShell } from "@/components/admin/admin-design-system";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
-import { loadIntegrityBoard, type IntegrityCase } from "@/lib/phoenix-crm/server/integrity-board";
+import { canReadIntegrityBoard, loadIntegrityBoard, type IntegrityCase } from "@/lib/phoenix-crm/server/integrity-board";
 
 export const dynamic = "force-dynamic";
 
 /**
- * Location integrity — the Super Admin's board, and the ONLY screen that reads the evidence.
+ * Location integrity — the Super Admin's and the SFE Manager's board, and the ONLY screen that reads
+ * the evidence (owner, 2026-09-26: "recorded in the admin and the SFE account").
  *
  * It sits under /admin, which a rep cannot open at all. That is the whole reason it is a page of its
  * own rather than a tab inside Phoenix CRM: the CRM tabs are the same component tree the field app
@@ -48,7 +49,7 @@ function Reasons({ entry }: { entry: IntegrityCase }) {
 export default async function PhoenixCrmIntegrityPage() {
   const access = await resolveAccessContextFromPage();
   const viewer = await resolvePhoenixCrmViewer(access).catch(() => null);
-  if (!viewer?.isSuperAdmin) redirect("/admin");
+  if (!viewer || !canReadIntegrityBoard(viewer)) redirect("/admin");
 
   const board = await loadIntegrityBoard(viewer);
   const weakCount = board.cases.length - board.strongCount;

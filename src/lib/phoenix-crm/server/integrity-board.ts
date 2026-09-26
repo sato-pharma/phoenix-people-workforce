@@ -1,16 +1,26 @@
 /**
- * Phoenix CRM — the location-integrity board, for the Super Admin alone.
+ * Phoenix CRM — the location-integrity board, for the Super Admin and the SFE Manager.
  *
  * This is the ONLY reader of `phoenix_crm_location_integrity`. It lives behind `/admin`, which no rep
  * can open at all, so the evidence cannot leak into the field app through a role mistake in a tab or
  * a component: the rep-facing bundle does not import this file and has no route that reaches it.
  *
+ * WHO READS IT (owner, 2026-09-26, Golden Rule #1): "every violation is then recorded in the admin
+ * and the SFE account". The SFE Manager joined the Super Admin that day. It is still the narrowest
+ * audience in the module, and narrow is the point rather than tidiness — the rep is never told he was
+ * flagged, so the fewer people who can open this, the longer it keeps working.
+ *
  * WHAT A FLAG IS AND IS NOT. It is a reason for a human to look — at the photo, at the day, at the
  * rep. It is not a verdict, it triggers nothing, and nobody is told they were flagged. Acting on one
  * is the owner's decision, made after he has looked, exactly as a flagged expense is.
+ *
+ * WHY THE REFUSAL IS A 404 AND NOT A 403. A message reading "the location integrity board is the
+ * Super Admin's" tells the person asking that a board exists and what it watches — which is the one
+ * thing Golden Rule #1 says he must never learn. To everybody outside the audience this is simply not
+ * a thing that is here.
  */
 
-import { forbiddenError } from "@/lib/http/api-errors";
+import { notFoundError } from "@/lib/http/api-errors";
 import { PHOENIX_CRM_INTEGRITY_LABELS, type PhoenixCrmIntegrityFlag } from "@/lib/phoenix-crm/location-integrity";
 import { type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { throwIfError } from "@/lib/phoenix-crm/server/db";
@@ -53,11 +63,21 @@ export type IntegrityBoard = {
 const BOARD_LIMIT = 200;
 
 /**
- * Load the board. Super Admin only — checked here as well as on the route, because this is the one
- * place in Phoenix CRM where reading the data IS the sensitive act.
+ * May this viewer read the evidence at all? The Super Admin and the SFE Manager, and nobody else.
+ *
+ * One predicate, two readers — this service and the page — so the board's audience is stated once
+ * and a screen can never be more generous than the service behind it.
+ */
+export function canReadIntegrityBoard(viewer: PhoenixCrmViewer): boolean {
+  return viewer.isSuperAdmin || viewer.isSfeManager;
+}
+
+/**
+ * Load the board. Checked here as well as on the page, because this is the one place in Phoenix CRM
+ * where reading the data IS the sensitive act.
  */
 export async function loadIntegrityBoard(viewer: PhoenixCrmViewer, options: { includeTest?: boolean } = {}): Promise<IntegrityBoard> {
-  if (!viewer.isSuperAdmin) throw forbiddenError("The location integrity board is the Super Admin's.");
+  if (!canReadIntegrityBoard(viewer)) throw notFoundError("Not found.");
 
   const supabase = getSupabaseAdmin();
   let query = supabase
@@ -66,7 +86,9 @@ export async function loadIntegrityBoard(viewer: PhoenixCrmViewer, options: { in
     .order("strong", { ascending: false })
     .order("captured_at", { ascending: false })
     .limit(BOARD_LIMIT);
-  if (options.includeTest !== true) query = query.eq("is_test", false);
+  // Test captures stay the Super Admin's, as they are everywhere else in the module: the SFE reads
+  // the real field, never the Super Admin's own trial entries.
+  if (options.includeTest !== true || !viewer.isSuperAdmin) query = query.eq("is_test", false);
 
   const { data, error } = await query;
   throwIfError(error);
