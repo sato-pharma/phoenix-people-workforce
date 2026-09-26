@@ -1890,6 +1890,7 @@ import { runCvPreviewFailureReportTests } from "./cv-preview-failure-report.test
 import { runCvLinkedInAndSelectableTextTests } from "./cv-linkedin-and-selectable-text.test.ts";
 import { runInterviewCalendarTests } from "./interview-calendar.test.ts";
 import { runInterviewCalendarApplicationTests } from "./interview-calendar-application.test.ts";
+import { runScreeningDownloadApplicationTests } from "./screening-download-application.test.ts";
 import { runInterviewReminderTests } from "./interview-reminders.test.ts";
 import { runInterviewRequestTests } from "./interview-requests.test.ts";
 import { runInterviewInvitationTests } from "./interview-invitation.test.ts";
@@ -6605,6 +6606,11 @@ await runTest(
 await runTest(
   "the interview calendar's CV screen gets Download application and Print application beside the CV's own Download: the button opens the WhatsApp conversation the list would show for that person (finished first, then newest as an instant); it is offered only to someone who could open the same file from WhatsApp Applicants (HR authority with recruitment:read and candidates:read — never a guest, an outside interviewee or a person the calendar was merely shared with); the lookup goes through the calendar's own gate, answers an id and builds nothing; and the four gates on an application say the same three things",
   runInterviewCalendarApplicationTests,
+);
+
+await runTest(
+  "the screening workstation gets the WhatsApp Applicants' Download application and Print application buttons: the same component, asked once per candidate through a GET-only lookup gated as an ordinary candidate read, drawn beside the other ways of reaching the person and before the verdicts, and only when the person actually applied on WhatsApp",
+  runScreeningDownloadApplicationTests,
 );
 
 await runTest(

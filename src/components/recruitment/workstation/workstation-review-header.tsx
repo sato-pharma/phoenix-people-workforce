@@ -58,6 +58,7 @@ import {
 } from "@/lib/recruitment/candidate-status";
 import { ScheduleInterviewButton } from "@/components/recruitment/interview-calendar/schedule-interview-button";
 import { ManagerPicker, type ManagerPickerOption } from "@/components/recruitment/manager-picker";
+import { WhatsAppApplicationActions } from "@/components/recruitment/whatsapp-application-actions";
 import { WhatsAppReplyBox } from "@/components/recruitment/whatsapp-reply-box";
 import { WhatsAppSendDialog } from "@/components/recruitment/whatsapp-send-dialog";
 import { Action } from "@/components/recruitment/workstation/workstation-look";
@@ -84,6 +85,7 @@ export type SendState = {
 };
 
 export function WorkstationReviewHeader({
+  applicationSessionId,
   busy,
   canDecide,
   canRate,
@@ -107,6 +109,13 @@ export function WorkstationReviewHeader({
   suggestedVacancyIds,
   vacancies,
 }: {
+  /**
+   * The WhatsApp conversation this candidate's application is built from, or null when they never
+   * applied on WhatsApp (or the lookup has not answered yet). Present, it draws the "Download
+   * application" and "Print application" buttons the WhatsApp Applicants page carries — the same
+   * component, so the two screens cannot drift — beside the other ways of reaching the person.
+   */
+  applicationSessionId: string | null;
   busy: boolean;
   /**
    * May this reader shortlist or reject this CV?
@@ -282,6 +291,17 @@ export function WorkstationReviewHeader({
           />
         )}
       />
+      {/* ── DOWNLOAD / PRINT THE APPLICATION, THE WHATSAPP APPLICANTS' OWN TWO BUTTONS ───────────────
+          The owner, 2026-09-26: the "Download application" WhatsApp Applicants carries, here on the
+          screening page. The SAME component, so the CV-plus-answer-sheet and its filename can never
+          drift between the two screens; with the ways of reaching the person and before the verdicts,
+          because it produces a document and decides nothing. Absent — never disabled — when the person
+          did not apply on WhatsApp, exactly as it is on the applicants list: there is no application to
+          build, so there is nothing to grey out. `applicationSessionId` is resolved server-side behind
+          the same gate the file itself uses. */}
+      {applicationSessionId ? (
+        <WhatsAppApplicationActions applicantName={row.fullName} sessionId={applicationSessionId} />
+      ) : null}
       {canDecide ? (
         <>
           <DecisionButton
