@@ -28,6 +28,7 @@
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { callHeadwind } from "@/lib/devices/headwind/client";
 import { resolveHeadwindActionTarget } from "@/lib/devices/headwind/commands";
+import { deviceRecordsFromSearch } from "@/lib/devices/headwind/devices";
 
 export class HeadwindAppInputError extends Error {
   constructor(message: string) {
@@ -137,8 +138,11 @@ export async function getHeadwindDeviceApps(
     fetchImpl,
     env,
   );
-  const items = Array.isArray(payload) ? (payload as RawRecord[]) : Array.isArray(payload.items) ? (payload.items as RawRecord[]) : [];
-  const record = items.find((entry) => pickString(entry, ["number", "deviceNumber"]) === number) ?? null;
+  // 🔴 ONE UNWRAPPER FOR THE SEARCH, BECAUSE THE LIVE REPLY NESTS THE PAGE — see
+  // `deviceRecordsFromSearch`. Reading `payload.items` here answered "no apps installed" for every
+  // tablet, which is indistinguishable from a tablet that has genuinely installed nothing.
+  const record =
+    deviceRecordsFromSearch(payload).find((entry) => pickString(entry, ["number", "deviceNumber"]) === number) ?? null;
   const installed = record ? installedAppsFromInfo(record.info ?? record.deviceInfo, remoteScreenPackage) : [];
 
   return { installed, remoteScreenAppPresent: installed.some((app) => app.isRemoteScreenApp) };

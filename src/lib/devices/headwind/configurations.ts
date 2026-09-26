@@ -34,6 +34,7 @@
 
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { callHeadwind } from "@/lib/devices/headwind/client";
+import { deviceRecordsFromSearch } from "@/lib/devices/headwind/devices";
 
 export class HeadwindConfigurationError extends Error {
   constructor(message: string) {
@@ -391,13 +392,16 @@ export async function moveHeadwindDeviceToConfiguration(
     throw new HeadwindConfigurationError("Say which set of rules to move the tablet onto.");
   }
 
-  const found = await callHeadwind<{ items?: Array<Record<string, unknown>> }>(
+  const found = await callHeadwind<unknown>(
     "/rest/private/devices/search",
     { body: JSON.stringify({ pageNum: 1, pageSize: 1000, value: deviceNumber }), method: "POST" },
     fetchImpl,
     env,
   );
-  const device = (found?.items ?? []).find((entry) => entry.number === deviceNumber);
+  // 🔴 THE SAME UNWRAPPER AS THE FLEET, BECAUSE THE LIVE REPLY NESTS THE PAGE UNDER `devices` — see
+  // `deviceRecordsFromSearch`. Reading `found.items` made this refuse EVERY move with "that tablet is
+  // not in the Headwind fleet any more", which reads as a deleted device rather than an unread reply.
+  const device = deviceRecordsFromSearch(found).find((entry) => entry.number === deviceNumber);
   if (!device) {
     throw new HeadwindConfigurationError(
       "That tablet is not in the Headwind fleet any more. Reload the page and try again from its row.",
