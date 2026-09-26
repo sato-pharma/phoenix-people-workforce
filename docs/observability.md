@@ -328,6 +328,7 @@ policy):
    | `phoenix-mapping-guard-notify` | `5,20,35,50 * * * *` | 1h | cron-job.org job `8427700` |
    | `phoenix-interview-reminders` | `3,13,23,33,43,53 * * * *` | 1h | cron-job.org job `8478976` · **in-house only** |
    | `phoenix-interview-digest` | `0 8 * * 0` | 6h | cron-job.org (created on `--apply`) · **in-house only** |
+   | `phoenix-crm-daily-digest` | `55 6 * * *` | 2h | cron-job.org (created on `--apply`) · **in-house only** |
    | `phoenix-retention-risk-sweep` | `40 7 * * *` | 1h | cron-job.org job `8397172` · **in-house only** |
    | `phoenix-retention-risk-pre-payroll` | `45 7 25 * *` | 2h | cron-job.org job `8397174` · **in-house only** |
    | `phoenix-mailbox-offboarding-sweep` | `15 8 * * *` | 1h | cron-job.org job `8350624` |
