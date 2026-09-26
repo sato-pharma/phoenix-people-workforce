@@ -325,24 +325,38 @@ function HrDecisionControls({
     // A disabled fieldset disables every control inside it natively — the switch, the amount and the
     // reason — without widening the shared Switch primitive.
     <fieldset className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0 disabled:opacity-60" disabled={locked}>
-      <Switch
-        checked={approval.hrApproved}
-        label={approval.hrApproved ? "Approved" : "Approve"}
-        onChange={(checked) => onUpdate({ hrApproved: checked })}
-      />
-      <div className="flex items-center gap-2">
-        <span className="w-12 shrink-0 text-phx-2xs font-bold uppercase tracking-[0.1em] text-text-secondary">
-          Amount
-        </span>
-        <input
-          className="h-8 w-28 rounded-lg border border-border bg-white px-2 text-right font-mono text-xs text-text focus:border-phx-accent focus:outline-none"
-          inputMode="decimal"
-          min={0}
-          onChange={(event) => onUpdate({ approvedAmount: Number(event.target.value) || 0 })}
-          type="number"
-          value={String(approval.approvedAmount)}
+      {/*
+        The Approve switch and the amount share ONE wrapping line. They were two stacked rows, and
+        this cell is what set the review row's height: measured at 1440px on 2026-09-26 it needed
+        104px — switch 24 + amount 32 + reason 32 + two 8px gaps — against 76px for the widest other
+        cell, so every row was 100px tall because of this column alone.
+
+        🔴 NOTHING about the decision itself changes. Same Switch, same number input, same handlers,
+        same values, same `was …` badge, same disabled fieldset, same required-reason rule and its
+        rose border. This is where a person approves money, so the controls are moved, never
+        reshaped: no size reduction, no merged fields, no shortened labels. `flex-wrap` keeps the
+        amount on its own line when the column is narrow, so nothing is ever clipped or overlapped.
+      */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <Switch
+          checked={approval.hrApproved}
+          label={approval.hrApproved ? "Approved" : "Approve"}
+          onChange={(checked) => onUpdate({ hrApproved: checked })}
         />
-        {amountChanged ? <Badge variant="warning">was {formatEGP(originalTotal)}</Badge> : null}
+        <div className="flex items-center gap-2">
+          <span className="w-12 shrink-0 text-phx-2xs font-bold uppercase tracking-[0.1em] text-text-secondary">
+            Amount
+          </span>
+          <input
+            className="h-8 w-28 rounded-lg border border-border bg-white px-2 text-right font-mono text-xs text-text focus:border-phx-accent focus:outline-none"
+            inputMode="decimal"
+            min={0}
+            onChange={(event) => onUpdate({ approvedAmount: Number(event.target.value) || 0 })}
+            type="number"
+            value={String(approval.approvedAmount)}
+          />
+          {amountChanged ? <Badge variant="warning">was {formatEGP(originalTotal)}</Badge> : null}
+        </div>
       </div>
       <Input
         className={cn("h-8 text-xs", reasonMissing && "border-rose-400")}
