@@ -493,6 +493,8 @@ type BookingRow = {
   external_cv_mime_type: string | null;
   interviewer_hr_id: string | null;
   panelist_hr_ids: string[] | null;
+  interview_area: string | null;
+  interview_line: string | null;
   outcome: string | null;
   outcome_set_by_hr_id: string | null;
   outcome_set_at: string | null;
@@ -526,7 +528,7 @@ type CommentRow = { id: string; booking_id: string; author_hr_id: string; body: 
 type CandidateRow = { id: string; full_name: string | null; applied_for_job_title: string | null };
 
 const BOOKING_COLUMNS =
-  "id,candidate_id,session_id,starts_at,duration_minutes,platform,zoom_status,zoom_meeting_id,zoom_join_url,zoom_error,notes,external_name,external_phone,external_email,external_cv_file_id,external_cv_file_name,external_cv_mime_type,interviewer_hr_id,panelist_hr_ids,outcome,outcome_set_by_hr_id,outcome_set_at,request_id,requested_by_hr_id,created_by_hr_id,updated_by_hr_id,created_at,updated_at";
+  "id,candidate_id,session_id,starts_at,duration_minutes,platform,zoom_status,zoom_meeting_id,zoom_join_url,zoom_error,notes,external_name,external_phone,external_email,external_cv_file_id,external_cv_file_name,external_cv_mime_type,interviewer_hr_id,panelist_hr_ids,interview_area,interview_line,outcome,outcome_set_by_hr_id,outcome_set_at,request_id,requested_by_hr_id,created_by_hr_id,updated_by_hr_id,created_at,updated_at";
 
 const SESSION_COLUMNS =
   "id,title,starts_at,duration_minutes,slot_minutes,platform,zoom_status,zoom_meeting_id,zoom_join_url,zoom_error,notes,created_by_hr_id,updated_by_hr_id,created_at,updated_at";
@@ -670,6 +672,10 @@ async function hydrate(rows: readonly BookingRow[], caller: InterviewCalendarCal
       panelists: (row.panelist_hr_ids ?? [])
         .map((hrId) => ({ hrId: hrIdForStorage(hrId) ?? hrId, name: personName(people, hrId) }))
         .filter((member): member is { hrId: string; name: string } => Boolean(member.name)),
+      // The area and line an interview is for — shown to everyone the calendar reaches, including a
+      // not-signed-in share-link guest, exactly like the interviewer's name.
+      area: row.interview_area?.trim() || null,
+      line: row.interview_line?.trim() || null,
       notes: row.notes,
       canSetOutcome: canSetInterviewOutcome(caller, row.interviewer_hr_id),
       outcome: readInterviewOutcome(row.outcome),
@@ -1241,9 +1247,21 @@ export type InterviewBookingRequest = Parameters<typeof validateInterviewBooking
   interviewerHrId?: unknown;
   /** Additional panel members beyond the lead — optional; each also sees the interview. */
   panelistHrIds?: unknown;
+  /** The sales Area and Line the interview is for — optional, shown in the calendar and share link. */
+  area?: unknown;
+  line?: unknown;
 };
 
 export type InterviewBookingResult = { booking: InterviewBooking; notice: string | null };
+
+/** An interview's area or line label for storage — trimmed and capped; empty becomes null. */
+function orgLabel(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const text = value.replace(/\s+/g, " ").trim();
+  if (!text) return null;
+  if (text.length > 80) throw new Error("That area or line name is too long.");
+  return text;
+}
 
 function slotIsFree(session: SessionRow, startMinutes: number, taken: readonly BookingRow[], ignoreBookingId: string | null): void {
   const at = new Date(session.starts_at);
@@ -1425,6 +1443,8 @@ export async function createInterviewBooking(
       duration_minutes: input.durationMinutes,
       interviewer_hr_id: interviewerHrId ?? null,
       panelist_hr_ids: panelistHrIds ?? [],
+      interview_area: orgLabel(raw.area),
+      interview_line: orgLabel(raw.line),
       notes: input.notes,
       platform: input.platform,
       request_id: options.requestLink?.requestId ?? null,
@@ -1475,6 +1495,9 @@ export async function updateInterviewBooking(
     interviewerHrId?: unknown;
     /** Additional panel members beyond the lead — replaces the panel when given. */
     panelistHrIds?: unknown;
+    /** The sales Area and Line the interview is for — set either to change it, null to clear. */
+    area?: unknown;
+    line?: unknown;
     /** The outside person's own name, phone and e-mail — edited after booking, external only. */
     external?: unknown;
   },
@@ -1495,6 +1518,9 @@ export async function updateInterviewBooking(
   const timeChanged = [patch.dateKey, patch.startMinutes, patch.durationMinutes].some((value) => value !== undefined);
   const interviewerColumn = interviewerHrId === undefined ? {} : { interviewer_hr_id: interviewerHrId };
   const panelistColumn = panelistHrIds === undefined ? {} : { panelist_hr_ids: panelistHrIds };
+  const orgColumns: Record<string, unknown> = {};
+  if (patch.area !== undefined) orgColumns.interview_area = orgLabel(patch.area);
+  if (patch.line !== undefined) orgColumns.interview_line = orgLabel(patch.line);
   let update: Record<string, unknown>;
 
   // A DETAILS-ONLY edit — the interviewer, the note, or the outside person's name, phone and e-mail —
@@ -1508,7 +1534,7 @@ export async function updateInterviewBooking(
     patch.platform === undefined &&
     patch.sessionId === undefined;
   if (detailsOnly) {
-    const saved = await saveBooking(row.id, { notes, ...interviewerColumn, ...panelistColumn, ...externalColumns, updated_by_hr_id: actor });
+    const saved = await saveBooking(row.id, { notes, ...interviewerColumn, ...panelistColumn, ...orgColumns, ...externalColumns, updated_by_hr_id: actor });
     const [booking] = await hydrate([saved], caller);
     return booking;
   }
@@ -1590,14 +1616,14 @@ export async function updateInterviewBooking(
       ...zoom,
     };
     if (fresh) {
-      const saved = await saveBooking(row.id, { ...update, ...interviewerColumn, ...panelistColumn, ...externalColumns, updated_by_hr_id: actor });
+      const saved = await saveBooking(row.id, { ...update, ...interviewerColumn, ...panelistColumn, ...orgColumns, ...externalColumns, updated_by_hr_id: actor });
       await pushWaitingPolls(zoomConfig, { bookingId: row.id }, zoom.zoom_meeting_id);
       const [booking] = await hydrate([saved], caller);
       return booking;
     }
   }
 
-  const [booking] = await hydrate([await saveBooking(row.id, { ...update, ...interviewerColumn, ...panelistColumn, ...externalColumns, updated_by_hr_id: actor })], caller);
+  const [booking] = await hydrate([await saveBooking(row.id, { ...update, ...interviewerColumn, ...panelistColumn, ...orgColumns, ...externalColumns, updated_by_hr_id: actor })], caller);
   return booking;
 }
 
@@ -2021,6 +2047,33 @@ function filterText(query: unknown): string {
  * Current employees, by name or job title. For sharing the calendar (the owner only), or — with
  * `purpose: "interviewer"` — for choosing who conducts an interview (anyone who can book).
  */
+/**
+ * Each person's OWN sales area & line from their org seat (au_v_org_tree), for auto-filling an
+ * interview's area & line when they are chosen as the interviewer. Null for a seat above District
+ * Manager or an HR/CEO seat (no area/line). Best-effort: auto-fill is a convenience, so a failed read
+ * simply returns no seats rather than failing the interviewer search.
+ */
+async function resolveSeatOrgForHrIds(hrIds: readonly string[]): Promise<Map<string, { area: string | null; line: string | null }>> {
+  const out = new Map<string, { area: string | null; line: string | null }>();
+  const keys = Array.from(new Set(hrIds.flatMap((id) => (id ? hrIdLookupKeys(id) : []))));
+  if (keys.length === 0) return out;
+  try {
+    const { data, error } = await recruitmentDb()
+      .from("au_v_org_tree")
+      .select("occupant_hr_id,area_name,line_name")
+      .in("occupant_hr_id", keys);
+    if (error || !data) return out;
+    for (const row of data as Array<{ occupant_hr_id: string | null; area_name: string | null; line_name: string | null }>) {
+      const key = canonicalHrIdKey(row.occupant_hr_id);
+      if (!key) continue;
+      out.set(key, { area: row.area_name?.trim() || null, line: row.line_name?.trim() || null });
+    }
+  } catch {
+    return out;
+  }
+  return out;
+}
+
 export async function searchInterviewCalendarPeople(
   caller: InterviewCalendarCaller,
   query: unknown,
@@ -2040,7 +2093,7 @@ export async function searchInterviewCalendarPeople(
     // first — otherwise fifteen reps sharing a name would crowd out the manager being searched for.
     .limit(purpose === "interviewer" ? 80 : 15);
   if (error) throw error;
-  return ((data ?? []) as EmployeeRow[])
+  const people = ((data ?? []) as EmployeeRow[])
     .filter((row) => row.hr_id && (row.nickname || row.full_name))
     .filter((row) => purpose !== "interviewer" || isDistrictManagerOrAbove({ jobTitle: row.job_title }))
     .map((row) => ({
@@ -2049,6 +2102,13 @@ export async function searchInterviewCalendarPeople(
       name: String(row.nickname || row.full_name).trim(),
     }))
     .slice(0, 15);
+  // Only the interviewer picker needs each person's own area & line (to auto-fill the interview's).
+  if (purpose !== "interviewer" || people.length === 0) return people;
+  const seats = await resolveSeatOrgForHrIds(people.map((person) => person.hrId));
+  return people.map((person) => {
+    const seat = seats.get(canonicalHrIdKey(person.hrId) ?? "");
+    return seat ? { ...person, area: seat.area, line: seat.line } : person;
+  });
 }
 
 export async function shareInterviewCalendar(

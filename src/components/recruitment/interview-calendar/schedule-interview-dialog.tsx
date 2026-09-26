@@ -55,6 +55,7 @@ import { calendarApi, type CalendarApi } from "./calendar-api";
 import { useTopmostEscape } from "./calendar-dialog";
 import { InvitationPanel } from "./invitation-panel";
 import { InterviewerPicker, type ChosenInterviewer } from "./interviewer-picker";
+import { OrgFields } from "./org-fields";
 import { PanelPicker } from "./panel-picker";
 import { MonthPicker, cursorFor, type MonthCursor } from "./month-picker";
 
@@ -121,6 +122,17 @@ export function ScheduleInterviewDialog({
     existing?.interviewerHrId ? { hrId: existing.interviewerHrId, name: existing.interviewerName ?? existing.interviewerHrId } : null,
   );
   const [panel, setPanel] = useState<ChosenInterviewer[]>((existing?.panelists ?? []).map((member) => ({ hrId: member.hrId, name: member.name })));
+  const [area, setArea] = useState(existing?.area ?? "");
+  const [line, setLine] = useState(existing?.line ?? "");
+
+  // Choosing the interviewer auto-fills the area & line from their own seat; both stay editable.
+  function chooseInterviewer(person: ChosenInterviewer | null) {
+    setInterviewer(person);
+    if (person?.area || person?.line) {
+      setArea(person.area ?? "");
+      setLine(person.line ?? "");
+    }
+  }
 
   // The chosen day's answer, with the day it answered. Whether it is still reading is derived from
   // that, during render — so a day clicked a moment ago never shows the previous day's holders.
@@ -188,7 +200,7 @@ export function ScheduleInterviewDialog({
     setSaving(true);
     setError(null);
     try {
-      const body = { dateKey, durationMinutes, interviewerHrId: interviewer?.hrId ?? null, panelistHrIds: panel.map((member) => member.hrId), notes: notes.trim(), platform, startMinutes };
+      const body = { dateKey, durationMinutes, interviewerHrId: interviewer?.hrId ?? null, panelistHrIds: panel.map((member) => member.hrId), area: area.trim() || null, line: line.trim() || null, notes: notes.trim(), platform, startMinutes };
       const data = existing
         ? await api.patch(`/bookings/${encodeURIComponent(existing.id)}`, body)
         : await api.post(`/bookings`, { ...body, candidateId: candidate.id });
@@ -422,7 +434,11 @@ export function ScheduleInterviewDialog({
 
                   <div className="mt-4">
                     <StepLabel number={4}>Interviewer (optional)</StepLabel>
-                    <InterviewerPicker api={api} onChange={setInterviewer} value={interviewer} />
+                    <InterviewerPicker api={api} onChange={chooseInterviewer} value={interviewer} />
+                    <p className="mt-1 text-[11px] text-slate-500">Choosing the interviewer fills in the area & line below — you can change them.</p>
+                    <div className="mt-3">
+                      <OrgFields area={area} line={line} onArea={setArea} onLine={setLine} />
+                    </div>
                     <div className="mt-3">
                       <p className="mb-1 text-[12px] font-bold text-slate-700">Panel (optional)</p>
                       <PanelPicker api={api} excludeHrId={interviewer?.hrId ?? null} onChange={setPanel} value={panel} />

@@ -44,6 +44,7 @@ import { cn } from "@/lib/utils";
 import { type CalendarApi, reasonText } from "./calendar-api";
 import { CalendarDialog, ErrorLine, NoteLine, Segmented } from "./calendar-dialog";
 import { InterviewerPicker, type ChosenInterviewer } from "./interviewer-picker";
+import { OrgFields } from "./org-fields";
 import { PanelPicker } from "./panel-picker";
 import { PersonPicker, initialPersonChoice, personLabel, personProblem, submitBooking, type PersonChoice } from "./person-picker";
 
@@ -157,6 +158,8 @@ export function CellDialog({
   const [platform, setPlatform] = useState<InterviewPlatform | null>(null);
   const [interviewer, setInterviewer] = useState<ChosenInterviewer | null>(null);
   const [panel, setPanel] = useState<ChosenInterviewer[]>([]);
+  const [area, setArea] = useState("");
+  const [line, setLine] = useState("");
   const [notes, setNotes] = useState("");
   const [title, setTitle] = useState("");
   const [end, setEnd] = useState(() => Math.min(firstStart + 4 * 60, WORKDAY_END_MINUTES));
@@ -198,6 +201,15 @@ export function CellDialog({
     if (end < next + SHORTEST) setEnd(Math.min(next + 4 * 60, WORKDAY_END_MINUTES));
   }
 
+  // Choosing the interviewer auto-fills the area & line from their own seat; both stay editable.
+  function chooseInterviewer(person: ChosenInterviewer | null) {
+    setInterviewer(person);
+    if (person?.area || person?.line) {
+      setArea(person.area ?? "");
+      setLine(person.line ?? "");
+    }
+  }
+
   const onTheDay = useMemo(() => {
     if (!day) return [];
     const lines: Array<{ key: string; start: number; text: string }> = [];
@@ -230,6 +242,8 @@ export function CellDialog({
         durationMinutes: duration,
         interviewerHrId: interviewer?.hrId ?? null,
         panelistHrIds: panel.map((member) => member.hrId),
+        area: area.trim() || null,
+        line: line.trim() || null,
         notes: notes.trim(),
         platform,
         startMinutes: start,
@@ -436,8 +450,9 @@ export function CellDialog({
               </div>
               <div>
                 <FieldLabel>Interviewer (optional)</FieldLabel>
-                <InterviewerPicker api={api} onChange={setInterviewer} value={interviewer} />
+                <InterviewerPicker api={api} onChange={chooseInterviewer} value={interviewer} />
               </div>
+              <OrgFields area={area} line={line} onArea={setArea} onLine={setLine} />
               <div>
                 <FieldLabel>Panel (optional)</FieldLabel>
                 <PanelPicker api={api} excludeHrId={interviewer?.hrId ?? null} onChange={setPanel} value={panel} />

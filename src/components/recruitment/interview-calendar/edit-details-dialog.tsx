@@ -18,6 +18,7 @@ import type { InterviewBooking } from "@/lib/recruitment/interview-calendar-type
 import { type CalendarApi, reasonText } from "./calendar-api";
 import { CalendarDialog, ErrorLine } from "./calendar-dialog";
 import { InterviewerPicker, type ChosenInterviewer } from "./interviewer-picker";
+import { OrgFields } from "./org-fields";
 import { PanelPicker } from "./panel-picker";
 
 const inputClass = "mt-1 block w-full border border-slate-200 px-2 py-1.5 text-[13px] text-slate-800 focus:border-orange-500 focus:outline-none";
@@ -40,11 +41,22 @@ export function EditInterviewDetailsDialog({
     booking.interviewerHrId ? { hrId: booking.interviewerHrId, name: booking.interviewerName ?? booking.interviewerHrId } : null,
   );
   const [panel, setPanel] = useState<ChosenInterviewer[]>(booking.panelists.map((member) => ({ hrId: member.hrId, name: member.name })));
+  const [area, setArea] = useState(booking.area ?? "");
+  const [line, setLine] = useState(booking.line ?? "");
   const [name, setName] = useState(isExternal ? booking.candidateName : "");
   const [phone, setPhone] = useState(booking.externalPhone ?? "");
   const [email, setEmail] = useState(booking.externalEmail ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Choosing the interviewer auto-fills the area & line from their own seat; both stay editable.
+  function chooseInterviewer(person: ChosenInterviewer | null) {
+    setInterviewer(person);
+    if (person?.area || person?.line) {
+      setArea(person.area ?? "");
+      setLine(person.line ?? "");
+    }
+  }
 
   const problem = isExternal && name.trim().length < 2 ? "Write the person's name." : null;
 
@@ -53,7 +65,12 @@ export function EditInterviewDetailsDialog({
     setBusy(true);
     setError(null);
     try {
-      const body: Record<string, unknown> = { interviewerHrId: interviewer?.hrId ?? null, panelistHrIds: panel.map((member) => member.hrId) };
+      const body: Record<string, unknown> = {
+        interviewerHrId: interviewer?.hrId ?? null,
+        panelistHrIds: panel.map((member) => member.hrId),
+        area: area.trim() || null,
+        line: line.trim() || null,
+      };
       if (isExternal) body.external = { email: email.trim(), name: name.trim(), phone: phone.trim() };
       const data = await api.patch(`/bookings/${encodeURIComponent(booking.id)}`, body);
       onSaved(data.booking as InterviewBooking);
@@ -132,8 +149,11 @@ export function EditInterviewDetailsDialog({
 
         <div>
           <p className="mb-1 text-[12px] font-bold text-slate-700">Interviewer (optional)</p>
-          <InterviewerPicker api={api} onChange={setInterviewer} value={interviewer} />
+          <InterviewerPicker api={api} onChange={chooseInterviewer} value={interviewer} />
+          <p className="mt-1 text-[11px] text-slate-500">Choosing the interviewer fills in the area & line below — you can change them.</p>
         </div>
+
+        <OrgFields area={area} line={line} onArea={setArea} onLine={setLine} />
 
         <div>
           <p className="mb-1 text-[12px] font-bold text-slate-700">Panel (optional)</p>

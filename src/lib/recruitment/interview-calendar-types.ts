@@ -384,6 +384,10 @@ export type InterviewBooking = {
   /** Additional panel members beyond the lead. Each sees the interview and it appears on their .ics
    * feed; the lead stays the outcome-setter and Zoom host. Empty for a one-interviewer interview. */
   panelists: Array<{ hrId: string; name: string }>;
+  /** The sales Area and Line the interview is for — optional, auto-filled from the interviewer's seat
+   * and editable. Shown in the calendar and on the share link; null when not set. */
+  area: string | null;
+  line: string | null;
   /** The instant, as stored. */
   startsAt: string;
   /** Cairo calendar day, YYYY-MM-DD. */
@@ -420,6 +424,10 @@ export type InterviewCalendarPerson = {
   hrId: string;
   name: string;
   jobTitle: string | null;
+  /** The person's own sales Area and Line from their org seat, when they hold one (null for a seat
+   * above District Manager, or an HR/CEO seat). Used to auto-fill an interview's area & line. */
+  area?: string | null;
+  line?: string | null;
 };
 
 export type DueZoomInterview = {
