@@ -698,6 +698,7 @@ import { runBusinessReviewPackMetricsTests } from "./business-review-pack-metric
 import { runBusinessReviewPreviousWindowTests } from "./business-review-previous-window.test.ts";
 import { runBusinessReviewSpecialtyMixTests } from "./business-review-specialty-mix.test.ts";
 import { runBusinessReviewClosingDetailTests } from "./business-review-closing-detail.test.ts";
+import { runBusinessReviewScopeFilterTests } from "./business-review-scope-filter.test.ts";
 import { runBusinessReviewPackModelTests } from "./business-review-pack-model.test.ts";
 import { runBusinessReviewPackPptxTests } from "./business-review-pack-pptx.test.ts";
 import { runMonthlySalesRunTests } from "./monthly-sales-run.test.ts";
@@ -4492,6 +4493,11 @@ await runTest(
 await runTest(
   "business review pack model (what goes in the exported file: every honesty rule the screen carries travels with its section, so a pack read in a meeting still says the achievement beside a rep is his AREA's and that the monthly customer columns do not sum to the window; a section with nothing to say is dropped rather than exported blank; ticked-but-never-loaded is not the same as loaded-and-empty; the route resolves scope from the SESSION and never from a line or seat parameter; and neither renderer derives a figure of its own)",
   runBusinessReviewPackModelTests,
+);
+
+await runTest(
+  "business review scope filter (export what you are filtered to, inside what you may see: a filter can only ever NARROW, because territoriesInScope is built from the session alone and never takes the request while resolveReviewFilter only removes from that list — so a rep who edits a URL gets his own areas, not the company; every out-of-scope value is dropped rather than refused, because links get forwarded, which is only safe while the LABEL names what was applied and never what was asked; and an area code repeats across lines, so it is offered once per line and never collapsed)",
+  runBusinessReviewScopeFilterTests,
 );
 
 await runTest(

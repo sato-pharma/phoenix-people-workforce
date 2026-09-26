@@ -26,11 +26,20 @@ import {
   needsClosingDetail,
   type PackLevel,
 } from "@/lib/business-review/pack/metrics";
-import { buildSalesReviewPack } from "@/lib/business-review/pack/model";
+import { buildSalesReviewPack, type PackArea, type PackDm } from "@/lib/business-review/pack/model";
 import { renderPackPdf } from "@/lib/business-review/pack/pdf";
 import { renderPackPptx } from "@/lib/business-review/pack/pptx";
 import { renderPackWorkbook } from "@/lib/business-review/pack/workbook";
 import { applyRepScope, applySeatScope, loadReviewPortalScope } from "@/lib/business-review/portal-scope";
+import {
+  lineLabelOf,
+  resolveReviewFilter,
+  REVIEW_LINE_ORDER,
+  territoriesInScope,
+} from "@/lib/business-review/scope-filter";
+import type { ReviewPersonRow } from "@/lib/business-review/sources/roles";
+import type { AreaSummary } from "@/lib/business-review/types";
+import type { ReviewLine } from "@/lib/business-review/canonical";
 import {
   getReviewDataset,
   loadBusinessReview,
@@ -84,40 +93,98 @@ export async function GET(request: Request) {
     if (scope.kind === "none") {
       return NextResponse.json({ error: scope.reason }, { status: 403 });
     }
-    // Company and whole-line packs are not built yet: the page renders those views but the pack
-    // model's sections are written for a territory. Refusing in words beats exporting a file whose
-    // sections are silently empty.
-    if (scope.kind !== "seats" && scope.kind !== "rep") {
-      return NextResponse.json(
-        { error: "A company-wide or whole-line pack is not available yet. Open a district to export one." },
-        { status: 400 },
-      );
-    }
 
     const { review, resolution } = await loadBusinessReview({
       from: params.get("from"),
       to: params.get("to"),
     });
     const coverage = review.coverage;
-    const ds = getReviewDataset(review, scope.line);
-    const level: PackLevel = scope.kind === "rep" ? "rep" : "district";
 
+    // Every line this VIEWER may see: all three for a company scope, exactly one for everyone else.
+    const scopeLines: ReviewLine[] = scope.kind === "company" ? [...REVIEW_LINE_ORDER] : [scope.line];
+
+    // Per line, the dataset and the areas the SCOPE allows. The request is still unread at this
+    // point, deliberately — see the header of scope-filter.ts.
+    const dsByLine = new Map<ReviewLine, ReturnType<typeof getReviewDataset>>();
+    const areasByLine: Partial<Record<ReviewLine, AreaSummary[]>> = {};
+    for (const line of scopeLines) {
+      const ds = getReviewDataset(review, line);
+      dsByLine.set(line, ds);
+      areasByLine[line] =
+        scope.kind === "rep"
+          ? applyRepScope(ds, scope.hrId).areas
+          : scope.kind === "seats"
+            ? applySeatScope(ds, scope.dmSeatIds).areas
+            : ds.areas;
+    }
+
+    // NOW the request is read, and only to REMOVE. Owner, 2026-09-26: "I want everyone to be able to
+    // export as he is filtered or as his scope."
+    const filter = resolveReviewFilter(scope, territoriesInScope(scope, areasByLine), {
+      area: params.get("area"),
+      dm: params.get("dm"),
+      line: params.get("line"),
+      region: params.get("region"),
+    });
+    if (filter.territories.length === 0) {
+      return NextResponse.json(
+        { error: "Nothing in your scope matches that filter, so there is no pack to build." },
+        { status: 400 },
+      );
+    }
+
+    const level: PackLevel = filter.level;
     const requested = params.getAll("m");
     const selection = requested.length > 0 ? narrowSelection(requested, level) : defaultSelectionFor(level);
 
-    const scoped =
-      scope.kind === "rep"
-        ? { areas: applyRepScope(ds, scope.hrId).areas, dms: [] }
-        : applySeatScope(ds, scope.dmSeatIds);
+    // Reassemble what survived into what the pack model reads.
+    const multiLine = filter.lines.length > 1;
+    const keptAreas = new Set(filter.territories.map((t) => `${t.line}:${t.areaCode ?? ""}`));
+    const keptSeats = new Set(filter.dmSeatIds);
+    const areas: PackArea[] = [];
+    const dms: PackDm[] = [];
+    const people: ReviewPersonRow[] = [];
+
+    for (const line of filter.lines) {
+      const ds = dsByLine.get(line);
+      if (!ds) continue;
+      // The line is named on the row only when the pack spans more than one; a column repeating one
+      // value is noise.
+      const lineLabel = multiLine ? lineLabelOf(line) : null;
+      const survivingCodes = new Set(
+        filter.territories
+          .filter((t) => t.line === line && t.areaCode != null)
+          .map((t) => t.areaCode as string),
+      );
+
+      for (const area of areasByLine[line] ?? []) {
+        if (keptAreas.has(`${line}:${area.areaCode ?? ""}`)) areas.push({ ...area, lineLabel });
+      }
+      for (const dm of ds.dms) {
+        if (dm.dmSeatId != null && keptSeats.has(dm.dmSeatId)) dms.push({ ...dm, lineLabel });
+      }
+      for (const person of ds.people) {
+        const keep =
+          scope.kind === "rep"
+            ? person.hrId.toUpperCase() === scope.hrId
+            : filter.applied.areaCode != null
+              // An AREA was chosen, so a colleague in the same district but a different area is not
+              // in this pack. Keying on the seat here would quietly widen the people back out to the
+              // whole district while every sales figure showed one area.
+              ? person.areaCode != null && survivingCodes.has(person.areaCode)
+              : person.dmSeatId != null && keptSeats.has(person.dmSeatId);
+        if (keep) people.push(person);
+      }
+    }
 
     let concentration = null;
     if (needsClosingDetail(selection)) {
       try {
         const detail = await loadReviewConcentration({ coverage, viewer: access });
-        concentration = concentrationForAreas(
-          detail.byLine[REVIEW_LINE_CODES[scope.line]] ?? [],
-          scoped.areas.map((area) => area.areaCode),
-        );
+        // Across every surviving line, narrowed to the surviving areas. El Qema is already masked
+        // out inside the loader, on the raw rows — never here.
+        const rows = filter.lines.flatMap((line) => detail.byLine[REVIEW_LINE_CODES[line]] ?? []);
+        concentration = concentrationForAreas(rows, [...new Set(areas.map((area) => area.areaCode))]);
       } catch (error) {
         // The rest of the pack is still correct, so it ships without these sections rather than
         // failing the whole export. The model drops a section with nothing in it.
@@ -125,21 +192,22 @@ export async function GET(request: Request) {
       }
     }
 
-    const people =
-      scope.kind === "rep"
-        ? ds.people.filter((person) => person.hrId.toUpperCase() === scope.hrId)
-        : ds.people.filter((person) => person.dmSeatId != null && new Set(scope.dmSeatIds).has(person.dmSeatId));
-
     const windowLabel = figureWindowLabel(coverage);
     const pack = buildSalesReviewPack({
-      areas: scoped.areas,
+      areas,
       concentration,
       coverageNote: coverage.notUploaded?.note ?? `Every figure covers ${windowLabel}.`,
-      dms: scoped.dms,
-      months: ds.meta.months,
+      dms,
+      months: dsByLine.get(filter.lines[0])?.meta.months ?? [],
       people,
       selection,
-      subject: { level, line: scope.line, title: scope.label, windowLabel },
+      subject: {
+        level,
+        line: filter.lines.length === 1 ? filter.lines[0] : null,
+        // The label comes from what was APPLIED, so a pack never names a scope it does not hold.
+        title: filter.label,
+        windowLabel,
+      },
       visitsAvailable: hasFigures(coverage, "visits"),
     });
 
@@ -154,22 +222,28 @@ export async function GET(request: Request) {
     // this hands somebody a performance document about named people.
     await writeAuditLog({
       actorLoginId: resolveEmployeeIdentityId(access) ?? access.loginId ?? "system",
-      entityId: `${scope.kind}:${scope.line}:${resolution.window.from}:${resolution.window.to}:${format}`,
+      entityId: `${scope.kind}:${level}:${resolution.window.from}:${resolution.window.to}:${format}`,
       entityType: "business_review_pack",
       newValues: {
+        // The FILTER as applied, and anything dropped: an audit row has to say which territory was
+        // handed over, not merely that somebody exported something.
+        dropped: filter.dropped,
+        filter: filter.applied,
         format,
         from: resolution.window.from,
+        level,
         metrics: selection,
         scope: scope.kind,
+        subject: filter.label,
         to: resolution.window.to,
       },
-      summary: `Sales Review pack exported (${scope.label}, ${windowLabel}, ${format}).`,
+      summary: `Sales Review pack exported (${filter.label}, ${windowLabel}, ${format}).`,
     });
 
     return new Response(new Uint8Array(buffer), {
       headers: {
         "Cache-Control": "no-store",
-        "Content-Disposition": `attachment; filename="${fileName(scope.label, windowLabel, format)}"`,
+        "Content-Disposition": `attachment; filename="${fileName(filter.label, windowLabel, format)}"`,
         "Content-Type": CONTENT_TYPE[format],
       },
       status: 200,
