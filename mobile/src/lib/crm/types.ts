@@ -449,3 +449,151 @@ export type CrmTodayView = {
   alsoVisited: Array<{ customerId: string; name: string; listType: CrmListType; doneAt: string }>;
   counts: { plannedAm: number; plannedPm: number; doneAm: number; donePm: number };
 };
+
+// ── Team, and the board of what needs him ─────────────────────────────────────────────────────────
+// Transcribed from src/lib/phoenix-crm/server/team.ts (TeamView, TeamTerritoryRow, TeamRequest,
+// TeamUnplannedVisit), server/list.ts (ListRequest, SeatReadiness), server/plans.ts (PlanReviewView,
+// PlanReviewRow) and exceptions.ts (ExceptionsBoard) + server/exceptions.ts (ExceptionsView).
+//
+// B3 (owner's plan, Phase 3): a manager approving a plan from the car is the point of these screens,
+// so the phone carries exactly the three queues that WAIT ON HIM and the board of what is wrong —
+// never the whole Reports tab.
+
+export type CrmRequestKind = "grade" | "drop";
+export type CrmRequestStatus = "pending" | "approved" | "refused" | "withdrawn";
+export type CrmUnplannedStatus = "manager_pending" | "sfe_pending" | "approved" | "refused";
+
+/** How far a territory has got through its carried-over list. Information, never a gate. */
+export type SeatReadiness = {
+  seatId: string;
+  total: number;
+  validated: number;
+  dropped: number;
+  dropPending: number;
+  open: number;
+  ready: boolean;
+  readyAt: string | null;
+};
+
+export type ListRequest = {
+  requestId: string;
+  kind: CrmRequestKind;
+  status: CrmRequestStatus;
+  customerId: string | null;
+  customerName: string;
+  listType: CrmListType;
+  currentGrade: CrmGrade | null;
+  proposedGrade: CrmGrade | null;
+  dropReasonLabel: string | null;
+  note: string | null;
+  requestedByName: string;
+  requestedAt: string;
+  decidedByName: string | null;
+  decidedAt: string | null;
+  decisionNote: string | null;
+};
+
+export type TeamRequest = ListRequest & { seatId: string; territoryName: string; canDecide: boolean };
+
+export type TeamUnplannedVisit = {
+  visitId: string;
+  seatId: string;
+  territoryName: string;
+  repName: string;
+  customerName: string;
+  customerListType: CrmListType;
+  speciality: string | null;
+  visitDate: string;
+  raisedAt: string;
+  /** The rep's written "why I went" — the whole reason the row exists. */
+  clarification: string;
+  status: CrmUnplannedStatus;
+  statusLabel: string;
+  version: number;
+  photoPath: string | null;
+  products: string[];
+  comment: string | null;
+  managerDecidedByName: string | null;
+  managerNote: string | null;
+  canDecide: boolean;
+};
+
+export type TeamTerritoryRow = {
+  territory: TerritorySummary;
+  /** Real entries only; null in test mode. */
+  readiness: SeatReadiness | null;
+  pendingRequests: number;
+  canReview: boolean;
+};
+
+export type TeamView = {
+  isTest: boolean;
+  territories: TeamTerritoryRow[];
+  requests: TeamRequest[];
+  unplannedVisits: TeamUnplannedVisit[];
+  summary: {
+    territories: number;
+    vacant: number;
+    ready: number;
+    notReady: number;
+    requestsWaiting: number;
+    waitingForYou: number;
+    unplannedWaiting: number;
+    unplannedWaitingForYou: number;
+  };
+};
+
+export type PlanReviewRow = {
+  territory: TerritorySummary;
+  plan: PlanSummary | null;
+  /** The PM half and the AM half of the week, counted apart and never summed. */
+  doctors: number;
+  accounts: number;
+  exceptions: number;
+  staleItems: number;
+  farApartDays: string[];
+  canApprove: boolean;
+  canReturn: boolean;
+};
+
+export type PlanReviewView = {
+  isTest: boolean;
+  weekStart: string;
+  weeks: Array<{ weekStart: string; waiting: number }>;
+  rows: PlanReviewRow[];
+  farApartKm: number;
+};
+
+export type ExceptionKind =
+  | "vacant"
+  | "never_opened"
+  | "list_not_ready"
+  | "plan_missing"
+  | "plan_unsent"
+  | "no_visit"
+  | "below_pm_rate"
+  | "below_am_rate";
+
+export type TerritoryException = {
+  seatId: string;
+  territoryName: string;
+  lineName: string | null;
+  repName: string | null;
+  kind: ExceptionKind;
+  label: string;
+  why: string;
+  detail: string | null;
+};
+
+export type ExceptionsView = {
+  rows: TerritoryException[];
+  summary: {
+    territories: number;
+    needingAttention: number;
+    byKind: Array<{ kind: ExceptionKind; label: string; count: number }>;
+  };
+  isTest: boolean;
+  lastFieldDay: string;
+  weekStart: string;
+  windowFieldDays: number;
+};
