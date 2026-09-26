@@ -10,7 +10,7 @@ import type { InterviewCalendarPerson } from "@/lib/recruitment/interview-calend
 
 import type { CalendarApi } from "./calendar-api";
 
-export type ChosenInterviewer = { hrId: string; name: string };
+export type ChosenInterviewer = { hrId: string; name: string; area?: string | null; line?: string | null };
 
 export function InterviewerPicker({
   api,
@@ -89,7 +89,7 @@ export function InterviewerPicker({
               <button
                 className="block w-full px-3 py-1.5 text-left hover:bg-orange-50"
                 onClick={() => {
-                  onChange({ hrId: person.hrId, name: person.name });
+                  onChange({ area: person.area ?? null, hrId: person.hrId, line: person.line ?? null, name: person.name });
                   setQuery("");
                   setResults([]);
                 }}

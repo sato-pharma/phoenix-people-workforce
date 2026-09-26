@@ -138,6 +138,10 @@ export function interviewCalendarFilename(model: InterviewCalendarExportModel, f
 
 function cellLine(booking: InterviewBooking): string {
   const bits = [formatTimeOfDay(booking.startMinutes), formatDuration(booking.durationMinutes), PLATFORM_LABEL[booking.platform]];
+  // The interviewer and the area/line an interview is for (owner, 2026-09-26) — readable from outside.
+  if (booking.interviewerName) bits.push(booking.interviewerName);
+  if (booking.line) bits.push(booking.line);
+  if (booking.area) bits.push(booking.area);
   // A slot in a session says so: its candidates share the session's one meeting.
   if (booking.sessionTitle) bits.push(booking.sessionTitle);
   // How it went, once the interviewer has said (owner, 2026-09-20). Ink only — no fill, per the house identity.

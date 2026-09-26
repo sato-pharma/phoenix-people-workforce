@@ -32,6 +32,7 @@ import {
   Loader2,
   LogIn,
   Mail,
+  MapPin,
   MessageSquarePlus,
   Pencil,
   Phone,
@@ -798,6 +799,11 @@ export function InterviewCalendarView({
                             <span className="block break-words text-[14px] font-bold text-orange-700 underline decoration-orange-300 underline-offset-2">
                               {item.booking.candidateName}
                             </span>
+                            {item.booking.interviewerName || item.booking.line || item.booking.area ? (
+                              <span className="mt-0.5 block break-words text-[11px] font-semibold text-slate-700">
+                                {[item.booking.interviewerName, item.booking.line, item.booking.area].filter(Boolean).join(" · ")}
+                              </span>
+                            ) : null}
                             <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-slate-500">
                               <span className="inline-flex items-center gap-1">
                                 <PlatformIcon className="h-3 w-3" platform={item.booking.platform} />
@@ -984,6 +990,11 @@ function BookingChip({ booking, onOpen }: { booking: InterviewBooking; onOpen: (
       <span className="block break-words text-[12px] font-bold leading-tight text-slate-900 group-hover/chip:underline">
         {booking.candidateName}
       </span>
+      {booking.interviewerName || booking.line || booking.area ? (
+        <span className="mt-0.5 block break-words text-[10.5px] font-semibold leading-tight text-slate-700">
+          {[booking.interviewerName, booking.line, booking.area].filter(Boolean).join(" · ")}
+        </span>
+      ) : null}
       <span className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[10.5px] leading-tight text-slate-600">
         <span className="inline-flex items-center gap-0.5">
           <PlatformIcon className="h-3 w-3" platform={booking.platform} />
@@ -1303,6 +1314,16 @@ function InterviewPanel({
             </dt>
             <dd>
               Panel <span className="font-semibold">{booking.panelists.map((member) => member.name).join(", ")}</span>
+            </dd>
+          </>
+        ) : null}
+        {booking.line || booking.area ? (
+          <>
+            <dt className="pt-0.5 text-slate-400">
+              <MapPin aria-label="Area and line" className="h-4 w-4" />
+            </dt>
+            <dd>
+              <span className="font-semibold">{[booking.line, booking.area].filter(Boolean).join(" · ")}</span>
             </dd>
           </>
         ) : null}

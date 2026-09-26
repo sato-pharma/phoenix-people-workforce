@@ -82,6 +82,8 @@ export async function POST(request: Request) {
         external: body.external,
         interviewerHrId: body.interviewerHrId,
         panelistHrIds: body.panelistHrIds,
+        area: body.area,
+        line: body.line,
         notes: body.notes,
         platform: body.platform,
         sessionId: body.sessionId,

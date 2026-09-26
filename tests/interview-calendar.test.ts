@@ -702,6 +702,8 @@ function booking(overrides: Partial<InterviewBooking> & Pick<InterviewBooking, "
     interviewerHrId: null,
     interviewerName: null,
     panelists: [],
+    area: null,
+    line: null,
     notes: null,
     canSetOutcome: false,
     outcome: null,
@@ -1121,4 +1123,30 @@ function runWiringTests() {
   assert.match(viewSrc, /Panel <span/, "the interview detail lists the panel members");
   const panelMigration = read("supabase/migrations/20260926153000_ats_interview_booking_panelists.sql");
   assert.match(panelMigration, /add column if not exists panelist_hr_ids text\[\] not null default '\{\}'/, "the migration adds the panel array");
+
+  // Interviewer name + optional Area & Line in the calendar and the share link (owner, 2026-09-26):
+  // from outside one can read the interviewer, the area and the line. Area & Line auto-fill from the
+  // chosen interviewer's own org seat (via the people search) and are editable; they are ungated like
+  // the interviewer's name, so a not-signed-in share guest sees them.
+  const domainOrg = stripComments(read("src/lib/recruitment/interview-calendar.ts"));
+  assert.match(domainOrg, /interview_area,interview_line/, "the booking selects its area & line");
+  assert.match(domainOrg, /area: row\.interview_area\?\.trim\(\) \|\| null/, "hydrate exposes the area (ungated, beside interviewerName)");
+  assert.match(domainOrg, /async function resolveSeatOrgForHrIds\(/, "an interviewer's seat area & line are resolved for auto-fill");
+  assert.match(domainOrg, /\.from\("au_v_org_tree"\)/, "the seat area & line come from the org tree");
+  assert.match(bookingsPost, /area: body\.area/, "the booking route forwards the area");
+  assert.match(patchRoute, /line: body\.line/, "the move/edit route forwards the line");
+  for (const file of [
+    "src/components/recruitment/interview-calendar/cell-dialog.tsx",
+    "src/components/recruitment/interview-calendar/schedule-interview-dialog.tsx",
+    "src/components/recruitment/interview-calendar/edit-details-dialog.tsx",
+  ]) {
+    const src = stripComments(read(file));
+    assert.match(src, /<OrgFields\b/, `${file} offers the area & line fields`);
+    assert.match(src, /function chooseInterviewer\(person: ChosenInterviewer \| null\)/, `${file} auto-fills area & line from the chosen interviewer`);
+  }
+  // The calendar cell AND the share link (same component) show the interviewer name and area/line.
+  assert.match(viewSrc, /\[booking\.interviewerName, booking\.line, booking\.area\]\.filter\(Boolean\)/, "the calendar chip shows interviewer · line · area");
+  const orgMigration = read("supabase/migrations/20260926155000_ats_interview_area_line.sql");
+  assert.match(orgMigration, /add column if not exists interview_area text/, "the migration adds the area column");
+  assert.match(orgMigration, /add column if not exists interview_line text/, "the migration adds the line column");
 }
