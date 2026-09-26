@@ -568,8 +568,15 @@ function RemoteScreenIdPanel({
         <em>Take control</em> are aimed at, and it changes every time the tablet is re-enrolled. Leave it empty to
         clear it — better no ID than one pointing at a tablet that no longer answers.
       </p>
+      {/*
+        🔴 THE BOX IS CAPPED, AND THAT IS FROM LOOKING AT IT ON PRODUCTION. Left to grow it filled the
+        whole panel — a 1,552px input for nine digits on a 2,124px window — which reads as a paragraph
+        field and matches nothing else on the page; the server-settings inputs beside it sit in a
+        two-column grid at about half the width. `basis-40` still lets it drop under the button and use
+        the full width on a phone, where the cap is never reached.
+      */}
       <div className="mt-2 flex flex-wrap items-end gap-2">
-        <label className="min-w-0 flex-1 basis-40">
+        <label className="min-w-0 max-w-xs flex-1 basis-40">
           <span className={`block ${MICRO_LABEL}`}>What RustDesk shows on the tablet</span>
           <input
             className={`mt-1 ${PANEL_INPUT}`}
