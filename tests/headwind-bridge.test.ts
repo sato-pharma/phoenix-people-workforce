@@ -72,6 +72,7 @@ import {
   HeadwindWipeError,
 } from "../src/lib/devices/headwind/wipe.ts";
 import {
+  deviceRecordsFromSearch,
   getHeadwindLocation,
   listHeadwindDevices,
   matchHeadwindToRegister,
@@ -465,6 +466,52 @@ async function runDeviceTests() {
   const search = listed.calls.find((call) => call.url.includes("/rest/private/devices/search"))!;
   assert.equal(search.init.method, "POST");
   assert.ok(String(search.init.body).includes("pageSize"), "and it names a page size, so a growing fleet is not cut short");
+
+  // 🔴 THE LIVE SERVER NESTS THE PAGE UNDER `devices`, AND THE FLAT-ONLY READ ANSWERED "no tablets"
+  // AGAINST A SERVER HOLDING TWO (production, 2026-09-26). This is the envelope mdm.satopharma.com
+  // actually answered with — the page of devices beside a map of the configurations they sit on. Every
+  // fixture above uses the flat shape, which is why the bridge's own tests were green while the
+  // tablets page was empty: a fixture that agrees with the guess proves the guess, not the server.
+  resetHeadwindTokenCache();
+  const nested = await listHeadwindDevices(
+    makeFetch({
+      api: [
+        {
+          body: {
+            data: {
+              configurations: { "3": { applications: [] } },
+              devices: {
+                items: [{ configurationId: 3, id: 11, lastUpdate: 0, number: "PHX-TAB-0002" }],
+                totalItemsCount: 2,
+              },
+            },
+            status: "OK",
+          },
+          status: 200,
+        },
+      ],
+    }).fetch,
+    ENV,
+  );
+  assert.equal(nested.length, 1, "the fleet reads the page Headwind nests under `devices`");
+  assert.equal(nested[0]?.deviceNumber, "PHX-TAB-0002", "and the tablet keeps its number through the nesting");
+
+  // The unwrapper on every shape it has to survive, so neither half of the fix can be dropped alone.
+  assert.equal(deviceRecordsFromSearch({ devices: { items: [{ number: "A" }] } }).length, 1, "the live nested page");
+  assert.equal(deviceRecordsFromSearch({ items: [{ number: "A" }] }).length, 1, "a flat page");
+  assert.equal(deviceRecordsFromSearch({ devices: [{ number: "A" }] }).length, 1, "devices as a bare array");
+  assert.equal(deviceRecordsFromSearch([{ number: "A" }]).length, 1, "the array on its own");
+  assert.deepEqual(deviceRecordsFromSearch({ devices: { totalItemsCount: 0 } }), [], "a genuinely empty page");
+  assert.deepEqual(deviceRecordsFromSearch(null), [], "and nothing at all");
+
+  // 🔴 AND THE OTHER TWO READERS OF THAT SEARCH GO THROUGH IT. Both had their own copy of the flat
+  // read: one reported no installed apps for every tablet, the other refused every configuration move
+  // with "that tablet is not in the Headwind fleet any more".
+  for (const file of ["src/lib/devices/headwind/apps.ts", "src/lib/devices/headwind/configurations.ts"] as const) {
+    const text = stripComments(source(file));
+    assert.ok(text.includes("deviceRecordsFromSearch"), `${file} unwraps the device search through the shared reader`);
+    assert.ok(!/payload\.items|found\?\.items|found\.items/.test(text), `${file} does not read the flat page itself`);
+  }
 
   // A malformed info blob loses the blob, never the device.
   resetHeadwindTokenCache();
@@ -2334,6 +2381,25 @@ function runBootstrapScriptTests() {
     book,
     /DOES NOT MEAN "NO SUCH LOGIN"/,
     "the runbook refuses the reading that a 2 proves the account is missing, because that cost an hour",
+  );
+
+  // 🔴 THE THREE THINGS §5.2 MEASURED, PINNED SO A TIDY-UP CANNOT DROP THEM. Each one is a fact a
+  // session would otherwise re-derive from an empty screen: the nested search page, the http base URL
+  // the QR hands out, and the device limit that LOOKS like a ceiling and is not one.
+  assert.match(
+    book,
+    /nested\s+under `devices`/,
+    "the runbook records the shape the device search actually answers with",
+  );
+  assert.match(
+    book,
+    /`301` to https/,
+    "and that every http request to the tablets' own hostname is redirected, which is what can silently drop a POST",
+  );
+  assert.match(
+    book,
+    /`deviceLimit = 3` does NOT cap the fleet/,
+    "and that the customer record's limit is not the fleet's limit — measured, so nobody raises it in a panic at tablet four",
   );
 }
 

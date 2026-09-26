@@ -178,14 +178,31 @@ function normalizeDevice(record: RawRecord): HeadwindDevice | null {
 
 type SearchResponse = RawRecord & { items?: unknown; devices?: unknown };
 
-function devicesArray(payload: unknown): RawRecord[] {
+/**
+ * The device rows out of whatever shape `POST /rest/private/devices/search` answers with.
+ *
+ * 🔴 THE LIVE SERVER NESTS THE PAGE, AND READING ONLY THE FLAT SHAPES REPORTED AN EMPTY FLEET
+ * (production, 2026-09-26). Headwind answers
+ * `{"data":{"configurations":{…},"devices":{"items":[…],"totalItemsCount":2}}}` — the page of devices
+ * sits under `devices`, beside a map of the configurations those devices use — and `callHeadwind`
+ * unwraps only the envelope's `data`. Every reader looked for `data.items` first and `data.devices` as
+ * an ARRAY second; both missed, so the fleet fell through to `[]` and the tablets page said there were
+ * no tablets while the server held two device rows. Nothing contradicted it either: an empty fleet and
+ * an unread reply look exactly alike. The flat shapes are kept, so a build that answers the page
+ * directly is not broken by the fix.
+ */
+export function deviceRecordsFromSearch(payload: unknown): RawRecord[] {
   if (Array.isArray(payload)) return payload as RawRecord[];
-  if (payload && typeof payload === "object") {
-    const record = payload as SearchResponse;
-    for (const key of ["items", "devices"] as const) {
-      const value = record[key];
-      if (Array.isArray(value)) return value as RawRecord[];
-    }
+  if (!payload || typeof payload !== "object") return [];
+  const record = payload as SearchResponse;
+  for (const key of ["items", "devices"] as const) {
+    const value = record[key];
+    if (Array.isArray(value)) return value as RawRecord[];
+  }
+  const page = record.devices;
+  if (page && typeof page === "object") {
+    const items = (page as SearchResponse).items;
+    if (Array.isArray(items)) return items as RawRecord[];
   }
   return [];
 }
@@ -209,7 +226,7 @@ export async function listHeadwindDevices(
     fetchImpl,
     env,
   );
-  return devicesArray(payload)
+  return deviceRecordsFromSearch(payload)
     .map((record) => normalizeDevice(record))
     .filter((device): device is HeadwindDevice => device !== null);
 }

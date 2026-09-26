@@ -858,27 +858,63 @@ easier** — it would put the fleet's database on the public internet to save on
 
 ---
 
-## 5. Moving a tablet across
+## 5. Moving a tablet across — the whole cycle for one tablet
 
-Do **PHX-TAB-0002 first, alone**, and only move the rest once every step below has actually been
-seen working. This is the pilot, and two of its steps are genuinely uncertain (§5.1).
+**The first two steps of the old list are done, and were done ONCE rather than per tablet.**
+Configuration **`id=3` "Rep tablets"** exists (location on, kiosk off, permissions granted
+automatically) and **RustDesk 1.4.9 is attached to it** with *Run after install* and *Run at boot* both
+set — so every tablet that enrols on configuration 3 installs and starts RustDesk by itself. Per
+tablet, the work is the eight steps below.
 
-1. In Headwind, create a **Configuration** for rep tablets — the app list, the kiosk setting, and
-   location reporting on.
-2. On the tablet: **back up anything on it**, then **factory reset**.
-3. On the welcome screen, **tap it six times**. Android offers a QR scanner.
-4. Join Wi-Fi, then **scan the Configuration's QR code** from Headwind.
-5. The Headwind agent installs itself as **device owner**. The tablet's device number can be embedded
-   in the QR, so it can come up already named `PHX-TAB-0002`.
-6. **Push the RustDesk APK** to it from Headwind's app repository, with **"Run after install"** and
-   **"Run at boot"** both ticked.
-7. Open RustDesk on the tablet once, read the **ID** it shows, and put it in the **first custom
-   field** of that device in Headwind. That is where Phoenix reads it from — there is deliberately no
-   second list in Phoenix to keep in step.
-8. Grant RustDesk's **"RustDesk Input"** accessibility service (see §5.1) and set an unattended-access
-   password on the tablet.
-9. In Phoenix, confirm: the tablet appears in the Headwind section; it has **added itself to the
-   custody register** under `PHX-TAB-0002`; **View the screen** and **Take control** both work.
+Do **PHX-TAB-0002 first, alone**, and only move the rest once every step has been seen working.
+
+**Wiping it off ManageEngine first — a tablet coming from the old system.**
+
+1. 🔴 **If a Google account is signed in on the tablet, remove it on the tablet first** — Settings →
+   Passwords & accounts → the Google account → Remove. After a factory reset, **Factory Reset
+   Protection asks for the last Google account the device had**, and a tablet nobody holds that password
+   for is a brick until Google releases it. A device-owner tablet normally carries no Google account at
+   all; check rather than assume.
+2. In ManageEngine's console — `https://mdm.manageengine.com` — **Inventory** → the tablet → **Actions**
+   → **Complete Wipe** (*not* Corporate Wipe, which only pulls the managed profile and leaves the old
+   management in place). That is the factory reset, issued from the server, which is why the "no factory
+   reset from Settings" restriction on the rep-tablet profile does not have to be lifted first. Then
+   **Actions → Remove Device** on the same row, so the seat is freed and the tablet cannot re-enrol
+   itself into the system being retired.
+
+**Bringing it up on Headwind.**
+
+3. On the welcome screen of the factory-fresh tablet, **tap the same blank spot until the QR scanner
+   opens** — Headwind's own help says **seven taps**; most tablets open it on six. **Do not sign into a
+   Google account and do not finish setup**: the QR path is only offered on an untouched device.
+4. Join the company Wi-Fi, then **scan the tablet's own QR code**. One link per tablet, and the number
+   in it is the name the tablet comes up with:
+
+   ```
+   https://mdm.satopharma.com/rest/public/qr/<the Rep tablets QR key>?size=400&deviceId=PHX-TAB-0003&create=1
+   ```
+
+   🔴 **The key is a credential and is deliberately not written down here** — anyone holding it can
+   enrol a device on configuration 3. Read it once from the console: **Devices → the QR icon on a row
+   already on Rep tablets**, and the key is in the address bar. `create=1` is what lets the tablet
+   **create its own row** on configuration 3, so nothing has to be pre-created; leave it off and the row
+   must already exist. Change only the number at the end for each tablet.
+5. The Headwind agent installs itself as **device owner**, names itself from the QR, takes configuration
+   3 and grants its own permissions. **RustDesk then installs and launches itself**, and again at every
+   boot. Nothing is pushed by hand.
+6. Open RustDesk on the tablet once, read the **ID** it shows, and set an **unattended-access password**
+   (RustDesk → ⋮ → Settings → Security → Unattended access). Grant the **"RustDesk Input"**
+   accessibility service (§5.1) — without it a session can watch the tablet but not touch it.
+7. Put that ID in the **first custom field** of the tablet's record in Headwind. That is where Phoenix
+   reads it from — deliberately no second list to keep in step. 🔴 **That field is invisible in the
+   console today** (§5.2), so until it is named the ID goes in through the API.
+8. In Phoenix — `https://phoenix-hr.satopharma.com/devices/tablets` — confirm: the tablet is in the
+   **Headwind** section, it has **added itself to the custody register** under its number, and **View
+   the screen** and **Take control** both work.
+
+**Handing a tablet to a new joiner** is then step 8 and nothing else: the tablet is already managed, so
+the only per-person act is the custody entry recording who holds it. A tablet coming back from a leaver
+goes round the same loop from step 1 — wipe, re-enrol, re-assign — and keeps its number.
 
 ### 5.1 The things that might not work first time
 
@@ -900,6 +936,46 @@ of that decision's cost.
 🔴 **Whether Headwind's push channel being unavailable on Railway is quiet or noisy is unproven
 (§4.4).** Commands still arrive — at the next check-in rather than in seconds. Watch this tablet's
 own log during the pilot and write the answer into §4.4.
+
+### 5.2 What the live server said when the cycle above was checked against it — 2026-09-26
+
+Four things, all read from `mdm.satopharma.com` itself rather than from this file. Two were fixed in
+the same change; two are the owner's to release.
+
+🔴 **The fleet read the device search in a shape the server does not use, so Phoenix showed NO tablets
+against a server holding two.** `POST /rest/private/devices/search` answers
+`{"data":{"configurations":{…},"devices":{"items":[…],"totalItemsCount":2}}}` — the page is **nested
+under `devices`** — and all three readers looked for `data.items`, then for `data.devices` as an array.
+Both missed and each fell through to an empty list: an empty fleet, no installed apps on any tablet, and
+"that tablet is not in the Headwind fleet any more" on every configuration move. **The bridge's own
+tests were green throughout, because every fixture repeated the guess.** Fixed by one shared unwrapper,
+`deviceRecordsFromSearch`, pinned in `tests/headwind-bridge.test.ts` with the live envelope.
+
+🔴 **The enrolment QR hands the tablets `http://mdm.satopharma.com`, and Railway answers every http
+request — GET *and* POST — with a `301` to https.** The base URL is baked into the database at install
+from `PROTOCOL://BASE_DOMAIN` (`PROTOCOL=http` is deliberate on Railway, where TLS ends at the edge —
+§4.2), it is on the **configuration** record, and **the console exposes no field for it**. A redirected
+GET is harmless; the standard Android HTTP client turns a POST across a `301` into a bodyless GET, which
+is how the tablet's own reports — model, IMEI, app list, **location** — could go missing while the
+tablet still looks enrolled. Changing it is one field over the API
+(`PUT /rest/private/configurations`, `baseUrl`), plus RustDesk's own `urlArm64`. **Not applied: a write
+to the shared MDM server is the owner's to release.**
+
+🔴 **The field the RustDesk ID belongs in cannot be shown in the console.** `custom1` — which Phoenix
+reads and displays as *Remote screen ID* — only appears in the device dialog when
+`settings.customPropertyName1` is set, and it is `null`; the Community console's own settings screens
+read that name but never set it. So the ID goes in through the API until it is named, and the clean fix
+is a **Remote screen ID** input on the tablet's card in Phoenix, which writes it through the bridge that
+already exists.
+
+✅ **The customer record's `deviceLimit = 3` does NOT cap the fleet.** It reads like a hard ceiling three
+tablets in. Measured instead of assumed: three throwaway rows were created past it (five in total, all
+accepted) and then deleted — the effective limit is the `deviceLimit = 0` on the settings record, which
+means unlimited. **Nothing needs raising before the other ninety-nine tablets.**
+
+One more, for the click path rather than the server: configuration 3 has **no main app**, and the
+Configurations tab only offers its QR icon when a configuration has one. **The QR is reached from the
+Devices tab** — the QR icon on a tablet's own row — or from the direct link in §5 step 4.
 
 ---
 
