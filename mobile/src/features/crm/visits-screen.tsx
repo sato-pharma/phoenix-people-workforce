@@ -20,7 +20,7 @@ import { CrmLivePhoto } from "@/components/crm/live-photo";
 import { CrmSpeakComment } from "@/components/crm/speak-comment";
 import { ErrorNotice, LoadingScreen, PrimaryButton, SecondaryButton, StatTile } from "@/components/ui";
 import { crmErrorCode, crmErrorMessage, crmGet, crmPost, crmUrl, newClientId } from "@/lib/crm/client";
-import { cairoClock, dayLabelLong, shiftIsoDay } from "@/lib/crm/format";
+import { cairoClock, dayLabel, dayLabelLong, shiftIsoDay } from "@/lib/crm/format";
 import { PendingVisit, PendingValidate, reuseWindowOver } from "@/features/crm/handoff";
 import {
   customerMetaText,
@@ -654,6 +654,9 @@ function AddVisit({
   const placePhoto = handoff?.photo && usePlacePhoto && customer && customer.customerId === handoff.customerId ? handoff.photo : null;
   const who = participantsOf(form, kind, managerHrId, seniorHrId);
   const commentLength = comment.trim().length;
+  // Captured out here on purpose: TypeScript's narrowing of `form` from the guards above does not
+  // reach inside a function declaration, so `pickCustomer` cannot read `form.customers` directly.
+  const customerOptions = form.customers;
 
   function pickCustomer(nextId: string) {
     setProblem(null);
@@ -661,6 +664,11 @@ function AddVisit({
     if (nextId === customerId) return;
     if (photo) setPhoto(null); // The name is burned into the photo, so a photo for another customer is retaken.
     setCustomerId(nextId);
+    // GOLDEN RULE #1, the EASY half: nothing is asked twice. The web twin does exactly this in
+    // src/components/phoenix-crm/visits-tab.tsx — filled in silently, with the day named under the
+    // grid, because a button to avoid typing is still a tap.
+    const carried = customerOptions.find((option) => option.customerId === nextId)?.lastVisit ?? null;
+    setProducts(carried ? [...carried.products] : []);
   }
 
   /** Changing the kind changes who is on offer, so a chosen customer who is no longer offered goes. */
@@ -920,6 +928,11 @@ function AddVisit({
           options={form.products.map((product) => ({ value: product, label: product, disabled: !products.includes(product) && products.length >= VISIT_PRODUCTS_MAX }))}
           value={products}
         />
+        {customer?.lastVisit ? (
+          <Text style={[type.meta, { color: palette.inkSoft }]}>
+            {`Filled in from your last visit on ${dayLabel(customer.lastVisit.date)}. Change any of them.`}
+          </Text>
+        ) : null}
         <Text style={[type.meta, { color: palette.inkSoft }]}>
           {products.length === 0 ? `Choose up to ${VISIT_PRODUCTS_MAX}.` : `${products.length} chosen, up to ${VISIT_PRODUCTS_MAX}.`}
         </Text>
