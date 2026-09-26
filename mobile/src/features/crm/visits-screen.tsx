@@ -35,6 +35,13 @@ import {
 } from "@/lib/crm/labels";
 import type { CrmCapturedPhoto } from "@/lib/crm/photo";
 import { appendCrmDictated, type CrmVoiceNote } from "@/lib/crm/voice";
+import {
+  OBJECTION_NOTE_MAX,
+  VISIT_NEXT_STEPS,
+  VISIT_OBJECTIONS,
+  type VisitNextStep,
+  type VisitObjection,
+} from "@/lib/crm/visit-outcome";
 import { ApiError } from "@/lib/api";
 import { useSession } from "@/lib/session";
 import { hairline, radius, space, type } from "@/theme/tokens";
@@ -178,6 +185,18 @@ function VisitCard({ visit }: { visit: VisitRow }) {
             <Text style={[type.meta, { color: palette.ink2 }]}>
               <Text style={{ color: palette.ink }}>Comment: </Text>
               {visit.comment}
+            </Text>
+          ) : null}
+          {visit.outcome?.objectionLabel ? (
+            <Text style={[type.meta, { color: palette.ink2 }]}>
+              <Text style={{ color: palette.ink }}>Objection: </Text>
+              {visit.outcome.objectionNote ? `${visit.outcome.objectionLabel} — ${visit.outcome.objectionNote}` : visit.outcome.objectionLabel}
+            </Text>
+          ) : null}
+          {visit.outcome?.nextStepLabel ? (
+            <Text style={[type.meta, { color: palette.ink2 }]}>
+              <Text style={{ color: palette.ink }}>Next: </Text>
+              {visit.outcome.nextStepOn ? `${visit.outcome.nextStepLabel} · by ${dayLabel(visit.outcome.nextStepOn)}` : visit.outcome.nextStepLabel}
             </Text>
           ) : null}
           <Text style={[type.meta, { color: palette.inkSoft }]}>{visit.locationLabel}</Text>
@@ -756,6 +775,10 @@ function AddVisit({
   // Which multi-concentration families are expanded. A family with one product is answered directly.
   const [openFamilies, setOpenFamilies] = useState<Set<string>>(() => new Set());
   const [comment, setComment] = useState("");
+  // What he took away from the visit. Both optional, both taps, neither gating the save.
+  const [nextStep, setNextStep] = useState<VisitNextStep | null>(null);
+  const [objection, setObjection] = useState<VisitObjection | null>(null);
+  const [objectionNote, setObjectionNote] = useState("");
   // The recording lives HERE and not inside the microphone control, because the save is what attaches it:
   // a recording uploaded and left out of the payload is an orphan in the bucket. Beside the photo, and
   // deliberately not one of its fields — the photo's slot dates the visit and a recording dates nothing.
@@ -862,6 +885,19 @@ function AddVisit({
     });
   }
 
+  // Tapping the chip that is already chosen clears it: a mis-tap on an optional field must not need a
+  // third button to take back.
+  function chooseNextStep(next: VisitNextStep) {
+    setProblem(null);
+    setNextStep((current) => (current === next ? null : next));
+  }
+
+  function chooseObjection(next: VisitObjection) {
+    setProblem(null);
+    setObjection((current) => (current === next ? null : next));
+    if (next === "none" || objection === next) setObjectionNote("");
+  }
+
   function draft(visitId: string): Draft {
     if (!customer) return { ok: false, problem: "Choose the customer you visited." };
     if (customer.visitedToday) return { ok: false, problem: "This customer's visit for today is already saved." };
@@ -894,6 +930,11 @@ function AddVisit({
         products,
         pharmacyName: pharmacyName.trim(),
         productAvailability: availability,
+        nextStep,
+        // No date from the phone, deliberately — see mobile/src/lib/crm/visit-outcome.ts.
+        nextStepOn: null,
+        objection,
+        objectionNote: objection && objection !== "none" ? objectionNote.trim() || null : null,
         comment: comment.trim() || null,
         voiceNotePath: voiceNote?.path ?? null,
         voiceNoteSeconds: voiceNote?.seconds ?? null,
@@ -1108,6 +1149,15 @@ function AddVisit({
             {`Filled in from your last visit on ${dayLabel(customer.lastVisit.date)}. Change any of them.`}
           </Text>
         ) : null}
+        {/* The whole reason the next step is worth writing down: it comes back to him at the door,
+            where he can still act on it. A reminder, never a check. */}
+        {customer?.lastNextStep ? (
+          <CrmNote tone="info">
+            {`Last time you said you would ${customer.lastNextStep.label.toLowerCase()}${
+              customer.lastNextStep.dueOn ? `, by ${dayLabel(customer.lastNextStep.dueOn)}` : ""
+            }.`}
+          </CrmNote>
+        ) : null}
         <Text style={[type.meta, { color: palette.inkSoft }]}>
           {products.length === 0 ? `Choose up to ${VISIT_PRODUCTS_MAX}.` : `${products.length} chosen, up to ${VISIT_PRODUCTS_MAX}.`}
         </Text>
@@ -1232,7 +1282,50 @@ function AddVisit({
         />
       </CrmSection>
 
-      <CrmSection title="6 · Live photo">
+      <CrmSection title="6 · What you took away">
+        {/* Both optional, both taps. Nothing here gates the save. The objection is the DOCTOR'S, never
+            a mark against him, and the next step comes back to him at the door next time. */}
+        <Text style={[type.bodyStrong, { color: palette.ink }]}>Did the customer push back on anything?</Text>
+        <CrmChoice
+          columns={2}
+          disabled={saving}
+          onChange={chooseObjection}
+          options={VISIT_OBJECTIONS.map((entry) => ({ value: entry.key, label: entry.label }))}
+          value={objection}
+        />
+        {objection && objection !== "none" ? (
+          <TextInput
+            editable={!saving}
+            maxLength={OBJECTION_NOTE_MAX}
+            onChangeText={setObjectionNote}
+            placeholder="In his own words (optional)"
+            placeholderTextColor={palette.inkFaint}
+            style={[
+              type.body,
+              {
+                backgroundColor: palette.surface,
+                borderColor: palette.line,
+                borderRadius: radius,
+                borderWidth: hairline,
+                color: palette.ink,
+                padding: space.md,
+              },
+            ]}
+            value={objectionNote}
+          />
+        ) : null}
+
+        <Text style={[type.bodyStrong, { color: palette.ink }]}>What will you do next?</Text>
+        <CrmChoice
+          columns={2}
+          disabled={saving}
+          onChange={chooseNextStep}
+          options={VISIT_NEXT_STEPS.map((entry) => ({ value: entry.key, label: entry.label }))}
+          value={nextStep}
+        />
+      </CrmSection>
+
+      <CrmSection title="7 · Live photo">
         {placePhoto ? (
           <View style={{ gap: space.sm }}>
             <View style={{ backgroundColor: palette.paper2, borderColor: palette.line, borderRadius: radius, borderWidth: hairline, overflow: "hidden" }}>

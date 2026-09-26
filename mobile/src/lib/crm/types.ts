@@ -92,6 +92,11 @@ export type VisitRow = {
    * knowing who it sits with is the only way he can chase it.
    */
   unplanned: { status: "manager_pending" | "sfe_pending" | "approved" | "refused"; statusLabel: string; note: string; clarification: string } | null;
+  /**
+   * What the doctor pushed back on, and what the rep said he would do next. Null on a visit that
+   * answered neither, which is every visit saved before the two questions existed.
+   */
+  outcome: { nextStepLabel: string | null; nextStepOn: string | null; objectionLabel: string | null; objectionNote: string | null } | null;
 };
 
 export type VisitDayView = {
@@ -126,6 +131,8 @@ export type VisitCustomerOption = {
   brickName: string | null;
   /** What he discussed with this customer last time — null when there is no earlier visit. */
   lastVisit: { date: string; products: string[] } | null;
+  /** What he said he would do for this customer last time, when it was something to do. */
+  lastNextStep: { date: string; nextStep: string; label: string; dueOn: string | null } | null;
   visitedToday: boolean;
   visitsThisMonth: number;
   target: number | null;

@@ -1546,6 +1546,7 @@ import { runPhoenixCrmLineNotOpenTests } from "./phoenix-crm-line-not-open.test.
 import { runPhoenixCrmBrickGroupsTests } from "./phoenix-crm-brick-groups.test.ts";
 import { runPhoenixCrmTodayTests } from "./phoenix-crm-today.test.ts";
 import { runPhoenixCrmLastVisitProductsTests } from "./phoenix-crm-last-visit-products.test.ts";
+import { runPhoenixCrmVisitOutcomeTests } from "./phoenix-crm-visit-outcome.test.ts";
 import { runPhoenixCrmLocationIntegrityTests } from "./phoenix-crm-location-integrity.test.ts";
 import { runPhoenixCrmPortalSidebarTests } from "./phoenix-crm-portal-sidebar.test.ts";
 import { runPhoenixCrmAmPmWordTests } from "./phoenix-crm-am-pm-words.test.ts";
@@ -5156,6 +5157,11 @@ await runTest(
 await runTest(
   "Phoenix CRM fills the products in from his own last visit (GOLDEN RULE #1, the EASY half — owner, 2026-09-26, \"nothing is asked twice\": the newest earlier visit wins with capturedAt breaking a same-day tie, a product retired from the line never comes back, a customer he has never visited is ABSENT rather than present-and-empty, the read stops strictly before today so his own morning cannot prefill itself, and both apps say which day it came from)",
   runPhoenixCrmLastVisitProductsTests,
+);
+
+await runTest(
+  "Phoenix CRM records the objection and the next step (E3 — owner, 2026-09-26: an UNKNOWN value is DROPPED and never refused, in the parser AND in the function, because the rep sending it is at a door holding a photo he cannot retake; \"none\" is STORED, so \"no objection\" and an unfilled row stay two different facts; a date under \"Nothing to follow\" and a note under \"No objection\" are cleared with their parent; last time's commitment comes back at the door, and the NEWEST visit answers — a follow-up closed out later is never resurrected; and the phone's copy of both lists is identical label for label)",
+  runPhoenixCrmVisitOutcomeTests,
 );
 
 await runTest(

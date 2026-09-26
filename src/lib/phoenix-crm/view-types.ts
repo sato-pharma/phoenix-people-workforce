@@ -14,6 +14,7 @@ export type {
   VisitDayView,
   VisitFormView,
   VisitLocationFlag,
+  VisitOutcomeView,
   VisitPerson,
   VisitRow,
 } from "@/lib/phoenix-crm/server/visits";
