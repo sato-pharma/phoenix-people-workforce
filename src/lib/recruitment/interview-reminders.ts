@@ -1,8 +1,12 @@
-// Recruitment — reminders to the person chosen to conduct an interview (owner, 2026-09-20).
+// Recruitment — reminders to everyone on an interview's panel (owner, 2026-09-20; widened to the whole
+// panel 2026-09-26).
 //
 // "The interviewer that I choose ... his interviews appears to him and send him reminders" — by all
 // three channels (in-app, email, Telegram), on two clocks: the EVENING BEFORE at 5:00 PM Cairo with
-// that day's whole list, and ONE HOUR BEFORE each interview.
+// that day's whole list, and ONE HOUR BEFORE each interview. The lead interviewer AND every panel
+// member get both; the source (listInterviewsToRemindAbout) returns one row per attendee, and the keys
+// below carry the recipient so each attendee is delivered to independently. Only the LEAD is nagged to
+// RECORD what happened, because only the lead (or the calendar owner) can set the outcome.
 //
 // NO LEDGER TABLE. Every message carries an idempotency key and `createSystemNotification` delivers a
 // key once, so a job that runs every ten minutes — or twice at once — tells nobody twice. The key of a
@@ -104,7 +108,7 @@ export function planInterviewReminders(interviews: readonly ReminderInterview[],
     const time = clockOf(interview);
     reminders.push({
       href: linkTo(interview),
-      key: `interview-reminder-hour:${interview.id}:${interview.startsAt}`,
+      key: `interview-reminder-hour:${interview.id}:${interview.startsAt}:${interview.interviewerHrId}`,
       kind: "hour",
       message: `Interview with ${interview.candidateName} at ${time} (${where(interview)}) — starting within the hour.`,
       metrics: [
@@ -124,6 +128,8 @@ export function planInterviewReminders(interviews: readonly ReminderInterview[],
   if (cairoMinutesOfDay(now) >= AWAITING_PUMP_MINUTES) {
     const todayKey = cairoDateKey(now);
     for (const interview of eligible) {
+      // Only the lead is nagged to record what happened — a panel member cannot set the outcome.
+      if (!interview.isLead) continue;
       const startMs = new Date(interview.startsAt).getTime();
       const endMs = startMs + interview.durationMinutes * 60_000;
       if (endMs > nowMs) continue; // still ahead, or in progress — wait until it has actually ended
@@ -132,7 +138,7 @@ export function planInterviewReminders(interviews: readonly ReminderInterview[],
       const heldDay = formatDayLong(cairoDateKey(new Date(interview.startsAt)));
       reminders.push({
         href: linkTo(interview),
-        key: `interview-reminder-awaiting:${interview.id}:${todayKey}`,
+        key: `interview-reminder-awaiting:${interview.id}:${todayKey}:${interview.interviewerHrId}`,
         kind: "awaiting",
         message: `Your interview with ${interview.candidateName} (${heldDay}) is waiting for your response — record what happened on the interview calendar.`,
         metrics: [

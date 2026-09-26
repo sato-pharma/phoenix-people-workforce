@@ -27,6 +27,7 @@ function interview(id: string, day: string, hour: number, overrides: Partial<Rem
     id,
     interviewerHrId: "D-07",
     interviewerJobTitle: "District Sales Manager",
+    isLead: true,
     platform: "zoom",
     startsAt: at(day, hour).toISOString(),
     ...overrides,
@@ -143,4 +144,22 @@ export async function runInterviewReminderTests() {
     "declared to the heartbeat register on the ten-minute clock",
   );
   assert.match(read("scripts/cronjob-sync.mjs"), /minutes: \[3, 13, 23, 33, 43, 53\]/, "and to the scheduler, on the same minutes");
+
+  // PANEL-WIDE (owner, 2026-09-26): every attendee — the lead AND each panel member — gets the evening
+  // list and the one-hour nudge, keyed per recipient so nobody's delivery collapses into another's.
+  // Only the LEAD is nagged to record what happened. listInterviewsToRemindAbout emits one row per
+  // attendee; here we simulate that (lead D-07 + panel member D-08 on the same interview).
+  const panelLead = interview("p", "2026-09-23", 10, { interviewerHrId: "D-07", isLead: true });
+  const panelMember = interview("p", "2026-09-23", 10, { interviewerHrId: "D-08", isLead: false });
+  const panelEvening = planInterviewReminders([panelLead, panelMember], at("2026-09-22", 17, 3)).filter((reminder) => reminder.kind === "evening");
+  assert.deepEqual(
+    panelEvening.map((reminder) => reminder.recipientHrId).sort(),
+    ["D-07", "D-08"],
+    "the evening list reaches BOTH the lead and the panel member",
+  );
+  const panelHour = planInterviewReminders([panelLead, panelMember], at("2026-09-23", 9, 15)).filter((reminder) => reminder.kind === "hour");
+  assert.deepEqual(panelHour.map((reminder) => reminder.recipientHrId).sort(), ["D-07", "D-08"], "the one-hour nudge reaches both");
+  assert.equal(new Set(panelHour.map((reminder) => reminder.key)).size, 2, "each attendee's one-hour key is distinct, so neither dedupes the other away");
+  const panelAwaiting = planInterviewReminders([panelLead, panelMember], at("2026-09-23", 12, 0)).filter((reminder) => reminder.kind === "awaiting");
+  assert.deepEqual(panelAwaiting.map((reminder) => reminder.recipientHrId), ["D-07"], "only the LEAD is nagged to record the outcome — a panel member cannot set it");
 }
