@@ -149,7 +149,11 @@ async function main() {
     body: { login: ADMIN_LOGIN, password: wire(adminPassword) },
     method: "POST",
   });
+  // 🔴 `id_token` FIRST: on this server the JWT comes back at the TOP LEVEL under that name, with no
+  //    envelope at all. Reading only the envelope shapes is what made a successful sign-in look like a
+  //    refused one for a whole night (see `tokenFromLogin` in src/lib/devices/headwind/auth.ts).
   const token =
+    signIn.payload?.id_token ?? signIn.payload?.idToken ??
     signIn.payload?.data?.authToken ?? signIn.payload?.data?.token ?? signIn.payload?.token ??
     (typeof signIn.payload?.data === "string" ? signIn.payload.data : null);
   if (!signIn.ok || !token) {
@@ -222,6 +226,7 @@ async function main() {
   //     account was found and the hash did not match, which is a format bug, not a typo.
   const proof = await api("/rest/public/jwt/login", { body: { login: LOGIN, password: wire(password) }, method: "POST" });
   const proofToken =
+    proof.payload?.id_token ?? proof.payload?.idToken ??
     proof.payload?.data?.authToken ?? proof.payload?.data?.token ?? proof.payload?.token ??
     (typeof proof.payload?.data === "string" ? proof.payload.data : null);
   const demand = proof.payload?.data && typeof proof.payload.data === "object" ? proof.payload.data : {};

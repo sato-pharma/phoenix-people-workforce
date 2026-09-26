@@ -156,6 +156,8 @@ type LoginResponse = {
   data?: unknown;
   token?: unknown;
   authToken?: unknown;
+  id_token?: unknown;
+  idToken?: unknown;
 };
 
 /**
@@ -197,14 +199,26 @@ function demandFromLogin(payload: LoginResponse): string | null {
  * `data.authToken` and, on other builds, as a bare `data` string or a top-level `token`. Reading a
  * short candidate list rather than pinning one spelling means a server upgrade cannot silently break
  * sign-in with a token that is present but under a different name.
+ *
+ * 🔴 AND ON THIS SERVER IT IS `id_token`, AT THE TOP LEVEL, WITH NO ENVELOPE AT ALL — which is the
+ * single fault that cost the owner an entire night. Measured against production on 2026-09-26 with the
+ * service's own injected variables: `POST /rest/public/jwt/login` answers **HTTP 200,
+ * application/json, `{ id_token: "<195 chars>" }`** — no `status`, no `message`, no `data`. The
+ * candidate list above missed it, so a sign-in that SUCCEEDED was reported as "the Headwind server
+ * refused the Phoenix sign-in — check HEADWIND_MDM_LOGIN and HEADWIND_MDM_PASSWORD", and the account,
+ * the password, the hostname and the hash form were each searched in turn for a fault none of them
+ * had. The server's own audit log recorded those same attempts as `errorCode=0`.
+ *
+ * With `id_token` read, the token works: `GET /rest/private/users/roles` answers HTTP 200 and lists
+ * `Admin · User · Observer`. **Never narrow this list to one spelling.**
  */
 function tokenFromLogin(payload: LoginResponse): string | null {
-  const candidates: unknown[] = [payload.token, payload.authToken];
+  const candidates: unknown[] = [payload.id_token, payload.idToken, payload.token, payload.authToken];
   const data = payload.data;
   if (typeof data === "string") candidates.push(data);
   if (data && typeof data === "object" && !Array.isArray(data)) {
     const record = data as Record<string, unknown>;
-    candidates.push(record.authToken, record.token, record.jwt, record.accessToken, record.access_token);
+    candidates.push(record.id_token, record.idToken, record.authToken, record.token, record.jwt, record.accessToken, record.access_token);
   }
   for (const candidate of candidates) {
     if (typeof candidate === "string" && candidate.trim()) return candidate.trim();
