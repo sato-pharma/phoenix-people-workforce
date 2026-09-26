@@ -7,11 +7,15 @@
 // unchanged. Telescoping keeps the month total correct: the sum of the real weeks equals the last
 // cumulative sheet of the cycle.
 //
-// NOT every distributor restates. Direct is invoice-keyed, so each sheet carries only that week's own
-// orders and subtracting the prior sheet invents negative weeks. Rows from a distributor marked
-// `cumulative: false` in distributors.ts therefore pass straight through, exactly like untagged rows.
-// The flag lives in the registry (not here) so the parser, the dashboard and the upload preview all
-// read one source of truth.
+// NOT every distributor restates. Direct is invoice-keyed, so MOST months each sheet carries only that
+// week's own orders and subtracting the prior sheet invents negative weeks. The registry marks Direct
+// `cumulative: false` in distributors.ts so the parser and upload preview read one source of truth —
+// but Direct has NOT been consistent: some months it was uploaded as cumulative month-to-date files
+// (June 2026 was, and summing its four sheets counted the month ~2.2x). So for a distributor the flag
+// marks non-cumulative, the cumulative-or-not decision is made PER cycle month FROM ITS OWN SHEETS
+// (cycleGroupIsCumulative): a running total never loses a cell and never lets one fall; a per-week feed
+// does both. A distributor the flag marks cumulative is ALWAYS de-cumulated — detection never turns it
+// off, so the working distributors cannot regress.
 //
 // Pure apart from that registry lookup, so it stays unit-testable in isolation
 // (see tests/weekly-decumulation.test.ts).
@@ -37,10 +41,73 @@ export type DecumulableRow = {
 
 const up = (value: string | null | undefined) => (value ?? "").trim().toUpperCase();
 
-export function decumulateRows<T extends DecumulableRow>(rows: T[]): T[] {
-  // A cell is one product at one branch. Branch falls back to its name when it has no code.
-  const cellKey = (r: DecumulableRow) => `${up(r.productCode)}||${up(r.branchCode) || up(r.branchName)}`;
+// A cell is one product at one branch. Branch falls back to its name when it has no code. Both the
+// de-cumulation and the cumulative detection key on this, so they always agree on what a cell is.
+const cellKey = (r: DecumulableRow) => `${up(r.productCode)}||${up(r.branchCode) || up(r.branchName)}`;
 
+// Detecting a cumulative cycle from its own sheets (see cycleGroupIsCumulative). A running month-to-date
+// total never loses a cell and never lets one fall, so a per-week (invoice) feed shows both. Measured on
+// production for the Direct channel: 2026-05 scored 0.633 and 2026-07 0.688 (per-week), while 2026-06
+// scored 0.000 (a genuine cumulative upload). 0.15 sits far below every per-week month and above a
+// cumulative month that carries the odd returns-driven dip.
+const CUMULATIVE_NET_EPSILON = 0.01;
+const CUMULATIVE_MAX_VIOLATION_FRACTION = 0.15;
+
+/**
+ * Do a single (distributor, cycle_month) group's sheets look cumulative — does each week restate the
+ * month to date? Pure, and keyed on the SAME cell as decumulateRows.
+ *
+ * A running total has two signatures: a cell present one week stays present every later week, and its
+ * value never falls. A per-week feed breaks both — cells appear and vanish, and values drop (a
+ * returns-only week even goes negative). We pool the vanished + fallen cells over every consecutive week
+ * pair and call it cumulative when they are a small fraction of the cells seen. Fewer than two weeks
+ * carry no evidence either way, so the caller's registry flag decides those.
+ */
+export function directGroupLooksCumulative(rows: readonly DecumulableRow[]): boolean {
+  const weeks = [...new Set(rows.map((r) => r.weekStart).filter(Boolean))].sort();
+  if (weeks.length < 2) return false;
+  const byWeek = new Map<string, Map<string, number>>();
+  for (const week of weeks) byWeek.set(week, new Map());
+  for (const r of rows) {
+    const m = byWeek.get(r.weekStart);
+    if (!m) continue;
+    const k = cellKey(r);
+    m.set(k, (m.get(k) ?? 0) + r.netQty);
+  }
+  let priorCells = 0;
+  let violations = 0;
+  for (let i = 1; i < weeks.length; i++) {
+    const prev = byWeek.get(weeks[i - 1])!;
+    const curr = byWeek.get(weeks[i])!;
+    for (const [k, prevNet] of prev) {
+      priorCells++;
+      const currNet = curr.get(k);
+      if (currNet === undefined) violations++; // a running total never loses a cell
+      else if (currNet < prevNet - CUMULATIVE_NET_EPSILON) violations++; // nor lets one fall
+    }
+  }
+  return priorCells > 0 && violations / priorCells <= CUMULATIVE_MAX_VIOLATION_FRACTION;
+}
+
+/**
+ * Should this (distributor, cycle_month) group be de-cumulated?
+ *
+ * A distributor the registry marks cumulative (every real export except Direct) always is — detection
+ * never turns de-cumulation OFF for them, so the working distributors cannot regress
+ * (tests/weekly-decumulation.test.ts). A distributor the registry marks NON-cumulative (Direct) is
+ * decided from its own sheets per cycle month: Direct has been per-week invoice sheets some months and a
+ * cumulative month-to-date file others (June 2026 was cumulative, and the fixed flag summed its four
+ * sheets ~2.2x — the double-count this detection removes).
+ */
+export function cycleGroupIsCumulative(
+  distributorCode: string | null | undefined,
+  groupRows: readonly DecumulableRow[],
+): boolean {
+  if (weeklyDistributorIsCumulative(distributorCode)) return true;
+  return directGroupLooksCumulative(groupRows);
+}
+
+export function decumulateRows<T extends DecumulableRow>(rows: T[]): T[] {
   const groups = new Map<string, T[]>();
   const out: T[] = [];
   for (const row of rows) {
@@ -48,10 +115,8 @@ export function decumulateRows<T extends DecumulableRow>(rows: T[]): T[] {
       out.push(row); // untagged / legacy — leave exactly as-is
       continue;
     }
-    if (!weeklyDistributorIsCumulative(row.distributorCode)) {
-      out.push(row); // non-cumulative sheet (Direct) — this row IS the week, nothing to subtract
-      continue;
-    }
+    // Bucket EVERY tagged row, whatever its flag: whether a Direct cycle is really cumulative is decided
+    // per group from its own sheets below (cycleGroupIsCumulative), not from the registry flag alone.
     const key = `${up(row.distributorCode)}||${row.cycleMonth}`;
     const bucket = groups.get(key);
     if (bucket) bucket.push(row);
@@ -59,6 +124,11 @@ export function decumulateRows<T extends DecumulableRow>(rows: T[]): T[] {
   }
 
   for (const groupRows of groups.values()) {
+    if (!cycleGroupIsCumulative(groupRows[0]?.distributorCode, groupRows)) {
+      // A per-week feed (Direct's invoice sheets): each row IS its own week, nothing to subtract.
+      for (const r of groupRows) out.push(r);
+      continue;
+    }
     const weeks = [...new Set(groupRows.map((r) => r.weekStart).filter(Boolean))].sort();
     // Per-week cumulative cell maps. Duplicate cells within a week (shouldn't happen post-aggregate) sum.
     const byWeek = new Map<string, Map<string, T>>();
@@ -170,6 +240,11 @@ export function depotWeekGaps(
   const calendars = new Map<string, { distributorCode: string; cycleMonth: string; weeks: Set<number> }>();
   for (const row of rows) {
     if (!row.cycleMonth || row.weekNumber == null || !row.weekStart) continue;
+    // The "spans gap" badge stays keyed on the registry flag, not on decumulateRows' per-cycle
+    // detection: it takes rows WITHOUT values, so it cannot run the same test, and it only drives a
+    // cosmetic badge and the per-week display suppression — never the month total. The one month this
+    // could under-flag (a Direct cycle detection finds cumulative) has no missing weeks in practice
+    // (June 2026 has all four), so there is nothing to badge there anyway.
     if (!weeklyDistributorIsCumulative(row.distributorCode)) continue;
     const key = `${up(row.distributorCode)}||${row.cycleMonth}`;
     const calendar = calendars.get(key) ?? { distributorCode: up(row.distributorCode), cycleMonth: row.cycleMonth, weeks: new Set<number>() };
