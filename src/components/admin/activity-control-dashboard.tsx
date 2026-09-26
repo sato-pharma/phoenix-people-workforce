@@ -696,6 +696,19 @@ export function ActivityControlDashboard({
             />
           </div>
 
+          {overview.excludedAccounts.length > 0 ? (
+            <p className="text-xs leading-5 text-slate-500">
+              Service logins are not counted as people:{" "}
+              {overview.excludedAccounts
+                .map(
+                  (account) =>
+                    `${account.name} — ${account.sessions.toLocaleString()} ${account.sessions === 1 ? "session" : "sessions"}, ${account.pageViews.toLocaleString()} page ${account.pageViews === 1 ? "view" : "views"}`,
+                )
+                .join(" · ")}
+              . These are left out of every figure on this page.
+            </p>
+          ) : null}
+
           {overview.kpis.totalPageViews < 25 ? (
             <AdminCallout tone="warning">
               <Activity className="mt-0.5 h-4 w-4 shrink-0" />

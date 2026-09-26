@@ -17,6 +17,7 @@ import type {
   ActivityRange,
   AdoptionRow,
   AdoptionStatus,
+  ExcludedAccount,
   LiveActivity,
   LiveEvent,
   ModulePopularity,
@@ -37,6 +38,13 @@ const EVENT_FETCH_CAP = 120_000;
 const SESSION_FETCH_CAP = 60_000;
 const TOP_USERS_LIMIT = 30;
 const ANOMALY_LIMIT = 40;
+// The live feed's 15-minute window. One page is plenty (it held ~200 rows at the
+// busiest hour measured); the feed shows the newest few, the rest only resolve
+// each online person's current module. A .limit() here would be silently
+// overwritten by fetchAll's .range(), which is why the old .limit(20) shipped
+// up to 1000 events to the browser on every 30-second poll.
+const LIVE_EVENT_FETCH_CAP = PAGE_SIZE;
+const LIVE_EVENT_DISPLAY_LIMIT = 20;
 
 type Row = Record<string, unknown>;
 
@@ -67,6 +75,29 @@ function identityKey(hrId: string | null, loginId: string | null): string {
   if (normalized) return `hr:${normalized}`;
   if (loginId) return `login:${loginId.trim().toLowerCase()}`;
   return "unknown";
+}
+
+/**
+ * Logins that are a machine, not a colleague. `admin-HR` is the HR canary
+ * account (`app_auth_users.hr_id` is NULL by design and it has no employee row);
+ * its auth layer writes a fresh session constantly, so on 2026-09-26 it owned
+ * 165 of the 382 logical sessions in a 7-day window — 43% — with zero page
+ * views, which halved the "Avg session" KPI (183 min against 319 for humans)
+ * and filled the odd-hour anomaly list with 36 entries of its own. Owner's
+ * instruction the same day: drop it from the activity figures.
+ *
+ * Kept as an explicit list rather than a rule ("no HR_ID and no employee row"),
+ * so a real person whose account is mis-wired shows up as a finding instead of
+ * quietly vanishing from the numbers.
+ */
+const MACHINE_LOGIN_IDS = new Set(["admin-hr"]);
+
+/** Whether this session / event belongs to a service login rather than a person. */
+export function isMachineAccount(hrId: string | null | undefined, loginId: string | null | undefined): boolean {
+  const login = String(loginId ?? "").trim().toLowerCase();
+  if (login && MACHINE_LOGIN_IDS.has(login)) return true;
+  const hr = normalizeHrId(hrId ?? null);
+  return Boolean(hr) && MACHINE_LOGIN_IDS.has(hr!);
 }
 
 function hourInBusinessTimezone(iso: string): number {
@@ -427,13 +458,20 @@ type EventRow = {
 };
 
 function mapEvent(row: Row): EventRow {
+  const path = str(row.path) ?? "/";
+  // Re-resolve the module from the PATH instead of trusting module_key /
+  // module_label, which were frozen at insert time. A row written before a
+  // route had a rule carries the catch-all bucket for ever, so every map fix
+  // used to need a backfill; resolving on read re-labels history as well as
+  // new traffic. The stored columns stay for other consumers.
+  const resolved = resolveActivityModule(path);
   return {
     hrId: str(row.hr_id),
     loginId: str(row.login_id),
     sessionId: str(row.session_id),
-    moduleKey: str(row.module_key) ?? "other",
-    moduleLabel: str(row.module_label) ?? "Other",
-    path: str(row.path) ?? "/",
+    moduleKey: resolved.key,
+    moduleLabel: resolved.label,
+    path,
     durationMs: num(row.duration_ms),
     role: str(row.role),
     createdAt: str(row.created_at) ?? new Date().toISOString(),
@@ -576,10 +614,33 @@ async function getActivityOverviewUncached(days: number): Promise<ActivityOvervi
     ),
   ]);
 
-  const sessions = sessionRowsRaw.map(mapSession);
+  // Machine logins are dropped BEFORE anything is counted — sessions, events,
+  // online, anomalies, benchmarks and every KPI derived from them. Their volume
+  // is kept so the page can say what it left out.
+  const allSessions = sessionRowsRaw.map(mapSession);
+  const sessions = allSessions.filter((row) => !isMachineAccount(row.hrId, row.loginId));
   const logicalSessions = collapseSessions(sessions);
-  const events = eventRowsRaw.map(mapEvent);
-  const onlineSessions = onlineRowsRaw.map(mapSession);
+  const allEvents = eventRowsRaw.map(mapEvent);
+  const events = allEvents.filter((row) => !isMachineAccount(row.hrId, row.loginId));
+  const onlineSessions = onlineRowsRaw.map(mapSession).filter((row) => !isMachineAccount(row.hrId, row.loginId));
+
+  const excludedTally = new Map<string, ExcludedAccount>();
+  function excludedEntry(hrId: string | null, loginId: string | null): ExcludedAccount {
+    const name = (loginId ?? hrId ?? "unknown").trim();
+    const key = name.toLowerCase();
+    const entry = excludedTally.get(key) ?? { name, sessions: 0, pageViews: 0 };
+    excludedTally.set(key, entry);
+    return entry;
+  }
+  // Counted the same way the KPI counts them: collapsed logical sessions, not
+  // raw app_sessions rows, so the footnote is comparable to the tile above it.
+  for (const session of collapseSessions(allSessions.filter((row) => isMachineAccount(row.hrId, row.loginId)))) {
+    excludedEntry(session.hrId, session.loginId).sessions += 1;
+  }
+  for (const row of allEvents) {
+    if (isMachineAccount(row.hrId, row.loginId)) excludedEntry(row.hrId, row.loginId).pageViews += 1;
+  }
+  const excludedAccounts = Array.from(excludedTally.values()).sort((a, b) => b.sessions - a.sessions);
 
   // Latest event per session (for "current module" of online users).
   const latestEventBySession = new Map<string, EventRow>();
@@ -763,6 +824,7 @@ async function getActivityOverviewUncached(days: number): Promise<ActivityOvervi
     anomalies: anomalies.slice(0, ANOMALY_LIMIT),
     hourlyHeatmap: buildHourlyHeatmap(logicalSessions),
     roleBenchmarks: buildRoleBenchmarks(aggByKey),
+    excludedAccounts,
   };
 }
 
@@ -1037,10 +1099,11 @@ export async function getActivityUserSummaries(range: ActivityRange): Promise<Us
     ),
   ]);
 
+  // Same exclusion as the screen, so the CSV export and the page agree.
   const { aggByKey } = aggregateActivity(
     maps,
-    collapseSessions(sessionRowsRaw.map(mapSession)),
-    eventRowsRaw.map(mapEvent),
+    collapseSessions(sessionRowsRaw.map(mapSession).filter((row) => !isMachineAccount(row.hrId, row.loginId))),
+    eventRowsRaw.map(mapEvent).filter((row) => !isMachineAccount(row.hrId, row.loginId)),
   );
   return Array.from(aggByKey.values())
     .map(summarize)
@@ -1124,13 +1187,26 @@ export async function getLiveActivity(): Promise<LiveActivity> {
     ),
     fetchAll(
       "activity_events",
-      "hr_id,login_id,module_label,created_at",
-      (q) => q.gte("created_at", fifteenAgo).order("created_at", { ascending: false }).limit(20),
-      1,
+      "hr_id,login_id,path,created_at",
+      (q) => q.gte("created_at", fifteenAgo).order("created_at", { ascending: false }),
+      LIVE_EVENT_FETCH_CAP,
     ),
   ]);
 
-  const onlineSessions = onlineRowsRaw.map(mapSession);
+  const recentRows = recentEventsRaw.filter((row) => !isMachineAccount(str(row.hr_id), str(row.login_id)));
+
+  // Newest event per person in the last 15 minutes — this is what fills the
+  // "Current module" column. The poll replaces the server-rendered online list
+  // wholesale, so without this the column blanked a second after the page
+  // loaded and never came back.
+  const latestModuleByKey = new Map<string, string>();
+  for (const row of recentRows) {
+    const identity = resolveIdentity(maps, str(row.hr_id), str(row.login_id), null);
+    if (latestModuleByKey.has(identity.key)) continue; // rows arrive newest-first
+    latestModuleByKey.set(identity.key, resolveActivityModule(str(row.path)).label);
+  }
+
+  const onlineSessions = onlineRowsRaw.map(mapSession).filter((row) => !isMachineAccount(row.hrId, row.loginId));
   const onlineByKey = new Map<string, OnlineUser>();
   for (const session of onlineSessions) {
     const identity = resolveIdentity(maps, session.hrId, session.loginId, session.role);
@@ -1142,18 +1218,18 @@ export async function getLiveActivity(): Promise<LiveActivity> {
         startedAt: session.createdAt ?? nowIso,
         lastSeenAt: lastSeen,
         idleSeconds: Math.max(0, Math.round((Date.now() - new Date(lastSeen).getTime()) / 1000)),
-        currentModule: existing?.currentModule ?? null,
+        currentModule: latestModuleByKey.get(identity.key) ?? existing?.currentModule ?? null,
         ip: session.ip,
       });
     }
   }
 
-  const recentEvents: LiveEvent[] = recentEventsRaw.map((row) => {
+  const recentEvents: LiveEvent[] = recentRows.slice(0, LIVE_EVENT_DISPLAY_LIMIT).map((row) => {
     const identity = resolveIdentity(maps, str(row.hr_id), str(row.login_id), null);
     return {
       hrId: str(row.hr_id),
       name: identity.name,
-      moduleLabel: str(row.module_label) ?? "Unknown",
+      moduleLabel: resolveActivityModule(str(row.path)).label,
       occurredAtIso: str(row.created_at) ?? nowIso,
     };
   });

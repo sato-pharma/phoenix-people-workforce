@@ -20,6 +20,7 @@ import {
 import {
   SESSION_MERGE_GAP_SECONDS,
   collapseSessions,
+  isMachineAccount,
   type SessionRow,
 } from "../src/lib/activity/service.ts";
 
@@ -41,9 +42,76 @@ function testModuleResolver() {
   assert.equal(resolveActivityModule("/employee-portals").key, "employee_portal");
   assert.equal(resolveActivityModule("/admin/activity-control").key, "activity_control");
 
-  // Root and unknown paths fall back cleanly.
+  // Root falls back cleanly.
   assert.equal(resolveActivityModule("/").key, "home");
-  assert.equal(resolveActivityModule("/totally/unknown/path").key, "other");
+
+  // ── The shell is not the module ────────────────────────────────────────────
+  // The same feature under four shells is ONE module. Before this, 57% of all
+  // active minutes sat in the "Command Center" / "Employee Portal" / "Other"
+  // catch-alls, which told the owner nothing about what people actually use.
+  for (const path of [
+    "/admin/direct-orders",
+    "/admin/direct-orders/new",
+    "/employee-portals/direct-orders",
+    "/employee-portals/direct-orders-in-my-area",
+    "/admin/approvals/direct-orders",
+  ]) {
+    assert.equal(resolveActivityModule(path).key, "direct_orders", path);
+    assert.equal(resolveActivityModule(path).label, "Direct Orders", path);
+  }
+
+  // The HR shell — including the "/hr/admin/..." double shell — resolves to the
+  // feature, never to "Other".
+  assert.equal(resolveActivityModule("/hr/recruitment").key, "recruitment");
+  assert.equal(resolveActivityModule("/hr/hiring-pack").label, "HR Forms");
+  assert.equal(resolveActivityModule("/hr/admin/hr-command-center").key, "hr_command_center");
+  assert.equal(resolveActivityModule("/workspace/leave-management/vacation-request").key, "leave");
+
+  // A bare shell path is still the shell's own landing page.
+  assert.equal(resolveActivityModule("/admin").key, "command_center");
+  assert.equal(resolveActivityModule("/employee-portals").key, "employee_portal");
+  assert.equal(resolveActivityModule("/workspace").key, "my_workspace");
+
+  // ── Real names, not "Other" ────────────────────────────────────────────────
+  // The two biggest unmapped routes measured in production.
+  assert.equal(resolveActivityModule("/employee-360").label, "Employee 360");
+  assert.equal(resolveActivityModule("/hr/employee-360").label, "Employee 360");
+  // A person's own 360 page is the same module, not one module per person.
+  assert.equal(resolveActivityModule("/employee-360/b-10").key, "employee_360");
+  assert.equal(resolveActivityModule("/employee-portals/employee-360/ai-0007").key, "employee_360");
+
+  // A route with no rule is named from its own path instead of "Other".
+  assert.equal(resolveActivityModule("/totally/unknown/path").label, "Totally");
+  assert.equal(resolveActivityModule("/sales/diagnostics").label, "Sales · Diagnostics");
+  // Acronyms survive derivation.
+  assert.equal(resolveActivityModule("/employee-portals/kpis/call-rate/x").label, "KPIs");
+  assert.equal(resolveActivityModule("/some-crm-thing").label, "Some CRM Thing");
+
+  // "Other" is now reserved for a path with no nameable segment at all.
+  assert.equal(resolveActivityModule("/12345").key, "other");
+
+  // Every rule's prefix must be unique — a duplicate is a dead rule (the old map
+  // listed "/sales/import" twice, so its second entry could never resolve).
+  const seenLabels = new Map<string, string>();
+  for (const path of ["/sales/import", "/sales/upload", "/sales/weekly", "/weekly-sales"]) {
+    const resolved = resolveActivityModule(path);
+    const existing = seenLabels.get(resolved.key);
+    if (existing) assert.equal(resolved.label, existing, `${path} must label ${resolved.key} consistently`);
+    seenLabels.set(resolved.key, resolved.label);
+  }
+}
+
+function testMachineAccountsAreNotPeople() {
+  // The HR canary login re-authenticates constantly: it owned 43% of all logical
+  // sessions in the 7 days measured on 2026-09-26, with zero page views, which
+  // halved the "Avg session" KPI. Owner's instruction: drop it from the figures.
+  assert.equal(isMachineAccount(null, "admin-HR"), true);
+  assert.equal(isMachineAccount(null, "admin-hr"), true);
+  assert.equal(isMachineAccount("admin-hr", null), true);
+  // Real people are never excluded.
+  assert.equal(isMachineAccount("B-10", "b-10"), false);
+  assert.equal(isMachineAccount(null, "ai-0007"), false);
+  assert.equal(isMachineAccount(null, null), false);
 }
 
 function testEngagementEngine() {
@@ -166,6 +234,7 @@ function testSessionCollapsing() {
 
 export function runActivityTrackingTests() {
   testModuleResolver();
+  testMachineAccountsAreNotPeople();
   testEngagementEngine();
   testPermissionGate();
   testSessionCollapsing();
