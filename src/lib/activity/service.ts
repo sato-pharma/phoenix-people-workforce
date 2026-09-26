@@ -7,6 +7,14 @@ import {
   cappedDwellSeconds,
   computeEngagement,
 } from "@/lib/activity/engagement";
+import { creditUncoveredSeconds, dwellIntervalForEvent, type DwellInterval } from "@/lib/activity/dwell-union";
+import {
+  cairoDateKey,
+  createWorkingDayBaseline,
+  expectedWorkingDaysInRange,
+  listCairoDatesInRange,
+} from "@/lib/activity/working-baseline";
+import { describeDeviceLabel } from "@/lib/auth/webauthn";
 import { resolveActivityModule } from "@/lib/activity/modules";
 import { stopPhoneAppPushForEmployee, type PhoneAppPushStopResult } from "@/lib/notifications/settings";
 import { logError } from "@/lib/observability/log";
@@ -34,7 +42,13 @@ const BUSINESS_TIMEZONE = "Africa/Cairo";
 const DORMANT_AFTER_DAYS = 7;
 const ADOPTION_LOOKBACK_DAYS = 90;
 const PAGE_SIZE = 1000;
-const EVENT_FETCH_CAP = 120_000;
+// 68,734 event rows existed on 2026-09-26 and ~9,000 more arrive each week, but
+// purgeOldActivityEvents(90) deletes anything older than 90 days, so the table's
+// steady state is ≈117,000 rows — against the old 120,000 cap, which would have
+// started silently dropping the oldest events within weeks. Raised, AND the
+// truncation is now reported (ActivityOverview.eventsTruncated): raising a cap
+// on its own only moves a silent cliff, it does not remove one.
+const EVENT_FETCH_CAP = 200_000;
 const SESSION_FETCH_CAP = 60_000;
 const TOP_USERS_LIMIT = 30;
 const ANOMALY_LIMIT = 40;
@@ -45,6 +59,15 @@ const ANOMALY_LIMIT = 40;
 // up to 1000 events to the browser on every 30-second poll.
 const LIVE_EVENT_FETCH_CAP = PAGE_SIZE;
 const LIVE_EVENT_DISPLAY_LIMIT = 20;
+// "Who is online now" reads live sessions the same way, and the same trap had
+// been sprung twice: a .limit(300) on the page read and a .limit(100) on the
+// 30-second poll, both overwritten by fetchAll's .range(), so both shipped a
+// full 1,000-row page. ONE pair of numbers for both reads on purpose — honouring
+// 300 on the page and 100 on the poll would make the online list shrink a second
+// after the page loaded. The display limit is applied AFTER the per-person
+// de-duplication, so it means 300 PEOPLE, not 300 session rows.
+const ONLINE_SESSION_FETCH_CAP = PAGE_SIZE;
+const ONLINE_SESSION_DISPLAY_LIMIT = 300;
 
 type Row = Record<string, unknown>;
 
@@ -142,32 +165,32 @@ function buildHourlyHeatmap(sessions: LogicalSession[]): number[][] {
   return heatmap;
 }
 
-function buildRoleBenchmarks(aggByKey: Map<string, Agg>): RoleBenchmark[] {
-  const groups = new Map<string, { sessionSeconds: number; activeSeconds: number; engTotal: number; engCount: number; users: number }>();
-  for (const agg of aggByKey.values()) {
-    const role = agg.identity.role;
-    const g = groups.get(role) ?? { sessionSeconds: 0, activeSeconds: 0, engTotal: 0, engCount: 0, users: 0 };
+/**
+ * Role averages, built from the SAME summaries the People table renders — not
+ * re-scored from the aggregates. Scoring twice meant two places to keep in step
+ * with the engagement rules, and only one of them ever got updated.
+ */
+function buildRoleBenchmarks(summaries: UserActivitySummary[]): RoleBenchmark[] {
+  const groups = new Map<string, { sessionMinutes: number; activeMinutes: number; engTotal: number; engCount: number; users: number }>();
+  for (const summary of summaries) {
+    const role = summary.role;
+    const g = groups.get(role) ?? { sessionMinutes: 0, activeMinutes: 0, engTotal: 0, engCount: 0, users: 0 };
     g.users++;
-    g.sessionSeconds += agg.sessionSeconds;
-    g.activeSeconds += agg.activeSeconds;
-    if (agg.pageViews > 0) {
-      const eng = computeEngagement({
-        activeSeconds: agg.activeSeconds,
-        sessionSeconds: agg.sessionSeconds,
-        distinctModules: agg.moduleSeconds.size,
-        pageViews: agg.pageViews,
-      });
-      g.engTotal += eng.score;
+    g.sessionMinutes += summary.sessionMinutes;
+    g.activeMinutes += summary.activeMinutes;
+    if (summary.pageViews > 0) {
+      g.engTotal += summary.engagement.score;
       g.engCount++;
     }
     groups.set(role, g);
   }
+  const round1 = (value: number) => Math.round(value * 10) / 10;
   return Array.from(groups.entries())
     .map(([role, g]) => ({
       role,
       userCount: g.users,
-      avgSessionMinutes: minutesFromSeconds(g.sessionSeconds / Math.max(1, g.users)),
-      avgActiveMinutes: minutesFromSeconds(g.activeSeconds / Math.max(1, g.users)),
+      avgSessionMinutes: round1(g.sessionMinutes / Math.max(1, g.users)),
+      avgActiveMinutes: round1(g.activeMinutes / Math.max(1, g.users)),
       avgEngagementScore: g.engCount > 0 ? Math.round(g.engTotal / g.engCount) : 0,
     }))
     .filter((b) => b.userCount > 0)
@@ -181,15 +204,23 @@ export function buildActivityRange(days: number): ActivityRange {
   return { fromIso: from.toISOString(), toIso: now.toISOString(), days: safeDays };
 }
 
-/** Page through a Supabase select until exhausted or the cap is reached. */
+/**
+ * Page through a Supabase select until exhausted or the cap is reached.
+ *
+ * `truncated` says the cap stopped the read with more rows still waiting — the
+ * caller must either report that or be certain its cap cannot be reached. A
+ * caller's own `.limit()` CANNOT survive here: `.range()` is appended after
+ * `apply`, and PostgREST lets the later one win. Cap the fetch instead.
+ */
 async function fetchAll(
   table: string,
   columns: string,
   apply: (query: any) => any, // eslint-disable-line @typescript-eslint/no-explicit-any
   cap: number,
-): Promise<Row[]> {
+): Promise<{ rows: Row[]; truncated: boolean }> {
   const supabase = getSupabaseAdmin();
   const rows: Row[] = [];
+  let truncated = false;
   for (let offset = 0; offset < cap; offset += PAGE_SIZE) {
     const query = apply(supabase.from(table).select(columns)).range(offset, offset + PAGE_SIZE - 1);
     const { data, error } = await query;
@@ -198,21 +229,34 @@ async function fetchAll(
       // migration is applied separately). The dashboard still works from sessions.
       if (isMissingRelationError(error)) {
         console.warn(`[activity] table ${table} not available yet; treating as empty`);
-        return rows;
+        return { rows, truncated: false };
       }
       throw new Error(`Failed to read ${table}: ${error.message}`);
     }
     const batch = (data ?? []) as Row[];
     rows.push(...batch);
     if (batch.length < PAGE_SIZE) break;
+    // A full last page that lands exactly on the cap means there may be more.
+    if (rows.length >= cap) truncated = true;
   }
-  return rows;
+  return { rows, truncated };
 }
 
 type IdentityMaps = {
   employeeByHrId: Map<string, { name: string; jobTitle: string | null; team: string | null; status: string | null }>;
   roleByHrId: Map<string, string>;
   hrIdByLoginId: Map<string, string>;
+  /**
+   * Lower-cased login ids whose account is still enabled. `is_active` was being
+   * SELECTed and then never read, so a deactivated account stayed on the
+   * adoption list and in the inactivity digest for ever, as a person who had
+   * "stopped using Phoenix" — when in fact Phoenix had stopped letting them in.
+   *
+   * This deliberately does NOT prune `hrIdByLoginId`: that map is how a session
+   * row gets a name, and pruning it would render a deactivated colleague's past
+   * sessions as a raw login code.
+   */
+  activeLoginIds: Set<string>;
 };
 
 async function loadIdentityMaps(): Promise<IdentityMaps> {
@@ -222,13 +266,13 @@ async function loadIdentityMaps(): Promise<IdentityMaps> {
       "hr_id,full_name,job_title,region_name,employment_status",
       (q) => q,
       50_000,
-    ),
+    ).then((result) => result.rows),
     fetchAll(
       "app_auth_users",
       "login_id,hr_id,role,is_active",
       (q) => q,
       50_000,
-    ),
+    ).then((result) => result.rows),
   ]);
 
   const employeeByHrId = new Map<string, { name: string; jobTitle: string | null; team: string | null; status: string | null }>();
@@ -245,15 +289,18 @@ async function loadIdentityMaps(): Promise<IdentityMaps> {
 
   const roleByHrId = new Map<string, string>();
   const hrIdByLoginId = new Map<string, string>();
+  const activeLoginIds = new Set<string>();
   for (const row of accounts) {
     const login = str(row.login_id);
     const hr = normalizeHrId(str(row.hr_id));
     const role = str(row.role);
     if (login && hr) hrIdByLoginId.set(login.toLowerCase(), hr);
     if (hr && role) roleByHrId.set(hr, role);
+    // A legacy NULL counts as active, so this changes nobody's status today.
+    if (login && row.is_active !== false) activeLoginIds.add(login.toLowerCase());
   }
 
-  return { employeeByHrId, roleByHrId, hrIdByLoginId };
+  return { employeeByHrId, roleByHrId, hrIdByLoginId, activeLoginIds };
 }
 
 function resolveIdentity(
@@ -362,6 +409,8 @@ export type LogicalSession = {
   hrId: string | null;
   loginId: string | null;
   role: string | null;
+  /** app_sessions.id of the earliest row merged in — a stable identifier for the UI. */
+  firstRowId: string | null;
   startedAt: string;
   /** Effective end used for duration (revoked_at or last_seen_at of last merged row). */
   endIso: string;
@@ -420,6 +469,7 @@ export function collapseSessions(rows: SessionRow[]): LogicalSession[] {
           hrId: row.hrId,
           loginId: row.loginId,
           role: row.role,
+          firstRowId: row.id,
           startedAt: row.createdAt!,
           endIso,
           revokedAt: row.revokedAt,
@@ -455,7 +505,12 @@ type EventRow = {
   durationMs: number;
   role: string | null;
   createdAt: string;
+  /** When the page became visible. Populated on 100% of rows measured over 30 days. */
+  enteredAt: string | null;
 };
+
+/** An event plus the seconds of wall clock no other page view of the same person covers. */
+type CreditedEvent = EventRow & { creditedSeconds: number };
 
 function mapEvent(row: Row): EventRow {
   const path = str(row.path) ?? "/";
@@ -475,16 +530,61 @@ function mapEvent(row: Row): EventRow {
     durationMs: num(row.duration_ms),
     role: str(row.role),
     createdAt: str(row.created_at) ?? new Date().toISOString(),
+    enteredAt: str(row.entered_at),
   };
+}
+
+/**
+ * Credit every event only for wall clock no OTHER page view of the same person
+ * already covered.
+ *
+ * Two open browser windows are both `visible`, so both record dwell over the
+ * same minute; summing them counted that minute twice, and one person's summed
+ * dwell reached 111% of their own logged-in time. The union is run ONCE per
+ * person across the whole window — never per session, which would split an
+ * interval at the boundary and then credit both halves.
+ */
+function creditEventDwell(events: EventRow[], keyFor: (event: EventRow, index: number) => string): CreditedEvent[] {
+  const intervals: DwellInterval[] = new Array(events.length);
+  const indicesByPerson = new Map<string, number[]>();
+
+  for (let index = 0; index < events.length; index += 1) {
+    const event = events[index];
+    intervals[index] = dwellIntervalForEvent({
+      createdAtIso: event.createdAt,
+      enteredAtIso: event.enteredAt,
+      // The per-view cap is applied BEFORE the union, so a forgotten tab cannot
+      // swallow a whole day of somebody else's real page views.
+      dwellSeconds: cappedDwellSeconds(event.durationMs),
+    }) ?? { startMs: 0, endMs: 0 };
+    const key = keyFor(event, index);
+    const list = indicesByPerson.get(key);
+    if (list) list.push(index);
+    else indicesByPerson.set(key, [index]);
+  }
+
+  const credited = new Array<number>(events.length).fill(0);
+  for (const indices of indicesByPerson.values()) {
+    const seconds = creditUncoveredSeconds(indices.map((index) => intervals[index]));
+    for (let position = 0; position < indices.length; position += 1) {
+      credited[indices[position]] = seconds[position];
+    }
+  }
+
+  return events.map((event, index) => ({ ...event, creditedSeconds: credited[index] }));
 }
 
 type Agg = {
   identity: ActivityIdentity;
+  /** The employee's job title — decides whether Saturday is a working day. */
+  jobTitle: string | null;
   sessions: number;
   sessionSeconds: number;
   activeSeconds: number;
   pageViews: number;
   moduleSeconds: Map<string, { label: string; seconds: number }>;
+  /** Distinct Cairo dates carrying at least one page view — the regularity signal. */
+  activeDays: Set<string>;
   lastSeen: string | null;
 };
 
@@ -500,11 +600,13 @@ function aggregateActivity(maps: IdentityMaps, sessions: LogicalSession[], event
     if (!agg) {
       agg = {
         identity,
+        jobTitle: identity.hrId ? maps.employeeByHrId.get(identity.hrId)?.jobTitle ?? null : null,
         sessions: 0,
         sessionSeconds: 0,
         activeSeconds: 0,
         pageViews: 0,
         moduleSeconds: new Map(),
+        activeDays: new Set<string>(),
         lastSeen: null,
       };
       aggByKey.set(identity.key, agg);
@@ -523,21 +625,34 @@ function aggregateActivity(maps: IdentityMaps, sessions: LogicalSession[], event
   const moduleTotals = new Map<string, ModuleTotal>();
   let totalActiveSeconds = 0;
 
-  for (const event of events) {
-    const agg = ensureAgg(event.hrId, event.loginId, event.role);
-    const dwell = cappedDwellSeconds(event.durationMs);
-    agg.activeSeconds += dwell;
+  // Resolve each event's person first, then run the overlap sweep per person, so
+  // the credited seconds every tile below adds up are already de-duplicated.
+  // Resolving identity here (rather than inside creditEventDwell) matters: an
+  // event carrying only a login id and one carrying the HR id belong to the same
+  // colleague, and bucketing on the raw columns would let their windows overlap
+  // unnoticed.
+  const aggForEvent = events.map((event) => ensureAgg(event.hrId, event.loginId, event.role));
+  const creditedEvents = creditEventDwell(events, (_event, index) => aggForEvent[index].identity.key);
+
+  for (let index = 0; index < creditedEvents.length; index += 1) {
+    const event = creditedEvents[index];
+    const agg = aggForEvent[index];
+    const credited = event.creditedSeconds;
+    agg.activeSeconds += credited;
     agg.pageViews += 1;
-    totalActiveSeconds += dwell;
+    totalActiveSeconds += credited;
 
     const perUserModule = agg.moduleSeconds.get(event.moduleKey) ?? { label: event.moduleLabel, seconds: 0 };
-    perUserModule.seconds += dwell;
+    perUserModule.seconds += credited;
     agg.moduleSeconds.set(event.moduleKey, perUserModule);
+
+    const dayKey = cairoDateKey(event.createdAt);
+    if (dayKey) agg.activeDays.add(dayKey);
 
     if (event.createdAt && (!agg.lastSeen || event.createdAt > agg.lastSeen)) agg.lastSeen = event.createdAt;
 
     const moduleTotal = moduleTotals.get(event.moduleKey) ?? { label: event.moduleLabel, seconds: 0, views: 0, users: new Set<string>() };
-    moduleTotal.seconds += dwell;
+    moduleTotal.seconds += credited;
     moduleTotal.views += 1;
     moduleTotal.users.add(agg.identity.key);
     moduleTotals.set(event.moduleKey, moduleTotal);
@@ -546,12 +661,12 @@ function aggregateActivity(maps: IdentityMaps, sessions: LogicalSession[], event
   return { aggByKey, moduleTotals, totalActiveSeconds };
 }
 
-function summarize(agg: Agg): UserActivitySummary {
+function summarize(agg: Agg, expectedWorkingDaysFor: (jobTitle: string | null) => number): UserActivitySummary {
   const engagement = computeEngagement({
     activeSeconds: agg.activeSeconds,
-    sessionSeconds: agg.sessionSeconds,
+    expectedWorkingDays: expectedWorkingDaysFor(agg.jobTitle),
     distinctModules: agg.moduleSeconds.size,
-    pageViews: agg.pageViews,
+    daysActive: agg.activeDays.size,
   });
   let topModule: string | null = null;
   let topModuleSeconds = -1;
@@ -586,7 +701,7 @@ async function getActivityOverviewUncached(days: number): Promise<ActivityOvervi
   const nowIso = new Date().toISOString();
   const adoptionFromIso = new Date(Date.now() - ADOPTION_LOOKBACK_DAYS * 24 * 60 * 60 * 1000).toISOString();
 
-  const [maps, sessionRowsRaw, eventRowsRaw, onlineRowsRaw, adoptionSessionRowsRaw] = await Promise.all([
+  const [maps, sessionRead, eventRead, onlineRead, adoptionRead] = await Promise.all([
     loadIdentityMaps(),
     fetchAll(
       "app_sessions",
@@ -596,15 +711,15 @@ async function getActivityOverviewUncached(days: number): Promise<ActivityOvervi
     ),
     fetchAll(
       "activity_events",
-      "hr_id,login_id,session_id,module_key,module_label,path,duration_ms,role,created_at",
+      "hr_id,login_id,session_id,module_key,module_label,path,duration_ms,role,created_at,entered_at",
       (q) => q.gte("created_at", range.fromIso).lte("created_at", range.toIso).order("created_at", { ascending: false }),
       EVENT_FETCH_CAP,
     ),
     fetchAll(
       "app_sessions",
       "id,login_id,hr_id,role,created_at,last_seen_at,revoked_at,revoked_reason,idle_expires_at,absolute_expires_at,ip,user_agent",
-      (q) => q.is("revoked_at", null).gt("idle_expires_at", nowIso).gt("absolute_expires_at", nowIso).order("last_seen_at", { ascending: false }).limit(300),
-      1,
+      (q) => q.is("revoked_at", null).gt("idle_expires_at", nowIso).gt("absolute_expires_at", nowIso).order("last_seen_at", { ascending: false }),
+      ONLINE_SESSION_FETCH_CAP,
     ),
     fetchAll(
       "app_sessions",
@@ -613,6 +728,10 @@ async function getActivityOverviewUncached(days: number): Promise<ActivityOvervi
       SESSION_FETCH_CAP,
     ),
   ]);
+  const sessionRowsRaw = sessionRead.rows;
+  const eventRowsRaw = eventRead.rows;
+  const onlineRowsRaw = onlineRead.rows;
+  const adoptionSessionRowsRaw = adoptionRead.rows;
 
   // Machine logins are dropped BEFORE anything is counted — sessions, events,
   // online, anomalies, benchmarks and every KPI derived from them. Their volume
@@ -667,7 +786,8 @@ async function getActivityOverviewUncached(days: number): Promise<ActivityOvervi
     .sort((a, b) => b.activeMinutes - a.activeMinutes || b.pageViews - a.pageViews);
 
   // ── Top users + engagement ─────────────────────────────────────────────────
-  const allSummaries = Array.from(aggByKey.values()).map(summarize);
+  const expectedWorkingDaysFor = createWorkingDayBaseline(range.fromIso, range.toIso);
+  const allSummaries = Array.from(aggByKey.values()).map((agg) => summarize(agg, expectedWorkingDaysFor));
   const topUsers = [...allSummaries]
     .sort(
       (a, b) =>
@@ -703,7 +823,9 @@ async function getActivityOverviewUncached(days: number): Promise<ActivityOvervi
       onlineByKey.set(user.key, { ...(existing ?? user), ...user, currentModule: user.currentModule ?? existing?.currentModule ?? null });
     }
   }
-  const online: OnlineUser[] = Array.from(onlineByKey.values()).sort((a, b) => (a.lastSeenAt < b.lastSeenAt ? 1 : -1));
+  const online: OnlineUser[] = Array.from(onlineByKey.values())
+    .sort((a, b) => (a.lastSeenAt < b.lastSeenAt ? 1 : -1))
+    .slice(0, ONLINE_SESSION_DISPLAY_LIMIT);
 
   // ── KPIs ───────────────────────────────────────────────────────────────────
   const activeUsers = aggByKey.size;
@@ -746,6 +868,10 @@ async function getActivityOverviewUncached(days: number): Promise<ActivityOvervi
     // Only track accounts for employees who are currently active/on-leave.
     const status = (employee?.status ?? "active").toLowerCase();
     if (!["active", "on_leave", ""].includes(status)) continue;
+    // A disabled login cannot sign in, so it is not a person who stopped using
+    // Phoenix — it is an account Phoenix stopped admitting. Leaving it here
+    // reported a revoked account as a dormant colleague for ever.
+    if (!maps.activeLoginIds.has(loginId)) continue;
 
     const identity = resolveIdentity(maps, hrId, loginId, null);
     if (seenAccountKeys.has(identity.key)) continue;
@@ -823,12 +949,13 @@ async function getActivityOverviewUncached(days: number): Promise<ActivityOvervi
     adoption: { counts: adoptionCounts, rows: adoptionRows },
     anomalies: anomalies.slice(0, ANOMALY_LIMIT),
     hourlyHeatmap: buildHourlyHeatmap(logicalSessions),
-    roleBenchmarks: buildRoleBenchmarks(aggByKey),
+    roleBenchmarks: buildRoleBenchmarks(allSummaries),
     excludedAccounts,
+    eventsTruncated: eventRead.truncated,
   };
 }
 
-// This diagnostic loads up to EVENT_FETCH_CAP (120k) events / SESSION_FETCH_CAP
+// This diagnostic loads up to EVENT_FETCH_CAP (200k) events / SESSION_FETCH_CAP
 // (60k) sessions into Node per call and aggregates them there — a real cost on
 // every page load with no caching previously. Company-wide (no per-viewer
 // scoping, page-level access-gated), so caching by `days` alone is scope-safe:
@@ -924,7 +1051,9 @@ export async function getUserTimeline(targetHrId: string, range: ActivityRange):
   const maps = await loadIdentityMaps();
   const identity = resolveIdentity(maps, hrId, null, null);
 
-  const [sessionRowsRaw, eventRowsRaw] = await Promise.all([
+  const loginCalendarFromIso = new Date(Date.now() - ADOPTION_LOOKBACK_DAYS * 24 * 60 * 60 * 1000).toISOString();
+
+  const [sessionRead, eventRead, loginCalendarRead] = await Promise.all([
     fetchAll(
       "app_sessions",
       "id,login_id,hr_id,role,created_at,last_seen_at,revoked_at,revoked_reason,idle_expires_at,absolute_expires_at,ip,user_agent",
@@ -936,14 +1065,50 @@ export async function getUserTimeline(targetHrId: string, range: ActivityRange):
     ),
     fetchAll(
       "activity_events",
-      "hr_id,login_id,session_id,module_key,module_label,path,duration_ms,role,created_at",
-      (q) => q.eq("hr_id", hrId).gte("created_at", range.fromIso).lte("created_at", range.toIso).order("created_at", { ascending: true }),
+      "hr_id,login_id,session_id,module_key,module_label,path,duration_ms,role,created_at,entered_at",
+      // Every accepted spelling, exactly like the session read above. This was an
+      // `.eq(hrId)` on the lower-cased key until 2026-09-26, and activity_events
+      // does NOT store one spelling: 51,024 rows are lower-cased across 56 people,
+      // and 11,934 are `B-10` — the owner's own history, invisible on his own
+      // timeline for every window reaching before 19 Aug 2026.
+      (q) => q.in("hr_id", hrIdLookupKeys(targetHrId)).gte("created_at", range.fromIso).lte("created_at", range.toIso).order("created_at", { ascending: true }),
       EVENT_FETCH_CAP,
+    ),
+    // The login-frequency calendar's OWN window. It is labelled in months and
+    // must not follow the range picker: fed from `sessions` it drew a 90-day grid
+    // out of 1, 7 or 30 days of rows and called the empty remainder "no login".
+    fetchAll(
+      "app_sessions",
+      "created_at",
+      (q) => q.in("hr_id", hrIdLookupKeys(targetHrId)).gte("created_at", loginCalendarFromIso).order("created_at", { ascending: true }),
+      SESSION_FETCH_CAP,
     ),
   ]);
 
-  const sessions = sessionRowsRaw.map(mapSession);
-  const events = eventRowsRaw.map(mapEvent);
+  const sessions = sessionRead.rows.map(mapSession);
+  const events = eventRead.rows.map(mapEvent);
+  const creditedEvents = creditEventDwell(events, () => identity.key);
+  const creditedSecondsByEvent = new Map<EventRow, number>();
+  for (let index = 0; index < events.length; index += 1) {
+    creditedSecondsByEvent.set(events[index], creditedEvents[index].creditedSeconds);
+  }
+  const creditedFor = (event: EventRow) => creditedSecondsByEvent.get(event) ?? 0;
+
+  // Bucket logins by Cairo day, server-side. The client then owns no clock at
+  // all: it used to key on the UTC date and grid from browser-local Dates, so
+  // between 00:00 and 03:00 Cairo the "today" ring landed on yesterday.
+  const loginCountsByDay = new Map<string, number>();
+  for (const row of loginCalendarRead.rows) {
+    const dayKey = cairoDateKey(str(row.created_at));
+    if (!dayKey) continue;
+    loginCountsByDay.set(dayKey, (loginCountsByDay.get(dayKey) ?? 0) + 1);
+  }
+  const loginCalendarDays = listCairoDatesInRange(loginCalendarFromIso, new Date().toISOString());
+  const loginCalendar = {
+    days: ADOPTION_LOOKBACK_DAYS,
+    todayKey: loginCalendarDays[loginCalendarDays.length - 1] ?? "",
+    counts: loginCalendarDays.map((dateIso) => ({ dateIso, logins: loginCountsByDay.get(dateIso) ?? 0 })),
+  };
 
   const nowMs = Date.now();
   const logical = collapseSessions(sessions).sort((a, b) => (a.startedAt < b.startedAt ? -1 : 1));
@@ -971,16 +1136,16 @@ export async function getUserTimeline(targetHrId: string, range: ActivityRange):
     const moduleAgg = new Map<string, { label: string; seconds: number; views: number }>();
     let activeSeconds = 0;
     for (const event of sessionEvents) {
-      const dwell = cappedDwellSeconds(event.durationMs);
-      activeSeconds += dwell;
+      const credited = creditedFor(event);
+      activeSeconds += credited;
       const entry = moduleAgg.get(event.moduleKey) ?? { label: event.moduleLabel, seconds: 0, views: 0 };
-      entry.seconds += dwell;
+      entry.seconds += credited;
       entry.views += 1;
       moduleAgg.set(event.moduleKey, entry);
     }
 
     return {
-      sessionId: null,
+      sessionId: session.firstRowId,
       startedAt: session.startedAt,
       endedAt: session.revokedAt ?? null,
       endedReason: logicalSessionEndedReason(session, nowMs),
@@ -988,6 +1153,10 @@ export async function getUserTimeline(targetHrId: string, range: ActivityRange):
       activeMinutes: minutesFromSeconds(activeSeconds),
       ip: session.ip,
       userAgent: session.userAgent,
+      // Resolved on the server: describeDeviceLabel lives in the WebAuthn module,
+      // which pulls @simplewebauthn/server and the admin client, so a "use client"
+      // component can never import it.
+      deviceLabel: describeDeviceLabel(session.userAgent),
       modules: Array.from(moduleAgg.values())
         .map((m) => ({ label: m.label, minutes: minutesFromSeconds(m.seconds), views: m.views }))
         .sort((a, b) => b.minutes - a.minutes),
@@ -995,6 +1164,9 @@ export async function getUserTimeline(targetHrId: string, range: ActivityRange):
         atIso: event.createdAt,
         moduleLabel: event.moduleLabel,
         path: event.path,
+        // The page's OWN dwell, not its credited share: a page opened in a second
+        // window is real, and rendering it as "0s" on the trail would read as a
+        // bug rather than as overlap.
         dwellSeconds: cappedDwellSeconds(event.durationMs),
       })),
     };
@@ -1002,15 +1174,18 @@ export async function getUserTimeline(targetHrId: string, range: ActivityRange):
 
   // Build the aggregate summary across the range.
   const moduleSeconds = new Map<string, { label: string; seconds: number }>();
+  const activeDays = new Set<string>();
   let activeSeconds = 0;
   let pageViews = 0;
   for (const event of events) {
-    const dwell = cappedDwellSeconds(event.durationMs);
-    activeSeconds += dwell;
+    const credited = creditedFor(event);
+    activeSeconds += credited;
     pageViews += 1;
     const entry = moduleSeconds.get(event.moduleKey) ?? { label: event.moduleLabel, seconds: 0 };
-    entry.seconds += dwell;
+    entry.seconds += credited;
     moduleSeconds.set(event.moduleKey, entry);
+    const dayKey = cairoDateKey(event.createdAt);
+    if (dayKey) activeDays.add(dayKey);
   }
   const sessionSeconds = logical.reduce((sum, s) => sum + s.durationSeconds, 0);
   let topModule: string | null = null;
@@ -1036,9 +1211,13 @@ export async function getUserTimeline(targetHrId: string, range: ActivityRange):
     lastSeenAt: lastSeen,
     engagement: computeEngagement({
       activeSeconds,
-      sessionSeconds,
+      expectedWorkingDays: expectedWorkingDaysInRange(
+        range.fromIso,
+        range.toIso,
+        identity.hrId ? maps.employeeByHrId.get(identity.hrId)?.jobTitle ?? null : null,
+      ),
       distinctModules: moduleSeconds.size,
-      pageViews,
+      daysActive: activeDays.size,
     }),
   };
 
@@ -1047,15 +1226,17 @@ export async function getUserTimeline(targetHrId: string, range: ActivityRange):
     const moduleAgg = new Map<string, { label: string; seconds: number; views: number }>();
     let looseActive = 0;
     for (const event of looseEvents) {
-      const dwell = cappedDwellSeconds(event.durationMs);
-      looseActive += dwell;
+      const credited = creditedFor(event);
+      looseActive += credited;
       const entry = moduleAgg.get(event.moduleKey) ?? { label: event.moduleLabel, seconds: 0, views: 0 };
-      entry.seconds += dwell;
+      entry.seconds += credited;
       entry.views += 1;
       moduleAgg.set(event.moduleKey, entry);
     }
     timelineSessions.push({
-      sessionId: null,
+      // Not a real app_sessions row — these events carry no session that survived
+      // the window. A stable literal so React still has a key.
+      sessionId: "unlinked",
       startedAt: looseEvents[0]?.createdAt ?? range.fromIso,
       endedAt: looseEvents[looseEvents.length - 1]?.createdAt ?? null,
       endedReason: "unlinked",
@@ -1063,6 +1244,7 @@ export async function getUserTimeline(targetHrId: string, range: ActivityRange):
       activeMinutes: minutesFromSeconds(looseActive),
       ip: null,
       userAgent: null,
+      deviceLabel: null,
       modules: Array.from(moduleAgg.values())
         .map((m) => ({ label: m.label, minutes: minutesFromSeconds(m.seconds), views: m.views }))
         .sort((a, b) => b.minutes - a.minutes),
@@ -1077,13 +1259,13 @@ export async function getUserTimeline(targetHrId: string, range: ActivityRange):
 
   timelineSessions.sort((a, b) => (a.startedAt < b.startedAt ? 1 : -1));
 
-  return { identity, range, summary, sessions: timelineSessions };
+  return { identity, range, summary, sessions: timelineSessions, loginCalendar };
 }
 
 // ── All-user summaries (Excel export) ────────────────────────────────────────
 
 export async function getActivityUserSummaries(range: ActivityRange): Promise<UserActivitySummary[]> {
-  const [maps, sessionRowsRaw, eventRowsRaw] = await Promise.all([
+  const [maps, sessionRead, eventRead] = await Promise.all([
     loadIdentityMaps(),
     fetchAll(
       "app_sessions",
@@ -1093,7 +1275,7 @@ export async function getActivityUserSummaries(range: ActivityRange): Promise<Us
     ),
     fetchAll(
       "activity_events",
-      "hr_id,login_id,session_id,module_key,module_label,path,duration_ms,role,created_at",
+      "hr_id,login_id,session_id,module_key,module_label,path,duration_ms,role,created_at,entered_at",
       (q) => q.gte("created_at", range.fromIso).lte("created_at", range.toIso),
       EVENT_FETCH_CAP,
     ),
@@ -1102,11 +1284,12 @@ export async function getActivityUserSummaries(range: ActivityRange): Promise<Us
   // Same exclusion as the screen, so the CSV export and the page agree.
   const { aggByKey } = aggregateActivity(
     maps,
-    collapseSessions(sessionRowsRaw.map(mapSession).filter((row) => !isMachineAccount(row.hrId, row.loginId))),
-    eventRowsRaw.map(mapEvent).filter((row) => !isMachineAccount(row.hrId, row.loginId)),
+    collapseSessions(sessionRead.rows.map(mapSession).filter((row) => !isMachineAccount(row.hrId, row.loginId))),
+    eventRead.rows.map(mapEvent).filter((row) => !isMachineAccount(row.hrId, row.loginId)),
   );
+  const expectedWorkingDaysFor = createWorkingDayBaseline(range.fromIso, range.toIso);
   return Array.from(aggByKey.values())
-    .map(summarize)
+    .map((agg) => summarize(agg, expectedWorkingDaysFor))
     .sort((a, b) => b.activeMinutes - a.activeMinutes || b.pageViews - a.pageViews || b.sessionMinutes - a.sessionMinutes);
 }
 
@@ -1136,10 +1319,16 @@ export async function getActivityUserSummaries(range: ActivityRange): Promise<Us
  * shared hrIdLookupKeys) fixes it without assuming a casing convention this
  * table has never actually enforced.
  *
- * DO NOT copy this to activity_events: that table stores the LOWERCASE form
- * (23,967 of 23,967 rows), so its own `.eq(normalized)` is already correct.
- * The two tables genuinely disagree, and "normalise everything one way" breaks
- * whichever side you do not look at.
+ * activity_events needs the SAME treatment, and the note that used to sit here
+ * said the opposite. It claimed that table stores the lowercase form "23,967 of
+ * 23,967 rows", so an `.eq(normalized)` on it was already correct. Re-measured
+ * on production 2026-09-26: 51,024 rows are lower-cased across 56 people, and
+ * 11,934 are spelled `B-10` — the owner's own history, written 29 Jun to 19 Aug
+ * 2026. His timeline showed none of it. The write path lower-cases today
+ * (recordPageView), so nothing new arrives mis-spelled and the last of the old
+ * block ages out of the 90-day retention purge around 17 Nov 2026; both reads
+ * match every accepted spelling in the meantime, and no repair UPDATE is run —
+ * that class of write is what left ~37,000 bad actor ids across 52 columns.
  */
 export type ForceLogoutResult = {
   phonePush: PhoneAppPushStopResult | null;
@@ -1178,12 +1367,12 @@ export async function getLiveActivity(): Promise<LiveActivity> {
 
   const maps = await loadIdentityMaps();
 
-  const [onlineRowsRaw, recentEventsRaw] = await Promise.all([
+  const [onlineRead, recentEventsRead] = await Promise.all([
     fetchAll(
       "app_sessions",
       "id,login_id,hr_id,role,created_at,last_seen_at,revoked_at,revoked_reason,idle_expires_at,absolute_expires_at,ip,user_agent",
-      (q) => q.is("revoked_at", null).gt("idle_expires_at", nowIso).gt("absolute_expires_at", nowIso).order("last_seen_at", { ascending: false }).limit(100),
-      1,
+      (q) => q.is("revoked_at", null).gt("idle_expires_at", nowIso).gt("absolute_expires_at", nowIso).order("last_seen_at", { ascending: false }),
+      ONLINE_SESSION_FETCH_CAP,
     ),
     fetchAll(
       "activity_events",
@@ -1192,8 +1381,9 @@ export async function getLiveActivity(): Promise<LiveActivity> {
       LIVE_EVENT_FETCH_CAP,
     ),
   ]);
+  const onlineRowsRaw = onlineRead.rows;
 
-  const recentRows = recentEventsRaw.filter((row) => !isMachineAccount(str(row.hr_id), str(row.login_id)));
+  const recentRows = recentEventsRead.rows.filter((row) => !isMachineAccount(str(row.hr_id), str(row.login_id)));
 
   // Newest event per person in the last 15 minutes — this is what fills the
   // "Current module" column. The poll replaces the server-rendered online list
@@ -1234,21 +1424,32 @@ export async function getLiveActivity(): Promise<LiveActivity> {
     };
   });
 
-  const online = Array.from(onlineByKey.values()).sort((a, b) => (a.lastSeenAt < b.lastSeenAt ? 1 : -1));
+  const online = Array.from(onlineByKey.values())
+    .sort((a, b) => (a.lastSeenAt < b.lastSeenAt ? 1 : -1))
+    .slice(0, ONLINE_SESSION_DISPLAY_LIMIT);
   return { online, recentEvents, generatedAtIso: nowIso };
 }
 
 // ── Inactivity check (called by the daily cron) ───────────────────────────────
 
-export async function getInactiveUsers(thresholdDays = 7): Promise<{ hrId: string | null; name: string; role: string; daysSinceSeen: number }[]> {
+export type InactiveUser = {
+  hrId: string | null;
+  name: string;
+  role: string;
+  daysSinceSeen: number;
+  /** Their last sign-in, or null when they have never signed in at all. */
+  lastSeenIso: string | null;
+};
+
+export async function getInactiveUsers(thresholdDays = 7): Promise<InactiveUser[]> {
   const maps = await loadIdentityMaps();
-  const lookbackIso = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
-  const sessionRowsRaw = await fetchAll(
+  const lookbackIso = new Date(Date.now() - ADOPTION_LOOKBACK_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  const sessionRowsRaw = (await fetchAll(
     "app_sessions",
     "login_id,hr_id,last_seen_at,created_at",
     (q) => q.gte("created_at", lookbackIso).order("last_seen_at", { ascending: false }),
     SESSION_FETCH_CAP,
-  );
+  )).rows;
 
   const lastSeenByKey = new Map<string, { iso: string; hrId: string | null; loginId: string | null }>();
   for (const row of sessionRowsRaw) {
@@ -1261,21 +1462,32 @@ export async function getInactiveUsers(thresholdDays = 7): Promise<{ hrId: strin
     }
   }
 
-  const results: { hrId: string | null; name: string; role: string; daysSinceSeen: number }[] = [];
+  const results: InactiveUser[] = [];
   const seen = new Set<string>();
   for (const [loginId, hrId] of maps.hrIdByLoginId.entries()) {
     const employee = maps.employeeByHrId.get(hrId);
     const status = (employee?.status ?? "active").toLowerCase();
     if (!["active", "on_leave", ""].includes(status)) continue;
+    // A disabled login cannot sign in; reporting it as inactive is reporting the
+    // deactivation, every day, for ever.
+    if (!maps.activeLoginIds.has(loginId)) continue;
     const identity = resolveIdentity(maps, hrId, loginId, null);
     if (seen.has(identity.key)) continue;
     seen.add(identity.key);
     const last = lastSeenByKey.get(identity.key);
+    // 999 is a sentinel for "never signed in", not a measurement. lastSeenIso is
+    // null in that case so the digest can say so in words.
     const days = last
       ? Math.floor((Date.now() - new Date(last.iso).getTime()) / (24 * 60 * 60 * 1000))
       : 999;
     if (days >= thresholdDays) {
-      results.push({ hrId: last?.hrId ?? hrId, name: identity.name, role: identity.role, daysSinceSeen: days });
+      results.push({
+        hrId: last?.hrId ?? hrId,
+        name: identity.name,
+        role: identity.role,
+        daysSinceSeen: days,
+        lastSeenIso: last?.iso ?? null,
+      });
     }
   }
   return results.sort((a, b) => b.daysSinceSeen - a.daysSinceSeen);

@@ -1012,6 +1012,7 @@ import { runEmployeePortalFingerprintVisibilityTests } from "./employee-portal-f
 import { runCronAuthPolicyTests } from "./cron-auth-policy.test.ts";
 import { runPostgrestArrayFilterGuardTests } from "./postgrest-array-filter-guard.test.ts";
 import { runActivityTrackingTests } from "./activity-tracking.test.ts";
+import { runActivityControlTablesFitTheScreenTests } from "./activity-control-tables-fit-the-screen.test.ts";
 import { runActivityManagerViewAccessTests } from "./activity-manager-view-access.test.ts";
 import { runAttendanceSelfScopeTests } from "./attendance-self-scope.test.ts";
 import { runAttendanceExceptionNotesTests } from "./attendance-exception-notes.test.ts";
@@ -2122,7 +2123,7 @@ await runTest("sos ai-suggest retry/backoff", runSosAiSuggestRetryTests);
 await runTest("employee import alert names its recipients (a subject-less ops alert resolves to nobody otherwise)", runEmployeeImportAlertRecipientTests);
 await runTest("payroll workflow alert names its recipients (a subject-less ops alert resolves to nobody otherwise)", runPayrollWorkflowAlertRecipientTests);
 await runTest("attendance ingestion alert never emails, and stays silent when disabled", runAttendanceAlertNoEmailTests);
-await runTest("force logout HR_ID casing (app_sessions stores UPPER, activity_events stores lower)", runForceLogoutHrIdCasingTests);
+await runTest("force logout HR_ID casing (app_sessions stores UPPER; activity_events stores BOTH spellings, so every reader of it matches every spelling)", runForceLogoutHrIdCasingTests);
 await runTest("resignation notification subject (a leaver is still a valid SUBJECT, never a recipient)", runResignationNotificationSubjectTests);
 await runTest("notification governance hardening", runNotificationGovernanceHardeningTests);
 await runTest("birthday eligibility (on_leave included, terminal excluded, birth_date required)", runBirthdayEligibilityTests);
@@ -4236,6 +4237,7 @@ await runTest("employee portal mobile input zoom (16px floor on every portal inp
 await runTest("employee portal mobile table cards (every converted table is desktop-gated with cards beside it, one shared SourceBreakdown, no <table> nested inside PortalDesktopTable)", runEmployeePortalMobileTableCardTests);
 await runTest("target visuals shared (both target modules import one visual language; neither forks a primitive; null achievement stays neutral, null percent stays an em dash, ring arc stays clamped)", runTargetVisualsSharedTests);
 await runTest("sales target tables fit the screen (Portal Targets and Sales vs Target desktop tables: every column holds its unwrappable content at the narrowest 1024px portal table, merged column counts, colgroup and colSpan agree, no sideways scroll, floor or ellipsis)", runSalesTargetTablesFitTheScreenTests);
+await runTest("activity control tables fit the screen (all four Activity Control desktop tables: every column holds its unwrappable content at the 720px full-width and 478px half-width floors, colgroup totals 100 and matches the header count, a mobile card list beside each, no sideways scroll, floor, colSpan or ellipsis anywhere in the page)", runActivityControlTablesFitTheScreenTests);
 await runTest("portal identity band and sales window (nothing renders above the identity banner on any of the 9 role centers, no horizontal nav rows on the portal, no ellipsis, a leaver leaves the list but not the money, every keycard names its closing month, and the landing page fits a 375px screen)", runPortalIdentityBandAndSalesWindowTests);
 await runTest("CRM mobile table cards (whole-directory scan: every CRM table desktop-gated, every table file has a card path, no bare overflow-x-auto, both coverage boards moved together)", runCrmMobileTableCardTests);
 await runTest("Outstation mobile table cards (whole-directory scan: every outstation table desktop-gated, every table file has a card path, no fixed-pixel floor in an ungated scroll box, HR decision controls shared by both halves)", runOutstationMobileTableCardTests);

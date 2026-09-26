@@ -8,6 +8,21 @@ const activitySource = readFileSync(
   "utf8",
 );
 
+const errorMonitorSource = readFileSync(
+  new URL("../src/lib/error-monitor/service.ts", import.meta.url),
+  "utf8",
+);
+
+/** The body of one top-level `export async function`, up to its closing brace in column 1. */
+function functionBody(source: string, signature: string): string {
+  const start = source.indexOf(signature);
+  assert.notEqual(start, -1, `could not find "${signature}" — this test is reading the wrong file`);
+  const rest = source.slice(start);
+  const end = rest.indexOf("\n}");
+  assert.notEqual(end, -1, `could not find the end of "${signature}"`);
+  return rest.slice(0, end + 2);
+}
+
 /**
  * Force logout revoked NOTHING, for every user, silently.
  *
@@ -20,9 +35,21 @@ const activitySource = readFileSync(
  * the admin UI showed as success while ~1,900 live sessions across 34 users
  * stayed valid.
  *
- * The trap this test also guards: `activity_events` stores the OPPOSITE casing
- * (23,967 of 23,967 rows lowercase). "Normalise it all one way" fixes one table
- * and breaks the other, so the two must be asserted separately.
+ * The trap this test also guards: `activity_events` does NOT store one spelling.
+ * Measured on production 2026-09-26: 51,024 rows are lower-cased across 56
+ * people, and 11,934 are spelled `B-10` — the owner's own history, written
+ * between 29 June and 19 August 2026. An `.eq` on either spelling is therefore
+ * wrong for somebody, and a reader that picks the lower-cased one shows the
+ * owner an empty timeline of his own work for any window reaching back that far.
+ * (An earlier version of this file asserted the opposite, on a 23,967-row
+ * measurement taken before the mixed block existed, and pinned the `.eq` in
+ * place as though it were the correct behaviour.)
+ *
+ * Both tables are therefore read with `hrIdLookupKeys` — every accepted
+ * spelling — and neither is repaired by an UPDATE: the mis-spelled block is
+ * frozen, the write path lower-cases, and the 90-day purge removes the last of
+ * it around 17 November 2026. A casing-repair UPDATE is the class of write that
+ * left ~37,000 bad actor ids across 52 columns.
  */
 export function runForceLogoutHrIdCasingTests() {
   // ── The helper must actually offer the stored spelling (behavioural) ───────
@@ -54,8 +81,7 @@ export function runForceLogoutHrIdCasingTests() {
   }
 
   // ── forceLogoutUser must not use the case-sensitive filter again ───────────
-  const forceLogout = activitySource.slice(activitySource.indexOf("export async function forceLogoutUser"));
-  const forceLogoutBody = forceLogout.slice(0, forceLogout.indexOf("\n}") + 2);
+  const forceLogoutBody = functionBody(activitySource, "export async function forceLogoutUser");
 
   assert.match(
     forceLogoutBody,
@@ -83,12 +109,48 @@ export function runForceLogoutHrIdCasingTests() {
     "the per-user activity timeline must fetch app_sessions by every accepted spelling, or it shows a user's events with no sessions at all",
   );
 
-  // ── activity_events must KEEP the lower-cased filter ───────────────────────
-  // This is the half that was already correct. Changing it to match app_sessions
-  // would strand 23,967 rows of event history.
+  // ── activity_events must be read by EVERY spelling, in both readers ────────
+  // The table holds both: 51,024 lower-cased rows and 11,934 spelled `B-10`.
+  // Each reader is checked inside its OWN body, so a correct filter somewhere
+  // else in the file can never vouch for a broken one here.
+  const timelineBody = functionBody(activitySource, "export async function getUserTimeline");
+
   assert.match(
-    activitySource,
-    /"activity_events",[\s\S]{0,220}q\.eq\("hr_id", hrId\)/,
-    "activity_events stores the LOWER-CASED HR_ID and must keep using it — the two tables genuinely disagree.",
+    timelineBody,
+    // Lazy, and anchored on EVENT_FETCH_CAP, so this can only be the event read
+    // itself — never the login-calendar read further down, which is correct for
+    // its own reasons and must not vouch for this one.
+    /"activity_events",[\s\S]{0,1500}?q\.in\("hr_id", hrIdLookupKeys\(targetHrId\)\)[\s\S]{0,300}?EVENT_FETCH_CAP/,
+    "getUserTimeline must read activity_events by every accepted HR_ID spelling — activity_events holds both, and the lower-cased .eq hid 11,934 of the owner's own rows from his own timeline.",
+  );
+
+  assert.doesNotMatch(
+    timelineBody,
+    /\.eq\("hr_id", hrId\)/,
+    "getUserTimeline must never go back to the lower-cased .eq on activity_events — that filter silently drops every row written in the mixed-case block.",
+  );
+
+  // The RAW id is what goes in, not the normalized one: `hrIdLookupKeys` derives
+  // the display spelling from what it is given, so handing it the lower-cased
+  // key throws away the very spelling it is there to recover.
+  assert.doesNotMatch(
+    timelineBody,
+    /hrIdLookupKeys\(hrId\)/,
+    "getUserTimeline must pass the RAW target id to hrIdLookupKeys, not the lower-cased key.",
+  );
+
+  // ── The error monitor's repro trail had the identical mismatch ─────────────
+  const reproTrailBody = functionBody(errorMonitorSource, "export async function getReproTrail");
+
+  assert.match(
+    reproTrailBody,
+    /"activity_events"[\s\S]{0,1500}?\.in\("hr_id", hrIdLookupKeys\(hrId\)\)/,
+    "getReproTrail must read activity_events by every accepted HR_ID spelling, or the trail behind an error reported by the owner comes back empty.",
+  );
+
+  assert.doesNotMatch(
+    reproTrailBody,
+    /\.eq\("hr_id",/,
+    "getReproTrail must never filter activity_events with a single spelling again.",
   );
 }

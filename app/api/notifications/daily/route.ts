@@ -24,6 +24,7 @@ import { pruneExpiredRateLimitBuckets } from "@/lib/security/api-rate-limit";
 import { pruneOldAppErrorEvents } from "@/lib/error-monitor/service";
 import { runSosMonthlyClosingReportCheck } from "@/lib/sales/sos-report-delivery";
 import { runMilestoneDueNotices } from "@/lib/milestones/notices";
+import { notifyInactiveUsers } from "@/lib/notifications/inactive-user-digest";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { assertCronAuthorized } from "@/lib/security/cron-auth";
 
@@ -105,9 +106,11 @@ async function runDailyNotifications(request: Request) {
     // Two entries that used to sit BEYOND the destructure's end are now named, in their Promise.all
     // order — adding a Promise.all entry without its name here is the exact off-by-one the comments
     // above record. `heldNotificationExpiry` was always unnamed (position 23); `milestoneDueNotices`
-    // is the new milestones pump (position 24). Both must stay LAST, in this order.
+    // is the new milestones pump (position 24). Both must stay LAST, in this order — and
+    // `inactiveUserDigest` (position 25, added 2026-09-26) after them.
     heldNotificationExpiry,
     milestoneDueNotices,
+    inactiveUserDigest,
   ] = await Promise.all([
     runBirthdayNotifications(request).catch(
       onJobFailure("daily-birthday", (message) =>
@@ -231,6 +234,17 @@ async function runDailyNotifications(request: Request) {
     runMilestoneDueNotices().catch(
       onJobFailure("daily-milestone-due", (message) => ({ delivered: 0, occasions: 0, skipped: true, reason: message })),
     ),
+    // Tells the Super Admin, in-app and on Telegram, who has not signed in to Phoenix for a week
+    // or more. It used to be computed on the FIVE-MINUTE cron and printed to the log as five names
+    // and an ellipsis — nobody received it. Owner's decision, 2026-09-26: daily, never email.
+    notifyInactiveUsers().catch(
+      onJobFailure("daily-inactive-user-digest", (message) => ({
+        delivered: 0,
+        inactiveCount: 0,
+        skipped: true,
+        reason: message,
+      })),
+    ),
   ]);
   const [birthdays, contractRenewals, holidayConfirmation] = await Promise.all([
     birthdayResponse instanceof Response ? birthdayResponse.json() : birthdayResponse,
@@ -242,9 +256,10 @@ async function runDailyNotifications(request: Request) {
   // the dead-man's-switch ping (which only proves the route executed) — is the signal to alert on:
   // `event="cron_run_summary" job="notifications/daily" failedCount>0`.
   // Hand-maintained: bump this whenever a sub-job is added above, or the run summary silently
-  // under-reports (24 since the milestones due-notice pump was added 2026-09-23; 23 before that,
+  // under-reports (25 since the inactive-colleague digest moved here from the 5-minute cron on
+  // 2026-09-26; 24 since the milestones due-notice pump was added 2026-09-23; 23 before that,
   // since the FWC deductions auto-sync was retired in the C6 cutover on 2026-08-30).
-  const totalJobs = 24;
+  const totalJobs = 25;
   if (failures.length > 0) {
     logError(
       `Daily notification run completed with ${failures.length} of ${totalJobs} sub-job(s) FAILED: ${failures.map((f) => f.job).join(", ")}`,
@@ -287,6 +302,7 @@ async function runDailyNotifications(request: Request) {
     heldNotificationReminder,
     heldNotificationExpiry,
     holidayConfirmation,
+    inactiveUserDigest,
     marketingAssignmentBackfill,
     milestoneDueNotices,
     marketingSla,

@@ -1,5 +1,5 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { canonicalHrIdForDisplay, canonicalHrIdKey } from "@/lib/hr-id";
+import { canonicalHrIdForDisplay, canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
 import { getBlockedIps, type BlockedIp } from "@/lib/auth/ip-blocklist";
 import { deriveAppErrorStatus, getCurrentReleaseTag, shouldPersistErrorEvents, signatureKey, type IssueStatus } from "@/lib/error-monitor/derived-status";
 import { redactSecretsFromRoute } from "@/lib/error-monitor/redact-route";
@@ -466,10 +466,14 @@ export type ReproTrailEntry = {
 /**
  * The last `limit` navigation events the given user made BEFORE an error — the "what was
  * the user doing right before it crashed" repro trail. Reads pre-stored module_label/path
- * from activity_events (page-view tracking); matches hr_id canonically (activity stores it
- * canonicalized on insert) and hits the (hr_id, created_at DESC) index. Best-effort:
- * returns [] if the user has no hr_id, or on failure. Note: activity_events is pruned at
- * 90 days, so an older error yields an empty trail.
+ * from activity_events (page-view tracking) and hits the (hr_id, created_at DESC) index.
+ * Best-effort: returns [] if the user has no hr_id, or on failure. Note: activity_events
+ * is pruned at 90 days, so an older error yields an empty trail.
+ *
+ * Matches EVERY accepted spelling of the id, not just the canonical one. The write path
+ * canonicalizes today, but the table holds 11,934 rows spelled `B-10` alongside 51,024
+ * lower-cased ones (measured on production 2026-09-26), so an `.eq(canonical)` returned an
+ * empty repro trail for the owner's own errors while reporting nothing wrong.
  */
 export async function getReproTrail(hrId: string | null | undefined, beforeIso: string, limit = 5): Promise<ReproTrailEntry[]> {
   const hrKey = canonicalHrIdKey(hrId);
@@ -478,7 +482,7 @@ export async function getReproTrail(hrId: string | null | undefined, beforeIso: 
     const { data, error } = await getSupabaseAdmin()
       .from("activity_events")
       .select("created_at, module_label, path, duration_ms")
-      .eq("hr_id", hrKey)
+      .in("hr_id", hrIdLookupKeys(hrId))
       .lt("created_at", beforeIso)
       .order("created_at", { ascending: false })
       .limit(Math.min(20, Math.max(1, limit)));

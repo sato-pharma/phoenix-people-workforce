@@ -237,12 +237,25 @@ export function runDistributorUploadNudgeTests() {
   // constraint it really applied to production listed eighteen keys, and the file is the record of
   // that. Resolving the newest by sort keeps the guard's actual intent and needs no upkeep as the
   // next audience is added.
-  const constraintRebuilds = readdirSync(join(ROOT, "supabase/migrations"))
-    .filter((name) => /^\d+_notification_role_policies_.*_key\.sql$/.test(name))
+  //
+  // Resolved by CONTENT, not by filename, since 2026-09-26. The filter used to demand a
+  // `_key.sql` suffix, which every rebuild happened to carry until
+  // 20260926090000_notification_role_policies_activity_inactivity_digest.sql did not — so the
+  // "newest" resolved to the service-milestone migration and the loop failed demanding that an
+  // already-applied file name a key that postdates it, the exact trap the fixed filename above
+  // sprang. Renaming the new file was not available: MCP apply_migration stamps its own version
+  // (staging 20260926004929, production 20260926004943), so NEITHER ledger matches any filename
+  // and both rows match on the slug alone — renaming it would read as unapplied on both projects
+  // in the nightly drift check. All eleven notification_role_policies migrations rebuild the
+  // constraint, so the suffix was never the signal; the DROP/ADD is.
+  const migrationsDir = join(ROOT, "supabase/migrations");
+  const constraintRebuilds = readdirSync(migrationsDir)
+    .filter((name) => /^\d+_notification_role_policies_.*\.sql$/.test(name))
+    .filter((name) => /notification_key_check/i.test(readFileSync(join(migrationsDir, name), "utf8")))
     .sort();
   const newestRebuild = constraintRebuilds[constraintRebuilds.length - 1];
   assert.ok(newestRebuild, "at least one migration must rebuild the notification_key CHECK constraint");
-  const newestRebuildSql = readFileSync(join(ROOT, "supabase/migrations", newestRebuild), "utf8");
+  const newestRebuildSql = readFileSync(join(migrationsDir, newestRebuild), "utf8");
   for (const key of notificationRoleKeys) {
     assert.ok(
       newestRebuildSql.includes(`'${key}'`),

@@ -90,6 +90,11 @@ const ROLE_RECIPIENTS_MODULE: Record<NotificationRoleKey, string> = {
   crm_account_setup_alert: "CRM",
   new_hire_mailbox_alert: "Employees",
   service_milestone_notice: "Milestones",
+  // In-app + Telegram, never email (owner decision, 2026-09-26) — it is listed here
+  // because this map is exhaustive over every role-recipients key, exactly as the
+  // Telegram-only telegram_daily_hr_digest above is. Listing it is NOT a reason to
+  // give it an email channel.
+  activity_inactivity_digest: SYSTEM_HEALTH_MODULE,
 };
 
 const EMAIL_NOTIFICATIONS_MODULE: Record<EmailNotificationType, string> = {

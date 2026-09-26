@@ -39,6 +39,7 @@ export const notificationRoleKeys = [
   "sos_mapping_guard_alert",
   "new_hire_mailbox_alert",
   "service_milestone_notice",
+  "activity_inactivity_digest",
 ] as const;
 
 export type NotificationRoleKey = (typeof notificationRoleKeys)[number];
@@ -238,6 +239,14 @@ export const DEFAULT_NOTIFICATION_ROLE_POLICIES: Record<NotificationRoleKey, Not
     label: "Service milestone notice",
     description:
       "Who is reminded, in-app and on Telegram, that someone is coming up on a service milestone or a birthday at Sato Pharma, so a card can be printed in time. It keeps reminding, once a day, until a recipient opens the Milestones page — the owner's chosen acknowledgement (2026-09-23: \"when I open it and the system confirm I see it, this pumping stops\"). Defaults to Super Admin alone, since the owner narrowed the whole module to Super Admin the same day.",
+    roles: ["Super Admin"],
+    enabled: true,
+  },
+  activity_inactivity_digest: {
+    key: "activity_inactivity_digest",
+    label: "Inactive-colleague digest",
+    description:
+      "Who is told, once a day in-app and on Telegram, which colleagues have not signed in to Phoenix for a week or more. Deliberately never email (the owner's standing rule for this kind of internal notice). Defaults to Super Admin alone, which is who asked for it (2026-09-26).",
     roles: ["Super Admin"],
     enabled: true,
   },

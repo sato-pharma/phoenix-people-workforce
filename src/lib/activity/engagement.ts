@@ -1,50 +1,90 @@
-// Transparent, explainable engagement scoring for the Activity Control Center.
+// Transparent, explainable USAGE scoring for the Activity Control Center.
 //
-// This is intentionally NOT a surveillance verdict. It blends three observable,
-// defensible signals into a 0-100 score and a coarse band, and exposes each
-// component so the UI can show exactly how the number was reached:
-//   • active ratio  — how much of the logged-in time was spent actively on pages
-//   • breadth       — how many distinct modules the person touched
-//   • depth         — how many pages they navigated through
+// This is a measure of how much of Phoenix a person used — not of how much work
+// they did, and not a verdict on whether they were working. Most of their job
+// happens off this system: in a pharmacy, on a call, in a meeting, in a car. A
+// low score here means little Phoenix usage and nothing else.
 //
-// It says nothing about WHAT the person did inside a module, the quality of their
-// work, or anything off-system. Treat it as a usage indicator, not a performance
-// rating.
+// Three observable signals, each exposed so the UI can show how the number was
+// reached:
+//   • usage      — credited active minutes against a working-day expectation
+//   • breadth    — how many distinct modules the person opened
+//   • regularity — on how many of their working days they showed up at all
+//
+// What changed on 2026-09-26, and why:
+//   1. The denominator was LOGGED-IN TIME, which is cookie lifetime: one person
+//      accumulated 8,874 minutes in a 168-hour week by leaving a tab open. It
+//      self-normalised — heavy users leave the browser open longest — so the
+//      ratio compressed instead of separating anyone. It is now a working-day
+//      expectation, a fixed yardstick that does not move with the person.
+//   2. DEPTH (page views) is gone. It saturated at 25 views for nearly everyone
+//      and it re-counted the same time the active term already counted.
+//      REGULARITY replaces it: a genuinely independent axis, and the one that
+//      separates a steady user from a single long burst.
+//   3. The "no session baseline → treat any active time as fully engaged"
+//      fallback is deleted. It manufactured the one and only High score in the
+//      measured population, out of a person with no session rows at all.
 
 /** A single page dwell longer than this is treated as "left the tab open", not
  * active work — capped so one forgotten tab can't inflate active time. */
 export const ACTIVE_VIEW_CAP_SECONDS = 30 * 60;
 
+/**
+ * Full usage credit at this many credited active minutes per expected working
+ * day. An hour and a half of FOREGROUND Phoenix on a working day is a heavy
+ * office user; a field rep who opens the app to file a plan and a visit report
+ * is nowhere near it, and should not be.
+ *
+ * MEASURED on production, 2026-09-26, over the last 30 days: 52 named people,
+ * credited active minutes per expected working day — median 8.2, p75 18.0,
+ * p90 45.9, p95 63.7, maximum 251.1.
+ *
+ * 90 rather than the 75th percentile the plan first named. At 18 the top
+ * QUARTER of the company saturates the usage term and scores the same as each
+ * other — which is the flattening this rescale exists to remove, arriving by a
+ * different door. At 90 exactly one person saturates, and the top of the range
+ * separates properly: 100 · 90 · 79 · 69 · 67 · 62 · 61 · 60 · 59 · 59 · 47.
+ * Bands land 8 High / 18 Moderate / 26 Low, no band over half the population.
+ * (120 was tried first and gives 3 High — too few to be a band at all.)
+ *
+ * It is the ONE knob. Move this, never the band thresholds, if the spread needs
+ * adjusting, and re-measure rather than guessing — the query is in the PR that
+ * introduced it.
+ */
+export const TARGET_MINUTES_PER_WORKING_DAY = 90;
+
 const WEIGHTS = {
-  activeRatio: 0.55,
-  breadth: 0.2,
-  depth: 0.25,
+  usage: 0.7,
+  breadth: 0.15,
+  regularity: 0.15,
 } as const;
 
 /** Distinct modules at/above this count earns full breadth credit. */
-const BREADTH_TARGET = 5;
-/** Page views at/above this count earns full depth credit. */
-const DEPTH_TARGET = 25;
+const BREADTH_TARGET = 6;
+
+export const ENGAGEMENT_BAND_THRESHOLDS = { high: 60, moderate: 30 } as const;
 
 export type EngagementBand = "Low" | "Moderate" | "High";
 
 export type EngagementInput = {
-  /** Sum of per-page dwell time (each page already capped), in seconds. */
+  /** Credited active seconds — overlapping page views already deduplicated. */
   activeSeconds: number;
-  /** Total logged-in time for the period, in seconds (from app_sessions). */
-  sessionSeconds: number;
+  /** Scheduled working days in the window for this person's job title (≥ 1). */
+  expectedWorkingDays: number;
   /** Count of distinct modules visited. */
   distinctModules: number;
-  /** Total page views recorded. */
-  pageViews: number;
+  /** Distinct Cairo dates on which the person recorded at least one page view. */
+  daysActive: number;
 };
 
 export type EngagementResult = {
   score: number;
   band: EngagementBand;
-  activeRatio: number;
+  usageScore: number;
   breadthScore: number;
-  depthScore: number;
+  regularityScore: number;
+  /** Credited active minutes per expected working day — the number behind `usageScore`. */
+  activeMinutesPerWorkingDay: number;
 };
 
 function clamp01(value: number): number {
@@ -60,37 +100,38 @@ export function cappedDwellSeconds(durationMs: number | null | undefined): numbe
 }
 
 export function bandForScore(score: number): EngagementBand {
-  if (score >= 66) return "High";
-  if (score >= 33) return "Moderate";
+  if (score >= ENGAGEMENT_BAND_THRESHOLDS.high) return "High";
+  if (score >= ENGAGEMENT_BAND_THRESHOLDS.moderate) return "Moderate";
   return "Low";
 }
 
 export function computeEngagement(input: EngagementInput): EngagementResult {
   const activeSeconds = Math.max(0, Number(input.activeSeconds) || 0);
-  const sessionSeconds = Math.max(0, Number(input.sessionSeconds) || 0);
+  const expectedWorkingDays = Math.max(1, Number(input.expectedWorkingDays) || 1);
   const distinctModules = Math.max(0, Number(input.distinctModules) || 0);
-  const pageViews = Math.max(0, Number(input.pageViews) || 0);
+  const daysActive = Math.max(0, Number(input.daysActive) || 0);
 
-  // If we have no session-duration baseline, fall back to "any active time = engaged".
-  const activeRatio = sessionSeconds > 0
-    ? clamp01(activeSeconds / sessionSeconds)
-    : (activeSeconds > 0 ? 1 : 0);
+  const activeMinutesPerWorkingDay = Math.round((activeSeconds / 60 / expectedWorkingDays) * 10) / 10;
 
+  // No fallback branch: with no active time the usage term is 0, and only real
+  // measured minutes move it.
+  const usageScore = clamp01(activeMinutesPerWorkingDay / TARGET_MINUTES_PER_WORKING_DAY);
   const breadthScore = clamp01(distinctModules / BREADTH_TARGET);
-  const depthScore = clamp01(pageViews / DEPTH_TARGET);
+  const regularityScore = clamp01(daysActive / expectedWorkingDays);
 
   const weighted =
-    WEIGHTS.activeRatio * activeRatio +
+    WEIGHTS.usage * usageScore +
     WEIGHTS.breadth * breadthScore +
-    WEIGHTS.depth * depthScore;
+    WEIGHTS.regularity * regularityScore;
 
   const score = Math.round(100 * clamp01(weighted));
 
   return {
     score,
     band: bandForScore(score),
-    activeRatio,
+    usageScore,
     breadthScore,
-    depthScore,
+    regularityScore,
+    activeMinutesPerWorkingDay,
   };
 }
