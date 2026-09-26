@@ -103,6 +103,7 @@ import { InterviewRequestPanels } from "./requests-inbox";
 import { ScheduleInterviewDialog } from "./schedule-interview-dialog";
 import { SessionDialog } from "./session-dialog";
 import { InvitationPanel } from "./invitation-panel";
+import { InterviewExtrasPanel } from "./interview-extras-panel";
 import { ScorecardPanel } from "./scorecard-panel";
 import { ZoomAutoOpen } from "./zoom-auto-open";
 import { ZoomMeetingPanels, type MeetingTarget } from "./zoom-panels";
@@ -1471,6 +1472,8 @@ function InterviewPanel({
           <InvitationPanel api={api} bookingId={booking.id} key={`${booking.id}:${booking.updatedAt}`} />
         </section>
       ) : null}
+
+      <InterviewExtrasPanel api={api} booking={booking} canBook={canBook} onChanged={onChanged} />
 
       <ScorecardPanel api={api} booking={booking} onChanged={onChanged} />
 

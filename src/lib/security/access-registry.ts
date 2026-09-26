@@ -1206,6 +1206,8 @@ export const accessRegistry = [
   sessionApi({ methods: ["PATCH"], pattern: "/api/recruitment/interview-calendar/bookings/*/outcome", permission: null, guard: "domain-helper", csrfRequired: true }),
   // The panel's scorecards: an interviewer files their OWN rating + verdict (saveInterviewScorecard checks they are on the interview).
   sessionApi({ methods: ["POST"], pattern: "/api/recruitment/interview-calendar/bookings/*/scorecard", permission: null, guard: "domain-helper", csrfRequired: true }),
+  // Confirm/decline: the chosen interviewer answers the assignment (setInterviewerConfirmation checks they are the lead and it is still to happen).
+  sessionApi({ methods: ["POST"], pattern: "/api/recruitment/interview-calendar/bookings/*/confirmation", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ methods: ["GET", "POST"], pattern: "/api/recruitment/interview-calendar/bookings/*/invitations", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ methods: readOnly, pattern: "/api/recruitment/interview-calendar/zoom-due", permission: null, guard: "domain-helper" }),
   sessionApi({ methods: readOnly, pattern: "/api/recruitment/interview-calendar/candidates/*/files", permission: null, guard: "domain-helper" }),
@@ -1218,7 +1220,7 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["DELETE"], pattern: "/api/recruitment/interview-calendar/shares/*", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ methods: readOnly, pattern: "/api/recruitment/interview-calendar/people", permission: null, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/recruitment/interview-calendar/export", permission: null, guard: "domain-helper" }),
-  sessionApi({ methods: readOnly, pattern: "/api/recruitment/interview-calendar/bookings/*/cv", permission: null, guard: "domain-helper" }),
+  sessionApi({ methods: ["GET", "POST"], pattern: "/api/recruitment/interview-calendar/bookings/*/cv", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ methods: readOnly, pattern: "/api/recruitment/interview-calendar/bookings/*/insights", permission: null, guard: "domain-helper" }),
   sessionApi({ methods: readOnly, pattern: "/api/recruitment/interview-calendar/bookings/*/invitation", permission: null, guard: "domain-helper" }),
   sessionApi({ methods: ["GET", "POST"], pattern: "/api/recruitment/interview-calendar/bookings/*/polls", permission: null, guard: "domain-helper", csrfRequired: true }),

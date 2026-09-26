@@ -234,7 +234,7 @@ function runInterviewerAccessTests() {
   // the gate alone would hand an interviewer the whole calendar and every candidate's CV. A NEW "view"
   // site fails the count until somebody decides how it guards the rows.
   const domain = stripComments(read("src/lib/recruitment/interview-calendar.ts"));
-  assert.equal(domain.split('requireCalendarAccess(caller, "view"').length - 1, 13, "thirteen view sites, each guarded below");
+  assert.equal(domain.split('requireCalendarAccess(caller, "view"').length - 1, 14, "fourteen view sites, each guarded below");
   const guarded: Array<[string, RegExp]> = [
     ["listInterviewCalendarWeek", /mayReadBooking\(caller, row\)[\s\S]*mayReadSessions\(/],
     ["listInterviewCalendarDay", /mayReadBooking\(caller, row\)[\s\S]*mayReadSessions\(/],
@@ -246,6 +246,8 @@ function runInterviewerAccessTests() {
     ["getInterviewExternalCv", /mayReadBooking\(caller, row\)/],
     // A scorecard is filed only by someone ON the interview — the lead or a panel member.
     ["saveInterviewScorecard", /isInterviewAttendee\(caller, row\)/],
+    // Confirm/decline is answered ONLY by the lead interviewer named on the row.
+    ["setInterviewerConfirmation", /viewer !== canonicalHrIdKey\(row\.interviewer_hr_id\)/],
   ];
   for (const [name, pattern] of guarded) assert.match(functionBody(domain, name), pattern, `${name} guards the rows an interviewer may read`);
   const onCalendar = domain.slice(domain.indexOf("async function assertCandidateOnCalendar"));
@@ -730,6 +732,12 @@ function booking(overrides: Partial<InterviewBooking> & Pick<InterviewBooking, "
     line: null,
     scorecards: [],
     canScoreInterview: false,
+    interviewerConfirmation: null,
+    confirmationAt: null,
+    confirmedByName: null,
+    declineReason: null,
+    canConfirmInterview: false,
+    changeHistory: [],
     notes: null,
     canSetOutcome: false,
     outcome: null,
@@ -951,6 +959,10 @@ function runWiringTests() {
     "listDueZoomInterviews(caller",
     "setInterviewOutcome(caller",
     "saveInterviewScorecard(caller",
+    // Tier 3: the lead confirms/declines the assignment; an outside candidate's CV is replaced after
+    // booking. Each resolves the caller and checks a right before it touches the row.
+    "setInterviewerConfirmation(caller",
+    "replaceInterviewExternalCv(caller",
     // The two-step request flow (interview-requests.ts). Each entry point resolves the caller and
     // checks a right before it touches a row — pinned in tests/interview-requests.test.ts.
     "listMyInterviewRequests(caller",
