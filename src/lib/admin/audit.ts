@@ -273,6 +273,11 @@ export type AuditEntityType =
   | "payroll_batch"
   | "permission_override"
   | "pharmacy_search_discovery"
+  // Who took the Phoenix CRM reports pack, over which period, and WHETHER IT HELD THE MANAGER
+  // SECTIONS. That last part is the point of the row: which sheets a workbook held IS this export's
+  // access story, and a file naming individual reps and their own work leaves the building. No
+  // migration — audit_logs has no CHECK on entity_type.
+  | "phoenix_crm_reports_export"
   // Who pulled the shared Planning Calendar to XLSX, for which month. Gated to SFE
   // Manager / Super Admin; the month is the entity id so a row says WHICH period
   // was handed over. audit_logs has no CHECK on entity_type, so this needs no migration.

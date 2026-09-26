@@ -1559,6 +1559,7 @@ import { runPhoenixCrmSamplesTests } from "./phoenix-crm-samples.test.ts";
 import { runPhoenixCrmVisitDwellTests } from "./phoenix-crm-visit-dwell.test.ts";
 import { runPhoenixCrmExceptionsTests } from "./phoenix-crm-exceptions.test.ts";
 import { runPhoenixCrmDailyDigestTests } from "./phoenix-crm-daily-digest.test.ts";
+import { runPhoenixCrmReportsExportTests } from "./phoenix-crm-reports-export.test.ts";
 import { runPhoenixCrmBrickCoverageReportTests } from "./phoenix-crm-brick-coverage-report.test.ts";
 import { runPhoenixCrmMobileManagerTests } from "./phoenix-crm-mobile-manager.test.ts";
 import { runPhoenixCrmMobileMirrorsTests } from "./phoenix-crm-mobile-mirrors.test.ts";
@@ -5220,6 +5221,11 @@ await runTest(
 await runTest(
   "Phoenix CRM puts a rep’s coverage beside what each BRICK actually sold (C2 — owner's plan, Phase 4: the board is the UNION of both sides, so a brick the line sells into with NOBODY on the list is a row of its own and sorts first — building it from the CRM half alone would drop exactly the rows worth reading; a sales brick of another area is never dragged in, which is what stops a district board accusing each rep of missing the other reps' bricks; a customer with no captured place is NAMED rather than dropped; AM and PM stay apart and the customer count is a SIZE, never a rate; the caveat that brick sales never add up to the area is ONE fixed sentence the server supplies; and the El Qema mask runs in the service before anything is summed, because it cannot live in the SQL (it takes a role) nor in the pure module (the phone bundles it))",
   runPhoenixCrmBrickCoverageReportTests,
+);
+
+await runTest(
+  "Phoenix CRM's reports pack is one workbook whose SHEETS are the access control (C1 — owner's plan, Phase 4: a section the viewer may not read is never loaded and writes NO SHEET, because an empty \"Where the visit was saved\" tab tells a medical rep both that the report exists and that he is not trusted with it — the disclosure Golden Rule #1 forbids, only in a file he keeps; the sheets are read back out of the real .xlsx buffer rather than asserted against the input, so a builder that wrote nothing cannot pass; a viewer with nothing in scope still gets a valid file that is the cover alone; AM and PM keep the same number of columns in every sheet and are never joined; the brick caveat is written INTO the workbook, because a saved file leaves the building without the screen it sat beside; it wears the house identity and never falls back to the Phoenix kit; the rate limit runs before any section is loaded; and there is exactly one blob download in the client)",
+  runPhoenixCrmReportsExportTests,
 );
 
 await runTest(
