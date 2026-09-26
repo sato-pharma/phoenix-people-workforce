@@ -261,6 +261,20 @@ Jersey's scan survives → the application serves. Nothing between the WAR and a
 more. **Use the generated domain for this**, not a custom hostname: it needs no DNS, no certificate
 wait and no Cloudflare, so it isolates "does the server work" from "is the name wired up".
 
+✅ **And the same chain survived a real code change — the seventh build, merge commit `8b5208d11`,
+2026-09-26 03:36 Cairo.** This is the first merge to `main` that touched
+`infra/headwind-phoenix-actions/**` since the service existed: the three before it were all marked
+`SKIPPED` because the watch path did not match, so this one is also the proof that the watch path
+works. It went `SUCCESS`, printed `Phoenix actions add-on: table ready.` again at `00:36:52.787` and
+`Server startup in [11411] milliseconds`, and both `GET /` and
+`GET /rest/public/sync/configuration/PHX-NOPE-0000` answered **200** afterwards.
+
+🔴 **On this build that log line carries one more fact: `ensureSchema()` ran the new
+`alter table phoenix_pending_actions add column if not exists confirmed_from`.** The live table was
+created 2026-09-25, and `create table if not exists` skips the statement **whole** — columns included —
+so widening the create block would have added nothing and every statement naming the new column would
+have failed inside the hook's swallowed catch, on the fleet's hottest path. The alter is why it did not.
+
 ✅ **And the add-on is serving, not merely loaded** — same session, no tablet and no sign-in needed:
 
 | Request | Result | What it proves |
@@ -341,25 +355,55 @@ unchanged, and labelled as the optional path.
 
 ### 4.6 Turning it on in Phoenix
 
-Set these on the **Phoenix app's** Railway service (production) — not on `phoenix-headwind` — then
-let it redeploy:
+Three variables on the **Phoenix app's** Railway service (production) — not on `phoenix-headwind`.
+✅ **One of them is already set, 2026-09-26:**
 
 ```
-HEADWIND_MDM_BASE_URL=https://mdm-console.satopharma.com
-HEADWIND_MDM_LOGIN=<Phoenix's own admin login>
-HEADWIND_MDM_PASSWORD=<its password, in plain text — Phoenix hashes it>
+HEADWIND_MDM_BASE_URL=https://mdm.satopharma.com   ✅ SET (skipDeploys — see below)
+HEADWIND_MDM_LOGIN=<Phoenix's own admin login>     ← his, one field
+HEADWIND_MDM_PASSWORD=<its password in plain text — Phoenix hashes it>   ← his, one field
 ```
+
+🔴 **All three are required together and there is no partial state.** `isHeadwindConfigured()` returns
+false unless all three are non-empty, so the base URL sitting there alone leaves the page **exactly as
+dark as it was** — it cannot half-open anything, which is why setting it needed no approval and no
+deploy. It was upserted with `skipDeploys: true`: it is inert until the other two exist, and the save
+that adds them is the deploy that lands all three at once.
+
+**The two that are left are the owner's, and not for a policy reason.** A Headwind admin login is a
+password that factory-resets tablets. Typed into Railway's own variable screen it goes straight to the
+secret store; pasted into a chat it is in a transcript forever. So those two fields are typed once,
+there, by him — and nothing needs to be sent here first.
 
 **Give Phoenix its own admin account on the Headwind server**, not a person's, so the Headwind side's
 own audit trail reads as "Phoenix" rather than as the owner. Extra logins are free and uncapped
 (§6.8). The account that already exists is the seeded `admin`, which is **not** created from
 `ADMIN_EMAIL` and arrives with a default password — §4.2's 🔴 block, and deal with that before this.
 
-🔴 **`HEADWIND_MDM_BASE_URL` is the CONSOLE hostname, not the tablets' one** — see §4.7. Pointing it
-at `mdm.satopharma.com` would work, and would quietly put the API back on the public internet that
-§4.7 exists to take it off.
+#### 🔴 WHY THE TABLETS' HOSTNAME, AND A CORRECTION TO WHAT THIS SECTION USED TO SAY
 
-#### ⭐ Better than either public name: both services are in one Railway project, so Phoenix never has to leave it
+This section used to instruct `https://mdm-console.satopharma.com` and warn that `mdm.satopharma.com`
+"would quietly put the API back on the public internet that §4.7 exists to take it off." **That
+sentence was wrong, and it is worth saying why rather than quietly deleting it.**
+
+**One Tomcat serves `/rest/*` on every hostname pointed at the service** — measured again 2026-09-26,
+both hostnames answer an identical Tomcat 403 on `/rest/private/devices/search` unauthenticated. And
+`mdm.satopharma.com` **must** stay open, with no Access, forever, or the whole fleet goes dark. So the
+private REST surface is reachable on a public name whatever this variable says: **the choice of base
+URL changes nothing at all about what is exposed.** Access on the console protects the console's *web
+UI* from strangers; it never took the API off the internet, and it cannot.
+
+What the choice does change is coupling, and that decides it:
+
+- `https://mdm.satopharma.com` — **Access can never be put on it** (hard rule), so Phoenix needs no
+  service token, today or ever. Proven answering over a valid certificate.
+- `https://mdm-console.satopharma.com` — breaks Phoenix the moment Access goes on, unless the two
+  `HEADWIND_MDM_ACCESS_*` values are set and kept correct. A whole failure mode bought for nothing.
+
+Both are HTTPS and both carry the same JWT. **So the tablets' hostname is the setting**, and turning
+Access on later cannot break Phoenix.
+
+#### ⭐ Better still, once somebody can prove it: both services are in one Railway project
 
 Read from Railway 2026-09-26 — `phoenix-people-workforce` and `phoenix-headwind` are the same project
 and the same `production` environment, and Railway has already minted the private hostname:
@@ -369,17 +413,20 @@ phoenix-headwind:          RAILWAY_PRIVATE_DOMAIN = phoenix-headwind.railway.int
 phoenix-people-workforce:  RAILWAY_PRIVATE_DOMAIN = phoenix-people-workforce.railway.internal
 ```
 
-So the value to prefer is
+So there is a third possible value:
 
 ```
 HEADWIND_MDM_BASE_URL=http://phoenix-headwind.railway.internal:8080
 ```
 
-and it removes work rather than adding it: **Phoenix's calls never reach Cloudflare, so no Access
-service token is needed for them at all**, the traffic never crosses the public internet, and Access
-on `mdm-console.satopharma.com` can be as strict as the owner likes without Phoenix having to be let
-through it. `http` and `8080` are right here — the private network is inside the project, there is no
-TLS on it, and 8080 is the Tomcat port proven in §4.3.
+Its one real advantage over the setting above is that Phoenix's calls **never cross the public
+internet at all** — not the Access coupling, which the tablets' hostname already avoids. `http` and
+`8080` are right here: the private network is inside the project, there is no TLS on it, and 8080 is
+the Tomcat port proven in §4.3.
+
+🔴 **It is NOT the current setting, and it should not be set on a hunch.** The gain is modest and the
+risk is total — a base URL that does not resolve means every tablet action fails — so it waits for
+proof, and the proof is one command.
 
 ⚠️ **Unproven from inside the container, and it has to be said rather than assumed.** Railway's private
 network is **IPv6-only**, so this rests on the Phoenix container resolving an AAAA-only hostname; Node's
@@ -392,9 +439,22 @@ railway ssh --service phoenix-people-workforce --environment production -- \
   node -e "fetch('http://phoenix-headwind.railway.internal:8080/rest/public/sync/configuration/PHX-NOPE-0000').then(r=>console.log(r.status))"
 ```
 
-**`200` means take the internal route and drop the service token; anything else means fall back to
-`https://mdm-console.satopharma.com` and Access's two token values.** Set it either way — this changes
-which of two values goes in one variable, and nothing else on the page.
+**`200` means the internal route is real and may be switched to; anything else means leave it on
+`https://mdm.satopharma.com`, which is where it is now.** Either way this is one variable and nothing
+else on the page — and if it is ever switched and the name does not resolve, the failure now explains
+itself instead of saying `fetch failed`: `callHeadwind` answers a transport failure with a 502 naming
+the address, the IPv6-only network, the fact that no laptop can reach it, and the public fallback
+(`unreachableMessage`, pinned in `tests/headwind-bridge.test.ts`).
+
+#### 🔴 AND A 403 ON A PRIVATE PATH DOES NOT PROVE THE ADD-ON IS LOADED
+
+Measured 2026-09-26: unauthenticated, **both** `/rest/private/devices/search` and
+`/rest/plugins/phoenix-actions/private/status` return the **same Tomcat HTML 403** — not Headwind's JSON
+envelope, and not a 404. Authentication intercepts before routing, so a 403 says only that something
+is guarding the path. **It is not evidence that the add-on is there**, and reading it as such is the
+easy mistake to make from outside. A **404** would be real evidence of absence; only an authenticated
+`GET .../phoenix-actions/private/status` returning `{"ready":true}` is evidence of presence, and
+Phoenix's own page asks exactly that before it offers the four actions.
 
 🔴 **Nothing about RustDesk goes here.** Both variables stay unset; §4.5 is why. Full descriptions of
 all five, and why the Headwind password is sent hashed: [environment.md](../environment.md),
@@ -1100,10 +1160,10 @@ this PR. Amber = built and unproven until a real tablet runs it. Red = impossibl
 | 12 | **Movement history**, every row naming its source | 🟡 Built — whether the free agent feeds the plugin is unproven (§6.5) |
 | 13 | **Show a message on a tablet**, the owner's own words | 🟡 Built — needs the new Phoenix APK on the tablet |
 | 14 | **Ring the alarm** | 🟡 Built — needs the new Phoenix APK; under Do Not Disturb it plays at whatever volume is set |
-| 15 | **Lock** | 🟡 Built — needs the add-on, which the Railway service builds in (§4.1) |
-| 16 | **Lost mode on / off**, with his words on the lock screen | 🟡 Built — needs the add-on, which the Railway service builds in (§4.1) |
-| 17 | **Factory reset** | 🟡 Built — needs the add-on, which the Railway service builds in (§4.1) |
-| 18 | **Reset the screen lock** | 🟡 Built — needs the add-on, which the Railway service builds in (§4.1) |
+| 15 | **Lock** | 🟡 Built, and the add-on is **live** — the server logs `Phoenix actions add-on: table ready.` on every start (§4.3). Unproven only in the last link: no tablet has yet been seen to obey an injected field |
+| 16 | **Lost mode on / off**, with his words on the lock screen | 🟡 Built, and the add-on is **live** — the server logs `Phoenix actions add-on: table ready.` on every start (§4.3). Unproven only in the last link: no tablet has yet been seen to obey an injected field |
+| 17 | **Factory reset** | 🟡 Built, and the add-on is **live** — the server logs `Phoenix actions add-on: table ready.` on every start (§4.3). Unproven only in the last link: no tablet has yet been seen to obey an injected field |
+| 18 | **Reset the screen lock** | 🟡 Built, and the add-on is **live** — the server logs `Phoenix actions add-on: table ready.` on every start (§4.3). Unproven only in the last link: no tablet has yet been seen to obey an injected field |
 | 19 | **Enrollment code** held and redrawn, never minted | 🟢 Built (§6.7) |
 | 20 | **Extra console sign-ins**, free and uncapped | 🟢 Built (§6.8) |
 | 21 | RustDesk per-tablet settings | 🟢 Documented (§6.9) — Android cannot be pre-seeded, so it is four taps per tablet |
@@ -1160,13 +1220,18 @@ relay:**
    Railway hostnames past Cloudflare and alerts on the owner's existing Telegram channel under 21 days
    (§4.7). So an orange cloud that stalls a renewal now costs a Telegram message, not a 526 sixty days
    later with nothing to blame.
-8. Set the `HEADWIND_MDM_*` variables on the **Phoenix app's** service (§4.6) — confirmed 2026-09-26
-   as still unset, which is why nothing renders today. ⭐ **Prefer
-   `http://phoenix-headwind.railway.internal:8080`**: both services are one Railway project, so Phoenix
-   never leaves it and the two Access token values are not needed at all (§4.6). 🔴 **Nothing
-   RustDesk** — both its variables stay empty, and empty is the working setting.
+8. **Two fields, on the Phoenix app's Railway service** — `HEADWIND_MDM_LOGIN` and
+   `HEADWIND_MDM_PASSWORD` (§4.6). ✅ **`HEADWIND_MDM_BASE_URL` is already set** to
+   `https://mdm.satopharma.com`, with `skipDeploys`, so production was not restarted for it; all three
+   are required together, so the page stays dark until these two exist and the save that adds them is
+   the deploy that lands everything. **Give Phoenix its own console account, not a person's** (§6.8 —
+   extra logins are free and uncapped), so Headwind's own audit trail reads "Phoenix". 🔴 The password
+   is typed **there**, never sent here: Railway's variable screen puts it straight into the secret
+   store, a chat message puts it in a transcript forever. 🔴 **Nothing RustDesk** — both its variables
+   stay empty, and empty is the working setting.
 9. Decide the **`headwind-db` backup schedule** (§4.8) — it bills storage, so it is his screen.
-10. Approve the merge.
+10. ~~Approve the merge.~~ ✅ **done** — #4444 merged 2026-09-26 03:11 Cairo, #4450 (the delivery gate
+    and the certificate watch) at 03:35, serving as revision `8b5208d11`.
 11. Run the pilot on PHX-TAB-0002.
 
 ---

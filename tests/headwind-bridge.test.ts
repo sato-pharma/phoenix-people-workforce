@@ -1960,10 +1960,25 @@ async function runCloudflareAccessTests() {
     /tunnel route dns \S+ mdm\.satopharma\.com/,
     "and no tunnel is ever routed to mdm.satopharma.com, which is the tablets' own name",
   );
+  // 🔴 REWRITTEN 2026-09-26, AND THE REASON MATTERS MORE THAN THE VALUE. This used to require
+  // `HEADWIND_MDM_BASE_URL=https://mdm-console.satopharma.com` on the belief that pointing Phoenix at
+  // the tablets' hostname "put the API back on the public internet". It never did: ONE Tomcat serves
+  // `/rest/*` on EVERY hostname aimed at the service (the assertion below says so in the runbook's own
+  // words), and `mdm.satopharma.com` must stay Access-free forever or the fleet goes dark — so the
+  // private REST surface is on a public name whatever this variable says. What the choice really
+  // decides is coupling, and the console name is the coupled one: the moment Access goes on it,
+  // Phoenix breaks unless two service-token values are set and kept right. So the setting is the
+  // tablets' hostname, and this pin exists to stop a future session "tidying" it back to the console
+  // name and arming that failure for whenever Access is finally switched on.
   assert.match(
     runbook,
-    /HEADWIND_MDM_BASE_URL=https:\/\/mdm-console\.satopharma\.com/,
-    "and Phoenix is pointed at the console hostname too, so the API stays behind Access",
+    /HEADWIND_MDM_BASE_URL=https:\/\/mdm\.satopharma\.com/,
+    "Phoenix is pointed at the tablets' hostname, which can never have Access on it — so turning Access on for the console cannot take Phoenix down with it",
+  );
+  assert.match(
+    runbook,
+    /the choice of base\s+URL changes nothing at all about what is exposed/,
+    "and the runbook states WHY that is safe, so the correction cannot be undone by someone re-deriving the old reasoning",
   );
 
   // 🔴 THE TABLE ABOVE SPLITS THE HOSTNAMES BY AUDIENCE, AND READS LIKE IT SPLITS THEM BY SURFACE.
@@ -2016,13 +2031,23 @@ async function runCloudflareAccessTests() {
     "the runbook states that the agent's confirmation endpoints are unauthenticated by necessity, so a confirmation is corroboration rather than proof and a tablet is never written off as clean on that row alone",
   );
   // Phoenix and Headwind are the same Railway project and environment, so Phoenix's own server-side
-  // calls can stay on the private network and never meet Cloudflare — which deletes the Access service
-  // token from the setup rather than adding anything. Without this written down, the obvious reading of
-  // §4.7 is that Phoenix must be let through Access, and the console then has to be loosened for it.
+  // calls COULD stay on the private network and never leave Railway at all. That is worth recording —
+  // without it, the obvious reading of §4.7 is that Phoenix must be let through Access and the console
+  // then has to be loosened for it, which is a real and unnecessary weakening.
+  // 🔴 BUT IT IS AN UPGRADE, NOT THE SETTING, and the runbook must keep saying so: Railway's private
+  // network is IPv6-only, nothing has yet watched this container resolve an AAAA-only name, and the
+  // one command that would prove it needs an SSH key the account does not have. A base URL that does
+  // not resolve fails EVERY tablet action, so the gain (no public transit) does not justify setting it
+  // on a hunch — which is exactly what "preferred" invited a future session to do.
   assert.match(
     runbook,
     /phoenix-headwind\.railway\.internal/,
-    "the runbook offers Railway's private hostname as the preferred HEADWIND_MDM_BASE_URL, so Phoenix's calls never reach Cloudflare and Access never has to be loosened to let Phoenix through",
+    "the runbook records Railway's private hostname as a possible HEADWIND_MDM_BASE_URL, so nobody concludes Access must be loosened to let Phoenix through",
+  );
+  assert.match(
+    runbook,
+    /It is NOT the current setting, and it should not be\s+set on a hunch/,
+    "and it marks that address as unproven rather than preferred, because an unresolvable base URL fails every tablet action",
   );
 }
 

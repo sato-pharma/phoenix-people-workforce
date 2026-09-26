@@ -69,13 +69,38 @@ make; the confirmation paths it POSTs to; `SyncResponseHook` being a public inte
 
 **NOT proven, because it cannot be from here:**
 
-- **This Java has never been compiled.** The six required CI checks on the Phoenix repository are
-  TypeScript — they do not see this directory at all. It is built by the box's own
-  `docker compose build`, and the first build is where a compile error shows up.
-- **The Guice/Jersey wiring is the part most likely to need a correction.** Headwind discovers
-  plugins through its own module registration; if the hook is not picked up, the symptom is silent —
-  the sync response simply does not carry the fields, and a tablet does nothing. **Check that first,
-  not the tablet.**
+✅ **TWO OF THESE ARE CLOSED — by Railway's own build and its own startup log, never by inspection.**
+They are kept here with their answers, because the *reasoning* for why they were the riskiest parts is
+still correct and any change to this directory re-opens both.
+
+- ~~**This Java has never been compiled.**~~ ✅ **It compiles**, and has since the sixth build
+  (`04fbaff7f`). The six required CI checks on the Phoenix repository are still TypeScript and still do
+  not see this directory at all — **the Railway build is the only thing that compiles it**, so a change
+  here that breaks the build shows up as a failed deploy, never as a red check.
+- ~~**The Guice/Jersey wiring is the part most likely to need a correction.**~~ ✅ **It is picked up.**
+  Verbatim from the startup log of the deploy for merge commit `8b5208d11`, the one carrying the
+  delivery gate:
+
+  ```
+  00:36:52.787 INFO [main] com.hmdm.plugins.phoenix.guice.module.PhoenixActionsModule.phoenixActionStore
+      Phoenix actions add-on: table ready.
+  ```
+
+  That line proves the module registered and the store was constructed — and **on this build it also
+  proves `ensureSchema()` ran the new `alter table … add column if not exists confirmed_from`**, which
+  is the statement the live table needed because `create table if not exists` skips its own column list
+  entirely. 🔴 **The reason it mattered stands: if the hook is ever NOT picked up, the symptom is
+  silent** — the sync response simply does not carry the fields and a tablet does nothing. So that log
+  line is what to look for after any change here, **before** suspecting a tablet.
+- 🔴 **A 403 from outside proves nothing.** Unauthenticated, `/rest/plugins/phoenix-actions/private/status`
+  and `/rest/private/devices/search` return the *same* Tomcat HTML 403 — authentication intercepts
+  before routing. A **404** would be evidence of absence; only an authenticated call returning
+  `{"ready":true}` is evidence of presence.
+- ⚠️ **One SEVERE in that startup log is expected and is not a fault.** Tomcat's `https-openssl-nio-8443`
+  connector fails with `FileNotFoundException: /usr/local/tomcat/ssl/hmdm.jks`, because `PROTOCOL=http`
+  and Railway terminates TLS in front of the container — there is no keystore and there should not be.
+  Tomcat continues and `Server startup in [11411] milliseconds` follows it. Do not "fix" it by
+  generating a keystore.
 - **No tablet has yet been seen to obey an injected field.** Until the pilot runs on PHX-TAB-0002,
   Phoenix reports these actions as *sent*, never as *done*. That is why part 4 above exists.
 
