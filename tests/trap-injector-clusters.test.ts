@@ -159,7 +159,12 @@ function testItIsRegisteredWithATimeout() {
   assert.equal(registered.length, 1, "trap-injector.mjs must be registered exactly once");
   const [hook] = registered;
   assert.equal(hook.event, "PreToolUse", "the injector reads the tool call, so it is a PreToolUse hook");
-  assert.ok((hook.command ?? "").includes("${CLAUDE_PROJECT_DIR"), "it resolves the session's own worktree first");
+  // The folder is resolved inside the hook now (process.env.CLAUDE_PROJECT_DIR), not expanded in the
+  // command — the shell-expanded form errored under any non-bash runtime reading .claude/settings.json.
+  assert.ok(
+    readFileSync(".claude/hooks/trap-injector.mjs", "utf8").includes("process.env.CLAUDE_PROJECT_DIR"),
+    "trap-injector.mjs must resolve the session's own worktree from CLAUDE_PROJECT_DIR first",
+  );
   for (const tool of ["Bash", "PowerShell"]) {
     assert.ok(hook.matcher.split("|").includes(tool), `the injector must see ${tool} calls`);
   }

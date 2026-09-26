@@ -36,7 +36,7 @@ import {
   memoryIndexBudgetLines,
 } from "../../scripts/memory-index-budget.mjs";
 
-const projectDir = process.argv[2] || process.cwd();
+const projectDir = process.argv[2] || process.env.CLAUDE_PROJECT_DIR || process.cwd();
 
 /**
  * The primary checkout's root, or null when git cannot answer.
