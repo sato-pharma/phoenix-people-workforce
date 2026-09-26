@@ -45,6 +45,7 @@ import {
   readInterviewOutcome,
   resolveCalendarRole,
   roleMeets,
+  seesWholeInterviewCalendar,
   sessionSlotStarts,
   whatsAppShareUrl,
   type InterviewBooking,
@@ -396,6 +397,27 @@ function runRoleTests() {
     const other = createAccessContext({ hrId: "A-99", role });
     assert.equal(isInterviewCalendarOwner(other), false, `${role} (scope ${other.scope}) is not the owner — only a share row lets them in`);
   }
+
+  // THE CEO SEES THE WHOLE CALENDAR (owner, 2026-09-26): a Viewer, not an owner. Only the CEO — no
+  // other executive is widened, and the Super Admin/HR Operations reach it as owners already.
+  assert.equal(seesWholeInterviewCalendar(createAccessContext({ hrId: "A-99", role: "CEO" })), true, "the CEO reads the whole calendar");
+  for (const role of ["Finance Manager", "HR Advisory", "National Sales Manager", "District Manager", "Medical Representative", "Employee"]) {
+    assert.equal(seesWholeInterviewCalendar(createAccessContext({ hrId: "A-99", role })), false, `${role} does not get the whole calendar from this seat`);
+  }
+  // A Viewer role — which is what the CEO resolves to — reads every booking, including ones he was
+  // never chosen for; the own-only requester tier does not. (mayReadBooking is pinned above too.)
+  const ceoAccess = createAccessContext({ hrId: "A-99", role: "CEO" });
+  const someWeek = "2026-09-20T09:00:00.000Z";
+  assert.equal(
+    mayReadBooking({ access: ceoAccess, link: null, own: "viewer" }, { interviewer_hr_id: "D-08", starts_at: someWeek }),
+    true,
+    "as a Viewer the CEO reads an interview he is not on",
+  );
+  assert.equal(
+    mayReadBooking({ access: ceoAccess, link: null, own: "requester" }, { interviewer_hr_id: "D-08", starts_at: someWeek }),
+    false,
+    "the own-only requester tier would NOT — which is the state this change lifts the CEO out of",
+  );
 }
 
 // ── 3b · Copy links: "exactly as Google Sheets", and view-only until sign-in ────────────────────

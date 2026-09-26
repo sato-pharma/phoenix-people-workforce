@@ -119,6 +119,17 @@ export function isInterviewCalendarOwner(access: { role: string | null; scope: s
 }
 
 /**
+ * A seat that READS the whole interview calendar without owning it — the CEO (owner, 2026-09-26:
+ * "anytime the CEO enters the interview calendar he sees the full calendar, doesn't need to see his
+ * interviews only"). He resolves to a Viewer: above the own-only tier, so every booking is served to
+ * him, but he changes nothing and cannot share the calendar. His seat still lets him REQUEST an
+ * interview — `mayRequestInterviews` reads the seat, not this role — so nothing he had is removed.
+ */
+export function seesWholeInterviewCalendar(access: { role: string | null }): boolean {
+  return access.role === "CEO";
+}
+
+/**
  * Who a viewer is on the calendar, from facts the caller has already read.
  *
  * `isOwner` is `isInterviewCalendarOwner` above. A share row is looked up by the caller with the HR id
