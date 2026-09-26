@@ -67,13 +67,17 @@ export default async function RepTabletsPage() {
         subtitle="Enroll a new tablet with a QR code, drive every enrolled tablet from here, and see them all beside the custody register. A tablet enrolled here is the company's from its first screen."
         title="Rep Tablets"
       />
+      {/* 🔴 HEADWIND FIRST, MANAGEENGINE BELOW IT - the owner's decision, 2026-09-26: ManageEngine is
+          not repaired, it is retired as the tablets move across. The system the fleet is moving TO is
+          what the page opens with; the one it is leaving reads as the block underneath. When the last
+          tablet has moved, the four ManageEngine lines come off and this page is Headwind alone. */}
+      {headwindReady ? <HeadwindEnrollment /> : null}
+      {headwindReady ? <HeadwindFleet /> : null}
+      {headwindReady ? <HeadwindServerSettings /> : null}
       <ManageEngineEnrollment />
       {manageEngineReady ? <ManageEngineRepTabletRules /> : null}
       {manageEngineReady ? <ManageEngineAppRepository /> : null}
       <ManageEngineFleet bridgeConfigured={manageEngineReady} />
-      {headwindReady ? <HeadwindEnrollment /> : null}
-      {headwindReady ? <HeadwindFleet /> : null}
-      {headwindReady ? <HeadwindServerSettings /> : null}
     </div>
   );
 }
