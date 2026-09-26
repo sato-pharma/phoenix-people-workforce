@@ -16,6 +16,7 @@ import {
 } from "@/lib/activity/working-baseline";
 import { describeDeviceLabel } from "@/lib/auth/webauthn";
 import { resolveActivityModule } from "@/lib/activity/modules";
+import { buildModuleJourney } from "@/lib/activity/module-journey";
 import { stopPhoneAppPushForEmployee, type PhoneAppPushStopResult } from "@/lib/notifications/settings";
 import { logError } from "@/lib/observability/log";
 import type {
@@ -50,7 +51,11 @@ const PAGE_SIZE = 1000;
 // on its own only moves a silent cliff, it does not remove one.
 const EVENT_FETCH_CAP = 200_000;
 const SESSION_FETCH_CAP = 60_000;
-const TOP_USERS_LIMIT = 30;
+// No cap on the People list. It was TOP_USERS_LIMIT = 30 until 2026-09-26; the
+// section is now searchable by name, and a capped list answers a search for the
+// 31st person with "not found" rather than with their row. ~55 people at a few
+// dozen bytes each is not a payload worth truncating for.
+
 const ANOMALY_LIMIT = 40;
 // The live feed's 15-minute window. One page is plenty (it held ~200 rows at the
 // busiest hour measured); the feed shows the newest few, the rest only resolve
@@ -788,15 +793,13 @@ async function getActivityOverviewUncached(days: number): Promise<ActivityOvervi
   // ── Top users + engagement ─────────────────────────────────────────────────
   const expectedWorkingDaysFor = createWorkingDayBaseline(range.fromIso, range.toIso);
   const allSummaries = Array.from(aggByKey.values()).map((agg) => summarize(agg, expectedWorkingDaysFor));
-  const topUsers = [...allSummaries]
-    .sort(
-      (a, b) =>
-        b.activeMinutes - a.activeMinutes ||
-        b.pageViews - a.pageViews ||
-        b.sessionMinutes - a.sessionMinutes ||
-        (a.lastSeenAt && b.lastSeenAt ? (a.lastSeenAt < b.lastSeenAt ? 1 : -1) : 0),
-    )
-    .slice(0, TOP_USERS_LIMIT);
+  const people = [...allSummaries].sort(
+    (a, b) =>
+      b.activeMinutes - a.activeMinutes ||
+      b.pageViews - a.pageViews ||
+      b.sessionMinutes - a.sessionMinutes ||
+      (a.lastSeenAt && b.lastSeenAt ? (a.lastSeenAt < b.lastSeenAt ? 1 : -1) : 0),
+  );
 
   // ── Online now (deduplicated to distinct PEOPLE, not raw sessions) ──────────
   const onlineResolved = onlineSessions.map((session) => {
@@ -945,7 +948,7 @@ async function getActivityOverviewUncached(days: number): Promise<ActivityOvervi
     kpis,
     online,
     modulePopularity,
-    topUsers,
+    people,
     adoption: { counts: adoptionCounts, rows: adoptionRows },
     anomalies: anomalies.slice(0, ANOMALY_LIMIT),
     hourlyHeatmap: buildHourlyHeatmap(logicalSessions),
@@ -1259,8 +1262,21 @@ export async function getUserTimeline(targetHrId: string, range: ActivityRange):
 
   timelineSessions.sort((a, b) => (a.startedAt < b.startedAt ? 1 : -1));
 
-  return { identity, range, summary, sessions: timelineSessions, loginCalendar };
+  // Ascending by created_at, which is how the read above is ordered — the run
+  // collapse inside buildModuleJourney is meaningless on unsorted rows.
+  const journey = buildModuleJourney(
+    events.map((event) => ({
+      moduleKey: event.moduleKey,
+      moduleLabel: event.moduleLabel,
+      createdAt: event.createdAt,
+      enteredAt: event.enteredAt,
+      creditedSeconds: creditedFor(event),
+    })),
+  );
+
+  return { identity, range, summary, sessions: timelineSessions, loginCalendar, journey };
 }
+
 
 // ── All-user summaries (Excel export) ────────────────────────────────────────
 

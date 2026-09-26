@@ -36,6 +36,7 @@ import type {
   AdoptionStatus,
   LiveActivity,
   LoginCalendar,
+  ModuleJourney,
   OnlineUser,
   RoleBenchmark,
   TimelineSession,
@@ -68,6 +69,23 @@ function formatMinutes(minutes: number): string {
 // The page trail needs seconds. formatMinutes rounds a 40-second page view up to
 // "1m" and a 20-second one down to "0m", which is a lie on a trail whose whole
 // point is how long each page was actually looked at.
+/**
+ * Fold a name for searching: strip accents, lower-case, collapse whitespace.
+ *
+ * Deliberately NOT `addressWords` from the geo matcher — that one drops words
+ * under three letters and every English address word, which is right for an
+ * address and wrong for a person ("Ali" would vanish). It also keeps non-Latin
+ * letters, so an Arabic spelling still matches an Arabic query.
+ */
+function foldForSearch(value: string): string {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function formatSeconds(seconds: number): string {
   const total = Math.max(0, Math.round(seconds));
   if (total < 60) return `${total}s`;
@@ -816,6 +834,7 @@ export function ActivityControlDashboard({
   const pathname = usePathname();
   const [isPending, startTransition] = useTransition();
 
+  const [peopleQuery, setPeopleQuery] = useState("");
   const [selectedUser, setSelectedUser] = useState<UserActivitySummary | null>(null);
   const [timeline, setTimeline] = useState<UserTimeline | null>(null);
   const [timelineLoading, setTimelineLoading] = useState(false);
@@ -934,6 +953,17 @@ export function ActivityControlDashboard({
 
   // Prefer live data for the online section when available.
   const displayedOnline = liveData?.online ?? overview?.online ?? [];
+
+  // Search by name, folded and accent-stripped so "Yasmeena" finds "Yasmeena
+  // Elsafory" and a typed Arabic name finds the Arabic spelling. Hoisted once so
+  // the table, the count chip and the empty state can never disagree about who
+  // matched. An empty query is NOT a filter — it returns everyone.
+  const filteredPeople = useMemo(() => {
+    const people = overview?.people ?? [];
+    const needle = foldForSearch(peopleQuery);
+    if (!needle) return people;
+    return people.filter((person) => foldForSearch(person.name).includes(needle));
+  }, [overview, peopleQuery]);
 
   // Hoisted once so the list and its footer count can never disagree.
   const inactiveAdoptionRows = useMemo(
@@ -1194,17 +1224,39 @@ export function ActivityControlDashboard({
             <TimeOfDayHeatmap hourlyHeatmap={overview.hourlyHeatmap} />
           </SectionCard>
 
-          {/* Top users + engagement */}
+          {/* Everyone + engagement, searchable by name */}
           <SectionCard
             icon={<Gauge className="h-4 w-4" />}
-            title="People — engagement & usage"
-            description="How much Phoenix each person used, which modules they opened, and how regularly. A usage signal, not a measure of their work."
-            action={<AdminInsightChip tone="orange" surface="light">Top {overview.topUsers.length}</AdminInsightChip>}
+            title="People — search by name"
+            description="Everyone with activity in this window. How much Phoenix each person used, which modules they opened, and how regularly. Open a name for their full module breakdown and the order they moved between modules. A usage signal, not a measure of their work."
+            action={
+              <AdminInsightChip tone="orange" surface="light">
+                {peopleQuery.trim()
+                  ? `${filteredPeople.length} of ${overview.people.length}`
+                  : `${overview.people.length} ${overview.people.length === 1 ? "person" : "people"}`}
+              </AdminInsightChip>
+            }
           >
-            {overview.topUsers.length ? (
-              <PeopleUsage users={overview.topUsers} onOpenTimeline={openTimeline} />
-            ) : (
+            <div className="border-b border-[#EEF2F7] px-5 py-3">
+              <label className="block">
+                <span className="sr-only">Search people by name</span>
+                <input
+                  type="search"
+                  value={peopleQuery}
+                  onChange={(event) => setPeopleQuery(event.target.value)}
+                  placeholder="Search by name"
+                  className="w-full border border-phx-line bg-white px-3 py-2 text-sm text-phx-ink outline-none placeholder:text-phx-ink-faint focus:border-phx-accent focus:ring-1 focus:ring-phx-accent"
+                />
+              </label>
+            </div>
+            {overview.people.length === 0 ? (
               <p className="px-5 py-8 text-center text-sm text-phx-ink-faint">No user activity in this window yet.</p>
+            ) : filteredPeople.length === 0 ? (
+              <p className="px-5 py-8 text-center text-sm text-phx-ink-faint">
+                Nobody here is called &ldquo;{peopleQuery.trim()}&rdquo;. They may have had no activity in this window.
+              </p>
+            ) : (
+              <PeopleUsage users={filteredPeople} onOpenTimeline={openTimeline} />
             )}
             <div className="border-t border-[#EEF2F7] px-5 py-3">
               <AdminCallout tone="neutral">
@@ -1361,6 +1413,10 @@ export function ActivityControlDashboard({
                     <HeatmapCalendar calendar={timeline.loginCalendar} />
                   </div>
 
+                  {/* Modules and the order they were entered — across every
+                      session in the range, not inside one login. */}
+                  <ModuleJourneyPanel journey={timeline.journey} />
+
                   {timeline.sessions.length ? (
                     <div className="space-y-3">
                       {timeline.sessions.map((session, index) => (
@@ -1498,6 +1554,156 @@ function SessionTimelineCard({ session }: { session: TimelineSession }) {
           )}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/** How many journey runs appear per "show more" press. */
+const JOURNEY_STEP = 25;
+
+/**
+ * Where one person's time actually went, and the order they moved in.
+ *
+ * The owner asked for this on 2026-09-26: which modules each person entered, how
+ * long they stayed in each, and the workflow BETWEEN modules. Before it, the
+ * drawer showed module chips per session only — a module opened across three
+ * logins read as three unrelated entries, and the ORDER was nowhere on the page.
+ *
+ * Every figure here is credited (overlap-deduplicated) seconds, the same ones
+ * behind the Active tile, so the module rows sum to Active instead of being a
+ * second measurement that disagrees with the first.
+ *
+ * A LIST, not a table, on purpose: at 303px (the drawer at 375px) a four-column
+ * table cannot hold a module name plus three figures without shrinking type,
+ * which the fits-the-screen golden rule forbids. Square edges, no nested
+ * scroller — the drawer already scrolls, and a second bar inside it hides rows.
+ */
+function ModuleJourneyPanel({ journey }: { journey: ModuleJourney }) {
+  const [journeyOpen, setJourneyOpen] = useState(false);
+  const [visibleRuns, setVisibleRuns] = useState(JOURNEY_STEP);
+
+  if (!journey.totals.length) {
+    return (
+      <div className="border border-phx-line px-4 py-3">
+        <p className="break-words text-phx-xs text-phx-ink-faint">
+          No module activity recorded in this range, so there is no journey to show.
+        </p>
+      </div>
+    );
+  }
+
+  const runCount = journey.visits.length;
+  const shownRuns = journeyOpen ? journey.visits.slice(0, visibleRuns) : [];
+  const remainingRuns = runCount - shownRuns.length;
+
+  return (
+    <div className="space-y-3">
+      <div className="border border-phx-line">
+        <div className="border-b border-[#EEF2F7] px-4 py-2.5">
+          <p className="text-phx-xs font-bold uppercase tracking-wide text-phx-ink-faint">
+            Modules — where the time went
+          </p>
+          <p className="mt-0.5 break-words text-phx-2xs text-phx-ink-soft">
+            {journey.totals.length} {journey.totals.length === 1 ? "module" : "modules"} entered. Share is of this
+            person&apos;s own active time, so these rows add up to the Active figure above.
+          </p>
+        </div>
+        <ul className="divide-y divide-[#EEF2F7]">
+          {journey.totals.map((total) => (
+            <li key={total.moduleLabel} className="px-4 py-2.5">
+              <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+                <span className="break-words text-sm font-semibold text-phx-ink">{total.moduleLabel}</span>
+                <span className="break-words text-phx-xs font-semibold text-phx-ink-2">
+                  {formatSeconds(total.seconds)} · {total.sharePct.toFixed(1)}%
+                </span>
+              </div>
+              {/* A hairline, never a rounded pill — the square-edge rule holds for
+                  anything new on this page. */}
+              <div className="mt-1.5 h-1.5 w-full bg-phx-paper-2">
+                <div className="h-full bg-phx-accent" style={{ width: `${Math.min(Math.max(total.sharePct, 1), 100)}%` }} />
+              </div>
+              <p className="mt-1 break-words text-phx-2xs text-phx-ink-soft">
+                {total.visits} {total.visits === 1 ? "visit" : "visits"} · {total.views}{" "}
+                {total.views === 1 ? "page" : "pages"} · first {formatDateTime(total.firstAtIso)} · last{" "}
+                {formatDateTime(total.lastAtIso)}
+              </p>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      {journey.transitions.length ? (
+        <div className="border border-phx-line">
+          <div className="border-b border-[#EEF2F7] px-4 py-2.5">
+            <p className="text-phx-xs font-bold uppercase tracking-wide text-phx-ink-faint">
+              Movement between modules
+            </p>
+            <p className="mt-0.5 break-words text-phx-2xs text-phx-ink-soft">
+              How often they went straight from one module into the next, most frequent first.
+            </p>
+          </div>
+          <ul className="divide-y divide-[#EEF2F7]">
+            {journey.transitions.map((transition) => (
+              <li
+                key={`${transition.fromLabel} → ${transition.toLabel}`}
+                className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 px-4 py-2"
+              >
+                <span className="break-words text-phx-xs text-phx-ink-2">
+                  <span className="font-semibold text-phx-ink">{transition.fromLabel}</span> →{" "}
+                  <span className="font-semibold text-phx-ink">{transition.toLabel}</span>
+                </span>
+                <span className="text-phx-xs font-semibold text-phx-ink-soft">
+                  {transition.count} {transition.count === 1 ? "time" : "times"}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      <div className="border border-phx-line px-4 py-2.5">
+        {journeyOpen ? (
+          <>
+            <p className="mb-2 text-phx-xs font-bold uppercase tracking-wide text-phx-ink-faint">
+              The order they moved ({runCount}) — newest first
+            </p>
+            <ol className="space-y-2">
+              {shownRuns.map((visit, index) => (
+                <li
+                  key={`${visit.startedAtIso}-${visit.moduleLabel}-${index}`}
+                  className="min-w-0 border-l-2 border-phx-paper-2 pl-2.5"
+                >
+                  <p className="break-words text-phx-xs text-phx-ink-2">
+                    <span className="font-semibold text-phx-ink">{formatDateTime(visit.startedAtIso)}</span> ·{" "}
+                    {visit.moduleLabel}
+                  </p>
+                  <p className="break-words text-phx-2xs text-phx-ink-soft">
+                    stayed {formatSeconds(visit.seconds)} · {visit.views} {visit.views === 1 ? "page" : "pages"} ·
+                    left {formatDateTime(visit.endedAtIso)}
+                  </p>
+                </li>
+              ))}
+            </ol>
+            {remainingRuns > 0 ? (
+              <button
+                type="button"
+                onClick={() => setVisibleRuns((count) => count + JOURNEY_STEP)}
+                className="mt-2 border border-phx-line px-2.5 py-1 text-phx-xs font-semibold text-phx-accent-press transition hover:bg-phx-accent-soft"
+              >
+                Show {Math.min(remainingRuns, JOURNEY_STEP)} more {remainingRuns === 1 ? "move" : "moves"}
+              </button>
+            ) : null}
+          </>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setJourneyOpen(true)}
+            className="border border-phx-line px-2.5 py-1 text-phx-xs font-semibold text-phx-accent-press transition hover:bg-phx-accent-soft"
+          >
+            Show the module-by-module order ({runCount} {runCount === 1 ? "move" : "moves"})
+          </button>
+        )}
+      </div>
     </div>
   );
 }

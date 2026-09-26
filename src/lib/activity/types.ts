@@ -101,7 +101,14 @@ export type ActivityOverview = {
   kpis: ActivityKpis;
   online: OnlineUser[];
   modulePopularity: ModulePopularity[];
-  topUsers: UserActivitySummary[];
+  /**
+   * EVERY person with activity in the range, most active first — not a top-N
+   * slice. It was `topUsers`, capped at 30, until 2026-09-26: the owner asked to
+   * "know EVERYONE entered which module", and a cap silently answers a different
+   * question. The section is searchable by name, which a truncated list cannot
+   * serve at all — the person searched for is the one most likely to be missing.
+   */
+  people: UserActivitySummary[];
   adoption: {
     counts: Record<AdoptionStatus, number>;
     rows: AdoptionRow[];
@@ -167,12 +174,66 @@ export type LoginCalendar = {
   counts: { dateIso: string; logins: number }[];
 };
 
+/**
+ * One unbroken run of consecutive page views inside the SAME module — the unit
+ * the journey is drawn from, and the reason a module can appear many times.
+ *
+ * A run is what the owner means by "stayed how much": opening Payroll, working
+ * for twenty minutes, leaving for CRM and coming back is TWO Payroll runs, not
+ * one forty-minute block. Collapsing them would hide the switching that the
+ * journey exists to show.
+ */
+export type ModuleVisit = {
+  moduleLabel: string;
+  startedAtIso: string;
+  endedAtIso: string;
+  /** Credited seconds — overlapping windows already deduplicated, so runs sum to Active. */
+  seconds: number;
+  views: number;
+};
+
+/** A module's whole footprint for one person over the range. */
+export type ModuleTotal = {
+  moduleLabel: string;
+  /** Credited seconds, so the column sums to the person's own Active time. */
+  seconds: number;
+  views: number;
+  /** Separate runs — how many times they came BACK, not how many pages they opened. */
+  visits: number;
+  firstAtIso: string;
+  lastAtIso: string;
+  /** Share of this person's own credited active time, 0–100 with one decimal. */
+  sharePct: number;
+};
+
+/** A move from one module straight into another, counted over the range. */
+export type ModuleTransition = {
+  fromLabel: string;
+  toLabel: string;
+  count: number;
+};
+
+/**
+ * Where one person's time went, and in what order. Built from the same credited
+ * seconds as every other active figure on the page, so the totals reconcile with
+ * the Active column instead of being a second, disagreeing measurement.
+ */
+export type ModuleJourney = {
+  totals: ModuleTotal[];
+  /** Newest first — the order the drawer reads them in. */
+  visits: ModuleVisit[];
+  /** Most frequent first. */
+  transitions: ModuleTransition[];
+};
+
 export type UserTimeline = {
   identity: ActivityIdentity;
   range: ActivityRange;
   summary: UserActivitySummary;
   sessions: TimelineSession[];
   loginCalendar: LoginCalendar;
+  /** Module totals, the ordered run list, and the moves between them. */
+  journey: ModuleJourney;
 };
 
 export type RecordPageViewInput = {
