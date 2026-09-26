@@ -23,6 +23,13 @@ import { canReviewTerritory, readTestFlag, type PhoenixCrmViewer } from "@/lib/p
 import { loadReadiness, loadRequestRows, mapRequestRow, type ListRequest, type SeatReadiness } from "@/lib/phoenix-crm/server/list";
 import { loadPeopleNames } from "@/lib/phoenix-crm/server/people";
 import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
+import {
+  canDecideUnplannedRow,
+  loadUnplannedRows,
+  mapUnplannedRow,
+  unplannedPeople,
+  type UnplannedVisitView,
+} from "@/lib/phoenix-crm/server/unplanned";
 
 export type TeamTerritoryRow = {
   territory: TerritorySummary;
@@ -35,11 +42,19 @@ export type TeamTerritoryRow = {
 
 export type TeamRequest = ListRequest & { seatId: string; territoryName: string; canDecide: boolean };
 
+export type TeamUnplannedVisit = UnplannedVisitView & { territoryName: string; canDecide: boolean };
+
 export type TeamView = {
   isTest: boolean;
   territories: TeamTerritoryRow[];
   /** Waiting requests, the longest-waiting first. */
   requests: TeamRequest[];
+  /**
+   * Off-plan visits waiting for a decision, the longest-waiting first. They ride in this payload
+   * rather than in a fetch of their own, so one decision refreshes the whole tab exactly as a grade
+   * or drop decision already does.
+   */
+  unplannedVisits: TeamUnplannedVisit[];
   summary: {
     territories: number;
     vacant: number;
@@ -48,6 +63,9 @@ export type TeamView = {
     requestsWaiting: number;
     /** Requests this viewer decides. */
     waitingForYou: number;
+    unplannedWaiting: number;
+    /** Off-plan visits at a step this viewer decides — the manager's, or the SFE's. */
+    unplannedWaitingForYou: number;
   };
 };
 
@@ -57,9 +75,10 @@ export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknow
   const seats: OrgSeat[] = isTest ? viewer.org.territories : viewer.scopeTerritories;
   const seatIds = seats.map((seat) => seat.seatId);
 
-  const [readiness, requestRows] = await Promise.all([
+  const [readiness, requestRows, unplannedRows] = await Promise.all([
     isTest || seatIds.length === 0 ? Promise.resolve(new Map<string, SeatReadiness>()) : loadReadiness(seatIds),
     seatIds.length === 0 ? Promise.resolve([]) : loadRequestRows(seatIds, isTest, { pendingOnly: true }),
+    loadUnplannedRows(seatIds, isTest),
   ]);
 
   const pendingBySeat = new Map<string, number>();
@@ -67,11 +86,14 @@ export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknow
     const seatId = String(row.seat_id);
     pendingBySeat.set(seatId, (pendingBySeat.get(seatId) ?? 0) + 1);
   }
-  // Test mode shows only the territories the Super Admin has tried; real mode shows every territory in scope.
-  const rowSeats = isTest ? seats.filter((seat) => pendingBySeat.has(seat.seatId)) : seats;
+  // Test mode shows only the territories the Super Admin has tried; real mode shows every territory in
+  // scope. A territory whose only waiting item is an off-plan visit still belongs in the test list.
+  const unplannedSeats = new Set(unplannedRows.map((row) => String(row.seat_id)));
+  const rowSeats = isTest ? seats.filter((seat) => pendingBySeat.has(seat.seatId) || unplannedSeats.has(seat.seatId)) : seats;
   const names = await loadPeopleNames([
     ...territoryPeople(viewer.org, rowSeats),
     ...requestRows.flatMap((row) => [row.requested_by_hr_id as string | null, row.decided_by_hr_id as string | null]),
+    ...unplannedPeople(unplannedRows),
   ]);
 
   const summaries = new Map(rowSeats.map((seat) => [seat.seatId, describeTerritory(viewer.org, seat, names)]));
@@ -106,11 +128,26 @@ export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknow
     })
     .sort((left, right) => Number(right.canDecide) - Number(left.canDecide) || left.requestedAt.localeCompare(right.requestedAt));
 
+  const unplannedVisits = unplannedRows
+    .map((row): TeamUnplannedVisit => {
+      const view = mapUnplannedRow(row, names);
+      const seat = seatsById.get(view.seatId);
+      return {
+        ...view,
+        territoryName: summaries.get(view.seatId)?.name ?? "Territory",
+        // The step it is ON decides who may press the button: the manager's step is the territory's
+        // reviewer, the SFE's step is the SFE Manager. Everyone else in scope reads it and no more.
+        canDecide: seat ? canDecideUnplannedRow(viewer, seat, isTest, view.status) : false,
+      };
+    })
+    .sort((left, right) => Number(right.canDecide) - Number(left.canDecide) || left.raisedAt.localeCompare(right.raisedAt));
+
   const realRows = territories.filter((row) => row.readiness);
   return {
     isTest,
     territories,
     requests,
+    unplannedVisits,
     summary: {
       territories: territories.length,
       vacant: territories.filter((row) => !row.territory.repHrId).length,
@@ -118,6 +155,8 @@ export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknow
       notReady: realRows.filter((row) => !row.readiness?.ready).length,
       requestsWaiting: requests.length,
       waitingForYou: requests.filter((request) => request.canDecide).length,
+      unplannedWaiting: unplannedVisits.length,
+      unplannedWaitingForYou: unplannedVisits.filter((visit) => visit.canDecide).length,
     },
   };
 }

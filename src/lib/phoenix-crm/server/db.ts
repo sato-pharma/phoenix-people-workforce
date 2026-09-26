@@ -47,6 +47,15 @@ const REFUSALS: Record<string, Refusal> = {
   photo_expired: { status: 409, message: "This photo was taken more than 2 hours ago. Take a new photo." },
   photo_missing: { status: 409, message: "The photo did not finish uploading. Check your connection and take the photo again." },
   already_visited: { status: 409, message: "This customer's visit for today is already saved." },
+  // The database's own sent-plan test disagreed with the form: the customer was not on a plan this rep
+  // had sent for that day, so the visit needs a reason before it can be saved as an off-plan one.
+  clarification_required: {
+    status: 400,
+    message: "This customer is not on a plan you have sent for today. Write why you went, then save again.",
+  },
+  unplanned_not_found: { status: 404, message: "This visit is no longer waiting for a decision. Reload the page." },
+  unplanned_decided: { status: 409, message: "This visit was already decided. Reload the page." },
+  unplanned_wrong_stage: { status: 409, message: "This visit has moved on to the next step. Reload the page." },
 };
 
 function messageOf(error: unknown): string {

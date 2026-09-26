@@ -30,6 +30,7 @@ import {
   type ScopeBasis,
 } from "@/lib/phoenix-crm/scope";
 import { loadPhoenixCrmOrg } from "@/lib/phoenix-crm/server/org";
+import type { UnplannedVisitStage } from "@/lib/phoenix-crm/unplanned-rules";
 import { loadPhoenixCrmConfig, openLineCodes, type PhoenixCrmConfig } from "@/lib/phoenix-crm/server/settings";
 
 export type PhoenixCrmViewer = {
@@ -212,6 +213,50 @@ export function canReviewTerritory(viewer: PhoenixCrmViewer, seat: OrgSeat, isTe
 export function canReturnTerritoryPlan(viewer: PhoenixCrmViewer, seat: OrgSeat, isTest: boolean): boolean {
   if (!isTest && viewer.isSfeManager && viewer.canApprove) return viewer.scopeTerritories.some((entry) => entry.seatId === seat.seatId);
   return canReviewTerritory(viewer, seat, isTest);
+}
+
+// ── An off-plan visit: the manager stage, then the SFE stage ───────────────────────────────────
+
+/**
+ * Whether the viewer may decide THIS stage of an off-plan visit (owner, 2026-09-26: the direct manager
+ * first, then the SFE).
+ *
+ * The two stages are two different authorities, which is why this is not one chain walk: the manager
+ * stage is the territory's own reviewer, exactly as a grade or drop request is, while the SFE Manager
+ * holds no sales seat at all and so can never appear in `managerChain`. The manager's manager reads the
+ * queue through his ordinary scope and decides nothing — scope is sight, not authority.
+ */
+export function canDecideUnplannedVisit(
+  viewer: PhoenixCrmViewer,
+  seat: OrgSeat,
+  isTest: boolean,
+  stage: UnplannedVisitStage,
+): boolean {
+  if (isTest) return viewer.isSuperAdmin;
+  if (viewer.isSuperAdmin || !viewer.canApprove) return false;
+  if (stage === "sfe") return viewer.isSfeManager && viewer.scopeTerritories.some((entry) => entry.seatId === seat.seatId);
+  return isTerritoryReviewer(viewer.org, seat.seatId, viewer.hrId);
+}
+
+/** The assert twin. The stage comes from the row's own status, never from the phone. */
+export function assertUnplannedVisitApprover(
+  viewer: PhoenixCrmViewer,
+  seat: OrgSeat,
+  isTest: boolean,
+  stage: UnplannedVisitStage,
+): void {
+  if (isTest) {
+    if (!viewer.isSuperAdmin) throw forbiddenError("Test entries are the Super Admin's.");
+    return;
+  }
+  if (viewer.isSuperAdmin) throw superAdminTestOnly();
+  if (!viewer.canApprove) throw forbiddenError("Your role cannot decide for a territory.");
+  if (canDecideUnplannedVisit(viewer, seat, isTest, stage)) return;
+  throw forbiddenError(
+    stage === "sfe"
+      ? "This visit is waiting for SFE, and only the SFE Manager decides that step."
+      : "Only the territory's reviewing manager decides this step.",
+  );
 }
 
 /** Settings: the Super Admin. */

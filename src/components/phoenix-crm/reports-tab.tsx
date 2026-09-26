@@ -36,6 +36,7 @@ import {
   CrmLoading,
   CrmNote,
   CrmPanel,
+  CrmPill,
   CrmSearchField,
   CrmSelect,
   CrmShowMore,
@@ -61,11 +62,12 @@ import type {
   RepVisitRow,
   TerritoryCoverageRow,
   TerritoryPlanRow,
+  VisitLocationReportView,
   VisitsReportView,
 } from "@/lib/phoenix-crm/view-types";
 import { cn } from "@/lib/utils";
 
-type ReportSection = "visits" | "plan" | "coverage" | "managers";
+type ReportSection = "visits" | "plan" | "coverage" | "managers" | "locations";
 type PeriodPreset = "today" | "yesterday" | "this_week" | "last_week" | "this_month" | "last_month";
 type Period = { from: string; to: string };
 type Presence = "all" | "with" | "without";
@@ -560,7 +562,7 @@ function VisitsSection({
 
 // ── Plan against actual ─────────────────────────────────────────────────────────────────────────
 
-const NO_PLAN: PlanCell = { planned: 0, visitedPlanned: 0, missed: 0, unplanned: 0, keptPct: null };
+const NO_PLAN: PlanCell = { planned: 0, visitedPlanned: 0, plannedWaiting: 0, missed: 0, unplanned: 0, unplannedWaiting: 0, unplannedRefused: 0, keptPct: null };
 
 type PlanLine = { key: string; territoryName: string; repName: string | null; row: TerritoryPlanRow | null };
 
@@ -583,11 +585,17 @@ function planMainText(counts: PlanCounts): string {
   return counts.planned > 0 ? `${countText(counts.visitedPlanned)} of ${countText(counts.planned)} visited` : "Nothing planned";
 }
 
-/** "1 missed · 2 off the plan"; null when neither happened. */
+/** "1 missed · 2 off the plan · 1 waiting"; null when none of them happened. */
 function planMissText(counts: PlanCounts): string | null {
   const parts = [
     counts.missed > 0 ? `${countText(counts.missed)} missed` : null,
+    // Seen, but the visit was off-plan and is not decided — so it is neither kept nor missed yet.
+    counts.plannedWaiting > 0 ? `${countText(counts.plannedWaiting)} seen off-plan` : null,
     counts.unplanned > 0 ? `${countText(counts.unplanned)} off the plan` : null,
+    // Beside the figure, never inside it. A day that reads low because an off-plan visit is still
+    // with the manager has to SAY so, or the dip reads as a rep who did not work.
+    counts.unplannedWaiting > 0 ? `${countText(counts.unplannedWaiting)} waiting` : null,
+    counts.unplannedRefused > 0 ? `${countText(counts.unplannedRefused)} refused` : null,
   ].filter((part): part is string => part !== null);
   return parts.length > 0 ? parts.join(" · ") : null;
 }
@@ -997,6 +1005,148 @@ function ManagersSection({ idPrefix, resource, today }: { idPrefix: string; reso
   );
 }
 
+/**
+ * WHERE THE VISIT WAS SAVED — the rep's own position against the place Phoenix holds for that customer.
+ *
+ * Owner, 2026-09-26: this one is for the district manager, SFE, the national sales manager and the
+ * Super Admin, and NOT for the medical rep. The server refuses it to a rep (loadVisitLocationReport)
+ * and `canSeeLocations` keeps the chip off his screen — two gates, because the chip alone is UX.
+ *
+ * It is not the mock-location board: that one is Super-Admin-only and stays silent by his rule. This
+ * says how far apart two saved points are, which the rep already sees on his own visit.
+ */
+function LocationsSection({
+  idPrefix,
+  resource,
+}: {
+  idPrefix: string;
+  resource: CrmResource<VisitLocationReportView>;
+}) {
+  const report = resource.data;
+  if (!report) return <SectionWaiting error={resource.error} label="Loading where the visits were saved" onRetry={resource.reload} />;
+  const { summary } = report;
+
+  return (
+    <>
+      <RefreshFailed error={resource.error} />
+      <CrmBlock className="border-t border-slate-100" title="These days">
+        <CrmStatGrid>
+          <CrmStat label="Visits" note="Every visit saved in the days chosen" value={countText(summary.visits)} />
+          <CrmStat
+            label="Far from the place"
+            note="Saved beyond the distance set in Settings"
+            tone={summary.far > 0 ? "warn" : "good"}
+            value={countText(summary.far)}
+          />
+          <CrmStat
+            label="Weak signal"
+            note="The phone was not sure where it was"
+            tone={summary.weakGps > 0 ? "warn" : "neutral"}
+            value={countText(summary.weakGps)}
+          />
+          <CrmStat
+            label="Nothing to compare"
+            note="The customer has no validated place yet"
+            tone={summary.noPlace > 0 ? "neutral" : "good"}
+            value={countText(summary.noPlace)}
+          />
+        </CrmStatGrid>
+      </CrmBlock>
+      {report.total > report.rows.length ? (
+        <CrmBlock className="border-t border-slate-100">
+          <CrmNote tone="info">
+            The {countText(report.rows.length)} farthest of {countText(report.total)} visits. Narrow the days or the territory to read the rest.
+          </CrmNote>
+        </CrmBlock>
+      ) : null}
+      {report.rows.length === 0 ? (
+        <div className="border-t border-slate-100">
+          <CrmEmpty message="No visit was saved in the days chosen." title="No visits to compare" />
+        </div>
+      ) : (
+        <ReportList
+          columns={["18%", "18%", "24%", "26%", "14%"]}
+          explain="The farthest first. Distance is between where the rep stood when he saved the visit and the place saved for that customer, which is fixed at capture and never edited."
+          hasData={(row) => row.locationFlag === "far" || row.locationFlag === "weak_gps"}
+          headers={["Day", "Rep", "Customer", "Place saved", "Apart"]}
+          idPrefix={`${idPrefix}-locations`}
+          items={report.rows}
+          keyOf={(row) => row.visitId}
+          renderCard={(row) => (
+            <CrmCard
+              accent={row.locationFlag === "far" ? "border-l-amber-500" : "border-l-orange-500"}
+              meta={[dayLabel(row.visitDate), row.territoryName, row.repName].join(" · ")}
+              status={
+                <>
+                  <CrmPill tone={row.locationFlag === "far" ? "warn" : row.locationFlag === "ok" ? "good" : "neutral"}>{row.distanceText}</CrmPill>
+                  {row.isUnplanned ? <CrmPill tone="orange">Off the plan</CrmPill> : null}
+                </>
+              }
+              title={row.customerName}
+            >
+              <div className="grid min-w-0 gap-1 text-xs font-semibold leading-5 text-slate-600">
+                <p className="break-words">
+                  <span className="font-black text-slate-800">Place saved: </span>
+                  {row.placeLabel ?? row.placeAddress ?? "No place saved yet"}
+                </p>
+                {row.placeWhere ? <p className="break-words">{row.placeWhere}</p> : null}
+                <p className="break-words">
+                  <span className="font-black text-slate-800">He stood at: </span>
+                  {row.visitLat.toFixed(5)}, {row.visitLon.toFixed(5)}
+                  {row.accuracyMeters === null ? "" : ` (accuracy ${countText(Math.round(row.accuracyMeters))} m)`}
+                </p>
+                {row.placeLat !== null && row.placeLon !== null ? (
+                  <p className="break-words">
+                    <span className="font-black text-slate-800">The place is at: </span>
+                    {row.placeLat.toFixed(5)}, {row.placeLon.toFixed(5)}
+                  </p>
+                ) : null}
+              </div>
+            </CrmCard>
+          )}
+          renderCells={(row) => (
+            <>
+              <td className={crmTdClassName}>
+                <p className="break-words font-black text-slate-950">{dayLabel(row.visitDate)}</p>
+                <p className="mt-0.5 break-words text-xs text-slate-500">{row.territoryName}</p>
+              </td>
+              <td className={crmTdClassName}>
+                <p className="break-words">{row.repName}</p>
+                {row.isUnplanned ? <p className="mt-0.5 break-words text-xs font-semibold text-orange-700">Off the plan</p> : null}
+              </td>
+              <td className={crmTdClassName}>
+                <p className="break-words font-black text-slate-950">{row.customerName}</p>
+                <p className="mt-0.5 break-words text-xs text-slate-500">
+                  {row.visitLat.toFixed(5)}, {row.visitLon.toFixed(5)}
+                </p>
+              </td>
+              <td className={crmTdClassName}>
+                <p className="break-words">{row.placeLabel ?? row.placeAddress ?? "No place saved yet"}</p>
+                {row.placeWhere ? <p className="mt-0.5 break-words text-xs text-slate-500">{row.placeWhere}</p> : null}
+              </td>
+              <td className={crmTdClassName}>
+                <span className={cn("block break-words font-black", row.locationFlag === "far" ? "text-amber-800" : "text-slate-900")}>
+                  {row.distanceText}
+                </span>
+              </td>
+            </>
+          )}
+          searchWords={(row) => [row.customerName, row.repName, row.territoryName, row.placeLabel, row.placeAddress, row.placeWhere]}
+          words={{
+            all: "All",
+            noneMatch: "Nothing matches",
+            searchLabel: "Find a visit",
+            searchPlaceholder: "Customer, rep, territory or place",
+            title: "Farthest first",
+            with: "Flagged",
+            without: "At the place",
+          }}
+        />
+      )}
+    </>
+  );
+}
+
 // ── The tab ─────────────────────────────────────────────────────────────────────────────────────
 
 const SECTION_TITLES: Record<ReportSection, string> = {
@@ -1004,6 +1154,7 @@ const SECTION_TITLES: Record<ReportSection, string> = {
   plan: "Plan against actual",
   coverage: "Coverage and frequency",
   managers: "Double and chain visits",
+  locations: "Where the visit was saved",
 };
 
 const REPORTS_DESCRIPTION = "Counted from what the field force enters in Phoenix CRM. AM and PM are always counted apart.";
@@ -1031,7 +1182,8 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
   const territories = view?.territories ?? [];
   const lineTerritories = lineCode ? territories.filter((territory) => territory.lineCode === lineCode) : territories;
   const chosen = seatId ? lineTerritories.filter((territory) => territory.seatId === seatId) : lineTerritories;
-  const activeSection: ReportSection = section === "managers" && view && !view.hasManagers ? "visits" : section;
+  const activeSection: ReportSection =
+    (section === "managers" && view && !view.hasManagers) || (section === "locations" && view && !view.canSeeLocations) ? "visits" : section;
   const withTest = Boolean(view?.canIncludeTest) && includeTest;
   const problem = activeSection === "coverage" ? null : periodProblem(period, today, view?.maxDays ?? REPORT_MAX_DAYS);
 
@@ -1046,7 +1198,8 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
   const plan = useCrmGet<PlanReportView>(sectionUrl("plan"), "report");
   const coverage = useCrmGet<CoverageReportView>(sectionUrl("coverage"), "report");
   const managers = useCrmGet<ManagerReportView>(sectionUrl("managers"), "report");
-  const active = { coverage, managers, plan, visits }[activeSection];
+  const locations = useCrmGet<VisitLocationReportView>(sectionUrl("locations"), "report");
+  const active = { coverage, locations, managers, plan, visits }[activeSection];
 
   if (!view) {
     return (
@@ -1089,6 +1242,9 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
     { value: "plan", label: SECTION_TITLES.plan, note: "Visited or missed, day by day" },
     { value: "coverage", label: SECTION_TITLES.coverage, note: "The list, month by month" },
     ...(view.hasManagers ? [{ value: "managers" as const, label: SECTION_TITLES.managers, note: "Per manager" }] : []),
+    // Managers, SFE and the Super Admin only — and the server refuses it too, so the chip is not the
+    // gate (system-navigation hiding a link is UX; the boundary is server side).
+    ...(view.canSeeLocations ? [{ value: "locations" as const, label: SECTION_TITLES.locations, note: "Against the saved place" }] : []),
   ];
   const presetOptions: Array<CrmChoiceOption<PeriodPreset>> = PRESETS.map(({ label, value }) => {
     const range = presetPeriod(value, today);
@@ -1125,7 +1281,7 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
       title={SECTION_TITLES[activeSection]}
     >
       <CrmBlock title="Report">
-        <CrmChoice columns={view.hasManagers ? 4 : 3} label="Report" onChange={setSection} options={sectionOptions} value={activeSection} />
+        <CrmChoice columns={sectionOptions.length === 4 ? 4 : 3} label="Report" onChange={setSection} options={sectionOptions} value={activeSection} />
       </CrmBlock>
 
       <CrmBlock
@@ -1234,6 +1390,8 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
         <PlanSection idPrefix={idPrefix} resource={plan} territories={chosen} today={today} />
       ) : activeSection === "coverage" ? (
         <CoverageSection idPrefix={idPrefix} resource={coverage} />
+      ) : activeSection === "locations" ? (
+        <LocationsSection idPrefix={idPrefix} resource={locations} />
       ) : (
         <ManagersSection idPrefix={idPrefix} resource={managers} today={today} />
       )}

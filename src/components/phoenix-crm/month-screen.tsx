@@ -16,12 +16,13 @@
 import { useMemo, useState } from "react";
 
 import { crmGet, crmPost, crmUrl, messageOf, useCrmGet } from "@/components/phoenix-crm/api";
-import { cairoStamp, countText, plural, weekLabel } from "@/components/phoenix-crm/format";
+import { cairoStamp, countText, dayLabelWithYear, plural, weekLabel } from "@/components/phoenix-crm/format";
 import { territoryLine } from "@/components/phoenix-crm/labels";
 import { PlanFilterBar } from "@/components/phoenix-crm/plan-filter-bar";
 import { PlanHistoryReference } from "@/components/phoenix-crm/plan-history-reference";
 import { PlanTab } from "@/components/phoenix-crm/plan-tab";
 import {
+  CrmBackBar,
   CrmBlock,
   CrmButton,
   CrmChoice,
@@ -71,12 +72,20 @@ function pctText(value: number | null): string {
 
 /** The whole Plan experience: the month, and the week it hands off to. */
 export function MonthlyPlanTab({
+  onBack,
   onChanged,
   onDirtyChange,
   onOpenList,
   seatId,
   test,
 }: {
+  /**
+   * Where this month was opened FROM, when it was not the rep's own Plan tab. The Team tab uses it to
+   * put a reviewing manager back on his board: the same month screen, read only, with Approve and
+   * Return on it. Nothing here is unsaved, so leaving needs no question — the weekly plan inside asks
+   * its own before it lets changes go.
+   */
+  onBack?: { label: string; onBack: () => void };
   onChanged?: () => void;
   onDirtyChange?: (dirty: boolean) => void;
   onOpenList?: () => void;
@@ -108,16 +117,18 @@ export function MonthlyPlanTab({
     );
   }
 
-  return <MonthScreen key={monthKey} onChanged={onChanged} onOpenList={onOpenList} onOpenWeek={setOpenWeek} seatId={seatId} test={test} />;
+  return <MonthScreen key={monthKey} onBack={onBack} onChanged={onChanged} onOpenList={onOpenList} onOpenWeek={setOpenWeek} seatId={seatId} test={test} />;
 }
 
 function MonthScreen({
+  onBack,
   onChanged,
   onOpenList,
   onOpenWeek,
   seatId,
   test,
 }: {
+  onBack?: { label: string; onBack: () => void };
   onChanged?: () => void;
   onOpenList?: () => void;
   onOpenWeek: (weekStart: string) => void;
@@ -270,6 +281,7 @@ function MonthScreen({
   if (!view) {
     return (
       <CrmPanel eyebrow="Plan" title="Monthly plan">
+        {onBack ? <CrmBackBar backLabel={onBack.label} onBack={onBack.onBack} title="Monthly plan" /> : null}
         {resource.error ? <CrmLoadError message={resource.error} onRetry={resource.reload} /> : <CrmLoading label="Loading the monthly plan" />}
       </CrmPanel>
     );
@@ -278,11 +290,18 @@ function MonthScreen({
   const { plan } = view;
   const status = plan?.status ?? null;
   const facts: Array<{ label: string; value: string }> = [
+    // Owner, 2026-09-26: the month is due the last Thursday of the month before. It is a DATE on the
+    // screen, never a gate — a late month is accepted and stamped, because a rep who cannot plan
+    // cannot work.
+    { label: "Due", value: `${dayLabelWithYear(view.dueOn)}${view.overdue ? " · overdue" : ""}` },
     { label: "Last change", value: plan ? cairoStamp(plan.updatedAt) : "Not started yet" },
     { label: "Reviewer", value: view.isTest ? "You (test entries)" : (view.territory.reviewerName ?? "No manager above this territory") },
   ];
   if (plan?.submittedAt) {
-    facts.push({ label: "Last sent for review", value: `${cairoStamp(plan.submittedAt)}${plan.submittedByName ? ` · ${plan.submittedByName}` : ""}` });
+    facts.push({
+      label: "Last sent for review",
+      value: `${cairoStamp(plan.submittedAt)}${plan.submittedByName ? ` · ${plan.submittedByName}` : ""}${plan.submittedLate ? " · late" : ""}`,
+    });
   }
   if (plan?.decidedAt && (status === "approved" || status === "returned")) {
     facts.push({
@@ -295,6 +314,7 @@ function MonthScreen({
 
   return (
     <CrmPanel description={territoryLine(view.territory)} eyebrow={view.isTest ? "Plan · test entries" : "Plan"} title={view.monthLabel}>
+      {onBack ? <CrmBackBar backLabel={onBack.label} onBack={onBack.onBack} title={`${view.territory.name} · ${view.monthLabel}`} /> : null}
       {notice ? (
         <div className="px-4 pt-4 sm:px-5">
           <CrmNote title={notice.title} tone={notice.tone}>
@@ -325,6 +345,24 @@ function MonthScreen({
         <CrmBlock className="border-t border-slate-100">
           <CrmNote tone="warn">
             <span className="block">{view.blockedReason}</span>
+          </CrmNote>
+        </CrmBlock>
+      ) : null}
+
+      {/* The deadline, said once where he is working. Never a block: his ruling was that a late month
+          is accepted and stamped. Only the rep is told he is behind — a manager reading the month sees
+          the stamp on the review board instead. */}
+      {view.viewerIsRep && view.overdue ? (
+        <CrmBlock className="border-t border-slate-100">
+          <CrmNote title={`This month was due ${dayLabelWithYear(view.dueOn)}`} tone="warn">
+            Send it as soon as it is ready. It will still be accepted, and it will be marked as sent late.
+          </CrmNote>
+        </CrmBlock>
+      ) : null}
+      {plan?.submittedLate ? (
+        <CrmBlock className="border-t border-slate-100">
+          <CrmNote title="Sent late" tone="warn">
+            This month was due {dayLabelWithYear(view.dueOn)} and was sent on {cairoStamp(plan.submittedAt ?? plan.updatedAt)}.
           </CrmNote>
         </CrmBlock>
       ) : null}

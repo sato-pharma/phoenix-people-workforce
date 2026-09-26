@@ -42,9 +42,11 @@ import {
 } from "@/lib/phoenix-crm/report-rules";
 import { heldManagerSeats, managersInScope, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import { readTestFlag, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
-import { callPhoenixCrm } from "@/lib/phoenix-crm/server/db";
+import { callPhoenixCrm, chunk, numberOrNull, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
+import { formatDistance } from "@/lib/phoenix-crm/geo";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { seatTierTitle } from "@/lib/phoenix-crm/server/territory";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type Row = Record<string, unknown>;
 
@@ -106,7 +108,22 @@ export type ReportScopeView = {
   territories: ReportTerritory[];
   /** Whether the manager section has anyone to show (the viewer or managers below them). */
   hasManagers: boolean;
+  /**
+   * Whether the viewer may open "Where the visit was saved".
+   *
+   * Owner, 2026-09-26: that report is for the district manager, SFE, the national sales manager and
+   * the Super Admin — NOT the medical rep. Everything else on this tab a rep may read about his own
+   * territory, so the section is gated on holding a manager seat (or reading the company) rather than
+   * on scope, which a rep also has. He still sees the distance on his OWN visit as he always has (his
+   * ruling, same day): what is withheld is the comparison across a team.
+   */
+  canSeeLocations: boolean;
 };
+
+/** The one predicate behind canSeeLocations, so the screen and the service cannot drift apart. */
+function canReadLocationReport(viewer: PhoenixCrmViewer): boolean {
+  return viewer.isSuperAdmin || viewer.isSfeManager || viewer.basis === "all" || viewer.managerSeats.length > 0;
+}
 
 export async function loadReportScope(viewer: PhoenixCrmViewer): Promise<ReportScopeView> {
   const seats = viewer.scopeTerritories;
@@ -133,6 +150,7 @@ export async function loadReportScope(viewer: PhoenixCrmViewer): Promise<ReportS
       }))
       .sort((left, right) => left.name.localeCompare(right.name)),
     hasManagers: managersInScope(viewer.org, viewer.hrId, viewer.basis).length > 0,
+    canSeeLocations: canReadLocationReport(viewer),
   };
 }
 
@@ -373,4 +391,155 @@ export async function loadManagerReport(viewer: PhoenixCrmViewer, raw: ReportFil
     })
     .sort((left, right) => (left.lineName ?? "").localeCompare(right.lineName ?? "") || left.name.localeCompare(right.name));
   return { period, includeTest: chosen.includeTest, rows };
+}
+
+// ── Where the visit was saved, against where the place is ────────────────────────────
+
+/**
+ * Owner, 2026-09-26: a report the district manager, SFE, the national sales manager and the Super
+ * Admin can read — where the rep actually stood when he saved the visit, against where that customer's
+ * place is saved in Phoenix, and how far apart the two are. The medical rep does not get it.
+ *
+ * Nothing new is captured for this. Every figure is already a column on the visit (`lat`, `lon`,
+ * `accuracy_meters`, `distance_meters`, `location_flag`) and on the place (its own fix, and the brick,
+ * area and region resolved server-side when it was captured and frozen since). This is a read, a sort
+ * and a table.
+ *
+ * It is NOT the mock-location board. That one is Super-Admin-only and silent by his rule, because a
+ * rep who learns what is measured learns what to defeat. This report says only how far apart two saved
+ * points are — which the rep already sees on his own visit and will keep seeing.
+ */
+export type VisitLocationRow = {
+  visitId: string;
+  visitDate: string;
+  capturedAt: string;
+  territoryName: string;
+  repName: string;
+  customerName: string;
+  listType: "AM" | "PM";
+  /** Where the place is saved: its name, its address, and the geography resolved when it was captured. */
+  placeLabel: string | null;
+  placeAddress: string | null;
+  placeWhere: string | null;
+  placeLat: number | null;
+  placeLon: number | null;
+  /** Where he actually stood. */
+  visitLat: number;
+  visitLon: number;
+  accuracyMeters: number | null;
+  distanceMeters: number | null;
+  distanceText: string;
+  locationFlag: string;
+  /** Off the plan, so a manager reading a long distance knows it was not a planned call either. */
+  isUnplanned: boolean;
+};
+
+export type VisitLocationReportView = {
+  period: ReportPeriod;
+  includeTest: boolean;
+  /** The worst first, capped; `total` says how many there were in all. */
+  rows: VisitLocationRow[];
+  total: number;
+  summary: { visits: number; far: number; weakGps: number; noPlace: number; measured: number; farthestMeters: number | null };
+};
+
+/** At most this many rows travel to the phone; the summary is measured over every visit in the period. */
+const LOCATION_ROW_CAP = 300;
+
+export async function loadVisitLocationReport(viewer: PhoenixCrmViewer, raw: ReportFilterInput): Promise<VisitLocationReportView> {
+  if (!canReadLocationReport(viewer)) throw forbiddenError("This report is for managers, SFE and the Super Admin.");
+  const chosen = chooseTerritories(viewer, raw);
+  const period = periodOf(viewer, raw);
+  const empty: VisitLocationReportView = {
+    period,
+    includeTest: chosen.includeTest,
+    rows: [],
+    total: 0,
+    summary: { visits: 0, far: 0, weakGps: 0, noPlace: 0, measured: 0, farthestMeters: null },
+  };
+  if (chosen.seats.length === 0) return empty;
+
+  const columns =
+    "id, seat_id, visit_date, captured_at, rep_hr_id, entered_by_hr_id, list_type, lat, lon, accuracy_meters, distance_meters, " +
+    "location_flag, is_unplanned, is_test, " +
+    "customer:phoenix_crm_customers!customer_id(name), " +
+    "place:phoenix_crm_places!place_id(label, address, brick_name, area_name, region_name, lat, lon)";
+
+  const rows: Row[] = [];
+  for (const batch of chunk(chosen.seats.map((seat) => seat.seatId))) {
+    let query = getSupabaseAdmin()
+      .from("phoenix_crm_visits")
+      .select(columns)
+      .in("seat_id", batch)
+      .gte("visit_date", period.from)
+      .lte("visit_date", period.to);
+    if (!chosen.includeTest) query = query.eq("is_test", false);
+    const { data, error } = await query;
+    throwIfError(error);
+    rows.push(...asRows(data));
+  }
+
+  const seatsById = new Map(chosen.seats.map((seat) => [seat.seatId, seat]));
+  const names = await loadPeopleNames(rows.map((row) => textOrNull(row.rep_hr_id) ?? textOrNull(row.entered_by_hr_id)));
+
+  let far = 0;
+  let weakGps = 0;
+  let noPlace = 0;
+  let measured = 0;
+  let farthest: number | null = null;
+  const mapped: VisitLocationRow[] = rows.map((row) => {
+    const flag = String(row.location_flag ?? "ok");
+    if (flag === "far") far += 1;
+    if (flag === "weak_gps") weakGps += 1;
+    if (flag === "no_place") noPlace += 1;
+    const distance = numberOrNull(row.distance_meters);
+    if (distance !== null) {
+      measured += 1;
+      if (farthest === null || distance > farthest) farthest = distance;
+    }
+    const place = (Array.isArray(row.place) ? row.place[0] : row.place) as Row | null;
+    const placeRow = (place ?? {}) as Row;
+    const customer = (Array.isArray(row.customer) ? row.customer[0] : row.customer) as Row | null;
+    const seat = seatsById.get(String(row.seat_id));
+    // Names, never codes (owner rule): the brick, area and region as the place recorded them.
+    const where = [textOrNull(placeRow.brick_name), textOrNull(placeRow.area_name), textOrNull(placeRow.region_name)].filter(Boolean).join(" · ");
+    return {
+      visitId: String(row.id),
+      visitDate: String(row.visit_date),
+      capturedAt: String(row.captured_at),
+      territoryName: seat ? territoryName(seat) : "Territory",
+      repName: nameOf(names, textOrNull(row.rep_hr_id) ?? textOrNull(row.entered_by_hr_id)),
+      customerName: textOrNull((customer ?? {}).name) ?? "Customer",
+      listType: row.list_type === "AM" ? "AM" : "PM",
+      placeLabel: textOrNull(placeRow.label),
+      placeAddress: textOrNull(placeRow.address),
+      placeWhere: where || null,
+      placeLat: numberOrNull(placeRow.lat),
+      placeLon: numberOrNull(placeRow.lon),
+      visitLat: Number(row.lat),
+      visitLon: Number(row.lon),
+      accuracyMeters: numberOrNull(row.accuracy_meters),
+      distanceMeters: distance,
+      distanceText: distance === null ? "—" : formatDistance(distance),
+      locationFlag: flag,
+      isUnplanned: row.is_unplanned === true,
+    };
+  });
+
+  // The farthest first: that is the only order a manager reads this in. A visit with no distance to
+  // measure (no place saved yet) sorts last rather than as if it were zero metres away.
+  mapped.sort(
+    (left, right) =>
+      (right.distanceMeters ?? -1) - (left.distanceMeters ?? -1) ||
+      right.visitDate.localeCompare(left.visitDate) ||
+      left.customerName.localeCompare(right.customerName),
+  );
+
+  return {
+    period,
+    includeTest: chosen.includeTest,
+    rows: mapped.slice(0, LOCATION_ROW_CAP),
+    total: mapped.length,
+    summary: { visits: mapped.length, far, weakGps, noPlace, measured, farthestMeters: farthest },
+  };
 }

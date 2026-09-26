@@ -51,24 +51,15 @@ import {
   type CustomerGroup,
 } from "@/lib/phoenix-crm/customer-list-grouping";
 import type { ListCustomer } from "@/lib/phoenix-crm/view-types";
+import { brickTintMap, type BrickTint } from "@/components/phoenix-crm/brick-tints";
 
 /**
- * BRICK COLOUR — the same eight hues, in the same order, as the board (reps-list-tables.tsx). Kept
- * here too because the colour is "Phoenix CRM's List tab only" and these sections are that tab. The
- * wash lands on the block heading, never on a row: a mapped brick gets a left bar and a light fill,
- * an unmapped locality stays amber, exactly as the board draws them.
+ * BRICK COLOUR — the same eight hues, in the same order, as the board (reps-list-tables.tsx) and now
+ * as the Visits picker, which groups a day by brick too. They live in brick-tints.ts precisely because
+ * there are three readers: a brick that is teal here and indigo at the door is no use as a landmark.
+ * The wash lands on the block heading, never on a row: a mapped brick gets a left bar and a light
+ * fill, an unmapped locality stays amber, exactly as the board draws them.
  */
-const BRICK_TINTS = [
-  { bar: "border-l-sky-500", fill: "bg-sky-50" },
-  { bar: "border-l-emerald-500", fill: "bg-emerald-50" },
-  { bar: "border-l-indigo-500", fill: "bg-indigo-50" },
-  { bar: "border-l-teal-500", fill: "bg-teal-50" },
-  { bar: "border-l-fuchsia-500", fill: "bg-fuchsia-50" },
-  { bar: "border-l-cyan-500", fill: "bg-cyan-50" },
-  { bar: "border-l-lime-500", fill: "bg-lime-50" },
-  { bar: "border-l-stone-500", fill: "bg-stone-100" },
-] as const;
-type BrickTint = (typeof BRICK_TINTS)[number];
 
 /**
  * The board's field-surface controls (reps-list-tables.tsx, FIELD_*_CLASS): a thumb's 44px on a phone
@@ -88,14 +79,7 @@ export type CustomerListVariant = "pending" | "active" | "dropped";
  * learn. Only mapped bricks are tinted; an unmapped locality keeps amber, which is a statement.
  */
 function tintsFor(groups: readonly CustomerGroup[]): Map<string, BrickTint> {
-  const tints = new Map<string, BrickTint>();
-  let index = 0;
-  for (const group of groups) {
-    if (!group.mapped) continue;
-    tints.set(group.key, BRICK_TINTS[index % BRICK_TINTS.length]);
-    index += 1;
-  }
-  return tints;
+  return brickTintMap(groups.filter((group) => group.mapped).map((group) => group.key));
 }
 
 function GroupCaret({ open }: { open: boolean }) {

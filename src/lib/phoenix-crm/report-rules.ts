@@ -76,10 +76,24 @@ export function resolveReportMonth(input: { month: unknown; cairoToday: string }
 
 // ── Visits per rep per day ──────────────────────────────────────────────────────────────────────
 
-export type VisitCounts = { visits: number; doubleVisits: number; chainVisits: number; farVisits: number; testVisits: number };
+export type VisitCounts = {
+  visits: number;
+  doubleVisits: number;
+  chainVisits: number;
+  farVisits: number;
+  testVisits: number;
+  /**
+   * Off-plan visits still waiting for a decision — BESIDE the count, never inside it.
+   *
+   * `visits` already leaves them out, which is the rule. This says how many, because a day that reads
+   * low only because three visits are with the manager must say so: without it the dip reads as a rep
+   * who did not work, and that is a wrong thing to believe about a real person.
+   */
+  unplannedWaiting: number;
+};
 
 export function emptyVisitCounts(): VisitCounts {
-  return { visits: 0, doubleVisits: 0, chainVisits: 0, farVisits: 0, testVisits: 0 };
+  return { visits: 0, doubleVisits: 0, chainVisits: 0, farVisits: 0, testVisits: 0, unplannedWaiting: 0 };
 }
 
 function addVisitCounts(target: VisitCounts, source: VisitCounts): void {
@@ -88,6 +102,7 @@ function addVisitCounts(target: VisitCounts, source: VisitCounts): void {
   target.chainVisits += source.chainVisits;
   target.farVisits += source.farVisits;
   target.testVisits += source.testVisits;
+  target.unplannedWaiting += source.unplannedWaiting;
 }
 
 export type RepVisitDay = { date: string; am: VisitCounts; pm: VisitCounts };
@@ -129,6 +144,7 @@ export function groupVisitsByRep(rows: ReadonlyArray<Row>): { groups: RepVisitGr
       chainVisits: count(row.chain_visits),
       farVisits: count(row.far_visits),
       testVisits: count(row.test_visits),
+      unplannedWaiting: count(row.unplanned_waiting),
     };
     const listType = listTypeOf(row.list_type);
     addVisitCounts(listType === "AM" ? day.am : day.pm, counts);
@@ -147,25 +163,45 @@ export function groupVisitsByRep(rows: ReadonlyArray<Row>): { groups: RepVisitGr
 export type PlanCounts = {
   /** Customers on a plan that reached review (submitted or approved) for the day. */
   planned: number;
-  /** Planned customers visited on their planned day. */
+  /** Planned customers visited on their planned day, on a visit that was itself planned. */
   visitedPlanned: number;
+  /**
+   * Planned, visited, but the visit was off-plan and is still waiting on a decision.
+   *
+   * It exists so that a customer the rep DID see cannot read as a miss while his visit sits with the
+   * manager. It is never part of plan-kept %, for the same reason `unplanned` is not.
+   */
+  plannedWaiting: number;
   missed: number;
-  /** Visits to customers who were not planned for that day. */
+  /** Visits to customers who were not planned for that day — every one of them, decided or not. */
   unplanned: number;
+  /** Of those, the ones still with the manager or with SFE, so counting in nothing yet. */
+  unplannedWaiting: number;
+  /** Of those, the ones refused — they happened, and they never count. */
+  unplannedRefused: number;
 };
 
 export function emptyPlanCounts(): PlanCounts {
-  return { planned: 0, visitedPlanned: 0, missed: 0, unplanned: 0 };
+  return { planned: 0, visitedPlanned: 0, plannedWaiting: 0, missed: 0, unplanned: 0, unplannedWaiting: 0, unplannedRefused: 0 };
 }
 
 function addPlanCounts(target: PlanCounts, source: PlanCounts): void {
   target.planned += source.planned;
   target.visitedPlanned += source.visitedPlanned;
+  target.plannedWaiting += source.plannedWaiting;
   target.missed += source.missed;
   target.unplanned += source.unplanned;
+  target.unplannedWaiting += source.unplannedWaiting;
+  target.unplannedRefused += source.unplannedRefused;
 }
 
-/** Planned customers visited on the day ÷ planned customers, 0–100 with one decimal. */
+/**
+ * Planned customers visited on the day ÷ planned customers, 0–100 with one decimal.
+ *
+ * Neither off-plan figure may ever enter this ratio, whatever it has been approved as: the denominator
+ * is what the rep PLANNED, and a visit he did not plan cannot make him better or worse at keeping the
+ * plan he did make.
+ */
 export function planKeptPercent(counts: PlanCounts): number | null {
   return sharePercent(counts.visitedPlanned, counts.planned);
 }
@@ -195,8 +231,11 @@ export function groupPlanByTerritory(rows: ReadonlyArray<Row>): { groups: Territ
     const counts: PlanCounts = {
       planned: count(row.planned),
       visitedPlanned: count(row.visited_planned),
+      plannedWaiting: count(row.planned_waiting),
       missed: count(row.missed),
       unplanned: count(row.unplanned),
+      unplannedWaiting: count(row.unplanned_waiting),
+      unplannedRefused: count(row.unplanned_refused),
     };
     const listType = listTypeOf(row.list_type);
     addPlanCounts(listType === "AM" ? day.am : day.pm, counts);

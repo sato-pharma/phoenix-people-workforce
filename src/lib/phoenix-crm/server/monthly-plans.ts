@@ -21,7 +21,7 @@
  */
 
 import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
-import { formatPhoenixMonth } from "@/lib/i18n/format";
+import { formatPhoenixLongDate, formatPhoenixMonth } from "@/lib/i18n/format";
 import {
   editablePlanDays,
   fieldWeeksOfMonth,
@@ -29,6 +29,7 @@ import {
   isMonthKey,
   isRamadanDay,
   monthEndOf,
+  monthlyPlanDueOn,
   monthStartOf,
   plannableMonths,
 } from "@/lib/phoenix-crm/calendar";
@@ -88,7 +89,8 @@ function record(raw: unknown): Row {
 }
 
 const MONTHLY_PLAN_COLUMNS =
-  "id, seat_id, line_code, month_start, status, version, submitted_at, submitted_by_hr_id, decided_at, decided_by_hr_id, decided_by_role, decision_note, created_by_hr_id, updated_at, is_test";
+  "id, seat_id, line_code, month_start, status, version, submitted_at, submitted_by_hr_id, decided_at, decided_by_hr_id, " +
+  "decided_by_role, decision_note, created_by_hr_id, updated_at, is_test, due_on, submitted_late";
 
 /** The requested month, clamped to the plannable months; the first plannable month by default. */
 function resolveMonth(value: unknown, plannable: string[]): string {
@@ -113,6 +115,17 @@ export type MonthlyPlanSummary = {
   decidedBySfe: boolean;
   decisionNote: string | null;
   updatedAt: string;
+  /**
+   * When the month was due: the last Thursday of the month before (owner, 2026-09-26). Null only for a
+   * header opened before the rule existed and never reopened since.
+   */
+  dueOn: string | null;
+  /**
+   * It was sent after that Thursday. Read from the SERVER's clock at submit and stamped on the row, so
+   * a screen drawn weeks later still tells the truth. Nothing was blocked — his ruling was that a late
+   * plan is ACCEPTED and STAMPED, because a rep who cannot plan cannot work.
+   */
+  submittedLate: boolean;
 };
 
 function mapMonthlyPlan(row: Row, names: PeopleNames): MonthlyPlanSummary {
@@ -132,6 +145,8 @@ function mapMonthlyPlan(row: Row, names: PeopleNames): MonthlyPlanSummary {
     decidedBySfe: row.decided_by_role === "sfe_manager",
     decisionNote: textOrNull(row.decision_note),
     updatedAt: String(row.updated_at),
+    dueOn: textOrNull(row.due_on),
+    submittedLate: row.submitted_late === true,
   };
 }
 
@@ -159,6 +174,16 @@ export type MonthlyPlannerView = {
   cairoToday: string;
   monthStart: string;
   monthLabel: string;
+  /**
+   * The last Thursday of the month before — when this month's plan is due (owner, 2026-09-26). Shown
+   * before the header exists too, so the deadline is on the screen from the moment he opens the month
+   * rather than appearing only once he has started. NOTHING refuses a plan after it: his ruling was
+   * that a late month is accepted and stamped, because a rep who cannot plan cannot work.
+   */
+  dueOn: string;
+  dueOnLabel: string;
+  /** The due date has passed and the month is still not sent. */
+  overdue: boolean;
   months: Array<{ monthStart: string; label: string; status: PhoenixCrmPlanStatus | null; statusLabel: string }>;
   readiness: TerritoryReadiness;
   /** Customers carried over from iReports360 and not validated yet. Information, never a refusal. */
@@ -302,6 +327,9 @@ export async function loadMonthlyPlanner(
 
   const plan = headerRow ? mapMonthlyPlan(headerRow, names) : null;
   const status = plan?.status ?? null;
+  // The header carries its own due date once it exists; before that the rule computes it, so the two
+  // can never show a rep two different Thursdays for the same month.
+  const dueOn = plan?.dueOn ?? monthlyPlanDueOn(monthStart);
   const viewerIsRep = canWriteAsRep(viewer, seat, isTest);
   const viewerIsReviewer = canReviewTerritory(viewer, seat, isTest);
   const monthOpen = months.includes(monthStart) && monthEndOf(monthStart) >= today;
@@ -320,6 +348,9 @@ export async function loadMonthlyPlanner(
     cairoToday: today,
     monthStart,
     monthLabel: formatPhoenixMonth(monthStart),
+    dueOn,
+    dueOnLabel: formatPhoenixLongDate(dueOn),
+    overdue: today > dueOn && (status === null || status === "draft" || status === "returned"),
     months: months.map((month) => {
       const monthStatus = monthStatusByStart.get(month) ?? null;
       return { monthStart: month, label: formatPhoenixMonth(month), status: monthStatus, statusLabel: monthlyPlanStatusLabel(monthStatus) };

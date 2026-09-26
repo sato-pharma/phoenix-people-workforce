@@ -34,16 +34,24 @@ import {
 } from "@/lib/phoenix-crm/entry-rules";
 import { checkVisitLocation, formatDistance } from "@/lib/phoenix-crm/geo";
 import { describeDayWindows, isUuid } from "@/lib/phoenix-crm/plan-rules";
-import { managerChain, resolveVisitParticipants } from "@/lib/phoenix-crm/scope";
+import { managerChain, resolveVisitParticipants, territoryReviewer } from "@/lib/phoenix-crm/scope";
 import { readTestFlag, territoryForRead, territoryForVisit, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, numberOrNull, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { judgeCapture } from "@/lib/phoenix-crm/server/location-integrity";
 import { ensureReferenceCustomers, loadMonthVisitCounts, loadTerritoryCustomers } from "@/lib/phoenix-crm/server/list";
+import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
 import { photoSlotIssuedAt } from "@/lib/phoenix-crm/server/photos";
 import { lineProductsByFamily, type LineProductFamily } from "@/lib/phoenix-crm/server/products";
 import { describeTerritory, seatTierTitle, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
 import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmVisitKind } from "@/lib/phoenix-crm/types";
+import {
+  isUnplannedVisitStatus,
+  unplannedFirstStatus,
+  unplannedVisitRepNote,
+  unplannedVisitStatusLabel,
+  type UnplannedVisitStatus,
+} from "@/lib/phoenix-crm/unplanned-rules";
 import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -96,13 +104,22 @@ export type VisitRow = {
   locationFlag: VisitLocationFlag;
   locationLabel: string;
   clockOff: boolean;
+  /**
+   * Off the plan, and where its approval has got to. Null on the ordinary planned visit.
+   *
+   * The rep sees this on his own day — deliberately. It is not the mock-location board, which is
+   * silent by owner's rule; this is his own visit telling him it is not counting yet and who it is
+   * with, which is the only way he can chase it.
+   */
+  unplanned: { status: UnplannedVisitStatus; statusLabel: string; note: string; clarification: string } | null;
 };
 
 const VISIT_COLUMNS =
   "id, visit_date, captured_at, customer_id, list_type, kind, rep_hr_id, manager_hr_id, senior_hr_id, entered_by_hr_id, products, " +
   "comment, pharmacy_name, product_availability, photo_path, voice_note_path, voice_note_seconds, " +
-  "accuracy_meters, distance_meters, location_flag, device_skew_minutes, " +
-  "customer:phoenix_crm_customers!customer_id(name)";
+  "accuracy_meters, distance_meters, location_flag, device_skew_minutes, is_unplanned, " +
+  "customer:phoenix_crm_customers!customer_id(name), " +
+  "unplanned:phoenix_crm_unplanned_visits!visit_id(status, clarification)";
 
 function visitKind(value: unknown): PhoenixCrmVisitKind {
   return value === "double" || value === "chain" ? value : "single";
@@ -110,6 +127,24 @@ function visitKind(value: unknown): PhoenixCrmVisitKind {
 
 function locationFlag(value: unknown): VisitLocationFlag {
   return value === "far" || value === "weak_gps" || value === "no_place" ? value : "ok";
+}
+
+/**
+ * The approval row PostgREST embedded beside the visit. It is one row through a primary-key foreign
+ * key, but PostgREST returns an object for some embeds and a one-element array for others, so both
+ * shapes are read rather than assumed.
+ */
+function visitUnplanned(row: Row): VisitRow["unplanned"] {
+  const embedded = Array.isArray(row.unplanned) ? row.unplanned[0] : row.unplanned;
+  const entry = record(embedded);
+  const status = entry.status;
+  if (!isUnplannedVisitStatus(status)) return null;
+  return {
+    status,
+    statusLabel: unplannedVisitStatusLabel(status),
+    note: unplannedVisitRepNote(status),
+    clarification: textOrNull(entry.clarification) ?? "",
+  };
 }
 
 function visitPeople(rows: ReadonlyArray<Row>): Array<string | null> {
@@ -152,6 +187,7 @@ function mapVisitRow(row: Row, names: PeopleNames): VisitRow {
     locationFlag: flag,
     locationLabel: visitLocationLabel(flag, numberOrNull(row.distance_meters), numberOrNull(row.accuracy_meters)),
     clockOff: skew !== null && Math.abs(skew) > DEVICE_CLOCK_TOLERANCE_MINUTES,
+    unplanned: row.is_unplanned === true ? visitUnplanned(row) : null,
   };
 }
 
@@ -203,6 +239,14 @@ export type VisitCustomerOption = {
   listType: PhoenixCrmListType;
   grade: PhoenixCrmGrade | null;
   speciality: string | null;
+  /**
+   * The brick his first place sits in, so the picker can group and colour a day geographically — the
+   * same eight hues, in the same order, as the List tab (brick-tints.ts). The List tab has read this
+   * from the start; the visit form used to drop it here, which is why the one screen a rep uses every
+   * day was the one with no map in it.
+   */
+  brickId: string | null;
+  brickName: string | null;
   places: Array<{
     placeId: string;
     label: string | null;
@@ -263,6 +307,20 @@ export type VisitFormView = {
   blockedReason: string | null;
 };
 
+/**
+ * The customers planned for a day on a plan that has GONE FOR REVIEW — the screen's twin of the test
+ * phoenix_crm_save_visit runs.
+ *
+ * The status filter is the whole point and must not be dropped for looking redundant. A draft plan is
+ * the rep's own to edit and today is an editable day, so counting a plain plan row would let him place
+ * the doctor at the door, save seconds later and never be off plan — the approval would never happen
+ * and the rule would be theatre. A RETURNED plan is his to edit too, so it is not authority either.
+ *
+ * The database's version is stricter still: it asks whether the plan had reached review BEFORE this
+ * visit's server-issued `captured_at`, which a form being drawn cannot know yet. The two disagree only
+ * when the rep reopens his plan between opening the form and saving, and then the save comes back
+ * asking him for a reason — the right answer, not a defect.
+ */
 async function plannedCustomerIds(seatId: string, isTest: boolean, date: string): Promise<Set<string>> {
   const supabase = getSupabaseAdmin();
   const { data: plan, error } = await supabase
@@ -271,6 +329,7 @@ async function plannedCustomerIds(seatId: string, isTest: boolean, date: string)
     .eq("seat_id", seatId)
     .eq("is_test", isTest)
     .eq("week_start", fieldWeekStart(date))
+    .in("status", ["submitted", "approved"])
     .maybeSingle();
   throwIfError(error);
   if (!plan) return new Set();
@@ -332,13 +391,20 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
     const customerId = String(row.id);
     const listType: PhoenixCrmListType = row.list_type === "AM" ? "AM" : "PM";
     const grade = parseGrade(row.grade);
+    const customerPlaces = placesByCustomer.get(customerId) ?? [];
+    // His first place's brick — a customer with several places is grouped by the one he was captured
+    // at first, which is how the List tab groups him too. A customer with no place yet has no brick,
+    // and the picker shows him under "Not mapped yet" rather than guessing one.
+    const [firstPlace] = customerPlaces;
     return {
       customerId,
       name: String(row.name),
       listType,
       grade,
       speciality: textOrNull(row.speciality),
-      places: (placesByCustomer.get(customerId) ?? []).map((place) => ({
+      brickId: firstPlace?.brickId ?? null,
+      brickName: firstPlace?.brickName ?? null,
+      places: customerPlaces.map((place) => ({
         placeId: place.placeId,
         label: place.label,
         address: place.address,
@@ -356,7 +422,8 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
       referenceContactCrmId: numberOrNull(row.reference_contact_crm_id),
     };
   });
-  // Today's planned customers first, then the rest by name.
+  // Today's planned customers first, then the rest by name. The picker groups by brick on top of this,
+  // so within a brick the planned doctors still lead.
   options.sort((left, right) => Number(right.plannedToday) - Number(left.plannedToday) || left.name.localeCompare(right.name));
 
   let blockedReason: string | null = null;
@@ -396,6 +463,9 @@ export type SavedVisit = {
   duplicate: boolean;
   locationFlag: VisitLocationFlag;
   locationLabel: string;
+  /** The server's verdict, not the rep's choice — it is what he is told after the save. */
+  isUnplanned: boolean;
+  unplannedNote: string | null;
 };
 
 export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown): Promise<SavedVisit> {
@@ -433,6 +503,7 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown): Promise
     if (allowedProducts.has(product)) productAvailability[product] = answer;
   }
 
+  const reviewer = territoryReviewer(viewer.org, seat.seatId);
   const supabase = getSupabaseAdmin();
   const [placesResult, issuedAt] = await Promise.all([
     supabase
@@ -483,6 +554,14 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown): Promise
       voice_note_path: visit.voiceNotePath,
       voice_note_seconds: visit.voiceNoteSeconds,
       voice_note_bytes: visit.voiceNoteBytes,
+      // Off the plan, if that is what it turns out to be. The reason is sent whatever the rep chose —
+      // the database asks for it only when its OWN test says the customer was not on a sent plan, so a
+      // rep who chose "planned" for a doctor who was not planned is refused here and shown the box,
+      // rather than quietly filed as planned. Where the approval starts is resolved from the
+      // organogram, never from the phone: a territory with no manager seat above it begins at SFE.
+      unplanned_reason: visit.unplannedReason,
+      unplanned_first_status: unplannedFirstStatus(reviewer !== null),
+      reviewer_hr_id: reviewer?.hrId ?? null,
       lat: visit.lat,
       lon: visit.lon,
       accuracy_meters: visit.accuracyMeters,
@@ -512,6 +591,25 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown): Promise
     }
   }
 
+  const isUnplanned = result.is_unplanned === true;
+  // An off-plan visit is the ONE visit that tells anybody (notifications.ts): it counts in nothing
+  // until it is decided, so the manager who must decide it is told. A repeat save is skipped — the
+  // first one already raised it, and the notice's idempotency key would drop the second anyway.
+  if (isUnplanned && result.duplicate !== true) {
+    await notifyPhoenixCrm(
+      {
+        kind: "unplanned_visit_raised",
+        org: viewer.org,
+        seat,
+        visitId,
+        repHrId: participants.value.repHrId ?? viewer.hrId,
+        customerName: textOrNull(result.customer_name) ?? "a customer",
+        visitDate: String(result.visit_date),
+        clarification: visit.unplannedReason ?? "",
+      },
+      isTest,
+    );
+  }
   return {
     visitId: String(result.id),
     visitDate: String(result.visit_date),
@@ -520,5 +618,7 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown): Promise
     duplicate: result.duplicate === true,
     locationFlag: flag,
     locationLabel: visitLocationLabel(flag, distance, visit.accuracyMeters),
+    isUnplanned,
+    unplannedNote: isUnplanned ? unplannedVisitRepNote(unplannedFirstStatus(reviewer !== null)) : null,
   };
 }

@@ -22,8 +22,10 @@ import { useId, useRef, useState } from "react";
 import { crmUrl, useCrmGet } from "@/components/phoenix-crm/api";
 import { cairoDayOf, cairoStamp, countText, dayLabel, dayLabelWithYear, plural, weekLabel } from "@/components/phoenix-crm/format";
 import { matchesWords, PENDING_PILL } from "@/components/phoenix-crm/labels";
+import { MonthlyPlanTab } from "@/components/phoenix-crm/month-screen";
 import { PlanTab } from "@/components/phoenix-crm/plan-tab";
 import { RequestCard } from "@/components/phoenix-crm/request-card";
+import { UnplannedVisitCard } from "@/components/phoenix-crm/unplanned-visit-card";
 import {
   CrmBlock,
   CrmButton,
@@ -50,14 +52,27 @@ import {
 } from "@/components/phoenix-crm/ui";
 import { fieldWeekStart, plannableWeeks } from "@/lib/phoenix-crm/calendar";
 import type { PhoenixCrmPlanStatus } from "@/lib/phoenix-crm/types";
-import type { PlanReviewRow, PlanReviewView, SeatReadiness, TeamRequest, TeamTerritoryRow, TeamView, TerritorySummary } from "@/lib/phoenix-crm/view-types";
+import type {
+  MonthlyReviewRow,
+  MonthlyReviewView,
+  PlanReviewRow,
+  PlanReviewView,
+  SeatReadiness,
+  TeamRequest,
+  TeamTerritoryRow,
+  TeamUnplannedVisit,
+  TeamView,
+  TerritorySummary,
+} from "@/lib/phoenix-crm/view-types";
 import { cn } from "@/lib/utils";
 
-type TeamSection = "plans" | "requests" | "lists";
+type TeamSection = "plans" | "months" | "unplanned" | "requests" | "lists";
 type ReviewFilter = "waiting" | "not_sent" | "approved" | "all";
 type ListFilter = "not_ready" | "ready" | "vacant" | "all";
 type TeamNotice = { tone: NoteTone; title: string; message?: string | null };
 type OpenPlan = { seatId: string; weekStart: string };
+/** A rep’s month opened from the review board — read only, with Approve and Return on it. */
+type OpenMonth = { seatId: string; territoryName: string };
 
 const PAGE = 25;
 
@@ -209,7 +224,10 @@ export function TeamTab({
   const [weekStart, setWeekStart] = useState<string | null>(null);
   const reviews = useCrmGet<PlanReviewView>(crmUrl("/api/phoenix-crm/plans/reviews", { test, weekStart }), "reviews");
   const [section, setSection] = useState<TeamSection | null>(null);
+  const [month, setMonth] = useState<string | null>(null);
+  const months = useCrmGet<MonthlyReviewView>(crmUrl("/api/phoenix-crm/monthly-plans/reviews", { test, month }), "months");
   const [openPlan, setOpenPlan] = useState<OpenPlan | null>(null);
+  const [openMonth, setOpenMonth] = useState<OpenMonth | null>(null);
   const [notice, setNotice] = useState<TeamNotice | null>(null);
   const topRef = useRef<HTMLDivElement>(null);
 
@@ -221,6 +239,7 @@ export function TeamTab({
   function refresh() {
     team.reload();
     reviews.reload();
+    months.reload();
     onChanged?.();
   }
 
@@ -248,6 +267,25 @@ export function TeamTab({
     scrollToTop();
   }
 
+  function openMonthReview(seatId: string, territoryName: string) {
+    setNotice(null);
+    setOpenMonth({ seatId, territoryName });
+    scrollToTop();
+  }
+
+  function closeMonth() {
+    onDirtyChange?.(false);
+    setOpenMonth(null);
+    months.reload();
+    scrollToTop();
+  }
+
+  function chooseMonth(next: string) {
+    setSection("months");
+    setNotice(null);
+    setMonth(next.slice(0, 7));
+  }
+
   function requestDecided(message: string) {
     setNotice({ tone: "info", title: message });
     refresh();
@@ -262,13 +300,37 @@ export function TeamTab({
   const summary = team.data?.summary ?? null;
   const settled = (team.data !== null || !team.loading) && (reviews.data !== null || !reviews.loading);
   const current: TeamSection | null =
-    section ?? (settled ? ((plansWaiting ?? 0) === 0 && (summary?.waitingForYou ?? 0) > 0 ? "requests" : "plans") : null);
+    section ??
+    (settled
+      ? (plansWaiting ?? 0) > 0
+        ? "plans"
+        : (summary?.unplannedWaitingForYou ?? 0) > 0
+          ? "unplanned"
+          : (summary?.waitingForYou ?? 0) > 0
+            ? "requests"
+            : "plans"
+      : null);
 
+  const monthsWaiting = months.data ? months.data.rows.filter((row) => row.canApprove).length : null;
   const sectionOptions: Array<CrmChoiceOption<TeamSection>> = [
     {
       value: "plans",
       label: "Weekly plans",
       note: plansWaiting === null ? undefined : plansWaiting > 0 ? `${countText(plansWaiting)} waiting for you` : "Nothing waiting for you",
+    },
+    {
+      value: "months",
+      label: "Monthly plans",
+      note: monthsWaiting === null ? undefined : monthsWaiting > 0 ? `${countText(monthsWaiting)} waiting for you` : "Nothing waiting for you",
+    },
+    {
+      value: "unplanned",
+      label: "Off-plan visits",
+      note: summary
+        ? summary.unplannedWaitingForYou > 0
+          ? `${countText(summary.unplannedWaitingForYou)} waiting for you`
+          : `${countText(summary.unplannedWaiting)} waiting`
+        : undefined,
     },
     {
       value: "requests",
@@ -290,7 +352,17 @@ export function TeamTab({
 
   return (
     <div className="min-w-0 scroll-mt-24" ref={topRef}>
-      {openPlan ? (
+      {openMonth ? (
+        <MonthlyPlanTab
+          key={openMonth.seatId}
+          onBack={{ label: "Team", onBack: closeMonth }}
+          onChanged={refresh}
+          onDirtyChange={onDirtyChange}
+          onOpenList={onOpenList ? () => onOpenList(openMonth.seatId) : undefined}
+          seatId={openMonth.seatId}
+          test={test}
+        />
+      ) : openPlan ? (
         <PlanTab
           initialWeekStart={openPlan.weekStart}
           key={`${openPlan.seatId}|${openPlan.weekStart}`}
@@ -329,6 +401,16 @@ export function TeamTab({
                     note="Sent by the rep for your approval"
                     tone={(plansWaiting ?? 0) > 0 ? "warn" : "neutral"}
                     value={countText(plansWaiting)}
+                  />
+                  <CrmStat
+                    label="Off-plan visits waiting for you"
+                    note={
+                      summary.unplannedWaiting > summary.unplannedWaitingForYou
+                        ? `${countText(summary.unplannedWaiting)} waiting in all`
+                        : "They count in nothing until they are approved"
+                    }
+                    tone={summary.unplannedWaitingForYou > 0 ? "warn" : "neutral"}
+                    value={countText(summary.unplannedWaitingForYou)}
                   />
                   <CrmStat
                     label="Requests waiting for you"
@@ -378,6 +460,21 @@ export function TeamTab({
               view={reviews.data}
               weeks={weeks}
             />
+          ) : null}
+
+          {current === "months" ? (
+            <MonthsSection
+              error={months.error}
+              onMonth={chooseMonth}
+              onOpen={(row) => openMonthReview(row.territory.seatId, row.territory.name)}
+              onRetry={months.reload}
+              test={test}
+              view={months.data}
+            />
+          ) : null}
+
+          {current === "unplanned" && team.data ? (
+            <UnplannedSection idPrefix={idPrefix} onChanged={requestDecided} team={team.data} test={test} />
           ) : null}
 
           {current === "requests" && team.data ? <RequestsSection idPrefix={idPrefix} onChanged={requestDecided} team={team.data} test={test} /> : null}
@@ -595,6 +692,235 @@ function PlansSection({
           <CrmShowMore left={rows.length - limit} onMore={() => setLimit((value) => value + PAGE)} page={PAGE} />
         </div>
       )}
+    </>
+  );
+}
+
+/**
+ * The MONTHS a rep has sent for review — the screen that was missing.
+ *
+ * Every other half of monthly approval already shipped: the rule, the RPC, the API and the Approve and
+ * Return buttons on the month itself. What did not exist was a way for a real manager to REACH a rep’s
+ * month: the Plan tab offers a viewer only his OWN territory, so `canApprove` was true and unreachable,
+ * and only the Super Admin, on a test plan, could press it. This opens the same month screen read-only,
+ * exactly as the weekly board opens a week.
+ */
+function MonthsSection({
+  error,
+  onMonth,
+  onOpen,
+  onRetry,
+  test,
+  view,
+}: {
+  error: string | null;
+  onMonth: (monthStart: string) => void;
+  onOpen: (row: MonthlyReviewRow) => void;
+  onRetry: () => void;
+  test: boolean;
+  view: MonthlyReviewView | null;
+}) {
+  if (!view) {
+    return (
+      <div className="border-t border-slate-100">
+        {error ? <CrmLoadError message={error} onRetry={onRetry} /> : <CrmLoading label="Loading the monthly plans" />}
+      </div>
+    );
+  }
+
+  const waiting = view.rows.filter((row) => row.canApprove);
+  const rest = view.rows.filter((row) => !row.canApprove);
+
+  function card(row: MonthlyReviewRow) {
+    const status = row.plan?.status ?? "none";
+    const late = row.plan?.submittedLate === true;
+    return (
+      <CrmCard
+        accent={STATUS_ACCENT[status]}
+        key={row.territory.seatId}
+        meta={[row.territory.name, repText(row.territory)].filter(Boolean).join(" · ")}
+        status={
+          <>
+            <CrmPill tone={STATUS_TONE[status]}>{row.plan?.statusLabel ?? "Not started"}</CrmPill>
+            {/* His ruling: a late month is accepted and STAMPED, never blocked. The stamp is the
+                whole enforcement, so it has to be visible where he reviews. */}
+            {late ? <CrmPill tone="warn">Sent late</CrmPill> : null}
+          </>
+        }
+        title={row.territory.name}
+      >
+        <div className="grid min-w-0 gap-1.5 text-sm leading-6">
+          <p className="break-words font-medium text-slate-700">
+            {countText(row.doctors)} PM · {countText(row.accounts)} AM placed
+            {row.exceptions > 0 ? ` · ${countText(row.exceptions)} on a day the customer does not receive` : ""}
+          </p>
+          {row.plan?.dueOn ? (
+            <p className="break-words text-xs font-semibold text-slate-500">
+              Due {dayLabelWithYear(row.plan.dueOn)}
+              {row.plan.submittedAt ? ` · sent ${cairoStamp(row.plan.submittedAt)}` : ""}
+            </p>
+          ) : null}
+          {row.farApartDays.length > 0 ? (
+            <p className="break-words text-xs font-semibold text-amber-800">
+              {plural(row.farApartDays.length, "day", "days")} with customers far apart.
+            </p>
+          ) : null}
+          <div>
+            <CrmButton onClick={() => onOpen(row)} size="sm" variant={row.canApprove ? "primary" : undefined}>
+              {row.canApprove ? "Review the month" : "Open the month"}
+            </CrmButton>
+          </div>
+        </div>
+      </CrmCard>
+    );
+  }
+
+  return (
+    <>
+      <CrmBlock className="border-t border-slate-100" title="Month">
+        <CrmChoice
+          columns={3}
+          label="Month"
+          onChange={onMonth}
+          options={view.months.map((entry) => ({
+            value: entry.monthStart,
+            label: entry.label,
+            note: entry.waiting > 0 ? `${countText(entry.waiting)} waiting` : undefined,
+          }))}
+          value={view.monthStart}
+        />
+      </CrmBlock>
+
+      {view.rows.length === 0 ? (
+        <div className="border-t border-slate-100">
+          <CrmEmpty
+            message={test ? "Test monthly plans from any territory show here." : "The monthly plans of the territories beneath you show here."}
+            title="No monthly plan this month"
+          />
+        </div>
+      ) : null}
+
+      {waiting.length > 0 ? (
+        <>
+          <CrmBlock className="border-t border-slate-100" title={`Waiting for your decision · ${countText(waiting.length)}`}>
+            <p className="break-words text-sm font-medium leading-6 text-slate-600">
+              Open the month to read it, then approve it or return it with a note. Approving the month approves its weeks with it.
+            </p>
+          </CrmBlock>
+          <div className="divide-y divide-slate-100 border-t border-slate-100">{waiting.map(card)}</div>
+        </>
+      ) : null}
+
+      {rest.length > 0 ? (
+        <>
+          <CrmBlock className="border-t border-slate-100" title={`The rest · ${countText(rest.length)}`}>
+            <p className="break-words text-sm font-medium leading-6 text-slate-600">
+              {waiting.length === 0 ? "Nothing waits for your decision. " : ""}
+              Months not sent yet, already decided, or another manager’s.
+            </p>
+          </CrmBlock>
+          <div className="divide-y divide-slate-100 border-t border-slate-100">{rest.map(card)}</div>
+        </>
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * Off-plan visits waiting for a decision. Two steps in order (owner, 2026-09-26): the territory’s own
+ * manager, then the SFE. Everyone else in scope reads them and decides nothing — scope is sight, not
+ * authority — which is why the split below is by `canDecide` and not by territory.
+ */
+function UnplannedSection({
+  idPrefix,
+  onChanged,
+  team,
+  test,
+}: {
+  idPrefix: string;
+  onChanged: (message: string) => void;
+  team: TeamView;
+  test: boolean;
+}) {
+  const [query, setQuery] = useState("");
+  const [limit, setLimit] = useState(PAGE);
+  const [othersLimit, setOthersLimit] = useState(PAGE);
+
+  if (team.unplannedVisits.length === 0) {
+    return (
+      <div className="border-t border-slate-100">
+        <CrmEmpty
+          message={
+            test
+              ? "Test off-plan visits show here while they wait for a decision."
+              : "A visit to a customer who was not on the rep’s sent plan for that day shows here, with what he wrote, until it is decided. Until then it counts in nothing."
+          }
+          title="No off-plan visit waiting"
+        />
+      </div>
+    );
+  }
+
+  const searchable = team.unplannedVisits.length > SEARCH_FROM;
+  const visits = searchable
+    ? team.unplannedVisits.filter((visit) => matchesWords(query, [visit.customerName, visit.territoryName, visit.repName, visit.clarification]))
+    : team.unplannedVisits;
+  const forYou = visits.filter((visit) => visit.canDecide);
+  const others = visits.filter((visit) => !visit.canDecide);
+
+  function card(visit: TeamUnplannedVisit) {
+    return <UnplannedVisitCard key={visit.visitId} onChanged={onChanged} visit={visit} />;
+  }
+
+  return (
+    <>
+      {searchable ? (
+        <CrmBlock className="border-t border-slate-100">
+          <CrmSearchField
+            id={`${idPrefix}-unplanned-search`}
+            label="Find an off-plan visit"
+            onChange={(next) => {
+              setQuery(next);
+              setLimit(PAGE);
+              setOthersLimit(PAGE);
+            }}
+            placeholder="Customer, territory, rep or reason"
+            value={query}
+          />
+        </CrmBlock>
+      ) : null}
+
+      {visits.length === 0 ? (
+        <div className="border-t border-slate-100">
+          <CrmEmpty message="Clear the search to see every off-plan visit." title="No off-plan visit matches" />
+        </div>
+      ) : null}
+
+      {forYou.length > 0 ? (
+        <>
+          <CrmBlock className="border-t border-slate-100" title={`Waiting for your decision · ${countText(forYou.length)}`}>
+            <p className="break-words text-sm font-medium leading-6 text-slate-600">
+              The longest waiting first. Look at the photo and what the rep wrote, then approve it or refuse it with a note he reads. It counts in
+              nothing until both steps approve it.
+            </p>
+          </CrmBlock>
+          <div className="divide-y divide-slate-100 border-t border-slate-100">{forYou.slice(0, limit).map(card)}</div>
+          <CrmShowMore left={forYou.length - limit} onMore={() => setLimit((value) => value + PAGE)} page={PAGE} />
+        </>
+      ) : null}
+
+      {others.length > 0 ? (
+        <>
+          <CrmBlock className="border-t border-slate-100" title={`Waiting for somebody else · ${countText(others.length)}`}>
+            <p className="break-words text-sm font-medium leading-6 text-slate-600">
+              {forYou.length === 0 && visits.length === team.unplannedVisits.length ? "Nothing waits for your decision. " : ""}
+              A visit sits with the territory’s own manager first, then with SFE.
+            </p>
+          </CrmBlock>
+          <div className="divide-y divide-slate-100 border-t border-slate-100">{others.slice(0, othersLimit).map(card)}</div>
+          <CrmShowMore left={others.length - othersLimit} onMore={() => setOthersLimit((value) => value + PAGE)} page={PAGE} />
+        </>
+      ) : null}
     </>
   );
 }
