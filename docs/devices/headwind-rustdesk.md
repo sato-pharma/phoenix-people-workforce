@@ -952,14 +952,32 @@ tests were green throughout, because every fixture repeated the guess.** Fixed b
 `deviceRecordsFromSearch`, pinned in `tests/headwind-bridge.test.ts` with the live envelope.
 
 🔴 **The enrolment QR hands the tablets `http://mdm.satopharma.com`, and Railway answers every http
-request — GET *and* POST — with a `301` to https.** The base URL is baked into the database at install
-from `PROTOCOL://BASE_DOMAIN` (`PROTOCOL=http` is deliberate on Railway, where TLS ends at the edge —
-§4.2), it is on the **configuration** record, and **the console exposes no field for it**. A redirected
-GET is harmless; the standard Android HTTP client turns a POST across a `301` into a bodyless GET, which
-is how the tablet's own reports — model, IMEI, app list, **location** — could go missing while the
-tablet still looks enrolled. Changing it is one field over the API
-(`PUT /rest/private/configurations`, `baseUrl`), plus RustDesk's own `urlArm64`. **Not applied: a write
-to the shared MDM server is the owner's to release.**
+request — GET *and* POST — with a `301` to https.** The base URL comes from the install-time
+`PROTOCOL://BASE_DOMAIN` (`PROTOCOL=http` is deliberate on Railway, where TLS ends at the edge — §4.2).
+A redirected GET is harmless; the standard Android HTTP client turns a POST across a `301` into a
+**bodyless GET**, which is how a tablet's own reports — model, IMEI, app list, **location** — can go
+missing while the tablet still looks perfectly enrolled.
+
+🔴 **`baseUrl` is NOT writable, and `PUT /rest/private/configurations` says `OK` while changing
+nothing.** Tried twice on 2026-09-26, both times `HTTP 200 status=OK`, both times the value came back
+`http://…`: the server recomputes it on read, and the same goes for an application's absolute
+`urlArm64` (RustDesk's link was PUT to https and came back http). **A PUT that reports success and
+changes nothing is the trap here** — read the value back, never trust the `OK`. The stored value is out
+of reach from the laptop as well, deliberately: the Headwind Postgres has **no public endpoint and must
+not get one**, and `railway ssh` into the service is refused by this machine's permission classifier.
+
+✅ **What IS set, and what it does: `newServerUrl = https://mdm.satopharma.com` on configuration 3**
+(owner-released 2026-09-26, "set the headwind base url to https"). That field is the server's own
+"I have moved" channel: a tablet enrols over http — every step of enrolment is a GET, so the redirect
+is harmless — and at its first sync it is told the server's address is the https one, after which
+**everything it sends, POSTs included, goes straight there with no redirect in the way**. It points at
+the same server under the same name, so nothing migrates but the scheme. Verified after the write:
+`newServerUrl` https, `baseUrl` still http (expected), and `gps`, `kioskMode`, `appPermissions`, the QR
+key and the RustDesk link with both its run flags all unchanged. 🔴 **Read the first tablet's own
+reports on the pilot** — model, IMEI and a position are the proof that the switch happened; if they are
+missing, the agent ignored the field and the permanent fix is to write `base.url` as https in
+`hmdm.properties` from `infra/headwind-phoenix-actions`, which rebuilds and restarts the fleet's server
+and is therefore its own decision.
 
 🔴 **The field the RustDesk ID belongs in cannot be shown in the console.** `custom1` — which Phoenix
 reads and displays as *Remote screen ID* — only appears in the device dialog when
