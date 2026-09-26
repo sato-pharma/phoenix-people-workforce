@@ -1559,6 +1559,7 @@ import { runPhoenixCrmSamplesTests } from "./phoenix-crm-samples.test.ts";
 import { runPhoenixCrmVisitDwellTests } from "./phoenix-crm-visit-dwell.test.ts";
 import { runPhoenixCrmExceptionsTests } from "./phoenix-crm-exceptions.test.ts";
 import { runPhoenixCrmDailyDigestTests } from "./phoenix-crm-daily-digest.test.ts";
+import { runPhoenixCrmReportComparisonTests } from "./phoenix-crm-report-comparison.test.ts";
 import { runPhoenixCrmReportsExportTests } from "./phoenix-crm-reports-export.test.ts";
 import { runPhoenixCrmBrickCoverageReportTests } from "./phoenix-crm-brick-coverage-report.test.ts";
 import { runPhoenixCrmMobileManagerTests } from "./phoenix-crm-mobile-manager.test.ts";
@@ -5226,6 +5227,11 @@ await runTest(
 await runTest(
   "Phoenix CRM's reports pack is one workbook whose SHEETS are the access control (C1 — owner's plan, Phase 4: a section the viewer may not read is never loaded and writes NO SHEET, because an empty \"Where the visit was saved\" tab tells a medical rep both that the report exists and that he is not trusted with it — the disclosure Golden Rule #1 forbids, only in a file he keeps; the sheets are read back out of the real .xlsx buffer rather than asserted against the input, so a builder that wrote nothing cannot pass; a viewer with nothing in scope still gets a valid file that is the cover alone; AM and PM keep the same number of columns in every sheet and are never joined; the brick caveat is written INTO the workbook, because a saved file leaves the building without the screen it sat beside; it wears the house identity and never falls back to the Phoenix kit; the rate limit runs before any section is loaded; and there is exactly one blob download in the client)",
   runPhoenixCrmReportsExportTests,
+);
+
+await runTest(
+  "Phoenix CRM reads a figure against something, without turning it into a scoreboard (C3 — owner's plan, Phase 4: \"the period before\" is the same LENGTH of days and never the previous calendar MONTH, because a manager reads the 1st to today and eleven days against a whole August shows every territory collapsing; a rise from a baseline of zero has NO percentage, since +100% off nothing is invented and an invented number costs the real ones their credibility; peer mode is an AVERAGE and never a ranking — every territory is read against the SAME district figure, no name, no rank, no position out of N, and the screen may not re-sort by it; the peer set is the viewer's WHOLE scope, because narrowing it to the filter compares a territory with itself and answers +0% for ever; a territory with nothing still divides the average; the headline figure is a COUNT in all three sections, since the difference between two percentages is percentage POINTS; it is manager-only and refused in the SERVICE, not by hiding the control; and it is a second LINE inside the cell, never a second column, which on a phone would be the horizontal scroll the fits-the-screen rule bans)",
+  runPhoenixCrmReportComparisonTests,
 );
 
 await runTest(

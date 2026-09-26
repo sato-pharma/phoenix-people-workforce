@@ -51,10 +51,19 @@ import {
 } from "@/components/phoenix-crm/ui";
 import { fieldWeekStart, isIsoDay, monthStartOf, weekdayOfIsoDay } from "@/lib/phoenix-crm/calendar";
 import type { BrickCoverageStatus } from "@/lib/phoenix-crm/brick-report";
-import { daysInPeriod, REPORT_MAX_DAYS, type CoverageCell, type PlanCounts, type VisitCounts } from "@/lib/phoenix-crm/report-rules";
+import {
+  daysInPeriod,
+  REPORT_MAX_DAYS,
+  type ComparisonMode,
+  type CoverageCell,
+  type Delta,
+  type PlanCounts,
+  type VisitCounts,
+} from "@/lib/phoenix-crm/report-rules";
 import type {
   BrickCoverageView,
   CoverageReportView,
+  ReportComparison,
   ExceptionsView,
   ManagerReportEntry,
   ManagerReportRow,
@@ -450,11 +459,50 @@ function visitDayLines(row: RepVisitRow, period: Period, includeTest: boolean, c
   });
 }
 
-function visitCell(counts: VisitCounts | null, includeTest: boolean, canSeeLocations: boolean) {
+// ── Comparison (C3) ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The second LINE on a cell — never a second column.
+ *
+ * The fits-the-screen rule: a comparison that added a column to every figure would double the width
+ * of three tables that already fill a desktop, and on a phone it would push them into the horizontal
+ * scroll the rule bans outright. So the cell keeps its one column and gains a line under it.
+ *
+ * 🔴 **A rise from a baseline of zero has no percentage.** `changePct` is null there and this prints
+ * the change alone: "+3 vs 0" is true, "+100%" is invented, and a board that shouts a number it made
+ * up is a board a manager stops believing.
+ */
+function DeltaLine({ value }: { value: Delta | undefined }) {
+  if (!value || value.baseline === null || value.change === null) return null;
+  const tone = value.direction === "up" ? "text-emerald-700" : value.direction === "down" ? "text-rose-700" : "text-slate-500";
+  const sign = value.change > 0 ? "+" : "";
+  const percent = value.changePct === null ? null : `${value.changePct > 0 ? "+" : ""}${value.changePct}%`;
+  return (
+    <p className={cn("mt-0.5 break-words text-xs font-semibold", tone)}>
+      {`vs ${countText(value.baseline)} · ${sign}${countText(value.change)}${percent ? ` · ${percent}` : ""}`}
+    </p>
+  );
+}
+
+/** The same line inside a mobile card's fact list, where a <p> would break the layout. */
+function deltaFact(value: Delta | undefined): ReactNode {
+  if (!value || value.baseline === null || value.change === null) return null;
+  const sign = value.change > 0 ? "+" : "";
+  const percent = value.changePct === null ? null : `${value.changePct > 0 ? "+" : ""}${value.changePct}%`;
+  return <span className="block font-semibold text-slate-500">{`vs ${countText(value.baseline)} · ${sign}${countText(value.change)}${percent ? ` · ${percent}` : ""}`}</span>;
+}
+
+/** A section's comparison, indexed by territory, so a row can find its own baseline in one lookup. */
+function deltasBySeat(comparison: ReportComparison | null): Map<string, { am: Delta; pm: Delta }> {
+  return new Map((comparison?.bySeat ?? []).map((entry) => [entry.seatId, { am: entry.am, pm: entry.pm }]));
+}
+
+function visitCell(counts: VisitCounts | null, includeTest: boolean, canSeeLocations: boolean, change?: Delta) {
   if (!counts || counts.visits === 0) {
     return (
       <td className={crmTdClassName}>
         <p className="text-slate-400">No visits</p>
+        <DeltaLine value={change} />
       </td>
     );
   }
@@ -463,6 +511,7 @@ function visitCell(counts: VisitCounts | null, includeTest: boolean, canSeeLocat
     <td className={crmTdClassName}>
       <p className="font-black text-slate-950">{plural(counts.visits, "visit", "visits")}</p>
       {detail ? <p className="mt-0.5 text-xs text-slate-500">{detail}</p> : null}
+      <DeltaLine value={change} />
     </td>
   );
 }
@@ -485,6 +534,7 @@ function VisitsSection({
   if (!report) return <SectionWaiting error={resource.error} label="Counting the visits" onRetry={resource.reload} />;
 
   const { AM: am, PM: pm } = report.totals;
+  const changes = deltasBySeat(report.comparison);
   const repRows = report.rows.filter((row) => row.repHrId !== null);
   const reps = new Set(repRows.map((row) => row.repHrId)).size;
   const repDays = repRows.reduce((sum, row) => sum + row.visitDays, 0);
@@ -505,8 +555,8 @@ function VisitsSection({
       ) : null}
       <CrmBlock>
         <CrmStatGrid>
-          <CrmStat label="AM visits" note={kindsNote(am, "No AM visited")} value={countText(am.visits)} />
-          <CrmStat label="PM visits" note={kindsNote(pm, "No PM visited")} value={countText(pm.visits)} />
+          <CrmStat label="AM visits" note={<>{kindsNote(am, "No AM visited")}{deltaFact(report.comparison?.totals.AM)}</>} value={countText(am.visits)} />
+          <CrmStat label="PM visits" note={<>{kindsNote(pm, "No PM visited")}{deltaFact(report.comparison?.totals.PM)}</>} value={countText(pm.visits)} />
           <CrmStat label="Reps who visited" note={periodText(report.period)} value={countText(reps)} />
           <CrmStat label="Rep days with visits" note="Each rep's days with a visit, added up" value={countText(repDays)} />
         </CrmStatGrid>
@@ -561,8 +611,8 @@ function VisitsSection({
               <p className="mt-0.5 text-xs text-slate-500">{line.repName}</p>
             </td>
             {oneDay ? null : <td className={crmTdClassName}>{line.row ? plural(line.row.visitDays, "day", "days") : "—"}</td>}
-            {visitCell(line.row?.pm ?? null, report.includeTest, canSeeLocations)}
-            {visitCell(line.row?.am ?? null, report.includeTest, canSeeLocations)}
+            {visitCell(line.row?.pm ?? null, report.includeTest, canSeeLocations, changes.get(line.row?.seatId ?? "")?.pm)}
+            {visitCell(line.row?.am ?? null, report.includeTest, canSeeLocations, changes.get(line.row?.seatId ?? "")?.am)}
             {oneDay ? null : <td className={crmTdClassName}>{line.row ? <DaysToggle onToggle={onToggle} open={open} /> : null}</td>}
           </>
         )}
@@ -622,12 +672,13 @@ function planDetailText(cell: PlanCell): string | null {
   return parts.length > 0 ? parts.join(" · ") : null;
 }
 
-function planCell(cell: PlanCell) {
+function planCell(cell: PlanCell, change?: Delta) {
   const detail = planDetailText(cell);
   return (
     <td className={crmTdClassName}>
       <p className={cell.planned > 0 ? "font-black text-slate-950" : "text-slate-400"}>{planMainText(cell)}</p>
       {detail ? <p className="mt-0.5 text-xs text-slate-500">{detail}</p> : null}
+      <DeltaLine value={change} />
     </td>
   );
 }
@@ -676,11 +727,17 @@ function PlanSection({
   if (!report) return <SectionWaiting error={resource.error} label="Matching the plans with the visits" onRetry={resource.reload} />;
 
   const { AM: am, PM: pm } = report.totals;
+  const changes = deltasBySeat(report.comparison);
   const oneDay = report.period.from === report.period.to;
   const keptStat = (cell: PlanCell, listType: "AM" | "PM", noneLabel: string) => (
     <CrmStat
       label={`Planned ${listType} visited`}
-      note={cell.planned > 0 ? `${percentText(cell.keptPct)} of the planned ${listType}, on their day` : noneLabel}
+      note={
+        <>
+          {cell.planned > 0 ? `${percentText(cell.keptPct)} of the planned ${listType}, on their day` : noneLabel}
+          {deltaFact(report.comparison?.totals[listType])}
+        </>
+      }
       value={cell.planned > 0 ? `${countText(cell.visitedPlanned)} of ${countText(cell.planned)}` : "—"}
     />
   );
@@ -748,8 +805,8 @@ function PlanSection({
               <p className="font-black text-slate-950">{line.territoryName}</p>
               <p className="mt-0.5 text-xs text-slate-500">{repText(line.repName)}</p>
             </td>
-            {planCell(line.row?.pm ?? NO_PLAN)}
-            {planCell(line.row?.am ?? NO_PLAN)}
+            {planCell(line.row?.pm ?? NO_PLAN, changes.get(line.row?.seatId ?? "")?.pm)}
+            {planCell(line.row?.am ?? NO_PLAN, changes.get(line.row?.seatId ?? "")?.am)}
             {oneDay ? null : <td className={crmTdClassName}>{line.row ? <DaysToggle onToggle={onToggle} open={open} /> : null}</td>}
           </>
         )}
@@ -774,11 +831,12 @@ function frequencyNote(cell: CoverageCell, customers: string): string {
   return `${countText(cell.onTarget)} of ${countText(cell.withTarget)} on their grade · ${countText(cell.under)} under · ${countText(cell.over)} over`;
 }
 
-function coverageCellMarkup(percent: number | null, note: string, hasList: boolean) {
+function coverageCellMarkup(percent: number | null, note: string, hasList: boolean, change?: Delta) {
   return (
     <td className={crmTdClassName}>
       <p className={hasList ? "font-black text-slate-950" : "text-slate-400"}>{percentText(percent)}</p>
       <p className="mt-0.5 text-xs text-slate-500">{note}</p>
+      <DeltaLine value={change} />
     </td>
   );
 }
@@ -803,6 +861,7 @@ function CoverageSection({
   if (!report) return <SectionWaiting error={resource.error} label="Measuring the lists" onRetry={resource.reload} />;
 
   const { AM: am, PM: pm } = report.totals;
+  const changes = deltasBySeat(report.comparison);
   const hasCustomers = (row: TerritoryCoverageRow) => row.am.customers > 0 || row.pm.customers > 0;
 
   return (
@@ -817,8 +876,8 @@ function CoverageSection({
       ) : null}
       <CrmBlock>
         <CrmStatGrid>
-          <CrmStat label="AM coverage" note={coverageNote(am, "AM")} value={percentText(am.coveragePct)} />
-          <CrmStat label="PM coverage" note={coverageNote(pm, "PM")} value={percentText(pm.coveragePct)} />
+          <CrmStat label="AM coverage" note={<>{coverageNote(am, "AM")}{deltaFact(report.comparison?.totals.AM)}</>} value={percentText(am.coveragePct)} />
+          <CrmStat label="PM coverage" note={<>{coverageNote(pm, "PM")}{deltaFact(report.comparison?.totals.PM)}</>} value={percentText(pm.coveragePct)} />
           <CrmStat label="AM frequency" note={frequencyNote(am, "AM")} value={percentText(am.frequencyPct)} />
           <CrmStat label="PM frequency" note={frequencyNote(pm, "PM")} value={percentText(pm.frequencyPct)} />
         </CrmStatGrid>
@@ -849,8 +908,8 @@ function CoverageSection({
               <p className="font-black text-slate-950">{row.territoryName}</p>
               <p className="mt-0.5 text-xs text-slate-500">{repText(row.repName)}</p>
             </td>
-            {coverageCellMarkup(row.pm.coveragePct, coverageNote(row.pm, "PM"), row.pm.customers > 0)}
-            {coverageCellMarkup(row.am.coveragePct, coverageNote(row.am, "AM"), row.am.customers > 0)}
+            {coverageCellMarkup(row.pm.coveragePct, coverageNote(row.pm, "PM"), row.pm.customers > 0, changes.get(row.seatId)?.pm)}
+            {coverageCellMarkup(row.am.coveragePct, coverageNote(row.am, "AM"), row.am.customers > 0, changes.get(row.seatId)?.am)}
             {coverageCellMarkup(row.pm.frequencyPct, frequencyNote(row.pm, "PM"), row.pm.withTarget > 0)}
             {coverageCellMarkup(row.am.frequencyPct, frequencyNote(row.am, "AM"), row.am.withTarget > 0)}
           </>
@@ -1397,6 +1456,15 @@ const SECTION_TITLES: Record<ReportSection, string> = {
   locations: "Where the visit was saved",
 };
 
+/** The three sections a comparison means anything for. The others are lists, not measures. */
+const COMPARABLE_SECTIONS: ReadonlyArray<ReportSection> = ["visits", "plan", "coverage"];
+
+const COMPARE_OPTIONS: ReadonlyArray<CrmChoiceOption<ComparisonMode>> = [
+  { value: "off", label: "Nothing", note: "The figures alone" },
+  { value: "previous", label: "The period before", note: "Same number of days" },
+  { value: "peers", label: "Your other territories", note: "An average, never a ranking" },
+];
+
 const REPORTS_DESCRIPTION = "Counted from what the field force enters in Phoenix CRM. AM and PM are always counted apart.";
 
 /** "Tue 1 Sept – Thu 17 Sept", for a quick pick's note. */
@@ -1416,6 +1484,7 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
   const [includeTest, setIncludeTest] = useState(test);
   // Phones only: the filters fold to a one-line summary, so the figures are not a screen further down.
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [compare, setCompare] = useState<ComparisonMode>("off");
   const [exporting, setExporting] = useState(false);
   const [exportFailed, setExportFailed] = useState(false);
 
@@ -1437,13 +1506,25 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
 
   function sectionUrl(name: ReportSection): string | null {
     if (!view || name !== activeSection) return null;
-    const filters = { section: name, lineCode: lineCode || null, seatId: seatId || null, includeTest: withTest };
+    //  is left OUT of the URL rather than sent: the server reads a missing value as off, and a
+    // URL that carries every default is a URL nobody can read.
+    const comparing = COMPARABLE_SECTIONS.includes(name) && compare !== "off" ? compare : null;
+    const filters = { section: name, lineCode: lineCode || null, seatId: seatId || null, includeTest: withTest, compare: comparing };
     // The board is about the viewer's whole scope today; a line or territory filter would turn "what
     // needs you" into "what needs you here", which is the Team tab's question and not this one.
     if (name === "exceptions") return crmUrl(REPORTS_PATH, { section: name, includeTest: withTest });
     if (name === "coverage") return crmUrl(REPORTS_PATH, { ...filters, month });
     return problem ? null : crmUrl(REPORTS_PATH, { ...filters, from: period.from, to: period.to });
   }
+
+  // What the second line on each cell is measured against, said once above the figures rather than
+  // repeated on every one of them.
+  const comparisonHint =
+    compare === "previous"
+      ? "Each figure gains a line against the same number of days immediately before this period."
+      : compare === "peers"
+        ? "Each figure gains a line against the average territory in your whole scope over the same days. An average, never a ranking — no names and no order."
+        : "The figures on their own.";
 
   const visits = useCrmGet<VisitsReportView>(sectionUrl("visits"), "report");
   const plan = useCrmGet<PlanReportView>(sectionUrl("plan"), "report");
@@ -1648,6 +1729,17 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
               </p>
             </>
           )}
+
+          {/*
+            C3. Manager-only — the service refuses it to a rep as well, so hiding the control is UX
+            and never the boundary. It sits with the period filters because that is what it changes
+            the meaning of: the same figures, read against something.
+          */}
+          {view.canSeeLocations && COMPARABLE_SECTIONS.includes(activeSection) ? (
+            <CrmField hint={comparisonHint} label="Compare with">
+              <CrmChoice columns={3} label="Compare with" onChange={setCompare} options={COMPARE_OPTIONS} value={compare} />
+            </CrmField>
+          ) : null}
 
           {view.lines.length > 1 || lineTerritories.length > 1 ? (
             <div className="grid min-w-0 gap-3 md:grid-cols-2">

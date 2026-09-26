@@ -14,6 +14,7 @@
  *     nobody else can include them.
  */
 
+import { addDaysIso } from "@/lib/crm/dates";
 import { forbiddenError, validationError } from "@/lib/http/api-errors";
 import {
   coverageCell,
@@ -26,11 +27,17 @@ import {
   groupPlanByTerritory,
   groupVisitsByRep,
   planKeptPercent,
+  averagePerTerritory,
+  delta,
+  isComparisonMode,
+  previousPeriod,
   REPORT_MAX_DAYS,
   resolveReportMonth,
   resolveReportPeriod,
   type ByList,
+  type ComparisonMode,
   type CoverageCell,
+  type Delta,
   type ManagerVisitEntry,
   type ManagerVisitSummary,
   type PlanCounts,
@@ -40,6 +47,7 @@ import {
   type ReportPeriod,
   type VisitCounts,
 } from "@/lib/phoenix-crm/report-rules";
+import { monthEndOf } from "@/lib/phoenix-crm/calendar";
 import { heldManagerSeats, managersInScope, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import { readTestFlag, readsTeamReports, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, chunk, numberOrNull, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
@@ -61,6 +69,8 @@ export type ReportFilterInput = {
   from?: unknown;
   to?: unknown;
   month?: unknown;
+  /** C3: what the figures are read against — off (the default), previous, or peers. */
+  compare?: unknown;
 };
 
 type ChosenTerritories = { seats: OrgSeat[]; includeTest: boolean };
@@ -93,6 +103,103 @@ function periodOf(viewer: PhoenixCrmViewer, raw: ReportFilterInput): ReportPerio
 
 function byTerritoryName<T extends { territoryName: string }>(left: T, right: T): number {
   return left.territoryName.localeCompare(right.territoryName);
+}
+
+// ── Comparison (C3) ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * What a section's figures are read against, when the viewer asks for it.
+ *
+ * One shape for all three sections, because a screen that reads each one differently is a screen
+ * where one of them quietly stops being drawn. The headline figure is a COUNT in every case — visits,
+ * planned calls kept, customers covered — never a percentage: the difference between two percentages
+ * is percentage POINTS, which reads as a percent and is not one.
+ *
+ * 🔴 **`peers` fills `bySeat` with the SAME district average for every territory**, deliberately. It
+ * is not a ranking and must not become one: the baseline is "the average territory in your scope",
+ * identical for every row on the board, so a reader looking for who is worst is left to work it out
+ * from figures he already had rather than handed an ordering with names on it.
+ */
+export type ReportComparison = {
+  mode: Exclude<ComparisonMode, "off">;
+  /** What the second line on a cell says it is against. */
+  label: string;
+  /** The days the baseline was measured over; null for `peers`, which uses the same days. */
+  baselinePeriod: ReportPeriod | null;
+  /** How many territories the peer average spans; null for `previous`. */
+  territories: number | null;
+  totals: ByList<Delta>;
+  bySeat: Array<{ seatId: string; am: Delta; pm: Delta }>;
+};
+
+/** One section's figures reduced to the two counts a comparison is built from. */
+type ComparisonFigures = { totals: ByList<number>; bySeat: Map<string, { am: number; pm: number }> };
+
+function comparisonModeOf(viewer: PhoenixCrmViewer, raw: ReportFilterInput): Exclude<ComparisonMode, "off"> | null {
+  const mode = isComparisonMode(raw.compare) ? raw.compare : "off";
+  if (mode === "off") return null;
+  // Manager-only in v1 (the plan). A rep shown "the average" is being shown his colleagues' work in
+  // aggregate — the same disclosure the place-vs-actual report withholds from him — and reading his
+  // own territory against last month is a smaller question nobody has asked for yet.
+  if (!readsTeamReports(viewer)) return null;
+  return mode;
+}
+
+/**
+ * Build the comparison from figures the caller has already measured.
+ *
+ * `now` and `baseline` are the same shape, so the two modes differ only in WHAT was measured: the
+ * previous days over the same seats, or the same days over every seat in the viewer's scope.
+ */
+function buildComparison(input: {
+  mode: Exclude<ComparisonMode, "off">;
+  now: ComparisonFigures;
+  baseline: ComparisonFigures;
+  baselinePeriod: ReportPeriod | null;
+  peerTerritoryCount: number | null;
+  seatIds: ReadonlyArray<string>;
+}): ReportComparison {
+  const { baseline, mode, now } = input;
+  if (mode === "peers") {
+    const count = input.peerTerritoryCount ?? 0;
+    const am = averagePerTerritory(baseline.totals.AM, count);
+    const pm = averagePerTerritory(baseline.totals.PM, count);
+    return {
+      baselinePeriod: null,
+      bySeat: input.seatIds.map((seatId) => ({
+        seatId,
+        am: delta(now.bySeat.get(seatId)?.am ?? 0, am),
+        pm: delta(now.bySeat.get(seatId)?.pm ?? 0, pm),
+      })),
+      label: count > 0 ? `vs the average of ${count} territories` : "vs the average territory",
+      mode,
+      territories: count,
+      totals: { AM: delta(now.totals.AM, am), PM: delta(now.totals.PM, pm) },
+    };
+  }
+  return {
+    baselinePeriod: input.baselinePeriod,
+    bySeat: input.seatIds.map((seatId) => ({
+      seatId,
+      am: delta(now.bySeat.get(seatId)?.am ?? 0, baseline.bySeat.get(seatId)?.am ?? 0),
+      pm: delta(now.bySeat.get(seatId)?.pm ?? 0, baseline.bySeat.get(seatId)?.pm ?? 0),
+    })),
+    label: input.baselinePeriod ? `vs ${input.baselinePeriod.from} to ${input.baselinePeriod.to}` : "vs the period before",
+    mode,
+    territories: null,
+    totals: { AM: delta(now.totals.AM, baseline.totals.AM), PM: delta(now.totals.PM, baseline.totals.PM) },
+  };
+}
+
+/**
+ * The territories a peer average spans: the viewer's WHOLE scope, whatever the screen is filtered to.
+ *
+ * Narrowing it to the chosen line or territory would compare a territory with itself and answer +0%
+ * every time. The filter is what the reader is looking AT; the peer set is what he is looking at it
+ * against, and the two are not the same set.
+ */
+export function peerTerritories(viewer: PhoenixCrmViewer): OrgSeat[] {
+  return viewer.scopeTerritories;
 }
 
 // ── What the report screen can choose from ──────────────────────────────────────────────────────
@@ -169,21 +276,58 @@ export type VisitsReportView = {
   includeTest: boolean;
   rows: RepVisitRow[];
   totals: ByList<VisitCounts>;
+  /** C3: null when the viewer did not ask, or may not (manager-only in v1). Headline figure: visits. */
+  comparison: ReportComparison | null;
 };
+
+/** The visits RPC reduced to the one count a comparison reads: visits, AM and PM apart. */
+async function visitFigures(
+  seatIds: ReadonlyArray<string>,
+  period: ReportPeriod,
+  includeTest: boolean,
+): Promise<ComparisonFigures> {
+  if (seatIds.length === 0) return { bySeat: new Map(), totals: { AM: 0, PM: 0 } };
+  const data = await callPhoenixCrm<unknown>("phoenix_crm_report_visits_by_day", {
+    p_seat_ids: [...seatIds],
+    p_from: period.from,
+    p_to: period.to,
+    p_include_test: includeTest,
+  });
+  const wanted = new Set(seatIds);
+  const { groups, totals } = groupVisitsByRep(asRows(data).filter((row) => wanted.has(String(row.seat_id))));
+  const bySeat = new Map<string, { am: number; pm: number }>();
+  for (const group of groups) {
+    const current = bySeat.get(group.seatId) ?? { am: 0, pm: 0 };
+    // A territory can hold two groups — the rep's own visits and the managers' — and the comparison
+    // is about the TERRITORY, so they add rather than one overwriting the other.
+    bySeat.set(group.seatId, { am: current.am + group.am.visits, pm: current.pm + group.pm.visits });
+  }
+  return { bySeat, totals: { AM: totals.AM.visits, PM: totals.PM.visits } };
+}
 
 export async function loadVisitsReport(viewer: PhoenixCrmViewer, raw: ReportFilterInput): Promise<VisitsReportView> {
   const chosen = chooseTerritories(viewer, raw);
   const period = periodOf(viewer, raw);
   if (chosen.seats.length === 0) {
-    return { period, includeTest: chosen.includeTest, rows: [], totals: { AM: emptyVisitCounts(), PM: emptyVisitCounts() } };
+    return { period, includeTest: chosen.includeTest, rows: [], totals: { AM: emptyVisitCounts(), PM: emptyVisitCounts() }, comparison: null };
   }
 
-  const data = await callPhoenixCrm<unknown>("phoenix_crm_report_visits_by_day", {
-    p_seat_ids: chosen.seats.map((seat) => seat.seatId),
-    p_from: period.from,
-    p_to: period.to,
-    p_include_test: chosen.includeTest,
-  });
+  const mode = comparisonModeOf(viewer, raw);
+  const previous = previousPeriod(period);
+  const peers = peerTerritories(viewer);
+  const [data, baseline] = await Promise.all([
+    callPhoenixCrm<unknown>("phoenix_crm_report_visits_by_day", {
+      p_seat_ids: chosen.seats.map((seat) => seat.seatId),
+      p_from: period.from,
+      p_to: period.to,
+      p_include_test: chosen.includeTest,
+    }),
+    mode === null
+      ? Promise.resolve(null)
+      : mode === "previous"
+        ? visitFigures(chosen.seats.map((seat) => seat.seatId), previous, chosen.includeTest)
+        : visitFigures(peers.map((seat) => seat.seatId), period, chosen.includeTest),
+  ]);
   const seatsById = new Map(chosen.seats.map((seat) => [seat.seatId, seat]));
   const { groups, totals } = groupVisitsByRep(asRows(data).filter((row) => seatsById.has(String(row.seat_id))));
   const names = await loadPeopleNames(groups.map((group) => group.repHrId));
@@ -204,7 +348,33 @@ export async function loadVisitsReport(viewer: PhoenixCrmViewer, raw: ReportFilt
         Number(left.repHrId === null) - Number(right.repHrId === null) ||
         left.repName.localeCompare(right.repName),
     );
-  return { period, includeTest: chosen.includeTest, rows, totals };
+
+  const nowFigures: ComparisonFigures = {
+    bySeat: groups.reduce((map, group) => {
+      const current = map.get(group.seatId) ?? { am: 0, pm: 0 };
+      map.set(group.seatId, { am: current.am + group.am.visits, pm: current.pm + group.pm.visits });
+      return map;
+    }, new Map<string, { am: number; pm: number }>()),
+    totals: { AM: totals.AM.visits, PM: totals.PM.visits },
+  };
+
+  return {
+    period,
+    includeTest: chosen.includeTest,
+    rows,
+    totals,
+    comparison:
+      mode === null || baseline === null
+        ? null
+        : buildComparison({
+            baseline,
+            baselinePeriod: mode === "previous" ? previous : null,
+            mode,
+            now: nowFigures,
+            peerTerritoryCount: mode === "peers" ? peers.length : null,
+            seatIds: chosen.seats.map((seat) => seat.seatId),
+          }),
+  };
 }
 
 // ── Plan against actual ─────────────────────────────────────────────────────────────────────────
@@ -228,10 +398,38 @@ export type PlanReportView = {
   runningDay: string | null;
   rows: TerritoryPlanRow[];
   totals: ByList<PlanCell>;
+  /** C3. Headline figure: planned calls KEPT — a count, not the kept percentage. */
+  comparison: ReportComparison | null;
 };
 
 function planCell(counts: PlanCounts): PlanCell {
   return { ...counts, keptPct: planKeptPercent(counts) };
+}
+
+/**
+ * The plan RPC reduced to the one count a comparison reads: planned calls KEPT.
+ *
+ * Kept, not the kept PERCENTAGE: the difference between two percentages is percentage points, and a
+ * cell reading "68% (vs 61% · +11.5%)" has three numbers in it of which one is a lie.
+ */
+async function planFigures(
+  seatIds: ReadonlyArray<string>,
+  period: ReportPeriod,
+  includeTest: boolean,
+): Promise<ComparisonFigures> {
+  if (seatIds.length === 0) return { bySeat: new Map(), totals: { AM: 0, PM: 0 } };
+  const data = await callPhoenixCrm<unknown>("phoenix_crm_report_plan_vs_actual", {
+    p_seat_ids: [...seatIds],
+    p_from: period.from,
+    p_to: period.to,
+    p_include_test: includeTest,
+  });
+  const wanted = new Set(seatIds);
+  const { groups, totals } = groupPlanByTerritory(asRows(data).filter((row) => wanted.has(String(row.seat_id))));
+  return {
+    bySeat: new Map(groups.map((group) => [group.seatId, { am: group.am.visitedPlanned, pm: group.pm.visitedPlanned }])),
+    totals: { AM: totals.AM.visitedPlanned, PM: totals.PM.visitedPlanned },
+  };
 }
 
 export async function loadPlanReport(viewer: PhoenixCrmViewer, raw: ReportFilterInput): Promise<PlanReportView> {
@@ -245,15 +443,26 @@ export async function loadPlanReport(viewer: PhoenixCrmViewer, raw: ReportFilter
       runningDay,
       rows: [],
       totals: { AM: planCell(emptyPlanCounts()), PM: planCell(emptyPlanCounts()) },
+      comparison: null,
     };
   }
 
-  const data = await callPhoenixCrm<unknown>("phoenix_crm_report_plan_vs_actual", {
-    p_seat_ids: chosen.seats.map((seat) => seat.seatId),
-    p_from: period.from,
-    p_to: period.to,
-    p_include_test: chosen.includeTest,
-  });
+  const mode = comparisonModeOf(viewer, raw);
+  const previous = previousPeriod(period);
+  const peers = peerTerritories(viewer);
+  const [data, baseline] = await Promise.all([
+    callPhoenixCrm<unknown>("phoenix_crm_report_plan_vs_actual", {
+      p_seat_ids: chosen.seats.map((seat) => seat.seatId),
+      p_from: period.from,
+      p_to: period.to,
+      p_include_test: chosen.includeTest,
+    }),
+    mode === null
+      ? Promise.resolve(null)
+      : mode === "previous"
+        ? planFigures(chosen.seats.map((seat) => seat.seatId), previous, chosen.includeTest)
+        : planFigures(peers.map((seat) => seat.seatId), period, chosen.includeTest),
+  ]);
   const seatsById = new Map(chosen.seats.map((seat) => [seat.seatId, seat]));
   const { groups, totals } = groupPlanByTerritory(asRows(data).filter((row) => seatsById.has(String(row.seat_id))));
   const names = await loadPeopleNames(groups.map((group) => seatsById.get(group.seatId)?.occupantHrId));
@@ -271,7 +480,27 @@ export async function loadPlanReport(viewer: PhoenixCrmViewer, raw: ReportFilter
       };
     })
     .sort(byTerritoryName);
-  return { period, includeTest: chosen.includeTest, runningDay, rows, totals: { AM: planCell(totals.AM), PM: planCell(totals.PM) } };
+  return {
+    period,
+    includeTest: chosen.includeTest,
+    runningDay,
+    rows,
+    totals: { AM: planCell(totals.AM), PM: planCell(totals.PM) },
+    comparison:
+      mode === null || baseline === null
+        ? null
+        : buildComparison({
+            baseline,
+            baselinePeriod: mode === "previous" ? previous : null,
+            mode,
+            now: {
+              bySeat: new Map(groups.map((group) => [group.seatId, { am: group.am.visitedPlanned, pm: group.pm.visitedPlanned }])),
+              totals: { AM: totals.AM.visitedPlanned, PM: totals.PM.visitedPlanned },
+            },
+            peerTerritoryCount: mode === "peers" ? peers.length : null,
+            seatIds: chosen.seats.map((seat) => seat.seatId),
+          }),
+  };
 }
 
 // ── Coverage and frequency ──────────────────────────────────────────────────────────────────────
@@ -291,7 +520,36 @@ export type CoverageReportView = {
   /** Every chosen territory, including ones with no validated customers yet. */
   rows: TerritoryCoverageRow[];
   totals: ByList<CoverageCell>;
+  /** C3. Headline figure: customers COVERED — a count, not the coverage percentage. */
+  comparison: ReportComparison | null;
 };
+
+/**
+ * The coverage RPC reduced to the one count a comparison reads: customers covered.
+ *
+ * Coverage is measured over a MONTH, not a period, so `previous` here is the previous calendar month
+ * — a whole one against a whole one. The month on screen is usually still running, so an early
+ * comparison is a part-month against a full one and reads as a collapse; the screen says which month
+ * the baseline is, and that is the honest fix rather than scaling a part-month up to look complete.
+ */
+async function coverageFigures(
+  seatIds: ReadonlyArray<string>,
+  monthStart: string,
+  includeTest: boolean,
+): Promise<ComparisonFigures> {
+  if (seatIds.length === 0) return { bySeat: new Map(), totals: { AM: 0, PM: 0 } };
+  const data = await callPhoenixCrm<unknown>("phoenix_crm_report_coverage", {
+    p_seat_ids: [...seatIds],
+    p_month_start: monthStart,
+    p_include_test: includeTest,
+  });
+  const wanted = new Set(seatIds);
+  const { groups, totals } = groupCoverageByTerritory(asRows(data).filter((row) => wanted.has(String(row.seat_id))));
+  return {
+    bySeat: new Map(groups.map((group) => [group.seatId, { am: group.am.covered, pm: group.pm.covered }])),
+    totals: { AM: totals.AM.covered, PM: totals.PM.covered },
+  };
+}
 
 export async function loadCoverageReport(viewer: PhoenixCrmViewer, raw: ReportFilterInput): Promise<CoverageReportView> {
   const chosen = chooseTerritories(viewer, raw);
@@ -304,14 +562,25 @@ export async function loadCoverageReport(viewer: PhoenixCrmViewer, raw: ReportFi
       includeTest: chosen.includeTest,
       rows: [],
       totals: { AM: coverageCell(emptyCoverageCounts()), PM: coverageCell(emptyCoverageCounts()) },
+      comparison: null,
     };
   }
 
-  const data = await callPhoenixCrm<unknown>("phoenix_crm_report_coverage", {
-    p_seat_ids: chosen.seats.map((seat) => seat.seatId),
-    p_month_start: month.monthStart,
-    p_include_test: chosen.includeTest,
-  });
+  const mode = comparisonModeOf(viewer, raw);
+  const previousMonthStart = addDaysIso(month.monthStart, -1).slice(0, 7) + "-01";
+  const peers = peerTerritories(viewer);
+  const [data, baseline] = await Promise.all([
+    callPhoenixCrm<unknown>("phoenix_crm_report_coverage", {
+      p_seat_ids: chosen.seats.map((seat) => seat.seatId),
+      p_month_start: month.monthStart,
+      p_include_test: chosen.includeTest,
+    }),
+    mode === null
+      ? Promise.resolve(null)
+      : mode === "previous"
+        ? coverageFigures(chosen.seats.map((seat) => seat.seatId), previousMonthStart, chosen.includeTest)
+        : coverageFigures(peers.map((seat) => seat.seatId), month.monthStart, chosen.includeTest),
+  ]);
   const chosenIds = new Set(chosen.seats.map((seat) => seat.seatId));
   const { groups, totals } = groupCoverageByTerritory(asRows(data).filter((row) => chosenIds.has(String(row.seat_id))));
   const bySeat = new Map(groups.map((group) => [group.seatId, group]));
@@ -329,7 +598,27 @@ export async function loadCoverageReport(viewer: PhoenixCrmViewer, raw: ReportFi
       };
     })
     .sort(byTerritoryName);
-  return { month, includeTest: chosen.includeTest, rows, totals: { AM: coverageCell(totals.AM), PM: coverageCell(totals.PM) } };
+  return {
+    month,
+    includeTest: chosen.includeTest,
+    rows,
+    totals: { AM: coverageCell(totals.AM), PM: coverageCell(totals.PM) },
+    comparison:
+      mode === null || baseline === null
+        ? null
+        : buildComparison({
+            baseline,
+            // Coverage is a MONTH, so its "previous" is the month before, stated as its own days.
+            baselinePeriod: mode === "previous" ? { from: previousMonthStart, to: monthEndOf(previousMonthStart) } : null,
+            mode,
+            now: {
+              bySeat: new Map(groups.map((group) => [group.seatId, { am: group.am.covered, pm: group.pm.covered }])),
+              totals: { AM: totals.AM.covered, PM: totals.PM.covered },
+            },
+            peerTerritoryCount: mode === "peers" ? peers.length : null,
+            seatIds: chosen.seats.map((seat) => seat.seatId),
+          }),
+  };
 }
 
 // ── Double and chain visits per manager ─────────────────────────────────────────────────────────
