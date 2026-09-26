@@ -126,9 +126,23 @@ export function headwindAccessHeaders(env: NodeJS.ProcessEnv = process.env): Rec
   return { "CF-Access-Client-Id": id, "CF-Access-Client-Secret": secret };
 }
 
-/** Headwind's wire form for a password: lower-case hex MD5. See the header — this is not a choice. */
+/**
+ * Headwind's wire form for a password: **UPPER-CASE** hex MD5. See the header — this is not a choice.
+ *
+ * 🔴 IT WAS LOWER-CASE UNTIL 2026-09-26, AND THAT WOULD HAVE FAILED EVERY SIGN-IN AGAINST A PERFECTLY
+ * CORRECT PASSWORD. Read from the console the live server serves — the authoritative client, not the
+ * documentation: `login.controller.js` sends `md5($scope.login.password).toUpperCase()`, and
+ * `users.controller.js` stores a new password the same way (`newPassword`/`confirmModal`, both
+ * upper-cased). So the hash sitting in the server's own column is upper-case hex, and a lower-case one
+ * matches it only if the comparison happens to be case-insensitive — which nothing here has proven and
+ * nothing should depend on. Matching the official client removes the question entirely.
+ *
+ * That mattered more than a normal near-miss: the failure it produces is `errorCode=1`, "user found,
+ * password wrong", which reads as a typo in the credential and sends whoever hit it back to the
+ * console to re-type a password that was right all along.
+ */
 export function headwindPasswordHash(password: string): string {
-  return createHash("md5").update(password, "utf8").digest("hex");
+  return createHash("md5").update(password, "utf8").digest("hex").toUpperCase();
 }
 
 type CachedToken = { token: string; expiresAt: number };

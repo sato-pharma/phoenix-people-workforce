@@ -384,6 +384,52 @@ own audit trail reads as "Phoenix" rather than as the owner. Extra logins are fr
 never through `railway variables --stdin`, which stores a BOM INSIDE the value** (§2.3). A leading
 byte no screen displays would make every sign-in fail while the password looked perfectly correct.
 
+#### ✅ ONE COMMAND DOES ALL OF IT — `scripts/headwind-bootstrap.mjs`
+
+Doing this by hand cost the owner an hour at 05:00 on 2026-09-26, and none of it was carelessness: the
+console's **Role** field is mandatory and a save without it fails in a way that looks like a form that
+did nothing, so `HEADWIND_MDM_LOGIN=phoenix` pointed at an account that had never been created. The
+server said so plainly — and nobody was reading its audit log.
+
+```bash
+node scripts/headwind-bootstrap.mjs
+```
+
+It asks for the Headwind **admin** password at a hidden prompt, then signs in, lists the roles, creates
+`phoenix` with a **generated** 24-character password, proves that account can sign in, and writes both
+variables into Railway — the login with `--skip-deploys` and the password without, so exactly one
+redeploy lands the pair. `--reset` gives an existing account a new password; `--skip-railway` stops
+after the account; `--role "<name>"` overrides the role it picks.
+
+🔴 **Neither password is ever printed, logged or stored.** The generated one goes straight into
+Railway's secret store and is then forgotten — there is no copy to leak from a transcript or a shell
+history, and if you need it later you reveal it in Railway or run the script again with `--reset`.
+Pinned by `tests/headwind-bridge.test.ts`, including that no line which prints may carry a password.
+
+#### 🔴 THE PASSWORD GOES ON THE WIRE AS **UPPER-CASE** MD5
+
+Read from the console the live server serves — the authoritative client, not the documentation:
+`login.controller.js` sends `md5(password).toUpperCase()`, and `users.controller.js` stores a new
+password the same way. **Phoenix sent lower-case until 2026-09-26**, which would have refused a
+perfectly correct password, and the failure it produces is the cruellest one available: "password
+wrong" against a password that is right. `headwindPasswordHash` upper-cases, and a test pins it.
+
+#### 🔴 THE SERVER'S AUDIT LOG IS THE ONLY HONEST DIAGNOSIS — READ IT FIRST
+
+`railway logs --service phoenix-headwind --environment production` prints an `AuditLogger` line for
+every sign-in, with an `errorCode` whose meanings were measured here on 2026-09-26 (a deliberately
+nonexistent login for `2`, the owner's own mistyped admin password for `1`):
+
+| `errorCode` | what it means | what to do |
+| --- | --- | --- |
+| `0` | signed in, `userId` set | nothing — it works |
+| `1` | the account exists, the hash did not match | the password, **or** the hash FORM (upper-case, above) |
+| `2` | **no such login** — `userId=null` | create the account; the password is irrelevant until then |
+
+**A `2` is not a password problem, and every minute spent re-typing a password against one is wasted.**
+Phoenix's own page cannot tell them apart — both arrive as an HTML 401 — so the log is where the answer
+is. The hostname to read is `phoenix-headwind`, not the Phoenix app.
+
 🔴 **AND IF THE SIGN-IN IS REFUSED, THE REPLY IS AN HTML PAGE, NOT JSON — WHICH IS NOT EVIDENCE OF
 CLOUDFLARE.** Measured 2026-09-26 against this very server: `POST /rest/public/jwt/login` with a login
 that does not exist, and no Cloudflare anywhere in the path, answers a **Tomcat HTML 401** error page.

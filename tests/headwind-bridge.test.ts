@@ -212,12 +212,19 @@ async function runAuthTests() {
   // 🔴 THE PASSWORD IS SENT AS ITS MD5 HASH, NEVER AS ITSELF — Headwind's own wire format. A build
   // that "upgraded" this to SHA-256, or sent the plain password, would simply never sign in, and the
   // failure would read as a wrong credential rather than as a wrong format.
+  // 🔴 AND THE HASH IS UPPER-CASE, which this pinned the wrong way round until 2026-09-26. The live
+  // server's own console is the authoritative client: `login.controller.js` sends
+  // `md5(password).toUpperCase()`, and `users.controller.js` writes a new password the same way — so the
+  // hash in the server's column is upper-case hex. A lower-case hash matches it only if the comparison
+  // is case-insensitive, which nothing has proven. The failure it would produce is the cruellest kind:
+  // `errorCode=1`, "password wrong", against a password that is right.
   resetHeadwindTokenCache();
   const signIn = makeFetch({});
   assert.equal(await getHeadwindToken(signIn.fetch, ENV), "jwt-1", "the token comes out of the envelope's data");
   const sent = JSON.parse(String(signIn.calls[0].init.body)) as { login: string; password: string };
   assert.equal(sent.login, "phoenix");
-  assert.equal(sent.password, createHash("md5").update("a-real-password", "utf8").digest("hex"));
+  assert.equal(sent.password, createHash("md5").update("a-real-password", "utf8").digest("hex").toUpperCase());
+  assert.match(sent.password, /^[0-9A-F]{32}$/, "upper-case hex, exactly as the console sends it");
   assert.notEqual(sent.password, "a-real-password", "the real password never leaves the module");
   assert.equal(headwindPasswordHash("a-real-password"), sent.password, "and the helper is what produced it");
 
@@ -2116,6 +2123,99 @@ async function runCloudflareAccessTests() {
   );
 }
 
+/**
+ * The one-command setup script — pinned on the four things that make it safe to run at 05:00.
+ *
+ * It exists because doing this by hand cost the owner an hour: the console's mandatory Role field
+ * refuses a save silently, so `HEADWIND_MDM_LOGIN` pointed at an account that was never created and the
+ * server answered "user not found", which reads exactly like a wrong password. A script cannot forget
+ * the Role field, cannot mistype the login, and can prove the account signs in before writing anything.
+ *
+ * These are source pins because nothing else can cover it: the script talks to a live server and to the
+ * Railway CLI, so CI can never run it. What CI CAN do is refuse a version of it that would leak a
+ * password or reintroduce a trap this workstream already paid for.
+ */
+function runBootstrapScriptTests() {
+  const script = stripComments(source("scripts/headwind-bootstrap.mjs"));
+  // The print check runs on the RAW file, not the stripped one: `stripComments` blanks the inside of a
+  // template literal, so a leak written the most natural way — say(`${password}`) — survives the strip
+  // invisibly and the pin reads green. Measured while breaking this very assertion on 2026-09-26.
+  const raw = source("scripts/headwind-bootstrap.mjs");
+
+  // 1 · UPPER-CASE MD5. Read from the console the live server serves, not from documentation. Sending
+  // lower-case gets a correct password refused as wrong — errorCode=1, the cruellest failure here.
+  assert.match(
+    script,
+    /digest\("hex"\)\.toUpperCase\(\)/,
+    "the script sends the password as UPPER-CASE hex MD5, the form the server's own console sends",
+  );
+
+  // 2 · NEITHER PASSWORD IS EVER PRINTED. The generated one goes straight into Railway's secret store
+  // and is then forgotten; the admin one is read from a hidden prompt. A script that echoed either would
+  // put a credential that factory-resets a hundred tablets into a terminal scrollback and a transcript.
+  for (const line of raw.split(String.fromCharCode(10))) {
+    if (!line.includes("say(") && !line.includes("console.log(")) continue;
+    assert.ok(
+      !/\$\{password\}|\$\{adminPassword\}/.test(line),
+      `no line that prints may carry a password value — this one does: ${line.trim()}`,
+    );
+  }
+  assert.match(
+    script,
+    /password\.length/,
+    "the success line reports the password's LENGTH, which is the proof that matters and carries nothing",
+  );
+  assert.match(
+    script,
+    /setRawMode\(true\)/,
+    "the admin password is read with the echo off, so it never reaches the screen or the scrollback",
+  );
+
+  // 3 · NOT --stdin. It stores a BOM INSIDE the value, and every sign-in then fails against a password
+  // that looks perfectly correct — a byte no screen displays. Measured on this account (AGENTS.md 2.3).
+  assert.ok(
+    !/--stdin/.test(script),
+    "the script must not use `railway variable set --stdin`, which stores a BOM inside the value",
+  );
+
+  // 4 · EXACTLY ONE REDEPLOY, AND ONLY AFTER THE ACCOUNT IS PROVEN. The login goes in with
+  // --skip-deploys and the password without, so the service restarts once with both values present —
+  // never once with half a credential, which reads as "wrong password" for the length of a build.
+  assert.match(
+    script,
+    /HEADWIND_MDM_LOGIN=\$\{LOGIN\}`, "--skip-deploys"/,
+    "the login is written with --skip-deploys",
+  );
+  assert.match(
+    script,
+    /HEADWIND_MDM_PASSWORD=\$\{password\}`\)/,
+    "and the password without it, so one redeploy lands both at once",
+  );
+  const provenAt = script.indexOf("signs in and gets a token");
+  const railwayAt = script.indexOf("variable");
+  assert.ok(provenAt > 0 && railwayAt > provenAt, "and nothing is written to Railway until the new account has signed in");
+
+  // 5 · THE RUNBOOK HAS TO CARRY THE ONE COMMAND AND THE THREE ERROR CODES. The codes are the only
+  // honest diagnosis of a refused sign-in: Phoenix's page sees an HTML 401 either way, so "wrong
+  // password" and "no such account" are indistinguishable from the app. An hour went on that once.
+  const book = source("docs/devices/headwind-rustdesk.md");
+  assert.match(
+    book,
+    /node scripts\/headwind-bootstrap\.mjs/,
+    "the runbook names the one command that creates the account and sets both variables",
+  );
+  assert.match(
+    book,
+    /THE PASSWORD GOES ON THE WIRE AS \*\*UPPER-CASE\*\* MD5/,
+    "and records that the hash is upper-case, read from the console the live server serves",
+  );
+  assert.match(
+    book,
+    /\*\*no such login\*\* — `userId=null`/,
+    "and the errorCode table, so a `2` is never mistaken for a password problem again",
+  );
+}
+
 export async function runHeadwindBridgeTests() {
   await runAuthTests();
   await runCloudflareAccessTests();
@@ -2138,6 +2238,7 @@ export async function runHeadwindBridgeTests() {
   runDoorTests();
   runServerImageTests();
   runOriginCertificateCheckTests();
+  runBootstrapScriptTests();
   runConsoleUiTests();
   runShipsDarkTests();
 }
