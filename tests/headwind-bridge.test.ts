@@ -2049,6 +2049,19 @@ async function runCloudflareAccessTests() {
     /It is NOT the current setting, and it should not be\s+set on a hunch/,
     "and it marks that address as unproven rather than preferred, because an unresolvable base URL fails every tablet action",
   );
+  // 🔴 THE WATCH PATTERN IS A FOLDER, NOT A FILE TYPE, AND IT CAUGHT OUT THE SESSION THAT WROTE THE
+  // PARAGRAPH ABOVE IT ON THE SAME DAY. `infra/headwind-phoenix-actions/**` matches the add-on's
+  // README and its schema.sql as well as its Java, so a docs-only edit inside that folder rebuilds the
+  // image and replaces the container the tablets sync against: #4451 changed nothing but that README
+  // and still deployed `SUCCESS`, not `SKIPPED`. The paragraph before it — "a merge to main does NOT
+  // redeploy this service" — is true of the repository at large and reads as though it covers the
+  // folder too, which is precisely how the wrong claim got made. Without this beside it, the next
+  // person to fix a typo in that README restarts the fleet's server without knowing they did.
+  assert.match(
+    runbook,
+    /EDITING THE README IN THERE RESTARTS THE\s+FLEET'S SERVER/,
+    "the runbook warns that the service's watch pattern matches the add-on's README as well as its Java, so a docs-only edit in that folder rebuilds and restarts the server the tablets talk to",
+  );
 }
 
 export async function runHeadwindBridgeTests() {
