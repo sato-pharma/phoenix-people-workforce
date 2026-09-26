@@ -1834,6 +1834,65 @@ async function runCloudflareAccessTests() {
     /HEADWIND_MDM_BASE_URL=https:\/\/mdm-console\.satopharma\.com/,
     "and Phoenix is pointed at the console hostname too, so the API stays behind Access",
   );
+
+  // 🔴 THE TABLE ABOVE SPLITS THE HOSTNAMES BY AUDIENCE, AND READS LIKE IT SPLITS THEM BY SURFACE.
+  // It does not. Headwind is ONE web application on ONE port: `/` is the console and `/rest/*` is
+  // the tablets' API, on EVERY hostname pointed at the service. So while `mdm.satopharma.com` is
+  // grey — which it must be, forever — the console is reachable there with no Access in front of
+  // it, and Access on the console's own name is a cost-of-discovery measure, not a seal. A future
+  // session that trims this sentence will conclude the console is protected when it is not.
+  assert.match(
+    runbook,
+    /ACCESS ON `mdm-console` DOES NOT SEAL THE CONSOLE/,
+    "the runbook says in writing that one Tomcat serves the console on BOTH hostnames, so Access on the console name alone does not protect it",
+  );
+  // 🔴 AND THAT IS WHY THE ADMIN PASSWORD, NOT ACCESS, IS THE BOUNDARY — §4.2 already says the
+  // server seeds `admin`/`admin`, but nothing joined the two facts until a name was about to be
+  // published with the seed still in place.
+  assert.match(
+    runbook,
+    /Certificate Transparency/,
+    "and it names the mechanism that turns a freshly-issued certificate into an advertisement: CT logs are scanned automatically, so a guessable name must not go live while the password is still the seed",
+  );
+  // 🔴 NOT A SESSION'S TO SWITCH ON. Zero Trust onboarding opens on a PLAN — Free is $0/seat, and
+  // $0 is still a subscription on the owner's account. A session that assumes Access can simply be
+  // configured will report the console as guarded when Access does not exist on the account at all.
+  assert.match(
+    runbook,
+    /ACCESS CANNOT BE SWITCHED ON BY A SESSION — IT STARTS WITH A PLAN/,
+    "the runbook says Zero Trust onboarding begins with a plan selection, which is the owner's and no session's",
+  );
+  // 🔴 THE ORANGE CLOUD IS NOT A TIDY-UP. Railway proves ownership by reading the CNAME's own value
+  // out of DNS, and through Cloudflare's proxy it reads "". Once the record is orange, Cloudflare
+  // serves its OWN edge certificate, so the browser padlock stays green while the origin certificate
+  // expires underneath it — and Full (strict) then turns that into a 526 sixty days after anybody
+  // touched anything. A session that flips the cloud orange "now that the certificate exists" has
+  // armed exactly that, so the runbook has to say the flip belongs to the Access step.
+  assert.match(
+    runbook,
+    /THE ORANGE CLOUD DOES NOT BECOME SAFE ONCE THE CERTIFICATE EXISTS — IT PUTS THE RENEWAL AT RISK/,
+    "the runbook warns that proxying the console hostname risks Railway's certificate RENEWAL, silently, and belongs to the Access step rather than to a tidy-up once the first certificate has issued",
+  );
+  // 🔴 THE WORD "WITNESSED" IS DOING A LOT OF WORK. The agent's three confirmation paths are
+  // /rest/plugins/…/public/ and carry no credential — they cannot, because authenticating them would
+  // mean shipping a modified agent, which is the one thing this design avoids. Anyone who knows a
+  // device number can therefore confirm a pending action; nobody who lacks the JWT can create one.
+  // The custody consequence is the whole risk: a tablet written off as wiped on a confirmation row
+  // alone. The runbook has to say corroboration, not proof, or the console implies the stronger claim.
+  assert.match(
+    runbook,
+    /"WITNESSED" MEANS SOMETHING THAT KNEW THE DEVICE NUMBER SAID SO — READ IT AS CORROBORATION/,
+    "the runbook states that the agent's confirmation endpoints are unauthenticated by necessity, so a confirmation is corroboration rather than proof and a tablet is never written off as clean on that row alone",
+  );
+  // Phoenix and Headwind are the same Railway project and environment, so Phoenix's own server-side
+  // calls can stay on the private network and never meet Cloudflare — which deletes the Access service
+  // token from the setup rather than adding anything. Without this written down, the obvious reading of
+  // §4.7 is that Phoenix must be let through Access, and the console then has to be loosened for it.
+  assert.match(
+    runbook,
+    /phoenix-headwind\.railway\.internal/,
+    "the runbook offers Railway's private hostname as the preferred HEADWIND_MDM_BASE_URL, so Phoenix's calls never reach Cloudflare and Access never has to be loosened to let Phoenix through",
+  );
 }
 
 export async function runHeadwindBridgeTests() {
