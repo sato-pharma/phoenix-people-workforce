@@ -157,7 +157,7 @@ value from the Postgres service rather than copying a password into a second pla
 | `HEADWIND_IMAGE_TAG` | `0.1.9` |
 | `PROTOCOL` | `http` |
 | `BASE_DOMAIN` | `mdm.satopharma.com` |
-| `ADMIN_EMAIL` | the address the first admin account is created for |
+| `ADMIN_EMAIL` | your own address — but see the 🔴 below: it does **not** reach the admin account |
 | `SQL_HOST` | `${{headwind-db.PGHOST}}` |
 | `SQL_PORT` | `${{headwind-db.PGPORT}}` |
 | `SQL_BASE` | `${{headwind-db.PGDATABASE}}` |
@@ -173,6 +173,34 @@ already resolve here before you start" trap that the rented-box path carried.
 
 🔴 **`FORCE_RECONFIGURE` is not set here.** It re-runs the whole first-time configuration. If the very
 first deploy fails its setup, add it as `1`, redeploy **once**, then delete the variable again.
+
+#### 🔴 THE SERVER COMES UP WITH `admin` / `admin`, AND `ADMIN_EMAIL` NEVER REACHES IT
+
+Read out of the first run's own Liquibase output, 2026-09-26, not from the project's documentation —
+which says the opposite. The **only** `INSERT INTO users` in the entire first run is Headwind's own
+seed:
+
+```
+INSERT INTO users(login, email, name, password)
+  VALUES ('admin', 'fast.daemon@gmail.com', 'admin', '21232f29…801fc3')
+```
+
+Three separate things a reader would otherwise get wrong:
+
+1. **That hash is MD5 of the word `admin`.** The console that can factory-reset a hundred tablets ships
+   answering to the most-guessed password there is.
+2. **The email is hardcoded upstream — it is the project author's address, not yours.** Six
+   `UPDATE users` statements run after that insert and **not one touches the email or the password**,
+   so `ADMIN_EMAIL` is read by the setup script for other purposes and never lands on the account.
+   Leaving it is a stranger's address on the recovery path of your fleet console.
+3. **So the order of §4.3 is a security order, not a convenience one.** Do **not** publish
+   `mdm-console.satopharma.com` and then go looking for the password screen: Railway's certificate has
+   to be issued through a grey cloud, so there is a window where a name anyone could guess answers to
+   `admin`/`admin` with no Cloudflare Access in front of it.
+
+   **Close it by using a name nobody can guess instead.** Settings → Networking → **Generate Domain**
+   → port **8080** gives a random `…up.railway.app`. Sign in there, change the password, put your own
+   email on the account, and only then add the two custom hostnames and delete the generated one.
 
 ### 4.3 The name, the port, and reading a deploy honestly
 
@@ -219,10 +247,36 @@ milliseconds` — with `filterStart`, `Context [] startup failed`, `ClassReader`
 `Phoenix actions add-on: table ready.` present. The only `SEVERE` left is the harmless 8443 keystore
 above.
 
-🔴 **Still unproven, and it needs a published name:** that the server answers an HTTP request. The
-service has **no domain yet** (`serviceDomains: []`), and Railway's private network is reachable only
-from another service in the same project, so there is nothing to `curl`. The first request is
-therefore part of step 1 of this section, not something that could be checked ahead of it.
+✅ **And the server answers — proven 2026-09-26, over a Railway-generated domain.** A
+`serviceDomainCreate` on port 8080 published the service, and the first two requests ever made to it
+returned:
+
+| Request | Result |
+|---|---|
+| `GET /` | **200**, and the body is the console itself — `<html ng-app='headwind-kiosk'>`, `<title>MDM server</title>` |
+| `GET /rest/public/sync/configuration/PHX-TAB-0002` | **200** — the endpoint every tablet calls at every check-in |
+
+That is the whole chain finally closed: image builds → container starts → Tomcat's context starts →
+Jersey's scan survives → the application serves. Nothing between the WAR and a tablet is unproven any
+more. **Use the generated domain for this**, not a custom hostname: it needs no DNS, no certificate
+wait and no Cloudflare, so it isolates "does the server work" from "is the name wired up".
+
+✅ **And the add-on is serving, not merely loaded** — same session, no tablet and no sign-in needed:
+
+| Request | Result | What it proves |
+|---|---|---|
+| `POST /rest/plugins/devicereset/public/{number}` | **200** `{"status":"OK"}` | the three confirmation paths the agent POSTs to are **live** — the stock open-source server 404s all three (§6.1) |
+| `POST /rest/plugins/devicereset/public/reboot/{number}` | **200** `{"status":"OK"}` | |
+| `POST /rest/plugins/devicereset/public/password/{number}` | **200** `{"status":"OK"}` | |
+| `GET /rest/plugins/phoenix-actions/private/status` | **403** | the private surface is registered **and closed** to a caller with no session |
+| `GET /rest/plugins/not-a-real-plugin/private/status` | **404** | the control — so that 403 is a real route, not a blanket refusal |
+
+**Probe with a device number that cannot exist** (`PHX-PROBE-NONE`, not a real tablet): `confirm()`
+marks a pending row consumed, so against a real number it would quietly eat a command that had been
+sent. With no such device it is an `UPDATE` matching nothing.
+
+That is "sent" becoming "witnessed" proven on the server side. What a tablet does with the five
+injected fields is still the pilot's job (§5).
 
 ⚠️ **And when you read those logs through Railway's GraphQL API rather than the CLI: the session
 token in `~/.railway/config.json` lives ONE HOUR** (`user.tokenExpiresAt`). A watcher that reads it
@@ -297,19 +351,60 @@ HEADWIND_MDM_PASSWORD=<its password, in plain text — Phoenix hashes it>
 ```
 
 **Give Phoenix its own admin account on the Headwind server**, not a person's, so the Headwind side's
-own audit trail reads as "Phoenix" rather than as the owner. The first admin account is the one
-created on first start from `ADMIN_EMAIL`; extra logins are free and uncapped (§6.8).
+own audit trail reads as "Phoenix" rather than as the owner. Extra logins are free and uncapped
+(§6.8). The account that already exists is the seeded `admin`, which is **not** created from
+`ADMIN_EMAIL` and arrives with a default password — §4.2's 🔴 block, and deal with that before this.
 
 🔴 **`HEADWIND_MDM_BASE_URL` is the CONSOLE hostname, not the tablets' one** — see §4.7. Pointing it
 at `mdm.satopharma.com` would work, and would quietly put the API back on the public internet that
 §4.7 exists to take it off.
 
+#### ⭐ Better than either public name: both services are in one Railway project, so Phoenix never has to leave it
+
+Read from Railway 2026-09-26 — `phoenix-people-workforce` and `phoenix-headwind` are the same project
+and the same `production` environment, and Railway has already minted the private hostname:
+
+```
+phoenix-headwind:          RAILWAY_PRIVATE_DOMAIN = phoenix-headwind.railway.internal
+phoenix-people-workforce:  RAILWAY_PRIVATE_DOMAIN = phoenix-people-workforce.railway.internal
+```
+
+So the value to prefer is
+
+```
+HEADWIND_MDM_BASE_URL=http://phoenix-headwind.railway.internal:8080
+```
+
+and it removes work rather than adding it: **Phoenix's calls never reach Cloudflare, so no Access
+service token is needed for them at all**, the traffic never crosses the public internet, and Access
+on `mdm-console.satopharma.com` can be as strict as the owner likes without Phoenix having to be let
+through it. `http` and `8080` are right here — the private network is inside the project, there is no
+TLS on it, and 8080 is the Tomcat port proven in §4.3.
+
+⚠️ **Unproven from inside the container, and it has to be said rather than assumed.** Railway's private
+network is **IPv6-only**, so this rests on the Phoenix container resolving an AAAA-only hostname; Node's
+own `fetch` does, but nothing here has watched it. The proof is one command, and it could not be run
+now because the Railway account has **no registered SSH key** — and registering one is an account
+credential, not a session's to add:
+
+```
+railway ssh --service phoenix-people-workforce --environment production -- \
+  node -e "fetch('http://phoenix-headwind.railway.internal:8080/rest/public/sync/configuration/PHX-NOPE-0000').then(r=>console.log(r.status))"
+```
+
+**`200` means take the internal route and drop the service token; anything else means fall back to
+`https://mdm-console.satopharma.com` and Access's two token values.** Set it either way — this changes
+which of two values goes in one variable, and nothing else on the page.
+
 🔴 **Nothing about RustDesk goes here.** Both variables stay unset; §4.5 is why. Full descriptions of
 all five, and why the Headwind password is sent hashed: [environment.md](../environment.md),
 "Headwind MDM + RustDesk".
 
-Two more settings follow in §4.7 — the Cloudflare Access service token, without which Phoenix cannot
-reach the console at all.
+✅ **Measured 2026-09-26: none of the three is set on `phoenix-people-workforce` yet**, which is the
+ships-dark state §2 describes — so nothing renders and no request leaves Phoenix until they are.
+
+Two more settings follow in §4.7 — the Cloudflare Access service token — **needed only if
+`HEADWIND_MDM_BASE_URL` goes to the public console name** rather than the internal one above.
 
 ### 4.7 Locking down the console — Cloudflare Access
 
@@ -358,12 +453,131 @@ Cloudflare identity and never will; Access would answer its sync with a sign-in 
 tablets would go quiet at once while the server itself looked perfectly healthy. The two hostnames
 exist for exactly this reason.
 
+⚠️ **A merge to `main` does NOT redeploy this service, and that is deliberate.** Measured
+2026-09-26: `phoenix-headwind` has `rootDirectory: infra/headwind-phoenix-actions` and
+`watchPatterns: ["infra/headwind-phoenix-actions/**"]`, so Railway marks every other commit
+`SKIPPED` — which is why the add-on's own merge showed a `SKIPPED` deployment beside the real one and
+had to be deployed by hand. **Do not "fix" that by clearing the watch pattern:** it would rebuild and
+restart the server the tablets talk to on every unrelated commit to the repository, several dozen
+times a day.
+
+🔴 **Each hostname gets its OWN CNAME target, and they are not interchangeable.** Railway issues a
+separate random `…up.railway.app` name per custom domain on the same service — measured 2026-09-26,
+`mdm-console` and `mdm` were given two different ones. Copying the first target into both records is
+the obvious-looking shortcut and it leaves the second hostname stuck at
+`CERTIFICATE_STATUS_TYPE_VALIDATING_OWNERSHIP` forever. Read each one from its own row in Railway.
+While a record is missing, Railway reports `currentValue: ""` and
+`DNS_RECORD_STATUS_REQUIRES_UPDATE` — and because `satopharma.com` is on Cloudflare, the unconfigured
+hostname answers with **Cloudflare's own 404**, which is not the server refusing anything.
+
 **The order matters, and getting it wrong looks like a broken certificate:** add
 `mdm-console.satopharma.com` to Railway **grey-cloud first**, wait until Railway reports the
 certificate issued, and only then turn the orange cloud on. Railway's own certificate request cannot
-complete through Cloudflare's proxy. Once it is proxied, set that hostname's **SSL/TLS mode to Full
-(strict)** — Flexible would send plaintext to the origin, which is precisely the thing being
-prevented.
+complete through Cloudflare's proxy — measured 2026-09-26: while that record was orange, Railway read
+`currentValue: ""` / `DNS_RECORD_STATUS_REQUIRES_UPDATE`, and it went to
+`DNS_RECORD_STATUS_PROPAGATED` within one poll of the cloud being turned grey. The grey record then
+resolves all the way through to Railway's own address on both Cloudflare's and Google's public
+resolvers, which is how to tell a saved change from a rendered one.
+
+#### 🔴 THE ORANGE CLOUD DOES NOT BECOME SAFE ONCE THE CERTIFICATE EXISTS — IT PUTS THE RENEWAL AT RISK
+
+The measurement above *is* the mechanism, and it does not expire: Railway proves ownership by reading
+the CNAME's own value out of DNS, and through the proxy it reads `""`. Nothing observed here says that
+check stops running at renewal time — and a renewal that quietly fails is invisible in a browser,
+because once the record is orange **Cloudflare serves its own edge certificate** and the padlock stays
+green while the *origin* certificate expires underneath it. `satopharma.com` is Full (strict)
+zone-wide (below), so an expired origin certificate surfaces as a **526** on the console, sixty-odd
+days after anybody touched anything, with nothing else changed to explain it.
+
+**So turning the cloud orange belongs to the Access step, not to a tidy-up before it.** It buys
+nothing while there is no Access policy to enforce, and it costs that risk from the moment it is on.
+Both records are grey today — read back from Cloudflare's own resolver 2026-09-26 as `69.46.46.117`
+and `69.46.46.125`, Railway addresses in no Cloudflare range.
+
+🔴 **And there is no precedent on this zone to lean on, which is the part worth knowing before the
+flip.** `phoenix-hr.satopharma.com` — the live production app, a Railway custom domain that has been
+renewing for months — is **grey too**: measured 2026-09-26, it answers with the CNAME
+`xok6ir4p.up.railway.app` and a Railway address, and Railway reads its `currentValue` correctly and
+holds it at `CERTIFICATE_STATUS_TYPE_VALID`. So **every** Railway hostname on `satopharma.com` is
+DNS-only, nothing here has ever renewed *through* the proxy, and the console would be the first. That
+also means Cloudflare's WAF is not something Phoenix relies on anywhere today — putting the console
+behind Access is a new dependency, not an extension of an existing one.
+
+**When one does go orange, do not check it with a browser.** Ask Railway what *it* thinks of its own
+certificate, which is the only reading the proxy cannot flatter:
+
+```
+domains(projectId, environmentId, serviceId){ customDomains{ domain status{ certificateStatus } } }
+```
+
+`CERTIFICATE_STATUS_TYPE_VALID` is healthy; anything back at `VALIDATING_OWNERSHIP` on a hostname
+that has been live for weeks is a renewal that has started failing, and the fix is the same grey
+flip that made issuance work the first time.
+
+✅ **`satopharma.com`'s SSL/TLS encryption mode is already Full (strict)** — read from the zone
+2026-09-26, "Mode last changed · 45 days ago". There is nothing to set here, and it is **zone-wide**,
+not per-hostname: it also fronts `phoenix-hr.satopharma.com`. Read it before touching it, and never
+move it to satisfy one new hostname.
+
+⚠️ **`CERTIFICATE_STATUS_TYPE_VALIDATING_OWNERSHIP` sits there for a long time and looks broken. Four
+checks tell "slow" from "broken", and all four are cheap:**
+
+| Check | Healthy answer | What a different answer means |
+|---|---|---|
+| `curl http://<host>/` (port **80**) | **301** to `https://` | anything else — Railway's edge does not know the hostname yet; routing, not the certificate |
+| `curl http://<host>/.well-known/acme-challenge/anything` | **404** | a **301** means the challenge path is being redirected and issuance can never finish |
+| `curl https://<host>/` | a TLS **wrong-principal** failure (`SEC_E_WRONG_PRINCIPAL` on Windows) | a *connection* failure is routing; a wrong-principal failure is only the missing certificate |
+| `CAA` on the zone and the host | **no CAA records at all** | a CAA record that does not authorize Let's Encrypt blocks issuance silently and forever |
+
+Measured 2026-09-26 with all four healthy and both names still `VALIDATING_OWNERSHIP` a quarter of
+an hour in: **it was simply slow.** `customDomainIssueCertificate(id)` nudges it; nothing else needs
+doing, and re-adding the domain would only cost a new CNAME target and a second DNS edit.
+
+#### 🔴 ACCESS CANNOT BE SWITCHED ON BY A SESSION — IT STARTS WITH A PLAN, WHICH IS THE OWNER'S
+
+Zero Trust is **not onboarded on this account**, and the first screen of onboarding is *Choose a
+plan* — Zero Trust **Free, $0 / seat / month, 50 seats**, which is ample for tablet administrators.
+$0 or not, that is an account-level subscription: **no session selects it.** Until the owner does,
+`Zero Trust → Access → Applications` does not exist to add anything to, and the console has no
+Access in front of it whatever the table above says.
+
+#### 🔴 ACCESS ON `mdm-console` DOES NOT SEAL THE CONSOLE — ONE TOMCAT SERVES BOTH NAMES
+
+The table above splits the hostnames by *audience*, and it is easy to read it as splitting them by
+*surface*. It does not. Headwind is one web application on one port: it serves the console at `/`
+and the tablets' API under `/rest/*`, **on every hostname pointed at the service**. So while
+`mdm.satopharma.com` is grey — which it must be, forever, for the tablets — the admin console is
+reachable there too, with no Access in front of it.
+
+**Which makes the admin password the real boundary, not Access.** Access raises the cost of finding
+the console; only the password decides who gets in. Read
+[§4.2's `admin`/`admin` block](#-the-server-comes-up-with-admin--admin-and-admin_email-never-reaches-it)
+before publishing either name, not after.
+
+🔴 **And that is why a certificate must not be allowed to issue onto a guessable name while the
+password is still `admin`.** The moment Railway issues one, `mdm.satopharma.com` and
+`mdm-console.satopharma.com` enter the public **Certificate Transparency** logs, which are scanned
+continuously and automatically; a default-credentialled MDM console on a pharmaceutical company's
+domain is exactly what that scanning is for. A Railway-generated `…up.railway.app` name is **not**
+CT-logged — Railway serves it from a wildcard — which is why the generated domain is the safe place
+to do the first sign-in and the password change.
+
+**To hold the publish without unpicking the DNS,** point both custom domains at a port nothing
+listens on and let the certificates finish behind a shut door:
+
+```
+customDomainUpdate(environmentId, id, targetPort: 8443)   # 8443 is the connector that always fails — see §4.3
+```
+
+Railway keeps validating and issuing; any request to those names reaches a dead port instead of a
+login form. Putting them back is the same call with `targetPort: 8080`, and it needs no DNS change,
+no new CNAME target and no second certificate. **Do it in that order — password first, port second.**
+
+✅ **Measured end to end, 2026-09-26, and the hold cost nothing.** Both names went to
+`CERTIFICATE_STATUS_TYPE_VALID` *while pointed at the dead port* — so a shut door does **not** stall
+issuance — and the moment they went back to 8080 both answered **200** on `/` and **200** on
+`/rest/public/sync/configuration/{number}` over a certificate `curl` verified without `-k`. The
+whole hold is two API calls and no DNS work.
 
 Then, in the Cloudflare dashboard, **Zero Trust → Access → Applications**, add
 `mdm-console.satopharma.com` with a policy allowing the owner's own address (and anyone else who is
@@ -396,9 +610,20 @@ Use a long unique password for the Headwind admin account regardless, and do not
 ### 4.8 Backups
 
 🔴 **One thing, and the fleet is unrecoverable without it: the `headwind-db` Postgres service.** It
-holds every tablet, its configuration, its rules and its history. Railway takes its own backups of a
-Postgres service — **check on the service that they are actually enabled and note the retention**,
-rather than assuming, and **take one by hand before any image-tag change**.
+holds every tablet, its configuration, its rules and its history.
+
+🔴 **MEASURED 2026-09-26: THERE IS NO BACKUP SCHEDULE AND THERE ARE ZERO BACKUPS.** An earlier
+revision of this section said Railway "takes its own backups of a Postgres service" and to check the
+retention. That is wrong, and it is the most dangerous kind of wrong — it reads as reassurance.
+Railway's own API is unambiguous: `volumeInstanceBackupScheduleList` for this volume returns `[]` and
+`volumeInstanceBackupList` returns **0**. **Railway does not create a schedule for you.** Nothing
+about Supabase's backup story covers this database either — it is a separate Postgres service from
+payroll, deliberately.
+
+A schedule is added on **headwind-db → Settings → Backups**. It bills storage, so it is a cost
+decision and belongs to the owner on that screen. Until one exists, **take one by hand before any
+image-tag change** and understand that losing this volume means re-enrolling the fleet tablet by
+tablet.
 
 🔴 **The relay key pair is no longer a thing that can be lost, and that is a real gain from §4.5.**
 On the rented box, losing `rustdesk-data` meant re-pairing **every** tablet by hand. On the public
@@ -495,6 +720,33 @@ five fields for a tablet that has one, a small private REST surface Phoenix call
 already holds, and **the three confirmation endpoints the agent already POSTs to and the open-source
 server answers 404 for**. Serving those is what turns *sent* into *witnessed* — the pending row is
 marked done only when the tablet says it did it.
+
+#### 🔴 "WITNESSED" MEANS SOMETHING THAT KNEW THE DEVICE NUMBER SAID SO — READ IT AS CORROBORATION
+
+Those three confirmation paths sit under `/rest/plugins/…/public/`, which is Headwind's own convention
+for agent traffic, and the stock agent sends **no credential** to them. It cannot be made to: adding
+authentication there would mean shipping a modified agent, and using the free agent exactly as
+published is the entire reason this add-on exists. So the endpoint is open, measured on both published
+hostnames 2026-09-26:
+
+```
+POST https://mdm.satopharma.com/rest/plugins/devicereset/public/PHX-NOPE-0000   →  200 {"status":"OK"}
+```
+
+— with no token, no cookie and no such device.
+
+**What that does and does not allow, both measured on both hostnames:**
+
+| | |
+|---|---|
+| Can a stranger **cause** a lock, a wipe or a password reset? | **No.** Every path that creates a pending row is `/rest/private/*` and answers **403** with no JWT — the add-on's `phoenix-actions/private/*` included. |
+| Can a stranger **confirm** one that is already pending? | **Yes**, if they know the device number, and `PHX-TAB-0002` is not a secret. |
+
+So the honest reading is that a confirmation is **corroboration, not proof**: it moves an action from
+*claimed* to *very probably done*, and the thing that finishes the job is the tablet's own next
+check-in — a wiped tablet stops checking in and comes back as a fresh enrolment. 🔴 **Never write a
+tablet off as clean on the confirmation row alone**, which is the same mistake in a new place as
+reading a queued push as a witnessed one.
 
 #### 🔴 Five things about that add-on that are not guessable, and were read out of the WAR
 
@@ -802,19 +1054,39 @@ this PR. Amber = built and unproven until a real tablet runs it. Red = impossibl
 box to rent, no card to enter, no SSH key, no firewall, no `docker compose`, no `cloudflared` and no
 relay:**
 
-1. In the existing Railway project: add a **PostgreSQL** service, and a service from this repo with
-   **Root Directory `infra/headwind-phoenix-actions`** and **Watch Paths** set (§4.1).
-2. Set its variables — the nine in §4.2, `PROTOCOL=http` among them.
-3. Add the two hostnames (§4.3, §4.7): `mdm.satopharma.com` **grey cloud** for the tablets, and
-   `mdm-console.satopharma.com` **grey first, then orange**, behind a Cloudflare Access application.
-   🔴 Never put Access on the tablets' hostname — it takes the whole fleet dark.
-4. Set the port Railway asks for from **the first deploy's own logs** (§4.3) — it is the one value
-   here nobody has yet seen.
-5. Set the `HEADWIND_MDM_*` variables on the **Phoenix app's** service (§4.6), plus the two Access
-   token values. 🔴 **Nothing RustDesk** — both its variables stay empty, and empty is the working
-   setting.
-6. Approve the merge.
-7. Run the pilot on PHX-TAB-0002.
+**Struck through as of 2026-09-26 — the server is standing and answering (§4.3):**
+
+1. ~~Railway project: PostgreSQL service, plus a service from this repo with Root Directory
+   `infra/headwind-phoenix-actions` and Watch Paths set~~ ✅ **done** (§4.1).
+2. ~~Its variables — the nine in §4.2, `PROTOCOL=http` among them~~ ✅ **done**.
+3. ~~The port, read from the first deploy's own logs~~ ✅ **8080**, and the server returns **200** on
+   both `/` and `/rest/public/sync/configuration/{number}` (§4.3).
+4. ~~Both hostnames in Railway, both CNAMEs in Cloudflare~~ ✅ **done**, both **grey** and both
+   reported `DNS_RECORD_STATUS_PROPAGATED`; certificates requested.
+
+**What is genuinely still his, in this order — and the order is the point:**
+
+5. ~~**Sign in at the Railway-generated domain and change the admin password**~~ ✅ **the owner
+   reported it changed, 2026-09-26.** No session verified it, and no session ever will: verifying
+   would mean submitting `admin` / `admin` to the live form, which is entering a password to
+   authenticate. 🔴 **The admin EMAIL is a separate field and was not part of that report** — it may
+   still be the upstream author's address (§4.2), which is where a password-reset link would go.
+6. ~~Put both hostnames back on **8080**~~ ✅ **done the same minute** — two `customDomainUpdate`
+   calls, no DNS change, and both names answer **200** on `/` and on
+   `/rest/public/sync/configuration/{number}` over a certificate `curl` verified without `-k` (§4.7).
+7. Choose the **Zero Trust plan** (Free, $0 / seat, 50 seats) — an account subscription, so no
+   session picks it — then build the Access application on `mdm-console.satopharma.com` and its
+   service token (§4.7). 🔴 Never put Access on the tablets' hostname. **The orange cloud on
+   `mdm-console` belongs to this step and not before it** — it buys nothing without a policy and it
+   risks the certificate's renewal from the moment it is on (§4.7).
+8. Set the `HEADWIND_MDM_*` variables on the **Phoenix app's** service (§4.6) — confirmed 2026-09-26
+   as still unset, which is why nothing renders today. ⭐ **Prefer
+   `http://phoenix-headwind.railway.internal:8080`**: both services are one Railway project, so Phoenix
+   never leaves it and the two Access token values are not needed at all (§4.6). 🔴 **Nothing
+   RustDesk** — both its variables stay empty, and empty is the working setting.
+9. Decide the **`headwind-db` backup schedule** (§4.8) — it bills storage, so it is his screen.
+10. Approve the merge.
+11. Run the pilot on PHX-TAB-0002.
 
 ---
 
