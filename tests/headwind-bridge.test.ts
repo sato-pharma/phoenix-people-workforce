@@ -1445,9 +1445,40 @@ function runShipsDarkTests() {
   // code for a server that does not exist is a code that enrolls a tablet into nothing.
   assert.match(page, /\{headwindReady \? <HeadwindEnrollment \/> : null\}/, "the enrollment card ships dark with the rest");
   assert.match(page, /\{headwindReady \? <HeadwindServerSettings \/> : null\}/, "and so do the fleet-wide settings");
+  // 🔴 FLIPPED 2026-09-26, BY THE OWNER'S DECISION, AND THE OLD PIN IS LEFT HERE IN WORDS SO THE
+  // FLIP READS AS A CHOICE RATHER THAN A REGRESSION. It used to require ManageEngine ABOVE Headwind,
+  // because every tablet was still in ManageEngine and the page should open with where they are. What
+  // changed is that ManageEngine's actions stopped working through Phoenix - every one of them answers
+  // "Insufficient Data for Processing Request" - and he decided not to repair a system the company is
+  // leaving. So the page now opens with the one that works and the one the fleet is moving to, and
+  // ManageEngine reads as the block underneath, on its way out. When the last tablet has moved, those
+  // four lines come off and this assertion goes with them.
+  const headwindAt = page.indexOf("<HeadwindFleet");
+  const manageEngineAt = page.indexOf("<ManageEngineFleet");
   assert.ok(
-    page.indexOf("<ManageEngineFleet") < page.indexOf("<HeadwindFleet"),
-    "ManageEngine stays above during the changeover: a tablet is in exactly one of the two, and today all of them are in the first",
+    headwindAt >= 0 && manageEngineAt >= 0 && headwindAt < manageEngineAt,
+    "Headwind is the section the page opens with: it is the one that works, and the one the fleet is moving to",
+  );
+
+  // 🔴 AND THE PAGE SAYS THE MANAGEENGINE ACTIONS DO NOT WORK, rather than letting him find out by
+  // pressing them. He pressed all nine on 2026-09-26 and got nothing but a red line, which is an hour
+  // this sentence exists to save. It also names where the fleet IS still drivable until it moves -
+  // ManageEngine's own console - so the notice is not merely an apology.
+  const meFleet = stripComments(source("src/components/devices/manageengine-fleet.tsx"));
+  assert.match(
+    meFleet,
+    /Insufficient Data for Processing Request/,
+    "the ManageEngine card names the refusal every one of its buttons gets, in ManageEngine's own words",
+  );
+  assert.match(
+    meFleet,
+    /Being retired - these actions do not work from here/,
+    "and says plainly that it is being retired rather than repaired",
+  );
+  assert.match(
+    meFleet,
+    /ManageEngine&rsquo;s own console/,
+    "and names where a tablet is still drivable until it has moved",
   );
 
   // The two free buttons carry no paid mark — that contrast with the section above is the payoff.

@@ -281,6 +281,26 @@ export function ManageEngineFleet({ bridgeConfigured }: { bridgeConfigured: bool
         the audit log.
       </p>
 
+      {/* 🔴 THESE BUTTONS DO NOT WORK, AND THE PAGE SAYS SO RATHER THAN LETTING HIM FIND OUT BY
+          PRESSING THEM. Measured 2026-09-26: every action here comes back "Insufficient Data for
+          Processing Request" - ManageEngine's own error for a missing required field, because Phoenix
+          posts an empty body to its action endpoint. The owner's decision the same morning was NOT to
+          repair it: ManageEngine is the system being retired, so the fix is the migration, not a patch
+          to an integration that gets deleted. He pressed all nine buttons first, which is exactly the
+          hour this notice exists to save the next person. */}
+      <div className="mt-3 flex max-w-3xl flex-col gap-1 border border-amber-500 bg-amber-50 px-4 py-3 text-[12px] font-semibold text-amber-900">
+        <p className="text-[9px] font-black uppercase tracking-[0.14em] text-amber-800">Being retired - these actions do not work from here</p>
+        <p>
+          Every button below is refused by ManageEngine with &ldquo;Insufficient Data for Processing Request&rdquo;. It is
+          one fault in the bridge to a system the company is leaving, and it is deliberately not being repaired.
+        </p>
+        <p>
+          Until a tablet has moved to the company&rsquo;s own server above, drive it from{" "}
+          <span className="font-black">ManageEngine&rsquo;s own console</span>, where lock, wipe and locate still work. The
+          list, the tablet details and the audit history on this page are unaffected - only the actions are.
+        </p>
+      </div>
+
       {/* Colour key for the free-trial split (owner asked, 2026-09-25). Amber = stops when the trial
           ends; everything else keeps working on the free edition, which is capped at 25 tablets. */}
       <div className="mt-3 flex max-w-3xl flex-col gap-1 border border-slate-200 bg-white px-4 py-3 text-[11px] font-semibold text-slate-600">
