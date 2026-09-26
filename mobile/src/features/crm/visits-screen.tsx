@@ -42,6 +42,8 @@ import { usePalette } from "@/theme/use-palette";
 import type {
   CrmListType,
   CrmVisitKind,
+  LineProductFamily,
+  ProductAvailability,
   SavedVisit,
   VisitCustomerOption,
   VisitDayView,
@@ -60,6 +62,14 @@ import type {
  */
 
 const VISIT_PRODUCTS_MAX = 12;
+
+/**
+ * The pharmacy the rep takes feedback from before the doctor (owner rule, 2026-09-26; #4341 added the
+ * server field and the web form, and this is its twin on the phone). The limit mirrors
+ * PHARMACY_NAME_MAX in src/lib/phoenix-crm/entry-rules.ts — copied, not imported, so the phone bundle
+ * never reaches into the web app's modules.
+ */
+const PHARMACY_NAME_MAX = 120;
 
 /**
  * The kind of visit, chosen BEFORE the doctor (owner, 2026-09-26). Planned offers only the doctors on
@@ -598,6 +608,120 @@ function personOptions(people: ReadonlyArray<VisitPerson>): Array<CrmChoiceOptio
   return people.map((person) => ({ value: person.hrId, label: person.name, note: person.title }));
 }
 
+/**
+ * One product's Has / Doesn't-have answer in the pharmacy-stock check. The twin of `AvailabilityRow`
+ * in src/components/phoenix-crm/visits-tab.tsx: tapping the answer it already carries clears it.
+ */
+function AvailabilityRow({
+  answer,
+  disabled,
+  onSet,
+  product,
+}: {
+  answer: ProductAvailability | undefined;
+  disabled: boolean;
+  onSet: (product: string, answer: ProductAvailability) => void;
+  product: string;
+}) {
+  const palette = usePalette();
+  const cell = (value: ProductAvailability, label: string, on: string) => {
+    const selected = answer === value;
+    return (
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ disabled, selected }}
+        disabled={disabled}
+        onPress={() => onSet(product, value)}
+        style={{
+          backgroundColor: selected ? on : palette.surface,
+          borderColor: selected ? on : palette.line,
+          borderRadius: radius,
+          borderWidth: hairline,
+          minHeight: 40,
+          minWidth: 96,
+          opacity: disabled ? 0.5 : 1,
+          paddingHorizontal: space.md,
+          paddingVertical: space.xs,
+        }}
+      >
+        <Text style={[type.meta, { color: selected ? palette.surface : palette.inkSoft, textAlign: "center" }]}>{label}</Text>
+      </Pressable>
+    );
+  };
+  return (
+    <View
+      style={{
+        alignItems: "center",
+        backgroundColor: palette.surface,
+        borderColor: palette.line,
+        borderRadius: radius,
+        borderWidth: hairline,
+        flexDirection: "row",
+        flexWrap: "wrap",
+        gap: space.sm,
+        justifyContent: "space-between",
+        paddingHorizontal: space.md,
+        paddingVertical: space.sm,
+      }}
+    >
+      <Text style={[type.body, { color: palette.ink, flex: 1, minWidth: 120 }]}>{product}</Text>
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space.sm }}>
+        {cell("has", "Has", palette.success)}
+        {cell("missing", "Doesn't have", palette.danger)}
+      </View>
+    </View>
+  );
+}
+
+/**
+ * A discussed choice in the stock check. One product is answered directly; a family with several
+ * concentrations is a header that expands to its products, with a badge of how many are answered.
+ */
+function FamilyStock({
+  answered,
+  disabled,
+  family,
+  onSet,
+  onToggle,
+  open,
+}: {
+  answered: Record<string, ProductAvailability>;
+  disabled: boolean;
+  family: LineProductFamily;
+  onSet: (product: string, answer: ProductAvailability) => void;
+  onToggle: (family: string) => void;
+  open: boolean;
+}) {
+  const palette = usePalette();
+  if (family.products.length <= 1) {
+    const product = family.products[0] ?? family.family;
+    return <AvailabilityRow answer={answered[product]} disabled={disabled} onSet={onSet} product={product} />;
+  }
+  const count = family.products.filter((product) => answered[product]).length;
+  return (
+    <View style={{ backgroundColor: palette.surface, borderColor: palette.line, borderRadius: radius, borderWidth: hairline }}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ disabled, expanded: open }}
+        disabled={disabled}
+        onPress={() => onToggle(family.family)}
+        style={{ alignItems: "center", flexDirection: "row", gap: space.sm, minHeight: 44, opacity: disabled ? 0.5 : 1, paddingHorizontal: space.md, paddingVertical: space.sm }}
+      >
+        <Ionicons color={palette.inkFaint} name={open ? "chevron-down" : "chevron-forward"} size={16} />
+        <Text style={[type.bodyStrong, { color: palette.ink2, flex: 1 }]}>{family.family}</Text>
+        <Text style={[type.meta, { color: palette.inkSoft }]}>{count > 0 ? `${count}/${family.products.length}` : `${family.products.length}`}</Text>
+      </Pressable>
+      {open ? (
+        <View style={{ borderTopColor: palette.line, borderTopWidth: hairline, gap: space.sm, padding: space.sm }}>
+          {family.products.map((product) => (
+            <AvailabilityRow answer={answered[product]} disabled={disabled} key={product} onSet={onSet} product={product} />
+          ))}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 type Draft = { ok: true; payload: Record<string, unknown>; customerName: string } | { ok: false; problem: string };
 
 function AddVisit({
@@ -627,6 +751,10 @@ function AddVisit({
   const [managerHrId, setManagerHrId] = useState<string | null>(null);
   const [seniorHrId, setSeniorHrId] = useState<string | null>(null);
   const [products, setProducts] = useState<string[]>([]);
+  const [pharmacyName, setPharmacyName] = useState("");
+  const [availability, setAvailability] = useState<Record<string, ProductAvailability>>({});
+  // Which multi-concentration families are expanded. A family with one product is answered directly.
+  const [openFamilies, setOpenFamilies] = useState<Set<string>>(() => new Set());
   const [comment, setComment] = useState("");
   // The recording lives HERE and not inside the microphone control, because the save is what attaches it:
   // a recording uploaded and left out of the payload is an orphan in the bucket. Beside the photo, and
@@ -713,6 +841,27 @@ function AddVisit({
     );
   }
 
+  // One product's Has / Doesn't-have answer. Tapping the answer it already carries clears it back to
+  // unanswered, so a mistaken tap is undone without a third button. Matches the web twin's setStock.
+  function setStock(product: string, answer: ProductAvailability) {
+    setProblem(null);
+    setAvailability((current) => {
+      const next = { ...current };
+      if (next[product] === answer) delete next[product];
+      else next[product] = answer;
+      return next;
+    });
+  }
+
+  function toggleFamily(family: string) {
+    setOpenFamilies((current) => {
+      const next = new Set(current);
+      if (next.has(family)) next.delete(family);
+      else next.add(family);
+      return next;
+    });
+  }
+
   function draft(visitId: string): Draft {
     if (!customer) return { ok: false, problem: "Choose the customer you visited." };
     if (customer.visitedToday) return { ok: false, problem: "This customer's visit for today is already saved." };
@@ -724,6 +873,7 @@ function AddVisit({
     }
     if (kind === "chain" && !who.senior) return { ok: false, problem: "Choose the senior manager who was on the visit." };
     if (products.length === 0) return { ok: false, problem: "Choose the products you discussed." };
+    if (!pharmacyName.trim()) return { ok: false, problem: "Write the pharmacy you took feedback from." };
     const evidence = placePhoto ?? photo;
     if (!evidence) return { ok: false, problem: "Take a live photo of the clinic sign or door." };
     return {
@@ -742,6 +892,8 @@ function AddVisit({
         managerHrId: kind === "single" ? null : who.manager?.hrId ?? null,
         seniorHrId: kind === "chain" ? who.senior?.hrId ?? null : null,
         products,
+        pharmacyName: pharmacyName.trim(),
+        productAvailability: availability,
         comment: comment.trim() || null,
         voiceNotePath: voiceNote?.path ?? null,
         voiceNoteSeconds: voiceNote?.seconds ?? null,
@@ -961,7 +1113,83 @@ function AddVisit({
         </Text>
       </CrmSection>
 
-      <CrmSection title="4 · Comment">
+      <CrmSection title="4 · Pharmacy you took feedback from">
+        <View style={{ gap: space.sm }}>
+          <Text style={[type.micro, { color: palette.inkSoft, textTransform: "uppercase" }]}>Pharmacy name</Text>
+          <TextInput
+            autoCapitalize="words"
+            autoCorrect={false}
+            editable={!saving}
+            maxLength={PHARMACY_NAME_MAX}
+            onChangeText={(next) => {
+              setProblem(null);
+              setPharmacyName(next);
+            }}
+            placeholder="e.g. El Ezaby — Nasr City"
+            placeholderTextColor={palette.inkFaint}
+            style={[
+              type.body,
+              {
+                backgroundColor: palette.surface,
+                borderColor: palette.line,
+                borderRadius: radius,
+                borderWidth: hairline,
+                color: palette.ink,
+                minHeight: 48,
+                padding: space.md,
+              },
+            ]}
+            value={pharmacyName}
+          />
+          {/* Ones he entered before, tap to fill — a button beside typing, never instead of it. */}
+          {form.pharmacies.length > 0 ? (
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space.sm }}>
+              {form.pharmacies.map((name) => (
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={saving}
+                  key={name}
+                  onPress={() => {
+                    setProblem(null);
+                    setPharmacyName(name);
+                  }}
+                  style={{
+                    backgroundColor: pharmacyName.trim() === name ? palette.accentSoft : palette.surface,
+                    borderColor: pharmacyName.trim() === name ? palette.accent : palette.line,
+                    borderRadius: radius,
+                    borderWidth: hairline,
+                    opacity: saving ? 0.5 : 1,
+                    paddingHorizontal: space.md,
+                    paddingVertical: space.xs,
+                  }}
+                >
+                  <Text style={[type.meta, { color: palette.ink2 }]}>{name}</Text>
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
+        </View>
+
+        <View style={{ gap: space.xs }}>
+          <Text style={[type.bodyStrong, { color: palette.ink }]}>Does this pharmacy have these products?</Text>
+          <Text style={[type.meta, { color: palette.inkSoft }]}>Answer the ones you checked — leave the rest blank.</Text>
+        </View>
+        <View style={{ gap: space.sm }}>
+          {form.productFamilies.map((family) => (
+            <FamilyStock
+              answered={availability}
+              disabled={saving}
+              family={family}
+              key={family.family}
+              onSet={setStock}
+              onToggle={toggleFamily}
+              open={openFamilies.has(family.family)}
+            />
+          ))}
+        </View>
+      </CrmSection>
+
+      <CrmSection title="5 · Comment">
         <TextInput
           editable={!saving}
           maxLength={VISIT_COMMENT_MAX}
@@ -1004,7 +1232,7 @@ function AddVisit({
         />
       </CrmSection>
 
-      <CrmSection title="5 · Live photo">
+      <CrmSection title="6 · Live photo">
         {placePhoto ? (
           <View style={{ gap: space.sm }}>
             <View style={{ backgroundColor: palette.paper2, borderColor: palette.line, borderRadius: radius, borderWidth: hairline, overflow: "hidden" }}>
