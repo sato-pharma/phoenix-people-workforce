@@ -1548,6 +1548,7 @@ import { runPhoenixCrmTodayTests } from "./phoenix-crm-today.test.ts";
 import { runPhoenixCrmLastVisitProductsTests } from "./phoenix-crm-last-visit-products.test.ts";
 import { runPhoenixCrmVisitOutcomeTests } from "./phoenix-crm-visit-outcome.test.ts";
 import { runPhoenixCrmSamplesTests } from "./phoenix-crm-samples.test.ts";
+import { runPhoenixCrmVisitDwellTests } from "./phoenix-crm-visit-dwell.test.ts";
 import { runPhoenixCrmLocationIntegrityTests } from "./phoenix-crm-location-integrity.test.ts";
 import { runPhoenixCrmPortalSidebarTests } from "./phoenix-crm-portal-sidebar.test.ts";
 import { runPhoenixCrmAmPmWordTests } from "./phoenix-crm-am-pm-words.test.ts";
@@ -5158,6 +5159,11 @@ await runTest(
 await runTest(
   "Phoenix CRM fills the products in from his own last visit (GOLDEN RULE #1, the EASY half — owner, 2026-09-26, \"nothing is asked twice\": the newest earlier visit wins with capturedAt breaking a same-day tie, a product retired from the line never comes back, a customer he has never visited is ABSENT rather than present-and-empty, the read stops strictly before today so his own morning cannot prefill itself, and both apps say which day it came from)",
   runPhoenixCrmLastVisitProductsTests,
+);
+
+await runTest(
+  "Phoenix CRM times a visit in silence (D3 — owner, 2026-09-26, Golden Rule #1: the rep is never told it exists, so no screen puts a duration into words and the clock is touched exactly twice, to start it and to send it; dwell_seconds is SERVER-derived from the visit's own captured_at and is never read from the body, while form_open_seconds is the phone's own count, kept because a forged one is CONSTANT; a phone sending \"abc\" is stripped to digits rather than cast, because a raw cast would abort the whole save; and neither can refuse a visit)",
+  runPhoenixCrmVisitDwellTests,
 );
 
 await runTest(

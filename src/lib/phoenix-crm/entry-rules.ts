@@ -249,7 +249,35 @@ export type VisitDraft = CapturedFix & {
    * exists. Junk is dropped rather than refused, for the same reason as the outcome above.
    */
   samplesGiven: SamplesGiven;
+  /**
+   * How long the form was open on the phone, in seconds — or null when it did not say.
+   *
+   * 🔴 SILENT (Golden Rule #1). It is never shown to the rep, never mentioned to him and never able
+   * to refuse a visit; it is read only by the Super Admin's integrity board, where a CONSTANT value
+   * across a rep's whole month is the signal and any single value is not. Clamped, never refused —
+   * see `clampFormOpenSeconds`.
+   */
+  formOpenSeconds: number | null;
 };
+
+/** A photo slot lasts 2 hours, so nothing legitimate is longer than that between opening and saving. */
+export const FORM_OPEN_SECONDS_MAX = 7200;
+
+/**
+ * The phone's stopwatch, clamped.
+ *
+ * Never refused and never thrown on: a build one release behind, a browser that lost the clock, a
+ * value of "abc" — each lands as null and the visit saves. The rep is standing at a door with a photo
+ * he cannot retake, and this is the one field on the whole form he is not even told exists.
+ */
+export function clampFormOpenSeconds(raw: unknown): number | null {
+  // Explicitly, because `Number(null)` and `Number("")` are BOTH 0 — a body that said nothing would
+  // otherwise land as a visit saved in under a second, which is the one reading that matters most.
+  if (typeof raw !== "number" && !(typeof raw === "string" && raw.trim() !== "")) return null;
+  const value = Math.floor(Number(raw));
+  if (!Number.isFinite(value) || value < 0) return null;
+  return Math.min(value, FORM_OPEN_SECONDS_MAX);
+}
 
 /** The recorder caps at 60s; the column allows 120, so a long note is clamped rather than refused. */
 const VOICE_NOTE_SECONDS_MAX = 120;
@@ -351,6 +379,7 @@ export function parseVisitDraft(raw: unknown): EntryRuleResult<VisitDraft> {
       unplannedReason,
       outcome: parseVisitOutcome(body),
       samplesGiven: parseSamplesGiven(body.samplesGiven),
+      formOpenSeconds: clampFormOpenSeconds(body.formOpenSeconds),
     },
   };
 }
