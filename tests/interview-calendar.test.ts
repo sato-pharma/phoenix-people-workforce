@@ -929,10 +929,19 @@ function runWiringTests() {
     "getInterviewRequest(caller",
     "scheduleInterviewRequestItem(caller",
     "cancelInterviewRequest(caller",
+    // The per-person .ics subscription: minting a feed token is its own gate — signed-in Phoenix
+    // person only, and only their own token (interview-calendar-ics.ts).
+    "getOrCreateMyCalendarFeedToken(caller",
   ];
   const routes = routeFiles("app/api/recruitment/interview-calendar");
   assert.ok(routes.length >= 28, `the calendar's routes were found (${routes.length})`);
+  // The ONE public route: the per-person .ics subscription feed. A calendar app (Outlook, Google, the
+  // phone) cannot sign in to Phoenix, so the bearer token IS the credential — exactly the copy-link
+  // model the owner chose. It resolves no Phoenix sign-in by design; its contract is pinned on its own
+  // below. Everything else on the calendar must still resolve who is asking and reach the gate.
+  const PUBLIC_ICS_FEED = "app/api/recruitment/interview-calendar/ics/[token]/route.ts";
   for (const file of routes) {
+    if (file.replace(/\\/g, "/").endsWith(PUBLIC_ICS_FEED)) continue;
     // A call wrapped over several lines — `createInterviewBooking(\n  caller,` — is still the call.
     const source = stripComments(read(file)).replace(/\(\s+/g, "(");
     const handlers = source.split(/(?=export async function (?:GET|POST|PATCH|PUT|DELETE)\()/).slice(1);
@@ -1052,4 +1061,35 @@ function runWiringTests() {
   assert.match(editDialog, /body\.external = \{/, "the edit dialog sends the outside person's name, phone and e-mail");
   const viewSrc = stripComments(read("src/components/recruitment/interview-calendar/interview-calendar-view.tsx"));
   assert.match(viewSrc, /<EditInterviewDetailsDialog\b/, "the interview panel opens the edit dialog");
+
+  // "My interviews" on the portal home + a per-person .ics subscription (owner, 2026-09-26: make the
+  // calendar relevant to everyone daily). The card travels inside the ONE identity band every role
+  // lands on, and myInterviews is a REQUIRED band prop so no landing surface can silently drop it —
+  // every call site must pass it, which the required prop enforces at compile time.
+  const domainSrc2 = stripComments(read("src/lib/recruitment/interview-calendar.ts"));
+  assert.match(domainSrc2, /export async function listMyUpcomingInterviews\(/, "the domain lists a person's own upcoming interviews");
+  assert.match(domainSrc2, /export async function listInterviewsForCalendarFeed\(/, "the domain lists a person's interviews for the .ics feed");
+  const snapshot = stripComments(read("src/lib/employee-portal/home-snapshot.ts"));
+  assert.match(snapshot, /myInterviews: PortalMyInterview\[\]/, "the portal snapshot carries the person's own interviews");
+  assert.match(snapshot, /loadMyUpcomingInterviews\(access\)/, "the snapshot computes them");
+  const band = stripComments(read("src/components/employee-portal/portal-command-center.tsx"));
+  assert.match(band, /<MyInterviewsCard interviews=\{myInterviews\} \/>/, "the identity band renders the My interviews card");
+  assert.match(band, /myInterviews: PortalMyInterview\[\];/, "the band takes myInterviews as a required prop (no landing surface can drop it)");
+  for (const file of [
+    "src/components/employee-portal/portal-command-center.tsx",
+    "src/components/employee-portal/dashboards/rm-command-center.tsx",
+    "src/components/employee-portal/dashboards/nsm-command-center.tsx",
+    "src/components/employee-portal/dashboards/marketing-manager-command-center.tsx",
+    "src/components/employee-portal/dashboards/dsm-command-center.tsx",
+  ]) {
+    const src = stripComments(read(file));
+    if (!src.includes("<PortalIdentityBand")) continue;
+    assert.doesNotMatch(src, /<PortalIdentityBand(?![^>]*myInterviews)[^>]*\/>/, `${file} passes myInterviews to every identity band`);
+  }
+  const feedRoute = stripComments(read("app/api/recruitment/interview-calendar/ics/[token]/route.ts"));
+  assert.match(feedRoute, /text\/calendar/, "the .ics feed route serves text/calendar");
+  assert.match(feedRoute, /buildCalendarFeedForToken\(/, "the feed is built from the token alone");
+  assert.doesNotMatch(feedRoute, /resolveAccessContext/, "the feed is public by design — the bearer token is the credential, so no Phoenix sign-in");
+  const myFeedRoute = stripComments(read("app/api/recruitment/interview-calendar/my-calendar-feed/route.ts"));
+  assert.match(myFeedRoute, /getOrCreateMyCalendarFeedToken\(caller\)/, "the subscribe route mints the person's own feed token");
 }

@@ -8,6 +8,8 @@ import { devSafePromiseAllSettled } from "@/lib/utils/dev-safe-promise-all";
 import { isReviewPeriod, windowLabel } from "@/lib/business-review/period-format";
 import { getVacationBalancePeriod } from "@/lib/vacation/calculations";
 import { getEmployeeAnnualLeaveBalanceDays } from "@/lib/vacation/service";
+import { interviewCalendarCaller, listMyUpcomingInterviews } from "@/lib/recruitment/interview-calendar";
+import type { InterviewPlatform } from "@/lib/recruitment/interview-calendar-types";
 import {
   getDsmTeamPerformance,
   getEmployeePortalShellData,
@@ -329,9 +331,27 @@ export type MrFieldKpis = {
   kpiRules?: "legacy" | "phoenix";
 };
 
+/** One of this person's own upcoming interviews, for the "My interviews" card on the portal home. */
+export type PortalMyInterview = {
+  id: string;
+  candidateName: string;
+  dateKey: string;
+  startMinutes: number;
+  durationMinutes: number;
+  platform: InterviewPlatform;
+  zoomJoinUrl: string | null;
+};
+
 export type PortalHomeSnapshot = {
   shell: EmployeePortalShellData;
   role: string;
+  /**
+   * This person's OWN upcoming interviews — the ones they conduct (interviewer) or asked for
+   * (requester), from today forward. Empty for almost everyone; the card renders nothing rather than
+   * an empty box, so it appears only for people who actually have an interview coming up. This is
+   * what makes the calendar relevant on the home page daily (owner, 2026-09-26).
+   */
+  myInterviews: PortalMyInterview[];
   /** This fortnight's stars, one per line, shown as a compact card on every audience's landing
    * page. Empty until the first fortnight is confirmed — the card renders nothing rather than an
    * empty box. */
@@ -938,6 +958,25 @@ export function resolvePlansAwaitingApproval(
   return { plansAwaitingManagerApproval: data.count, plansCountAvailable: true };
 }
 
+/**
+ * This person's own upcoming interviews for the "My interviews" card — the ones they conduct or
+ * asked for, from today forward. Degrades to [] like every snapshot field; the card renders nothing
+ * when empty, so most dashboards show nothing extra.
+ */
+async function loadMyUpcomingInterviews(access: AccessContext): Promise<PortalMyInterview[]> {
+  const caller = await interviewCalendarCaller(access);
+  const rows = await listMyUpcomingInterviews(caller);
+  return rows.map((booking) => ({
+    candidateName: booking.candidateName,
+    dateKey: booking.dateKey,
+    durationMinutes: booking.durationMinutes,
+    id: booking.id,
+    platform: booking.platform,
+    startMinutes: booking.startMinutes,
+    zoomJoinUrl: booking.zoomJoinUrl,
+  }));
+}
+
 export async function getPortalHomeSnapshot(access: AccessContext): Promise<PortalHomeSnapshot> {
   const shell = await getEmployeePortalShellData(access);
   const hrId = normalizeHrId(access.hrId) ?? "";
@@ -1138,7 +1177,7 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
   // does on the Vacation Report and the request page — omitting it silently kept this tile on
   // the hire-anniversary reset for an employee whose real period had already rolled over.
   const balance = getVacationBalancePeriod({ employeeHrId: hrId, hireDate: shell.hrContract.hireDate, referenceDate: today });
-  const [roleExtras, dvFocus, earlyBirdStars, planAdherence, leaveDaysRemaining] = await Promise.all([
+  const [roleExtras, dvFocus, earlyBirdStars, planAdherence, leaveDaysRemaining, myInterviews] = await Promise.all([
     roleExtrasPromise,
     dvFocusPromise,
     // Computed OUTSIDE the role branches: it is the same three line-stars for every audience, so
@@ -1154,11 +1193,15 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
     hrId ? loadPortalPlanAdherence(hrId).catch(() => null) : Promise.resolve(null),
     // Days LEFT, not the raw entitlement — see leaveDaysRemaining's own doc on PortalHomeSnapshot.
     hrId ? getEmployeeAnnualLeaveBalanceDays(hrId).catch(() => null) : Promise.resolve(null),
+    // The person's own upcoming interviews — outside the role branches, data-driven like plan
+    // adherence: whether they have any interview is the only honest test, so that is the test.
+    hrId ? loadMyUpcomingInterviews(access).catch(() => []) : Promise.resolve([]),
   ]);
 
   return {
     shell,
     role,
+    myInterviews,
     earlyBirdStars,
     pendingVacationCount,
     pendingExcuseCount,

@@ -31,7 +31,8 @@ import { RmCommandCenter } from "@/components/employee-portal/dashboards/rm-comm
 import { MarketingManagerCommandCenter } from "@/components/employee-portal/dashboards/marketing-manager-command-center";
 import { PlanAdherenceDashboardCard } from "@/components/weekly-planning/plan-adherence-report";
 import type { AccessContext } from "@/lib/auth/permissions";
-import type { PortalHomeSnapshot } from "@/lib/employee-portal/home-snapshot";
+import { MyInterviewsCard } from "@/components/employee-portal/my-interviews-card";
+import type { PortalHomeSnapshot, PortalMyInterview } from "@/lib/employee-portal/home-snapshot";
 import type { PortalPlanAdherence } from "@/lib/weekly-planning/plan-adherence-data";
 import type { EmployeePortalShellData } from "@/lib/employee-portal/service";
 import { currentCairoDateParts, PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
@@ -282,9 +283,14 @@ export function ProfileIntelBar({ shell }: { shell: EmployeePortalShellData }) {
  * container, so the rhythm of the page is unchanged from when they were written out by hand.
  */
 export function PortalIdentityBand({
+  myInterviews,
   planAdherence,
   shell,
 }: {
+  /** This person's own upcoming interviews. REQUIRED, like planAdherence, so no landing surface can
+   * silently drop the card: every call site passes snapshot.myInterviews, and the card itself
+   * renders nothing when the list is empty (which it is for almost everyone). */
+  myInterviews: PortalMyInterview[];
   planAdherence: PortalPlanAdherence | null;
   shell: EmployeePortalShellData;
 }) {
@@ -295,6 +301,7 @@ export function PortalIdentityBand({
       {planAdherence?.latest ? (
         <PlanAdherenceDashboardCard adherence={planAdherence} planBaseHref="/employee-portals/approvals/plan" />
       ) : null}
+      <MyInterviewsCard interviews={myInterviews} />
       {/* Travels with the identity band, per the design note above — every role lands here, so
           this is the one place a push opt-in nudge reaches every employee-portal role's home in
           a single edit. Renders nothing until it has checked this person's own state. */}
@@ -796,7 +803,7 @@ function PmGpmCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
 
   return (
     <div className="mx-auto w-full space-y-3" dir="auto">
-      <PortalIdentityBand shell={shell} planAdherence={snapshot.planAdherence} />
+      <PortalIdentityBand shell={shell} planAdherence={snapshot.planAdherence} myInterviews={snapshot.myInterviews} />
 
       {!pendingAvailable ? (
         <PendingCountsUnavailable />
@@ -1126,7 +1133,7 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
 
   return (
     <div className="mx-auto w-full space-y-2" dir="auto">
-      <PortalIdentityBand shell={shell} planAdherence={snapshot.planAdherence} />
+      <PortalIdentityBand shell={shell} planAdherence={snapshot.planAdherence} myInterviews={snapshot.myInterviews} />
       <PortalContextBar context="Field Performance" role="Medical Representative" />
 
       {/* Four measurements, no ornament. Coverage and frequency stand apart on purpose: they
@@ -1457,7 +1464,7 @@ function StandardCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
 
   return (
     <div className="mx-auto w-full space-y-3 sm:space-y-5" dir="auto">
-      <PortalIdentityBand shell={shell} planAdherence={snapshot.planAdherence} />
+      <PortalIdentityBand shell={shell} planAdherence={snapshot.planAdherence} myInterviews={snapshot.myInterviews} />
       <PortalContextBar role={role} context={shell.employee.department || ""} />
 
       <GlanceStrip

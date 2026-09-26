@@ -891,6 +891,71 @@ export async function getInterviewBooking(caller: InterviewCalendarCaller, booki
   return booking;
 }
 
+/**
+ * The signed-in person's OWN upcoming interviews — the ones they conduct (interviewer) or asked for
+ * (requester) — from the start of today (Cairo) forward, still open (no outcome recorded). For the
+ * "My interviews" strip on the portal (owner, 2026-09-26: make the calendar relevant to everyone
+ * daily). A person always sees their own, so it is keyed on their hr id, not the calendar view gate.
+ */
+export async function listMyUpcomingInterviews(caller: InterviewCalendarCaller, now: Date = new Date()): Promise<InterviewBooking[]> {
+  const me = canonicalHrIdKey(caller.access.hrId);
+  if (!me) return [];
+  const from = cairoLocalToUtc(cairoDateKey(now), 0);
+  const to = new Date(from.getTime() + 21 * 24 * 60 * 60 * 1000);
+  const rows = (await bookingsBetween(from, to)).filter(
+    (row) => !row.outcome && (canonicalHrIdKey(row.interviewer_hr_id) === me || canonicalHrIdKey(row.requested_by_hr_id) === me),
+  );
+  return hydrate(rows.slice(0, 50), caller, now);
+}
+
+/** One interview as the .ics calendar feed shows it — names resolved; it is the person's own, so no reveal gate. */
+export type FeedInterview = {
+  id: string;
+  candidateName: string;
+  startsAt: string;
+  durationMinutes: number;
+  platform: InterviewPlatform;
+  zoomJoinUrl: string | null;
+  notes: string | null;
+  interviewerName: string | null;
+  sessionTitle: string | null;
+  updatedAt: string;
+};
+
+/**
+ * One person's interviews between two instants — those they conduct or asked for — for their private
+ * .ics calendar feed (interview-calendar-ics.ts). A SYSTEM read keyed on the hr id the feed token
+ * resolves to, never a caller's gate: the feed carries only that one person's own interviews. A
+ * cancelled interview is a deleted row, so it simply drops out of the feed on the next refresh.
+ */
+export async function listInterviewsForCalendarFeed(hrId: string, from: Date, to: Date): Promise<FeedInterview[]> {
+  const me = canonicalHrIdKey(hrId);
+  if (!me) return [];
+  const rows = (await bookingsBetween(from, to)).filter(
+    (row) => canonicalHrIdKey(row.interviewer_hr_id) === me || canonicalHrIdKey(row.requested_by_hr_id) === me,
+  );
+  if (rows.length === 0) return [];
+  const candidates = await loadCandidates(rows.map((row) => row.candidate_id ?? ""));
+  const people = await loadPeople(rows.map((row) => row.interviewer_hr_id));
+  const sessions = await loadSessionsById(rows.map((row) => row.session_id ?? ""));
+  return rows.map((row) => {
+    const candidate = row.candidate_id ? candidates.get(String(row.candidate_id)) : undefined;
+    const session = row.session_id ? sessions.get(String(row.session_id)) : undefined;
+    return {
+      candidateName: (candidate?.full_name || row.external_name || "A candidate").trim(),
+      durationMinutes: Number(row.duration_minutes),
+      id: row.id,
+      interviewerName: row.interviewer_hr_id ? personName(people, row.interviewer_hr_id) : null,
+      notes: row.notes ?? null,
+      platform: session ? asPlatform(session.platform) : asPlatform(row.platform),
+      sessionTitle: session?.title ?? null,
+      startsAt: row.starts_at,
+      updatedAt: row.updated_at,
+      zoomJoinUrl: row.zoom_join_url ?? session?.zoom_join_url ?? null,
+    };
+  });
+}
+
 export async function getInterviewSession(
   caller: InterviewCalendarCaller,
   sessionId: string,

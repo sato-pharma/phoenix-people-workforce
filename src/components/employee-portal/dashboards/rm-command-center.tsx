@@ -239,7 +239,7 @@ export function RmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSnap
 
   return (
     <div className="mx-auto w-full space-y-3" dir="auto">
-      <PortalIdentityBand shell={shell} planAdherence={snapshot.planAdherence} />
+      <PortalIdentityBand shell={shell} planAdherence={snapshot.planAdherence} myInterviews={snapshot.myInterviews} />
       <PortalContextBar role="Regional Manager" context={shell.employee.territory || "—"} />
 
       {!pendingAvailable ? (
