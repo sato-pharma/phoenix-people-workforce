@@ -22,6 +22,7 @@ import * as React from "react";
 
 import { Action } from "@/components/recruitment/workstation/workstation-look";
 import {
+  fetchCandidateApplication,
   fetchWhatsAppApplication,
   saveBytesAsPdf,
   type FetchedApplication,
@@ -45,11 +46,32 @@ function problemText(error: unknown): string {
   return "The application could not be produced right now. Try again in a minute.";
 }
 
-export function WhatsAppApplicationPrint({ sessionId }: { sessionId: string }) {
+/**
+ * The print page's body, source-agnostic. `load` fetches the bytes (from a WhatsApp conversation or from a
+ * candidate), `id` keys the effect and the retry, and `title` is the one word in the toolbar. The two exports
+ * below are the only callers; drawing the pages, opening the dialog once and the retry are identical either way.
+ */
+function ApplicationPrint({
+  id,
+  load,
+  title,
+}: {
+  id: string;
+  load: (signal: AbortSignal) => Promise<FetchedApplication>;
+  title: string;
+}) {
   const pagesRef = React.useRef<HTMLDivElement | null>(null);
   const printedOnce = React.useRef(false);
   const [phase, setPhase] = React.useState<Phase>({ kind: "loading" });
   const [attempt, setAttempt] = React.useState(0);
+  // `load` is a fresh closure each render; kept in a ref so re-creating it never re-runs the draw. Only
+  // `id` and a retry do that. Synced in its own effect (never during render), and that effect is declared
+  // BEFORE the draw effect below, so on the render where `id` changes the ref already holds the latest
+  // `load` by the time the draw reads it.
+  const loadRef = React.useRef(load);
+  React.useEffect(() => {
+    loadRef.current = load;
+  });
 
   React.useEffect(() => {
     let active = true;
@@ -57,7 +79,7 @@ export function WhatsAppApplicationPrint({ sessionId }: { sessionId: string }) {
     printedOnce.current = false;
     void (async () => {
       try {
-        const application = await fetchWhatsAppApplication(sessionId, controller.signal);
+        const application = await loadRef.current(controller.signal);
         if (!active) return;
 
         // Native import of a same-origin asset, so the bundler never touches pdf.js (cv-preview-modal.tsx).
@@ -102,7 +124,7 @@ export function WhatsAppApplicationPrint({ sessionId }: { sessionId: string }) {
       active = false;
       controller.abort();
     };
-  }, [sessionId, attempt]);
+  }, [id, attempt]);
 
   // The dialog opens once, after the canvases are in the document. A frame later, so the last page has
   // been laid out and the dialog does not preview a half-built sheet.
@@ -128,7 +150,7 @@ export function WhatsAppApplicationPrint({ sessionId }: { sessionId: string }) {
       <header className={`${SCREEN_ONLY_CLASS} sticky top-0 z-10 border-b border-slate-300 bg-white`}>
         <div className="mx-auto flex max-w-[297mm] flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2.5">
           <div className="min-w-0 flex-1">
-            <h1 className="text-[15px] font-bold text-slate-900">WhatsApp application</h1>
+            <h1 className="text-[15px] font-bold text-slate-900">{title}</h1>
             <p className="text-[12px] text-slate-600" role="status">
               {phase.kind === "loading" ? "Preparing the CV and the application sheet. This takes a few seconds." : null}
               {phase.kind === "error" ? "The application did not open." : null}
@@ -169,6 +191,24 @@ export function WhatsAppApplicationPrint({ sessionId }: { sessionId: string }) {
         <div ref={pagesRef} />
       </main>
     </div>
+  );
+}
+
+/** The WhatsApp Applicants / interview-calendar print page: keyed by conversation. */
+export function WhatsAppApplicationPrint({ sessionId }: { sessionId: string }) {
+  return (
+    <ApplicationPrint
+      id={sessionId}
+      load={(signal) => fetchWhatsAppApplication(sessionId, signal)}
+      title="WhatsApp application"
+    />
+  );
+}
+
+/** The screening page's print page: keyed by candidate, so it reaches a CV that never applied on WhatsApp. */
+export function CandidateApplicationPrint({ candidateId }: { candidateId: string }) {
+  return (
+    <ApplicationPrint id={candidateId} load={(signal) => fetchCandidateApplication(candidateId, signal)} title="Application" />
   );
 }
 

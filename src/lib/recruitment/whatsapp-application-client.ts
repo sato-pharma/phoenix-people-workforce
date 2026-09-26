@@ -11,6 +11,8 @@ import {
   APPLICATION_FILE_NAME_HEADER,
   APPLICATION_SHEET_PAGES_HEADER,
   applicationFileName,
+  candidateApplicationFileName,
+  candidateApplicationTextPath,
   whatsAppApplicationTextPath,
 } from "@/lib/recruitment/whatsapp-application-file";
 
@@ -56,8 +58,8 @@ async function problemMessage(response: Response): Promise<string> {
  * Asks the server to build the application and returns its bytes. Throws an Error whose message is a
  * sentence the reader can act on, never a status code alone.
  */
-export async function fetchWhatsAppApplication(sessionId: string, signal?: AbortSignal): Promise<FetchedApplication> {
-  const response = await fetch(whatsAppApplicationTextPath(sessionId), { credentials: "same-origin", signal });
+async function fetchApplicationFromPath(textPath: string, fallbackName: string, signal?: AbortSignal): Promise<FetchedApplication> {
+  const response = await fetch(textPath, { credentials: "same-origin", signal });
   if (!response.ok) throw new Error(await problemMessage(response));
   const bytes = base64ToBytes(await response.text());
   const named = response.headers.get(APPLICATION_FILE_NAME_HEADER);
@@ -70,9 +72,21 @@ export async function fetchWhatsAppApplication(sessionId: string, signal?: Abort
   return {
     bytes,
     cvPages: headerNumber(response, APPLICATION_CV_PAGES_HEADER),
-    fileName: fileName || applicationFileName(""),
+    fileName: fileName || fallbackName,
     sheetPages: headerNumber(response, APPLICATION_SHEET_PAGES_HEADER),
   };
+}
+
+export async function fetchWhatsAppApplication(sessionId: string, signal?: AbortSignal): Promise<FetchedApplication> {
+  return fetchApplicationFromPath(whatsAppApplicationTextPath(sessionId), applicationFileName(""), signal);
+}
+
+/**
+ * The candidate-keyed application, for the screening page's "Download application" on any CV. Same bytes and
+ * same headers as the WhatsApp one; only the endpoint and the fallback name differ.
+ */
+export async function fetchCandidateApplication(candidateId: string, signal?: AbortSignal): Promise<FetchedApplication> {
+  return fetchApplicationFromPath(candidateApplicationTextPath(candidateId), candidateApplicationFileName(""), signal);
 }
 
 /** Saves bytes as a file through a temporary link, then lets the browser forget the object. */

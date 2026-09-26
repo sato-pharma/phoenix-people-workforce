@@ -1073,6 +1073,11 @@ export const accessRegistry = [
   // of a manager (recruitment:update). Left to the catch-all, a widening of read access would
   // silently hand out the ability to message applicants.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/recruitment/candidates/*/whatsapp-reply", permission: { resource: "recruitment", action: "update" }, csrfRequired: true }),
+  // The candidate's application PDF (CV plus the Job application form, and the WhatsApp Q&A when they had
+  // one) — the screening page's "Download application" on any CV. A CV leaving the building is an audited
+  // export, exactly like the WhatsApp conversation's own /application above, so it is listed here rather
+  // than left to the candidates/** catch-all, which would not mark it an export. Same candidates:read gate.
+  sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/recruitment/candidates/:id/application", permission: { resource: "candidates", action: "read" } }),
   sessionApi({ methods: allMethods, pattern: "/api/recruitment/candidates/**", permission: { resource: "candidates", action: "read" }, csrfRequired: true }),
   // The recruiter's OWN folder tree — folders and subfolders built by hand, and the CVs pushed into
   // them (owner request 2026-09-12). Gated on `candidates` rather than `recruitment` because of what

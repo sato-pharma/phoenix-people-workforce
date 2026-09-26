@@ -30,19 +30,54 @@ export function whatsAppApplicationPrintPath(sessionId: string): string {
   return `/print/whatsapp-application/${encodeURIComponent(sessionId)}`;
 }
 
+// ── The candidate-keyed forms, for the screening page's "Download application" on ANY CV ─────────────
+//
+// The owner, 2026-09-26: the button reaches every CV on the screening page, not only the WhatsApp
+// applicants. The id in these is a CANDIDATE, and the route behind them builds the same application PDF —
+// the CV plus the Job application form from the record, with the WhatsApp Q&A when the person had a
+// conversation. The WhatsApp-conversation forms above stay exactly as they are for WhatsApp Applicants.
+
+/** The endpoint that builds the application PDF for one candidate. */
+export function candidateApplicationApiPath(candidateId: string): string {
+  return `/api/recruitment/candidates/${encodeURIComponent(candidateId)}/application`;
+}
+
+/** The same, as text for the in-page renderer — see `whatsAppApplicationTextPath` for why base64. */
+export function candidateApplicationTextPath(candidateId: string): string {
+  return `${candidateApplicationApiPath(candidateId)}?format=base64`;
+}
+
+/** The print page for one candidate's application. Outside both shells, like the WhatsApp one. */
+export function candidateApplicationPrintPath(candidateId: string): string {
+  return `/print/candidate-application/${encodeURIComponent(candidateId)}`;
+}
+
+/** The cleaned, file-system-safe form of an applicant's name, capped at 80 characters. */
+function safeApplicantName(name: string): string {
+  return name
+    .replace(/[\\/:*?"<>|\u0000-\u001f]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 80)
+    .trim();
+}
+
 /**
  * The saved file's name, from the applicant's own name: "Sara Ahmed - WhatsApp application.pdf".
  * Anything a file system refuses is dropped, and an all-Arabic name stays Arabic. The route sends it
  * as a UTF-8 `filename*`, since a header value cannot carry those letters as they are.
  */
 export function applicationFileName(name: string): string {
-  const cleaned = name
-    .replace(/[\\/:*?"<>|\u0000-\u001f]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 80)
-    .trim();
-  return `${cleaned || "Applicant"} - WhatsApp application.pdf`;
+  return `${safeApplicantName(name) || "Applicant"} - WhatsApp application.pdf`;
+}
+
+/**
+ * The candidate-application file's name: "Sara Ahmed - application.pdf". Plain "application", because a
+ * candidate reached from the screening page may never have applied on WhatsApp; the WhatsApp form keeps
+ * its own name above.
+ */
+export function candidateApplicationFileName(name: string): string {
+  return `${safeApplicantName(name) || "Applicant"} - application.pdf`;
 }
 
 /** `Content-Disposition` for a download whose name may hold any letters: an ASCII fallback and the real name. */

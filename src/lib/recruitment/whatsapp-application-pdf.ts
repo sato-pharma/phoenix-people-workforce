@@ -171,8 +171,15 @@ export async function buildWhatsAppApplicationPdf(input: {
   cv: ApplicationCvSource | null;
   missingCvReason: string;
   now?: Date;
+  /**
+   * Did this person apply on WhatsApp? Defaults true (every existing caller). False for the screening
+   * page's "Download application" on a candidate who never used WhatsApp — the sheet is then a plain Job
+   * application form with no Q&A section, and the file names itself accordingly.
+   */
+  hasWhatsApp?: boolean;
 }): Promise<BuiltApplicationPdf> {
   const { application, cv, missingCvReason } = input;
+  const hasWhatsApp = input.hasWhatsApp ?? true;
   return withChromiumPage(async (page) => {
     // The CV first: a Word CV needs this same browser, and the sheet's footer needs to know what
     // became of it.
@@ -182,6 +189,7 @@ export async function buildWhatsAppApplicationPdf(input: {
       candidate: application.candidate,
       contact: application.contact,
       cvLine: part.line,
+      hasWhatsApp,
       now: input.now ?? new Date(),
       row: application.row,
       titleLabel: application.titleLabel,
@@ -199,7 +207,7 @@ export async function buildWhatsAppApplicationPdf(input: {
       for (const copied of await merged.copyPages(part.pdf, part.pdf.getPageIndices())) merged.addPage(copied);
     }
     for (const copied of await merged.copyPages(sheetDoc, sheetDoc.getPageIndices())) merged.addPage(copied);
-    merged.setTitle(`${application.row.name} — WhatsApp application`);
+    merged.setTitle(`${application.row.name} — ${hasWhatsApp ? "WhatsApp application" : "Job application"}`);
     merged.setCreator("Phoenix Workforce");
     merged.setProducer("Phoenix Workforce");
     return {
