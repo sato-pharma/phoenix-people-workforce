@@ -6,8 +6,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { CrmChoice, CrmNote } from "@/components/crm/crm-kit";
 import { ErrorNotice, LoadingScreen } from "@/components/ui";
 import { useCrm } from "@/lib/crm/client";
+import { ExceptionsScreen } from "@/features/crm/exceptions-screen";
 import { ListScreen } from "@/features/crm/list-screen";
 import { PlanScreen } from "@/features/crm/plan-screen";
+import { TeamScreen } from "@/features/crm/team-screen";
 import { TodayScreen } from "@/features/crm/today-screen";
 import { VisitsScreen } from "@/features/crm/visits-screen";
 import type { PendingValidate, PendingVisit } from "@/features/crm/handoff";
@@ -18,10 +20,11 @@ import type { CrmOverview, TerritorySummary } from "@/lib/crm/types";
 /**
  * Phoenix CRM on the phone — the module's own tab.
  *
- * The native counterpart of the web `PhoenixCrmApp` (src/components/phoenix-crm/phoenix-crm-app.tsx),
- * cut to the rep's core for this first release: the Visits and List sub-tabs of one territory, the
- * territory picker for anyone who reads more than one, and the Super Admin's test mode. The Plan, Team,
- * Directory, Reports and Settings tabs, and the customer's own page, are later releases.
+ * The native counterpart of the web `PhoenixCrmApp` (src/components/phoenix-crm/phoenix-crm-app.tsx):
+ * the rep's four sub-tabs of one territory, the territory picker for anyone who reads more than one,
+ * the Super Admin's test mode, and since B3 the two a manager acts on between visits — Team and
+ * "Needs you". The Directory, the rest of Reports, Settings and the customer's own page stay the
+ * browser's: a phone is where he DECIDES, and those are study he does sitting down.
  *
  * The server decides who sees what (GET /api/phoenix-crm/overview) and checks every read and save
  * again; this screen only lays out what it is handed. The two hand-offs the web module carries are here
@@ -30,9 +33,16 @@ import type { CrmOverview, TerritorySummary } from "@/lib/crm/types";
  * hidden, so the whole screen is the entry the rep is standing at the door to finish.
  */
 
-type SubTab = "today" | "visits" | "list" | "plan";
+type SubTab = "today" | "visits" | "list" | "plan" | "team" | "exceptions";
 
-const SUB_TAB_LABEL: Record<SubTab, string> = { today: "Today", visits: "Visits", list: "List", plan: "Plan" };
+const SUB_TAB_LABEL: Record<SubTab, string> = {
+  today: "Today",
+  visits: "Visits",
+  list: "List",
+  plan: "Plan",
+  team: "Team",
+  exceptions: "Needs you",
+};
 
 function seatOf(overview: CrmOverview, chosen: string | null): string | null {
   const options = overview.territories;
@@ -91,11 +101,21 @@ export default function PhoenixCrmScreen() {
 
   const subTabs: SubTab[] = [
     // A2: the app opens on his day. Built from `overview.tabs` alone — the server decides who gets
-    // which tab, and the phone must never re-derive that from a role.
+    // which tab, and the phone must never re-derive that from a role. 🔴 In particular not from
+    // `viewer.isManager`, which is a fact ABOUT him and not a grant: an acting district manager holds
+    // no manager seat and an SFE Manager holds no territory, and either one read from a role here
+    // would disagree with the gate the service applies.
     ...(overview.tabs.today ? (["today"] as const) : []),
     ...(overview.tabs.visits ? (["visits"] as const) : []),
     ...(overview.tabs.list ? (["list"] as const) : []),
     ...(overview.tabs.plan ? (["plan"] as const) : []),
+    ...(overview.tabs.team ? (["team"] as const) : []),
+    // B3: "Needs you" rides on the SAME flag as Team, deliberately. The board's own gate on the
+    // server is `readsTeamReports` — Super Admin, SFE Manager, a company basis, or a manager seat —
+    // and `tabs.team` admits that same audience, so nobody is ever offered a tab whose read would
+    // then be refused, and a medical rep is offered neither. It is not `tabs.reports`, which is true
+    // for every seat in the module and would put the board in a rep's hand.
+    ...(overview.tabs.team ? (["exceptions"] as const) : []),
   ];
   const activeTab: SubTab = subTabs.includes(tab) ? tab : (subTabs[0] ?? "visits");
 
@@ -126,7 +146,11 @@ export default function PhoenixCrmScreen() {
   }
 
   const entersVisits = test || (!viewer.isSuperAdmin && overview.visitSeatIds.includes(seatId));
-  const working = activeTab === "visits" ? visitsWorking : activeTab === "list" ? listWorking : planWorking;
+  // Only the three tabs that can take the whole screen hide the chrome. Read as a fallthrough — the
+  // old `: planWorking` — Team and "Needs you" would inherit the planner's open day and lose their
+  // own tab bar.
+  const working =
+    activeTab === "visits" ? visitsWorking : activeTab === "list" ? listWorking : activeTab === "plan" ? planWorking : false;
   const currentTerritory = overview.territories.find((territory) => territory.seatId === seatId) ?? null;
 
   const chrome = (
@@ -261,6 +285,22 @@ export default function PhoenixCrmScreen() {
               seatId={seatId}
               test={test}
             />
+          </View>
+        ) : null}
+        {/*
+          B3 — the manager's two. Neither is scoped to the chosen territory: Team is every decision
+          waiting on him across his whole reach, and the board is every territory in it. So neither
+          takes `seatId`, and neither is keyed by one — switching the picker must not throw away a
+          note he has half typed into a refusal.
+        */}
+        {overview.tabs.team ? (
+          <View style={{ display: activeTab === "team" ? "flex" : "none", flex: activeTab === "team" ? 1 : 0 }}>
+            <TeamScreen key={`team|${test}`} test={test} />
+          </View>
+        ) : null}
+        {overview.tabs.team ? (
+          <View style={{ display: activeTab === "exceptions" ? "flex" : "none", flex: activeTab === "exceptions" ? 1 : 0 }}>
+            <ExceptionsScreen key={`exceptions|${test}`} test={test} />
           </View>
         ) : null}
       </View>
