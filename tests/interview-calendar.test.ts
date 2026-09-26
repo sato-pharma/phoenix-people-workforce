@@ -701,6 +701,7 @@ function booking(overrides: Partial<InterviewBooking> & Pick<InterviewBooking, "
     hasMeeting: false,
     interviewerHrId: null,
     interviewerName: null,
+    panelists: [],
     notes: null,
     canSetOutcome: false,
     outcome: null,
@@ -1092,4 +1093,32 @@ function runWiringTests() {
   assert.doesNotMatch(feedRoute, /resolveAccessContext/, "the feed is public by design — the bearer token is the credential, so no Phoenix sign-in");
   const myFeedRoute = stripComments(read("app/api/recruitment/interview-calendar/my-calendar-feed/route.ts"));
   assert.match(myFeedRoute, /getOrCreateMyCalendarFeedToken\(caller\)/, "the subscribe route mints the person's own feed token");
+
+  // Interview PANELS (owner, 2026-09-26): an interview may have more than one interviewer. The lead
+  // (interviewer_hr_id) stays the outcome-setter and Zoom host; additional panel members (an array
+  // column) each SEE the interview — on the calendar, in "My interviews" and on their .ics feed. The
+  // read gate, the personal list and the feed all check panel membership, and panel members are
+  // District Managers and above, deduped, never the lead.
+  const domainPanel = stripComments(read("src/lib/recruitment/interview-calendar.ts"));
+  assert.match(domainPanel, /panelist_hr_ids/, "the booking carries a panel array");
+  assert.match(domainPanel, /async function resolvePanelists\(/, "the panel is validated (District Managers and above, deduped, never the lead)");
+  assert.match(domainPanel, /Panel members are District Managers and above/, "panel members meet the interviewer rank rule");
+  assert.match(domainPanel, /isOnPanel\(viewer, row\.panelist_hr_ids\)/, "a panel member may read the interview");
+  assert.match(domainPanel, /isOnPanel\(me, row\.panelist_hr_ids\)/, "a panel member's own list and .ics feed include the interview");
+  assert.match(domainPanel, /panelists: \(row\.panelist_hr_ids \?\? \[\]\)/, "hydrate exposes the panel members");
+  const bookingsPost = stripComments(read("app/api/recruitment/interview-calendar/bookings/route.ts"));
+  assert.match(bookingsPost, /panelistHrIds: body\.panelistHrIds/, "the booking route forwards the panel");
+  assert.match(patchRoute, /panelistHrIds: body\.panelistHrIds/, "the move/edit route forwards the panel");
+  for (const file of [
+    "src/components/recruitment/interview-calendar/cell-dialog.tsx",
+    "src/components/recruitment/interview-calendar/schedule-interview-dialog.tsx",
+    "src/components/recruitment/interview-calendar/edit-details-dialog.tsx",
+  ]) {
+    const src = stripComments(read(file));
+    assert.match(src, /<PanelPicker\b/, `${file} offers a panel picker`);
+    assert.match(src, /panelistHrIds: panel\.map\(\(member\) => member\.hrId\)/, `${file} sends the chosen panel`);
+  }
+  assert.match(viewSrc, /Panel <span/, "the interview detail lists the panel members");
+  const panelMigration = read("supabase/migrations/20260926153000_ats_interview_booking_panelists.sql");
+  assert.match(panelMigration, /add column if not exists panelist_hr_ids text\[\] not null default '\{\}'/, "the migration adds the panel array");
 }

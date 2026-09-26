@@ -44,6 +44,7 @@ import { cn } from "@/lib/utils";
 import { type CalendarApi, reasonText } from "./calendar-api";
 import { CalendarDialog, ErrorLine, NoteLine, Segmented } from "./calendar-dialog";
 import { InterviewerPicker, type ChosenInterviewer } from "./interviewer-picker";
+import { PanelPicker } from "./panel-picker";
 import { PersonPicker, initialPersonChoice, personLabel, personProblem, submitBooking, type PersonChoice } from "./person-picker";
 
 const QUARTER = 15;
@@ -155,6 +156,7 @@ export function CellDialog({
   const [duration, setDuration] = useState(30);
   const [platform, setPlatform] = useState<InterviewPlatform | null>(null);
   const [interviewer, setInterviewer] = useState<ChosenInterviewer | null>(null);
+  const [panel, setPanel] = useState<ChosenInterviewer[]>([]);
   const [notes, setNotes] = useState("");
   const [title, setTitle] = useState("");
   const [end, setEnd] = useState(() => Math.min(firstStart + 4 * 60, WORKDAY_END_MINUTES));
@@ -227,6 +229,7 @@ export function CellDialog({
         dateKey,
         durationMinutes: duration,
         interviewerHrId: interviewer?.hrId ?? null,
+        panelistHrIds: panel.map((member) => member.hrId),
         notes: notes.trim(),
         platform,
         startMinutes: start,
@@ -434,6 +437,10 @@ export function CellDialog({
               <div>
                 <FieldLabel>Interviewer (optional)</FieldLabel>
                 <InterviewerPicker api={api} onChange={setInterviewer} value={interviewer} />
+              </div>
+              <div>
+                <FieldLabel>Panel (optional)</FieldLabel>
+                <PanelPicker api={api} excludeHrId={interviewer?.hrId ?? null} onChange={setPanel} value={panel} />
               </div>
               <label className="block">
                 <FieldLabel>Note (optional)</FieldLabel>

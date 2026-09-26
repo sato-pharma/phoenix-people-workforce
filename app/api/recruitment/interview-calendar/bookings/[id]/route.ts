@@ -42,6 +42,7 @@ export async function PATCH(request: Request, { params }: Context) {
       durationMinutes: body.durationMinutes,
       external: body.external,
       interviewerHrId: body.interviewerHrId,
+      panelistHrIds: body.panelistHrIds,
       notes: body.notes,
       platform: body.platform,
       sessionId: body.sessionId,
