@@ -25,6 +25,7 @@ import {
   getHeadwindToken,
   headwindAccessHeaders,
   headwindAuthConfig,
+  HeadwindNotConfiguredError,
   resetHeadwindTokenCache,
 } from "@/lib/devices/headwind/auth";
 
@@ -175,7 +176,16 @@ export async function callHeadwind<T = unknown>(
       result = await once(path, init, fetchImpl, env);
     }
   } catch (error) {
-    // 🔴 A TRANSPORT FAILURE USED TO ARRIVE AS "fetch failed" AND NOTHING ELSE. Every refusal above
+    // 🔴 ONLY A REAL TRANSPORT FAILURE MAY BE BLAMED ON THE ADDRESS, AND THIS BRANCH GOT THAT WRONG
+    // ON THE FIRST REAL SIGN-IN FAILURE IT EVER SAW (production, 2026-09-26). `once()` mints the token
+    // first, so a REFUSED sign-in — the wrong login or password — throws HeadwindNotConfiguredError
+    // from inside this try, and it was being rewrapped as "the request never reached a server, so this
+    // is the address, DNS or the network — not Headwind refusing anything. Check HEADWIND_MDM_BASE_URL
+    // first." The page therefore printed the correct diagnosis and then flatly contradicted it, and the
+    // advice it ended on pointed at the one value that was right. An error that already carries
+    // Headwind's own account of what happened is passed through untouched.
+    if (error instanceof HeadwindNotConfiguredError || error instanceof HeadwindRequestError) throw error;
+    // A TRANSPORT FAILURE USED TO ARRIVE AS "fetch failed" AND NOTHING ELSE. Every refusal above
     // carries Headwind's own sentence, but a request that never reached a server at all fell through
     // to the generic 500 handler, so the page said "fetch failed" — which names neither the address
     // it tried nor anything to do about it. That is the one failure a wrong base URL produces.

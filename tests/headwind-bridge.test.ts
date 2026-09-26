@@ -361,6 +361,25 @@ async function runClientTests() {
     "an unreachable railway.internal address explains the private network, that no laptop can reach it, and names the public fallback",
   );
   resetHeadwindTokenCache();
+
+  // 🔴 AND A REFUSED SIGN-IN IS NOT A TRANSPORT FAILURE, WHICH IS EXACTLY WHAT PRODUCTION SHOWED THE
+  // FIRST TIME THE CREDENTIALS WERE REAL (2026-09-26). `once()` mints the token inside the same `try`,
+  // so a wrong login or password throws HeadwindNotConfiguredError from in there and was rewrapped as
+  // "the request never reached a server … Check HEADWIND_MDM_BASE_URL first." The page printed the right
+  // diagnosis and then contradicted it, ending on the one value that was correct — and the base URL is
+  // the single hardest thing to re-derive, so that advice costs an evening. Headwind's own account of a
+  // refusal must reach the page untouched.
+  const refusedSignIn = makeFetch({ login: [{ body: new Error("<!doctype html> HTTP Status 401"), status: 401 }] });
+  await assert.rejects(
+    () => callHeadwind("/rest/private/devices/search", {}, refusedSignIn.fetch, ENV),
+    (error: unknown) =>
+      error instanceof HeadwindNotConfiguredError &&
+      /HEADWIND_MDM_LOGIN and HEADWIND_MDM_PASSWORD/.test(error.message) &&
+      !/never reached a server/.test(error.message) &&
+      !/Check HEADWIND_MDM_BASE_URL first/.test(error.message),
+    "a refused sign-in keeps naming the login and the password, and is never rewritten into an address, DNS or network fault",
+  );
+  resetHeadwindTokenCache();
 }
 
 async function runDeviceTests() {
