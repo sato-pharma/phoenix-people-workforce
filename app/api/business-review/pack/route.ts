@@ -28,6 +28,7 @@ import {
 } from "@/lib/business-review/pack/metrics";
 import { buildSalesReviewPack } from "@/lib/business-review/pack/model";
 import { renderPackPdf } from "@/lib/business-review/pack/pdf";
+import { renderPackPptx } from "@/lib/business-review/pack/pptx";
 import { renderPackWorkbook } from "@/lib/business-review/pack/workbook";
 import { applyRepScope, applySeatScope, loadReviewPortalScope } from "@/lib/business-review/portal-scope";
 import {
@@ -41,6 +42,26 @@ import { logError } from "@/lib/observability/log";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+/**
+ * The three formats, and nothing else.
+ *
+ * An UNKNOWN format falls back to the workbook rather than refusing: the parameter comes from a
+ * link a manager may have been sent, and handing him the spreadsheet is a better answer than an
+ * error page. Written as a closed map so a fourth format cannot be added in one place and forgotten
+ * in the other.
+ */
+const CONTENT_TYPE = {
+  pdf: "application/pdf",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+} as const;
+
+type PackFormat = keyof typeof CONTENT_TYPE;
+
+function packFormat(value: string | null): PackFormat {
+  return value === "pdf" || value === "pptx" ? value : "xlsx";
+}
+
 /** A filename a human can find again in a downloads folder, with no characters Windows refuses. */
 function fileName(subject: string, windowLabel: string, extension: string): string {
   const safe = `${subject} ${windowLabel}`.replace(/[\\/:*?"<>|]/g, " ").replace(/\s+/g, " ").trim();
@@ -53,7 +74,7 @@ export async function GET(request: Request) {
     if (!access.role) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
     const params = new URL(request.url).searchParams;
-    const format = params.get("format") === "pdf" ? "pdf" : "xlsx";
+    const format = packFormat(params.get("format"));
 
     // The scope, from the session. Never from the request.
     const { scope } = await loadReviewPortalScope({
@@ -122,7 +143,12 @@ export async function GET(request: Request) {
       visitsAvailable: hasFigures(coverage, "visits"),
     });
 
-    const buffer = format === "pdf" ? await renderPackPdf(pack) : await renderPackWorkbook(pack);
+    const buffer =
+      format === "pdf"
+        ? await renderPackPdf(pack)
+        : format === "pptx"
+          ? await renderPackPptx(pack)
+          : await renderPackWorkbook(pack);
 
     // Who pulled which territory over which window, and what was in it — reconstructable, because
     // this hands somebody a performance document about named people.
@@ -144,10 +170,7 @@ export async function GET(request: Request) {
       headers: {
         "Cache-Control": "no-store",
         "Content-Disposition": `attachment; filename="${fileName(scope.label, windowLabel, format)}"`,
-        "Content-Type":
-          format === "pdf"
-            ? "application/pdf"
-            : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "Content-Type": CONTENT_TYPE[format],
       },
       status: 200,
     });
