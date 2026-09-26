@@ -92,4 +92,53 @@ SQL
   rm -f /tmp/phoenix-https.sql
 fi
 
+# 🔴 RE-PROVISION THE ONE CONSOLE-ADDED APP HEADWIND DOES NOT RE-FETCH: RustDesk.
+#
+# Headwind serves /files/<name> from $BASE_DIR/files, which lives under /usr/local/tomcat/work — the
+# same ephemeral tree as the WAR cache above. On Railway there is no volume, so EVERY redeploy starts
+# with an empty work/ and the files directory is recreated bare. Headwind's own entrypoint repopulates
+# it for the apps that are in the install-time seed — its launcher and plugins: it greps init.sql for
+# the h-mdm.com download URLs and re-downloads each into $BASE_DIR/files if missing (confirmed against
+# h-mdm/hmdm's docker-entrypoint, `cd $BASE_DIR/files; for FILE in $FILES_TO_DOWNLOAD`). RustDesk was
+# added later, through the console, so it is NOT in that seed and is NOT re-fetched. That is exactly
+# why the https redeploy left the device record pointing at /files/rustdesk-1.4.9-aarch64-signed.apk
+# (urlArm64, still correct in the database) while the file itself was gone — a 404 the tablet cannot
+# install from — even though the small plugins survived.
+#
+# The fix is to do for RustDesk what Headwind already does for its own files: ensure the APK is in
+# $BASE_DIR/files on every start, fetching it from RustDesk's official release if missing. The device
+# record's urlArm64 already names this exact file, so nothing in the database changes and no console
+# step is needed. It downloads to a temp name and only moves the finished file into place once its
+# size and zip magic check out, so a partial download never shadows a good file; and it never aborts
+# startup — a failed fetch logs and the server still boots, and it retries on the next start.
+RUSTDESK_APK="rustdesk-1.4.9-aarch64-signed.apk"
+RUSTDESK_URL="https://github.com/rustdesk/rustdesk/releases/download/1.4.9/${RUSTDESK_APK}"
+RUSTDESK_SIZE=26871021   # bytes — the exact size of RustDesk's immutable 1.4.9 aarch64-signed asset
+FILES_DIR="$BASE_DIR/files"
+DEST="$FILES_DIR/$RUSTDESK_APK"
+mkdir -p "$FILES_DIR"
+have_size="$([ -f "$DEST" ] && wc -c < "$DEST" | tr -d ' ' || echo 0)"
+if [ "$have_size" = "$RUSTDESK_SIZE" ]; then
+  echo "phoenix-entrypoint(files): $RUSTDESK_APK already present ($have_size bytes)"
+else
+  echo "phoenix-entrypoint(files): $RUSTDESK_APK missing or wrong size ($have_size) — fetching from RustDesk"
+  TMP="$FILES_DIR/.$RUSTDESK_APK.part"
+  rm -f "$TMP"
+  fetched=""
+  if command -v wget >/dev/null 2>&1; then
+    wget -q -O "$TMP" "$RUSTDESK_URL" && fetched="yes" || true
+  elif command -v curl >/dev/null 2>&1; then
+    curl -fsSL -o "$TMP" "$RUSTDESK_URL" && fetched="yes" || true
+  fi
+  got_size="$([ -f "$TMP" ] && wc -c < "$TMP" | tr -d ' ' || echo 0)"
+  magic="$([ -f "$TMP" ] && dd if="$TMP" bs=2 count=1 2>/dev/null || true)"
+  if [ -n "$fetched" ] && [ "$got_size" = "$RUSTDESK_SIZE" ] && [ "$magic" = "PK" ]; then
+    mv -f "$TMP" "$DEST"
+    echo "phoenix-entrypoint(files): installed $RUSTDESK_APK ($got_size bytes)"
+  else
+    rm -f "$TMP"
+    echo "phoenix-entrypoint(files): could not fetch a valid $RUSTDESK_APK (got $got_size bytes) — it will retry next start" >&2
+  fi
+fi
+
 exec /docker-entrypoint.sh "$@"

@@ -1636,6 +1636,28 @@ function runServerImageTests() {
     "the cache path is read out of the image's own entrypoint, never hard-coded — a hard-coded path that drifts does not fail, it silently loses the add-on",
   );
 
+  // 🔴 AND IT RE-PROVISIONS RUSTDESK ON EVERY START, BECAUSE HEADWIND WILL NOT.
+  //
+  // /files/<name> is served from $BASE_DIR/files, under the same ephemeral /usr/local/tomcat/work as
+  // the WAR cache. Railway has no volume there, so every redeploy recreates it bare. Headwind's own
+  // entrypoint re-fetches the apps that are in the install-time seed (its launcher and plugins); it
+  // does NOT re-fetch RustDesk, which was added later through the console. So the 2026-09-26 https
+  // redeploy left the RustDesk device record pointing at /files/rustdesk-1.4.9-aarch64-signed.apk
+  // (urlArm64, still correct) while the file itself 404'd, and the tablet could not install it. This
+  // step does for RustDesk exactly what Headwind does for its seed: ensure the APK is in $BASE_DIR/files
+  // on start, fetching it if missing. Remove it and RustDesk silently disappears from the fleet on the
+  // next unrelated rebuild of this image.
+  assert.match(
+    entrypoint,
+    /rustdesk-1\.4\.9-aarch64-signed\.apk/,
+    "the entrypoint re-provisions the RustDesk APK by its exact filename — the same name the device record's urlArm64 already points at",
+  );
+  assert.match(
+    entrypoint,
+    /FILES_DIR="\$BASE_DIR\/files"/,
+    "into $BASE_DIR/files, the directory Headwind serves /files/ from — derived from the same BASE_DIR read out of the image, never hard-coded",
+  );
+
   // 🔴 THE CORE JAR IS FOUND BY THE CLASS IT CARRIES, NEVER BY ITS FILENAME.
   //
   // Headwind ships no `server-*.jar`. Measured 2026-09-26 by unpacking hmdm-5.40.1-os.war: 114 jars
