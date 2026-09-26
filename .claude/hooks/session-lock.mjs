@@ -30,7 +30,7 @@ import os from "node:os";
 import crypto from "node:crypto";
 
 const mode = process.argv[2]; // "start" | "beat" | "end"
-const projectDir = process.argv[3] || process.cwd();
+const projectDir = process.argv[3] || process.env.CLAUDE_PROJECT_DIR || process.cwd();
 const lockPath = path.join(projectDir, ".claude", "session.lock");
 const STALE_MS = 2 * 60 * 60 * 1000; // 2 hours — a crashed session's leftover lock self-expires this long after its last refresh
 const BEAT_EVERY_MS = 5 * 60 * 1000; // a beat rewrites the lock at most this often

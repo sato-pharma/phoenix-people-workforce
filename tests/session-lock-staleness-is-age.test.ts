@@ -223,19 +223,24 @@ function testTheHeartbeatIsWired() {
   const entries = (event: string, mode: string) =>
     (settings.hooks?.[event] ?? []).flatMap((group) =>
       (group.hooks ?? [])
-        .filter((h) => (h.command ?? "").includes(`session-lock.mjs\\" ${mode} \\"$DIR\\"`)
-          || (h.command ?? "").includes(`session-lock.mjs" ${mode} "$DIR"`))
+        .filter((h) => (h.command ?? "").includes(`session-lock.mjs ${mode}`))
         .map((h) => ({ ...h, matcher: group.matcher ?? "" })),
     );
 
   for (const [event, mode] of [["SessionStart", "start"], ["SessionEnd", "end"], ["PreToolUse", "beat"]] as const) {
     const found = entries(event, mode);
     assert.equal(found.length, 1, `session-lock.mjs ${mode} must be registered exactly once as a ${event} hook`);
-    assert.ok(
-      (found[0].command ?? "").includes("${CLAUDE_PROJECT_DIR"),
-      `the ${event} lock hook must resolve its folder from CLAUDE_PROJECT_DIR — the session's own worktree`,
-    );
   }
+  // The command no longer expands the folder in the shell. That bash-only form ("$DIR" /
+  // ${CLAUDE_PROJECT_DIR}) errored under any runtime that reads .claude/settings.json and does not
+  // honour "shell": "bash" — it ran the raw string through cmd.exe / PowerShell, which cannot parse
+  // it, and denied every tool call. session-lock.mjs now resolves the folder from
+  // process.env.CLAUDE_PROJECT_DIR — the session's own worktree — so the isolation guarantee lives
+  // in the hook itself, not the command string.
+  assert.ok(
+    readFileSync(".claude/hooks/session-lock.mjs", "utf8").includes("process.env.CLAUDE_PROJECT_DIR"),
+    "session-lock.mjs must resolve its folder from CLAUDE_PROJECT_DIR — the session's own worktree",
+  );
   const beat = entries("PreToolUse", "beat")[0];
   for (const tool of ["Bash", "PowerShell", "Edit", "Write"]) {
     assert.ok(beat.matcher.split("|").includes(tool), `the lock heartbeat must fire on ${tool}, but matches "${beat.matcher}"`);

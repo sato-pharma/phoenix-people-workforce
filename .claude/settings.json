@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "DIR=\"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}\"; node \"$DIR/.claude/hooks/bash-guard.mjs\" 2>/dev/null || true",
+            "command": "node .claude/hooks/bash-guard.mjs",
             "shell": "bash"
           }
         ]
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "DIR=\"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}\"; node \"$DIR/.claude/hooks/trap-injector.mjs\" 2>/dev/null || true",
+            "command": "node .claude/hooks/trap-injector.mjs",
             "shell": "bash",
             "timeout": 10
           }
@@ -27,7 +27,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "DIR=\"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}\"; node \"$DIR/.claude/hooks/session-lock.mjs\" beat \"$DIR\" 2>/dev/null || true",
+            "command": "node .claude/hooks/session-lock.mjs beat",
             "shell": "bash",
             "timeout": 5
           }
@@ -38,7 +38,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "DIR=\"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}\"; node \"$DIR/.claude/hooks/primary-write-guard.mjs\" 2>/dev/null || true",
+            "command": "node .claude/hooks/primary-write-guard.mjs",
             "shell": "bash"
           }
         ]
@@ -49,7 +49,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "DIR=\"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}\"; node \"$DIR/.claude/hooks/autorun-guard.mjs\" 2>/dev/null || true",
+            "command": "node .claude/hooks/autorun-guard.mjs",
             "shell": "bash"
           }
         ]
@@ -60,7 +60,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "DIR=\"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}\"; node \"$DIR/.claude/hooks/session-lock.mjs\" start \"$DIR\" 2>/dev/null || true",
+            "command": "node .claude/hooks/session-lock.mjs start",
             "shell": "bash"
           },
           {
@@ -71,7 +71,7 @@
           },
           {
             "type": "command",
-            "command": "DIR=\"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}\"; node \"$DIR/.claude/hooks/memory-index-guard.mjs\" \"$DIR\" 2>/dev/null || true",
+            "command": "node .claude/hooks/memory-index-guard.mjs",
             "shell": "bash",
             "statusMessage": "Checking memory index budget"
           },
@@ -90,12 +90,12 @@
         "hooks": [
           {
             "type": "command",
-            "command": "DIR=\"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}\"; node \"$DIR/.claude/hooks/session-lock.mjs\" end \"$DIR\" 2>/dev/null || true",
+            "command": "node .claude/hooks/session-lock.mjs end",
             "shell": "bash"
           },
           {
             "type": "command",
-            "command": "DIR=\"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}\"; node \"$DIR/.claude/hooks/worktree-exit-guard.mjs\" \"$DIR\" 2>/dev/null || true",
+            "command": "node .claude/hooks/worktree-exit-guard.mjs",
             "shell": "bash",
             "timeout": 45,
             "statusMessage": "Checking worktree state"
