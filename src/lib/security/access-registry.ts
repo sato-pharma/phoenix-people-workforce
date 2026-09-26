@@ -1449,6 +1449,13 @@ export const accessRegistry = [
   // browser can ask for the copy but never say what it copies. Each IMEI written carries its own
   // REQUIRED audit row (company_device).
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/headwind/imei", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
+  // Recording the RustDesk ID of one tablet — the number a screen session is aimed at, kept in Headwind's
+  // `custom1` so there is no second list to keep in step. 🔴 It is typed through Phoenix because the
+  // Community console CANNOT draw that field: it appears only when `settings.customPropertyName1` is
+  // named, which is `null` on this server and settable from no screen in it. Same Super Admin gate as the
+  // remote actions, and a REQUIRED audit row naming the tablet, the old ID and the new one
+  // (headwind_device_command). An empty value clears it, which is what a re-enrolled tablet needs.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/headwind/remote-id", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
   // Taking one app off one Headwind-managed tablet (`uninstallApp`). 🔴 The removal is SILENT on the
   // tablet — the agent is the device owner, so nothing prompts the rep — which is why it sits on the
   // same Super Admin gate as the remote actions and carries its own REQUIRED audit row naming the
