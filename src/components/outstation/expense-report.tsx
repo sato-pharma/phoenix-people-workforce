@@ -1554,6 +1554,17 @@ export function ExpenseReport({
                             <p className="mt-0.5 whitespace-nowrap font-mono text-phx-xs text-text-secondary">
                               {record.hrId ? record.hrId : "HR ID not mapped"}
                             </p>
+                            {/*
+                              The declared-workload chips and the Verify control share ONE wrapping
+                              line. They used to be two stacked blocks, which made every review row
+                              about 102px tall — name, HR id, chips, button, each on its own line —
+                              and the owner asked for that height back on 2026-09-26. Nothing was
+                              removed to get it: the same four pieces of information are here, the
+                              last two side by side. `flex-wrap` is what keeps that honest on a
+                              narrow screen — the button drops onto its own line rather than pushing
+                              the column wider, so the fits-the-screen rule still holds and no cell
+                              is ever cut.
+                            */}
                             <div className="mt-1.5 flex flex-wrap items-center gap-1">
                               <span className="whitespace-nowrap rounded-md bg-sky-50 px-1.5 py-0.5 text-phx-2xs font-bold text-sky-700">
                                 AM {formatNumber(record.amWorkload)}
@@ -1567,15 +1578,15 @@ export function ExpenseReport({
                                 </span>
                               )}
                               <span className="text-phx-3xs font-semibold uppercase tracking-wide text-text-secondary">declared</span>
+                              <button
+                                className="inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-slate-200 px-1.5 py-0.5 text-phx-2xs font-semibold text-slate-600 hover:bg-slate-50"
+                                onClick={() => toggleTripExpand(record)}
+                                type="button"
+                              >
+                                {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                                {isExpanded ? "Hide" : "Verify"} workload
+                              </button>
                             </div>
-                            <button
-                              className="mt-1.5 inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-slate-200 px-1.5 py-0.5 text-phx-2xs font-semibold text-slate-600 hover:bg-slate-50"
-                              onClick={() => toggleTripExpand(record)}
-                              type="button"
-                            >
-                              {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-                              {isExpanded ? "Hide" : "Verify"} workload
-                            </button>
                           </td>
                           {visibleDetailColumns.map((column) => {
                             const rawValue = expenseColumnRawValue(record, column.key);
