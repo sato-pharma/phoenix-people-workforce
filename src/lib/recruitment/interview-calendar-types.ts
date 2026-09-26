@@ -378,9 +378,12 @@ export type InterviewBooking = {
   ended: boolean;
   /** The job the CV applied for, when it names one. */
   candidateJobTitle: string | null;
-  /** The employee conducting it (HR id and name), when one was chosen. */
+  /** The employee conducting it (HR id and name), when one was chosen — the lead of the panel. */
   interviewerHrId: string | null;
   interviewerName: string | null;
+  /** Additional panel members beyond the lead. Each sees the interview and it appears on their .ics
+   * feed; the lead stays the outcome-setter and Zoom host. Empty for a one-interviewer interview. */
+  panelists: Array<{ hrId: string; name: string }>;
   /** The instant, as stored. */
   startsAt: string;
   /** Cairo calendar day, YYYY-MM-DD. */

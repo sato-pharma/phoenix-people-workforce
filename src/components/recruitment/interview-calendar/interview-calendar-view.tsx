@@ -1296,6 +1296,16 @@ function InterviewPanel({
             </dd>
           </>
         ) : null}
+        {booking.panelists.length > 0 ? (
+          <>
+            <dt className="pt-0.5 text-slate-400">
+              <Users aria-label="Panel" className="h-4 w-4" />
+            </dt>
+            <dd>
+              Panel <span className="font-semibold">{booking.panelists.map((member) => member.name).join(", ")}</span>
+            </dd>
+          </>
+        ) : null}
         {booking.externalPhone ? (
           <>
             <dt className="pt-0.5 text-slate-400">

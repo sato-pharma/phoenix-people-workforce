@@ -18,6 +18,7 @@ import type { InterviewBooking } from "@/lib/recruitment/interview-calendar-type
 import { type CalendarApi, reasonText } from "./calendar-api";
 import { CalendarDialog, ErrorLine } from "./calendar-dialog";
 import { InterviewerPicker, type ChosenInterviewer } from "./interviewer-picker";
+import { PanelPicker } from "./panel-picker";
 
 const inputClass = "mt-1 block w-full border border-slate-200 px-2 py-1.5 text-[13px] text-slate-800 focus:border-orange-500 focus:outline-none";
 
@@ -38,6 +39,7 @@ export function EditInterviewDetailsDialog({
   const [interviewer, setInterviewer] = useState<ChosenInterviewer | null>(
     booking.interviewerHrId ? { hrId: booking.interviewerHrId, name: booking.interviewerName ?? booking.interviewerHrId } : null,
   );
+  const [panel, setPanel] = useState<ChosenInterviewer[]>(booking.panelists.map((member) => ({ hrId: member.hrId, name: member.name })));
   const [name, setName] = useState(isExternal ? booking.candidateName : "");
   const [phone, setPhone] = useState(booking.externalPhone ?? "");
   const [email, setEmail] = useState(booking.externalEmail ?? "");
@@ -51,7 +53,7 @@ export function EditInterviewDetailsDialog({
     setBusy(true);
     setError(null);
     try {
-      const body: Record<string, unknown> = { interviewerHrId: interviewer?.hrId ?? null };
+      const body: Record<string, unknown> = { interviewerHrId: interviewer?.hrId ?? null, panelistHrIds: panel.map((member) => member.hrId) };
       if (isExternal) body.external = { email: email.trim(), name: name.trim(), phone: phone.trim() };
       const data = await api.patch(`/bookings/${encodeURIComponent(booking.id)}`, body);
       onSaved(data.booking as InterviewBooking);
@@ -131,6 +133,12 @@ export function EditInterviewDetailsDialog({
         <div>
           <p className="mb-1 text-[12px] font-bold text-slate-700">Interviewer (optional)</p>
           <InterviewerPicker api={api} onChange={setInterviewer} value={interviewer} />
+        </div>
+
+        <div>
+          <p className="mb-1 text-[12px] font-bold text-slate-700">Panel (optional)</p>
+          <PanelPicker api={api} excludeHrId={interviewer?.hrId ?? null} onChange={setPanel} value={panel} />
+          <p className="mt-1 text-[11px] text-slate-500">Anyone added here also sees the interview on their own calendar. The interviewer above records how it went.</p>
         </div>
       </div>
     </CalendarDialog>

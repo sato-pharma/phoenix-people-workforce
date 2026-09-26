@@ -210,17 +210,28 @@ export async function resolveInterviewCalendarRole(access: AccessContext): Promi
  */
 export function mayReadBooking(
   caller: InterviewCalendarCaller,
-  row: { starts_at: string; interviewer_hr_id: string | null; requested_by_hr_id?: string | null },
+  row: { starts_at: string; interviewer_hr_id: string | null; requested_by_hr_id?: string | null; panelist_hr_ids?: string[] | null },
 ): boolean {
   const role = calendarRoleFor(caller, weekOfInstant(row.starts_at));
   if (!role) return false;
   // Everyone above the own-only tier (a Viewer and up) reads every booking.
   if (role !== "interviewer" && role !== "requester") return true;
   // The own-only tier — an interviewer or a requester — reads ONLY the interviews it is part of: the
-  // ones it was chosen to conduct, and the ones it requested. A District Manager who does both sees both.
+  // ones it was chosen to conduct (as the lead OR anywhere on the panel), and the ones it requested.
+  // A District Manager who does more than one of these sees them all.
   const viewer = canonicalHrIdKey(caller.access.hrId);
   if (!viewer) return false;
-  return viewer === canonicalHrIdKey(row.interviewer_hr_id) || viewer === canonicalHrIdKey(row.requested_by_hr_id);
+  return (
+    viewer === canonicalHrIdKey(row.interviewer_hr_id) ||
+    viewer === canonicalHrIdKey(row.requested_by_hr_id) ||
+    isOnPanel(viewer, row.panelist_hr_ids)
+  );
+}
+
+/** Whether a canonical hr-id key is one of a booking's additional panel members. */
+function isOnPanel(viewerKey: string | null, panelistHrIds: string[] | null | undefined): boolean {
+  if (!viewerKey || !panelistHrIds?.length) return false;
+  return panelistHrIds.some((hrId) => canonicalHrIdKey(hrId) === viewerKey);
 }
 
 /**
@@ -481,6 +492,7 @@ type BookingRow = {
   external_cv_file_name: string | null;
   external_cv_mime_type: string | null;
   interviewer_hr_id: string | null;
+  panelist_hr_ids: string[] | null;
   outcome: string | null;
   outcome_set_by_hr_id: string | null;
   outcome_set_at: string | null;
@@ -514,7 +526,7 @@ type CommentRow = { id: string; booking_id: string; author_hr_id: string; body: 
 type CandidateRow = { id: string; full_name: string | null; applied_for_job_title: string | null };
 
 const BOOKING_COLUMNS =
-  "id,candidate_id,session_id,starts_at,duration_minutes,platform,zoom_status,zoom_meeting_id,zoom_join_url,zoom_error,notes,external_name,external_phone,external_email,external_cv_file_id,external_cv_file_name,external_cv_mime_type,interviewer_hr_id,outcome,outcome_set_by_hr_id,outcome_set_at,request_id,requested_by_hr_id,created_by_hr_id,updated_by_hr_id,created_at,updated_at";
+  "id,candidate_id,session_id,starts_at,duration_minutes,platform,zoom_status,zoom_meeting_id,zoom_join_url,zoom_error,notes,external_name,external_phone,external_email,external_cv_file_id,external_cv_file_name,external_cv_mime_type,interviewer_hr_id,panelist_hr_ids,outcome,outcome_set_by_hr_id,outcome_set_at,request_id,requested_by_hr_id,created_by_hr_id,updated_by_hr_id,created_at,updated_at";
 
 const SESSION_COLUMNS =
   "id,title,starts_at,duration_minutes,slot_minutes,platform,zoom_status,zoom_meeting_id,zoom_join_url,zoom_error,notes,created_by_hr_id,updated_by_hr_id,created_at,updated_at";
@@ -605,6 +617,7 @@ async function hydrate(rows: readonly BookingRow[], caller: InterviewCalendarCal
   const people = await loadPeople([
     ...rows.map((row) => row.created_by_hr_id),
     ...rows.map((row) => row.interviewer_hr_id),
+    ...rows.flatMap((row) => row.panelist_hr_ids ?? []),
     ...rows.map((row) => row.outcome_set_by_hr_id),
     ...comments.map((comment) => comment.author_hr_id),
   ]);
@@ -654,6 +667,9 @@ async function hydrate(rows: readonly BookingRow[], caller: InterviewCalendarCal
       id: row.id,
       interviewerHrId: hrIdForStorage(row.interviewer_hr_id) ?? null,
       interviewerName: personName(people, row.interviewer_hr_id),
+      panelists: (row.panelist_hr_ids ?? [])
+        .map((hrId) => ({ hrId: hrIdForStorage(hrId) ?? hrId, name: personName(people, hrId) }))
+        .filter((member): member is { hrId: string; name: string } => Boolean(member.name)),
       notes: row.notes,
       canSetOutcome: canSetInterviewOutcome(caller, row.interviewer_hr_id),
       outcome: readInterviewOutcome(row.outcome),
@@ -903,7 +919,9 @@ export async function listMyUpcomingInterviews(caller: InterviewCalendarCaller, 
   const from = cairoLocalToUtc(cairoDateKey(now), 0);
   const to = new Date(from.getTime() + 21 * 24 * 60 * 60 * 1000);
   const rows = (await bookingsBetween(from, to)).filter(
-    (row) => !row.outcome && (canonicalHrIdKey(row.interviewer_hr_id) === me || canonicalHrIdKey(row.requested_by_hr_id) === me),
+    (row) =>
+      !row.outcome &&
+      (canonicalHrIdKey(row.interviewer_hr_id) === me || canonicalHrIdKey(row.requested_by_hr_id) === me || isOnPanel(me, row.panelist_hr_ids)),
   );
   return hydrate(rows.slice(0, 50), caller, now);
 }
@@ -932,7 +950,7 @@ export async function listInterviewsForCalendarFeed(hrId: string, from: Date, to
   const me = canonicalHrIdKey(hrId);
   if (!me) return [];
   const rows = (await bookingsBetween(from, to)).filter(
-    (row) => canonicalHrIdKey(row.interviewer_hr_id) === me || canonicalHrIdKey(row.requested_by_hr_id) === me,
+    (row) => canonicalHrIdKey(row.interviewer_hr_id) === me || canonicalHrIdKey(row.requested_by_hr_id) === me || isOnPanel(me, row.panelist_hr_ids),
   );
   if (rows.length === 0) return [];
   const candidates = await loadCandidates(rows.map((row) => row.candidate_id ?? ""));
@@ -1219,8 +1237,10 @@ export type InterviewBookingRequest = Parameters<typeof validateInterviewBooking
   sessionId?: unknown;
   /** For someone from outside: also make them a Recruitment candidate (the default), or not. */
   addToRecruitment?: unknown;
-  /** The employee who conducts the interview — optional. */
+  /** The employee who conducts the interview — the lead of the panel, optional. */
   interviewerHrId?: unknown;
+  /** Additional panel members beyond the lead — optional; each also sees the interview. */
+  panelistHrIds?: unknown;
 };
 
 export type InterviewBookingResult = { booking: InterviewBooking; notice: string | null };
@@ -1257,6 +1277,36 @@ async function resolveInterviewer(value: unknown, current: string | null = null)
     throw new Error("Interviewers are District Managers and above — choose someone at that level.");
   }
   return person.hrId;
+}
+
+/**
+ * The additional panel members, checked against Employee Master — District Managers and above, like
+ * the lead — deduped, and never including the lead itself. `undefined` leaves the panel as it is;
+ * anything else replaces it. Returns storage-form hr ids for the `panelist_hr_ids` column.
+ */
+async function resolvePanelists(value: unknown, leadHrId: string | null | undefined): Promise<string[] | undefined> {
+  if (value === undefined) return undefined;
+  if (value === null) return [];
+  if (!Array.isArray(value)) throw new Error("Choose the panel members from the list.");
+  const raw = value.filter((entry): entry is string => typeof entry === "string" && entry.trim() !== "").map((entry) => entry.trim());
+  if (raw.length === 0) return [];
+  const leadKey = canonicalHrIdKey(leadHrId ?? "");
+  const people = await loadPeople(raw);
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const hrId of raw) {
+    const key = canonicalHrIdKey(hrId);
+    // Skip a blank, the lead (they are already on it), and a duplicate.
+    if (!key || key === leadKey || seen.has(key)) continue;
+    const person = people.get(key);
+    if (!person) throw new Error("A panel member is not in Employee Master.");
+    if (!isDistrictManagerOrAbove({ jobTitle: person.jobTitle })) {
+      throw new Error("Panel members are District Managers and above — choose people at that level.");
+    }
+    seen.add(key);
+    out.push(person.hrId);
+  }
+  return out;
 }
 
 export async function createInterviewBooking(
@@ -1298,6 +1348,7 @@ export async function createInterviewBooking(
     assertMayBookInterview(caller, weekStartFor(input.dateKey), raw.interviewerHrId);
   }
   const interviewerHrId = await resolveInterviewer(raw.interviewerHrId);
+  const panelistHrIds = await resolvePanelists(raw.panelistHrIds, interviewerHrId);
   const cv = options.cv ? checkCvUpload(options.cv) : null;
   const addToRecruitment = raw.addToRecruitment !== false && raw.addToRecruitment !== "false";
   if (input.external && addToRecruitment) await assertMayUseRecruitmentFromCalendar(caller.access, "create");
@@ -1373,6 +1424,7 @@ export async function createInterviewBooking(
       created_by_hr_id: actor,
       duration_minutes: input.durationMinutes,
       interviewer_hr_id: interviewerHrId ?? null,
+      panelist_hr_ids: panelistHrIds ?? [],
       notes: input.notes,
       platform: input.platform,
       request_id: options.requestLink?.requestId ?? null,
@@ -1421,6 +1473,8 @@ export async function updateInterviewBooking(
     notes?: unknown;
     sessionId?: unknown;
     interviewerHrId?: unknown;
+    /** Additional panel members beyond the lead — replaces the panel when given. */
+    panelistHrIds?: unknown;
     /** The outside person's own name, phone and e-mail — edited after booking, external only. */
     external?: unknown;
   },
@@ -1432,10 +1486,15 @@ export async function updateInterviewBooking(
   const notes = patch.notes === undefined ? row.notes : cleanNotes(patch.notes);
   const actor = hrIdForStorage(caller.access.hrId);
   const interviewerHrId = await resolveInterviewer(patch.interviewerHrId, row.interviewer_hr_id);
+  // The panel is validated against the EFFECTIVE lead — the new interviewer if one is being set,
+  // otherwise the one already on the row — so the lead is never also listed as a panel member.
+  const effectiveLead = interviewerHrId === undefined ? row.interviewer_hr_id : interviewerHrId;
+  const panelistHrIds = await resolvePanelists(patch.panelistHrIds, effectiveLead);
   const externalColumns = resolveExternalContactPatch(row, patch.external);
   const nameFor = async () => (row.candidate_id ? candidateNameFor(row.candidate_id) : row.external_name?.trim() || "Unnamed candidate");
   const timeChanged = [patch.dateKey, patch.startMinutes, patch.durationMinutes].some((value) => value !== undefined);
   const interviewerColumn = interviewerHrId === undefined ? {} : { interviewer_hr_id: interviewerHrId };
+  const panelistColumn = panelistHrIds === undefined ? {} : { panelist_hr_ids: panelistHrIds };
   let update: Record<string, unknown>;
 
   // A DETAILS-ONLY edit — the interviewer, the note, or the outside person's name, phone and e-mail —
@@ -1449,7 +1508,7 @@ export async function updateInterviewBooking(
     patch.platform === undefined &&
     patch.sessionId === undefined;
   if (detailsOnly) {
-    const saved = await saveBooking(row.id, { notes, ...interviewerColumn, ...externalColumns, updated_by_hr_id: actor });
+    const saved = await saveBooking(row.id, { notes, ...interviewerColumn, ...panelistColumn, ...externalColumns, updated_by_hr_id: actor });
     const [booking] = await hydrate([saved], caller);
     return booking;
   }
@@ -1531,14 +1590,14 @@ export async function updateInterviewBooking(
       ...zoom,
     };
     if (fresh) {
-      const saved = await saveBooking(row.id, { ...update, ...interviewerColumn, ...externalColumns, updated_by_hr_id: actor });
+      const saved = await saveBooking(row.id, { ...update, ...interviewerColumn, ...panelistColumn, ...externalColumns, updated_by_hr_id: actor });
       await pushWaitingPolls(zoomConfig, { bookingId: row.id }, zoom.zoom_meeting_id);
       const [booking] = await hydrate([saved], caller);
       return booking;
     }
   }
 
-  const [booking] = await hydrate([await saveBooking(row.id, { ...update, ...interviewerColumn, ...externalColumns, updated_by_hr_id: actor })], caller);
+  const [booking] = await hydrate([await saveBooking(row.id, { ...update, ...interviewerColumn, ...panelistColumn, ...externalColumns, updated_by_hr_id: actor })], caller);
   return booking;
 }
 
