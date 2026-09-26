@@ -31,6 +31,16 @@ import { describeSpecialtyMix, type SpecialtyMix } from "../specialty-mix";
 import type { AreaSummary, DmSummary } from "../types";
 import { metricById, type PackSubject, type ReviewMetricId } from "./metrics";
 
+/**
+ * An area, plus the line it sits on when the pack spans more than one.
+ *
+ * "Alex Center" is a CNS territory AND a Pedia one, with different managers and different numbers.
+ * A company pack that listed the name twice with no line would be unreadable, so the line becomes a
+ * column — and null when there is only one line, because a column of one repeated value is noise.
+ */
+export type PackArea = AreaSummary & { lineLabel?: string | null };
+export type PackDm = DmSummary & { lineLabel?: string | null };
+
 export type PackCell = string | number | null;
 export type PackAlign = "left" | "right";
 
@@ -61,8 +71,8 @@ export type PackInput = {
   coverageNote: string;
   generatedAt?: string;
   months: readonly string[];
-  areas: readonly AreaSummary[];
-  dms: readonly DmSummary[];
+  areas: readonly PackArea[];
+  dms: readonly PackDm[];
   people: readonly ReviewPersonRow[];
   /** Null when the customer-grain metrics were not ticked, or the read failed. */
   concentration: ConcentrationFacts | null;
@@ -82,6 +92,10 @@ export function buildSalesReviewPack(input: PackInput): SalesReviewPack {
     if (section && section.rows.length > 0) sections.push(section);
   };
 
+  // First, because it is the slide a company or multi-line review opens on.
+  if (wanted.has("line-comparison")) {
+    add(lineComparison(input));
+  }
   if (wanted.has("achievement") || wanted.has("sales-vs-target")) {
     add(areaPerformance(input));
   }
@@ -125,13 +139,19 @@ export function buildSalesReviewPack(input: PackInput): SalesReviewPack {
 }
 
 function areaPerformance({ areas, visitsAvailable }: PackInput): PackSection {
+  const withLine = areas.some((area) => area.lineLabel);
   return {
-    align: ["left", "left", "right", "right", "right", "right"],
-    columns: ["Area", "District manager", "Achievement", "Sales", "Target", "Customers"],
+    align: withLine
+      ? ["left", "left", "left", "right", "right", "right", "right"]
+      : ["left", "left", "right", "right", "right", "right"],
+    columns: withLine
+      ? ["Area", "Line", "District manager", "Achievement", "Sales", "Target", "Customers"]
+      : ["Area", "District manager", "Achievement", "Sales", "Target", "Customers"],
     metric: "achievement",
     note: "Achievement is sales in targeted months over target — the Monthly Closing's own rule, never an average of percentages.",
     rows: areas.map((area) => [
       area.area,
+      ...(withLine ? [area.lineLabel ?? "—"] : []),
       area.dm,
       pct(area.allProducts.ach),
       num(area.allProducts.sales),
@@ -139,6 +159,46 @@ function areaPerformance({ areas, visitsAvailable }: PackInput): PackSection {
       visitsAvailable ? num(area.customersTotal) : NO_VISIT_DATA,
     ]),
     title: "Areas",
+  };
+}
+
+/**
+ * The lines side by side — the slide a company review opens on.
+ *
+ * 🔴 ROLLED UP FROM THE VERY AREAS THIS PACK HOLDS, not from the line rollup the page loaded. Two
+ * sources for one figure is how a deck's opening slide comes to disagree with its own second slide
+ * in front of a room. Because both read the same list, they cannot.
+ *
+ * sum(sales) / sum(target), never an average of the areas' percentages — the Monthly Closing's rule.
+ *
+ * Returns null below two lines: a "comparison" of one line is a slide that compares nothing, and the
+ * caller drops a section with no rows anyway.
+ */
+function lineComparison({ areas }: PackInput): PackSection | null {
+  const byLine = new Map<string, { areas: number; sales: number; target: number }>();
+  for (const area of areas) {
+    const line = area.lineLabel;
+    if (!line) continue;
+    const row = byLine.get(line) ?? { areas: 0, sales: 0, target: 0 };
+    row.areas += 1;
+    row.sales += num(area.allProducts.sales);
+    row.target += num(area.allProducts.target);
+    byLine.set(line, row);
+  }
+  if (byLine.size < 2) return null;
+  return {
+    align: ["left", "right", "right", "right", "right"],
+    columns: ["Line", "Achievement", "Sales", "Target", "Areas"],
+    metric: "line-comparison",
+    note: "Each line's own sales over its own target — sum(sales)/sum(target), never an average of the areas' percentages. Rolled up from the areas listed in this same pack, so the two cannot disagree.",
+    rows: [...byLine.entries()].map(([line, row]) => [
+      line,
+      row.target > 0 ? `${((row.sales / row.target) * 100).toFixed(1)}%` : "not gradeable",
+      row.sales,
+      row.target,
+      row.areas,
+    ]),
+    title: "Line comparison",
   };
 }
 
@@ -237,9 +297,14 @@ function customersPerMonth({ months, people, visitsAvailable }: PackInput): Pack
 }
 
 function spend({ dms }: PackInput): PackSection {
+  const withLine = dms.some((dm) => dm.lineLabel);
   return {
-    align: ["left", "right", "right", "right", "right"],
-    columns: ["District", "Marketing", "Outstation claimed", "Achievement", "Spend per point"],
+    align: withLine
+      ? ["left", "left", "right", "right", "right", "right"]
+      : ["left", "right", "right", "right", "right"],
+    columns: withLine
+      ? ["District", "Line", "Marketing", "Outstation claimed", "Achievement", "Spend per point"]
+      : ["District", "Marketing", "Outstation claimed", "Achievement", "Spend per point"],
     metric: "marketing-committed",
     note: "Spend per point is marketing plus outstation divided by points of achievement — LOWER IS BETTER, and it is a cost rather than a score.",
     rows: dms.map((dm) => {
@@ -247,6 +312,7 @@ function spend({ dms }: PackInput): PackSection {
       const total = dm.marketingCost + dm.outstationCost;
       return [
         dm.dm,
+        ...(withLine ? [dm.lineLabel ?? "—"] : []),
         num(dm.marketingCost),
         num(dm.outstationCost),
         pct(ach),

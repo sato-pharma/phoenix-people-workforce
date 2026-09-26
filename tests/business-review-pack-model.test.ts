@@ -173,10 +173,31 @@ export function runBusinessReviewPackModelTests() {
       `${ROUTE}: the scope must be resolved from the SESSION. Without it the route has no idea who ` +
         `is asking.`,
     );
+    // 🔴 THIS ASSERTION CHANGED ON 2026-09-26, AND THE PROTECTION GOT STRONGER, NOT WEAKER.
+    //
+    // It used to forbid the route reading `line` or `dm` from the request at all, which was exactly
+    // right while a pack's SCOPE was also its LEVEL. The owner then ruled that everyone exports "as
+    // he is filtered or as his scope" — a district manager one of his own areas or his whole region,
+    // a Super Admin one line, or one line inside one region — so those parameters now exist on
+    // purpose and forbidding them would forbid the feature.
+    //
+    // What must stay impossible is a PARAMETER WIDENING A SCOPE. So the rule moved from "do not read
+    // it" to "read it only through the narrowing module": `territoriesInScope` is built from the
+    // session alone and `resolveReviewFilter` can only remove from that list, so the widest any URL
+    // can resolve to is the viewer's own scope. Pinned in full by business-review-scope-filter.
     assert.ok(
-      !/params\.get\("line"\)|params\.get\("seat"\)|params\.get\("dm"\)/.test(route),
-      `${ROUTE}: the scope must never be read from the request — a line or seat parameter would let ` +
-        `anyone export any district by editing a URL.`,
+      route.includes("territoriesInScope(scope,") && route.includes("resolveReviewFilter("),
+      `${ROUTE}: a filter from the request must pass through resolveReviewFilter, which can only ` +
+        `narrow the list territoriesInScope built from the SESSION. Selecting data straight from a ` +
+        `line or district parameter is how a URL becomes a scope.`,
+    );
+    assert.ok(
+      !/loadReviewPortalScope\(\{[^}]*params\.get/.test(route),
+      `${ROUTE}: no request value may reach loadReviewPortalScope — the scope is the session's alone.`,
+    );
+    assert.ok(
+      !/getReviewDataset\(\s*review\s*,\s*params\.get/.test(route),
+      `${ROUTE}: a dataset must never be chosen straight from a request parameter.`,
     );
     assert.ok(
       route.includes("narrowSelection"),

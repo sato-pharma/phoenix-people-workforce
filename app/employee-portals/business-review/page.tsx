@@ -133,9 +133,22 @@ export default async function PortalBusinessReviewPage({ searchParams }: PagePro
   // ---- company scope: every line, consolidated ----
   if (scope.kind === "company") {
     const company = getReviewCompany(review);
+    // What this review shows, and what an export carries — the same list, so the file a manager
+    // hands round cannot disagree with the screen he built it from. Absent `m` means this level's
+    // defaults; `m` present but empty means exactly that, so the page can be stripped to a headline.
+    const metrics = requested == null ? defaultSelectionFor("company") : narrowSelection(requested, "company");
     return shell(
       <BusinessReviewPortal
         {...shared}
+        metrics={metrics}
+        picker={
+          <PackPicker
+            action="/employee-portals/business-review"
+            hidden={{ from: window.from, to: window.to }}
+            level="company"
+            selected={metrics}
+          />
+        }
         areas={getReviewCompanyAreas(review).map(withAreaBand)}
         dms={getReviewCompanyDms(review).map(withDmBand)}
         spend={{ marketing: company.total.marketingCost, outstation: company.total.outstationCost }}
@@ -161,9 +174,22 @@ export default async function PortalBusinessReviewPage({ searchParams }: PagePro
 
   // ---- line scope (NSM / GPM / PM): their whole line ----
   if (scope.kind === "line") {
+    // What this review shows, and what an export carries — the same list, so the file a manager
+    // hands round cannot disagree with the screen he built it from. Absent `m` means this level's
+    // defaults; `m` present but empty means exactly that, so the page can be stripped to a headline.
+    const metrics = requested == null ? defaultSelectionFor("line") : narrowSelection(requested, "line");
     return shell(
       <BusinessReviewPortal
         {...shared}
+        metrics={metrics}
+        picker={
+          <PackPicker
+            action="/employee-portals/business-review"
+            hidden={{ from: window.from, to: window.to }}
+            level="line"
+            selected={metrics}
+          />
+        }
         areas={ds.areas.map(withAreaBand)}
         dms={ds.dms.map(withDmBand)}
         spend={{ marketing: ds.line.marketingCost, outstation: ds.line.outstationCost }}
@@ -209,9 +235,22 @@ export default async function PortalBusinessReviewPage({ searchParams }: PagePro
         figureLabel,
       );
     }
+    // What this review shows, and what an export carries — the same list, so the file a manager
+    // hands round cannot disagree with the screen he built it from. Absent `m` means this level's
+    // defaults; `m` present but empty means exactly that, so the page can be stripped to a headline.
+    const metrics = requested == null ? defaultSelectionFor("rep") : narrowSelection(requested, "rep");
     return shell(
       <BusinessReviewPortal
         {...shared}
+        metrics={metrics}
+        picker={
+          <PackPicker
+            action="/employee-portals/business-review"
+            hidden={{ from: window.from, to: window.to }}
+            level="rep"
+            selected={metrics}
+          />
+        }
         areas={mine.areas.map(withAreaBand)}
         dms={[]}
         spend={{ marketing: 0, outstation: 0 }}
