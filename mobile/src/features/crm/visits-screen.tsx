@@ -797,6 +797,19 @@ function AddVisit({
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const visitIdRef = useRef<string | null>(null);
+  // 🔴 SILENT (Golden Rule #1, the BLIND half). Nothing on this screen says it exists, nothing shows
+  // it back, and it can never refuse a save — `clampFormOpenSeconds` drops anything odd. It is read
+  // only by the Super Admin's integrity board, where a CONSTANT figure across a rep's whole month is
+  // the signal and one small value is not.
+  //
+  // A ref, so it never causes a re-render, and set in an EFFECT rather than at `useRef(Date.now())`:
+  // `Date.now` is impure and React forbids calling one during render, because a re-render would move
+  // the start of the clock. Null until the form has actually mounted.
+  const openedAtRef = useRef<number | null>(null);
+  useEffect(() => {
+    openedAtRef.current = Date.now();
+  }, []);
+
 
   async function loadForm() {
     if (!token) return;
@@ -920,7 +933,7 @@ function AddVisit({
     if (next === "none" || objection === next) setObjectionNote("");
   }
 
-  function draft(visitId: string): Draft {
+  function draft(visitId: string, formOpenSeconds: number | null): Draft {
     if (!customer) return { ok: false, problem: "Choose the customer you visited." };
     if (customer.visitedToday) return { ok: false, problem: "This customer's visit for today is already saved." };
     if (visitType === "unplanned" && unplannedReason.trim().length < UNPLANNED_REASON_MIN) {
@@ -953,6 +966,12 @@ function AddVisit({
         pharmacyName: pharmacyName.trim(),
         productAvailability: availability,
         samplesGiven: samples,
+        // 🔴 SILENT: what the phone counted, read in the event handler and passed in — never taken
+        // here, because `draft` runs where React will not allow an impure call. The server derives
+        // the real elapsed time itself from its own captured_at, so a lying build changes nothing
+        // that matters; and a lying build lies by the same number every time, which is the point of
+        // keeping this beside it.
+        formOpenSeconds,
         nextStep,
         // No date from the phone, deliberately — see mobile/src/lib/crm/visit-outcome.ts.
         nextStepOn: null,
@@ -973,7 +992,10 @@ function AddVisit({
     };
   }
 
-  async function save() {
+  // `savedAt` is read at the BUTTON, the one place React allows an impure call, and handed in:
+  // a re-render must never be able to move the clock. It is the only reason this takes an
+  // argument at all.
+  async function save(savedAt: number) {
     if (saving) return;
     if (placePhoto && handoff && reuseWindowOver(handoff.validatedAtMs)) {
       setUsePlacePhoto(false);
@@ -981,7 +1003,9 @@ function AddVisit({
       return;
     }
     const visitId = visitIdRef.current ?? newClientId();
-    const next = draft(visitId);
+    // The clock is read HERE, in the event handler, where an impure call is allowed.
+    const openedAt = openedAtRef.current;
+    const next = draft(visitId, openedAt === null ? null : Math.max(0, Math.round((savedAt - openedAt) / 1000)));
     if (!next.ok) {
       setProblem(next.problem);
       return;
@@ -1392,7 +1416,7 @@ function AddVisit({
       </CrmSection>
 
       {problem ? <CrmNote tone="bad">{problem}</CrmNote> : null}
-      <PrimaryButton busy={saving} busyLabel="Saving the visit…" label="Save the visit" onPress={() => void save()} />
+      <PrimaryButton busy={saving} busyLabel="Saving the visit…" label="Save the visit" onPress={() => void save(Date.now())} />
       <SecondaryButton label="Cancel" onPress={() => (saving ? undefined : onClose())} />
     </ScrollView>
   );

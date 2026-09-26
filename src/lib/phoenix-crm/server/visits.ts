@@ -782,6 +782,12 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown): Promise
       // Narrowed to the line's own products the same way product_availability is: a product dropped
       // from the line since the form loaded is quietly left out rather than blocking the save.
       samples_given: narrowSamplesToLine(visit.samplesGiven, allowedProducts),
+      // 🔴 The one mention of a SILENT column in this file, and it is a WRITE. Nothing reads it back:
+      // it is not in VISIT_COLUMNS, not on VisitRow and not in mapVisitRow, and the blind-half test
+      // pins that every occurrence of it here lies inside saveVisit. The server derives the real
+      // elapsed time itself; this is only what the phone claims, kept because a forged one is
+      // constant. It never reaches the rep and can never refuse him a visit.
+      form_open_seconds: visit.formOpenSeconds,
       unplanned_first_status: unplannedFirstStatus(reviewer !== null),
       reviewer_hr_id: reviewer?.hrId ?? null,
       lat: visit.lat,

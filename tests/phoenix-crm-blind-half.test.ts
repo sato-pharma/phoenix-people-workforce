@@ -88,8 +88,15 @@ const NEVER_SERVED_TO_A_REP = new Set([
   "src/components/phoenix-crm/settings-tab.tsx",
 ]);
 
-/** Columns that exist only to be judged. A rep-facing type naming one is the defect. */
-const SILENT_COLUMNS: ReadonlyArray<string> = [];
+/**
+ * Columns that exist only to be judged. A rep-facing type naming one is the defect.
+ *
+ * Both joined on 2026-09-26 with the visit's silent stopwatch: `dwell_seconds` is server-derived from
+ * the visit's own captured_at and the phone never sends it; `form_open_seconds` is what the phone
+ * counted and IS sent, which is why the check below draws the line at the READ rather than at the
+ * file — see it for the whole rule.
+ */
+const SILENT_COLUMNS: ReadonlyArray<string> = ["dwell_seconds", "form_open_seconds"];
 
 /** Tables only the blind readers may touch. */
 const SILENT_TABLES: ReadonlyArray<string> = ["phoenix_crm_location_integrity"];
@@ -209,13 +216,46 @@ export function runPhoenixCrmBlindHalfTests(): void {
     }
   }
 
-  // ── 3 · No silent column reaches a rep-facing type or read ──────────────────────────────────────
+  // ── 3 · No silent column reaches a rep-facing type or READ ──────────────────────────────────────
+  //
+  // 🔴 The line is the READ, not the file — widened 2026-09-26 with `form_open_seconds`, which the
+  // phone has to SEND or the signal never exists at all. A blanket "this name appears nowhere in
+  // visits.ts" banned the write along with the read, which would have left the only way to record it
+  // being to hide it somewhere worse. So the three rep-facing surfaces are checked by name:
+  //
+  //   * VISIT_COLUMNS   — what is selected back out of the table
+  //   * VisitRow        — the shape every rep-facing screen reads
+  //   * mapVisitRow     — the one place a row becomes that shape
+  //
+  // and the write is PINNED rather than merely allowed: every occurrence in the file must lie inside
+  // saveVisit. A second mention anywhere else is the defect this catches.
   {
     const visits = read("src/lib/phoenix-crm/server/visits.ts");
+    const region = (start: string, end: string) => {
+      const from = visits.indexOf(start);
+      const to = from < 0 ? -1 : visits.indexOf(end, from);
+      return from < 0 || to < 0 ? null : visits.slice(from, to);
+    };
+    const NL = String.fromCharCode(10);
+    const readPaths: Array<[string, string | null]> = [
+      ["VISIT_COLUMNS", region("const VISIT_COLUMNS", `;${NL}`)],
+      ["VisitRow", region("export type VisitRow = {", `${NL}};`)],
+      ["mapVisitRow", region("function mapVisitRow(", `${NL}}`)],
+    ];
+    const writeFrom = visits.indexOf("export async function saveVisit");
+    if (writeFrom < 0) problems.push("visits.ts no longer exports saveVisit — this check has lost its anchor");
+
     for (const column of SILENT_COLUMNS) {
       const camel = column.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
-      if (visits.includes(column)) problems.push(`visits.ts must not select ${column} — it is the rep's own screen`);
-      if (visits.includes(camel)) problems.push(`visits.ts must not map ${column} onto ${camel}`);
+      for (const [name, text] of readPaths) {
+        if (text === null) problems.push(`the blind-half check can no longer find ${name} in visits.ts`);
+        else if (text.includes(column) || text.includes(camel)) problems.push(`${name} must not carry ${column} — it is the rep's own screen`);
+      }
+      for (const match of [...visits.matchAll(new RegExp(column, "g"))]) {
+        if (writeFrom >= 0 && match.index !== undefined && match.index < writeFrom) {
+          problems.push(`visits.ts names ${column} outside saveVisit — a silent column is written there and read nowhere`);
+        }
+      }
     }
   }
 

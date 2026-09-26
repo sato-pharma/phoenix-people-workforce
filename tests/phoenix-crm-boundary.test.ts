@@ -404,6 +404,9 @@ const LATER_MIGRATIONS = [
   // What the rep LEFT — one jsonb column, and save_visit again. It takes over as the last entry that
   // replaces save_visit, and restates its revoke/grant pair for the same reason the one above does.
   "supabase/migrations/20260926230000_phoenix_crm_visit_samples.sql",
+  // The visit's own stopwatch — two silent columns, and save_visit again. Last among the save_visit
+  // replacers, and it restates the revoke/grant pair for the same reason the two above it do.
+  "supabase/migrations/20260926234500_phoenix_crm_visit_dwell.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */
