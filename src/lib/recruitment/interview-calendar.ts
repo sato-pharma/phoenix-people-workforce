@@ -867,11 +867,14 @@ export async function listDueZoomInterviews(
   return due;
 }
 
-/** What a reminder needs to say about one interview, and to whom. */
+/** What a reminder needs to say about one interview, and to whom (one row per attendee). */
 export type ReminderInterview = {
   id: string;
   interviewerHrId: string;
   interviewerJobTitle: string | null;
+  /** True for the lead interviewer, false for a panel member. Only the lead is nagged to RECORD the
+   * outcome (only the lead or the owner can); everyone gets the evening list and the one-hour nudge. */
+  isLead: boolean;
   startsAt: string;
   durationMinutes: number;
   candidateName: string;
@@ -879,29 +882,44 @@ export type ReminderInterview = {
 };
 
 /**
- * The interviews between two instants that still have someone to remind: a chosen interviewer and no
- * outcome recorded yet. A cancelled interview is a deleted row, so it is simply not here. This is the
- * reminder job's ONLY read of the calendar — a system read, not a caller's, so it never goes through
- * the gate; what it returns leaves the building only as a notice to the interviewer named on the row.
+ * The interviews between two instants that still have someone to remind, with ONE row PER ATTENDEE:
+ * the lead interviewer AND every panel member (owner, 2026-09-26 — the whole panel is reminded, not
+ * only the lead). Only interviews with no outcome recorded yet; a cancelled interview is a deleted
+ * row, so it is simply not here. This is the reminder job's ONLY read of the calendar — a system read,
+ * not a caller's, so it never goes through the gate; each row leaves the building only as a notice to
+ * the one attendee named on it. The plan de-duplicates delivery per attendee by its own key.
  */
 export async function listInterviewsToRemindAbout(from: Date, to: Date): Promise<ReminderInterview[]> {
-  const rows = (await bookingsBetween(from, to)).filter((row) => row.interviewer_hr_id && !row.outcome);
+  const rows = (await bookingsBetween(from, to)).filter((row) => !row.outcome && (row.interviewer_hr_id || (row.panelist_hr_ids?.length ?? 0) > 0));
   if (rows.length === 0) return [];
   const candidates = await loadCandidates(rows.map((row) => row.candidate_id ?? ""));
-  const people = await loadPeople(rows.map((row) => row.interviewer_hr_id));
+  const people = await loadPeople(rows.flatMap((row) => [row.interviewer_hr_id, ...(row.panelist_hr_ids ?? [])]));
   const sessions = await loadSessionsById(rows.map((row) => row.session_id ?? ""));
-  return rows.map((row) => {
+  return rows.flatMap((row) => {
     const candidate = row.candidate_id ? candidates.get(String(row.candidate_id)) : undefined;
     const session = row.session_id ? sessions.get(String(row.session_id)) : undefined;
-    return {
-      candidateName: (candidate?.full_name || row.external_name || "A candidate").trim(),
+    const candidateName = (candidate?.full_name || row.external_name || "A candidate").trim();
+    const platform = session ? asPlatform(session.platform) : asPlatform(row.platform);
+    // The lead first, then each panel member; de-duplicated so nobody on twice gets two reminders.
+    const attendees: string[] = [];
+    const seen = new Set<string>();
+    for (const hrId of [row.interviewer_hr_id, ...(row.panelist_hr_ids ?? [])]) {
+      const key = canonicalHrIdKey(hrId);
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      attendees.push(hrId as string);
+    }
+    const leadKey = canonicalHrIdKey(row.interviewer_hr_id);
+    return attendees.map((hrId) => ({
+      candidateName,
       durationMinutes: Number(row.duration_minutes),
       id: row.id,
-      interviewerHrId: hrIdForStorage(row.interviewer_hr_id) ?? String(row.interviewer_hr_id),
-      interviewerJobTitle: people.get(canonicalHrIdKey(row.interviewer_hr_id) ?? "")?.jobTitle ?? null,
-      platform: session ? asPlatform(session.platform) : asPlatform(row.platform),
+      interviewerHrId: hrIdForStorage(hrId) ?? String(hrId),
+      interviewerJobTitle: people.get(canonicalHrIdKey(hrId) ?? "")?.jobTitle ?? null,
+      isLead: Boolean(leadKey) && canonicalHrIdKey(hrId) === leadKey,
+      platform,
       startsAt: row.starts_at,
-    };
+    }));
   });
 }
 
