@@ -35,6 +35,14 @@ import {
   territoryLine,
 } from "@/components/phoenix-crm/labels";
 import { LivePhotoCapture, releaseCapturedPhoto, type CapturedPhoto } from "@/components/phoenix-crm/live-photo-capture";
+import {
+  OBJECTION_NOTE_MAX,
+  VISIT_NEXT_STEPS,
+  VISIT_OBJECTIONS,
+  isFollowUp,
+  type VisitNextStep,
+  type VisitObjection,
+} from "@/lib/phoenix-crm/visit-outcome";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
 import {
   CrmBackBar,
@@ -276,6 +284,40 @@ function PharmacyLines({ visit }: { visit: VisitRow }) {
   );
 }
 
+/**
+ * What the doctor pushed back on, and what the rep said he would do next.
+ *
+ * His own, and shown to him without hedging: an objection is the DOCTOR's, never a mark against him.
+ * Absent entirely on a visit that answered neither — which is every visit saved before this existed —
+ * so no card grows an empty row.
+ */
+function OutcomeLines({ visit }: { visit: VisitRow }) {
+  const outcome = visit.outcome;
+  if (!outcome) return null;
+  return (
+    <>
+      {outcome.objectionLabel ? (
+        <p className="break-words">
+          <span className="font-black text-slate-800">Objection: </span>
+          {outcome.objectionLabel}
+          {outcome.objectionNote ? (
+            <span className="block" dir="auto">
+              {outcome.objectionNote}
+            </span>
+          ) : null}
+        </p>
+      ) : null}
+      {outcome.nextStepLabel ? (
+        <p className="break-words">
+          <span className="font-black text-slate-800">Next: </span>
+          {outcome.nextStepLabel}
+          {outcome.nextStepOn ? ` · by ${dayLabel(outcome.nextStepOn)}` : ""}
+        </p>
+      ) : null}
+    </>
+  );
+}
+
 function VisitDetails({ visit }: { visit: VisitRow }) {
   const people = visitPeople(visit);
   return (
@@ -302,6 +344,7 @@ function VisitDetails({ visit }: { visit: VisitRow }) {
           typed. It is NOT beside the photo, which is where the eye goes for evidence of presence: a
           recording can be made in a car afterwards and proves nothing about where anybody stood. */}
       {visit.voiceNotePath ? <CrmVoiceNotePlayer path={visit.voiceNotePath} seconds={visit.voiceNoteSeconds} /> : null}
+      <OutcomeLines visit={visit} />
       <p className="break-words">{visit.locationLabel}</p>
       {/* Off the plan: what he wrote, and where it has got to. He is TOLD this deliberately — it is his
           own visit, it is not counting yet, and the only way he can chase it is to know. */}
@@ -415,6 +458,22 @@ function VisitTable({ visits }: { visits: ReadonlyArray<VisitRow> }) {
                   <div className="mt-1.5">
                     <CrmVoiceNotePlayer path={visit.voiceNotePath} seconds={visit.voiceNoteSeconds} />
                   </div>
+                ) : null}
+                {visit.outcome?.objectionLabel ? (
+                  <span className="mt-1 block text-xs text-slate-600">
+                    Objection: {visit.outcome.objectionLabel}
+                    {visit.outcome.objectionNote ? (
+                      <span className="block" dir="auto">
+                        {visit.outcome.objectionNote}
+                      </span>
+                    ) : null}
+                  </span>
+                ) : null}
+                {visit.outcome?.nextStepLabel ? (
+                  <span className="mt-1 block text-xs text-slate-600">
+                    Next: {visit.outcome.nextStepLabel}
+                    {visit.outcome.nextStepOn ? ` · by ${dayLabel(visit.outcome.nextStepOn)}` : ""}
+                  </span>
                 ) : null}
               </td>
               <td className={crmTdClassName}>
@@ -993,6 +1052,12 @@ function AddVisit({
   // with a single product is never a group, so it is never in here; the rest start collapsed.
   const [openFamilies, setOpenFamilies] = useState<Set<string>>(() => new Set());
   const [comment, setComment] = useState("");
+  // What he took away from the visit. Both start unanswered and both may stay that way: nothing here
+  // gates the save, and a rep who taps neither loses nothing.
+  const [nextStep, setNextStep] = useState<VisitNextStep | null>(null);
+  const [nextStepOn, setNextStepOn] = useState("");
+  const [objection, setObjection] = useState<VisitObjection | null>(null);
+  const [objectionNote, setObjectionNote] = useState("");
   const [photo, setPhoto] = useState<CapturedPhoto | null>(null);
   // The spoken note, already uploaded by the control. Null is the normal case: it was never required.
   const [voiceNote, setVoiceNote] = useState<VoiceNoteValue | null>(null);
@@ -1082,6 +1147,20 @@ function AddVisit({
     );
   }
 
+  // Tapping the chip that is already chosen clears it, the same way the pharmacy stock answers below
+  // undo themselves: a mis-tap on an optional field must not need a third button to take back.
+  function chooseNextStep(next: VisitNextStep) {
+    setProblem(null);
+    setNextStep((current) => (current === next ? null : next));
+    if (next === "none" || nextStep === next) setNextStepOn("");
+  }
+
+  function chooseObjection(next: VisitObjection) {
+    setProblem(null);
+    setObjection((current) => (current === next ? null : next));
+    if (next === "none" || objection === next) setObjectionNote("");
+  }
+
   // The pharmacy stock answer for one product. Tapping the answer it already has clears it back to
   // unanswered, so a mistaken tap is undone without a third button.
   function setStock(product: string, answer: ProductAvailability) {
@@ -1138,6 +1217,12 @@ function AddVisit({
         products,
         pharmacyName: pharmacyName.trim(),
         productAvailability: availability,
+        nextStep,
+        // Sent only under a next step that is something to do; the parser and the database both clear
+        // it anyway, so this is the first of three places that agree rather than the only one.
+        nextStepOn: isFollowUp(nextStep) && nextStepOn ? nextStepOn : null,
+        objection,
+        objectionNote: objection && objection !== "none" ? objectionNote.trim() || null : null,
         comment: comment.trim() || null,
         photoPath: evidence.path,
         // Beside the photo and deliberately not one of its fields: the photo's slot dates the visit
@@ -1375,6 +1460,15 @@ function AddVisit({
             Filled in from your last visit on {dayLabel(customer.lastVisit.date)}. Change any of them.
           </p>
         ) : null}
+        {/* The whole reason the next step is worth writing down: it comes back to him at the door,
+            where he can still act on it. A reminder, never a check — nothing measures whether he did
+            it, and nothing here can stop the visit. */}
+        {customer?.lastNextStep ? (
+          <CrmNote className="mt-2" tone="info">
+            Last time you said you would {customer.lastNextStep.label.toLowerCase()}
+            {customer.lastNextStep.dueOn ? `, by ${dayLabel(customer.lastNextStep.dueOn)}` : ""}.
+          </CrmNote>
+        ) : null}
         <p className="mt-2 text-xs font-semibold text-slate-500">
           {products.length === 0 ? `Choose up to ${VISIT_PRODUCTS_MAX}.` : `${products.length} chosen, up to ${VISIT_PRODUCTS_MAX}.`}
         </p>
@@ -1488,7 +1582,62 @@ function AddVisit({
         />
       </CrmBlock>
 
-      <CrmBlock className="border-t border-slate-100" title="6 · Live photo">
+      <CrmBlock className="border-t border-slate-100" title="6 · What you took away">
+        {/* Both optional, both taps. Nothing here gates the save — a rep who has nothing to add taps
+            nothing and the form is no longer than it was. The objection is the DOCTOR'S, never a mark
+            against him, and the next step comes back to him at the door next time. */}
+        <p className="text-sm font-black text-slate-800">Did the customer push back on anything?</p>
+        <CrmChoice
+          className="mt-2"
+          label="What the customer pushed back on"
+          onChange={chooseObjection}
+          options={VISIT_OBJECTIONS.map((entry) => ({ value: entry.key, label: entry.label, disabled: saving }))}
+          value={objection}
+        />
+        {objection && objection !== "none" ? (
+          <CrmField
+            className="mt-3"
+            hint={`Optional · ${objectionNote.trim().length} of ${OBJECTION_NOTE_MAX} characters`}
+            htmlFor="phoenix-crm-visit-objection-note"
+            label="In his own words"
+          >
+            <input
+              className={crmInputClassName}
+              dir="auto"
+              disabled={saving}
+              id="phoenix-crm-visit-objection-note"
+              maxLength={OBJECTION_NOTE_MAX}
+              onChange={(event) => setObjectionNote(event.target.value)}
+              placeholder="e.g. the 30-tablet pack is too big for most patients"
+              value={objectionNote}
+            />
+          </CrmField>
+        ) : null}
+
+        <p className="mt-4 text-sm font-black text-slate-800">What will you do next?</p>
+        <CrmChoice
+          className="mt-2"
+          label="What you will do next"
+          onChange={chooseNextStep}
+          options={VISIT_NEXT_STEPS.map((entry) => ({ value: entry.key, label: entry.label, disabled: saving }))}
+          value={nextStep}
+        />
+        {isFollowUp(nextStep) ? (
+          <CrmField className="mt-3" hint="Optional" htmlFor="phoenix-crm-visit-next-step-on" label="By when">
+            <input
+              className={crmInputClassName}
+              disabled={saving}
+              id="phoenix-crm-visit-next-step-on"
+              min={loaded.cairoToday}
+              onChange={(event) => setNextStepOn(event.target.value)}
+              type="date"
+              value={nextStepOn}
+            />
+          </CrmField>
+        ) : null}
+      </CrmBlock>
+
+      <CrmBlock className="border-t border-slate-100" title="7 · Live photo">
         {placePhoto ? (
           <div className="grid gap-2">
             <span className="block w-full overflow-hidden rounded-none border border-slate-200 bg-slate-950">

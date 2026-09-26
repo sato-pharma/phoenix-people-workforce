@@ -35,6 +35,14 @@ import {
 } from "@/lib/phoenix-crm/entry-rules";
 import { checkVisitLocation, formatDistance } from "@/lib/phoenix-crm/geo";
 import { pickLastVisitProducts, type LastVisitProducts } from "@/lib/phoenix-crm/last-visit-products";
+import {
+  pickLastNextStep,
+  visitNextStepLabel,
+  visitObjectionLabel,
+  isVisitNextStep,
+  isVisitObjection,
+  type LastNextStep,
+} from "@/lib/phoenix-crm/visit-outcome";
 import { describeDayWindows, isUuid } from "@/lib/phoenix-crm/plan-rules";
 import { managerChain, resolveVisitParticipants, territoryReviewer } from "@/lib/phoenix-crm/scope";
 import { canWriteAsRep, readTestFlag, territoryForRead, territoryForVisit, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
@@ -129,12 +137,28 @@ export type VisitRow = {
    * with, which is the only way he can chase it.
    */
   unplanned: { status: UnplannedVisitStatus; statusLabel: string; note: string; clarification: string } | null;
+  /**
+   * What the doctor pushed back on, and what the rep said he would do next. Null on a visit that
+   * answered neither, which is every visit saved before this existed.
+   *
+   * His own, and shown to him: an objection is the DOCTOR's, never a mark against the rep, and the
+   * next step is the commitment he made and will be reminded of at the door next time.
+   */
+  outcome: VisitOutcomeView | null;
+};
+
+export type VisitOutcomeView = {
+  nextStepLabel: string | null;
+  nextStepOn: string | null;
+  objectionLabel: string | null;
+  objectionNote: string | null;
 };
 
 const VISIT_COLUMNS =
   "id, visit_date, captured_at, customer_id, list_type, kind, rep_hr_id, manager_hr_id, senior_hr_id, entered_by_hr_id, products, " +
   "comment, pharmacy_name, product_availability, photo_path, voice_note_path, voice_note_seconds, " +
   "accuracy_meters, distance_meters, location_flag, device_skew_minutes, is_unplanned, " +
+  "next_step, next_step_on, objection, objection_note, " +
   "customer:phoenix_crm_customers!customer_id(name), " +
   "unplanned:phoenix_crm_unplanned_visits!visit_id(status, clarification)";
 
@@ -161,6 +185,25 @@ function visitUnplanned(row: Row): VisitRow["unplanned"] {
     statusLabel: unplannedVisitStatusLabel(status),
     note: unplannedVisitRepNote(status),
     clarification: textOrNull(entry.clarification) ?? "",
+  };
+}
+
+/**
+ * The outcome, or null when the visit answered neither question.
+ *
+ * Null rather than an object of nulls: the card has to tell "he answered nothing" from "he answered",
+ * and every visit saved before E3 answered nothing. An unrecognised value reads as unanswered — the
+ * same drop-never-refuse rule the save follows, applied on the way back out.
+ */
+function visitOutcome(row: Row): VisitOutcomeView | null {
+  const nextStep = isVisitNextStep(row.next_step) ? row.next_step : null;
+  const objection = isVisitObjection(row.objection) ? row.objection : null;
+  if (nextStep === null && objection === null) return null;
+  return {
+    nextStepLabel: nextStep === null ? null : visitNextStepLabel(nextStep),
+    nextStepOn: textOrNull(row.next_step_on),
+    objectionLabel: objection === null ? null : visitObjectionLabel(objection),
+    objectionNote: textOrNull(row.objection_note),
   };
 }
 
@@ -205,6 +248,7 @@ function mapVisitRow(row: Row, names: PeopleNames): VisitRow {
     locationLabel: visitLocationLabel(flag, numberOrNull(row.distance_meters), numberOrNull(row.accuracy_meters)),
     clockOff: skew !== null && Math.abs(skew) > DEVICE_CLOCK_TOLERANCE_MINUTES,
     unplanned: row.is_unplanned === true ? visitUnplanned(row) : null,
+    outcome: visitOutcome(row),
   };
 }
 
@@ -300,6 +344,15 @@ export type VisitCustomerOption = {
    * "he discussed nothing".
    */
   lastVisit: { date: string; products: string[] } | null;
+  /**
+   * What he said he would do for this customer last time, if it was something to do — absent when the
+   * answer was "Nothing to follow", and absent when there is no earlier visit.
+   *
+   * Kept APART from `lastVisit`, from the same read, because `pickLastVisitProducts` deliberately
+   * drops a customer whose last products have all been retired from the line — and a commitment the
+   * rep made to that same doctor is still a commitment. Folding the two together would lose it.
+   */
+  lastNextStep: LastNextStep | null;
   plannedToday: boolean;
   visitedToday: boolean;
   visitsThisMonth: number;
@@ -434,33 +487,41 @@ function monthsBackFrom(isoDay: string, months: number): string {
  * same day would prefill itself, which is not carrying anything over. One read for the whole
  * territory rather than one per customer — it rides in the form's existing Promise.all.
  */
-async function loadLastVisitProducts(
+async function loadLastVisits(
   seatId: string,
   isTest: boolean,
   today: string,
   lineProducts: readonly string[],
-): Promise<Map<string, LastVisitProducts>> {
+): Promise<{ products: Map<string, LastVisitProducts>; nextSteps: Map<string, LastNextStep> }> {
   const rows = await fetchAllRowsKeyset<Row>(
     () =>
       getSupabaseAdmin()
         .from("phoenix_crm_visits")
-        .select("id, customer_id, visit_date, captured_at, products")
+        .select("id, customer_id, visit_date, captured_at, products, next_step, next_step_on")
         .eq("seat_id", seatId)
         .eq("is_test", isTest)
         .lt("visit_date", today)
         .gte("visit_date", monthsBackFrom(today, LAST_VISIT_MONTHS)),
     { cursorColumn: "id", cursorOf: (row) => String(row.id) },
   );
-  return pickLastVisitProducts(
-    rows.map((row) => ({
-      customerId: String(row.customer_id ?? ""),
-      visitDate: String(row.visit_date ?? ""),
-      capturedAt: String(row.captured_at ?? ""),
-      products: Array.isArray(row.products) ? (row.products as unknown[]).map((entry) => String(entry)) : [],
-    })),
-    lineProducts,
-    VISIT_PRODUCTS_MAX,
-  );
+  const base = rows.map((row) => ({
+    customerId: String(row.customer_id ?? ""),
+    visitDate: String(row.visit_date ?? ""),
+    capturedAt: String(row.captured_at ?? ""),
+  }));
+  return {
+    products: pickLastVisitProducts(
+      rows.map((row, index) => ({
+        ...base[index],
+        products: Array.isArray(row.products) ? (row.products as unknown[]).map((entry) => String(entry)) : [],
+      })),
+      lineProducts,
+      VISIT_PRODUCTS_MAX,
+    ),
+    nextSteps: pickLastNextStep(
+      rows.map((row, index) => ({ ...base[index], nextStep: textOrNull(row.next_step), nextStepOn: textOrNull(row.next_step_on) })),
+    ),
+  };
 }
 
 /**
@@ -523,7 +584,7 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
   ]);
   const products = productFamilies.map((entry) => entry.family);
   // After the families, because what he discussed last time is narrowed to what the line still sells.
-  const lastVisits = await loadLastVisitProducts(seat.seatId, isTest, today, products);
+  const lastVisits = await loadLastVisits(seat.seatId, isTest, today, products);
   const names = await loadPeopleNames([...territoryPeople(viewer.org, [seat]), ...chain.map((member) => member.hrId), ...visitPeople(visitRows)]);
   const visitedToday = new Set(visitRows.map((row) => String(row.customer_id)));
   const ramadan = isRamadanDay(today, viewer.config.ramadanOverrides);
@@ -546,7 +607,8 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
       speciality: textOrNull(row.speciality),
       brickId: firstPlace?.brickId ?? null,
       brickName: firstPlace?.brickName ?? null,
-      lastVisit: lastVisits.get(customerId) ?? null,
+      lastVisit: lastVisits.products.get(customerId) ?? null,
+      lastNextStep: lastVisits.nextSteps.get(customerId) ?? null,
       places: customerPlaces.map((place) => ({
         placeId: place.placeId,
         label: place.label,
@@ -703,6 +765,13 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown): Promise
       // rather than quietly filed as planned. Where the approval starts is resolved from the
       // organogram, never from the phone: a territory with no manager seat above it begins at SFE.
       unplanned_reason: visit.unplannedReason,
+      // The outcome. Already dropped-not-refused by parseVisitOutcome; the function does the same
+      // again from its own lists, because the vocabulary has to be true of the column and not only of
+      // the caller that happens to be in front of it today.
+      next_step: visit.outcome.nextStep,
+      next_step_on: visit.outcome.nextStepOn,
+      objection: visit.outcome.objection,
+      objection_note: visit.outcome.objectionNote,
       unplanned_first_status: unplannedFirstStatus(reviewer !== null),
       reviewer_hr_id: reviewer?.hrId ?? null,
       lat: visit.lat,

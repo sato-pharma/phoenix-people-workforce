@@ -84,16 +84,25 @@ export function runMobileCrmVisitPharmacyFeedbackTests(): void {
   // ── The section exists, is numbered like the web, and adds no tracking wording ──────────────────
   {
     const code = source("mobile/src/features/crm/visits-screen.tsx");
-    assert.ok(code.includes('title="4 · Pharmacy you took feedback from"'), "the pharmacy section sits at 4, mirroring the web form");
-    assert.ok(code.includes('title="5 · Comment"'), "Comment is renumbered to 5");
-    assert.ok(code.includes('title="6 · Live photo"'), "Live photo is renumbered to 6");
+
+    // 🔴 DERIVED FROM THE WEB, not hard-coded (2026-09-26). This block used to pin "6 · Live photo"
+    // by its literal number, and E3 inserting a step above it turned a correct phone into a red test
+    // — the pin read the number rather than the rule it stands for, which is that the two forms are
+    // numbered the SAME. A later step adds another section and the same thing happens again. Now the
+    // web's own step titles are the expected list, so the phone can only fail this by DIVERGING.
+    const titles = (text: string, pattern: RegExp) => [...text.matchAll(pattern)].map((match) => match[1]).filter((title) => /^\d+ · /.test(title));
+    const web = titles(source("src/components/phoenix-crm/visits-tab.tsx"), /<CrmBlock[^>]*title="([^"]+)"/g);
+    const phone = titles(code, /<CrmSection title="([^"]+)"/g);
+    assert.ok(web.length >= 6, `the web form's steps must actually be found — got ${web.length}`);
+    assert.deepEqual(phone, web, "the phone's steps are numbered and named exactly as the web form's");
+    assert.ok(phone.includes("4 · Pharmacy you took feedback from"), "and the pharmacy section is one of them, at 4");
     assert.ok(code.includes("Does this pharmacy have these products?"), "the stock grid asks the same question as the web");
 
     // GOLDEN RULE #1, the BLIND half: the rep's form never hints at a check. The only visit save
     // wording about location is the neutral pill on a saved row; the Add Visit form itself must not
     // gain a distance/flag/tracking line with this change.
     const formStart = code.indexOf('title="4 · Pharmacy you took feedback from"');
-    const formEnd = code.indexOf('title="6 · Live photo"');
+    const formEnd = code.indexOf('title="5 · Comment"');
     const section = code.slice(formStart, formEnd);
     for (const banned of ["distance", "flag", "tracked", "checked against", "location check"]) {
       assert.ok(!section.toLowerCase().includes(banned), `the pharmacy section says nothing about "${banned}"`);

@@ -101,10 +101,16 @@ export function runPhoenixCrmLastVisitProductsTests(): void {
   // customer at 9am and opens the form again at 11am must not be handed HIS OWN morning back as
   // "last visit" — that is not carrying anything over. The floor is in the read, not in the rules.
   {
+    // `loadLastVisits` since E3 (2026-09-26): one read, two answers — the products the form carries
+    // over, and the commitment the rep made last time. The floor below belongs to both.
     const visits = source("src/lib/phoenix-crm/server/visits.ts");
-    const start = visits.indexOf("async function loadLastVisitProducts");
-    assert.notEqual(start, -1, "loadLastVisitProducts is still there");
-    const body = visits.slice(start, start + 1200);
+    const start = visits.indexOf("async function loadLastVisits");
+    assert.notEqual(start, -1, "loadLastVisits is still there");
+    // A window, not a parse. `source()` blanks comments IN PLACE, so it holds line numbers steady and
+    // a comment inside the function still costs the window its length — sized for the whole of it and
+    // proved by the last assertion below, which reads the closing line of the same function.
+    const body = visits.slice(start, start + 2400);
+    assert.ok(body.includes("pickLastVisitProducts("), "and it is still the caller of the pure rule");
     assert.ok(body.includes('.lt("visit_date", today)'), "the read must stop strictly before today");
     assert.ok(body.includes("fetchAllRowsKeyset"), "and must page, like every other read in the module");
   }

@@ -21,6 +21,7 @@ import { isUsableFix } from "@/lib/phoenix-crm/geo";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
 import { parseTimings } from "@/lib/phoenix-crm/timings";
 import { parseUnplannedReason } from "@/lib/phoenix-crm/unplanned-rules";
+import { parseVisitOutcome, type VisitOutcome } from "@/lib/phoenix-crm/visit-outcome";
 import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmTiming, PhoenixCrmVisitKind } from "@/lib/phoenix-crm/types";
 
 export type EntryRuleResult<T> = { ok: true; value: T } | { ok: false; error: string };
@@ -231,6 +232,15 @@ export type VisitDraft = CapturedFix & {
   visitType: "planned" | "unplanned";
   /** His written "why I went", when he chose unplanned. */
   unplannedReason: string | null;
+  /**
+   * The objection the doctor raised and what the rep will do next — both optional, both chips.
+   *
+   * It never fails, by design. Every other field on this type can refuse the draft; these four are
+   * extras on a visit that is otherwise complete, and a phone one release behind sending a value this
+   * one does not know must not cost a rep a visit he actually made. The unknown value is dropped and
+   * the visit saves. See `visit-outcome.ts`.
+   */
+  outcome: VisitOutcome;
 };
 
 /** The recorder caps at 60s; the column allows 120, so a long note is clamped rather than refused. */
@@ -331,6 +341,7 @@ export function parseVisitDraft(raw: unknown): EntryRuleResult<VisitDraft> {
       voiceNoteBytes: voiceNotePath ? clampVoiceNumber(body.voiceNoteBytes, VOICE_NOTE_BYTES_MAX) : null,
       visitType,
       unplannedReason,
+      outcome: parseVisitOutcome(body),
     },
   };
 }

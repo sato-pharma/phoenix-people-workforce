@@ -395,6 +395,12 @@ const LATER_MIGRATIONS = [
   // after the unplanned-visit migration because that one is the last save_visit replacer, and the
   // list is applied in order.
   "supabase/migrations/20260926193000_phoenix_crm_day_activities.sql",
+  // The visit's outcome — the objection and the next step. It REPLACES phoenix_crm_save_visit, so it
+  // takes over as the last entry that does: liveMigrationSql applies each in order and the last wins.
+  // It adds four columns and no table, and RESTATES save_visit's own revoke/grant pair — a no-op that
+  // `check:migrations` requires of any file whose only function is SECURITY DEFINER; see
+  // assertFunctionGrants.
+  "supabase/migrations/20260926210000_phoenix_crm_visit_outcome.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */
@@ -436,12 +442,37 @@ function liveMigrationSql(): string {
   return sql;
 }
 
-/** Every function a migration introduces is taken from everyone and given to the service role alone. */
-function assertFunctionGrants(sql: string, path: string, expected: readonly string[]) {
+/**
+ * Every function a migration INTRODUCES is taken from everyone and given to the service role alone.
+ *
+ * `required` is what the file must carry a pair for; `owned` is every function it creates or replaces,
+ * which is the most it may name. A function it merely REPLACES can restate its pair or leave it out —
+ * `create or replace function` preserves the ACL, so restating says the same thing twice.
+ *
+ * 🔴 It HAS to be allowed, and this used to be an exact match that forbade it (widened 2026-09-26).
+ * The fast `pnpm run check:migrations`, a required check, fails any migration that creates a SECURITY
+ * DEFINER function and carries no `revoke execute … from … public` anywhere in it: a function in
+ * `public` inherits EXECUTE from PUBLIC, and revoking only anon and authenticated is a no-op. A
+ * migration whose one function is a REPLACEMENT has nothing else to hang that revoke on, so the two
+ * guards deadlocked — one demanded the line, the other refused it. Two earlier migrations in this
+ * module (20260924231210 and 20260925021140) already restate it and predate this list.
+ *
+ * What stays exact: nothing may revoke or grant a function the file does not create or replace, and
+ * the revoked and granted sets must match — revoking PUBLIC without re-granting strips the service
+ * role with it, which is the failure this whole check exists to catch.
+ */
+function assertFunctionGrants(sql: string, path: string, required: readonly string[], owned: readonly string[] = required) {
   const revoked = [...sql.matchAll(/^revoke execute on function public\.(phoenix_crm_[a-z_]+)\([^)]*\) from public, anon, authenticated;$/gm)].map((match) => match[1]);
   const granted = [...sql.matchAll(/^grant execute on function public\.(phoenix_crm_[a-z_]+)\([^)]*\) to service_role;$/gm)].map((match) => match[1]);
-  assert.deepEqual([...revoked].sort(), [...expected].sort(), `${path}: every function it introduces is taken away from public, anon and authenticated`);
-  assert.deepEqual([...granted].sort(), [...expected].sort(), `${path}: and given to the service role`);
+  for (const name of required) {
+    assert.ok(revoked.includes(name), `${path}: ${name} is introduced here, so it must be taken away from public, anon and authenticated`);
+  }
+  assert.deepEqual(
+    revoked.filter((name) => !owned.includes(name)).sort(),
+    [],
+    `${path}: it revokes a function it neither creates nor replaces`,
+  );
+  assert.deepEqual([...granted].sort(), [...revoked].sort(), `${path}: every function it revokes is given back to the service role, and nothing else is`);
 }
 
 /** What every migration in the module must do, whichever one it is. */
@@ -537,7 +568,7 @@ function runMigrationTests() {
       added.length > 0 || laterTables.length > 0,
       `${path} adds no function and no table — have they been renamed, or the regexes outgrown?`,
     );
-    assertFunctionGrants(later, path, added.filter((name) => !callable.has(name)));
+    assertFunctionGrants(later, path, added.filter((name) => !callable.has(name)), added);
     for (const name of added) callable.add(name);
     assert.equal(
       laterTables.length,
