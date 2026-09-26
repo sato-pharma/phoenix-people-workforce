@@ -20,6 +20,7 @@ import { isIsoDay } from "@/lib/phoenix-crm/calendar";
 import { isUsableFix } from "@/lib/phoenix-crm/geo";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
 import { parseTimings } from "@/lib/phoenix-crm/timings";
+import { parseUnplannedReason } from "@/lib/phoenix-crm/unplanned-rules";
 import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmTiming, PhoenixCrmVisitKind } from "@/lib/phoenix-crm/types";
 
 export type EntryRuleResult<T> = { ok: true; value: T } | { ok: false; error: string };
@@ -218,6 +219,18 @@ export type VisitDraft = CapturedFix & {
   voiceNotePath: string | null;
   voiceNoteSeconds: number | null;
   voiceNoteBytes: number | null;
+  /**
+   * The kind of visit the rep CHOSE on the first step: "planned" offers only today's plan, "unplanned"
+   * opens his whole list and asks him why he went.
+   *
+   * It is what he said, never what is true. The server resolves the truth from the plan's own history
+   * inside phoenix_crm_save_visit, and a phone claiming "planned" for a doctor who was not on a sent
+   * plan is filed as unplanned regardless. It is carried only so the reason below can be asked for
+   * HERE, before the photo, instead of coming back as a refusal after it.
+   */
+  visitType: "planned" | "unplanned";
+  /** His written "why I went", when he chose unplanned. */
+  unplannedReason: string | null;
 };
 
 /** The recorder caps at 60s; the column allows 120, so a long note is clamped rather than refused. */
@@ -286,6 +299,16 @@ export function parseVisitDraft(raw: unknown): EntryRuleResult<VisitDraft> {
   const fix = parseCapturedFix(body);
   if (!fix.ok) return fix;
 
+  // The kind he chose. Asked for the reason here, before the photo, so an off-plan visit never gets as
+  // far as the camera without one — the server still decides which kind it really was.
+  const visitType = body.visitType === "unplanned" ? "unplanned" : "planned";
+  let unplannedReason: string | null = null;
+  if (visitType === "unplanned") {
+    const reason = parseUnplannedReason(body.unplannedReason);
+    if (!reason.ok) return { ok: false, error: reason.error };
+    unplannedReason = reason.value;
+  }
+
   // All three travel together or none does: a path with no numbers would print an empty player, and
   // numbers with no path would print a duration for a recording nobody can hear.
   const voiceNotePath = cleanText(body.voiceNotePath, 200);
@@ -306,6 +329,8 @@ export function parseVisitDraft(raw: unknown): EntryRuleResult<VisitDraft> {
       voiceNotePath,
       voiceNoteSeconds: voiceNotePath ? clampVoiceNumber(body.voiceNoteSeconds, VOICE_NOTE_SECONDS_MAX) : null,
       voiceNoteBytes: voiceNotePath ? clampVoiceNumber(body.voiceNoteBytes, VOICE_NOTE_BYTES_MAX) : null,
+      visitType,
+      unplannedReason,
     },
   };
 }

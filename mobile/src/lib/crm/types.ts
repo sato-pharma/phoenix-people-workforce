@@ -79,6 +79,13 @@ export type VisitRow = {
   locationFlag: CrmLocationFlag;
   locationLabel: string;
   clockOff: boolean;
+  /**
+   * Off the plan, and where its approval has got to. Null on the ordinary planned visit.
+   *
+   * The rep sees this on his own day deliberately: it is his own visit, it is not counting yet, and
+   * knowing who it sits with is the only way he can chase it.
+   */
+  unplanned: { status: "manager_pending" | "sfe_pending" | "approved" | "refused"; statusLabel: string; note: string; clarification: string } | null;
 };
 
 export type VisitDayView = {
@@ -108,6 +115,9 @@ export type VisitCustomerOption = {
   speciality: string | null;
   places: VisitCustomerPlace[];
   plannedToday: boolean;
+  /** The brick the customer's first place sits in, so the picker can group a day geographically. */
+  brickId: string | null;
+  brickName: string | null;
   visitedToday: boolean;
   visitsThisMonth: number;
   target: number | null;

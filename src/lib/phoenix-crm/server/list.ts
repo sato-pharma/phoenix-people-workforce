@@ -324,12 +324,21 @@ export async function loadTerritoryCustomers(
   return { customers, placesByCustomer };
 }
 
-/** Visits a customer this month, by customer id. */
+/**
+ * Visits a customer this month, by customer id.
+ *
+ * `phoenix_crm_countable_visits`, never the base table. This read feeds `visitsThisMonth` — the rep's
+ * own standing against his grade norm on FOUR screens (the visit form, the weekly planner, the monthly
+ * planner and the List board) and, through `coverageTier`, the day's suggestions. It is a PostgREST
+ * read and not one of the phoenix_crm_report_* functions, so "I moved every report to the view" does
+ * not reach it; leave it on the raw table and an off-plan visit nobody has approved quietly satisfies
+ * a frequency norm everywhere a rep plans.
+ */
 export async function loadMonthVisitCounts(seatId: string, isTest: boolean, monthStart: string, through: string): Promise<Map<string, number>> {
   const rows = await fetchAllRowsKeyset<Row>(
     () =>
       getSupabaseAdmin()
-        .from("phoenix_crm_visits")
+        .from("phoenix_crm_countable_visits")
         .select("id, customer_id")
         .eq("seat_id", seatId)
         .eq("is_test", isTest)

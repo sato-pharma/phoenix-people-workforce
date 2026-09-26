@@ -169,6 +169,21 @@ export function fieldWeeksOfMonth(monthStart: string): string[] {
 }
 
 /**
+ * When a month's plan is due: the last Thursday of the month BEFORE it (owner, 2026-09-26).
+ *
+ * Nothing in the module refuses a plan after this date — he ruled a late month is ACCEPTED and
+ * STAMPED, never blocked, so a rep is never left unable to plan. The date is a fact the rep's card and
+ * the manager's board both show; `phoenix_crm_monthly_plans.submitted_late` records the verdict from
+ * the SERVER's clock at submit. The same arithmetic lives in `phoenix_crm_open_monthly_plan`, written
+ * in isodow; tests/phoenix-crm-monthly-plan.test.ts walks a month starting on each weekday.
+ */
+export function monthlyPlanDueOn(monthStart: string): string {
+  const lastDayBefore = addDaysIso(monthStartOf(monthStart), -1);
+  // getUTCDay puts Thursday at 4, so this steps back to the Thursday on or before that day.
+  return addDaysIso(lastDayBefore, -((weekdayOfIsoDay(lastDayBefore) - 4 + 7) % 7));
+}
+
+/**
  * The months a rep can plan: the month of each week the rep can still plan (calendar.ts
  * `plannableWeeks`), so month and week stay in step — a month is plannable exactly when it holds a
  * plannable week. Today's month, and the next once the horizon reaches into it.

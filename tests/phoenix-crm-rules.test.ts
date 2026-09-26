@@ -764,8 +764,8 @@ function runReportRuleTests() {
     { seat_id: "R2", rep_hr_id: "T-102", visit_date: "2026-10-04", list_type: "PM", visits: -4, double_visits: "many" },
   ]);
   assert.deepEqual(Object.keys(visits.totals), ["AM", "PM"], "there is no combined AM and PM total");
-  assert.deepEqual(visits.totals.AM, { visits: 2, doubleVisits: 1, chainVisits: 0, farVisits: 0, testVisits: 0 });
-  assert.deepEqual(visits.totals.PM, { visits: 18, doubleVisits: 0, chainVisits: 1, farVisits: 2, testVisits: 3 });
+  assert.deepEqual(visits.totals.AM, { visits: 2, doubleVisits: 1, chainVisits: 0, farVisits: 0, testVisits: 0, unplannedWaiting: 0 });
+  assert.deepEqual(visits.totals.PM, { visits: 18, doubleVisits: 0, chainVisits: 1, farVisits: 2, testVisits: 3, unplannedWaiting: 0 });
   assert.deepEqual(visits.groups.map((group) => [group.seatId, group.repHrId, group.visitDays]), [["R1", "T-101", 2], ["R1", null, 1], ["R2", "T-102", 0]]);
   const rep = visits.groups[0];
   assert.deepEqual(rep.days.map((day) => day.date), ["2026-10-03", "2026-10-04", "2026-10-05"], "days in date order");
@@ -781,9 +781,9 @@ function runReportRuleTests() {
     { seat_id: "R2", day: "2026-10-04", list_type: "PM", planned: 0, visited_planned: 0, missed: 0, unplanned: 4 },
   ]);
   assert.deepEqual(plan.groups[0].days.map((day) => day.date), ["2026-10-03", "2026-10-04"]);
-  assert.deepEqual(plan.groups[0].pm, { planned: 22, visitedPlanned: 19, missed: 3, unplanned: 2 });
-  assert.deepEqual(plan.groups[0].am, { planned: 3, visitedPlanned: 3, missed: 0, unplanned: 1 });
-  assert.deepEqual(plan.totals.PM, { planned: 22, visitedPlanned: 19, missed: 3, unplanned: 6 });
+  assert.deepEqual(plan.groups[0].pm, { planned: 22, visitedPlanned: 19, plannedWaiting: 0, missed: 3, unplanned: 2, unplannedWaiting: 0, unplannedRefused: 0 });
+  assert.deepEqual(plan.groups[0].am, { planned: 3, visitedPlanned: 3, plannedWaiting: 0, missed: 0, unplanned: 1, unplannedWaiting: 0, unplannedRefused: 0 });
+  assert.deepEqual(plan.totals.PM, { planned: 22, visitedPlanned: 19, plannedWaiting: 0, missed: 3, unplanned: 6, unplannedWaiting: 0, unplannedRefused: 0 });
   assert.equal(planKeptPercent(plan.groups[0].pm), 86.4);
   assert.equal(planKeptPercent(plan.groups[1].pm), null, "no plan is no figure, never 0%");
 

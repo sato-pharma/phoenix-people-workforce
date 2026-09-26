@@ -28,7 +28,8 @@ export type {
   ValidateResult,
 } from "@/lib/phoenix-crm/server/list";
 export type { DoctorDirectoryRow, DoctorDirectoryView } from "@/lib/phoenix-crm/server/doctors";
-export type { TeamRequest, TeamTerritoryRow, TeamView } from "@/lib/phoenix-crm/server/team";
+export type { TeamRequest, TeamTerritoryRow, TeamUnplannedVisit, TeamView } from "@/lib/phoenix-crm/server/team";
+export type { UnplannedVisitView } from "@/lib/phoenix-crm/server/unplanned";
 export type {
   PlanDayView,
   PlanItemView,
@@ -60,6 +61,8 @@ export type {
   RepVisitRow,
   TerritoryCoverageRow,
   TerritoryPlanRow,
+  VisitLocationReportView,
+  VisitLocationRow,
   VisitsReportView,
 } from "@/lib/phoenix-crm/server/reports";
 export type { PhotoSlot } from "@/lib/phoenix-crm/server/photos";

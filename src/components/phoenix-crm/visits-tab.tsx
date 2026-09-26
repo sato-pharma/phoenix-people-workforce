@@ -20,6 +20,7 @@ import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Plus, Search } from "lucide-react";
 
 import { crmPost, crmUrl, errorCodeOf, messageOf, newClientId, useCrmGet } from "@/components/phoenix-crm/api";
+import { brickTintMap } from "@/components/phoenix-crm/brick-tints";
 import { CrmSpeak, type VoiceNoteValue } from "@/components/phoenix-crm/speak";
 import { CrmVoiceNotePlayer } from "@/components/phoenix-crm/voice-playback";
 import { cairoClock, cairoStamp, countText, dayLabelLong, plural, shiftIsoDay } from "@/components/phoenix-crm/format";
@@ -63,6 +64,7 @@ import { isIsoDay } from "@/lib/phoenix-crm/calendar";
 import { appendDictated } from "@/lib/phoenix-crm/dictation";
 import { PHARMACY_NAME_MAX, VISIT_COMMENT_MAX, VISIT_PRODUCTS_MAX, type ProductAvailability } from "@/lib/phoenix-crm/entry-rules";
 import type { PhoenixCrmListType, PhoenixCrmVisitKind } from "@/lib/phoenix-crm/types";
+import { UNPLANNED_REASON_MAX, UNPLANNED_REASON_MIN, type VisitTypeChoice } from "@/lib/phoenix-crm/unplanned-rules";
 import type {
   SavedVisit,
   VisitCustomerOption,
@@ -173,6 +175,11 @@ function LocationPills({ visit }: { visit: VisitRow }) {
   return (
     <>
       <CrmPill tone={location.tone}>{location.label}</CrmPill>
+      {visit.unplanned ? (
+        <CrmPill tone={visit.unplanned.status === "approved" ? "good" : visit.unplanned.status === "refused" ? "warn" : "orange"}>
+          {visit.unplanned.statusLabel}
+        </CrmPill>
+      ) : null}
       {visit.clockOff ? <CrmPill tone="warn">Phone clock off</CrmPill> : null}
     </>
   );
@@ -285,6 +292,15 @@ function VisitDetails({ visit }: { visit: VisitRow }) {
           recording can be made in a car afterwards and proves nothing about where anybody stood. */}
       {visit.voiceNotePath ? <CrmVoiceNotePlayer path={visit.voiceNotePath} seconds={visit.voiceNoteSeconds} /> : null}
       <p className="break-words">{visit.locationLabel}</p>
+      {/* Off the plan: what he wrote, and where it has got to. He is TOLD this deliberately — it is his
+          own visit, it is not counting yet, and the only way he can chase it is to know. */}
+      {visit.unplanned ? (
+        <p className="break-words">
+          <span className="font-black text-slate-800">Off the plan: </span>
+          <span dir="auto">{visit.unplanned.clarification}</span>
+          <span className="block">{visit.unplanned.note}</span>
+        </p>
+      ) : null}
       {enteredByOther(visit) ? <p className="break-words">Entered by {visit.enteredByName}</p> : null}
     </div>
   );
@@ -422,6 +438,9 @@ function SavedNote({ onValidate, saved }: { onValidate: (() => void) | null; sav
     <CrmNote title={`Visit saved: ${customerName}`} tone={isFlagged(visit.locationFlag) ? "warn" : "good"}>
       {cairoClock(visit.capturedAt)} · {visit.locationLabel}
       {isFlagged(visit.locationFlag) ? ". The visit is saved with this flag." : ""}
+      {/* The server's own verdict, not what he chose on the first step — so a rep who picked Planned
+          for a doctor his plan no longer holds finds out here rather than a month later. */}
+      {visit.unplannedNote ? <span className="mt-1 block">{visit.unplannedNote}</span> : null}
     </CrmNote>
   );
   if (!onValidate) return note;
@@ -639,16 +658,24 @@ function PlaceWindows({ customer }: { customer: VisitCustomerOption }) {
   );
 }
 
+/** The brick a customer is grouped under in the picker. A customer with no place yet has none. */
+const NO_BRICK = "__no_brick__";
+const NO_BRICK_LABEL = "Not mapped yet";
+
+type PickerGroup = { key: string; name: string; customers: VisitCustomerOption[] };
+
 function CustomerPicker({
   customers,
   disabled,
   onPick,
   selectedId,
+  visitType,
 }: {
   customers: ReadonlyArray<VisitCustomerOption>;
   disabled: boolean;
   onPick: (customerId: string) => void;
   selectedId: string | null;
+  visitType: VisitTypeChoice;
 }) {
   const [query, setQuery] = useState("");
   const [listType, setListType] = useState<"all" | PhoenixCrmListType>("all");
@@ -656,13 +683,33 @@ function CustomerPicker({
   // buttons, and today's plan (which sorts first) is what the rep is almost always looking for.
   const [limit, setLimit] = useState(PICKER_PAGE);
   const needle = query.trim().toLowerCase();
-  const shown = customers.filter(
+  // A PLANNED visit offers only the doctors on a plan he has sent for today (owner, 2026-09-26); an
+  // UNPLANNED one opens his whole list. This is the door, not the gate: the server decides which kind
+  // the visit really was from the plan's own history, and refuses a mismatch with a named refusal.
+  const offered = visitType === "planned" ? customers.filter((customer) => customer.plannedToday) : customers;
+  const shown = offered.filter(
     (customer) =>
       (listType === "all" || customer.listType === listType) &&
       (!needle || customer.name.toLowerCase().includes(needle) || (customer.speciality ?? "").toLowerCase().includes(needle)),
   );
-  const planned = customers.filter((customer) => customer.plannedToday).length;
   const left = shown.length - limit;
+  // The hue is keyed off each brick's place in the WHOLE list, never this filtered one: a brick that
+  // changes colour as the rep searches is a brick he cannot learn.
+  const tints = brickTintMap(customers.map((customer) => customer.brickId).filter((brickId): brickId is string => Boolean(brickId)));
+  // Grouped in the order the bricks first appear. Customers already sort planned-first, so the bricks
+  // he is planned in lead: his day laid out geographically before he taps anything.
+  const groups: PickerGroup[] = [];
+  const groupByKey = new Map<string, PickerGroup>();
+  for (const customer of shown.slice(0, limit)) {
+    const key = customer.brickId ?? NO_BRICK;
+    let group = groupByKey.get(key);
+    if (!group) {
+      group = { key, name: customer.brickName ?? NO_BRICK_LABEL, customers: [] };
+      groupByKey.set(key, group);
+      groups.push(group);
+    }
+    group.customers.push(customer);
+  }
 
   return (
     <div className="grid min-w-0 gap-3">
@@ -695,47 +742,72 @@ function CustomerPicker({
         ]}
         value={listType}
       />
-      {planned > 0 ? <p className="text-xs font-semibold text-slate-500">Customers on today&apos;s plan come first.</p> : null}
+      <p className="text-xs font-semibold text-slate-500">
+        {visitType === "planned" ? "Today’s plan, grouped by brick." : "Your whole list, grouped by brick."}
+      </p>
       {shown.length === 0 ? (
-        <p className="border border-dashed border-slate-200 px-3 py-4 text-center text-sm font-semibold text-slate-500">No customer matches.</p>
+        <p className="border border-dashed border-slate-200 px-3 py-4 text-center text-sm font-semibold text-slate-500">
+          {offered.length === 0 && visitType === "planned"
+            ? "No customer is on a plan you have sent for today. Choose Unplanned visit above to visit anyone on your list."
+            : "No customer matches."}
+        </p>
       ) : (
-        <ul className="grid gap-1.5">
-          {shown.slice(0, limit).map((customer) => {
-            const selected = customer.customerId === selectedId;
+        <div className="grid min-w-0 gap-3">
+          {groups.map((group) => {
+            const tint = tints.get(group.key);
             return (
-              <li key={customer.customerId}>
-                <button
-                  aria-pressed={selected}
+              <div className="min-w-0" key={group.key}>
+                {/* The wash is on the heading, never on a row — the same way the List tab and the
+                    Reps List board draw a brick, from the one shared palette. */}
+                <p
                   className={cn(
-                    "block w-full min-w-0 rounded-none border px-3 py-2.5 text-left transition disabled:cursor-not-allowed disabled:opacity-60",
-                    selected ? "border-orange-500 bg-orange-50" : "border-slate-200 bg-white hover:border-slate-300",
+                    "mb-1.5 break-words border-l-4 px-2 py-1 text-phx-2xs font-black uppercase tracking-[0.16em]",
+                    tint ? `${tint.bar} ${tint.fill} text-slate-600` : "border-l-amber-500 bg-amber-50 text-amber-800",
                   )}
-                  disabled={disabled || customer.visitedToday}
-                  onClick={() => onPick(customer.customerId)}
-                  type="button"
                 >
-                  <span className="flex min-w-0 flex-wrap items-start justify-between gap-2">
-                    <span className="min-w-0 flex-1">
-                      <span className="block break-words text-sm font-black text-slate-950">{customer.name}</span>
-                      <span className="mt-0.5 block break-words text-xs font-semibold text-slate-500">{customerMetaText(customer)}</span>
-                    </span>
-                    <span className="flex max-w-full flex-wrap gap-1">
-                      {customer.pending ? <CrmPill tone="orange">{PENDING_PILL}</CrmPill> : null}
-                      {customer.plannedToday ? <CrmPill tone="orange">On today&apos;s plan</CrmPill> : null}
-                      {customer.visitedToday ? <CrmPill tone="good">Visited today</CrmPill> : null}
-                    </span>
-                  </span>
-                  <PlaceWindows customer={customer} />
-                  {/* A customer not validated yet has no month standing to report: "2 of 3 visits this
-                      month" would be read as progress on a figure his visits do not move. */}
-                  <span className="mt-1 block text-xs font-semibold text-slate-600">
-                    {customer.pending ? pendingVisitsText(customer.visitsThisMonth) : monthVisitsText(customer.visitsThisMonth, customer.target)}
-                  </span>
-                </button>
-              </li>
+                  {group.name} · {countText(group.customers.length)}
+                </p>
+                <ul className="grid gap-1.5">
+                  {group.customers.map((customer) => {
+                    const selected = customer.customerId === selectedId;
+                    return (
+                      <li key={customer.customerId}>
+                        <button
+                          aria-pressed={selected}
+                          className={cn(
+                            "block w-full min-w-0 rounded-none border px-3 py-2.5 text-left transition disabled:cursor-not-allowed disabled:opacity-60",
+                            selected ? "border-orange-500 bg-orange-50" : "border-slate-200 bg-white hover:border-slate-300",
+                          )}
+                          disabled={disabled || customer.visitedToday}
+                          onClick={() => onPick(customer.customerId)}
+                          type="button"
+                        >
+                          <span className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+                            <span className="min-w-0 flex-1">
+                              <span className="block break-words text-sm font-black text-slate-950">{customer.name}</span>
+                              <span className="mt-0.5 block break-words text-xs font-semibold text-slate-500">{customerMetaText(customer)}</span>
+                            </span>
+                            <span className="flex max-w-full flex-wrap gap-1">
+                              {customer.pending ? <CrmPill tone="orange">{PENDING_PILL}</CrmPill> : null}
+                              {customer.plannedToday ? <CrmPill tone="orange">On today&apos;s plan</CrmPill> : null}
+                              {customer.visitedToday ? <CrmPill tone="good">Visited today</CrmPill> : null}
+                            </span>
+                          </span>
+                          <PlaceWindows customer={customer} />
+                          {/* A customer not validated yet has no month standing to report: "2 of 3 visits this
+                              month" would be read as progress on a figure his visits do not move. */}
+                          <span className="mt-1 block text-xs font-semibold text-slate-600">
+                            {customer.pending ? pendingVisitsText(customer.visitsThisMonth) : monthVisitsText(customer.visitsThisMonth, customer.target)}
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
             );
           })}
-        </ul>
+        </div>
       )}
       {/* The same words as every "show more" in the module (CrmShowMore); inline here, because the
           picker already sits inside the step's padded block. */}
@@ -846,6 +918,11 @@ function AddVisit({
 
   const [customerId, setCustomerId] = useState<string | null>(handoff?.customerId ?? null);
   const [picking, setPicking] = useState(!handoff);
+  // The first thing he chooses (owner, 2026-09-26). Planned shows today's plan; unplanned opens the
+  // whole list and asks why. A handoff comes from validating a customer at the door, which is by
+  // definition someone he went to see — so it opens on unplanned and he writes the reason there.
+  const [visitType, setVisitType] = useState<VisitTypeChoice>("planned");
+  const [unplannedReason, setUnplannedReason] = useState("");
   const [kind, setKind] = useState<PhoenixCrmVisitKind>("single");
   const [managerHrId, setManagerHrId] = useState<string | null>(null);
   const [seniorHrId, setSeniorHrId] = useState<string | null>(null);
@@ -898,9 +975,26 @@ function AddVisit({
 
   const loaded = form;
   const customer = customerId ? loaded.customers.find((option) => option.customerId === customerId) ?? null : null;
+  const plannedToday = loaded.customers.filter((option) => option.plannedToday).length;
   const placePhoto = handoff?.photo && usePlacePhoto && customer && customer.customerId === handoff.customerId ? handoff.photo : null;
   const who = participantsOf(loaded, kind, managerHrId, seniorHrId);
   const commentLength = comment.trim().length;
+
+  /**
+   * Changing the kind changes which customers are on offer, so a customer already chosen who is no
+   * longer offered is dropped rather than left sitting there with a picker that cannot show him.
+   */
+  function chooseVisitType(next: VisitTypeChoice) {
+    setProblem(null);
+    setVisitType(next);
+    if (next === "planned" && customer && !customer.plannedToday) {
+      releaseCapturedPhoto(photo);
+      setPhoto(null);
+      setCustomerId(null);
+      setPicking(true);
+    }
+    if (next === "planned") setUnplannedReason("");
+  }
 
   function pickCustomer(nextId: string) {
     setProblem(null);
@@ -945,6 +1039,9 @@ function AddVisit({
   function draft(visitId: string): Draft {
     if (!customer) return { ok: false, problem: "Choose the customer you visited." };
     if (customer.visitedToday) return { ok: false, problem: "This customer's visit for today is already saved." };
+    if (visitType === "unplanned" && unplannedReason.trim().length < UNPLANNED_REASON_MIN) {
+      return { ok: false, problem: "Write why you visited this customer off your plan." };
+    }
     if (kind !== "single" && !who.manager) {
       return {
         ok: false,
@@ -964,6 +1061,10 @@ function AddVisit({
         seatId,
         test,
         customerId: customer.customerId,
+        // What he chose. The server re-decides it from the plan's own history, so this only settles
+        // whether the reason travels with the visit.
+        visitType,
+        unplannedReason: visitType === "unplanned" ? unplannedReason.trim() : null,
         kind,
         managerHrId: kind === "single" ? null : (who.manager?.hrId ?? null),
         seniorHrId: kind === "chain" ? (who.senior?.hrId ?? null) : null,
@@ -1022,6 +1123,11 @@ function AddVisit({
         // send the rep into the same refusal on every press of Save; dropping it lets them record again.
         // The photo is deliberately left alone — the visit itself is still good.
         setVoiceNote(null);
+      } else if (code === "phoenix_crm_clarification_required") {
+        // The server's own test says this customer was not on a plan sent for today — the rep's plan
+        // moved under him, or he chose Planned for someone who was not. Open the reason box and keep
+        // the photo and the visit id: he writes one line and saves the SAME visit again.
+        setVisitType("unplanned");
       } else if (code === "phoenix_crm_id_conflict") {
         visitIdRef.current = null;
       } else if (
@@ -1045,6 +1151,26 @@ function AddVisit({
       </CrmBlock>
 
       <CrmBlock className="border-t border-slate-100" title="1 · Customer">
+        {/* The kind of visit comes FIRST, above the picker: it decides which customers the picker
+            offers at all (owner, 2026-09-26). Unplanned is what replaces the old CRM's "Campaign
+            (Prospection)" — the same idea, with a reason attached and an approval behind it. */}
+        <CrmChoice
+          className="mb-3"
+          columns={2}
+          label="Kind of visit"
+          onChange={chooseVisitType}
+          options={[
+            { value: "planned", label: "Planned visit", note: `${countText(plannedToday)} on today’s plan`, disabled: saving },
+            { value: "unplanned", label: "Unplanned visit", note: "Anyone on your list · needs approval", disabled: saving },
+          ]}
+          value={visitType}
+        />
+        {visitType === "unplanned" ? (
+          <CrmNote className="mb-3" title="It counts once it is approved" tone="info">
+            Write why you went. {loaded.managers[0] ? `${loaded.managers[0].name} decides it first, then SFE.` : "SFE decides it."} Until then it
+            counts in nothing — not your call rate, not coverage, not frequency.
+          </CrmNote>
+        ) : null}
         {customer && !picking ? (
           <div className="flex min-w-0 flex-wrap items-start justify-between gap-3 border border-orange-200 bg-orange-50/50 px-3 py-2.5">
             <div className="min-w-0 flex-1">
@@ -1078,9 +1204,30 @@ function AddVisit({
                 {handoff.customerName} is not on the list of customers to visit. Reload the page, or choose the customer below.
               </CrmNote>
             ) : null}
-            <CustomerPicker customers={loaded.customers} disabled={saving} onPick={pickCustomer} selectedId={customerId} />
+            <CustomerPicker customers={loaded.customers} disabled={saving} onPick={pickCustomer} selectedId={customerId} visitType={visitType} />
           </>
         )}
+        {visitType === "unplanned" ? (
+          <CrmField className="mt-3" label="Why you went">
+            <textarea
+              className={crmTextareaClassName}
+              disabled={saving}
+              maxLength={UNPLANNED_REASON_MAX}
+              onChange={(event) => {
+                setProblem(null);
+                setUnplannedReason(event.target.value);
+              }}
+              placeholder="A sentence your manager can act on — what took you there."
+              rows={3}
+              value={unplannedReason}
+            />
+            <p className="mt-1 text-xs font-semibold text-slate-500">
+              {unplannedReason.trim().length < UNPLANNED_REASON_MIN
+                ? `At least ${UNPLANNED_REASON_MIN} characters.`
+                : `${countText(UNPLANNED_REASON_MAX - unplannedReason.length)} left.`}
+            </p>
+          </CrmField>
+        ) : null}
       </CrmBlock>
 
       <CrmBlock className="border-t border-slate-100" title="2 · Who was on the visit">

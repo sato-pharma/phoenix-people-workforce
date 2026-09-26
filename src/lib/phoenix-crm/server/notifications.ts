@@ -11,8 +11,10 @@
  *   - a plan is approved or returned     → the rep; a plan the SFE Manager returns also tells the
  *                                          reviewing manager, whose approval it undoes.
  *
- * A visit tells nobody: double and chain visits count straight away, and a far visit is flagged on
- * the manager's screens rather than pushed (about 600 visits a working day).
+ * A PLANNED visit tells nobody: double and chain visits count straight away, and a far visit is
+ * flagged on the manager's screens rather than pushed (about 600 visits a working day). An OFF-PLAN
+ * visit is the one exception (owner, 2026-09-26) — it counts in nothing until it is approved, so the
+ * manager who must approve it is told, and the rep is told each time it moves.
  *
  * Never throws: a notice that cannot be delivered must not undo a saved decision.
  */
@@ -24,6 +26,7 @@ import { dropReasonLabel } from "@/lib/phoenix-crm/entry-rules";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { territoryName, territoryReviewer, type OrgIndex, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import type { PhoenixCrmListType } from "@/lib/phoenix-crm/types";
+import type { UnplannedVisitStatus } from "@/lib/phoenix-crm/unplanned-rules";
 
 export const PHOENIX_CRM_NOTIFICATION_MODULE = "phoenix_crm";
 export const PHOENIX_CRM_NOTIFICATION_CATEGORY = "phoenix_crm";
@@ -97,6 +100,29 @@ export type PhoenixCrmNotice =
       decidedAs: "reviewer" | "sfe";
       repHrIds: string[];
       note: string | null;
+    }
+  | {
+      kind: "unplanned_visit_raised";
+      org: OrgIndex;
+      seat: OrgSeat;
+      visitId: string;
+      repHrId: string;
+      customerName: string;
+      visitDate: string;
+      clarification: string;
+    }
+  | {
+      kind: "unplanned_visit_decided";
+      org: OrgIndex;
+      seat: OrgSeat;
+      visitId: string;
+      version: number;
+      repHrId: string;
+      customerName: string;
+      visitDate: string;
+      status: UnplannedVisitStatus;
+      deciderHrId: string;
+      note: string | null;
     };
 
 type Delivery = {
@@ -104,7 +130,7 @@ type Delivery = {
   eventType: string;
   title: string;
   message: string;
-  tab: "team" | "list" | "plan";
+  tab: "team" | "list" | "plan" | "visits";
   recordId: string;
   idempotencyKey: string;
   subjectHrId: string | null;
@@ -211,6 +237,53 @@ async function describe(notice: PhoenixCrmNotice): Promise<Delivery | null> {
       recordId: notice.monthlyPlanId,
       idempotencyKey: `phoenix_crm:monthly:${notice.monthlyPlanId}:v${notice.version}:${notice.status}`,
       subjectHrId: notice.repHrIds[0] ?? null,
+    };
+  }
+
+  if (notice.kind === "unplanned_visit_raised") {
+    // The reviewing manager, exactly as a grade request goes to him. A territory whose chain is vacant
+    // starts at the SFE stage, and the SFE Manager is a ROLE with no seat in the organogram — there is
+    // no hr id here to address, so it goes unpushed and the Team tab's counter carries it, the same
+    // silence plan_submitted already keeps for a vacant chain.
+    const reviewer = territoryReviewer(notice.org, notice.seat.seatId);
+    if (!reviewer) return null;
+    const names = await loadPeopleNames([notice.repHrId]);
+    const rep = nameOf(names, notice.repHrId, "A rep");
+    return {
+      recipients: [reviewer.hrId],
+      eventType: "unplanned_visit_waiting",
+      title: `Off-plan visit to approve: ${notice.customerName}`,
+      message: `${rep} visited ${notice.customerName} on ${territory} off his plan on ${formatPhoenixLongDate(notice.visitDate)}. He wrote: ${notice.clarification} — approve it or refuse it in Phoenix CRM. It counts in nothing until you and then SFE approve it.`,
+      tab: "team",
+      recordId: notice.visitId,
+      idempotencyKey: `phoenix_crm:unplanned:${notice.visitId}:raised`,
+      subjectHrId: notice.repHrId,
+    };
+  }
+
+  if (notice.kind === "unplanned_visit_decided") {
+    const names = await loadPeopleNames([notice.deciderHrId]);
+    const decider = nameOf(names, notice.deciderHrId, "Your manager");
+    const day = formatPhoenixLongDate(notice.visitDate);
+    const note = notice.note ? ` Note: ${notice.note}` : "";
+    // Read as booleans first, so the eventType line below carries event NAMES and nothing else.
+    const approved = notice.status === "approved";
+    const refused = notice.status === "refused";
+    return {
+      recipients: [notice.repHrId],
+      eventType: approved ? "unplanned_visit_approved" : refused ? "unplanned_visit_refused" : "unplanned_visit_moved_on",
+      title: approved || refused
+        ? `${approved ? "Approved" : "Refused"}: off-plan visit to ${notice.customerName}`
+        : `Passed to SFE: off-plan visit to ${notice.customerName}`,
+      message: approved
+        ? `${decider} approved your off-plan visit to ${notice.customerName} on ${day}. It counts like a planned visit.${note}`
+        : refused
+          ? `${decider} refused your off-plan visit to ${notice.customerName} on ${day}, so it does not count.${note}`
+          : `${decider} approved your off-plan visit to ${notice.customerName} on ${day}. It counts once SFE approves it too.${note}`,
+      tab: "visits",
+      recordId: notice.visitId,
+      idempotencyKey: `phoenix_crm:unplanned:${notice.visitId}:v${notice.version}:${notice.status}`,
+      subjectHrId: notice.repHrId,
     };
   }
 

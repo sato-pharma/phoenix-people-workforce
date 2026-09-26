@@ -661,6 +661,12 @@ export const accessRegistry = [
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/visits", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/visits", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/visits/form", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: false }),
+  // Deciding an off-plan visit: the same split as a grade or drop request, `approve` rather than
+  // `update`, and narrowed AGAIN in the service to the one person whose step it is — the territory's
+  // reviewing manager, then the SFE Manager. A district manager holding `approve` is not entitled to
+  // another district's off-plan visits, and that is a gate a permission cannot perform. The queue
+  // itself has no route: it rides in /api/phoenix-crm/team.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/visits/unplanned", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/list", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
   // The same territory's list as the Reps List board holds it — grouped by brick, with the month's
   // activity beside each row. It gets its own entry rather than inheriting a blanket because it reads

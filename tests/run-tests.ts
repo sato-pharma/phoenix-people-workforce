@@ -1548,6 +1548,9 @@ import { runPhoenixCrmVoiceNoteTests } from "./phoenix-crm-voice-note.test.ts";
 import { runPhoenixCrmMonthlyPlanTests } from "./phoenix-crm-monthly-plan.test.ts";
 import { runPhoenixCrmPlanFiltersTests } from "./phoenix-crm-plan-filters.test.ts";
 import { runPhoenixCrmPlanCopyTests } from "./phoenix-crm-plan-copy.test.ts";
+import { runPhoenixCrmUnplannedVisitTests } from "./phoenix-crm-unplanned-visit.test.ts";
+import { runPhoenixCrmCountableVisitsTests } from "./phoenix-crm-countable-visits.test.ts";
+import { runPhoenixCrmBrickTintsTests } from "./phoenix-crm-brick-tints.test.ts";
 import { runCrmCutoverTests } from "./crm-cutover.test.ts";
 import { runCrmUnifyVendorReadsTests } from "./crm-unify-vendor-reads.test.ts";
 import { runPhoenixKpiRulesTests } from "./phoenix-kpi-rules.test.ts";
@@ -5158,6 +5161,21 @@ await runTest(
 await runTest(
   "Phoenix CRM copy last month (owner, 2026-09-25: pre-fill the new month from the rep's iReports360 plan, editable, never auto-submitted; only a doctor still on the list is placed, on his old weekdays' editable days, on the list types the day allows, at his first place; the day's cap is honoured, a doctor already on a day is not doubled, and the order is deterministic)",
   runPhoenixCrmPlanCopyTests,
+);
+
+await runTest(
+  "Phoenix CRM unplanned visit (owner, 2026-09-26: the rep chooses the KIND of visit before the doctor — a planned visit offers only the doctors on a plan he has SENT for today, an unplanned one opens his whole list and asks him why he went, and it counts in nothing until his direct manager approves it and then SFE does; one refusal at either step ends it, a territory with no manager above it starts at the SFE step so nothing lands in a queue nobody owns, \"ok\" is not a reason, and neither off-plan figure may ever enter plan-kept %, whose denominator is what the rep PLANNED)",
+  runPhoenixCrmUnplannedVisitTests,
+);
+
+await runTest(
+  "Phoenix CRM counts an off-plan visit only once it is approved (owner, 2026-09-26; two silent ways to get it wrong are pinned here — that \"planned\" is a plan that had REACHED REVIEW before the visit's server-issued captured_at and never merely a plan row, since the rep owns his own draft and today is an editable day; and that loadMonthVisitCounts is a PostgREST read rather than one of the report functions, so moving every RPC to the countable view does not reach the figure behind the rep's own standing on four screens. The anti-fraud judge is deliberately NOT filtered, the rep still sees his waiting visit on his own day, and the legacy vendor KPI stack stays untouched)",
+  runPhoenixCrmCountableVisitsTests,
+);
+
+await runTest(
+  "Phoenix CRM draws one brick in one colour everywhere (owner, 2026-09-26: \"every brick highlighted, the doctors in the same brick highlighted with the same colour\"; the palette the Reps List board and the List tab already used now also groups Add Visit, which is the moment a third copy would have been made — a brick that is teal on one screen and indigo on the next is no use as a landmark — so it lives in one module, its hues are assigned from the WHOLE list rather than the filtered one, and the visit form carries the brick's NAME because a screen shows names, never codes)",
+  runPhoenixCrmBrickTintsTests,
 );
 
 await runTest(

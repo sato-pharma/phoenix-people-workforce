@@ -58,6 +58,19 @@ import type {
  */
 
 const VISIT_PRODUCTS_MAX = 12;
+
+/**
+ * The kind of visit, chosen BEFORE the doctor (owner, 2026-09-26). Planned offers only the doctors on
+ * a plan the rep has sent for today; unplanned opens his whole list and asks him why he went, and the
+ * visit counts in nothing until his manager and then SFE approve it. Unplanned is what replaces the
+ * old iReports360 "Campaign (Prospection)".
+ *
+ * Mirrors src/lib/phoenix-crm/unplanned-rules.ts; the numbers are copied rather than imported so the
+ * phone bundle never reaches into the web app’s modules.
+ */
+type VisitTypeChoice = "planned" | "unplanned";
+const UNPLANNED_REASON_MIN = 10;
+const UNPLANNED_REASON_MAX = 500;
 const VISIT_COMMENT_MAX = 1000;
 
 const NOT_RECEIVING = "Does not receive this day";
@@ -126,6 +139,11 @@ function VisitCard({ visit }: { visit: VisitRow }) {
         </View>
         <View style={{ alignItems: "flex-end", flexDirection: "row", flexWrap: "wrap", gap: space.xs, justifyContent: "flex-end" }}>
           <CrmPill tone={location.tone}>{location.label}</CrmPill>
+          {visit.unplanned ? (
+            <CrmPill tone={visit.unplanned.status === "approved" ? "good" : visit.unplanned.status === "refused" ? "warn" : "warn"}>
+              {visit.unplanned.statusLabel}
+            </CrmPill>
+          ) : null}
           {visit.clockOff ? <CrmPill tone="warn">Phone clock off</CrmPill> : null}
         </View>
       </View>
@@ -149,6 +167,12 @@ function VisitCard({ visit }: { visit: VisitRow }) {
             </Text>
           ) : null}
           <Text style={[type.meta, { color: palette.inkSoft }]}>{visit.locationLabel}</Text>
+          {visit.unplanned ? (
+            <Text style={[type.meta, { color: palette.ink2 }]}>
+              <Text style={{ color: palette.ink }}>Off the plan: </Text>
+              {`${visit.unplanned.clarification} — ${visit.unplanned.note}`}
+            </Text>
+          ) : null}
           {enteredByOther(visit) ? <Text style={[type.meta, { color: palette.inkSoft }]}>{`Entered by ${visit.enteredByName}`}</Text> : null}
         </View>
       </View>
@@ -410,22 +434,26 @@ function CustomerPicker({
   disabled,
   onPick,
   selectedId,
+  visitType,
 }: {
   customers: ReadonlyArray<VisitCustomerOption>;
   disabled: boolean;
   onPick: (customerId: string) => void;
   selectedId: string | null;
+  visitType: VisitTypeChoice;
 }) {
   const palette = usePalette();
   const [query, setQuery] = useState("");
   const [listType, setListType] = useState<"all" | CrmListType>("all");
   const needle = query.trim().toLowerCase();
-  const shown = customers.filter(
+  // The door, not the gate: the server decides which kind the visit really was from the plan's own
+  // history and refuses a mismatch with a named refusal the screen turns into the reason box.
+  const offered = visitType === "planned" ? customers.filter((customer) => customer.plannedToday) : customers;
+  const shown = offered.filter(
     (customer) =>
       (listType === "all" || customer.listType === listType) &&
       (!needle || customer.name.toLowerCase().includes(needle) || (customer.speciality ?? "").toLowerCase().includes(needle)),
   );
-  const planned = customers.filter((customer) => customer.plannedToday).length;
 
   return (
     <View style={{ gap: space.md }}>
@@ -440,9 +468,10 @@ function CustomerPicker({
         ]}
         value={listType}
       />
-      {planned > 0 ? <Text style={[type.meta, { color: palette.inkSoft }]}>Customers on today&apos;s plan come first.</Text> : null}
       {shown.length === 0 ? (
-        <CrmEmpty title="No customer matches" />
+        <CrmEmpty
+          title={offered.length === 0 && visitType === "planned" ? "Nobody is on today’s plan" : "No customer matches"}
+        />
       ) : (
         <View style={{ gap: space.sm }}>
           {shown.map((customer) => {
@@ -571,6 +600,8 @@ function AddVisit({
 
   const [customerId, setCustomerId] = useState<string | null>(handoff?.customerId ?? null);
   const [picking, setPicking] = useState(!handoff);
+  const [visitType, setVisitType] = useState<VisitTypeChoice>("planned");
+  const [unplannedReason, setUnplannedReason] = useState("");
   const [kind, setKind] = useState<CrmVisitKind>("single");
   const [managerHrId, setManagerHrId] = useState<string | null>(null);
   const [seniorHrId, setSeniorHrId] = useState<string | null>(null);
@@ -634,6 +665,18 @@ function AddVisit({
     setCustomerId(nextId);
   }
 
+  /** Changing the kind changes who is on offer, so a chosen customer who is no longer offered goes. */
+  function chooseVisitType(next: VisitTypeChoice) {
+    setProblem(null);
+    setVisitType(next);
+    if (next === "planned" && customer && !customer.plannedToday) {
+      setPhoto(null);
+      setCustomerId(null);
+      setPicking(true);
+    }
+    if (next === "planned") setUnplannedReason("");
+  }
+
   function toggleProduct(product: string) {
     setProblem(null);
     setProducts((current) =>
@@ -644,6 +687,9 @@ function AddVisit({
   function draft(visitId: string): Draft {
     if (!customer) return { ok: false, problem: "Choose the customer you visited." };
     if (customer.visitedToday) return { ok: false, problem: "This customer's visit for today is already saved." };
+    if (visitType === "unplanned" && unplannedReason.trim().length < UNPLANNED_REASON_MIN) {
+      return { ok: false, problem: "Write why you visited this customer off your plan." };
+    }
     if (kind !== "single" && !who.manager) {
       return { ok: false, problem: form!.enteredAs === "manager" ? "You are not a manager of this territory. Reload." : "Choose the manager who was on the visit." };
     }
@@ -659,6 +705,10 @@ function AddVisit({
         seatId,
         test,
         customerId: customer.customerId,
+        // What he chose. The server re-decides it from the plan's own history; this only settles
+        // whether the reason travels with the visit.
+        visitType,
+        unplannedReason: visitType === "unplanned" ? unplannedReason.trim() : null,
         kind,
         managerHrId: kind === "single" ? null : who.manager?.hrId ?? null,
         seniorHrId: kind === "chain" ? who.senior?.hrId ?? null : null,
@@ -708,6 +758,10 @@ function AddVisit({
         setUsePlacePhoto(false);
       } else if (code && code.startsWith("phoenix_crm_photo_")) {
         setPhoto(null);
+      } else if (code === "phoenix_crm_clarification_required") {
+        // The server's own test says this customer was not on a plan sent for today. Open the reason
+        // box and keep the photo and the visit id: one line, and the SAME visit saves again.
+        setVisitType("unplanned");
       } else if (code === "phoenix_crm_id_conflict") {
         visitIdRef.current = null;
       } else if (
@@ -733,6 +787,24 @@ function AddVisit({
       <Text style={[type.meta, { color: palette.inkSoft }]}>{territoryLine(form.territory)}</Text>
 
       <CrmSection title="1 · Customer">
+        {/* The kind of visit comes FIRST: it decides which customers the picker offers at all. */}
+        <CrmChoice
+          columns={2}
+          disabled={saving}
+          onChange={chooseVisitType}
+          options={[
+            { value: "planned" as VisitTypeChoice, label: "Planned visit" },
+            { value: "unplanned" as VisitTypeChoice, label: "Unplanned visit" },
+          ]}
+          value={visitType}
+        />
+        {visitType === "unplanned" ? (
+          <CrmNote title="It counts once it is approved" tone="info">
+            {form.managers[0]
+              ? `Write why you went. ${form.managers[0].name} decides it first, then SFE. Until then it counts in nothing.`
+              : "Write why you went. SFE decides it. Until then it counts in nothing."}
+          </CrmNote>
+        ) : null}
         {customer && !picking ? (
           <View style={{ borderColor: palette.accentLine, borderRadius: radius, borderWidth: hairline, backgroundColor: palette.accentSoft, gap: space.xs, padding: space.md }}>
             <Text style={[type.bodyStrong, { color: palette.ink }]}>{customer.name}</Text>
@@ -750,9 +822,44 @@ function AddVisit({
             {handoff && !customer ? (
               <CrmNote tone="warn">{`${handoff.customerName} is not on the list of customers to visit. Choose the customer below.`}</CrmNote>
             ) : null}
-            <CustomerPicker customers={form.customers} disabled={saving} onPick={pickCustomer} selectedId={customerId} />
+            <CustomerPicker customers={form.customers} disabled={saving} onPick={pickCustomer} selectedId={customerId} visitType={visitType} />
           </>
         )}
+        {visitType === "unplanned" ? (
+          <View style={{ gap: space.sm }}>
+            <Text style={[type.micro, { color: palette.inkSoft, textTransform: "uppercase" }]}>Why you went</Text>
+            <TextInput
+              editable={!saving}
+              maxLength={UNPLANNED_REASON_MAX}
+              multiline
+              onChangeText={(next) => {
+                setProblem(null);
+                setUnplannedReason(next);
+              }}
+              placeholder="A sentence your manager can act on — what took you there."
+              placeholderTextColor={palette.inkFaint}
+              style={[
+                type.body,
+                {
+                  backgroundColor: palette.surface,
+                  borderColor: palette.line,
+                  borderRadius: radius,
+                  borderWidth: hairline,
+                  color: palette.ink,
+                  minHeight: 80,
+                  padding: space.md,
+                  textAlignVertical: "top",
+                },
+              ]}
+              value={unplannedReason}
+            />
+            <Text style={[type.meta, { color: palette.inkSoft }]}>
+              {unplannedReason.trim().length < UNPLANNED_REASON_MIN
+                ? `At least ${UNPLANNED_REASON_MIN} characters.`
+                : `${UNPLANNED_REASON_MAX - unplannedReason.length} left.`}
+            </Text>
+          </View>
+        ) : null}
       </CrmSection>
 
       <CrmSection title="2 · Who was on the visit">

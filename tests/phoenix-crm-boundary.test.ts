@@ -126,6 +126,11 @@ const ROUTE_GATES: RouteGate[] = [
   post("monthly-plans", "create"),
   get("monthly-plans/reviews"),
   post("monthly-plans/reviews", "approve"),
+  // An off-plan visit's decision. `approve`, the same split as a grade or drop request, and narrowed
+  // AGAIN in the service to the one person whose STEP it is (the territory's reviewer, then the SFE
+  // Manager) — a district manager holding `approve` is not entitled to another district's visits.
+  // There is no GET: the queue rides in /team, so one decision refreshes the whole tab.
+  post("visits/unplanned", "approve"),
   get("team"),
   // The Doctors directory: validated customers across territories, scoped downward on the server.
   get("doctors"),
@@ -378,6 +383,11 @@ const LATER_MIGRATIONS = [
   "supabase/migrations/20260925033551_phoenix_crm_location_integrity.sql",
   // The monthly plan — two new tables and two brand-new functions (open, transition); replaces nothing.
   "supabase/migrations/20260925165851_phoenix_crm_monthly_plans.sql",
+  // The off-plan visit. It REPLACES phoenix_crm_save_visit, so it must stay last among the migrations
+  // that do — liveMigrationSql applies each entry in order and the last one wins. It also replaces the
+  // four report functions and both monthly-plan functions, adds two tables and one view, and adds
+  // phoenix_crm_decide_unplanned_visit.
+  "supabase/migrations/20260926163000_phoenix_crm_unplanned_visits.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */
@@ -537,6 +547,31 @@ function runMigrationTests() {
         assert.ok(later.includes(statement), `${path}: ${table} is locked to the service role — missing: ${statement.split("\n")[0]}`);
       }
       allTables.push(table);
+    }
+
+    // A VIEW a later migration adds. It is read through PostgREST exactly as a table is, so it is held
+    // to the same lock — and to one rule of its own: WITHOUT `security_invoker` a view runs as its
+    // OWNER, which walks it straight through the row-level security every table above enables. That is
+    // the one way to add an object to this module that looks locked and is not.
+    const laterViews = [...later.matchAll(/\bcreate or replace view public\.(phoenix_crm_[a-z_]+)\b/g)].map((match) => match[1]);
+    assert.equal(
+      laterViews.length,
+      (later.match(/\bcreate\s+(?:or\s+replace\s+)?view\b/gi) ?? []).length,
+      `${path}: every view it creates is a public.phoenix_crm_* view`,
+    );
+    for (const view of laterViews) {
+      assert.match(
+        later,
+        new RegExp(String.raw`create or replace view public\.${view}\s*\nwith \(security_invoker = true\)`),
+        `${path}: ${view} must be security_invoker, or it bypasses the RLS on the tables under it`,
+      );
+      for (const statement of [
+        `revoke all on table public.${view} from public, anon, authenticated;`,
+        `grant select on table public.${view} to service_role;`,
+      ]) {
+        assert.ok(later.includes(statement), `${path}: ${view} is locked to the service role — missing: ${statement}`);
+      }
+      allTables.push(view);
     }
   }
 

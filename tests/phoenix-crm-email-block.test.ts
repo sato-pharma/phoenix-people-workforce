@@ -29,6 +29,13 @@ const EVENT_TYPES = [
   "monthly_plan_waiting",
   "monthly_plan_approved",
   "monthly_plan_returned",
+  // An off-plan visit (owner, 2026-09-26). The first visit in the module that tells anybody at all:
+  // it counts in nothing until it is decided, so the manager who must decide it is told and the rep
+  // is told each time it moves — which makes it the first place this rule could be broken by accident.
+  "unplanned_visit_waiting",
+  "unplanned_visit_approved",
+  "unplanned_visit_refused",
+  "unplanned_visit_moved_on",
 ];
 
 export function runPhoenixCrmEmailBlockTests() {
@@ -77,7 +84,14 @@ export function runPhoenixCrmEmailBlockTests() {
     assert.ok(existsSync("app/employee-portals/field-crm/page.tsx"), "a notice's link opens a page that exists");
 
     // Every place that notifies passes the entry's test flag through — never a literal.
-    for (const file of ["src/lib/phoenix-crm/server/list.ts", "src/lib/phoenix-crm/server/plans.ts", "src/lib/phoenix-crm/server/monthly-plans.ts"]) {
+    for (const file of [
+      "src/lib/phoenix-crm/server/list.ts",
+      "src/lib/phoenix-crm/server/plans.ts",
+      "src/lib/phoenix-crm/server/monthly-plans.ts",
+      // The off-plan visit: raised from the save, decided from the queue.
+      "src/lib/phoenix-crm/server/visits.ts",
+      "src/lib/phoenix-crm/server/unplanned.ts",
+    ]) {
       const source = readFileSync(file, "utf8");
       const calls = source.split("notifyPhoenixCrm(").slice(1);
       assert.ok(calls.length > 0, `${file} notifies`);

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 
 import { AM_CALL_RATE_TARGET, CALL_RATE_WEEKDAYS, PM_CALL_RATE_TARGET } from "../src/lib/crm/call-rate.ts";
 import { addDaysIso } from "../src/lib/crm/dates.ts";
-import { fieldWeeksOfMonth, monthEndOf, monthStartOf, plannableMonths, weekdayOfIsoDay } from "../src/lib/phoenix-crm/calendar.ts";
+import { fieldWeeksOfMonth, monthEndOf, monthlyPlanDueOn, monthStartOf, plannableMonths, weekdayOfIsoDay } from "../src/lib/phoenix-crm/calendar.ts";
 import {
   callRateWorkingDaysOfMonth,
   isMonthlyPlanEditable,
@@ -137,4 +137,32 @@ export function runPhoenixCrmMonthlyPlanTests() {
   // ── The copied call-rate targets equal the company standard ─────────────────────────────────────
   assert.equal(SETTINGS.callRateAmTarget, AM_CALL_RATE_TARGET, "the phone's AM call-rate target is the company's 2, copied not imported");
   assert.equal(SETTINGS.callRatePmTarget, PM_CALL_RATE_TARGET, "the phone's PM call-rate target is the company's 10");
+
+  // ── When the month is due ──────────────────────────────────────────
+  // Owner, 2026-09-26: the last Thursday of the month BEFORE the one it covers. Nothing refuses a plan
+  // after it — he ruled a late month is accepted and STAMPED, because a rep who cannot plan cannot
+  // work — so what has to be right is the date itself, for a month starting on every weekday there is.
+  {
+    // Twenty-four consecutive months walk a month-start through all seven weekdays several times over.
+    for (let index = 0; index < 24; index += 1) {
+      const year = 2026 + Math.floor(index / 12);
+      const month = String((index % 12) + 1).padStart(2, "0");
+      const monthStart = `${year}-${month}-01`;
+      const due = monthlyPlanDueOn(monthStart);
+      assert.equal(weekdayOfIsoDay(due), 4, `${monthStart}: the due date is a Thursday`);
+      assert.ok(due < monthStart, `${monthStart}: the due date is before the month it covers`);
+      // The LAST Thursday: a week later would already be inside the month.
+      assert.ok(addDaysIso(due, 7) >= monthStart, `${monthStart}: no later Thursday fits before the month`);
+    }
+
+    // Two worked examples, so a wrong sign in the arithmetic cannot pass by being self-consistent.
+    assert.equal(monthlyPlanDueOn("2026-10-01"), "2026-09-24", "October 2026 is due Thursday 24 September");
+    assert.equal(monthlyPlanDueOn("2026-11-01"), "2026-10-29", "November 2026 is due Thursday 29 October");
+    // A month whose last day IS a Thursday is due that day, not a week earlier.
+    assert.equal(weekdayOfIsoDay("2026-04-30"), 4, "30 April 2026 is a Thursday");
+    assert.equal(monthlyPlanDueOn("2026-05-01"), "2026-04-30", "the last day of the month can be the due date");
+
+    // Any day of the month answers for that month, as the migration's own arithmetic does.
+    assert.equal(monthlyPlanDueOn("2026-10-17"), monthlyPlanDueOn("2026-10-01"));
+  }
 }

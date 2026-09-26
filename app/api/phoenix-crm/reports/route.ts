@@ -10,6 +10,7 @@ import {
   loadManagerReport,
   loadPlanReport,
   loadReportScope,
+  loadVisitLocationReport,
   loadVisitsReport,
   type ReportFilterInput,
 } from "@/lib/phoenix-crm/server/reports";
@@ -23,6 +24,8 @@ export const dynamic = "force-dynamic";
 //   plan      plan against actual, per day
 //   coverage  coverage and frequency for a month
 //   managers  double and chain visits per manager
+//   locations where the rep stood against where the customer's place is saved — a manager's report,
+//             refused to a medical rep inside the service (owner, 2026-09-26)
 // Filters: seatId, lineCode, from, to, month, includeTest (the Super Admin's only). Scope runs
 // downward only and is applied in the service.
 export async function GET(request: Request) {
@@ -46,6 +49,7 @@ export async function GET(request: Request) {
     else if (section === "plan") report = await loadPlanReport(viewer, filters);
     else if (section === "coverage") report = await loadCoverageReport(viewer, filters);
     else if (section === "managers") report = await loadManagerReport(viewer, filters);
+    else if (section === "locations") report = await loadVisitLocationReport(viewer, filters);
     else throw validationError("Choose a report.");
     return NextResponse.json({ report, section, success: true });
   } catch (error) {

@@ -2981,6 +2981,53 @@ AGENTS.md §4 kept "A reply that asks nothing of him needs none" until 2026-09-1
 the user-level rule loaded into every session (`~/.claude/CLAUDE.md`), and a session reading §4 alone
 would drop the line. §4 now carries the 2026-09-18 form.
 
+## The visit type, the off-plan approval and the monthly plan's due date — owner rulings, 2026-09-26
+
+He described the whole cycle he wants a medical rep to live in and asked, first, whether it was
+actually happening. Most of it was: the monthly plan, the field weeks derived from it, the live photo
+and GPS, the validate-at-the-door step, and — already stricter than he expected — the impossibility of
+back-dating a visit, since the phone never sends a date and the photo slot that does dies in two
+hours. Four things were not, and these are the rulings that shaped them.
+
+**The visit type comes first.** In his words: "he will have another button called unplanned visit …
+when he choose unplanned visit a pop-up will appear … he will then type the name of the doctor he
+wants", and "here what will replace the campaign in the old CRM is the unplanned visit". So Add Visit
+opens on a two-way choice, and the choice decides which customers the picker offers at all. He also
+asked for the old CRM's visit types to be audited — "don't mimic it, but understand it" — and the
+thing the audit teaches is that the vendor jammed two different things into one table: a CALL (a named
+doctor, a place) and a DAY ACTIVITY (a meeting, training, a health or sales day, admin work, leave —
+no doctor at all). Phoenix already pays for that every day in `isFieldWorkVisit` and in the separate
+`visit-type-meaning.ts` table. So Phoenix CRM splits them at the source: a visit is always a call, and
+its type says only whether the call was planned. Day activities are a separate record and were
+deliberately left for a later conversation, because whether one blocks the day's call rate is his
+decision and has not been asked.
+
+**The approval is his direct manager, then the SFE.** Asked whether it was any one of the three he
+named, all three, or two stages in order, he chose two stages in order and left the manager's manager
+out of the decision. A refusal at either step is terminal.
+
+**A late monthly plan is accepted and stamped.** Asked what should happen to a rep who has not sent
+the month by the last Thursday of the month before, he chose "accept it, stamp it LATE" over blocking
+the Send button and over a silent reminder. So nothing refuses a plan after the date: `submitted_late`
+is read from the server's clock at submit and shown on the rep's month and on the manager's board.
+
+**The rep keeps seeing his own distance flag.** The place-vs-actual report he asked for is for the
+district manager, SFE, the national sales manager and the Super Admin. Asked whether the rep should
+therefore stop seeing "Far from the place" on his own visit, he chose to keep it — "it is honest
+help". What is withheld from him is the comparison across a team, not the fact about his own visit.
+That is the opposite call from the mock-location board (2026-09-25), which stays silent, and the
+difference is real: a distance he can see lets him fix a wrong place at the door, while a fraud
+detector he can see teaches the one person you caught what to defeat.
+
+**The one thing most likely to be got wrong later**, and the reason two tests pin it: "planned" is not
+"the customer is on a plan row". The rep owns his own draft plan and today is an editable day, so
+plan-row existence alone would let him place the doctor at the door, save thirty seconds later, and
+never be off plan — nobody would ever see an approval queue, the feature would look like it worked,
+and the rule would be theatre. The test is a plan that reached `submitted` or `approved` before the
+visit's server-issued `captured_at`. A DRAFT plan and a RETURNED plan are both still his to edit, so
+neither is authority — deliberately narrower than `phoenix_crm_report_plan_vs_actual`'s `sent_days`,
+where the day is already past and a returned plan was genuinely sent.
+
 ## `AGENTS.md` §4 Standing owner rules — as it stood before the 2026-09-12 condensation
 
 On 2026-09-12 `AGENTS.md` was cut to roughly half its size at the owner's request ("Load less of AGENTS.md"): every hook was reduced to its rule plus the one detail needed to obey it. This is that section's hook text **verbatim** from `origin/main` 3eea44aef, kept so that no measurement, date, count or diagnosis a condensed hook dropped is lost. Search it for the hook's wording. The accounts earlier in this file remain the fuller record.
