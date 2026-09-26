@@ -1559,6 +1559,7 @@ import { runPhoenixCrmSamplesTests } from "./phoenix-crm-samples.test.ts";
 import { runPhoenixCrmVisitDwellTests } from "./phoenix-crm-visit-dwell.test.ts";
 import { runPhoenixCrmExceptionsTests } from "./phoenix-crm-exceptions.test.ts";
 import { runPhoenixCrmDailyDigestTests } from "./phoenix-crm-daily-digest.test.ts";
+import { runPhoenixCrmBrickCoverageReportTests } from "./phoenix-crm-brick-coverage-report.test.ts";
 import { runPhoenixCrmMobileManagerTests } from "./phoenix-crm-mobile-manager.test.ts";
 import { runPhoenixCrmMobileMirrorsTests } from "./phoenix-crm-mobile-mirrors.test.ts";
 import { runPhoenixCrmLocationIntegrityTests } from "./phoenix-crm-location-integrity.test.ts";
@@ -5214,6 +5215,11 @@ await runTest(
 await runTest(
   "Phoenix CRM shows a manager only what needs him (B2 — owner, 2026-09-26: a territory with NOTHING WRONG IS ABSENT, so there is no green row and an empty board is the good outcome; ONE kind per territory, worst first, so a vacant seat is not also blamed for having no plan; \"never started\" is nothing touched at all, never a rep who is merely behind; an undated line keeps the 30-day grace forever rather than accusing anyone on a date nobody set; AM and PM are judged APART and never averaged; the day kind speaks only about a day that has ENDED, never today; and the whole board is four reads, through the countable view, touching no integrity evidence)",
   runPhoenixCrmExceptionsTests,
+);
+
+await runTest(
+  "Phoenix CRM puts a rep’s coverage beside what each BRICK actually sold (C2 — owner's plan, Phase 4: the board is the UNION of both sides, so a brick the line sells into with NOBODY on the list is a row of its own and sorts first — building it from the CRM half alone would drop exactly the rows worth reading; a sales brick of another area is never dragged in, which is what stops a district board accusing each rep of missing the other reps' bricks; a customer with no captured place is NAMED rather than dropped; AM and PM stay apart and the customer count is a SIZE, never a rate; the caveat that brick sales never add up to the area is ONE fixed sentence the server supplies; and the El Qema mask runs in the service before anything is summed, because it cannot live in the SQL (it takes a role) nor in the pure module (the phone bundles it))",
+  runPhoenixCrmBrickCoverageReportTests,
 );
 
 await runTest(
