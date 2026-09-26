@@ -159,6 +159,38 @@ type LoginResponse = {
 };
 
 /**
+ * What the server is DEMANDING when it answers a correct credential with no token, or null.
+ *
+ * 🔴 A 200 WITH NO TOKEN IS NOT ALWAYS A REFUSAL, AND CALLING IT ONE COST AN EVENING. Headwind's
+ * login answers `status: "OK"` with `data.passwordReset` and a `passwordResetToken` when the account
+ * must change its password before it can be used — which is what a freshly created console user is
+ * set to — and `data.twoFactor` when 2FA is on. Its own console reads both and moves the person to the
+ * right screen (`login.controller.js`). Phoenix read neither, found no token, and reported "the server
+ * refused the Phoenix sign-in — check HEADWIND_MDM_LOGIN and HEADWIND_MDM_PASSWORD", against a login
+ * and a password that were both exactly right. Measured on production 2026-09-26: the server's own
+ * audit log recorded that same sign-in as `errorCode=0`, a SUCCESS, while the page called it a refusal.
+ */
+function demandFromLogin(payload: LoginResponse): string | null {
+  const data = payload.data;
+  if (!data || typeof data !== "object" || Array.isArray(data)) return null;
+  const record = data as Record<string, unknown>;
+  if (record.passwordReset) {
+    return (
+      "the credential is CORRECT and the server is asking for a password change before this account " +
+      "can be used — which is how a newly created console user arrives. Sign in to the console once as " +
+      "this login, set a new password when it asks, and put THAT password in HEADWIND_MDM_PASSWORD."
+    );
+  }
+  if (record.twoFactor) {
+    return (
+      "the credential is CORRECT and this account has two-factor authentication on, which Phoenix " +
+      "cannot complete — use an account without it for the bridge."
+    );
+  }
+  return null;
+}
+
+/**
  * The token out of a Headwind login response, whatever shape this server's version answers in.
  *
  * Headwind wraps REST replies as `{ status, message, data }`, and the JWT has been seen both at
@@ -222,6 +254,9 @@ async function mintHeadwindToken(fetchImpl: typeof fetch, env: NodeJS.ProcessEnv
 
   const token = response.ok ? tokenFromLogin(payload) : null;
   if (!token) {
+    // Before blaming the credential: the server may have ACCEPTED it and be demanding something else.
+    const demand = response.ok ? demandFromLogin(payload) : null;
+    if (demand) throw new HeadwindNotConfiguredError(`The Headwind server accepted the sign-in, but ${demand}`);
     const said = typeof payload.message === "string" && payload.message ? ` (${payload.message})` : "";
     // 🔴 A NON-JSON REPLY IS NOT EVIDENCE OF CLOUDFLARE. This branch used to say it was, and it was
     // measured wrong on 2026-09-26: `POST /rest/public/jwt/login` on the live server, with a login

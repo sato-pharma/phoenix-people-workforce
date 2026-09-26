@@ -1953,6 +1953,38 @@ async function runCloudflareAccessTests() {
     "with no service token set, an HTML refusal names the LOGIN and PASSWORD and never sends the reader to Cloudflare variables that do not exist",
   );
 
+  // 🔴 A 200 WITH NO TOKEN IS NOT ALWAYS A REFUSAL, and calling it one cost an evening on
+  // production. Headwind answers `status: OK` with `data.passwordReset` plus a reset token when the
+  // account must change its password first — which is how a freshly created console user arrives — and
+  // `data.twoFactor` when 2FA is on. Its own console reads both. Phoenix read neither and reported
+  // "the server refused the Phoenix sign-in — check HEADWIND_MDM_LOGIN and HEADWIND_MDM_PASSWORD",
+  // while the server's audit log recorded that very sign-in as `errorCode=0`: a SUCCESS. The credential
+  // was right, and the message sent the owner back to Railway for the third time that night.
+  resetHeadwindTokenCache();
+  const mustChange = makeFetch({
+    login: [{ body: { data: { passwordReset: true, passwordResetToken: "reset-1" }, status: "OK" }, status: 200 }],
+  });
+  await assert.rejects(
+    () => getHeadwindToken(mustChange.fetch, ENV),
+    (error: unknown) =>
+      error instanceof HeadwindNotConfiguredError &&
+      /accepted the sign-in/.test(error.message) &&
+      /password change/.test(error.message) &&
+      !/refused/.test(error.message),
+    "a password-change demand says the credential is correct and names what the server wants, never 'refused'",
+  );
+  resetHeadwindTokenCache();
+  const twoFactor = makeFetch({ login: [{ body: { data: { twoFactor: true }, status: "OK" }, status: 200 }] });
+  await assert.rejects(
+    () => getHeadwindToken(twoFactor.fetch, ENV),
+    (error: unknown) =>
+      error instanceof HeadwindNotConfiguredError &&
+      /two-factor/.test(error.message) &&
+      !/refused/.test(error.message),
+    "and a two-factor account is named as such rather than reported as a bad password",
+  );
+  resetHeadwindTokenCache();
+
   // And the secret is never in what a person or a log is shown.
   resetHeadwindTokenCache();
   const refused = makeFetch({ login: [{ body: { message: "Wrong password", status: "ERROR" }, status: 200 }] });
@@ -2210,6 +2242,18 @@ function runBootstrapScriptTests() {
     /HEADWIND_MDM_PASSWORD=\$\{password\}`\)/,
     "and the password without it, so one redeploy lands both at once",
   );
+  // 6 · THE THREE ENDPOINTS, READ FROM THE CONSOLE'S OWN SERVICE DEFINITION rather than guessed. The
+  // first real run died on `/rest/private/roles` (no such path, so no roles, so the script refused) —
+  // and that refusal is the only reason the next call cost nothing. One path along from the list is
+  // `PUT /rest/private/users/current`, "change MY OWN password": a create aimed there would have
+  // re-passworded the administrator running the script and locked him out of his own console.
+  assert.match(script, /"\/rest\/private\/users\/roles"/, "roles come from /rest/private/users/roles");
+  assert.match(script, /"\/rest\/private\/users\/all"/, "the user list comes from /rest/private/users/all");
+  assert.ok(
+    !/\/rest\/private\/users\/current/.test(script),
+    "and the script never touches /rest/private/users/current, which would change the running administrator's own password",
+  );
+
   const provenAt = script.indexOf("signs in and gets a token");
   const railwayAt = script.indexOf("variable");
   assert.ok(provenAt > 0 && railwayAt > provenAt, "and nothing is written to Railway until the new account has signed in");
