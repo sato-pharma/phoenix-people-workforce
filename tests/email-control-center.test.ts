@@ -11,7 +11,7 @@ export function runEmailControlCenterTests() {
   const outstationServiceSource = readFileSync("src/lib/outstation/service.ts", "utf8");
   const marketingServiceSource = readFileSync("src/lib/marketing-requests/service.ts", "utf8");
 
-  assert.equal(notificationRoleKeys.length, 23, "expected 23 role-recipients keys (12 original + marketing_sla_reminder + resignation_workflow_alert + employee_import_alert + payroll_workflow_alert + marketing_invoice_overdue_alert + distributor_upload_overdue_alert + retention_risk_alert + crm_account_setup_alert + sos_mapping_guard_alert + new_hire_mailbox_alert + service_milestone_notice)");
+  assert.equal(notificationRoleKeys.length, 24, "expected 24 role-recipients keys (12 original + marketing_sla_reminder + resignation_workflow_alert + employee_import_alert + payroll_workflow_alert + marketing_invoice_overdue_alert + distributor_upload_overdue_alert + retention_risk_alert + crm_account_setup_alert + sos_mapping_guard_alert + new_hire_mailbox_alert + service_milestone_notice + activity_inactivity_digest)");
   assert.equal(emailNotificationTypes.length, 8, "expected 8 email-notification policy types");
   assert.ok(emailTemplateKeys.length > 0, "expected at least one email template key");
 

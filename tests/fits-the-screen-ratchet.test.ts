@@ -158,8 +158,19 @@ import { stripComments } from "./support/comment-strip.ts";
  * the Medical Rep / Territory Drilldown entries above landed on separate branches in parallel and
  * touch disjoint sites, so the merged count is the two lines' sum of drops (254 -> 238 -> 237), not
  * independently recomputed from either branch alone.
+ *
+ * 237 -> 229 on 2026-09-26: all eight sites in activity-control-dashboard.tsx, the Activity
+ * Control Center. Four were deleted outright by real layout work — the login calendar and the
+ * time-of-day heatmap now fit their card (the heatmap is a fluid 24-column grid of aspect-square
+ * cells instead of a row of fixed 20px ones), and the role-benchmarks and People tables are
+ * `table-fixed` with percentage `<colgroup>`s beside mobile card lists, the People table merged
+ * from NINE columns to five. The other four were the `max-h-[Npx] overflow-auto` shape this
+ * ratchet's own note calls the cheapest kind to retire — vertical scrollers written with the
+ * shorthand — and became `overflow-y-auto`: who's online, adoption, anomalies and the timeline
+ * drawer. The drawer's new page trail deliberately adds no scroller of its own; it collapses and
+ * pages instead, because a second scroller inside a scrolling drawer hides content.
  */
-const BASELINE = 237;
+const BASELINE = 229;
 
 /**
  * app/ and src/components/ are where UI class strings live. src/lib/ is excluded on

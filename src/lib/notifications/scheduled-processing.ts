@@ -1,6 +1,5 @@
 
 import { runAttendanceIngestionAlert } from "@/lib/attendance/ingestion-health";
-import { getInactiveUsers } from "@/lib/activity/service";
 import {
   processNotificationOutbox,
   reapStaleProcessingOutboxRows,
@@ -152,12 +151,10 @@ export async function runScheduledNotificationProcessing(limit = 10) {
       await notifyDrainStranded(drainHealth);
     }
 
-    const inactiveUsers = await runStep("inactive-users", () => getInactiveUsers(7), budget);
-    if (inactiveUsers && inactiveUsers.length) {
-      console.info(
-        `[activity] inactivity digest: ${inactiveUsers.length} user(s) inactive 7+ days — ${inactiveUsers.slice(0, 5).map((u) => u.name).join(", ")}${inactiveUsers.length > 5 ? "…" : ""}`,
-      );
-    }
+    // The inactive-colleague list used to be computed HERE, on the five-minute tick — ~288 times a
+    // day, re-reading up to 60,000 session rows each time — and then written to the log as five
+    // names and an ellipsis that nobody received. It is a once-a-day digest now, delivered in-app
+    // and on Telegram from app/api/notifications/daily (notifyInactiveUsers).
 
     const totalMs = Date.now() - enteredAt;
     const timings: StepTiming[] = budget.timings;
@@ -168,7 +165,6 @@ export async function runScheduledNotificationProcessing(limit = 10) {
       attendanceAgent,
       deferred,
       drainHealth,
-      inactiveUsers: inactiveUsers?.length ?? 0,
       outbox,
       probationReminders,
       push,

@@ -220,8 +220,14 @@ import { stripComments } from "./support/comment-strip.ts";
  * column now gives the name the room it needs. Includes the Territory Drilldown manager tree's
  * block card (territory-tree-desktop.tsx, BlockLane) — its block-code line truncated, same fix,
  * landed independently on the territory-tree-manager-fit branch and merged in here.
+ *
+ * 151 -> 147 on 2026-09-26: the Activity Control Center's four remaining cuts, all in
+ * activity-control-dashboard.tsx — the online list's name and role, and the recent-navigation
+ * feed's person and module. The online list is now a `table-fixed` desktop table with a
+ * percentage `<colgroup>` beside a mobile card list, and the navigation row wraps instead of
+ * cutting, so the four became `break-words` with no horizontal scroll bought in exchange.
  */
-const BASELINE = 151;
+const BASELINE = 147;
 
 const ROOTS = ["app", "src"];
 

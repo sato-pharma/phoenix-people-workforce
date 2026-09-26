@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Activity,
@@ -10,6 +10,7 @@ import {
   Download,
   Eye,
   Gauge,
+  Laptop,
   LayoutGrid,
   Loader2,
   Radio,
@@ -31,13 +32,17 @@ import { useHydrated } from "@/hooks/use-hydrated";
 import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 import type {
   ActivityOverview,
+  AdoptionRow,
   AdoptionStatus,
   LiveActivity,
+  LoginCalendar,
+  OnlineUser,
   RoleBenchmark,
+  TimelineSession,
   UserActivitySummary,
   UserTimeline,
 } from "@/lib/activity/types";
-import type { EngagementBand } from "@/lib/activity/engagement";
+import { ENGAGEMENT_BAND_THRESHOLDS, type EngagementBand } from "@/lib/activity/engagement";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 
 const RANGE_OPTIONS = [
@@ -58,6 +63,18 @@ function formatMinutes(minutes: number): string {
   const hours = Math.floor(total / 60);
   const mins = total % 60;
   return mins ? `${hours}h ${mins}m` : `${hours}h`;
+}
+
+// The page trail needs seconds. formatMinutes rounds a 40-second page view up to
+// "1m" and a 20-second one down to "0m", which is a lie on a trail whose whole
+// point is how long each page was actually looked at.
+function formatSeconds(seconds: number): string {
+  const total = Math.max(0, Math.round(seconds));
+  if (total < 60) return `${total}s`;
+  const mins = Math.floor(total / 60);
+  const rest = total % 60;
+  if (mins < 60) return rest ? `${mins}m ${rest}s` : `${mins}m`;
+  return formatMinutes(total / 60);
 }
 
 function formatRelative(iso: string | null): string {
@@ -110,8 +127,10 @@ const BAND_STYLES: Record<EngagementBand, string> = {
 function EngagementBadge({ band, score }: { band: EngagementBand; score: number }) {
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-phx-xs font-bold ${BAND_STYLES[band]}`}
-      title="Engagement = active time vs logged-in time, blended with modules and pages visited. Usage indicator, not a performance rating."
+      // `flex-wrap`, so in a narrow column the band drops under the score
+      // instead of pushing the cell wider than its share of the table.
+      className={`inline-flex flex-wrap items-center justify-center gap-x-1.5 rounded-full border px-2.5 py-1 text-phx-xs font-bold ${BAND_STYLES[band]}`}
+      title="How much Phoenix was used: hands-on minutes against this person's own working days, plus how many modules they opened and how regularly they came back. A usage signal, not a measure of their work."
     >
       <span className="tabular-nums">{score}</span>
       <span className="uppercase tracking-wide">{band}</span>
@@ -168,37 +187,58 @@ const ADOPTION_TONE: Record<AdoptionStatus, string> = {
   never: "text-rose-700",
 };
 
-// ── Heatmap calendar (52 weeks from the range's startedAt data) ──────────────
+// ── Login-frequency calendar ─────────────────────────────────────────────────
+//
+// Every date here arrives already bucketed by CAIRO day from the server, over a
+// fixed 90-day window of its own. This component therefore holds NO clock: it
+// used to key sessions on the UTC date, grid from browser-local `Date`s, and
+// compare "today" against `new Date()`, which put the today-ring on yesterday
+// between 00:00 and 03:00 Cairo — the hours the owner actually works. It was
+// also labelled "last 3 months" while being fed the range picker's 1, 7 or 30
+// days, so the empty remainder of the grid read as "never logged in".
+//
+// The only `Date` used below is a CARRIER built from an explicit Y-M-D triple
+// and read back in UTC, purely to name a weekday or a month. It never reads the
+// machine's clock or its time zone.
 
-function HeatmapCalendar({ sessions }: { sessions: { startedAt: string }[] }) {
-  const dateMap = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const s of sessions) {
-      if (!s.startedAt) continue;
-      const key = s.startedAt.slice(0, 10); // YYYY-MM-DD
-      map.set(key, (map.get(key) ?? 0) + 1);
+/** A UTC-anchored carrier date for a `YYYY-MM-DD` key — no local time zone, no clock. */
+function carrierDateFor(dateIso: string): Date | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateIso);
+  if (!match) return null;
+  return new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+}
+
+type CalendarCell = { dateIso: string; logins: number; dayOfMonth: number; carrier: Date };
+
+function HeatmapCalendar({ calendar }: { calendar: LoginCalendar }) {
+  const { max, weeks } = useMemo(() => {
+    const cells: (CalendarCell | null)[] = [];
+    let highest = 1;
+    let leadingBlanks: number | null = null;
+
+    for (const entry of calendar.counts) {
+      const carrier = carrierDateFor(entry.dateIso);
+      if (!carrier) continue;
+      // Pad the first week so column 1 starts on a Sunday, exactly as the row
+      // labels below claim. The pad is derived from the first real date, never
+      // from today.
+      if (leadingBlanks === null) {
+        leadingBlanks = carrier.getUTCDay();
+        for (let i = 0; i < leadingBlanks; i += 1) cells.push(null);
+      }
+      if (entry.logins > highest) highest = entry.logins;
+      cells.push({
+        carrier,
+        dateIso: entry.dateIso,
+        dayOfMonth: carrier.getUTCDate(),
+        logins: entry.logins,
+      });
     }
-    return map;
-  }, [sessions]);
 
-  const max = useMemo(() => Math.max(1, ...Array.from(dateMap.values())), [dateMap]);
-
-  // Build 13 weeks (≈90 days) ending today.
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const weeks: { date: Date; key: string }[][] = [];
-  const current = new Date(today);
-  // Roll back to the Sunday of 12 weeks ago.
-  current.setDate(current.getDate() - current.getDay() - 12 * 7);
-
-  for (let w = 0; w < 13; w++) {
-    const week: { date: Date; key: string }[] = [];
-    for (let d = 0; d < 7; d++) {
-      week.push({ date: new Date(current), key: current.toISOString().slice(0, 10) });
-      current.setDate(current.getDate() + 1);
-    }
-    weeks.push(week);
-  }
+    const grid: (CalendarCell | null)[][] = [];
+    for (let i = 0; i < cells.length; i += 7) grid.push(cells.slice(i, i + 7));
+    return { max: highest, weeks: grid };
+  }, [calendar]);
 
   function cellColor(count: number): string {
     if (!count) return "bg-slate-100";
@@ -211,42 +251,44 @@ function HeatmapCalendar({ sessions }: { sessions: { startedAt: string }[] }) {
 
   return (
     <div>
-      <p className="mb-2 text-phx-2xs font-bold uppercase tracking-wide text-phx-ink-faint">
-        Login frequency — last 3 months (Cairo)
+      <p className="mb-0.5 text-phx-2xs font-bold uppercase tracking-wide text-phx-ink-faint">
+        Login frequency — last {calendar.days} days (Cairo)
       </p>
-      <div className="overflow-x-auto">
-        <div className="flex gap-0.5">
-          {/* Day labels */}
-          <div className="flex flex-col gap-0.5 pr-1.5 pt-4">
-            {WEEKDAY_LABELS.map((d) => (
-              <div key={d} className="h-3 text-phx-3xs leading-3 text-phx-ink-faint">{d}</div>
-            ))}
-          </div>
-          {/* Week columns */}
-          {weeks.map((week, wi) => (
-            <div key={wi} className="flex flex-col gap-0.5">
-              {/* Month label on first day of month */}
+      <p className="mb-2 text-phx-2xs text-phx-ink-faint">
+        This calendar keeps its own {calendar.days}-day window and does not follow the range picker above.
+      </p>
+      <div className="flex gap-0.5">
+        {/* Day labels */}
+        <div className="flex flex-col gap-0.5 pr-1.5 pt-4">
+          {WEEKDAY_LABELS.map((d) => (
+            <div key={d} className="h-3 text-phx-3xs leading-3 text-phx-ink-faint">{d}</div>
+          ))}
+        </div>
+        {/* Week columns */}
+        {weeks.map((week, wi) => {
+          const monthStart = week.find((cell) => cell && cell.dayOfMonth <= 7);
+          return (
+            <div key={week.find(Boolean)?.dateIso ?? `week-${wi}`} className="flex flex-col gap-0.5">
               <div className="h-3 text-phx-3xs leading-3 text-phx-ink-faint">
-                {week[0].date.getDate() <= 7
-                  ? formatStableEnGb(week[0].date, { month: "short" })
-                  : ""}
+                {monthStart ? formatStableEnGb(monthStart.carrier, { month: "short", timeZone: "UTC" }) : ""}
               </div>
-              {week.map(({ date, key }) => {
-                const count = dateMap.get(key) ?? 0;
-                const isToday = key === today.toISOString().slice(0, 10);
+              {Array.from({ length: 7 }, (_, index) => {
+                const cell = week[index] ?? null;
+                if (!cell) return <div key={`blank-${wi}-${index}`} className="h-3 w-3" />;
+                const isToday = cell.dateIso === calendar.todayKey;
                 return (
                   <div
-                    key={key}
-                    className={`h-3 w-3 rounded-sm ${cellColor(count)} ${isToday ? "ring-1 ring-orange-500" : ""}`}
-                    title={`${formatStableEnGb(date, { weekday: "short", day: "numeric", month: "short" })}: ${count} session${count === 1 ? "" : "s"}`}
+                    key={cell.dateIso}
+                    className={`h-3 w-3 rounded-sm ${cellColor(cell.logins)} ${isToday ? "ring-1 ring-orange-500" : ""}`}
+                    title={`${formatStableEnGb(cell.carrier, { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" })}: ${cell.logins} login${cell.logins === 1 ? "" : "s"}`}
                   />
                 );
               })}
             </div>
-          ))}
-        </div>
+          );
+        })}
       </div>
-      <div className="mt-2 flex items-center gap-1.5 text-phx-2xs text-phx-ink-faint">
+      <div className="mt-2 flex flex-wrap items-center gap-1.5 text-phx-2xs text-phx-ink-faint">
         <span>Less</span>
         {["bg-slate-100", "bg-orange-200", "bg-orange-300", "bg-orange-400", "bg-orange-600"].map((c) => (
           <div key={c} className={`h-3 w-3 rounded-sm ${c}`} />
@@ -272,40 +314,47 @@ function TimeOfDayHeatmap({ hourlyHeatmap }: { hourlyHeatmap: number[][] }) {
     return "bg-blue-700";
   }
 
+  // A fluid 25-column grid — one label column plus 24 equal hour columns that
+  // divide whatever width the card has. It was a row of fixed 20px cells inside
+  // an `overflow-x-auto`, which is the anti-pattern the fits-the-screen golden
+  // rule names by name: it scrolled sideways on a phone instead of fitting.
   return (
     <div className="px-5 py-4">
-      <div className="overflow-x-auto">
-        {/* Hour labels */}
-        <div className="mb-1 flex gap-0.5 pl-10">
-          {Array.from({ length: 24 }, (_, h) => (
-            <div key={h} className="w-5 text-center text-phx-4xs text-phx-ink-faint">
-              {HOUR_LABELS[Math.floor(h / 3)] && h % 3 === 0 ? HOUR_LABELS[h / 3] : ""}
-            </div>
-          ))}
-        </div>
-        {/* Rows */}
-        {WEEKDAY_LABELS.map((day, wi) => (
-          <div key={day} className="mb-0.5 flex items-center gap-0.5">
-            <div className="w-9 text-right text-phx-2xs text-phx-ink-soft">{day}</div>
-            <div className="ml-1 flex gap-0.5">
-              {hourlyHeatmap[wi].map((count, h) => (
-                <div
-                  key={h}
-                  className={`h-5 w-5 rounded-sm ${cellColor(count)}`}
-                  title={`${day} ${h}:00 — ${count} login${count === 1 ? "" : "s"}`}
-                />
-              ))}
-            </div>
+      <div className="grid grid-cols-[2.25rem_repeat(24,minmax(0,1fr))] gap-0.5">
+        {/* Hour labels — every 6 hours on a phone, every 3 from `sm` up. Each of
+            the 24 cells stays in the grid so the columns never shift; only the
+            text inside it appears or not. */}
+        <div />
+        {Array.from({ length: 24 }, (_, h) => (
+          <div key={`hour-${h}`} className="text-center text-phx-4xs leading-3 text-phx-ink-faint">
+            <span className={h % 6 === 0 ? "" : "hidden sm:inline"}>
+              {h % 3 === 0 ? HOUR_LABELS[h / 3] : ""}
+            </span>
           </div>
         ))}
+        {/* Rows */}
+        {WEEKDAY_LABELS.map((day, wi) => (
+          <Fragment key={day}>
+            <div className="self-center pr-1 text-right text-phx-2xs text-phx-ink-soft">{day}</div>
+            {hourlyHeatmap[wi].map((count, h) => (
+              <div
+                key={`${day}-${h}`}
+                className={`aspect-square w-full rounded-sm ${cellColor(count)}`}
+                title={`${day} ${h}:00 — ${count} login${count === 1 ? "" : "s"}`}
+              />
+            ))}
+          </Fragment>
+        ))}
       </div>
-      <div className="mt-3 flex items-center gap-1.5 text-phx-2xs text-phx-ink-faint">
+      <div className="mt-3 flex flex-wrap items-center gap-1.5 text-phx-2xs text-phx-ink-faint">
         <span>Quiet</span>
         {["bg-slate-100", "bg-blue-100", "bg-blue-200", "bg-blue-400", "bg-blue-700"].map((c) => (
           <div key={c} className={`h-3 w-3 rounded-sm ${c}`} />
         ))}
         <span>Busy</span>
-        <span className="ml-2">· Cairo (EET)</span>
+        {/* Not "EET": Egypt is on EEST from late April to late October, so that
+            abbreviation was wrong for half of every year. */}
+        <span className="ml-2">· Cairo time</span>
       </div>
     </div>
   );
@@ -313,57 +362,372 @@ function TimeOfDayHeatmap({ hourlyHeatmap }: { hourlyHeatmap: number[][] }) {
 
 // ── Role benchmarks table ─────────────────────────────────────────────────────
 
-function RoleBenchmarksTable({ benchmarks }: { benchmarks: RoleBenchmark[] }) {
-  const maxActive = Math.max(1, ...benchmarks.map((b) => b.avgActiveMinutes));
+function scoreBarColor(score: number): string {
+  if (score >= ENGAGEMENT_BAND_THRESHOLDS.high) return "bg-emerald-500";
+  if (score >= ENGAGEMENT_BAND_THRESHOLDS.moderate) return "bg-amber-400";
+  return "bg-rose-400";
+}
 
+function EngagementBar({ score }: { score: number }) {
+  if (score <= 0) return <span className="text-phx-ink-faint">—</span>;
+  return (
+    <div className="flex items-center gap-2">
+      <span className="shrink-0 tabular-nums font-semibold text-phx-ink">{score}</span>
+      <span className="h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-phx-paper-2">
+        <span className={`block h-full rounded-full ${scoreBarColor(score)}`} style={{ width: `${score}%` }} />
+      </span>
+    </div>
+  );
+}
+
+function RoleBenchmarksTable({ benchmarks }: { benchmarks: RoleBenchmark[] }) {
   if (!benchmarks.length) {
     return <p className="px-5 py-8 text-center text-sm text-phx-ink-faint">No data yet.</p>;
   }
 
   return (
-    <div className="overflow-auto">
-      <table className="w-full text-sm">
+    <>
+      {/* A phone never gets a table (admin-shell rule). */}
+      <ul className="divide-y divide-phx-paper-2 md:hidden">
+        {benchmarks.map((b) => (
+          <li key={b.role} className="min-w-0 px-4 py-3">
+            <p className="break-words text-sm font-semibold text-phx-ink">{b.role}</p>
+            <p className="break-words text-phx-xs text-phx-ink-soft">
+              {b.userCount} {b.userCount === 1 ? "person" : "people"} · session {formatMinutes(b.avgSessionMinutes)} · active{" "}
+              {formatMinutes(b.avgActiveMinutes)}
+            </p>
+            <div className="mt-1.5">
+              <EngagementBar score={b.avgEngagementScore} />
+            </div>
+          </li>
+        ))}
+      </ul>
+
+      {/* `table-fixed` + a percentage colgroup, never a min-width floor inside an
+          overflow wrapper: the score and its bar are now ONE merged column, which
+          is what let the stray `colSpan={2}` header and the never-visible second
+          bar underneath it go. */}
+      <div className="hidden md:block">
+        <table className="w-full table-fixed border-collapse text-sm">
+          <colgroup>
+            <col className="w-[32%]" />
+            <col className="w-[12%]" />
+            <col className="w-[18%]" />
+            <col className="w-[18%]" />
+            <col className="w-[20%]" />
+          </colgroup>
+          <thead>
+            <tr>
+              <th className="px-4 py-2 text-left align-bottom">Role</th>
+              <th className="px-4 py-2 text-right align-bottom">People</th>
+              <th className="px-4 py-2 text-right align-bottom">Avg session span</th>
+              <th className="px-4 py-2 text-right align-bottom">Avg active</th>
+              <th className="px-4 py-2 text-left align-bottom">Avg engagement</th>
+            </tr>
+          </thead>
+          <tbody>
+            {benchmarks.map((b) => (
+              <tr key={b.role} className="border-t border-phx-paper-2 align-top">
+                <td className="px-4 py-2 break-words font-semibold text-phx-ink">{b.role}</td>
+                <td className="px-4 py-2 text-right tabular-nums text-phx-ink-2">{b.userCount}</td>
+                <td className="px-4 py-2 text-right tabular-nums text-phx-ink-2">{formatMinutes(b.avgSessionMinutes)}</td>
+                <td className="px-4 py-2 text-right tabular-nums font-semibold text-phx-ink">{formatMinutes(b.avgActiveMinutes)}</td>
+                <td className="px-4 py-2">
+                  <EngagementBar score={b.avgEngagementScore} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
+// ── Who's online now ─────────────────────────────────────────────────────────
+
+type ForceLogoutHandler = (target: { name: string; hrId: string }) => void;
+
+function LogoutButton({ user, onForceLogout }: { user: OnlineUser; onForceLogout: ForceLogoutHandler }) {
+  if (!user.hrId) return null;
+  const hrId = user.hrId;
+  return (
+    <button
+      type="button"
+      onClick={() => onForceLogout({ name: user.name, hrId })}
+      className="inline-flex items-center gap-1 rounded-full border border-phx-danger-line px-2.5 py-1 text-phx-xs font-semibold text-phx-danger transition hover:bg-phx-danger-bg"
+      title="Force logout this user"
+    >
+      <ShieldOff className="h-3 w-3" /> Logout
+    </button>
+  );
+}
+
+function OnlineCards({ users, onForceLogout }: { users: OnlineUser[]; onForceLogout: ForceLogoutHandler }) {
+  return (
+    <ul className="divide-y divide-phx-paper-2 md:hidden">
+      {users.map((user) => (
+        <li key={`${user.key}-${user.startedAt}`} className="min-w-0 px-4 py-3">
+          <div className="flex items-start gap-2">
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-phx-ink text-phx-2xs font-bold text-white">
+              {initialsFor(user.name)}
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="break-words text-sm font-semibold text-phx-ink">{user.name}</p>
+              <p className="break-words text-phx-xs text-phx-ink-soft">{user.role}</p>
+              <p className="mt-1 break-words text-phx-xs text-phx-ink-2">
+                {user.currentModule ?? "No module open"} · <RelativeTime iso={user.lastSeenAt} />
+              </p>
+              <div className="mt-2">
+                <LogoutButton user={user} onForceLogout={onForceLogout} />
+              </div>
+            </div>
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function OnlineTable({ users, onForceLogout }: { users: OnlineUser[]; onForceLogout: ForceLogoutHandler }) {
+  return (
+    // "Last active" is merged under Current module rather than given a column of
+    // its own — the fits-the-screen rule buys width by MERGING columns, never by
+    // shrinking type or letting the card scroll sideways.
+    <div className="hidden md:block">
+      <table className="w-full table-fixed border-collapse text-sm">
+        {/* 26% for the action column, not 24%: at 478px — this card's narrowest
+            state, half of a two-up grid at 1280 — the Logout chip is an
+            inline-flex box that does not fit less. */}
+        <colgroup>
+          <col className="w-[38%]" />
+          <col className="w-[36%]" />
+          <col className="w-[26%]" />
+        </colgroup>
         <thead>
           <tr>
-            <th className="px-4 py-2 text-left">Role</th>
-            <th className="px-4 py-2 text-right">Users</th>
-            <th className="px-4 py-2 text-right">Avg session</th>
-            <th className="px-4 py-2 text-right">Avg active</th>
-            <th className="px-4 py-2 text-left" colSpan={2}>Avg engagement</th>
+            <th className="px-4 py-2 text-left align-bottom">User</th>
+            <th className="px-4 py-2 text-left align-bottom">Current module</th>
+            <th className="px-4 py-2 text-right align-bottom">Session</th>
           </tr>
         </thead>
         <tbody>
-          {benchmarks.map((b) => (
-            <tr key={b.role} className="border-t border-phx-paper-2">
-              <td className="px-4 py-2 font-semibold text-phx-ink">{b.role}</td>
-              <td className="px-4 py-2 text-right tabular-nums text-phx-ink-2">{b.userCount}</td>
-              <td className="px-4 py-2 text-right tabular-nums text-phx-ink-2">{formatMinutes(b.avgSessionMinutes)}</td>
-              <td className="px-4 py-2 text-right tabular-nums font-semibold text-phx-ink">{formatMinutes(b.avgActiveMinutes)}</td>
-              <td className="px-4 py-2 text-right tabular-nums text-phx-ink-2 w-12">{b.avgEngagementScore > 0 ? b.avgEngagementScore : "—"}</td>
-              <td className="px-4 py-2 w-28">
-                {b.avgEngagementScore > 0 ? (
-                  <div className="relative h-2 w-full overflow-hidden rounded-full bg-phx-paper-2">
-                    <div
-                      className={`h-full rounded-full ${
-                        b.avgEngagementScore >= 66
-                          ? "bg-emerald-500"
-                          : b.avgEngagementScore >= 33
-                          ? "bg-amber-400"
-                          : "bg-rose-400"
-                      }`}
-                      style={{ width: `${b.avgEngagementScore}%` }}
-                    />
+          {users.map((user) => (
+            <tr key={`${user.key}-${user.startedAt}`} className="align-top">
+              <td className="px-4 py-2">
+                <div className="flex items-start gap-2">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-phx-ink text-phx-2xs font-bold text-white">
+                    {initialsFor(user.name)}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="break-words font-semibold text-phx-ink">{user.name}</p>
+                    <p className="break-words text-phx-xs text-phx-ink-soft">{user.role}</p>
                   </div>
-                ) : null}
-                <div className="h-2 w-full overflow-hidden rounded-full bg-phx-paper-2" style={{ display: b.avgEngagementScore > 0 ? "none" : "block" }}>
-                  <div className="h-full w-full rounded-full bg-phx-accent" style={{ width: `${(b.avgActiveMinutes / maxActive) * 100}%` }} />
                 </div>
+              </td>
+              <td className="px-4 py-2 break-words text-phx-ink-2">
+                {user.currentModule ?? "—"}
+                <span className="block text-phx-xs text-phx-ink-soft">
+                  Last active <RelativeTime iso={user.lastSeenAt} />
+                </span>
+              </td>
+              <td className="px-4 py-2 text-right">
+                <LogoutButton user={user} onForceLogout={onForceLogout} />
               </td>
             </tr>
           ))}
         </tbody>
       </table>
     </div>
+  );
+}
+
+// ── People — engagement & usage ──────────────────────────────────────────────
+
+const SESSION_SPAN_TITLE =
+  "Session span is how long the login itself stayed alive — a tab left open all evening counts in full. It is not hands-on time; the Active figure is.";
+
+function PeopleUsage({
+  users,
+  onOpenTimeline,
+}: {
+  users: UserActivitySummary[];
+  onOpenTimeline: (user: UserActivitySummary) => void;
+}) {
+  function nameCell(user: UserActivitySummary) {
+    if (!user.hrId) return <span className="break-words font-semibold text-phx-ink">{user.name}</span>;
+    return (
+      // The name IS the timeline control — that retired a whole action column,
+      // which is how this table went from nine columns to five without shrinking
+      // any type.
+      <button
+        type="button"
+        onClick={() => onOpenTimeline(user)}
+        className="inline-flex items-start gap-1 break-words text-left font-semibold text-phx-accent-press transition hover:underline"
+      >
+        <Eye className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+        <span className="break-words">{user.name}</span>
+      </button>
+    );
+  }
+
+  return (
+    <>
+      <ul className="divide-y divide-phx-paper-2 lg:hidden">
+        {users.map((user) => (
+          <li key={user.key} className="min-w-0 px-4 py-3">
+            <p className="break-words text-sm">{nameCell(user)}</p>
+            <p className="break-words text-phx-xs text-phx-ink-soft">
+              {user.role}
+              {user.team ? ` · ${user.team}` : ""}
+            </p>
+            <p className="mt-1.5 break-words text-phx-xs text-phx-ink-2">
+              <span className="font-semibold text-phx-ink">
+                {user.pageViews > 0 ? formatMinutes(user.activeMinutes) : "—"} active
+              </span>{" "}
+              · {formatMinutes(user.sessionMinutes)} session span · seen <RelativeTime iso={user.lastSeenAt} />
+            </p>
+            <p className="break-words text-phx-xs text-phx-ink-2">
+              {user.sessions} {user.sessions === 1 ? "login" : "logins"} · {user.distinctModules}{" "}
+              {user.distinctModules === 1 ? "module" : "modules"} · top module {user.topModule ?? "—"}
+            </p>
+            <div className="mt-2">
+              {user.pageViews > 0 ? (
+                <EngagementBadge band={user.engagement.band} score={user.engagement.score} />
+              ) : (
+                <NoDataChip />
+              )}
+            </div>
+          </li>
+        ))}
+      </ul>
+
+      <div className="hidden lg:block">
+        <table className="w-full table-fixed border-collapse text-sm">
+          {/* 17% for Engagement, not the 12% first drafted: the band chip is an
+              inline-flex box and "MODERATE", 11px bold capitals with the chip's
+              own padding, does not fit in less. Top module gives up the width —
+              a module label wraps, a chip does not. */}
+          <colgroup>
+            <col className="w-[30%]" />
+            <col className="w-[19%]" />
+            <col className="w-[15%]" />
+            <col className="w-[19%]" />
+            <col className="w-[17%]" />
+          </colgroup>
+          <thead>
+            <tr>
+              <th className="px-4 py-2 text-left align-bottom">Employee</th>
+              <th className="px-4 py-2 text-right align-bottom">Time</th>
+              <th className="px-4 py-2 text-right align-bottom">Usage</th>
+              <th className="px-4 py-2 text-left align-bottom">Top module</th>
+              <th className="px-2 py-2 text-center align-bottom">Engagement</th>
+            </tr>
+          </thead>
+          <tbody>
+            {users.map((user) => (
+              <tr key={user.key} className="align-top">
+                <td className="px-4 py-2">
+                  <p className="break-words">{nameCell(user)}</p>
+                  <p className="break-words text-phx-xs text-phx-ink-soft">
+                    {user.role}
+                    {user.team ? ` · ${user.team}` : ""}
+                  </p>
+                </td>
+                <td className="px-4 py-2 text-right text-phx-ink-2">
+                  <span className="block tabular-nums font-semibold text-phx-ink">
+                    {user.pageViews > 0 ? formatMinutes(user.activeMinutes) : "—"} active
+                  </span>
+                  <span className="block text-phx-xs tabular-nums" title={SESSION_SPAN_TITLE}>
+                    {formatMinutes(user.sessionMinutes)} session span
+                  </span>
+                  <span className="block text-phx-xs text-phx-ink-soft">
+                    seen <RelativeTime iso={user.lastSeenAt} />
+                  </span>
+                </td>
+                <td className="px-4 py-2 text-right text-phx-ink-2">
+                  <span className="block tabular-nums">
+                    {user.sessions} {user.sessions === 1 ? "login" : "logins"}
+                  </span>
+                  <span className="block text-phx-xs tabular-nums">
+                    {user.distinctModules} {user.distinctModules === 1 ? "module" : "modules"}
+                  </span>
+                </td>
+                <td className="px-4 py-2 break-words text-phx-ink-2">{user.topModule ?? "—"}</td>
+                <td className="px-2 py-2 text-center">
+                  {user.pageViews > 0 ? (
+                    <EngagementBadge band={user.engagement.band} score={user.engagement.score} />
+                  ) : (
+                    <NoDataChip />
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
+// ── Adoption — who isn't using the system ────────────────────────────────────
+
+function AdoptionList({ rows }: { rows: AdoptionRow[] }) {
+  function statusLabel(row: AdoptionRow) {
+    return row.status === "never" ? "Never (90d)" : row.status;
+  }
+
+  return (
+    <>
+      <ul className="divide-y divide-phx-paper-2 md:hidden">
+        {rows.map((row) => (
+          <li key={row.key} className="min-w-0 px-4 py-3">
+            <p className="break-words text-sm font-semibold text-phx-ink">{row.name}</p>
+            <p className="break-words text-phx-xs text-phx-ink-soft">{row.role}</p>
+            <p className={`mt-1 break-words text-phx-xs font-semibold capitalize ${ADOPTION_TONE[row.status]}`}>
+              {statusLabel(row)}
+              <span className="font-normal text-phx-ink-soft">
+                {" "}
+                · last seen <RelativeTime iso={row.lastSeenAt} />
+              </span>
+            </p>
+          </li>
+        ))}
+      </ul>
+
+      <div className="hidden md:block">
+        <table className="w-full table-fixed border-collapse text-sm">
+          <colgroup>
+            <col className="w-[46%]" />
+            <col className="w-[26%]" />
+            <col className="w-[28%]" />
+          </colgroup>
+          <thead>
+            <tr>
+              <th className="px-4 py-2 text-left align-bottom">Employee</th>
+              <th className="px-4 py-2 text-left align-bottom">Status</th>
+              <th className="px-4 py-2 text-right align-bottom">Last seen</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.key} className="align-top">
+                <td className="px-4 py-2">
+                  <p className="break-words font-semibold text-phx-ink">{row.name}</p>
+                  <p className="break-words text-phx-xs text-phx-ink-soft">{row.role}</p>
+                </td>
+                <td className={`px-4 py-2 break-words font-semibold capitalize ${ADOPTION_TONE[row.status]}`}>
+                  {statusLabel(row)}
+                </td>
+                <td className="px-4 py-2 text-right text-phx-ink-soft">
+                  <RelativeTime iso={row.lastSeenAt} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }
 
@@ -571,6 +935,12 @@ export function ActivityControlDashboard({
   // Prefer live data for the online section when available.
   const displayedOnline = liveData?.online ?? overview?.online ?? [];
 
+  // Hoisted once so the list and its footer count can never disagree.
+  const inactiveAdoptionRows = useMemo(
+    () => (overview?.adoption.rows ?? []).filter((row) => row.status !== "active"),
+    [overview],
+  );
+
   const heroActions = (
     <div className="flex flex-wrap items-center gap-2">
       <div className="inline-flex items-center rounded-full border border-white/20 bg-white/10 p-0.5 backdrop-blur">
@@ -709,6 +1079,18 @@ export function ActivityControlDashboard({
             </p>
           ) : null}
 
+          {overview.eventsTruncated ? (
+            <AdminCallout tone="warning">
+              <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+              <p className="text-xs leading-5">
+                <strong>This window holds more page activity than one read can carry,</strong> so the oldest
+                part of it was left behind. <strong>Engagement, module popularity and the People table are
+                therefore partial</strong> — they under-count. Sessions, who is online and adoption are built
+                from a different read and are unaffected. Pick a shorter range for figures you intend to quote.
+              </p>
+            </AdminCallout>
+          ) : null}
+
           {overview.kpis.totalPageViews < 25 ? (
             <AdminCallout tone="warning">
               <Activity className="mt-0.5 h-4 w-4 shrink-0" />
@@ -738,48 +1120,9 @@ export function ActivityControlDashboard({
               }
             >
               {displayedOnline.length ? (
-                <div className="max-h-[360px] overflow-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr>
-                        <th className="px-4 py-2 text-left">User</th>
-                        <th className="px-4 py-2 text-left">Current module</th>
-                        <th className="px-4 py-2 text-right">Last active</th>
-                        <th className="px-4 py-2 text-right"></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {displayedOnline.map((user) => (
-                        <tr key={`${user.key}-${user.startedAt}`}>
-                          <td className="px-4 py-2">
-                            <div className="flex items-center gap-2">
-                              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-phx-ink text-phx-2xs font-bold text-white">
-                                {initialsFor(user.name)}
-                              </span>
-                              <div className="min-w-0">
-                                <p className="truncate font-semibold text-phx-ink">{user.name}</p>
-                                <p className="truncate text-phx-xs text-phx-ink-soft">{user.role}</p>
-                              </div>
-                            </div>
-                          </td>
-                          <td className="px-4 py-2 text-phx-ink-2">{user.currentModule ?? "—"}</td>
-                          <td className="px-4 py-2 text-right text-phx-ink-soft"><RelativeTime iso={user.lastSeenAt} /></td>
-                          <td className="px-4 py-2 text-right">
-                            {user.hrId ? (
-                              <button
-                                type="button"
-                                onClick={() => setForceLogoutTarget({ name: user.name, hrId: user.hrId! })}
-                                className="inline-flex items-center gap-1 rounded-full border border-phx-danger-line px-2.5 py-1 text-phx-xs font-semibold text-phx-danger transition hover:bg-phx-danger-bg"
-                                title="Force logout this user"
-                              >
-                                <ShieldOff className="h-3 w-3" /> Logout
-                              </button>
-                            ) : null}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                <div className="max-h-[360px] overflow-y-auto">
+                  <OnlineCards users={displayedOnline} onForceLogout={setForceLogoutTarget} />
+                  <OnlineTable users={displayedOnline} onForceLogout={setForceLogoutTarget} />
                 </div>
               ) : (
                 <p className="px-5 py-8 text-center text-sm text-phx-ink-faint">No one is online right now.</p>
@@ -794,14 +1137,14 @@ export function ActivityControlDashboard({
                   </div>
                   <div className="divide-y divide-phx-paper">
                     {liveData.recentEvents.slice(0, 8).map((event, i) => (
-                      <div key={i} className="flex items-center justify-between px-5 py-1.5">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="h-1.5 w-1.5 rounded-full bg-phx-accent shrink-0" />
-                          <span className="truncate text-xs text-phx-ink font-semibold">{event.name}</span>
+                      <div key={i} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 px-5 py-1.5">
+                        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+                          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-phx-accent" />
+                          <span className="break-words text-xs font-semibold text-phx-ink">{event.name}</span>
                           <span className="text-xs text-phx-ink-soft">→</span>
-                          <span className="truncate text-xs text-phx-ink-2">{event.moduleLabel}</span>
+                          <span className="break-words text-xs text-phx-ink-2">{event.moduleLabel}</span>
                         </div>
-                        <span className="ml-3 shrink-0 text-phx-xs text-phx-ink-faint"><RelativeTime iso={event.occurredAtIso} /></span>
+                        <span className="shrink-0 text-phx-xs text-phx-ink-faint"><RelativeTime iso={event.occurredAtIso} /></span>
                       </div>
                     ))}
                   </div>
@@ -855,61 +1198,11 @@ export function ActivityControlDashboard({
           <SectionCard
             icon={<Gauge className="h-4 w-4" />}
             title="People — engagement & usage"
-            description="Is this person really working? Active time, modules touched, and a fair engagement band."
+            description="How much Phoenix each person used, which modules they opened, and how regularly. A usage signal, not a measure of their work."
             action={<AdminInsightChip tone="orange" surface="light">Top {overview.topUsers.length}</AdminInsightChip>}
           >
             {overview.topUsers.length ? (
-              <div className="overflow-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr>
-                      <th className="px-4 py-2 text-left">Employee</th>
-                      <th className="px-4 py-2 text-right">Logins</th>
-                      <th className="px-4 py-2 text-right">Logged-in</th>
-                      <th className="px-4 py-2 text-right">Active</th>
-                      <th className="px-4 py-2 text-right">Modules</th>
-                      <th className="px-4 py-2 text-left">Top module</th>
-                      <th className="px-4 py-2 text-center">Engagement</th>
-                      <th className="px-4 py-2 text-right">Last seen</th>
-                      <th className="px-4 py-2 text-right"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {overview.topUsers.map((user) => (
-                      <tr key={user.key}>
-                        <td className="px-4 py-2">
-                          <p className="font-semibold text-phx-ink">{user.name}</p>
-                          <p className="text-phx-xs text-phx-ink-soft">{user.role}{user.team ? ` · ${user.team}` : ""}</p>
-                        </td>
-                        <td className="px-4 py-2 text-right tabular-nums text-phx-ink-2">{user.sessions}</td>
-                        <td className="px-4 py-2 text-right tabular-nums text-phx-ink-2">{formatMinutes(user.sessionMinutes)}</td>
-                        <td className="px-4 py-2 text-right tabular-nums font-semibold text-phx-ink">{user.pageViews > 0 ? formatMinutes(user.activeMinutes) : "—"}</td>
-                        <td className="px-4 py-2 text-right tabular-nums text-phx-ink-2">{user.distinctModules}</td>
-                        <td className="px-4 py-2 text-phx-ink-2">{user.topModule ?? "—"}</td>
-                        <td className="px-4 py-2 text-center">
-                          {user.pageViews > 0 ? (
-                            <EngagementBadge band={user.engagement.band} score={user.engagement.score} />
-                          ) : (
-                            <NoDataChip />
-                          )}
-                        </td>
-                        <td className="px-4 py-2 text-right text-phx-ink-soft"><RelativeTime iso={user.lastSeenAt} /></td>
-                        <td className="px-4 py-2 text-right">
-                          {user.hrId ? (
-                            <button
-                              type="button"
-                              onClick={() => openTimeline(user)}
-                              className="inline-flex items-center gap-1 rounded-full border border-phx-line px-2.5 py-1 text-phx-xs font-semibold text-phx-accent-press transition hover:bg-phx-accent-soft"
-                            >
-                              <Eye className="h-3.5 w-3.5" /> Timeline
-                            </button>
-                          ) : null}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <PeopleUsage users={overview.topUsers} onOpenTimeline={openTimeline} />
             ) : (
               <p className="px-5 py-8 text-center text-sm text-phx-ink-faint">No user activity in this window yet.</p>
             )}
@@ -917,9 +1210,11 @@ export function ActivityControlDashboard({
               <AdminCallout tone="neutral">
                 <Gauge className="mt-0.5 h-4 w-4 shrink-0" />
                 <p className="text-xs leading-5">
-                  <strong>How to read engagement.</strong> It blends active-vs-logged-in time (most weight),
-                  how many modules were touched, and how many pages were opened — into a 0–100 score and a band.
-                  It reflects <em>system usage</em>, not the quality of someone&apos;s work or anything done off-system.
+                  <strong>How to read engagement.</strong> Hands-on minutes measured against this person&apos;s own
+                  scheduled working days carry most of the weight; how many modules they opened and on how many of
+                  those days they showed up at all make up the rest — a 0–100 score and a band. It says how much of
+                  Phoenix someone used, and nothing about the quality of their work or the part of their job that
+                  happens away from a screen.
                 </p>
               </AdminCallout>
             </div>
@@ -941,37 +1236,19 @@ export function ActivityControlDashboard({
               title="Adoption — who isn't using the system"
               description={`Active ${overview.adoption.counts.active} · Dormant ${overview.adoption.counts.dormant} · Never ${overview.adoption.counts.never}`}
             >
-              {overview.adoption.rows.filter((row) => row.status !== "active").length ? (
-                <div className="max-h-[360px] overflow-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr>
-                        <th className="px-4 py-2 text-left">Employee</th>
-                        <th className="px-4 py-2 text-left">Status</th>
-                        <th className="px-4 py-2 text-right">Last seen</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {overview.adoption.rows
-                        .filter((row) => row.status !== "active")
-                        .slice(0, 60)
-                        .map((row) => (
-                          <tr key={row.key}>
-                            <td className="px-4 py-2">
-                              <p className="font-semibold text-phx-ink">{row.name}</p>
-                              <p className="text-phx-xs text-phx-ink-soft">{row.role}</p>
-                            </td>
-                            <td className={`px-4 py-2 font-semibold capitalize ${ADOPTION_TONE[row.status]}`}>
-                              {row.status === "never" ? "Never (90d)" : row.status}
-                            </td>
-                            <td className="px-4 py-2 text-right text-phx-ink-soft">
-                              <RelativeTime iso={row.lastSeenAt} />
-                            </td>
-                          </tr>
-                        ))}
-                    </tbody>
-                  </table>
-                </div>
+              {inactiveAdoptionRows.length ? (
+                <>
+                  {/* No `.slice(60)` any more: the box already scrolls vertically,
+                      so the cut bought nothing and silently hid people from a
+                      header that had counted every one of them. */}
+                  <div className="max-h-[360px] overflow-y-auto">
+                    <AdoptionList rows={inactiveAdoptionRows} />
+                  </div>
+                  <p className="border-t border-[#EEF2F7] px-5 py-2 text-phx-xs text-phx-ink-soft">
+                    Showing all {inactiveAdoptionRows.length}{" "}
+                    {inactiveAdoptionRows.length === 1 ? "person who is" : "people who are"} not active.
+                  </p>
+                </>
               ) : (
                 <p className="px-5 py-8 text-center text-sm text-phx-ink-faint">Every account has been active recently. 🎉</p>
               )}
@@ -984,7 +1261,7 @@ export function ActivityControlDashboard({
               description="Concurrent logins and odd-hour access"
             >
               {overview.anomalies.length ? (
-                <div className="max-h-[360px] divide-y divide-[#EEF2F7] overflow-auto">
+                <div className="max-h-[360px] divide-y divide-[#EEF2F7] overflow-y-auto">
                   {overview.anomalies.map((anomaly) => (
                     <div key={anomaly.id} className="flex items-start gap-3 px-5 py-3">
                       <span
@@ -1014,7 +1291,7 @@ export function ActivityControlDashboard({
       {selectedUser ? (
         <div className="fixed inset-0 z-50 flex justify-end bg-black/40" onClick={() => setSelectedUser(null)}>
           <div
-            className="h-full w-full max-w-xl overflow-auto bg-white shadow-2xl"
+            className="h-full w-full max-w-xl overflow-y-auto bg-white shadow-2xl"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="sticky top-0 z-10 flex items-center justify-between border-b border-[#EEF2F7] bg-phx-ink px-5 py-4 text-white">
@@ -1063,12 +1340,12 @@ export function ActivityControlDashboard({
                   </div>
 
                   {/* Engagement signal */}
-                  <div className="flex items-center justify-between rounded-[12px] border border-phx-line bg-[#FBFCFD] px-4 py-3">
-                    <div>
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-[12px] border border-phx-line bg-[#FBFCFD] px-4 py-3">
+                    <div className="min-w-0">
                       <p className="text-phx-xs font-bold uppercase tracking-wide text-phx-ink-faint">Engagement signal</p>
-                      <p className="text-xs text-phx-ink-soft">
+                      <p className="break-words text-xs text-phx-ink-soft">
                         {timeline.summary.pageViews > 0
-                          ? `Active ${Math.round(timeline.summary.engagement.activeRatio * 100)}% of logged-in time · top module ${timeline.summary.topModule ?? "—"}`
+                          ? `${formatMinutes(timeline.summary.engagement.activeMinutesPerWorkingDay)} hands-on per working day · top module ${timeline.summary.topModule ?? "—"}`
                           : "No page-view activity recorded yet — it appears here as they navigate the system."}
                       </p>
                     </div>
@@ -1079,40 +1356,15 @@ export function ActivityControlDashboard({
                     )}
                   </div>
 
-                  {/* Login heatmap calendar */}
+                  {/* Login heatmap calendar — its own fixed Cairo window, bucketed server-side. */}
                   <div className="rounded-[12px] border border-phx-line bg-[#FBFCFD] px-4 py-3">
-                    <HeatmapCalendar sessions={timeline.sessions} />
+                    <HeatmapCalendar calendar={timeline.loginCalendar} />
                   </div>
 
                   {timeline.sessions.length ? (
                     <div className="space-y-3">
                       {timeline.sessions.map((session, index) => (
-                        <div key={session.sessionId ?? `loose-${index}`} className="rounded-[12px] border border-phx-line">
-                          <div className="flex items-center justify-between border-b border-[#EEF2F7] px-4 py-2.5">
-                            <div className="flex items-center gap-2 text-sm">
-                              <Clock3 className="h-4 w-4 text-phx-accent-hover" />
-                              <span className="font-semibold text-phx-ink">{formatDateTime(session.startedAt)}</span>
-                            </div>
-                            <span className="text-xs text-phx-ink-soft">
-                              {formatMinutes(session.durationMinutes)} session · {formatMinutes(session.activeMinutes)} active · {session.endedReason}
-                            </span>
-                          </div>
-                          {session.modules.length ? (
-                            <div className="flex flex-wrap gap-1.5 px-4 py-3">
-                              {session.modules.map((module) => (
-                                <span
-                                  key={module.label}
-                                  className="inline-flex items-center gap-1 rounded-full border border-[#FED7AA] bg-phx-accent-soft px-2.5 py-1 text-phx-xs font-semibold text-[#9A3412]"
-                                >
-                                  {module.label}
-                                  <span className="text-phx-accent-press/70">{formatMinutes(module.minutes)}</span>
-                                </span>
-                              ))}
-                            </div>
-                          ) : (
-                            <p className="px-4 py-3 text-xs text-phx-ink-faint">No page views recorded for this session.</p>
-                          )}
-                        </div>
+                        <SessionTimelineCard key={session.sessionId ?? `loose-${index}`} session={session} />
                       ))}
                     </div>
                   ) : (
@@ -1135,6 +1387,116 @@ export function ActivityControlDashboard({
           onCancel={() => setForceLogoutTarget(null)}
           isPending={forceLogoutPending}
         />
+      ) : null}
+    </div>
+  );
+}
+
+/** How many trail rows appear per "show more" press. */
+const PAGE_TRAIL_STEP = 25;
+
+/**
+ * One logical login in the timeline drawer.
+ *
+ * The drawer already downloaded every path, IP and user-agent for this session
+ * and rendered none of them — the owner asked (2026-09-26) for the page trail
+ * AND the device. Both live here.
+ *
+ * Deliberately NO nested `overflow-auto`: this card sits inside a drawer that
+ * already scrolls, and a second scroller inside it hides content behind a bar
+ * nobody sees. The trail is collapsed and paged instead.
+ */
+function SessionTimelineCard({ session }: { session: TimelineSession }) {
+  const [trailOpen, setTrailOpen] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(PAGE_TRAIL_STEP);
+
+  const pageCount = session.events.length;
+  const shown = trailOpen ? session.events.slice(0, visibleCount) : [];
+  const remaining = pageCount - shown.length;
+
+  return (
+    <div className="rounded-[12px] border border-phx-line">
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-[#EEF2F7] px-4 py-2.5">
+        <div className="flex min-w-0 items-center gap-2 text-sm">
+          <Clock3 className="h-4 w-4 shrink-0 text-phx-accent-hover" />
+          <span className="break-words font-semibold text-phx-ink">{formatDateTime(session.startedAt)}</span>
+        </div>
+        <span className="break-words text-xs text-phx-ink-soft">
+          <span title={SESSION_SPAN_TITLE}>{formatMinutes(session.durationMinutes)} span</span> ·{" "}
+          {formatMinutes(session.activeMinutes)} active · {session.endedReason}
+        </span>
+      </div>
+
+      {/* Device band. `break-all`, not `break-words`: a user agent and an IPv6
+          literal have no spaces to break at. */}
+      <div className="border-b border-[#EEF2F7] px-4 py-2.5 text-phx-xs text-phx-ink-soft">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <Laptop className="h-3.5 w-3.5 shrink-0 text-phx-ink-faint" />
+          <span className="break-words font-semibold text-phx-ink-2">{session.deviceLabel ?? "Device not recorded"}</span>
+          {session.ip ? <span className="break-all font-mono text-phx-ink-soft">{session.ip}</span> : null}
+        </div>
+        {session.userAgent ? (
+          <details className="mt-1">
+            <summary className="cursor-pointer select-none text-phx-accent-press">Show the full browser string</summary>
+            <p className="mt-1 break-all font-mono text-phx-ink-soft">{session.userAgent}</p>
+          </details>
+        ) : null}
+      </div>
+
+      {session.modules.length ? (
+        <div className="flex flex-wrap gap-1.5 px-4 py-3">
+          {session.modules.map((module) => (
+            <span
+              key={module.label}
+              className="inline-flex items-center gap-1 rounded-full border border-[#FED7AA] bg-phx-accent-soft px-2.5 py-1 text-phx-xs font-semibold text-[#9A3412]"
+            >
+              {module.label}
+              <span className="text-phx-accent-press/70">{formatMinutes(module.minutes)}</span>
+            </span>
+          ))}
+        </div>
+      ) : (
+        <p className="px-4 py-3 text-xs text-phx-ink-faint">No page views recorded for this session.</p>
+      )}
+
+      {pageCount ? (
+        <div className="border-t border-[#EEF2F7] px-4 py-2.5">
+          {trailOpen ? (
+            <>
+              <p className="mb-2 text-phx-xs font-bold uppercase tracking-wide text-phx-ink-faint">
+                Pages opened ({pageCount})
+              </p>
+              <ol className="space-y-2">
+                {shown.map((event, index) => (
+                  <li key={`${event.atIso}-${index}`} className="min-w-0 border-l-2 border-phx-paper-2 pl-2.5">
+                    <p className="break-words text-phx-xs text-phx-ink-2">
+                      <span className="font-semibold text-phx-ink">{formatDateTime(event.atIso)}</span> ·{" "}
+                      {event.moduleLabel} · {formatSeconds(event.dwellSeconds)}
+                    </p>
+                    <p className="block w-full break-all font-mono text-phx-2xs text-phx-ink-soft">{event.path}</p>
+                  </li>
+                ))}
+              </ol>
+              {remaining > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => setVisibleCount((count) => count + PAGE_TRAIL_STEP)}
+                  className="mt-2 rounded-[8px] border border-phx-line px-2.5 py-1 text-phx-xs font-semibold text-phx-accent-press transition hover:bg-phx-accent-soft"
+                >
+                  Show {Math.min(remaining, PAGE_TRAIL_STEP)} more {remaining === 1 ? "page" : "pages"}
+                </button>
+              ) : null}
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setTrailOpen(true)}
+              className="rounded-[8px] border border-phx-line px-2.5 py-1 text-phx-xs font-semibold text-phx-accent-press transition hover:bg-phx-accent-soft"
+            >
+              Show the {pageCount} {pageCount === 1 ? "page" : "pages"}
+            </button>
+          )}
+        </div>
       ) : null}
     </div>
   );

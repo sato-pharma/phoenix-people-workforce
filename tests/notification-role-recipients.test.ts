@@ -106,14 +106,17 @@ const EXPECTED: Record<string, { roles: string[]; enabled: boolean }> = {
   // because the owner narrowed the whole module to Super Admin the same day ("make it only super
   // admin. None either uh, CEO").
   service_milestone_notice: { roles: ["Super Admin"], enabled: true },
+  // 24th key, added 2026-09-26. The daily inactive-colleague digest. Super Admin ALONE —
+  // the owner asked for it to reach him, in-app and on Telegram, and never by email.
+  activity_inactivity_digest: { roles: ["Super Admin"], enabled: true },
 };
 
 export function runNotificationRoleRecipientsTests() {
-  assert.equal(notificationRoleKeys.length, 23, "expected exactly the 23 confirmed notification-role keys");
+  assert.equal(notificationRoleKeys.length, 24, "expected exactly the 24 confirmed notification-role keys");
   assert.deepEqual(
     [...notificationRoleKeys].sort(),
     Object.keys(EXPECTED).sort(),
-    "notificationRoleKeys set does not match the confirmed 23 keys",
+    "notificationRoleKeys set does not match the confirmed 24 keys",
   );
 
   for (const key of notificationRoleKeys) {

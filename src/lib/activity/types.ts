@@ -115,6 +115,13 @@ export type ActivityOverview = {
    * through and shown as a footnote so the number is never silently dropped.
    */
   excludedAccounts: ExcludedAccount[];
+  /**
+   * True when the event read hit its cap and older events in the window were
+   * left behind. The figures built from events — engagement, module popularity,
+   * top users — are then partial, and the page says so rather than presenting a
+   * short count as a measurement.
+   */
+  eventsTruncated: boolean;
 };
 
 export type ExcludedAccount = {
@@ -132,6 +139,7 @@ export type TimelineEvent = {
 };
 
 export type TimelineSession = {
+  /** app_sessions.id of the first row merged in, or "unlinked" for loose events. */
   sessionId: string | null;
   startedAt: string;
   endedAt: string | null;
@@ -140,8 +148,23 @@ export type TimelineSession = {
   activeMinutes: number;
   ip: string | null;
   userAgent: string | null;
+  /** "iPhone (Safari)" — resolved server-side from the user agent. */
+  deviceLabel: string | null;
   modules: { label: string; minutes: number; views: number }[];
   events: TimelineEvent[];
+};
+
+/**
+ * Logins per Cairo day over a FIXED window, bucketed on the server. It does not
+ * follow the range picker: the calendar is a months-long habit view, and feeding
+ * it the picker's 1/7/30 days drew a 90-day grid whose empty remainder read as
+ * "never logged in".
+ */
+export type LoginCalendar = {
+  days: number;
+  /** Today in Cairo, as YYYY-MM-DD — so the client needs no clock of its own. */
+  todayKey: string;
+  counts: { dateIso: string; logins: number }[];
 };
 
 export type UserTimeline = {
@@ -149,6 +172,7 @@ export type UserTimeline = {
   range: ActivityRange;
   summary: UserActivitySummary;
   sessions: TimelineSession[];
+  loginCalendar: LoginCalendar;
 };
 
 export type RecordPageViewInput = {
