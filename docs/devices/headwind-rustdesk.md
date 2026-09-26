@@ -764,6 +764,17 @@ in-house, that risk comes back with it — it is written into
 Postgres service from the payroll database, deliberately — a device-management server talking to reps'
 tablets all day does not belong beside payroll — so nothing about Supabase's backup story covers it.
 
+🔴 **AND IT HAS NO PUBLIC ENDPOINT, SO NOTHING OUTSIDE RAILWAY CAN READ IT — INCLUDING A SESSION
+TRYING TO VERIFY THE ADD-ON'S TABLE.** Measured 2026-09-26: `headwind-db` carries `DATABASE_URL` only,
+pointed at `postgres.railway.internal`, and **no `DATABASE_PUBLIC_URL`** — no TCP proxy is enabled on
+it, so from a laptop the host does not even resolve (`ENOTFOUND`). That is the right posture for the
+database that holds the whole fleet and it should stay that way, but it means the obvious way to check
+`phoenix_pending_actions` — connect and `select` — **is not available**, and a session will spend a few
+minutes finding that out. **The evidence that the add-on's schema is live is the server's own startup
+log:** `ensureSchema()` prints `Phoenix actions add-on: table ready.` after every deploy, readable with
+`railway logs` on the service. 🔴 **Do not open a TCP proxy on this database to make a verification
+easier** — it would put the fleet's database on the public internet to save one command.
+
 ---
 
 ## 5. Moving a tablet across

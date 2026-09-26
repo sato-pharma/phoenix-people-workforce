@@ -1963,6 +1963,22 @@ async function runCloudflareAccessTests() {
     /never through `railway variables --stdin`, which stores a BOM INSIDE the value/,
     "and warns how to type the two credentials, because a BOM no screen displays would fail every sign-in with a password that looks correct",
   );
+  // 🔴 THE OBVIOUS WAY TO VERIFY THE ADD-ON'S TABLE DOES NOT EXIST, AND THE RUNBOOK HAS TO SAY SO.
+  // `headwind-db` has no TCP proxy — DATABASE_URL points at postgres.railway.internal and there is no
+  // DATABASE_PUBLIC_URL — so a laptop cannot connect at all (measured: ENOTFOUND). Without this, the
+  // next session reaches for psql, hits a DNS failure that looks like a broken connection string, and
+  // may well "fix" it by opening a proxy — putting the fleet's database on the public internet to save
+  // one command. The runbook names the startup log as the evidence instead, and refuses the proxy.
+  assert.match(
+    runbook,
+    /no `DATABASE_PUBLIC_URL`/,
+    "the runbook records that the Headwind database has no public endpoint, so a session does not try to connect to it and then open one",
+  );
+  assert.match(
+    runbook,
+    /Do not open a TCP proxy on this database/,
+    "and refuses that proxy in writing, because the fleet's database would be on the public internet to make one verification easier",
+  );
   // 🔴 REWORDED 2026-09-25 WHEN THE SERVER MOVED TO RAILWAY, AND THE DANGER IT GUARDS IS UNCHANGED.
   // This used to read `31000 stays open directly`, because the rented box published the tablets'
   // push channel on its own port. Railway publishes no second port, so that sentence is gone — but
