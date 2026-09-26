@@ -58,21 +58,29 @@ function MultiSelect({
           <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">{count} selected</span>
           <button className="text-xs font-bold text-phx-accent hover:underline" onClick={onClear} type="button">Clear</button>
         </div>
+        {/*
+          `items-start` + `break-words` on each option, never `truncate`: this is the list you pick
+          an area from, so cutting the end of a name hides the very thing being chosen. Measured on
+          2026-09-26 at 1440px, two real options were being cut with an ellipsis — "Dokki -
+          Mohandseen - Bolak (GZ2)" lost 32px and "Imbaba - Imbaba Centers (GZ3)" lost 14px.
+          Nothing is truncated with an ellipsis (AGENTS.md §4), so a long option takes a second
+          line and the checkbox stays aligned to the first one.
+        */}
         {options.length === 0 ? (
           <p className="px-2 py-3 text-xs text-slate-400">No options.</p>
         ) : (
           options.map((option) => (
             <label
-              className="flex cursor-pointer items-center gap-2 px-2 py-1.5 text-sm text-slate-700 transition hover:bg-orange-50/60"
+              className="flex cursor-pointer items-start gap-2 px-2 py-1.5 text-sm text-slate-700 transition hover:bg-orange-50/60"
               key={option.code}
             >
               <input
                 checked={selected.includes(option.code)}
-                className="h-4 w-4 accent-phx-accent"
+                className="mt-0.5 h-4 w-4 shrink-0 accent-phx-accent"
                 onChange={() => onToggle(option.code)}
                 type="checkbox"
               />
-              <span className="truncate">{option.label}</span>
+              <span className="min-w-0 break-words">{option.label}</span>
             </label>
           ))
         )}

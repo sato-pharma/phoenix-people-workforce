@@ -362,7 +362,14 @@ const COL = {
   famContr: 68, famTgt: 96, famValue: 102,
   // "of wh. Office" — wide enough for the longest header, which never wraps (owner's rule).
   office: 92,
-  name: 196, tgtUnits: 66, tgtValue: 96, units: 70, value: 102,
+  // The area / region name column. 196 -> 208 on 2026-09-26: at 196 the longest real area name,
+  // "Dokki - Mohandseen - Bolak", needed 200px and was cut to "…Bola…" by an ellipsis — measured
+  // on production data at 1440px, the only cell on this grid that overflowed. The grid already
+  // scrolls sideways by design (the matrix can never fit), so the 12px costs nothing and keeps
+  // every name on ONE line, which is what the dense executive look depends on. The name cells no
+  // longer carry `truncate` either, so a longer name in future wraps rather than being cut —
+  // width is the cosmetic half of the fix, wrapping is the half that cannot fail.
+  name: 208, tgtUnits: 66, tgtValue: 96, units: 70, value: 102,
 };
 const PRODUCT_GROUP_WIDTH = COL.units + COL.value + COL.contr + COL.tgtUnits + COL.tgtValue + COL.ach;
 const FAMILY_GROUP_WIDTH = COL.famValue + COL.famTgt + COL.famContr;
@@ -400,7 +407,11 @@ function RegionBlock({
         return (
           <tr className={synthetic ? "" : "transition-colors hover:bg-orange-50/40"} key={area.areaCode}>
             <td className={`${STICKY1} whitespace-nowrap px-3 py-2.5 font-semibold ${synthetic ? `${directBg} uppercase tracking-wide text-[#1D4ED8]` : "bg-white text-slate-900"}`}>{synthetic ? "◆ Direct" : area.areaCode}</td>
-            <td className={`${STICKY2} truncate px-3 py-2.5 ${synthetic ? `${directBg} font-bold text-[#1D4ED8]` : "bg-white text-slate-600"}`} style={{ left: COL.area }}>{synthetic ? "Direct orders (company)" : area.areaName}</td>
+            {/* `break-words`, never `truncate`: an area name is read, not skimmed, and the owner's
+                rule is that nothing is cut with an ellipsis — where it collides with width,
+                wrapping wins (AGENTS.md §4). COL.name is sized so today's longest name still sits
+                on one line; this is the guarantee for the one that does not. */}
+            <td className={`${STICKY2} break-words px-3 py-2.5 ${synthetic ? `${directBg} font-bold text-[#1D4ED8]` : "bg-white text-slate-600"}`} style={{ left: COL.area }}>{synthetic ? "Direct orders (company)" : area.areaName}</td>
             {columnGroups.map((group, gi) => (
               <Fragment key={gi}>
                 {group.indices.map((idx) => (
@@ -432,7 +443,8 @@ function RegionBlock({
       })}
       <tr className="bg-[#FDEAD0]">
         <td className={`${STICKY1} whitespace-nowrap bg-[#FDEAD0] px-3 py-2.5 font-black uppercase tracking-wide text-slate-900`}>{region.regionCode}</td>
-        <td className={`${STICKY2} truncate bg-[#FDEAD0] px-3 py-2.5 font-black text-slate-900`} style={{ left: COL.area }}>{region.regionName}</td>
+        {/* Same column, same rule as the area row above — a region subtotal's name wraps, never cuts. */}
+        <td className={`${STICKY2} break-words bg-[#FDEAD0] px-3 py-2.5 font-black text-slate-900`} style={{ left: COL.area }}>{region.regionName}</td>
         {columnGroups.map((group, gi) => (
           <Fragment key={gi}>
             {group.indices.map((idx) => (
