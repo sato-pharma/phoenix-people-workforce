@@ -23,6 +23,8 @@ import {
   type CoverageProvenance,
 } from "./coverage.client";
 import { ReviewPeriodFilter } from "./review-filter.client";
+import { PackPicker } from "./pack-picker.client";
+import type { PackLevel, ReviewMetricId } from "@/lib/business-review/pack/metrics";
 import { PortalDesktopTable, PortalResponsiveDataList } from "@/components/employee-portal/portal-primitives";
 import { CustomersByAreaTable, PeopleActivityTable, RoleActivityTable } from "./rollups.client";
 import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
@@ -43,6 +45,9 @@ type Shared = {
   provenance: CoverageProvenance;
   /** Months the filter may offer. Discovered from the data, never hardcoded. */
   available: string[];
+  /** The export pack: which metric catalogue this view offers, and what is currently ticked. */
+  packLevel: PackLevel;
+  packMetrics: ReviewMetricId[];
 };
 /** Discriminated on `view`: the company rollup consolidates every line's areas and DM
  * seats; a line view carries exactly one dataset. Keeps each branch free of null checks. */
@@ -262,6 +267,8 @@ function ReviewHeader({
   current,
   window,
   available,
+  packLevel,
+  packMetrics,
   children,
 }: {
   title: string;
@@ -269,6 +276,8 @@ function ReviewHeader({
   current: ReviewView;
   window: ReviewWindow;
   available: string[];
+  packLevel: PackLevel;
+  packMetrics: ReviewMetricId[];
   children?: React.ReactNode;
 }) {
   return (
@@ -293,6 +302,17 @@ function ReviewHeader({
         to={window.to}
         hidden={{ line: current }}
       />
+      {/* The self-service export pack, the same one the employee portal offers. The pack link
+          carries the current line as a FILTER (hidden), and the route resolves the SCOPE from the
+          session — so a Super Admin on the CNS tab exports a CNS pack, never wider than his own scope.
+          The line is passed only when it IS a line: "company" is not one the pack route would accept,
+          and sending it would surface a needless "dropped" note. */}
+      <PackPicker
+        action="/business-review"
+        hidden={current === "company" ? { from: window.from, to: window.to } : { from: window.from, line: current, to: window.to }}
+        level={packLevel}
+        selected={packMetrics}
+      />
     </header>
   );
 }
@@ -307,6 +327,8 @@ export function BusinessReviewDashboard(props: Props) {
           current={props.view}
           window={props.window}
           available={props.available}
+          packLevel={props.packLevel}
+          packMetrics={props.packMetrics}
           title={`Business Review — ${props.window.label}`}
           subtitle={`No data in this window · viewing as ${props.viewerRole}`}
         />
@@ -320,7 +342,7 @@ export function BusinessReviewDashboard(props: Props) {
 
 function CompanyDashboard({
   company, viewerRole, companyDms, companyAreas, companyProductTables, companyThresholds, restatementNotice,
-  window: reviewWindow, coverage, provenance, available,
+  window: reviewWindow, coverage, provenance, available, packLevel, packMetrics,
 }: Extract<Props, { view: "company" }>) {
   const [tab, setTab] = useState<TabId>("achievers");
   const [excludeVacant, setExcludeVacant] = useState(false);
@@ -345,6 +367,8 @@ function CompanyDashboard({
         current="company"
         window={reviewWindow}
         available={available}
+        packLevel={packLevel}
+        packMetrics={packMetrics}
         title={`All Company — ${figureWindowLabel(coverage)}`}
         subtitle={`${company.meta.lines.length} lines consolidated · ≥90% = earner · viewing as ${viewerRole}`}
       >
@@ -402,7 +426,7 @@ function CompanyDashboard({
 
 function LineDashboard({
   ds, dms, areas, viewerRole, view: currentLine, restatementNotice,
-  window: reviewWindow, coverage, provenance, available, company,
+  window: reviewWindow, coverage, provenance, available, company, packLevel, packMetrics,
 }: Extract<Props, { ds: ReviewDataset }>) {
   const [tab, setTab] = useState<TabId>("achievers");
   const [excludeVacant, setExcludeVacant] = useState(false);
@@ -431,6 +455,8 @@ function LineDashboard({
         current={currentLine}
         window={reviewWindow}
         available={available}
+        packLevel={packLevel}
+        packMetrics={packMetrics}
         title={`${ds.meta.line} Line — ${figureWindowLabel(coverage)}`}
         subtitle={`all products · ≥90% = earner · viewing as ${viewerRole}`}
       >

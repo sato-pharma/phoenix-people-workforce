@@ -27,6 +27,11 @@ import {
   type ReviewView,
 } from "@/lib/business-review/service";
 import { BusinessReviewDashboard } from "@/components/business-review/dashboard.client";
+import {
+  defaultSelectionFor,
+  narrowSelection,
+  type PackLevel,
+} from "@/lib/business-review/pack/metrics";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -38,7 +43,13 @@ function firstSearchParam(value: string | string[] | undefined) {
 }
 
 type PageProps = {
-  searchParams?: Promise<{ line?: string | string[]; from?: string | string[]; to?: string | string[] }>;
+  searchParams?: Promise<{
+    line?: string | string[];
+    from?: string | string[];
+    to?: string | string[];
+    /** The export pack's chosen metrics, same convention as the portal: absent = this level's defaults. */
+    m?: string | string[];
+  }>;
 };
 
 export default async function BusinessReviewPage({ searchParams }: PageProps) {
@@ -57,6 +68,15 @@ export default async function BusinessReviewPage({ searchParams }: PageProps) {
     to: firstSearchParam(params?.to) ?? null,
   });
   const company = getReviewCompany(review);
+
+  // The export pack the portal already offers, now on the admin shell too. The scope is resolved
+  // from the SESSION inside /api/business-review/pack — never from here — and the pack link carries
+  // the current line as a FILTER, so exporting from the CNS tab produces a CNS pack. The level is
+  // the admin's view: All Company → company, a line tab → line.
+  const packLevel: PackLevel = view === "company" ? "company" : "line";
+  const requestedMetrics = params?.m == null ? null : (Array.isArray(params.m) ? params.m : [params.m]).filter(Boolean);
+  const packMetrics = requestedMetrics == null ? defaultSelectionFor(packLevel) : narrowSelection(requestedMetrics, packLevel);
+
   const shared = {
     viewerRole: access.role,
     company,
@@ -65,6 +85,8 @@ export default async function BusinessReviewPage({ searchParams }: PageProps) {
     coverage: review.coverage,
     provenance: review.provenance,
     available,
+    packLevel,
+    packMetrics,
   };
 
   // The company rollup is cross-line: it consolidates every line's areas and DM seats
