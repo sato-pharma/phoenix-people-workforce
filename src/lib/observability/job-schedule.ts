@@ -73,6 +73,11 @@ export const JOB_SCHEDULES: readonly JobScheduleDeclaration[] = [
   // land in, so a slower clock would skip interviews. Off every other job's minutes so a red execution
   // names one job. Must match scripts/cronjob-sync.mjs exactly.
   { slug: "phoenix-interview-reminders", kind: "cron", schedule: "3,13,23,33,43,53 * * * *", graceSeconds: 1 * HOUR },
+  // 06:55 Cairo, every day — before the field day starts, and on :55 so a red execution names one
+  // job. Daily rather than field-days-only: the job runs on a Friday too and simply finds the
+  // Thursday before, which is what keeps its heartbeat a straight daily one. Must match
+  // scripts/cronjob-sync.mjs exactly, or the heartbeat judges a job that fires perfectly to be late.
+  { slug: "phoenix-crm-daily-digest", kind: "cron", schedule: "55 6 * * *", graceSeconds: 2 * HOUR },
   { slug: "phoenix-retention-risk-sweep", kind: "cron", schedule: "40 7 * * *", graceSeconds: 1 * HOUR },
   // Day 25 only. The pre-payroll half of the same feature: Part 1 pays at the start of the month,
   // so the 25th leaves several working days to check on someone before any money moves. The other

@@ -61,11 +61,11 @@ export type ExceptionsView = ExceptionsBoard & {
   windowFieldDays: number;
 };
 
-/** The day the rolling window opens on: `RATE_WINDOW_FIELD_DAYS` field days back from the last one. */
-function windowDays(lastDay: string): string[] {
+/** The field days the window covers, counting back from the last finished one. */
+function windowDays(lastDay: string, count: number): string[] {
   const days: string[] = [];
   const date = new Date(`${lastDay}T00:00:00Z`);
-  while (days.length < RATE_WINDOW_FIELD_DAYS) {
+  while (days.length < Math.max(1, count)) {
     const day = date.toISOString().slice(0, 10);
     if (isFieldDay(day)) days.push(day);
     date.setUTCDate(date.getUTCDate() - 1);
@@ -160,16 +160,26 @@ async function loadVisitTallies(
   return out;
 }
 
-export async function loadExceptionsBoard(viewer: PhoenixCrmViewer, raw: { test: unknown }): Promise<ExceptionsView> {
-  if (!readsTeamReports(viewer)) throw forbiddenError("The exceptions board is for managers.");
-  const isTest = readTestFlag(raw.test);
-  if (isTest && !viewer.isSuperAdmin) throw forbiddenError("Test entries are the Super Admin's.");
-
-  const seats: OrgSeat[] = isTest ? viewer.org.territories : viewer.scopeTerritories;
+/**
+ * The board over an explicit set of seats — the one gathering, shared by the screen and the cron.
+ *
+ * The 06:55 digest has no viewer to scope by and reads a window of ONE day, so it calls this
+ * directly. Keeping it as one function is what stops the two answering differently about the same
+ * territory on the same morning, which is exactly the kind of drift nobody notices for a month.
+ */
+export async function gatherExceptions(input: {
+  seats: ReadonlyArray<OrgSeat>;
+  isTest: boolean;
+  cairoToday: string;
+  config: PhoenixCrmViewer["config"];
+  /** How many finished field days the call rate reads. The board uses six; the digest uses one. */
+  windowFieldDays: number;
+}): Promise<ExceptionsView> {
+  const { config, isTest, seats } = input;
   const seatIds = seats.map((seat) => seat.seatId);
-  const lastDay = lastFinishedFieldDay(viewer.cairoToday);
-  const window = windowDays(lastDay);
-  const weekStart = fieldWeekStart(viewer.cairoToday);
+  const lastDay = lastFinishedFieldDay(input.cairoToday);
+  const window = windowDays(lastDay, input.windowFieldDays);
+  const weekStart = fieldWeekStart(input.cairoToday);
 
   const [readiness, plans, visits, names] = await Promise.all([
     // Readiness is measured on real entries; in test mode nothing is claimed about a list.
@@ -179,7 +189,7 @@ export async function loadExceptionsBoard(viewer: PhoenixCrmViewer, raw: { test:
     loadPeopleNames(seats.map((seat) => seat.occupantHrId)),
   ]);
 
-  const openedOn = new Map(viewer.config.lineRollout.map((line) => [line.lineCode, line.opensOn]));
+  const openedOn = new Map(config.lineRollout.map((line) => [line.lineCode, line.opensOn]));
 
   const facts: TerritoryFacts[] = seats.map((seat) => {
     const list = readiness.get(seat.seatId) ?? null;
@@ -205,10 +215,23 @@ export async function loadExceptionsBoard(viewer: PhoenixCrmViewer, raw: { test:
   });
 
   const board = buildExceptions(facts, {
-    callRateAmTarget: viewer.config.settings.callRateAmTarget,
-    callRatePmTarget: viewer.config.settings.callRatePmTarget,
-    cairoToday: viewer.cairoToday,
+    callRateAmTarget: config.settings.callRateAmTarget,
+    callRatePmTarget: config.settings.callRatePmTarget,
+    cairoToday: input.cairoToday,
   });
 
   return { ...board, isTest, lastFieldDay: lastDay, weekStart, windowFieldDays: window.length };
+}
+
+export async function loadExceptionsBoard(viewer: PhoenixCrmViewer, raw: { test: unknown }): Promise<ExceptionsView> {
+  if (!readsTeamReports(viewer)) throw forbiddenError("The exceptions board is for managers.");
+  const isTest = readTestFlag(raw.test);
+  if (isTest && !viewer.isSuperAdmin) throw forbiddenError("Test entries are the Super Admin's.");
+  return gatherExceptions({
+    seats: isTest ? viewer.org.territories : viewer.scopeTerritories,
+    isTest,
+    cairoToday: viewer.cairoToday,
+    config: viewer.config,
+    windowFieldDays: RATE_WINDOW_FIELD_DAYS,
+  });
 }
