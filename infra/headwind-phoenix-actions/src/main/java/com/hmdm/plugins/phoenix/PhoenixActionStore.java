@@ -85,6 +85,15 @@ public final class PhoenixActionStore {
             statement.execute(
                 "create index if not exists phoenix_pending_actions_open_idx"
                     + " on phoenix_pending_actions (device_number) where confirmed_at is null");
+
+            // 🔴 THE LIVE BOX ALREADY HAS THIS TABLE, SO WIDENING THE `create table if not exists`
+            // ABOVE ADDS NOTHING TO IT. It was created on 2026-09-25 and `if not exists` means exactly
+            // that — the statement is skipped whole, columns and all. Every column added after the
+            // first deploy needs its own `add column if not exists`, or the new code runs against the
+            // old shape and every statement naming the column fails at run time, on the fleet's
+            // hottest path, with the only symptom a swallowed warning in the hook's catch block.
+            statement.execute(
+                "alter table phoenix_pending_actions add column if not exists confirmed_from varchar(64)");
         }
     }
 
@@ -150,31 +159,50 @@ public final class PhoenixActionStore {
     }
 
     /**
-     * The tablet came back and said it acted.
+     * The tablet came back and said it acted. Returns how many rows that actually closed.
+     *
+     * 🔴 `consumed_at is not null` IS THE SECURITY CONDITION IN THIS METHOD, AND IT IS NOT DECORATION.
+     * The three confirmation URLs are unauthenticated by the agent's design — see
+     * `DeviceResetConfirmResource` — so anyone who knows a device number can call them, and the number
+     * is printed on the tablet. Without this clause a stranger could close a row that had *never been
+     * delivered*: queue a wipe, and a confirmation arriving a second later would mark it done before
+     * the tablet had even checked in. `consumed_at` is set only by the sync hook, only while writing
+     * the field into a real response for a real device. Requiring it narrows a forged confirmation to
+     * the window between the tablet being handed the instruction and the tablet reporting back — the
+     * window in which it is carrying the instruction out anyway. That is the difference between a lie
+     * the console cannot detect and a few seconds of optimism.
      *
      * 🔴 THE PASSWORD IS CLEARED IN THE SAME STATEMENT. A temporary screen-lock password that
      * outlives the reset it was for is a credential sitting in a table for no reason.
+     *
+     * `confirmed_from` is a NOTE, never an identity. Behind Railway's edge every public request
+     * shares one source address, so it distinguishes nothing there; over the private network it does.
+     * A row closed with a NULL source was closed by the SERVER, not by a tablet — `clearStanding`
+     * below is the only thing that does that, and it is worth being able to tell apart.
      *
      * A lock or a lost-mode message is NOT closed here: those are standing states the tablet must
      * keep being told about at every check-in, or the next sync response would drop the field and the
      * tablet would quietly unlock itself. Only the one-shot actions close.
      */
-    public void confirm(String deviceNumber, String... actions) throws SQLException {
-        if (actions.length == 0) return;
+    public int confirm(String deviceNumber, String confirmedFrom, String... actions) throws SQLException {
+        if (actions.length == 0) return 0;
         StringBuilder sql = new StringBuilder(
-            "update phoenix_pending_actions set confirmed_at = now(), password = null"
-                + " where device_number = ? and confirmed_at is null and action in (");
+            "update phoenix_pending_actions"
+                + " set confirmed_at = now(), password = null, confirmed_from = ?"
+                + " where device_number = ? and confirmed_at is null and consumed_at is not null"
+                + " and action in (");
         for (int index = 0; index < actions.length; index++) {
             sql.append(index == 0 ? "?" : ", ?");
         }
         sql.append(")");
         try (Connection connection = dataSource.getConnection();
              PreparedStatement statement = connection.prepareStatement(sql.toString())) {
-            statement.setString(1, deviceNumber);
+            statement.setString(1, confirmedFrom);
+            statement.setString(2, deviceNumber);
             for (int index = 0; index < actions.length; index++) {
-                statement.setString(index + 2, actions[index]);
+                statement.setString(index + 3, actions[index]);
             }
-            statement.executeUpdate();
+            return statement.executeUpdate();
         }
     }
 

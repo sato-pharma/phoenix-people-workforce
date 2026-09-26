@@ -1,0 +1,187 @@
+name: Origin Certificate Check
+
+# WHY THIS EXISTS (added 2026-09-26). Railway issues and renews the certificate for every custom
+# domain itself, and it proves ownership by reading that hostname's CNAME **out of DNS**. Measured the
+# same day: while `mdm-console.satopharma.com` was orange-clouded in Cloudflare, Railway read
+# `currentValue: ""` and `DNS_RECORD_STATUS_REQUIRES_UPDATE`, and it went to
+# `DNS_RECORD_STATUS_PROPAGATED` within one poll of the cloud being turned grey. Nothing says that
+# check stops running at RENEWAL time.
+#
+# THE FAILURE MODE IS THE REASON THIS IS A WORKFLOW AND NOT A PARAGRAPH. Once a record is proxied,
+# Cloudflare serves its OWN edge certificate to the browser, so the padlock stays green while the
+# ORIGIN certificate expires underneath it. `satopharma.com` is Full (strict) zone-wide, so the first
+# visible symptom is a 526 — roughly sixty days after anybody touched anything, with no deploy, no
+# merge and no failed check to connect it to. Every existing check in this repository would stay green
+# through it: /api/healthz answers from behind Cloudflare, CI knows nothing about certificates, and the
+# deploy drift check compares SHAs.
+#
+# HOW IT SEES PAST THE PROXY. It does not ask the hostname. It connects to that domain's own Railway
+# edge target with SNI set to the custom hostname, so Railway serves the certificate it holds FOR that
+# hostname — the one whose renewal is at risk — whether the Cloudflare record is grey or orange. The
+# targets are pinned below because a proxied record hides its CNAME from public DNS, which is the very
+# condition this check has to work in.
+#
+# WHAT IT COVERS. All three Railway custom domains on this account, not only the new ones: the
+# production app is the expensive one. Measured 2026-09-26, every Railway hostname on satopharma.com is
+# grey today, so nothing here has ever renewed through a proxy and the console would be the first.
+#
+# COST. No checkout, no Node, no pnpm — curl, openssl and date. A normal run is a few seconds. Daily,
+# not half-hourly: a certificate has 90 days of life and this needs to notice a stalled renewal within
+# days, not minutes. Actions spend in this repo has frozen merges before, so this stays cheap.
+#
+# ALERTING. The same TELEGRAM_BOT_TOKEN / TELEGRAM_ALERT_CHAT_ID secrets and the same streak-age block
+# as deploy-drift-check.yml — the owner's existing channel, no new recipient. A schedule-triggered
+# failure notifies nobody by construction: GitHub emails the run author and a cron run has none.
+on:
+  schedule:
+    - cron: "17 5 * * *" # 05:17 UTC = 07:17 Cairo, daily, offset from the shared firing minutes
+  workflow_dispatch:
+    inputs:
+      test_alert:
+        description: "Send a test Telegram alert and stop (proves the alarm still works)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  actions: read # read this workflow's own past runs, to count the failure streak
+
+concurrency:
+  group: origin-certificate-check
+  cancel-in-progress: true
+
+jobs:
+  origin-certificate-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Read each Railway origin certificate past Cloudflare
+        if: ${{ !inputs.test_alert }}
+        run: |
+          set -uo pipefail
+
+          # host|railway edge target. The target is per-custom-domain and Railway mints a new random
+          # one whenever a domain is removed and re-added — so a connection failure here is a real
+          # signal (the domain was re-created, or the certificate is gone), not noise to be ignored.
+          DOMAINS=(
+            "phoenix-hr.satopharma.com|xok6ir4p.up.railway.app"
+            "mdm.satopharma.com|iul4dp7h.up.railway.app"
+            "mdm-console.satopharma.com|6yo992ue.up.railway.app"
+          )
+
+          # Let's Encrypt issues for 90 days and Railway renews around 30 days out. Under 21 days
+          # means a renewal has been failing for over a week, which is the window worth waking up in.
+          WARN_DAYS=21
+          FAILED=0
+          SUMMARY=""
+
+          now_epoch=$(date -u +%s)
+
+          for entry in "${DOMAINS[@]}"; do
+            host="${entry%%|*}"
+            target="${entry##*|}"
+
+            # The origin certificate: connect to Railway's edge, ask for the custom hostname by SNI.
+            origin_end=$(timeout 25 openssl s_client -connect "${target}:443" -servername "${host}" \
+              </dev/null 2>/dev/null | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2)
+
+            if [ -z "${origin_end}" ]; then
+              echo "::error::${host}: could not read an origin certificate from ${target}. Either Railway no longer holds a certificate for that hostname, or the domain was removed and re-added and its edge target changed — read customDomains{ domain status{ certificateStatus } } from the Railway API and update the pinned target in this workflow."
+              SUMMARY=$(printf '%s\n%s: NO ORIGIN CERTIFICATE from %s' "${SUMMARY}" "${host}" "${target}")
+              FAILED=1
+              continue
+            fi
+
+            origin_epoch=$(date -u -d "${origin_end}" +%s 2>/dev/null || echo 0)
+            origin_days=$(( (origin_epoch - now_epoch) / 86400 ))
+
+            # And what a browser sees, so the alert can name the blind spot rather than imply the two
+            # agree. On a grey record these are the same certificate; on an orange one they are not.
+            edge_end=$(timeout 25 openssl s_client -connect "${host}:443" -servername "${host}" \
+              </dev/null 2>/dev/null | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2)
+            edge_epoch=$(date -u -d "${edge_end:-}" +%s 2>/dev/null || echo 0)
+            edge_days=$(( (edge_epoch - now_epoch) / 86400 ))
+
+            echo "${host}: origin ${origin_days}d left (${origin_end}), edge ${edge_days}d left (${edge_end:-unreadable})"
+
+            if [ "${origin_days}" -lt "${WARN_DAYS}" ]; then
+              echo "::error::${host}: the ORIGIN certificate Railway holds expires in ${origin_days} days (${origin_end}). Railway renews around 30 days out, so this renewal has been failing for over a week. If that record is orange in Cloudflare, turn it GREY — Railway reads the CNAME's own value out of DNS to prove ownership and the proxy hides it, which is the measured cause. The browser is no help here: the edge certificate has ${edge_days} days left and looks fine."
+              SUMMARY=$(printf '%s\n%s: origin %sd left, edge %sd' "${SUMMARY}" "${host}" "${origin_days}" "${edge_days}")
+              FAILED=1
+            fi
+          done
+
+          if [ "${FAILED}" -ne 0 ]; then
+            printf 'SUMMARY%s\n' "${SUMMARY}" > /tmp/cert-summary.txt
+            exit 1
+          fi
+          echo "Every Railway origin certificate has more than ${WARN_DAYS} days left."
+
+      # SELF-TEST, the same convention as deploy-drift-check.yml: a dispatch with test_alert=true
+      # answers "does this channel still work?" without waiting for a certificate to nearly expire.
+      - name: Notify Telegram on failure
+        if: ${{ failure() || inputs.test_alert }}
+        continue-on-error: true
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_ALERT_CHAT_ID: ${{ secrets.TELEGRAM_ALERT_CHAT_ID }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          IS_TEST: ${{ inputs.test_alert }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          EVENT: ${{ github.event_name }}
+          WF_FILE: origin-certificate-check.yml
+        run: |
+          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_ALERT_CHAT_ID" ]; then
+            echo "::warning::Telegram alert not sent — TELEGRAM_BOT_TOKEN or TELEGRAM_ALERT_CHAT_ID is unset. An expiring origin certificate went UNDETECTED-BY-A-HUMAN, which is the whole condition this step exists to prevent."
+            exit 0
+          fi
+          # How old is this failure? Copied deliberately from deploy-drift-check.yml, whose own header
+          # records why: that check was red on 21 consecutive nightly runs and every alert delivered.
+          # Delivery was never the problem — visibility of AGE was. Scoped to the same event so a
+          # manual dispatch cannot reset a nightly streak. Best-effort: any failure here leaves the
+          # line out rather than breaking the alert.
+          STREAK_LINE=""
+          RUNS=$(gh api "repos/${REPO}/actions/workflows/${WF_FILE}/runs?per_page=50&status=completed&event=${EVENT}" --jq '.workflow_runs[] | [(.id|tostring), .conclusion, .created_at] | join(" ")' 2>/dev/null || true)
+          if [ -n "$RUNS" ]; then
+            STREAK=1
+            FIRST_SEEN=""
+            while read -r rid rconc rdate; do
+              [ -z "$rid" ] && continue
+              [ "$rid" = "$RUN_ID" ] && continue
+              if [ "$rconc" = "failure" ]; then
+                STREAK=$((STREAK + 1))
+                FIRST_SEEN="$rdate"
+              else
+                break
+              fi
+            done <<< "$RUNS"
+            if [ "$STREAK" -gt 1 ]; then
+              STREAK_LINE=$(printf 'Consecutive failure #%s' "$STREAK")
+              if [ -n "$FIRST_SEEN" ]; then
+                STREAK_LINE=$(printf '%s, first seen %s' "$STREAK_LINE" "${FIRST_SEEN%%T*}")
+              fi
+              STREAK_LINE=$(printf '%s. A climbing number means nobody is acting on this.' "$STREAK_LINE")
+            fi
+          fi
+          DETAIL="$(cat /tmp/cert-summary.txt 2>/dev/null || true)"
+          if [ "$IS_TEST" = "true" ]; then
+            TEXT=$(printf 'ALERT SELF-TEST (not an incident)\n\nSomeone ran the origin certificate check with the test flag to confirm this channel still works.\n\nIf you are reading this, a real expiring Railway certificate would also reach you.\n\n%s' "$RUN_URL")
+          else
+            HEADER='RAILWAY ORIGIN CERTIFICATE EXPIRING'
+            [ -n "$STREAK_LINE" ] && HEADER=$(printf '%s\n%s' "$HEADER" "$STREAK_LINE")
+            TEXT=$(printf '%s\n\nA certificate Railway holds for one of our own hostnames is running out, and the browser will NOT show it — once a Cloudflare record is orange the padlock is Cloudflare own certificate while the origin one expires behind it. Full (strict) turns that into a 526 with no deploy to blame.\n\nThe measured cause is the orange cloud: Railway proves ownership by reading the CNAME value out of DNS and the proxy hides it. Turning that record GREY in Cloudflare is the fix.\n\n%s\n\n%s' "$HEADER" "$DETAIL" "$RUN_URL")
+          fi
+          HTTP=$(curl -sS --max-time 20 -X POST \
+            "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d "chat_id=${TELEGRAM_ALERT_CHAT_ID}" \
+            -d "disable_web_page_preview=true" \
+            --data-urlencode "text=${TEXT}" \
+            -o /tmp/tg-response.json -w '%{http_code}')
+          echo "telegram sendMessage HTTP ${HTTP}"
+          if [ "$HTTP" != "200" ]; then
+            echo "::error::Telegram alert FAILED to deliver (HTTP ${HTTP}). An expiring origin certificate reached nobody. Response: $(cat /tmp/tg-response.json 2>/dev/null | head -c 500)"
+            exit 1
+          fi
+          echo "Telegram alert delivered."

@@ -49,6 +49,17 @@ This plugin implements it.
    serve — so today they 404. Serving them turns **"sent" into "witnessed"**: a row is marked done
    only when the tablet says it did it. On a custody console that distinction is the entire point.
 
+   🔴 **And those three are unauthenticated, because the agent posts them without a token.** That is
+   the agent's design and it cannot be closed from this side — authenticating them would mean shipping
+   a modified agent, which is the one thing this add-on exists to avoid. So the confirmation is
+   **gated on delivery instead**: `confirm` requires `consumed_at is not null`, meaning the sync hook
+   has already written that instruction into a real response for that device. A stranger who knows a
+   device number can therefore only call an action done in the seconds before the tablet does it — not
+   mark a freshly queued wipe as finished while the tablet sits in somebody's bag. A confirmation that
+   closes no row is logged at `WARNING`, and the answer to the agent stays `200 OK` either way, because
+   refusing makes a real tablet retry forever. **Read a confirmation as corroboration, not proof, and
+   never write a tablet off as clean on that row alone.**
+
 ---
 
 ## 🔴 What is proven, and what is not

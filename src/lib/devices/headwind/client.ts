@@ -75,6 +75,40 @@ function readsAsExpiredSession(message: string): boolean {
   return /\b(token|session|jwt|unauthori[sz]ed|not\s+logged\s+in)\b/i.test(message);
 }
 
+/**
+ * The sentence for a request that never reached a server at all.
+ *
+ * 🔴 THE `.railway.internal` BRANCH IS NOT COSMETIC — IT IS THE WHOLE REASON THIS FUNCTION EXISTS.
+ * Phoenix and the Headwind box are the same Railway project, so the base URL can be
+ * `http://phoenix-headwind.railway.internal:8080` and skip Cloudflare entirely, which also means no
+ * Access service token is needed. But Railway's private network is **IPv6-only**, and nothing has yet
+ * watched this container resolve an AAAA-only name — so the one thing that setting could get wrong is
+ * exactly a name that does not resolve. Without this branch that arrives as `fetch failed` and reads
+ * like a broken server; with it, the answer names the network, the reason and the fallback in one
+ * sentence, and whoever set the variable can correct it in a minute rather than an evening.
+ *
+ * The address is included because a typo in it is the other cause, and it is not a secret — the login
+ * and password are, and neither is ever in here.
+ */
+function unreachableMessage(error: unknown, env: NodeJS.ProcessEnv): string {
+  const detail = error instanceof Error ? error.message : String(error);
+  const base = env.HEADWIND_MDM_BASE_URL?.trim() ?? "";
+  if (/\.railway\.internal(:|\/|$)/i.test(base)) {
+    return (
+      `Nothing answered at ${base} (${detail}). That address is Railway's private network, which is ` +
+      "IPv6-only and only reachable from another service in the same project and environment — so it " +
+      "works from the Phoenix app on Railway and from nowhere else, including a laptop. If this keeps " +
+      "failing there, set HEADWIND_MDM_BASE_URL to https://mdm-console.satopharma.com instead and add " +
+      "the two HEADWIND_MDM_ACCESS_* values if Cloudflare Access is on."
+    );
+  }
+  return (
+    `Nothing answered at ${base || "the configured Headwind address"} (${detail}). The request never ` +
+    "reached a server, so this is the address, DNS or the network — not Headwind refusing anything. " +
+    "Check HEADWIND_MDM_BASE_URL first."
+  );
+}
+
 type Attempt = { ok: boolean; status: number; body: unknown; envelopeError: string | null };
 
 async function once(
@@ -133,10 +167,19 @@ export async function callHeadwind<T = unknown>(
   fetchImpl: typeof fetch = fetch,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<T> {
-  let result = await once(path, init, fetchImpl, env);
-  if (result.status === 401 || (result.envelopeError !== null && readsAsExpiredSession(result.envelopeError))) {
-    resetHeadwindTokenCache();
+  let result: Attempt;
+  try {
     result = await once(path, init, fetchImpl, env);
+    if (result.status === 401 || (result.envelopeError !== null && readsAsExpiredSession(result.envelopeError))) {
+      resetHeadwindTokenCache();
+      result = await once(path, init, fetchImpl, env);
+    }
+  } catch (error) {
+    // 🔴 A TRANSPORT FAILURE USED TO ARRIVE AS "fetch failed" AND NOTHING ELSE. Every refusal above
+    // carries Headwind's own sentence, but a request that never reached a server at all fell through
+    // to the generic 500 handler, so the page said "fetch failed" — which names neither the address
+    // it tried nor anything to do about it. That is the one failure a wrong base URL produces.
+    throw new HeadwindRequestError(502, unreachableMessage(error, env));
   }
   if (!result.ok) {
     throw new HeadwindRequestError(result.status, messageFromBody(result.body, result.status));
