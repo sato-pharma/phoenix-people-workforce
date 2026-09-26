@@ -52,6 +52,10 @@ type ParsedOption = {
   lowerValue: string;
   selected: boolean;
   disabled: boolean;
+  // Optional visual tone, read from an <option data-tone="…"> attribute. "planned" paints the row
+  // green — used by the weekly Plan-week picker to mark weeks a plan already exists for. The raw
+  // <option> is never rendered to the DOM (only parsed), so this attribute never leaks as markup.
+  tone: string | undefined;
   node: React.ReactElement;
 };
 
@@ -87,11 +91,13 @@ function parseOptions(children: React.ReactNode): ParsedOption[] {
       children?: React.ReactNode;
       selected?: unknown;
       disabled?: unknown;
+      "data-tone"?: unknown;
     };
     if (node.type === "option") {
       const rawValue = props.value ?? props.children ?? "";
       const value = String(rawValue);
       const label = toDisplayText(props.children);
+      const rawTone = props["data-tone"];
       options.push({
         value,
         label: label || value,
@@ -99,6 +105,7 @@ function parseOptions(children: React.ReactNode): ParsedOption[] {
         lowerValue: value.toLowerCase(),
         selected: Boolean(props.selected),
         disabled: Boolean(props.disabled),
+        tone: typeof rawTone === "string" && rawTone ? rawTone : undefined,
         node,
       });
       return;
@@ -470,7 +477,11 @@ export function SearchableSelect({
                       aria-selected={isActive}
                       className={cn(
                         "flex w-full items-center justify-between gap-2 border-b border-slate-100 px-3 py-2 text-left text-sm transition last:border-b-0",
-                        isActive ? "bg-orange-50 font-semibold text-orange-700" : "text-slate-700 hover:bg-orange-50 hover:text-orange-700",
+                        isActive
+                          ? "bg-orange-50 font-semibold text-orange-700"
+                          : option.tone === "planned"
+                            ? "bg-emerald-50/40 font-semibold text-emerald-700 hover:bg-emerald-50"
+                            : "text-slate-700 hover:bg-orange-50 hover:text-orange-700",
                       )}
                       type="button"
                       onMouseDown={(event) => {
@@ -499,7 +510,12 @@ export function SearchableSelect({
                         `min-w-0` because without it this flex child refuses to shrink below its content and
                         the scroll comes straight back.
                       */}
-                      <span className="min-w-0 whitespace-normal break-words">{option.label}</span>
+                      <span className="flex min-w-0 items-center gap-1.5">
+                        {option.tone === "planned" ? (
+                          <span aria-hidden className="h-2 w-2 shrink-0 bg-emerald-500" />
+                        ) : null}
+                        <span className="min-w-0 whitespace-normal break-words">{option.label}</span>
+                      </span>
                       {isActive ? <Check aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-orange-600" /> : null}
                     </button>
                   );

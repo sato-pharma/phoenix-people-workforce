@@ -66,6 +66,7 @@ import {
   employeePlanActivityTypes,
   HEAD_OFFICE_WORKWEEK,
   isDistrictManagerPlanTitle,
+  isPastPlanWeek,
   planRequiredSlotsByDate,
 } from "@/lib/weekly-planning/plan-v1";
 import type {
@@ -1050,19 +1051,46 @@ function friendlyError(message: string): string {
   return text;
 }
 
+// The "flag" half of the wrong-week guard (owner, 2026-09-26): a plan filed for a week that had
+// already begun or elapsed carries this amber chip so the owner and reviewers can see it at a
+// glance. It marks; it never blocks. Square edges — this card can portal to <body>, escaping the
+// shell's square-corner sweep, so the chip must be square in its own right (square-edge golden rule,
+// AGENTS.md §4; tests/square-edge-portal-ratchet.test.ts).
+function OffWindowBadge() {
+  return (
+    <span
+      className="inline-flex items-center gap-1 border border-amber-300 bg-amber-50 px-2 py-1 text-phx-xs font-black text-amber-700"
+      title="Filed for a week that had already started or passed — flagged for review, not blocked."
+    >
+      <TriangleAlert className="h-3 w-3" />
+      Off-window
+    </span>
+  );
+}
+
 function PlanPeriodControl({
   activeKind,
   anchorDate,
+  chosen,
   disabled,
   idPrefix,
   onAnchorChange,
+  plannedWeekStarts,
   workweek,
 }: {
   activeKind: EmployeePlanKind;
   anchorDate: string;
+  // The weekly Plan-week dropdown no longer auto-selects (owner, 2026-09-26). `chosen` is false for
+  // a fresh weekly plan until the person picks a week by hand — the field then shows a placeholder
+  // and saving/submitting is blocked until they choose. Always true for monthly and for an existing
+  // plan being edited (its week is fixed).
+  chosen: boolean;
   disabled: boolean;
   idPrefix: string;
   onAnchorChange: (value: string) => void;
+  // Week START dates the owner already has a live plan for — marked green in the list so they can
+  // avoid double-filing a week.
+  plannedWeekStarts: Set<string>;
   workweek: PlanWorkweek;
 }) {
   const period = buildEmployeePlanPeriod(activeKind, anchorDate, workweek);
@@ -1083,17 +1111,25 @@ function PlanPeriodControl({
           disabled={disabled}
           id={`${idPrefix}-plan-week`}
           onChange={(event) => onAnchorChange(event.target.value)}
-          value={period.periodStartDate}
+          placeholder="Select a week…"
+          value={chosen ? period.periodStartDate : ""}
         >
           {weeklyPlanWeekOptions(anchorDate, workweek).map((weekStart) => {
             const optionPeriod = buildEmployeePlanPeriod("weekly", weekStart, workweek);
+            const planned = plannedWeekStarts.has(weekStart);
             return (
-              <option key={weekStart} value={weekStart}>
+              <option data-tone={planned ? "planned" : undefined} key={weekStart} value={weekStart}>
                 {formatDate(optionPeriod.periodStartDate)} to {formatDate(optionPeriod.periodEndDate)} - {optionPeriod.periodKey}
+                {planned ? " · already planned" : ""}
               </option>
             );
           })}
         </SearchableSelect>
+        {!chosen ? (
+          <p className="text-xs font-bold text-orange-600">
+            Pick the plan week — it is not chosen for you.
+          </p>
+        ) : null}
       </div>
     );
   }
@@ -1133,6 +1169,10 @@ export function PlansWorkspace({
   const [workspace, setWorkspace] = useState(initialWorkspace);
   const [activeKind, setActiveKind] = useState<EmployeePlanKind>(initialKind);
   const [anchorDate, setAnchorDate] = useState(initialAnchorDate);
+  // The Plan week no longer auto-selects for a fresh weekly plan (owner, 2026-09-26): it starts
+  // UNCHOSEN and the person picks it by hand, so a plan is never filed for a week nobody chose.
+  // True immediately when an existing plan is opened (its week is already fixed).
+  const [weekChosen, setWeekChosen] = useState<boolean>(Boolean(initialSelectedPlan));
   const [selectedPlan, setSelectedPlan] = useState<string | null>(initialSelectedPlan?.id ?? null);
   // A District Manager's region is his own AU district and nothing else — he is not asked for it
   // (owner, 2026-09-12). Null for everyone else, and null too when the seat model cannot name his
@@ -1233,6 +1273,17 @@ export function PlansWorkspace({
   const ownPlans = plans.filter(
     (item) => hrIdsMatch(item.employeeHrId, workspace.currentEmployee?.hrId),
   );
+  // Weeks the owner already has a LIVE weekly plan for — a draft/cancelled/rejected one lays no
+  // claim on the week (it mirrors the server's duplicate rule), so it does not count. Marked green
+  // in the Plan-week dropdown so a week is never double-filed by mistake.
+  const plannedWeekStarts = useMemo(() => {
+    const dead = new Set<EmployeePlanStatus>(["draft", "cancelled", "manager_rejected", "ceo_rejected"]);
+    return new Set(
+      ownPlans
+        .filter((item) => item.planKind === "weekly" && !dead.has(item.status))
+        .map((item) => item.periodStartDate),
+    );
+  }, [ownPlans]);
   // The employee's most recent earlier weekly plan, for one-tap "copy last week".
   const previousWeeklyPlan = useMemo(() => {
     if (activeKind !== "weekly") return null;
@@ -1342,6 +1393,9 @@ export function PlansWorkspace({
   const needsAssignedRep = rows.some((row) => activityRule(row.activityType, row.activityTitle).requiresRep);
   const noSameLineReps = needsAssignedRep && workspace.medicalRepOptions.filter((rep) => !isVacantMedicalRep(rep)).length === 0;
   const noPlanRows = rows.length === 0;
+  // A fresh weekly plan cannot be saved or submitted until its week is picked by hand (owner,
+  // 2026-09-26). Editing an existing plan (week fixed) and monthly plans are unaffected.
+  const needsWeekPick = activeKind === "weekly" && !plan && !weekChosen;
   const lineOptions = useMemo(() => lineOptionsFromReps(workspace.medicalRepOptions), [workspace.medicalRepOptions]);
 
   // Everything the Area picker reads, assembled once. The AU seat model decides; the roster
@@ -1356,7 +1410,7 @@ export function PlansWorkspace({
     [lockedRegion, workspace.currentEmployee, workspace.medicalRepOptions, workspace.planningAreaSeats],
   );
   const tableNeedsLine = lineOptions.length > 1;
-  const submitBlocked = !canEdit || submitValidationIssues.length > 0 || incompleteDays.length > 0 || noSameLineReps || noPlanRows;
+  const submitBlocked = !canEdit || submitValidationIssues.length > 0 || incompleteDays.length > 0 || noSameLineReps || noPlanRows || needsWeekPick;
   const prefillScopeKey = `${workspace.currentEmployee?.hrId ?? ""}|${activeKind}|${period.periodStartDate}`;
   const rowConflictWarning = useMemo(() => {
     const map = new Map<string, string>();
@@ -1746,6 +1800,10 @@ export function PlansWorkspace({
   // confirm before sending it to the manager. Deliberately a soft nudge, not a
   // block — a genuine all-office week is valid, the user just clicks through.
   function requestSubmit() {
+    // Defensive only: Save/Submit are disabled and an orange hint is shown until a week is picked
+    // (needsWeekPick). No banner here — a disabled button is never clicked, and the error banner is
+    // reserved for a failed action (tests/weekly-plan-error-banner-tone.test.ts).
+    if (needsWeekPick) return;
     const allBlank = rows.length > 0 && rows.every(isUntouchedRow);
     if (
       allBlank &&
@@ -1850,6 +1908,7 @@ export function PlansWorkspace({
     setSelectedPlan(target.id);
     setActiveKind(target.planKind);
     setAnchorDate(target.periodStartDate);
+    setWeekChosen(true);
     setSheetKey(null);
     setRows(draftRowsFromPlan(target, workspace.medicalRepOptions));
   }
@@ -1859,6 +1918,8 @@ export function PlansWorkspace({
     setSelectedPlan(null);
     setActiveKind(kind);
     setAnchorDate(nextAnchorDate);
+    // A fresh weekly plan starts with its week UNCHOSEN — the person must pick it (owner, 2026-09-26).
+    setWeekChosen(kind !== "weekly");
     resetRows(kind, nextAnchorDate);
     setMessage(null);
   }
@@ -1868,12 +1929,32 @@ export function PlansWorkspace({
     setActiveKind(kind);
     setSelectedPlan(null);
     setAnchorDate(nextAnchorDate);
+    setWeekChosen(kind !== "weekly");
     resetRows(kind, nextAnchorDate);
   }
 
   function onAnchorChange(value: string) {
     const nextAnchorDate = normalizeAnchorForKind(activeKind, value, workweek);
+    if (activeKind === "weekly") {
+      const picked = buildEmployeePlanPeriod("weekly", nextAnchorDate, workweek);
+      const past = isPastPlanWeek({
+        periodStartDate: picked.periodStartDate,
+        todayIso: currentCairoDateOnlyIso(),
+        workweek,
+      });
+      // Owner rule (2026-09-26): picking a week that has already started or passed asks once, then
+      // the plan is FLAGGED for review — never blocked. Cancelling keeps the previous choice.
+      if (
+        past &&
+        !window.confirm(
+          `The week ${formatDate(picked.periodStartDate)} to ${formatDate(picked.periodEndDate)} has already started or passed.\n\nFile the plan for that earlier week anyway? It will be flagged as an off-window plan for your manager and HR to see.`,
+        )
+      ) {
+        return;
+      }
+    }
     setAnchorDate(nextAnchorDate);
+    setWeekChosen(true);
     resetRows(activeKind, nextAnchorDate);
   }
 
@@ -2078,9 +2159,11 @@ export function PlansWorkspace({
             <PlanPeriodControl
               activeKind={activeKind}
               anchorDate={anchorDate}
+              chosen={!needsWeekPick}
               disabled={periodLocked || isPending || !workspace.canSubmitPlans}
               idPrefix="mobile"
               onAnchorChange={onAnchorChange}
+              plannedWeekStarts={plannedWeekStarts}
               workweek={workweek}
             />
             {periodLocked && workspace.canSubmitPlans ? (
@@ -2296,7 +2379,7 @@ export function PlansWorkspace({
                 <>
                   <Button
                     className="flex-1"
-                    disabled={isPending || !canEdit || noPlanRows}
+                    disabled={isPending || !canEdit || noPlanRows || needsWeekPick}
                     onClick={() => runAction(() => submitPlan(false))}
                     variant="secondary"
                   >
@@ -2429,14 +2512,18 @@ export function PlansWorkspace({
               <PlanPeriodControl
                 activeKind={activeKind}
                 anchorDate={anchorDate}
+                chosen={!needsWeekPick}
                 disabled={periodLocked || isPending || !workspace.canSubmitPlans}
                 idPrefix="desktop"
                 onAnchorChange={onAnchorChange}
+                plannedWeekStarts={plannedWeekStarts}
                 workweek={workweek}
               />
-              <span className="inline-flex h-10 items-center rounded-sm border border-slate-200 bg-white px-3 text-sm font-black text-slate-700 shadow-sm">
-                {period.periodKey}
-              </span>
+              {!needsWeekPick ? (
+                <span className="inline-flex h-10 items-center rounded-sm border border-slate-200 bg-white px-3 text-sm font-black text-slate-700 shadow-sm">
+                  {period.periodKey}
+                </span>
+              ) : null}
               {periodLocked && workspace.canSubmitPlans ? (
                 <button
                   className="inline-flex h-10 items-center gap-1.5 rounded-sm border border-slate-200 bg-white px-3 text-sm font-black text-slate-700 shadow-sm transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700"
@@ -2951,7 +3038,7 @@ export function PlansWorkspace({
                   />
                 ) : null}
                 <Button
-                  disabled={isPending || !canEdit || noPlanRows}
+                  disabled={isPending || !canEdit || noPlanRows || needsWeekPick}
                   onClick={() => runAction(() => submitPlan(false))}
                   variant="secondary"
                 >
@@ -3915,6 +4002,7 @@ function QueueCard({
               </div>
               <div className="mt-1 flex flex-wrap items-center gap-2">
                 <p className="text-xs font-semibold text-slate-500">Revision {p.revision}</p>
+                {p.offWindowFlagged ? <OffWindowBadge /> : null}
                 {/* His own plans carry their score here, so he sees it on the plan itself rather
                     than only after opening the approvals hub. Absent on other people's plans —
                     see EmployeePlan.adherence. */}
@@ -4012,6 +4100,11 @@ function ReviewCard({
                   <p className="text-xs font-semibold text-slate-500">
                     {p.planKind} {p.periodKey} — {statusLabels[p.status]}
                   </p>
+                  {p.offWindowFlagged ? (
+                    <div className="mt-1">
+                      <OffWindowBadge />
+                    </div>
+                  ) : null}
                 </div>
                 {type === "manager" ? (
                   <input
