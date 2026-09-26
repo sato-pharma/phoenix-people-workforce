@@ -29,6 +29,10 @@
 //    off the NSM. Reading the PATH rather than the parent is what keeps that honest.
 //  - Scope is applied BEFORE any truncation or ranking. PR #1487: truncating company-wide
 //    first and filtering after silently emptied a scoped viewer's list.
+//  - A DISTRICT SEAT IS `DM` OR `ACTING_DM`, never `DM` alone — see DISTRICT_SEAT_TIERS below.
+//    Reading the narrower tier locked the one serving acting district manager out of the module
+//    entirely and, under a Regional Manager, would have dropped her district from that region's
+//    totals with no message at all.
 //  - Every failure path returns NO access, never a wider one.
 //  - The SESSION role decides which kind of scope is sought; the ORG TREE decides how far it
 //    reaches. Neither is taken from client input, and a role with no seat is refused rather than
@@ -76,8 +80,32 @@ function hrKey(value: string | null | undefined): string {
   return String(value ?? "").trim().toUpperCase();
 }
 
+/**
+ * THE TIERS THAT ARE A DISTRICT SEAT. `ACTING_DM` is one of them.
+ *
+ * Owner rule (AGENTS.md §4): "An acting District Manager (DM app role, Medical Rep title) sees
+ * EXACTLY what a District Manager sees." This module used to read `["DM", "RSM"]`, so the one live
+ * ACTING_DM seat — SEAT-AIF-ADM-UE-1 on Anti Infective, three areas, 118,073 EGP of sales against
+ * 308,860 EGP of target over Jul–Aug 2026 — never entered the snapshot, and the person occupying it
+ * was told she holds no district seat at all. Her district was in the canonical data the whole time,
+ * and the admin page listed it; she was the only one who could not see it.
+ *
+ * `au_v_org_tree` applies no tier filter of its own — every tier the CHECK constraint allows
+ * (`CEO, NSM, RSM, DM, ACTING_DM, REP`) reaches this query — so the omission was here and nowhere
+ * else. The same set is spelled out under four other names elsewhere in the repo
+ * (`DM_SEAT_TIERS` in sales/weekly/upload-notification-recipients.ts and sales/closing-publish-recipients.ts,
+ * `DISTRICT_TIERS` in recruitment/district-manager-folders.ts, `REP_MANAGER_TIERS` in
+ * recruitment/vacancy-manager-escalation.ts) plus inline pairs in sources/attribution.ts and
+ * sales/seat-area-scope.ts. All of those already include ACTING_DM and are correct; this one did not.
+ */
+export const DISTRICT_SEAT_TIERS = ["DM", "ACTING_DM"] as const;
+export type DistrictSeatTier = (typeof DISTRICT_SEAT_TIERS)[number];
+export function isDistrictSeatTier(tier: string | null | undefined): tier is DistrictSeatTier {
+  return tier === "DM" || tier === "ACTING_DM";
+}
+
 export type OrgSeat = {
-  seatTier: "DM" | "RSM";
+  seatTier: DistrictSeatTier | "RSM";
   seatId: string;
   lineCode: string;
   occupantHrId: string | null;
@@ -144,7 +172,9 @@ export function resolveReviewPortalScopeFromOrg(
   // Both are resolved from OCCUPANCY, so a manager appointed this morning resolves this morning and
   // one who left yesterday resolves to nothing. That is the whole reason the snapshot was retired.
   if (role === "District Manager") {
-    const seat = org.seats.find((s) => s.seatTier === "DM" && hrKey(s.occupantHrId) === key);
+    // `isDistrictSeatTier`, never `=== "DM"`: an acting district manager holds a district
+    // (DISTRICT_SEAT_TIERS above), and the owner's rule is that she sees exactly what a DM sees.
+    const seat = org.seats.find((s) => isDistrictSeatTier(s.seatTier) && hrKey(s.occupantHrId) === key);
     if (!seat) {
       return {
         kind: "none",
@@ -184,11 +214,13 @@ export function resolveReviewPortalScopeFromOrg(
     }
     // The PATH, not the parent: a DM seat two levels below an RSM node is still that RM's, and
     // resolving one level is exactly the PR #1486 defect. The seat itself is excluded — an RSM seat
-    // is never its own district.
+    // is never its own district. `isDistrictSeatTier` rather than `=== "DM"` because an ACTING_DM
+    // under this node is one of this region's districts: reading the narrower tier dropped it from
+    // the total with no message at all, which is worse than the refusal the DM branch above gave.
     const dmSeatIds = org.seats
       .filter(
         (s) =>
-          s.seatTier === "DM" &&
+          isDistrictSeatTier(s.seatTier) &&
           s.lineCode === rsm.lineCode &&
           s.seatId !== rsm.seatId &&
           s.path.includes(rsm.seatId),
@@ -229,11 +261,11 @@ export async function loadReviewOrgSnapshot(options?: { needsLineName?: string |
   const seatRes = await db
     .from("au_v_org_tree")
     .select("seat_tier,seat_id,line_code,occupant_hr_id,path")
-    .in("seat_tier", ["DM", "RSM"]);
+    .in("seat_tier", [...DISTRICT_SEAT_TIERS, "RSM"]);
   if (seatRes.error) throw new Error(`Business Review: could not read the organogram — ${seatRes.error.message}`);
 
   const seats: OrgSeat[] = (seatRes.data ?? []).map((r) => ({
-    seatTier: r.seat_tier as "DM" | "RSM",
+    seatTier: r.seat_tier as DistrictSeatTier | "RSM",
     seatId: String(r.seat_id),
     lineCode: String(r.line_code ?? ""),
     occupantHrId: r.occupant_hr_id ?? null,

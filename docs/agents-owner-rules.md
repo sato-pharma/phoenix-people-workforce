@@ -654,9 +654,12 @@ test; a second copy is how the next screen drifts.
 | Phoenix KPI rules (after the CRM cutover) | a pharmacy call is the pharmacy lane even when the contact sits on the rep's AM or PM list |
 | The outstation trip workload (#4185) | capture, submit, the approval screens, the payroll expense mapping and the expense dashboards read AM · PM · Pharmacies. Owner ruling, 2026-09-21: pharmacies are field WORK, so a pharmacy-only trip is `matched`, never "no activity". `pharmacy_workload` is NULL — shown as "not counted separately", never 0 — on a trip stamped before the split, a hand-typed workload or an Excel import. No pay formula reads it, and `decision.ts` stays pharmacy-blind (pinned by `tests/outstation-trip-workload-pharmacies.test.ts`). The Excel expense template and the held-requests hand entry are still AM · PM only. |
 
-Two deliberate differences in how an **unmarked** period is treated: the calendar files an unmarked
-visit under PM so every visit lands in exactly one figure; Double Visit Analytics and Employee 360
-keep an unmarked visit out of all three, as they always had. A pharmacy is a pharmacy in both.
+| The Business Review (2026-09-26) | the last surface that called a pharmacy a doctor. Its "Doctors reached" read 7,364 for July 2026 with **1,030 pharmacies inside it** — one in seven — and its single "Visits" figure folded in 1,680 pharmacy calls. Owner: *"everything full detailed"*, so the split reaches the KPI tiles, every area / district / line / company table, the role and people rows and the workbook, as ONE merged `AM · PM · Pharmacies` cell rather than three columns (which keeps the fits-the-screen rule). Customers are split the same way and the total is labelled **Customers**, never Doctors. The read adds `ampm` + `speciality` to its projection and gets the `-30` comment from a second narrow query. 🔴 It also excludes the **catch-all contact** for the first time — every other CRM surface already did. |
+
+Two deliberate differences in how an **unmarked** period is treated: the calendar and the Business
+Review file an unmarked visit under PM so every visit lands in exactly one figure and the three
+always sum to the total; Double Visit Analytics and Employee 360 keep an unmarked visit out of all
+three, as they always had. A pharmacy is a pharmacy in all of them.
 
 **Not yet converted — each needs its own change, never a quiet fold-in:**
 

@@ -692,6 +692,7 @@ import { runClosingAndTargetsAgreeTests } from "./closing-and-targets-agree.test
 import { runBusinessReviewPortalScopeTests } from "./business-review-portal-scope.test.ts";
 import { runBusinessReviewWindowAndCoverageTests } from "./business-review-window-and-coverage.test.ts";
 import { runBusinessReviewMonthEndTests } from "./business-review-month-end.test.ts";
+import { runBusinessReviewFitsTheScreenTests } from "./business-review-fits-the-screen.test.ts";
 import { runMonthlySalesRunTests } from "./monthly-sales-run.test.ts";
 import { runSosHeaderDetectionTests } from "./sos-header-detection.test.ts";
 import { runSalesStrictConformanceTests } from "./sales-strict-conformance.test.ts";
@@ -4474,6 +4475,10 @@ await runTest("brick drill-down follows the Fayoum/Beni Suef area merge (per lin
 await runTest(
   "business review window + coverage (a period with no data SAYS so and never renders a zero: Mar-Jun grade as \"not gradeable\" rather than 0%, a pre-August window reports no marketing rather than 0 EGP, a month whose distributor files have not landed is held out of the grade and named with the value it does hold rather than dragging Jan-Aug from 50.67% to 39.30%, every clamp announces itself, unplaceable rows are counted not dropped, and doctors are unioned at every level while rides land where the rep stood)",
   runBusinessReviewWindowAndCoverageTests,
+);
+await runTest(
+  "business review fits the screen (the admin half carried 22 tables with a min-width floor up to 980px inside five scrolling wrappers, in a ~720px content box; every table is now table-fixed with a colgroup that totals exactly 100% however many months or products the window holds, a phone gets cards, and no bare <table> is left to collect the admin shell's own overflow-x rule)",
+  runBusinessReviewFitsTheScreenTests,
 );
 await runTest(
   "business review month end (a window's upper date bound is the month's real last day: \"2026-09-31\" is not a date, Postgres refuses it, and the swallowed failure showed September's five coaching reports as zero; no source may hardcode day 28-31 in a bound)",

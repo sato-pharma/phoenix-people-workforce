@@ -274,4 +274,61 @@ export function runVisitCountGoldenRuleTests() {
     assert.doesNotMatch(ceo, />AM \/ PM split</, "never AM / PM joined with a slash");
     assert.match(ceo, /bg-emerald-600" style=\{\{ width: `\$\{share\(pharmacyVisits\)\}%` \}\}/, "pharmacies get their own segment of the bar");
   }
+
+  // ── Business Review, converted 2026-09-26 ─────────────────────────────────────────────────
+  //
+  // The last surface that counted a pharmacy as a doctor. Measured on production before the change:
+  // July 2026's "Doctors reached" read 7,364, of which 1,030 — one in seven — were pharmacies, and
+  // the single "Visits" figure folded in 1,680 pharmacy calls. Owner: "everything full detailed",
+  // so the split reaches the KPI tiles, every table, the role and people rows and the workbook.
+  {
+    const visits = readFileSync("src/lib/business-review/sources/visits.ts", "utf8");
+    assert.match(visits, /visitCountBucket\(\{/, "the review buckets through the one shared authority, never a second copy");
+    assert.match(visits, /ampm, contact_crm_id/, "its projection carries the period tag");
+    assert.match(visits, /speciality, visit_date, visit_type/, "and the contact speciality that marks a pharmacy");
+    assert.match(
+      visits,
+      /visitTypes: \[UNLABELLED_FIELD_VISIT_TYPE\]/,
+      "the vendor's -30 field visit carries no contact, so its comment is read by a second narrow query",
+    );
+    // THE CATCH-ALL. Contact 100000 is a slot the vendor writes when the rep named nobody. Every
+    // other CRM surface excludes it; this one did not, and added a phantom customer wherever it
+    // appeared (6 rows, one phantom doctor, September 2026).
+    assert.match(
+      visits,
+      /row\.contact_crm_id !== CATCH_ALL_CONTACT_CRM_ID/,
+      "the catch-all contact is excluded from the customer count, using the shared constant",
+    );
+    assert.doesNotMatch(visits, /=== 100000|!== 100000/, "by the constant, never a bare literal");
+
+    // Unlike Employee 360, this page files an unmarked period under PM, so the three buckets always
+    // sum to the visit total — its figures have to add up against the sales beside them.
+    const split = emptyVisitCountSplit();
+    for (const row of [
+      { ampm: "AM", speciality: "Surgery" },
+      { ampm: "PM", speciality: "Cardiology" },
+      { ampm: "PM", speciality: "Pharmacy" },
+      { ampm: "AM", speciality: "pharmacy" },
+      { ampm: null, speciality: "Cardiology" },
+    ]) addVisitToSplit(split, row);
+    assert.deepEqual(split, { am: 1, pm: 2, pharmacies: 2 }, "an unmarked period lands in PM here, so nothing falls out");
+    assert.equal(visitCountSplitTotal(split), 5, "and the three always sum to the total");
+
+    for (const [file, label] of [
+      ["src/components/business-review/dashboard.client.tsx", "the admin dashboard"],
+      ["src/components/business-review/portal-review.client.tsx", "the portal page"],
+      ["src/components/business-review/rollups.client.tsx", "the shared rollup tables"],
+      ["src/lib/business-review/excel-export.ts", "the workbook"],
+    ] as const) {
+      const src = readFileSync(file, "utf8");
+      assert.match(src, /formatVisitCountSplit/, `${label} formats the split with the shared formatter`);
+      assert.match(src, /AM · PM · Pharmacies/, `${label} names the three figures in the house wording`);
+      assert.doesNotMatch(src, /AM ?\/ ?PM/, `${label} must never join them with a slash`);
+      assert.doesNotMatch(
+        src,
+        /"Doctors reached"|>Doctors</,
+        `${label} must not print a union of accounts, doctors and pharmacies under the word "Doctors"`,
+      );
+    }
+  }
 }

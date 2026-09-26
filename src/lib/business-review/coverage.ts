@@ -80,7 +80,35 @@ export type ReviewCoverage = {
     value: number;
     rows: number;
     note: string;
+    /**
+     * What those months hold BESIDE sales — committed marketing, claimed outstation, visit rows and
+     * the people who made them.
+     *
+     * Owner ruling 2026-09-26. Before it, a held-out month's SALES were excluded and named here
+     * while its spend and visits stayed inside every total, so the page put three months of cost
+     * against two months of sales under one heading — on the default Jul–Sep 2026 window, 48.8% of
+     * committed marketing, 41.8% of outstation and 24.2% of field visits came from the month whose
+     * sales were not there. Both halves stop at the same month now, and this is where the rest is
+     * reported: named, never zeroed, never folded back into a total.
+     */
+    alsoHeldOut: {
+      marketingRequests: number;
+      marketingCommitted: number;
+      outstationRows: number;
+      outstationClaimed: number;
+      visitRows: number;
+      visitAgents: number;
+    } | null;
   } | null;
+  /**
+   * The span every figure on the page answers.
+   *
+   * Null when it is the whole requested window, which is the ordinary case. It is set only when the
+   * two differ — when the window reaches a month whose distributor files have not landed — and the
+   * header prints THIS label rather than the requested range, because naming a range a third of
+   * whose figures were never in it is the mislabel this field exists to end.
+   */
+  figureWindow: { label: string; periods: string[] } | null;
 };
 
 /** "2026-03, 2026-04 and 2026-05" — never an ellipsis, per the standing UI rule; a long run is
@@ -149,6 +177,7 @@ export function buildReviewCoverage(input: {
   sources: SourceCoverage[];
   adjustment: string | null;
   notUploaded?: ReviewCoverage["notUploaded"];
+  figureWindow?: ReviewCoverage["figureWindow"];
 }): ReviewCoverage {
   const byId = new Map(input.sources.map((s) => [s.source, s]));
   return {
@@ -160,7 +189,14 @@ export function buildReviewCoverage(input: {
     partialSources: input.sources.filter((s) => s.status === "partial").map((s) => s.source),
     adjustment: input.adjustment,
     notUploaded: input.notUploaded ?? null,
+    figureWindow: input.figureWindow ?? null,
   };
+}
+
+/** The span the page's figures answer, in words — the figure window when it is narrower than the
+ *  one that was asked for, otherwise the window itself. One place, so header and export agree. */
+export function figureWindowLabel(coverage: ReviewCoverage): string {
+  return coverage.figureWindow?.label ?? coverage.window.label;
 }
 
 /** True when a figure fed by this source may be rendered as a number. When false the UI must

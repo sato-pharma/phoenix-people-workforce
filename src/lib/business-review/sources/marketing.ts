@@ -42,8 +42,6 @@ export type MarketingLoad = {
   periodsWithData: string[];
   /** Every row the window returned, including the rejected and archived ones. */
   totalRows: number;
-  /** Requests whose requester carries no HR id at all, so they can reach no district. */
-  unattributableRows: number;
 };
 
 export async function loadMarketingFacts(window: ReviewWindow): Promise<MarketingLoad> {
@@ -64,12 +62,11 @@ export async function loadMarketingFacts(window: ReviewWindow): Promise<Marketin
   } catch {
     // A missing table or a transient read must not read as "spent nothing" — an empty load with
     // no periods makes the coverage layer report the source as empty, which is the truthful state.
-    return { facts: [], periodsWithData: [], totalRows: 0, unattributableRows: 0 };
+    return { facts: [], periodsWithData: [], totalRows: 0 };
   }
 
   const facts: MarketingFact[] = [];
   const periods = new Set<string>();
-  let unattributableRows = 0;
 
   for (const row of rows) {
     const payDate = String(row.pay_date ?? "");
@@ -78,7 +75,6 @@ export async function loadMarketingFacts(window: ReviewWindow): Promise<Marketin
     periods.add(period);
 
     const requesterHrId = String(row.requester_hr_id ?? "").trim();
-    if (!requesterHrId) unattributableRows += 1;
 
     const status = String(row.status ?? "");
     const cost = Number(row.estimated_cost ?? 0);
@@ -101,7 +97,6 @@ export async function loadMarketingFacts(window: ReviewWindow): Promise<Marketin
     facts,
     periodsWithData: [...periods].sort(),
     totalRows: facts.length,
-    unattributableRows,
   };
 }
 

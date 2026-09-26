@@ -45,8 +45,6 @@ export type OutstationLoad = {
   facts: OutstationFact[];
   periodsWithData: string[];
   totalRows: number;
-  /** Rows with no usable hr_id, so they can reach no person and no district. */
-  unattributableRows: number;
 };
 
 function money(value: unknown): number {
@@ -74,12 +72,11 @@ export async function loadOutstationFacts(window: ReviewWindow): Promise<Outstat
       "id",
     );
   } catch {
-    return { facts: [], periodsWithData: [], totalRows: 0, unattributableRows: 0 };
+    return { facts: [], periodsWithData: [], totalRows: 0 };
   }
 
   const facts: OutstationFact[] = [];
   const periods = new Set<string>();
-  let unattributableRows = 0;
 
   for (const row of rows) {
     const month = Number(row.payout_month ?? 0);
@@ -90,7 +87,6 @@ export async function loadOutstationFacts(window: ReviewWindow): Promise<Outstat
     periods.add(period);
 
     const hrId = String(row.hr_id ?? "").trim();
-    if (!hrId) unattributableRows += 1;
 
     const rejected = isRejectedStatus(row.status as string | null);
     const payable = payableExpenseAmount(
@@ -118,7 +114,6 @@ export async function loadOutstationFacts(window: ReviewWindow): Promise<Outstat
     facts,
     periodsWithData: [...periods].sort(),
     totalRows: facts.length,
-    unattributableRows,
   };
 }
 

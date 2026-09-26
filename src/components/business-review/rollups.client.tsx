@@ -35,6 +35,7 @@ import {
 } from "@/components/employee-portal/portal-primitives";
 import { cn } from "@/lib/utils";
 import type { ReviewPersonRow, ReviewRoleRow } from "@/lib/business-review/sources/roles";
+import { formatVisitCountSplit } from "@/lib/crm/visit-count-buckets";
 import { periodColumnLabel } from "@/lib/business-review/period-format";
 import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
 
@@ -112,10 +113,19 @@ export type CustomerAreaRow = {
   vacant: boolean;
   customersTotal: number;
   customersByMonth: Record<string, number>;
+  /** The window total, three ways — AM accounts · PM doctors · Pharmacies. Owner golden rule: a
+   *  pharmacy is never counted among the doctors, so the total alone cannot be called "doctors". */
+  customersAm: number;
+  customersPm: number;
+  customersPharmacy: number;
 };
 
+/** The three figures in the house wording, middle dot and never a slash. */
+const splitOf = (row: { customersAm: number; customersPm: number; customersPharmacy: number }) =>
+  formatVisitCountSplit({ am: row.customersAm, pm: row.customersPm, pharmacies: row.customersPharmacy });
+
 /**
- * Doctors reached per area, month by month.
+ * Customers reached per area, month by month — AM accounts, PM doctors and pharmacies apart.
  *
  * The window total is a UNION across the whole window, not the sum of the columns — a doctor seen
  * in both April and May is one customer for the window and one in each of those months. Reading
@@ -134,7 +144,7 @@ export function CustomersByAreaTable({
 }) {
   if (!visitsAvailable) {
     return (
-      <Panel title="Doctors reached by area, month by month">
+      <Panel title="Customers reached by area, month by month">
         <PanelNote>
           No CRM visit rows exist for this window, so no doctor can be counted. This is not zero doctors.
         </PanelNote>
@@ -150,11 +160,11 @@ export function CustomersByAreaTable({
 
   return (
     <Panel
-      note="window total is a union of the months, not their sum"
-      title="Doctors reached by area, month by month"
+      note="window total is a union of the months, not their sum · AM accounts, PM doctors and pharmacies apart"
+      title="Customers reached by area, month by month"
     >
       <PortalResponsiveDataList
-        empty={<PanelNote>No area in scope reached a doctor in this window.</PanelNote>}
+        empty={<PanelNote>No area in scope reached a customer in this window.</PanelNote>}
         getKey={(a) => `${a.line ?? ""}-${a.area}`}
         items={ranked}
         renderCard={(a) => (
@@ -177,6 +187,7 @@ export function CustomersByAreaTable({
             <dl className="mt-2 grid grid-cols-2 gap-2">
               {months.length > 1 && <Field label="Change" value={<Delta value={changeOf(a)} />} />}
               <Field label="Window (union)" tone="text-slate-950" value={num(a.customersTotal)} />
+              <Field label="AM · PM · Pharmacies" value={splitOf(a)} />
             </dl>
           </div>
         )}
@@ -246,7 +257,7 @@ export function CustomersByAreaTable({
  * visits they rode and the reps they rode with. Where a role cannot honestly be measured on either,
  * its row says why instead of showing a zero.
  */
-export function RoleActivityTable({ roles }: { roles: ReviewRoleRow[] }) {
+export function RoleActivityTable({ roles, scopeNote }: { roles: ReviewRoleRow[]; scopeNote?: string }) {
   if (roles.length === 0) {
     return (
       <Panel title="Activity by role">
@@ -257,7 +268,10 @@ export function RoleActivityTable({ roles }: { roles: ReviewRoleRow[] }) {
   const noted = roles.filter((r) => r.note);
 
   return (
-    <Panel note="visits, coaching rides and spend per job function" title="Activity by role">
+    <Panel
+      note={`visits, rides and spend per job function${scopeNote ? ` · ${scopeNote}` : ""}`}
+      title="Activity by role"
+    >
       <PortalResponsiveDataList
         empty={<PanelNote>No recorded activity for any role in this window.</PanelNote>}
         getKey={(r) => r.role}
@@ -276,8 +290,8 @@ export function RoleActivityTable({ roles }: { roles: ReviewRoleRow[] }) {
               <Field label="Campaign" value={num(r.campaignVisits)} />
               <Field label="Rides led" value={num(r.ridesLed)} />
               <Field label="Reps coached" value={num(r.repsCoached)} />
-              <Field label="Doctors" value={num(r.customersReached)} />
-              <Field label="Reports" value={num(r.coachingReports)} />
+              <Field label="Customers" value={num(r.customersReached)} />
+              <Field label="AM · PM · Pharmacies" value={splitOf(r)} />
               <Field label="Outstation" value={egp(r.outstationClaimed)} />
               <Field label="Marketing" value={egp(r.marketingCommitted)} />
             </dl>
@@ -315,8 +329,7 @@ export function RoleActivityTable({ roles }: { roles: ReviewRoleRow[] }) {
                 <th className={THR}>Campaign</th>
                 <th className={THR}>Rides led</th>
                 <th className={THR}>Reps coached</th>
-                <th className={THR}>Doctors</th>
-                <th className={THR}>Coaching reports</th>
+                <th className={THR}>AM · PM · Pharmacies</th>
                 <th className={THR}>Outstation</th>
                 <th className={THR}>Marketing</th>
               </tr>
@@ -332,8 +345,7 @@ export function RoleActivityTable({ roles }: { roles: ReviewRoleRow[] }) {
                   <td className={cn(TDR, "text-muted-foreground")}>{num(r.campaignVisits)}</td>
                   <td className={TDR}>{num(r.ridesLed)}</td>
                   <td className={cn(TDR, "text-muted-foreground")}>{num(r.repsCoached)}</td>
-                  <td className={TDR}>{num(r.customersReached)}</td>
-                  <td className={cn(TDR, "text-muted-foreground")}>{num(r.coachingReports)}</td>
+                  <td className={TDR}>{splitOf(r)}</td>
                   <td className={cn(TDR, "text-muted-foreground")}>{egp(r.outstationClaimed)}</td>
                   <td className={cn(TDR, "text-muted-foreground")}>{egp(r.marketingCommitted)}</td>
                 </tr>
@@ -358,7 +370,11 @@ export function RoleActivityTable({ roles }: { roles: ReviewRoleRow[] }) {
 }
 
 /** The individuals behind the role table, ranked by recorded fieldwork. */
-export function PeopleActivityTable({ people, limit = 40 }: { people: ReviewPersonRow[]; limit?: number }) {
+export function PeopleActivityTable({
+  people,
+  limit = 40,
+  scopeNote,
+}: { people: ReviewPersonRow[]; limit?: number; scopeNote?: string }) {
   if (people.length === 0) {
     return (
       <Panel title="People by recorded activity">
@@ -370,9 +386,9 @@ export function PeopleActivityTable({ people, limit = 40 }: { people: ReviewPers
   return (
     <Panel
       note={
-        people.length > shown.length
+        (people.length > shown.length
           ? `top ${shown.length} of ${num(people.length)} — the full list is in the Excel export`
-          : `${num(people.length)} people`
+          : `${num(people.length)} people`) + (scopeNote ? ` · ${scopeNote}` : "")
       }
       title="People by recorded activity"
     >
@@ -392,14 +408,17 @@ export function PeopleActivityTable({ people, limit = 40 }: { people: ReviewPers
                   {p.employmentStatus !== "active" ? ` · ${p.employmentStatus}` : ""}
                 </p>
               </div>
-              <span className="whitespace-nowrap text-xs font-black tabular-nums text-slate-400">#{i + 1}</span>
+              {/* `shrink-0` — the chip is `whitespace-nowrap`, so a flex parent that is allowed to
+                  shrink it hands it 13px for 21px of content and it hangs out of its own row. */}
+              <span className="shrink-0 whitespace-nowrap text-xs font-black tabular-nums text-slate-400">#{i + 1}</span>
             </div>
             <dl className="mt-2 grid grid-cols-3 gap-2">
               <Field label="Field visits" tone="text-slate-950" value={num(p.fieldVisits)} />
               <Field label="Per month" value={p.avgPerActiveMonth.toFixed(1)} />
               <Field label="Active months" value={num(p.activeMonths)} />
               <Field label="Rides led" value={num(p.ridesLed)} />
-              <Field label="Doctors" value={num(p.customers)} />
+              <Field label="Customers" value={num(p.customers)} />
+              <Field label="AM · PM · Pharmacies" value={splitOf(p)} />
               <Field label="Outstation" value={egp(p.outstationClaimed)} />
             </dl>
           </div>
@@ -428,7 +447,7 @@ export function PeopleActivityTable({ people, limit = 40 }: { people: ReviewPers
                 <th className={THR}>Field visits</th>
                 <th className={THR}>Per active month</th>
                 <th className={THR}>Rides led</th>
-                <th className={THR}>Doctors</th>
+                <th className={THR}>AM · PM · Pharmacies</th>
                 <th className={THR}>Active months</th>
                 <th className={THR}>Outstation</th>
               </tr>
@@ -449,7 +468,7 @@ export function PeopleActivityTable({ people, limit = 40 }: { people: ReviewPers
                   <td className={cn(TDR, "font-semibold")}>{num(p.fieldVisits)}</td>
                   <td className={TDR}>{p.avgPerActiveMonth.toFixed(1)}</td>
                   <td className={TDR}>{num(p.ridesLed)}</td>
-                  <td className={TDR}>{num(p.customers)}</td>
+                  <td className={TDR}>{splitOf(p)}</td>
                   <td className={cn(TDR, "text-muted-foreground")}>{num(p.activeMonths)}</td>
                   <td className={cn(TDR, "text-muted-foreground")}>{egp(p.outstationClaimed)}</td>
                 </tr>

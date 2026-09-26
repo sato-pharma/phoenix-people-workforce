@@ -14,7 +14,8 @@ import {
 } from "@/components/employee-portal/portal-primitives";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
-import { hasFigures, type ReviewCoverage } from "@/lib/business-review/coverage";
+import { figureWindowLabel, hasFigures, type ReviewCoverage } from "@/lib/business-review/coverage";
+import { formatVisitCountSplit } from "@/lib/crm/visit-count-buckets";
 import { periodColumnLabel } from "@/lib/business-review/period-format";
 import type { ReviewWindow } from "@/lib/business-review/period";
 import type { AreaSummary, CompanyLineRow, DmSummary, ProductRow } from "@/lib/business-review/types";
@@ -67,6 +68,17 @@ type Props = {
   mapGeneratedAt: string;
   /** Fallback when a DM row carries no own flag (single-line scopes). */
   visitsAvailable: boolean;
+  /**
+   * Committed marketing and claimed outstation for THIS VIEWER'S SCOPE, computed server-side.
+   *
+   * Passed rather than re-derived. This card summed the district rows on screen until 2026-09-26,
+   * and `getReviewCompanyDms` drops every seat with no target — so spend belonging to anyone who
+   * reaches no district seat vanished from it. Measured on production for Jul–Sep 2026: at least
+   * 29,692 EGP of outstation (45% of the window's claimed) and 11,900 EGP of marketing belong to
+   * HR ids that appear nowhere in the achievement rows as a rep or a DM — NSMs, product managers,
+   * trainers. The admin page's company tile counted them; this card did not.
+   */
+  spend: { marketing: number; outstation: number };
   /** The window every figure answers, and what the sources actually hold for it. */
   window: ReviewWindow;
   coverage: ReviewCoverage;
@@ -84,6 +96,12 @@ const pct = (n: number | null) => (n == null ? "—" : `${n.toFixed(1)}%`);
 const num = (n: number | null | undefined) => (n != null && Number.isFinite(n) ? n.toLocaleString("en-US") : "0");
 /** "no data", never a misleading 0, when the source holds no rows for this window. */
 const numOrNA = (n: number | null | undefined, available: boolean) => (available ? num(n) : "no data");
+/** AM · PM · Pharmacies, the house wording — middle dot, never a slash (owner golden rule). A
+ *  pharmacy is never counted among the PM doctors, so only the PM figure may be called doctors. */
+const splitOf = (row: { customersAm: number; customersPm: number; customersPharmacy: number }) =>
+  formatVisitCountSplit({ am: row.customersAm, pm: row.customersPm, pharmacies: row.customersPharmacy });
+const splitOrNA = (row: { customersAm: number; customersPm: number; customersPharmacy: number }, available: boolean) =>
+  available ? splitOf(row) : "no data";
 const egpOrNA = (n: number, available: boolean) => (available ? egp(n) : "no data");
 
 function achClass(a: number | null) {
@@ -146,7 +164,7 @@ const TABS = [
   { id: "performance", label: "Performance" },
   { id: "gaps", label: "Performance Gaps" },
   { id: "detail", label: "Detail" },
-  { id: "doctors", label: "Doctors" },
+  { id: "doctors", label: "Customers" },
 ] as const;
 type TabId = (typeof TABS)[number]["id"];
 
@@ -176,6 +194,7 @@ export function BusinessReviewPortal({
   months,
   productTables,
   scopeLabel,
+  spend: spendProp,
   thresholds,
   visitsAvailable,
   window: reviewWindow,
@@ -195,13 +214,26 @@ export function BusinessReviewPortal({
   // average of the per-area percentages, and never sum(sales)/sum(target) — sales on a product
   // with no target would lift the numerator against a denominator they never entered, which is
   // exactly how the admin headline came to read 130.73% for a 50.67% window.
+  //
+  // Summing the areas is EXACT, not an approximation, and only since 2026-09-26. Each area's
+  // `graded` is now taken against its own LINE's targeted months (the owner's ruling; see
+  // BuildContext.gradedPeriods in canonical.ts), so these rows add up to the line they came from
+  // and this card agrees with the admin page's headline. While each area decided its own graded
+  // months, it did not: for Jul–Aug 2026 this card read 70.12% where the admin page read 74.35%,
+  // 1,598,667 EGP of sales apart, and two district managers saw a grade up to 7.2 points below
+  // the one in the DSM league table their own review was being run from.
   const totals = useMemo(() => {
     const sales = areas.reduce((sum, a) => sum + a.allProducts.sales, 0);
     const target = areas.reduce((sum, a) => sum + a.allProducts.target, 0);
     const graded = areas.reduce((sum, a) => sum + a.allProducts.graded, 0);
-    const spend = dms.reduce((sum, d) => sum + d.marketingCost + d.outstationCost, 0);
-    return { ach: target > 0 ? (100 * graded) / target : null, sales, spend, target };
-  }, [areas, dms]);
+    return {
+      ach: target > 0 ? (100 * graded) / target : null,
+      sales,
+      // From the server, at the right level — never re-derived from the district rows on screen.
+      spend: spendProp.marketing + spendProp.outstation,
+      target,
+    };
+  }, [areas, spendProp]);
 
   const graded = useMemo(() => areas.filter((a) => a.hasTarget && a.allProducts.ach != null), [areas]);
   const earners = useMemo(() => graded.filter((a) => !a.vacant && (a.allProducts.ach ?? 0) >= 90), [graded]);
@@ -357,7 +389,8 @@ export function BusinessReviewPortal({
                         { label: "Earners", value: num(row.earners) },
                         { label: "Areas", value: `${num(row.areas)} · ${num(row.areasVacant)} vacant` },
                         { label: "Marketing", value: egp(row.marketingCost) },
-                        { label: "Doctors", value: numOrNA(row.customersTotal, row.visitsAvailable) },
+                        { label: "Customers", value: numOrNA(row.customersTotal, row.visitsAvailable) },
+                        { label: "AM · PM · Pharmacies", value: splitOrNA(row, row.visitsAvailable) },
                       ]}
                     />
                   </div>
@@ -388,7 +421,7 @@ export function BusinessReviewPortal({
                         <th className={THR}>Areas</th>
                         <th className={THR}>Vacant</th>
                         <th className={THR}>Marketing</th>
-                        <th className={THR}>Doctors</th>
+                        <th className={THR}>AM · PM · Pharmacies</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -404,7 +437,7 @@ export function BusinessReviewPortal({
                           <td className={TDR}>{num(row.areas)}</td>
                           <td className={cn(TDR, "text-slate-500")}>{num(row.areasVacant)}</td>
                           <td className={cn(TDR, "text-slate-500")}>{egp(row.marketingCost)}</td>
-                          <td className={TDR}>{numOrNA(row.customersTotal, row.visitsAvailable)}</td>
+                          <td className={TDR}>{splitOrNA(row, row.visitsAvailable)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -447,7 +480,8 @@ export function BusinessReviewPortal({
                         { label: "Target", value: egp(row.allProducts.target) },
                         { label: "Areas", value: num(row.areas.length) },
                         { label: "Visits/mo", value: numOrNA(row.visitsAvgPerMonth, visitsOf(row)) },
-                        { label: "Doctors", value: numOrNA(row.customersTotal, visitsOf(row)) },
+                        { label: "Customers", value: numOrNA(row.customersTotal, visitsOf(row)) },
+                        { label: "AM · PM · Pharmacies", value: splitOrNA(row, visitsOf(row)) },
                       ]}
                     />
                   </div>
@@ -480,7 +514,7 @@ export function BusinessReviewPortal({
                         <th className={THR}>Target</th>
                         <th className={THR}>Areas</th>
                         <th className={THR}>Visits/mo</th>
-                        <th className={THR}>Doctors</th>
+                        <th className={THR}>AM · PM · Pharmacies</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -506,7 +540,7 @@ export function BusinessReviewPortal({
                           <td className={cn(TDR, "text-slate-500")}>{egp(row.allProducts.target)}</td>
                           <td className={TDR}>{num(row.areas.length)}</td>
                           <td className={TDR}>{numOrNA(row.visitsAvgPerMonth, visitsOf(row))}</td>
-                          <td className={TDR}>{numOrNA(row.customersTotal, visitsOf(row))}</td>
+                          <td className={TDR}>{splitOrNA(row, visitsOf(row))}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -1047,6 +1081,9 @@ export function BusinessReviewPortal({
               dm: row.dm,
               vacant: row.vacant,
               customersTotal: row.customersTotal,
+              customersAm: row.customersAm,
+              customersPm: row.customersPm,
+              customersPharmacy: row.customersPharmacy,
               customersByMonth: row.customersByMonth,
             }))}
             months={months}
@@ -1058,8 +1095,8 @@ export function BusinessReviewPortal({
 
       <p className="px-1 text-phx-xs font-semibold leading-5 text-slate-400">
         Territory resolved from the live organogram seat map, read {mapGeneratedAt.slice(0, 10)}. Figures are the
-        actuals for {reviewWindow.label} and are not restated when a seat changes hands, so an area shown as vacant for this
-        window may have an occupant today.
+        actuals for {figureWindowLabel(coverage)} and are not restated when a seat changes hands, so an area shown as
+        vacant for this window may have an occupant today.
       </p>
     </div>
   );

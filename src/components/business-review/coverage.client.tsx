@@ -20,6 +20,7 @@ import { AlertTriangle, CircleAlert, Info } from "lucide-react";
 
 import { describePeriods, type ReviewCoverage, type SourceCoverage } from "@/lib/business-review/coverage";
 import { periodLabel } from "@/lib/business-review/period-format";
+import { PortalDesktopTable, PortalResponsiveDataList } from "@/components/employee-portal/portal-primitives";
 import { cn } from "@/lib/utils";
 import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
 
@@ -93,10 +94,22 @@ export function HardEmptyWindow({
  */
 export function CoverageBanner({ coverage }: { coverage: ReviewCoverage }) {
   const flagged = coverage.sources.filter((s) => s.status !== "complete");
-  if (flagged.length === 0 && !coverage.adjustment) return null;
+  if (flagged.length === 0 && !coverage.adjustment && !coverage.figureWindow) return null;
 
   return (
     <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+      {/* Said FIRST, in one sentence, because it governs every number underneath. Sales, spend,
+          visits and doctors all stop at the same month now (owner ruling 2026-09-26); before that
+          they did not, and the heading named a range a third of whose figures were never in it. */}
+      {coverage.figureWindow && (
+        <div className="flex items-start gap-2.5">
+          <Info aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+          <p className="text-sm font-semibold text-amber-900">
+            Every figure below covers {coverage.figureWindow.label}, not the whole of{" "}
+            {coverage.window.label} — sales, spend and field activity all stop at the same month.
+          </p>
+        </div>
+      )}
       {coverage.adjustment && (
         <div className="flex items-start gap-2.5">
           <Info aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
@@ -144,13 +157,13 @@ export type CoverageProvenance = {
   };
   visitsCollapsed: number;
   visitsFromExcludedAgents: number;
-  coachingReports: number;
-  coachingCoaches: number;
 };
 
 const TH = "px-3 py-2 text-left text-phx-xs font-bold uppercase tracking-wide text-muted-foreground";
 const THR = "px-3 py-2 text-right text-phx-xs font-bold uppercase tracking-wide text-muted-foreground";
 const TD = "px-3 py-2 align-top text-sm";
+/** One line of muted prose where a table would otherwise be empty. */
+const EMPTY_LINE = "px-3 py-4 text-sm text-muted-foreground";
 const TDR = "px-3 py-2 align-top text-sm text-right tabular-nums";
 
 function Panel({ title, note, children }: { title: string; note?: string; children: React.ReactNode }) {
@@ -160,9 +173,45 @@ function Panel({ title, note, children }: { title: string; note?: string; childr
         <h2 className="text-sm font-bold">{title}</h2>
         {note && <span className="text-xs text-muted-foreground">{note}</span>}
       </div>
-      <div className="overflow-x-auto p-1">{children}</div>
+      {/* No scroll wrapper. Every table inside is `table-fixed` with a percentage colgroup, so it
+          divides the container instead of overflowing it, and a phone gets cards rather than a
+          table at all. Note that removing the class is not by itself the fix in the admin shell:
+          app/globals.css gives ANY element with a direct <table> child `overflow-x: auto`, whatever
+          its class list says — which is exactly why the fix has to be structural. */}
+      <div className="p-1">{children}</div>
     </div>
   );
+}
+
+/**
+ * The four "reached no unit" rows, as data — so the phone cards and the desktop table are two
+ * renderings of one list rather than two lists that have to be kept in step by hand.
+ */
+function unplacedRows(unplaced: CoverageProvenance["unplaced"]): { what: string; count: string; why: string }[] {
+  return [
+    {
+      what: "Marketing requests with no district",
+      count: num(unplaced.marketingRequests) + (unplaced.marketingCommitted > 0 ? ` · ${egp(unplaced.marketingCommitted)}` : ""),
+      why: "In the company total, absent from every district row below it.",
+    },
+    {
+      what: "Outstation claims with no district",
+      count: num(unplaced.outstationRows) + (unplaced.outstationClaimed > 0 ? ` · ${egp(unplaced.outstationClaimed)}` : ""),
+      why: "Same: real spend, in the company total, on nobody's district line.",
+    },
+    {
+      what: "Visit rows with no HR id",
+      count: num(unplaced.visitRows),
+      why: "Real fieldwork the mirror could not attribute to a person, so it reaches no area.",
+    },
+    {
+      what: "People placed from today's org tree",
+      count: num(unplaced.liveTreePlacedFacts),
+      why:
+        "Carried no sales in the window, so their district comes from where they sit today rather " +
+        "than from that month's own attribution.",
+    },
+  ];
 }
 
 /**
@@ -185,65 +234,133 @@ export function CoverageTab({
   return (
     <div className="space-y-4">
       <Panel title="Sources for this window" note={coverage.window.label}>
-        <table className="w-full min-w-[900px] border-collapse">
-          <thead>
-            <tr className="border-b border-border">
-              <th className={TH}>Metric</th>
-              <th className={TH}>Status</th>
-              <th className={THR}>Rows</th>
-              <th className={TH}>Where it comes from</th>
-              <th className={TH}>What counts</th>
-              <th className={TH}>Months without data</th>
-            </tr>
-          </thead>
-          <tbody>
-            {coverage.sources.map((s) => (
-              <tr key={s.source} className="border-b border-border/60 last:border-0">
-                <td className={cn(TD, "font-semibold")}>{s.label}</td>
-                <td className={TD}>
-                  <CoverageStatusChip status={s.status} />
-                </td>
-                <td className={TDR}>{num(s.rows)}</td>
-                <td className={cn(TD, "text-muted-foreground")}>{s.origin}</td>
-                <td className={cn(TD, "max-w-[26rem] text-muted-foreground")}>{s.rule}</td>
-                <td className={cn(TD, "text-muted-foreground")}>
-                  {s.periodsWithoutData.length === 0 ? "None" : describePeriods(s.periodsWithoutData)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <PortalResponsiveDataList
+          breakpoint="lg"
+          empty={<p className={EMPTY_LINE}>This window holds no sources at all.</p>}
+          getKey={(s) => s.source}
+          items={coverage.sources}
+          renderCard={(s) => (
+            <div className="space-y-1.5 px-4 py-3.5">
+              <div className="flex items-start justify-between gap-3">
+                <h3 className="min-w-0 break-words text-sm font-bold">{s.label}</h3>
+                <CoverageStatusChip status={s.status} />
+              </div>
+              <p className="text-phx-xs text-muted-foreground">
+                {num(s.rows)} rows · {s.origin}
+              </p>
+              <p className="break-words text-phx-xs text-muted-foreground">{s.rule}</p>
+              <p className="break-words text-phx-xs text-muted-foreground">
+                Months without data:{" "}
+                {s.periodsWithoutData.length === 0 ? "None" : describePeriods(s.periodsWithoutData)}
+              </p>
+            </div>
+          )}
+          renderTable={() => (
+            <PortalDesktopTable
+              breakpoint="lg"
+              cols={
+                <colgroup>
+                  <col className="w-[14%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[7%]" />
+                  <col className="w-[23%]" />
+                  <col className="w-[32%]" />
+                  <col className="w-[14%]" />
+                </colgroup>
+              }
+            >
+              <thead>
+                <tr className="border-b border-border">
+                  <th className={TH}>Metric</th>
+                  <th className={TH}>Status</th>
+                  <th className={THR}>Rows</th>
+                  <th className={TH}>Where it comes from</th>
+                  <th className={TH}>What counts</th>
+                  <th className={TH}>Months without data</th>
+                </tr>
+              </thead>
+              <tbody>
+                {coverage.sources.map((s) => (
+                  <tr key={s.source} className="border-b border-border/60 last:border-0">
+                    <td className={cn(TD, "break-words font-semibold")}>{s.label}</td>
+                    <td className={TD}>
+                      <CoverageStatusChip status={s.status} />
+                    </td>
+                    <td className={TDR}>{num(s.rows)}</td>
+                    <td className={cn(TD, "break-words text-muted-foreground")}>{s.origin}</td>
+                    <td className={cn(TD, "break-words text-muted-foreground")}>{s.rule}</td>
+                    <td className={cn(TD, "break-words text-muted-foreground")}>
+                      {s.periodsWithoutData.length === 0 ? "None" : describePeriods(s.periodsWithoutData)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </PortalDesktopTable>
+          )}
+        />
       </Panel>
 
       <Panel title="Gradeability by line" note="achievement is covered actual ÷ target — never actual ÷ target">
-        <table className="w-full min-w-[820px] border-collapse">
-          <thead>
-            <tr className="border-b border-border">
-              <th className={TH}>Line</th>
-              <th className={THR}>Sales with a target</th>
-              <th className={THR}>Sales with no target</th>
-              <th className={TH}>Months graded</th>
-              <th className={TH}>Months value-only</th>
-            </tr>
-          </thead>
-          <tbody>
-            {provenance.lines.map((l) => (
-              <tr key={l.label} className="border-b border-border/60 last:border-0">
-                <td className={cn(TD, "font-semibold")}>{l.label}</td>
-                <td className={TDR}>{egp(l.coveredValue)}</td>
-                <td className={cn(TDR, l.uncoveredValue > 0 && "font-semibold text-amber-700")}>
-                  {egp(l.uncoveredValue)}
-                </td>
-                <td className={cn(TD, "text-muted-foreground")}>
-                  {l.periodsWithTarget.length === 0 ? "None" : describePeriods(l.periodsWithTarget)}
-                </td>
-                <td className={cn(TD, "text-muted-foreground")}>
-                  {l.periodsWithoutTarget.length === 0 ? "None" : describePeriods(l.periodsWithoutTarget)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <PortalResponsiveDataList
+          empty={<p className={EMPTY_LINE}>No line carried sales in this window.</p>}
+          getKey={(l) => l.label}
+          items={provenance.lines}
+          renderCard={(l) => (
+            <div className="space-y-1.5 px-4 py-3.5">
+              <h3 className="text-sm font-bold">{l.label}</h3>
+              <p className="text-phx-xs text-muted-foreground">
+                With a target {egp(l.coveredValue)} · without {egp(l.uncoveredValue)}
+              </p>
+              <p className="break-words text-phx-xs text-muted-foreground">
+                Graded: {l.periodsWithTarget.length === 0 ? "None" : describePeriods(l.periodsWithTarget)}
+              </p>
+              <p className="break-words text-phx-xs text-muted-foreground">
+                Value only:{" "}
+                {l.periodsWithoutTarget.length === 0 ? "None" : describePeriods(l.periodsWithoutTarget)}
+              </p>
+            </div>
+          )}
+          renderTable={() => (
+            <PortalDesktopTable
+              cols={
+                <colgroup>
+                  <col className="w-[16%]" />
+                  <col className="w-[17%]" />
+                  <col className="w-[17%]" />
+                  <col className="w-[25%]" />
+                  <col className="w-[25%]" />
+                </colgroup>
+              }
+            >
+              <thead>
+                <tr className="border-b border-border">
+                  <th className={TH}>Line</th>
+                  <th className={THR}>Sales with a target</th>
+                  <th className={THR}>Sales with no target</th>
+                  <th className={TH}>Months graded</th>
+                  <th className={TH}>Months value-only</th>
+                </tr>
+              </thead>
+              <tbody>
+                {provenance.lines.map((l) => (
+                  <tr key={l.label} className="border-b border-border/60 last:border-0">
+                    <td className={cn(TD, "break-words font-semibold")}>{l.label}</td>
+                    <td className={TDR}>{egp(l.coveredValue)}</td>
+                    <td className={cn(TDR, l.uncoveredValue > 0 && "font-semibold text-amber-700")}>
+                      {egp(l.uncoveredValue)}
+                    </td>
+                    <td className={cn(TD, "break-words text-muted-foreground")}>
+                      {l.periodsWithTarget.length === 0 ? "None" : describePeriods(l.periodsWithTarget)}
+                    </td>
+                    <td className={cn(TD, "break-words text-muted-foreground")}>
+                      {l.periodsWithoutTarget.length === 0 ? "None" : describePeriods(l.periodsWithoutTarget)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </PortalDesktopTable>
+          )}
+        />
         <p className="px-3 pb-3 pt-1 text-xs text-muted-foreground">
           A month with sales and no target is shown by value and is not graded. No run-rate is estimated in
           its place — loading its targets is what makes it gradeable.
@@ -252,52 +369,46 @@ export function CoverageTab({
 
       <Panel title="Rows that reached no unit" note="counted here, never folded into a total">
         {anyUnplaced ? (
-          <table className="w-full min-w-[720px] border-collapse">
-            <thead>
-              <tr className="border-b border-border">
-                <th className={TH}>What</th>
-                <th className={THR}>Count</th>
-                <th className={TH}>Why it matters</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr className="border-b border-border/60">
-                <td className={cn(TD, "font-semibold")}>Marketing requests with no district</td>
-                <td className={TDR}>
-                  {num(unplaced.marketingRequests)}
-                  {unplaced.marketingCommitted > 0 ? ` · ${egp(unplaced.marketingCommitted)}` : ""}
-                </td>
-                <td className={cn(TD, "text-muted-foreground")}>
-                  In the company total, absent from every district row below it.
-                </td>
-              </tr>
-              <tr className="border-b border-border/60">
-                <td className={cn(TD, "font-semibold")}>Outstation claims with no district</td>
-                <td className={TDR}>
-                  {num(unplaced.outstationRows)}
-                  {unplaced.outstationClaimed > 0 ? ` · ${egp(unplaced.outstationClaimed)}` : ""}
-                </td>
-                <td className={cn(TD, "text-muted-foreground")}>
-                  Same: real spend, in the company total, on nobody&apos;s district line.
-                </td>
-              </tr>
-              <tr className="border-b border-border/60">
-                <td className={cn(TD, "font-semibold")}>Visit rows with no HR id</td>
-                <td className={TDR}>{num(unplaced.visitRows)}</td>
-                <td className={cn(TD, "text-muted-foreground")}>
-                  Real fieldwork the mirror could not attribute to a person, so it reaches no area.
-                </td>
-              </tr>
-              <tr className="border-b border-border/60 last:border-0">
-                <td className={cn(TD, "font-semibold")}>People placed from today&apos;s org tree</td>
-                <td className={TDR}>{num(unplaced.liveTreePlacedFacts)}</td>
-                <td className={cn(TD, "text-muted-foreground")}>
-                  Carried no sales in the window, so their district comes from where they sit today rather
-                  than from that month&apos;s own attribution.
-                </td>
-              </tr>
-            </tbody>
-          </table>
+          <PortalResponsiveDataList
+            empty={<p className={EMPTY_LINE}>Every row in this window reached a unit.</p>}
+            getKey={(row) => row.what}
+            items={unplacedRows(unplaced)}
+            renderCard={(row) => (
+              <div className="space-y-1 px-4 py-3.5">
+                <h3 className="min-w-0 break-words text-sm font-bold">{row.what}</h3>
+                <p className="text-phx-xs font-semibold tabular-nums">{row.count}</p>
+                <p className="break-words text-phx-xs text-muted-foreground">{row.why}</p>
+              </div>
+            )}
+            renderTable={() => (
+              <PortalDesktopTable
+                cols={
+                  <colgroup>
+                    <col className="w-[32%]" />
+                    <col className="w-[16%]" />
+                    <col className="w-[52%]" />
+                  </colgroup>
+                }
+              >
+                <thead>
+                  <tr className="border-b border-border">
+                    <th className={TH}>What</th>
+                    <th className={THR}>Count</th>
+                    <th className={TH}>Why it matters</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {unplacedRows(unplaced).map((row) => (
+                    <tr key={row.what} className="border-b border-border/60 last:border-0">
+                      <td className={cn(TD, "break-words font-semibold")}>{row.what}</td>
+                      <td className={TDR}>{row.count}</td>
+                      <td className={cn(TD, "break-words text-muted-foreground")}>{row.why}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </PortalDesktopTable>
+            )}
+          />
         ) : (
           <p className="px-3 py-4 text-sm text-muted-foreground">
             Every marketing request, outstation claim and visit row in this window reached a district.
@@ -334,14 +445,6 @@ export function CoverageTab({
           <Fact
             term="Resigned agents"
             detail={`${num(provenance.visitsFromExcludedAgents)} visit rows belong to agents on the resigned/excluded floor. They are INCLUDED on purpose — a rep who left in March still worked in January, and dropping them would quietly shrink a past month.`}
-          />
-          <Fact
-            term="Coaching reports"
-            detail={
-              provenance.coachingReports === 0
-                ? "No coaching reports were filed in this window."
-                : `${num(provenance.coachingReports)} reports from ${num(provenance.coachingCoaches)} coach${provenance.coachingCoaches === 1 ? "" : "es"}.`
-            }
           />
           <Fact
             term="Timezone"

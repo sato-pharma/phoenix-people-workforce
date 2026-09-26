@@ -169,8 +169,21 @@ import { stripComments } from "./support/comment-strip.ts";
  * shorthand — and became `overflow-y-auto`: who's online, adoption, anomalies and the timeline
  * drawer. The drawer's new page trail deliberately adds no scroller of its own; it collapses and
  * pages instead, because a second scroller inside a scrolling drawer hides content.
+ *
+ * 229 -> 223 on 2026-09-26: the Business Review module, admin half and Coverage tab. Twenty-five
+ * tables carrying a `min-w-[…]` floor as wide as 980px inside a ~720px content box, under six
+ * scrolling wrappers — the last large unretired cluster in `src/components/`. Every one now goes
+ * through `PortalDesktopTable` with a percentage `<colgroup>` beside a mobile card list, fitting by
+ * MERGING: the DSM league went from ten columns to seven and the company one from twelve to eight,
+ * marketing and expenses share a Spend cell, the band rides under its own achievement, and the
+ * per-product columns (fifteen of them on CNS) became one wrapped cell. Six sites rather than
+ * twenty-five, because the shared `Section` wrapper and the four inline
+ * `<div className="overflow-x-auto">`s were all this ratchet could see; the floors themselves are
+ * counted by nothing here, which is why `tests/business-review-fits-the-screen.test.ts` exists to
+ * pin them. Note what that gap means in general: a file can shed twenty min-width floors and move
+ * this number by one.
  */
-const BASELINE = 229;
+const BASELINE = 223;
 
 /**
  * app/ and src/components/ are where UI class strings live. src/lib/ is excluded on

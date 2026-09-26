@@ -18,6 +18,8 @@
 // every field nullable would push the same decision into a hundred render sites, and one missed
 // `?? 0` would silently print the accusation this module exists to prevent.
 
+import type { VisitCountSplit } from "@/lib/crm/visit-count-buckets";
+
 import type { ReviewCoverage } from "./coverage";
 import type { ReviewWindow } from "./period";
 import type { ReviewPersonRow, ReviewRoleRow } from "./sources/roles";
@@ -44,6 +46,13 @@ export type { ReviewPersonRow, ReviewRoleRow } from "./sources/roles";
  * The second rule is the closing's own "ALL MONTHS" row, and it exists because this page spans a
  * WINDOW while the closing covers one month. Mar–Jun 2026 hold sales and no target: counting them
  * against the targeted months' targets reads 77.55% where the closing's rule reads 35.26%.
+ *
+ * WHOSE TARGET DECIDES — THE LINE'S. Owner ruling 2026-09-26. The closing grades a LINE, so "did
+ * this month carry a target" is asked once per line and the answer is used at every grain beneath
+ * it: area, district, product, quarter. Every grain used to ask it of itself, which made the
+ * grains stop adding up — summing the areas of a line landed below the line, and the portal (which
+ * sums the viewer's own areas) read 70.12% for Jul–Aug 2026 against the admin page's 74.35%.
+ * `BuildContext.gradedPeriods` in canonical.ts is where that one set is made.
  *
  * This field was called `covered` until 2026-09-05 and meant "actual on a key that HAS a target" —
  * the first rule inverted. It was renamed rather than quietly redefined, because a numerator that
@@ -79,6 +88,9 @@ export type AreaSummary = {
 
   // ── Live field activity for the reps placed in this area, month by month ──
   visits: number;
+  /** Field visits split AM · PM · Pharmacies — the owner's golden rule, 2026-09-21. The three sum
+   *  to `visits`; a pharmacy is never counted among the PM doctors. */
+  visitSplit: VisitCountSplit;
   regularVisits: number;
   campaignVisits: number;
   visitsByMonth: Record<string, number>;
@@ -88,6 +100,10 @@ export type AreaSummary = {
    *  A union of the doctors a regular visit named, never a sum across reps. */
   customersTotal: number;
   customersByMonth: Record<string, number>;
+  /** The customers above, three ways. Only `customersPm` may be called doctors. Unions, not sums. */
+  customersAm: number;
+  customersPm: number;
+  customersPharmacy: number;
   outstationClaimed: number;
   outstationApproved: number;
   marketingCommitted: number;
@@ -128,6 +144,9 @@ export type DmSummary = {
   /** Rides this manager personally delivered. Their own coaching output, not the district's. */
   doubleVisitsLed: number;
   visits: number;
+  /** Field visits split AM · PM · Pharmacies — the owner's golden rule, 2026-09-21. The three sum
+   *  to `visits`; a pharmacy is never counted among the PM doctors. */
+  visitSplit: VisitCountSplit;
   regularVisits: number;
   campaignVisits: number;
   visitsAvgPerMonth: number;
@@ -136,6 +155,10 @@ export type DmSummary = {
   achByMonthActive: Record<string, number | null>;
   customersTotal: number;
   customersByMonth: Record<string, number>;
+  /** The customers above, three ways. Only `customersPm` may be called doctors. Unions, not sums. */
+  customersAm: number;
+  customersPm: number;
+  customersPharmacy: number;
 };
 
 export type ProductRow = {
@@ -161,6 +184,9 @@ export type LineSummary = {
   outstationCost: number;
   outstationApproved: number;
   visits: number;
+  /** Field visits split AM · PM · Pharmacies — the owner's golden rule, 2026-09-21. The three sum
+   *  to `visits`; a pharmacy is never counted among the PM doctors. */
+  visitSplit: VisitCountSplit;
   regularVisits: number;
   campaignVisits: number;
   doubleVisits: number;
@@ -171,6 +197,10 @@ export type LineSummary = {
   visitingReps: number;
   customersTotal: number;
   customersByMonth: Record<string, number>;
+  /** The customers above, three ways. Only `customersPm` may be called doctors. Unions, not sums. */
+  customersAm: number;
+  customersPm: number;
+  customersPharmacy: number;
 };
 
 export type MarketingSummary = {
@@ -217,11 +247,18 @@ export type VisitsSummary = {
   /** False when this window holds no CRM visit rows at all — "no data", never "zero visits". */
   available: boolean;
   totalDeduped: number;
+  /** Field visits split AM · PM · Pharmacies — the owner's golden rule, 2026-09-21. The three sum
+   *  to `visits`; a pharmacy is never counted among the PM doctors. */
+  visitSplit: VisitCountSplit;
   reps: number;
   avgPerRepPerMonth: number;
   byMonth: Record<string, number>;
   customersTotal: number;
   customersByMonth: Record<string, number>;
+  /** The customers above, three ways. Only `customersPm` may be called doctors. Unions, not sums. */
+  customersAm: number;
+  customersPm: number;
+  customersPharmacy: number;
   byDM: Record<string, { visits: number; avgPerMonth: number; byMonth: Record<string, number> }>;
   /** Share of this line's visiting reps that resolve to a district, 0..1. */
   repToDmCoverage: number;
@@ -247,6 +284,16 @@ export type ReviewMeta = {
 
 export type ReviewDataset = {
   meta: ReviewMeta;
+  /**
+   * Activity by role and by person, SCOPED TO THIS LINE.
+   *
+   * The line view rendered the company-wide tables here until 2026-09-26, with no caption — so
+   * "Pedia Line — Deep Analysis" ended with every rep, manager and Head-Office person in the
+   * business, and a reader took those rows for Pedia's. The company view keeps its own set on
+   * ReviewCompany.
+   */
+  roles: ReviewRoleRow[];
+  people: ReviewPersonRow[];
   line: LineSummary;
   products: ProductRow[];
   dms: DmSummary[];
@@ -267,9 +314,16 @@ export type CompanyLineRow = {
   outstationCost: number;
   outstationApproved: number;
   visits: number;
+  /** Field visits split AM · PM · Pharmacies — the owner's golden rule, 2026-09-21. The three sum
+   *  to `visits`; a pharmacy is never counted among the PM doctors. */
+  visitSplit: VisitCountSplit;
   visitsAvailable: boolean;
   doubleVisits: number;
   customersTotal: number;
+  /** The customers above, three ways. Only `customersPm` may be called doctors. Unions, not sums. */
+  customersAm: number;
+  customersPm: number;
+  customersPharmacy: number;
   dms: number;
   dmsVacant: number;
   areas: number;
@@ -289,6 +343,10 @@ export type CompanyDmRow = {
   outstationCost: number;
   visitsAvgPerMonth: number;
   customersTotal: number;
+  /** The customers above, three ways. Only `customersPm` may be called doctors. Unions, not sums. */
+  customersAm: number;
+  customersPm: number;
+  customersPharmacy: number;
   doubleVisits: number;
   visitsAvailable: boolean;
 };
@@ -314,10 +372,21 @@ export type ReviewCompany = {
     outstationCost: number;
     outstationApproved: number;
     visits: number;
+    /** Field visits AM · PM · Pharmacies, company-wide. Sums to `visits`. */
+    visitSplit: VisitCountSplit;
     doubleVisits: number;
+    /** Reps with SALES. Never the visit denominator — see `visitingReps`. */
     reps: number;
+    /** Distinct reps who logged a field visit, a UNION across lines. The figure a visit count is
+     *  actually per: the company tile printed `reps` (85 on Jul–Aug 2026) beside a visit total made
+     *  by 122 people, which reads 44% too high per rep. */
+    visitingReps: number;
     customersTotal: number;
     customersByMonth: Record<string, number>;
+    /** The company customers, three ways. Unions across lines, never sums. */
+    customersAm: number;
+    customersPm: number;
+    customersPharmacy: number;
     /** Sum of the lines' own doctor counts — above `customersTotal` by the cross-line overlap. */
     customersNaiveSum: number;
     customersOverlap: number;
@@ -333,11 +402,3 @@ export type ReviewCompany = {
   people: ReviewPersonRow[];
 };
 
-/** Everything a page needs to render one window: the data, the window it answers, and an honest
- *  account of what the window does and does not hold. */
-export type BusinessReviewData = {
-  window: ReviewWindow;
-  coverage: ReviewCoverage;
-  company: ReviewCompany;
-  datasets: Record<string, ReviewDataset>;
-};

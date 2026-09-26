@@ -61,6 +61,7 @@ import {
 import { listMonthlyClosingPeriods } from "@/lib/sales/monthly-distributor-import";
 import {
   emptyTotals,
+  gradedPeriodsOf,
   loadAchievementRange,
   loadUploadedPeriodsInRange,
   totalRows,
@@ -79,17 +80,26 @@ import {
   periodColumnLabels,
   quartersInWindow,
   resolveReviewWindow,
+  windowLabel,
   type ReviewWindow,
 } from "./period";
 import { buildAttributionMap, hrKey, type AttributionMap, type Placement } from "./sources/attribution";
 import { MARKETING_ORIGIN, MARKETING_RULE, loadMarketingFacts, type MarketingLoad } from "./sources/marketing";
 import { OUTSTATION_ORIGIN, OUTSTATION_RULE, loadOutstationFacts, type OutstationLoad } from "./sources/outstation";
-import { buildOverlays, type ReviewOverlay, type ReviewOverlays, type UnplacedTotals } from "./sources/rollup";
 import {
-  COACHING_ORIGIN,
+  buildOverlays,
+  type HeldOutTotals,
+  type ReviewOverlay,
+  type ReviewOverlays,
+  type UnplacedTotals,
+} from "./sources/rollup";
+import {
   ROLES_ORIGIN,
-  loadRoleFacts,
+  buildRoleFacts,
+  loadLineIdByCode,
+  loadReviewDirectory,
   type ReviewDirectory,
+  type RoleFacts,
   type RolesLoad,
 } from "./sources/roles";
 import {
@@ -113,6 +123,9 @@ import type {
 } from "./types";
 
 export type ReviewLine = "pedia" | "cns" | "anti";
+
+/** A line with no recorded activity at all still renders its tables, empty rather than absent. */
+const EMPTY_ROLE_FACTS: RoleFacts = { roles: [], people: [], unknownPeople: 0 };
 
 /**
  * The label every surface rendering this dataset must show. Not optional.
@@ -228,15 +241,23 @@ function latest<T>(rows: readonly AchievementRow[], pick: (row: AchievementRow) 
   return best;
 }
 
-function monthlySlices(rows: readonly AchievementRow[], periods: readonly string[]): Record<string, Slice> {
+function monthlySlices(
+  rows: readonly AchievementRow[],
+  periods: readonly string[],
+  graded: ReadonlySet<string>,
+): Record<string, Slice> {
   const out: Record<string, Slice> = {};
   const byPeriod = groupBy(rows, (r) => r.period);
-  for (const period of periods) out[period] = sliceOf(totalRows(byPeriod.get(period) ?? []));
+  for (const period of periods) out[period] = sliceOf(totalRows(byPeriod.get(period) ?? [], graded));
   return out;
 }
 
-function monthlyAch(rows: readonly AchievementRow[], periods: readonly string[]): Record<string, number | null> {
-  const slices = monthlySlices(rows, periods);
+function monthlyAch(
+  rows: readonly AchievementRow[],
+  periods: readonly string[],
+  graded: ReadonlySet<string>,
+): Record<string, number | null> {
+  const slices = monthlySlices(rows, periods, graded);
   const out: Record<string, number | null> = {};
   for (const period of periods) out[period] = slices[period].ach;
   return out;
@@ -279,8 +300,6 @@ export type ReviewProvenance = {
   /** Visit rows the duplicate collapse removed, and rows from resigned agents kept on purpose. */
   visitsCollapsed: number;
   visitsFromExcludedAgents: number;
-  coachingReports: number;
-  coachingCoaches: number;
   restatementNotice: string;
 };
 
@@ -301,18 +320,53 @@ const NO_AREA_NAME = "Unattributed — no area on the source row";
 const NO_DM_KEY = "|no-dm";
 const NO_DM_NAME = "No district manager";
 
-/** Everything the per-line builders need beyond the sales rows themselves. */
-type BuildContext = {
+/** The half of the build context that is identical for all three lines, built once. */
+type SharedBuildContext = {
   window: ReviewWindow;
   names: Names;
   overlays: ReviewOverlays;
   directory: ReviewDirectory;
+  /**
+   * THE SPAN EVERY FIGURE ON THE PAGE ANSWERS — the requested window intersected with the months
+   * whose distributor files have landed.
+   *
+   * It is what `meta.period` prints, and it is deliberately NOT `window.label`. The sales half has
+   * always held a month with no upload out of every sales, target and achievement figure; the
+   * non-sales half did not until 2026-09-26, so one heading covered two spans. Now both halves stop
+   * at the same month, and the heading says which one that is rather than naming a range a third of
+   * whose figures were never in it. The requested window is still carried, on the coverage block, so
+   * the page can say what it did and why.
+   */
+  figureLabel: string;
+};
+
+/** Everything the per-line builders need beyond the sales rows themselves. */
+type BuildContext = SharedBuildContext & {
+  /**
+   * THE MONTHS THIS LINE IS GRADED ON — one set, decided once, used at every grain beneath it.
+   *
+   * Owner ruling 2026-09-26: the Business Review follows the Monthly Closing's LINE-level rule.
+   * The closing grades a line, so "was there a target in this month" is a question about the
+   * LINE, not about whichever area, district or product subset happens to be on screen.
+   *
+   * Before this, every grain asked the question of itself (`totalRows`'s own default), and the
+   * grains then disagreed: an area with no target in a month its line WAS targeted in dropped
+   * that month's sales from its own numerator while the line kept them. Summing the areas
+   * therefore fell short of the line, which is why the admin page read 74.35% for Jul–Aug 2026
+   * and the portal page — which sums the viewer's own areas — read 70.12% for the same window,
+   * 1,598,667 EGP apart. Two named district managers saw a grade up to 7.2 points below the one
+   * in the DSM league table their review was run from.
+   *
+   * Set PER LINE in `loadReviewBundle`, so the three lines never borrow each other's months.
+   */
+  gradedPeriods: ReadonlySet<string>;
 };
 
 function buildAreas(line: ReviewLine, rows: AchievementRow[], ctx: BuildContext): AreaSummary[] {
   const includeCodes = INCLUDE_PRODUCT_CODES[line];
   const lineCode = LINE_CODE[line];
   const periods = ctx.window.periods;
+  const graded = ctx.gradedPeriods;
 
   return [...groupBy(rows, (r) => r.areaCode ?? NO_AREA_KEY)]
     .map(([areaKey, areaRows]) => {
@@ -328,11 +382,11 @@ function buildAreas(line: ReviewLine, rows: AchievementRow[], ctx: BuildContext)
 
       const products: Record<string, Slice> = {};
       for (const [code, productRows] of groupBy(includeRows, (r) => r.productCode.toUpperCase())) {
-        products[ctx.names.product(code)] = sliceOf(totalRows(productRows));
+        products[ctx.names.product(code)] = sliceOf(totalRows(productRows, graded));
       }
 
-      const allProducts = sliceOf(totalRows(areaRows));
-      const byMonth = monthlySlices(areaRows, periods);
+      const allProducts = sliceOf(totalRows(areaRows, graded));
+      const byMonth = monthlySlices(areaRows, periods, graded);
       const overlay = isUnattributed ? ctx.overlays.area(null, null) : ctx.overlays.area(lineCode, areaKey);
 
       return {
@@ -342,7 +396,7 @@ function buildAreas(line: ReviewLine, rows: AchievementRow[], ctx: BuildContext)
         dm: dmHrId ? ctx.names.employee(dmHrId) : `${region} (vacant)`,
         region,
         vacant,
-        includeOnly: sliceOf(totalRows(includeRows)),
+        includeOnly: sliceOf(totalRows(includeRows, graded)),
         allProducts,
         hasTarget: areaRows.some((r) => r.hasTarget),
         // "Ungradeable" is the review's word for an area no achievement can be computed for.
@@ -354,12 +408,16 @@ function buildAreas(line: ReviewLine, rows: AchievementRow[], ctx: BuildContext)
         byMonth,
         reps: new Set(areaRows.map((r) => r.repHrId).filter(Boolean)).size,
         visits: overlay.visits,
+        visitSplit: overlay.visitSplit,
         regularVisits: overlay.regularVisits,
         campaignVisits: overlay.campaignVisits,
         visitsByMonth: overlay.visitsByMonth,
         doubleVisits: overlay.doubleVisits,
         customersTotal: overlay.customersTotal,
         customersByMonth: overlay.customersByMonth,
+        customersAm: overlay.customersAm,
+        customersPm: overlay.customersPm,
+        customersPharmacy: overlay.customersPharmacy,
         outstationClaimed: overlay.outstationClaimed,
         outstationApproved: overlay.outstationApproved,
         marketingCommitted: overlay.marketingCommitted,
@@ -373,6 +431,7 @@ function buildDms(line: ReviewLine, rows: AchievementRow[], areas: AreaSummary[]
   const includeCodes = INCLUDE_PRODUCT_CODES[line];
   const areasBySeat = groupBy(areas, (a) => a.dmSeatId ?? NO_DM_KEY);
   const periods = ctx.window.periods;
+  const graded = ctx.gradedPeriods;
 
   return [...groupBy(rows, (r) => r.dmSeatId ?? NO_DM_KEY)]
     .map(([seatKey, seatRows]) => {
@@ -389,11 +448,11 @@ function buildDms(line: ReviewLine, rows: AchievementRow[], areas: AreaSummary[]
 
       const productAch: Record<string, number | null> = {};
       for (const [code, productRows] of groupBy(includeRows, (r) => r.productCode.toUpperCase())) {
-        productAch[ctx.names.product(code)] = sliceOf(totalRows(productRows)).ach;
+        productAch[ctx.names.product(code)] = sliceOf(totalRows(productRows, graded)).ach;
       }
       const familyAch: Record<string, number | null> = {};
       for (const [family, familyRows] of groupBy(includeRows, (r) => PRODUCT_FAMILY[r.productCode.toUpperCase()] ?? null)) {
-        familyAch[family] = sliceOf(totalRows(familyRows)).ach;
+        familyAch[family] = sliceOf(totalRows(familyRows, graded)).ach;
       }
 
       const overlay = isUnmanaged ? ctx.overlays.dm(null) : ctx.overlays.dm(seatKey);
@@ -406,14 +465,14 @@ function buildDms(line: ReviewLine, rows: AchievementRow[], areas: AreaSummary[]
         vacant: !isUnmanaged && !dmHrId,
         areas: seatAreas.map((a) => a.area),
         activeAreas: [...activeAreaNames],
-        includeOnly: sliceOf(totalRows(includeRows)),
-        activeIncludeOnly: sliceOf(totalRows(activeRows)),
-        allProducts: sliceOf(totalRows(seatRows)),
+        includeOnly: sliceOf(totalRows(includeRows, graded)),
+        activeIncludeOnly: sliceOf(totalRows(activeRows, graded)),
+        allProducts: sliceOf(totalRows(seatRows, graded)),
         productAch,
         familyAch,
         trend: monthlySales(includeRows, periods),
-        achByMonth: monthlyAch(includeRows, periods),
-        achByMonthActive: monthlyAch(activeRows, periods),
+        achByMonth: monthlyAch(includeRows, periods, graded),
+        achByMonthActive: monthlyAch(activeRows, periods, graded),
         marketingCost: overlay.marketingCommitted,
         marketingPending: overlay.marketingPending,
         marketingRequests: overlay.marketingRequests,
@@ -428,12 +487,16 @@ function buildDms(line: ReviewLine, rows: AchievementRow[], areas: AreaSummary[]
         doubleVisits: overlay.doubleVisits,
         doubleVisitsLed: overlay.ridesLed,
         visits: overlay.visits,
+        visitSplit: overlay.visitSplit,
         regularVisits: overlay.regularVisits,
         campaignVisits: overlay.campaignVisits,
         visitsAvgPerMonth: round2(overlay.visits / activeMonths),
         visitsByMonth: overlay.visitsByMonth,
         customersTotal: overlay.customersTotal,
         customersByMonth: overlay.customersByMonth,
+        customersAm: overlay.customersAm,
+        customersPm: overlay.customersPm,
+        customersPharmacy: overlay.customersPharmacy,
       } satisfies DmSummary;
     })
     .sort((a, b) => b.allProducts.sales - a.allProducts.sales);
@@ -446,8 +509,8 @@ function buildProducts(line: ReviewLine, rows: AchievementRow[], ctx: BuildConte
       product: ctx.names.product(code),
       family: PRODUCT_FAMILY[code] ?? ctx.names.product(code),
       include: includeCodes.has(code),
-      byMonth: monthlySlices(productRows, ctx.window.periods),
-      total: sliceOf(totalRows(productRows)),
+      byMonth: monthlySlices(productRows, ctx.window.periods, ctx.gradedPeriods),
+      total: sliceOf(totalRows(productRows, ctx.gradedPeriods)),
     }))
     .sort((a, b) => b.total.sales - a.total.sales);
 }
@@ -460,6 +523,7 @@ function buildLineSummary(
   ctx: BuildContext,
 ): LineSummary {
   const periods = ctx.window.periods;
+  const graded = ctx.gradedPeriods;
   const vacantAreaCodes = new Set(areas.filter((a) => a.vacant).map((a) => a.areaCode));
   const exVacantRows = includeRows.filter((r) => !vacantAreaCodes.has(r.areaCode));
 
@@ -467,8 +531,8 @@ function buildLineSummary(
   for (const quarter of quartersInWindow(periods)) {
     const set = new Set(quarter.periods);
     quarters[quarter.label] = {
-      includeOnly: sliceOf(totalRows(includeRows.filter((r) => set.has(r.period)))),
-      allProducts: sliceOf(totalRows(rows.filter((r) => set.has(r.period)))),
+      includeOnly: sliceOf(totalRows(includeRows.filter((r) => set.has(r.period)), graded)),
+      allProducts: sliceOf(totalRows(rows.filter((r) => set.has(r.period)), graded)),
       complete: quarter.complete,
     };
   }
@@ -476,20 +540,20 @@ function buildLineSummary(
   const byMonth: LineSummary["byMonth"] = {};
   for (const period of periods) {
     byMonth[period] = {
-      includeOnly: sliceOf(totalRows(includeRows.filter((r) => r.period === period))),
-      allProducts: sliceOf(totalRows(rows.filter((r) => r.period === period))),
+      includeOnly: sliceOf(totalRows(includeRows.filter((r) => r.period === period), graded)),
+      allProducts: sliceOf(totalRows(rows.filter((r) => r.period === period), graded)),
     };
   }
 
-  const includeOnly = sliceOf(totalRows(includeRows));
-  const allProducts = sliceOf(totalRows(rows));
+  const includeOnly = sliceOf(totalRows(includeRows, graded));
+  const allProducts = sliceOf(totalRows(rows, graded));
   return {
     includeOnly,
     allProducts,
     // The workbook's manual +280,000 Ivyronc reconciliation has no meaning against an engine that
     // already carries that order at its real area and month.
     withException: { includeOnly, allProducts },
-    exVacant: { includeOnly: sliceOf(totalRows(exVacantRows)) },
+    exVacant: { includeOnly: sliceOf(totalRows(exVacantRows, graded)) },
     exceptionValue: 0,
     quarters,
     byMonth,
@@ -498,6 +562,7 @@ function buildLineSummary(
     outstationCost: overlay.outstationClaimed,
     outstationApproved: overlay.outstationApproved,
     visits: overlay.visits,
+    visitSplit: overlay.visitSplit,
     regularVisits: overlay.regularVisits,
     campaignVisits: overlay.campaignVisits,
     doubleVisits: overlay.doubleVisits,
@@ -506,6 +571,9 @@ function buildLineSummary(
     visitingReps: overlay.visitingReps,
     customersTotal: overlay.customersTotal,
     customersByMonth: overlay.customersByMonth,
+    customersAm: overlay.customersAm,
+    customersPm: overlay.customersPm,
+    customersPharmacy: overlay.customersPharmacy,
   };
 }
 
@@ -547,7 +615,14 @@ function newLineActivity(): LineActivity {
  * month has to appear on both lines with the right split, and a total alone cannot do that
  * without guessing.
  */
-function buildLineActivity(visits: VisitsLoad, attribution: AttributionMap): Map<string, LineActivity> {
+function buildLineActivity(
+  visits: VisitsLoad,
+  attribution: AttributionMap,
+  /** The one span every figure answers — see SharedBuildContext.figureLabel. A fact outside it is
+   *  skipped here for the same reason it is skipped in buildOverlays: the per-rep table and the
+   *  activity mix must not cover months the sales figures beside them cannot. */
+  figurePeriods: ReadonlySet<string>,
+): Map<string, LineActivity> {
   const byLine = new Map<string, LineActivity>();
   const of = (lineCode: string): LineActivity => {
     let activity = byLine.get(lineCode);
@@ -562,6 +637,7 @@ function buildLineActivity(visits: VisitsLoad, attribution: AttributionMap): Map
     hrId ? attribution.place(hrId, period) : null;
 
   for (const fact of visits.agents) {
+    if (!figurePeriods.has(fact.period)) continue;
     const placement = placementOf(fact.agentHrId, fact.period);
     if (!placement?.lineCode) continue;
     const activity = of(placement.lineCode);
@@ -604,6 +680,7 @@ function buildLineActivity(visits: VisitsLoad, attribution: AttributionMap): Map
   }
 
   for (const fact of visits.managers) {
+    if (!figurePeriods.has(fact.period)) continue;
     for (const [repHrId, rides] of fact.ridesByRep) {
       const placement = placementOf(repHrId, fact.period);
       if (!placement?.lineCode) continue;
@@ -628,6 +705,8 @@ function buildDataset(
   dms: DmSummary[],
   activity: LineActivity,
   ctx: BuildContext,
+  /** This line's own role and people tables — never the company's. */
+  roleFacts: RoleFacts,
 ): ReviewDataset {
   const includeCodes = INCLUDE_PRODUCT_CODES[line];
   const includeRows = rows.filter((r) => includeCodes.has(r.productCode.toUpperCase()));
@@ -707,9 +786,11 @@ function buildDataset(
   const visitingReps = activity.perRep.size;
 
   return {
+    roles: roleFacts.roles,
+    people: roleFacts.people,
     meta: {
       line: label,
-      period: ctx.window.label,
+      period: ctx.figureLabel,
       currency: "EGP",
       months: [...periods],
       monthLabels: periodColumnLabels(periods),
@@ -750,11 +831,15 @@ function buildDataset(
     visits: {
       available: overlay.visits > 0 || overlay.adminRows > 0,
       totalDeduped: overlay.visits,
+      visitSplit: overlay.visitSplit,
       reps: visitingReps,
       avgPerRepPerMonth: overlay.visitsAvgPerRepPerMonth,
       byMonth: overlay.visitsByMonth,
       customersTotal: overlay.customersTotal,
       customersByMonth: overlay.customersByMonth,
+      customersAm: overlay.customersAm,
+      customersPm: overlay.customersPm,
+      customersPharmacy: overlay.customersPharmacy,
       byDM: visitsByDm,
       repToDmCoverage: visitingReps > 0 ? round2(activity.repsWithDm / visitingReps) : 0,
       perRep,
@@ -776,13 +861,15 @@ function generatedFromLines(window: ReviewWindow): string[] {
     `${OUTSTATION_ORIGIN} (live)`,
     `${VISITS_ORIGIN} (live)`,
     `${CUSTOMERS_ORIGIN} (live)`,
-    `${ROLES_ORIGIN} · ${COACHING_ORIGIN} (live)`,
+    `${ROLES_ORIGIN} (live)`,
   ];
 }
 
 function buildCompany(
+  // The shared half only: the company rollup re-adds the per-line slices, which already carry
+  // their line's graded months, so it never grades anything itself.
   datasets: Record<ReviewLine, ReviewDataset>,
-  ctx: BuildContext,
+  ctx: SharedBuildContext,
   roles: RolesLoad,
 ): ReviewCompany {
   const periods = ctx.window.periods;
@@ -820,9 +907,13 @@ function buildCompany(
       outstationCost: ds.line.outstationCost,
       outstationApproved: ds.line.outstationApproved,
       visits: ds.line.visits,
+      visitSplit: ds.line.visitSplit,
       visitsAvailable: ds.visits.available,
       doubleVisits: ds.line.doubleVisits,
       customersTotal: ds.line.customersTotal,
+      customersAm: ds.line.customersAm,
+      customersPm: ds.line.customersPm,
+      customersPharmacy: ds.line.customersPharmacy,
       dms: seats.filter((d) => !d.vacant).length,
       dmsVacant: seats.filter((d) => d.vacant).length,
       areas: ds.areas.length,
@@ -845,6 +936,9 @@ function buildCompany(
         outstationCost: d.outstationCost,
         visitsAvgPerMonth: d.visitsAvgPerMonth,
         customersTotal: d.customersTotal,
+        customersAm: d.customersAm,
+        customersPm: d.customersPm,
+        customersPharmacy: d.customersPharmacy,
         doubleVisits: d.doubleVisits,
         visitsAvailable: datasets[id].visits.available,
       })),
@@ -867,21 +961,28 @@ function buildCompany(
     ach: t !== 0 ? round2((c / t) * 100) : null,
   });
 
-  // The company doctor count is a UNION across lines. The sum of the lines is above it by exactly
-  // the number of doctors more than one line covers — a cross-line "treasure", the owner's word,
+  // The company customer count is a UNION across lines. The sum of the lines is above it by exactly
+  // the number of customers more than one line covers — a cross-line "treasure", the owner's word,
   // and the interesting half of the sentence.
+  //
+  // "Customers", not "doctors". The three buckets are named apart because the union holds all of
+  // them and a pharmacy is never a doctor (owner golden rule, 2026-09-21): on production's July
+  // 2026, 1,030 of the 7,364 were pharmacies — one in seven, under a label that said doctors.
   const naiveSum = REVIEW_LINE_ORDER.reduce((sum, { id }) => sum + datasets[id].line.customersTotal, 0);
   const overlap = Math.max(0, naiveSum - company.customersTotal);
   const doctorNote =
     company.customersTotal === 0
-      ? "No regular CRM visit in this window named a doctor, so no doctor count can be given for it."
-      : `${company.customersTotal.toLocaleString("en-US")} unique doctors company-wide. Summing the ` +
+      ? "No regular CRM visit in this window named a customer, so no customer count can be given for it."
+      : `${company.customersTotal.toLocaleString("en-US")} unique customers company-wide — ` +
+        `${company.customersAm.toLocaleString("en-US")} AM accounts · ` +
+        `${company.customersPm.toLocaleString("en-US")} PM doctors · ` +
+        `${company.customersPharmacy.toLocaleString("en-US")} pharmacies. Summing the ` +
         `lines' own counts gives ${naiveSum.toLocaleString("en-US")}; ${overlap.toLocaleString("en-US")} ` +
-        `of those are the same doctor covered by more than one line, so they are counted once here.`;
+        `of those are the same customer covered by more than one line, so they are counted once here.`;
 
   return {
     meta: {
-      period: ctx.window.label,
+      period: ctx.figureLabel,
       currency: "EGP",
       months: [...periods],
       monthLabels: periodColumnLabels(periods),
@@ -898,10 +999,19 @@ function buildCompany(
       outstationCost: company.outstationClaimed,
       outstationApproved: company.outstationApproved,
       visits: company.visits,
+      visitSplit: company.visitSplit,
       doubleVisits: company.doubleVisits,
       reps,
+      // The company overlay's own union, NOT the sum of the lines' figures: a rep who visits on two
+      // lines is one person, and the tile beside the visit count has to be the number those visits
+      // were actually made by. It printed `reps` — reps with SALES — until 2026-09-26: 85 against
+      // 122 who really visited, so visits-per-rep read 44% high.
+      visitingReps: company.visitingReps,
       customersTotal: company.customersTotal,
       customersByMonth: company.customersByMonth,
+      customersAm: company.customersAm,
+      customersPm: company.customersPm,
+      customersPharmacy: company.customersPharmacy,
       customersNaiveSum: naiveSum,
       customersOverlap: overlap,
       areas: areasTotal,
@@ -948,15 +1058,22 @@ export async function availableReviewPeriods(): Promise<string[]> {
  * a full attribution pass and every round trip crosses to eu-central-1.
  */
 export async function loadReviewBundle(window: ReviewWindow, adjustment: string | null = null): Promise<ReviewBundle> {
-  const [rawRows, areaNames, productNames, uploaded, marketing, outstation, visits] = await Promise.all([
-    loadAchievementRange(window.from, window.to),
-    loadAllCanonicalAreaNames(),
-    loadProductNameMap(),
-    loadUploadedPeriodsInRange(window.from, window.to),
-    loadMarketingFacts(window),
-    loadOutstationFacts(window),
-    loadVisitFacts(window),
-  ]);
+  const [rawRows, areaNames, productNames, uploaded, marketing, outstation, visits, directory, lineIdByCode] =
+    await Promise.all([
+      loadAchievementRange(window.from, window.to),
+      loadAllCanonicalAreaNames(),
+      loadProductNameMap(),
+      loadUploadedPeriodsInRange(window.from, window.to),
+      loadMarketingFacts(window),
+      loadOutstationFacts(window),
+      loadVisitFacts(window),
+      // The employee directory and the line-id lookup used to be loaded inside loadRoleFacts, which
+      // therefore had to RACE buildAttributionMap and so could not place anybody on a line. With
+      // coaching removed (owner ruling, 2026-09-26) the role builder has no I/O left, so both reads
+      // join the one Promise.all here and the builder runs after the attribution map instead.
+      loadReviewDirectory(),
+      loadLineIdByCode(),
+    ]);
 
   // Fayoum/Beni Suef fold onto one area for Pedia and CNS, exactly as they do on Monthly Closing.
   // Applied before any aggregation, or the two surfaces show different area lists.
@@ -969,21 +1086,38 @@ export async function loadReviewBundle(window: ReviewWindow, adjustment: string 
   for (const fact of visits.agents) if (fact.agentHrId) interested.add(fact.agentHrId);
   for (const fact of visits.managers) interested.add(fact.managerHrId);
 
-  const [attribution, roles] = await Promise.all([
-    buildAttributionMap(rows, interested),
-    loadRoleFacts({ window, visits, outstation, marketing }),
-  ]);
+  const attribution = await buildAttributionMap(rows, interested);
 
-  const overlays = buildOverlays({ window, rows, attribution, marketing, outstation, visits });
-  const activityByLine = buildLineActivity(visits, attribution);
+  // ONE span for every figure on the page (owner ruling 2026-09-26): the requested window
+  // intersected with the months whose distributor files have landed. The sales half has always
+  // stopped here; now the spend and activity halves do too, and anything outside it is reported by
+  // the coverage layer instead of being folded into a total that reads as if it belonged.
+  const figurePeriodList = window.periods.filter((p) => uploaded.has(p));
+  const figurePeriods = new Set(figurePeriodList);
+  const figureLabel =
+    figurePeriodList.length > 0
+      ? windowLabel(figurePeriodList[0], figurePeriodList[figurePeriodList.length - 1])
+      : window.label;
+
+  const overlays = buildOverlays({
+    window, rows, attribution, marketing, outstation, visits, figurePeriods,
+  });
+  const activityByLine = buildLineActivity(visits, attribution, figurePeriods);
 
   const names: Names = {
     area: (lineCode, code) => getMergedAreaName(lineCode, code) ?? areaNames.get(code) ?? "Unassigned area",
     product: (code) => productNames.get(code) ?? code,
-    employee: (hrId) => roles.directory.get(hrKey(hrId))?.name ?? "Unnamed employee",
+    employee: (hrId) => directory.get(hrKey(hrId))?.name ?? "Unnamed employee",
   };
 
-  const ctx: BuildContext = { window, names, overlays, directory: roles.directory };
+  // Role and people tables, company-wide and per line. Synchronous, and AFTER the attribution map,
+  // so a line's tables hold that line's own people — until 2026-09-26 the company-wide rows were
+  // rendered under a line heading with no caption at all.
+  const roles = buildRoleFacts({
+    window, visits, outstation, marketing, directory, lineIdByCode, attribution, figurePeriods,
+  });
+
+  const shared: SharedBuildContext = { window, names, overlays, directory, figureLabel };
 
   // The FULL row set still feeds buildAttributionMap above: a rep who appears only in a not-yet-
   // uploaded month still needs a seat, or that month's visits lose their area. It is the sales
@@ -995,10 +1129,16 @@ export async function loadReviewBundle(window: ReviewWindow, adjustment: string 
   const datasets = {} as Record<ReviewLine, ReviewDataset>;
   for (const { id } of REVIEW_LINE_ORDER) {
     const lineRows = byLine.get(LINE_CODE[id]) ?? [];
+    // The graded months, decided ONCE for the whole line and handed to every grain beneath it —
+    // the owner's 2026-09-26 ruling, and the only arrangement in which the areas sum to their
+    // district, the districts sum to their line and the portal agrees with the admin page. See
+    // BuildContext.gradedPeriods. Computed on the line's own rows, so the three lines never
+    // borrow each other's months.
+    const ctx: BuildContext = { ...shared, gradedPeriods: gradedPeriodsOf(lineRows) };
     const areas = buildAreas(id, lineRows, ctx);
     const dms = buildDms(id, lineRows, areas, ctx);
     const activity = activityByLine.get(LINE_CODE[id]) ?? newLineActivity();
-    datasets[id] = buildDataset(id, lineRows, areas, dms, activity, ctx);
+    datasets[id] = buildDataset(id, lineRows, areas, dms, activity, ctx, roles.byLine[LINE_CODE[id]] ?? EMPTY_ROLE_FACTS);
   }
 
   // Rows the engine resolved to no line at all. Small but real, and they belong to no per-line
@@ -1021,17 +1161,23 @@ export async function loadReviewBundle(window: ReviewWindow, adjustment: string 
   });
 
   // `rows`, not `gradedRows` — coverage has to report the value it held back, not inherit the
-  // hole it created.
+  // hole it created. Same reason `overlays.heldOut` is handed over: the spend and visits the figure
+  // window excluded are named there, in words, rather than vanishing.
   const coverage = buildCoverage({
     window, rows, uploaded, marketing, outstation, visits, adjustment,
     unplaced: overlays.unplaced,
+    heldOut: overlays.heldOut,
+    figureWindow:
+      figurePeriodList.length > 0 && figurePeriodList.length < window.periods.length
+        ? { label: figureLabel, periods: figurePeriodList }
+        : null,
   });
 
   return {
     window,
     coverage,
     datasets,
-    company: buildCompany(datasets, ctx, roles),
+    company: buildCompany(datasets, shared, roles),
     provenance: {
       engine: "SoS Monthly Closing (au.f_monthly_achievement)",
       from: window.from,
@@ -1044,8 +1190,6 @@ export async function loadReviewBundle(window: ReviewWindow, adjustment: string 
       unplaced: overlays.unplaced,
       visitsCollapsed: visits.collapsedRows,
       visitsFromExcludedAgents: visits.excludedAgentRows,
-      coachingReports: roles.coachingReports,
-      coachingCoaches: roles.coachingCoaches,
       restatementNotice: REVIEW_SOURCE_NOTICE,
     },
   };
@@ -1094,6 +1238,9 @@ export function buildCoverage(input: {
   outstation: OutstationLoad;
   visits: VisitsLoad;
   unplaced: UnplacedTotals;
+  /** Spend and activity the figure window excluded — reported, never totalled. */
+  heldOut?: HeldOutTotals;
+  figureWindow?: ReviewCoverage["figureWindow"];
   adjustment: string | null;
 }): ReviewCoverage {
   const { window, rows, uploaded } = input;
@@ -1105,13 +1252,35 @@ export function buildCoverage(input: {
   const notUploadedPeriods = window.periods.filter((p) => !uploaded.has(p));
   const heldOut = rows.filter((r) => !uploaded.has(r.period));
   const heldOutValue = round2(heldOut.reduce((sum, r) => sum + r.actualValue, 0));
+
+  // The other half of the same sentence (owner ruling 2026-09-26). Those months no longer contribute
+  // spend or visits either, so the note has to say what they DID hold — otherwise the exclusion is
+  // the silent kind this whole layer exists to prevent.
+  const alsoHeldOut = input.heldOut ?? null;
+  const alsoHeldOutNote =
+    alsoHeldOut &&
+    (alsoHeldOut.marketingCommitted !== 0 ||
+      alsoHeldOut.outstationClaimed !== 0 ||
+      alsoHeldOut.visitRows > 0)
+      ? ` Their spend and field activity are held out with them, and are real: ` +
+        `${money(alsoHeldOut.marketingCommitted)} of committed marketing across ` +
+        `${alsoHeldOut.marketingRequests.toLocaleString("en-US")} request${alsoHeldOut.marketingRequests === 1 ? "" : "s"}, ` +
+        `${money(alsoHeldOut.outstationClaimed)} of claimed outstation across ` +
+        `${alsoHeldOut.outstationRows.toLocaleString("en-US")} claim${alsoHeldOut.outstationRows === 1 ? "" : "s"}, and ` +
+        `${alsoHeldOut.visitRows.toLocaleString("en-US")} CRM row${alsoHeldOut.visitRows === 1 ? "" : "s"} from ` +
+        `${alsoHeldOut.visitAgents.toLocaleString("en-US")} ${alsoHeldOut.visitAgents === 1 ? "person" : "people"}. ` +
+        `Every figure below covers the same months as the sales, so cost and activity can be read ` +
+        `against them.`
+      : "";
+
   const notUploadedNote =
     `The distributor files for ${describePeriods(notUploadedPeriods)} have not arrived yet. ` +
     `Those months hold only Direct orders — ${money(heldOutValue)} across ` +
     `${heldOut.length.toLocaleString("en-US")} row${heldOut.length === 1 ? "" : "s"} — which are approved one at a time all month, ` +
     `so they are held out of every sales, target and achievement figure below and reported here ` +
     `instead. Grading a month against its whole target before its sales have landed shows a ` +
-    `collapse that has not happened.`;
+    `collapse that has not happened.` +
+    alsoHeldOutNote;
 
   // Sales coverage follows the upload ledger, not the row count. Targets do NOT: August's targets
   // really are loaded, and saying "targets are missing" would send someone to load them again.
@@ -1186,7 +1355,9 @@ export function buildCoverage(input: {
     }),
     buildSourceCoverage({
       source: "customers",
-      label: "Doctors reached",
+      // "Customers", not "Doctors": the count unions AM accounts, PM doctors and pharmacies, and a
+      // pharmacy is never a doctor (owner golden rule). The three are reported apart everywhere.
+      label: "Customers reached",
       origin: CUSTOMERS_ORIGIN,
       rule: CUSTOMERS_RULE,
       window,
@@ -1199,9 +1370,25 @@ export function buildCoverage(input: {
     window,
     sources,
     adjustment: input.adjustment,
+    figureWindow: input.figureWindow ?? null,
     notUploaded:
       notUploadedPeriods.length > 0
-        ? { periods: notUploadedPeriods, value: heldOutValue, rows: heldOut.length, note: notUploadedNote }
+        ? {
+            periods: notUploadedPeriods,
+            value: heldOutValue,
+            rows: heldOut.length,
+            note: notUploadedNote,
+            alsoHeldOut: alsoHeldOut
+              ? {
+                  marketingRequests: alsoHeldOut.marketingRequests,
+                  marketingCommitted: alsoHeldOut.marketingCommitted,
+                  outstationRows: alsoHeldOut.outstationRows,
+                  outstationClaimed: alsoHeldOut.outstationClaimed,
+                  visitRows: alsoHeldOut.visitRows,
+                  visitAgents: alsoHeldOut.visitAgents,
+                }
+              : null,
+          }
         : null,
   });
 }
@@ -1222,7 +1409,14 @@ export function emptySlice(): Slice {
   return { ...EMPTY_SLICE };
 }
 
-/** Exported so a caller can total a scoped subset with the same coverage rule. */
+/**
+ * Total a scoped subset of areas with the same rule the whole review uses.
+ *
+ * Since the 2026-09-26 ruling this is EXACT rather than approximate: every area slice was graded
+ * against its own line's targeted months, so summing all of a line's areas reproduces the line's
+ * own figure, and summing a district manager's areas reproduces the district's. Before it, each
+ * area decided its own graded months and the sum fell short of the line it belonged to.
+ */
 export function totalAreas(areas: readonly AreaSummary[]): Slice {
   const total = emptyTotals();
   for (const area of areas) {

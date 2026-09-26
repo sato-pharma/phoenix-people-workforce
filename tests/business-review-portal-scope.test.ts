@@ -4,7 +4,9 @@ import { fileURLToPath } from "node:url";
 
 import {
   applySeatScope,
+  isDistrictSeatTier,
   resolveReviewPortalScopeFromOrg,
+  DISTRICT_SEAT_TIERS,
   type OrgSeat,
   type ReviewOrgSnapshot,
   type ReviewPortalScope,
@@ -38,7 +40,10 @@ const SRC = (rel: string) => readFileSync(fileURLToPath(new URL(`../${rel}`, imp
 const flat = (s: string) => s.replace(/\s+/g, " ");
 
 const seat = (
-  seatTier: "DM" | "RSM",
+  // Widened from `"DM" | "RSM"` deliberately: ACTING_DM is a district seat, and while this parameter
+  // forbade it the fixture could not express production's real shape at all — which is exactly how
+  // the one serving acting district manager stayed locked out with every test green.
+  seatTier: OrgSeat["seatTier"],
   seatId: string,
   lineCode: string,
   occupantHrId: string | null,
@@ -88,6 +93,29 @@ const ORG: ReviewOrgSnapshot = {
     seat("DM", "SEAT-AIF-DM-GZ", "anti_infective", "AI-0007", AIF),
     seat("DM", "SEAT-AIF-DM-UE-2", "anti_infective", "AI-0013", AIF),
     seat("DM", "SEAT-AIF-OTHERS", "anti_infective", null, AIF),
+    // Production's one ACTING_DM seat, verbatim: Upper Egypt 1 on Anti Infective, hanging directly
+    // off the NSM (no RSM in its path), occupied by B-1 — a Medical Rep by job title and a District
+    // Manager by app role. Three areas, 118,073 EGP of sales against 308,860 EGP of target over
+    // Jul–Aug 2026, all of it already attributed to this seat by the canonical engine.
+    seat("ACTING_DM", "SEAT-AIF-ADM-UE-1", "anti_infective", "B-1", AIF),
+  ],
+};
+
+/**
+ * A Pedia region with an ACTING_DM district hanging under the RSM node.
+ *
+ * Production has no such shape today — its one acting district sits under an NSM — which is exactly
+ * why it needs a fixture. Under the old `seatTier === "DM"` filter this district would have been
+ * dropped from the Regional Manager's scope with NO message at all: his totals would simply have
+ * been short, which is worse than the refusal a district manager at least got to read.
+ */
+const ORG_WITH_ACTING_DM_UNDER_RSM: ReviewOrgSnapshot = {
+  readAt: "2026-09-26T00:00:00.000Z",
+  lineNameByHrId: {},
+  seats: [
+    seat("RSM", "SEAT-PED-RSM", "pedia", "PD-0001", PED),
+    seat("DM", "SEAT-PED-DM-AB", "pedia", "PD-0012", PED_RSM),
+    seat("ACTING_DM", "SEAT-PED-ADM-D1", "pedia", "PD-0099", PED_RSM),
   ],
 };
 
@@ -100,8 +128,14 @@ function datasetOf(areaSeats: (string | null)[], dmSeats: (string | null)[]): Re
 }
 
 export async function runBusinessReviewPortalScopeTests(): Promise<void> {
-  const occupiedDmSeats = ORG.seats.filter((s) => s.seatTier === "DM" && s.occupantHrId);
-  assert.ok(occupiedDmSeats.length >= 19, `the fixture should hold production's district seats, found ${occupiedDmSeats.length}`);
+  // `isDistrictSeatTier`, not `=== "DM"` — an acting district seat is a district seat, and the loop
+  // below is the one that proves whoever occupies one resolves to it.
+  const occupiedDmSeats = ORG.seats.filter((s) => isDistrictSeatTier(s.seatTier) && s.occupantHrId);
+  assert.ok(occupiedDmSeats.length >= 20, `the fixture should hold production's district seats, found ${occupiedDmSeats.length}`);
+  assert.ok(
+    occupiedDmSeats.some((s) => s.seatTier === "ACTING_DM"),
+    "and it must include the ACTING_DM seat, or this loop cannot see the tier that was omitted",
+  );
 
   // ────────────────────────── 1. EVERY serving district manager resolves
   //
@@ -133,6 +167,48 @@ export async function runBusinessReviewPortalScopeTests(): Promise<void> {
     "seats",
     "a lower-cased HR id is the same district manager",
   );
+
+  // ────────────────────────── 1b. AN ACTING DISTRICT MANAGER IS A DISTRICT MANAGER
+  //
+  // Owner rule (AGENTS.md §4): "An acting District Manager (DM app role, Medical Rep title) sees
+  // EXACTLY what a District Manager sees." This resolver read `seat_tier IN ('DM','RSM')`, so
+  // production's one ACTING_DM seat never entered the snapshot and its occupant was told she holds
+  // no district at all — while the admin page listed her district, from the same canonical rows.
+  assert.deepEqual([...DISTRICT_SEAT_TIERS], ["DM", "ACTING_DM"], "a district seat is either tier");
+  assert.ok(isDistrictSeatTier("ACTING_DM"), "ACTING_DM is a district seat");
+  assert.ok(isDistrictSeatTier("DM"), "and so is DM");
+  for (const notADistrict of ["RSM", "NSM", "REP", "CEO", "acting_dm", "", null, undefined]) {
+    assert.equal(isDistrictSeatTier(notADistrict), false, `"${notADistrict}" is not a district seat`);
+  }
+  {
+    const acting = resolveReviewPortalScopeFromOrg({ hrId: "B-1", sessionRole: "District Manager" }, ORG);
+    assert.equal(
+      acting.kind,
+      "seats",
+      `the acting district manager must reach her own district, got: ${acting.kind === "none" ? acting.reason : acting.kind}`,
+    );
+    assert.deepEqual(
+      acting.kind === "seats" ? acting.dmSeatIds : [],
+      ["SEAT-AIF-ADM-UE-1"],
+      "her own acting district and nothing else",
+    );
+    assert.equal(acting.kind === "seats" ? acting.line : null, "anti", "on the line her seat sits on");
+  }
+
+  // The same omission, one level up and SILENT: an ACTING_DM under an RSM node is one of that
+  // region's districts. Dropping it left a Regional Manager's totals short with no message at all.
+  {
+    const rm = resolveReviewPortalScopeFromOrg(
+      { hrId: "PD-0001", sessionRole: "Regional Manager" },
+      ORG_WITH_ACTING_DM_UNDER_RSM,
+    );
+    assert.equal(rm.kind, "seats", "the regional manager resolves");
+    assert.deepEqual(
+      (rm.kind === "seats" ? rm.dmSeatIds : []).slice().sort(),
+      ["SEAT-PED-ADM-D1", "SEAT-PED-DM-AB"],
+      "an acting district under the RSM node is inside that region's scope, not missing from it",
+    );
+  }
 
   // ────────────────────────── 2. the SESSION role decides, never the seat
   //
@@ -186,7 +262,7 @@ export async function runBusinessReviewPortalScopeTests(): Promise<void> {
 
     // A vacant seat belongs to nobody. Four districts sit empty in the fixture; not one of them may
     // fall to another district manager just because it has no occupant to claim it.
-    const vacant = ORG.seats.filter((s) => s.seatTier === "DM" && !s.occupantHrId).map((s) => s.seatId);
+    const vacant = ORG.seats.filter((s) => isDistrictSeatTier(s.seatTier) && !s.occupantHrId).map((s) => s.seatId);
     assert.ok(vacant.length >= 4, "the fixture keeps production vacant districts");
     for (const s of occupiedDmSeats) {
       const scope = resolveReviewPortalScopeFromOrg(
