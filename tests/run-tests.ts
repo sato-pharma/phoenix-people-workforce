@@ -1558,6 +1558,7 @@ import { runPhoenixCrmVisitOutcomeTests } from "./phoenix-crm-visit-outcome.test
 import { runPhoenixCrmSamplesTests } from "./phoenix-crm-samples.test.ts";
 import { runPhoenixCrmVisitDwellTests } from "./phoenix-crm-visit-dwell.test.ts";
 import { runPhoenixCrmExceptionsTests } from "./phoenix-crm-exceptions.test.ts";
+import { runPhoenixCrmDailyDigestTests } from "./phoenix-crm-daily-digest.test.ts";
 import { runPhoenixCrmLocationIntegrityTests } from "./phoenix-crm-location-integrity.test.ts";
 import { runPhoenixCrmPortalSidebarTests } from "./phoenix-crm-portal-sidebar.test.ts";
 import { runPhoenixCrmAmPmWordTests } from "./phoenix-crm-am-pm-words.test.ts";
@@ -5201,6 +5202,11 @@ await runTest(
 await runTest(
   "Phoenix CRM fills the products in from his own last visit (GOLDEN RULE #1, the EASY half — owner, 2026-09-26, \"nothing is asked twice\": the newest earlier visit wins with capturedAt breaking a same-day tie, a product retired from the line never comes back, a customer he has never visited is ABSENT rather than present-and-empty, the read stops strictly before today so his own morning cannot prefill itself, and both apps say which day it came from)",
   runPhoenixCrmLastVisitProductsTests,
+);
+
+await runTest(
+  "Phoenix CRM tells a District Manager at 06:55 what needs him (B1 — owner, 2026-09-26: a CLEAN MANAGER IS TOLD NOTHING, because a digest that arrives every morning whatever happened is muted within a week and a muted one is worse than none; one message per manager, worst first, names and never HR codes; the key is per manager per DAY so a retry or a double fire reaches nobody twice; it judges nothing itself but calls the board's own gathering over ONE field day where the board reads six; email cannot escape, since the guard filters on the module key and not on any call site; and the cron expression matches cron-job.org exactly on a minute no other job uses)",
+  runPhoenixCrmDailyDigestTests,
 );
 
 await runTest(
