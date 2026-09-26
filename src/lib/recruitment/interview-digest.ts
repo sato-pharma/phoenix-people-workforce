@@ -2,19 +2,37 @@
 //
 // A once-a-week summary of the interview calendar: how many interviews are coming up, how many were
 // held, how many are decided vs still awaiting a decision, attended vs did-not-come, and the average
-// days to a decision. It goes to the SUPER ADMIN(s) ONLY — the owner's choice, "HR / Super Admin
-// only" — by IN-APP and TELEGRAM, never e-mail, and NEVER to the CEO (the CEO is not a Super Admin,
-// and resolveSuperAdminRecipients returns only Super Admins). It reports numbers; it changes nothing.
+// days to a decision. It goes to the SUPER ADMIN(s) AND HR OPERATIONS — the owner's choice, "HR /
+// Super Admin only" (HR Operations added 2026-09-26) — by IN-APP and TELEGRAM, never e-mail, and
+// NEVER to the CEO (the CEO holds neither role). It reports numbers; it changes nothing.
 //
 // NO LEDGER TABLE — each message carries a weekly idempotency key and createSystemNotification
 // delivers a key once, so a job that runs more than once in the week tells nobody twice.
 
 import { createSystemNotification } from "@/lib/notifications/system";
-import { resolveSuperAdminRecipients } from "@/lib/private-calendar/notify-admin";
 import { summarizeInterviewsForDigest, type InterviewDigestSummary } from "@/lib/recruitment/interview-calendar";
 import { cairoDateKey, formatDayLong, weekStartFor } from "@/lib/recruitment/interview-calendar-week";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 const PORTAL_BASE = "/employee-portals/interview-calendar";
+
+/**
+ * Who receives the weekly digest: active Super Admins AND HR Operations (owner, 2026-09-26 — "HR /
+ * Super Admin"). Both run the calendar as owners; the CEO holds neither role, so a decision the owner
+ * made about who oversees recruitment is what governs this list — never the org chart. Deduping and
+ * per-recipient keying happen in planInterviewDigest.
+ */
+export async function resolveInterviewDigestRecipients(): Promise<Array<{ hrId: string }>> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("app_auth_users")
+    .select("hr_id")
+    .in("role", ["Super Admin", "HR Operations"])
+    .eq("is_active", true);
+  if (error) throw error;
+  return ((data ?? []) as Array<{ hr_id: string | null }>)
+    .filter((row): row is { hr_id: string } => Boolean(row.hr_id))
+    .map((row) => ({ hrId: row.hr_id }));
+}
 
 export type InterviewDigest = {
   recipientHrId: string;
@@ -84,7 +102,7 @@ export async function runInterviewDigest(
   now: Date = new Date(),
   send: InterviewDigestSend = sendInterviewDigest,
   summarize: (now: Date) => Promise<InterviewDigestSummary> = (at) => summarizeInterviewsForDigest(at),
-  recipients: () => Promise<Array<{ hrId: string }>> = resolveSuperAdminRecipients,
+  recipients: () => Promise<Array<{ hrId: string }>> = resolveInterviewDigestRecipients,
 ): Promise<InterviewDigestRun> {
   const [summary, people] = await Promise.all([summarize(now), recipients()]);
   const plan = planInterviewDigest(summary, people.map((person) => person.hrId), now);
