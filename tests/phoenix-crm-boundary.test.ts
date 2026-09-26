@@ -139,6 +139,8 @@ const ROUTE_GATES: RouteGate[] = [
   // nothing else. The list below is asserted against the handlers on disk, so this absence is itself
   // checked: re-adding the route without a gate fails, and adding a gate without the route fails.
   get("today"),
+  get("day-activities"),
+  post("day-activities", "create"),
   get("reports"),
   post("photos/upload-slot", "create"),
   // The native app's live photo: the phone sends the stamped JPEG as a base64 data URL and the server
@@ -389,6 +391,10 @@ const LATER_MIGRATIONS = [
   // four report functions and both monthly-plan functions, adds two tables and one view, and adds
   // phoenix_crm_decide_unplanned_visit.
   "supabase/migrations/20260926163000_phoenix_crm_unplanned_visits.sql",
+  // Day activities: one table and one function of its own, touching nothing that exists. It sits
+  // after the unplanned-visit migration because that one is the last save_visit replacer, and the
+  // list is applied in order.
+  "supabase/migrations/20260926193000_phoenix_crm_day_activities.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */

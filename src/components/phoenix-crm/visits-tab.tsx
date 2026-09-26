@@ -19,7 +19,8 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Plus, Search } from "lucide-react";
 
-import { crmPost, crmUrl, errorCodeOf, messageOf, newClientId, useCrmGet } from "@/components/phoenix-crm/api";
+import { crmPost, crmUrl, errorCodeOf, messageOf, newClientId, useCrmAction, useCrmGet, type CrmResource } from "@/components/phoenix-crm/api";
+import { PHOENIX_CRM_DAY_ACTIVITIES } from "@/lib/phoenix-crm/day-activities";
 import { brickTintMap } from "@/components/phoenix-crm/brick-tints";
 import { CrmSpeak, type VoiceNoteValue } from "@/components/phoenix-crm/speak";
 import { CrmVoiceNotePlayer } from "@/components/phoenix-crm/voice-playback";
@@ -47,6 +48,7 @@ import {
   CrmLoadError,
   CrmLoading,
   CrmNote,
+  CrmSelect,
   CrmPanel,
   CrmPill,
   CrmStat,
@@ -470,6 +472,64 @@ function SavedNote({ onValidate, saved }: { onValidate: (() => void) | null; sav
   );
 }
 
+/**
+ * What this day was, when it was not a call — a meeting, training, a conference, admin work,
+ * travelling, a health day (owner, 2026-09-26).
+ *
+ * A RECORD ONLY, and the copy says so out loud: it changes no call rate, no coverage and no
+ * plan-against-actual. A rep at a training day currently looks like a rep who did nothing, and this
+ * is what lets his manager see the difference — not what excuses the day.
+ *
+ * There is no leave here. HR's vacation module is the only leave record, and a second one in the CRM
+ * would be a truth nothing reconciles.
+ */
+function DayActivityBlock({ day, view }: { day: CrmResource<VisitDayView>; view: VisitDayView }) {
+  const action = useCrmAction();
+  const current = view.dayActivity;
+
+  async function choose(next: string) {
+    const body =
+      next === ""
+        ? { clear: true, seatId: view.territory.seatId, test: view.isTest }
+        : { activityType: next, seatId: view.territory.seatId, test: view.isTest };
+    const ok = await action.run("day-activity", () => crmPost("/api/phoenix-crm/day-activities", body, "saved"));
+    if (ok !== undefined) day.reload();
+  }
+
+  if (!view.canSetDayActivity) {
+    return current ? (
+      <CrmBlock className="border-t border-slate-100" title="This day">
+        <p className="text-sm font-semibold text-slate-700">
+          {current.activityLabel}
+          {current.halfDay ? " · half day" : ""}
+        </p>
+      </CrmBlock>
+    ) : null;
+  }
+
+  return (
+    <CrmBlock className="border-t border-slate-100" title="Was today a field day?">
+      <CrmSelect
+        aria-label="What today was"
+        disabled={action.busy !== null}
+        onChange={(event) => void choose(event.target.value)}
+        value={current?.activityType ?? ""}
+      >
+        <option value="">A field day — visits only</option>
+        {PHOENIX_CRM_DAY_ACTIVITIES.map((entry) => (
+          <option key={entry.key} value={entry.key}>
+            {entry.label}
+          </option>
+        ))}
+      </CrmSelect>
+      <p className="mt-2 text-xs font-semibold text-slate-500">
+        Recorded so your manager can see the day. It changes none of your figures.
+      </p>
+      {action.error ? <CrmNote title="Not saved" tone="warn">{action.error}</CrmNote> : null}
+    </CrmBlock>
+  );
+}
+
 export function VisitsTab({
   cairoToday,
   onPendingVisitDone,
@@ -609,6 +669,7 @@ export function VisitsTab({
       {view ? (
         <>
           {day.error ? <CrmLoadError message={day.error} onRetry={day.reload} /> : null}
+          <DayActivityBlock day={day} view={view} />
           <CrmBlock>
             {/* AM first, as every sentence and the Day screen say it; the figures are unchanged. */}
             <CrmStatGrid>
