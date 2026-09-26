@@ -43,6 +43,7 @@ import { cn } from "@/lib/utils";
 
 import { type CalendarApi, reasonText } from "./calendar-api";
 import { CalendarDialog, ErrorLine, NoteLine, Segmented } from "./calendar-dialog";
+import { InterviewerPicker, type ChosenInterviewer } from "./interviewer-picker";
 import { PersonPicker, initialPersonChoice, personLabel, personProblem, submitBooking, type PersonChoice } from "./person-picker";
 
 const QUARTER = 15;
@@ -153,6 +154,7 @@ export function CellDialog({
   const [start, setStart] = useState(firstStart);
   const [duration, setDuration] = useState(30);
   const [platform, setPlatform] = useState<InterviewPlatform | null>(null);
+  const [interviewer, setInterviewer] = useState<ChosenInterviewer | null>(null);
   const [notes, setNotes] = useState("");
   const [title, setTitle] = useState("");
   const [end, setEnd] = useState(() => Math.min(firstStart + 4 * 60, WORKDAY_END_MINUTES));
@@ -221,7 +223,14 @@ export function CellDialog({
     setBusy(true);
     setError(null);
     try {
-      const data = await submitBooking(api, person, { dateKey, durationMinutes: duration, notes: notes.trim(), platform, startMinutes: start });
+      const data = await submitBooking(api, person, {
+        dateKey,
+        durationMinutes: duration,
+        interviewerHrId: interviewer?.hrId ?? null,
+        notes: notes.trim(),
+        platform,
+        startMinutes: start,
+      });
       const booking = data.booking as InterviewBooking;
       onBooked(booking);
       setDone({ booking, kind: "booking", notice: typeof data.notice === "string" ? data.notice : null });
@@ -273,6 +282,7 @@ export function CellDialog({
                   <p>
                     {formatTimeRange(booking.startMinutes, booking.durationMinutes)} · {formatDuration(booking.durationMinutes)} · {PLATFORM_LABEL[booking.platform]}
                   </p>
+                  {booking.interviewerName ? <p className="mt-1 text-[12px] text-slate-600">Interviewer: {booking.interviewerName}</p> : null}
                 </>
               ) : session ? (
                 <>
@@ -420,6 +430,10 @@ export function CellDialog({
                 {platform === "zoom" && !zoomConnected ? (
                   <p className="mt-1.5 text-[11px] text-amber-800">It is booked as Zoom; the meeting link is made once Zoom is connected to Phoenix.</p>
                 ) : null}
+              </div>
+              <div>
+                <FieldLabel>Interviewer (optional)</FieldLabel>
+                <InterviewerPicker api={api} onChange={setInterviewer} value={interviewer} />
               </div>
               <label className="block">
                 <FieldLabel>Note (optional)</FieldLabel>

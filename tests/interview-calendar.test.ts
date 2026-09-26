@@ -1022,4 +1022,13 @@ function runWiringTests() {
     /\{headerActions\}/,
     "the CV preview draws what its caller hands it, which is how a preview anywhere gets the button",
   );
+
+  // An interview booked straight from a calendar cell — the only path that can book someone from
+  // OUTSIDE Phoenix — can name the interviewer too, so an outside candidate's interview reaches the
+  // chosen interviewer's own calendar (owner, 2026-09-26). Before this the cell dialog carried no
+  // picker, so every cell-booked outside interview was born with interviewer_hr_id null and stayed
+  // invisible to interviewers. The domain already resolves an interviewer on an external booking.
+  const cellDialog = stripComments(read("src/components/recruitment/interview-calendar/cell-dialog.tsx"));
+  assert.match(cellDialog, /<InterviewerPicker\b/, "the cell booking offers an interviewer picker");
+  assert.match(cellDialog, /interviewerHrId:\s*interviewer\?\.hrId\s*\?\?\s*null/, "and it sends the chosen interviewer with the booking, external candidate included");
 }
