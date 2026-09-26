@@ -69,6 +69,7 @@ import type {
   VisitLocationReportView,
   VisitsReportView,
 } from "@/lib/phoenix-crm/view-types";
+import { downloadXlsxFrom } from "@/lib/export/download-xlsx-client";
 import { cn } from "@/lib/utils";
 
 type ReportSection = "exceptions" | "visits" | "plan" | "coverage" | "bricks" | "managers" | "locations";
@@ -1415,6 +1416,8 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
   const [includeTest, setIncludeTest] = useState(test);
   // Phones only: the filters fold to a one-line summary, so the figures are not a screen further down.
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportFailed, setExportFailed] = useState(false);
 
   const view = scope.data;
   const today = view?.cairoToday ?? cairoToday;
@@ -1487,6 +1490,38 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
     active.reload();
   }
 
+  /**
+   * The whole pack, in one file. The URL carries the SAME filters the screen is showing, so what he
+   * saves is what he was looking at — a workbook built from different filters than the ones on screen
+   * is the kind of mismatch nobody notices until a number is quoted in a meeting.
+   *
+   * A failure is shown ON the button rather than swallowed: half a workbook delivered quietly is
+   * worse than one the reader knows to take again.
+   */
+  async function exportPack() {
+    if (exporting || problem) return;
+    setExporting(true);
+    setExportFailed(false);
+    try {
+      await downloadXlsxFrom(
+        crmUrl(`${REPORTS_PATH}/export`, {
+          from: period.from,
+          includeTest: withTest,
+          lineCode: lineCode || null,
+          month,
+          seatId: seatId || null,
+          to: period.to,
+        }),
+        `phoenix-crm-reports-${period.from}-to-${period.to}.xlsx`,
+      );
+    } catch (error) {
+      console.error("Phoenix CRM reports export failed:", error);
+      setExportFailed(true);
+    } finally {
+      setExporting(false);
+    }
+  }
+
   const sectionOptions: Array<CrmChoiceOption<ReportSection>> = [
     // First, because it is the one a manager opens the tab FOR. Same gate as the place-vs-actual
     // report — one predicate, `readsTeamReports`, so the two can never disagree about who is a
@@ -1528,9 +1563,19 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
   return (
     <CrmPanel
       actions={
-        <CrmButton busy={scope.loading || active.loading} disabled={Boolean(problem)} onClick={refresh} size="sm">
-          Refresh
-        </CrmButton>
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          {/*
+            C1: one workbook holding every section this viewer may read. The sections he may not are
+            never loaded and write no sheet, so the file has the same shape as his screen — it can
+            never be a way round a refusal, and never an empty tab announcing a report exists.
+          */}
+          <CrmButton busy={exporting} disabled={Boolean(problem)} onClick={() => void exportPack()} size="sm">
+            {exportFailed ? "Export failed — press to retry" : "Export all sections"}
+          </CrmButton>
+          <CrmButton busy={scope.loading || active.loading} disabled={Boolean(problem)} onClick={refresh} size="sm">
+            Refresh
+          </CrmButton>
+        </div>
       }
       description={REPORTS_DESCRIPTION}
       eyebrow={withTest ? "Reports · your test entries included" : "Reports"}

@@ -710,6 +710,10 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/monthly-plans/reviews", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/team", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/reports", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
+  // The whole reports pack as one workbook (C1). Same "read" gate as the screen — it can never be a
+  // way round a refusal, because the sections a viewer may not read are never loaded and write no
+  // sheet. Audited as an export: a workbook naming individual employees leaves the building.
+  sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/phoenix-crm/reports/export", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
   // The Doctors directory: validated customers across territories. Scope is settled in
   // loadDoctorDirectory — a directory role reads the company, everyone else reads downward only.
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/doctors", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),

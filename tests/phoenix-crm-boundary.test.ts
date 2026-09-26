@@ -77,12 +77,23 @@ type RouteGate = {
   route: string;
   method: "GET" | "POST";
   action: PermissionAction;
-  audit: "mutation" | "access-read" | null;
+  audit: "mutation" | "access-read" | "export" | null;
   auditRequired: boolean;
 };
 
 function get(route: string, action: PermissionAction = "read"): RouteGate {
   return { route, method: "GET", action, audit: null, auditRequired: false };
+}
+
+/**
+ * A GET that hands back a FILE.
+ *
+ * Its own helper rather than an option on `get`, because the difference is not a flag: an ordinary
+ * read is answered on a screen and gone, while a workbook naming individual employees and their work
+ * leaves the building and is kept. That is why it audits and an ordinary read does not.
+ */
+function exportGet(route: string, action: PermissionAction = "read"): RouteGate {
+  return { route, method: "GET", action, audit: "export", auditRequired: true };
 }
 
 function post(route: string, action: PermissionAction): RouteGate {
@@ -142,6 +153,10 @@ const ROUTE_GATES: RouteGate[] = [
   get("day-activities"),
   post("day-activities", "create"),
   get("reports"),
+  // The whole reports pack as one workbook (C1). Same "read" gate as the screen it exports: which
+  // SHEETS the file holds is the access control, and a section the viewer may not read is never
+  // loaded and writes none — so the export can never be a way round a refusal on the tab.
+  exportGet("reports/export"),
   post("photos/upload-slot", "create"),
   // The native app's live photo: the phone sends the stamped JPEG as a base64 data URL and the server
   // does the PUT to the slot itself. Same create gate as upload-slot, which it calls to issue the slot.
