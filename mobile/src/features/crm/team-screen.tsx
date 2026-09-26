@@ -163,6 +163,10 @@ export function TeamScreen({ test }: { test: boolean }) {
     );
   }
 
+  // Read out of the narrowed view here, not inside the decide functions below: those are hoisted
+  // function DECLARATIONS, so TypeScript will not carry the `!teamView` guard into them.
+  const isTest = teamView.isTest;
+
   const plans = reviewView.rows.filter(waitsOnHim);
   const unplanned = teamView.unplannedVisits.filter(
     (visit) => visit.canDecide && visit.status !== "approved" && visit.status !== "refused",
@@ -195,7 +199,7 @@ export function TeamScreen({ test }: { test: boolean }) {
     if (!done) return;
     after(
       decision === "positive" ? "Plan approved" : "Plan returned for changes",
-      `${row.territory.name} · ${weekLabel(plan.weekStart)}${teamView.isTest ? " · a test plan, so nobody is notified" : ""}`,
+      `${row.territory.name} · ${weekLabel(plan.weekStart)}${isTest ? " · a test plan, so nobody is notified" : ""}`,
     );
   }
 
