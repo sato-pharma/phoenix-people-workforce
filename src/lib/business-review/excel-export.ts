@@ -7,8 +7,9 @@
 // workbook can never drift from the screen. In particular:
 //   - achievement is always the dataset's stored sum(sales)/sum(target), never
 //     recomputed or averaged here;
-//   - company doctors use the cross-line UNION (summing the per-line counts would
-//     double-count doctors covered by two lines);
+//   - company customers use the cross-line UNION (summing the per-line counts would
+//     double-count anyone covered by two lines), and are reported AM accounts · PM doctors ·
+//     Pharmacies apart, because a pharmacy is never a doctor (owner golden rule, 2026-09-21);
 //   - a source that holds no rows for the window shows "no data", never 0, so a blank
 //     period can never be read as a month in which nobody did anything.
 //
@@ -29,6 +30,8 @@ import {
   type BusinessReview,
   type ReviewView,
 } from "./service";
+import { formatVisitCountSplit } from "@/lib/crm/visit-count-buckets";
+
 import { describePeriods } from "./coverage";
 import { periodColumnLabel } from "./period-format";
 import type { AreaSummary, DmSummary, ReviewCompany, ReviewDataset } from "./types";
@@ -59,6 +62,11 @@ function achFont(ach: number | null): string {
 }
 
 type Col = { label: string; width: number; kind?: "egp" | "pct" | "num" | "text" };
+
+/** AM · PM · Pharmacies in the house wording — middle dot, never a slash (owner golden rule).
+ *  A pharmacy is never counted among the PM doctors, so only the PM figure may be called doctors. */
+const splitOf = (row: { customersAm: number; customersPm: number; customersPharmacy: number }) =>
+  formatVisitCountSplit({ am: row.customersAm, pm: row.customersPm, pharmacies: row.customersPharmacy });
 
 function titleBand(sheet: ExcelJS.Worksheet, ncols: number, title: string, subtitle: string, note?: string) {
   sheet.mergeCells(1, 1, 1, ncols);
@@ -181,10 +189,11 @@ function addCover(wb: ExcelJS.Workbook, company: ReviewCompany, scopeLabel: stri
     r += 1;
   };
   kpi("Company achievement", T.allProducts.ach ?? 0, "sum(graded sales) / sum(target) — never an average of line %s. Graded sales are every pound inside a month that carried a target.", "pct", T.allProducts.ach);
-  kpi("Sales", T.allProducts.sales, `all products, all areas — ${fmt(T.allProducts.graded)} of it sits on a product with a target of its own`, "egp");
+  kpi("Sales", T.allProducts.sales, `all products, all areas — ${fmt(T.allProducts.graded)} of it was sold in a month the line carried a target, which is the figure the achievement divides`, "egp");
   kpi("Target", T.allProducts.target, "", "egp");
-  kpi("Doctors reached", T.customersTotal, company.meta.doctorNote);
-  kpi("Visits", T.visits, `${T.reps} reps · ${T.doubleVisits} double visits`);
+  kpi("Customers reached", T.customersTotal, company.meta.doctorNote);
+  kpi("AM · PM · Pharmacies", splitOf(T), "accounts, doctors and pharmacies apart — a pharmacy is never counted among the doctors", "text");
+  kpi("Visits", T.visits, `${formatVisitCountSplit(T.visitSplit)} · ${T.visitingReps} reps in the field · ${T.doubleVisits} double visits`);
   kpi("Marketing", T.marketingCost, "GM-approved only (committed spend)", "egp");
   kpi("Outstation expenses", T.outstationCost, "rejected claims excluded", "egp");
   kpi("Areas", T.areas, `${T.areasVacant} vacant (${Math.round((100 * T.areasVacant) / Math.max(1, T.areas))}%)`);
@@ -229,7 +238,7 @@ function addCompanySheets(wb: ExcelJS.Workbook, review: BusinessReview, company:
     { label: "Expenses", width: 13, kind: "egp" }, { label: "Earners", width: 10, kind: "num" },
     { label: "Rep fails", width: 10, kind: "num" }, { label: "DM seats", width: 10, kind: "num" },
     { label: "Vacant seats", width: 12, kind: "num" }, { label: "Visits", width: 12, kind: "num" },
-    { label: "Doctors", width: 11, kind: "num" },
+    { label: "AM · PM · Pharmacies", width: 26 },
   ];
   const s1 = wb.addWorksheet("Company · Lines", { properties: { tabColor: { argb: ORANGE } } });
   titleBand(s1, lc.length, "LINE COMPARISON", `${company.meta.period} · ranked by achievement`,
@@ -241,7 +250,7 @@ function addCompanySheets(wb: ExcelJS.Workbook, review: BusinessReview, company:
       l.label, pctOr(l.allProducts.ach), l.allProducts.sales, l.allProducts.target,
       pctOr(l.exVacant.ach), l.marketingCost, l.outstationCost, l.earners, l.repFails,
       l.dms, l.dmsVacant,
-      naOr(l.visits, l.visitsAvailable), naOr(l.customersTotal, l.visitsAvailable),
+      naOr(l.visits, l.visitsAvailable), l.visitsAvailable ? splitOf(l) : "N/A",
     ], { achCols: [2, 5], zebra: i % 2 === 1 });
   });
   bodyRow(s1, r, lc, [
@@ -251,7 +260,7 @@ function addCompanySheets(wb: ExcelJS.Workbook, review: BusinessReview, company:
     company.lines.reduce((s, l) => s + l.repFails, 0),
     company.lines.reduce((s, l) => s + l.dms, 0),
     company.lines.reduce((s, l) => s + l.dmsVacant, 0),
-    T.visits, T.customersTotal,
+    T.visits, splitOf(T),
   ], { achCols: [2, 5], bold: true });
   s1.getRow(r).eachCell((c) => {
     c.border = { top: { style: "medium", color: { argb: SLATE } }, bottom: { style: "thin", color: { argb: HAIR } } };
@@ -265,7 +274,7 @@ function addCompanySheets(wb: ExcelJS.Workbook, review: BusinessReview, company:
     { label: "Payout %", width: 11, kind: "num" }, { label: "Sales", width: 15, kind: "egp" },
     { label: "Target", width: 15, kind: "egp" }, { label: "Marketing", width: 13, kind: "egp" },
     { label: "Expenses", width: 12, kind: "egp" }, { label: "Visits/mo", width: 11, kind: "num" },
-    { label: "Doctors", width: 10, kind: "num" }, { label: "Doubles", width: 10, kind: "num" },
+    { label: "AM · PM · Pharmacies", width: 26 }, { label: "Doubles", width: 10, kind: "num" },
   ];
   const s2 = wb.addWorksheet("Company · DSM league");
   titleBand(s2, dl.length, "DSM LEAGUE TABLE — ALL LINES", `${company.dms.length} target-carrying seats · best first`,
@@ -279,7 +288,7 @@ function addCompanySheets(wb: ExcelJS.Workbook, review: BusinessReview, company:
       pctOr(d.allProducts.ach), bandLabel(d.allProducts.ach),
       payoutPercentageFor(d.allProducts.ach) || "—",
       d.allProducts.sales, d.allProducts.target, d.marketingCost, d.outstationCost,
-      naOr(d.visitsAvgPerMonth, d.visitsAvailable), naOr(d.customersTotal, d.visitsAvailable),
+      naOr(d.visitsAvgPerMonth, d.visitsAvailable), d.visitsAvailable ? splitOf(d) : "N/A",
       naOr(d.doubleVisits, d.visitsAvailable),
     ], { achCols: [6], zebra: i % 2 === 1 });
   });
@@ -292,7 +301,7 @@ function addCompanySheets(wb: ExcelJS.Workbook, review: BusinessReview, company:
   headerRow(s3, 4, mt);
   bodyRow(s3, 5, mt, ["Sales achievement %", ...months.map((m) => pctOr(T.byMonth[m]?.ach ?? null))],
     { achCols: months.map((_m, i) => i + 2) });
-  bodyRow(s3, 6, mt, ["Doctors reached (unique)", ...months.map((m) => T.customersByMonth[m] ?? 0)], { zebra: true });
+  bodyRow(s3, 6, mt, ["Customers reached (unique)", ...months.map((m) => T.customersByMonth[m] ?? 0)], { zebra: true });
 }
 
 function regionOfDm(review: BusinessReview, line: ReviewLine, dm: string): string {
@@ -327,7 +336,7 @@ function addLineSheets(wb: ExcelJS.Workbook, line: ReviewLine, ds: ReviewDataset
     { label: "Sales", width: 15, kind: "egp" }, { label: "Target", width: 15, kind: "egp" },
     { label: "Marketing", width: 13, kind: "egp" }, { label: "Mktg months", width: 11, kind: "num" },
     { label: "Expenses", width: 12, kind: "egp" }, { label: "Visits/mo", width: 11, kind: "num" },
-    { label: "Doctors", width: 10, kind: "num" }, { label: "Doubles", width: 10, kind: "num" },
+    { label: "AM · PM · Pharmacies", width: 26 }, { label: "Doubles", width: 10, kind: "num" },
     { label: "Areas", width: 8, kind: "num" },
   ];
   const s1 = wb.addWorksheet(`${label} · DSMs`.slice(0, 31));
@@ -342,7 +351,7 @@ function addLineSheets(wb: ExcelJS.Workbook, line: ReviewLine, ds: ReviewDataset
       pctOr(d.allProducts.ach), bandLabel(d.allProducts.ach),
       payoutPercentageFor(d.allProducts.ach) || "—",
       d.allProducts.sales, d.allProducts.target, d.marketingCost, d.marketingMonths, d.outstationCost,
-      naOr(d.visitsAvgPerMonth, avail), naOr(d.customersTotal, avail), naOr(d.doubleVisits, avail),
+      naOr(d.visitsAvgPerMonth, avail), avail ? splitOf(d) : "N/A", naOr(d.doubleVisits, avail),
       d.areas.length,
     ], { achCols: [5], zebra: i % 2 === 1 });
   });
@@ -448,14 +457,14 @@ function addLineSheets(wb: ExcelJS.Workbook, line: ReviewLine, ds: ReviewDataset
   const mc: Col[] = [{ label: "DSM / Metric", width: 26 }, ...months.map((m) => ({ label: periodColumnLabel(m, months), width: 12, kind: "num" as const }))];
   const s4 = wb.addWorksheet(`${label} · Monthly`.slice(0, 31));
   titleBand(s4, mc.length, `${label.toUpperCase()} — MONTHLY DETAIL`, ds.meta.period,
-    avail ? undefined : "This line has no CRM visits export — visit and doctor rows are omitted rather than shown as zero.");
+    avail ? undefined : "This line has no CRM visits export — visit and customer rows are omitted rather than shown as zero.");
   headerRow(s4, 4, mc);
   r = 5;
   bodyRow(s4, r++, mc, ["LINE achievement %", ...months.map((m) => pctOr(ds.line.byMonth[m]?.allProducts.ach ?? null))],
     { achCols: months.map((_m, i) => i + 2), bold: true });
   if (avail) {
     bodyRow(s4, r++, mc, ["LINE visits", ...months.map((m) => ds.visits.byMonth[m] ?? 0)], { zebra: true });
-    bodyRow(s4, r++, mc, ["LINE doctors reached", ...months.map((m) => ds.line.customersByMonth[m] ?? 0)]);
+    bodyRow(s4, r++, mc, ["LINE customers reached", ...months.map((m) => ds.line.customersByMonth[m] ?? 0)]);
   }
   r += 1;
   const dh = s4.getCell(r, 1);
@@ -547,7 +556,7 @@ function addSummarySheet(wb: ExcelJS.Workbook, review: BusinessReview, company: 
   kpi("Achievement", ach ?? 0, "sum(graded sales) / sum(target)", "pct", ach);
   kpi("Sales", sales, `of ${fmt(target)} target`, "egp");
   kpi("Marketing + expenses", mkt + outn, `${fmt(mkt)} marketing + ${fmt(outn)} outstation`, "egp");
-  kpi("Visits", visAvail ? visits : "N/A", visAvail ? `${docs.toLocaleString("en-US")} doctors reached` : "no CRM visits export for this line");
+  kpi("Visits", visAvail ? visits : "N/A", visAvail ? `${docs.toLocaleString("en-US")} customers reached` : "no CRM visits export for this line");
   kpi("Areas", areas, `${vac} vacant (${Math.round((100 * vac) / Math.max(1, areas))}% uncovered)`);
 
   // line comparison (company scope only)
@@ -745,8 +754,11 @@ function addCoverageSheet(wb: ExcelJS.Workbook, review: BusinessReview) {
       `${prov.unplaced.marketingRequests} marketing requests, ${prov.unplaced.outstationRows} outstation claims, ${prov.unplaced.visitRows} visit rows. Counted in the company total, absent from every district row.`,
     ],
     [
-      "Doctors",
-      "Unioned, never summed. An area\u2019s window total is not the sum of its months, and the company total is not the sum of the lines.",
+      "Customers",
+      "Unioned, never summed. An area\u2019s window total is not the sum of its months, and the company " +
+        "total is not the sum of the lines. Reported AM accounts \u00b7 PM doctors \u00b7 Pharmacies apart: a " +
+        "pharmacy is never counted among the doctors, whatever period the vendor tagged it with. The " +
+        "vendor\u2019s catch-all contact is excluded \u2014 it is a slot, not a person.",
     ],
     ["Timezone", "Every month boundary is Africa/Cairo local time."],
   ];

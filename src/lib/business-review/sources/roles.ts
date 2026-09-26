@@ -9,12 +9,10 @@
 //
 // EACH ROLE IS MEASURED BY WHAT IT ACTUALLY DOES, AND THE GAPS ARE NAMED RATHER THAN FILLED:
 //
-//   Medical Rep        own field visits, doctors reached, outstation claims.
-//   District Manager   rides delivered, reps coached, own district's sales (from the sales half).
+//   Medical Rep        own field visits, customers reached, outstation claims.
+//   District Manager   rides delivered, reps ridden with, own district's sales (from the sales half).
 //   Regional / National Sales Manager   rides delivered across districts.
-//   Training Manager   rides delivered plus coaching reports. Production holds 41 coaching reports
-//                      for 2026 from a SINGLE coach, so this row is thin by nature, and it says so
-//                      instead of implying the role does nothing.
+//   Training Manager   rides delivered. Nothing else — see COACHING, below.
 //   Product Manager    rides delivered, and their line's sales. VISITS PER PRODUCT DO NOT EXIST —
 //                      `ireports360_visits` has no product column at all. Inventing one from the
 //                      rep's line would be a guess wearing a metric's clothes, so the row carries
@@ -23,17 +21,33 @@
 // A person with no activity at all in the window still appears in `headcount` but not in `people`:
 // the difference between "12 DMs employed" and "9 DMs with recorded activity" is one of the more
 // useful numbers on the page, and collapsing them would hide it.
+//
+// COACHING IS NOT READ HERE, AND MUST NOT COME BACK. Owner ruling 2026-09-26: "leave him out and
+// remove the coaching from this module." `coaching_reports` was a source of this module until that
+// day; it is not any more, and the Training Manager keeps no access to the page either. `repsCoached`
+// survives and is NOT coaching — it is the distinct reps a manager rode along with, from the visit
+// feed. Coaching analytics live in their own module.
+//
+// EVERY FIGURE IS PLACED ON A LINE. The tables are built once for the company and once for each
+// line, and a line's tables hold only the people the month's own sales attribution places there.
+// Until 2026-09-26 the company-wide rows were rendered under a line heading with no caption, so
+// "Pedia Line — Deep Analysis" ended with every rep, manager and Head-Office person in the
+// business and nothing on the page saying so.
 
+import {
+  emptyVisitCountSplit,
+  mergeVisitCountSplits,
+  type VisitCountSplit,
+} from "@/lib/crm/visit-count-buckets";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 
-import { hrKey } from "./attribution";
+import { hrKey, type AttributionMap } from "./attribution";
 import type { MarketingLoad } from "./marketing";
 import type { OutstationLoad } from "./outstation";
 import type { VisitsLoad } from "./visits";
 import type { ReviewWindow } from "../period";
-import { periodMonthEnd } from "../period-format";
 
 export type ReviewDirectoryEntry = {
   hrId: string;
@@ -54,15 +68,20 @@ export type ReviewRoleRow = {
   /** People of this role with at least one recorded action inside the window. */
   people: number;
   fieldVisits: number;
+  /** The same visits AM · PM · Pharmacies (owner golden rule). The three sum to `fieldVisits`. */
+  visitSplit: VisitCountSplit;
   regularVisits: number;
   campaignVisits: number;
   /** Double visits this role DELIVERED (rode along on). */
   ridesLed: number;
-  /** Distinct reps ridden with. */
+  /** Distinct reps ridden with. NOT coaching — that source was removed on 2026-09-26. */
   repsCoached: number;
-  /** Distinct doctors reached — a union across the role's people, never a sum. */
+  /** Distinct customers reached — a union across the role's people, never a sum. */
   customersReached: number;
-  coachingReports: number;
+  /** The same customers, three ways. Only `customersPm` may be called doctors. */
+  customersAm: number;
+  customersPm: number;
+  customersPharmacy: number;
   outstationClaimed: number;
   outstationApproved: number;
   marketingRequests: number;
@@ -81,12 +100,16 @@ export type ReviewPersonRow = {
   employmentStatus: string;
   hireDate: string | null;
   fieldVisits: number;
+  /** AM · PM · Pharmacies for this person's own field visits. */
+  visitSplit: VisitCountSplit;
   regularVisits: number;
   campaignVisits: number;
   ridesLed: number;
   repsCoached: number;
   customers: number;
-  coachingReports: number;
+  customersAm: number;
+  customersPm: number;
+  customersPharmacy: number;
   outstationClaimed: number;
   marketingRequests: number;
   /** Months inside the window in which this person recorded anything. */
@@ -95,14 +118,17 @@ export type ReviewPersonRow = {
   avgPerActiveMonth: number;
 };
 
-export type RolesLoad = {
+/** One scope's tables: the company's, or one line's. */
+export type RoleFacts = {
   roles: ReviewRoleRow[];
   people: ReviewPersonRow[];
-  directory: ReviewDirectory;
-  coachingReports: number;
-  coachingCoaches: number;
   /** People carrying activity whose HR id matches nobody in the directory. */
   unknownPeople: number;
+};
+
+export type RolesLoad = RoleFacts & {
+  /** The same tables, scoped to each line's own people. Keyed on the canonical `line_code`. */
+  byLine: Record<string, RoleFacts>;
 };
 
 const ROLE_NOTES: Record<string, string> = {
@@ -113,8 +139,8 @@ const ROLE_NOTES: Record<string, string> = {
     "Visits per product cannot be measured — the CRM visit feed carries no product column. A " +
     "Group Product Manager's recorded footprint is the double visits they rode on, beside their line's sales.",
   "Training Manager":
-    "Measured through double visits and coaching reports rather than owned territory. Production " +
-    "holds very few coaching reports, from a single coach, so a low count here reflects the record, not the role.",
+    "Measured through the double visits they rode on rather than owned territory. Coaching reports " +
+    "are not part of this module (owner ruling, 2026-09-26) — they are counted in their own.",
 };
 
 /** Role display order: field first, then the roles that ride along, then everyone else. */
@@ -160,64 +186,150 @@ export async function loadReviewDirectory(): Promise<ReviewDirectory> {
   return directory;
 }
 
-type CoachingFact = { period: string; coachHrId: string; repHrId: string };
+/** `lines.name` as production spells it → the canonical `line_code`. The same vocabulary
+ *  portal-scope.ts uses; both spellings of Anti Infective are in production. */
+const LINE_CODE_BY_DB_NAME: Record<string, string> = {
+  Pedia: "pedia",
+  CNS: "cns",
+  "Anti Infective": "anti_infective",
+  "Anti-Infective": "anti_infective",
+};
 
-async function loadCoachingFacts(window: ReviewWindow): Promise<CoachingFact[]> {
+/**
+ * `employees.line_id` per canonical line code, read from the `lines` table.
+ *
+ * Read, never hardcoded. A line scope's HEADCOUNT is "people employed on this line today", which
+ * only the HR record can answer — the sales attribution cannot, because somebody with no activity
+ * in the window has no attribution at all. An unknown line reports NO headcount rather than a
+ * guessed one: a wrong headcount is worse than an absent one, because "visits per head" divides by it.
+ */
+export async function loadLineIdByCode(): Promise<Record<string, number>> {
   const supabase = getSupabaseAdmin();
+  const out: Record<string, number> = {};
   try {
-    const rows = await fetchAllRows<Record<string, unknown>>(
-      () =>
-        supabase
-          .from("coaching_reports")
-          .select("id, coach_hr_id, medical_rep_hr_id, coaching_date")
-          .not("coaching_date", "is", null)
-          .gte("coaching_date", `${window.from}-01`)
-          .lte("coaching_date", periodMonthEnd(window.to)),
-      "id",
-    );
-    const facts: CoachingFact[] = [];
-    for (const row of rows) {
-      const period = String(row.coaching_date ?? "").slice(0, 7);
-      if (!window.periods.includes(period)) continue;
-      facts.push({
-        period,
-        coachHrId: hrKey(row.coach_hr_id as string | null),
-        repHrId: hrKey(row.medical_rep_hr_id as string | null),
-      });
+    const { data, error } = await supabase.from("lines").select("id,name");
+    if (error || !data) return out;
+    for (const row of data as { id: number | null; name: string | null }[]) {
+      const code = LINE_CODE_BY_DB_NAME[String(row.name ?? "").trim()];
+      if (code && row.id != null) out[code] = Number(row.id);
     }
-    return facts;
   } catch {
-    return [];
+    return out;
   }
+  return out;
 }
 
 type PersonAcc = {
   hrId: string;
+  visitSplit: VisitCountSplit;
+  customersAm: Set<number>;
+  customersPm: Set<number>;
+  customersPharmacy: Set<number>;
   fieldVisits: number;
   regularVisits: number;
   campaignVisits: number;
   ridesLed: number;
   reps: Set<string>;
   customers: Set<number>;
-  coachingReports: number;
   outstationClaimed: number;
   marketingRequests: number;
   months: Set<string>;
 };
 
+type RoleAcc = {
+  role: string;
+  headcount: number;
+  people: Set<string>;
+  visitSplit: VisitCountSplit;
+  customersAm: Set<number>;
+  customersPm: Set<number>;
+  customersPharmacy: Set<number>;
+  fieldVisits: number;
+  regularVisits: number;
+  campaignVisits: number;
+  ridesLed: number;
+  reps: Set<string>;
+  customers: Set<number>;
+  outstationClaimed: number;
+  outstationApproved: number;
+  marketingRequests: number;
+  marketingCommitted: number;
+  fieldVisitsByMonth: Map<string, number>;
+  ridesLedByMonth: Map<string, number>;
+};
+
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-export async function loadRoleFacts(input: {
+export type RoleFactsInput = {
   window: ReviewWindow;
   visits: VisitsLoad;
   outstation: OutstationLoad;
   marketing: MarketingLoad;
-  directory?: ReviewDirectory;
-}): Promise<RolesLoad> {
-  const [directory, coaching] = await Promise.all([
-    input.directory ? Promise.resolve(input.directory) : loadReviewDirectory(),
-    loadCoachingFacts(input.window),
-  ]);
+  directory: ReviewDirectory;
+  lineIdByCode: Record<string, number>;
+  /**
+   * Where each person stood, month by month. The same map the sales overlays use, so a line's role
+   * table and a line's sales table can never disagree about who belongs to it.
+   */
+  attribution: AttributionMap;
+  /** The one span every figure answers — see SharedBuildContext.figureLabel in canonical.ts. */
+  figurePeriods: ReadonlySet<string>;
+};
+
+/**
+ * Build the role and people tables — company-wide, and once more for each line.
+ *
+ * Synchronous: with coaching gone this function has no I/O of its own, so it runs AFTER the
+ * attribution map rather than racing it, and the directory is loaded in the caller's own
+ * Promise.all. That is one round trip fewer than the arrangement it replaces, not one more.
+ */
+export function buildRoleFacts(input: RoleFactsInput): RolesLoad {
+  const company = collect(input, null);
+  const lineCodes = new Set<string>();
+  for (const fact of input.visits.agents) {
+    if (!input.figurePeriods.has(fact.period) || !fact.agentHrId) continue;
+    const line = input.attribution.place(fact.agentHrId, fact.period)?.lineCode;
+    if (line) lineCodes.add(line);
+  }
+  for (const code of Object.keys(input.lineIdByCode)) lineCodes.add(code);
+  const byLine: Record<string, RoleFacts> = {};
+  for (const lineCode of lineCodes) byLine[lineCode] = collect(input, lineCode);
+  return { ...company, byLine };
+}
+
+/**
+ * One scope's tables. `lineCode` null is the company; otherwise only the work the month's own
+ * attribution places on that line is counted.
+ */
+function collect(input: RoleFactsInput, lineCode: string | null): RoleFacts {
+  const { directory, attribution, figurePeriods } = input;
+
+  /** True when this person's work in this month belongs to the scope being built. */
+  const inScope = (hrId: string, period: string): boolean => {
+    if (!figurePeriods.has(period)) return false;
+    if (lineCode == null) return true;
+    return attribution.place(hrId, period)?.lineCode === lineCode;
+  };
+
+  /**
+   * A manager's rides, split by THE LINE THE REP STOOD ON — never the manager's own seat.
+   *
+   * The same rule the overlays follow, and the reason `VisitManagerFact` carries `ridesByRep`
+   * rather than a bare count: a Training Manager who rode with a CNS rep and a Pedia rep in one
+   * month belongs in both lines' tables, with the right split in each, and a total alone cannot be
+   * attributed to a line without guessing.
+   */
+  const ridesInScope = (fact: VisitsLoad["managers"][number]): { rides: number; reps: string[] } => {
+    if (lineCode == null) return { rides: fact.rides, reps: [...fact.ridesByRep.keys()] };
+    let rides = 0;
+    const reps: string[] = [];
+    for (const [repHrId, count] of fact.ridesByRep) {
+      if (attribution.place(repHrId, fact.period)?.lineCode !== lineCode) continue;
+      rides += count;
+      reps.push(repHrId);
+    }
+    return { rides, reps };
+  };
 
   const people = new Map<string, PersonAcc>();
   const of = (key: string): PersonAcc => {
@@ -225,9 +337,11 @@ export async function loadRoleFacts(input: {
     if (!acc) {
       acc = {
         hrId: key,
+        visitSplit: emptyVisitCountSplit(),
+        customersAm: new Set(), customersPm: new Set(), customersPharmacy: new Set(),
         fieldVisits: 0, regularVisits: 0, campaignVisits: 0,
         ridesLed: 0, reps: new Set(), customers: new Set(),
-        coachingReports: 0, outstationClaimed: 0, marketingRequests: 0,
+        outstationClaimed: 0, marketingRequests: 0,
         months: new Set(),
       };
       people.set(key, acc);
@@ -235,40 +349,114 @@ export async function loadRoleFacts(input: {
     return acc;
   };
 
+  const roles = new Map<string, RoleAcc>();
+  const roleOf = (role: string): RoleAcc => {
+    let acc = roles.get(role);
+    if (!acc) {
+      acc = {
+        role, headcount: 0, people: new Set(),
+        visitSplit: emptyVisitCountSplit(),
+        customersAm: new Set(), customersPm: new Set(), customersPharmacy: new Set(),
+        fieldVisits: 0, regularVisits: 0, campaignVisits: 0, ridesLed: 0,
+        reps: new Set(), customers: new Set(),
+        outstationClaimed: 0, outstationApproved: 0,
+        marketingRequests: 0, marketingCommitted: 0,
+        fieldVisitsByMonth: new Map(), ridesLedByMonth: new Map(),
+      };
+      roles.set(role, acc);
+    }
+    return acc;
+  };
+  const roleFor = (hrIdKey: string) => directory.get(hrIdKey)?.role ?? "Employee";
+
+  // ── Field visits ──
   for (const fact of input.visits.agents) {
-    if (!fact.agentHrId) continue;
-    const acc = of(fact.agentHrId);
-    acc.fieldVisits += fact.fieldVisits;
-    acc.regularVisits += fact.regularVisits;
-    acc.campaignVisits += fact.campaignVisits;
-    for (const id of fact.customers) acc.customers.add(id);
-    if (fact.fieldVisits > 0 || fact.adminRows > 0) acc.months.add(fact.period);
+    if (!fact.agentHrId || !inScope(fact.agentHrId, fact.period)) continue;
+    const person = of(fact.agentHrId);
+    const role = roleOf(roleFor(fact.agentHrId));
+    role.people.add(fact.agentHrId);
+    for (const acc of [person, role] as { visitSplit: VisitCountSplit; fieldVisits: number; regularVisits: number; campaignVisits: number; customers: Set<number>; customersAm: Set<number>; customersPm: Set<number>; customersPharmacy: Set<number> }[]) {
+      acc.fieldVisits += fact.fieldVisits;
+      mergeVisitCountSplits(acc.visitSplit, fact.visitSplit);
+      acc.regularVisits += fact.regularVisits;
+      acc.campaignVisits += fact.campaignVisits;
+      for (const id of fact.customers) acc.customers.add(id);
+      for (const id of fact.customersAm) acc.customersAm.add(id);
+      for (const id of fact.customersPm) acc.customersPm.add(id);
+      for (const id of fact.customersPharmacy) acc.customersPharmacy.add(id);
+    }
+    if (fact.fieldVisits > 0 || fact.adminRows > 0) person.months.add(fact.period);
+    if (fact.fieldVisits > 0) {
+      role.fieldVisitsByMonth.set(fact.period, (role.fieldVisitsByMonth.get(fact.period) ?? 0) + fact.fieldVisits);
+    }
   }
+
+  // ── Rides delivered ──
   for (const fact of input.visits.managers) {
-    const acc = of(fact.managerHrId);
-    acc.ridesLed += fact.rides;
-    for (const rep of fact.ridesByRep.keys()) acc.reps.add(rep);
-    for (const id of fact.customers) acc.customers.add(id);
-    if (fact.rides > 0) acc.months.add(fact.period);
+    if (!figurePeriods.has(fact.period)) continue;
+    const { rides, reps } = ridesInScope(fact);
+    if (rides === 0 && reps.length === 0) continue;
+    const person = of(fact.managerHrId);
+    const role = roleOf(roleFor(fact.managerHrId));
+    role.people.add(fact.managerHrId);
+    person.ridesLed += rides;
+    role.ridesLed += rides;
+    for (const rep of reps) {
+      person.reps.add(rep);
+      role.reps.add(rep);
+    }
+    for (const acc of [person, role]) {
+      for (const id of fact.customers) acc.customers.add(id);
+      for (const id of fact.customersAm) acc.customersAm.add(id);
+      for (const id of fact.customersPm) acc.customersPm.add(id);
+      for (const id of fact.customersPharmacy) acc.customersPharmacy.add(id);
+    }
+    if (rides > 0) {
+      person.months.add(fact.period);
+      role.ridesLedByMonth.set(fact.period, (role.ridesLedByMonth.get(fact.period) ?? 0) + rides);
+    }
   }
+
+  // ── Outstation ──
   for (const fact of input.outstation.facts) {
     if (!fact.hrId) continue;
-    const acc = of(hrKey(fact.hrId));
-    acc.outstationClaimed += fact.claimed;
-    if (fact.claimed !== 0) acc.months.add(fact.period);
+    const key = hrKey(fact.hrId);
+    if (!inScope(key, fact.period)) continue;
+    const person = of(key);
+    const role = roleOf(roleFor(key));
+    role.people.add(key);
+    person.outstationClaimed += fact.claimed;
+    role.outstationClaimed += fact.claimed;
+    role.outstationApproved += fact.approved;
+    if (fact.claimed !== 0) person.months.add(fact.period);
   }
+
+  // ── Marketing ──
   for (const fact of input.marketing.facts) {
     if (!fact.requesterHrId) continue;
-    const acc = of(hrKey(fact.requesterHrId));
-    acc.marketingRequests += 1;
-    acc.months.add(fact.period);
+    const key = hrKey(fact.requesterHrId);
+    if (!inScope(key, fact.period)) continue;
+    const person = of(key);
+    const role = roleOf(roleFor(key));
+    role.people.add(key);
+    person.marketingRequests += 1;
+    role.marketingRequests += 1;
+    if (fact.bucket === "committed") role.marketingCommitted += fact.cost;
+    person.months.add(fact.period);
   }
-  for (const fact of coaching) {
-    if (!fact.coachHrId) continue;
-    const acc = of(fact.coachHrId);
-    acc.coachingReports += 1;
-    if (fact.repHrId) acc.reps.add(fact.repHrId);
-    acc.months.add(fact.period);
+
+  // Headcount is the directory's live answer, restricted to people who are actually employed —
+  // a resigned rep is counted in the activity above (they worked those months) but is not a seat
+  // the business holds today, and mixing the two makes "visits per head" nonsense. A LINE scope
+  // follows the employee record's own line, the only line an HR record states.
+  const scopeLineId = lineCode == null ? null : input.lineIdByCode[lineCode] ?? null;
+  const headcountResolvable = lineCode == null || scopeLineId != null;
+  if (headcountResolvable) {
+    for (const entry of directory.values()) {
+      if (/resign|terminat|exit/i.test(entry.employmentStatus)) continue;
+      if (scopeLineId != null && entry.lineId !== scopeLineId) continue;
+      roleOf(entry.role).headcount += 1;
+    }
   }
 
   // ── Person rows ──
@@ -285,12 +473,15 @@ export async function loadRoleFacts(input: {
       employmentStatus: entry?.employmentStatus ?? "",
       hireDate: entry?.hireDate ?? null,
       fieldVisits: acc.fieldVisits,
+      visitSplit: { ...acc.visitSplit },
       regularVisits: acc.regularVisits,
       campaignVisits: acc.campaignVisits,
       ridesLed: acc.ridesLed,
       repsCoached: acc.reps.size,
       customers: acc.customers.size,
-      coachingReports: acc.coachingReports,
+      customersAm: acc.customersAm.size,
+      customersPm: acc.customersPm.size,
+      customersPharmacy: acc.customersPharmacy.size,
       outstationClaimed: round2(acc.outstationClaimed),
       marketingRequests: acc.marketingRequests,
       activeMonths,
@@ -298,96 +489,6 @@ export async function loadRoleFacts(input: {
     };
   });
   personRows.sort((a, b) => b.fieldVisits + b.ridesLed - (a.fieldVisits + a.ridesLed));
-
-  // ── Role rows ──
-  type RoleAcc = {
-    role: string;
-    headcount: number;
-    people: Set<string>;
-    fieldVisits: number;
-    regularVisits: number;
-    campaignVisits: number;
-    ridesLed: number;
-    reps: Set<string>;
-    customers: Set<number>;
-    coachingReports: number;
-    outstationClaimed: number;
-    outstationApproved: number;
-    marketingRequests: number;
-    marketingCommitted: number;
-    fieldVisitsByMonth: Map<string, number>;
-    ridesLedByMonth: Map<string, number>;
-  };
-  const roles = new Map<string, RoleAcc>();
-  const roleOf = (role: string): RoleAcc => {
-    let acc = roles.get(role);
-    if (!acc) {
-      acc = {
-        role, headcount: 0, people: new Set(),
-        fieldVisits: 0, regularVisits: 0, campaignVisits: 0, ridesLed: 0,
-        reps: new Set(), customers: new Set(), coachingReports: 0,
-        outstationClaimed: 0, outstationApproved: 0,
-        marketingRequests: 0, marketingCommitted: 0,
-        fieldVisitsByMonth: new Map(), ridesLedByMonth: new Map(),
-      };
-      roles.set(role, acc);
-    }
-    return acc;
-  };
-
-  // Headcount is the directory's live answer, restricted to people who are actually employed —
-  // a resigned rep is counted in the activity above (they worked those months) but is not a seat
-  // the business holds today, and mixing the two makes "visits per head" nonsense.
-  for (const entry of directory.values()) {
-    if (/resign|terminat|exit/i.test(entry.employmentStatus)) continue;
-    roleOf(entry.role).headcount += 1;
-  }
-
-  const roleFor = (hrIdKey: string) => directory.get(hrIdKey)?.role ?? "Employee";
-
-  for (const fact of input.visits.agents) {
-    if (!fact.agentHrId) continue;
-    const acc = roleOf(roleFor(fact.agentHrId));
-    acc.people.add(fact.agentHrId);
-    acc.fieldVisits += fact.fieldVisits;
-    acc.regularVisits += fact.regularVisits;
-    acc.campaignVisits += fact.campaignVisits;
-    for (const id of fact.customers) acc.customers.add(id);
-    if (fact.fieldVisits > 0) {
-      acc.fieldVisitsByMonth.set(fact.period, (acc.fieldVisitsByMonth.get(fact.period) ?? 0) + fact.fieldVisits);
-    }
-  }
-  for (const fact of input.visits.managers) {
-    const acc = roleOf(roleFor(fact.managerHrId));
-    acc.people.add(fact.managerHrId);
-    acc.ridesLed += fact.rides;
-    for (const rep of fact.ridesByRep.keys()) acc.reps.add(rep);
-    for (const id of fact.customers) acc.customers.add(id);
-    acc.ridesLedByMonth.set(fact.period, (acc.ridesLedByMonth.get(fact.period) ?? 0) + fact.rides);
-  }
-  for (const fact of input.outstation.facts) {
-    if (!fact.hrId) continue;
-    const key = hrKey(fact.hrId);
-    const acc = roleOf(roleFor(key));
-    acc.people.add(key);
-    acc.outstationClaimed += fact.claimed;
-    acc.outstationApproved += fact.approved;
-  }
-  for (const fact of input.marketing.facts) {
-    if (!fact.requesterHrId) continue;
-    const key = hrKey(fact.requesterHrId);
-    const acc = roleOf(roleFor(key));
-    acc.people.add(key);
-    acc.marketingRequests += 1;
-    if (fact.bucket === "committed") acc.marketingCommitted += fact.cost;
-  }
-  for (const fact of coaching) {
-    if (!fact.coachHrId) continue;
-    const acc = roleOf(roleFor(fact.coachHrId));
-    acc.people.add(fact.coachHrId);
-    acc.coachingReports += 1;
-    if (fact.repHrId) acc.reps.add(fact.repHrId);
-  }
 
   const fill = (map: Map<string, number>): Record<string, number> => {
     const out: Record<string, number> = {};
@@ -401,12 +502,15 @@ export async function loadRoleFacts(input: {
       headcount: acc.headcount,
       people: acc.people.size,
       fieldVisits: acc.fieldVisits,
+      visitSplit: { ...acc.visitSplit },
       regularVisits: acc.regularVisits,
       campaignVisits: acc.campaignVisits,
       ridesLed: acc.ridesLed,
       repsCoached: acc.reps.size,
       customersReached: acc.customers.size,
-      coachingReports: acc.coachingReports,
+      customersAm: acc.customersAm.size,
+      customersPm: acc.customersPm.size,
+      customersPharmacy: acc.customersPharmacy.size,
       outstationClaimed: round2(acc.outstationClaimed),
       outstationApproved: round2(acc.outstationApproved),
       marketingRequests: acc.marketingRequests,
@@ -425,15 +529,7 @@ export async function loadRoleFacts(input: {
       return a.role < b.role ? -1 : 1;
     });
 
-  return {
-    roles: roleRows,
-    people: personRows,
-    directory,
-    coachingReports: coaching.length,
-    coachingCoaches: new Set(coaching.map((c) => c.coachHrId).filter(Boolean)).size,
-    unknownPeople,
-  };
+  return { roles: roleRows, people: personRows, unknownPeople };
 }
 
 export const ROLES_ORIGIN = "public.employees job titles, via the shared job-function classifier";
-export const COACHING_ORIGIN = "public.coaching_reports, keyed on coaching_date";

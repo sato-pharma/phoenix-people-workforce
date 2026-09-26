@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
+import { stripComments } from "./support/comment-strip.ts";
+
 import { periodMonthEnd } from "../src/lib/business-review/period-format.ts";
 
 /**
@@ -9,15 +11,16 @@ import { periodMonthEnd } from "../src/lib/business-review/period-format.ts";
  *
  * WHAT WENT WRONG (production, September 2026). The coaching read asked `coaching_reports` for
  * `coaching_date <= "2026-09-31"`. Postgres answers that with 22008 ("date/time field value out of
- * range"), `loadCoachingFacts` swallows the failure as "no data", and every window ending in
- * September showed ZERO coaching reports while production held five. The same happens for any
- * window ending in a 30-day month or in February. The Postgres log carried 24 of those failures. A
- * zero on this page reads as "this coach did nothing", which is the accusation the review's
- * coverage rules exist to prevent.
+ * range"), the loader swallowed the failure as "no data", and every window ending in September
+ * showed ZERO coaching reports while production held five. The same happens for any window ending
+ * in a 30-day month or in February. The Postgres log carried 24 of those failures. A zero on this
+ * page reads as "this coach did nothing", which is the accusation the review's coverage rules
+ * exist to prevent.
  *
- * The marketing and visits sources already computed the real last day, each with its own private
- * copy of the helper. All three now share `periodMonthEnd`, and this file pins both the helper and
- * the absence of a hardcoded day in any source's date bound.
+ * COACHING ITSELF LEFT THIS MODULE on 2026-09-26 (owner: "remove the coaching from this module"),
+ * so the assertion naming that one read is gone with it. The DEFECT CLASS is not gone: marketing,
+ * outstation and the visits read all bound a date the same way, all three share `periodMonthEnd`,
+ * and the directory-wide sweep below is what keeps a hardcoded day from coming back in any of them.
  */
 
 const SOURCES_DIR = fileURLToPath(new URL("../src/lib/business-review/sources/", import.meta.url));
@@ -34,11 +37,17 @@ export function runBusinessReviewMonthEndTests() {
   assert.equal(periodMonthEnd("2026-07"), "2026-07-31", "July has 31 days");
   assert.equal(periodMonthEnd("2026-12"), "2026-12-31", "December rolls into the next year correctly");
 
-  // The coaching read is the one that failed: its upper bound must come from the helper.
-  assert.ok(
-    flat(source("roles.ts")).includes('.lte("coaching_date", periodMonthEnd(window.to))'),
-    "loadCoachingFacts must bound coaching_date with periodMonthEnd(window.to), never a hardcoded day",
-  );
+  // Coaching is no longer read by this module at all — owner ruling, 2026-09-26. Pinned so it
+  // cannot drift back in through a source file rather than through a decision.
+  // Comments STRIPPED before measuring, or this file's own prose about the removal fails it — the
+  // exact mistake the no-ellipsis ratchet lost a CI round to (#2571).
+  for (const name of readdirSync(SOURCES_DIR).filter((f) => f.endsWith(".ts"))) {
+    assert.doesNotMatch(
+      stripComments(source(name)),
+      /coaching_reports/,
+      `${name} reads coaching_reports — the owner removed coaching from the Business Review on 2026-09-26`,
+    );
+  }
 
   // No source may build a date bound with a hardcoded day 28-31 (`${window.to}-31` was the bug).
   const offenders = readdirSync(SOURCES_DIR)

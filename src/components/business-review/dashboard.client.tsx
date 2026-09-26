@@ -1,14 +1,19 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, Download, FileSpreadsheet } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import type { ReviewLine, ReviewView } from "@/lib/business-review/service";
 import { REVIEW_VIEWS } from "@/lib/business-review/review-views";
-import { hasFigures, type ReviewCoverage } from "@/lib/business-review/coverage";
+import { figureWindowLabel, hasFigures, type ReviewCoverage } from "@/lib/business-review/coverage";
+import {
+  formatVisitCountSplit,
+  type VisitCountSplit,
+} from "@/lib/crm/visit-count-buckets";
 import { periodColumnLabel } from "@/lib/business-review/period-format";
+import { columnPercents } from "@/lib/business-review/table-columns";
 import type { ReviewWindow } from "@/lib/business-review/period";
 import type { AreaSummary, DmSummary, ProductRow, ReviewCompany, ReviewDataset } from "@/lib/business-review/types";
 import {
@@ -18,6 +23,7 @@ import {
   type CoverageProvenance,
 } from "./coverage.client";
 import { ReviewPeriodFilter } from "./review-filter.client";
+import { PortalDesktopTable, PortalResponsiveDataList } from "@/components/employee-portal/portal-primitives";
 import { CustomersByAreaTable, PeopleActivityTable, RoleActivityTable } from "./rollups.client";
 import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
 
@@ -58,6 +64,18 @@ const num = (n: number | null | undefined) => (n != null && Number.isFinite(n) ?
  *  window. A zero here would read as "nobody visited anybody", which is an accusation. */
 const numOrNA = (n: number | null | undefined, available: boolean) => (available ? num(n) : "no data");
 const egpOrNA = (n: number, available: boolean) => (available ? egp(n) : "no data");
+
+/**
+ * AM · PM · Pharmacies, in the house wording — the owner's golden rule, 2026-09-21.
+ *
+ * The separator is the middle dot and NEVER a slash, and a pharmacy is never folded into the PM
+ * doctors however the vendor tagged its period. `formatVisitCountSplit` is the shared formatter, so
+ * this page cannot drift from Private Calendar, Double Visit Analytics or Employee 360.
+ */
+const splitLabel = (split: VisitCountSplit) => formatVisitCountSplit(split);
+/** The same three figures for distinct CUSTOMERS rather than visits. */
+const customerSplitLabel = (c: { customersAm: number; customersPm: number; customersPharmacy: number }) =>
+  formatVisitCountSplit({ am: c.customersAm, pm: c.customersPm, pharmacies: c.customersPharmacy });
 
 function achColor(a: number | null) {
   if (a == null) return "text-muted-foreground";
@@ -101,6 +119,105 @@ const TABS = [
   { id: "coverage", label: "Coverage & Sources" },
 ] as const;
 type TabId = (typeof TABS)[number]["id"];
+
+/**
+ * THE ONE TABLE SHAPE ON THIS PAGE — desktop table, phone cards, and no sideways scroll.
+ *
+ * Owner's golden rule: "never a horizontal scroll, always mobile AND desktop friendly … fit by
+ * MERGING columns, never shrinking type — `overflow-x-auto` over a `min-width` IS the bug." This
+ * file held 22 tables in exactly that construct, the largest unretired cluster in the module.
+ *
+ * 🔴 Deleting the class was NOT the fix. `app/globals.css` gives ANY element in the admin shell
+ * with a direct `<table>` child `overflow-x: auto`, whatever its class list says — deliberate, for
+ * the components that render a bare table, and invisible to the ratchet, which only reads class
+ * strings. So the fix has to make the overflow impossible BY CONSTRUCTION: `PortalDesktopTable` is
+ * `w-full table-fixed` and takes a percentage `<colgroup>`, so the columns divide the container
+ * and a long name wraps instead of pushing the table wide.
+ *
+ * Those two primitives are safe here despite their names: they carry no palette at all, and
+ * rollups.client.tsx has been rendering through them inside this very dashboard for weeks. What is
+ * NOT reused is PortalSection / PortalMetricCard, which do state portal colours — the admin chrome
+ * (`Section`, `Kpi`) stays.
+ *
+ * Widths are sized against ~720px, the admin content box at a 1024px viewport (1024 − 272 sidebar
+ * − 32 padding), not 1280. `breakpoint="lg"` for a grid that needs more than that.
+ */
+function ReviewTable<T>({
+  breakpoint = "md",
+  cols,
+  empty,
+  getKey,
+  head,
+  items,
+  renderCard,
+  renderRow,
+}: {
+  breakpoint?: "md" | "lg" | "xl";
+  cols: React.ReactNode;
+  empty: string;
+  getKey: (item: T, index: number) => string;
+  head: React.ReactNode;
+  items: T[];
+  renderCard: (item: T, index: number) => React.ReactNode;
+  renderRow: (item: T, index: number) => React.ReactNode;
+}) {
+  return (
+    <PortalResponsiveDataList
+      breakpoint={breakpoint}
+      empty={<p className={EMPTY_LINE}>{empty}</p>}
+      getKey={getKey}
+      items={items}
+      renderCard={renderCard}
+      renderTable={() => (
+        <PortalDesktopTable breakpoint={breakpoint} cols={cols}>
+          <thead>
+            <tr className="border-b border-border">{head}</tr>
+          </thead>
+              <tbody>
+            {items.map((item, i) => (
+              <React.Fragment key={getKey(item, i)}>{renderRow(item, i)}</React.Fragment>
+            ))}
+          </tbody>
+        </PortalDesktopTable>
+      )}
+    />
+  );
+}
+
+/**
+ * A `<colgroup>` for one of these tables. `fixed` is the leading columns' percentages; `fill` is
+ * how many generated columns (one per month, one per product) divide what is left. The width is an
+ * inline style rather than a `w-[n%]` class because Tailwind scans arbitrary values out of the
+ * source text and would never generate a computed one.
+ */
+function Cols({ fill = 0, fixed }: { fill?: number; fixed: readonly number[] }) {
+  return (
+    <colgroup>
+      {columnPercents(fixed, fill).map((width, i) => (
+        <col key={i} style={{ width: `${width}%` }} />
+      ))}
+    </colgroup>
+  );
+}
+
+/** One line of muted prose where a table would otherwise be empty. */
+const EMPTY_LINE = "px-3 py-4 text-sm text-muted-foreground";
+/** A phone card's title line. `break-words` because a district name has no natural break. */
+const CARD_TITLE = "min-w-0 break-words text-sm font-bold";
+const CARD_SUB = "mt-0.5 min-w-0 break-words text-phx-xs text-muted-foreground";
+/** The small labelled figures under a card's title. */
+function CardFields({ items }: { items: { label: string; value: React.ReactNode }[] }) {
+  return (
+    <dl className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
+      {items.map((f) => (
+        <div className="border border-border bg-bg-muted px-2.5 py-2" key={f.label}>
+          <dt className="text-phx-2xs font-bold uppercase tracking-[0.1em] text-muted-foreground">{f.label}</dt>
+          <dd className="mt-0.5 min-w-0 break-words text-sm font-semibold">{f.value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
 
 /** Top switcher — All Company first, then each line. Server-rendered links so every
  * switch re-runs the page's role gate. */
@@ -228,7 +345,7 @@ function CompanyDashboard({
         current="company"
         window={reviewWindow}
         available={available}
-        title={`All Company — ${reviewWindow.label}`}
+        title={`All Company — ${figureWindowLabel(coverage)}`}
         subtitle={`${company.meta.lines.length} lines consolidated · ≥90% = earner · viewing as ${viewerRole}`}
       >
         <label className="flex items-center gap-2.5 rounded-lg border border-border bg-card px-3 py-2">
@@ -240,18 +357,27 @@ function CompanyDashboard({
       <RestatementBanner notice={restatementNotice} />
       <CoverageBanner coverage={coverage} />
 
-      <section className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+      <section className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
         <Kpi label="Company achievement" value={coverage.ungradeable ? "not gradeable" : pct(T.allProducts.ach)} sub={coverage.ungradeable ? "no targets loaded for this window" : "all 3 lines · all areas"} accent={coverage.ungradeable ? undefined : achColor(T.allProducts.ach)} />
         <Kpi label="Sales (total)" value={egp(T.allProducts.sales)} sub={coverage.ungradeable ? "value only" : `of ${egp(T.allProducts.target)}`} />
-        <Kpi label="Doctors reached" value={numOrNA(T.customersTotal, customersOk)} sub={customersOk ? "unique across all lines" : "no CRM rows in this window"} />
+        {/* "Customers", not "Doctors": one in seven of these is a pharmacy, and a pharmacy is never
+            a doctor (owner golden rule). The three figures are reported apart, never joined by a
+            slash, and PM is the only one that may be called doctors. */}
+        <Kpi label="Customers reached" value={numOrNA(T.customersTotal, customersOk)} sub={customersOk ? customerSplitLabel(T) : "no CRM rows in this window"} />
         <Kpi label="Marketing + exp." value={marketingOk || outstationOk ? egp(T.marketingCost + T.outstationCost) : "no data"} sub={`${egpOrNA(T.marketingCost, marketingOk)} + ${egpOrNA(T.outstationCost, outstationOk)}`} />
-        <Kpi label="Visits" value={numOrNA(T.visits, visitsOk)} sub={visitsOk ? `${num(T.reps)} reps · ${num(T.doubleVisits)} doubles` : "no CRM rows in this window"} />
+        <Kpi label="Visits" value={numOrNA(T.visits, visitsOk)} sub={visitsOk ? splitLabel(T.visitSplit) : "no CRM rows in this window"} />
+        {/* The denominator a visit count is actually per. This tile printed reps with SALES until
+            2026-09-26 — 85 against the 122 who really visited, so visits-per-rep read 44% high. */}
+        <Kpi label="Reps in the field" value={numOrNA(T.visitingReps, visitsOk)} sub={visitsOk ? `${num(T.doubleVisits)} double visits · ${num(T.reps)} reps carried sales` : "no CRM rows in this window"} />
       </section>
 
-      <nav className="flex gap-1 rounded-lg border border-border bg-card p-1">
+      {/* Two-up on a phone, one row from sm. Four `flex-1` buttons in a 359px row left 82px for
+          "Performance Gaps", which needs 93 — measured at 375px, 2026-09-26. A grid wraps; `flex-1`
+          on its own only ever shrinks, and the label was cut with nothing to scroll to reach it. */}
+      <nav className="grid grid-cols-2 gap-1 rounded-lg border border-border bg-card p-1 sm:flex">
         {TABS.map((t) => (
           <button key={t.id} onClick={() => setTab(t.id)} type="button"
-            className={cn("flex-1 rounded-md px-3 py-2 text-sm font-semibold transition-colors", tab === t.id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-bg-muted")}>
+            className={cn("min-w-0 rounded-md px-3 py-2 text-sm font-semibold transition-colors sm:flex-1", tab === t.id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-bg-muted")}>
             {t.label}
           </button>
         ))}
@@ -305,7 +431,7 @@ function LineDashboard({
         current={currentLine}
         window={reviewWindow}
         available={available}
-        title={`${ds.meta.line} Line — ${reviewWindow.label}`}
+        title={`${ds.meta.line} Line — ${figureWindowLabel(coverage)}`}
         subtitle={`all products · ≥90% = earner · viewing as ${viewerRole}`}
       >
         <label className="flex items-center gap-2.5 rounded-lg border border-border bg-card px-3 py-2">
@@ -320,16 +446,27 @@ function LineDashboard({
       <section className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
         <Kpi label="Line achievement" value={ds.line.allProducts.target > 0 ? pct(line.ach) : "not gradeable"} sub={ds.line.allProducts.target > 0 ? "all areas · all products" : "no targets loaded for this window"} accent={ds.line.allProducts.target > 0 ? achColor(line.ach) : undefined} />
         <Kpi label="Sales (total)" value={egp(line.sales)} sub={line.target > 0 ? `of ${egp(line.target)}` : "value only"} />
-        <Kpi label="Doctors reached" value={numOrNA(ds.line.customersTotal, customersOk)} sub={customersOk ? `${num(ds.line.customersByMonth[M[0]] ?? 0)} → ${num(ds.line.customersByMonth[M[M.length - 1]] ?? 0)} /mo` : "no CRM rows in this window"} />
+        <Kpi label="Customers reached" value={numOrNA(ds.line.customersTotal, customersOk)} sub={customersOk ? customerSplitLabel(ds.line) : "no CRM rows in this window"} />
         <Kpi label="Marketing cost" value={egpOrNA(ds.line.marketingCost, marketingOk)} sub={marketingOk ? "committed only" : "no requests in this window"} />
         <Kpi label="Outstation exp." value={egpOrNA(ds.line.outstationCost, outstationOk)} sub={outstationOk ? `${egp(ds.line.outstationApproved)} HR-approved` : "no claims in this window"} />
         <Kpi label="Visits / rep / mo" value={numOrNA(ds.line.visitsAvgPerRepPerMonth, visitsOk)} sub={visitsOk ? `${num(ds.line.visits)} total · ${num(ds.line.visitingReps)} reps` : "no CRM rows in this window"} />
       </section>
 
-      <nav className="flex gap-1 rounded-lg border border-border bg-card p-1">
+      {/* The three figures apart, at line level. Never joined by a slash — the separator is the
+          middle dot, and a pharmacy call is never counted among the PM doctors. */}
+      {visitsOk && (
+        <p className="text-phx-xs text-muted-foreground">
+          Visits {splitLabel(ds.line.visitSplit)} · customers {customerSplitLabel(ds.line)}
+        </p>
+      )}
+
+      {/* Two-up on a phone, one row from sm. Four `flex-1` buttons in a 359px row left 82px for
+          "Performance Gaps", which needs 93 — measured at 375px, 2026-09-26. A grid wraps; `flex-1`
+          on its own only ever shrinks, and the label was cut with nothing to scroll to reach it. */}
+      <nav className="grid grid-cols-2 gap-1 rounded-lg border border-border bg-card p-1 sm:flex">
         {TABS.map((t) => (
           <button key={t.id} onClick={() => setTab(t.id)} type="button"
-            className={cn("flex-1 rounded-md px-3 py-2 text-sm font-semibold transition-colors", tab === t.id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-bg-muted")}>
+            className={cn("min-w-0 rounded-md px-3 py-2 text-sm font-semibold transition-colors sm:flex-1", tab === t.id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-bg-muted")}>
             {t.label}
           </button>
         ))}
@@ -345,8 +482,8 @@ function LineDashboard({
           months={M}
           keyProducts={keyProducts}
           customersOk={customersOk}
-          roles={company.roles}
-          people={company.people}
+          roles={ds.roles}
+          people={ds.people}
         />
       )}
       {tab === "coverage" && <CoverageTab coverage={coverage} provenance={provenance} />}
@@ -366,11 +503,17 @@ function Kpi({ label, value, sub, accent }: { label: string; value: string; sub?
 function Section({ title, note, children }: { title: string; note?: string; children: React.ReactNode }) {
   return (
     <div className="rounded-xl border border-border bg-card shadow-sm">
-      <div className="flex items-center justify-between border-b border-border px-4 py-3">
-        <h2 className="text-sm font-bold">{title}</h2>
-        {note && <span className="text-xs text-muted-foreground">{note}</span>}
+      {/* `flex-wrap` and `min-w-0`: without them a title and a note share one non-wrapping row,
+          and at 375px "Company monthly trend" was given 36px of the 62 it needs. The no-ellipsis
+          rule means the answer is to wrap, never to truncate. */}
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-border px-4 py-3">
+        <h2 className="min-w-0 break-words text-sm font-bold">{title}</h2>
+        {note && <span className="min-w-0 break-words text-xs text-muted-foreground">{note}</span>}
       </div>
-      <div className="overflow-x-auto p-1">{children}</div>
+      {/* No scroll wrapper — see ReviewTable. Removing the class is not by itself the fix in the
+          admin shell, which grants overflow-x to any element with a direct <table> child; the fix
+          is that nothing inside is wide any more. */}
+      <div className="p-1">{children}</div>
     </div>
   );
 }
@@ -378,6 +521,30 @@ const TH = "px-3 py-2 text-left text-phx-xs font-bold uppercase tracking-wide te
 const THR = "px-3 py-2 text-right text-phx-xs font-bold uppercase tracking-wide text-muted-foreground";
 const TD = "px-3 py-2 text-sm";
 const TDR = "px-3 py-2 text-sm text-right tabular-nums";
+
+/** "Lacto Advanced" is the only product name long enough to distort a column. */
+const shortProduct = (p: string) => p.replace("Lacto Advanced", "Lacto");
+
+/**
+ * The per-product achievements as ONE wrapped cell.
+ *
+ * CNS carries fifteen include products. Fifteen columns cannot be read inside a 720px admin
+ * content box, and they cannot be narrowed without shrinking type, which the fits-the-screen
+ * golden rule forbids ahead of everything else — so the rule's own answer applies: MERGE them.
+ * Every figure is still here, each one named, wrapping inside a single column.
+ */
+function ProductAchList({ products, slices }: { products: string[]; slices: Record<string, { ach: number | null }> | undefined }) {
+  if (products.length === 0) return <span className="text-muted-foreground">—</span>;
+  return (
+    <span className="flex flex-wrap gap-x-3 gap-y-0.5">
+      {products.map((p) => (
+        <span className="min-w-0 break-words text-phx-xs" key={p}>
+          <span className="text-muted-foreground">{shortProduct(p)}</span> {achCell(slices?.[p]?.ach ?? null)}
+        </span>
+      ))}
+    </span>
+  );
+}
 
 function AchieversTab({ dms, areas, visitsAvailable }: { dms: DmRow[]; areas: AreaRow[]; visitsAvailable: boolean }) {
   // Vacant areas never count as earners — no rep held the territory, so residual
@@ -387,46 +554,118 @@ function AchieversTab({ dms, areas, visitsAvailable }: { dms: DmRow[]; areas: Ar
   return (
     <div className="space-y-4">
       <Section title="DSM league table" note="all-products achievement → 2026 payout (90% = threshold)">
-        <table className="w-full min-w-[860px] border-collapse">
-          <thead><tr className="border-b border-border">
-            <th className={TH}>#</th><th className={TH}>DSM</th><th className={TH}>Achievement</th><th className={TH}>Band</th><th className={THR}>Payout</th>
-            <th className={THR}>Marketing</th><th className={THR}>Expenses</th><th className={THR}>Visits/mo</th><th className={THR}>Doctors</th><th className={THR}>Doubles</th>
-          </tr></thead>
-          <tbody>
-            {dms.map((d, i) => (
-              <tr key={d.dm} className={cn("border-b border-border/60 last:border-0", (d.allProducts.ach ?? 0) >= 90 && "bg-emerald-50/40")}>
-                <td className={cn(TD, "text-muted-foreground")}>{i + 1}</td>
-                <td className={cn(TD, "font-semibold")}>{d.dm}{d.vacant && <span className="ml-2 rounded bg-bg-muted px-1.5 py-0.5 text-phx-2xs font-bold text-muted-foreground">VACANT</span>}</td>
-                <td className={TD}>{achCell(d.allProducts.ach)}</td>
-                <td className={TD}><Band band={d.band} /></td>
-                <td className={cn(TDR, "font-semibold")}>{d.payoutPct > 0 ? `${d.payoutPct.toFixed(0)}%` : "—"}</td>
-                <td className={cn(TDR, "text-muted-foreground")}>{egp(d.marketingCost)}</td>
-                <td className={cn(TDR, "text-muted-foreground")}>{egp(d.outstationCost)}</td>
-                <td className={TDR}>{numOrNA(d.visitsAvgPerMonth, visitsAvailable)}</td>
-                <td className={TDR}>{numOrNA(d.customersTotal, visitsAvailable)}</td>
-                <td className={TDR}>{numOrNA(d.doubleVisits, visitsAvailable)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        {/* Ten columns merged to seven: the band rides under its own achievement, marketing and
+            expenses share one Spend cell, and doubles ride under the visit rate. */}
+        <ReviewTable
+          breakpoint="lg"
+          cols={<Cols fixed={[5, 23, 15, 10, 16, 13, 18]} />}
+          empty="No district carried a target in this view."
+          getKey={(d) => d.dmSeatId ?? d.dm}
+          head={
+            <>
+              <th className={TH}>#</th>
+              <th className={TH}>DSM</th>
+              <th className={TH}>Achievement</th>
+              <th className={THR}>Payout</th>
+              <th className={THR}>Spend</th>
+              <th className={THR}>Visits/mo</th>
+              <th className={THR}>AM · PM · Pharmacies</th>
+            </>
+          }
+          items={dms}
+          renderCard={(d, i) => (
+            <div className="px-4 py-3.5">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h3 className={CARD_TITLE}>
+                    {i + 1}. {d.dm}
+                    {d.vacant && <span className="ml-2 bg-bg-muted px-1.5 py-0.5 text-phx-2xs font-bold text-muted-foreground">VACANT</span>}
+                  </h3>
+                  <p className={CARD_SUB}>Customers {visitsAvailable ? customerSplitLabel(d) : "no data"}</p>
+                </div>
+                <div className="shrink-0 text-right">
+                  {achCell(d.allProducts.ach)}
+                  <p className="mt-1"><Band band={d.band} /></p>
+                </div>
+              </div>
+              <CardFields
+                items={[
+                  { label: "Payout", value: d.payoutPct > 0 ? `${d.payoutPct.toFixed(0)}%` : "—" },
+                  { label: "Marketing", value: egp(d.marketingCost) },
+                  { label: "Expenses", value: egp(d.outstationCost) },
+                  { label: "Visits/mo", value: numOrNA(d.visitsAvgPerMonth, visitsAvailable) },
+                  { label: "Doubles", value: numOrNA(d.doubleVisits, visitsAvailable) },
+                ]}
+              />
+            </div>
+          )}
+          renderRow={(d, i) => (
+            <tr className={cn("border-b border-border/60 last:border-0", (d.allProducts.ach ?? 0) >= 90 && "bg-emerald-50/40")}>
+              <td className={cn(TD, "text-muted-foreground")}>{i + 1}</td>
+              <td className={cn(TD, "break-words font-semibold")}>
+                {d.dm}
+                {d.vacant && <span className="ml-2 bg-bg-muted px-1.5 py-0.5 text-phx-2xs font-bold text-muted-foreground">VACANT</span>}
+              </td>
+              <td className={TD}>
+                {achCell(d.allProducts.ach)}
+                <span className="mt-1 block"><Band band={d.band} /></span>
+              </td>
+              <td className={cn(TDR, "font-semibold")}>{d.payoutPct > 0 ? `${d.payoutPct.toFixed(0)}%` : "—"}</td>
+              <td className={cn(TDR, "text-muted-foreground")}>
+                {egp(d.marketingCost)}
+                <span className="block">{egp(d.outstationCost)} exp.</span>
+              </td>
+              <td className={TDR}>
+                {numOrNA(d.visitsAvgPerMonth, visitsAvailable)}
+                <span className="block text-muted-foreground">{numOrNA(d.doubleVisits, visitsAvailable)} doubles</span>
+              </td>
+              <td className={cn(TDR, "break-words")}>{visitsAvailable ? customerSplitLabel(d) : "no data"}</td>
+            </tr>
+          )}
+        />
       </Section>
 
       <Section title={`Incentive earners — areas ≥ 90% (${earners.length})`} note="threshold to unlock payout">
-        <table className="w-full min-w-[620px] border-collapse">
-          <thead><tr className="border-b border-border"><th className={TH}>Area</th><th className={TH}>DSM</th><th className={TH}>Achievement</th><th className={TH}>Band</th><th className={THR}>Payout</th></tr></thead>
-          <tbody>
-            {earners.map((a) => (
-              <tr key={a.area} className="border-b border-border/60 last:border-0">
-                <td className={cn(TD, "font-semibold")}>{a.area}</td>
-                <td className={cn(TD, "text-muted-foreground")}>{a.dm}</td>
-                <td className={TD}>{achCell(a.allProducts.ach)}</td>
-                <td className={TD}><Band band={a.band} /></td>
-                <td className={cn(TDR, "font-semibold")}>{a.payoutPct.toFixed(0)}%</td>
-              </tr>
-            ))}
-            {earners.length === 0 && <tr><td className={cn(TD, "text-muted-foreground")} colSpan={5}>No area reached the 90% threshold in this view.</td></tr>}
-          </tbody>
-        </table>
+        <ReviewTable
+          cols={<Cols fixed={[32, 28, 22, 18]} />}
+          empty="No area reached the 90% threshold in this view."
+          getKey={(a) => a.areaCode ?? a.area}
+          head={
+            <>
+              <th className={TH}>Area</th>
+              <th className={TH}>DSM</th>
+              <th className={TH}>Achievement</th>
+              <th className={THR}>Payout</th>
+            </>
+          }
+          items={earners}
+          renderCard={(a) => (
+            <div className="px-4 py-3.5">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h3 className={CARD_TITLE}>{a.area}</h3>
+                  <p className={CARD_SUB}>{a.dm}</p>
+                </div>
+                <div className="shrink-0 text-right">
+                  {achCell(a.allProducts.ach)}
+                  <p className="mt-1"><Band band={a.band} /></p>
+                </div>
+              </div>
+              <CardFields items={[{ label: "Payout", value: `${a.payoutPct.toFixed(0)}%` }]} />
+            </div>
+          )}
+          renderRow={(a) => (
+            <tr className="border-b border-border/60 last:border-0">
+              <td className={cn(TD, "break-words font-semibold")}>{a.area}</td>
+              <td className={cn(TD, "break-words text-muted-foreground")}>{a.dm}</td>
+              <td className={TD}>
+                {achCell(a.allProducts.ach)}
+                <span className="mt-1 block"><Band band={a.band} /></span>
+              </td>
+              <td className={cn(TDR, "font-semibold")}>{a.payoutPct.toFixed(0)}%</td>
+            </tr>
+          )}
+        />
       </Section>
     </div>
   );
@@ -443,75 +682,287 @@ function FailsTab({ dms, areas, thresholds, keyProducts }: { dms: DmRow[]; areas
   return (
     <div className="space-y-4">
       <Section title={`DSMs below ${thresholds.dsmFailBelow}% (${failDms.length})`}>
-        <table className="w-full min-w-[520px] border-collapse">
-          <thead><tr className="border-b border-border"><th className={TH}>DSM</th><th className={TH}>Achievement</th><th className={THR}>Sales</th><th className={THR}>Target</th></tr></thead>
-          <tbody>
-            {failDms.map((d) => (
-              <tr key={d.dm} className="border-b border-border/60 last:border-0">
-                <td className={cn(TD, "font-semibold")}>{d.dm}</td><td className={TD}>{achCell(d.allProducts.ach)}</td>
-                <td className={cn(TDR, "text-muted-foreground")}>{egp(d.allProducts.sales)}</td><td className={cn(TDR, "text-muted-foreground")}>{egp(d.allProducts.target)}</td>
-              </tr>
-            ))}
-            {failDms.length === 0 && <tr><td className={cn(TD, "text-muted-foreground")} colSpan={4}>No DSM below threshold in this view.</td></tr>}
-          </tbody>
-        </table>
+        <ReviewTable
+          cols={<Cols fixed={[34, 22, 22, 22]} />}
+          empty="No DSM below threshold in this view."
+          getKey={(d) => d.dmSeatId ?? d.dm}
+          head={
+            <>
+              <th className={TH}>DSM</th>
+              <th className={TH}>Achievement</th>
+              <th className={THR}>Sales</th>
+              <th className={THR}>Target</th>
+            </>
+          }
+          items={failDms}
+          renderCard={(d) => (
+            <div className="px-4 py-3.5">
+              <div className="flex items-start justify-between gap-3">
+                <h3 className={CARD_TITLE}>{d.dm}</h3>
+                <span className="shrink-0">{achCell(d.allProducts.ach)}</span>
+              </div>
+              <CardFields
+                items={[
+                  { label: "Sales", value: egp(d.allProducts.sales) },
+                  { label: "Target", value: egp(d.allProducts.target) },
+                ]}
+              />
+            </div>
+          )}
+          renderRow={(d) => (
+            <tr className="border-b border-border/60 last:border-0">
+              <td className={cn(TD, "break-words font-semibold")}>{d.dm}</td>
+              <td className={TD}>{achCell(d.allProducts.ach)}</td>
+              <td className={cn(TDR, "text-muted-foreground")}>{egp(d.allProducts.sales)}</td>
+              <td className={cn(TDR, "text-muted-foreground")}>{egp(d.allProducts.target)}</td>
+            </tr>
+          )}
+        />
       </Section>
 
       <Section title={`Rep areas below ${thresholds.repFailBelow}% (${failAreas.length})`} note="per-product achievement + trend">
-        <table className="w-full min-w-[880px] border-collapse">
-          <thead><tr className="border-b border-border">
-            <th className={TH}>Area</th><th className={TH}>DSM</th><th className={TH}>Total</th>
-            {prods.map((p) => <th key={p} className={THR}>{p.replace("Lacto Advanced", "Lacto")}</th>)}<th className={TH}>Flag</th>
-          </tr></thead>
-          <tbody>
-            {failAreas.map((a) => (
-              <tr key={a.area} className="border-b border-border/60 last:border-0">
-                <td className={cn(TD, "font-semibold")}>{a.area}</td>
-                <td className={cn(TD, "text-xs text-muted-foreground")}>{a.dm}</td>
-                <td className={TD}>{achCell(a.allProducts.ach)}</td>
-                {prods.map((p) => <td key={p} className={TDR}>{achCell(a.products?.[p]?.ach ?? null)}</td>)}
-                <td className={TD}>{a.hasReturns ? <span className="rounded bg-red-100 px-1.5 py-0.5 text-phx-2xs font-bold text-red-600">RETURNS</span> : ""}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        {/* One column per include product would be fifteen on CNS. Merged — see ProductAchList. */}
+        <ReviewTable
+          breakpoint="lg"
+          cols={<Cols fixed={[22, 18, 12, 40, 8]} />}
+          empty="No rep area below threshold in this view."
+          getKey={(a) => a.areaCode ?? a.area}
+          head={
+            <>
+              <th className={TH}>Area</th>
+              <th className={TH}>DSM</th>
+              <th className={TH}>Total</th>
+              <th className={TH}>Per product</th>
+              <th className={TH}>Flag</th>
+            </>
+          }
+          items={failAreas}
+          renderCard={(a) => (
+            <div className="px-4 py-3.5">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h3 className={CARD_TITLE}>{a.area}</h3>
+                  <p className={CARD_SUB}>{a.dm}</p>
+                </div>
+                <div className="shrink-0 text-right">
+                  {achCell(a.allProducts.ach)}
+                  {a.hasReturns && <p className="mt-1 bg-red-100 px-1.5 py-0.5 text-phx-2xs font-bold text-red-600">RETURNS</p>}
+                </div>
+              </div>
+              <div className="mt-2">
+                <ProductAchList products={prods} slices={a.products} />
+              </div>
+            </div>
+          )}
+          renderRow={(a) => (
+            <tr className="border-b border-border/60 last:border-0">
+              <td className={cn(TD, "break-words font-semibold")}>{a.area}</td>
+              <td className={cn(TD, "break-words text-xs text-muted-foreground")}>{a.dm}</td>
+              <td className={TD}>{achCell(a.allProducts.ach)}</td>
+              <td className={TD}>
+                <ProductAchList products={prods} slices={a.products} />
+              </td>
+              <td className={TD}>
+                {a.hasReturns ? <span className="bg-red-100 px-1.5 py-0.5 text-phx-2xs font-bold text-red-600">RETURNS</span> : ""}
+              </td>
+            </tr>
+          )}
+        />
       </Section>
 
       {uncovered.length > 0 && (
         <Section title={`Uncovered areas — vacant, no rep (${uncovered.length})`} note="excluded from failures · coverage gap, not a rep failure">
-          <table className="w-full min-w-[520px] border-collapse">
-            <thead><tr className="border-b border-border"><th className={TH}>Area</th><th className={TH}>DSM</th><th className={THR}>Achievement</th></tr></thead>
-            <tbody>{uncovered.map((a) => (
-              <tr key={a.area} className="border-b border-border/60 last:border-0">
-                <td className={cn(TD, "font-semibold")}>{a.area}</td><td className={cn(TD, "text-muted-foreground")}>{a.dm}</td><td className={TDR}>{achCell(a.allProducts.ach)}</td>
-              </tr>))}
-            </tbody>
-          </table>
+          <ReviewTable
+            cols={<Cols fixed={[44, 34, 22]} />}
+            empty="Every area in this view has a rep."
+            getKey={(a) => a.areaCode ?? a.area}
+            head={
+              <>
+                <th className={TH}>Area</th>
+                <th className={TH}>DSM</th>
+                <th className={THR}>Achievement</th>
+              </>
+            }
+            items={uncovered}
+            renderCard={(a) => (
+              <div className="flex items-start justify-between gap-3 px-4 py-3.5">
+                <div className="min-w-0">
+                  <h3 className={CARD_TITLE}>{a.area}</h3>
+                  <p className={CARD_SUB}>{a.dm}</p>
+                </div>
+                <span className="shrink-0">{achCell(a.allProducts.ach)}</span>
+              </div>
+            )}
+            renderRow={(a) => (
+              <tr className="border-b border-border/60 last:border-0">
+                <td className={cn(TD, "break-words font-semibold")}>{a.area}</td>
+                <td className={cn(TD, "break-words text-muted-foreground")}>{a.dm}</td>
+                <td className={TDR}>{achCell(a.allProducts.ach)}</td>
+              </tr>
+            )}
+          />
         </Section>
       )}
 
       {ungrade.length > 0 && (
         <Section title={`Ungradeable — sales but no target (${ungrade.length})`} note="target-setting gap, not a failure">
-          <table className="w-full min-w-[420px] border-collapse">
-            <thead><tr className="border-b border-border"><th className={TH}>Area</th><th className={TH}>DSM</th><th className={THR}>Sales (no target)</th></tr></thead>
-            <tbody>{ungrade.map((a) => (
-              <tr key={a.area} className="border-b border-border/60 last:border-0">
-                <td className={cn(TD, "font-semibold")}>{a.area}</td><td className={cn(TD, "text-muted-foreground")}>{a.dm}</td><td className={TDR}>{egp(a.allProducts.sales)}</td>
-              </tr>))}
-            </tbody>
-          </table>
+          <ReviewTable
+            cols={<Cols fixed={[40, 34, 26]} />}
+            empty="Every area with sales in this view carries a target."
+            getKey={(a) => a.areaCode ?? a.area}
+            head={
+              <>
+                <th className={TH}>Area</th>
+                <th className={TH}>DSM</th>
+                <th className={THR}>Sales (no target)</th>
+              </>
+            }
+            items={ungrade}
+            renderCard={(a) => (
+              <div className="flex items-start justify-between gap-3 px-4 py-3.5">
+                <div className="min-w-0">
+                  <h3 className={CARD_TITLE}>{a.area}</h3>
+                  <p className={CARD_SUB}>{a.dm}</p>
+                </div>
+                <span className="shrink-0 text-sm font-semibold tabular-nums">{egp(a.allProducts.sales)}</span>
+              </div>
+            )}
+            renderRow={(a) => (
+              <tr className="border-b border-border/60 last:border-0">
+                <td className={cn(TD, "break-words font-semibold")}>{a.area}</td>
+                <td className={cn(TD, "break-words text-muted-foreground")}>{a.dm}</td>
+                <td className={TDR}>{egp(a.allProducts.sales)}</td>
+              </tr>
+            )}
+          />
         </Section>
       )}
     </div>
   );
 }
 
-function MiniMonth({ label, months, values, kind }: { label: string; months: string[]; values: (number | null)[]; kind: "ach" | "num" }) {
+/** One row of a month grid: a metric, its figure per month, and optionally a window total. */
+type MonthGridRow = {
+  key: string;
+  kind: "ach" | "num";
+  label: React.ReactNode;
+  total?: number | null;
+  values: (number | null)[];
+};
+const monthCell = (v: number | null, kind: "ach" | "num") => (kind === "ach" ? achCell(v) : num(v));
+
+/**
+ * THE MONTH GRID — a metric per row, a month per column, and phone cards below the breakpoint.
+ *
+ * The window is the owner's to choose, so the column count is the data's: three months today, a
+ * year if he picks one. Nothing here can be merged — a month is a month — so the fit comes from
+ * `table-fixed` dividing the container by `Cols`, and from the phone getting a card per metric
+ * with its months wrapped inside it rather than a grid it would have to drag sideways.
+ */
+function MonthGridTable({
+  breakpoint = "md",
+  empty,
+  firstHead,
+  months,
+  rows,
+  totalHead,
+}: {
+  breakpoint?: "md" | "lg" | "xl";
+  empty: string;
+  firstHead: string;
+  months: string[];
+  rows: MonthGridRow[];
+  totalHead?: string;
+}) {
   return (
-    <tr className="border-b border-border/50 last:border-0">
-      <td className={cn(TD, "font-medium text-muted-foreground")}>{label}</td>
-      {values.map((v, i) => <td key={months[i]} className={TDR}>{kind === "ach" ? achCell(v) : num(v)}</td>)}
-    </tr>
+    <ReviewTable
+      breakpoint={breakpoint}
+      cols={<Cols fill={months.length + (totalHead ? 1 : 0)} fixed={[totalHead ? 24 : 26]} />}
+      empty={empty}
+      getKey={(r) => r.key}
+      head={
+        <>
+          <th className={TH}>{firstHead}</th>
+          {months.map((m) => (
+            <th className={THR} key={m}>
+              {periodColumnLabel(m, months)}
+            </th>
+          ))}
+          {totalHead && <th className={THR}>{totalHead}</th>}
+        </>
+      }
+      items={rows}
+      renderCard={(r) => (
+        <div className="px-4 py-3.5">
+          <div className="flex items-start justify-between gap-3">
+            <h3 className={CARD_TITLE}>{r.label}</h3>
+            {totalHead && <span className="shrink-0 text-sm font-bold tabular-nums">{monthCell(r.total ?? null, r.kind)}</span>}
+          </div>
+          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+            {months.map((m, i) => (
+              <span className="min-w-0 text-phx-xs" key={m}>
+                <span className="text-muted-foreground">{periodColumnLabel(m, months)}</span>{" "}
+                {monthCell(r.values[i] ?? null, r.kind)}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+      renderRow={(r) => (
+        <tr className="border-b border-border/50 last:border-0">
+          <td className={cn(TD, "break-words font-medium text-muted-foreground")}>{r.label}</td>
+          {months.map((m, i) => (
+            <td className={TDR} key={m}>
+              {monthCell(r.values[i] ?? null, r.kind)}
+            </td>
+          ))}
+          {totalHead && <td className={cn(TDR, "font-bold")}>{monthCell(r.total ?? null, r.kind)}</td>}
+        </tr>
+      )}
+    />
+  );
+}
+
+/** The mix panel beside a district's month grid — one row per family, or per include product. */
+function DmMixTable({
+  families,
+  keyProducts,
+  mix,
+  mixByFamily,
+}: {
+  families: FamilyRow[];
+  keyProducts: string[];
+  mix: { familyAch?: Record<string, number | null>; productAch?: Record<string, number | null> };
+  mixByFamily: boolean;
+}) {
+  const rows = mixByFamily
+    ? families.map((f) => ({ ach: mix.familyAch?.[f.family] ?? null, key: f.family, label: `${f.family.trim()} (${f.skuCount})` }))
+    : keyProducts.map((p) => ({ ach: mix.productAch?.[p] ?? null, key: p, label: p }));
+  return (
+    <ReviewTable
+      cols={<Cols fixed={[62, 38]} />}
+      empty="No mix to show for this district."
+      getKey={(r) => r.key}
+      head={
+        <>
+          <th className={TH}>{mixByFamily ? "Family mix" : "Product mix"}</th>
+          <th className={THR}>Achievement</th>
+        </>
+      }
+      items={rows}
+      renderCard={(r) => (
+        <div className="flex items-start justify-between gap-3 px-4 py-3">
+          <span className="min-w-0 break-words text-sm font-medium">{r.label}</span>
+          <span className="shrink-0">{achCell(r.ach)}</span>
+        </div>
+      )}
+      renderRow={(r) => (
+        <tr className="border-b border-border/50 last:border-0">
+          <td className={cn(TD, "break-words font-medium")}>{r.label}</td>
+          <td className={TDR}>{achCell(r.ach)}</td>
+        </tr>
+      )}
+    />
   );
 }
 
@@ -574,7 +1025,7 @@ function DeepTab({
     <div className="space-y-4">
       {/* Per-DSM deep dives */}
       {dms.map((d) => (
-        <div key={d.dm} className="rounded-xl border border-border bg-card shadow-sm">
+        <div key={d.dmSeatId ?? d.dm} className="rounded-xl border border-border bg-card shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
             <div className="flex items-center gap-3">
               <h2 className="text-sm font-bold">{d.dm}</h2>
@@ -586,37 +1037,31 @@ function DeepTab({
               <span>Payout <b className="text-foreground">{d.payoutPct.toFixed(0)}%</b></span>
               <span>Mktg <b className="text-foreground">{egp(d.marketingCost)}</b> ({d.marketingMonths}mo)</span>
               <span>Exp <b className="text-foreground">{egp(d.outstationCost)}</b></span>
-              <span>Doctors <b className="text-foreground">{numOrNA(d.customersTotal, ds.visits.available)}</b></span>
+              <span>Customers <b className="text-foreground">{ds.visits.available ? customerSplitLabel(d) : "no data"}</b></span>
               <span>Doubles <b className="text-foreground">{numOrNA(d.doubleVisits, ds.visits.available)}</b></span>
             </div>
           </div>
+          {/* `min-w-0` on both halves: a grid item's default `min-width: auto` is the one thing
+              that still pushes a `table-fixed` table past its container. */}
           <div className="grid gap-3 p-3 lg:grid-cols-[1.6fr_1fr]">
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[440px] border-collapse">
-                <thead><tr className="border-b border-border"><th className={TH}>Monthly</th>{months.map((m) => <th key={m} className={THR}>{periodColumnLabel(m, months)}</th>)}</tr></thead>
-                <tbody>
-                  <MiniMonth label="Achievement" months={months} values={months.map((m) => d.achByMonth?.[m] ?? null)} kind="ach" />
-                  {ds.visits.available && <MiniMonth label="Visits" months={months} values={months.map((m) => d.visitsByMonth?.[m] ?? 0)} kind="num" />}
-                  {ds.visits.available && <MiniMonth label="Doctors" months={months} values={months.map((m) => d.customersByMonth?.[m] ?? 0)} kind="num" />}
-                </tbody>
-              </table>
+            <div className="min-w-0">
+              <MonthGridTable
+                empty="No month in this window carries a figure for this district."
+                firstHead="Monthly"
+                months={months}
+                rows={[
+                  { key: "ach", kind: "ach", label: "Achievement", values: months.map((m) => d.achByMonth?.[m] ?? null) },
+                  ...(ds.visits.available
+                    ? [
+                        { key: "visits", kind: "num" as const, label: "Visits", values: months.map((m) => d.visitsByMonth?.[m] ?? 0) },
+                        { key: "customers", kind: "num" as const, label: "Customers", values: months.map((m) => d.customersByMonth?.[m] ?? 0) },
+                      ]
+                    : []),
+                ]}
+              />
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[240px] border-collapse">
-                <thead><tr className="border-b border-border"><th className={TH}>{mixByFamily ? "Family mix" : "Product mix"}</th><th className={THR}>Achievement</th></tr></thead>
-                <tbody>
-                  {mixByFamily
-                    ? families.map((f) => (
-                        <tr key={f.family} className="border-b border-border/50 last:border-0">
-                          <td className={cn(TD, "font-medium")}>{f.family.trim()} <span className="text-xs text-muted-foreground">({f.skuCount})</span></td>
-                          <td className={TDR}>{achCell(d.familyAch?.[f.family] ?? null)}</td>
-                        </tr>
-                      ))
-                    : keyProducts.map((p) => (
-                        <tr key={p} className="border-b border-border/50 last:border-0"><td className={cn(TD, "font-medium")}>{p}</td><td className={TDR}>{achCell(d.productAch?.[p] ?? null)}</td></tr>
-                      ))}
-                </tbody>
-              </table>
+            <div className="min-w-0">
+              <DmMixTable families={families} keyProducts={keyProducts} mix={d} mixByFamily={mixByFamily} />
             </div>
           </div>
         </div>
@@ -624,46 +1069,61 @@ function DeepTab({
 
       {mixByFamily && (
         <Section title="Achievement per product family per month" note="rolled up across each family's include-eligible SKUs">
-          <table className="w-full min-w-[720px] border-collapse">
-            <thead><tr className="border-b border-border"><th className={TH}>Family</th>{months.map((m) => <th key={m} className={THR}>{periodColumnLabel(m, months)}</th>)}<th className={THR}>Total</th></tr></thead>
-            <tbody>
-              {families.map((f) => (
-                <tr key={f.family} className="border-b border-border/60 last:border-0">
-                  <td className={cn(TD, "font-medium")}>{f.family.trim()} <span className="text-xs text-muted-foreground">({f.skuCount} SKU{f.skuCount === 1 ? "" : "s"})</span></td>
-                  {months.map((m) => <td key={m} className={TDR}>{achCell(f.byMonth[m] ?? null)}</td>)}
-                  <td className={cn(TDR, "font-bold")}>{achCell(f.total)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <MonthGridTable
+            empty="No family carried an include SKU in this window."
+            firstHead="Family"
+            months={months}
+            rows={families.map((f) => ({
+              key: f.family,
+              kind: "ach" as const,
+              label: `${f.family.trim()} (${f.skuCount} SKU${f.skuCount === 1 ? "" : "s"})`,
+              total: f.total,
+              values: months.map((m) => f.byMonth[m] ?? null),
+            }))}
+            totalHead="Total"
+          />
         </Section>
       )}
 
       <Section title="Achievement per product per month" note="★ include products">
-        <table className="w-full min-w-[720px] border-collapse">
-          <thead><tr className="border-b border-border"><th className={TH}>Product</th>{months.map((m) => <th key={m} className={THR}>{periodColumnLabel(m, months)}</th>)}<th className={THR}>Total</th></tr></thead>
-          <tbody>
-            {ds.products.filter((p) => p.total.target > 0 || p.total.sales > 0).map((p) => (
-              <tr key={p.product} className="border-b border-border/60 last:border-0">
-                <td className={cn(TD, "font-medium")}>{p.include && <span className="mr-1 text-amber-500">★</span>}{p.product}</td>
-                {months.map((m) => <td key={m} className={TDR}>{achCell(p.byMonth[m]?.ach ?? null)}</td>)}
-                <td className={cn(TDR, "font-bold")}>{achCell(p.total.ach)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <MonthGridTable
+          empty="No product carried sales or a target in this window."
+          firstHead="Product"
+          months={months}
+          rows={ds.products
+            .filter((p) => p.total.target > 0 || p.total.sales > 0)
+            .map((p) => ({
+              key: p.product,
+              kind: "ach" as const,
+              label: (
+                <>
+                  {p.include && <span className="mr-1 text-amber-500">★</span>}
+                  {p.product}
+                </>
+              ),
+              total: p.total.ach,
+              values: months.map((m) => p.byMonth[m]?.ach ?? null),
+            }))}
+          totalHead="Total"
+        />
       </Section>
 
       <Section title="Line trend" note={ds.visits.available ? `${num(ds.visits.totalDeduped)} visits · ${num(ds.line.customersTotal)} doctors` : "no CRM visit rows in this window"}>
-        <table className="w-full min-w-[620px] border-collapse">
-          <thead><tr className="border-b border-border"><th className={TH}>Metric</th>{months.map((m) => <th key={m} className={THR}>{periodColumnLabel(m, months)}</th>)}</tr></thead>
-          <tbody>
-            <MiniMonth label="Sales achievement" months={months} values={months.map((m) => ds.line.byMonth[m]?.allProducts.ach ?? null)} kind="ach" />
-            <MiniMonth label="Sales value" months={months} values={months.map((m) => ds.line.byMonth[m]?.allProducts.sales ?? 0)} kind="num" />
-            {ds.visits.available && <MiniMonth label="Visits" months={months} values={months.map((m) => ds.visits.byMonth[m] ?? 0)} kind="num" />}
-            {ds.visits.available && <MiniMonth label="Doctors reached" months={months} values={months.map((m) => ds.line.customersByMonth[m] ?? 0)} kind="num" />}
-          </tbody>
-        </table>
+        <MonthGridTable
+          empty="No month in this window carries a figure for this line."
+          firstHead="Metric"
+          months={months}
+          rows={[
+            { key: "ach", kind: "ach" as const, label: "Sales achievement", values: months.map((m) => ds.line.byMonth[m]?.allProducts.ach ?? null) },
+            { key: "value", kind: "num" as const, label: "Sales value", values: months.map((m) => ds.line.byMonth[m]?.allProducts.sales ?? 0) },
+            ...(ds.visits.available
+              ? [
+                  { key: "visits", kind: "num" as const, label: "Visits", values: months.map((m) => ds.visits.byMonth[m] ?? 0) },
+                  { key: "customers", kind: "num" as const, label: "Customers reached", values: months.map((m) => ds.line.customersByMonth[m] ?? 0) },
+                ]
+              : []),
+          ]}
+        />
       </Section>
 
       {/* The question the owner asked for by name: how many customers did this area have,
@@ -675,13 +1135,18 @@ function DeepTab({
           vacant: a.vacant,
           customersTotal: a.customersTotal,
           customersByMonth: a.customersByMonth,
+          customersAm: a.customersAm,
+          customersPm: a.customersPm,
+          customersPharmacy: a.customersPharmacy,
         }))}
         months={months}
         visitsAvailable={customersOk}
       />
 
-      <RoleActivityTable roles={roles} />
-      <PeopleActivityTable people={people} />
+      {/* This line's own people — not the company's. Captioned either way, because two tables
+          with identical headings and different scopes is how the old defect read as correct. */}
+      <RoleActivityTable roles={roles} scopeNote={`${ds.meta.line} line only`} />
+      <PeopleActivityTable people={people} scopeNote={`${ds.meta.line} line only`} />
     </div>
   );
 }
@@ -696,94 +1161,242 @@ function CompanyAchieversTab({ company, dms, areas }: { company: ReviewCompany; 
   const earners = areas
     .filter((a) => !a.vacant && a.hasTarget && (a.allProducts.ach ?? 0) >= 90)
     .sort((a, b) => (b.allProducts.ach ?? 0) - (a.allProducts.ach ?? 0));
+  // Each line, then the company itself as a final row. One shape, so the totals line cannot
+  // drift from the lines above it and the phone card list ends with it rather than losing it.
+  const lineRows = [
+    ...company.lines.map((l) => ({
+      ach: l.allProducts.ach,
+      dms: l.dms,
+      dmsVacant: l.dmsVacant,
+      earners: l.earners,
+      exVacantAch: l.exVacant.ach,
+      expenses: l.outstationCost,
+      href: `/business-review?line=${l.id}`,
+      isCompany: false,
+      key: l.id,
+      label: l.label,
+      marketing: l.marketingCost,
+      sales: l.allProducts.sales,
+      target: l.allProducts.target,
+    })),
+    {
+      ach: T.allProducts.ach,
+      dms: company.lines.reduce((sum, l) => sum + l.dms, 0),
+      dmsVacant: company.lines.reduce((sum, l) => sum + l.dmsVacant, 0),
+      earners: company.lines.reduce((sum, l) => sum + l.earners, 0),
+      exVacantAch: T.exVacant.ach,
+      expenses: T.outstationCost,
+      href: null as string | null,
+      isCompany: true,
+      key: "company",
+      label: "Company",
+      marketing: T.marketingCost,
+      sales: T.allProducts.sales,
+      target: T.allProducts.target,
+    },
+  ];
   return (
     <div className="space-y-4">
       <Section title="Line comparison" note="ranked by achievement · sum(sales)/sum(target), never an average of percentages">
-        <table className="w-full min-w-[980px] border-collapse">
-          <thead><tr className="border-b border-border">
-            <th className={TH}>Line</th><th className={TH}>Achievement</th><th className={THR}>Sales</th><th className={THR}>Target</th>
-            <th className={THR}>Excl. vacant</th><th className={THR}>Marketing</th><th className={THR}>Expenses</th>
-            <th className={THR}>Earners</th><th className={THR}>DM seats</th>
-          </tr></thead>
-          <tbody>
-            {company.lines.map((l) => (
-              <tr key={l.id} className="border-b border-border/60 last:border-0">
-                <td className={cn(TD, "font-semibold")}>
-                  <Link href={`/business-review?line=${l.id}`} className="hover:text-primary hover:underline">{l.label}</Link>
-                </td>
-                <td className={TD}>{achCell(l.allProducts.ach)}</td>
-                <td className={cn(TDR, "text-muted-foreground")}>{egp(l.allProducts.sales)}</td>
-                <td className={cn(TDR, "text-muted-foreground")}>{egp(l.allProducts.target)}</td>
-                <td className={TDR}>{achCell(l.exVacant.ach)}</td>
-                <td className={cn(TDR, "text-muted-foreground")}>{egp(l.marketingCost)}</td>
-                <td className={cn(TDR, "text-muted-foreground")}>{egp(l.outstationCost)}</td>
-                <td className={TDR}>{num(l.earners)}</td>
-                <td className={cn(TDR, "text-muted-foreground")}>{num(l.dms)}{l.dmsVacant > 0 && <span className="text-phx-xs"> +{l.dmsVacant} vac</span>}</td>
-              </tr>
-            ))}
-            <tr className="border-t-2 border-border bg-bg-muted/40 font-bold">
-              <td className={TD}>Company</td>
-              <td className={TD}>{achCell(T.allProducts.ach)}</td>
-              <td className={TDR}>{egp(T.allProducts.sales)}</td>
-              <td className={TDR}>{egp(T.allProducts.target)}</td>
-              <td className={TDR}>{achCell(T.exVacant.ach)}</td>
-              <td className={TDR}>{egp(T.marketingCost)}</td>
-              <td className={TDR}>{egp(T.outstationCost)}</td>
-              <td className={TDR}>{num(company.lines.reduce((s, l) => s + l.earners, 0))}</td>
-              <td className={TDR}>{num(company.lines.reduce((s, l) => s + l.dms, 0))}<span className="text-phx-xs"> +{company.lines.reduce((s, l) => s + l.dmsVacant, 0)} vac</span></td>
+        {/* Nine columns merged to six — the excl.-vacant achievement rides under the headline
+            one, the target under its own sales, and marketing and expenses share a Spend cell.
+            The Company row is the LAST item rather than a `tfoot`, so the phone gets it too. */}
+        <ReviewTable
+          cols={<Cols fixed={[20, 16, 18, 18, 12, 16]} />}
+          empty="No line carried sales in this window."
+          getKey={(r) => r.key}
+          head={
+            <>
+              <th className={TH}>Line</th>
+              <th className={TH}>Achievement</th>
+              <th className={THR}>Sales</th>
+              <th className={THR}>Spend</th>
+              <th className={THR}>Earners</th>
+              <th className={THR}>DM seats</th>
+            </>
+          }
+          items={lineRows}
+          renderCard={(r) => (
+            <div className={cn("px-4 py-3.5", r.isCompany && "bg-bg-muted/40")}>
+              <div className="flex items-start justify-between gap-3">
+                <h3 className={CARD_TITLE}>{r.label}</h3>
+                <div className="shrink-0 text-right">
+                  {achCell(r.ach)}
+                  <p className={CARD_SUB}>{pct(r.exVacantAch)} excl. vacant</p>
+                </div>
+              </div>
+              <CardFields
+                items={[
+                  { label: "Sales", value: egp(r.sales) },
+                  { label: "Target", value: egp(r.target) },
+                  { label: "Marketing", value: egp(r.marketing) },
+                  { label: "Expenses", value: egp(r.expenses) },
+                  { label: "Earners", value: num(r.earners) },
+                  { label: "DM seats", value: `${num(r.dms)}${r.dmsVacant > 0 ? ` +${r.dmsVacant} vac` : ""}` },
+                ]}
+              />
+            </div>
+          )}
+          renderRow={(r) => (
+            <tr
+              className={cn(
+                "border-b border-border/60 last:border-0",
+                r.isCompany && "border-t-2 border-border bg-bg-muted/40 font-bold",
+              )}
+            >
+              <td className={cn(TD, "break-words font-semibold")}>
+                {r.href ? (
+                  <Link className="hover:text-primary hover:underline" href={r.href}>
+                    {r.label}
+                  </Link>
+                ) : (
+                  r.label
+                )}
+              </td>
+              <td className={TD}>
+                {achCell(r.ach)}
+                <span className="block text-phx-xs text-muted-foreground">{pct(r.exVacantAch)} excl. vac</span>
+              </td>
+              <td className={cn(TDR, "text-muted-foreground")}>
+                {egp(r.sales)}
+                <span className="block text-phx-xs">of {egp(r.target)}</span>
+              </td>
+              <td className={cn(TDR, "text-muted-foreground")}>
+                {egp(r.marketing)}
+                <span className="block text-phx-xs">{egp(r.expenses)} exp.</span>
+              </td>
+              <td className={TDR}>{num(r.earners)}</td>
+              <td className={cn(TDR, "text-muted-foreground")}>
+                {num(r.dms)}
+                {r.dmsVacant > 0 && <span className="text-phx-xs"> +{r.dmsVacant} vac</span>}
+              </td>
             </tr>
-          </tbody>
-        </table>
+          )}
+        />
       </Section>
 
       <Section title={`Company DSM league table (${dms.length} seats)`} note="all lines together · all-products achievement → 2026 payout (90% = threshold)">
-        <table className="w-full min-w-[960px] border-collapse">
-          <thead><tr className="border-b border-border">
-            <th className={TH}>#</th><th className={TH}>DSM</th><th className={TH}>Line</th><th className={TH}>Achievement</th>
-            <th className={TH}>Band</th><th className={THR}>Payout</th><th className={THR}>Sales</th>
-            <th className={THR}>Marketing</th><th className={THR}>Expenses</th>
-            <th className={THR}>Visits/mo</th><th className={THR}>Doctors</th><th className={THR}>Doubles</th>
-          </tr></thead>
-          <tbody>
-            {dms.map((d, i) => (
-              <tr key={`${d.lineId}:${d.dm}`} className={cn("border-b border-border/60 last:border-0", (d.allProducts.ach ?? 0) >= 90 && "bg-emerald-50/40")}>
-                <td className={cn(TD, "text-muted-foreground")}>{i + 1}</td>
-                <td className={cn(TD, "font-semibold")}>{d.dm}{d.vacant && <span className="ml-2 rounded bg-bg-muted px-1.5 py-0.5 text-phx-2xs font-bold text-muted-foreground">VACANT</span>}</td>
-                <td className={TD}><LineChip line={d.line} /></td>
-                <td className={TD}>{achCell(d.allProducts.ach)}</td>
-                <td className={TD}><Band band={d.band} /></td>
-                <td className={cn(TDR, "font-semibold")}>{d.payoutPct > 0 ? `${d.payoutPct.toFixed(0)}%` : "—"}</td>
-                <td className={cn(TDR, "text-muted-foreground")}>{egp(d.allProducts.sales)}</td>
-                <td className={cn(TDR, "text-muted-foreground")}>{egp(d.marketingCost)}</td>
-                <td className={cn(TDR, "text-muted-foreground")}>{egp(d.outstationCost)}</td>
-                <td className={TDR}>{numOrNA(d.visitsAvgPerMonth, d.visitsAvailable)}</td>
-                <td className={TDR}>{numOrNA(d.customersTotal, d.visitsAvailable)}</td>
-                <td className={TDR}>{numOrNA(d.doubleVisits, d.visitsAvailable)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        {/* Twelve columns merged to eight: the line chip and the band ride under the names they
+            belong to, spend is one cell, and doubles ride under the visit rate. */}
+        <ReviewTable
+          breakpoint="lg"
+          cols={<Cols fixed={[4, 20, 14, 9, 14, 15, 10, 14]} />}
+          empty="No district carried a target in this view."
+          getKey={(d) => `${d.lineId}:${d.dm}`}
+          head={
+            <>
+              <th className={TH}>#</th>
+              <th className={TH}>DSM</th>
+              <th className={TH}>Achievement</th>
+              <th className={THR}>Payout</th>
+              <th className={THR}>Sales</th>
+              <th className={THR}>Spend</th>
+              <th className={THR}>Visits/mo</th>
+              <th className={THR}>AM · PM · Pharmacies</th>
+            </>
+          }
+          items={dms}
+          renderCard={(d, i) => (
+            <div className="px-4 py-3.5">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h3 className={CARD_TITLE}>
+                    {i + 1}. {d.dm}
+                    {d.vacant && <span className="ml-2 bg-bg-muted px-1.5 py-0.5 text-phx-2xs font-bold text-muted-foreground">VACANT</span>}
+                  </h3>
+                  <p className="mt-1"><LineChip line={d.line} /></p>
+                </div>
+                <div className="shrink-0 text-right">
+                  {achCell(d.allProducts.ach)}
+                  <p className="mt-1"><Band band={d.band} /></p>
+                </div>
+              </div>
+              <CardFields
+                items={[
+                  { label: "Payout", value: d.payoutPct > 0 ? `${d.payoutPct.toFixed(0)}%` : "—" },
+                  { label: "Sales", value: egp(d.allProducts.sales) },
+                  { label: "Marketing", value: egp(d.marketingCost) },
+                  { label: "Expenses", value: egp(d.outstationCost) },
+                  { label: "Visits/mo", value: numOrNA(d.visitsAvgPerMonth, d.visitsAvailable) },
+                  { label: "Doubles", value: numOrNA(d.doubleVisits, d.visitsAvailable) },
+                  { label: "Customers", value: d.visitsAvailable ? customerSplitLabel(d) : "no data" },
+                ]}
+              />
+            </div>
+          )}
+          renderRow={(d, i) => (
+            <tr className={cn("border-b border-border/60 last:border-0", (d.allProducts.ach ?? 0) >= 90 && "bg-emerald-50/40")}>
+              <td className={cn(TD, "text-muted-foreground")}>{i + 1}</td>
+              <td className={cn(TD, "break-words font-semibold")}>
+                {d.dm}
+                {d.vacant && <span className="ml-2 bg-bg-muted px-1.5 py-0.5 text-phx-2xs font-bold text-muted-foreground">VACANT</span>}
+                <span className="mt-1 block"><LineChip line={d.line} /></span>
+              </td>
+              <td className={TD}>
+                {achCell(d.allProducts.ach)}
+                <span className="mt-1 block"><Band band={d.band} /></span>
+              </td>
+              <td className={cn(TDR, "font-semibold")}>{d.payoutPct > 0 ? `${d.payoutPct.toFixed(0)}%` : "—"}</td>
+              <td className={cn(TDR, "text-muted-foreground")}>{egp(d.allProducts.sales)}</td>
+              <td className={cn(TDR, "text-muted-foreground")}>
+                {egp(d.marketingCost)}
+                <span className="block">{egp(d.outstationCost)} exp.</span>
+              </td>
+              <td className={TDR}>
+                {numOrNA(d.visitsAvgPerMonth, d.visitsAvailable)}
+                <span className="block text-muted-foreground">{numOrNA(d.doubleVisits, d.visitsAvailable)} doubles</span>
+              </td>
+              <td className={cn(TDR, "break-words")}>{d.visitsAvailable ? customerSplitLabel(d) : "no data"}</td>
+            </tr>
+          )}
+        />
       </Section>
 
       <Section title={`Incentive earners — areas ≥ 90% company-wide (${earners.length})`} note="threshold to unlock payout · vacant areas excluded">
-        <table className="w-full min-w-[720px] border-collapse">
-          <thead><tr className="border-b border-border">
-            <th className={TH}>Area</th><th className={TH}>Line</th><th className={TH}>DSM</th><th className={TH}>Achievement</th><th className={TH}>Band</th><th className={THR}>Payout</th>
-          </tr></thead>
-          <tbody>
-            {earners.map((a) => (
-              <tr key={`${a.lineId}:${a.area}`} className="border-b border-border/60 last:border-0">
-                <td className={cn(TD, "font-semibold")}>{a.area}</td>
-                <td className={TD}><LineChip line={a.line} /></td>
-                <td className={cn(TD, "text-muted-foreground")}>{a.dm}</td>
-                <td className={TD}>{achCell(a.allProducts.ach)}</td>
-                <td className={TD}><Band band={a.band} /></td>
-                <td className={cn(TDR, "font-semibold")}>{a.payoutPct.toFixed(0)}%</td>
-              </tr>
-            ))}
-            {earners.length === 0 && <tr><td className={cn(TD, "text-muted-foreground")} colSpan={6}>No area reached the 90% threshold in this view.</td></tr>}
-          </tbody>
-        </table>
+        <ReviewTable
+          cols={<Cols fixed={[26, 24, 26, 24]} />}
+          empty="No area reached the 90% threshold in this view."
+          getKey={(a) => `${a.lineId}:${a.area}`}
+          head={
+            <>
+              <th className={TH}>Area</th>
+              <th className={TH}>DSM</th>
+              <th className={TH}>Achievement</th>
+              <th className={THR}>Payout</th>
+            </>
+          }
+          items={earners}
+          renderCard={(a) => (
+            <div className="px-4 py-3.5">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h3 className={CARD_TITLE}>{a.area}</h3>
+                  <p className={CARD_SUB}>{a.dm}</p>
+                  <p className="mt-1"><LineChip line={a.line} /></p>
+                </div>
+                <div className="shrink-0 text-right">
+                  {achCell(a.allProducts.ach)}
+                  <p className="mt-1"><Band band={a.band} /></p>
+                </div>
+              </div>
+              <CardFields items={[{ label: "Payout", value: `${a.payoutPct.toFixed(0)}%` }]} />
+            </div>
+          )}
+          renderRow={(a) => (
+            <tr className="border-b border-border/60 last:border-0">
+              <td className={cn(TD, "break-words font-semibold")}>
+                {a.area}
+                <span className="mt-1 block"><LineChip line={a.line} /></span>
+              </td>
+              <td className={cn(TD, "break-words text-muted-foreground")}>{a.dm}</td>
+              <td className={TD}>
+                {achCell(a.allProducts.ach)}
+                <span className="mt-1 block"><Band band={a.band} /></span>
+              </td>
+              <td className={cn(TDR, "font-semibold")}>{a.payoutPct.toFixed(0)}%</td>
+            </tr>
+          )}
+        />
       </Section>
     </div>
   );
@@ -801,82 +1414,176 @@ function CompanyFailsTab({ dms, areas, thresholds }: { dms: CoDmRow[]; areas: Co
   return (
     <div className="space-y-4">
       <Section title={`DSMs below ${thresholds.dsmFailBelow}% company-wide (${failDms.length})`}>
-        <table className="w-full min-w-[640px] border-collapse">
-          <thead><tr className="border-b border-border">
-            <th className={TH}>DSM</th><th className={TH}>Line</th><th className={TH}>Achievement</th><th className={THR}>Sales</th><th className={THR}>Target</th>
-          </tr></thead>
-          <tbody>
-            {failDms.map((d) => (
-              <tr key={`${d.lineId}:${d.dm}`} className="border-b border-border/60 last:border-0">
-                <td className={cn(TD, "font-semibold")}>{d.dm}</td>
-                <td className={TD}><LineChip line={d.line} /></td>
-                <td className={TD}>{achCell(d.allProducts.ach)}</td>
-                <td className={cn(TDR, "text-muted-foreground")}>{egp(d.allProducts.sales)}</td>
-                <td className={cn(TDR, "text-muted-foreground")}>{egp(d.allProducts.target)}</td>
-              </tr>
-            ))}
-            {failDms.length === 0 && <tr><td className={cn(TD, "text-muted-foreground")} colSpan={5}>No DSM below threshold in this view.</td></tr>}
-          </tbody>
-        </table>
+        <ReviewTable
+          cols={<Cols fixed={[28, 22, 25, 25]} />}
+          empty="No DSM below threshold in this view."
+          getKey={(d) => `${d.lineId}:${d.dm}`}
+          head={
+            <>
+              <th className={TH}>DSM</th>
+              <th className={TH}>Achievement</th>
+              <th className={THR}>Sales</th>
+              <th className={THR}>Target</th>
+            </>
+          }
+          items={failDms}
+          renderCard={(d) => (
+            <div className="px-4 py-3.5">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h3 className={CARD_TITLE}>{d.dm}</h3>
+                  <p className="mt-1"><LineChip line={d.line} /></p>
+                </div>
+                <span className="shrink-0">{achCell(d.allProducts.ach)}</span>
+              </div>
+              <CardFields
+                items={[
+                  { label: "Sales", value: egp(d.allProducts.sales) },
+                  { label: "Target", value: egp(d.allProducts.target) },
+                ]}
+              />
+            </div>
+          )}
+          renderRow={(d) => (
+            <tr className="border-b border-border/60 last:border-0">
+              <td className={cn(TD, "break-words font-semibold")}>
+                {d.dm}
+                <span className="mt-1 block"><LineChip line={d.line} /></span>
+              </td>
+              <td className={TD}>{achCell(d.allProducts.ach)}</td>
+              <td className={cn(TDR, "text-muted-foreground")}>{egp(d.allProducts.sales)}</td>
+              <td className={cn(TDR, "text-muted-foreground")}>{egp(d.allProducts.target)}</td>
+            </tr>
+          )}
+        />
       </Section>
 
       {/* Per-product columns are deliberately omitted here: the three lines sell
           different catalogues, so there is no shared product set to column on. The
           per-line Performance Gaps tab still shows them. */}
       <Section title={`Rep areas below ${thresholds.repFailBelow}% company-wide (${failAreas.length})`} note="worst first · per-product detail lives in each line's own tab">
-        <table className="w-full min-w-[680px] border-collapse">
-          <thead><tr className="border-b border-border">
-            <th className={TH}>Area</th><th className={TH}>Line</th><th className={TH}>DSM</th><th className={TH}>Achievement</th><th className={THR}>Sales</th><th className={TH}>Flag</th>
-          </tr></thead>
-          <tbody>
-            {failAreas.map((a) => (
-              <tr key={`${a.lineId}:${a.area}`} className="border-b border-border/60 last:border-0">
-                <td className={cn(TD, "font-semibold")}>{a.area}</td>
-                <td className={TD}><LineChip line={a.line} /></td>
-                <td className={cn(TD, "text-xs text-muted-foreground")}>{a.dm}</td>
-                <td className={TD}>{achCell(a.allProducts.ach)}</td>
-                <td className={cn(TDR, "text-muted-foreground")}>{egp(a.allProducts.sales)}</td>
-                <td className={TD}>{a.hasReturns ? <span className="rounded bg-red-100 px-1.5 py-0.5 text-phx-2xs font-bold text-red-600">RETURNS</span> : ""}</td>
-              </tr>
-            ))}
-            {failAreas.length === 0 && <tr><td className={cn(TD, "text-muted-foreground")} colSpan={6}>No rep area below threshold in this view.</td></tr>}
-          </tbody>
-        </table>
+        <ReviewTable
+          cols={<Cols fixed={[26, 22, 18, 22, 12]} />}
+          empty="No rep area below threshold in this view."
+          getKey={(a) => `${a.lineId}:${a.area}`}
+          head={
+            <>
+              <th className={TH}>Area</th>
+              <th className={TH}>DSM</th>
+              <th className={TH}>Achievement</th>
+              <th className={THR}>Sales</th>
+              <th className={TH}>Flag</th>
+            </>
+          }
+          items={failAreas}
+          renderCard={(a) => (
+            <div className="px-4 py-3.5">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h3 className={CARD_TITLE}>{a.area}</h3>
+                  <p className={CARD_SUB}>{a.dm}</p>
+                  <p className="mt-1"><LineChip line={a.line} /></p>
+                </div>
+                <div className="shrink-0 text-right">
+                  {achCell(a.allProducts.ach)}
+                  {a.hasReturns && <p className="mt-1 bg-red-100 px-1.5 py-0.5 text-phx-2xs font-bold text-red-600">RETURNS</p>}
+                </div>
+              </div>
+              <CardFields items={[{ label: "Sales", value: egp(a.allProducts.sales) }]} />
+            </div>
+          )}
+          renderRow={(a) => (
+            <tr className="border-b border-border/60 last:border-0">
+              <td className={cn(TD, "break-words font-semibold")}>
+                {a.area}
+                <span className="mt-1 block"><LineChip line={a.line} /></span>
+              </td>
+              <td className={cn(TD, "break-words text-xs text-muted-foreground")}>{a.dm}</td>
+              <td className={TD}>{achCell(a.allProducts.ach)}</td>
+              <td className={cn(TDR, "text-muted-foreground")}>{egp(a.allProducts.sales)}</td>
+              <td className={TD}>
+                {a.hasReturns ? <span className="bg-red-100 px-1.5 py-0.5 text-phx-2xs font-bold text-red-600">RETURNS</span> : ""}
+              </td>
+            </tr>
+          )}
+        />
       </Section>
 
       {uncovered.length > 0 && (
         <Section title={`Uncovered areas — vacant, no rep (${uncovered.length})`} note="excluded from failures · coverage gap, not a rep failure">
-          <table className="w-full min-w-[620px] border-collapse">
-            <thead><tr className="border-b border-border">
-              <th className={TH}>Area</th><th className={TH}>Line</th><th className={TH}>DSM</th><th className={THR}>Achievement</th>
-            </tr></thead>
-            <tbody>{uncovered.map((a) => (
-              <tr key={`${a.lineId}:${a.area}`} className="border-b border-border/60 last:border-0">
-                <td className={cn(TD, "font-semibold")}>{a.area}</td>
-                <td className={TD}><LineChip line={a.line} /></td>
-                <td className={cn(TD, "text-muted-foreground")}>{a.dm}</td>
+          <ReviewTable
+            cols={<Cols fixed={[34, 20, 26, 20]} />}
+            empty="Every area in this view has a rep."
+            getKey={(a) => `${a.lineId}:${a.area}`}
+            head={
+              <>
+                <th className={TH}>Area</th>
+                <th className={TH}>Line</th>
+                <th className={TH}>DSM</th>
+                <th className={THR}>Achievement</th>
+              </>
+            }
+            items={uncovered}
+            renderCard={(a) => (
+              <div className="flex items-start justify-between gap-3 px-4 py-3.5">
+                <div className="min-w-0">
+                  <h3 className={CARD_TITLE}>{a.area}</h3>
+                  <p className={CARD_SUB}>{a.dm}</p>
+                  <p className="mt-1"><LineChip line={a.line} /></p>
+                </div>
+                <span className="shrink-0">{achCell(a.allProducts.ach)}</span>
+              </div>
+            )}
+            renderRow={(a) => (
+              <tr className="border-b border-border/60 last:border-0">
+                <td className={cn(TD, "break-words font-semibold")}>{a.area}</td>
+                <td className={TD}>
+                  <LineChip line={a.line} />
+                </td>
+                <td className={cn(TD, "break-words text-muted-foreground")}>{a.dm}</td>
                 <td className={TDR}>{achCell(a.allProducts.ach)}</td>
-              </tr>))}
-            </tbody>
-          </table>
+              </tr>
+            )}
+          />
         </Section>
       )}
 
       {ungrade.length > 0 && (
         <Section title={`Ungradeable — sales but no target (${ungrade.length})`} note="target-setting gap, not a failure">
-          <table className="w-full min-w-[540px] border-collapse">
-            <thead><tr className="border-b border-border">
-              <th className={TH}>Area</th><th className={TH}>Line</th><th className={TH}>DSM</th><th className={THR}>Sales (no target)</th>
-            </tr></thead>
-            <tbody>{ungrade.map((a) => (
-              <tr key={`${a.lineId}:${a.area}`} className="border-b border-border/60 last:border-0">
-                <td className={cn(TD, "font-semibold")}>{a.area}</td>
-                <td className={TD}><LineChip line={a.line} /></td>
-                <td className={cn(TD, "text-muted-foreground")}>{a.dm}</td>
+          <ReviewTable
+            cols={<Cols fixed={[32, 18, 24, 26]} />}
+            empty="Every area with sales in this view carries a target."
+            getKey={(a) => `${a.lineId}:${a.area}`}
+            head={
+              <>
+                <th className={TH}>Area</th>
+                <th className={TH}>Line</th>
+                <th className={TH}>DSM</th>
+                <th className={THR}>Sales (no target)</th>
+              </>
+            }
+            items={ungrade}
+            renderCard={(a) => (
+              <div className="flex items-start justify-between gap-3 px-4 py-3.5">
+                <div className="min-w-0">
+                  <h3 className={CARD_TITLE}>{a.area}</h3>
+                  <p className={CARD_SUB}>{a.dm}</p>
+                  <p className="mt-1"><LineChip line={a.line} /></p>
+                </div>
+                <span className="shrink-0 text-sm font-semibold tabular-nums">{egp(a.allProducts.sales)}</span>
+              </div>
+            )}
+            renderRow={(a) => (
+              <tr className="border-b border-border/60 last:border-0">
+                <td className={cn(TD, "break-words font-semibold")}>{a.area}</td>
+                <td className={TD}>
+                  <LineChip line={a.line} />
+                </td>
+                <td className={cn(TD, "break-words text-muted-foreground")}>{a.dm}</td>
                 <td className={TDR}>{egp(a.allProducts.sales)}</td>
-              </tr>))}
-            </tbody>
-          </table>
+              </tr>
+            )}
+          />
         </Section>
       )}
     </div>
@@ -897,13 +1604,15 @@ function CompanyDeepTab({
   return (
     <div className="space-y-4">
       <Section title="Company monthly trend" note={company.meta.doctorNote}>
-        <table className="w-full min-w-[620px] border-collapse">
-          <thead><tr className="border-b border-border"><th className={TH}>Metric</th>{months.map((m) => <th key={m} className={THR}>{periodColumnLabel(m, months)}</th>)}</tr></thead>
-          <tbody>
-            <MiniMonth label="Sales achievement" months={months} values={months.map((m) => T.byMonth[m]?.ach ?? null)} kind="ach" />
-            <MiniMonth label="Doctors reached" months={months} values={months.map((m) => T.customersByMonth[m] ?? 0)} kind="num" />
-          </tbody>
-        </table>
+        <MonthGridTable
+          empty="No month in this window carries a company figure."
+          firstHead="Metric"
+          months={months}
+          rows={[
+            { key: "ach", kind: "ach" as const, label: "Sales achievement", values: months.map((m) => T.byMonth[m]?.ach ?? null) },
+            { key: "customers", kind: "num" as const, label: "Customers reached", values: months.map((m) => T.customersByMonth[m] ?? 0) },
+          ]}
+        />
       </Section>
 
       {/* Per-DSM deep dives, all lines in one ranked list. Each DM's product/family mix
@@ -927,33 +1636,53 @@ function CompanyDeepTab({
                 <span>Payout <b className="text-foreground">{d.payoutPct.toFixed(0)}%</b></span>
                 <span>Mktg <b className="text-foreground">{egp(d.marketingCost)}</b> ({d.marketingMonths}mo)</span>
                 <span>Exp <b className="text-foreground">{egp(d.outstationCost)}</b></span>
-                <span>Doctors <b className="text-foreground">{numOrNA(d.customersTotal, d.visitsAvailable)}</b></span>
+                <span>Customers <b className="text-foreground">{d.visitsAvailable ? customerSplitLabel(d) : "no data"}</b></span>
                 <span>Doubles <b className="text-foreground">{numOrNA(d.doubleVisits, d.visitsAvailable)}</b></span>
               </div>
             </div>
+            {/* `min-w-0` on both halves — see the per-line Deep Analysis tab. */}
             <div className="grid gap-3 p-3 lg:grid-cols-[1.6fr_1fr]">
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[440px] border-collapse">
-                  <thead><tr className="border-b border-border"><th className={TH}>Monthly</th>{months.map((m) => <th key={m} className={THR}>{periodColumnLabel(m, months)}</th>)}</tr></thead>
-                  <tbody>
-                    <MiniMonth label="Achievement" months={months} values={months.map((m) => d.achByMonth?.[m] ?? null)} kind="ach" />
-                    {d.visitsAvailable && <MiniMonth label="Visits" months={months} values={months.map((m) => d.visitsByMonth?.[m] ?? 0)} kind="num" />}
-                    {d.visitsAvailable && <MiniMonth label="Doctors" months={months} values={months.map((m) => d.customersByMonth?.[m] ?? 0)} kind="num" />}
-                  </tbody>
-                </table>
+              <div className="min-w-0">
+                <MonthGridTable
+                  empty="No month in this window carries a figure for this district."
+                  firstHead="Monthly"
+                  months={months}
+                  rows={[
+                    { key: "ach", kind: "ach" as const, label: "Achievement", values: months.map((m) => d.achByMonth?.[m] ?? null) },
+                    ...(d.visitsAvailable
+                      ? [
+                          { key: "visits", kind: "num" as const, label: "Visits", values: months.map((m) => d.visitsByMonth?.[m] ?? 0) },
+                          { key: "customers", kind: "num" as const, label: "Customers", values: months.map((m) => d.customersByMonth?.[m] ?? 0) },
+                        ]
+                      : []),
+                  ]}
+                />
               </div>
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[240px] border-collapse">
-                  <thead><tr className="border-b border-border"><th className={TH}>{useFamily ? "Family mix" : "Product mix"}</th><th className={THR}>Achievement</th></tr></thead>
-                  <tbody>
-                    {mixRows.map((r) => (
-                      <tr key={r.label} className="border-b border-border/50 last:border-0">
-                        <td className={cn(TD, "font-medium")}>{r.label}</td>
-                        <td className={TDR}>{achCell(r.ach)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="min-w-0">
+                <ReviewTable
+                  cols={<Cols fixed={[62, 38]} />}
+                  empty="No mix to show for this district."
+                  getKey={(r) => r.label}
+                  head={
+                    <>
+                      <th className={TH}>{useFamily ? "Family mix" : "Product mix"}</th>
+                      <th className={THR}>Achievement</th>
+                    </>
+                  }
+                  items={mixRows}
+                  renderCard={(r) => (
+                    <div className="flex items-start justify-between gap-3 px-4 py-3">
+                      <span className="min-w-0 break-words text-sm font-medium">{r.label}</span>
+                      <span className="shrink-0">{achCell(r.ach)}</span>
+                    </div>
+                  )}
+                  renderRow={(r) => (
+                    <tr className="border-b border-border/50 last:border-0">
+                      <td className={cn(TD, "break-words font-medium")}>{r.label}</td>
+                      <td className={TDR}>{achCell(r.ach)}</td>
+                    </tr>
+                  )}
+                />
               </div>
             </div>
           </div>
@@ -964,18 +1693,24 @@ function CompanyDeepTab({
           product table would imply a common catalogue that does not exist. */}
       {productTables.map((pt) => (
         <Section key={pt.id} title={`${pt.label} — achievement per product per month`} note="★ include products">
-          <table className="w-full min-w-[720px] border-collapse">
-            <thead><tr className="border-b border-border"><th className={TH}>Product</th>{months.map((m) => <th key={m} className={THR}>{periodColumnLabel(m, months)}</th>)}<th className={THR}>Total</th></tr></thead>
-            <tbody>
-              {pt.products.map((p) => (
-                <tr key={p.product} className="border-b border-border/60 last:border-0">
-                  <td className={cn(TD, "font-medium")}>{p.include && <span className="mr-1 text-amber-500">★</span>}{p.product}</td>
-                  {months.map((m) => <td key={m} className={TDR}>{achCell(p.byMonth[m]?.ach ?? null)}</td>)}
-                  <td className={cn(TDR, "font-bold")}>{achCell(p.total.ach)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <MonthGridTable
+            empty="No product on this line carried sales or a target in this window."
+            firstHead="Product"
+            months={months}
+            rows={pt.products.map((p) => ({
+              key: p.product,
+              kind: "ach" as const,
+              label: (
+                <>
+                  {p.include && <span className="mr-1 text-amber-500">★</span>}
+                  {p.product}
+                </>
+              ),
+              total: p.total.ach,
+              values: months.map((m) => p.byMonth[m]?.ach ?? null),
+            }))}
+            totalHead="Total"
+          />
         </Section>
       ))}
 
@@ -989,14 +1724,17 @@ function CompanyDeepTab({
           vacant: a.vacant,
           customersTotal: a.customersTotal,
           customersByMonth: a.customersByMonth,
+          customersAm: a.customersAm,
+          customersPm: a.customersPm,
+          customersPharmacy: a.customersPharmacy,
         }))}
         months={months}
         showLine
         visitsAvailable={customersOk}
       />
 
-      <RoleActivityTable roles={company.roles} />
-      <PeopleActivityTable people={company.people} />
+      <RoleActivityTable roles={company.roles} scopeNote="all three lines" />
+      <PeopleActivityTable people={company.people} scopeNote="all three lines" />
     </div>
   );
 }

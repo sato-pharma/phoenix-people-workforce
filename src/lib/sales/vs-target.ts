@@ -820,8 +820,11 @@ function addRow(total: VsTargetTotals, row: AchievementRow, gradedPeriods: Reado
  * Computed per GROUP, from that group's own rows, because the question is "was THIS team targeted
  * in that month", not "did anyone have a target somewhere". A region with no February target must
  * not have its February sales graded against another region's February.
+ *
+ * Exported so a caller that grades at a DIFFERENT grain can compute the set ONCE and hand it to
+ * every `totalRows` beneath it — see the override on `totalRows` below.
  */
-function gradedPeriodsOf(rows: readonly AchievementRow[]): Set<string> {
+export function gradedPeriodsOf(rows: readonly AchievementRow[]): Set<string> {
   const periods = new Set<string>();
   for (const row of rows) if ((row.targetValue ?? 0) > 0) periods.add(row.period);
   return periods;
@@ -847,10 +850,24 @@ function sealTotals(total: VsTargetTotals): VsTargetTotals {
   return total;
 }
 
-/** Total a set of rows, with coverage accounting. */
-export function totalRows(rows: AchievementRow[]): VsTargetTotals {
+/**
+ * Total a set of rows, with coverage accounting.
+ *
+ * `gradedPeriods` overrides which months may contribute to the numerator. Omit it and the set is
+ * computed from these rows alone — "was THIS team targeted that month", the right question for a
+ * total that stands on its own, and what every caller outside the Business Review wants.
+ *
+ * Pass one when a WIDER unit owns that decision. The Business Review does: owner ruling
+ * 2026-09-26, every level of a line grades against the LINE's targeted months, because the
+ * Monthly Closing grades a line. Without the override an area untargeted in a month its line WAS
+ * targeted in drops that month's sales from its own numerator while the line keeps them, so the
+ * areas stop summing to the line — measured on production for Jul–Aug 2026, summing the areas
+ * read 70.12% where the line rule reads 74.35%: a 1,598,667 EGP hole in the numerator, and two
+ * different company achievements on two screens of one module.
+ */
+export function totalRows(rows: AchievementRow[], gradedPeriods?: ReadonlySet<string>): VsTargetTotals {
   const total = emptyTotals();
-  const graded = gradedPeriodsOf(rows);
+  const graded = gradedPeriods ?? gradedPeriodsOf(rows);
   for (const row of rows) addRow(total, row, graded);
   return sealTotals(total);
 }

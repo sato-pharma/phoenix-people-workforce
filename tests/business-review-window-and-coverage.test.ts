@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 import {
   REVIEW_SOURCE_NOTICE,
   buildCoverage,
   gradedRowsOf,
 } from "../src/lib/business-review/canonical.ts";
-import { describePeriods, hasFigures } from "../src/lib/business-review/coverage.ts";
+import { describePeriods, figureWindowLabel, hasFigures } from "../src/lib/business-review/coverage.ts";
 import {
   REVIEW_FLOOR,
   periodColumnLabel,
@@ -16,7 +18,11 @@ import { buildOverlays } from "../src/lib/business-review/sources/rollup.ts";
 import type { AttributionMap, Placement } from "../src/lib/business-review/sources/attribution.ts";
 import type { MarketingLoad } from "../src/lib/business-review/sources/marketing.ts";
 import type { OutstationLoad } from "../src/lib/business-review/sources/outstation.ts";
-import type { VisitAgentFact, VisitsLoad } from "../src/lib/business-review/sources/visits.ts";
+import type {
+  VisitAgentFact,
+  VisitManagerFact,
+  VisitsLoad,
+} from "../src/lib/business-review/sources/visits.ts";
 import type { AchievementRow } from "../src/lib/sales/monthly-targets.ts";
 import { SALES_HISTORY_FLOOR } from "../src/lib/sales/vs-target.ts";
 
@@ -77,8 +83,13 @@ function salesRow(partial: Partial<AchievementRow> & { period: string }): Achiev
   };
 }
 
-const NO_MARKETING: MarketingLoad = { facts: [], periodsWithData: [], totalRows: 0, unattributableRows: 0 };
-const NO_OUTSTATION: OutstationLoad = { facts: [], periodsWithData: [], totalRows: 0, unattributableRows: 0 };
+/** Source text, for the pins that guard wiring a unit test cannot reach. */
+const SRC = (rel: string) => readFileSync(fileURLToPath(new URL(`../${rel}`, import.meta.url)), "utf8");
+/** Collapse whitespace runs so a reformat or a line-wrap cannot false-fail a source check. */
+const flat = (s: string) => s.replace(/\s+/g, " ");
+
+const NO_MARKETING: MarketingLoad = { facts: [], periodsWithData: [], totalRows: 0 };
+const NO_OUTSTATION: OutstationLoad = { facts: [], periodsWithData: [], totalRows: 0 };
 const NO_VISITS: VisitsLoad = {
   agents: [], managers: [], activity: [], periodsWithData: [],
   totalRows: 0, collapsedRows: 0, unattributableRows: 0, excludedAgentRows: 0,
@@ -120,8 +131,37 @@ function agentFact(partial: Partial<VisitAgentFact> & { period: string; agentHrI
     campaignVisits: 0,
     adminRows: 0,
     accompaniedVisits: 0,
+    // Default the split to "all PM", which is what visitCountBucket answers for an unmarked period
+    // and a contact with no speciality — so a fixture that says nothing about buckets still adds up.
+    visitSplit: { am: 0, pm: partial.fieldVisits ?? 0, pharmacies: 0 },
     customers: new Set<number>(),
+    customersAm: new Set<number>(),
+    customersPm: new Set<number>(partial.customers ?? []),
+    customersPharmacy: new Set<number>(),
     byLabel: new Map<string, number>(),
+    ...partial,
+  };
+}
+
+/**
+ * A manager's visit fact. A helper rather than two object literals, because a literal is what made
+ * this file go red in CI when the three-way split landed — `agentFact` absorbed the new fields in
+ * one place and the two manager rows did not.
+ */
+function managerFact(
+  partial: Partial<VisitManagerFact> & { period: string; managerHrId: string },
+): VisitManagerFact {
+  return {
+    managerName: null,
+    rides: 0,
+    ridesByRep: new Map<string, number>(),
+    customers: new Set<number>(),
+    // Same default as `agentFact`: an unmarked period and a contact with no speciality bucket to
+    // PM, so a fixture that says nothing about buckets still adds up.
+    customersAm: new Set<number>(),
+    customersPm: new Set<number>(partial.customers ?? []),
+    customersPharmacy: new Set<number>(),
+    rideSplit: { am: 0, pm: partial.rides ?? 0, pharmacies: 0 },
     ...partial,
   };
 }
@@ -264,7 +304,7 @@ export async function runBusinessReviewWindowAndCoverageTests() {
     const rows = window.periods.map((period) => salesRow({ period }));
     const coverage = buildCoverage({
       window, rows, uploaded: UPLOADED(window),
-      marketing: { facts: [], periodsWithData: ["2026-08"], totalRows: 15, unattributableRows: 0 },
+      marketing: { facts: [], periodsWithData: ["2026-08"], totalRows: 15 },
       outstation: NO_OUTSTATION, visits: NO_VISITS, unplaced: NO_UNPLACED, adjustment: null,
     });
     const marketing = coverage.sources.find((s) => s.source === "marketing");
@@ -343,6 +383,8 @@ export async function runBusinessReviewWindowAndCoverageTests() {
 
     const overlays = buildOverlays({
       window,
+      // Every month of these fixtures carries sales, so the figure window is the whole window.
+      figurePeriods: new Set(window.periods),
       rows: [],
       attribution,
       marketing: NO_MARKETING,
@@ -402,17 +444,19 @@ export async function runBusinessReviewWindowAndCoverageTests() {
 
     const overlays = buildOverlays({
       window,
+      // Every month of these fixtures carries sales, so the figure window is the whole window.
+      figurePeriods: new Set(window.periods),
       rows: [],
       attribution,
       marketing: {
-        periodsWithData: ["2026-02"], totalRows: 2, unattributableRows: 0,
+        periodsWithData: ["2026-02"], totalRows: 2,
         facts: [
           { period: "2026-02", requesterHrId: "HR-KNOWN", lineId: 1, areaId: 1, status: "approved", bucket: "committed", cost: 5500 },
           { period: "2026-02", requesterHrId: "HR-GHOST", lineId: null, areaId: null, status: "approved", bucket: "committed", cost: 1000 },
         ],
       },
       outstation: {
-        periodsWithData: ["2026-02"], totalRows: 2, unattributableRows: 0,
+        periodsWithData: ["2026-02"], totalRows: 2,
         facts: [
           { period: "2026-02", hrId: "HR-KNOWN", claimed: 900, approved: 0, rejected: false, travel: 900, meeting: 0, allowance: 0, other: 0 },
           { period: "2026-02", hrId: "HR-GHOST", claimed: 37, approved: 37, rejected: false, travel: 0, meeting: 37, allowance: 0, other: 0 },
@@ -464,6 +508,8 @@ export async function runBusinessReviewWindowAndCoverageTests() {
 
     const overlays = buildOverlays({
       window,
+      // Every month of these fixtures carries sales, so the figure window is the whole window.
+      figurePeriods: new Set(window.periods),
       rows: [salesRow({ period: "2026-06", dmHrId: "HR-DM", dmSeatId: "DM1" })],
       attribution,
       marketing: NO_MARKETING,
@@ -475,9 +521,9 @@ export async function runBusinessReviewWindowAndCoverageTests() {
           agentFact({ period: "2026-06", agentHrId: "HR-REP", fieldVisits: 20, regularVisits: 20, accompaniedVisits: 6 }),
         ],
         managers: [
-          { period: "2026-06", managerHrId: "HR-DM", managerName: "DM", rides: 6, ridesByRep: new Map([["HR-REP", 6]]), customers: new Set() },
+          managerFact({ period: "2026-06", managerHrId: "HR-DM", managerName: "DM", rides: 6, ridesByRep: new Map([["HR-REP", 6]]) }),
           // A manager with no DM seat in the sales rows contributes no phantom district.
-          { period: "2026-06", managerHrId: "HR-TRAINING", managerName: "TM", rides: 44, ridesByRep: new Map(), customers: new Set() },
+          managerFact({ period: "2026-06", managerHrId: "HR-TRAINING", managerName: "TM", rides: 44 }),
         ],
       },
     });
@@ -690,5 +736,181 @@ export async function runBusinessReviewWindowAndCoverageTests() {
       /Monthly Closing/,
       "and it must still name the engine the review was rebuilt from",
     );
+  }
+
+  // ─────────── ONE SPAN FOR EVERY FIGURE (owner ruling 2026-09-26) ───────────
+  //
+  // The sales half has always held a month with no distributor upload out of every sales, target and
+  // achievement figure. The non-sales half did not, so one heading covered two different spans: on
+  // production's default Jul–Sep 2026 window, sales were Jul+Aug while 48.8% of committed marketing,
+  // 41.8% of outstation and 24.2% of field visits came from September. The coverage note listed
+  // exactly what had been held out of the SALES — which is what made the silence about the rest read
+  // as deliberate rather than as an oversight.
+  {
+    const window = windowOf("2026-07", "2026-08");
+    // July's distributor files landed; August holds Direct orders only.
+    const figurePeriods = new Set(["2026-07"]);
+    const attribution = attributionOf({
+      "HR-REP|2026-07": { areaCode: "A1", dmSeatId: "DM1", lineCode: "pedia" },
+      "HR-REP|2026-08": { areaCode: "A1", dmSeatId: "DM1", lineCode: "pedia" },
+    });
+
+    const overlays = buildOverlays({
+      window,
+      figurePeriods,
+      rows: [],
+      attribution,
+      marketing: {
+        periodsWithData: ["2026-07", "2026-08"], totalRows: 2,
+        facts: [
+          { period: "2026-07", requesterHrId: "HR-REP", lineId: 1, areaId: 1, status: "approved", bucket: "committed", cost: 1_000 },
+          { period: "2026-08", requesterHrId: "HR-REP", lineId: 1, areaId: 1, status: "approved", bucket: "committed", cost: 9_000 },
+        ],
+      },
+      outstation: {
+        periodsWithData: ["2026-08"], totalRows: 1,
+        facts: [
+          { period: "2026-08", hrId: "HR-REP", claimed: 700, approved: 700, rejected: false, travel: 700, meeting: 0, allowance: 0, other: 0 },
+        ],
+      },
+      visits: {
+        ...NO_VISITS,
+        periodsWithData: ["2026-07", "2026-08"],
+        agents: [
+          agentFact({ period: "2026-07", agentHrId: "HR-REP", fieldVisits: 4, regularVisits: 4, customers: new Set([1]) }),
+          agentFact({ period: "2026-08", agentHrId: "HR-REP", fieldVisits: 40, regularVisits: 40, customers: new Set([2, 3]) }),
+        ],
+      },
+    });
+
+    assert.equal(
+      overlays.company.marketingCommitted,
+      1_000,
+      "August's 9,000 EGP of committed marketing must not sit beside sales that stop in July",
+    );
+    assert.equal(overlays.company.outstationClaimed, 0, "nor August's outstation claim");
+    assert.equal(overlays.company.visits, 4, "nor August's 40 field visits");
+    assert.equal(overlays.company.customersTotal, 1, "nor the doctors only August saw");
+    assert.equal(
+      overlays.area("pedia", "A1").marketingCommitted,
+      1_000,
+      "and the same cut applies at every grain, not only the company total",
+    );
+
+    // Held out is not dropped. Every excluded fact is counted, by source, and named in words.
+    assert.deepEqual(overlays.heldOut.periods, ["2026-08"]);
+    assert.equal(overlays.heldOut.marketingCommitted, 9_000);
+    assert.equal(overlays.heldOut.marketingRequests, 1);
+    assert.equal(overlays.heldOut.outstationClaimed, 700);
+    assert.equal(overlays.heldOut.outstationRows, 1);
+    assert.equal(overlays.heldOut.visitRows, 40);
+    assert.equal(overlays.heldOut.visitAgents, 1);
+
+    const coverage = buildCoverage({
+      window,
+      rows: [salesRow({ period: "2026-07", targetValue: 10, actualValue: 10, hasTarget: true })],
+      uploaded: figurePeriods,
+      marketing: NO_MARKETING,
+      outstation: NO_OUTSTATION,
+      visits: NO_VISITS,
+      unplaced: overlays.unplaced,
+      heldOut: overlays.heldOut,
+      figureWindow: { label: "Jul 2026", periods: ["2026-07"] },
+      adjustment: null,
+    });
+
+    const note = coverage.notUploaded?.note ?? "";
+    assert.match(note, /9,000/, "the note must name the marketing that was held out, in EGP");
+    assert.match(note, /700/, "and the outstation");
+    assert.match(note, /40 CRM rows/, "and the visit rows");
+    assert.match(
+      note,
+      /cost and activity can be read against them/i,
+      "and say why the cut was made, or a reader takes it for missing data",
+    );
+    assert.equal(coverage.notUploaded?.alsoHeldOut?.marketingCommitted, 9_000, "carried as data, not only prose");
+
+    // The heading must name the span the figures answer, never the span that was asked for.
+    assert.equal(figureWindowLabel(coverage), "Jul 2026", "the header prints the figure window");
+    assert.notEqual(
+      figureWindowLabel(coverage),
+      window.label,
+      "and it differs from the requested range — naming that range is the mislabel this closes",
+    );
+
+    // When nothing is held out the two are the same and nothing extra is claimed.
+    const whole = buildCoverage({
+      window,
+      rows: [salesRow({ period: "2026-07", targetValue: 10, actualValue: 10, hasTarget: true })],
+      uploaded: new Set(window.periods),
+      marketing: NO_MARKETING,
+      outstation: NO_OUTSTATION,
+      visits: NO_VISITS,
+      unplaced: overlays.unplaced,
+      adjustment: null,
+    });
+    assert.equal(whole.figureWindow, null, "no figure window when every month counts");
+    assert.equal(figureWindowLabel(whole), window.label, "and the header falls back to the window itself");
+  }
+
+  // ─────────── A LINE VIEW SHOWS THAT LINE'S PEOPLE (owner ruling 2026-09-26) ───────────
+  //
+  // The role and people tables were fed `company.roles` / `company.people` in BOTH views, with no
+  // caption, so "Pedia Line — Deep Analysis" ended with every rep, manager and Head-Office person
+  // in the business and a reader took those rows for Pedia's. Neither row type carried a line, and
+  // the builder could not place anybody because it RACED the attribution map.
+  //
+  // These are source pins because the builders are module-private and need a database; what they
+  // guard is that the wiring cannot quietly revert to the company-wide set.
+  {
+    const canonical = flat(SRC("src/lib/business-review/canonical.ts"));
+    assert.ok(
+      canonical.includes("const attribution = await buildAttributionMap(rows, interested);"),
+      "the attribution map must be built BEFORE the role tables, not concurrently with them",
+    );
+    assert.ok(
+      canonical.includes("const roles = buildRoleFacts({"),
+      "and the role tables must be built from it, synchronously",
+    );
+    assert.ok(
+      canonical.includes("roles.byLine[LINE_CODE[id]] ?? EMPTY_ROLE_FACTS"),
+      "every dataset must get ITS OWN line's role facts",
+    );
+    assert.ok(
+      !canonical.includes("loadRoleFacts({ window, visits, outstation, marketing })"),
+      "the racing loader is gone — it could not place anyone on a line",
+    );
+
+    const dashboard = flat(SRC("src/components/business-review/dashboard.client.tsx"));
+    assert.ok(
+      dashboard.includes("<RoleActivityTable roles={roles} scopeNote={`${ds.meta.line} line only`} />"),
+      "the line view renders its own roles and says so",
+    );
+    assert.ok(
+      dashboard.includes('<RoleActivityTable roles={company.roles} scopeNote="all three lines" />'),
+      "and the company view says what IT is showing, or two identical headings hide the difference",
+    );
+    assert.ok(
+      !dashboard.includes("roles={company.roles} people={company.people} />"),
+      "the line view must never be handed the company-wide set again",
+    );
+  }
+
+  // ─────────── COACHING IS OUT OF THIS MODULE (owner ruling 2026-09-26) ───────────
+  //
+  // "Leave him out and remove the coaching from this module." The source-level sweep lives in
+  // business-review-month-end.test.ts, over every file in sources/; these two pin the surfaces.
+  {
+    const rollups = flat(SRC("src/components/business-review/rollups.client.tsx"));
+    assert.ok(!rollups.includes("coachingReports"), "the role table no longer prints coaching reports");
+    const coverageClient = flat(SRC("src/components/business-review/coverage.client.tsx"));
+    assert.ok(
+      !coverageClient.includes("Coaching reports"),
+      "and the coverage sheet no longer names coaching as a source of this module",
+    );
+    // `repsCoached` is NOT coaching — it is the distinct reps a manager rode along with, from the
+    // visit feed. It stays, and the distinction is the whole reason the removal is safe.
+    const roles = flat(SRC("src/lib/business-review/sources/roles.ts"));
+    assert.ok(roles.includes("repsCoached: acc.reps.size"), "rides ridden with survive the coaching removal");
   }
 }

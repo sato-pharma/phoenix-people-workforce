@@ -23,6 +23,11 @@
 // Anything that reaches no unit at all is accumulated into `unplaced` and reported. It is never
 // folded into a total and never dropped.
 
+import {
+  emptyVisitCountSplit,
+  mergeVisitCountSplits,
+  type VisitCountSplit,
+} from "@/lib/crm/visit-count-buckets";
 import type { AchievementRow } from "@/lib/sales/monthly-targets";
 
 import type { AttributionMap, Placement } from "./attribution";
@@ -52,6 +57,8 @@ export type ReviewOverlay = {
 
   /** Field visits — regular, campaign and unlabelled field calls. */
   visits: number;
+  /** The same visits AM · PM · Pharmacies (owner golden rule). The three sum to `visits`. */
+  visitSplit: VisitCountSplit;
   regularVisits: number;
   campaignVisits: number;
   /** Meetings, leave, admin, BRM. Recorded, but not customer visits. */
@@ -66,9 +73,14 @@ export type ReviewOverlay = {
   visitingReps: number;
   visitsAvgPerRepPerMonth: number;
 
-  /** Distinct doctors reached by a regular visit, unioned across the whole window. */
+  /** Distinct customers reached by a regular visit, unioned across the whole window. */
   customersTotal: number;
   customersByMonth: Record<string, number>;
+  /** The same customers, three ways. A pharmacy is not a doctor, so only `customersPm` may be
+   *  printed under the word "doctors". Each is a union across the level, never a sum. */
+  customersAm: number;
+  customersPm: number;
+  customersPharmacy: number;
 };
 
 export type UnplacedTotals = {
@@ -83,12 +95,40 @@ export type UnplacedTotals = {
   liveTreePlacedFacts: number;
 };
 
+/**
+ * What a month the SALES figures cannot cover still holds — counted, named, and in no total.
+ *
+ * The sales half already holds a month with no distributor upload out of every sales, target and
+ * achievement figure (`gradedRowsOf`). Until 2026-09-26 the non-sales half did not, so one heading
+ * covered two different spans: on the default Jul–Sep 2026 window, sales were Jul+Aug while 48.8% of
+ * committed marketing, 41.8% of outstation and 24.2% of field visits came from September. Anyone
+ * reading cost against sales off that header was reading three months of spend against two months of
+ * sales, and the coverage note — which listed exactly what was held out of the SALES figures — made
+ * the silence about the rest look deliberate.
+ *
+ * Owner ruling 2026-09-26: cut them to the same months, and report what was cut. This is the second
+ * half of that. It is never folded into a total; the coverage layer prints it in words.
+ */
+export type HeldOutTotals = {
+  /** Months inside the requested window that no figure covers. */
+  periods: string[];
+  marketingRequests: number;
+  marketingCommitted: number;
+  outstationRows: number;
+  outstationClaimed: number;
+  visitRows: number;
+  /** Distinct agents whose work falls entirely in a held-out month. */
+  visitAgents: number;
+};
+
 export type ReviewOverlays = {
   area: (lineCode: string | null, areaCode: string | null) => ReviewOverlay;
   dm: (dmSeatId: string | null) => ReviewOverlay;
   line: (lineCode: string | null) => ReviewOverlay;
   company: ReviewOverlay;
   unplaced: UnplacedTotals;
+  /** Facts excluded because their month carries no sales. Reported, never totalled. */
+  heldOut: HeldOutTotals;
 };
 
 // ── Accumulator ──────────────────────────────────────────────────────────────
@@ -108,6 +148,7 @@ type Acc = {
   allowance: number;
   other: number;
   visits: number;
+  visitSplit: VisitCountSplit;
   regularVisits: number;
   campaignVisits: number;
   adminRows: number;
@@ -116,6 +157,9 @@ type Acc = {
   ridesLed: number;
   visitingReps: Set<string>;
   customersAll: Set<number>;
+  customersAm: Set<number>;
+  customersPm: Set<number>;
+  customersPharmacy: Set<number>;
   customersByMonth: Map<string, Set<number>>;
 };
 
@@ -125,9 +169,11 @@ function newAcc(): Acc {
     outstationClaimed: 0, outstationApproved: 0, outstationRows: 0,
     outstationByMonth: new Map(), outstationApprovedByMonth: new Map(),
     travel: 0, meeting: 0, allowance: 0, other: 0,
-    visits: 0, regularVisits: 0, campaignVisits: 0, adminRows: 0, visitsByMonth: new Map(),
+    visits: 0, visitSplit: emptyVisitCountSplit(),
+    regularVisits: 0, campaignVisits: 0, adminRows: 0, visitsByMonth: new Map(),
     doubleVisits: 0, ridesLed: 0, visitingReps: new Set(),
-    customersAll: new Set(), customersByMonth: new Map(),
+    customersAll: new Set(), customersAm: new Set(), customersPm: new Set(), customersPharmacy: new Set(),
+    customersByMonth: new Map(),
   };
 }
 
@@ -183,6 +229,7 @@ function finalize(acc: Acc, periods: readonly string[]): ReviewOverlay {
       allowance: round2(acc.allowance), other: round2(acc.other),
     },
     visits: acc.visits,
+    visitSplit: { ...acc.visitSplit },
     regularVisits: acc.regularVisits,
     campaignVisits: acc.campaignVisits,
     adminRows: acc.adminRows,
@@ -197,6 +244,9 @@ function finalize(acc: Acc, periods: readonly string[]): ReviewOverlay {
       reps > 0 && visitsMonths > 0 ? round2(acc.visits / reps / visitsMonths) : 0,
     customersTotal: acc.customersAll.size,
     customersByMonth: fillCounts(periods, acc.customersByMonth),
+    customersAm: acc.customersAm.size,
+    customersPm: acc.customersPm.size,
+    customersPharmacy: acc.customersPharmacy.size,
   };
 }
 
@@ -219,8 +269,18 @@ export function buildOverlays(input: {
   marketing: MarketingLoad;
   outstation: OutstationLoad;
   visits: VisitsLoad;
+  /**
+   * The months every figure on the page may count — the requested window intersected with the
+   * months whose distributor files have landed, the same set `gradedRowsOf` filters the sales rows
+   * on. Owner ruling 2026-09-26: one span for every figure. A fact outside it is accumulated into
+   * `heldOut` and reaches no unit, so spend and visits can never cover months the sales cannot.
+   */
+  figurePeriods: ReadonlySet<string>;
 }): ReviewOverlays {
-  const { window, attribution } = input;
+  const { window, attribution, figurePeriods } = input;
+  // Every by-month record still carries the FULL requested window's keys, so a renderer iterating
+  // `meta.months` never hits `undefined` — a held-out month simply reads 0 there, and the coverage
+  // layer is what distinguishes that from "nobody spent anything".
   const periods = window.periods;
 
   const areas = new Map<string, Acc>();
@@ -232,6 +292,12 @@ export function buildOverlays(input: {
     outstationRows: 0, outstationClaimed: 0,
     visitRows: 0, visitAgents: 0,
     liveTreePlacedFacts: 0,
+  };
+  const heldOut: HeldOutTotals = {
+    periods: window.periods.filter((p) => !figurePeriods.has(p)),
+    marketingRequests: 0, marketingCommitted: 0,
+    outstationRows: 0, outstationClaimed: 0,
+    visitRows: 0, visitAgents: 0,
   };
 
   const of = (map: Map<string, Acc>, key: string): Acc => {
@@ -258,6 +324,11 @@ export function buildOverlays(input: {
 
   // ── Marketing ──
   for (const fact of input.marketing.facts) {
+    if (!figurePeriods.has(fact.period)) {
+      heldOut.marketingRequests += 1;
+      if (fact.bucket === "committed") heldOut.marketingCommitted += fact.cost;
+      continue;
+    }
     const placement = attribution.place(fact.requesterHrId, fact.period);
     if (!placement) {
       unplaced.marketingRequests += 1;
@@ -276,6 +347,11 @@ export function buildOverlays(input: {
 
   // ── Outstation ──
   for (const fact of input.outstation.facts) {
+    if (!figurePeriods.has(fact.period)) {
+      heldOut.outstationRows += 1;
+      heldOut.outstationClaimed += fact.claimed;
+      continue;
+    }
     const placement = attribution.place(fact.hrId, fact.period);
     if (!placement) {
       unplaced.outstationRows += 1;
@@ -295,7 +371,13 @@ export function buildOverlays(input: {
   }
 
   // ── Visits, and the customers inside them ──
+  const heldOutAgents = new Set<string>();
   for (const fact of input.visits.agents) {
+    if (!figurePeriods.has(fact.period)) {
+      heldOut.visitRows += fact.fieldVisits + fact.adminRows;
+      if (fact.agentHrId) heldOutAgents.add(fact.agentHrId);
+      continue;
+    }
     const placement = fact.agentHrId ? attribution.place(fact.agentHrId, fact.period) : null;
     if (!placement) {
       unplaced.visitRows += fact.fieldVisits + fact.adminRows;
@@ -303,6 +385,7 @@ export function buildOverlays(input: {
     }
     for (const acc of chainOf(placement)) {
       acc.visits += fact.fieldVisits;
+      mergeVisitCountSplits(acc.visitSplit, fact.visitSplit);
       acc.regularVisits += fact.regularVisits;
       acc.campaignVisits += fact.campaignVisits;
       acc.adminRows += fact.adminRows;
@@ -310,6 +393,9 @@ export function buildOverlays(input: {
       bump(acc.visitsByMonth, fact.period, fact.fieldVisits);
       if (fact.fieldVisits > 0 && fact.agentHrId) acc.visitingReps.add(fact.agentHrId);
       for (const id of fact.customers) acc.customersAll.add(id);
+      for (const id of fact.customersAm) acc.customersAm.add(id);
+      for (const id of fact.customersPm) acc.customersPm.add(id);
+      for (const id of fact.customersPharmacy) acc.customersPharmacy.add(id);
       unionInto(acc.customersByMonth, fact.period, fact.customers);
     }
   }
@@ -323,9 +409,12 @@ export function buildOverlays(input: {
     if (key && row.dmSeatId && !dmSeatByHrId.has(key)) dmSeatByHrId.set(key, row.dmSeatId);
   }
   for (const fact of input.visits.managers) {
+    if (!figurePeriods.has(fact.period)) continue;
     const seat = dmSeatByHrId.get(fact.managerHrId);
     if (seat) of(dms, seat).ridesLed += fact.rides;
   }
+
+  heldOut.visitAgents = heldOutAgents.size;
 
   const empty = emptyFor(periods);
   const finalizedAreas = new Map<string, ReviewOverlay>();
@@ -341,5 +430,10 @@ export function buildOverlays(input: {
     line: (lineCode) => (lineCode ? finalizedLines.get(lineCode) ?? empty : empty),
     company: finalize(company, periods),
     unplaced,
+    heldOut: {
+      ...heldOut,
+      marketingCommitted: round2(heldOut.marketingCommitted),
+      outstationClaimed: round2(heldOut.outstationClaimed),
+    },
   };
 }

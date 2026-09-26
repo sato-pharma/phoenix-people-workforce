@@ -44,31 +44,54 @@ import {
   isCrmDoubleVisitRow,
   queryVisits,
 } from "@/lib/crm/reads";
+import { CATCH_ALL_CONTACT_CRM_ID } from "@/lib/crm/call-rate";
+import {
+  addBucketToSplit,
+  emptyVisitCountSplit,
+  visitCountBucket,
+  type VisitCountBucket,
+  type VisitCountSplit,
+} from "@/lib/crm/visit-count-buckets";
 import { CAMPAIGN_TYPE, REGULAR_TYPE, classifyVisit } from "@/lib/crm/visit-types";
 
 import { hrKey } from "./attribution";
 import type { ReviewWindow } from "../period";
 import { periodMonthEnd } from "../period-format";
 
-/** The columns the fold needs. Deliberately narrow: `comment` is the one big text column on this
- *  table and pulling it across the window would multiply the payload for a label that only two
- *  codes out of sixteen consult (-7 and -30, 1,016 rows in all of production). `classifyVisit`
- *  documents a null comment as safe — it yields the code's own default label — and neither code
- *  can move a customer count or a field-visit count whichever way it lands. */
+/**
+ * The columns the fold needs.
+ *
+ * `ampm` and `speciality` joined the projection on 2026-09-26, for the AM · PM · Pharmacies golden
+ * rule: the bucket is decided by the visited contact's own speciality, and only then by the period
+ * tag. Both are narrow columns.
+ *
+ * `comment` is still deliberately OUT. It is the one big text column on this table and pulling it
+ * across a window would multiply the payload for a label only the vendor's `-30` code consults —
+ * and that code carries no contact, so it is the one row shape `speciality` cannot answer for. It is
+ * read by a SECOND, narrow query instead (`loadUnlabelledFieldComments` below), the same shape
+ * crm/sfe-field-analytics.ts uses. Measured on production for 2026-07 → 2026-09: 325 `-30` rows in
+ * all, so the second read is nothing.
+ */
 const VISIT_COLUMNS =
-  "agent_crm_id, agent_hr_id, agent_name, contact_crm_id, crm_save_date, crm_visit_id, " +
-  "double_crm_id, double_hr_id, double_name, visit_date, visit_type";
+  "agent_crm_id, agent_hr_id, agent_name, ampm, contact_crm_id, crm_save_date, crm_visit_id, " +
+  "double_crm_id, double_hr_id, double_name, speciality, visit_date, visit_type";
+
+/** Just enough to route the vendor's unlabelled field visit, keyed back by `crm_visit_id`. */
+const UNLABELLED_FIELD_VISIT_TYPE = -30;
+const UNLABELLED_COMMENT_COLUMNS = "comment, crm_visit_id";
 
 type VisitRow = {
   agent_crm_id: number | null;
   agent_hr_id: string | null;
   agent_name: string | null;
+  ampm: string | null;
   contact_crm_id: number | null;
   crm_save_date: string | null;
   crm_visit_id: number | null;
   double_crm_id: number | null;
   double_hr_id: string | null;
   double_name: string | null;
+  speciality: string | null;
   visit_date: string | null;
   visit_type: number | null;
 };
@@ -89,8 +112,28 @@ export type VisitAgentFact = {
   adminRows: number;
   /** Of this agent's own field visits, how many carried a manager riding along. */
   accompaniedVisits: number;
+  /**
+   * The same field visits, split AM · PM · Pharmacies — the owner's golden rule, 2026-09-21.
+   *
+   * A pharmacy is NEVER counted among the PM doctors, however the vendor tagged its period: measured
+   * on production for 2026-08-01 → 2026-09-20, 1,827 regular pharmacy visits carried `ampm = 'PM'`
+   * and 426 carried 'AM'. `visitCountBucket` is the one authority and is never re-implemented here.
+   *
+   * `am + pm + pharmacies` equals `fieldVisits`: an unmarked period lands in PM, so every counted
+   * visit sits in exactly one bucket. That is the Private Calendar's convention rather than Employee
+   * 360's (which keeps an unmarked visit out of all three) — deliberate, because this page's figures
+   * have to add up against the sales beside them.
+   */
+  visitSplit: VisitCountSplit;
   /** Distinct `contact_crm_id` on type-0 rows. A SET, so an area total is a union not a sum. */
   customers: Set<number>;
+  /**
+   * The same contacts, split the same three ways. A pharmacy is not a doctor, so "doctors reached"
+   * can only be honest once these are apart. Unioned at every level, never summed.
+   */
+  customersAm: Set<number>;
+  customersPm: Set<number>;
+  customersPharmacy: Set<number>;
   /** Rows per classifier label, so the activity mix can be rolled up per area, district and line
    *  instead of only company-wide — a mix is only useful next to the team it describes. */
   byLabel: Map<string, number>;
@@ -108,6 +151,12 @@ export type VisitManagerFact = {
   ridesByRep: Map<string, number>;
   /** Distinct customers reached while riding along, type-0 rows only. */
   customers: Set<number>;
+  /** The same, split three ways — a pharmacy a manager rode to is not a doctor either. */
+  customersAm: Set<number>;
+  customersPm: Set<number>;
+  customersPharmacy: Set<number>;
+  /** Rides split AM · PM · Pharmacies. */
+  rideSplit: VisitCountSplit;
 };
 
 /** The activity mix, in the classifier's own display labels. */
@@ -142,8 +191,9 @@ const EMPTY: VisitsLoad = {
 export async function loadVisitFacts(window: ReviewWindow): Promise<VisitsLoad> {
   let raw: VisitRow[] = [];
   let excludedCrmIds: number[] = [];
+  let unlabelledComments: { comment: string | null; crm_visit_id: number | null }[] = [];
   try {
-    [raw, excludedCrmIds] = await Promise.all([
+    [raw, excludedCrmIds, unlabelledComments] = await Promise.all([
       // Collapse is applied below rather than by the door, so the number removed can be reported.
       queryVisits<VisitRow>({
         columns: VISIT_COLUMNS,
@@ -152,11 +202,26 @@ export async function loadVisitFacts(window: ReviewWindow): Promise<VisitsLoad> 
         includeResignedAgents: true,
       }),
       getEffectiveExcludedAgentCrmIds(),
+      // The `-30` rows only, and only their comment. That code carries no contact, so its bucket can
+      // be read from nothing else; every other row is answered by `speciality`, which is already in
+      // the main projection. Narrow on purpose — see VISIT_COLUMNS.
+      queryVisits<{ comment: string | null; crm_visit_id: number | null }>({
+        columns: UNLABELLED_COMMENT_COLUMNS,
+        dateFrom: `${window.from}-01`,
+        dateTo: periodMonthEnd(window.to),
+        includeResignedAgents: true,
+        visitTypes: [UNLABELLED_FIELD_VISIT_TYPE],
+      }),
     ]);
   } catch {
     // A missing mirror or a transient read must read as "no data", which the coverage layer then
     // states in words. It must never read as a month in which nobody visited anybody.
     return EMPTY;
+  }
+
+  const commentByVisitId = new Map<number, string | null>();
+  for (const row of unlabelledComments) {
+    if (row.crm_visit_id != null) commentByVisitId.set(row.crm_visit_id, row.comment ?? null);
   }
 
   const rows = collapseDuplicateVisitSubmissions(raw);
@@ -183,8 +248,28 @@ export async function loadVisitFacts(window: ReviewWindow): Promise<VisitsLoad> 
     const { label, bucket } = classifyVisit(row.visit_type ?? null, null, null);
     const isField = bucket === "regular" || bucket === "campaign";
     const isRegular = row.visit_type === REGULAR_TYPE;
+    // Contact 0 is no contact, and 100000 is the catch-all — a slot the vendor's UI writes when the
+    // rep named nobody, and no doctor. Every other CRM surface in this repo excludes it (the call
+    // rate, Employee 360, the contact lists, customer bricks, the Phoenix plan history); this one
+    // did not, so it added one phantom customer to every level that saw it.
     const contactId =
-      isRegular && row.contact_crm_id != null && row.contact_crm_id !== 0 ? row.contact_crm_id : null;
+      isRegular &&
+      row.contact_crm_id != null &&
+      row.contact_crm_id !== 0 &&
+      row.contact_crm_id !== CATCH_ALL_CONTACT_CRM_ID
+        ? row.contact_crm_id
+        : null;
+    // The one authority for AM · PM · Pharmacies. `comment` is only consulted for the vendor's
+    // unlabelled `-30` field visit, which carries no contact — hence the narrow second read.
+    const countBucket: VisitCountBucket = visitCountBucket({
+      ampm: row.ampm,
+      comment:
+        row.visit_type === UNLABELLED_FIELD_VISIT_TYPE && row.crm_visit_id != null
+          ? commentByVisitId.get(row.crm_visit_id) ?? null
+          : null,
+      speciality: row.speciality,
+      visit_type: row.visit_type,
+    });
 
     const activityKey = `${period}|${label}`;
     const activityFact = activity.get(activityKey);
@@ -206,18 +291,29 @@ export async function loadVisitFacts(window: ReviewWindow): Promise<VisitsLoad> 
         campaignVisits: 0,
         adminRows: 0,
         accompaniedVisits: 0,
+        visitSplit: emptyVisitCountSplit(),
         customers: new Set<number>(),
+        customersAm: new Set<number>(),
+        customersPm: new Set<number>(),
+        customersPharmacy: new Set<number>(),
         byLabel: new Map<string, number>(),
       };
       agents.set(agentKey, agent);
     }
     if (!agent.agentName && row.agent_name) agent.agentName = row.agent_name;
     agent.byLabel.set(label, (agent.byLabel.get(label) ?? 0) + 1);
-    if (isField) agent.fieldVisits += 1;
-    else agent.adminRows += 1;
+    if (isField) {
+      agent.fieldVisits += 1;
+      addBucketToSplit(agent.visitSplit, countBucket);
+    } else agent.adminRows += 1;
     if (isRegular) agent.regularVisits += 1;
     if (row.visit_type === CAMPAIGN_TYPE) agent.campaignVisits += 1;
-    if (contactId != null) agent.customers.add(contactId);
+    if (contactId != null) {
+      agent.customers.add(contactId);
+      if (countBucket === "AM") agent.customersAm.add(contactId);
+      else if (countBucket === "PM") agent.customersPm.add(contactId);
+      else agent.customersPharmacy.add(contactId);
+    }
 
     if (!isCrmDoubleVisitRow(row)) continue;
     if (isField) agent.accompaniedVisits += 1;
@@ -234,13 +330,23 @@ export async function loadVisitFacts(window: ReviewWindow): Promise<VisitsLoad> 
         rides: 0,
         ridesByRep: new Map<string, number>(),
         customers: new Set<number>(),
+        customersAm: new Set<number>(),
+        customersPm: new Set<number>(),
+        customersPharmacy: new Set<number>(),
+        rideSplit: emptyVisitCountSplit(),
       };
       managers.set(managerKey, manager);
     }
     if (!manager.managerName && row.double_name) manager.managerName = row.double_name;
     manager.rides += 1;
+    addBucketToSplit(manager.rideSplit, countBucket);
     if (agentHrId) manager.ridesByRep.set(agentHrId, (manager.ridesByRep.get(agentHrId) ?? 0) + 1);
-    if (contactId != null) manager.customers.add(contactId);
+    if (contactId != null) {
+      manager.customers.add(contactId);
+      if (countBucket === "AM") manager.customersAm.add(contactId);
+      else if (countBucket === "PM") manager.customersPm.add(contactId);
+      else manager.customersPharmacy.add(contactId);
+    }
   }
 
   return {
@@ -262,10 +368,13 @@ export const VISITS_RULE =
   "A visit is a field row under the shared classifier — regular, campaign, or an unlabelled field " +
   "call. Meetings, leave, admin and BRM days are counted separately and are not visits. Repeat " +
   "submissions of the same stop are collapsed, and resigned agents are included so a past month " +
-  "keeps the visits it really had.";
+  "keeps the visits it really had. Every visit is reported AM · PM · Pharmacies, three figures " +
+  "apart: a pharmacy call is never counted among the PM doctors, whatever period the vendor tagged " +
+  "it with, and an unmarked period counts as PM so the three always add to the total.";
 export const CUSTOMERS_ORIGIN =
   "public.ireports360_visits, distinct contact_crm_id on regular visits";
 export const CUSTOMERS_RULE =
   "A customer counts in a month when a regular (type 0) visit named them. Area, district, line and " +
   "company totals are unions of those contacts, never sums, so one doctor seen by two reps is one " +
-  "customer.";
+  "customer. They are reported AM accounts · PM doctors · Pharmacies apart, because a pharmacy is " +
+  "not a doctor. The vendor's catch-all contact is excluded — it is a slot, not a person.";

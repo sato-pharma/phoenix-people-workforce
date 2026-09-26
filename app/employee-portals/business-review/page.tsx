@@ -4,14 +4,18 @@
 //   CEO / SFE Manager / Marketing Manager / Super Admin  → all company, all three lines
 //   NSM / GPM / Product Manager                          → their whole line
 //   Regional Manager                                     → the DM seats under their RSM node
-//   District Manager                                     → their own district's areas
+//   District Manager (incl. ACTING)                      → their own district's areas
 //   Medical Representative                               → no access (owner ruling)
+//
+// An ACTING district manager is a District Manager here, in full — owner rule, AGENTS.md §4.
 //
 // Scope is resolved by src/lib/business-review/portal-scope.ts against the LIVE organogram seat
 // map, NOT by matching region labels or DM display names. That shortcut has produced a real defect
 // here before (#1479). It was resolved against a committed snapshot of that map until 2026-09-12,
 // when seven serving district managers were found to be locked out of the module by a file six
-// weeks out of date; the snapshot is no longer in the request path.
+// weeks out of date; the snapshot is no longer in the request path. The same resolver then read
+// `seat_tier IN ('DM','RSM')` until 2026-09-26, which locked out the one serving ACTING district
+// manager while the admin page listed her district from the same canonical rows.
 //
 // Two different timeframes meet on this page and are deliberately not merged: the numbers are the
 // history of whatever window the viewer picked, while the seat map is today. An area that was
@@ -39,7 +43,7 @@ import {
   payoutPercentageFor,
   REVIEW_SOURCE_NOTICE,
 } from "@/lib/business-review/service";
-import { hasFigures } from "@/lib/business-review/coverage";
+import { figureWindowLabel, hasFigures } from "@/lib/business-review/coverage";
 import type { AreaSummary, DmSummary } from "@/lib/business-review/types";
 
 export const runtime = "nodejs";
@@ -96,6 +100,10 @@ export default async function PortalBusinessReviewPage({ searchParams }: PagePro
   });
   const window = resolution.window;
   const coverage = review.coverage;
+  // The span the figures ANSWER, which is the requested window minus any month whose distributor
+  // files have not landed. Owner ruling 2026-09-26 — every heading on this page names it, never the
+  // requested range, because the spend and activity halves stop at the same month as the sales now.
+  const figureLabel = figureWindowLabel(coverage);
   const visitsOk = hasFigures(coverage, "visits");
   const shared = {
     available,
@@ -113,7 +121,8 @@ export default async function PortalBusinessReviewPage({ searchParams }: PagePro
         {...shared}
         areas={getReviewCompanyAreas(review).map(withAreaBand)}
         dms={getReviewCompanyDms(review).map(withDmBand)}
-        headline={`All Company — ${window.label}`}
+        spend={{ marketing: company.total.marketingCost, outstation: company.total.outstationCost }}
+        headline={`All Company — ${figureLabel}`}
         // Per-product columns are omitted company-wide: the three lines sell entirely different
         // catalogues, so one shared product column set would be meaningless.
         keyProducts={[]}
@@ -124,14 +133,14 @@ export default async function PortalBusinessReviewPage({ searchParams }: PagePro
         thresholds={getReviewCompanyThresholds(review)}
         visitsAvailable={visitsOk}
       />,
-      `${window.label} across all three lines, as ${access.role}.`,
-      window.label,
+      `${figureLabel} across all three lines, as ${access.role}.`,
+      figureLabel,
     );
   }
 
   const ds = getReviewDataset(review, scope.line);
   const keyProducts = ds.products.filter((p) => p.include).map((p) => p.product);
-  const headline = `${ds.meta.line} Line — ${window.label}`;
+  const headline = `${ds.meta.line} Line — ${figureLabel}`;
 
   // ---- line scope (NSM / GPM / PM): their whole line ----
   if (scope.kind === "line") {
@@ -140,6 +149,7 @@ export default async function PortalBusinessReviewPage({ searchParams }: PagePro
         {...shared}
         areas={ds.areas.map(withAreaBand)}
         dms={ds.dms.map(withDmBand)}
+        spend={{ marketing: ds.line.marketingCost, outstation: ds.line.outstationCost }}
         headline={headline}
         keyProducts={keyProducts}
         lineRows={[]}
@@ -155,8 +165,8 @@ export default async function PortalBusinessReviewPage({ searchParams }: PagePro
         thresholds={ds.meta.thresholds}
         visitsAvailable={ds.visits.available}
       />,
-      `${window.label} for the ${ds.meta.line} line, as ${access.role}.`,
-      window.label,
+      `${figureLabel} for the ${ds.meta.line} line, as ${access.role}.`,
+      figureLabel,
     );
   }
 
@@ -173,13 +183,13 @@ export default async function PortalBusinessReviewPage({ searchParams }: PagePro
       <EmployeePortalEmptyState
         message={
           coverage.empty
-            ? `No sales data exists for ${window.label} at all — not for your territory and not for anyone else's. Pick a different period.`
-            : `No sales in ${window.label} were attributed to your DM seat${scope.dmSeatIds.length > 1 ? "s" : ""} in the ${ds.meta.line} line's canonical data. This may be a seat-mapping gap rather than an empty territory — please report it before drawing any conclusion.`
+            ? `No sales data exists for ${figureLabel} at all — not for your territory and not for anyone else's. Pick a different period.`
+            : `No sales in ${figureLabel} were attributed to your DM seat${scope.dmSeatIds.length > 1 ? "s" : ""} in the ${ds.meta.line} line's canonical data. This may be a seat-mapping gap rather than an empty territory — please report it before drawing any conclusion.`
         }
         title={coverage.empty ? "No data in this period" : "Territory could not be matched"}
       />,
-      `${window.label} for your territory, as ${access.role}.`,
-      window.label,
+      `${figureLabel} for your territory, as ${access.role}.`,
+      figureLabel,
     );
   }
 
@@ -188,6 +198,10 @@ export default async function PortalBusinessReviewPage({ searchParams }: PagePro
       {...shared}
       areas={areas.map(withAreaBand)}
       dms={dms.map(withDmBand)}
+      spend={{
+        marketing: dms.reduce((sum, d) => sum + d.marketingCost, 0),
+        outstation: dms.reduce((sum, d) => sum + d.outstationCost, 0),
+      }}
       headline={headline}
       keyProducts={keyProducts}
       lineRows={[]}
@@ -197,7 +211,7 @@ export default async function PortalBusinessReviewPage({ searchParams }: PagePro
       thresholds={ds.meta.thresholds}
       visitsAvailable={ds.visits.available}
     />,
-    `${window.label} for your territory, as ${access.role}.`,
-    window.label,
+    `${figureLabel} for your territory, as ${access.role}.`,
+    figureLabel,
   );
 }
