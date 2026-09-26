@@ -106,10 +106,10 @@ export default async function TrainingManagerOverviewPage() {
 
   return (
     <div className="mx-auto w-full space-y-4" dir="auto">
-      {/* planAdherence={null}: this is the Training Manager MODULE page, not a landing surface.
-          The plan score belongs on /employee-portals, which is StandardCommandCenter for this role
-          and already carries it. */}
-      <PortalIdentityBand shell={shell} planAdherence={null} />
+      {/* planAdherence={null} and myInterviews={[]}: this is the Training Manager MODULE page, not a
+          landing surface. The plan score and the "My interviews" card belong on /employee-portals,
+          which is StandardCommandCenter for this role and already carries them. */}
+      <PortalIdentityBand shell={shell} planAdherence={null} myInterviews={[]} />
 
       <GlanceStrip
         items={[

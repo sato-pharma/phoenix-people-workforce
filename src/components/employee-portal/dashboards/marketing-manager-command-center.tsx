@@ -83,7 +83,7 @@ export function MarketingManagerCommandCenter({ snapshot, access }: { snapshot: 
 
   return (
     <div className="mx-auto w-full space-y-3" dir="auto">
-      <PortalIdentityBand shell={shell} planAdherence={snapshot.planAdherence} />
+      <PortalIdentityBand shell={shell} planAdherence={snapshot.planAdherence} myInterviews={snapshot.myInterviews} />
       <PortalContextBar role="Marketing Manager" context="Marketing & Commercial" />
 
       <GlanceStrip

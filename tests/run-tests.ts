@@ -1896,6 +1896,7 @@ import { runScreeningDownloadApplicationTests } from "./screening-download-appli
 import { runInterviewReminderTests } from "./interview-reminders.test.ts";
 import { runInterviewRequestTests } from "./interview-requests.test.ts";
 import { runInterviewInvitationTests } from "./interview-invitation.test.ts";
+import { runInterviewCalendarIcsTests } from "./interview-calendar-ics.test.ts";
 import { runWhatsAppApplicationPrintTests } from "./whatsapp-application-print.test.ts";
 import { runCandidateRecordPrintTests } from "./candidate-record-print.test.ts";
 import { runWhatsAppPendingBackfillCompletedOnlyTests } from "./whatsapp-pending-backfill-completed-only.test.ts";
@@ -6630,6 +6631,11 @@ await runTest(
 await runTest(
   "the interview calendar invites both people: the message is the owner's own wording (date 21-9-2026, time 04:00 PM, map pin, Arabic address, LinkedIn, website; a Zoom interview swaps the place for its link), the candidate's WhatsApp is the number they applied on unless it is a forwarder's, WhatsApp is only ever logged as opened while e-mail is sent or failed, the company details go by WhatsApp or e-mail on their own, an interviewer is checked against Employee Master, and only the interviewer (or the owner when none is chosen) has a Zoom opened for them",
   runInterviewInvitationTests,
+);
+
+await runTest(
+  "the interview calendar's per-person .ics feed emits a valid VCALENDAR (empty for a stale token, one VEVENT per interview with UTC DTSTART/DTEND, escaped text, and the office or Zoom link as the location)",
+  runInterviewCalendarIcsTests,
 );
 
 await runTest(

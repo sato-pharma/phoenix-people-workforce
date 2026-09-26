@@ -1186,6 +1186,11 @@ export const accessRegistry = [
   // copy links. Polls, interview sessions and the Zoom report: the owner and Editors change them,
   // everyone the calendar reaches reads them, and nothing is ever messaged to a candidate.
   sessionApi({ methods: readOnly, pattern: "/api/recruitment/interview-calendar/me", permission: null, guard: "domain-helper" }),
+  // The signed-in person's own .ics subscription: get-or-create their feed token (their own hr id only).
+  sessionApi({ methods: readOnly, pattern: "/api/recruitment/interview-calendar/my-calendar-feed", permission: null, guard: "domain-helper" }),
+  // The .ics feed itself is PUBLIC by design: a calendar app (Outlook, Google, the phone) cannot sign
+  // in, so the 32-byte bearer token is the credential — the same model as the calendar's copy links.
+  tokenApi({ authMode: "public-token", methods: ["GET"], pattern: "/api/recruitment/interview-calendar/ics/:token", reason: "Per-person interview subscription feed for a calendar app that cannot authenticate; the token resolves to ONE hr id and the feed carries only that person's own interviews (as interviewer or requester). An unknown or retired token returns a valid EMPTY calendar, never an error or anyone else's data. Containment is a 32-byte bearer token, read-only, and the token is redacted from the error log (CREDENTIAL_ROUTE_PREFIXES)." }),
   sessionApi({ methods: ["GET", "POST"], pattern: "/api/recruitment/interview-calendar/bookings", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ methods: ["GET", "PATCH", "DELETE"], pattern: "/api/recruitment/interview-calendar/bookings/*", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ methods: ["POST"], pattern: "/api/recruitment/interview-calendar/bookings/*/comments", permission: null, guard: "domain-helper", csrfRequired: true }),
