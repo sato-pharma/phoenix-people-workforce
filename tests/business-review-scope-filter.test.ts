@@ -33,6 +33,9 @@ import { stripComments } from "./support/comment-strip.ts";
  */
 
 const FILTER = "src/lib/business-review/scope-filter.ts";
+const CONTROL = "src/components/business-review/scope-filter.client.tsx";
+const PAGE = "app/employee-portals/business-review/page.tsx";
+const PORTAL = "src/components/business-review/portal-review.client.tsx";
 
 const area = (
   line: string,
@@ -231,6 +234,147 @@ export function runBusinessReviewScopeFilterTests() {
       !/territories\s*=\s*\[\s*\.\.\.territories\s*,|territories\.push\(|territories\.concat\(/.test(resolver[0]),
       `${FILTER}: resolveReviewFilter must only REMOVE territories. Adding one is how a URL parameter ` +
         `becomes a scope.`,
+    );
+  }
+
+  // ------------------------------------------------------------------ 9. the control, and the wiring
+  {
+    const control = stripComments(readFileSync(CONTROL, "utf8"));
+    const page = stripComments(readFileSync(PAGE, "utf8"));
+
+    // The options come from the scoped choices, never from a hard-coded list of lines or regions.
+    // A hard-coded "Pedia" would offer a district manager a line he cannot see, and a picker wider
+    // than its viewer is a defect this repo already has a rule about.
+    assert.ok(control.includes("choices"), `${CONTROL}: the options must come from filterChoices.`);
+    for (const literal of ['"Pedia"', '"CNS"', '"Anti-Infective"', '"Cairo"', '"Alex-BHR"']) {
+      assert.ok(
+        !control.includes(literal),
+        `${CONTROL}: ${literal} is hard-coded. Every option must be derived from the viewer's own ` +
+          `scope, or the control offers territories he will be refused.`,
+      );
+    }
+
+    // One control must not silently undo another. Narrowing the territory has to carry the chosen
+    // metrics; choosing metrics has to carry the narrowing; changing the window has to keep both.
+    assert.ok(
+      /metrics\.map\(\(metric\) => \(\s*<input key=\{metric\} name="m"/.test(control),
+      `${CONTROL}: the chosen metrics must ride along as hidden inputs, or narrowing to a district ` +
+        `silently resets what the page is showing back to that level's defaults.`,
+    );
+    assert.ok(
+      page.includes("hidden={carry}"),
+      `${PAGE}: the export links and the metric picker must carry the applied filter, or applying ` +
+        `metrics throws the territory narrowing away.`,
+    );
+    assert.ok(
+      page.includes("windowHidden={appliedParams}"),
+      `${PAGE}: the PERIOD filter must carry the narrowing, or changing the month silently widens ` +
+        `the view back to the whole scope.`,
+    );
+
+    // A "Clear" that is a submit cannot empty the selects sitting beside it.
+    assert.ok(
+      /href=\{action\}/.test(control),
+      `${CONTROL}: Clear must be a link to the bare page — a submit button carries the very values ` +
+        `it is meant to remove.`,
+    );
+
+    // And the drop must be visible, because the server narrows a forwarded link rather than
+    // refusing it.
+    assert.ok(control.includes("dropped"), `${CONTROL}: a dropped filter must be shown to the viewer.`);
+
+    // The screen and the export must narrow through the SAME module, or a file disagrees with the
+    // page it was exported from — the one outcome this directory exists to prevent.
+    assert.ok(
+      page.includes("territoriesInScope(scope,") && page.includes("resolveReviewFilter("),
+      `${PAGE}: the page must narrow through the same module the export route uses.`,
+    );
+  }
+
+  // ------------------------------------------------------------------ 10. the folded long lists
+  {
+    const portal = stripComments(readFileSync(PORTAL, "utf8"));
+
+    assert.ok(portal.includes("function LongList("), `${PORTAL}: the long-list fold is missing.`);
+
+    // The 144-row area table was 69% of a 10.1-screen page. It must be folded.
+    assert.match(
+      portal,
+      /<LongList count=\{visibleAreas\.length\} label="areas">/,
+      `${PORTAL}: the areas list must be folded by default — it was 7,376px of a 10,676px page.`,
+    );
+
+    // Every fold must be closed, or the page renders inside a disclosure that never ends.
+    const opens = (portal.match(/<LongList /g) ?? []).length;
+    const closesCount = (portal.match(/<\/LongList>/g) ?? []).length;
+    assert.equal(opens, closesCount, `${PORTAL}: ${opens} folds opened but ${closesCount} closed.`);
+    assert.ok(opens >= 3, `${PORTAL}: expected the long lists to be folded, found ${opens}.`);
+
+    // 🔴 FOLDING IS NOT CAPPING. The fold must render its children whole — a slice here would drop
+    // rows silently, and a reader would quote a total that is not the total. That is strictly worse
+    // than the scrolling it replaced.
+    const body = /function LongList\([\s\S]*?\n\}/.exec(portal);
+    assert.ok(body, `${PORTAL}: could not read the LongList body.`);
+    // A POSITIVE check, not a blacklist.
+    //
+    // 🔴 The first draft of this forbade `.slice(` and was SATISFIED by
+    // `[].slice.call(children, 0, 10)` — found by breaking the fold into a cap and watching
+    // nothing fire. A blacklist only ever bans the spellings you thought of.
+    //
+    // What must be TRUE is that both paths render the children whole: the short-list early
+    // return, and the folded body.
+    const whole = (body[0].match(/\{children\}/g) ?? []).length;
+    assert.ok(
+      whole >= 2,
+      `${PORTAL}: both the unfolded and the folded path must render {children} whole — found ` +
+        `${whole}. Folding hides rows behind one click; capping removes them, and nothing on the ` +
+        `page would say so, so a reader would quote a total that is not the total.`,
+    );
+    assert.ok(
+      !/children\s*[.[(]/.test(body[0]),
+      `${PORTAL}: the children must not be indexed, called or sliced on their way to the page.`,
+    );
+    assert.ok(
+      body[0].includes("{num(count)}"),
+      `${PORTAL}: the summary must carry the REAL row count, so a folded list still says how big it is.`,
+    );
+    assert.ok(
+      /count <= LONG_LIST_ROWS/.test(body[0]),
+      `${PORTAL}: a short list must not be folded — a disclosure around five rows is furniture.`,
+    );
+
+    // The square-edge golden rule reaches a disclosure too. Measured on production: every control
+    // on this page computes to a 0px radius.
+    assert.ok(
+      !/rounded(-[a-z0-9]+)?["'\s]/.test(body[0]),
+      `${PORTAL}: the fold must not introduce a rounded corner.`,
+    );
+  }
+
+  // ------------------------------------------------------------------ 11. the three stay separate
+  {
+    const portal = stripComments(readFileSync(PORTAL, "utf8"));
+
+    // 🔒 OWNER DECISION, 2026-09-26. Achievement, Band and Payout were merged into one column that
+    // day on his instruction, and he reversed it the same day: "no leave separated".
+    //
+    // This pin exists because the measurement that argued for the merge is STILL TRUE — 1,129 cells
+    // on this page wrap onto three or more lines, these three among the worst. Any later session
+    // that measures the page will reach the same conclusion and merge them again, which is
+    // re-litigating a decision already made. The page's length is handled by folding instead.
+    assert.equal(
+      (portal.match(/>Band<\/th>/g) ?? []).length,
+      2,
+      `${PORTAL}: Band stays its own column in both tables — owner decision 2026-09-26, do not merge.`,
+    );
+    assert.equal(
+      (portal.match(/>Payout<\/th>/g) ?? []).length,
+      2,
+      `${PORTAL}: Payout stays its own column in both tables — owner decision 2026-09-26, do not merge.`,
+    );
+    assert.ok(
+      !portal.includes("Achievement · band · payout"),
+      `${PORTAL}: the merged column was reversed by the owner on 2026-09-26 ("no leave separated").`,
     );
   }
 }
