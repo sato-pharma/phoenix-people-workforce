@@ -1941,6 +1941,7 @@ import { runNativeLoginCsrfCookieTests } from "./native-login-csrf-cookie.test.t
 import { runMobileEvidenceStampParityTests } from "./mobile-evidence-stamp-parity.test.ts";
 import { runMobilePushLinkTests } from "./mobile-push-link.test.ts";
 import { runMobileCrmVoiceCommentTests } from "./mobile-crm-voice-comment.test.ts";
+import { runMobileCrmVisitPharmacyFeedbackTests } from "./mobile-crm-visit-pharmacy-feedback.test.ts";
 import { runForceLogoutStopsPhoneAppPushTests } from "./force-logout-stops-phone-app-push.test.ts";
 import { runNormalizerInvoiceDayImpossibleYearTests } from "./normalizer-invoice-day-never-an-impossible-year.test.ts";
 import { runNormalizerSoficoExcelSerialDateTests } from "./normalizer-reads-sofico-excel-serial-billing-dates.test.ts";
@@ -6897,6 +6898,11 @@ await runTest(
 await runTest(
   "the spoken visit comment on the phone: its append matches the web's output for output, the copy never promises words as you talk (they come after Stop), the recording is stored before it is transcribed so a refused transcription keeps the audio, availability is the free GET not the paid POST, the visit save carries voiceNotePath/Seconds/Bytes so the recording is never orphaned, and RECORD_AUDIO is declared while image-picker no longer blocks it",
   runMobileCrmVoiceCommentTests,
+);
+
+await runTest(
+  "the phone's Add Visit form carries the pharmacy feedback the server requires (#4341 added the pharmacy name and stock check and the phone was never updated, so every save came back \"Write the pharmacy you took feedback from.\" with no field to write in): parseVisitDraft refuses a body with no pharmacy name and keeps only has/missing stock answers, the phone's draft payload now carries pharmacyName and productAvailability, the section sits at 4 with Comment and Live photo renumbered to 5 and 6, and GOLDEN RULE #1's blind half holds — the pharmacy section adds no distance, flag or tracking wording",
+  runMobileCrmVisitPharmacyFeedbackTests,
 );
 
 await runTest(
