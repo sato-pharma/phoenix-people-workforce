@@ -1330,10 +1330,35 @@ export async function createInterviewBooking(
   return { booking, notice };
 }
 
+/**
+ * The outside person's own name, phone and e-mail, edited on the booking after it was made — the
+ * owner, 2026-09-26: a WhatsApp number forgotten when booking can be added later. Only for someone
+ * kept on the calendar; a Recruitment candidate's contact details live on their candidate record,
+ * not on the interview, so editing them here is refused with a sentence that says where to go.
+ */
+function resolveExternalContactPatch(row: BookingRow, value: unknown): Record<string, string | null> {
+  if (value === undefined) return {};
+  if (row.candidate_id) {
+    throw new Error("This person is a Recruitment candidate — change their name, phone and e-mail on their candidate record.");
+  }
+  const person = validateExternalPerson(value);
+  return { external_email: person.email, external_name: person.name, external_phone: person.phone };
+}
+
 export async function updateInterviewBooking(
   caller: InterviewCalendarCaller,
   bookingId: string,
-  patch: { dateKey?: unknown; startMinutes?: unknown; durationMinutes?: unknown; platform?: unknown; notes?: unknown; sessionId?: unknown; interviewerHrId?: unknown },
+  patch: {
+    dateKey?: unknown;
+    startMinutes?: unknown;
+    durationMinutes?: unknown;
+    platform?: unknown;
+    notes?: unknown;
+    sessionId?: unknown;
+    interviewerHrId?: unknown;
+    /** The outside person's own name, phone and e-mail — edited after booking, external only. */
+    external?: unknown;
+  },
   zoomConfig: ZoomConfig | null = readZoomConfig(),
 ): Promise<InterviewBooking> {
   const row = await loadBookingRow(bookingId);
@@ -1342,10 +1367,27 @@ export async function updateInterviewBooking(
   const notes = patch.notes === undefined ? row.notes : cleanNotes(patch.notes);
   const actor = hrIdForStorage(caller.access.hrId);
   const interviewerHrId = await resolveInterviewer(patch.interviewerHrId, row.interviewer_hr_id);
+  const externalColumns = resolveExternalContactPatch(row, patch.external);
   const nameFor = async () => (row.candidate_id ? candidateNameFor(row.candidate_id) : row.external_name?.trim() || "Unnamed candidate");
   const timeChanged = [patch.dateKey, patch.startMinutes, patch.durationMinutes].some((value) => value !== undefined);
   const interviewerColumn = interviewerHrId === undefined ? {} : { interviewer_hr_id: interviewerHrId };
   let update: Record<string, unknown>;
+
+  // A DETAILS-ONLY edit — the interviewer, the note, or the outside person's name, phone and e-mail —
+  // touches no time, place or session, so it needs no bookable window and works on a PAST interview
+  // (the owner, 2026-09-26: "choose the interviewer for historical interviews"). The week gate above
+  // has already run, and the Zoom meeting and the slot are left exactly as they are.
+  const detailsOnly =
+    patch.dateKey === undefined &&
+    patch.startMinutes === undefined &&
+    patch.durationMinutes === undefined &&
+    patch.platform === undefined &&
+    patch.sessionId === undefined;
+  if (detailsOnly) {
+    const saved = await saveBooking(row.id, { notes, ...interviewerColumn, ...externalColumns, updated_by_hr_id: actor });
+    const [booking] = await hydrate([saved], caller);
+    return booking;
+  }
 
   const targetSessionId = typeof patch.sessionId === "string" && patch.sessionId.trim() ? patch.sessionId.trim() : null;
   if (targetSessionId) {
@@ -1424,14 +1466,14 @@ export async function updateInterviewBooking(
       ...zoom,
     };
     if (fresh) {
-      const saved = await saveBooking(row.id, { ...update, ...interviewerColumn, updated_by_hr_id: actor });
+      const saved = await saveBooking(row.id, { ...update, ...interviewerColumn, ...externalColumns, updated_by_hr_id: actor });
       await pushWaitingPolls(zoomConfig, { bookingId: row.id }, zoom.zoom_meeting_id);
       const [booking] = await hydrate([saved], caller);
       return booking;
     }
   }
 
-  const [booking] = await hydrate([await saveBooking(row.id, { ...update, ...interviewerColumn, updated_by_hr_id: actor })], caller);
+  const [booking] = await hydrate([await saveBooking(row.id, { ...update, ...interviewerColumn, ...externalColumns, updated_by_hr_id: actor })], caller);
   return booking;
 }
 

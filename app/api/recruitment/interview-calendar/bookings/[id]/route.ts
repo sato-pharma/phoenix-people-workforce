@@ -40,6 +40,7 @@ export async function PATCH(request: Request, { params }: Context) {
     const booking = await updateInterviewBooking(caller, id, {
       dateKey: body.dateKey,
       durationMinutes: body.durationMinutes,
+      external: body.external,
       interviewerHrId: body.interviewerHrId,
       notes: body.notes,
       platform: body.platform,
