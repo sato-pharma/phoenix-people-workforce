@@ -514,6 +514,45 @@ domains(projectId, environmentId, serviceId){ customDomains{ domain status{ cert
 that has been live for weeks is a renewal that has started failing, and the fix is the same grey
 flip that made issuance work the first time.
 
+##### ✅ AND NOBODY HAS TO REMEMBER TO ASK — `.github/workflows/origin-certificate-check.yml`, daily
+
+The paragraphs above describe a failure that arrives roughly sixty days after somebody flips a cloud,
+with **no deploy, no merge and no red check to connect it to**. Every signal this repository already
+has would stay green through it: `/api/healthz` answers from *behind* Cloudflare, CI knows nothing
+about certificates, and the deploy drift check compares SHAs. A paragraph in a runbook is not a
+detection, so this is a workflow.
+
+**How it sees past the proxy — the one non-obvious part, and it is proven.** It does not resolve the
+hostname. It connects to that domain's own **Railway edge target** with SNI set to the custom
+hostname, so Railway serves the certificate it holds *for that hostname* — the one whose renewal is at
+risk — whether the Cloudflare record is grey or orange:
+
+```bash
+openssl s_client -connect iul4dp7h.up.railway.app:443 -servername mdm.satopharma.com </dev/null \
+  | openssl x509 -noout -subject -issuer -enddate
+```
+
+Verified against all three live hostnames 2026-09-26: each returns `subject=CN=<that custom host>`
+with a Let's Encrypt issuer. It also reads what a browser sees, so the alert can name the gap instead
+of implying the two agree.
+
+**What it covers and what it costs.** All three Railway custom domains — `phoenix-hr.satopharma.com`
+first, because the production app is the expensive one — under 21 days to expiry, alerting on the
+owner's existing `TELEGRAM_BOT_TOKEN` / `TELEGRAM_ALERT_CHAT_ID` channel with `deploy-drift-check.yml`'s
+own streak-age block. No checkout, no Node, no pnpm: curl, openssl and date, a few seconds a day.
+
+🔴 **The edge targets are pinned in the workflow, and that is deliberate** — a proxied record hides its
+CNAME from public DNS, which is exactly the condition this check has to work in, so it cannot look them
+up. **Railway mints a new random target whenever a domain is removed and re-added**, so if a hostname
+is ever re-created the check fails loudly with the GraphQL query to run and the line to update. A
+connection failure there is a real signal, never noise.
+
+Tested rather than assumed, the same day: today's real run reads origin 34d / 89d / 89d with the edge
+identical on all three (which is what "all grey" looks like), raising the threshold to 40 fired
+`ALARM FIRED: phoenix-hr.satopharma.com origin 34d < 40d`, and a nonexistent target took the
+NO-ORIGIN-CERTIFICATE branch. A dispatch with `test_alert` proves the Telegram channel without waiting
+for a certificate to nearly expire.
+
 ✅ **`satopharma.com`'s SSL/TLS encryption mode is already Full (strict)** — read from the zone
 2026-09-26, "Mode last changed · 45 days ago". There is nothing to set here, and it is **zone-wide**,
 not per-hostname: it also fronts `phoenix-hr.satopharma.com`. Read it before touching it, and never
@@ -740,13 +779,34 @@ POST https://mdm.satopharma.com/rest/plugins/devicereset/public/PHX-NOPE-0000   
 | | |
 |---|---|
 | Can a stranger **cause** a lock, a wipe or a password reset? | **No.** Every path that creates a pending row is `/rest/private/*` and answers **403** with no JWT — the add-on's `phoenix-actions/private/*` included. |
-| Can a stranger **confirm** one that is already pending? | **Yes**, if they know the device number, and `PHX-TAB-0002` is not a secret. |
+| Can a stranger **confirm** one that is already pending? | Only one already **delivered** — see the gate below. |
 
-So the honest reading is that a confirmation is **corroboration, not proof**: it moves an action from
-*claimed* to *very probably done*, and the thing that finishes the job is the tablet's own next
+✅ **Gated on delivery, 2026-09-26.** `PhoenixActionStore.confirm` now requires
+`consumed_at is not null`, and `consumed_at` is written by nothing but the sync hook, while it puts the
+instruction into a real response for that device. Before that clause a forged confirmation could close
+a row that had **never been delivered** — queue a wipe, confirm it a second later, and the console
+reported it done while the tablet sat in somebody's bag. Now the worst a stranger can do is call an
+action done in the seconds before the tablet does it anyway. The endpoint itself cannot be
+authenticated: that would mean shipping a modified agent, which is the one thing the add-on exists to
+avoid.
+
+Two more things came with it: the source address is recorded in `confirmed_from` — from
+`getRemoteAddr()`, never the caller-set `X-Forwarded-For`, and a note beside the row rather than an
+identity — and **a confirmation that closes no row is logged at `WARNING`**, which is the detection. A
+real agent reaches that line only on a stale retry. The answer stays `200 OK` either way, because
+refusing makes a real tablet retry forever.
+
+So the honest reading is still that a confirmation is **corroboration, not proof**: it moves an action
+from *claimed* to *very probably done*, and the thing that finishes the job is the tablet's own next
 check-in — a wiped tablet stops checking in and comes back as a fresh enrolment. 🔴 **Never write a
 tablet off as clean on the confirmation row alone**, which is the same mistake in a new place as
 reading a queued push as a witnessed one.
+
+🔴 **The column needs an `alter`, not a widened `create`.** The live table was created 2026-09-25, and
+`create table if not exists` skips the statement whole rather than reconciling columns — so
+`ensureSchema` issues `add column if not exists` as well, and `schema.sql` repeats it so the two cannot
+drift. Without that, the new code runs against the old shape and every statement naming the column
+fails inside the hook's own swallowed catch.
 
 #### 🔴 Five things about that add-on that are not guessable, and were read out of the WAR
 
@@ -1050,6 +1110,22 @@ this PR. Amber = built and unproven until a real tablet runs it. Red = impossibl
 | 22 | A chat toggle for RustDesk | 🔴 **No such key exists.** Chat is built in and has no switch — a toggle would be a dead button |
 | 23 | **Shut down** | 🔴 **Impossible on stock Android, at any price.** Signature-level permission, manufacturer only. Reboot is not a substitute (§6.1) |
 
+### What verifying the standing server found, and what was done about it — 2026-09-26
+
+Publishing it and then actually reading it back turned up three things. All three are **fixed in code
+in this PR**, not left as warnings, and each one is pinned by a test that was broken and watched firing:
+
+| Found | What it would have cost | Fixed by |
+|---|---|---|
+| The agent's three confirmation paths are unauthenticated **by the agent's design**, and `confirm` closed *any* open row for a device number — so a stranger reading the number off a tablet's own screen could mark a freshly queued **factory reset** as done while the tablet sat in a bag | A custody console reporting a wiped tablet that was never wiped — the one reading this feature exists to make trustworthy | `confirm` now requires `consumed_at is not null`, which only the sync hook writes while injecting the instruction into a real response for a real device. A forged confirmation is narrowed to the seconds in which the tablet is carrying it out anyway. The caller's address is recorded from the connection (never the caller-set `X-Forwarded-For`), and a confirmation that closes nothing logs at `WARNING` — that log line is the detection |
+| A stalled certificate renewal behind an orange cloud is invisible to every signal this repo has | A **526** on the console roughly sixty days later, with no deploy to blame | `.github/workflows/origin-certificate-check.yml`, daily, reading the origin certificate past the proxy (§4.7) |
+| `HEADWIND_MDM_BASE_URL` on Railway's private network is the right setting and needs no Access token — but that network is IPv6-only and unproven from inside the container | A wrong-looking `fetch failed` with no address in it, read as a broken server | `callHeadwind` now answers a transport failure with a 502 naming the address, the network, why a laptop cannot reach it, and the public fallback (§4.6) |
+
+🔴 **The one that is not a code fix, and must not be read as one:** authenticating the confirmation
+endpoints is impossible from this side, because doing it would mean shipping a modified agent — the one
+thing this add-on exists to avoid. **Read a confirmed row as corroboration, never as proof, and never
+write a tablet off as clean on that row alone.**
+
 **Still the owner's own steps, and only these.** 🔴 **Shorter than it was on 2026-09-25 — there is no
 box to rent, no card to enter, no SSH key, no firewall, no `docker compose`, no `cloudflared` and no
 relay:**
@@ -1079,6 +1155,11 @@ relay:**
    service token (§4.7). 🔴 Never put Access on the tablets' hostname. **The orange cloud on
    `mdm-console` belongs to this step and not before it** — it buys nothing without a policy and it
    risks the certificate's renewal from the moment it is on (§4.7).
+   ✅ **That renewal risk is now watched rather than only written down** —
+   `.github/workflows/origin-certificate-check.yml`, daily, reads the ORIGIN certificate for all three
+   Railway hostnames past Cloudflare and alerts on the owner's existing Telegram channel under 21 days
+   (§4.7). So an orange cloud that stalls a renewal now costs a Telegram message, not a 526 sixty days
+   later with nothing to blame.
 8. Set the `HEADWIND_MDM_*` variables on the **Phoenix app's** service (§4.6) — confirmed 2026-09-26
    as still unset, which is why nothing renders today. ⭐ **Prefer
    `http://phoenix-headwind.railway.internal:8080`**: both services are one Railway project, so Phoenix

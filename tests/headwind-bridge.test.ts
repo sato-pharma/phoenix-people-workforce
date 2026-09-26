@@ -314,6 +314,44 @@ async function runClientTests() {
   );
   assert.equal(alwaysDead.calls.filter((call) => call.url.includes("/rest/private/")).length, 2, "tried twice, never more");
   resetHeadwindTokenCache();
+
+  // 🔴 A REQUEST THAT NEVER REACHED A SERVER USED TO SURFACE AS "fetch failed" AND NOTHING ELSE.
+  // Every refusal above carries Headwind's own sentence, but a transport failure escaped `callHeadwind`
+  // untouched and landed on the generic 500 branch of `headwindErrorResponse` — so the page named
+  // neither the address it tried nor anything to do about it. A wrong base URL produces exactly that.
+  const dead = (async () => {
+    throw new TypeError("fetch failed");
+  }) as unknown as typeof fetch;
+  await assert.rejects(
+    () => callHeadwind("/rest/private/devices/search", {}, dead, ENV),
+    (error: unknown) =>
+      error instanceof HeadwindRequestError &&
+      error.status === 502 &&
+      error.message.includes("https://mdm.test.local") &&
+      /never reached a server/.test(error.message),
+    "a request that never reached a server is a 502 naming the address it tried, not an unexplained 500",
+  );
+  resetHeadwindTokenCache();
+
+  // 🔴 AND THE PRIVATE-NETWORK ADDRESS GETS ITS OWN SENTENCE, because that is the one setting whose
+  // only plausible failure is a name that does not resolve. Phoenix and the Headwind box are the same
+  // Railway project, so HEADWIND_MDM_BASE_URL can be http://phoenix-headwind.railway.internal:8080 and
+  // skip Cloudflare — and skip needing an Access service token at all. But that network is IPv6-only
+  // and reachable from no laptop, so the failure has to say so itself rather than read as a dead server.
+  await assert.rejects(
+    () =>
+      callHeadwind("/rest/private/devices/search", {}, dead, {
+        ...ENV,
+        HEADWIND_MDM_BASE_URL: "http://phoenix-headwind.railway.internal:8080",
+      } as unknown as NodeJS.ProcessEnv),
+    (error: unknown) =>
+      error instanceof HeadwindRequestError &&
+      /IPv6-only/.test(error.message) &&
+      /same project and environment/.test(error.message) &&
+      error.message.includes("https://mdm-console.satopharma.com"),
+    "an unreachable railway.internal address explains the private network, that no laptop can reach it, and names the public fallback",
+  );
+  resetHeadwindTokenCache();
 }
 
 async function runDeviceTests() {
@@ -1626,6 +1664,99 @@ function runServerImageTests() {
       `${name} never calls getDeviceId() — SyncResponseInt declares no such method, and the tablet is identified by the device id the hook is handed`,
     );
   }
+
+  // 6. 🔴 THE CONFIRMATION IS GATED ON DELIVERY, AND THAT CLAUSE IS THE SECURITY OF THIS ADD-ON.
+  //    The three confirmation URLs are unauthenticated — the stock agent posts them with no token, and
+  //    authenticating them would mean shipping a modified agent, which is the one thing this design
+  //    avoids. So anyone who knows a device number can call them, and the number is printed on the
+  //    tablet. Without `consumed_at is not null` a stranger could close a row that had NEVER been
+  //    delivered: queue a wipe, confirm it a second later, and the console reports a wiped tablet that
+  //    is sitting in somebody's bag. `consumed_at` is written by nothing but the sync hook, while it
+  //    puts the field into a real response — so requiring it narrows a forged confirmation to the
+  //    seconds in which the tablet is carrying the instruction out anyway.
+  const store = java("PhoenixActionStore.java");
+  assert.match(
+    store,
+    /confirmed_at is null and consumed_at is not null/,
+    "a confirmation can only close a row the sync hook actually delivered — without that clause an unauthenticated caller could mark a freshly queued wipe as done before the tablet ever heard about it",
+  );
+
+  // 7. 🔴 AND A COLUMN ADDED AFTER THE FIRST DEPLOY NEEDS AN ALTER, NOT A WIDER CREATE. The live table
+  //    was created 2026-09-25 and `create table if not exists` skips the statement WHOLE rather than
+  //    reconciling columns, so a column added to the create block alone never reaches the running box —
+  //    and every statement naming it then fails inside the hook's own swallowed catch, invisibly.
+  assert.match(
+    store,
+    /alter table phoenix_pending_actions add column if not exists/,
+    "ensureSchema issues add-column-if-not-exists as well as create-table-if-not-exists, because the live table already exists and a widened create reaches it never",
+  );
+
+  // 8. The source of a confirmation is recorded from getRemoteAddr() and NEVER from X-Forwarded-For:
+  //    that header is set by whoever is calling, so trusting it would let a forged confirmation choose
+  //    what gets written beside it, which is worse than recording nothing at all.
+  const confirmResource = java("rest/DeviceResetConfirmResource.java");
+  assert.match(
+    confirmResource,
+    /request\.getRemoteAddr\(\)/,
+    "the confirmation's source is read from the connection, not from a header the caller controls",
+  );
+  assert.doesNotMatch(
+    confirmResource,
+    /X-Forwarded-For|x-forwarded-for/,
+    "and never from X-Forwarded-For, which a forged confirmation would simply set to whatever it liked",
+  );
+
+  // 9. A confirmation that closes nothing is the detection, so it must be logged — and the answer to
+  //    the agent must still be OK, because refusing makes a real tablet retry forever.
+  assert.match(
+    confirmResource,
+    /closed == 0/,
+    "a confirmation that closed no row is noticed rather than silently accepted — that log line is the only signal a forged or stale confirmation leaves",
+  );
+}
+
+/**
+ * The one failure mode nothing else in this repository would see: a Railway certificate that stops
+ * renewing behind Cloudflare's proxy.
+ *
+ * 🔴 WHY A WORKFLOW AND NOT A NOTE. Railway proves ownership of a custom domain by reading that
+ * hostname's CNAME out of DNS, and through an orange cloud it reads `""` — measured 2026-09-26 on
+ * `mdm-console.satopharma.com`, which went to `DNS_RECORD_STATUS_PROPAGATED` within one poll of the
+ * cloud being turned grey. Once a record is proxied, Cloudflare serves its OWN certificate to the
+ * browser, so the padlock stays green while the origin certificate expires underneath it, and Full
+ * (strict) — zone-wide here — turns that into a 526 sixty days after anybody touched anything.
+ * /api/healthz answers from behind Cloudflare, CI knows nothing about certificates, and the deploy
+ * drift check compares SHAs, so every existing signal in this repository stays green through it.
+ */
+function runOriginCertificateCheckTests() {
+  const workflow = stripHashComments(source(".github/workflows/origin-certificate-check.yml"));
+
+  // 🔴 IT READS THE ORIGIN, NOT THE HOSTNAME. Asking the hostname gets Cloudflare's certificate once
+  // the record is orange — which is the blind spot, not the measurement. Connecting to the Railway edge
+  // target with SNI set to the custom hostname is what makes Railway serve the certificate it holds
+  // FOR that hostname, grey or orange. Proven against all three live hosts before this shipped.
+  assert.match(
+    workflow,
+    /openssl s_client -connect "\$\{target\}:443" -servername "\$\{host\}"/,
+    "the check connects to the Railway edge target with SNI set to the custom hostname, which is the only way to read the ORIGIN certificate once Cloudflare is proxying",
+  );
+
+  // 🔴 AND IT COVERS THE PRODUCTION APP, NOT ONLY THE TABLET HOSTNAMES. phoenix-hr.satopharma.com is a
+  // Railway custom domain on the same zone; the same silent renewal failure there takes the business
+  // down, and it is the cheapest hostname to forget because nobody set it up this month.
+  assert.match(
+    workflow,
+    /phoenix-hr\.satopharma\.com\|/,
+    "the production app's own hostname is covered — the same failure there is far more expensive than on the console",
+  );
+
+  // The alarm has to reach a person: a schedule-triggered failure emails the run author, and a cron run
+  // has none. Same secrets and same channel as deploy-drift-check.yml, never a new recipient.
+  assert.match(
+    workflow,
+    /TELEGRAM_ALERT_CHAT_ID/,
+    "a failing scheduled check notifies nobody by construction, so it alerts through the owner's existing Telegram channel",
+  );
 }
 
 /**
@@ -1916,6 +2047,7 @@ export async function runHeadwindBridgeTests() {
   runErrorMappingTests();
   runDoorTests();
   runServerImageTests();
+  runOriginCertificateCheckTests();
   runConsoleUiTests();
   runShipsDarkTests();
 }
