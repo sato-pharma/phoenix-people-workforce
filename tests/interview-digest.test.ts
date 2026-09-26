@@ -81,7 +81,8 @@ export async function runInterviewDigestTests() {
   assert.doesNotMatch(source, /"email"/, "no e-mail channel anywhere");
   assert.match(source, /idempotencyKey: digest\.key/, "each message is deduped by its weekly key");
   assert.match(source, /recipientHrId: digest\.recipientHrId/, "and goes to the resolved recipient");
-  assert.match(source, /resolveSuperAdminRecipients/, "the recipients default to the Super Admin(s) — the CEO is not one");
+  assert.match(source, /resolveInterviewDigestRecipients/, "the recipients default to the digest resolver (Super Admins + HR Operations)");
+  assert.match(source, /\.in\("role", \["Super Admin", "HR Operations"\]\)/, "the digest goes to Super Admins AND HR Operations, active only");
   assert.doesNotMatch(source, /ceo|chief|CEO/, "the CEO is never a recipient");
 
   const route = stripComments(read("app/api/cron/interview-digest/route.ts"));
