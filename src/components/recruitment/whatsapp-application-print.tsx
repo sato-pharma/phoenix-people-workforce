@@ -65,9 +65,13 @@ function ApplicationPrint({
   const [phase, setPhase] = React.useState<Phase>({ kind: "loading" });
   const [attempt, setAttempt] = React.useState(0);
   // `load` is a fresh closure each render; kept in a ref so re-creating it never re-runs the draw. Only
-  // `id` and a retry do that.
+  // `id` and a retry do that. Synced in its own effect (never during render), and that effect is declared
+  // BEFORE the draw effect below, so on the render where `id` changes the ref already holds the latest
+  // `load` by the time the draw reads it.
   const loadRef = React.useRef(load);
-  loadRef.current = load;
+  React.useEffect(() => {
+    loadRef.current = load;
+  });
 
   React.useEffect(() => {
     let active = true;
