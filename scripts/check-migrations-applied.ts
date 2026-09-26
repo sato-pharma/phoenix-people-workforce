@@ -53,11 +53,40 @@ async function loadRemoteMigrations(): Promise<{ versions: Set<string>; names: S
   // distinguishes staging from production (AGENTS.md).
   console.log(`[migration-drift-check] target project ref: ${projectRef}`);
   const supabase = createClient(url, key);
-  const { data, error } = await supabase.rpc("phx_ci_migration_versions");
-  if (error) {
-    throw new Error(`phx_ci_migration_versions RPC failed: ${error.message}`);
+
+  // PAGE THROUGH THE RPC — do not trust a single call to return every row. PostgREST caps an RPC
+  // response at its `db-max-rows` setting, and that setting differs BETWEEN the two projects:
+  // staging returns at most 1000 rows, production returns all of them. Once staging's ledger
+  // crossed 1000 rows (on 2026-09-20, which is exactly when this check first went red), the single
+  // unpaged call silently dropped the NEWEST rows past 1000 — so every migration recorded after
+  // the cap read as "merged but never applied", 42 of them, all of which were in fact present in
+  // schema_migrations. Worse than the false alarm: the same truncation would HIDE a genuinely
+  // unapplied newest migration, defeating the check. The function itself is fine — `select count(*)
+  // from public.phx_ci_migration_versions()` returns the true 1063 in direct SQL; only the REST
+  // transport caps. So keep requesting successive ranges, advancing by however many rows actually
+  // came back (never by the requested window — the cap may be smaller than STRIDE), until a page
+  // returns nothing. Advancing by rows.length is what makes this correct for any db-max-rows value.
+  const STRIDE = 1000;
+  const rows: { version: string; name: string }[] = [];
+  for (let from = 0; ; ) {
+    const { data, error } = await supabase
+      .rpc("phx_ci_migration_versions")
+      .range(from, from + STRIDE - 1);
+    if (error) {
+      throw new Error(`phx_ci_migration_versions RPC failed: ${error.message}`);
+    }
+    const page = (data ?? []) as { version: string; name: string }[];
+    rows.push(...page);
+    if (page.length === 0) break;
+    from += page.length;
+    // Safety valve against an RPC that ignores Range and returns the same page forever — the ledger
+    // is in the low thousands, so anything past this is a bug, not a bigger database.
+    if (from > 100_000) {
+      throw new Error(
+        `phx_ci_migration_versions returned more than 100,000 rows while paging — the RPC is likely ignoring the Range header. Aborting rather than looping.`,
+      );
+    }
   }
-  const rows = (data ?? []) as { version: string; name: string }[];
   return {
     versions: new Set(rows.map((r) => r.version)),
     names: new Set(rows.map((r) => r.name)),
