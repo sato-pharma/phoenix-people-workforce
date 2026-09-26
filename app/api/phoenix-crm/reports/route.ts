@@ -50,6 +50,8 @@ export async function GET(request: Request) {
       from: search.get("from"),
       to: search.get("to"),
       month: search.get("month"),
+      // C3: what the figures are read against. Refused to a rep inside the service, not here.
+      compare: search.get("compare"),
     };
     const section = search.get("section") ?? "scope";
     let report: unknown;

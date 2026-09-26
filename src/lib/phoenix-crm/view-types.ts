@@ -63,6 +63,7 @@ export type {
   RepVisitRow,
   TerritoryCoverageRow,
   TerritoryPlanRow,
+  ReportComparison,
   VisitLocationReportView,
   VisitLocationRow,
   VisitsReportView,
