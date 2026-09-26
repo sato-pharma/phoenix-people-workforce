@@ -5,6 +5,7 @@ import { resolveAccessContext } from "@/lib/auth/server";
 import { validationError } from "@/lib/http/api-errors";
 import { resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { phoenixCrmFailure, searchOf } from "@/lib/phoenix-crm/server/http";
+import { loadExceptionsBoard } from "@/lib/phoenix-crm/server/exceptions";
 import {
   loadCoverageReport,
   loadManagerReport,
@@ -26,6 +27,9 @@ export const dynamic = "force-dynamic";
 //   managers  double and chain visits per manager
 //   locations where the rep stood against where the customer's place is saved — a manager's report,
 //             refused to a medical rep inside the service (owner, 2026-09-26)
+//   exceptions the few territories that need a manager today — a territory with nothing wrong is
+//             ABSENT, so this is the one section whose usefulness is what it LEAVES OUT. Same gate as
+//             locations (readsTeamReports) and nothing on it acts.
 // Filters: seatId, lineCode, from, to, month, includeTest (the Super Admin's only). Scope runs
 // downward only and is applied in the service.
 export async function GET(request: Request) {
@@ -50,6 +54,7 @@ export async function GET(request: Request) {
     else if (section === "coverage") report = await loadCoverageReport(viewer, filters);
     else if (section === "managers") report = await loadManagerReport(viewer, filters);
     else if (section === "locations") report = await loadVisitLocationReport(viewer, filters);
+    else if (section === "exceptions") report = await loadExceptionsBoard(viewer, { test: filters.includeTest });
     else throw validationError("Choose a report.");
     return NextResponse.json({ report, section, success: true });
   } catch (error) {

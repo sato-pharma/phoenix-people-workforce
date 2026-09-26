@@ -41,7 +41,7 @@ import {
   type VisitCounts,
 } from "@/lib/phoenix-crm/report-rules";
 import { heldManagerSeats, managersInScope, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
-import { readTestFlag, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { readTestFlag, readsTeamReports, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, chunk, numberOrNull, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { formatDistance } from "@/lib/phoenix-crm/geo";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
@@ -121,9 +121,9 @@ export type ReportScopeView = {
 };
 
 /** The one predicate behind canSeeLocations, so the screen and the service cannot drift apart. */
-function canReadLocationReport(viewer: PhoenixCrmViewer): boolean {
-  return viewer.isSuperAdmin || viewer.isSfeManager || viewer.basis === "all" || viewer.managerSeats.length > 0;
-}
+// Lifted into server/access.ts as `readsTeamReports` (2026-09-26) once the exceptions board asked the
+// same question. Kept as a named alias here so every call site still reads as what it is testing.
+const canReadLocationReport = readsTeamReports;
 
 export async function loadReportScope(viewer: PhoenixCrmViewer): Promise<ReportScopeView> {
   const seats = viewer.scopeTerritories;
