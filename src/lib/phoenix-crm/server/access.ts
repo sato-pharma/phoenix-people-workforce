@@ -206,6 +206,19 @@ export function assertCanReturnPlan(viewer: PhoenixCrmViewer, seat: OrgSeat, isT
 // ── The same rules as answers, for screens (which button to show). Saves still assert. ─────────
 
 /** The twin of territoryForRepWrite: the viewer changes this territory's list and plan. */
+/**
+ * The viewer reads a report ABOUT A TEAM rather than about himself.
+ *
+ * One predicate with three readers now — the place-vs-actual report, the exceptions board, and the
+ * daily digest's recipient test — because they are the same question and a second copy of it would
+ * drift. A medical rep is deliberately NOT in it: the owner ruled on 2026-09-26 that the comparison
+ * ACROSS a team is the DM's, the SFE's, the NSM's and the Super Admin's, while a rep keeps every
+ * figure about his own work, including the polite distance line on his own visit.
+ */
+export function readsTeamReports(viewer: PhoenixCrmViewer): boolean {
+  return viewer.isSuperAdmin || viewer.isSfeManager || viewer.basis === "all" || viewer.managerSeats.length > 0;
+}
+
 export function canWriteAsRep(viewer: PhoenixCrmViewer, seat: OrgSeat, isTest: boolean): boolean {
   if (isTest) return viewer.isSuperAdmin;
   return !viewer.isSuperAdmin && viewer.canCreate && viewer.ownTerritories.some((entry) => entry.seatId === seat.seatId);

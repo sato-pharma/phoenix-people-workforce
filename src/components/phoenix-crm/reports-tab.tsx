@@ -52,6 +52,7 @@ import { fieldWeekStart, isIsoDay, monthStartOf, weekdayOfIsoDay } from "@/lib/p
 import { daysInPeriod, REPORT_MAX_DAYS, type CoverageCell, type PlanCounts, type VisitCounts } from "@/lib/phoenix-crm/report-rules";
 import type {
   CoverageReportView,
+  ExceptionsView,
   ManagerReportEntry,
   ManagerReportRow,
   ManagerReportView,
@@ -67,7 +68,7 @@ import type {
 } from "@/lib/phoenix-crm/view-types";
 import { cn } from "@/lib/utils";
 
-type ReportSection = "visits" | "plan" | "coverage" | "managers" | "locations";
+type ReportSection = "exceptions" | "visits" | "plan" | "coverage" | "managers" | "locations";
 type PeriodPreset = "today" | "yesterday" | "this_week" | "last_week" | "this_month" | "last_month";
 type Period = { from: string; to: string };
 type Presence = "all" | "with" | "without";
@@ -1158,9 +1159,114 @@ function LocationsSection({
   );
 }
 
+/**
+ * The exceptions board.
+ *
+ * 🔴 A territory with nothing wrong is ABSENT. There is no green row anywhere in here, and the empty
+ * state is the GOOD one — a manager whose whole district is fine sees a short sentence saying so, not
+ * sixty-eight ticks. That absence is the entire feature; a board that listed every seat and coloured
+ * eight of them would be the Team tab again, and he would still be reading sixty-eight rows.
+ *
+ * Nothing on it acts. Every row names what to do in words, and the doing happens on the Team tab or
+ * in the rep's own plan, which is also why it carries no buttons: a board that can approve is a board
+ * people click through without reading.
+ */
+function ExceptionsSection({ idPrefix, resource }: { idPrefix: string; resource: CrmResource<ExceptionsView> }) {
+  const report = resource.data;
+  if (!report) return <SectionWaiting error={resource.error} label="Looking for anything that needs you" onRetry={resource.reload} />;
+  const { summary } = report;
+
+  return (
+    <>
+      <RefreshFailed error={resource.error} />
+      <CrmBlock className="border-t border-slate-100" title="Right now">
+        <CrmStatGrid>
+          <CrmStat label="Territories" note="Everything in your scope" value={countText(summary.territories)} />
+          <CrmStat
+            label="Need you"
+            note="One line each, worst first"
+            tone={summary.needingAttention > 0 ? "warn" : "good"}
+            value={countText(summary.needingAttention)}
+          />
+        </CrmStatGrid>
+        {summary.byKind.length > 0 ? (
+          <div className="mt-3 flex min-w-0 flex-wrap gap-1.5">
+            {summary.byKind.map((entry) => (
+              <CrmPill key={entry.kind} tone="warn">{`${entry.label} · ${countText(entry.count)}`}</CrmPill>
+            ))}
+          </div>
+        ) : null}
+        <p className="mt-3 break-words text-xs font-semibold leading-5 text-slate-500">
+          {`The last full field day is ${dayLabel(report.lastFieldDay)}, and the call rate reads the ${countText(report.windowFieldDays)} field days up to it. This week's plan means the week of ${dayLabel(report.weekStart)}.`}
+        </p>
+      </CrmBlock>
+      {report.rows.length === 0 ? (
+        <div className="border-t border-slate-100">
+          <CrmEmpty
+            message="Every territory in your scope has a rep, a sent plan, a visit on the last field day and a call rate on target."
+            title="Nothing needs you"
+          />
+        </div>
+      ) : (
+        <ReportList
+          columns={["28%", "22%", "26%", "24%"]}
+          explain="Worst first. One line per territory — the worst true thing about it — so a vacant seat is not also listed as having no plan, because there is nobody to have made one."
+          hasData={() => true}
+          headers={["Territory", "Rep", "What", "Where it stands"]}
+          idPrefix={`${idPrefix}-exceptions`}
+          items={report.rows}
+          keyOf={(row) => row.seatId}
+          renderCard={(row) => (
+            <CrmCard
+              accent="border-l-amber-500"
+              meta={[row.lineName, row.repName ?? "No rep"].filter(Boolean).join(" · ")}
+              status={<CrmPill tone="warn">{row.label}</CrmPill>}
+              title={row.territoryName}
+            >
+              <div className="grid min-w-0 gap-1 text-xs font-semibold leading-5 text-slate-600">
+                <p className="break-words">{row.why}</p>
+                {row.detail ? <p className="break-words font-black text-slate-800">{row.detail}</p> : null}
+              </div>
+            </CrmCard>
+          )}
+          renderCells={(row) => (
+            <>
+              <td className={crmTdClassName}>
+                <p className="break-words font-black text-slate-950">{row.territoryName}</p>
+                {row.lineName ? <p className="mt-0.5 break-words text-xs text-slate-500">{row.lineName}</p> : null}
+              </td>
+              <td className={crmTdClassName}>
+                <p className="break-words">{row.repName ?? "No rep"}</p>
+              </td>
+              <td className={crmTdClassName}>
+                <p className="break-words font-black text-amber-800">{row.label}</p>
+                <p className="mt-0.5 break-words text-xs text-slate-500">{row.why}</p>
+              </td>
+              <td className={crmTdClassName}>
+                <p className="break-words">{row.detail ?? "—"}</p>
+              </td>
+            </>
+          )}
+          searchWords={(row) => [row.territoryName, row.repName, row.lineName, row.label]}
+          words={{
+            all: "All",
+            noneMatch: "Nothing matches",
+            searchLabel: "Find a territory",
+            searchPlaceholder: "Territory, rep or line",
+            title: "Worst first",
+            with: "All",
+            without: "None",
+          }}
+        />
+      )}
+    </>
+  );
+}
+
 // ── The tab ─────────────────────────────────────────────────────────────────────────────────────
 
 const SECTION_TITLES: Record<ReportSection, string> = {
+  exceptions: "Needs you today",
   visits: "Visits per day",
   plan: "Plan against actual",
   coverage: "Coverage and frequency",
@@ -1194,13 +1300,22 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
   const lineTerritories = lineCode ? territories.filter((territory) => territory.lineCode === lineCode) : territories;
   const chosen = seatId ? lineTerritories.filter((territory) => territory.seatId === seatId) : lineTerritories;
   const activeSection: ReportSection =
-    (section === "managers" && view && !view.hasManagers) || (section === "locations" && view && !view.canSeeLocations) ? "visits" : section;
+    (section === "managers" && view && !view.hasManagers) ||
+    ((section === "locations" || section === "exceptions") && view && !view.canSeeLocations)
+      ? "visits"
+      : section;
   const withTest = Boolean(view?.canIncludeTest) && includeTest;
-  const problem = activeSection === "coverage" ? null : periodProblem(period, today, view?.maxDays ?? REPORT_MAX_DAYS);
+  // Neither of these two reads a period: coverage asks for a month, and the exceptions board is about
+  // today and resolves its own days on the server. A period error must not blank either of them.
+  const readsPeriod = activeSection !== "coverage" && activeSection !== "exceptions";
+  const problem = readsPeriod ? periodProblem(period, today, view?.maxDays ?? REPORT_MAX_DAYS) : null;
 
   function sectionUrl(name: ReportSection): string | null {
     if (!view || name !== activeSection) return null;
     const filters = { section: name, lineCode: lineCode || null, seatId: seatId || null, includeTest: withTest };
+    // The board is about the viewer's whole scope today; a line or territory filter would turn "what
+    // needs you" into "what needs you here", which is the Team tab's question and not this one.
+    if (name === "exceptions") return crmUrl(REPORTS_PATH, { section: name, includeTest: withTest });
     if (name === "coverage") return crmUrl(REPORTS_PATH, { ...filters, month });
     return problem ? null : crmUrl(REPORTS_PATH, { ...filters, from: period.from, to: period.to });
   }
@@ -1210,7 +1325,8 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
   const coverage = useCrmGet<CoverageReportView>(sectionUrl("coverage"), "report");
   const managers = useCrmGet<ManagerReportView>(sectionUrl("managers"), "report");
   const locations = useCrmGet<VisitLocationReportView>(sectionUrl("locations"), "report");
-  const active = { coverage, locations, managers, plan, visits }[activeSection];
+  const exceptions = useCrmGet<ExceptionsView>(sectionUrl("exceptions"), "report");
+  const active = { coverage, exceptions, locations, managers, plan, visits }[activeSection];
 
   if (!view) {
     return (
@@ -1249,6 +1365,10 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
   }
 
   const sectionOptions: Array<CrmChoiceOption<ReportSection>> = [
+    // First, because it is the one a manager opens the tab FOR. Same gate as the place-vs-actual
+    // report — one predicate, `readsTeamReports`, so the two can never disagree about who is a
+    // manager — and the server refuses it too, since a hidden chip is UX and never the boundary.
+    ...(view.canSeeLocations ? [{ value: "exceptions" as const, label: SECTION_TITLES.exceptions, note: "Only what is wrong" }] : []),
     { value: "visits", label: SECTION_TITLES.visits, note: "AM and PM apart" },
     { value: "plan", label: SECTION_TITLES.plan, note: "Visited or missed, day by day" },
     { value: "coverage", label: SECTION_TITLES.coverage, note: "The list, month by month" },
@@ -1292,7 +1412,9 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
       title={SECTION_TITLES[activeSection]}
     >
       <CrmBlock title="Report">
-        <CrmChoice columns={sectionOptions.length === 4 ? 4 : 3} label="Report" onChange={setSection} options={sectionOptions} value={activeSection} />
+        {/* Two a row on a phone whatever the count — six labels at three across would wrap "Coverage
+            and frequency" onto three lines and push the filters below the fold. */}
+        <CrmChoice columns={sectionOptions.length >= 5 ? 2 : sectionOptions.length === 4 ? 4 : 3} label="Report" onChange={setSection} options={sectionOptions} value={activeSection} />
       </CrmBlock>
 
       <CrmBlock
@@ -1308,7 +1430,11 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
       >
         {showFilters ? null : <p className="break-words text-sm font-semibold leading-6 text-slate-700 md:hidden">{filterSummary}</p>}
         <div className={cn("min-w-0 gap-3", showFilters ? "grid" : "hidden md:grid")} id={filtersId}>
-          {activeSection === "coverage" ? (
+          {activeSection === "exceptions" ? (
+            <p className="break-words text-sm font-semibold leading-6 text-slate-700">
+              This board reads your whole scope, as it stands today. It takes no days and no territory.
+            </p>
+          ) : activeSection === "coverage" ? (
             <CrmField className="md:max-w-md" htmlFor={`${idPrefix}-month`} label="Month">
               <CrmSelect id={`${idPrefix}-month`} onChange={(event) => setMonth(event.target.value)} value={month}>
                 {offeredMonths(today).map((key) => (
@@ -1401,6 +1527,8 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
         <PlanSection idPrefix={idPrefix} resource={plan} territories={chosen} today={today} />
       ) : activeSection === "coverage" ? (
         <CoverageSection idPrefix={idPrefix} resource={coverage} />
+      ) : activeSection === "exceptions" ? (
+        <ExceptionsSection idPrefix={idPrefix} resource={exceptions} />
       ) : activeSection === "locations" ? (
         <LocationsSection idPrefix={idPrefix} resource={locations} />
       ) : (
