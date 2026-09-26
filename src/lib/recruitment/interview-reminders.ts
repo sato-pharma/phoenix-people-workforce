@@ -56,9 +56,15 @@ export type InterviewReminder = {
   key: string;
   recipientHrId: string;
   title: string;
+  /** The in-app + Telegram body — the readable list. */
   message: string;
+  /** The e-mail's short intro line above the details table (the list lives in the table, not here,
+   * so the e-mail reads as a premium zebra table rather than a run-on paragraph). */
+  emailSummary: string;
   subject: string;
   href: string;
+  /** Rows for the e-mail's zebra {{detailsTable}}: for the evening list, one row per interview
+   * (time → candidate · where); for a single-interview reminder, the interview's own facts. */
   metrics: Array<{ label: string; value: string }>;
 };
 
@@ -111,6 +117,7 @@ export function planInterviewReminders(interviews: readonly ReminderInterview[],
       key: `interview-reminder-hour:${interview.id}:${interview.startsAt}:${interview.interviewerHrId}`,
       kind: "hour",
       message: `Interview with ${interview.candidateName} at ${time} (${where(interview)}) — starting within the hour.`,
+      emailSummary: `Your interview with ${interview.candidateName} starts within the hour.`,
       metrics: [
         { label: "Candidate", value: interview.candidateName },
         { label: "Time", value: time },
@@ -141,6 +148,7 @@ export function planInterviewReminders(interviews: readonly ReminderInterview[],
         key: `interview-reminder-awaiting:${interview.id}:${todayKey}:${interview.interviewerHrId}`,
         kind: "awaiting",
         message: `Your interview with ${interview.candidateName} (${heldDay}) is waiting for your response — record what happened on the interview calendar.`,
+        emailSummary: `Your interview with ${interview.candidateName} (${heldDay}) is waiting for your response — record what happened.`,
         metrics: [
           { label: "Candidate", value: interview.candidateName },
           { label: "Interview", value: heldDay },
@@ -166,14 +174,17 @@ export function planInterviewReminders(interviews: readonly ReminderInterview[],
       for (const [hrId, list] of byPerson) {
         list.sort((left, right) => left.startsAt.localeCompare(right.startsAt));
         const count = list.length;
-        const lines = list.map((interview) => `${clockOf(interview)} — ${interview.candidateName} (${where(interview)})`);
         const dayText = formatDayLong(day);
+        // In-app + Telegram: the list, one interview per line (tidy, not a semicolon run-on).
+        const message = `Your interviews on ${dayText}:\n${list.map((interview) => `• ${clockOf(interview)} — ${interview.candidateName} (${where(interview)})`).join("\n")}`;
         reminders.push({
           href: interviewCalendarHref({ base: PORTAL_BASE, weekStart: weekStartFor(day) }),
           key: `interview-reminder-evening:${hrId}:${day}:${fingerprint(list)}`,
           kind: "evening",
-          message: `Your interviews on ${dayText}: ${lines.join("; ")}.`,
-          metrics: lines.map((line, index) => ({ label: `Interview ${index + 1}`, value: line })),
+          message,
+          // E-mail: a short intro, then the list as a premium zebra table (time → candidate · where).
+          emailSummary: `You have ${count === 1 ? "one interview" : `${count} interviews`} on ${dayText} — the times are below.`,
+          metrics: list.map((interview) => ({ label: clockOf(interview), value: `${interview.candidateName} · ${where(interview)}` })),
           recipientHrId: hrId,
           subject: `Your ${count === 1 ? "interview" : `${count} interviews`} on ${dayText}`,
           title: `${count === 1 ? "1 interview" : `${count} interviews`} on ${dayText}`,
@@ -206,7 +217,7 @@ export const sendInterviewReminder: InterviewReminderSend = async (reminder) => 
       notificationType: "general",
       recipientMode: "employee",
       subject: reminder.subject,
-      summary: reminder.message,
+      summary: reminder.emailSummary,
       title: reminder.title,
     },
     eventType:

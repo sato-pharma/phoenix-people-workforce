@@ -601,8 +601,8 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
     templateName: "Offer Status",
   },
   recruitment_update: {
-    bodyHtml: "<p>{{summary}}</p><p>{{status}}</p>",
-    bodyText: "{{summary}}\n\n{{status}}",
+    bodyHtml: "<p>{{summary}}</p>{{detailsTable}}<p>{{status}}</p>",
+    bodyText: "{{summary}}\n\n{{detailsTable}}\n\n{{status}}",
     closingText: "Open Phoenix Workforce to review the recruitment pipeline.",
     description: "Recruitment notices: interview cancellations, interviewer notifications, and day-before reminders (invitations and feedback use their own templates).",
     greeting: "Dear {{honorific}}{{recipientName}},",
