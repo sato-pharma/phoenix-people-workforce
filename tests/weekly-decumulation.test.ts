@@ -2,10 +2,12 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import {
+  cycleGroupIsCumulative,
   decumulateRows,
   depotWeekGapKey,
   depotWeekGapKeys,
   depotWeekGaps,
+  directGroupLooksCumulative,
   moneySpansDepotGap,
   suppressGapSpannedValue,
   weekHasDecumulationGap,
@@ -139,6 +141,52 @@ export function runWeeklyDecumulationTests() {
     const real = decumulateRows(cumulative);
     const w3 = real.find((r) => r.weekNumber === 3)!;
     assert.equal(w3.salesValue, -65198.5, "a cumulative distributor still subtracts (and still shows the negative)");
+  }
+
+  // 8b) A Direct cycle uploaded CUMULATIVELY (June 2026 on prod) is detected and de-cumulated, even
+  //     though the registry flags Direct non-cumulative. Under the old fixed flag its four sheets were
+  //     summed, counting the month ~2.2x; now the month telescopes to the last sheet. The detector reads
+  //     the two signatures of a running total — cells never vanish and values never fall.
+  {
+    const cumulativeDirect = [
+      row({ distributorCode: "Direct", weekStart: "2026-06-06", weekNumber: 1, productCode: "LA001", branchCode: "X", salesValue: 100, netQty: 10 }),
+      row({ distributorCode: "Direct", weekStart: "2026-06-13", weekNumber: 2, productCode: "LA001", branchCode: "X", salesValue: 250, netQty: 26 }),
+      row({ distributorCode: "Direct", weekStart: "2026-06-20", weekNumber: 3, productCode: "LA001", branchCode: "X", salesValue: 400, netQty: 41 }),
+      row({ distributorCode: "Direct", weekStart: "2026-06-27", weekNumber: 4, productCode: "LA001", branchCode: "X", salesValue: 450, netQty: 45 }),
+    ];
+    assert.equal(directGroupLooksCumulative(cumulativeDirect), true, "monotonic Direct sheets are detected cumulative");
+    const real = decumulateRows(cumulativeDirect);
+    assert.equal(sumBy(real, (r) => r.salesValue), 450, "cumulative Direct month = last sheet, NOT the ~2.2x sum of all four");
+    const byWeek = new Map(real.map((r) => [r.weekNumber, r]));
+    assert.equal(byWeek.get(2)!.salesValue, 150, "W2 = 250-100 once detected cumulative");
+    assert.equal(byWeek.get(4)!.netQty, 4, "units de-cumulate too: W4 = 45-41");
+  }
+
+  // 8c) A genuinely per-week Direct cycle (cells vanish / values fall / a returns-only negative week —
+  //     May & July 2026 on prod) is NOT detected cumulative, so it still passes straight through summed.
+  {
+    const perWeekDirect = [
+      row({ distributorCode: "Direct", weekStart: "2026-05-09", weekNumber: 2, productCode: "LA001", branchCode: "AB", salesValue: 128700, netQty: 200 }),
+      row({ distributorCode: "Direct", weekStart: "2026-05-16", weekNumber: 3, productCode: "LA001", branchCode: "AB", salesValue: 45045, netQty: 70 }),
+      row({ distributorCode: "Direct", weekStart: "2026-05-16", weekNumber: 3, productCode: "SS001", branchCode: "OT", salesValue: -28462, netQty: -30 }),
+    ];
+    assert.equal(directGroupLooksCumulative(perWeekDirect), false, "vanishing cells and a falling value read as per-week");
+    const real = decumulateRows(perWeekDirect);
+    assert.equal(sumBy(real, (r) => r.salesValue), 128700 + 45045 - 28462, "per-week Direct month = sum of its own weeks, untouched");
+  }
+
+  // 8d) Detection can only ADD de-cumulation to a non-cumulative-flagged distributor — it never turns it
+  //     OFF for a cumulative one. Even per-week-shaped numbers under IS still de-cumulate (guards #8).
+  {
+    // Net falls week to week (700 → 640) — the detector keys on netQty, so this reads as per-week.
+    const isPerWeekShaped = [
+      row({ distributorCode: "IS", weekStart: "2026-05-09", weekNumber: 2, salesValue: 657360, netQty: 700 }),
+      row({ distributorCode: "IS", weekStart: "2026-05-16", weekNumber: 3, salesValue: 592161.5, netQty: 640 }),
+    ];
+    assert.equal(cycleGroupIsCumulative("IS", isPerWeekShaped), true, "a cumulative-flagged distributor is always de-cumulated");
+    assert.equal(cycleGroupIsCumulative("Direct", isPerWeekShaped), false, "the same shape under Direct is detected per-week");
+    // Fewer than two weeks carries no evidence — the registry flag decides.
+    assert.equal(directGroupLooksCumulative([isPerWeekShaped[0]]), false, "a single week is never called cumulative on its own");
   }
 
   // 9) The registry flag itself: default true, explicit opt-out for Direct only, code-case agnostic,
