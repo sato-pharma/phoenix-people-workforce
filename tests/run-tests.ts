@@ -1541,6 +1541,7 @@ import { runPhoenixCrmPlaceLocationFrozenTests } from "./phoenix-crm-place-locat
 import { runPhoenixCrmRetiredPilotRedirectTests } from "./phoenix-crm-retired-pilot-redirect.test.ts";
 import { runPhoenixCrmBlindHalfTests } from "./phoenix-crm-blind-half.test.ts";
 import { runPhoenixCrmLineNotOpenTests } from "./phoenix-crm-line-not-open.test.ts";
+import { runPhoenixCrmLastVisitProductsTests } from "./phoenix-crm-last-visit-products.test.ts";
 import { runPhoenixCrmLocationIntegrityTests } from "./phoenix-crm-location-integrity.test.ts";
 import { runPhoenixCrmPortalSidebarTests } from "./phoenix-crm-portal-sidebar.test.ts";
 import { runPhoenixCrmAmPmWordTests } from "./phoenix-crm-am-pm-words.test.ts";
@@ -5136,6 +5137,11 @@ await runTest(
 await runTest(
   "Phoenix CRM says a line is not open instead of vanishing (2026-09-26 — a District Manager whose whole district sits on an unopened line used to get no sidebar row, no page and no word at all, because `scopeTerritories` is already filtered to open lines; the viewer now carries the waiting half of his own scope, the overview hands him the dated sentence, and someone holding no seat anywhere still gets nothing)",
   runPhoenixCrmLineNotOpenTests,
+);
+
+await runTest(
+  "Phoenix CRM fills the products in from his own last visit (GOLDEN RULE #1, the EASY half — owner, 2026-09-26, \"nothing is asked twice\": the newest earlier visit wins with capturedAt breaking a same-day tie, a product retired from the line never comes back, a customer he has never visited is ABSENT rather than present-and-empty, the read stops strictly before today so his own morning cannot prefill itself, and both apps say which day it came from)",
+  runPhoenixCrmLastVisitProductsTests,
 );
 
 await runTest(

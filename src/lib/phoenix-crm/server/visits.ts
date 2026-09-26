@@ -30,9 +30,11 @@ import {
   parseGrade,
   parseProductAvailability,
   parseVisitDraft,
+  VISIT_PRODUCTS_MAX,
   type ProductAvailability,
 } from "@/lib/phoenix-crm/entry-rules";
 import { checkVisitLocation, formatDistance } from "@/lib/phoenix-crm/geo";
+import { pickLastVisitProducts, type LastVisitProducts } from "@/lib/phoenix-crm/last-visit-products";
 import { describeDayWindows, isUuid } from "@/lib/phoenix-crm/plan-rules";
 import { managerChain, resolveVisitParticipants, territoryReviewer } from "@/lib/phoenix-crm/scope";
 import { readTestFlag, territoryForRead, territoryForVisit, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
@@ -272,6 +274,15 @@ export type VisitCustomerOption = {
     /** Today's receiving hours at this place, or "Does not receive this day". */
     todayWindows: string;
   }>;
+  /**
+   * What he discussed with this customer last time, and when — null when there is no earlier visit.
+   *
+   * GOLDEN RULE #1, the EASY half: nothing is asked twice. The form fills the products in from this
+   * the moment he picks the customer, and says which day they came from so he can see what he is
+   * agreeing to. Absent, never an empty list: the screen has to tell "nothing to carry over" from
+   * "he discussed nothing".
+   */
+  lastVisit: { date: string; products: string[] } | null;
   plannedToday: boolean;
   visitedToday: boolean;
   visitsThisMonth: number;
@@ -381,6 +392,60 @@ async function loadSeatPharmacies(seatId: string, isTest: boolean): Promise<stri
   return names;
 }
 
+/**
+ * How far back the form looks for "same as last visit".
+ *
+ * Six months rather than forever: a doctor not seen since last winter is a conversation to have
+ * fresh, not one to reopen with whatever was said then, and the read stays small on a territory that
+ * has been running for a year.
+ */
+const LAST_VISIT_MONTHS = 6;
+
+/** The first day of the month `months` before this Cairo day — the floor for the read above. */
+function monthsBackFrom(isoDay: string, months: number): string {
+  const [year, month] = isoDay.split("-").map((part) => Number(part));
+  const zeroBased = (year ?? 0) * 12 + (month ?? 1) - 1 - months;
+  const backYear = Math.floor(zeroBased / 12);
+  const backMonth = (zeroBased % 12) + 1;
+  return `${String(backYear).padStart(4, "0")}-${String(backMonth).padStart(2, "0")}-01`;
+}
+
+/**
+ * The newest earlier visit per customer on this territory, for the products the form carries over.
+ *
+ * `.lt("visit_date", today)` is load-bearing: without it a second visit to the same customer on the
+ * same day would prefill itself, which is not carrying anything over. One read for the whole
+ * territory rather than one per customer — it rides in the form's existing Promise.all.
+ */
+async function loadLastVisitProducts(
+  seatId: string,
+  isTest: boolean,
+  today: string,
+  lineProducts: readonly string[],
+): Promise<Map<string, LastVisitProducts>> {
+  const rows = await fetchAllRowsKeyset<Row>(
+    () =>
+      getSupabaseAdmin()
+        .from("phoenix_crm_visits")
+        .select("id, customer_id, visit_date, captured_at, products")
+        .eq("seat_id", seatId)
+        .eq("is_test", isTest)
+        .lt("visit_date", today)
+        .gte("visit_date", monthsBackFrom(today, LAST_VISIT_MONTHS)),
+    { cursorColumn: "id", cursorOf: (row) => String(row.id) },
+  );
+  return pickLastVisitProducts(
+    rows.map((row) => ({
+      customerId: String(row.customer_id ?? ""),
+      visitDate: String(row.visit_date ?? ""),
+      capturedAt: String(row.captured_at ?? ""),
+      products: Array.isArray(row.products) ? (row.products as unknown[]).map((entry) => String(entry)) : [],
+    })),
+    lineProducts,
+    VISIT_PRODUCTS_MAX,
+  );
+}
+
 export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unknown; test: unknown }): Promise<VisitFormView> {
   const { seat, isTest, enteredAs } = territoryForVisit(viewer, raw.seatId, readTestFlag(raw.test));
   const today = viewer.cairoToday;
@@ -396,6 +461,8 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
     loadSeatPharmacies(seat.seatId, isTest),
   ]);
   const products = productFamilies.map((entry) => entry.family);
+  // After the families, because what he discussed last time is narrowed to what the line still sells.
+  const lastVisits = await loadLastVisitProducts(seat.seatId, isTest, today, products);
   const names = await loadPeopleNames([...territoryPeople(viewer.org, [seat]), ...chain.map((member) => member.hrId), ...visitPeople(visitRows)]);
   const visitedToday = new Set(visitRows.map((row) => String(row.customer_id)));
   const ramadan = isRamadanDay(today, viewer.config.ramadanOverrides);
@@ -418,6 +485,7 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
       speciality: textOrNull(row.speciality),
       brickId: firstPlace?.brickId ?? null,
       brickName: firstPlace?.brickName ?? null,
+      lastVisit: lastVisits.get(customerId) ?? null,
       places: customerPlaces.map((place) => ({
         placeId: place.placeId,
         label: place.label,

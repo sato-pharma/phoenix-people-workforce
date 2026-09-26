@@ -118,6 +118,8 @@ export type VisitCustomerOption = {
   /** The brick the customer's first place sits in, so the picker can group a day geographically. */
   brickId: string | null;
   brickName: string | null;
+  /** What he discussed with this customer last time — null when there is no earlier visit. */
+  lastVisit: { date: string; products: string[] } | null;
   visitedToday: boolean;
   visitsThisMonth: number;
   target: number | null;

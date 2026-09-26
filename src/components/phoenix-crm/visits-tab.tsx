@@ -23,7 +23,7 @@ import { crmPost, crmUrl, errorCodeOf, messageOf, newClientId, useCrmGet } from 
 import { brickTintMap } from "@/components/phoenix-crm/brick-tints";
 import { CrmSpeak, type VoiceNoteValue } from "@/components/phoenix-crm/speak";
 import { CrmVoiceNotePlayer } from "@/components/phoenix-crm/voice-playback";
-import { cairoClock, cairoStamp, countText, dayLabelLong, plural, shiftIsoDay } from "@/components/phoenix-crm/format";
+import { cairoClock, cairoStamp, countText, dayLabel, dayLabelLong, plural, shiftIsoDay } from "@/components/phoenix-crm/format";
 import {
   customerMetaText,
   listText,
@@ -1005,6 +1005,13 @@ function AddVisit({
       setPhoto(null);
     }
     setCustomerId(nextId);
+    // GOLDEN RULE #1, the EASY half (owner, 2026-09-26): nothing is asked twice. He sees the same
+    // doctor every few weeks and re-taps the same three products every time, and the answer is
+    // already in his own last visit. Filled in silently rather than behind a button — a button to
+    // avoid typing is still a tap — and the line under the grid says which day it came from, so he
+    // can see what he is agreeing to and change any of it.
+    const carried = loaded.customers.find((option) => option.customerId === nextId)?.lastVisit ?? null;
+    setProducts(carried ? [...carried.products] : []);
   }
 
   function toggleProduct(product: string) {
@@ -1302,6 +1309,11 @@ function AddVisit({
             );
           })}
         </div>
+        {customer?.lastVisit ? (
+          <p className="mt-2 text-xs font-semibold text-slate-500">
+            Filled in from your last visit on {dayLabel(customer.lastVisit.date)}. Change any of them.
+          </p>
+        ) : null}
         <p className="mt-2 text-xs font-semibold text-slate-500">
           {products.length === 0 ? `Choose up to ${VISIT_PRODUCTS_MAX}.` : `${products.length} chosen, up to ${VISIT_PRODUCTS_MAX}.`}
         </p>
