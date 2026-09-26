@@ -358,7 +358,7 @@ function CompanyDashboard({
       <CoverageBanner coverage={coverage} />
 
       <section className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-        <Kpi label="Company achievement" value={coverage.ungradeable ? "not gradeable" : pct(T.allProducts.ach)} sub={coverage.ungradeable ? "no targets loaded for this window" : "all 3 lines · all areas"} accent={coverage.ungradeable ? undefined : achColor(T.allProducts.ach)} />
+        <Kpi label="Company achievement" value={coverage.ungradeable ? "not gradeable" : pct(T.allProducts.ach)} sub={coverage.ungradeable ? "no targets loaded for this window" : `all 3 lines · all areas · ${figureWindowLabel(coverage)}, period to date`} accent={coverage.ungradeable ? undefined : achColor(T.allProducts.ach)} />
         <Kpi label="Sales (total)" value={egp(T.allProducts.sales)} sub={coverage.ungradeable ? "value only" : `of ${egp(T.allProducts.target)}`} />
         {/* "Customers", not "Doctors": one in seven of these is a pharmacy, and a pharmacy is never
             a doctor (owner golden rule). The three figures are reported apart, never joined by a
@@ -444,7 +444,7 @@ function LineDashboard({
       <CoverageBanner coverage={coverage} />
 
       <section className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-        <Kpi label="Line achievement" value={ds.line.allProducts.target > 0 ? pct(line.ach) : "not gradeable"} sub={ds.line.allProducts.target > 0 ? "all areas · all products" : "no targets loaded for this window"} accent={ds.line.allProducts.target > 0 ? achColor(line.ach) : undefined} />
+        <Kpi label="Line achievement" value={ds.line.allProducts.target > 0 ? pct(line.ach) : "not gradeable"} sub={ds.line.allProducts.target > 0 ? `all areas · all products · ${figureWindowLabel(coverage)}, period to date` : "no targets loaded for this window"} accent={ds.line.allProducts.target > 0 ? achColor(line.ach) : undefined} />
         <Kpi label="Sales (total)" value={egp(line.sales)} sub={line.target > 0 ? `of ${egp(line.target)}` : "value only"} />
         <Kpi label="Customers reached" value={numOrNA(ds.line.customersTotal, customersOk)} sub={customersOk ? customerSplitLabel(ds.line) : "no CRM rows in this window"} />
         <Kpi label="Marketing cost" value={egpOrNA(ds.line.marketingCost, marketingOk)} sub={marketingOk ? "committed only" : "no requests in this window"} />
@@ -553,7 +553,7 @@ function AchieversTab({ dms, areas, visitsAvailable }: { dms: DmRow[]; areas: Ar
   const earners = areas.filter((a) => !a.vacant && a.hasTarget && (a.allProducts.ach ?? 0) >= 90).sort((a, b) => (b.allProducts.ach ?? 0) - (a.allProducts.ach ?? 0));
   return (
     <div className="space-y-4">
-      <Section title="DSM league table" note="all-products achievement → 2026 payout (90% = threshold)">
+      <Section title="DSM league table" note="all-products achievement → 2026 payout (90% = threshold) · period to date — not a settled semester payout">
         {/* Ten columns merged to seven: the band rides under its own achievement, marketing and
             expenses share one Spend cell, and doubles ride under the visit rate. */}
         <ReviewTable
@@ -625,7 +625,7 @@ function AchieversTab({ dms, areas, visitsAvailable }: { dms: DmRow[]; areas: Ar
         />
       </Section>
 
-      <Section title={`Incentive earners — areas ≥ 90% (${earners.length})`} note="threshold to unlock payout">
+      <Section title={`Incentive earners — areas ≥ 90% (${earners.length})`} note="threshold to unlock payout · period to date — not a settled semester payout">
         <ReviewTable
           cols={<Cols fixed={[32, 28, 22, 18]} />}
           empty="No area reached the 90% threshold in this view."
@@ -1275,7 +1275,7 @@ function CompanyAchieversTab({ company, dms, areas }: { company: ReviewCompany; 
         />
       </Section>
 
-      <Section title={`Company DSM league table (${dms.length} seats)`} note="all lines together · all-products achievement → 2026 payout (90% = threshold)">
+      <Section title={`Company DSM league table (${dms.length} seats)`} note={`all lines together · all-products achievement → 2026 payout (90% = threshold) · ${company.meta.period}, period to date — not a settled semester payout`}>
         {/* Twelve columns merged to eight: the line chip and the band ride under the names they
             belong to, spend is one cell, and doubles ride under the visit rate. */}
         <ReviewTable
@@ -1352,7 +1352,7 @@ function CompanyAchieversTab({ company, dms, areas }: { company: ReviewCompany; 
         />
       </Section>
 
-      <Section title={`Incentive earners — areas ≥ 90% company-wide (${earners.length})`} note="threshold to unlock payout · vacant areas excluded">
+      <Section title={`Incentive earners — areas ≥ 90% company-wide (${earners.length})`} note={`threshold to unlock payout · vacant areas excluded · ${company.meta.period}, period to date — not a settled semester payout`}>
         <ReviewTable
           cols={<Cols fixed={[26, 24, 26, 24]} />}
           empty="No area reached the 90% threshold in this view."

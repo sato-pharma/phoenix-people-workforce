@@ -205,7 +205,7 @@ function addCover(wb: ExcelJS.Workbook, company: ReviewCompany, scopeLabel: stri
   r += 1;
   const notes = [
     "Achievement is always all-products (include + exclude) as stored in the verified dataset.",
-    "≥ 90% unlocks incentive per the locked 2026 scheme; payout % comes from that same curve.",
+    `≥ 90% unlocks incentive per the locked 2026 scheme; payout % comes from that same curve. ${company.meta.period}, period to date — not a settled semester payout.`,
     "Vacant areas are never counted as earners and never listed as rep failures — they are a",
     "coverage gap, so they appear under 'Uncovered'. Their achievement is still shown unchanged.",
     "'N/A' means that line has no CRM visits export at all — it does not mean zero.",
@@ -342,7 +342,7 @@ function addLineSheets(wb: ExcelJS.Workbook, line: ReviewLine, ds: ReviewDataset
   const s1 = wb.addWorksheet(`${label} · DSMs`.slice(0, 31));
   titleBand(s1, dl.length, `${label.toUpperCase()} — DSM LEAGUE TABLE`,
     `${ds.meta.period} · ${seats.length} target-carrying seats`,
-    `≥90% unlocks payout (locked 2026 curve). Fail thresholds: rep area <${th.repFailBelow}%, DSM <${th.dsmFailBelow}%.`);
+    `≥90% unlocks payout (locked 2026 curve). Fail thresholds: rep area <${th.repFailBelow}%, DSM <${th.dsmFailBelow}%. period to date — not a settled semester payout.`);
   headerRow(s1, 4, dl);
   let r = 5;
   seats.forEach((d, i) => {
@@ -519,7 +519,7 @@ function addSummarySheet(wb: ExcelJS.Workbook, review: BusinessReview, company: 
     isCompany ? "PHOENIX · BUSINESS REVIEW — EXECUTIVE SUMMARY"
               : `PHOENIX · ${lineLabel.toUpperCase()} EXECUTIVE SUMMARY`,
     `${company.meta.period} · ${isCompany ? "3 lines consolidated" : `${lineLabel} line`}`,
-    `${REVIEW_SOURCE_NOTICE} · ≥90% unlocks incentive (locked 2026 curve). Vacant areas are a coverage gap, never an earner or a rep failure.`,
+    `${REVIEW_SOURCE_NOTICE} · ≥90% unlocks incentive (locked 2026 curve), period to date — not a settled semester payout. Vacant areas are a coverage gap, never an earner or a rep failure.`,
   );
   [26, 16, 16, 14, 14, 13, 11, 11, 24].forEach((w, i) => { sheet.getColumn(i + 1).width = w; });
 
