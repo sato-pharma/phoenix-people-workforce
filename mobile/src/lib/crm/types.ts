@@ -17,6 +17,10 @@ export type CrmGrade = "A" | "B" | "C";
 export type CrmVisitKind = "single" | "double" | "chain";
 export type CrmSeason = "normal" | "ramadan";
 export type CrmLocationFlag = "ok" | "far" | "weak_gps" | "no_place";
+/** One product's answer in the pharmacy-stock check: the pharmacy has it, or it is missing. */
+export type ProductAvailability = "has" | "missing";
+/** A discussed choice and its concentrations — mirrors LineProductFamily on the server. */
+export type LineProductFamily = { family: string; products: string[] };
 
 export type TerritorySummary = {
   seatId: string;
@@ -144,6 +148,10 @@ export type VisitFormView = {
   managers: VisitPerson[];
   viewerPosition: number | null;
   products: string[];
+  /** The same products grouped by family, for the finer per-product pharmacy-stock check. */
+  productFamilies: LineProductFamily[];
+  /** Pharmacies this seat has typed on earlier visits, most recent first, for the name suggestions. */
+  pharmacies: string[];
   rules: { visitFarMeters: number; weakGpsMeters: number };
   customers: VisitCustomerOption[];
   todayVisits: VisitRow[];
