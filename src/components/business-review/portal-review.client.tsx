@@ -179,7 +179,7 @@ const BAND_TEXT: Record<string, string> = {
 const Band = ({ band }: { band: string }) => (
   <span
     className={cn(
-      "inline-flex whitespace-nowrap rounded border px-1.5 py-0.5 text-phx-2xs font-black uppercase tracking-[0.08em]",
+      "inline-flex whitespace-nowrap rounded border px-1.5 py-0.5 text-phx-2xs font-black uppercase",
       BAND_STYLE[band] ?? BAND_STYLE["not-eligible"],
     )}
   >
@@ -189,7 +189,7 @@ const Band = ({ band }: { band: string }) => (
 const Tag = ({ children, tone }: { children: React.ReactNode; tone: "slate" | "rose" }) => (
   <span
     className={cn(
-      "inline-flex whitespace-nowrap rounded border px-1.5 py-0.5 text-phx-2xs font-black uppercase tracking-[0.08em]",
+      "inline-flex whitespace-nowrap rounded border px-1.5 py-0.5 text-phx-2xs font-black uppercase",
       tone === "rose" ? "border-rose-200 bg-rose-50 text-rose-700" : "border-slate-200 bg-slate-50 text-slate-500",
     )}
   >
@@ -197,9 +197,9 @@ const Tag = ({ children, tone }: { children: React.ReactNode; tone: "slate" | "r
   </span>
 );
 
-const TH = "whitespace-nowrap px-3 py-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500";
+const TH = "whitespace-nowrap px-3 py-1.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500";
 const THR = `${TH} text-right`;
-const TD = "whitespace-nowrap px-3 py-2.5 text-sm font-semibold text-slate-800";
+const TD = "whitespace-nowrap px-3 py-1.5 text-sm font-semibold leading-tight text-slate-800";
 const TDR = `${TD} text-right tabular-nums`;
 const HEAD = "border-b border-slate-200 bg-slate-50/70";
 const ROW = "border-b border-slate-100 last:border-0";
