@@ -110,6 +110,18 @@ export type ActivityOverview = {
   /** [weekday 0=Sun … 6=Sat][hour 0–23] session-start counts in Cairo time. */
   hourlyHeatmap: number[][];
   roleBenchmarks: RoleBenchmark[];
+  /**
+   * Service logins left out of every figure above (they are not people). Carried
+   * through and shown as a footnote so the number is never silently dropped.
+   */
+  excludedAccounts: ExcludedAccount[];
+};
+
+export type ExcludedAccount = {
+  /** The login as it appears in app_auth_users, e.g. "admin-HR". */
+  name: string;
+  sessions: number;
+  pageViews: number;
 };
 
 export type TimelineEvent = {
