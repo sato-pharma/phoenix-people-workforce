@@ -354,6 +354,33 @@ export type InterviewBookingComment = {
   mine: boolean;
 };
 
+/** An interviewer's verdict on a candidate — the panel's recommendation, not a lifecycle action. */
+export type InterviewVerdict = "strong_yes" | "yes" | "no";
+
+export const INTERVIEW_VERDICT_LABEL: Record<InterviewVerdict, string> = {
+  no: "No",
+  strong_yes: "Strong yes",
+  yes: "Yes",
+};
+
+export const INTERVIEW_VERDICTS: readonly InterviewVerdict[] = ["strong_yes", "yes", "no"];
+
+export function isInterviewVerdict(value: unknown): value is InterviewVerdict {
+  return value === "strong_yes" || value === "yes" || value === "no";
+}
+
+/** One interviewer's scorecard for one interview: an overall rating 1-5 and a verdict, plus a note. */
+export type InterviewScorecard = {
+  evaluatorHrId: string;
+  evaluatorName: string;
+  rating: number;
+  verdict: InterviewVerdict;
+  comment: string | null;
+  /** Whether the person reading filed it — their own is the editable one. */
+  mine: boolean;
+  updatedAt: string;
+};
+
 export type InterviewBooking = {
   id: string;
   /** The recruitment record — or null for someone from outside, kept on the calendar only. */
@@ -388,6 +415,11 @@ export type InterviewBooking = {
    * and editable. Shown in the calendar and on the share link; null when not set. */
   area: string | null;
   line: string | null;
+  /** The panel's evaluations — one per interviewer who has filed. Shown only to those who can book or
+   * who are on the interview; never to a guest. Empty when none filed or the viewer may not see them. */
+  scorecards: InterviewScorecard[];
+  /** Whether THIS viewer may file their own scorecard — true only for someone on the interview. */
+  canScoreInterview: boolean;
   /** The instant, as stored. */
   startsAt: string;
   /** Cairo calendar day, YYYY-MM-DD. */
