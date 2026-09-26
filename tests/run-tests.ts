@@ -1537,6 +1537,7 @@ import { runPhoenixCrmEmailBlockTests } from "./phoenix-crm-email-block.test.ts"
 import { runPhoenixCrmBoundaryTests } from "./phoenix-crm-boundary.test.ts";
 import { runPhoenixCrmPendingCustomerTests } from "./phoenix-crm-pending-customers.test.ts";
 import { runPhoenixCrmCustomerListBoardTests } from "./phoenix-crm-customer-list-board.test.ts";
+import { runPhoenixCrmDayActivitiesTests } from "./phoenix-crm-day-activities.test.ts";
 import { runPhoenixCrmDoctorsDirectoryTests } from "./phoenix-crm-doctors-directory.test.ts";
 import { runPhoenixCrmPlaceLocationFrozenTests } from "./phoenix-crm-place-location-frozen.test.ts";
 import { runPhoenixCrmRetiredPilotRedirectTests } from "./phoenix-crm-retired-pilot-redirect.test.ts";
@@ -5134,6 +5135,11 @@ await runTest(
 await runTest(
   "Phoenix CRM catches a mock location app silently (owner, 2026-09-25: \"close this hole without reps knowing\" — Android's own mock-provider flag plus server-side replay, physics, jitter and precision checks; an honest rep in one building all morning is never flagged, a confessed mock location still SAVES with no message of any kind, and no rep-facing screen reads the verdict)",
   runPhoenixCrmLocationIntegrityTests,
+);
+
+await runTest(
+  "Phoenix CRM records a day that was not a call (E1 — owner, 2026-09-26: a meeting, training, a conference, admin work, travelling or a health day, so a rep at a training day stops looking like a rep who did nothing; a RECORD ONLY that no report, no coverage and no call rate reads; LEAVE IS NOT HERE because HR's vacation module is the only leave record; an unknown kind is refused rather than coerced; one row a day, replaced not piled up; and the date is the server's Cairo today, never the body's)",
+  runPhoenixCrmDayActivitiesTests,
 );
 
 await runTest(

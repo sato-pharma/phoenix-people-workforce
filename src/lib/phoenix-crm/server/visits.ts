@@ -37,7 +37,8 @@ import { checkVisitLocation, formatDistance } from "@/lib/phoenix-crm/geo";
 import { pickLastVisitProducts, type LastVisitProducts } from "@/lib/phoenix-crm/last-visit-products";
 import { describeDayWindows, isUuid } from "@/lib/phoenix-crm/plan-rules";
 import { managerChain, resolveVisitParticipants, territoryReviewer } from "@/lib/phoenix-crm/scope";
-import { readTestFlag, territoryForRead, territoryForVisit, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { canWriteAsRep, readTestFlag, territoryForRead, territoryForVisit, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { loadDayActivityOn, type DayActivityRow } from "@/lib/phoenix-crm/server/day-activities";
 import { callPhoenixCrm, numberOrNull, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { judgeCapture } from "@/lib/phoenix-crm/server/location-integrity";
 import { ensureReferenceCustomers, loadMonthVisitCounts, loadTerritoryCustomers } from "@/lib/phoenix-crm/server/list";
@@ -231,19 +232,35 @@ export type VisitDayView = {
   date: string;
   visits: VisitRow[];
   canAdd: boolean;
+  /**
+   * What this day was, when it was not a call: a meeting, training, a conference, admin work,
+   * travelling, a health day. Null on an ordinary field day (owner, 2026-09-26).
+   *
+   * Carried on the day view so the screen needs no second read, and a RECORD ONLY — it changes no
+   * call rate, no coverage and no plan-against-actual, by his ruling. There is no leave value: HR's
+   * vacation module stays the only leave record.
+   */
+  dayActivity: DayActivityRow | null;
+  /** The rep's own day to describe; a manager enters his visits but never how he spent his day. */
+  canSetDayActivity: boolean;
 };
 
 export async function loadVisitDay(viewer: PhoenixCrmViewer, raw: { seatId: unknown; test: unknown; date: unknown }): Promise<VisitDayView> {
   const { seat, isTest } = territoryForRead(viewer, raw.seatId, readTestFlag(raw.test));
   const date = isIsoDay(raw.date) && raw.date <= viewer.cairoToday ? raw.date : viewer.cairoToday;
   const rows = await loadVisitRows(seat.seatId, isTest, date);
-  const names = await loadPeopleNames([...territoryPeople(viewer.org, [seat]), ...visitPeople(rows)]);
+  const [names, activity] = await Promise.all([
+    loadPeopleNames([...territoryPeople(viewer.org, [seat]), ...visitPeople(rows)]),
+    loadDayActivityOn(seat.seatId, isTest, date),
+  ]);
   return {
     territory: describeTerritory(viewer.org, seat, names),
     isTest,
     date,
     visits: rows.map((row) => mapVisitRow(row, names)),
     canAdd: date === viewer.cairoToday && canEnterVisits(viewer, seat.seatId, isTest),
+    dayActivity: activity,
+    canSetDayActivity: date === viewer.cairoToday && canWriteAsRep(viewer, seat, isTest),
   };
 }
 
