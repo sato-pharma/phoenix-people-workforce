@@ -521,6 +521,22 @@ had to be deployed by hand. **Do not "fix" that by clearing the watch pattern:**
 restart the server the tablets talk to on every unrelated commit to the repository, several dozen
 times a day.
 
+🔴 **BUT THE WATCH PATTERN IS A FOLDER, NOT A FILE TYPE — SO EDITING THE README IN THERE RESTARTS THE
+FLEET'S SERVER.** `infra/headwind-phoenix-actions/**` matches **everything** under that folder,
+`README.md` and `schema.sql` included. Measured the hard way 2026-09-26: #4451 changed that README and
+nothing else in the folder — no Java at all — and Railway still built the image and replaced the
+container (`SUCCESS`, not `SKIPPED`), taking the console and the device sync API down for the restart.
+A session that had just written "this is docs only, it will not restart that server" was wrong by the
+time the sentence was finished.
+
+**So a typo fix in that README costs the tablets a real restart**, and two of them in a row cost two.
+It is seconds, not minutes, and a tablet that misses one check-in simply retries — but say it out loud
+before merging rather than discovering it in a deployment list, and **put prose that does not need to
+ship with the Java in THIS runbook instead**, which sits outside the watch path and restarts nothing.
+Do not narrow the pattern to `**/*.java` to dodge this: `Dockerfile`, `pom.xml` and `schema.sql` all
+have to trigger a build, and a pattern that misses one of those ships a server that does not match its
+own source.
+
 🔴 **Each hostname gets its OWN CNAME target, and they are not interchangeable.** Railway issues a
 separate random `…up.railway.app` name per custom domain on the same service — measured 2026-09-26,
 `mdm-console` and `mdm` were given two different ones. Copying the first target into both records is
