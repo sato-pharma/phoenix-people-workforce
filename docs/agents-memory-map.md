@@ -64,6 +64,7 @@ status, give it its own line.
 - **Looking at a generated workbook has two modes that LIE (LibreOffice PNG, ExcelJS round-trip).** — `looking-at-a-generated-workbook-two-ways-that-lie` **(inline — load-bearing)**
 - **Deleting a branch does not remove its pushed commit** — `deleting-a-branch-does-not-remove-a-pushed-commit` · `reusing-a-squash-merged-branch-makes-a-conflicting-pr`
 - **`git branch -d` gates NOTHING after a squash merge — it compares against its own STALE tracking ref** — `git-branch-d-is-not-a-safety-gate-after-a-squash-merge` **(inline — load-bearing)**
+- **A stacked branch REBUILDS after its parent squash-merges — merging main into it conflicts on every line of the parent, and rerere replays the wrong resolution** — `a-squash-merge-makes-a-stacked-branch-rebuild-not-merge` **(inline — load-bearing)**
 - **git push hangs — kill at ~60s and retry.** — `git-push-to-origin-hangs-retry-immediately` · `git-push-oom-is-a-500mb-postbuffer-in-repo-config`
 - **A merge to main mid-session silently orphans your next push.** — `a-merge-mid-session-orphans-your-next-push-silently` · `two-sessions-fixed-one-bug-main-was-never-ci-validated`
 - **refs/deleted-* is NOT automatic — a plain git branch -D archives NOTHING.** — `deleted-branch-tips-live-in-refs-deleted-branches`
