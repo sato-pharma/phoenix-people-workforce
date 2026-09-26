@@ -97,6 +97,8 @@ export type VisitRow = {
    * answered neither, which is every visit saved before the two questions existed.
    */
   outcome: { nextStepLabel: string | null; nextStepOn: string | null; objectionLabel: string | null; objectionNote: string | null } | null;
+  /** What he handed over, ready to print. Empty on a visit that left nothing. */
+  samples: Array<{ key: string; label: string; quantity: number }>;
 };
 
 export type VisitDayView = {

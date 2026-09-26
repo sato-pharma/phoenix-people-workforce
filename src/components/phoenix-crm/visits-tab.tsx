@@ -35,6 +35,7 @@ import {
   territoryLine,
 } from "@/components/phoenix-crm/labels";
 import { LivePhotoCapture, releaseCapturedPhoto, type CapturedPhoto } from "@/components/phoenix-crm/live-photo-capture";
+import { SAMPLE_MATERIALS, SAMPLE_QUANTITY_MAX, type SamplesGiven } from "@/lib/phoenix-crm/samples";
 import {
   OBJECTION_NOTE_MAX,
   VISIT_NEXT_STEPS,
@@ -291,6 +292,17 @@ function PharmacyLines({ visit }: { visit: VisitRow }) {
  * Absent entirely on a visit that answered neither — which is every visit saved before this existed —
  * so no card grows an empty row.
  */
+/** What he handed over. Absent on a visit that left nothing, so no card grows an empty row. */
+function SampleLine({ visit }: { visit: VisitRow }) {
+  if (visit.samples.length === 0) return null;
+  return (
+    <p className="break-words">
+      <span className="font-black text-slate-800">Left behind: </span>
+      {visit.samples.map((item) => `${item.label} × ${item.quantity}`).join(", ")}
+    </p>
+  );
+}
+
 function OutcomeLines({ visit }: { visit: VisitRow }) {
   const outcome = visit.outcome;
   if (!outcome) return null;
@@ -344,6 +356,7 @@ function VisitDetails({ visit }: { visit: VisitRow }) {
           typed. It is NOT beside the photo, which is where the eye goes for evidence of presence: a
           recording can be made in a car afterwards and proves nothing about where anybody stood. */}
       {visit.voiceNotePath ? <CrmVoiceNotePlayer path={visit.voiceNotePath} seconds={visit.voiceNoteSeconds} /> : null}
+      <SampleLine visit={visit} />
       <OutcomeLines visit={visit} />
       <p className="break-words">{visit.locationLabel}</p>
       {/* Off the plan: what he wrote, and where it has got to. He is TOLD this deliberately — it is his
@@ -458,6 +471,11 @@ function VisitTable({ visits }: { visits: ReadonlyArray<VisitRow> }) {
                   <div className="mt-1.5">
                     <CrmVoiceNotePlayer path={visit.voiceNotePath} seconds={visit.voiceNoteSeconds} />
                   </div>
+                ) : null}
+                {visit.samples.length > 0 ? (
+                  <span className="mt-1 block text-xs text-slate-600">
+                    Left behind: {visit.samples.map((item) => `${item.label} × ${item.quantity}`).join(", ")}
+                  </span>
                 ) : null}
                 {visit.outcome?.objectionLabel ? (
                   <span className="mt-1 block text-xs text-slate-600">
@@ -1058,6 +1076,8 @@ function AddVisit({
   const [nextStepOn, setNextStepOn] = useState("");
   const [objection, setObjection] = useState<VisitObjection | null>(null);
   const [objectionNote, setObjectionNote] = useState("");
+  // What he handed over. A RECORD, never a stock movement — nothing here subtracts from anything.
+  const [samples, setSamples] = useState<SamplesGiven>({});
   const [photo, setPhoto] = useState<CapturedPhoto | null>(null);
   // The spoken note, already uploaded by the control. Null is the normal case: it was never required.
   const [voiceNote, setVoiceNote] = useState<VoiceNoteValue | null>(null);
@@ -1147,6 +1167,19 @@ function AddVisit({
     );
   }
 
+  // One step up, wrapping to nothing at the cap and back to nothing after it: the whole control is
+  // one button per item, so a mis-tap is undone by tapping round rather than by a second control.
+  function bumpSample(key: string) {
+    setProblem(null);
+    setSamples((current) => {
+      const next = { ...current };
+      const count = (next[key] ?? 0) + 1;
+      if (count > SAMPLE_QUANTITY_MAX) delete next[key];
+      else next[key] = count;
+      return next;
+    });
+  }
+
   // Tapping the chip that is already chosen clears it, the same way the pharmacy stock answers below
   // undo themselves: a mis-tap on an optional field must not need a third button to take back.
   function chooseNextStep(next: VisitNextStep) {
@@ -1217,6 +1250,7 @@ function AddVisit({
         products,
         pharmacyName: pharmacyName.trim(),
         productAvailability: availability,
+        samplesGiven: samples,
         nextStep,
         // Sent only under a next step that is something to do; the parser and the database both clear
         // it anyway, so this is the first of three places that agree rather than the only one.
@@ -1582,7 +1616,35 @@ function AddVisit({
         />
       </CrmBlock>
 
-      <CrmBlock className="border-t border-slate-100" title="6 · What you took away">
+      <CrmBlock className="border-t border-slate-100" title="6 · What you left">
+        {/* A RECORD of what he handed over, never a stock movement: nothing subtracts, nothing is
+            allocated, and no balance exists anywhere. One button per item — each tap is one more,
+            and tapping past the cap clears it, so a mis-tap needs no second control. */}
+        <p className="text-xs font-semibold text-slate-500">Optional. Tap once for each one you left.</p>
+        <div className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+          {[...loaded.products.map((product) => ({ key: product, label: product })), ...SAMPLE_MATERIALS].map((item) => {
+            const count = samples[item.key] ?? 0;
+            return (
+              <button
+                aria-label={`${item.label}: ${count}`}
+                className={cn(
+                  "flex min-h-11 min-w-0 items-center justify-between gap-2 rounded-none border px-3 py-2 text-left text-sm font-black transition disabled:cursor-not-allowed disabled:opacity-50",
+                  count > 0 ? "border-orange-500 bg-orange-50 text-orange-800" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300",
+                )}
+                disabled={saving}
+                key={item.key}
+                onClick={() => bumpSample(item.key)}
+                type="button"
+              >
+                <span className="min-w-0 break-words">{item.label}</span>
+                {count > 0 ? <span className="shrink-0 text-xs font-black">× {count}</span> : null}
+              </button>
+            );
+          })}
+        </div>
+      </CrmBlock>
+
+      <CrmBlock className="border-t border-slate-100" title="7 · What you took away">
         {/* Both optional, both taps. Nothing here gates the save — a rep who has nothing to add taps
             nothing and the form is no longer than it was. The objection is the DOCTOR'S, never a mark
             against him, and the next step comes back to him at the door next time. */}
@@ -1637,7 +1699,7 @@ function AddVisit({
         ) : null}
       </CrmBlock>
 
-      <CrmBlock className="border-t border-slate-100" title="7 · Live photo">
+      <CrmBlock className="border-t border-slate-100" title="8 · Live photo">
         {placePhoto ? (
           <div className="grid gap-2">
             <span className="block w-full overflow-hidden rounded-none border border-slate-200 bg-slate-950">

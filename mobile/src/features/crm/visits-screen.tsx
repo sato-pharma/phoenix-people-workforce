@@ -35,6 +35,7 @@ import {
 } from "@/lib/crm/labels";
 import type { CrmCapturedPhoto } from "@/lib/crm/photo";
 import { appendCrmDictated, type CrmVoiceNote } from "@/lib/crm/voice";
+import { SAMPLE_MATERIALS, SAMPLE_QUANTITY_MAX, type SamplesGiven } from "@/lib/crm/samples";
 import {
   OBJECTION_NOTE_MAX,
   VISIT_NEXT_STEPS,
@@ -185,6 +186,12 @@ function VisitCard({ visit }: { visit: VisitRow }) {
             <Text style={[type.meta, { color: palette.ink2 }]}>
               <Text style={{ color: palette.ink }}>Comment: </Text>
               {visit.comment}
+            </Text>
+          ) : null}
+          {visit.samples.length > 0 ? (
+            <Text style={[type.meta, { color: palette.ink2 }]}>
+              <Text style={{ color: palette.ink }}>Left behind: </Text>
+              {visit.samples.map((item) => `${item.label} × ${item.quantity}`).join(", ")}
             </Text>
           ) : null}
           {visit.outcome?.objectionLabel ? (
@@ -779,6 +786,8 @@ function AddVisit({
   const [nextStep, setNextStep] = useState<VisitNextStep | null>(null);
   const [objection, setObjection] = useState<VisitObjection | null>(null);
   const [objectionNote, setObjectionNote] = useState("");
+  // What he handed over. A RECORD, never a stock movement — nothing here subtracts from anything.
+  const [samples, setSamples] = useState<SamplesGiven>({});
   // The recording lives HERE and not inside the microphone control, because the save is what attaches it:
   // a recording uploaded and left out of the payload is an orphan in the bucket. Beside the photo, and
   // deliberately not one of its fields — the photo's slot dates the visit and a recording dates nothing.
@@ -885,6 +894,19 @@ function AddVisit({
     });
   }
 
+  // One step up per tap, wrapping to nothing past the cap: one control per item, so a mis-tap is
+  // undone by tapping round rather than by a second button.
+  function bumpSample(key: string) {
+    setProblem(null);
+    setSamples((current) => {
+      const next = { ...current };
+      const count = (next[key] ?? 0) + 1;
+      if (count > SAMPLE_QUANTITY_MAX) delete next[key];
+      else next[key] = count;
+      return next;
+    });
+  }
+
   // Tapping the chip that is already chosen clears it: a mis-tap on an optional field must not need a
   // third button to take back.
   function chooseNextStep(next: VisitNextStep) {
@@ -930,6 +952,7 @@ function AddVisit({
         products,
         pharmacyName: pharmacyName.trim(),
         productAvailability: availability,
+        samplesGiven: samples,
         nextStep,
         // No date from the phone, deliberately — see mobile/src/lib/crm/visit-outcome.ts.
         nextStepOn: null,
@@ -1282,7 +1305,22 @@ function AddVisit({
         />
       </CrmSection>
 
-      <CrmSection title="6 · What you took away">
+      <CrmSection title="6 · What you left">
+        {/* A RECORD of what he handed over, never a stock movement. One button per item: each tap is
+            one more, and tapping past the cap clears it. */}
+        <Text style={[type.meta, { color: palette.inkSoft }]}>Optional. Tap once for each one you left.</Text>
+        <CrmChoice
+          columns={2}
+          disabled={saving}
+          onChange={bumpSample}
+          options={[...form.products.map((product) => ({ value: product, label: product })), ...SAMPLE_MATERIALS.map((m) => ({ value: m.key, label: m.label }))].map(
+            (option) => ({ ...option, label: samples[option.value] ? `${option.label} × ${samples[option.value]}` : option.label }),
+          )}
+          value={Object.keys(samples)}
+        />
+      </CrmSection>
+
+      <CrmSection title="7 · What you took away">
         {/* Both optional, both taps. Nothing here gates the save. The objection is the DOCTOR'S, never
             a mark against him, and the next step comes back to him at the door next time. */}
         <Text style={[type.bodyStrong, { color: palette.ink }]}>Did the customer push back on anything?</Text>
@@ -1325,7 +1363,7 @@ function AddVisit({
         />
       </CrmSection>
 
-      <CrmSection title="7 · Live photo">
+      <CrmSection title="8 · Live photo">
         {placePhoto ? (
           <View style={{ gap: space.sm }}>
             <View style={{ backgroundColor: palette.paper2, borderColor: palette.line, borderRadius: radius, borderWidth: hairline, overflow: "hidden" }}>
