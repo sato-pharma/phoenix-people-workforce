@@ -73,6 +73,13 @@ type Props = {
   metrics?: readonly ReviewMetricId[];
   /** The chooser, rendered by the page so this component needs no router. */
   picker?: React.ReactNode;
+  /** The line / region / district / area control, rendered beside the period filter. */
+  scopeFilter?: React.ReactNode;
+  /**
+   * Params the PERIOD filter must carry so changing the window keeps the territory narrowing.
+   * Without it, picking a different month silently resets the view to the whole scope.
+   */
+  windowHidden?: Record<string, string>;
   headline: string;
   scopeLabel: string;
   months: string[];
@@ -154,6 +161,21 @@ const BAND_TEXT: Record<string, string> = {
   "over-achiever": "120–150%",
   threshold: "90–100%",
 };
+/**
+ * 🔒 ACHIEVEMENT, BAND AND PAYOUT STAY THREE SEPARATE COLUMNS — owner decision, 2026-09-26.
+ *
+ * They were merged into a single cell that day, on his own instruction, and he reversed it the same
+ * day: "no leave separated". Do not merge them again, and do not re-propose it.
+ *
+ * 🔴 THE MEASUREMENT THAT ARGUED FOR THE MERGE IS STILL TRUE, and is now an ACCEPTED COST rather
+ * than a defect to fix: 1,129 cells on this page wrap onto three or more lines, with Achievement,
+ * Band and Payout among the worst offenders, which is what puts the median row at 53px. A later
+ * session that re-measures will find the same numbers and reach the same conclusion — and would be
+ * re-litigating a decision the owner has already made. The page's LENGTH is handled by folding the
+ * long lists instead; see LongList.
+ *
+ * Pinned by tests/business-review-scope-filter.test.ts.
+ */
 const Band = ({ band }: { band: string }) => (
   <span
     className={cn(
@@ -205,6 +227,44 @@ function Fields({ items }: { items: { label: string; value: string }[] }) {
   );
 }
 
+/**
+ * A long list, folded away by default.
+ *
+ * Owner, 2026-09-26: "collapse the areas table by default". Measured on production the same day,
+ * this page was 10,676px — 10.1 full screens — and the 144-row area table was 7,376px of it, 69% of
+ * the whole page. A district manager looking for his five areas scrolled past 139 that were not his,
+ * which is what "impossible for anyone to be able to extract data" meant.
+ *
+ * 🔴 NOTHING IS HIDDEN AND NOTHING IS REORDERED. The same table, the same order, one click away,
+ * with its REAL count on the summary. A cap that silently dropped rows would be worse than the
+ * scrolling: a reader would believe the list was short and quote a number that is not the total.
+ *
+ * A SHORT LIST IS NEVER FOLDED. A district manager's five areas are the page itself, not a
+ * footnote, and a disclosure wrapped around five rows is furniture rather than structure.
+ *
+ * Square corners, because the square-edge golden rule reaches a disclosure as much as a card —
+ * measured on production, every control on this page computes to a 0px radius today.
+ */
+const LONG_LIST_ROWS = 25;
+
+function LongList({ children, count, label }: { children: React.ReactNode; count: number; label: string }) {
+  if (count <= LONG_LIST_ROWS) return <>{children}</>;
+  return (
+    <details className="group">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 border border-slate-200 bg-white px-4 py-3 hover:bg-slate-50">
+        <span className="min-w-0 break-words text-sm font-bold text-slate-900">
+          {num(count)} {label} — folded to keep this page readable
+        </span>
+        <span className="shrink-0 whitespace-nowrap text-phx-2xs font-black uppercase tracking-[0.14em] text-orange-600">
+          <span className="group-open:hidden">Show all</span>
+          <span className="hidden group-open:inline">Hide</span>
+        </span>
+      </summary>
+      <div className="mt-3">{children}</div>
+    </details>
+  );
+}
+
 /* ---------- component ---------- */
 
 export function BusinessReviewPortal({
@@ -213,6 +273,8 @@ export function BusinessReviewPortal({
   people = [],
   metrics = [],
   picker = null,
+  scopeFilter = null,
+  windowHidden,
   restatementNotice,
   dms,
   headline,
@@ -330,8 +392,11 @@ export function BusinessReviewPortal({
         action="/employee-portals/business-review"
         available={available}
         from={reviewWindow.from}
+        hidden={windowHidden}
         to={reviewWindow.to}
       />
+      {/* The territory narrowing sits with the period filter: both answer "what am I looking at". */}
+      {scopeFilter}
     </div>
   );
 
@@ -589,6 +654,7 @@ export function BusinessReviewPortal({
             eyebrow="My territory"
             title={`Areas (${num(visibleAreas.length)})`}
           >
+            <LongList count={visibleAreas.length} label="areas">
             <PortalResponsiveDataList
               empty={nothing("No area in scope.")}
               getKey={areaKey}
@@ -706,6 +772,7 @@ export function BusinessReviewPortal({
                 </PortalDesktopTable>
               )}
             />
+            </LongList>
           </PortalSection>
         </div>
       ) : null}
@@ -781,6 +848,7 @@ export function BusinessReviewPortal({
             eyebrow="Below threshold"
             title={`Areas under ${thresholds.repFailBelow}% (${num(failAreas.length)})`}
           >
+            <LongList count={failAreas.length} label="areas below the threshold">
             <PortalResponsiveDataList
               empty={nothing(`No occupied area in scope is below ${thresholds.repFailBelow}%.`)}
               getKey={areaKey}
@@ -846,6 +914,7 @@ export function BusinessReviewPortal({
                 </PortalDesktopTable>
               )}
             />
+            </LongList>
           </PortalSection>
 
           <PortalSection
@@ -919,6 +988,7 @@ export function BusinessReviewPortal({
       {tab === "detail" ? (
         <div className="space-y-4">
           <PortalSection description={`${num(months.length)} months of sales value per area.`} eyebrow="Trend" title="Monthly sales">
+            <LongList count={visibleAreas.length} label="areas">
             <PortalResponsiveDataList
               empty={nothing("No area in scope.")}
               getKey={areaKey}
@@ -979,6 +1049,7 @@ export function BusinessReviewPortal({
                 </PortalDesktopTable>
               )}
             />
+            </LongList>
           </PortalSection>
 
           {showDms ? (

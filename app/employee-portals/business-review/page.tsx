@@ -33,6 +33,16 @@ import {
 } from "@/lib/business-review/portal-scope";
 import { concentrationForAreas, type ConcentrationFacts } from "@/lib/business-review/concentration";
 import { PackPicker } from "@/components/business-review/pack-picker.client";
+import { ReviewScopeFilter } from "@/components/business-review/scope-filter.client";
+import {
+  filterChoices,
+  filterParams,
+  resolveReviewFilter,
+  REVIEW_LINE_ORDER,
+  territoriesInScope,
+} from "@/lib/business-review/scope-filter";
+import type { ReviewLine } from "@/lib/business-review/canonical";
+import type { ReviewPersonRow } from "@/lib/business-review/sources/roles";
 import {
   defaultSelectionFor,
   narrowSelection,
@@ -77,7 +87,16 @@ function firstSearchParam(value: string | string[] | undefined) {
 }
 
 type PageProps = {
-  searchParams?: Promise<{ from?: string | string[]; m?: string | string[]; to?: string | string[] }>;
+  searchParams?: Promise<{
+    /** The territory narrowing: line, region, district seat, area code. */
+    area?: string | string[];
+    dm?: string | string[];
+    from?: string | string[];
+    line?: string | string[];
+    m?: string | string[];
+    region?: string | string[];
+    to?: string | string[];
+  }>;
 };
 
 export default async function PortalBusinessReviewPage({ searchParams }: PageProps) {
@@ -130,6 +149,156 @@ export default async function PortalBusinessReviewPage({ searchParams }: PagePro
     window,
   };
 
+  // ---- what this viewer is LOOKING at, inside what he may see ----
+  //
+  // Owner, 2026-09-26, on the portal page: "the pages are very long and impossible for anyone to be
+  // able to extract data." Measured on production the same day: 10,676px of page — 10.1 screens —
+  // of which the 144-row area table alone was 7,376px. This narrowing is the answer: a district
+  // manager reads his five areas instead of scrolling past everyone else's.
+  //
+  // 🔴 THE SCOPE IS BUILT FIRST, FROM THE SESSION, AND THE REQUEST ONLY REMOVES FROM IT. Identical
+  // to what the export route does, deliberately — the file a manager downloads is built from the
+  // same narrowing as the screen he built it from, so the two cannot disagree.
+  const scopeLines: ReviewLine[] = scope.kind === "company" ? [...REVIEW_LINE_ORDER] : [scope.line];
+  const areasByLine: Partial<Record<ReviewLine, AreaSummary[]>> = {};
+  for (const line of scopeLines) {
+    const lineDs = getReviewDataset(review, line);
+    areasByLine[line] =
+      scope.kind === "rep"
+        ? applyRepScope(lineDs, scope.hrId).areas
+        : scope.kind === "seats"
+          ? applySeatScope(lineDs, scope.dmSeatIds).areas
+          : lineDs.areas;
+  }
+  const scopedTerritories = territoriesInScope(scope, areasByLine);
+  const filter = resolveReviewFilter(scope, scopedTerritories, {
+    area: firstSearchParam(params?.area) ?? null,
+    dm: firstSearchParam(params?.dm) ?? null,
+    line: firstSearchParam(params?.line) ?? null,
+    region: firstSearchParam(params?.region) ?? null,
+  });
+  const narrowed =
+    filter.applied.line != null ||
+    filter.applied.region != null ||
+    filter.applied.dmSeatId != null ||
+    filter.applied.areaCode != null;
+  const appliedParams = filterParams(filter.applied);
+  const scopeFilterFor = (metrics: readonly string[]) => (
+    <ReviewScopeFilter
+      action="/employee-portals/business-review"
+      applied={filter.applied}
+      choices={filterChoices(scopedTerritories)}
+      dropped={filter.dropped}
+      hidden={{ from: window.from, to: window.to }}
+      metrics={metrics}
+    />
+  );
+  // Everything a link must carry so one control does not undo another.
+  const carry = { ...appliedParams, from: window.from, to: window.to };
+
+  // ---- a narrowed view: one line, one region, one district or one area ----
+  if (narrowed) {
+    const metrics =
+      requested == null ? defaultSelectionFor(filter.level) : narrowSelection(requested, filter.level);
+    const keptAreas = new Set(filter.territories.map((t) => `${t.line}:${t.areaCode ?? ""}`));
+    const keptSeats = new Set(filter.dmSeatIds);
+    const fAreas: AreaSummary[] = [];
+    const fDms: DmSummary[] = [];
+    const fPeople: ReviewPersonRow[] = [];
+    let months: string[] = [];
+
+    for (const line of filter.lines) {
+      const lineDs = getReviewDataset(review, line);
+      months = lineDs.meta.months;
+      const surviving = new Set(
+        filter.territories.filter((t) => t.line === line && t.areaCode != null).map((t) => t.areaCode as string),
+      );
+      for (const a of areasByLine[line] ?? []) {
+        if (keptAreas.has(`${line}:${a.areaCode ?? ""}`)) fAreas.push(a);
+      }
+      for (const d of lineDs.dms) {
+        if (d.dmSeatId != null && keptSeats.has(d.dmSeatId)) fDms.push(d);
+      }
+      for (const p of lineDs.people) {
+        const keep =
+          scope.kind === "rep"
+            ? p.hrId.toUpperCase() === scope.hrId
+            : filter.applied.areaCode != null
+              // An AREA was chosen, so a colleague in the same district but another area is not in
+              // this view. Keying on the seat would widen the people back out to the whole district
+              // while every sales figure on the page showed one area.
+              ? p.areaCode != null && surviving.has(p.areaCode)
+              : p.dmSeatId != null && keptSeats.has(p.dmSeatId);
+        if (keep) fPeople.push(p);
+      }
+    }
+
+    const only = filter.lines.length === 1 ? filter.lines[0] : null;
+    const onlyDs = only ? getReviewDataset(review, only) : null;
+
+    let narrowedConcentration: ConcentrationFacts | null = null;
+    try {
+      if (needsClosingDetail(metrics)) {
+        const detail = await loadReviewConcentration({ coverage, viewer: access });
+        const rows = filter.lines.flatMap((line) => detail.byLine[REVIEW_LINE_CODES[line]] ?? []);
+        narrowedConcentration = concentrationForAreas(rows, fAreas.map((a) => a.areaCode));
+      }
+    } catch {
+      narrowedConcentration = null;
+    }
+
+    return shell(
+      <BusinessReviewPortal
+        {...shared}
+        areas={fAreas.map(withAreaBand)}
+        concentration={narrowedConcentration}
+        dms={fDms.map(withDmBand)}
+        headline={`${filter.label} — ${figureLabel}`}
+        keyProducts={onlyDs ? onlyDs.products.filter((p) => p.include).map((p) => p.product) : []}
+        lineRows={[]}
+        metrics={metrics}
+        months={months}
+        people={fPeople}
+        picker={
+          <PackPicker
+            action="/employee-portals/business-review"
+            hidden={carry}
+            level={filter.level}
+            selected={metrics}
+          />
+        }
+        productTables={
+          onlyDs && only
+            ? [
+                {
+                  id: only,
+                  label: onlyDs.meta.line,
+                  products: onlyDs.products.filter((p) => p.total.target > 0 || p.total.sales > 0),
+                },
+              ]
+            : []
+        }
+        scopeFilter={scopeFilterFor(metrics)}
+        scopeLabel={filter.label}
+        // A rep's spend stays zero: marketing and outstation are DISTRICT budgets, and printing one
+        // under a rep's name reads as his. Otherwise it is the districts actually shown.
+        spend={
+          scope.kind === "rep"
+            ? { marketing: 0, outstation: 0 }
+            : {
+                marketing: fDms.reduce((sum, d) => sum + d.marketingCost, 0),
+                outstation: fDms.reduce((sum, d) => sum + d.outstationCost, 0),
+              }
+        }
+        thresholds={onlyDs ? onlyDs.meta.thresholds : getReviewCompanyThresholds(review)}
+        visitsAvailable={onlyDs ? onlyDs.visits.available : visitsOk}
+        windowHidden={appliedParams}
+      />,
+      `${figureLabel} — ${filter.label}, as ${access.role}.`,
+      figureLabel,
+    );
+  }
+
   // ---- company scope: every line, consolidated ----
   if (scope.kind === "company") {
     const company = getReviewCompany(review);
@@ -141,10 +310,12 @@ export default async function PortalBusinessReviewPage({ searchParams }: PagePro
       <BusinessReviewPortal
         {...shared}
         metrics={metrics}
+        scopeFilter={scopeFilterFor(metrics)}
+        windowHidden={appliedParams}
         picker={
           <PackPicker
             action="/employee-portals/business-review"
-            hidden={{ from: window.from, to: window.to }}
+            hidden={carry}
             level="company"
             selected={metrics}
           />
@@ -182,10 +353,12 @@ export default async function PortalBusinessReviewPage({ searchParams }: PagePro
       <BusinessReviewPortal
         {...shared}
         metrics={metrics}
+        scopeFilter={scopeFilterFor(metrics)}
+        windowHidden={appliedParams}
         picker={
           <PackPicker
             action="/employee-portals/business-review"
-            hidden={{ from: window.from, to: window.to }}
+            hidden={carry}
             level="line"
             selected={metrics}
           />
@@ -243,10 +416,12 @@ export default async function PortalBusinessReviewPage({ searchParams }: PagePro
       <BusinessReviewPortal
         {...shared}
         metrics={metrics}
+        scopeFilter={scopeFilterFor(metrics)}
+        windowHidden={appliedParams}
         picker={
           <PackPicker
             action="/employee-portals/business-review"
-            hidden={{ from: window.from, to: window.to }}
+            hidden={carry}
             level="rep"
             selected={metrics}
           />
@@ -333,6 +508,8 @@ export default async function PortalBusinessReviewPage({ searchParams }: PagePro
   return shell(
     <BusinessReviewPortal
       {...shared}
+      scopeFilter={scopeFilterFor(metrics)}
+      windowHidden={appliedParams}
       areas={areas.map(withAreaBand)}
       concentration={concentration}
       dms={dms.map(withDmBand)}
@@ -341,7 +518,7 @@ export default async function PortalBusinessReviewPage({ searchParams }: PagePro
       picker={
         <PackPicker
           action="/employee-portals/business-review"
-          hidden={{ from: window.from, to: window.to }}
+          hidden={carry}
           level="district"
           selected={metrics}
         />
