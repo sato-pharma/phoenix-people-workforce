@@ -163,7 +163,11 @@ async function main() {
   // 2 · The roles this server actually has. Phoenix needs a role that can read devices,
   //     configurations, applications and files — a restricted one fails later as a 403 that looks
   //     like a bug in Phoenix rather than a choice made here.
-  const roles = await api("/rest/private/roles", { token });
+  // 🔴 `/rest/private/users/roles`, NOT `/rest/private/roles`. Read from the console's own service
+  //    definition (`app/shared/service/user.service.js`, `getUserRoles`) after the first real run died
+  //    here on 2026-09-26: the wrong path returns no `data`, and the refusal below stopped the run
+  //    BEFORE anything was written — which is the only reason a mistake in the next call cost nothing.
+  const roles = await api("/rest/private/users/roles", { token });
   const roleList = Array.isArray(roles.payload?.data) ? roles.payload.data : [];
   if (!roleList.length) die("the server returned no user roles, so there is nothing to give the account");
   const wanted = String(flag("role", "")).toLowerCase();
@@ -176,7 +180,12 @@ async function main() {
 
   // 3 · Does the account already exist? A create that collides is refused with a message, and the
   //     honest repair is a password reset rather than a second account.
-  const users = await api("/rest/private/users", { token });
+  // 🔴 AND THE LIST IS `/rest/private/users/all` (`getAll`). A plain GET on `/rest/private/users`
+  //    is not the list, and `PUT /rest/private/users/current` — one path along — is "change MY OWN
+  //    password": aiming the create at it would have re-passworded the administrator running this and
+  //    locked him out of his own console. The create below is `PUT /rest/private/users`, which is what
+  //    the console itself sends for a new user (`update`, with no id in the payload).
+  const users = await api("/rest/private/users/all", { token });
   const existing = (Array.isArray(users.payload?.data) ? users.payload.data : []).find(
     (user) => String(user.login) === LOGIN,
   );
@@ -215,6 +224,16 @@ async function main() {
   const proofToken =
     proof.payload?.data?.authToken ?? proof.payload?.data?.token ?? proof.payload?.token ??
     (typeof proof.payload?.data === "string" ? proof.payload.data : null);
+  const demand = proof.payload?.data && typeof proof.payload.data === "object" ? proof.payload.data : {};
+  if (!proofToken && (demand.passwordReset || demand.twoFactor)) {
+    die(
+      demand.passwordReset
+        ? `${LOGIN} exists and the password is right, but the server wants it changed on first sign-in. ` +
+            "Nothing was written to Railway. Sign in to the console once as this login, set a new password, " +
+            "and run this again with --reset, which sets the password without that flag."
+        : `${LOGIN} has two-factor authentication on, which Phoenix cannot complete. Nothing was written.`,
+    );
+  }
   if (!proof.ok || !proofToken) {
     die(
       `the new account will not sign in (HTTP ${proof.status}). Nothing has been written to Railway. ` +
