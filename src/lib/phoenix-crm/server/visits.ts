@@ -35,6 +35,7 @@ import {
 } from "@/lib/phoenix-crm/entry-rules";
 import { checkVisitLocation, formatDistance } from "@/lib/phoenix-crm/geo";
 import { pickLastVisitProducts, type LastVisitProducts } from "@/lib/phoenix-crm/last-visit-products";
+import { describeSamples, narrowSamplesToLine, parseSamplesGiven } from "@/lib/phoenix-crm/samples";
 import {
   pickLastNextStep,
   visitNextStepLabel,
@@ -145,6 +146,11 @@ export type VisitRow = {
    * next step is the commitment he made and will be reminded of at the door next time.
    */
   outcome: VisitOutcomeView | null;
+  /**
+   * What he handed over, ready to print: the sampled products first, then the materials in their
+   * fixed order. Empty on a visit that left nothing, which is every visit saved before this existed.
+   */
+  samples: Array<{ key: string; label: string; quantity: number }>;
 };
 
 export type VisitOutcomeView = {
@@ -158,7 +164,7 @@ const VISIT_COLUMNS =
   "id, visit_date, captured_at, customer_id, list_type, kind, rep_hr_id, manager_hr_id, senior_hr_id, entered_by_hr_id, products, " +
   "comment, pharmacy_name, product_availability, photo_path, voice_note_path, voice_note_seconds, " +
   "accuracy_meters, distance_meters, location_flag, device_skew_minutes, is_unplanned, " +
-  "next_step, next_step_on, objection, objection_note, " +
+  "next_step, next_step_on, objection, objection_note, samples_given, " +
   "customer:phoenix_crm_customers!customer_id(name), " +
   "unplanned:phoenix_crm_unplanned_visits!visit_id(status, clarification)";
 
@@ -249,6 +255,7 @@ function mapVisitRow(row: Row, names: PeopleNames): VisitRow {
     clockOff: skew !== null && Math.abs(skew) > DEVICE_CLOCK_TOLERANCE_MINUTES,
     unplanned: row.is_unplanned === true ? visitUnplanned(row) : null,
     outcome: visitOutcome(row),
+    samples: describeSamples(parseSamplesGiven(row.samples_given)),
   };
 }
 
@@ -772,6 +779,9 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown): Promise
       next_step_on: visit.outcome.nextStepOn,
       objection: visit.outcome.objection,
       objection_note: visit.outcome.objectionNote,
+      // Narrowed to the line's own products the same way product_availability is: a product dropped
+      // from the line since the form loaded is quietly left out rather than blocking the save.
+      samples_given: narrowSamplesToLine(visit.samplesGiven, allowedProducts),
       unplanned_first_status: unplannedFirstStatus(reviewer !== null),
       reviewer_hr_id: reviewer?.hrId ?? null,
       lat: visit.lat,

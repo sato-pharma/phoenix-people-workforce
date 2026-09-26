@@ -21,6 +21,7 @@ import { isUsableFix } from "@/lib/phoenix-crm/geo";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
 import { parseTimings } from "@/lib/phoenix-crm/timings";
 import { parseUnplannedReason } from "@/lib/phoenix-crm/unplanned-rules";
+import { parseSamplesGiven, type SamplesGiven } from "@/lib/phoenix-crm/samples";
 import { parseVisitOutcome, type VisitOutcome } from "@/lib/phoenix-crm/visit-outcome";
 import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmTiming, PhoenixCrmVisitKind } from "@/lib/phoenix-crm/types";
 
@@ -241,6 +242,13 @@ export type VisitDraft = CapturedFix & {
    * the visit saves. See `visit-outcome.ts`.
    */
   outcome: VisitOutcome;
+  /**
+   * What he handed over — free samples of his line's products, and pens, block notes and giveaways.
+   *
+   * 🔴 A RECORD, never a stock movement: nothing subtracts, nothing is allocated and no balance
+   * exists. Junk is dropped rather than refused, for the same reason as the outcome above.
+   */
+  samplesGiven: SamplesGiven;
 };
 
 /** The recorder caps at 60s; the column allows 120, so a long note is clamped rather than refused. */
@@ -342,6 +350,7 @@ export function parseVisitDraft(raw: unknown): EntryRuleResult<VisitDraft> {
       visitType,
       unplannedReason,
       outcome: parseVisitOutcome(body),
+      samplesGiven: parseSamplesGiven(body.samplesGiven),
     },
   };
 }

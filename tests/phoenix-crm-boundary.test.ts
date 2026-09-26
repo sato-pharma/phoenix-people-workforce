@@ -401,6 +401,9 @@ const LATER_MIGRATIONS = [
   // `check:migrations` requires of any file whose only function is SECURITY DEFINER; see
   // assertFunctionGrants.
   "supabase/migrations/20260926210000_phoenix_crm_visit_outcome.sql",
+  // What the rep LEFT — one jsonb column, and save_visit again. It takes over as the last entry that
+  // replaces save_visit, and restates its revoke/grant pair for the same reason the one above does.
+  "supabase/migrations/20260926230000_phoenix_crm_visit_samples.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */
