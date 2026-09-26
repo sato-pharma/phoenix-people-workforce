@@ -75,16 +75,21 @@ const VISIT_COMMENT_MAX = 1000;
 
 const NOT_RECEIVING = "Does not receive this day";
 
+/**
+ * The pill on the rep's own visit — the owner's polite sign, 2026-09-26. The web twin is
+ * `LOCATION_PILL` in src/components/phoenix-crm/visits-tab.tsx and says exactly the same words.
+ *
+ * Neutral, never the accent colour: an alarm on a rep's own day is a count of offences he cannot act
+ * on, and the usual cause of a distance is a place saved from the wrong doorway months ago. There is
+ * no `isFlagged` here any more and no count of one anywhere — the evidence still reaches the Super
+ * Admin and the SFE Manager in full; what left is the scoreboard he was being shown of himself.
+ */
 const LOCATION_PILL: Record<VisitRow["locationFlag"], { label: string; tone: CrmTone }> = {
   ok: { label: "At the place", tone: "good" },
-  far: { label: "Far from the place", tone: "warn" },
-  weak_gps: { label: "Weak location", tone: "warn" },
+  far: { label: "Take care", tone: "neutral" },
+  weak_gps: { label: "Location was rough", tone: "neutral" },
   no_place: { label: "No place to compare", tone: "neutral" },
 };
-
-function isFlagged(flag: VisitRow["locationFlag"]): boolean {
-  return flag === "far" || flag === "weak_gps";
-}
 
 function visitPeople(visit: VisitRow): Array<{ name: string; role: string }> {
   const people: Array<{ name: string; role: string }> = [];
@@ -103,14 +108,11 @@ function dayFigures(visits: ReadonlyArray<VisitRow>) {
     visits.filter((visit) => visit.listType === listType && match(visit)).length;
   const any = () => true;
   const paired = (visit: VisitRow) => visit.kind !== "single";
-  const flagged = (visit: VisitRow) => isFlagged(visit.locationFlag);
   return {
     pm: count("PM", any),
     am: count("AM", any),
     pairedPm: count("PM", paired),
     pairedAm: count("AM", paired),
-    flaggedPm: count("PM", flagged),
-    flaggedAm: count("AM", flagged),
   };
 }
 
@@ -124,7 +126,7 @@ function VisitCard({ visit }: { visit: VisitRow }) {
     <View
       style={{
         borderColor: palette.line,
-        borderLeftColor: isFlagged(visit.locationFlag) ? palette.accent : palette.success,
+        borderLeftColor: palette.success,
         borderLeftWidth: 3,
         borderRadius: radius,
         borderWidth: hairline,
@@ -189,8 +191,8 @@ function SavedNote({ onValidate, saved }: { onValidate: (() => void) | null; sav
   const note = visit.duplicate ? (
     <CrmNote title={customerName} tone="info">{`This visit was already saved, at ${cairoClock(visit.capturedAt)}.`}</CrmNote>
   ) : (
-    <CrmNote title={`Visit saved: ${customerName}`} tone={isFlagged(visit.locationFlag) ? "warn" : "good"}>
-      {`${cairoClock(visit.capturedAt)} · ${visit.locationLabel}${isFlagged(visit.locationFlag) ? ". The visit is saved with this flag." : ""}`}
+    <CrmNote title={`Visit saved: ${customerName}`} tone="good">
+      {`${cairoClock(visit.capturedAt)} · ${visit.locationLabel}`}
     </CrmNote>
   );
   if (!onValidate) return note;
@@ -375,10 +377,6 @@ export function VisitsScreen({
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space.sm }}>
             <StatTile label="PM visited" value={String(figures.pm)} />
             <StatTile label="AM visited" value={String(figures.am)} />
-          </View>
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space.sm }}>
-            <StatTile label="PM flagged" tone={figures.flaggedPm > 0 ? "accent" : "default"} value={String(figures.flaggedPm)} />
-            <StatTile label="AM flagged" tone={figures.flaggedAm > 0 ? "accent" : "default"} value={String(figures.flaggedAm)} />
           </View>
 
           {view.canAdd ? (

@@ -1701,7 +1701,7 @@ function DayScreen({
           {showSpread ? (
             <CrmStat
               label="Farthest apart"
-              note={`Flagged above ${rules.farApartKm} km`}
+              note={`Shown above ${rules.farApartKm} km`}
               tone={state.farApart ? "warn" : "neutral"}
               value={located < 2 ? "—" : `${state.spanKm} km`}
             />
