@@ -148,7 +148,7 @@ function areaPerformance({ areas, visitsAvailable }: PackInput): PackSection {
       ? ["Area", "Line", "District manager", "Achievement", "Sales", "Target", "Customers"]
       : ["Area", "District manager", "Achievement", "Sales", "Target", "Customers"],
     metric: "achievement",
-    note: "Achievement is sales in targeted months over target — the Monthly Closing's own rule, never an average of percentages.",
+    note: "Achievement is sales in targeted months over target — the Monthly Closing's own rule, never an average of percentages. It is period to date over the window shown, not a settled semester payout.",
     rows: areas.map((area) => [
       area.area,
       ...(withLine ? [area.lineLabel ?? "—"] : []),

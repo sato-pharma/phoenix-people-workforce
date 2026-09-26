@@ -431,7 +431,7 @@ export function BusinessReviewPortal({
         <PortalMetricCard
           accent={(totals.ach ?? 0) >= 90 ? "emerald" : "rose"}
           label="My achievement"
-          note="my areas · all products"
+          note={`my areas · all products · ${figureWindowLabel(coverage)}, period to date`}
           value={pct(totals.ach)}
         />
         <PortalMetricCard accent="sky" label="My sales" note={`of ${egp(totals.target)}`} value={egp(totals.sales)} />
@@ -548,7 +548,7 @@ export function BusinessReviewPortal({
 
           {showDms ? (
             <PortalSection
-              description="All-products achievement mapped onto the locked 2026 payout curve."
+              description={`All-products achievement mapped onto the locked 2026 payout curve. ${figureWindowLabel(coverage)}, period to date — not a settled semester payout.`}
               eyebrow="My team"
               title={`District managers (${num(visibleDms.length)})`}
             >
