@@ -701,6 +701,7 @@ import { runBusinessReviewClosingDetailTests } from "./business-review-closing-d
 import { runBusinessReviewScopeFilterTests } from "./business-review-scope-filter.test.ts";
 import { runBusinessReviewPackModelTests } from "./business-review-pack-model.test.ts";
 import { runBusinessReviewPackPptxTests } from "./business-review-pack-pptx.test.ts";
+import { runBusinessReviewPackFilenameTests } from "./business-review-pack-filename.test.ts";
 import { runMonthlySalesRunTests } from "./monthly-sales-run.test.ts";
 import { runSosHeaderDetectionTests } from "./sos-header-detection.test.ts";
 import { runSalesStrictConformanceTests } from "./sales-strict-conformance.test.ts";
@@ -4508,6 +4509,11 @@ await runTest(
 await runTest(
   "business review pack pptx (the EMITTED deck, not the source that wrote it: a .pptx is a zip of XML parts and PowerPoint's failure mode is total, so one unescaped ampersand or one relationship pointing at nothing refuses the whole presentation naming none of it; every part declared, every r:id resolving, hostile names escaped, the twelve-row cap both enforced and admitted on the slide, the honesty notes travelling into the file, AM · PM · Pharmacies keeping its middle dots, the house palette and square corners in the artifact, and no PPTX dependency creeping in)",
   runBusinessReviewPackPptxTests,
+);
+
+await runTest(
+  "business review pack filename (the Content-Disposition header that 500d every export in production: an em/en dash in the filename is > 255 and an HTTP header is a ByteString, so new Response threw AFTER the pack built; the header now carries an ASCII filename and a filename*=UTF-8 that round-trips, proven by constructing a real Response)",
+  runBusinessReviewPackFilenameTests,
 );
 await runTest(
   "business review closing detail (the customer-grain source: a direct order is direct whoever bought it, a warehouse buying from a distributor is a wholesaler row decided by the one channel authority, El Qema is masked on the RAW rows before anything is derived from them, the load is cut to the figure window, and the module reads the closing's own aggregate RPC rather than re-grouping raw import rows)",

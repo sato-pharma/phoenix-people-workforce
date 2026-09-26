@@ -30,6 +30,7 @@ import { buildSalesReviewPack, type PackArea, type PackDm } from "@/lib/business
 import { renderPackPdf } from "@/lib/business-review/pack/pdf";
 import { renderPackPptx } from "@/lib/business-review/pack/pptx";
 import { renderPackWorkbook } from "@/lib/business-review/pack/workbook";
+import { packContentDisposition, packFileName } from "@/lib/business-review/pack/filename";
 import { applyRepScope, applySeatScope, loadReviewPortalScope } from "@/lib/business-review/portal-scope";
 import {
   lineLabelOf,
@@ -71,11 +72,6 @@ function packFormat(value: string | null): PackFormat {
   return value === "pdf" || value === "pptx" ? value : "xlsx";
 }
 
-/** A filename a human can find again in a downloads folder, with no characters Windows refuses. */
-function fileName(subject: string, windowLabel: string, extension: string): string {
-  const safe = `${subject} ${windowLabel}`.replace(/[\\/:*?"<>|]/g, " ").replace(/\s+/g, " ").trim();
-  return `Sales Review — ${safe}.${extension}`;
-}
 
 export async function GET(request: Request) {
   try {
@@ -243,7 +239,7 @@ export async function GET(request: Request) {
     return new Response(new Uint8Array(buffer), {
       headers: {
         "Cache-Control": "no-store",
-        "Content-Disposition": `attachment; filename="${fileName(filter.label, windowLabel, format)}"`,
+        "Content-Disposition": packContentDisposition(packFileName(filter.label, windowLabel, format)),
         "Content-Type": CONTENT_TYPE[format],
       },
       status: 200,
