@@ -55,7 +55,11 @@ function resetHref(action: string, hidden?: Record<string, string>): string {
  * The scope is NOT in this link. The route resolves it from the session — a seat or line parameter
  * here would let anyone export any district by editing a URL.
  */
-function packHref(format: "pdf" | "xlsx", hidden: Record<string, string> | undefined, selected: readonly string[]): string {
+function packHref(
+  format: "pdf" | "pptx" | "xlsx",
+  hidden: Record<string, string> | undefined,
+  selected: readonly string[],
+): string {
   const params = new URLSearchParams(hidden ?? {});
   params.set("format", format);
   for (const id of selected) params.append("m", id);
@@ -164,6 +168,14 @@ export function PackPicker({ action, hidden, level, selected }: Props) {
             href={packHref("xlsx", hidden, selected)}
           >
             Export Excel
+          </a>
+          {/* The deck. One slide per section, the cover carrying the window and the coverage note —
+              the owner's own reason for this module: a sales review presented rather than typed. */}
+          <a
+            className="flex h-9 items-center border border-border bg-card px-4 text-sm font-semibold hover:bg-bg-muted"
+            href={packHref("pptx", hidden, selected)}
+          >
+            Export PowerPoint
           </a>
         </div>
       </form>

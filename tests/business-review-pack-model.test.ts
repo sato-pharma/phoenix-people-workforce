@@ -202,7 +202,11 @@ export function runBusinessReviewPackModelTests() {
   // ------------------------------------------------------------------ 8. neither renderer computes
   {
     const model = stripComments(readFileSync(MODEL, "utf8"));
-    for (const file of ["src/lib/business-review/pack/pdf.ts", "src/lib/business-review/pack/workbook.ts"]) {
+    for (const file of [
+      "src/lib/business-review/pack/pdf.ts",
+      "src/lib/business-review/pack/workbook.ts",
+      "src/lib/business-review/pack/pptx.ts",
+    ]) {
       const source = stripComments(readFileSync(file, "utf8"));
       assert.ok(
         !/loadBusinessReview|buildConcentration|buildSpecialtyMix/.test(source),
