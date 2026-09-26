@@ -497,6 +497,23 @@ export const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // re-run this file; on a project where the 8/3-arg originals are already gone, `create
   // function` would then fail the OPPOSITE way ("already exists").
   "20260905183000_district_manager_plans_never_write_a_ceo_row.sql",
+  // ── Added 2026-09-26. These three read as "missing" on PRODUCTION only. Production's ledger has
+  // no row for any of them under any version OR name — each was applied to production by direct SQL
+  // / an MCP apply_migration clock that writes no matching schema_migrations row — but the EFFECT
+  // of all three is fully live on production. (The first two are also in staging's ledger under
+  // their own name and match once the paged fetch in check-migrations-applied.ts sees the whole
+  // ledger.) Verified 2026-09-26 by direct inspection on ozucdzovmcqvepbozvqf, never from
+  // schema_migrations:
+  //   - notification_role_policies_notification_key_check includes 'new_hire_mailbox_alert'.
+  //   - phoenix_crm_plan_items.place_id is nullable (this file dropped its NOT NULL), and the
+  //     new-signature phoenix_crm_ensure_reference_customers(p_seat_id text, p_line_c…) exists.
+  //   - pg_get_functiondef(phx_territory_area_pharmacies) carries the effective_units fix (units
+  //     counted as sum(effective_units), not sum(total_qty)).
+  // Do not re-apply any of the three — each is a "create or replace" / idempotent alter, and the
+  // gap is production bookkeeping, not missing schema.
+  "20260918120027_notification_role_policies_new_hire_mailbox_key.sql",
+  "20260922180258_phoenix_crm_pending_customers.sql",
+  "20260922220000_territory_area_pharmacies_effective_units.sql",
 ]);
 
 export type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
