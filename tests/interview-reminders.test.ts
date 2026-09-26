@@ -63,6 +63,15 @@ export async function runInterviewReminderTests() {
   const seven = evening.find((reminder) => reminder.recipientHrId === "D-07");
   assert.ok(seven && seven.message.indexOf("10:00 AM") < seven.message.indexOf("1:00 PM"), "the list is in time order");
   assert.match(seven?.title ?? "", /^2 interviews on /, "and counts them");
+  // PREMIUM E-MAIL: the list becomes a zebra table, not a run-on. The e-mail intro is short (no list),
+  // and each metric row is time -> candidate · where — the rows the {{detailsTable}} renders.
+  assert.match(seven?.emailSummary ?? "", /2 interviews on .* times are below/, "the e-mail intro is a short line, not the list");
+  assert.doesNotMatch(seven?.emailSummary ?? "", /Candidate/, "the candidate names live in the table, not the intro");
+  assert.deepEqual(
+    (seven?.metrics ?? []).map((row) => `${row.label} | ${row.value}`),
+    ["10:00 AM | Candidate d · Zoom", "1:00 PM | Candidate c · Zoom"],
+    "one clean table row per interview, in time order: time -> candidate · where",
+  );
   assert.deepEqual(kinds(planInterviewReminders(tomorrow, at("2026-09-22", 23, 50))), ["evening:D-07", "evening:D-08"], "the list keeps being asked for until midnight (deduped by its key)");
   assert.deepEqual(kinds(planInterviewReminders(tomorrow, at("2026-09-23", 0, 10))), [], "and stops at midnight");
   assert.deepEqual(kinds(planInterviewReminders([interview("f", "2026-09-24", 10)], at("2026-09-22", 17, 5))), [], "the day after tomorrow is not on tomorrow's list");
@@ -135,6 +144,18 @@ export async function runInterviewReminderTests() {
   assert.doesNotMatch(source, /candidateEmail|recipientMode: "candidate"/, "the candidate is sent nothing");
   assert.match(source, /kind === "awaiting" \? \["in_app", "telegram"\]/, "the daily pump is in-app + Telegram only — no month of e-mails");
   assert.match(source, /interview-reminder-awaiting:/, "the pump's key is stamped with the day, so it fires once a day");
+  // PREMIUM E-MAIL: a "general" notification in the "recruitment" module (no candidateEmail) resolves
+  // to the recruitment_update template (migratedTemplateKeyForNotification), which renders the zebra
+  // {{detailsTable}}; the e-mail shows the short intro (emailSummary) above it, not the full list.
+  assert.match(source, /notificationType: "general"/, "a general recruitment notification routes to the recruitment_update template");
+  assert.match(source, /module: "recruitment"/, "the module is what routes it to the recruitment template");
+  assert.match(source, /summary: reminder\.emailSummary/, "and its summary is the short intro, with the list in the table");
+  const recruitmentTemplate = read("src/lib/email-templates/service.ts");
+  assert.match(
+    recruitmentTemplate,
+    /recruitment_update: \{\s*bodyHtml: "<p>\{\{summary\}\}<\/p>\{\{detailsTable\}\}<p>\{\{status\}\}<\/p>"/,
+    "the recruitment_update template renders the zebra details table",
+  );
   const route = stripComments(read("app/api/cron/interview-reminders/route.ts"));
   assert.match(route, /assertCronAuthorized\(request, "cron\/interview-reminders"\)/, "the cron route checks the secret");
   assert.match(route, /export async function POST/, "and answers the scheduler's POST too");
