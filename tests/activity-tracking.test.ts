@@ -23,6 +23,7 @@ import {
   listCairoDatesInRange,
 } from "../src/lib/activity/working-baseline.ts";
 import { isAttendanceScheduledWorkingDay } from "../src/lib/attendance/work-schedule.ts";
+import { buildModuleJourney, type JourneyEvent } from "../src/lib/activity/module-journey.ts";
 import {
   ACTIVITY_CONTROL_ACCESS_ROLES,
   ACTIVITY_TRACKING_SHOW_EMPLOYEE_NOTICE,
@@ -482,12 +483,136 @@ function testSessionCollapsing() {
   assert.equal(burstCollapsed[0].mergedRows, 20);
 }
 
+/**
+ * The module journey — the owner's 2026-09-26 ask: which modules each person
+ * entered, how long they stayed in each, and the workflow BETWEEN them.
+ *
+ * The three things that can silently go wrong here, and are pinned below:
+ *   1. Consecutive views of one module must COLLAPSE into one run, or a person
+ *      who opened six payroll pages reads as six separate visits.
+ *   2. Leaving a module and coming BACK must NOT collapse — that return is the
+ *      switching the whole feature exists to show.
+ *   3. The totals must sum to the person's own credited active seconds, because
+ *      the drawer prints them beside the Active tile and the owner reconciles
+ *      the two by eye.
+ */
+function journeyEvent(
+  moduleKey: string,
+  createdAt: string,
+  creditedSeconds: number,
+  enteredAt: string | null = null,
+): JourneyEvent {
+  return {
+    moduleKey,
+    moduleLabel: moduleKey === "payroll" ? "Payroll" : moduleKey === "crm" ? "CRM" : "Recruitment",
+    createdAt,
+    enteredAt,
+    creditedSeconds,
+  };
+}
+
+function testModuleJourney() {
+  const events: JourneyEvent[] = [
+    journeyEvent("payroll", "2026-09-20T08:01:00Z", 60, "2026-09-20T08:00:00Z"),
+    journeyEvent("payroll", "2026-09-20T08:03:00Z", 120),
+    journeyEvent("crm", "2026-09-20T08:06:00Z", 180),
+    journeyEvent("payroll", "2026-09-20T08:10:00Z", 240),
+    journeyEvent("recruitment", "2026-09-20T08:20:00Z", 300),
+    journeyEvent("crm", "2026-09-20T08:30:00Z", 100),
+  ];
+  const journey = buildModuleJourney(events);
+
+  // 1. Consecutive same-module views collapse; a return does not.
+  assert.equal(journey.visits.length, 5, "six views over four modules-in-a-row collapse to five runs");
+
+  // The run list is newest first, the way the drawer reads it.
+  assert.equal(journey.visits[0].moduleLabel, "CRM");
+  assert.equal(journey.visits[journey.visits.length - 1].moduleLabel, "Payroll");
+
+  // The first run starts at entered_at (when the page was OPENED), not at the
+  // beacon's created_at — a minute of real dwell hangs on that one line.
+  const firstRun = journey.visits[journey.visits.length - 1];
+  assert.equal(firstRun.startedAtIso, "2026-09-20T08:00:00Z");
+  assert.equal(firstRun.seconds, 180, "two consecutive payroll views credit 60 + 120 into one run");
+  assert.equal(firstRun.views, 2);
+
+  // 2. Payroll was entered TWICE — the return is a separate visit, but one total.
+  const payroll = journey.totals.find((total) => total.moduleLabel === "Payroll");
+  assert.ok(payroll, "Payroll must appear in the totals");
+  assert.equal(payroll.visits, 2, "leaving Payroll and coming back is two visits, never one");
+  assert.equal(payroll.views, 3);
+  assert.equal(payroll.seconds, 420);
+
+  // 3. The totals sum to exactly the credited seconds that feed the Active tile.
+  const creditedTotal = events.reduce((sum, event) => sum + event.creditedSeconds, 0);
+  const journeyTotal = journey.totals.reduce((sum, total) => sum + total.seconds, 0);
+  assert.equal(journeyTotal, creditedTotal, "module time must reconcile with Active, not be a second measurement");
+  assert.equal(creditedTotal, 1000);
+
+  // Share is of the person's OWN time and sums to 100 (within rounding).
+  const shareTotal = journey.totals.reduce((sum, total) => sum + total.sharePct, 0);
+  assert.ok(Math.abs(shareTotal - 100) < 0.5, `shares must total ~100, got ${shareTotal}`);
+  assert.equal(payroll.sharePct, 42);
+
+  // Totals are biggest-first, which is the order the panel renders — Payroll 420s,
+  // Recruitment 300s, then CRM's two runs at 180 + 100.
+  assert.deepEqual(
+    journey.totals.map((total) => total.moduleLabel),
+    ["Payroll", "Recruitment", "CRM"],
+  );
+  assert.deepEqual(
+    journey.totals.map((total) => total.seconds),
+    [420, 300, 280],
+  );
+
+  // Transitions: every move from one module straight into another, and never a
+  // module to ITSELF (a run cannot follow itself, so that pair cannot exist).
+  assert.equal(
+    journey.transitions.reduce((sum, transition) => sum + transition.count, 0),
+    4,
+    "five runs produce four moves",
+  );
+  for (const transition of journey.transitions) {
+    assert.notEqual(transition.fromLabel, transition.toLabel, "a module never transitions to itself");
+  }
+  const payrollToCrm = journey.transitions.find((t) => t.fromLabel === "Payroll" && t.toLabel === "CRM");
+  assert.ok(payrollToCrm);
+  assert.equal(payrollToCrm.count, 1);
+
+  // A repeated move is counted, not listed twice, and sorts to the front.
+  const pingPong = buildModuleJourney([
+    journeyEvent("payroll", "2026-09-20T08:00:00Z", 10),
+    journeyEvent("crm", "2026-09-20T08:01:00Z", 10),
+    journeyEvent("payroll", "2026-09-20T08:02:00Z", 10),
+    journeyEvent("crm", "2026-09-20T08:03:00Z", 10),
+    journeyEvent("payroll", "2026-09-20T08:04:00Z", 10),
+    journeyEvent("crm", "2026-09-20T08:05:00Z", 10),
+  ]);
+  assert.equal(pingPong.transitions[0].fromLabel, "Payroll");
+  assert.equal(pingPong.transitions[0].toLabel, "CRM");
+  assert.equal(pingPong.transitions[0].count, 3);
+  assert.equal(pingPong.totals.find((t) => t.moduleLabel === "Payroll")?.visits, 3);
+
+  // An empty range produces an empty journey rather than throwing — the drawer
+  // renders it for a person who has never opened a page.
+  const empty = buildModuleJourney([]);
+  assert.deepEqual(empty.totals, []);
+  assert.deepEqual(empty.visits, []);
+  assert.deepEqual(empty.transitions, []);
+
+  // A person with zero credited seconds (every view overlapped another window)
+  // must not divide by zero — shares fall to 0, not NaN.
+  const zero = buildModuleJourney([journeyEvent("payroll", "2026-09-20T08:00:00Z", 0)]);
+  assert.equal(zero.totals[0].sharePct, 0);
+}
+
 export function runActivityTrackingTests() {
   testModuleResolver();
   testMachineAccountsAreNotPeople();
   testEngagementEngine();
   testBandsSeparate();
   testDwellUnion();
+  testModuleJourney();
   testWorkingDayBaseline();
   testPermissionGate();
   testSessionCollapsing();
