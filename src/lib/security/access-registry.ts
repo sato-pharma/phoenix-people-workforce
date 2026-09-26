@@ -655,10 +655,11 @@ export const accessRegistry = [
   // a manager above it; a grade, drop or plan decision by its reviewing manager only (the SFE Manager
   // may only return a plan); scope runs downward only; the Super Admin's writes are test entries.
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/overview", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
-  // Location integrity evidence — read-only, and narrowed a SECOND time inside the service to the
-  // Super Admin alone. The `phoenix_crm.update` permission here is the outer gate only: every other
-  // holder of it is refused by the service, because a rep must never learn this board exists.
-  sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/integrity", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: false }),
+  // There is no /api/phoenix-crm/integrity entry, and that is deliberate (2026-09-26). The route
+  // existed and had NO caller — the board is a server component that loads the evidence directly —
+  // so it was an address a curious rep could probe for nothing in return. Deleting it is strictly
+  // more blind than widening it: a URL that 404s because it was never built is indistinguishable
+  // from one that 404s because he is not the audience. Do not re-add it without a real client.
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/visits", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/visits", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/visits/form", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: false }),

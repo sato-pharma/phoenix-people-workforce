@@ -12,7 +12,7 @@ import { canAccess, type AccessContext } from "@/lib/auth/permissions";
 import { isForbiddenError } from "@/lib/auth/server";
 import { ApiError } from "@/lib/http/api-errors";
 import { logError } from "@/lib/observability/log";
-import { resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { resolvePhoenixCrmViewer, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadPhoenixCrmOverview, type PhoenixCrmOverview } from "@/lib/phoenix-crm/server/overview";
 
 export const PHOENIX_CRM_PORTAL_PATH = "/employee-portals/field-crm";
@@ -39,17 +39,41 @@ export async function loadPhoenixCrmPage(access: AccessContext): Promise<Phoenix
 }
 
 /**
- * Whether My Visits shows the Phoenix CRM button: to a holder of `phoenix_crm` read with something
- * open in the module today — a territory of their own, or territories beneath them, in a line that has
- * opened. Before a line opens, its reps and managers get no button, so nobody is sent to a page that
- * only says it is not open yet. It never throws: My Visits renders whatever happens here, and a
- * failure is logged rather than shown as a missing button nobody can explain.
+ * Has the module anything to say to this person — a territory to work, or a date to wait for?
+ *
+ * 🔴 THE SECOND HALF IS THE FIX, AND IT COST A REAL HOUR. Until 2026-09-26 the door opened only on
+ * something OPEN, and `scopeTerritories` is already filtered to open lines — so a District Manager
+ * whose whole district sits on a line that has not opened got no sidebar row, no page, and not one
+ * word anywhere saying why. He is indistinguishable from a stranger with no seat at all. The owner
+ * hit it on a CNS manager's account and could only ask what was broken; nothing was.
+ *
+ * Golden Rule #1 permits this sentence: it is about his ACCESS, never his conduct. The wording comes
+ * from `lineOpeningText` — a line and a date, nothing else.
+ *
+ * A person with NO seat anywhere still gets nothing, which is right: a closed line must not open the
+ * door for someone the organogram does not place in the field at all.
+ */
+export function phoenixCrmHasSomethingToSay(viewer: PhoenixCrmViewer): boolean {
+  return (
+    viewer.isSuperAdmin ||
+    viewer.ownTerritories.length > 0 ||
+    viewer.scopeTerritories.length > 0 ||
+    viewer.waitingTerritories.length > 0 ||
+    viewer.waitingScopeTerritories.length > 0
+  );
+}
+
+/**
+ * Whether My Visits and the portal sidebar show the Phoenix CRM row: to a holder of `phoenix_crm`
+ * read whom the module has something to say to — see `phoenixCrmHasSomethingToSay`. It never throws:
+ * the sidebar renders whatever happens here, and a failure is logged rather than shown as a missing
+ * row nobody can explain.
  */
 export async function phoenixCrmEntryAvailable(access: AccessContext): Promise<boolean> {
   try {
     if (!(await canAccess(access, "phoenix_crm", "read"))) return false;
     const viewer = await resolvePhoenixCrmViewer(access);
-    return viewer.isSuperAdmin || viewer.ownTerritories.length > 0 || viewer.scopeTerritories.length > 0;
+    return phoenixCrmHasSomethingToSay(viewer);
   } catch (error) {
     if ((error instanceof ApiError && error.status < 500) || isForbiddenError(error)) return false;
     logError("Phoenix CRM entry check failed", {

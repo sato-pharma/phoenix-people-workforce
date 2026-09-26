@@ -54,6 +54,13 @@ export type PhoenixCrmViewer = {
   waitingTerritories: OrgSeat[];
   /** The territories the viewer reads (real entries): open lines only, except for the Super Admin. */
   scopeTerritories: OrgSeat[];
+  /**
+   * The territories BENEATH him whose line has not opened — the manager's twin of
+   * `waitingTerritories`, and the reason a District Manager on a closed line used to see nothing at
+   * all and be told nothing. `scopeTerritories` is already filtered to open lines, so without this
+   * set a manager whose whole district is waiting is indistinguishable from a stranger.
+   */
+  waitingScopeTerritories: OrgSeat[];
   managerSeats: OrgSeat[];
 };
 
@@ -94,6 +101,7 @@ export async function resolvePhoenixCrmViewer(access: AccessContext): Promise<Ph
     ownTerritories: held.filter(isOpen),
     waitingTerritories: held.filter((seat) => !isOpen(seat)),
     scopeTerritories: isSuperAdmin ? scope : scope.filter(isOpen),
+    waitingScopeTerritories: isSuperAdmin ? [] : scope.filter((seat) => !isOpen(seat)),
     managerSeats: heldManagerSeats(org, hrId),
   };
 }

@@ -1,0 +1,268 @@
+import assert from "node:assert/strict";
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
+import { stripComments } from "./support/comment-strip.ts";
+
+/**
+ * Phoenix CRM — GOLDEN RULE #1, the BLIND half, made mechanical.
+ *
+ * Owner, 2026-09-26: "never make the medical rep feel that the system is here to catch him, make
+ * everything silent to him … never informed of any violation or any other thing. But every violation
+ * is then recorded in the admin and the SFE account."
+ *
+ * ## Why this file replaces the block it replaces
+ *
+ * The blindness was pinned by a HARD-CODED LIST OF SIX FILES inside
+ * `tests/phoenix-crm-location-integrity.test.ts`. That list cannot grow by itself, so the seventh
+ * rep-facing screen anyone writes is born unchecked — and the module is about to gain several (a
+ * Today screen, a manager screen, more of the mobile app). A rule whose guard has to be remembered
+ * is a rule with a deadline.
+ *
+ * Here the surface is DERIVED: every file under the rep-facing roots is swept, whatever its name and
+ * whenever it was added. The four registries below are the only thing a later step edits, in one
+ * place, and the file-count floors mean a moved or renamed directory fails loudly instead of quietly
+ * sweeping nothing and reporting green.
+ *
+ * ## The boundary this encodes
+ *
+ * Not "information about him" — WHOSE WORK IT IS. His plan, his day, his targets and an approval he
+ * raised himself are his and stay visible. Anything that judges his honesty is never his, and he
+ * must not learn that the judging exists. That is why the refusals below must be 404 and not 403: a
+ * message reading "the location integrity board is the Super Admin's" IS the disclosure.
+ */
+
+const ROOT = new URL("../", import.meta.url);
+
+/** Every rep-facing file, derived — the point of this test. */
+const REP_FACING_ROOTS: ReadonlyArray<{ dir: string; floor: number }> = [
+  { dir: "src/components/phoenix-crm", floor: 20 },
+  { dir: "mobile/src/features/crm", floor: 5 },
+  { dir: "mobile/src/components/crm", floor: 4 },
+  { dir: "mobile/src/lib/crm", floor: 8 },
+  { dir: "app/employee-portals/field-crm", floor: 1 },
+];
+
+/**
+ * The pure rule modules a rep's bundle pulls in. `src/lib/phoenix-crm/server/**` is excluded — it is
+ * the server, and it is where the evidence is SUPPOSED to live — and so is the one pure module that
+ * exists to describe the checks themselves.
+ */
+const REP_FACING_PURE_EXCLUDED = new Set(["location-integrity.ts"]);
+
+/**
+ * Words that must never reach the rep's eyes, checked against strings and JSX TEXT.
+ *
+ * Text, not raw source: `deviceMocked` is a payload key the phone must forward or the evidence never
+ * reaches the server, and forwarding is fine. Putting it into words is not.
+ *
+ * `flagged` is deliberately NOT here yet — the visit screen still says "AM flagged" today, and it
+ * leaves in the same step that softens the distance line into the owner's polite sign. Add it there,
+ * with the change, so this test is never red on `main`.
+ */
+const SILENT_WORDS: ReadonlyArray<RegExp> = [
+  /\bintegrity\b/i,
+  /\bmock\b/i,
+  /fake\s*gps/i,
+  /\bspoof/i,
+  /\bfraud\b/i,
+  /\bcheat/i,
+  /app that changes the location/i,
+];
+
+/** Columns that exist only to be judged. A rep-facing type naming one is the defect. */
+const SILENT_COLUMNS: ReadonlyArray<string> = [];
+
+/** Tables only the blind readers may touch. */
+const SILENT_TABLES: ReadonlyArray<string> = ["phoenix_crm_location_integrity"];
+
+/** Modules only the blind readers may import. */
+const SILENT_MODULES: ReadonlyArray<string> = ["location-integrity", "integrity-board"];
+
+/**
+ * The only files allowed to read a silent table. Every one of them is also asserted to gate on the
+ * board's audience and to refuse with a 404.
+ */
+const BLIND_READERS: ReadonlyArray<string> = [
+  "src/lib/phoenix-crm/server/location-integrity.ts",
+  "src/lib/phoenix-crm/server/integrity-board.ts",
+  "app/(admin)/admin/phoenix-crm/integrity/page.tsx",
+];
+
+/** The judges that must never be able to cost a rep his visit. */
+const SILENT_RUNNERS: ReadonlyArray<string> = ["src/lib/phoenix-crm/server/location-integrity.ts"];
+
+function read(path: string): string {
+  return readFileSync(new URL(path, ROOT), "utf8");
+}
+
+function exists(path: string): boolean {
+  try {
+    statSync(fileURLToPath(new URL(path, ROOT)));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Every `.ts`/`.tsx` under a directory, recursively. */
+function filesUnder(dir: string): string[] {
+  const out: string[] = [];
+  const walk = (relative: string) => {
+    for (const entry of readdirSync(fileURLToPath(new URL(relative, ROOT)), { withFileTypes: true })) {
+      const next = `${relative}/${entry.name}`;
+      if (entry.isDirectory()) walk(next);
+      else if (/\.tsx?$/.test(entry.name)) out.push(next);
+    }
+  };
+  walk(dir);
+  return out;
+}
+
+/** The pure Phoenix CRM rule modules, which a rep's bundle can reach. */
+function purePhoenixCrmFiles(): string[] {
+  const dir = "src/lib/phoenix-crm";
+  return readdirSync(fileURLToPath(new URL(dir, ROOT)), { withFileTypes: true })
+    .filter((entry) => entry.isFile() && /\.tsx?$/.test(entry.name) && !REP_FACING_PURE_EXCLUDED.has(entry.name))
+    .map((entry) => `${dir}/${entry.name}`);
+}
+
+/** Every string literal in a source, comments already blanked. */
+function literalsOf(source: string): string[] {
+  return stripComments(source).match(/(["'`])(?:\\.|(?!\1)[\s\S])*\1/g) ?? [];
+}
+
+/**
+ * The text between JSX tags — `<p>Integrity</p>`.
+ *
+ * The old guard read string literals only, so a word typed straight into the markup slipped past it
+ * entirely. Braces are excluded so an interpolation is not mistaken for prose.
+ */
+function jsxTextOf(source: string): string[] {
+  return [...stripComments(source).matchAll(/>([^<>{}]+)</g)]
+    .map((match) => match[1] ?? "")
+    .filter((text) => /[A-Za-z]{3}/.test(text));
+}
+
+export function runPhoenixCrmBlindHalfTests(): void {
+  const repFacing: string[] = [];
+  for (const { dir, floor } of REP_FACING_ROOTS) {
+    assert.ok(exists(dir), `${dir} must exist — a moved rep-facing root would sweep nothing and read green`);
+    const found = filesUnder(dir);
+    assert.ok(
+      found.length >= floor,
+      `${dir} holds ${found.length} files, below the floor of ${floor}. Either the directory moved or the sweep is looking at nothing.`,
+    );
+    repFacing.push(...found);
+  }
+  repFacing.push(...purePhoenixCrmFiles());
+
+  const problems: string[] = [];
+
+  // ── 1 · No silent word reaches a rep, in a string OR in the markup ──────────────────────────────
+  for (const path of repFacing) {
+    const source = read(path);
+    for (const text of [...literalsOf(source), ...jsxTextOf(source)]) {
+      for (const word of SILENT_WORDS) {
+        if (word.test(text)) problems.push(`${path} says ${word} to a rep: ${text.trim().slice(0, 80)}`);
+      }
+    }
+  }
+
+  // ── 2 · No rep-facing file imports a silent module or names a silent table ──────────────────────
+  //
+  // Comments are blanked first. Prose explaining WHY a field is carried but never shown necessarily
+  // names the thing it is not showing — `entry-rules.ts` says in capitals that `deviceMocked` is
+  // recorded for the board and refused to nobody, which is exactly the note that must stay. What may
+  // not survive is an import or a real reference.
+  for (const path of repFacing) {
+    const code = stripComments(read(path));
+    for (const silentModule of SILENT_MODULES) {
+      if (code.includes(silentModule)) problems.push(`${path} must not reach ${silentModule}`);
+    }
+    for (const table of SILENT_TABLES) {
+      if (code.includes(table)) problems.push(`${path} must not name ${table}`);
+    }
+  }
+
+  // ── 3 · No silent column reaches a rep-facing type or read ──────────────────────────────────────
+  {
+    const visits = read("src/lib/phoenix-crm/server/visits.ts");
+    for (const column of SILENT_COLUMNS) {
+      const camel = column.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
+      if (visits.includes(column)) problems.push(`visits.ts must not select ${column} — it is the rep's own screen`);
+      if (visits.includes(camel)) problems.push(`visits.ts must not map ${column} onto ${camel}`);
+    }
+  }
+
+  // ── 4 · No silent table is reachable from a route the rep's app can call ────────────────────────
+  for (const path of filesUnder("app/api/phoenix-crm")) {
+    const code = stripComments(read(path));
+    for (const table of SILENT_TABLES) {
+      if (code.includes(table)) problems.push(`${path} is a rep-callable route and must not read ${table}`);
+    }
+    for (const silentModule of SILENT_MODULES) {
+      if (code.includes(silentModule)) problems.push(`${path} is a rep-callable route and must not reach ${silentModule}`);
+    }
+  }
+
+  // ── 5 · Every reader of the evidence is declared, and there IS one ──────────────────────────────
+  {
+    const declared = new Set(BLIND_READERS);
+    const searched = [...filesUnder("src/lib/phoenix-crm/server"), ...filesUnder("app/(admin)/admin/phoenix-crm")];
+    for (const table of SILENT_TABLES) {
+      const readers = searched.filter((path) => read(path).includes(table));
+      // Anti-vacuity: if nothing reads it, this whole assertion has stopped meaning anything.
+      if (readers.length === 0) problems.push(`nothing reads ${table} any more — this test has gone vacuous`);
+      for (const path of readers) {
+        if (!declared.has(path)) problems.push(`${path} reads ${table} but is not a declared blind reader`);
+      }
+    }
+  }
+
+  // ── 6 · The board's audience is one predicate, and the refusal is a 404 ─────────────────────────
+  {
+    const board = read("src/lib/phoenix-crm/server/integrity-board.ts");
+    if (!board.includes("canReadIntegrityBoard")) problems.push("the board must gate on canReadIntegrityBoard");
+    if (!board.includes("isSuperAdmin")) problems.push("the board's audience must name the Super Admin");
+    if (!board.includes("isSfeManager")) problems.push("the board's audience must name the SFE Manager (owner, 2026-09-26)");
+    // A 403 that names the board tells the person asking that the board exists and what it watches.
+    if (board.includes("forbiddenError")) {
+      problems.push("the board must refuse with notFoundError, never forbiddenError — a 403 naming it IS the disclosure");
+    }
+    if (!board.includes("notFoundError")) problems.push("the board must refuse with notFoundError");
+
+    const page = read("app/(admin)/admin/phoenix-crm/integrity/page.tsx");
+    if (!page.includes("canReadIntegrityBoard")) problems.push("the board page must gate on the same predicate as the service");
+    if (!page.includes("redirect(")) problems.push("the board page must redirect, never render an explanation");
+  }
+
+  // ── 7 · No silent judgement can cost a rep his visit ────────────────────────────────────────────
+  for (const path of SILENT_RUNNERS) {
+    const source = read(path);
+    if (!source.includes("Promise<void>")) problems.push(`${path} must return nothing — a judge that throws is a judge that refuses a visit`);
+    if (!source.includes("catch")) problems.push(`${path} must swallow its own failures`);
+  }
+
+  // ── 8 · No refusal the rep can trigger names a check ────────────────────────────────────────────
+  {
+    const refusals = stripComments(read("src/lib/phoenix-crm/server/db.ts"));
+    for (const text of literalsOf(refusals)) {
+      for (const word of SILENT_WORDS) {
+        if (word.test(text)) problems.push(`a refusal message names a check: ${text.trim().slice(0, 80)}`);
+      }
+    }
+  }
+
+  // ── 9 · The evidence stays out of every rep-facing API response shape ───────────────────────────
+  {
+    const viewTypes = read("src/lib/phoenix-crm/view-types.ts");
+    for (const silentModule of SILENT_MODULES) {
+      if (viewTypes.includes(silentModule)) problems.push(`view-types.ts must not re-export ${silentModule} — it is the wire the phone reads`);
+    }
+  }
+
+  assert.deepEqual(problems, [], `\n  ${problems.join("\n  ")}\n`);
+
+  console.log(`phoenix-crm blind half: OK (${repFacing.length} rep-facing files swept)`);
+}

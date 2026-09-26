@@ -134,10 +134,10 @@ const ROUTE_GATES: RouteGate[] = [
   get("team"),
   // The Doctors directory: validated customers across territories, scoped downward on the server.
   get("doctors"),
-  // Location integrity evidence. `update` is the OUTER gate only — the service refuses every holder
-  // of it but the Super Admin, because a rep who learned this board exists would learn what it
-  // measures. Read-only by design: there is no POST, so nothing here can be cleared or edited away.
-  get("integrity", "update"),
+  // There is no "integrity" gate here because there is no integrity ROUTE (2026-09-26). It had no
+  // caller — the board is a server component reading the service directly — so it was an address and
+  // nothing else. The list below is asserted against the handlers on disk, so this absence is itself
+  // checked: re-adding the route without a gate fails, and adding a gate without the route fails.
   get("reports"),
   post("photos/upload-slot", "create"),
   // The native app's live photo: the phone sends the stamped JPEG as a base64 data URL and the server
