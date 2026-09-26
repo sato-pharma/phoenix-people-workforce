@@ -800,10 +800,11 @@ export function InterviewCalendarView({
                           <span className="min-w-0 flex-1">
                             <span className="block break-words text-[14px] font-bold text-orange-700 underline decoration-orange-300 underline-offset-2">
                               {item.booking.candidateName}
+                              {item.booking.area ? <span className="font-semibold text-slate-500"> / {item.booking.area}</span> : null}
                             </span>
-                            {item.booking.interviewerName || item.booking.line || item.booking.area ? (
+                            {item.booking.interviewerName || item.booking.line ? (
                               <span className="mt-0.5 block break-words text-[11px] font-semibold text-slate-700">
-                                {[item.booking.interviewerName, item.booking.line, item.booking.area].filter(Boolean).join(" · ")}
+                                {[item.booking.interviewerName, item.booking.line].filter(Boolean).join(" · ")}
                               </span>
                             ) : null}
                             <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-slate-500">
@@ -991,10 +992,11 @@ function BookingChip({ booking, onOpen }: { booking: InterviewBooking; onOpen: (
     >
       <span className="block break-words text-[12px] font-bold leading-tight text-slate-900 group-hover/chip:underline">
         {booking.candidateName}
+        {booking.area ? <span className="font-semibold text-slate-600"> / {booking.area}</span> : null}
       </span>
-      {booking.interviewerName || booking.line || booking.area ? (
+      {booking.interviewerName || booking.line ? (
         <span className="mt-0.5 block break-words text-[10.5px] font-semibold leading-tight text-slate-700">
-          {[booking.interviewerName, booking.line, booking.area].filter(Boolean).join(" · ")}
+          {[booking.interviewerName, booking.line].filter(Boolean).join(" · ")}
         </span>
       ) : null}
       <span className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[10.5px] leading-tight text-slate-600">

@@ -1184,7 +1184,10 @@ function runWiringTests() {
     assert.match(src, /function chooseInterviewer\(person: ChosenInterviewer \| null\)/, `${file} auto-fills area & line from the chosen interviewer`);
   }
   // The calendar cell AND the share link (same component) show the interviewer name and area/line.
-  assert.match(viewSrc, /\[booking\.interviewerName, booking\.line, booking\.area\]\.filter\(Boolean\)/, "the calendar chip shows interviewer · line · area");
+  // The area sits BESIDE the name — "Name / Area" (owner, 2026-09-26) — and the meta line under it
+  // keeps the interviewer and line.
+  assert.match(viewSrc, /booking\.area \? <span[^>]*> \/ \{booking\.area\}<\/span> : null/, "the area shows beside the name as Name / Area");
+  assert.match(viewSrc, /\[booking\.interviewerName, booking\.line\]\.filter\(Boolean\)/, "the chip's meta line keeps interviewer · line");
   const orgMigration = read("supabase/migrations/20260926155000_ats_interview_area_line.sql");
   assert.match(orgMigration, /add column if not exists interview_area text/, "the migration adds the area column");
   assert.match(orgMigration, /add column if not exists interview_line text/, "the migration adds the line column");
