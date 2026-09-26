@@ -392,6 +392,22 @@ export type InterviewScorecard = {
   updatedAt: string;
 };
 
+/** The interviewer's answer to the assignment (owner, 2026-09-26): confirmed, declined, or unanswered. */
+export type InterviewConfirmation = "confirmed" | "declined";
+
+/** One entry in a booking's change history — a change that already happened, newest first. */
+export type InterviewChange = {
+  id: string;
+  /** A short slug for the kind of change — "booked", "rescheduled", "interviewer", "confirmed", … */
+  kind: string;
+  /** The human line shown in the detail view. */
+  summary: string;
+  /** Who made the change, when their name resolves. */
+  actorName: string | null;
+  /** The instant it was recorded. */
+  at: string;
+};
+
 export type InterviewBooking = {
   id: string;
   /** The recruitment record — or null for someone from outside, kept on the calendar only. */
@@ -431,6 +447,17 @@ export type InterviewBooking = {
   scorecards: InterviewScorecard[];
   /** Whether THIS viewer may file their own scorecard — true only for someone on the interview. */
   canScoreInterview: boolean;
+  /** The chosen interviewer's answer to the assignment, or null when unanswered (owner, 2026-09-26). */
+  interviewerConfirmation: InterviewConfirmation | null;
+  /** When that answer was given, and by whom (the interviewer's own name). */
+  confirmationAt: string | null;
+  confirmedByName: string | null;
+  /** Why the interviewer declined, when they left a reason. Null unless declined. */
+  declineReason: string | null;
+  /** Whether THIS viewer may confirm/decline — true only for the lead interviewer, before it happens. */
+  canConfirmInterview: boolean;
+  /** The change history, newest first — shown to everyone who can read the booking. */
+  changeHistory: InterviewChange[];
   /** The instant, as stored. */
   startsAt: string;
   /** Cairo calendar day, YYYY-MM-DD. */

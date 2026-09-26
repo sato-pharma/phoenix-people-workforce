@@ -65,6 +65,7 @@ import {
   type DueZoomInterview,
   type InterviewBooking,
   type InterviewBookingComment,
+  type InterviewChange,
   type InterviewScorecard,
   type InterviewVerdict,
   type InterviewCalendarAccessLevel,
@@ -112,10 +113,12 @@ const SESSIONS = "ats_interview_sessions";
 const SHARES = "ats_interview_calendar_shares";
 const COMMENTS = "ats_interview_booking_comments";
 const SCORECARDS = "ats_interview_scorecards";
+const CHANGES = "ats_interview_booking_changes";
 const LINKS = "ats_interview_calendar_links";
 const POLLS = "ats_interview_zoom_polls";
 
 const NOTE_LIMIT = 1000;
+const DECLINE_REASON_LIMIT = 500;
 
 // ── Who is asking ───────────────────────────────────────────────────────────────────────────────
 
@@ -505,6 +508,10 @@ type BookingRow = {
   panelist_hr_ids: string[] | null;
   interview_area: string | null;
   interview_line: string | null;
+  interviewer_confirmation: string | null;
+  interviewer_confirmation_at: string | null;
+  interviewer_confirmation_by_hr_id: string | null;
+  decline_reason: string | null;
   outcome: string | null;
   outcome_set_by_hr_id: string | null;
   outcome_set_at: string | null;
@@ -538,7 +545,7 @@ type CommentRow = { id: string; booking_id: string; author_hr_id: string; body: 
 type CandidateRow = { id: string; full_name: string | null; applied_for_job_title: string | null };
 
 const BOOKING_COLUMNS =
-  "id,candidate_id,session_id,starts_at,duration_minutes,platform,zoom_status,zoom_meeting_id,zoom_join_url,zoom_error,notes,external_name,external_phone,external_email,external_cv_file_id,external_cv_file_name,external_cv_mime_type,interviewer_hr_id,panelist_hr_ids,interview_area,interview_line,outcome,outcome_set_by_hr_id,outcome_set_at,request_id,requested_by_hr_id,created_by_hr_id,updated_by_hr_id,created_at,updated_at";
+  "id,candidate_id,session_id,starts_at,duration_minutes,platform,zoom_status,zoom_meeting_id,zoom_join_url,zoom_error,notes,external_name,external_phone,external_email,external_cv_file_id,external_cv_file_name,external_cv_mime_type,interviewer_hr_id,panelist_hr_ids,interview_area,interview_line,interviewer_confirmation,interviewer_confirmation_at,interviewer_confirmation_by_hr_id,decline_reason,outcome,outcome_set_by_hr_id,outcome_set_at,request_id,requested_by_hr_id,created_by_hr_id,updated_by_hr_id,created_at,updated_at";
 
 const SESSION_COLUMNS =
   "id,title,starts_at,duration_minutes,slot_minutes,platform,zoom_status,zoom_meeting_id,zoom_join_url,zoom_error,notes,created_by_hr_id,updated_by_hr_id,created_at,updated_at";
@@ -599,6 +606,35 @@ async function loadScorecards(bookingIds: readonly string[]): Promise<ScorecardR
   return rows;
 }
 
+type ChangeRow = { id: string; booking_id: string; actor_hr_id: string | null; kind: string; summary: string; created_at: string };
+
+async function loadBookingChanges(bookingIds: readonly string[]): Promise<ChangeRow[]> {
+  const rows: ChangeRow[] = [];
+  for (let index = 0; index < bookingIds.length; index += 50) {
+    const { data, error } = await recruitmentDb()
+      .from(CHANGES)
+      .select("id,booking_id,actor_hr_id,kind,summary,created_at")
+      .in("booking_id", bookingIds.slice(index, index + 50))
+      .order("created_at", { ascending: false });
+    if (error) throw error;
+    rows.push(...((data ?? []) as ChangeRow[]));
+  }
+  return rows;
+}
+
+/**
+ * Append one entry to a booking's change history. BEST-EFFORT and swallowed: the history is a record
+ * of a change that already happened, so a failure to log it must never undo or block the change
+ * itself. The `kind` is a short slug; the `summary` is the human line shown in the detail view.
+ */
+async function recordBookingChange(bookingId: string, actorHrId: string | null, kind: string, summary: string): Promise<void> {
+  try {
+    await recruitmentDb().from(CHANGES).insert({ actor_hr_id: actorHrId, booking_id: bookingId, kind, summary });
+  } catch {
+    // A change already landed; a missing history line is not worth failing the mutation for.
+  }
+}
+
 /** Is this caller ON the interview — the lead, or one of the panel — so they may file their own scorecard? */
 function isInterviewAttendee(caller: InterviewCalendarCaller, row: { interviewer_hr_id: string | null; panelist_hr_ids?: string[] | null }): boolean {
   if (!isSignedInCaller(caller.access)) return false;
@@ -651,6 +687,102 @@ export async function saveInterviewScorecard(
   return booking;
 }
 
+const INTERVIEW_PORTAL_BASE = "/employee-portals/interview-calendar";
+
+/**
+ * The chosen interviewer confirms ("I'll conduct it") or declines ("I can't") the assignment (owner,
+ * 2026-09-26, Tier 3). Only the LEAD interviewer may answer, and only while the interview is still to
+ * happen. A decline keeps the row so it can be reassigned, stops the reminders to him
+ * (listInterviewsToRemindAbout skips a declined lead), and alerts the booker and the requester. Every
+ * answer is written to the change history. Reassigning the interviewer clears the answer (see
+ * updateInterviewBooking), so a new interviewer starts unanswered.
+ */
+export async function setInterviewerConfirmation(
+  caller: InterviewCalendarCaller,
+  bookingId: string,
+  decision: unknown,
+  reason?: unknown,
+): Promise<InterviewBooking> {
+  const row = await loadBookingRow(bookingId);
+  requireCalendarAccess(caller, "view", weekOfInstant(row.starts_at));
+  const viewer = canonicalHrIdKey(caller.access.hrId);
+  if (!viewer || viewer !== canonicalHrIdKey(row.interviewer_hr_id)) {
+    throw new Error("Only the interviewer chosen to conduct this interview can confirm or decline it.");
+  }
+  if (new Date().getTime() >= endsAt(row.starts_at, row.duration_minutes)) {
+    throw new Error("This interview's time has passed — record its outcome instead.");
+  }
+  if (decision !== "confirmed" && decision !== "declined") throw new Error("Choose confirm or decline.");
+  const declineReason = decision === "declined" && typeof reason === "string" ? reason.trim().slice(0, DECLINE_REASON_LIMIT) : null;
+  const actor = hrIdForStorage(caller.access.hrId);
+  const saved = await saveBooking(row.id, {
+    interviewer_confirmation: decision,
+    interviewer_confirmation_at: new Date().toISOString(),
+    interviewer_confirmation_by_hr_id: actor,
+    decline_reason: declineReason,
+    updated_by_hr_id: actor,
+  });
+  const who = personName(await loadPeople([caller.access.hrId]), caller.access.hrId) ?? "The interviewer";
+  const candidateName = row.candidate_id ? await candidateNameFor(row.candidate_id) : row.external_name?.trim() || "the candidate";
+  if (decision === "confirmed") {
+    await recordBookingChange(row.id, actor, "confirmed", `${who} confirmed they will conduct the interview.`);
+  } else {
+    await recordBookingChange(row.id, actor, "declined", `${who} declined the interview${declineReason ? `: ${declineReason}` : ""}.`);
+    // Tell the people who arranged it, so it can be reassigned — the requester and the booker.
+    const notify = new Set<string>();
+    for (const hrId of [row.requested_by_hr_id, row.created_by_hr_id]) {
+      const key = hrIdForStorage(hrId);
+      if (key && canonicalHrIdKey(key) !== viewer) notify.add(key);
+    }
+    for (const recipient of notify) {
+      await createSystemNotification({
+        actionUrl: INTERVIEW_PORTAL_BASE,
+        channels: ["in_app", "telegram"],
+        eventType: "recruitment_interview_declined",
+        message: `${who} declined the interview with ${candidateName}${declineReason ? ` (${declineReason})` : ""}. It needs a new interviewer.`,
+        metadata: { idempotencyKey: `interview-declined:${row.id}:${actor ?? "?"}:${saved.interviewer_confirmation_at ?? ""}` },
+        module: "recruitment",
+        priority: "normal",
+        recipientHrId: recipient,
+        title: "An interview was declined",
+      }).catch(() => {});
+    }
+  }
+  const [booking] = await hydrate([saved], caller);
+  return booking;
+}
+
+/**
+ * Replace (or attach) the CV kept on an OUTSIDE candidate's interview (owner, 2026-09-26, Tier 3 —
+ * edit the CV, e.g. one added after booking). Only for an external booking: an in-house candidate's
+ * CV lives on their Recruitment record, not here. Needs book-level access, like every other detail
+ * edit. Records the change.
+ */
+export async function replaceInterviewExternalCv(
+  caller: InterviewCalendarCaller,
+  bookingId: string,
+  cv: { bytes: Buffer; fileName: string; mimeType: string },
+): Promise<InterviewBooking> {
+  const row = await loadBookingRow(bookingId);
+  requireCalendarAccess(caller, "book", weekOfInstant(row.starts_at));
+  if (row.candidate_id) throw new Error("This candidate's CV lives on their Recruitment record — edit it there.");
+  const storage = getRecruitmentFileStorage();
+  if (!storage.supportsUpload) throw new Error("CV uploads are not switched on in Phoenix yet.");
+  const stored = await storage.uploadFile({ bytes: cv.bytes, fileName: cv.fileName, mimeType: cv.mimeType });
+  if (!stored.driveFileId) throw new Error("The CV could not be stored. Try again.");
+  const actor = hrIdForStorage(caller.access.hrId);
+  const saved = await saveBooking(row.id, {
+    external_cv_file_id: stored.driveFileId,
+    external_cv_file_name: cv.fileName,
+    external_cv_mime_type: cv.mimeType,
+    updated_by_hr_id: actor,
+  });
+  const who = personName(await loadPeople([caller.access.hrId]), caller.access.hrId) ?? "A colleague";
+  await recordBookingChange(row.id, actor, "cv", `${who} ${row.external_cv_file_id ? "replaced" : "added"} the CV (${cv.fileName}).`);
+  const [booking] = await hydrate([saved], caller);
+  return booking;
+}
+
 function asPlatform(value: string): InterviewPlatform {
   return isInterviewPlatform(value) ? value : "in_office";
 }
@@ -689,21 +821,39 @@ function mapSession(row: SessionRow, people: Map<string, InterviewCalendarPerson
 
 async function hydrate(rows: readonly BookingRow[], caller: InterviewCalendarCaller, now: Date = new Date()): Promise<InterviewBooking[]> {
   if (rows.length === 0) return [];
-  const [candidates, comments, sessions, scorecards] = await Promise.all([
+  const [candidates, comments, sessions, scorecards, changes] = await Promise.all([
     loadCandidates(rows.map((row) => row.candidate_id ?? "")),
     loadComments(rows.map((row) => row.id)),
     loadSessionsById(rows.map((row) => row.session_id ?? "")),
     loadScorecards(rows.map((row) => row.id)),
+    loadBookingChanges(rows.map((row) => row.id)),
   ]);
   const people = await loadPeople([
     ...rows.map((row) => row.created_by_hr_id),
     ...rows.map((row) => row.interviewer_hr_id),
     ...rows.flatMap((row) => row.panelist_hr_ids ?? []),
     ...rows.map((row) => row.outcome_set_by_hr_id),
+    ...rows.map((row) => row.interviewer_confirmation_by_hr_id),
     ...comments.map((comment) => comment.author_hr_id),
     ...scorecards.map((scorecard) => scorecard.evaluator_hr_id),
+    ...changes.map((change) => change.actor_hr_id),
   ]);
   const viewerKey = canonicalHrIdKey(caller.access.hrId);
+
+  // The change history, newest first — one line per recorded change, shown to everyone who can read
+  // the booking (the same lens as its comments).
+  const changesByBooking = new Map<string, InterviewChange[]>();
+  for (const change of changes) {
+    const list = changesByBooking.get(change.booking_id) ?? [];
+    list.push({
+      actorName: personName(people, change.actor_hr_id),
+      at: change.created_at,
+      id: change.id,
+      kind: change.kind,
+      summary: change.summary,
+    });
+    changesByBooking.set(change.booking_id, list);
+  }
 
   // The panel's evaluations. Sensitive — shown only to those who can book (owner/editor/HR) or to
   // someone who is themselves ON the interview; never to a not-signed-in share-link guest.
@@ -772,6 +922,18 @@ async function hydrate(rows: readonly BookingRow[], caller: InterviewCalendarCal
       id: row.id,
       interviewerHrId: hrIdForStorage(row.interviewer_hr_id) ?? null,
       interviewerName: personName(people, row.interviewer_hr_id),
+      // Confirm/decline (owner, 2026-09-26): the chosen interviewer's own answer to the assignment.
+      // Only the lead interviewer may answer, and only while an interview is still to happen.
+      interviewerConfirmation: row.interviewer_confirmation === "confirmed" || row.interviewer_confirmation === "declined" ? row.interviewer_confirmation : null,
+      confirmationAt: row.interviewer_confirmation_at,
+      confirmedByName: personName(people, row.interviewer_confirmation_by_hr_id),
+      declineReason: row.interviewer_confirmation === "declined" ? row.decline_reason?.trim() || null : null,
+      canConfirmInterview:
+        !session &&
+        now.getTime() < endsAt(row.starts_at, row.duration_minutes) &&
+        Boolean(viewerKey) &&
+        viewerKey === canonicalHrIdKey(row.interviewer_hr_id),
+      changeHistory: changesByBooking.get(row.id) ?? [],
       panelists: (row.panelist_hr_ids ?? [])
         .map((hrId) => ({ hrId: hrIdForStorage(hrId) ?? hrId, name: personName(people, hrId) }))
         .filter((member): member is { hrId: string; name: string } => Boolean(member.name)),
@@ -1070,9 +1232,12 @@ export async function listInterviewsToRemindAbout(from: Date, to: Date): Promise
     const candidateName = (candidate?.full_name || row.external_name || "A candidate").trim();
     const platform = session ? asPlatform(session.platform) : asPlatform(row.platform);
     // The lead first, then each panel member; de-duplicated so nobody on twice gets two reminders.
+    // A lead who DECLINED is dropped — he answered "I can't", so he is not reminded (owner, 2026-09-26);
+    // the interview stays for reassignment and the panel is still reminded.
+    const lead = row.interviewer_confirmation === "declined" ? null : row.interviewer_hr_id;
     const attendees: string[] = [];
     const seen = new Set<string>();
-    for (const hrId of [row.interviewer_hr_id, ...(row.panelist_hr_ids ?? [])]) {
+    for (const hrId of [lead, ...(row.panelist_hr_ids ?? [])]) {
       const key = canonicalHrIdKey(hrId);
       if (!key || seen.has(key)) continue;
       seen.add(key);
@@ -1650,7 +1815,10 @@ export async function createInterviewBooking(
     await dropMeeting(zoomConfig, zoom.zoom_meeting_id);
     throw error;
   }
-  const [booking] = await hydrate([data as BookingRow], caller);
+  const bookedRow = data as BookingRow;
+  const bookerName = personName(await loadPeople([caller.access.hrId]), caller.access.hrId) ?? "A colleague";
+  await recordBookingChange(bookedRow.id, actor, "booked", `${bookerName} booked the interview.`);
+  const [booking] = await hydrate([bookedRow], caller);
   return { booking, notice };
 }
 
@@ -1703,12 +1871,32 @@ export async function updateInterviewBooking(
   const externalColumns = resolveExternalContactPatch(row, patch.external);
   const nameFor = async () => (row.candidate_id ? candidateNameFor(row.candidate_id) : row.external_name?.trim() || "Unnamed candidate");
   const timeChanged = [patch.dateKey, patch.startMinutes, patch.durationMinutes].some((value) => value !== undefined);
-  const interviewerColumn = interviewerHrId === undefined ? {} : { interviewer_hr_id: interviewerHrId };
+  // Reassigning the interviewer to a DIFFERENT person clears their predecessor's confirm/decline
+  // answer, so the new interviewer starts unanswered (owner, 2026-09-26).
+  const interviewerChanged = interviewerHrId !== undefined && canonicalHrIdKey(interviewerHrId) !== canonicalHrIdKey(row.interviewer_hr_id);
+  const confirmationReset = interviewerChanged
+    ? { decline_reason: null, interviewer_confirmation: null, interviewer_confirmation_at: null, interviewer_confirmation_by_hr_id: null }
+    : {};
+  const interviewerColumn = interviewerHrId === undefined ? {} : { interviewer_hr_id: interviewerHrId, ...confirmationReset };
   const panelistColumn = panelistHrIds === undefined ? {} : { panelist_hr_ids: panelistHrIds };
   const orgColumns: Record<string, unknown> = {};
   if (patch.area !== undefined) orgColumns.interview_area = orgLabel(patch.area);
   if (patch.line !== undefined) orgColumns.interview_line = orgLabel(patch.line);
   let update: Record<string, unknown>;
+
+  // The change-history line for this edit, recorded after whichever save path runs. Interviewer set
+  // wins over reschedule wins over a plain detail edit — the most notable single change.
+  const editorName = personName(await loadPeople([caller.access.hrId]), caller.access.hrId) ?? "A colleague";
+  const logEdit = async (savedRow: BookingRow) => {
+    if (interviewerChanged) {
+      const to = personName(await loadPeople([interviewerHrId as string]), interviewerHrId as string);
+      await recordBookingChange(savedRow.id, actor, "interviewer", `${editorName} set the interviewer to ${to ?? "someone new"}.`);
+    } else if (timeChanged || patch.platform !== undefined || patch.sessionId !== undefined) {
+      await recordBookingChange(savedRow.id, actor, "rescheduled", `${editorName} changed the interview's time or place.`);
+    } else {
+      await recordBookingChange(savedRow.id, actor, "edited", `${editorName} edited the interview's details.`);
+    }
+  };
 
   // A DETAILS-ONLY edit — the interviewer, the note, or the outside person's name, phone and e-mail —
   // touches no time, place or session, so it needs no bookable window and works on a PAST interview
@@ -1722,6 +1910,7 @@ export async function updateInterviewBooking(
     patch.sessionId === undefined;
   if (detailsOnly) {
     const saved = await saveBooking(row.id, { notes, ...interviewerColumn, ...panelistColumn, ...orgColumns, ...externalColumns, updated_by_hr_id: actor });
+    await logEdit(saved);
     const [booking] = await hydrate([saved], caller);
     return booking;
   }
@@ -1805,12 +1994,15 @@ export async function updateInterviewBooking(
     if (fresh) {
       const saved = await saveBooking(row.id, { ...update, ...interviewerColumn, ...panelistColumn, ...orgColumns, ...externalColumns, updated_by_hr_id: actor });
       await pushWaitingPolls(zoomConfig, { bookingId: row.id }, zoom.zoom_meeting_id);
+      await logEdit(saved);
       const [booking] = await hydrate([saved], caller);
       return booking;
     }
   }
 
-  const [booking] = await hydrate([await saveBooking(row.id, { ...update, ...interviewerColumn, ...panelistColumn, ...orgColumns, ...externalColumns, updated_by_hr_id: actor })], caller);
+  const saved = await saveBooking(row.id, { ...update, ...interviewerColumn, ...panelistColumn, ...orgColumns, ...externalColumns, updated_by_hr_id: actor });
+  await logEdit(saved);
+  const [booking] = await hydrate([saved], caller);
   return booking;
 }
 
@@ -1950,6 +2142,13 @@ export async function setInterviewOutcome(
     .eq("id", row.id);
   if (error) throw error;
   const candidateNote = outcome ? await applyOutcomeToCandidate(caller, row, outcome) : null;
+  const setterName = personName(await loadPeople([caller.access.hrId]), caller.access.hrId) ?? "A colleague";
+  await recordBookingChange(
+    row.id,
+    actor,
+    "outcome",
+    outcome ? `${setterName} recorded the outcome: ${interviewOutcomeLabels[outcome]}.` : `${setterName} cleared the recorded outcome.`,
+  );
   return { booking: await getInterviewBooking(caller, row.id), candidateNote };
 }
 
