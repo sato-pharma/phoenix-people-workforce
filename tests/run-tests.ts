@@ -1897,6 +1897,7 @@ import { runInterviewCalendarTests } from "./interview-calendar.test.ts";
 import { runInterviewCalendarApplicationTests } from "./interview-calendar-application.test.ts";
 import { runScreeningDownloadApplicationTests } from "./screening-download-application.test.ts";
 import { runInterviewReminderTests } from "./interview-reminders.test.ts";
+import { runInterviewDigestTests } from "./interview-digest.test.ts";
 import { runInterviewRequestTests } from "./interview-requests.test.ts";
 import { runInterviewInvitationTests } from "./interview-invitation.test.ts";
 import { runInterviewCalendarIcsTests } from "./interview-calendar-ics.test.ts";
@@ -6639,6 +6640,11 @@ await runTest(
 await runTest(
   "interview reminders go to the chosen interviewer only, District Manager and above, by in-app, email and Telegram: the evening before from 5:00 PM Cairo with the day's list and one hour before each interview, each sent once by its key",
   runInterviewReminderTests,
+);
+
+await runTest(
+  "the weekly interview digest summarizes the week to the Super Admin(s) only, in-app + Telegram, never e-mail and never the CEO, once per week by its key, and is wired to the Sunday-08:00-Cairo cron",
+  runInterviewDigestTests,
 );
 
 await runTest(

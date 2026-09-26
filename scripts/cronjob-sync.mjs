@@ -132,6 +132,16 @@ const JOBS = {
     // Nowhere near the 30s platform cut. 300 matches the rest of the account.
     requestTimeout: 300,
   },
+  "interview-digest": {
+    title: "Phoenix — weekly interview digest",
+    path: "/api/cron/interview-digest",
+    // 08:00 Cairo on Sunday (wdays 0), the start of the working week — a week-ahead + week-behind
+    // summary of the interview calendar, to the Super Admin(s) only, in-app + Telegram. Weekly, so a
+    // generous heartbeat grace; a weekly idempotency key means a repeat in the week tells nobody twice.
+    schedule: { hours: [8], minutes: [0], mdays: [-1], months: [-1], wdays: [0] },
+    // One indexed read of two weeks of interviews, then a notification or two. Well under the cut.
+    requestTimeout: 300,
+  },
   "job-heartbeat-sweep": {
     title: "Phoenix — job heartbeat sweep",
     path: "/api/cron/job-heartbeat-sweep",
