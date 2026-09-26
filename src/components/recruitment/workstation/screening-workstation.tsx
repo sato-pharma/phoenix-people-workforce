@@ -288,6 +288,17 @@ export function ScreeningWorkstation({
 
   const [loaded, setLoaded] = useState<Record<string, LoadedCandidate>>({});
   const [loadError, setLoadError] = useState<Record<string, string>>({});
+  /**
+   * The WhatsApp conversation each candidate's application is built from, keyed by candidate id — the
+   * id the "Download application" and "Print application" buttons act on (owner, 2026-09-26: the same
+   * two buttons WhatsApp Applicants carries, here on the screening page).
+   *
+   * A value PRESENT and holding `null` means "asked, and this person never applied on WhatsApp", which
+   * draws no buttons — distinct from an ABSENT key, which means the lookup has not run yet. Fetched
+   * lazily and non-blocking below, exactly as the interview calendar does it: the CV and the panel
+   * never wait on it, and a lookup that fails simply leaves the buttons off.
+   */
+  const [applicationSessions, setApplicationSessions] = useState<Record<string, string | null>>({});
   const [decided, setDecided] = useState<Record<string, CandidateStatus>>({});
   /**
    * The star put on a CV in THIS sitting, which outranks the stored one until the page reloads.
@@ -491,6 +502,30 @@ export function ScreeningWorkstation({
     }, 2500);
     return () => clearTimeout(timer);
   }, [entry, selectedId]);
+
+  // Does the selected candidate have a WhatsApp application to offer? Asked once per candidate, the
+  // moment they are selected, and never again — the answer does not change while the page is open. The
+  // `in` guard is why the write below is safe as a dependency: a candidate already answered (or answered
+  // `null`) is skipped, so this settles rather than looping. Best-effort, like the seen ping above: a
+  // refusal or a network blip only means the buttons stay off, never a broken CV or panel.
+  useEffect(() => {
+    const id = selectedId;
+    if (!id || id in applicationSessions) return;
+    let live = true;
+    void fetch(`/api/recruitment/candidates/${id}/application`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { application?: { sessionId?: unknown } | null } | null) => {
+        const sessionId =
+          data && data.application && typeof data.application.sessionId === "string" && data.application.sessionId !== ""
+            ? data.application.sessionId
+            : null;
+        if (live) setApplicationSessions((prev) => ({ ...prev, [id]: sessionId }));
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [applicationSessions, selectedId]);
 
   const goToNext = useCallback(() => {
     if (positionInList < 0) return;
@@ -1444,6 +1479,7 @@ export function ScreeningWorkstation({
             {selected ? (
               <>
                 <WorkstationReviewHeader
+                  applicationSessionId={applicationSessions[selected.id] ?? null}
                   busy={busy}
                   canDecide={canDecide}
                   canReply={canReply}
