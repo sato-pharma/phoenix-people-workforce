@@ -69,6 +69,7 @@ import {
   type PlanExceptionType,
   type PlanItemDraft,
 } from "@/lib/phoenix-crm/plan-rules";
+import { clusterByBrick } from "@/lib/phoenix-crm/brick-groups";
 import { normalizeArea, suggestForDay, type DaySuggestion, type PlannerCustomer, type PlannerPlace } from "@/lib/phoenix-crm/suggestions";
 import { formatTimingWindow, PHOENIX_CRM_WEEKDAY_NAMES, windowOverlapsRange, windowsForWeekday } from "@/lib/phoenix-crm/timings";
 import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmPlanStatus } from "@/lib/phoenix-crm/types";
@@ -284,7 +285,27 @@ type DayRow = {
   isolated: boolean;
   nearestKm: number | null;
   startMinute: number | null;
+  /**
+   * The brick of the place he is planned at — for grouping his day geographically (A3).
+   *
+   * `PlanItemView.brickName` has been on the wire since the planner shipped; the row simply dropped
+   * it, which is why the day a rep is about to DRIVE read alphabetically while the candidates he
+   * picked it from read by brick.
+   */
+  brick: string | null;
 };
+
+/**
+ * A day's rows as a route: bricks in the order `compareRows` already put them, rows ordered inside.
+ *
+ * `"first-appearance"` on purpose (A3) — the candidate list a rep SEARCHES is alphabetical, but the
+ * day he is about to DRIVE is not an index, and re-sorting the clusters by name would scatter his
+ * morning. Callers sort with `compareRows` first, so AM comes before PM and the receiving hour
+ * orders each cluster.
+ */
+function dayBricks(rows: readonly DayRow[]) {
+  return clusterByBrick(rows, (row) => row.brick, "first-appearance");
+}
 
 function compareRows(left: DayRow, right: DayRow): number {
   return (
@@ -322,6 +343,7 @@ function liveRow(entry: PlaceEntry, item: PlanItemDraft, day: PlanDayView, rules
     isolated: false,
     nearestKm: null,
     startMinute: receives ? windows[0].startMinute : null,
+    brick: place.brick,
   };
 }
 
@@ -352,6 +374,7 @@ function pendingRow(customer: PlannerCustomer): DayRow {
     isolated: false,
     nearestKm: null,
     startMinute: null,
+    brick: null,
   };
 }
 
@@ -388,6 +411,7 @@ function savedRow(item: PlanItemView, index: PlanIndex, rules: PlanRules): DayRo
     isolated: item.isolated,
     nearestKm: item.nearestKm,
     startMinute: item.startMinute,
+    brick: item.brickName,
   };
 }
 
@@ -424,6 +448,8 @@ function draftRow(item: PlanItemDraft, day: PlanDayView, index: PlanIndex, rules
     isolated: false,
     nearestKm: null,
     startMinute: null,
+    // The customer or the place has left the list, so there is nothing to look a brick up from.
+    brick: null,
   };
 }
 
@@ -1723,19 +1749,36 @@ function DayScreen({
               {state.editing ? "Nobody is placed on this day yet. Choose them under Add customers." : "Nothing was planned on this day."}
             </p>
           ) : (
+            /* A3, owner 2026-09-26 ("I want the thing to be as easiest as it could be"): the day he is
+               about to DRIVE reads as a route. The bricks order the GROUPS in first-appearance order,
+               which is the order `compareRows` already sorted the rows into (AM, then the receiving
+               hour, then the name), and `compareRows` still orders the rows INSIDE one brick. So he
+               sees his morning laid out cluster by cluster before he taps anything.
+
+               Nothing here is a spread flag: no km, no "far apart", no nearest-distance. Those stay
+               behind `showSpread`, which is false for a rep on his own plan. */
             <div className="grid min-w-0 gap-2">
-              {state.rows.map((row) => (
-                <PlannedRow
-                  editing={state.editing}
-                  idPrefix={idPrefix}
-                  key={row.customerId}
-                  locked={locked}
-                  onReason={(exceptionType, exceptionNote) => onReason(day.date, row.customerId, exceptionType, exceptionNote)}
-                  onRemove={() => onRemove(day.date, row.customerId)}
-                  row={row}
-                  showSpread={showSpread}
-                  weekdayName={weekdayName}
-                />
+              {dayBricks(state.rows).map((group, _index, groups) => (
+                <div className="grid min-w-0 gap-2" key={group.key}>
+                  {/* One brick for the whole day needs no heading — it would label the obvious and
+                      cost him a line of screen. Two or more, and the headings are the route. */}
+                  {groups.length > 1 ? (
+                    <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">{group.label}</p>
+                  ) : null}
+                  {group.rows.map((row) => (
+                    <PlannedRow
+                      editing={state.editing}
+                      idPrefix={idPrefix}
+                      key={row.customerId}
+                      locked={locked}
+                      onReason={(exceptionType, exceptionNote) => onReason(day.date, row.customerId, exceptionType, exceptionNote)}
+                      onRemove={() => onRemove(day.date, row.customerId)}
+                      row={row}
+                      showSpread={showSpread}
+                      weekdayName={weekdayName}
+                    />
+                  ))}
+                </div>
               ))}
             </div>
           )}
@@ -1991,21 +2034,9 @@ function AddCustomers({
   const otherDaysOf = (customerId: string): number[] =>
     [6, 0, 1, 2, 3, 4, 5].filter((other) => other !== weekday && (receivingDaysByCustomer.get(customerId)?.has(other) ?? false));
 
-  // Cluster a list by brick, so a day's candidates read in geographic groups and fewer visits land far
-  // apart. A customer with no brick falls into one "No brick" group.
-  const brickGroups = (list: ReadonlyArray<DaySuggestion>): Array<{ key: string; label: string; rows: DaySuggestion[] }> => {
-    const groups = new Map<string, { label: string; rows: DaySuggestion[] }>();
-    for (const suggestion of list) {
-      const key = normalizeArea(suggestion.brick) ?? "—";
-      const label = suggestion.brick?.trim() ? `Brick ${suggestion.brick.trim()}` : "No brick";
-      const group = groups.get(key) ?? { label, rows: [] };
-      group.rows.push(suggestion);
-      groups.set(key, group);
-    }
-    return [...groups.entries()]
-      .map(([key, group]) => ({ key, label: group.label, rows: group.rows }))
-      .sort((left, right) => left.label.localeCompare(right.label));
-  };
+  // A list he is SEARCHING is an index, so it stays alphabetical — "Brick D14" where he expects to
+  // find it. The shared helper is the same one the planned day above uses with "first-appearance".
+  const brickGroups = (list: ReadonlyArray<DaySuggestion>) => clusterByBrick(list, (suggestion) => suggestion.brick, "alphabetical");
 
   function filterBy(update: () => void) {
     update();

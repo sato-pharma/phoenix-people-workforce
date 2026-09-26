@@ -1541,6 +1541,7 @@ import { runPhoenixCrmPlaceLocationFrozenTests } from "./phoenix-crm-place-locat
 import { runPhoenixCrmRetiredPilotRedirectTests } from "./phoenix-crm-retired-pilot-redirect.test.ts";
 import { runPhoenixCrmBlindHalfTests } from "./phoenix-crm-blind-half.test.ts";
 import { runPhoenixCrmLineNotOpenTests } from "./phoenix-crm-line-not-open.test.ts";
+import { runPhoenixCrmBrickGroupsTests } from "./phoenix-crm-brick-groups.test.ts";
 import { runPhoenixCrmLastVisitProductsTests } from "./phoenix-crm-last-visit-products.test.ts";
 import { runPhoenixCrmLocationIntegrityTests } from "./phoenix-crm-location-integrity.test.ts";
 import { runPhoenixCrmPortalSidebarTests } from "./phoenix-crm-portal-sidebar.test.ts";
@@ -5142,6 +5143,11 @@ await runTest(
 await runTest(
   "Phoenix CRM fills the products in from his own last visit (GOLDEN RULE #1, the EASY half — owner, 2026-09-26, \"nothing is asked twice\": the newest earlier visit wins with capturedAt breaking a same-day tie, a product retired from the line never comes back, a customer he has never visited is ABSENT rather than present-and-empty, the read stops strictly before today so his own morning cannot prefill itself, and both apps say which day it came from)",
   runPhoenixCrmLastVisitProductsTests,
+);
+
+await runTest(
+  "Phoenix CRM lays a rep's day out as a route, by brick (A3 — owner, 2026-09-26, \"every brick be highlighted, the doctors in the same bricks are highlighted with the same colour\": one shared helper for the planned day, the candidate list and the phone; \"faisal\" and \"Faisal \" are ONE brick; a day he will DRIVE keeps its order while a list he SEARCHES is alphabetical; customers with no place yet are one group and always last; the phone answers exactly as the browser does; and the brick heading carries no spread flag, which stays the manager's)",
+  runPhoenixCrmBrickGroupsTests,
 );
 
 await runTest(

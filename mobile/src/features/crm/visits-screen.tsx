@@ -20,6 +20,8 @@ import { CrmLivePhoto } from "@/components/crm/live-photo";
 import { CrmSpeakComment } from "@/components/crm/speak-comment";
 import { ErrorNotice, LoadingScreen, PrimaryButton, SecondaryButton, StatTile } from "@/components/ui";
 import { crmErrorCode, crmErrorMessage, crmGet, crmPost, crmUrl, newClientId } from "@/lib/crm/client";
+import { brickTintColorMap } from "@/components/crm/brick-tints";
+import { clusterByBrick, NO_BRICK_KEY } from "@/lib/crm/brick-groups";
 import { cairoClock, dayLabel, dayLabelLong, shiftIsoDay } from "@/lib/crm/format";
 import { PendingVisit, PendingValidate, reuseWindowOver } from "@/features/crm/handoff";
 import {
@@ -452,6 +454,17 @@ function CustomerPicker({
       (listType === "all" || customer.listType === listType) &&
       (!needle || customer.name.toLowerCase().includes(needle) || (customer.speciality ?? "").toLowerCase().includes(needle)),
   );
+  // A3 (owner, 2026-09-26): his day reads geographically before he taps anything. The same helper and
+  // the same eight hues as the browser — the phone's are hex because React Native has no class names.
+  //
+  // The tints are keyed off the WHOLE offered list, never `shown`: a brick that changes colour as he
+  // searches is no use as a landmark.
+  const groups = clusterByBrick(shown, (customer) => customer.brickName, "first-appearance");
+  const tints = brickTintColorMap(
+    clusterByBrick(offered, (customer) => customer.brickName, "first-appearance")
+      .filter((group) => group.key !== NO_BRICK_KEY)
+      .map((group) => group.key),
+  );
 
   return (
     <View style={{ gap: space.md }}>
@@ -472,7 +485,15 @@ function CustomerPicker({
         />
       ) : (
         <View style={{ gap: space.sm }}>
-          {shown.map((customer) => {
+          {groups.map((group) => (
+            <View key={group.key} style={{ gap: space.sm }}>
+              {/* One brick for the whole list needs no heading — it would label the obvious. */}
+              {groups.length > 1 ? (
+                <View style={{ borderLeftColor: tints.get(group.key)?.bar ?? palette.accent, borderLeftWidth: 3, paddingLeft: space.sm }}>
+                  <Text style={[type.meta, { color: palette.ink2, letterSpacing: 1, textTransform: "uppercase" }]}>{group.label}</Text>
+                </View>
+              ) : null}
+              {group.rows.map((customer) => {
             const selected = customer.customerId === selectedId;
             const off = disabled || customer.visitedToday;
             return (
@@ -507,7 +528,9 @@ function CustomerPicker({
                 </Text>
               </Pressable>
             );
-          })}
+              })}
+            </View>
+          ))}
         </View>
       )}
     </View>
