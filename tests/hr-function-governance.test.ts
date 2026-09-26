@@ -356,12 +356,6 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   // like role-recipients.ts. The recipients receive an in-app + Telegram message and a link to the
   // calendar they already reach; the notice carries no salary, personnel or payroll figure.
   "src/lib/recruitment/interview-request-notifications.ts",
-  // Names "Super Admin" and "HR Operations" in resolveInterviewDigestRecipients, added 2026-09-26
-  // (owner: "also send the digest to HR Operations"). Reviewed verdict: it names the two seats only
-  // to pick who RECEIVES the weekly interview digest — a read-only, count-only summary by in-app +
-  // Telegram — exactly like interview-request-notifications.ts above. It grants nothing and gates
-  // nothing; the digest carries no salary, personnel or payroll figure, and never an e-mail.
-  "src/lib/recruitment/interview-digest.ts",
   "src/lib/reports/organogram.ts",
   "src/lib/resignations/service.ts",
   // Names HR Advisory in canUseSatoEmail, added 2026-09-12 for the Sato Email Composer. Owner

@@ -56,7 +56,6 @@ import {
   interviewOutcomeLabels,
   isInterviewPlatform,
   isInterviewVerdict,
-  interviewOutcomeGroup,
   readInterviewOutcome,
   resolveCalendarRole,
   roleMeets,
@@ -1154,72 +1153,6 @@ export type ReminderInterview = {
  * not a caller's, so it never goes through the gate; each row leaves the building only as a notice to
  * the one attendee named on it. The plan de-duplicates delivery per attendee by its own key.
  */
-/** The weekly recruitment-interview digest's numbers, over a window either side of `now`. */
-export type InterviewDigestSummary = {
-  windowDays: number;
-  upcomingCount: number;
-  heldCount: number;
-  decidedCount: number;
-  awaitingCount: number;
-  attendedCount: number;
-  noShowCount: number;
-  avgDaysToDecision: number | null;
-};
-
-/**
- * The digest's numbers: interviews coming up in the next `windowDays`, and those HELD in the last
- * `windowDays` broken down by decided / awaiting a decision / attended / did-not-come, plus the
- * average days from an interview to its outcome being recorded. A SYSTEM read; it counts, names nobody.
- */
-export async function summarizeInterviewsForDigest(now: Date = new Date(), windowDays = 7): Promise<InterviewDigestSummary> {
-  const from = new Date(now.getTime() - windowDays * 86_400_000);
-  const to = new Date(now.getTime() + windowDays * 86_400_000);
-  const rows = await bookingsBetween(from, to);
-  const nowMs = now.getTime();
-  let upcoming = 0;
-  let held = 0;
-  let decided = 0;
-  let awaiting = 0;
-  let attended = 0;
-  let noShow = 0;
-  let decisionDaysSum = 0;
-  let decisionDaysCount = 0;
-  for (const row of rows) {
-    const startMs = new Date(row.starts_at).getTime();
-    const outcome = readInterviewOutcome(row.outcome);
-    if (endsAt(row.starts_at, row.duration_minutes) <= nowMs) {
-      held += 1;
-      if (outcome) {
-        decided += 1;
-        const group = interviewOutcomeGroup(outcome);
-        if (group === "attended") attended += 1;
-        else if (group === "did_not_come") noShow += 1;
-        if (row.outcome_set_at) {
-          const days = (new Date(row.outcome_set_at).getTime() - startMs) / 86_400_000;
-          if (days >= 0) {
-            decisionDaysSum += days;
-            decisionDaysCount += 1;
-          }
-        }
-      } else {
-        awaiting += 1;
-      }
-    } else if (startMs > nowMs && !outcome) {
-      upcoming += 1;
-    }
-  }
-  return {
-    attendedCount: attended,
-    avgDaysToDecision: decisionDaysCount > 0 ? Math.round((decisionDaysSum / decisionDaysCount) * 10) / 10 : null,
-    awaitingCount: awaiting,
-    decidedCount: decided,
-    heldCount: held,
-    noShowCount: noShow,
-    upcomingCount: upcoming,
-    windowDays,
-  };
-}
-
 export async function listInterviewsToRemindAbout(from: Date, to: Date): Promise<ReminderInterview[]> {
   const rows = (await bookingsBetween(from, to)).filter((row) => !row.outcome && (row.interviewer_hr_id || (row.panelist_hr_ids?.length ?? 0) > 0));
   if (rows.length === 0) return [];

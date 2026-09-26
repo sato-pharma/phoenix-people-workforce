@@ -1915,7 +1915,6 @@ import { runInterviewCalendarTests } from "./interview-calendar.test.ts";
 import { runInterviewCalendarApplicationTests } from "./interview-calendar-application.test.ts";
 import { runScreeningDownloadApplicationTests } from "./screening-download-application.test.ts";
 import { runInterviewReminderTests } from "./interview-reminders.test.ts";
-import { runInterviewDigestTests } from "./interview-digest.test.ts";
 import { runInterviewTier3Tests } from "./interview-tier3.test.ts";
 import { runInterviewRequestTests } from "./interview-requests.test.ts";
 import { runInterviewInvitationTests } from "./interview-invitation.test.ts";
@@ -6745,10 +6744,6 @@ await runTest(
   runInterviewReminderTests,
 );
 
-await runTest(
-  "the weekly interview digest summarizes the week to the Super Admin(s) only, in-app + Telegram, never e-mail and never the CEO, once per week by its key, and is wired to the Sunday-08:00-Cairo cron",
-  runInterviewDigestTests,
-);
 
 await runTest(
   "Tier 3: the lead interviewer confirms/declines (a declined lead is dropped from reminders and a reassignment clears the answer), an outside candidate's CV is replaced after booking, every change is kept in a per-interview history, and the routes, registry and migration are wired",
