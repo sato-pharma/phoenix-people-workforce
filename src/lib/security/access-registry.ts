@@ -477,6 +477,10 @@ export const accessRegistry = [
   // caller asks for (it used to serve a bundled snapshot), so the audit row carries the window
   // that is actually in the file — see app/api/business-review/export/route.ts.
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/business-review/export", permission: null, guard: "domain-helper" }),
+  // The Sales Review pack. Same shape as the export above, and the same reason: the scope is
+  // resolved inside the route from the SESSION and never read from the request, so there is no
+  // permission to name here — a district manager exporting gets his own district and nothing else.
+  sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/business-review/pack", permission: null, guard: "domain-helper" }),
 
   sessionApi({ methods: allMethods, pattern: "/api/coaching/**", permission: { resource: "coaching", action: "read" }, guard: "domain-helper" }),
   sessionApi({ methods: allMethods, pattern: "/api/contracts/**", permission: { resource: "contracts", action: "update" }, csrfRequired: true }),

@@ -27,9 +27,17 @@
 import { EmployeePortalEmptyState, EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
 import { BusinessReviewPortal } from "@/components/business-review/portal-review.client";
 import {
+  applyRepScope,
   applySeatScope,
   loadReviewPortalScope,
 } from "@/lib/business-review/portal-scope";
+import { concentrationForAreas, type ConcentrationFacts } from "@/lib/business-review/concentration";
+import { PackPicker } from "@/components/business-review/pack-picker.client";
+import {
+  defaultSelectionFor,
+  narrowSelection,
+  needsClosingDetail,
+} from "@/lib/business-review/pack/metrics";
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import {
   bandFor,
@@ -40,6 +48,8 @@ import {
   getReviewCompanyThresholds,
   getReviewDataset,
   loadBusinessReview,
+  loadReviewConcentration,
+  REVIEW_LINE_CODES,
   payoutPercentageFor,
   REVIEW_SOURCE_NOTICE,
 } from "@/lib/business-review/service";
@@ -67,7 +77,7 @@ function firstSearchParam(value: string | string[] | undefined) {
 }
 
 type PageProps = {
-  searchParams?: Promise<{ from?: string | string[]; to?: string | string[] }>;
+  searchParams?: Promise<{ from?: string | string[]; m?: string | string[]; to?: string | string[] }>;
 };
 
 export default async function PortalBusinessReviewPage({ searchParams }: PageProps) {
@@ -104,6 +114,13 @@ export default async function PortalBusinessReviewPage({ searchParams }: PagePro
   // files have not landed. Owner ruling 2026-09-26 — every heading on this page names it, never the
   // requested range, because the spend and activity halves stop at the same month as the sales now.
   const figureLabel = figureWindowLabel(coverage);
+
+  // WHAT THIS REVIEW SHOWS. Absent `m` means this level's defaults; `m` present — even empty —
+  // means exactly that selection, so a viewer can strip the page back to its headline. Whatever
+  // arrives is narrowed to what the level can answer, because a pack link built at company level
+  // may well be opened by a district manager and rendering an empty Line comparison would tell him
+  // his line has no data.
+  const requested = params?.m == null ? null : (Array.isArray(params.m) ? params.m : [params.m]).filter(Boolean);
   const visitsOk = hasFigures(coverage, "visits");
   const shared = {
     available,
@@ -170,6 +187,57 @@ export default async function PortalBusinessReviewPage({ searchParams }: PagePro
     );
   }
 
+  // ---- rep scope: his own areas, and no district row at all ----
+  //
+  // A rep sees the territory he stands in. He is NOT given his district's total — that is his
+  // manager's figure, and showing it here is the upward read the scope rule forbids. So `dms` is
+  // deliberately empty and the spend tiles are zero: marketing and outstation are district budgets,
+  // not a rep's, and printing a district's spend under a rep's name would read as his.
+  if (scope.kind === "rep") {
+    const mine = applyRepScope(ds, scope.hrId);
+    if (mine.areas.length === 0) {
+      return shell(
+        <EmployeePortalEmptyState
+          message={
+            coverage.empty
+              ? `No sales data exists for ${figureLabel} at all — not for your areas and not for anyone else's. Pick a different period.`
+              : `No sales in ${figureLabel} were attributed to you in the ${ds.meta.line} line's canonical data. If you carried a territory in these months, this is an attribution gap rather than an empty area — please report it before drawing any conclusion.`
+          }
+          title={coverage.empty ? "No data in this period" : "Your territory could not be matched"}
+        />,
+        `${figureLabel} for your own areas, as ${access.role}.`,
+        figureLabel,
+      );
+    }
+    return shell(
+      <BusinessReviewPortal
+        {...shared}
+        areas={mine.areas.map(withAreaBand)}
+        dms={[]}
+        spend={{ marketing: 0, outstation: 0 }}
+        headline={headline}
+        keyProducts={keyProducts}
+        lineRows={[]}
+        months={ds.meta.months}
+        productTables={[]}
+        scopeLabel={scope.label}
+        thresholds={ds.meta.thresholds}
+        visitsAvailable={ds.visits.available}
+      />,
+      `${figureLabel} for your own areas, as ${access.role}.`,
+      figureLabel,
+    );
+  }
+
+  // ---- the customer-grain read, for a district and only for a district ----
+  //
+  // Where this district's money came from — bricks, customers, channel. Loaded HERE rather than in
+  // the bundle because the bundle is cached across viewers and these rows are not the same for
+  // everyone: El Qema's are removed for all but the Super Admin. See loadReviewConcentration.
+  //
+  // A district only. The company and line views above are already rendered, and a rep's own panel
+  // is a separate ruling — neither pays for this read.
+
   // ---- seat scope (RM / DSM): only their own territory ----
   // Filtering happens before any ranking or truncation (PR #1487), and every figure the component
   // renders is summed from these rows — it never reads ds.line.*, which is the whole line. The
@@ -193,11 +261,52 @@ export default async function PortalBusinessReviewPage({ searchParams }: PagePro
     );
   }
 
+  // One read, then narrowed to the areas this viewer actually holds. A failed read must not take
+  // the page down with it: the achievement, spend and activity figures are all still correct, so
+  // the panels are dropped and everything else renders.
+  // The people this viewer may see: the ones whose own month-by-month attribution placed them in
+  // one of HIS districts. Never the line's people, which is what the deep tab showed before the
+  // 2026-09-26 line-scoping fix.
+  const seatIds = new Set(scope.dmSeatIds);
+  // A district pack. `narrowSelection` keeps catalogue order, so two people who tick the same
+  // metrics get the same page in the same sequence.
+  const metrics = requested == null
+    ? defaultSelectionFor("district")
+    : narrowSelection(requested, "district");
+
+  // The customer-grain read happens ONLY when a metric that needs it is ticked. It is a round trip
+  // per line per month, and a manager who untickled the brick, customer and channel metrics must not
+  // pay for them. A failed read drops the panels and leaves the rest of the page correct —
+  // achievement, spend and activity do not depend on it.
+  let concentration: ConcentrationFacts | null = null;
+  try {
+    if (needsClosingDetail(metrics)) {
+      const detail = await loadReviewConcentration({ coverage, viewer: access });
+      concentration = concentrationForAreas(
+        detail.byLine[REVIEW_LINE_CODES[scope.line]] ?? [],
+        areas.map((area) => area.areaCode),
+      );
+    }
+  } catch {
+    concentration = null;
+  }
+
   return shell(
     <BusinessReviewPortal
       {...shared}
       areas={areas.map(withAreaBand)}
+      concentration={concentration}
       dms={dms.map(withDmBand)}
+      people={ds.people.filter((p) => p.dmSeatId != null && seatIds.has(p.dmSeatId))}
+      metrics={metrics}
+      picker={
+        <PackPicker
+          action="/employee-portals/business-review"
+          hidden={{ from: window.from, to: window.to }}
+          level="district"
+          selected={metrics}
+        />
+      }
       spend={{
         marketing: dms.reduce((sum, d) => sum + d.marketingCost, 0),
         outstation: dms.reduce((sum, d) => sum + d.outstationCost, 0),

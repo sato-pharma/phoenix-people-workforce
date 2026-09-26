@@ -39,6 +39,13 @@ export type AuditEntityType =
   // Retired name, kept in the union so historical audit rows still typecheck. Nothing writes
   // it any more: the module stopped being a fixed S1 report when it grew a period filter.
   | "business_review_s1_export"
+  // The self-service Sales Review pack (2026-09-26). ITS OWN TYPE rather than folded into
+  // `business_review_export`, because the two hand over different things: the export is the fixed
+  // company workbook, while the pack is a CHOSEN-METRICS performance document about NAMED people,
+  // scoped to one territory and built in whatever format was asked for. Its row carries the metrics
+  // that were ticked, so "who pulled a pack covering this district, and what was in it" stays
+  // answerable without reading the newValues of every export row ever written.
+  | "business_review_pack"
   | "calendar_event"
   // The device register. `company_device` is the asset — registered, sent for repair, marked lost,
   // stolen or retired. `device_assignment` is one custody event against it — issued, returned, or

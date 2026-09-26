@@ -3,10 +3,11 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import {
+  applyRepScope,
   applySeatScope,
+  DISTRICT_SEAT_TIERS,
   isDistrictSeatTier,
   resolveReviewPortalScopeFromOrg,
-  DISTRICT_SEAT_TIERS,
   type OrgSeat,
   type ReviewOrgSnapshot,
   type ReviewPortalScope,
@@ -67,6 +68,9 @@ const ORG: ReviewOrgSnapshot = {
     "B-122": "CNS",
     "A-10": "Anti Infective",
     "A-99": null,
+    // Two medical reps: one whose employee record carries a line, one whose does not.
+    "R-500": "Pedia",
+    "R-501": null,
   },
   seats: [
     seat("RSM", "SEAT-PED-RSM", "pedia", "PD-0001", PED),
@@ -214,12 +218,94 @@ export async function runBusinessReviewPortalScopeTests(): Promise<void> {
   //
   // The fail-closed property. Somebody who still occupies a district seat but whose Phoenix role has
   // been changed gets what their ROLE carries today, not what their seat once did.
-  for (const nearMiss of ["District Sales Manager", "district manager", "DM", "Medical Rep", ""]) {
+  // "Medical Rep" was in this list until 2026-09-26, when the owner gave a rep his own list. It is
+  // a real role now, with its own branch and its own tests below — so it belongs nowhere near a list
+  // of strings that must resolve to nothing.
+  for (const nearMiss of ["District Sales Manager", "district manager", "DM", "Rep", ""]) {
     assert.equal(
       resolveReviewPortalScopeFromOrg({ hrId: "B-154", sessionRole: nearMiss }, ORG).kind,
       "none",
       `"${nearMiss}" is not "District Manager" and must not be treated as it`,
     );
+  }
+
+  // ────────────────────────── 2b. a medical rep sees HIS OWN list, and nothing else
+  //
+  // Owner ruling, 2026-09-26: "yes — his own list only". Until that day this module refused him in
+  // so many words. The scope is his HR ID rather than an org seat deliberately: `au_v_org_tree`
+  // carries REP seats, but loading them would pull every rep in the company into a snapshot read on
+  // every manager's page load, and the seat carries no area anyway.
+  {
+    const rep = resolveReviewPortalScopeFromOrg(
+      { hrId: "R-500", sessionRole: "Medical Rep", viewerName: "A Medical Rep" },
+      ORG,
+    );
+    assert.equal(rep.kind, "rep", "a medical rep with a line on his record gets his own territory");
+    if (rep.kind === "rep") {
+      assert.equal(rep.line, "pedia", "the line comes from his employee record, the only place it is held");
+      assert.equal(rep.hrId, "R-500", "normalised, because HR ids reach this code in three cases");
+      assert.match(rep.label, /own territory/);
+    }
+
+    // SCOPE RUNS DOWNWARD ONLY and a rep is the bottom. Whatever he is handed, he never resolves to
+    // a district, a line or the company — the three shapes that would show him a teammate.
+    for (const kind of ["company", "line", "seats"]) {
+      assert.notEqual(rep.kind, kind, `a rep must never resolve to a "${kind}" scope`);
+    }
+
+    // Case does not decide access.
+    assert.equal(
+      resolveReviewPortalScopeFromOrg({ hrId: "r-500", sessionRole: "Medical Rep" }, ORG).kind,
+      "rep",
+      "a lower-cased HR id is the same person — a plain .eq on these has hidden 28% of rows before",
+    );
+
+    // No line on the record is a REFUSAL WITH A REASON, never a silent company-wide fallback.
+    const noLine = resolveReviewPortalScopeFromOrg({ hrId: "R-501", sessionRole: "Medical Rep" }, ORG);
+    assert.equal(noLine.kind, "none", "a rep with no line resolves to nothing rather than to everything");
+    assert.match(
+      noLine.kind === "none" ? noLine.reason : "",
+      /No line is recorded/,
+      "and it says why, so it reads as a record gap rather than as a decision about him",
+    );
+
+    // An unknown HR id is still refused, rep branch or not.
+    assert.equal(
+      resolveReviewPortalScopeFromOrg({ hrId: "R-NOBODY", sessionRole: "Medical Rep" }, ORG).kind,
+      "none",
+    );
+  }
+
+  // ────────────────────────── 2c. applyRepScope hands back HIS areas and NO district row
+  {
+    // A deliberate partial: `applyRepScope` reads nothing but `areaCode` and `repHrIds`, and
+    // building four whole AreaSummary objects here would bury the one thing under test. The cast is
+    // the honest way to say that — an `AreaSummary` carries some forty fields.
+    const area = (code: string, repHrIds: string[]) =>
+      ({ area: code, areaCode: code, dmSeatId: "SEAT-X", repHrIds }) as unknown as AreaSummary;
+    const ds = {
+      areas: [area("CA1", ["R-500"]), area("CA2", ["R-500", "R-777"]), area("CA3", ["R-777"])],
+    };
+
+    const mine = applyRepScope(ds, "R-500");
+    assert.deepEqual(
+      mine.areas.map((a) => a.areaCode),
+      ["CA1", "CA2"],
+      "his own areas, including one he shares — never a third he has no sales in",
+    );
+    assert.equal(
+      "dms" in mine,
+      false,
+      "and NO district rows at all: his district total is his manager’s figure, and handing it down is the upward read the scope rule forbids",
+    );
+
+    assert.deepEqual(
+      applyRepScope(ds, "r-500").areas.map((a) => a.areaCode),
+      ["CA1", "CA2"],
+      "case does not decide what a rep can see",
+    );
+    assert.deepEqual(applyRepScope(ds, "R-NOBODY").areas, [], "an unknown id gets nothing, never everything");
+    assert.deepEqual(applyRepScope(ds, "   ").areas, [], "and neither does a blank one");
   }
 
   // ────────────────────────── 3. the denial paths
@@ -234,14 +320,22 @@ export async function runBusinessReviewPortalScopeTests(): Promise<void> {
       "and whitespace is not an HR ID",
     );
 
-    // A Medical Rep is not an oversight — it is the documented design. The reason has to say so,
-    // or the owner gets asked to "fix" an access bug that is a decision.
-    const rep = resolveReviewPortalScopeFromOrg({ hrId: "B-200", sessionRole: "Medical Rep" }, ORG);
-    assert.equal(rep.kind, "none");
+    // 🔴 This block used to pin "Medical Representatives have no access to this module by design".
+    // That sentence is GONE — the owner opened the module to reps on 2026-09-26, own list only, and
+    // the rep cases live in section 2b above. What remains is the role that carries no territory at
+    // all: it must read as a gap to REPORT rather than as a verdict on the person, because the
+    // opposite reading is what sends somebody to the owner to "fix" a decision.
+    const noScope = resolveReviewPortalScopeFromOrg({ hrId: "B-200", sessionRole: "HR Operations" }, ORG);
+    assert.equal(noScope.kind, "none");
     assert.match(
-      rep.kind === "none" ? rep.reason : "",
-      /Medical Representatives have no access to this module by design/,
-      "a role outside the module is told this is by design, not that something is broken",
+      noScope.kind === "none" ? noScope.reason : "",
+      /organogram gap rather than a decision about you/,
+      "a role with no territory is invited to report it, not told it is excluded",
+    );
+    assert.doesNotMatch(
+      noScope.kind === "none" ? noScope.reason : "",
+      /Medical Representatives have no access/,
+      "and the retired sentence must not come back with the old denial",
     );
 
     // A district manager with no seat is the OPPOSITE case and must never be told the same thing.

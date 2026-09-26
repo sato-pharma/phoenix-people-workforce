@@ -23,6 +23,7 @@
 // Anything that reaches no unit at all is accumulated into `unplaced` and reported. It is never
 // folded into a total and never dropped.
 
+import { specialtyMixFromTallies, type SpecialtyMix } from "../specialty-mix";
 import {
   emptyVisitCountSplit,
   mergeVisitCountSplits,
@@ -81,6 +82,8 @@ export type ReviewOverlay = {
   customersAm: number;
   customersPm: number;
   customersPharmacy: number;
+  /** What this unit's visited list is made of — doctors against pharmacies, hospitals and accounts. */
+  specialityMix: SpecialtyMix;
 };
 
 export type UnplacedTotals = {
@@ -161,6 +164,8 @@ type Acc = {
   customersPm: Set<number>;
   customersPharmacy: Set<number>;
   customersByMonth: Map<string, Set<number>>;
+  specialityContacts: Map<string, Set<number>>;
+  specialityVisits: Map<string, number>;
 };
 
 function newAcc(): Acc {
@@ -174,6 +179,7 @@ function newAcc(): Acc {
     doubleVisits: 0, ridesLed: 0, visitingReps: new Set(),
     customersAll: new Set(), customersAm: new Set(), customersPm: new Set(), customersPharmacy: new Set(),
     customersByMonth: new Map(),
+    specialityContacts: new Map(), specialityVisits: new Map(),
   };
 }
 
@@ -247,6 +253,7 @@ function finalize(acc: Acc, periods: readonly string[]): ReviewOverlay {
     customersAm: acc.customersAm.size,
     customersPm: acc.customersPm.size,
     customersPharmacy: acc.customersPharmacy.size,
+    specialityMix: specialtyMixFromTallies(acc.specialityContacts, acc.specialityVisits),
   };
 }
 
@@ -397,6 +404,19 @@ export function buildOverlays(input: {
       for (const id of fact.customersPm) acc.customersPm.add(id);
       for (const id of fact.customersPharmacy) acc.customersPharmacy.add(id);
       unionInto(acc.customersByMonth, fact.period, fact.customers);
+      // The list's make-up, merged the way the customer sets are: a doctor two reps visited is ONE
+      // doctor in their district, so the contact ids UNION and only the VISITS add.
+      for (const [speciality, ids] of fact.specialityContacts) {
+        let seen = acc.specialityContacts.get(speciality);
+        if (!seen) {
+          seen = new Set<number>();
+          acc.specialityContacts.set(speciality, seen);
+        }
+        for (const id of ids) seen.add(id);
+      }
+      for (const [speciality, count] of fact.specialityVisits) {
+        acc.specialityVisits.set(speciality, (acc.specialityVisits.get(speciality) ?? 0) + count);
+      }
     }
   }
 

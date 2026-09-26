@@ -34,7 +34,9 @@ const DASHBOARD = "src/components/business-review/dashboard.client.tsx";
 const COVERAGE = "src/components/business-review/coverage.client.tsx";
 const ROLLUPS = "src/components/business-review/rollups.client.tsx";
 const PORTAL = "src/components/business-review/portal-review.client.tsx";
-const SURFACES = [DASHBOARD, COVERAGE, ROLLUPS, PORTAL];
+const PANELS = "src/components/business-review/concentration.client.tsx";
+const PICKER = "src/components/business-review/pack-picker.client.tsx";
+const SURFACES = [DASHBOARD, COVERAGE, ROLLUPS, PORTAL, PANELS, PICKER];
 
 /**
  * Every class a file actually APPLIES. Scoped deliberately, and read from comment-stripped source:

@@ -55,6 +55,14 @@ import type { AreaSummary, DmSummary, ReviewDataset } from "./types";
 const COMPANY_ROLES = new Set(["Super Admin", "CEO", "SFE Manager", "Marketing Manager"]);
 /** Roles that see their own whole line. */
 const WHOLE_LINE_ROLES = new Set(["National Sales Manager", "Group Product Manager", "Product Manager"]);
+/**
+ * Roles that see THEIR OWN territory and nothing else (owner ruling, 2026-09-26).
+ *
+ * Only the field titles that carry a list. A rep is the bottom of the scope ladder, so this set
+ * must never grow to include a title that manages anyone — that is what the seat branches below
+ * are for, and widening it here would hand somebody a scope with no seat check behind it.
+ */
+const REP_ROLES = new Set(["Medical Rep", "Medical Representative"]);
 
 /** `au_v_org_tree.line_code` → the review's own line key. */
 const LINE_BY_ORG_CODE: Record<string, ReviewLine> = {
@@ -133,6 +141,21 @@ export type ReviewPortalScope =
       viewerName: string;
       label: string;
     }
+  /**
+   * ONE MEDICAL REP, HIS OWN LIST ONLY (owner ruling, 2026-09-26: "yes — his own list only").
+   *
+   * Scoped by HR ID rather than by an org seat, deliberately. `au_v_org_tree` does carry REP
+   * seats, but loading them would pull every rep in the company into a snapshot read on every
+   * manager's page load, and the seat carries no area anyway. The module already places every
+   * person in an area month by month through the sales attribution map, and a rep's own areas are
+   * exactly the ones that map gives him — so the scope is his id, and the page narrows the line's
+   * areas with it.
+   *
+   * SCOPE RUNS DOWNWARD ONLY, and a rep is the bottom: he sees his own areas, his own visits, his
+   * own customers and the achievement of the territory he stands in. Never a teammate's, never his
+   * district's total, never anyone at or above his rank.
+   */
+  | { kind: "rep"; line: ReviewLine; hrId: string; viewerName: string; label: string }
   | { kind: "none"; reason: string };
 
 /**
@@ -241,11 +264,24 @@ export function resolveReviewPortalScopeFromOrg(
     };
   }
 
+  // A medical rep, on his own line and his own areas. Until 2026-09-26 this module refused him in
+  // so many words; the owner opened it that day, downward-only.
+  if (REP_ROLES.has(role)) {
+    const line = LINE_BY_DB_NAME[String(org.lineNameByHrId[key] ?? "").trim()];
+    if (!line) {
+      return {
+        kind: "none",
+        reason: "No line is recorded against your employee record, so your own territory cannot be resolved.",
+      };
+    }
+    return { hrId: key, kind: "rep", label: `${role} · own territory`, line, viewerName };
+  }
+
   return {
     kind: "none",
     reason:
-      "Your Phoenix role does not carry a Business Review scope. Medical Representatives have no " +
-      "access to this module by design.",
+      `The ${role} role does not carry a Business Review scope. If you manage a territory and see ` +
+      "this, it is an organogram gap rather than a decision about you — please report it.",
   };
 }
 
@@ -311,7 +347,11 @@ export async function loadReviewPortalScope(input: {
   sessionRole: string;
   viewerName?: string | null;
 }): Promise<{ scope: ReviewPortalScope; resolvedAt: string }> {
-  const needsLineName = WHOLE_LINE_ROLES.has(input.sessionRole) ? input.hrId : null;
+  // A rep needs his line name for exactly the same reason a whole-line role does: it is the only
+  // place his line is recorded. Every other role is resolved from a SEAT, so the second query is
+  // still skipped for all of them.
+  const needsLineName =
+    WHOLE_LINE_ROLES.has(input.sessionRole) || REP_ROLES.has(input.sessionRole) ? input.hrId : null;
   const org = await loadReviewOrgSnapshot({ needsLineName });
   return { scope: resolveReviewPortalScopeFromOrg(input, org), resolvedAt: org.readAt };
 }
@@ -323,6 +363,27 @@ export async function loadReviewPortalScope(input: {
  * canonical engine's own attribution key, so this is an exact match rather than a name
  * reconciliation — an area either was attributed to that seat during the window or it was not.
  */
+/**
+ * One medical rep's own territory: the areas the month's canonical attribution placed him in, and
+ * nothing else (owner ruling, 2026-09-26).
+ *
+ * NO DISTRICT ROWS COME BACK, ever — not even the one district his areas sit under. His district's
+ * total is his manager's figure, and handing it to him is the upward read that SCOPE RUNS DOWNWARD
+ * ONLY forbids. The caller renders the areas alone.
+ *
+ * Membership is tested on the upper-cased id set the area already carries, for the reason that set
+ * is upper-cased: HR ids reach this code from three systems in mixed case, and a raw comparison has
+ * silently under-returned by 28% elsewhere in this repo.
+ */
+export function applyRepScope(
+  ds: Pick<ReviewDataset, "areas">,
+  hrId: string,
+): { areas: AreaSummary[] } {
+  const key = String(hrId ?? "").trim().toUpperCase();
+  if (!key) return { areas: [] };
+  return { areas: ds.areas.filter((a) => a.repHrIds.includes(key)) };
+}
+
 export function applySeatScope(ds: ReviewDataset, dmSeatIds: readonly string[]): { areas: AreaSummary[]; dms: DmSummary[] } {
   const keep = new Set(dmSeatIds);
   return {

@@ -13,6 +13,15 @@ import {
   portalSubtlePanelClassName,
 } from "@/components/employee-portal/portal-primitives";
 import { Switch } from "@/components/ui/switch";
+import type { ConcentrationFacts } from "@/lib/business-review/concentration";
+import type { ReviewMetricId } from "@/lib/business-review/pack/metrics";
+import type { ReviewPersonRow } from "@/lib/business-review/sources/roles";
+import {
+  ConcentrationPanels,
+  CustomersPerMonthTable,
+  RepRowsTable,
+  SpecialtyMixPanel,
+} from "./concentration.client";
 import { cn } from "@/lib/utils";
 import { figureWindowLabel, hasFigures, type ReviewCoverage } from "@/lib/business-review/coverage";
 import { formatVisitCountSplit } from "@/lib/crm/visit-count-buckets";
@@ -49,6 +58,21 @@ type PortalDmRow = DmSummary & {
 };
 
 type Props = {
+  /**
+   * Where this scope's money came from. NULL when the customer-grain read was not performed —
+   * the panels then render nothing at all, because a panel of zeros would say this district sold
+   * through no bricks.
+   */
+  concentration?: ConcentrationFacts | null;
+  /** This scope’s own people. Empty unless the caller scoped and passed them. */
+  people?: ReviewPersonRow[];
+  /**
+   * The metrics this review is showing. Empty means the caller did not choose, and everything it
+   * would gate renders — a page that hid itself because nobody passed a selection would look broken.
+   */
+  metrics?: readonly ReviewMetricId[];
+  /** The chooser, rendered by the page so this component needs no router. */
+  picker?: React.ReactNode;
   headline: string;
   scopeLabel: string;
   months: string[];
@@ -185,6 +209,10 @@ function Fields({ items }: { items: { label: string; value: string }[] }) {
 
 export function BusinessReviewPortal({
   areas,
+  concentration = null,
+  people = [],
+  metrics = [],
+  picker = null,
   restatementNotice,
   dms,
   headline,
@@ -204,6 +232,10 @@ export function BusinessReviewPortal({
   const [tab, setTab] = useState<TabId>("performance");
   const [excludeVacant, setExcludeVacant] = useState(false);
   // Coverage decides whether a figure may be a number at all. Read it BEFORE the figure.
+  // A metric renders when it was CHOSEN, or when nobody chose at all. A page that hid itself
+  // because no selection was passed would look broken to every caller that does not use the picker.
+  const chosen = new Set(metrics);
+  const shows = (id: ReviewMetricId) => chosen.size === 0 || chosen.has(id);
   const customersOk = hasFigures(coverage, "customers");
   const marketingOk = hasFigures(coverage, "marketing");
   const outstationOk = hasFigures(coverage, "outstation");
@@ -324,6 +356,8 @@ export function BusinessReviewPortal({
       </div>
 
       <CoverageBanner coverage={coverage} />
+
+      {picker}
 
       {/* ---------- KPIs, summed from the granted rows only ----------
           No icons: the owner's portal design rule is monochrome, functional cards — a thin
@@ -1072,6 +1106,31 @@ export function BusinessReviewPortal({
       ) : null}
 
       {/* ================= DOCTORS ================= */}
+      {tab === "detail" ? (
+        <div className="space-y-4">
+          {concentration ? <ConcentrationPanels facts={concentration} scopeNote={scopeLabel} /> : null}
+          {/* ONE PANEL PER DISTRICT, never a merged one. A regional manager holds several, and a
+              doctor both of his districts visited is one doctor in each of them — so merging their
+              mixes would double him, and there is no honest single figure to show instead. */}
+          {shows("specialty-mix")
+            ? visibleDms.map((d) => (
+                <SpecialtyMixPanel key={d.dmSeatId ?? d.dm} mix={d.specialityMix} scopeNote={d.dm} />
+              ))
+            : null}
+          {shows("rep-rows") ? (
+          <RepRowsTable
+            areas={visibleAreas}
+            people={people}
+            scopeNote={scopeLabel}
+            visitsAvailable={visitsAvailable}
+          />
+          ) : null}
+          {shows("customers-per-month") ? (
+            <CustomersPerMonthTable months={months} people={people} scopeNote={scopeLabel} />
+          ) : null}
+        </div>
+      ) : null}
+
       {tab === "doctors" ? (
         <div className="space-y-4">
           <CustomersByAreaTable

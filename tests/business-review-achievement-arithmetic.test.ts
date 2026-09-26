@@ -78,6 +78,8 @@ function areaFixture(name: string, sales: number, graded: number, target: number
     trend: [],
     byMonth: {},
     reps: 1,
+    // This file tests the graded-month arithmetic; WHICH rep stood here never enters it.
+    repHrIds: [],
     visits: 0,
     regularVisits: 0,
     campaignVisits: 0,

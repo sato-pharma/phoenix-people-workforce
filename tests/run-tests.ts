@@ -693,6 +693,12 @@ import { runBusinessReviewPortalScopeTests } from "./business-review-portal-scop
 import { runBusinessReviewWindowAndCoverageTests } from "./business-review-window-and-coverage.test.ts";
 import { runBusinessReviewMonthEndTests } from "./business-review-month-end.test.ts";
 import { runBusinessReviewFitsTheScreenTests } from "./business-review-fits-the-screen.test.ts";
+import { runBusinessReviewConcentrationTests } from "./business-review-concentration.test.ts";
+import { runBusinessReviewPackMetricsTests } from "./business-review-pack-metrics.test.ts";
+import { runBusinessReviewPreviousWindowTests } from "./business-review-previous-window.test.ts";
+import { runBusinessReviewSpecialtyMixTests } from "./business-review-specialty-mix.test.ts";
+import { runBusinessReviewClosingDetailTests } from "./business-review-closing-detail.test.ts";
+import { runBusinessReviewPackModelTests } from "./business-review-pack-model.test.ts";
 import { runMonthlySalesRunTests } from "./monthly-sales-run.test.ts";
 import { runSosHeaderDetectionTests } from "./sos-header-detection.test.ts";
 import { runSalesStrictConformanceTests } from "./sales-strict-conformance.test.ts";
@@ -4481,6 +4487,30 @@ await runTest("brick drill-down follows the Fayoum/Beni Suef area merge (per lin
 await runTest(
   "business review window + coverage (a period with no data SAYS so and never renders a zero: Mar-Jun grade as \"not gradeable\" rather than 0%, a pre-August window reports no marketing rather than 0 EGP, a month whose distributor files have not landed is held out of the grade and named with the value it does hold rather than dragging Jan-Aug from 50.67% to 39.30%, every clamp announces itself, unplaceable rows are counted not dropped, and doctors are unioned at every level while rides land where the rep stood)",
   runBusinessReviewWindowAndCoverageTests,
+);
+await runTest(
+  "business review pack model (what goes in the exported file: every honesty rule the screen carries travels with its section, so a pack read in a meeting still says the achievement beside a rep is his AREA's and that the monthly customer columns do not sum to the window; a section with nothing to say is dropped rather than exported blank; ticked-but-never-loaded is not the same as loaded-and-empty; the route resolves scope from the SESSION and never from a line or seat parameter; and neither renderer derives a figure of its own)",
+  runBusinessReviewPackModelTests,
+);
+await runTest(
+  "business review closing detail (the customer-grain source: a direct order is direct whoever bought it, a warehouse buying from a distributor is a wholesaler row decided by the one channel authority, El Qema is masked on the RAW rows before anything is derived from them, the load is cut to the figure window, and the module reads the closing's own aggregate RPC rather than re-grouping raw import rows)",
+  runBusinessReviewClosingDetailTests,
+);
+await runTest(
+  "business review specialty mix (what a list is made of, at every level: customers are UNIONED and never summed, so a doctor two reps visited is one doctor in their district and a doctor seen in two months is one doctor in the window; an unseen vendor value is surfaced rather than folded into the doctor panel, which is how a fifth of it was once mis-scored; a visit with no contact keeps its visit and adds no customer; and the headline states a share without judging the mix)",
+  runBusinessReviewSpecialtyMixTests,
+);
+await runTest(
+  "business review previous window (the review floor is July 2026, so TODAY there is no previous window at all: an equal-length span is offered only when every month of it sits above the floor, otherwise the comparison falls back to the month before the last one and the label names which basis was used; a zero base yields no percentage, and an achievement moves in points)",
+  runBusinessReviewPreviousWindowTests,
+);
+await runTest(
+  "business review pack metrics (one catalogue read by the picker, the PDF and the workbook: every metric is offered only at a level that can answer it, a rep is never offered a line comparison or his own reps, a link built at company level narrows rather than rendering empty slides, the customer-grain read stays opt-in, and no level ticks everything by default)",
+  runBusinessReviewPackMetricsTests,
+);
+await runTest(
+  "business review concentration (where a scope’s money came from: how many bricks and customers carried it, how few carry half, and the distributor/wholesaler/direct split — plus marketing spend read against the area’s own direction, and what a point of achievement cost)",
+  runBusinessReviewConcentrationTests,
 );
 await runTest(
   "business review fits the screen (the admin half carried 22 tables with a min-width floor up to 980px inside five scrolling wrappers, in a ~720px content box; every table is now table-fixed with a colgroup that totals exactly 100% however many months or products the window holds, a phone gets cards, and no bare <table> is left to collect the admin shell's own overflow-x rule)",
