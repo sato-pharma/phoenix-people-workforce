@@ -60,6 +60,7 @@ status, give it its own line.
 - **ONE Supabase token wears TWO names — both `.mcp.json` entries expand the same Windows user env var** — `supabase-access-and-prod-token-are-one-token` **(inline — load-bearing)**
 - **`CLAUDE_PROJECT_DIR` is the session's OWN worktree, never the primary — the docs say otherwise and hooks break silently** — `claude-project-dir-is-the-sessions-own-worktree` **(inline — load-bearing)**
 - **`apply-sql-file.mjs` rewrites production's URL to the aws-0 pooler, which does NOT resolve — production is aws-1-eu-central-1, staging really is aws-0** — `apply-sql-file-default-pooler-host-is-wrong-for-production` **(inline — load-bearing)**
+- **A NEW Railway service is born in `sfo` (US), not Europe, and a volume is region-pinned once created — set the region explicitly or the standing Europe rule is broken silently** — `railway-services-are-born-in-sfo-and-volumes-are-region-pinned` **(inline — load-bearing)**
 - **The local attendance agent dies at EVERY logon and loses NOTHING — do not escalate…** — `attendance-agent-crashes-at-logon-but-loses-no-attendance`
 - **ExcelJS emits two schema-invalid OOXML fragments, so Excel silently REPAIRS the…** — `exceljs-writes-two-schema-invalid-ooxml-fragments`
 - **Looking at a generated workbook has two modes that LIE (LibreOffice PNG, ExcelJS round-trip).** — `looking-at-a-generated-workbook-two-ways-that-lie` **(inline — load-bearing)**
@@ -147,7 +148,6 @@ status, give it its own line.
 - **A new workbook builder takes three checks, and none substitutes for another.** — `verifying-a-new-workbook-builder-takes-three-layers` **(inline — load-bearing)**
 - **A keyword scan over source text matches a COMMENT exactly as it matches a call — read the imports before reporting what a generator reads.** — `regen-readslivedata-flag-matches-a-comment-not-a-call` **(inline — load-bearing)**
 - **Auto mode refuses an `Edit` to `settings.json` as `[Self-Modification]`; his instruction clears it, his own grant does not.** — `automode-allow-cannot-authorize-editing-the-permission-config` **(inline — load-bearing)**
-- **`apply-sql-file.mjs`'s DEFAULT POOLER HOST IS WRONG FOR PRODUCTION — it rewrites the direct URL to aws-0-eu-central-1, which does not resolve; production's pooler is aws-1, and only staging really is `aws-0`.** — `apply-sql-file-default-pooler-host-is-wrong-for-production` **(inline — load-bearing)**
 
 ## 2.2 The memory index
 
@@ -175,8 +175,6 @@ status, give it its own line.
 - **A LOCAL run writes PRODUCTION but silently skips every email** — `local-run-against-prod-db-silently-skips-every-email` · `local-resend-key-is-restricted-use-railway-run-to-send-from-production`
 - **STAGING cannot rehearse a PRODUCTION shape.** — `staging-cannot-rehearse-shapes-only-prod-surgery-made`
 - **APP_ENV was UNSET on Railway staging, so staging identified itself as PRODUCTION** — `app-env-unset-on-staging-made-it-look-like-production`
-- **A RED `main` CI MAKES RAILWAY MARK THE PRODUCTION DEPLOY `SKIPPED` WITHIN MINUTES, NOT AFTER TWO HOURS — and re-running that CI green does NOT resurrect it.** The commit is then merged, green and not serving, with nothing red anywhere; only a NEW commit ships. — `a-red-main-ci-makes-railway-skip-the-deploy-for-good` **(inline — load-bearing)**
-- **The `railway` CLI link in the PRIMARY checkout points at `phoenix-headwind`, NOT the app** — so `railway run` there injects the wrong service's variables and `CRON_SECRET` reads as ABSENT, which looks like a half-rotated secret and sends a session chasing a rotation §2.3 forbids. — `railway-cli-is-linked-to-phoenix-headwind-not-the-app` **(inline — load-bearing)**
 
 ## 3. Stable Environment Facts
 
