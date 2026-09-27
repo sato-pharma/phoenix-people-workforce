@@ -60,7 +60,6 @@ status, give it its own line.
 - **ONE Supabase token wears TWO names — both `.mcp.json` entries expand the same Windows user env var** — `supabase-access-and-prod-token-are-one-token` **(inline — load-bearing)**
 - **`CLAUDE_PROJECT_DIR` is the session's OWN worktree, never the primary — the docs say otherwise and hooks break silently** — `claude-project-dir-is-the-sessions-own-worktree` **(inline — load-bearing)**
 - **`apply-sql-file.mjs` rewrites production's URL to the aws-0 pooler, which does NOT resolve — production is aws-1-eu-central-1, staging really is aws-0** — `apply-sql-file-default-pooler-host-is-wrong-for-production` **(inline — load-bearing)**
-- **`main`'s required checks are FOUR, not six — `lint`, `typecheck` and `test` are STEPS of `checks` since #4527, so a gate waiting for them by name waits forever; read the list live from the protection API** — `mains-required-checks-are-four-not-six-checks-carries-the-suite` **(inline — load-bearing)**
 - **A NEW Railway service is born in `sfo` (US), not Europe, and a volume is region-pinned once created — set the region explicitly or the standing Europe rule is broken silently** — `railway-services-are-born-in-sfo-and-volumes-are-region-pinned` **(inline — load-bearing)**
 - **The local attendance agent dies at EVERY logon and loses NOTHING — do not escalate…** — `attendance-agent-crashes-at-logon-but-loses-no-attendance`
 - **ExcelJS emits two schema-invalid OOXML fragments, so Excel silently REPAIRS the…** — `exceljs-writes-two-schema-invalid-ooxml-fragments`
