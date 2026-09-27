@@ -61,6 +61,7 @@ function candidate(overrides: Partial<Candidate> = {}): Candidate {
     nationality: null,
     noticePeriod: null,
     notes: null,
+    offerId: null,
     phone: null,
     placeOfBirth: null,
     positionSpecificFields: {},

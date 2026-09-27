@@ -184,6 +184,9 @@ export function mapCandidate(row: CandidateDbRow): Candidate {
     medicalRepEmployer: textOrNull(row.medical_rep_employer),
     medicalRepExperienceFrom: textOrNull(row.medical_rep_experience_from),
     medicalRepExperienceTo: textOrNull(row.medical_rep_experience_to),
+    // The offer letter currently in play. The direction is the whole design — see the field's own
+    // note on `Candidate`: recruitment points AT offers, and `offers` learns nothing about the ATS.
+    offerId: textOrNull(row.offer_id),
     positionSpecificFields:
       row.position_specific_fields && typeof row.position_specific_fields === "object"
         ? (row.position_specific_fields as Record<string, unknown>)

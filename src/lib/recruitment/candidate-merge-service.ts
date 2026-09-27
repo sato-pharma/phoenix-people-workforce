@@ -547,6 +547,14 @@ export async function mergeCandidates(
 
   // Captured BEFORE the duplicate is deleted — after step 3 there is nothing left to read.
   const borrowed = borrowableFields(survivor, duplicate);
+  // TWO DIFFERENT OFFER LETTERS CANNOT BOTH SURVIVE ONE MERGE, and this is the one skipped field
+  // that has to be said out loud. `borrowableFields` fills a blank and steps over a collision, which
+  // is the right rule for every fact on a CV — those can be re-read from the document. An offer
+  // letter is joined to a person by this pointer and by nothing else, so a silent skip leaves a real
+  // letter, in Offers, pointed at from nowhere. The letter itself is untouched; what is lost is the
+  // only thread back to it, and only a human can say which of the two stands.
+  const strandedOffer =
+    Boolean(duplicate.offerId) && Boolean(survivor.offerId) && duplicate.offerId !== survivor.offerId;
   const { changed: extraAnswersChanged, merged: mergedExtraAnswers } = mergeScreeningExtraAnswers(
     survivor.screeningExtraAnswers,
     duplicate.screeningExtraAnswers,
@@ -633,6 +641,7 @@ export async function mergeCandidates(
     movedDeduped,
     movedFiles,
     movedInterviews,
+    strandedOffer,
   });
   await recordMergeEvent({
     actorHrId: access.hrId ?? null,
@@ -713,6 +722,7 @@ function buildSummary(input: {
   movedDeduped: readonly { count: number; plural: string; singular: string }[];
   movedFiles: number;
   movedInterviews: number;
+  strandedOffer: boolean;
 }): string {
   const parts: string[] = [`Merged the duplicate record for ${input.duplicateName}.`];
   const moved: string[] = [];
@@ -748,6 +758,16 @@ function buildSummary(input: {
     parts.push(
       `${listPhrase(dropped)} could not move across — the record being kept already had its own, so `
       + `${total === 1 ? "it was" : "they were"} dropped.`,
+    );
+  }
+  // Said in full rather than counted, because it is one fact about one person and the recruiter has
+  // to be able to act on it without opening anything: which letter stands is a decision, and this
+  // sentence is the only place the question ever gets asked.
+  if (input.strandedOffer) {
+    parts.push(
+      "The duplicate record pointed at a DIFFERENT job offer letter, and the record being kept "
+      + "already had one of its own, so the letter itself is untouched in Offers but nothing points "
+      + "at it from here any more. Re-link it on this record if it is the offer that stands.",
     );
   }
   return parts.join(" ");

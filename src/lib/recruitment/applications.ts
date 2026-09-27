@@ -455,11 +455,31 @@ async function loadHiredEmployeeTerms(employeeHrId: string): Promise<HiredEmploy
 export async function recordApplicationOfferLetter(applicationId: string, offerLetterId: string): Promise<void> {
   try {
     const supabase = recruitmentDb();
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from("ats_applications")
       .update({ offer_id: offerLetterId, updated_at: new Date().toISOString() })
-      .eq("id", applicationId);
+      .eq("id", applicationId)
+      .select("candidate_id")
+      .maybeSingle();
     if (error) throw new Error(error.message);
+
+    // AND ON THE PERSON, in the same call. `ats_candidates.offer_id` is the pointer that can answer
+    // for a letter with no application behind it — most of them — so the two must not disagree about
+    // the ones that do have one.
+    //
+    // WRITTEN OVER WHATEVER WAS THERE, unlike the merge's fill-a-blank rule. Reaching here means a
+    // recruiter has just produced this letter for this person, so it IS the offer now in play; a
+    // pointer left on an older letter would put that letter's first working day into a welcome
+    // message. The person is read back from the row just updated rather than passed in, so the
+    // pointer cannot be stamped onto somebody the application does not actually name.
+    const candidateId = textOrNull((data as Record<string, unknown> | null)?.candidate_id);
+    if (candidateId) {
+      const { error: candidateError } = await supabase
+        .from("ats_candidates")
+        .update({ offer_id: offerLetterId, updated_at: new Date().toISOString() })
+        .eq("id", candidateId);
+      if (candidateError) throw new Error(candidateError.message);
+    }
   } catch (error) {
     logError("Failed to link an offer letter to its application", {
       error,

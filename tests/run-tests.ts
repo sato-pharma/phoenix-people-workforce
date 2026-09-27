@@ -1745,6 +1745,7 @@ import {
 import { runPushActionUrlResolutionTests } from "./push-action-url-resolution.test.ts";
 import { runAttendanceAgentBrowserTokenSplitTests } from "./attendance-agent-browser-token-split.test.ts";
 import { runCandidateBackgroundEligibilityTests } from "./candidate-background-eligibility.test.ts";
+import { runCandidateOfferPointerTests } from "./candidate-offer-pointer.test.ts";
 import { runHrProvisioningGuardTests } from "./hr-provisioning-guard.test.ts";
 import { runHrNavNoEmptyInboxRowsTests } from "./hr-nav-no-empty-inbox-rows.test.ts";
 
@@ -6179,6 +6180,10 @@ await runTest(
 await runTest(
   "paramedical split: veterinary and dental medicine never read as medicine, and no exclusion auto-files",
   runCandidateBackgroundEligibilityTests,
+);
+await runTest(
+  "a standalone offer points at its candidate from the recruitment side, and offers learns nothing",
+  runCandidateOfferPointerTests,
 );
 await runTest(
   "new-hire login provisioning admits HR Operations, the one seat that can reach it",
