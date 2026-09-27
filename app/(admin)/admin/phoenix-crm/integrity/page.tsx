@@ -4,7 +4,7 @@ import { Eye, ShieldAlert, Users } from "lucide-react";
 import { AdminCallout, AdminPageHero, AdminStatCard, AdminTableShell } from "@/components/admin/admin-design-system";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
-import { canReadIntegrityBoard, integritySourceLabel, loadIntegrityBoard, type IntegrityCase } from "@/lib/phoenix-crm/server/integrity-board";
+import { canReadIntegrityBoard, integritySourceLabel, loadIntegrityBoard, type BehaviourCase, type IntegrityCase } from "@/lib/phoenix-crm/server/integrity-board";
 
 export const dynamic = "force-dynamic";
 
@@ -36,6 +36,25 @@ function cairo(value: string): string {
     minute: "2-digit",
     hour12: false,
   }).format(new Date(value));
+}
+
+function monthName(month: string): string {
+  const [year, index] = month.split("-").map((part) => Number(part));
+  if (!Number.isFinite(year) || !Number.isFinite(index)) return month;
+  return new Intl.DateTimeFormat("en-GB", { month: "long", year: "numeric" }).format(new Date(Date.UTC(year, index - 1, 1)));
+}
+
+function BehaviourReasons({ entry }: { entry: BehaviourCase }) {
+  return (
+    <ul className="space-y-1">
+      {entry.reasons.map((reason) => (
+        <li key={reason} className="flex items-start gap-2 text-sm leading-6 text-slate-700">
+          <span className={`mt-2 h-1.5 w-1.5 shrink-0 ${entry.strong ? "bg-rose-500" : "bg-amber-500"}`} />
+          <span>{reason}</span>
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 function Reasons({ entry }: { entry: IntegrityCase }) {
@@ -109,6 +128,70 @@ export default async function PhoenixCrmIntegrityPage() {
           <span>
             {board.bySource.map((entry) => `${entry.label.toLowerCase()} ${entry.cases}`).join(" · ")} — which check filed each case. A capture can carry
             one from each, and they are counted apart because a re-used photograph and an impossible journey are different things to look at.
+          </span>
+        </AdminCallout>
+      ) : null}
+
+      {board.behaviour.length > 0 ? (
+        <AdminTableShell
+          title="Months that do not look like months"
+          description="A whole month of one rep's work, judged on its shape rather than on any single capture — durations that never vary, a metronome, a list covered with nothing sold behind it. The strong ones are things a person cannot do; the rest are only worth reading beside them."
+        >
+          {/* Desktop: the full table. `table-fixed` with a colgroup, never a min-width in a scroller. */}
+          <div className="hidden lg:block">
+            <table className="w-full table-fixed border-collapse">
+              <colgroup>
+                <col className="w-[20%]" />
+                <col className="w-[18%]" />
+                <col className="w-[12%]" />
+                <col className="w-[50%]" />
+              </colgroup>
+              <thead>
+                <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-bold uppercase tracking-wide text-slate-500">
+                  <th className="px-5 py-3">Rep</th>
+                  <th className="px-5 py-3">Month</th>
+                  <th className="px-5 py-3">Visits</th>
+                  <th className="px-5 py-3">What is wrong</th>
+                </tr>
+              </thead>
+              <tbody>
+                {board.behaviour.map((entry) => (
+                  <tr key={entry.id} className="border-b border-slate-100 align-top even:bg-slate-50/60">
+                    <td className="px-5 py-4 text-sm font-semibold text-slate-900">{entry.repName}</td>
+                    <td className="px-5 py-4 text-sm text-slate-700">{monthName(entry.month)}</td>
+                    <td className="px-5 py-4 text-sm tabular-nums text-slate-700">{entry.visits}</td>
+                    <td className="px-5 py-4">
+                      <BehaviourReasons entry={entry} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mobile: the same months as cards. */}
+          <div className="space-y-3 px-5 py-4 lg:hidden sm:px-6">
+            {board.behaviour.map((entry) => (
+              <div key={entry.id} className="border border-slate-200 bg-white p-4">
+                <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                  <span className="text-sm font-bold text-slate-900">{entry.repName}</span>
+                  <span className="text-xs text-slate-500">{monthName(entry.month)}</span>
+                </div>
+                <p className="mt-1 text-sm text-slate-700">{entry.visits} visits</p>
+                <div className="mt-3">
+                  <BehaviourReasons entry={entry} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </AdminTableShell>
+      ) : null}
+
+      {board.behaviourNotChecked > 0 ? (
+        <AdminCallout tone="neutral">
+          <span>
+            {board.behaviourNotChecked} rep-months held too few visits to judge on shape, so they were not checked — which is not the same as clean. A
+            month of leave and a month of nothing look alike from here, and neither is a finding.
           </span>
         </AdminCallout>
       ) : null}

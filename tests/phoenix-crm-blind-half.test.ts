@@ -54,6 +54,9 @@ const REP_FACING_PURE_EXCLUDED = new Set([
   // cannot also be forbidden from naming them. Neither file is reachable from the rep's bundle —
   // check 2 below is what proves that, by refusing the import anywhere a rep can see.
   "duplicate-photos.ts",
+  // And the behaviour rules (2026-09-27), for the same reason: a module that names the checks
+  // cannot also be forbidden from naming them. Check 2 is what proves no rep-facing file imports it.
+  "behaviour-integrity.ts",
 ]);
 
 /**
@@ -105,10 +108,21 @@ const NEVER_SERVED_TO_A_REP = new Set([
 const SILENT_COLUMNS: ReadonlyArray<string> = ["dwell_seconds", "form_open_seconds"];
 
 /** Tables only the blind readers may touch. */
-const SILENT_TABLES: ReadonlyArray<string> = ["phoenix_crm_location_integrity", "phoenix_crm_photo_fingerprints"];
+const SILENT_TABLES: ReadonlyArray<string> = [
+  "phoenix_crm_location_integrity",
+  "phoenix_crm_photo_fingerprints",
+  "phoenix_crm_behaviour_integrity",
+];
 
 /** Modules only the blind readers may import. */
-const SILENT_MODULES: ReadonlyArray<string> = ["location-integrity", "integrity-board", "duplicate-photos", "photo-dupes"];
+const SILENT_MODULES: ReadonlyArray<string> = [
+  "location-integrity",
+  "integrity-board",
+  "duplicate-photos",
+  "photo-dupes",
+  "behaviour-integrity",
+  "phoenix-crm/server/behaviour",
+];
 
 /**
  * The only files allowed to read a silent table. Every one of them is also asserted to gate on the
@@ -118,6 +132,7 @@ const BLIND_READERS: ReadonlyArray<string> = [
   "src/lib/phoenix-crm/server/location-integrity.ts",
   "src/lib/phoenix-crm/server/integrity-board.ts",
   "src/lib/phoenix-crm/server/photo-dupes.ts",
+  "src/lib/phoenix-crm/server/behaviour.ts",
   "app/(admin)/admin/phoenix-crm/integrity/page.tsx",
 ];
 
