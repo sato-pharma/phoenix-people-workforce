@@ -1947,6 +1947,7 @@ import { runRawNextDevGuardTests } from "./raw-next-dev-guard.test.ts";
 import { runLocalTypecheckGuardTests } from "./local-typecheck-guard.test.ts";
 import { runAutorunGuardFalseArmingTests } from "./autorun-guard-false-arming.test.ts";
 import { runTrapInjectorClustersTests } from "./trap-injector-clusters.test.ts";
+import { runHookCommandsResolveTests } from "./hook-commands-resolve.test.ts";
 import { runDocsShareTokenGuardTests } from "./docs-share-token-guard.test.ts";
 import { runVacationPendingAttachmentPathTests } from "./vacation-pending-attachment-path.test.ts";
 import { runClosingDetailsPublicationGateTests } from "./closing-details-publication-gate.test.ts";
@@ -6933,6 +6934,14 @@ await runTest(
 await runTest(
   "every session-trap cluster is delivered by a real command (Parallel sessions had no rule and reached nobody), once per session, from the session's own worktree, by a hook registered once with a timeout",
   runTrapInjectorClustersTests,
+);
+
+await runTest(
+  "every .claude/settings.json hook command names a script that EXISTS, carries shell syntax only "
+    + "where it declares \"shell\": \"bash\" (exactly two entries do), and points at a hook that fails "
+    + "open — the three guarantees that moved out of the command string when the shell-expanded "
+    + "`$DIR ... || true` form was removed, and that nothing was checking",
+  runHookCommandsResolveTests,
 );
 
 await runTest(

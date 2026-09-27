@@ -236,9 +236,12 @@ function testTheHeartbeatIsWired() {
   // honour "shell": "bash" — it ran the raw string through cmd.exe / PowerShell, which cannot parse
   // it, and denied every tool call. session-lock.mjs now resolves the folder from
   // process.env.CLAUDE_PROJECT_DIR — the session's own worktree — so the isolation guarantee lives
-  // in the hook itself, not the command string.
+  // in the hook itself, not the command string. Read through `stripComments` (as the staleness scan
+  // at the top of this file does): the prose above this assertion names the variable, and so does
+  // the hook's own header, so a raw `includes` would stay green on a hook whose real read had been
+  // deleted and only its comment left behind.
   assert.ok(
-    readFileSync(".claude/hooks/session-lock.mjs", "utf8").includes("process.env.CLAUDE_PROJECT_DIR"),
+    stripComments(readFileSync(HOOK, "utf8")).includes("process.env.CLAUDE_PROJECT_DIR"),
     "session-lock.mjs must resolve its folder from CLAUDE_PROJECT_DIR — the session's own worktree",
   );
   const beat = entries("PreToolUse", "beat")[0];

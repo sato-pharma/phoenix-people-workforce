@@ -6,8 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/hooks/bash-guard.mjs",
-            "shell": "bash"
+            "command": "node .claude/hooks/bash-guard.mjs"
           }
         ]
       },
@@ -17,7 +16,6 @@
           {
             "type": "command",
             "command": "node .claude/hooks/trap-injector.mjs",
-            "shell": "bash",
             "timeout": 10
           }
         ]
@@ -28,7 +26,6 @@
           {
             "type": "command",
             "command": "node .claude/hooks/session-lock.mjs beat",
-            "shell": "bash",
             "timeout": 5
           }
         ]
@@ -38,8 +35,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/hooks/primary-write-guard.mjs",
-            "shell": "bash"
+            "command": "node .claude/hooks/primary-write-guard.mjs"
           }
         ]
       }
@@ -49,8 +45,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/hooks/autorun-guard.mjs",
-            "shell": "bash"
+            "command": "node .claude/hooks/autorun-guard.mjs"
           }
         ]
       }
@@ -60,8 +55,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/hooks/session-lock.mjs start",
-            "shell": "bash"
+            "command": "node .claude/hooks/session-lock.mjs start"
           },
           {
             "type": "command",
@@ -72,7 +66,6 @@
           {
             "type": "command",
             "command": "node .claude/hooks/memory-index-guard.mjs",
-            "shell": "bash",
             "statusMessage": "Checking memory index budget"
           },
           {
@@ -90,13 +83,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/hooks/session-lock.mjs end",
-            "shell": "bash"
+            "command": "node .claude/hooks/session-lock.mjs end"
           },
           {
             "type": "command",
             "command": "node .claude/hooks/worktree-exit-guard.mjs",
-            "shell": "bash",
             "timeout": 45,
             "statusMessage": "Checking worktree state"
           }

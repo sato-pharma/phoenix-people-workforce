@@ -29,12 +29,31 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import {
-  assessAutoloadFootprint,
-  assessMemoryIndexSize,
-  autoloadFootprintLines,
-  memoryIndexBudgetLines,
-} from "../../scripts/memory-index-budget.mjs";
+// FAIL OPEN, ALWAYS. The settings.json command ended `2>/dev/null || true` until 2026-09-27; the
+// shell operators were removed so it parses under cmd.exe and PowerShell as well as bash, and
+// nothing replaced the guarantee. A budget REPORT must never turn a session's start into an error,
+// so a throw anywhere below exits 0 with nothing said — the same contract bash-guard, trap-injector,
+// primary-write-guard and autorun-guard carry as a trailing `} catch { process.exit(0) }`.
+process.on("uncaughtException", () => process.exit(0));
+
+// The budget module is imported DYNAMICALLY, inside a try, and the guard above cannot do this job: a
+// static import is linked before the first statement of this file runs, so a checkout that does not
+// have `scripts/memory-index-budget.mjs` — a partial clone, a cloud session mid-rebase — would fail
+// before any handler existed. Missing module means no report, not a failed SessionStart.
+let assessAutoloadFootprint;
+let assessMemoryIndexSize;
+let autoloadFootprintLines;
+let memoryIndexBudgetLines;
+try {
+  ({
+    assessAutoloadFootprint,
+    assessMemoryIndexSize,
+    autoloadFootprintLines,
+    memoryIndexBudgetLines,
+  } = await import("../../scripts/memory-index-budget.mjs"));
+} catch {
+  process.exit(0);
+}
 
 const projectDir = process.argv[2] || process.env.CLAUDE_PROJECT_DIR || process.cwd();
 
