@@ -72,16 +72,20 @@ export type ReviewFilterChoices = {
 
 export type ReviewFilterRequest = {
   line?: string | null;
-  region?: string | null;
+  /** One region or several — the owner exports "multiple regions and multiple areas" (2026-09-27). */
+  region?: string | string[] | null;
   dm?: string | null;
-  area?: string | null;
+  /** One area code or several. */
+  area?: string | string[] | null;
 };
 
 export type AppliedReviewFilter = {
   line: ReviewLine | null;
-  region: string | null;
+  /** The regions actually applied (each was in scope). Empty when none narrowed. */
+  regions: string[];
   dmSeatId: string | null;
-  areaCode: string | null;
+  /** The area codes actually applied (each was in scope). Empty when none narrowed. */
+  areaCodes: string[];
 };
 
 export type ResolvedReviewFilter = {
@@ -174,6 +178,11 @@ export function filterChoices(territories: readonly FilterableTerritory[]): Revi
   };
 }
 
+/** A request value — one string, several, or none — as a clean list of trimmed non-empty values. */
+function asList(value: string | string[] | null | undefined): string[] {
+  return (Array.isArray(value) ? value : value == null ? [] : [value]).map((s) => s.trim()).filter(Boolean);
+}
+
 /**
  * Narrow the scoped territories by what the viewer asked for.
  *
@@ -187,7 +196,7 @@ export function resolveReviewFilter(
 ): ResolvedReviewFilter {
   const dropped: string[] = [];
   let territories = [...scoped];
-  const applied: AppliedReviewFilter = { areaCode: null, dmSeatId: null, line: null, region: null };
+  const applied: AppliedReviewFilter = { areaCodes: [], dmSeatId: null, line: null, regions: [] };
 
   // ── line ──
   const wantedLine = request.line ? LINE_BY_VALUE[request.line.trim().toLowerCase()] : undefined;
@@ -203,15 +212,19 @@ export function resolveReviewFilter(
     }
   }
 
-  // ── region ──
-  if (request.region?.trim()) {
-    const wanted = request.region.trim();
-    const kept = territories.filter((t) => t.region === wanted);
-    if (kept.length === 0) {
-      dropped.push(`The ${wanted} region is not in your scope, so it was not applied.`);
-    } else {
-      territories = kept;
-      applied.region = wanted;
+  // ── region(s) ── one or several. Each narrows to the union of the regions actually in scope; an
+  // out-of-scope region is dropped and named, never obeyed — the whole module can only ever remove.
+  const wantedRegions = asList(request.region);
+  if (wantedRegions.length > 0) {
+    const inScope = new Set(territories.map((t) => t.region));
+    const keep = wantedRegions.filter((r) => inScope.has(r));
+    for (const r of wantedRegions) {
+      if (!keep.includes(r)) dropped.push(`The ${r} region is not in your scope, so it was not applied.`);
+    }
+    if (keep.length > 0) {
+      const set = new Set(keep);
+      territories = territories.filter((t) => set.has(t.region));
+      applied.regions = keep;
     }
   }
 
@@ -227,15 +240,21 @@ export function resolveReviewFilter(
     }
   }
 
-  // ── area ──
-  if (request.area?.trim()) {
-    const wanted = request.area.trim().toUpperCase();
-    const kept = territories.filter((t) => (t.areaCode ?? "").toUpperCase() === wanted);
-    if (kept.length === 0) {
-      dropped.push("That area is not in your scope, so it was not applied.");
-    } else {
-      territories = kept;
-      applied.areaCode = kept[0].areaCode;
+  // ── area(s) ── one or several, matched case-insensitively. A code repeats across lines, so a
+  // value keeps every territory that carries it (both lines' "AX1") unless a line was also chosen.
+  const wantedAreas = asList(request.area).map((a) => a.toUpperCase());
+  if (wantedAreas.length > 0) {
+    const inScope = new Map(
+      territories.filter((t) => t.areaCode).map((t) => [(t.areaCode as string).toUpperCase(), t.areaCode as string]),
+    );
+    const keepUpper = wantedAreas.filter((a) => inScope.has(a));
+    for (const a of wantedAreas) {
+      if (!keepUpper.includes(a)) dropped.push("That area is not in your scope, so it was not applied.");
+    }
+    if (keepUpper.length > 0) {
+      const set = new Set(keepUpper);
+      territories = territories.filter((t) => t.areaCode != null && set.has(t.areaCode.toUpperCase()));
+      applied.areaCodes = [...new Set(keepUpper.map((a) => inScope.get(a) as string))];
     }
   }
 
@@ -262,7 +281,7 @@ export function resolveReviewFilter(
  */
 function filterLevel(scope: ReviewPortalScope, applied: AppliedReviewFilter): PackLevel {
   if (scope.kind === "rep") return "rep";
-  if (applied.areaCode || applied.dmSeatId || applied.region) return "district";
+  if (applied.areaCodes.length > 0 || applied.dmSeatId || applied.regions.length > 0) return "district";
   if (scope.kind === "seats") return "district";
   if (applied.line || scope.kind === "line") return "line";
   return "company";
@@ -284,15 +303,17 @@ function filterLabel(
         ? LINE_LABEL[lines[0]]
         : "All lines";
 
-  if (applied.areaCode) {
-    const area = territories.find((t) => t.areaCode === applied.areaCode);
-    return `${lineBit} · ${area?.area ?? applied.areaCode}`;
+  if (applied.areaCodes.length === 1) {
+    const area = territories.find((t) => t.areaCode === applied.areaCodes[0]);
+    return `${lineBit} · ${area?.area ?? applied.areaCodes[0]}`;
   }
+  if (applied.areaCodes.length > 1) return `${lineBit} · ${applied.areaCodes.length} areas`;
   if (applied.dmSeatId) {
     const district = territories.find((t) => t.dmSeatId === applied.dmSeatId);
     return `${lineBit} · ${district?.dm ?? "District"}`;
   }
-  if (applied.region) return `${lineBit} · ${applied.region} region`;
+  if (applied.regions.length === 1) return `${lineBit} · ${applied.regions[0]} region`;
+  if (applied.regions.length > 1) return `${lineBit} · ${applied.regions.length} regions`;
   if (applied.line || scope.kind === "line") return `${lineBit} line`;
   if (scope.kind === "seats") return scope.label;
   if (scope.kind === "rep") return scope.label;
@@ -307,12 +328,18 @@ export function lineLabelOf(line: ReviewLine): string {
 /** Every line the review covers, in catalogue order. */
 export const REVIEW_LINE_ORDER: readonly ReviewLine[] = LINE_ORDER;
 
-/** The filter as URL params, for a link that reproduces this view. Empty values are left out. */
-export function filterParams(applied: AppliedReviewFilter): Record<string, string> {
-  const params: Record<string, string> = {};
+/**
+ * The filter as URL params, for a link that reproduces this view. Empty values are left out. A single
+ * region or area stays a plain string (so existing one-value links are byte-identical); several become
+ * an array, which the hidden-input plumbing renders as repeated params the route reads with `getAll`.
+ */
+export function filterParams(applied: AppliedReviewFilter): Record<string, string | string[]> {
+  const params: Record<string, string | string[]> = {};
   if (applied.line) params.line = applied.line;
-  if (applied.region) params.region = applied.region;
   if (applied.dmSeatId) params.dm = applied.dmSeatId;
-  if (applied.areaCode) params.area = applied.areaCode;
+  if (applied.regions.length === 1) params.region = applied.regions[0];
+  else if (applied.regions.length > 1) params.region = applied.regions;
+  if (applied.areaCodes.length === 1) params.area = applied.areaCodes[0];
+  else if (applied.areaCodes.length > 1) params.area = applied.areaCodes;
   return params;
 }

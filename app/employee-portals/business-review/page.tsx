@@ -172,16 +172,18 @@ export default async function PortalBusinessReviewPage({ searchParams }: PagePro
   }
   const scopedTerritories = territoriesInScope(scope, areasByLine);
   const filter = resolveReviewFilter(scope, scopedTerritories, {
-    area: firstSearchParam(params?.area) ?? null,
+    // region and area may be several — the multi-select submits repeated params (2026-09-27). The
+    // resolver still only narrows, so a list from a forwarded link cannot widen this viewer's scope.
+    area: params?.area ?? null,
     dm: firstSearchParam(params?.dm) ?? null,
     line: firstSearchParam(params?.line) ?? null,
-    region: firstSearchParam(params?.region) ?? null,
+    region: params?.region ?? null,
   });
   const narrowed =
     filter.applied.line != null ||
-    filter.applied.region != null ||
+    filter.applied.regions.length > 0 ||
     filter.applied.dmSeatId != null ||
-    filter.applied.areaCode != null;
+    filter.applied.areaCodes.length > 0;
   const appliedParams = filterParams(filter.applied);
   const scopeFilterFor = (metrics: readonly string[]) => (
     <ReviewScopeFilter
@@ -223,10 +225,10 @@ export default async function PortalBusinessReviewPage({ searchParams }: PagePro
         const keep =
           scope.kind === "rep"
             ? p.hrId.toUpperCase() === scope.hrId
-            : filter.applied.areaCode != null
-              // An AREA was chosen, so a colleague in the same district but another area is not in
+            : filter.applied.areaCodes.length > 0
+              // AREAS were chosen, so a colleague in the same district but another area is not in
               // this view. Keying on the seat would widen the people back out to the whole district
-              // while every sales figure on the page showed one area.
+              // while every sales figure on the page showed the chosen areas.
               ? p.areaCode != null && surviving.has(p.areaCode)
               : p.dmSeatId != null && keptSeats.has(p.dmSeatId);
         if (keep) fPeople.push(p);
