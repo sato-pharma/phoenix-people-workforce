@@ -57,6 +57,31 @@ async function applicationOfferId(candidateId: string): Promise<string | null> {
 }
 
 /**
+ * Whether a letter in this state may still hand over its first working day.
+ *
+ * 🔒 THE OWNER'S RULING, 2026-09-28: *"exclude declined and withdrawn letters from the start date"*.
+ *
+ * A DECLINED OR WITHDRAWN LETTER IS DEAD, AND ITS DATE IS A LIE. The live case is real: one wired
+ * candidate's only letter reads `declined` and still carries 01 October 2026, so before this rule a
+ * template aimed at her filled in a first working day from an offer she turned down — grammatical,
+ * plausible, and wrong about the one fact a new hire acts on.
+ *
+ * `draft` AND `sent` STILL COUNT, deliberately. A recruiter routinely sends the document request or
+ * the welcome message on a verbal yes, while the letter itself still reads `sent` — narrowing this to
+ * `accepted` alone would make the ordinary case ask for a date that is already agreed and on file.
+ * The rule withholds a date from a letter that is FINISHED, not from one that is merely unconfirmed.
+ *
+ * THE POINTER ITSELF IS UNTOUCHED. A declined letter stays linked to the person it was written for —
+ * that is history and it is true. What is withheld is only the date, and `renderTemplate` then
+ * reports it MISSING so a human types the real one.
+ */
+const OFFER_STATUSES_WITH_NO_START_DATE = new Set(["declined", "withdrawn"]);
+
+export function offerCanGiveAStartDate(status: string): boolean {
+  return !OFFER_STATUSES_WITH_NO_START_DATE.has(String(status ?? "").trim().toLowerCase());
+}
+
+/**
  * The agreed first working day for a candidate, or "" when nothing reliable says.
  *
  * TWO POINTERS, THE CANDIDATE'S FIRST. `ats_candidates.offer_id` is the one that can answer for an
@@ -66,6 +91,8 @@ async function applicationOfferId(candidateId: string): Promise<string | null> {
  * answer for every row that has one.
  *
  * BOTH ARE STORED POINTERS. Neither branch matches an offer to a person by anything a human typed.
+ *
+ * A DECLINED OR WITHDRAWN LETTER GIVES NO DATE — the owner's ruling, see `offerCanGiveAStartDate`.
  *
  * NEVER THROWS. `getOffer` raises `OfferNotFoundError` for a letter that has since been deleted,
  * and a deleted letter must degrade to "type the date yourself" rather than failing the whole send
@@ -77,10 +104,11 @@ async function resolveOfferStartDate(candidateId: string): Promise<string> {
     if (!offerId) return "";
 
     const offer = await getOffer(offerId);
+    if (!offerCanGiveAStartDate(offer.status)) return "";
     return textOrNull(offer.startDate) ?? "";
   } catch {
-    // Any miss — no pointer on either side, a deleted letter, a read failure — is an empty string,
-    // and the send screen then asks for the date. Nothing here may invent one.
+    // Any miss — no pointer on either side, a dead letter, a deleted one, a read failure — is an
+    // empty string, and the send screen then asks for the date. Nothing here may invent one.
     return "";
   }
 }
