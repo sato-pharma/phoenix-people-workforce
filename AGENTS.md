@@ -438,21 +438,27 @@ automatically; the local branch and worktree survive and still need approval to 
 merges"). A merge pays a full CI run on the PR **and** another on `main`, ~14 billable minutes each,
 because GitHub rounds every job up to a whole minute. Measured that day: **338 pushes to `main` in 7
 days**, ≥100 PRs merged, **41% of them touching ≤3 files** and 23% changing ≤50 lines — ~28 minutes
-of billing to ship a 3-file change. That volume is what produced 37,610 billable minutes and
-$300.88 in September, not the pipeline, which is already tuned to its limit. **So batch related work
+of billing to ship a 3-file change. That volume, not the pipeline, is the whole bill. 🔴 **The
+$300.88 / 37,610-minute figure this rule was first written against was a MONTH-TO-DATE reading taken
+around 16-17 September, not September** — re-measured from real per-day run counts, the month is
+~72,800 billable minutes, about **$559**. Never quote a GitHub cost figure without the date it was
+read on. **So batch related work
 into ONE branch and ONE PR**: finish the whole task — the fix, its test, its doc, the follow-ups you
 can already see — before opening it, and push fixups in fewer, larger commits (concurrency cancels
 superseded PR runs, so two pushes a minute apart bill twice and verify once). Splitting is still
 right when the parts need SEPARATE approval (a migration, a locked file, a protected rule) or when
 one part is urgent and the rest is not — never merely because the change feels tidier in pieces.
-🔴 **MEASURE IN MINUTES, NEVER IN RUNS — the count lies.** Re-measured 2026-09-27 in billable
-minutes: `pull_request` **63.4%** · `push` to `main` **32.7%** · `workflow_dispatch` **3.9%** (26% of
-the RUNS but 1.2 min each, so "stop re-running CI" is worth ~$12/month, not the ~$78 a session
-reported off the count). `ci.yml` is 84.3% of the whole bill, so nothing outside it is worth touching;
-`main` already runs exactly once per commit; **2.18 runs per PR** is the real lever, and it is this
-rule. **And `main`'s 32.7% is NOT reclaimable — it is the production deploy gate** (§2), so the only
-lever left that costs no safety is the self-hosted runner. Account:
-`docs/ci-self-hosted-runner.md`, "Why the volume is what it is" and "Where the money actually is".
+🔴 **MEASURE IN MINUTES, NEVER IN RUNS, AND NEVER FROM A SAMPLE — both lie.** Re-measured
+2026-09-27 from EVERY run of the month rather than a sample: `pull_request` **60.5%** · `push` to
+`main` **39.5%** · `workflow_dispatch` **~0%**. Dispatch is a rounding error — about eight runs in the
+whole month — so "stop re-running CI" is worth single-digit dollars, and the ~$78 figure AND the ~$12
+that corrected it were both sample artefacts. `ci.yml` is **89.1%** of the bill, so nothing outside it
+is worth touching, and `main` already runs exactly once per commit. **`main`'s 39.5% is NOT
+reclaimable — it is the production deploy gate** (§2), so the only lever left that costs no safety is
+the self-hosted runner. 🔴 **The Actions runs API caps at 1,000 rows and truncates the OLDEST
+silently** — a wide query returning *exactly* 1,000 is truncated data wearing the shape of a complete
+month; count the rows and disbelieve that number. Account: `docs/ci-self-hosted-runner.md`, "Why the
+volume is what it is" and "Where the money actually is".
 
 ## 7. Validation
 
