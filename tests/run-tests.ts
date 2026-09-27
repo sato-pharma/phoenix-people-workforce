@@ -2021,6 +2021,7 @@ import { runNextBuildCpuCapTests } from "./next-build-cpu-cap.test.ts";
 import { runAttributionFreezesPublishedMonthsTests } from "./attribution-freezes-published-months.test.ts";
 import { runTestAccountTests } from "./test-accounts.test.ts";
 import { runNeedsYouBoardTests } from "./needs-you-board.test.ts";
+import { runNeedsYouSourceHealthTests } from "./needs-you-source-health.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -7339,6 +7340,10 @@ await runTest(
 await runTest(
   "the tier-1 needs-you board never under-reports: GitHub's own mergeStateStatus decides the bucket (never a count against a required-check list, the drift that has rotted four times), every state it does not model - UNKNOWN, empty, null, a value GitHub adds later - lands in COULD NOT READ rather than in his section, a blocked PR is explained from the LIVE protection contexts with an unreported required check named as waiting (the mobile case) and an unreadable protection list never promotes it, three dead reads render the COULD NOT READ heading rather than a quiet all-clear, a production revision behind main names redeploy and re-merge as forbidden (AGENTS.md 2.3), and nothing it prints carries an ellipsis or exceeds the terminal width",
   runNeedsYouBoardTests,
+);
+await runTest(
+  "a pending source can say it could not answer: the awaiting-action fan-out carries no .catch(() => null) inside its Promise.allSettled (which made the allSettled decorative and turned a dead queue into an empty one, silently, in the function the badge endpoint counts), its labels and its sources stay index-aligned and none of them reads like a code, a Forbidden refusal is classified as a TRUE zero while a network failure never is, and all three approvals badges return available on BOTH their success and their failure paths with no fabricated count in the catch",
+  runNeedsYouSourceHealthTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
