@@ -97,6 +97,7 @@
     "master-map:sync": "pnpm run master-map:preview -- --all",
     "master-map:check-feed": "node --env-file-if-exists=.env.local --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs scripts/master-map-check-feed.ts",
     "check:migrations": "node scripts/check-migrations.mjs",
+    "check:required-checks": "node scripts/check-required-checks.mjs",
     "check:deductions-write-contract": "node --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs scripts/check-deductions-write-contract.ts",
     "check:sql-backups": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/check-sql-backup-placement.ts",
     "check:migrations-applied": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/check-migrations-applied.ts",
