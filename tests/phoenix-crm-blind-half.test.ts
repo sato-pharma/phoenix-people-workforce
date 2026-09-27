@@ -105,7 +105,16 @@ const NEVER_SERVED_TO_A_REP = new Set([
  * counted and IS sent, which is why the check below draws the line at the READ rather than at the
  * file — see it for the whole rule.
  */
-const SILENT_COLUMNS: ReadonlyArray<string> = ["dwell_seconds", "form_open_seconds"];
+const SILENT_COLUMNS: ReadonlyArray<string> = [
+  "dwell_seconds",
+  "form_open_seconds",
+  // A1 (2026-09-27). The owner ruled that an offline visit COUNTS normally and that the fact it came
+  // in offline is "visible to his manager and on the board" — so these three are a manager's fact,
+  // not an integrity secret, and the line they must not cross is the REP's own visit rows.
+  "capture_source",
+  "offline_seconds",
+  "synced_at",
+];
 
 /** Tables only the blind readers may touch. */
 const SILENT_TABLES: ReadonlyArray<string> = [

@@ -220,3 +220,29 @@ export const OFFLINE_CLOCK_LABELS: Record<OfflineClockRefusal, string> = {
   elapsed_impossible: "The phone claimed more elapsed time than had actually passed",
   rebooted: "The phone restarted while the visit was waiting, so its stopwatch had reset",
 };
+
+// ── Reading the claim off a request body ────────────────────────────────────────────────────────
+
+/**
+ * The claim, parsed from whatever the phone sent — in ONE place, so there is exactly one answer to
+ * "what may a phone say about time".
+ *
+ * 🔴 **It reads three fields and there is no fourth.** An anchor id, an elapsed duration and a boot
+ * id. A body carrying a timestamp is not partially honoured: the timestamp is simply never looked
+ * at, because no line here looks for one. That is the structural form of the owner's requirement,
+ * and it is what the test asserts rather than trusting a comment.
+ *
+ * Returns null for an online save, which is every save that names no anchor. An unusable claim also
+ * returns null rather than an error: the visit is then dated by the photo slot as it always was, and
+ * the rep is told nothing.
+ */
+export function parseOfflineCaptureClaim(raw: Record<string, unknown>): OfflineCaptureClaim | null {
+  const source = raw.offline && typeof raw.offline === "object" ? (raw.offline as Record<string, unknown>) : null;
+  if (!source) return null;
+  const anchorId = typeof source.anchorId === "string" ? source.anchorId.trim() : "";
+  if (!/^[0-9a-f-]{36}$/i.test(anchorId)) return null;
+  const elapsed = Number(source.elapsedMs);
+  if (!Number.isFinite(elapsed) || elapsed < 0) return null;
+  const bootId = typeof source.bootId === "string" && source.bootId.trim() ? source.bootId.trim().slice(0, 120) : null;
+  return { anchorId, elapsedMs: Math.round(elapsed), bootId };
+}

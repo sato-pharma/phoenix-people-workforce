@@ -7,6 +7,7 @@ import {
   OFFLINE_GAP_NOTABLE_SECONDS,
   cairoDayOf,
   deriveOfflineCaptureTime,
+  parseOfflineCaptureClaim,
   type OfflineCaptureClaim,
   type TimeAnchorRecord,
 } from "../src/lib/phoenix-crm/offline-clock.ts";
@@ -253,6 +254,57 @@ export function runPhoenixCrmOfflineClockTests(): void {
     const route = source("app/api/phoenix-crm/time-anchor/route.ts");
     assert.ok(route.includes('assertPermission(access, "phoenix_crm", "create")'), "the route carries the same permission as the photo slot");
     assert.ok(route.includes("assertSameOriginMutation"), "and the same CSRF guard");
+  }
+
+  // ── 10. The claim is parsed in ONE place and carries no timestamp (phase 3) ────────────────────
+  {
+    // An ordinary claim.
+    const good = parseOfflineCaptureClaim({ offline: { anchorId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", elapsedMs: 5000, bootId: "b1" } });
+    assert.deepEqual(good, { anchorId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", elapsedMs: 5000, bootId: "b1" });
+
+    // 🔴 A body that smuggles a timestamp is not partially honoured — the parser has no field for it,
+    // so it is simply never looked at. This is the structural form of the owner's requirement.
+    const smuggled = parseOfflineCaptureClaim({
+      offline: { anchorId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", elapsedMs: 5000, capturedAt: "2020-01-01T00:00:00Z", now: 123 },
+    });
+    assert.deepEqual(Object.keys(smuggled ?? {}).sort(), ["anchorId", "bootId", "elapsedMs"], "🔴 three fields, and there is no fourth");
+
+    // An online save names no anchor, and rubbish is null rather than an error — the visit then dates
+    // by the photo slot exactly as it always did and the rep is told nothing.
+    assert.equal(parseOfflineCaptureClaim({}), null, "an online save");
+    assert.equal(parseOfflineCaptureClaim({ offline: { anchorId: "not-a-uuid", elapsedMs: 1 } }), null);
+    assert.equal(parseOfflineCaptureClaim({ offline: { anchorId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", elapsedMs: -5 } }), null);
+  }
+
+  // ── 11. The save DERIVES the time; it never copies one, and the database fences it again ───────
+  {
+    const service = source("src/lib/phoenix-crm/server/visits.ts");
+    assert.ok(service.includes("parseOfflineCaptureClaim(body)"), "the claim is read through the one parser");
+    assert.ok(service.includes("deriveOfflineCaptureTime("), "and judged by the pure rules");
+    assert.ok(service.includes("offline_captured_at: offlineCapturedAt"), "the derived value is what reaches the database");
+    // 🔴 The body must never be the source of the timestamp.
+    assert.equal(service.includes("offline_captured_at: body"), false, "🔴 never copied from the request");
+    assert.equal(/offline_captured_at:\s*(String\()?body/.test(service), false, "🔴 nor through a cast of it");
+    // A failed derivation must not refuse the visit.
+    const region = service.slice(service.indexOf("const offlineClaim = parseOfflineCaptureClaim"), service.indexOf("offline_captured_at:"));
+    assert.equal(/throw /.test(region), false, "a clock argument must never cost a rep a real visit");
+
+    const migration = stripSqlComments(
+      readFileSync(new URL("supabase/migrations/20260927200000_phoenix_crm_offline_capture.sql", ROOT), "utf8"),
+    );
+    assert.ok(migration.includes("v_offline_at <= now()"), "the database refuses a capture time in the future");
+    assert.ok(migration.includes("v_offline_at > now() - interval '1 day'"), "and one older than a day, as a second fence");
+    // 🔴 The photo slot is untouched — it still proves the path was issued and never used.
+    assert.ok(migration.includes("public.phoenix_crm_take_photo(v_photo, v_actor, v_seat, 'visit', v_is_test)"), "the slot is still consumed, unchanged");
+    // 🔴 Dwell must not be computed from an offline capture time.
+    assert.ok(
+      /when v_source = 'offline_anchor' then null/.test(migration),
+      "🔴 dwell_seconds is NULL for an offline visit — now() - captured_at would read a six-hour queue as six hours of dwell",
+    );
+    // The date and the planned verdict both follow the CAPTURE, which is the whole point.
+    assert.ok(migration.includes("v_date := (v_captured_at at time zone 'Africa/Cairo')::date;"), "the day is the capture's");
+    assert.ok(migration.includes("and e.created_at <= v_captured_at"), "and so is the planned-or-not verdict");
+    assert.ok(migration.includes("synced_at"), "every visit is stamped with the server's own receipt, so the gap is readable");
   }
 
   console.log("phoenix-crm offline clock: OK");
