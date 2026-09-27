@@ -120,6 +120,24 @@ projection from them**, and anchor the money to the real invoice.
    the runner first.**
 2. **Never on the owner's laptop.** `AGENTS.md` §5 records that the 16 GB machine already
    hard-freezes under a build plus a dev server. A CI runner there guarantees it.
+   🔴 **This happened.** On 2026-09-27 a runner named `OMAR-GAWISH` (`self-hosted, Windows, X64`)
+   was registered and online, and with `CI_RUNNER=self-hosted` it took the jobs — see rule 2b for
+   what that did. Deregister it: `gh api -X DELETE repos/Gawish-1997/phoenix-people-workforce/actions/runners/<id>`,
+   and on the machine `cd C:\actions-runner && .\config.cmd remove`. A registered runner is not
+   idle — it competes for every job the moment the variable points at it.
+2b. 🔴 **THE RUNNER MUST BE LINUX. A WINDOWS RUNNER FAILS EVERY JOB IN SECONDS, AND LOOKS HEALTHY
+   DOING IT.** Every `run:` step here is bash; GitHub's default shell on a Windows runner is
+   PowerShell, which cannot parse `answer() { … }` or `[ "$X" = "y" ]`. Measured 2026-09-27 on
+   PR #4537: all four required checks failed in 11–25 s with `An expression was expected after '('`
+   and `Missing type name after '['`, from
+   `C:\WINDOWS\System32\WindowsPowerShell\v1.0\powershell.EXE`. Nothing reports "wrong OS" — the
+   runner shows `status: online`, the checks simply go red, and the failure reads like a broken
+   branch. **Under the production deploy gate this is far worse than a red PR:** every `main` run
+   would fail in seconds, so Railway would withhold every deploy and then skip it at the two-hour
+   timeout with nothing red to explain why (`deployment.md`, "The deploy gate", failure modes 1 and
+   3). `scripts/setup-self-hosted-runner.sh` is an Ubuntu script and refuses anything else; the
+   `runs-on` label must resolve to a **Linux x86_64** host, and a runner registered any other way
+   must be deregistered rather than left online.
 3. **The host has repository-level trust.** Anything in `.env` on that box, and any credential the
    workflows use, is reachable by any job. Treat it as production infrastructure: no shared logins,
    SSH keys only, firewall everything except SSH out.
@@ -155,6 +173,14 @@ runner is opt-in and the rollback is one command.
    are still downloaded and cached per run by `ci.yml`), registers the runner and installs it as a
    systemd service so it survives reboot.
 4. Confirm it shows **Idle** at `/settings/actions/runners`.
+4b. 🔴 **Confirm the OS before flipping the variable, and that NO other runner is registered** —
+   this is the step whose absence cost PR #4537 a full red cycle on 2026-09-27 (safety rule 2b):
+   ```bash
+   gh api repos/Gawish-1997/phoenix-people-workforce/actions/runners \
+     --jq '.runners[] | {name, os, status, labels: [.labels[].name]}'
+   ```
+   Every row must read `"os": "Linux"`. A `"Windows"` row will take the jobs and fail all of them in
+   seconds, and `status: online` tells you nothing about whether it can run bash.
 5. Flip CI onto it:
    ```bash
    gh variable set CI_RUNNER --repo Gawish-1997/phoenix-people-workforce --body 'self-hosted'
