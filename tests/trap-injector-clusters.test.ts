@@ -4,6 +4,8 @@ import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSy
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
+import { stripComments } from "./support/comment-strip.ts";
+
 /**
  * Every trap cluster must be REACHABLE — some command a session really runs has to deliver it.
  *
@@ -161,8 +163,10 @@ function testItIsRegisteredWithATimeout() {
   assert.equal(hook.event, "PreToolUse", "the injector reads the tool call, so it is a PreToolUse hook");
   // The folder is resolved inside the hook now (process.env.CLAUDE_PROJECT_DIR), not expanded in the
   // command — the shell-expanded form errored under any non-bash runtime reading .claude/settings.json.
+  // Comments are stripped first: the hook's own prose names the variable, so a raw `includes` would
+  // stay green on a hook whose real read had been deleted and only its comment left behind.
   assert.ok(
-    readFileSync(".claude/hooks/trap-injector.mjs", "utf8").includes("process.env.CLAUDE_PROJECT_DIR"),
+    stripComments(readFileSync(HOOK, "utf8")).includes("process.env.CLAUDE_PROJECT_DIR"),
     "trap-injector.mjs must resolve the session's own worktree from CLAUDE_PROJECT_DIR first",
   );
   for (const tool of ["Bash", "PowerShell"]) {
