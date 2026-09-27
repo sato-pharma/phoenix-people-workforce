@@ -26,6 +26,7 @@
  */
 
 import { notFoundError } from "@/lib/http/api-errors";
+import { PHOENIX_CRM_BEHAVIOUR_LABELS, type PhoenixCrmBehaviourFlag } from "@/lib/phoenix-crm/behaviour-integrity";
 import { PHOENIX_CRM_PHOTO_LABELS, type PhoenixCrmPhotoFlag } from "@/lib/phoenix-crm/duplicate-photos";
 import { PHOENIX_CRM_INTEGRITY_LABELS, type PhoenixCrmIntegrityFlag } from "@/lib/phoenix-crm/location-integrity";
 import { type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
@@ -84,6 +85,28 @@ export type IntegrityCase = {
   isTest: boolean;
 };
 
+/**
+ * A rep's MONTH, as the behaviour pass judged it. Not a capture, which is why it is its own list.
+ *
+ * `measured: false` is the row that matters most to read correctly: the month was too thin to carry
+ * a claim, so it is NOT CHECKED. A rep on leave for three weeks must never read as a clean month.
+ */
+export type BehaviourCase = {
+  id: string;
+  month: string;
+  /** The rep's NAME, never his code (owner's standing rule). */
+  repName: string;
+  repHrId: string;
+  seatId: string | null;
+  visits: number;
+  measured: boolean;
+  strong: boolean;
+  flags: PhoenixCrmBehaviourFlag[];
+  /** Those flags in plain English, ready to print. */
+  reasons: string[];
+  signals: Record<string, unknown>;
+};
+
 export type IntegrityBoard = {
   cases: IntegrityCase[];
   /** How many of the listed cases carry at least one individually damning flag. */
@@ -92,6 +115,10 @@ export type IntegrityBoard = {
   byRep: { repHrId: string; repName: string; cases: number; strongCases: number }[];
   /** How many cases each detector filed, so a silent detector is visible as a zero. */
   bySource: { source: IntegritySource; label: string; cases: number }[];
+  /** Months whose SHAPE did not hold up. Strongest and most recent first. */
+  behaviour: BehaviourCase[];
+  /** Months the sweep could not judge at all — too few visits. NOT CHECKED, never clean. */
+  behaviourNotChecked: number;
 };
 
 const BOARD_LIMIT = 200;
@@ -104,6 +131,48 @@ const BOARD_LIMIT = 200;
  */
 export function canReadIntegrityBoard(viewer: PhoenixCrmViewer): boolean {
   return viewer.isSuperAdmin || viewer.isSfeManager;
+}
+
+/**
+ * The months the behaviour pass judged, strongest and most recent first.
+ *
+ * Read separately from the captures because it IS separate: a behaviour verdict is about a rep and a
+ * month, not about a visit, and it is recomputed whole every night as more of the month lands.
+ */
+async function loadBehaviourCases(): Promise<{ cases: BehaviourCase[]; notChecked: number; repHrIds: string[] }> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("phoenix_crm_behaviour_integrity")
+    .select("id, month, rep_hr_id, seat_id, visits, measured, flags, strong, signals")
+    .eq("is_test", false)
+    .order("strong", { ascending: false })
+    .order("month", { ascending: false })
+    .limit(BOARD_LIMIT);
+  throwIfError(error);
+  const rows = (data ?? []) as Row[];
+  // A month with nothing wrong is not a case, but a month that could not be JUDGED is counted, so
+  // the page can say how much of the field this pass is actually able to speak about.
+  const notChecked = rows.filter((row) => row.measured !== true).length;
+  const flagged = rows.filter((row) => Array.isArray(row.flags) && row.flags.length > 0);
+  return {
+    cases: flagged.map((row) => {
+      const flags = (Array.isArray(row.flags) ? row.flags : []).map((flag) => String(flag)) as PhoenixCrmBehaviourFlag[];
+      return {
+        id: String(row.id),
+        month: String(row.month ?? ""),
+        repHrId: String(row.rep_hr_id ?? ""),
+        repName: "",
+        seatId: row.seat_id ? String(row.seat_id) : null,
+        visits: Number(row.visits ?? 0),
+        measured: row.measured === true,
+        strong: row.strong === true,
+        flags,
+        reasons: flags.map((flag) => PHOENIX_CRM_BEHAVIOUR_LABELS[flag] ?? flag),
+        signals: (row.signals && typeof row.signals === "object" ? row.signals : {}) as Record<string, unknown>,
+      };
+    }),
+    notChecked,
+    repHrIds: [...new Set(flagged.map((row) => String(row.rep_hr_id ?? "")).filter(Boolean))],
+  };
 }
 
 /**
@@ -124,14 +193,16 @@ export async function loadIntegrityBoard(viewer: PhoenixCrmViewer, options: { in
   // the real field, never the Super Admin's own trial entries.
   if (options.includeTest !== true || !viewer.isSuperAdmin) query = query.eq("is_test", false);
 
-  const { data, error } = await query;
+  const [{ data, error }, behaviourRead] = await Promise.all([query, loadBehaviourCases()]);
   throwIfError(error);
   const rows = (data ?? []) as Row[];
-  if (rows.length === 0) return { cases: [], strongCount: 0, byRep: [], bySource: [] };
+  if (rows.length === 0 && behaviourRead.cases.length === 0) {
+    return { cases: [], strongCount: 0, byRep: [], bySource: [], behaviour: [], behaviourNotChecked: behaviourRead.notChecked };
+  }
 
   const customerIds = [...new Set(rows.map((row) => (row.customer_id ? String(row.customer_id) : null)).filter((id): id is string => Boolean(id)))];
   const [people, customers] = await Promise.all([
-    loadPeopleNames([...new Set(rows.map((row) => String(row.rep_hr_id ?? "")).filter(Boolean))]),
+    loadPeopleNames([...new Set([...rows.map((row) => String(row.rep_hr_id ?? "")), ...behaviourRead.repHrIds].filter(Boolean))]),
     customerIds.length === 0
       ? Promise.resolve({ data: [] as Row[] })
       : supabase.from("phoenix_crm_customers").select("id, name").in("id", customerIds),
@@ -182,5 +253,7 @@ export async function loadIntegrityBoard(viewer: PhoenixCrmViewer, options: { in
       const count = cases.filter((entry) => entry.source === source).length;
       return count === 0 ? [] : [{ source, label: integritySourceLabel(source), cases: count }];
     }),
+    behaviour: behaviourRead.cases.map((entry) => ({ ...entry, repName: nameOf(people, entry.repHrId) || entry.repHrId })),
+    behaviourNotChecked: behaviourRead.notChecked,
   };
 }

@@ -432,6 +432,11 @@ const LATER_MIGRATIONS = [
   // the photo sweep's verdict would have OVERWRITTEN the GPS verdict on the same visit rather than
   // sitting beside it, with nothing anywhere going red.
   "supabase/migrations/20260927120000_phoenix_crm_photo_fingerprints.sql",
+  // The behaviour verdicts (D4). ONE brand-new table and nothing else — no function, no column on
+  // anything that exists, and it replaces no save_visit, so it appends safely at the end. It is a
+  // table of its own rather than a source on the evidence table because a behaviour verdict is
+  // about a rep and a MONTH, not about a capture, and it is recomputed whole every sweep.
+  "supabase/migrations/20260927160000_phoenix_crm_behaviour_integrity.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */
