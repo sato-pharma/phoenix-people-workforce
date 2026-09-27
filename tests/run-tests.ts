@@ -1571,6 +1571,7 @@ import { runPhoenixCrmLocationIntegrityTests } from "./phoenix-crm-location-inte
 import { runPhoenixCrmDuplicatePhotosTests } from "./phoenix-crm-duplicate-photos.test.ts";
 import { runPhoenixCrmBehaviourIntegrityTests } from "./phoenix-crm-behaviour-integrity.test.ts";
 import { runPhoenixCrmOfflineClockTests } from "./phoenix-crm-offline-clock.test.ts";
+import { runPhoenixCrmOutboxTests } from "./phoenix-crm-outbox.test.ts";
 import { runPhoenixCrmPortalSidebarTests } from "./phoenix-crm-portal-sidebar.test.ts";
 import { runPhoenixCrmAmPmWordTests } from "./phoenix-crm-am-pm-words.test.ts";
 import { runPhoenixCrmDoctorPharmaciesTests } from "./phoenix-crm-doctor-pharmacies.test.ts";
@@ -5249,6 +5250,11 @@ await runTest(
 await runTest(
   "Phoenix CRM can date a visit captured with no signal, without trusting the phone's clock (A1 phase 1 — owner, 2026-09-27: \"I want the Cairo time, but I don't want the time on the phone because they may install an app that changes the time in the phone\"; the phone sends a DURATION measured on the monotonic clock, never a timestamp, against an ANCHOR the server wrote and looks up, so capturedAt = the server's own anchor time plus the elapsed time; the claim must fit inside the window the server brackets at both ends itself, which makes the bound physics rather than trust; a correction can only ever pull a claim back towards the truth and never past the server's own receipt; a delta measured across a reboot is refused because the monotonic clock resets, while two UNKNOWN boot ids are not a match; a borrowed anchor is refused; and the visit files under the Cairo day it was CAPTURED, never the day it arrived)",
   runPhoenixCrmOfflineClockTests,
+);
+
+await runTest(
+  "Phoenix CRM holds a visit on the phone until there is signal, and never throws a rep's work away (A1, the queue — an item leaves only when the server ACCEPTED it or refused it for a reason that can never change, so every network failure and every 5xx is kept and retried, and a refusal code this build has never heard of is KEPT rather than deleted; when the queue is full the NEWEST capture is refused at the door with an instruction he can act on, never yesterday's visit discarded; a stale item stops being retried but stays on disk; the photo path is recorded the moment an upload succeeds so a retry cannot burn a second upload slot and rate-limit him out of his own work; the drain never throws, because it runs where no rep is watching; the elapsed reading comes from the monotonic clock and never Date.now(); and every word he sees says a held visit is SAVED, never failed — no error, no attempt count, no explanation)",
+  runPhoenixCrmOutboxTests,
 );
 
 await runTest(
