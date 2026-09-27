@@ -1077,6 +1077,9 @@ function AddVisit({
     // not a visit. A reused place photo has none, which is why `hold` refuses below rather than
     // inventing one.
     const evidenceBytes = (placePhoto ?? photo)?.imageBase64 ?? null;
+    // Read off the narrowed draft HERE: TypeScript does not carry the `next.ok` narrowing into the
+    // nested `hold`, and reaching through `next` inside it would not compile.
+    const { customerName, payload } = next;
 
     /**
      * Hold this visit on the phone. Returns false when it could not be held, and the caller then
@@ -1093,11 +1096,11 @@ function AddVisit({
         return true;
       }
       try {
-        queueVisit({ offline: offlineClaimNow(seatId, test), payload: next.payload, photoBase64: evidenceBytes, visitId });
+        queueVisit({ offline: offlineClaimNow(seatId, test), payload, photoBase64: evidenceBytes, visitId });
       } catch {
         return false;
       }
-      onQueued(next.customerName);
+      onQueued(customerName);
       return true;
     }
 
