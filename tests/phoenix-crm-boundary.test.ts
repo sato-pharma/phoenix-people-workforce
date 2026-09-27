@@ -157,6 +157,10 @@ const ROUTE_GATES: RouteGate[] = [
   // SHEETS the file holds is the access control, and a section the viewer may not read is never
   // loaded and writes none — so the export can never be a way round a refusal on the tab.
   exportGet("reports/export"),
+  // The time anchor (A1 phase 2): a server-minted starting point the phone measures elapsed
+  // MONOTONIC time against, so an offline visit never needs a timestamp from a clock a rep can move.
+  // Same permission and audience as entering a visit, because that is what it dates.
+  post("time-anchor", "create"),
   post("photos/upload-slot", "create"),
   // The native app's live photo: the phone sends the stamped JPEG as a base64 data URL and the server
   // does the PUT to the slot itself. Same create gate as upload-slot, which it calls to issue the slot.
@@ -437,6 +441,11 @@ const LATER_MIGRATIONS = [
   // table of its own rather than a source on the evidence table because a behaviour verdict is
   // about a rep and a MONTH, not about a capture, and it is recomputed whole every sweep.
   "supabase/migrations/20260927160000_phoenix_crm_behaviour_integrity.sql",
+  // The time anchors (A1 phase 2). ONE new table, no function, no column on anything that exists,
+  // and it replaces no save_visit — so it appends safely at the end. `issued_at` defaults to now()
+  // in the database on purpose: that is the one value in the offline design a phone must never be
+  // able to set.
+  "supabase/migrations/20260927190000_phoenix_crm_time_anchors.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */

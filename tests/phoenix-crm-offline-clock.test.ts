@@ -10,7 +10,7 @@ import {
   type OfflineCaptureClaim,
   type TimeAnchorRecord,
 } from "../src/lib/phoenix-crm/offline-clock.ts";
-import { stripComments } from "./support/comment-strip.ts";
+import { stripComments, stripSqlComments } from "./support/comment-strip.ts";
 
 /**
  * Phoenix CRM — a trustworthy Cairo time for a visit captured with no signal (A1, phase 1).
@@ -219,6 +219,40 @@ export function runPhoenixCrmOfflineClockTests(): void {
       /Golden Rule #1/.test(readFileSync(new URL("src/lib/phoenix-crm/offline-clock.ts", ROOT), "utf8")),
       "and the file states whose rule keeps it off his screen",
     );
+  }
+
+  // ── 9. 🔴 The anchor is the SERVER's timestamp, and nothing can reach it (phase 2) ─────────────
+  {
+    const migration = stripSqlComments(
+      readFileSync(new URL("supabase/migrations/20260927190000_phoenix_crm_time_anchors.sql", ROOT), "utf8"),
+    );
+    assert.ok(
+      migration.includes("issued_at timestamptz not null default now()"),
+      "🔴 the anchor's time is DEFAULTED BY THE DATABASE — that is what stops a request body ever setting it",
+    );
+    assert.ok(migration.includes("boot_id text"), "and the restart id rides with it, so a reset stopwatch is detectable");
+    assert.equal(migration.includes("used_at"), false, "an anchor is NOT single-use — one dates a whole offline stretch; age is the bound");
+
+    const service = source("src/lib/phoenix-crm/server/time-anchor.ts");
+    // 🔴 The insert must not name issued_at at all. Naming it, even from the server's own clock,
+    // would put the value on a code path a body could one day be threaded into.
+    const insert = service.slice(service.indexOf(".insert({"), service.indexOf(".select(\"id, issued_at\")"));
+    assert.equal(insert.includes("issued_at"), false, "🔴 the insert never writes issued_at — the column default is the only writer");
+    for (const forbidden of ["Date.now()", "new Date()"]) {
+      const body = service.slice(service.indexOf("export async function issueTimeAnchor"), service.indexOf("export async function readTimeAnchor"));
+      assert.equal(
+        body.includes(forbidden) && !body.includes("60 * 60 * 1000"),
+        false,
+        `${forbidden} may appear only for the rate-limit window, never to stamp an anchor`,
+      );
+    }
+    assert.ok(service.includes("territoryForVisit"), "gated like entering a visit, so a manager in a dead spot is not locked out of a double visit");
+    assert.ok(service.includes("ANCHORS_PER_HOUR"), "and rate-limited, like the photo slot it accompanies");
+    assert.ok(service.includes("return null"), "an unknown anchor is null, so the refusal stays a silent verdict rather than an error on a phone");
+
+    const route = source("app/api/phoenix-crm/time-anchor/route.ts");
+    assert.ok(route.includes('assertPermission(access, "phoenix_crm", "create")'), "the route carries the same permission as the photo slot");
+    assert.ok(route.includes("assertSameOriginMutation"), "and the same CSRF guard");
   }
 
   console.log("phoenix-crm offline clock: OK");
