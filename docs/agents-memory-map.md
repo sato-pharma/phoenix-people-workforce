@@ -59,6 +59,7 @@ status, give it its own line.
 - **A Windows USER env var SHADOWS every .env.local, silently.** — `windows-env-var-shadows-every-env-local-key`
 - **ONE Supabase token wears TWO names — both `.mcp.json` entries expand the same Windows user env var** — `supabase-access-and-prod-token-are-one-token` **(inline — load-bearing)**
 - **`CLAUDE_PROJECT_DIR` is the session's OWN worktree, never the primary — the docs say otherwise and hooks break silently** — `claude-project-dir-is-the-sessions-own-worktree` **(inline — load-bearing)**
+- **`apply-sql-file.mjs` rewrites production's URL to the aws-0 pooler, which does NOT resolve — production is aws-1-eu-central-1, staging really is aws-0** — `apply-sql-file-default-pooler-host-is-wrong-for-production` **(inline — load-bearing)**
 - **The local attendance agent dies at EVERY logon and loses NOTHING — do not escalate…** — `attendance-agent-crashes-at-logon-but-loses-no-attendance`
 - **ExcelJS emits two schema-invalid OOXML fragments, so Excel silently REPAIRS the…** — `exceljs-writes-two-schema-invalid-ooxml-fragments`
 - **Looking at a generated workbook has two modes that LIE (LibreOffice PNG, ExcelJS round-trip).** — `looking-at-a-generated-workbook-two-ways-that-lie` **(inline — load-bearing)**
@@ -158,6 +159,8 @@ status, give it its own line.
 ## 2.3 Production and approval hooks
 
 - **A deploy applies NO migrations** — `railway-deploy-applies-no-migrations` · `railway-auto-deploy-can-silently-skip-a-race`
+- **A red `main` CI makes Railway mark the production deploy SKIPPED in minutes, and a green re-run does not resurrect it** — `a-red-main-ci-makes-railway-skip-the-deploy-for-good` **(inline — load-bearing)**
+- **The `railway` CLI in the primary is linked to `phoenix-headwind`, not the app — every command needs `--service phoenix-people-workforce`** — `railway-cli-is-linked-to-phoenix-headwind-not-the-app` **(inline — load-bearing)**
 - **railway variables --stdin stores a BOM** — `railway-stdin-bom-trap`
 - **railway ssh JOINS argv and lands as ROOT.** — `railway-ssh-joins-argv-and-lands-as-root`
 - **railway service source connect is NOT environment-scoped — --environment staging…** — `railway-service-source-connect-is-not-environment-scoped`
