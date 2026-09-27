@@ -72,4 +72,5 @@ export type { AdoptionView } from "@/lib/phoenix-crm/server/adoption";
 export type { ExceptionsView } from "@/lib/phoenix-crm/server/exceptions";
 export type { BrickCoverageView } from "@/lib/phoenix-crm/server/brick-report";
 export type { PhotoSlot } from "@/lib/phoenix-crm/server/photos";
+export type { TimeAnchorView } from "@/lib/phoenix-crm/server/time-anchor";
 export type { PhoenixCrmSettingsView, SettingsLine, SettingsRamadan } from "@/lib/phoenix-crm/server/admin-settings";
