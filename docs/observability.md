@@ -328,6 +328,7 @@ policy):
    | `phoenix-distributor-upload-overdue-nudge` | `20 7 * * *` | 1h | cron-job.org job `8375333` |
    | `phoenix-mapping-guard-notify` | `5,20,35,50 * * * *` | 1h | cron-job.org job `8427700` |
    | `phoenix-interview-reminders` | `3,13,23,33,43,53 * * * *` | 1h | cron-job.org job `8478976` · **in-house only** |
+   | `phoenix-crm-daily-digest` | `55 6 * * *` | 2h | cron-job.org (created on `--apply`) · **in-house only** |
    | `phoenix-crm-integrity-sweep` | `35 3 * * *` | 3h | cron-job.org (created on `--apply`) · **in-house only** |
    | `phoenix-retention-risk-sweep` | `40 7 * * *` | 1h | cron-job.org job `8397172` · **in-house only** |
    | `phoenix-retention-risk-pre-payroll` | `45 7 25 * *` | 2h | cron-job.org job `8397174` · **in-house only** |

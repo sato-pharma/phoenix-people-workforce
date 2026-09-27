@@ -132,13 +132,17 @@ const JOBS = {
     // Nowhere near the 30s platform cut. 300 matches the rest of the account.
     requestTimeout: 300,
   },
-  // 🔴 phoenix-crm-daily-digest IS DELIBERATELY ABSENT.
-  // Owner, 2026-09-27, in his own words: "donot create this digest i donot want it".
-  // It was built, merged and dry-run clean, and he decided against the 06:55 Telegram to District
-  // Managers before a single one had been sent to anybody. Do NOT re-add a declaration
-  // here: this file is a list of jobs someone is about to create, and adding it back is the same
-  // keystroke as creating it. Its schedule is also gone from JOB_SCHEDULES and from
-  // docs/observability.md, so nothing alarms about a job that will never fire.
+  "phoenix-crm-daily-digest": {
+    title: "Phoenix — CRM daily digest",
+    path: "/api/cron/phoenix-crm-daily-digest",
+    // 06:55 Cairo, every day, before the field day starts. On :55 so it shares a minute with nothing
+    // else in this account and a red execution names one job. It runs on Fridays too and simply finds
+    // the Thursday before — a daily fire keeps the heartbeat a straight daily one.
+    schedule: { hours: [6], minutes: [55], mdays: [-1], months: [-1], wdays: [-1] },
+    // Four reads over the whole company's territories, then at most a dozen notifications. Most
+    // mornings it sends nothing at all, which is the feature rather than a fault.
+    requestTimeout: 300,
+  },
   "phoenix-crm-integrity-sweep": {
     title: "Phoenix — CRM integrity sweep",
     path: "/api/cron/phoenix-crm-integrity-sweep",

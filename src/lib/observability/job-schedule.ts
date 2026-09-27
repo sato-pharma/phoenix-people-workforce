@@ -77,17 +77,18 @@ export const JOB_SCHEDULES: readonly JobScheduleDeclaration[] = [
   // job. Daily rather than field-days-only: the job runs on a Friday too and simply finds the
   // Thursday before, which is what keeps its heartbeat a straight daily one. Must match
   // scripts/cronjob-sync.mjs exactly, or the heartbeat judges a job that fires perfectly to be late.
-  // 🔴 NO phoenix-crm-daily-digest HERE, and that is the owner's decision, not an oversight
-  // (2026-09-27: "donot create this digest i donot want it"). The route, the message builder and
-  // their tests all still exist and are merged — what is gone is the SCHEDULE, so nothing fires it
-  // and nobody is messaged at 06:55.
+  // 🔴 RESTORED 2026-09-28 — the owner asked for the digest back, in his own words: "i want it in
+  // app or telegram only". He had stood it down the evening before ("donot create this digest i
+  // donot want it") and nothing had ever been sent, so there is nothing in the field to undo.
+  // The channel condition he attached was already how it was built: `deliver` asks for
+  // ["in_app", "telegram"] and the module guard strips email whatever any caller asks for.
   //
-  // It has to leave THIS list too, not just cron-job.org, and that is the whole reason this comment
-  // is here: a declaration with no job behind it is read by the sweep as a job that has STOPPED.
-  // Once a 06:55 passes after bootstrap, `hadAChanceToRun` is true, it has never reported a
-  // success, and it goes STRANDED — an in-app, Telegram and push alarm to every Super Admin, every
-  // sweep, for ever, about a job that was never meant to run. Restoring the line without creating
-  // the cron job is that alarm.
+  // 🔴 THIS LINE AND THE CRON JOB LAND IN THE SAME SITTING, NEVER ONE WITHOUT THE OTHER. A
+  // declaration with no job behind it is read by the heartbeat sweep as a job that has STOPPED:
+  // once one 06:55 passes, `hadAChanceToRun` is true, it has never reported a success, and it goes
+  // STRANDED — an in-app, Telegram and push alarm to every Super Admin, every sweep, for ever,
+  // about a job nobody created. Merging this without running the cron-job.org sync IS that alarm.
+  { slug: "phoenix-crm-daily-digest", kind: "cron", schedule: "55 6 * * *", graceSeconds: 2 * HOUR },
   { slug: "phoenix-crm-integrity-sweep", kind: "cron", schedule: "35 3 * * *", graceSeconds: 3 * HOUR },
   { slug: "phoenix-retention-risk-sweep", kind: "cron", schedule: "40 7 * * *", graceSeconds: 1 * HOUR },
   // Day 25 only. The pre-payroll half of the same feature: Part 1 pays at the start of the month,
