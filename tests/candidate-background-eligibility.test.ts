@@ -222,6 +222,25 @@ export function runCandidateBackgroundEligibilityTests(): void {
     );
   }
 
+  // ── EVERY Pick THAT FEEDS THE RULE MUST CARRY THE DEGREE ──────────────────────────────────────
+  // BackgroundSubject.degree is OPTIONAL, so a caller handing over a candidate shape without it
+  // compiles cleanly and simply judges on the faculty alone — the same CV routing in one screen and
+  // not another. The typechecker caught district-manager-folders.ts only because its own Pick made
+  // the field required; nothing would have caught the next one. So this reads the source: any
+  // Pick of Candidate that takes "faculty" takes "degree" too.
+  for (const file of [
+    "src/lib/recruitment/background-review.ts",
+    "src/lib/recruitment/district-manager-folders.ts",
+    "src/lib/recruitment/whatsapp-application-form.ts",
+  ]) {
+    const source = readFileSync(file, "utf8");
+    assert.ok(source.includes("| \"faculty\""), file + " is expected to pick faculty — if it stopped, drop it from this list");
+    assert.ok(
+      source.includes("| \"degree\""),
+      file + " picks faculty for the eligibility rule, so it must pick degree too, or that screen judges a CV on half the evidence",
+    );
+  }
+
   // ── THE DEGREE LINE, ADDED 2026-09-28 ─────────────────────────────────────────────────────────
   // An Egyptian CV very often names the degree and not the faculty, and this module read only the
   // faculty. Measured on production that day: 241 candidates read UNKNOWN, 112 of them still live,
