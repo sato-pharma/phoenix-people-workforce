@@ -186,8 +186,11 @@ whether it was sound** — and nothing recorded that the protection had been los
 - `next.config.ts` sets **`typescript: { ignoreBuildErrors: true }`**, so a red `main` builds,
   deploys and serves perfectly. Without this run, nothing detects it at all.
 
-Measured 2026-09-27: `push` to `main` is **32.7% of `ci.yml`'s billable minutes** (~$98 of a $300.88
-month). That is the price of the gate, not waste to reclaim — see
+Measured 2026-09-27 across every run of the month: `push` to `main` is **39.5% of `ci.yml`'s
+billable minutes** — the single largest slice after PR runs. **A share, deliberately, not a dollar
+figure:** converting measured minutes into a monthly bill overstated it by ~2x and the owner's invoice
+is the only authority (see the runner doc). That share is the price of the gate, not waste to
+reclaim — see
 [ci-self-hosted-runner.md](ci-self-hosted-runner.md) for the full split and for the lever that makes
 those minutes cost nothing.
 
