@@ -173,6 +173,14 @@ export type OfferFields = {
 };
 
 export type OfferRecord = OfferFields & {
+  /**
+   * The candidate this offer was written for, or null where it was not raised from the ATS pool.
+   *
+   * NOT part of OfferFields, because it is not letter content — it is the link the offer never had.
+   * Passed at create time the way templateId is, as an intersection at the boundary. Null is a real
+   * answer here: three of the eight people hired on 2026-09-28 had no candidate record at all.
+   */
+  candidateId: string | null;
   createdAt: string | null;
   createdBy: string | null;
   id: string;

@@ -537,6 +537,7 @@ export async function lookupOfferTemplateIdForTitle(title: string): Promise<stri
 
 type OfferRow = {
   candidate_email: string;
+  candidate_id: string | null;
   candidate_name: string;
   contract_term: string | null;
   cost_of_living: number | string | null;
@@ -566,6 +567,7 @@ function toOffer(row: OfferRow): OfferRecord {
 
   return {
     candidateEmail: row.candidate_email,
+    candidateId: row.candidate_id ?? null,
     candidateName: row.candidate_name,
     contractTerm: row.contract_term ?? "",
     costOfLiving: Number(row.cost_of_living) || 0,
@@ -661,7 +663,7 @@ export async function allocateOfferReference(title: string, year: number): Promi
 const UNIQUE_VIOLATION = "23505";
 
 export async function createOffer(
-  fields: OfferFields & { templateId?: string | null },
+  fields: OfferFields & { candidateId?: string | null; templateId?: string | null },
   createdBy: string | null,
 ): Promise<OfferRecord> {
   const db = getSupabaseAdmin();
@@ -693,6 +695,9 @@ export async function createOffer(
       .from("offers")
       .insert({
         ...toRow({ ...fields, reference }),
+        // Written HERE and not through toRow, because toRow maps letter CONTENT and this is a link.
+        // Null is a real answer: an offer may be raised for somebody who never came through the ATS.
+        candidate_id: fields.candidateId ?? null,
         created_by: createdBy,
         status: "draft",
         template_id: templateId,

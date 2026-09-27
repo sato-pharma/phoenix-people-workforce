@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContext } from "@/lib/auth/server";
+import { isUuid } from "@/lib/http/uuid";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { createOffer, listOfferJobTitles, listOfferTemplates, listOffers } from "@/lib/offers/service";
 import { offerJsonError } from "@/lib/offers/http";
@@ -46,10 +47,16 @@ export async function GET(request: Request) {
   }
 }
 
-function readFields(body: Record<string, unknown>): OfferFields & { templateId?: string | null } {
+function readFields(
+  body: Record<string, unknown>,
+): OfferFields & { candidateId?: string | null; templateId?: string | null } {
   const text = (key: string) => String(body[key] ?? "").trim();
   return {
     candidateEmail: text("candidateEmail"),
+    // A uuid or nothing. Anything else is discarded rather than stored: a bad id here would be a
+    // WRONG link, which is worse than the null this column is designed to carry, and the foreign key
+    // would refuse it anyway — with a 500 instead of a saved offer.
+    candidateId: isUuid(text("candidateId")) ? text("candidateId") : null,
     candidateName: text("candidateName"),
     contractTerm: text("contractTerm"),
     costOfLiving: Number(body.costOfLiving ?? 0),

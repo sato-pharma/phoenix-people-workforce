@@ -39,6 +39,8 @@ export type CandidateMergeResult = {
   movedFiles: number;
   /** Booked interviews carried onto the survivor. Reported because a human already promised one. */
   movedInterviews: number;
+  /** Job offers carried onto the survivor — a promise already made, so it is never moved silently. */
+  movedOffers: number;
   summary: string;
 };
 
@@ -80,6 +82,13 @@ export type CandidateMergeResult = {
 const childTables = [
   "ats_applications",
   "ats_interview_bookings",
+  // The job offer, added 2026-09-28 with offers.candidate_id itself. Its FK is ON DELETE SET NULL, so
+  // without this line a merge would not destroy the offer but WOULD quietly cut it loose from the
+  // person — putting the record straight back into the state that column exists to end. Marina Osama
+  // is the proof: her offer links to the candidate row that survived the 2026-09-28 merge, and it
+  // links there only because the row it pointed at happened to be the survivor. The `offers` table
+  // has its own `id` column and no unique index on `candidate_id`, so the plain reassign is safe.
+  "offers",
   "ats_files",
   "ats_candidate_cv_extractions",
   "ats_cv_intake_events",
@@ -576,6 +585,7 @@ export async function mergeCandidates(
   let movedApplications = 0;
   let movedFiles = 0;
   let movedInterviews = 0;
+  let movedOffers = 0;
   for (const table of childTables) {
     const moved = await reassign(table, duplicateId, survivorId);
     if (table === "ats_applications") movedApplications = moved;
@@ -584,6 +594,9 @@ export async function mergeCandidates(
     // a human has already promised to another human, so the recruiter has to be told which record
     // it now sits on — a silent move would leave them looking for it on the row that is gone.
     if (table === "ats_interview_bookings") movedInterviews = moved;
+    // Reported for the same reason as the interview: a job offer is a promise already made to a
+    // person, so the recruiter has to be told which record now holds it.
+    if (table === "offers") movedOffers = moved;
   }
 
   // Step 4. An INSERT is the only verb these tables permit, so their rows are copied, not moved —
@@ -633,6 +646,7 @@ export async function mergeCandidates(
     movedDeduped,
     movedFiles,
     movedInterviews,
+    movedOffers,
   });
   await recordMergeEvent({
     actorHrId: access.hrId ?? null,
@@ -670,6 +684,7 @@ export async function mergeCandidates(
     movedApplications,
     movedFiles,
     movedInterviews,
+    movedOffers,
     summary,
   };
 }
@@ -713,6 +728,7 @@ function buildSummary(input: {
   movedDeduped: readonly { count: number; plural: string; singular: string }[];
   movedFiles: number;
   movedInterviews: number;
+  movedOffers: number;
 }): string {
   const parts: string[] = [`Merged the duplicate record for ${input.duplicateName}.`];
   const moved: string[] = [];
@@ -721,6 +737,7 @@ function buildSummary(input: {
   if (input.movedInterviews > 0) {
     moved.push(countedNoun(input.movedInterviews, "booked interview", "booked interviews"));
   }
+  if (input.movedOffers > 0) moved.push(countedNoun(input.movedOffers, "job offer", "job offers"));
   if (input.movedFiles > 0) moved.push(countedNoun(input.movedFiles, "file", "files"));
   if (input.movedApplications > 0) {
     moved.push(countedNoun(input.movedApplications, "application", "applications"));

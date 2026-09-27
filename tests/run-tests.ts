@@ -795,6 +795,7 @@ import { runPerformanceReconciliationTests } from "./performance-reconciliation.
 import { runHrIdAliasNormalizationTests } from "./hrid-alias-normalization.test.ts";
 import { runPayrollLifecycleScopeTests } from "./payroll-lifecycle-scope.test.ts";
 import { runOfferVacancyMatchingTests } from "./offer-vacancy-matching.test.ts";
+import { runOfferCandidateLinkTests } from "./offer-candidate-link.test.ts";
 import { runNotificationRecipientIsolationTests } from "./notification-recipient-isolation.test.ts";
 import { runWorkflowControlTests } from "./workflow-control.test.ts";
 import { runWorkflowControlGovernanceTests } from "./workflow-control-governance.test.ts";
@@ -3530,6 +3531,11 @@ await runTest("workforce hierarchy continuity", runWorkforceHierarchyContinuityT
 await runTest("performance page reconciliation (header foots to leaderboard + unattributed slice)", runPerformanceReconciliationTests);
 await runTest("payroll lifecycle scope", runPayrollLifecycleScopeTests);
 await runTest("offer vacancy matching", runOfferVacancyMatchingTests);
+await runTest(
+  "an offer knows which candidate it was written for (SET NULL not CASCADE, resolved on the e-mail "
+    + "never the name, and a candidate merge keeps the link instead of cutting it)",
+  runOfferCandidateLinkTests,
+);
 await runTest("notification recipient isolation", runNotificationRecipientIsolationTests);
 await runTest("workflow control center", runWorkflowControlTests);
 await runTest("workflow control governance", runWorkflowControlGovernanceTests);
