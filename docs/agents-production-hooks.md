@@ -63,6 +63,18 @@ production-ops guidance. They stay in the index.
   `railway-stdin-bom-trap`
 - **`railway ssh` JOINS argv and lands as ROOT** - the command you think you are quoting is not the
   command that runs. `railway-ssh-joins-argv-and-lands-as-root`
+- 🔴 **`railway service scale <region>=1` ADDS a region rather than MOVING one, and the extra replica
+  is live immediately.** Measured 2026-09-28 during the Headwind EU cut-over: the call answered
+  `regions: EU West (1) · sfo (1) — 2 replicas`, which for an MDM server meant **two live copies
+  writing one database** until it was corrected. The old region has to be passed `=0` in the SAME
+  command, and the region map the call prints back is the thing to read before believing a move
+  happened — the command succeeding says only that it accepted a region, not that it dropped one.
+  Compounding it, a new Railway service in this account is created in `sfo`, so §3's "it must stay in
+  Europe" needs an explicit scale on every new service and a re-read afterwards. The successful
+  cut-over that followed: `phoenix-headwind` in EU West, `headwind-db-eu` on a
+  `europe-west4-drams3a` volume with 52 tables, the `sfo` database frozen at 0 backends as the
+  rollback, and latency 426 ms → ~245 ms, level with `phoenix-hr.satopharma.com`. Reported by the
+  session that did it; the `=0` rule and the read-back are the parts that generalise.
 - **`railway service source connect` is NOT environment-scoped — `--environment staging` REPOINTED
   PRODUCTION** (relocated from `MEMORY.md` 2026-08-28 together with its index line). The flag reads
   like `railway variables -e staging`, which genuinely is environment-scoped; this one is not. The

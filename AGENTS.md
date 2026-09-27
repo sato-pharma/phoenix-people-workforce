@@ -125,6 +125,7 @@ cost, the deploy path or the region.
 - **`railway variables --stdin` stores a BOM** inside the value.
 - **`railway ssh` JOINS argv and lands as ROOT.**
 - 🔴 **`railway service source connect` is NOT environment-scoped — `--environment staging` REPOINTED PRODUCTION.** Never use it to preview; staging a branch needs a separate service.
+- 🔴 **`railway service scale <region>=1` ADDS a region, it does not MOVE one** — it answered `EU West (1) · sfo (1) — 2 replicas`, i.e. two live copies of an MDM server writing one database (2026-09-28, Headwind EU cut-over). **Pass the old region `=0` in the SAME command**, and read the region map the call prints back before believing a move happened. A new service is created in `sfo`, so every one needs this explicitly (§3, "it must stay in Europe").
 
 **Cron and secrets**
 
