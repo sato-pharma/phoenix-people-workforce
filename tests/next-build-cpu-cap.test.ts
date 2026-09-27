@@ -153,6 +153,32 @@ export function runNextBuildCpuCapTests() {
     "the CI webServer must bind HOSTNAME=127.0.0.1 so the server and the readiness poll cannot resolve to " +
       "different addresses — the standalone server reads HOSTNAME and PORT, exactly as Dockerfile:169-171 sets them",
   );
+  // 🔴 THE ONE ASSERTION THAT COVERS THE ACTUAL 2026-09-27 FAILURE. A self-hosted runner inherits its
+  // Railway service's whole environment, including `PORT=8080`. Both `next start` and the standalone
+  // server bind `process.env.PORT` and fall back to 3000 only when it is UNSET — true on GitHub's
+  // runners, false in the container. Measured from inside it: `printenv PORT` -> 8080, and `next start`
+  // -> "Local: http://localhost:8080  ✓ Ready in 93ms" while the poll watched 3000 for 120s. Inheriting
+  // the port is the bug; pinning it is the fix.
+  // Deliberately NOT a literal "3000" here: that would make the agreement check below unreachable,
+  // since any wrong port would fail this assertion first. Pinned-at-all and pinned-to-the-same-number
+  // are two different mistakes, so they get two assertions that can each actually fire.
+  const pinnedPort = /PORT:\s*"(\d+)"/.exec(webServer[1]);
+  assert.ok(
+    pinnedPort,
+    "the CI webServer must PIN a PORT rather than inherit one. A self-hosted runner inherits its Railway " +
+      "service's environment, where PORT=8080, and the server then comes up healthily on a port nothing is " +
+      "watching — no error, no clue, just the full readiness timeout. This single line is what fixed the " +
+      "2026-09-27 smoke-test failure; neither the IPv6 spelling nor the standalone command did.",
+  );
+  const urlPort = /url:\s*"http:\/\/127\.0\.0\.1:(\d+)\//.exec(webServer[1]);
+  assert.ok(urlPort, "playwright.config.ts's readiness URL must name the port it polls");
+  assert.equal(
+    pinnedPort[1],
+    urlPort[1],
+    "the PORT the CI webServer binds and the port its readiness URL polls must be the SAME number. Them " +
+      "disagreeing IS the 2026-09-27 failure, and it is silent: the server is healthy, the poll times out, and " +
+      `nothing in the log names either port. Found server ${pinnedPort[1]} vs poll ${urlPort[1]}.`,
+  );
   const assemble = /- name: Assemble the standalone runtime[\s\S]*?\n\n/.exec(workflow);
   assert.ok(
     assemble,
