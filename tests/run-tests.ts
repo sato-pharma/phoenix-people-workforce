@@ -1700,6 +1700,7 @@ import { runCvContentFingerprintTests } from "./cv-content-fingerprint.test.ts";
 import { runCvRereadAppliesWhatItReadsTests } from "./cv-reread-applies-what-it-reads.test.ts";
 import { runCandidateNameFromCvTests } from "./candidate-name-from-cv.test.ts";
 import { runLegacyDocCvTests } from "./recruitment-legacy-doc-cv.test.ts";
+import { runLegacyDocCvPreviewTests } from "./legacy-doc-cv-preview.test.ts";
 import {
   runCvGradeNormalizerTests,
   runCvLibraryScreeningFilterTests,
@@ -5964,6 +5965,13 @@ await runTest(
     + "reaches word-extractor instead of dying in mammoth - and a mislabelled real .docx still "
     + "reaches mammoth)",
   runLegacyDocCvTests,
+);
+
+await runTest(
+  "legacy Word CV preview (a Word 97-2003 .doc is READ as text on the screen instead of a dead-end "
+    + "notice - the lines are shaped, the phone mask and the manager's no-download rule still reach "
+    + "it, and the page is fitted like every other CV)",
+  runLegacyDocCvPreviewTests,
 );
 
 await runTest(

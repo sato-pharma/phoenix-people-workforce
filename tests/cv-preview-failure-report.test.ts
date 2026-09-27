@@ -54,7 +54,7 @@ export function runCvPreviewFailureReportTests() {
 
   // ── A designed notice is NOT a failure ────────────────────────────────────────────────────────
   const photoNotice = new CvPreviewNotice("This CV is a photograph, so the phone number printed on it cannot be covered.");
-  const docNotice = new CvPreviewNotice("This is an older Word (.doc) format that can't be previewed here.");
+  const docNotice = new CvPreviewNotice("This older Word (.doc) file holds no text that can be shown on screen.");
   for (const notice of [photoNotice, docNotice]) {
     assert.equal(shouldReportCvPreviewFailure(notice), false, `a designed notice is not reported: ${notice.message}`);
     assert.equal(buildCvPreviewFailureReport({ caught: notice, kind: "image", route, stage: "render" }), null);
@@ -107,7 +107,17 @@ export function runCvPreviewFailureReportTests() {
     "what the manager sees must not change",
   );
   assert.match(viewer, /throw new CvPreviewNotice\(\s*"This CV is a photograph/, "the photograph notice is thrown as a notice, so it is not reported");
-  assert.match(viewer, /throw new CvPreviewNotice\("This is an older Word \(\.doc\) format/, "the legacy .doc notice is thrown as a notice, so it is not reported");
+  // Until 2026-09-27 the notice here read "This is an older Word (.doc) format that can't be
+  // previewed here", and EVERY legacy .doc raised it. That format is now READ as text
+  // (legacy-doc-text.ts), so the notice is left for the one case with genuinely nothing to show: an
+  // OLE2 file holding no text at all. Still a notice and still never reported, for the same reason
+  // as the photograph above — it fires by design, and a monitor full of decisions buries the next
+  // real failure.
+  assert.match(
+    viewer,
+    /throw new CvPreviewNotice\("This older Word \(\.doc\) file holds no text/,
+    "an empty legacy .doc is thrown as a notice, so it is not reported",
+  );
 
   console.log("  CV viewer: a load failure reaches /api/errors/client with cvKind, stage and status");
   console.log("  CV viewer: no file name, no candidate id, no query string in the report; notices stay out");

@@ -831,9 +831,11 @@ export async function runRecruitmentScreeningPageTests() {
   );
   // The PAGE element, not the container's scrollWidth. scrollWidth is the wrong number here and
   // misleadingly close to the right one: measured live, an 816px page in a 637px pane reported 727.
+  // `.cv-text-page` joined the list on 2026-09-27: a Word 97-2003 .doc read as text is dressed at the
+  // same fixed 816px width, so it must be fitted by this same pass or it overflows its column.
   assert.match(
     viewer,
-    /querySelectorAll<HTMLElement>\("\.docx, canvas"\)/,
+    /querySelectorAll<HTMLElement>\("\.docx, \.cv-text-page, canvas"\)/,
     "the width must be measured from the rendered page, never inferred from the scroll box",
   );
 

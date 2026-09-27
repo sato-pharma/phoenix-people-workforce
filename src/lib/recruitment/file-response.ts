@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { isLegacyDocBytes } from "./cv-file-kind";
+
 /**
  * How the bytes of a recruitment file are handed to the browser.
  *
@@ -20,6 +22,12 @@ import { NextResponse } from "next/server";
  * The other two modes are unchanged and still needed:
  *   - `?disposition=inline` — the "Open the CV in a new tab" escape hatch, and <img> sources.
  *   - no parameter — the real Download control, which must produce a save-file prompt.
+ *
+ * A fourth mode, `?format=doc-text`, serves the ONE format no browser can render: the Word
+ * 97-2003 binary .doc. It is a RENDER, not a file — the document's own lines as JSON, read on the
+ * server (legacy-doc-text.ts) because the only reader for that format runs in Node. Like the
+ * base64 mode it carries no filename, no document content-type and no Content-Disposition, so it
+ * hands a download manager nothing and hands a reader no copy.
  */
 export type RecruitmentFileBody = {
   bytes: Uint8Array | Buffer;
@@ -27,8 +35,34 @@ export type RecruitmentFileBody = {
   mimeType: string;
 };
 
-export function recruitmentFileResponse(request: Request, download: RecruitmentFileBody): NextResponse {
+/**
+ * Async only because of the `doc-text` branch. Every caller already returns this straight out of
+ * its own async route handler, so a promise changed nothing at any call site.
+ */
+export async function recruitmentFileResponse(
+  request: Request,
+  download: RecruitmentFileBody,
+): Promise<NextResponse> {
   const params = new URL(request.url).searchParams;
+
+  if (params.get("format") === "doc-text") {
+    const bytes = Buffer.from(download.bytes);
+    if (!isLegacyDocBytes(bytes)) {
+      // The renderer asks for this mode only after finding the OLE2 signature in bytes it already
+      // holds, so arriving here with anything else is a wiring mistake — said plainly rather than
+      // answered with an empty document, which would paint on screen as a blank CV.
+      return NextResponse.json(
+        { error: "not_legacy_doc", message: "This file is not a Word 97-2003 (.doc) document.", success: false },
+        { status: 415 },
+      );
+    }
+    const { extractLegacyDocText } = await import("./legacy-doc-text");
+    const { paragraphs, truncated } = await extractLegacyDocText(bytes);
+    return NextResponse.json(
+      { paragraphs, success: true, truncated },
+      { headers: { "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" } },
+    );
+  }
 
   if (params.get("format") === "base64") {
     return new NextResponse(Buffer.from(download.bytes).toString("base64"), {

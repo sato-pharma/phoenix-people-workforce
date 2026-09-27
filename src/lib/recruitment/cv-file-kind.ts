@@ -9,7 +9,18 @@ export function detectCvFileKind(mimeType: string, fileName: string): CvFileKind
   const normalizedMime = (mimeType || "").toLowerCase();
   const lowerName = (fileName || "").toLowerCase();
   if (normalizedMime.includes("pdf") || lowerName.endsWith(".pdf")) return "pdf";
-  if (normalizedMime.includes("wordprocessingml") || normalizedMime.includes("msword") || lowerName.endsWith(".docx")) {
+  // ".doc" is tested as well as ".docx" because the NAME is sometimes all there is: an attachment
+  // off WhatsApp or e-mail can arrive with no mime type, or a generic application/octet-stream, and
+  // before 2026-09-27 such a file answered "unsupported" — a reader was shown "no preview for this
+  // file type" for a document the Word branch can read. "docx" means "a Word file" here, never
+  // "the modern format"; which of the two readers runs is decided by the bytes (isLegacyDocBytes
+  // below), not by this label.
+  if (
+    normalizedMime.includes("wordprocessingml") ||
+    normalizedMime.includes("msword") ||
+    lowerName.endsWith(".docx") ||
+    lowerName.endsWith(".doc")
+  ) {
     return "docx";
   }
   // Scanned/photographed CVs — no local text extraction, read directly via OpenAI vision
