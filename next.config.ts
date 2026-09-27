@@ -306,6 +306,29 @@ const nextConfig: NextConfig = {
     ],
   },
   experimental: {
+    // 🔴 THE PAGE-DATA WORKER POOL, CAPPED ONLY WHERE THE HOST LIES ABOUT ITS CPUs.
+    //
+    // `next build` sizes this pool from the CPUs it can SEE. In a container that is the HOST's count,
+    // not the container's allowance, so on the self-hosted Railway runner it read 47, spawned 47
+    // tokio workers against a far lower pid/thread limit, and aborted the build AFTER compiling
+    // successfully:
+    //
+    //     ✓ Compiled successfully in 40s
+    //     Collecting page data using 47 workers ...
+    //     OS can't spawn worker thread: Resource temporarily unavailable (os error 11)
+    //     fatal runtime error: failed to initiate panic, error 5, aborting
+    //
+    // 🔴 `NEXT_CPUS` CANNOT FIX THIS — no env var can. Read from the installed next@16.3.3:
+    // `dist/build/index.js:371` decides the count from `config.experimental.cpus` alone, so a
+    // container variable is ignored however it is spelled, which is why setting one changed nothing
+    // and the log still said 47. The option is the only knob.
+    //
+    // Unset — every GitHub-hosted run, every local build, production — this key is ABSENT and the
+    // default is untouched: `0` and a non-numeric value both resolve to absent, never to a cap of
+    // zero. Pinned by tests/next-build-cpu-cap.test.ts.
+    ...(Number(process.env.PHX_BUILD_CPUS) > 0
+      ? { cpus: Number(process.env.PHX_BUILD_CPUS) }
+      : {}),
     serverActions: {
       allowedOrigins: [
         "phoenix-hr-897559113412.europe-west3.run.app",

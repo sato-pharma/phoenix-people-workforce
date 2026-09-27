@@ -198,14 +198,35 @@ reproducibly on two different runners, in the Build step, with an identical sign
     OS can't spawn worker thread: Resource temporarily unavailable (os error 11)
     fatal runtime error: failed to initiate panic, error 5, aborting
 
-Job ids `36346183612` and `36346466953`. That is a thread or process limit in the container —
-RLIMIT_NPROC, or a pids/memory cap — **not vCPU count, so adding replicas will not help and may hurt**
-by splitting the same allowance. A second job on that rollout printed every test as PASS and then took
-`The runner has received a shutdown signal`, which is a replica cycling mid-job, not a test failing.
-**So the ~4 GB figure above is too low for the Build step.** The knobs are the container's
-process/thread limit and its memory, plus pinning the build's own concurrency. Rolled back with
-`gh variable set CI_RUNNER --body ubuntu-latest` at 20:04:38Z; set it explicitly rather than deleting
-it, so the repo variables still read safe.
+Job ids `36346183612` and `36346466953`. A second job on that rollout printed every test as PASS and
+then took `The runner has received a shutdown signal`, which is a replica cycling mid-job, not a test
+failing. Rolled back with `gh variable set CI_RUNNER --body ubuntu-latest` at 20:04:38Z; set it
+explicitly rather than deleting it, so the repo variables still read safe.
+
+🔴 **THE HEADING ABOVE AND THE SENTENCE "SO THE ~4 GB FIGURE IS TOO LOW" WERE BOTH MINE, AND BOTH ARE
+WRONG — MEMORY IS NOT IMPLICATED AT ALL.** I read `os error 11` as a memory/pids cap and passed that on
+before looking at the rest of the log. The build **succeeds**; the abort comes afterwards, and the line
+before it names the real cause:
+
+```
+✓ Compiled successfully in 40s
+Collecting page data using 47 workers ...
+OS can't spawn worker thread: Resource temporarily unavailable (os error 11)
+```
+
+`next build` sizes that worker pool from the CPUs it can **see**, which inside a container is the
+HOST's count — 47 — not the container's allowance, so tokio asks for 47 threads against a far lower pid
+limit and gets `EAGAIN`. **Nothing to do with memory, the image, or the code**, and more replicas would
+split the same allowance. Memory therefore remains exactly as unmeasured as the table above says:
+neither confirmed nor refuted. **Raising the container's memory would not have fixed this.**
+
+🔴 **AND NO ENVIRONMENT VARIABLE CAN CAP IT.** `NEXT_CPUS` was set on the service and the next run
+still printed `using 47 workers`. Read from the installed `next@16.3.3`, `dist/build/index.js:371`
+takes the count from `config.experimental.cpus` alone. So the cap lives in `next.config.ts` behind
+`PHX_BUILD_CPUS`, and `ci.yml`'s Build step passes it **only** when
+`runner.environment == 'self-hosted'` — a GitHub-hosted build keeps the key absent and is byte-for-byte
+its old configuration, because capping workers on GitHub's 4-core runners would slow every build here
+to buy nothing. Pinned by `tests/next-build-cpu-cap.test.ts`, both guards proved by breaking them.
 
 🔴 **A BROKEN RUNNER ROLLOUT TURNS `main` RED, AND THE DEPLOY GATE THEN CORRECTLY PINS PRODUCTION.**
 That is the gate working, but it is invisible until somebody reads it, and Railway abandons the
@@ -252,6 +273,44 @@ it does not press.* What is ours is the last step only: flipping `CI_RUNNER` onc
 registered** — since the `OMAR-GAWISH` deregistration there are none, and jobs do **not** fall back
 to GitHub's: `main` runs would queue for ever rather than fail, which under the production deploy
 gate means no deploy at all, silently, until Railway abandons it at the two-hour timeout.
+
+## It is BUILT, and two of the three jobs already pass — 2026-09-27
+
+The owner had it built rather than prepared, overriding this document's own "a session prepares, it
+does not press". What exists:
+
+| | |
+| --- | --- |
+| Railway project | `phoenix-ci-runner` `d657a3c0-684c-4e83-88bc-ded47b32a00d` |
+| service | `ci-runner` `f6a18a22-1434-4423-95d5-875b88928f9b`, image `ghcr.io/actions/actions-runner:latest` |
+| region | EU West `europe-west4-drams3a` — **explicitly scaled there, see the trap below** |
+| shape | 3 replicas, runners named `phoenix-ci-<RAILWAY_REPLICA_ID>`, labels `self-hosted,X64,Linux,phoenix` |
+
+Three tested flips, each reverted on anything but success:
+
+| job | result | against GitHub-hosted |
+| --- | --- | --- |
+| `mobile` | **success**, 33s | — |
+| `checks` | **success**, 201s | ~254s hosted — **faster**, and this is the dominant job |
+| `validate` | **failure**, 97s | the `Build` step only; steps 1–12 pass. Fixed above. |
+
+**So the last mile is one `CI_RUNNER` flip with the worker cap merged** — the hosted half of that cap
+is proven by CI, and nothing else stands in the way.
+
+**Two traps this rollout paid for:**
+
+- 🔴 **`ghcr.io/actions/actions-runner:latest` is BARE — no Node.js** — and `ci.yml` runs
+  `Enable Corepack (pnpm)` **before** `actions/setup-node`, so step 4 dies `corepack: command not
+  found` (exit 127). Solved in the container's start command (NodeSource Node 24, then
+  `corepack enable`, logging `node v24.21.0 corepack 0.36.0` before it registers). That ordering
+  assumption in `ci.yml` is invisible until an image without Node runs it.
+- 🔴 **A NEW RAILWAY SERVICE IN THIS ACCOUNT IS CREATED IN `sfo`, NOT EUROPE** — the same default that
+  put `superb-smile` in the US. `AGENTS.md` §3's "it must stay in Europe" therefore needs an
+  **explicit** `railway service scale` on every new service, and the region map printed by the scale
+  API is the only place it shows.
+
+**While `CI_RUNNER` reads `ubuntu-latest`, the replicas still bill** — roughly $8/month in idle memory
+for three. That is spend producing nothing, and parking them at 0 is a dashboard decision.
 
 ## 🔴 The safety rules
 
