@@ -62,10 +62,22 @@ those minutes cost nothing.
    withholds a production deploy**, and so would expired Google credentials in the Apps Script push.
    `mobile-ota.yml` is safe by construction: without `EXPO_TOKEN` its steps are *skipped*, not
    failed, and Railway ignores a skipped run.
-3. **A CANCELLED run blocks the deploy** unless another workflow on the same commit succeeded. This
-   is why `ci.yml` groups `main` by **commit** and never cancels — a setting that now has three
-   independent reasons to stay. Never dispatch `ci.yml` on a `main` commit that already has a push
-   run: a cancelled dispatch is exactly this case.
+3. **A CANCELLED run blocks the deploy** unless another run on the same commit succeeded. This is
+   why `ci.yml` groups `main` by **commit** and never cancels — a setting that now has three
+   independent reasons to stay.
+   🔴 **NEVER LEAVE A `main` COMMIT WHOSE ONLY CI RUN IS CANCELLED — and that means the usual
+   recovery for a stuck run is the exact wrong move here.** Measured on `88f86ee57` (the #4527
+   merge) on 2026-09-27: its `push` run was created 14:15:16, sat **queued for 21m41s** because
+   `CI_RUNNER` pointed at a runner that could not serve it, and was **cancelled** at 14:36:57; a
+   `workflow_dispatch` was fired 5 seconds later at 14:37:02 and succeeded. Under the gate that
+   commit deploys **only because** that dispatch followed. Cancel the stuck run and walk away and
+   the commit's only run is `cancelled`, so Railway withholds the deploy and abandons it at the
+   two-hour timeout **with nothing red anywhere**.
+   So: prefer fixing the cause and `gh run rerun <id>` on the push run itself, which keeps
+   `event=push`. If you do cancel, you **must** then produce a succeeding run on that same SHA — on
+   `main` a dispatch is a legitimate way to do it, because `main` is not gated by a PR and the
+   `statusCheckRollup` caveat does not apply there. What you must never do is dispatch onto a **PR**
+   branch, where the run cannot reach the rollup at all.
 4. **`railway variables --set` bypasses the gate entirely**
    ([railwayapp/cli#640](https://github.com/railwayapp/cli/issues/640)) — setting a variable
    redeploys *ungated*. Treat a variable change as an unverified deploy.
