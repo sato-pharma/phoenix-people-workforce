@@ -68,7 +68,7 @@ export function runCiGateParityTests() {
  * and `agents-long-hooks-cite-docs` (AGENTS.md hooks must point at a docs/ account). Measured on PR
  * #4147 (AGENTS.md + docs/agents-*.md only): the `test` job reported success in 8 seconds with
  * every real step SKIPPED. So the moment someone grew AGENTS.md past budget or orphaned a memory,
- * the checks that would catch it skipped, the PR went green on five of six required checks, and a
+ * the checks that would catch it skipped, the PR went green on every required check but one, and a
  * merge to `main` ships to production immediately (§2 / §2.1) — the failure surfacing only
  * afterwards as a red `main`, which still builds and serves.
  *

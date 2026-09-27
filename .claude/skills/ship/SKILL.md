@@ -1,6 +1,6 @@
 ---
 name: ship
-description: Merge an approved PR and prove it reached production — read the six required checks, merge with a plain `gh pr merge` from a non-git directory, settle the PR state (a merge run from a worktree exits non-zero AFTER it already succeeded), then prove the live `/api/healthz` revision contains the merge and read main's own CI run (a docs-only PR's green checks ran no tests at all). Use when the owner's own message approves merging a specific PR — "merge it", "merge 3805 when green" — never on your own initiative.
+description: Merge an approved PR and prove it reached production — read the required checks live from branch protection (never a count from a doc), merge with a plain `gh pr merge` from a non-git directory, settle the PR state (a merge run from a worktree exits non-zero AFTER it already succeeded), then prove the live `/api/healthz` revision contains the merge and read main's own CI run (a docs-only PR's green checks ran no tests at all). Use when the owner's own message approves merging a specific PR — "merge it", "merge 3805 when green" — never on your own initiative.
 argument-hint: '[PR number, e.g. 3947]'
 ---
 
@@ -44,17 +44,30 @@ something newly on `main`.
 gh pr checks <n>
 ```
 
-Six checks block the merge, and only these six: **`validate`, `lint`, `typecheck`, `test`,
-`secret-scan`, `mobile`** (branch protection, `enforce_admins: true`). Anything else in the list —
-e.g. `sast-scan` reading `skipping` — is not a gate and not a failure. **`test` and `mobile` were
-added on 2026-09-18**: `test` had left `validate` for its own job the day before (#3950) and nobody
-added the new name, so for that day a red unit suite showed four green required checks and merged;
-`mobile` runs `npm ci` and a typecheck inside `mobile/` (#3974). A run that reads only the old four
-is now reading four of six, and the two it drops are the tests and the mobile app.
+🔴 **ASK BRANCH PROTECTION WHAT THE GATE IS — never a number from this file or any other.** The
+list has changed four times (4 → 5 → 6 → 4) and every change left the docs stating the old one:
 
-- All six `pass` → merge.
+```bash
+gh api repos/Gawish-1997/phoenix-people-workforce/branches/main/protection/required_status_checks \
+  --jq '.contexts'
+```
+
+As of 2026-09-27 that returns **four**: **`validate`, `checks`, `mobile`, `secret-scan`**
+(`enforce_admins: true`). `checks` is one job carrying lint, `next typegen`, typecheck and the unit
+suite as STEPS — #4527 merged the three former jobs to stop paying per-job minute rounding four
+times, so **`lint`, `typecheck` and `test` no longer exist as check names.** Anything in
+`gh pr checks` that protection does not name — `sast-scan` or `full-e2e` reading `skipping` — is not
+a gate and not a failure.
+
+Why this is written as a live read and not a list: on 2026-09-17 `test` left `validate` for its own
+job and nobody added the name, so for a day a red unit suite showed four green required checks and
+merged (#3950, fixed 09-18). On 2026-09-27 the names changed again and this skill still said six —
+a session following it counted to six, waited for three checks that no longer exist, and the only
+thing that saved the merge was reading the API by hand.
+
+- Every context protection names `pass` → merge.
 - Any `pending` → it is not green. Wait in the background and report when it lands; never merge on
-  five of six.
+  a partial set.
 - Red → fix the cause and push. Do not re-run a job hoping, and report a failure your change caused
   separately from one that was already there.
 - **Do not run a local full validation before the merge** — those PR checks are the gate and they
@@ -68,7 +81,7 @@ gh pr diff <n> --name-only
 
 `ci.yml`'s `detect` step answers `docs_only=true` when **every** changed path matches `*.md`,
 `docs/`, `.github/ISSUE_TEMPLATE/` or `.github/PULL_REQUEST_TEMPLATE/`, and then skips node setup,
-the tests, the build and the login smoke test — the four checks still report green, in seconds. On a
+the tests, the build and the login smoke test — every required check still reports green, in seconds. On a
 push to `main` the same step answers `false` ("not a pull_request — always run everything"), so for
 a docs-only PR **the tests first run after the merge** (phase 8). Say that in the report instead of
 implying they passed.

@@ -17,9 +17,20 @@ relevant section here first.
 
 ## Branch protection and the required checks
 
-`main` is branch-protected: `enforce_admins: true`, force-pushes and deletions blocked, and **6
-required status checks** (`validate`, `lint`, `typecheck`, `test`, `secret-scan`, `mobile`) that
-**DO gate every merge** — a PR cannot land until all six are green on its head commit.
+`main` is branch-protected: `enforce_admins: true`, force-pushes and deletions blocked, and **4
+required status checks** (`validate`, `checks`, `mobile`, `secret-scan`) that **DO gate every
+merge** — a PR cannot land until all four are green on its head commit.
+
+🔴 **THE COUNT IS THE PART THAT ROTS. It has been 4, then 5, then 6, and is 4 again — and after
+every single change the docs kept stating the old one.** On 2026-09-27 PR #4527 folded `lint`,
+`typecheck` and `test` into one `checks` job (GitHub rounds every job up to the minute, so three
+jobs paid that rounding three times; ~14% fewer billable minutes), branch protection was repointed at
+`checks` in the same window, and **`lint`, `typecheck` and `test` stopped existing as check
+names.** Nineteen places in this repo still said six afterwards, including `.claude/skills/ship`
+and `.claude/skills/verify-context` — the two things a session follows to merge. One session
+followed `ship`, counted to six, and waited on three checks that could never report. **So: read
+`branches/main/protection/required_status_checks` live before stating or counting anything, and
+treat every list in the repo — including this one — as a description, never a source.**
 
 **It was 4 until 2026-09-18**, and both names added that day had been outside the gate by oversight
 rather than by decision. `test` was split out of `validate` on 2026-09-17 (#3950) for speed, and
@@ -538,7 +549,7 @@ Evidence — dates, PR numbers, billing figures, measurements — is in
 [docs/agents-incident-history.md](agents-incident-history.md). Read it before changing branch
 protection, CI cost, the deploy path, or the region.
 
-- **Never use `gh pr merge --auto`.** `main` is branch-protected (`enforce_admins: true`) with **6 required status checks** — `validate`, `lint`, `typecheck`, `test`, `secret-scan`, `mobile` — that **DO gate every merge**. `allow_auto_merge: false`, so `--auto` is rejected anyway. Required reviews is **0**. Merge only with an explicit plain `gh pr merge` after separate owner approval.
+- **Never use `gh pr merge --auto`.** `main` is branch-protected (`enforce_admins: true`) with **4 required status checks** — `validate`, `checks`, `mobile`, `secret-scan` — that **DO gate every merge**. `allow_auto_merge: false`, so `--auto` is rejected anyway. Required reviews is **0**. Merge only with an explicit plain `gh pr merge` after separate owner approval. The list has changed four times (4 → 5 → 6 → 4); read it live rather than from any doc.
 - **Do NOT run `gh pr update-branch` reflexively.** "Require branches up to date" is **OFF** (`strict: false`, owner-approved 2026-08-05) because it was the dominant Actions cost and hit the spending cap. Each run costs ~16 Actions minutes and discards the prior green CI. Run it **only when the change genuinely depends on something newly on `main`**.
 - **When you do run it, it acts on the SERVER — your local branch is then stale.** The next `git push` is rejected with *"remote contains work that you do not have locally"*. Always `git fetch` and `git merge --ff-only origin/<branch>` first. It also moves the head SHA, so **CI re-runs and the previous green result no longer applies.**
 - **A merge to `main` SHIPS TO PRODUCTION as soon as that commit's CI is green.** Railway deploys on push, at full traffic, no cron wait, no staged rollout, no smoke test — **gated since 2026-09-27 on the commit's Actions check suites** (Wait for CI), which is why `main`'s own CI run must never be removed to save minutes. **Never merge anything to `main` you are not willing to have serving employees within minutes.** To confirm what is live, request `/api/healthz` and read `revision` — 🔴 and note the gate fails by *not* shipping, silently, so a green PR is no longer evidence production moved. Account: `docs/deployment.md`, "The deploy gate".
@@ -577,8 +588,8 @@ On 2026-09-12 `AGENTS.md` was cut to roughly half its size at the owner's reques
 branch and let the PR's checks answer.**
 
 This is safe because the local gate never gated anything. `.github/workflows/ci.yml` re-lists every
-step itself, and the six **required** checks — `validate`, `lint`, `typecheck`, `test`, `secret-scan`,
-`mobile` — run on the PR head commit and block the merge if any is red.
+step itself, and the four **required** checks — `validate`, `checks`, `mobile`, `secret-scan` —
+run on the PR head commit and block the merge if any is red.
 
 `pnpm run ci` still exists for the rare case where you genuinely need the answer before pushing. It
 is opt-in: run it **only when the owner names it**.

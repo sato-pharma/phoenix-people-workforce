@@ -24,10 +24,36 @@ that commit's CI** (see "The deploy gate" below). There is no deploy workflow in
 
 ## The deploy gate
 
-🔴 **Production deploys are gated on CI, and the gate fails by NOT shipping — silently.** Railway's
-**Wait for CI** is enabled on the `phoenix-people-workforce` service, environment `production`
-(owner's instruction, 2026-09-27: *"no i want 2 stop bad deploy"*). A merge is no longer the deploy;
-a merge **plus a green check suite on that commit** is.
+🔴 **THE GATE IS NOT HOLDING YET — MEASURED 2026-09-27. Do not read the rest of this section as a
+guarantee.** Railway's **Wait for CI** on the `phoenix-people-workforce` service, environment
+`production`, is the intended design (owner's instruction, 2026-09-27: *"no i want 2 stop bad
+deploy"*), and everything below describes how it behaves once the toggle is on. It is not on yet:
+three consecutive commits reached full traffic **before a verdict existed**, and the deployment record
+appears about two seconds after the push — ungated auto-deploy timing.
+
+| commit | CI started | CI finished | live (`status=success`) | live before its verdict by |
+| --- | --- | --- | --- | --- |
+| `f84fb0fd8` | 16:41:59 | 16:46:44 | 16:42:41 | 4m 03s |
+| `98ed75c83` | 17:00:38 | 17:05:59 | 17:03:15 | 2m 44s |
+| `1c498d8fa` | 17:02:41 | 17:07:53 | 17:04:55 | 2m 58s |
+
+`98ed75c83` is the commit that added the gate, so its own push going ungated is expected. `1c498d8fa`
+came after it and still shipped ~3 minutes early. All three were green, so nothing broke — the
+protection simply is not there. Measured independently by two sessions against the deployments and
+runs APIs. 🔴 **And the toggle alone cannot fix it: a SECOND, undocumented Railway project —
+`superb-smile / production` (`83a26007-…`) — deploys this repo successfully on every push to `main`,
+106 times since 2026-09-25T21:12:51Z. Wait-for-CI is per service, so it cannot gate another project at all.**
+Account: [agents-production-hooks.md](agents-production-hooks.md). The toggle is dashboard-only (`railway service` has no settings command and there is no
+documented API), so switching it on is the owner's click and cannot be scripted from here.
+
+🔴 **The wording matters more than the gap.** A doc promising a protection that measurement
+contradicts is worse than one admitting the gap, because the next session merges trusting it. Do not
+restate "production deploys are gated on CI" as established fact here, in `AGENTS.md`,
+`docs/system-overview.md` or the runbook until a **withheld** deploy has actually been observed — a
+green one proves only that deploying happened, never that it waited. Until then this is **configured
+in the repo, unverified on the platform.**
+
+Once it is on: a merge is no longer the deploy; a merge **plus a green check suite on that commit** is.
 
 **This restores a guarantee the platform move silently dropped.** Under Cloud Run, production
 deployed from `main` *after CI passed*. Railway's GitHub auto-deploy has no such gate, so from the
@@ -148,8 +174,8 @@ Never push directly to `main`. Work happens on a branch/PR and merges after CI p
    revision, no post-deploy smoke test, and no cron wait — nothing stands between the merge and
    employees using it.
 
-> ⚠️ Branch protection does gate the merge itself: 6 required status checks (`validate`, `lint`,
-> `typecheck`, `test`, `secret-scan`, `mobile`) must be green on the PR head commit, with
+> ⚠️ Branch protection does gate the merge itself: 4 required status checks (`validate`, `checks`,
+> `mobile`, `secret-scan`) must be green on the PR head commit, with
 > `enforce_admins: true`. So a merged commit has passed CI. But CI passing is the *only* gate —
 > once merged, it serves live traffic. **Never merge anything you are not willing to have serving
 > employees within minutes.**

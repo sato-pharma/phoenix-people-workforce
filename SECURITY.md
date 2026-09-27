@@ -127,9 +127,10 @@ Key principles:
 ## Deployment Security
 
 - **Production deploys** are only permitted from the `main` branch, and only
-  after the PR's six required checks pass -- `validate`, `lint`, `typecheck`,
-  `test`, `secret-scan` and `mobile`, which between them cover lint, typecheck,
-  the unit suite, the production build and the mobile app's lockfile.
+  after the PR's four required checks pass -- `validate`, `checks`, `mobile`
+  and `secret-scan`, which between them cover lint, typecheck, the unit suite,
+  the production build, the mobile app's lockfile and secret scanning. Read the
+  list from branch protection, not from here: it has changed four times.
 - **Preview environments** enforce a read-only guard via the
   `PHOENIX_PREVIEW_READ_ONLY` environment variable, preventing accidental
   mutations against production data from preview deployments.

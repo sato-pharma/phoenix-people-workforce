@@ -41,7 +41,7 @@
 - [ ] Unit tests added/updated
 - [ ] E2E tests added/updated
 - [ ] Manual testing completed
-- [ ] CI is green on this PR (`validate`, `lint`, `typecheck`, `test`, `secret-scan`, `mobile`)
+- [ ] CI is green on this PR (`validate`, `checks`, `mobile`, `secret-scan`)
 
 ## Deployment Notes
 

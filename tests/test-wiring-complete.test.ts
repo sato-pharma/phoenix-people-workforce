@@ -70,4 +70,41 @@ export function runTestWiringCompleteTests() {
     [],
     "these files are imported but their exported symbol is never referenced in run-tests.ts — imported-and-uninvoked is the silent half of this failure",
   );
+
+  // ── A COLLAPSED runTest CALL: the third way to lose a test, and the quietest ─────────────────
+  //
+  // Every new-test PR appends at the same anchor in run-tests.ts, so git puts a merge conflict
+  // INSIDE one `await runTest(` call. Keeping both sides then yields ONE call taking four
+  // arguments — `runTest(nameA, fnA, nameB, fnB)` — which compiles, runs fnA, reports PASS, and
+  // silently retires fnB for good. The checks above cannot see it: fnB IS imported and IS
+  // referenced, so `notImported` and `notInvoked` are both empty while the test never executes.
+  //
+  // Not hypothetical, and not only a merge artefact. On 2026-09-27 a session's own edit landed a
+  // second function inside an existing call (the daily-digest one) while adding a CRM test. It
+  // compiled and went green; it was caught only by reading the file back afterwards. Measured the
+  // same day across origin/main: 858 `await runTest(` calls, zero carrying more than one function.
+  //
+  // One name, one function, per call. The floor below is what stops this passing by matching nothing.
+  const calls = [...runner.matchAll(/await\s+runTest\(([\s\S]*?)\n\s*\);/g)].map((m) => m[1]);
+  assert.ok(
+    calls.length > 800,
+    `expected to find the full set of runTest calls in run-tests.ts, matched only ${calls.length} — the matcher has stopped matching, so the collapsed-call check below is checking nothing`,
+  );
+
+  const collapsed = calls
+    .map((body) => {
+      // The function argument is a bare identifier: `runFooTests` or `runFooTests,`. A second one in
+      // the same call is the defect. String literals may legitimately contain commas and parentheses,
+      // so count identifiers rather than splitting on commas.
+      const fns = [...body.matchAll(/(?:^|,)\s*(run\w*Tests)\s*,?\s*$/gm)].map((m) => m[1]);
+      return fns.length > 1 ? fns.join(" + ") : null;
+    })
+    .filter((entry): entry is string => entry !== null);
+
+  assert.deepEqual(
+    collapsed,
+    [],
+    "one or more `await runTest(...)` calls pass MORE THAN ONE test function. Only the first runs; the rest are silently retired, and every other check in this file still reports them as wired. " +
+      "This is what a merge conflict at the shared append anchor produces when both sides are kept. Split them into one `await runTest(name, fn)` call each",
+  );
 }

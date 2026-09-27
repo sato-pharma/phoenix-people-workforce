@@ -2010,6 +2010,8 @@ import { runPhoenixCrmDictationCorrectTests } from "./phoenix-crm-dictation-corr
 import { runPhoenixCrmDictationCorpusTests } from "./phoenix-crm-dictation-corpus.test.ts";
 import { runTerritorySyncPanelRoleScopingTests } from "./territory-sync-panel-role-scoping.test.ts";
 import { runTerritoryTreeDesktopFitsTheScreenTests } from "./territory-tree-desktop-fits-the-screen.test.ts";
+import { runRequiredCheckNamesTests } from "./required-check-names.test.ts";
+import { runWorkflowDispatchGuardTests } from "./workflow-dispatch-guard.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -7280,6 +7282,15 @@ await runTest(
   "territory drilldown desktop tree fits the screen: no overflow-x-auto and no min-w-[…] floor anywhere in the file — Medical Rep's AreaRoot and the manager branches (RegionRoot, RegionsRoot, AreaLane, BlockLane) alike — and block/area/region names wrap rather than truncate",
   runTerritoryTreeDesktopFitsTheScreenTests,
 );
+await runTest(
+  "the required-check list cannot drift: AGENTS.md 2 declares it, its stated count must equal the names it lists, every name must be produced by a real workflow job, a name retired on 2026-09-27 (lint, typecheck, test) must not come back as a job while protection does not require it, and no file a session ACTS on - AGENTS.md, CLAUDE.md, the ship and verify-context skills, the PR template - may still name a retired check as a gate",
+  runRequiredCheckNamesTests,
+);
+await runTest(
+  "bash-guard C9 refuses the THIRD workflow_dispatch of one workflow+ref in a session and explains itself with the measurement, the rollup and gh run rerun, while main stays exempt with no counter (it is the outage recovery and the production deploy gate), gh run rerun and every read verb stay uncounted, the display name / .github path / gh api /dispatches / curl spellings all collapse to one target, and every degraded state - no session id, corrupt, wrong version, another session file, unwritable - ALLOWS",
+  runWorkflowDispatchGuardTests,
+);
+
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
 console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);

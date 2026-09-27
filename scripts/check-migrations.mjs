@@ -3,6 +3,7 @@
 // Exits non-zero on any violation so it can gate the validate job.
 'use strict';
 
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -86,6 +87,56 @@ for (const file of files) {
   } else {
     seenTimestamps.set(ts, file);
   }
+}
+
+// 2c. A timestamp that collides with something ALREADY ON origin/main.
+//
+// Rule 2 above only ever saw this worktree, and that is the blind spot behind most of this check's
+// failures: 10 of the last 14 `validate` failures were this step, and the commonest shape is a
+// timestamp that is unique locally and collides with a migration that merged while the branch was
+// open. CI judges the MERGE ref, so it sees the collision and the branch does not — the session gets
+// a green local run, pushes, and reads a red check over a file that is not even on its branch.
+// Three collisions in one session are on record.
+//
+// Reading origin/main here closes it in about 30 milliseconds and needs no network: the ref is
+// already in the local object store after any fetch. It FAILS OPEN on purpose — a shallow CI
+// checkout (`fetch-depth: 2`) has no origin/main, and a checkout with no git at all must not be
+// refused. A check that cannot see main is silently skipped, never treated as clean proof.
+let mainFiles = null;
+try {
+  mainFiles = new Set(
+    execFileSync('git', ['ls-tree', '-r', '--name-only', 'origin/main', '--', 'supabase/migrations'], {
+      cwd: path.join(__dirname, '..'),
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 15000,
+    })
+      .split('\n')
+      .map((line) => path.basename(line.trim()))
+      .filter((name) => name.endsWith('.sql')),
+  );
+} catch {
+  mainFiles = null; // no origin/main, no git, shallow clone — skip, do not fail
+}
+
+if (mainFiles && mainFiles.size > 0) {
+  const onMainByStamp = new Map();
+  for (const name of mainFiles) onMainByStamp.set(name.slice(0, 14), name);
+  for (const file of files) {
+    if (mainFiles.has(file)) continue; // already merged; rule 2 covers duplicates within the tree
+    const ts = file.slice(0, 14);
+    const clash = onMainByStamp.get(ts);
+    if (!clash) continue;
+    if (GRANDFATHERED_DUPLICATE_TIMESTAMPS.has(ts)) continue;
+    fail(
+      `"${file}" uses timestamp "${ts}", which "${clash}" already carries on origin/main. ` +
+        'CI judges the MERGE ref, so this is red there and green here — the file it collides with is not ' +
+        'on your branch. Rename this migration to a timestamp later than every file on main: ' +
+        'the new-migration skill mints one for you, or take the greatest stamp on main and add a second.'
+    );
+  }
+} else {
+  console.log('[migration-check] origin/main not readable here — skipped the cross-branch timestamp check (this is normal in a shallow CI checkout).');
 }
 
 // 2b. A grandfathered entry must still name a REAL duplicate.

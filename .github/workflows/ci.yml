@@ -192,12 +192,12 @@ jobs:
 
           echo "Changed files:"; echo "$files" | sed 's/^/  /'
           # NOT every .md / docs/ path is inert. CLAUDE.md, AGENTS.md and docs/agents-*.md are the
-          # auto-loaded instruction files, and tests in the `test` job exist ONLY to police them:
+          # auto-loaded instruction files, and tests in the `checks` job exist ONLY to police them:
           # the autoload footprint budget (CLAUDE.md + AGENTS.md), the memory-index reachability
           # scan (a memory slug orphaned by an AGENTS.md edit), and the long-hook docs-pointer
           # check. If those files took the docs-only fast path, the very checks that guard them
           # would skip, and a PR that grew AGENTS.md past its byte budget or orphaned a memory would
-          # go green on five of six required checks and merge — surfacing only afterwards as a red
+          # go green on three of four required checks and merge — surfacing only afterwards as a red
           # `main`, which still ships to production (§2.1). So they are NOT documentation for this
           # purpose: matched FIRST, they force the full suite. (Still shell, no third-party action —
           # see the note above the step.)
@@ -272,7 +272,8 @@ jobs:
         # high or critical finding still fails the build. See scripts/ci-dependency-audit.mjs.
         run: node scripts/ci-dependency-audit.mjs
 
-      # THE TEST SUITE IS NOT IN THIS JOB ANY MORE — it is the `test` job below (2026-09-17).
+      # THE TEST SUITE IS NOT IN THIS JOB ANY MORE — it is a STEP of the `checks` job below. It left
+      # this job on 2026-09-17 as its own `test` job, and became a step of `checks` on 2026-09-27.
       # `pnpm run test` reads nothing `validate` produces: it ran in front of the build and the
       # smoke test and needs neither, so a quarter of the slowest required check was serial for
       # no reason. The measurement and the reasoning are on that job.
@@ -465,11 +466,21 @@ jobs:
   # excluded from the root tsconfig.json and eslint.config.mjs, so it shares no preamble with
   # this job — merging it would buy one rounding at disproportionate risk.
   #
-  # 🔴 THE REQUIRED CHECK NAMES CHANGED. `lint`, `typecheck` and `test` no longer exist as
-  # check names; this one job reports as `checks`. Branch protection lists the names, and a
-  # required check that never reports blocks every PR forever. So `checks` must be ADDED and
-  # the three old names REMOVED on the repository in the same window this merges. Only the
-  # owner can do that.
+  # 🔴 THE REQUIRED CHECK NAMES CHANGED, AND THE SWAP IS DONE. Branch protection was repointed
+  # on 2026-09-27 at the owner's instruction, in the same window #4527 merged: the required
+  # contexts are now `validate`, `checks`, `mobile`, `secret-scan`, and `lint`, `typecheck` and
+  # `test` no longer exist as check names — they are the steps below. Verified live against
+  # branches/main/protection/required_status_checks.
+  #
+  # WHAT IT COST, so the next rename is done differently: nineteen places in the repo went on
+  # saying "6 required checks" and naming the three dead ones, including .claude/skills/ship and
+  # .claude/skills/verify-context — the two files a session follows in order to merge. A session
+  # followed `ship`, counted to six, and sat waiting on three checks that can never report again.
+  # A required check that never reports blocks every PR forever, and a session told to count to a
+  # number that no longer exists blocks itself just as completely. So if a name here ever changes
+  # again: repoint protection in the same window, and fix every doc that states the list in the
+  # same PR. tests/required-check-names.test.ts now fails if this job's name and the docs drift
+  # apart, which is the only part of that a machine can hold.
   checks:
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 30
@@ -500,12 +511,12 @@ jobs:
 
           echo "Changed files:"; echo "$files" | sed 's/^/  /'
           # NOT every .md / docs/ path is inert. CLAUDE.md, AGENTS.md and docs/agents-*.md are the
-          # auto-loaded instruction files, and tests in the `test` job exist ONLY to police them:
+          # auto-loaded instruction files, and tests in the `checks` job exist ONLY to police them:
           # the autoload footprint budget (CLAUDE.md + AGENTS.md), the memory-index reachability
           # scan (a memory slug orphaned by an AGENTS.md edit), and the long-hook docs-pointer
           # check. If those files took the docs-only fast path, the very checks that guard them
           # would skip, and a PR that grew AGENTS.md past its byte budget or orphaned a memory would
-          # go green on five of six required checks and merge — surfacing only afterwards as a red
+          # go green on three of four required checks and merge — surfacing only afterwards as a red
           # `main`, which still ships to production (§2.1). So they are NOT documentation for this
           # purpose: matched FIRST, they force the full suite. (Still shell, no third-party action —
           # see the note above the step.)
