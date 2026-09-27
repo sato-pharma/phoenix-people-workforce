@@ -211,7 +211,7 @@ status, give it its own line.
 - **THE DIRECT-ORDER MONTH GOLDEN RULE — the month Finance books is the month the order COUNTS, at that pharmacy’s own brick and area.** `direct-orders-are-counted-in-the-month-finance-books-them` **(inline — load-bearing)**
 - **NOT every distributor uploads every month — "N of 17 missing" is never a finding.** `not-every-distributor-uploads-every-month` **(inline — load-bearing)**
 - **THE CALL RATE'S LEAVER AND WINDOW RULINGS ARE DECIDED, not defects** (owner chose B2/C1/D2): a leaver or new hire is divided by the WHOLE month's working days, a resigned rep DROPS OUT the moment HR marks him, and every call rate scores through YESTERDAY — the rate only. — `reps-list-rulings-b2-c1-d2-leavers-keep-whole-month` **(inline — load-bearing)**
-- **THE 06:55 CRM DAILY DIGEST IS REFUSED — never schedule it** (owner, "donot create this digest i donot want it", before a single message had been sent). The route and builder stay; the schedule is gone from all three places. — `the-0655-crm-digest-is-refused-never-schedule-it` **(inline — load-bearing)**
+- **THE 06:55 CRM DAILY DIGEST IS LIVE AGAIN — never delete its schedule** (refused 2026-09-27, restored 2026-09-28: "i want it in app or telegram only"). A declaration and its cron job move in one sitting, and a restored one also carries `watchingSince`. — `the-0655-crm-digest-is-refused-never-schedule-it` **(inline — load-bearing)**
 
 ## 4.1 Marketing customer, venue and licence validation
 
