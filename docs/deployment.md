@@ -158,6 +158,18 @@ same sha does NOT resurrect it:** main's head was green from 23:11 Cairo and pro
 deploy — so the tell is an `inactive` that was never `success`; `verify-shipped.mjs` prints that as
 `WITHHELD`. **Staging deployed both commits fine, which is why staging can never be the evidence here.**
 
+✅ **AND THE RECOVERY IS NOW MEASURED TOO — the next green merge carries it forward with no click at
+all.** An unrelated PR merged green and deployed `SUCCESS` at 23:35 Cairo; `/api/healthz` then answered
+`1fb0e15c9`, and `git merge-base --is-ancestor` puts **both** withheld commits inside it (`2b654dd73`
+and `371200082`, each `true`). Railway deploys `main`'s HEAD, so a later merge necessarily carries every
+commit the gate skipped. **Nothing had to be redeployed, and `railway redeploy` would have been the
+wrong move throughout.**
+
+🔴 **WHICH IS EXACTLY WHY IT GOES UNNOTICED.** On a busy night the withhold self-heals within minutes,
+so by the time anyone looks, production is serving the commit and every reading is consistent. **The
+window, not the outcome, is what to check** — `railway deployment list` for `SKIPPED`, never only the
+live `revision`. A commit can have been unserved for an hour and leave no trace in what is serving now.
+
 One caveat kept deliberately: this proves the gate on the `phoenix-people-workforce` service. Nobody
 measured what the undocumented second Railway project (§2.3) did with the same two commits.
 

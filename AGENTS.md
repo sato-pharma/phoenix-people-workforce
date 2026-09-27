@@ -120,6 +120,7 @@ cost, the deploy path or the region.
 **Railway deploys**
 
 - **A deploy applies NO migrations, and auto-deploy can silently SKIP** — read `/api/healthz` `revision`.
+- 🔴 **A RED `main` CI MAKES RAILWAY MARK THE PRODUCTION DEPLOY `SKIPPED` WITHIN MINUTES — NOT AFTER TWO HOURS — AND RE-RUNNING THAT CI GREEN DOES NOT RESURRECT IT.** The commit is then merged, green and NOT serving, with nothing red to show it. **GitHub only ever calls it `inactive`, the same word it uses for a healthy superseded deploy** — the tell is an `inactive` that was NEVER `success`; `railway deployment list -s phoenix-people-workforce -e production` says `SKIPPED` outright, and `verify-shipped.mjs` prints `WITHHELD`. Staging deploys it anyway, so staging proves nothing. 🔴 **THE NEXT GREEN MERGE CARRIES IT FORWARD BY ITSELF — measured, and that is WHY it goes unnoticed**, so never `railway redeploy` and never re-merge. Measured 2026-09-27: `2b654dd73` and `371200082` SKIPPED 86 seconds apart, both inside the live revision an hour later without a click. `a-red-main-ci-makes-railway-skip-the-deploy-for-good`
 - **Two merges inside a minute look ROLLED BACK when they are only QUEUED.** Read deployment STATES, never timestamps; settle with `git merge-base --is-ancestor <your merge> <live revision>`. Do NOT re-merge or `railway redeploy`.
 - **`railway variables --stdin` stores a BOM** inside the value.
 - **`railway ssh` JOINS argv and lands as ROOT.**
