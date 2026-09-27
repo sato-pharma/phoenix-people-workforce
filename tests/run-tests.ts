@@ -2013,6 +2013,7 @@ import { runTerritorySyncPanelRoleScopingTests } from "./territory-sync-panel-ro
 import { runTerritoryTreeDesktopFitsTheScreenTests } from "./territory-tree-desktop-fits-the-screen.test.ts";
 import { runRequiredCheckNamesTests } from "./required-check-names.test.ts";
 import { runWorkflowDispatchGuardTests } from "./workflow-dispatch-guard.test.ts";
+import { runAttributionFreezesPublishedMonthsTests } from "./attribution-freezes-published-months.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -7296,6 +7297,10 @@ await runTest(
 await runTest(
   "bash-guard C9 refuses the THIRD workflow_dispatch of one workflow+ref in a session and explains itself with the measurement, the rollup and gh run rerun, while main stays exempt with no counter (it is the outage recovery and the production deploy gate), gh run rerun and every read verb stay uncounted, the display name / .github path / gh api /dispatches / curl spellings all collapse to one target, and every degraded state - no session id, corrupt, wrong version, another session file, unwritable - ALLOWS",
   runWorkflowDispatchGuardTests,
+);
+await runTest(
+  "a published month's attribution is frozen: the last definition of phx_write_monthly_store_split_net and f_refresh_monthly_attribution each consults monthly_closing_publications, gates on unpublished_at is null, and returns early for a published period, so no later import can move a published month's store split or achievement rollup off the announced closing",
+  runAttributionFreezesPublishedMonthsTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
