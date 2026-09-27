@@ -45,8 +45,17 @@ production-ops guidance. They stay in the index.
   `railway-deploy-applies-no-migrations` · `railway-auto-deploy-can-silently-skip-a-race`
 - 🔴 **THE DEPLOY IS GATED ON CI (Railway Wait for CI, 2026-09-27) AND THE GATE FAILS BY NOT
   SHIPPING.** Red, cancelled or still-queued check suites on the pushed commit withhold the deploy,
-  and after **two hours Railway SKIPS it outright with nothing turning red** — a second, larger way
-  for "a merge that never shipped" to look like one that did. **Any** workflow on that commit counts,
+  and Railway then SKIPS it outright with nothing turning red — a second, larger way for "a merge that
+  never shipped" to look like one that did. 🔴 **CORRECTED 2026-09-27: a RED conclusion skips it within
+  MINUTES, not after two hours.** Measured on `2b654dd73` and `371200082`, merged 86 seconds apart and
+  both `SKIPPED` about five minutes later, as soon as their CI concluded red. The two-hour timeout is
+  the case for a suite that never finishes at all; do not wait two hours before believing a red merge
+  was withheld. 🔴 **And re-running that CI GREEN afterwards does NOT resurrect the deploy** — main's
+  head was green from 23:11 Cairo and production stayed on the older commit. `railway deployment list`
+  says `SKIPPED`; **GitHub only ever says `inactive`, the same word as a healthy superseded deploy**, so
+  the tell is an `inactive` that was never `success` (`verify-shipped.mjs` prints `WITHHELD`). Staging
+  deployed both fine, so staging proves nothing about production.
+  `a-red-main-ci-makes-railway-skip-the-deploy-for-good` **Any** workflow on that commit counts,
   so a failed `staging-migrate` withholds production; `railway variables --set` bypasses the gate
   entirely. Never remove `push: main` from `ci.yml` to save minutes. Account:
   `docs/deployment.md`, "The deploy gate".

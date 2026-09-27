@@ -1,0 +1,112 @@
+import { strict as assert } from "node:assert";
+import { readFileSync } from "node:fs";
+
+/**
+ * The page-data worker cap: inert everywhere except a self-hosted runner.
+ *
+ * WHY IT EXISTS. `next build` sizes its page-data worker pool from the CPUs it can SEE, which inside
+ * a container is the HOST's count rather than the container's allowance. On the self-hosted Railway
+ * runner that read 47, spawned 47 tokio workers against a far lower pid/thread limit, and aborted
+ * AFTER the compile had already succeeded:
+ *
+ *     ✓ Compiled successfully in 40s
+ *     Collecting page data using 47 workers ...
+ *     OS can't spawn worker thread: Resource temporarily unavailable (os error 11)
+ *
+ * Measured 2026-09-27 on jobs 108695670880 and 108696483287 — two different runners, same abort, so
+ * it is the environment and not one bad replica.
+ *
+ * 🔴 WHAT THIS TEST IS REALLY PROTECTING: that a GitHub-hosted build is UNCHANGED. The cap must never
+ * apply on GitHub's 4-core runners, where limiting workers would slow every build in the repo to buy
+ * nothing. Two independent things have to hold for that, and both are easy to break by accident —
+ * the config must leave `experimental.cpus` ABSENT when the variable is unset, and the workflow must
+ * pass it only when `runner.environment` is `self-hosted`. A future edit that "simplifies" the
+ * workflow to a plain `PHX_BUILD_CPUS: 4` passes any structural check while quietly capping every
+ * hosted build, which is why the gate itself is asserted here by name.
+ *
+ * 🔴 AND WHY NO ENV VAR CAN DO THIS JOB DIRECTLY: read from the installed next@16.3.3,
+ * `dist/build/index.js:371` decides the worker count from `config.experimental.cpus` alone. A
+ * container variable — `NEXT_CPUS` was tried — is ignored however it is spelled, and the build log
+ * still reported 47 workers. The option is the only knob, so the config is the only place this can
+ * live.
+ *
+ * The predicate is LIFTED OUT OF `next.config.ts` AND EXECUTED rather than pattern-matched: the file
+ * cannot be imported (it uses `__dirname`, so it is not loadable as an ES module), and a test that
+ * re-implemented the condition would pass against a config whose guard had been inverted.
+ */
+const CONFIG = "next.config.ts";
+const WORKFLOW = ".github/workflows/ci.yml";
+
+/** Pulls the real spread out of the config and runs it against a controlled `process.env`. */
+function capFor(source: string, value: string | undefined): Record<string, unknown> {
+  const match = /\.\.\.\(Number\(process\.env\.PHX_BUILD_CPUS\)[\s\S]*?:\s*\{\}\)/.exec(source);
+  assert.ok(
+    match,
+    `${CONFIG} no longer carries the \`...(Number(process.env.PHX_BUILD_CPUS) > 0 ? … : {})\` spread this test ` +
+      "executes. Either the worker cap was removed — which returns the self-hosted build to aborting on " +
+      "`OS can't spawn worker thread` — or it was rewritten in a form this test can no longer verify. Do not " +
+      "delete this test to make it pass.",
+  );
+  const expr = match[0].replace(/process\.env/g, "env");
+  const build = new Function("env", `return { ${expr} };`) as (env: Record<string, string | undefined>) => Record<string, unknown>;
+  return build({ PHX_BUILD_CPUS: value });
+}
+
+export function runNextBuildCpuCapTests() {
+  const config = readFileSync(CONFIG, "utf8");
+  const workflow = readFileSync(WORKFLOW, "utf8");
+
+  // ── the config's own predicate, executed ─────────────────────────────────────────────────────
+  for (const [label, value] of [
+    ["unset", undefined],
+    ["empty", ""],
+    ["zero", "0"],
+    ["non-numeric", "abc"],
+    ["negative", "-2"],
+  ] as const) {
+    const result = capFor(config, value);
+    assert.deepEqual(
+      result,
+      {},
+      `with PHX_BUILD_CPUS ${label}, the config must leave \`experimental.cpus\` ABSENT — every GitHub-hosted ` +
+        "run, every local build and production take this path, and a cap of 0 or NaN reaching Next would be far " +
+        `worse than no cap at all. It produced: ${JSON.stringify(result)}`,
+    );
+  }
+  assert.deepEqual(
+    capFor(config, "4"),
+    { cpus: 4 },
+    "with PHX_BUILD_CPUS=4 the config must cap the pool at 4 workers as a NUMBER — Next compares " +
+      "`config.experimental.cpus` against its default, and the string \"4\" is not that number",
+  );
+
+  // ── the workflow half: the cap must reach ONLY a self-hosted runner ──────────────────────────
+  assert.match(
+    workflow,
+    /PHX_BUILD_CPUS:\s*\$\{\{\s*runner\.environment\s*==\s*'self-hosted'\s*&&\s*'\d+'\s*\|\|\s*''\s*\}\}/,
+    `${WORKFLOW} must pass PHX_BUILD_CPUS only when \`runner.environment == 'self-hosted'\`. A plain value ` +
+      "there caps the worker pool on GitHub's own 4-core runners too, which slows every build in the repo and " +
+      "buys nothing — the constrained container is the only place the cap helps.",
+  );
+  const buildStep = /- name: Build\n([\s\S]*?)\n\n/.exec(workflow);
+  assert.ok(buildStep, `${WORKFLOW} no longer has a \`- name: Build\` step this test can read`);
+  assert.match(
+    buildStep[1],
+    /PHX_BUILD_CPUS/,
+    "the cap must sit on the Build step itself, not on the job: page-data collection is what aborts, and a " +
+      "job-wide value would also reach steps that have no worker pool to size",
+  );
+
+  // ── the dead knob must not come back as if it worked ─────────────────────────────────────────
+  for (const [file, source] of [[CONFIG, config], [WORKFLOW, workflow]] as const) {
+    const lines = source.split("\n").filter((line) => /NEXT_CPUS/.test(line) && !/^\s*(#|\/\/|\*)/.test(line.trim()) === true);
+    const live = lines.filter((line) => !/^\s*(#|\/\/|\*)/.test(line));
+    assert.deepEqual(
+      live,
+      [],
+      `${file} must not set NEXT_CPUS as if it capped anything. next@16.3.3 reads the worker count from ` +
+        "`config.experimental.cpus` only (dist/build/index.js:371), so that variable was set once, changed " +
+        `nothing, and the log still said 47 workers. Found: ${JSON.stringify(live)}`,
+    );
+  }
+}

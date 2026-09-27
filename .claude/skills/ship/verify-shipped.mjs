@@ -275,13 +275,22 @@ const prod = deployments.filter((d) => String(d.environment || '').includes('pro
 out.deployments = [];
 for (const d of prod) {
   let state = null;
+  let withheld = false;
   try {
     const statuses = ghJson(['api', `repos/${REPO}/deployments/${d.id}/statuses`]) || [];
     state = statuses.length ? statuses[0].state : null;
+    // 🔴 AN `inactive` THAT WAS NEVER `success` IS A DEPLOY THAT NEVER HAPPENED, NOT A SUPERSEDED ONE.
+    // Railway calls it SKIPPED; GitHub only ever says `inactive`, which this script used to print as
+    // "normal and not a failure" — so a withheld deploy read as healthy. Measured 2026-09-27: two
+    // merges 86 seconds apart went `in_progress` -> `inactive` with no `success` between them, while
+    // `railway deployment list` showed SKIPPED for both, and production stayed on an older commit even
+    // after main's CI was re-run GREEN on the same sha. The whole status history is what distinguishes
+    // the two; the newest row alone cannot.
+    withheld = !!state && state === 'inactive' && !statuses.some((s) => s.state === 'success');
   } catch (e) {
     out.notes.push(`deployment ${d.id} statuses unreadable: ${String(e.message).trim()}`);
   }
-  out.deployments.push({ id: d.id, sha: d.sha, short: String(d.sha).slice(0, 9), created: cairo(d.created_at), state, isThisMerge: d.sha === out.mergeSha });
+  out.deployments.push({ id: d.id, sha: d.sha, short: String(d.sha).slice(0, 9), created: cairo(d.created_at), state, withheld, isThisMerge: d.sha === out.mergeSha });
 }
 const mine = out.deployments.find((d) => d.isThisMerge) || null;
 const building = out.deployments.some((d) => ['in_progress', 'queued', 'pending'].includes(d.state));
@@ -328,9 +337,18 @@ function report(verdict, code, why) {
     L.push(`  contains it    ${out.liveContainsMerge ? 'yes - ancestor of what is serving' : 'NO'}`);
   if (out.deployments && out.deployments.length) {
     L.push('  production deployments (newest first, STATES not timestamps):');
-    for (const d of out.deployments) L.push(`    ${d.short}  ${String(d.state || '?').padEnd(11)} ${d.created}${d.isThisMerge ? '   <- this merge' : ''}`);
+    for (const d of out.deployments) {
+      const label = d.withheld ? 'WITHHELD' : String(d.state || '?');
+      L.push(`    ${d.short}  ${label.padEnd(11)} ${d.created}${d.isThisMerge ? '   <- this merge' : ''}${d.withheld ? '   (never succeeded — Railway SKIPPED it)' : ''}`);
+    }
     L.push('    states: success = serving · in_progress/queued = building, that is a QUEUE not a revert');
-    L.push('            inactive = superseded by a later deploy, which is normal and not a failure');
+    L.push('            inactive AFTER a success = superseded by a later deploy, which is normal');
+    L.push('            WITHHELD = inactive having NEVER succeeded: the gate refused it and Railway');
+    L.push('            marked it SKIPPED. Re-running that CI green does NOT resurrect it — the next');
+    L.push('            merge carries production forward, or the owner redeploys in the dashboard.');
+  }
+  if (out.deployments && out.deployments.some((d) => d.withheld && d.isThisMerge)) {
+    L.push('  🔴 THIS MERGE WAS WITHHELD, not queued and not superseded — it is merged, green and NOT serving.');
   }
   if (out.mainCi) L.push(`  main's CI      ${out.mainCi.status}/${out.mainCi.conclusion || '-'}  ${out.mainCi.at}`);
   for (const n of out.notes) L.push(`  note: ${n}`);

@@ -138,10 +138,28 @@ the `||` above falls back to the same value, but it leaves the variable absent r
 The load-bearing number is the last one: production advanced **2m 36s after CI went green**, not 41
 seconds after the push. That is the dependency doing its job.
 
-🔴 **WHAT IS STILL NOT PROVEN: a RED commit being refused.** Nobody has watched that happen — it is
-Railway's documented behaviour plus the dependency demonstrated above, and no one manufactured a red
-merge to `main` to test it. Say "withholding is demonstrated, refusal is not yet observed" rather
-than claiming the whole guarantee.
+✅ **A RED COMMIT BEING REFUSED IS NOW OBSERVED — 2026-09-27, and nobody had to manufacture it.** This
+paragraph used to say refusal was unproven. Two merges 86 seconds apart (`2b654dd73` then `371200082`)
+caught a window in which `CI_RUNNER` was pointed at a self-hosted runner for a smoke test, so both
+`main` runs went red on infrastructure rather than on code, and:
+
+```
+railway deployment list -s phoenix-people-workforce -e production
+  22:56:39  371200082  SKIPPED
+  22:55:12  2b654dd73  SKIPPED
+  22:38:01  bc049b3e4  SUCCESS   <- still serving
+```
+
+🔴 **Three things that reading corrects.** It is `SKIPPED` within **MINUTES** of the red conclusion, not
+after the two-hour timeout — that timeout is the never-finishing case. **Re-running the CI green on the
+same sha does NOT resurrect it:** main's head was green from 23:11 Cairo and production stayed on
+`bc049b3e4`, so the recovery is the next merge or the dashboard, never `railway redeploy`. And
+**GitHub's API only ever calls it `inactive`** — the identical word it uses for a healthy superseded
+deploy — so the tell is an `inactive` that was never `success`; `verify-shipped.mjs` prints that as
+`WITHHELD`. **Staging deployed both commits fine, which is why staging can never be the evidence here.**
+
+One caveat kept deliberately: this proves the gate on the `phoenix-people-workforce` service. Nobody
+measured what the undocumented second Railway project (§2.3) did with the same two commits.
 
 **Why staging being gated matters as much as production.** Staging tracks `main` too, and it holds a
 real production clone — real auth accounts and real payroll data, not mock data. (The owner's memory

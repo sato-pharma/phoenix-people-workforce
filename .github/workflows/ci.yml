@@ -345,6 +345,20 @@ jobs:
 
       - name: Build
         if: steps.detect.outputs.docs_only != 'true'
+        env:
+          # 🔴 ONLY on a self-hosted runner, and only because a container lies about its CPUs.
+          # `next build` sizes its page-data worker pool from the CPUs it can SEE — the HOST's count
+          # inside a container — so on the Railway runner it read 47, spawned 47 tokio workers against
+          # a much lower pid/thread limit, and aborted AFTER compiling successfully with
+          # `OS can't spawn worker thread: Resource temporarily unavailable (os error 11)`. Measured
+          # 2026-09-27 on jobs 108695670880 and 108696483287, on two different runners.
+          #
+          # `runner.environment` is `github-hosted` on GitHub's runners, so this resolves to the empty
+          # string there and `next.config.ts` leaves `experimental.cpus` ABSENT — a hosted build is
+          # byte-for-byte the configuration it was before this existed. Do not replace this with a
+          # plain value: capping workers on a 4-core hosted runner would slow every build here to buy
+          # nothing.
+          PHX_BUILD_CPUS: ${{ runner.environment == 'self-hosted' && '4' || '' }}
         run: pnpm run build
 
       # The ONE thing a PR could not previously answer. #2299 shipped a canvas fix that was correct
