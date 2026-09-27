@@ -150,8 +150,37 @@ function pack(patch: Partial<ReportsPackInput> = {}): ReportsPackInput {
     locations: null,
     exceptions: null,
     bricks: null,
+    // F3's sheet, added 2026-09-27. A REQUIRED field, not optional: a section the pack type lets you
+    // leave out is a section nobody notices is missing from the workbook.
+    adoption: null,
     ...patch,
   };
+}
+
+function adoptionView() {
+  return {
+    isTest: false,
+    cairoToday: "2026-09-27",
+    graceDays: 14,
+    rows: [
+      {
+        seatId: "SEAT-1",
+        territoryName: "Faisal",
+        lineName: "Pedia",
+        repName: "Mahmoud Adel",
+        hasRep: true,
+        stage: "never_touched" as const,
+        label: "Never opened the module",
+        why: "The line is open and nothing at all has been entered from this territory.",
+        daysOpen: 26,
+        overdue: true,
+        readyAt: null,
+        firstVisitOn: null,
+        detail: "26 days since the line opened",
+      },
+    ],
+    summary: { territories: 1, open: 1, neverTouched: 1, overdue: 1, ready: 0, working: 0, byStage: [] },
+  } as unknown as NonNullable<ReportsPackInput["adoption"]>;
 }
 
 async function sheetsOf(input: ReportsPackInput): Promise<string[]> {
@@ -173,13 +202,14 @@ export async function runPhoenixCrmReportsExportTests(): Promise<void> {
       ["Cover", "Visits per day", "Coverage and frequency"],
       "a rep's pack holds only the sections he may read — no empty tab announcing the ones he may not",
     );
-    for (const withheld of ["Where the visit was saved", "Needs you", "Coverage against sales"]) {
+    for (const withheld of ["Where the visit was saved", "Needs you", "Coverage against sales", "Who has started"]) {
       assert.equal(repSheets.includes(withheld), false, `${withheld} must be ABSENT, not present and empty`);
     }
 
-    const managerSheets = await sheetsOf(pack({ bricks: bricksView(), locations: locationsView() }));
+    const managerSheets = await sheetsOf(pack({ adoption: adoptionView(), bricks: bricksView(), locations: locationsView() }));
     assert.ok(managerSheets.includes("Where the visit was saved"), "a manager's pack holds the locations sheet");
     assert.ok(managerSheets.includes("Coverage against sales"), "and the bricks sheet");
+    assert.ok(managerSheets.includes("Who has started"), "and the adoption sheet (F3)");
     assert.ok(managerSheets.length > repSheets.length, "a manager's pack is strictly larger than a rep's");
   }
 
@@ -195,6 +225,7 @@ export async function runPhoenixCrmReportsExportTests(): Promise<void> {
   // ── 3. `packSections` is the order the cover promises, and the builder follows it ──────────────
   {
     const full = pack({
+      adoption: adoptionView(),
       bricks: bricksView(),
       exceptions: { rows: [], summary: { territories: 0, needingAttention: 0, byKind: [] }, isTest: false, lastFieldDay: "2026-09-24", weekStart: "2026-09-19", windowFieldDays: 6 } as unknown as NonNullable<ReportsPackInput["exceptions"]>,
       locations: locationsView(),
