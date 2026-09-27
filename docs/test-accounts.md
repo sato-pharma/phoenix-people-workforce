@@ -36,4 +36,24 @@ together.
   exactly what hers do. A temporary module lock is per login and is NOT copied: a lock on her does not
   reach her test account.
 
+## The risk review's holes (2026-09-28), and the rule they teach
+
+The write guard sees only non-read requests, so the review hunted what else could still change her
+data. Each is closed and pinned:
+
+- **A write that trusts a stored row's world.** Submitting or reopening a weekly plan took `is_test`
+  from the plan row and threw the gate's answer away, so a test login replaying a REAL plan's id could
+  move her real plan and notify her real manager. The gate's answer is now compared with the row's.
+  **Rule: never call a `territoryFor*` gate for its side effect alone — use or compare what it returns.**
+- **Push identity.** `/api/notifications/push/context` gives a test login no HR id, or `OneSignal.login`
+  would move the device onto HER push user.
+- **Reads that write** (a GET or a page load writing under her HR id): the bell's stale-approval
+  archive, the interview-calendar feed token (a lasting link to her calendar — refused), the ROI export
+  audit's "exported by" row (skipped), and her residence geocode on the expense pages (answered, not
+  saved). A new GET that writes keyed on `access.hrId` must skip the write for `access.testPersona`.
+- **Every password path** (sign-in, password setup, change password) skips the Supabase bridge.
+
+The copy of role, line and scope overrides is taken when the account is made or repointed; repoint it
+(or make it again) if the real person's own account changes. Her departure is checked live.
+
 Pinned by `tests/test-accounts.test.ts`.

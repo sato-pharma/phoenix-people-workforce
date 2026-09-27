@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { recruitmentApiError } from "@/app/api/recruitment/_lib/http";
 import { resolveAccessContext } from "@/lib/auth/server";
+import { assertNotTestAccount } from "@/lib/auth/test-persona";
 import { interviewCalendarCaller } from "@/lib/recruitment/interview-calendar";
 import { calendarFeedPath, getOrCreateMyCalendarFeedToken } from "@/lib/recruitment/interview-calendar-ics";
 
@@ -15,6 +16,9 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
+    // A GET that WRITES: it mints a lasting subscription link to the real person's own calendar. A test
+    // login (src/lib/auth/test-persona.ts) reads as her, so it would mint or read HER link — refused.
+    assertNotTestAccount(access);
     const caller = await interviewCalendarCaller(access, request);
     const token = await getOrCreateMyCalendarFeedToken(caller);
     return NextResponse.json({ path: calendarFeedPath(token), success: true }, { headers: { "Cache-Control": "no-store" } });

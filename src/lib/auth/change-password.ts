@@ -55,7 +55,7 @@ export async function changeUserPassword(input: {
   const { data, error } = await supabase
     .from("app_auth_users")
     .select(
-      "login_id, password_hash, session_version, hr_id, email, name, role, is_active, line, manager_hr_id, auth_user_id, auth_email",
+      "login_id, password_hash, session_version, hr_id, email, name, role, is_active, line, manager_hr_id, auth_user_id, auth_email, is_test_persona",
     )
     .eq("login_id", input.loginId)
     .maybeSingle();
@@ -69,6 +69,7 @@ export async function changeUserPassword(input: {
     email?: string | null;
     hr_id?: string | null;
     is_active?: boolean | null;
+    is_test_persona?: boolean | null;
     line?: string | null;
     login_id: string;
     manager_hr_id?: string | null;
@@ -131,7 +132,9 @@ export async function changeUserPassword(input: {
   const role = normalizeRole(row.role ?? "Employee");
   const bridgeRequired = isSupabaseBridgeRequiredForRole(role);
 
-  try {
+  // A test login (src/lib/auth/test-persona.ts) has no Supabase identity, as at sign-in and at password
+  // setup: minting one would leave a Supabase user whose profile row the employees foreign key refuses.
+  if (row.is_test_persona !== true) try {
     const identity = await provisionSupabaseAuthIdentity({
       authUserId: row.auth_user_id ?? null,
       email: row.email ?? null,

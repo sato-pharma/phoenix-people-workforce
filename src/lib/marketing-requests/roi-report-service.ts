@@ -1367,6 +1367,10 @@ export async function writeMarketingRoiExportAudit(input: {
     // employees(hr_id) FK is case-sensitive — store the canonical (uppercase) HR_ID, never normalizeHrId().
     const storedHrId = resolveStoredEmployeeHrId(input.access.hrId);
     if (!storedHrId) return;
+    // A test login's hrId is the real person it mirrors (src/lib/auth/test-persona.ts). The coverage
+    // report shows this row as "last exported by", so writing it would name her for an export she never
+    // made. The export itself is only a read and still goes ahead.
+    if (input.access.testPersona) return;
     const supabase = getSupabaseAdmin();
     await supabase.from("marketing_roi_export_audit").insert({
       id: input.exportId,
