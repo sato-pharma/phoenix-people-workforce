@@ -1389,13 +1389,29 @@ function toProductCodeSet(raw: string[] | null): Set<string> | null {
   return raw === null ? null : new Set(raw.map((code) => code.trim().toUpperCase()));
 }
 
-// Named, owner-approved exception: B-155 is a Product Manager assigned to two SPECIFIC
-// cross-line products (Tigogrow/TG001 on Pedia, Osteosat/OS001 on Anti infective), not to a
-// product line. His marketing visibility/submission is hard-clamped to exactly his
-// product_scope_override codes, matching the sales-side clamp (applyProductCodeAllowlist),
-// instead of the general line + override union below. This is intentionally scoped to this one
-// HR_ID — every other requester (including other users with a product_scope_override, e.g.
-// A-8/A-10) keeps the union behaviour unchanged.
+// Named, owner-approved exception: B-155 is a Product Manager assigned to SPECIFIC named
+// cross-line products, not to a product line. His marketing visibility/submission is hard-clamped
+// to exactly his product_scope_override codes, matching the sales-side clamp
+// (applyProductCodeAllowlist), instead of the general line + override union below. This is
+// intentionally scoped to this one HR_ID — every other requester (including other users with a
+// product_scope_override, e.g. A-8/A-10) keeps the union behaviour unchanged.
+//
+// The codes themselves are DATA, never a list written here — read
+// app_auth_users.product_scope_override. It shipped as Tigogrow/TG001 (Pedia) + Osteosat/OS001
+// (Anti Infective); the owner added Guamusin/GU001 + Ivyronc/IV001 on 2026-09-28.
+//
+// 🔴 Because of this clamp a NULL override means he sees NOTHING here, while on the sales side
+// NULL means "no restriction". So clearing his list does not widen his marketing access, it
+// empties it: canCreateDraft stays true and the product dropdown comes back with zero rows, no
+// error anywhere. That is what happened between 2026-08-10 — the owner cleared the two pre-launch
+// codes because both were inactive and every export came back empty — and 2026-09-28. Never clear
+// it; give him real codes instead.
+//
+// And a smaller trap on top: his four assigned codes yield TWO pickable products, because the
+// workspace's catalogue query drops `active = false` rows before this predicate ever sees them, and
+// Tigogrow and Osteosat are still pre-launch. Two of four is the CORRECT reading, not a
+// half-applied assignment. Measured on production 2026-09-28 by executing this path: 21 catalogue
+// rows, 2 pickable; with the old {TG001, OS001} list, 0; with the list cleared, 0.
 const PRODUCT_SCOPE_EXCLUSIVE_HR_IDS = new Set(["B-155"].map((id) => normalizeHrId(id)));
 
 // A requester may use a product if it is on their assigned line OR its code is in their
