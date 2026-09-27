@@ -136,7 +136,7 @@ jobs:
           # lone underscore or asterisk opens a span that is never closed, and Telegram answers
           # HTTP 400. An alert must never fail because of how it is formatted.
           SUBJECT=$(printf '%s' "$COMMIT_MSG" | head -n 1)
-          TEXT=$(printf 'STAGING MIGRATION FAILED\n\nA migration merged to main was NOT applied to the staging database, so staging is now behind production.\n\nCommit: %s\n%s\n\nNothing on production is affected — this workflow cannot reach it. What is affected is every test that trusts staging to look like production.\n\n%s' "${COMMIT_SHA:0:12}" "$SUBJECT" "$RUN_URL")
+          TEXT=$(printf 'STAGING MIGRATION FAILED\n\nA migration merged to main was NOT applied to the staging database, so staging is now behind production.\n\nCommit: %s\n%s\n\nThis workflow still cannot write to production. But production deploys are now GATED on this commit (Railway Wait for CI waits on every check suite), so this red run is ALSO holding back the production deploy of that commit: production is still serving the PREVIOUS revision. Confirm with /api/healthz and read docs/deployment.md, "The deploy gate".\n\nAlso affected: every test that trusts staging to look like production.\n\n%s' "${COMMIT_SHA:0:12}" "$SUBJECT" "$RUN_URL")
           # Capture the body, not just the status: a silent non-2xx is how the drift check's own
           # alert step reported success while delivering nothing on its very first run.
           HTTP=$(curl -sS --max-time 20 -X POST \

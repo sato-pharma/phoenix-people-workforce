@@ -16,8 +16,8 @@ Current operating state: see [Current Operating State](current-operating-state.m
 
 - `main` is production-only and should stay aligned with the live production deployment.
 - Feature work happens on a `codex/<task>` branch/worktree, PR'd against `main`.
-- Production is served at `https://phoenix-hr.satopharma.com` (GCP Cloud Run).
-- Cloud Run auto-deploys both production and staging from `main` after CI passes — there is no per-branch preview deployment (that was a retired Vercel-era model).
+- Production is served at `https://phoenix-hr.satopharma.com` (**Railway** — hosting moved off GCP Cloud Run on 2026-08-01 and 🔴 **GCP is DEAD, not standby**: never deploy to or verify against it, see `AGENTS.md` §3).
+- Railway auto-deploys production from `main` **after that commit's CI passes** (Wait for CI, enabled 2026-09-27) — there is no per-branch preview deployment (that was a retired Vercel-era model). 🔴 The gate fails by not shipping, silently: read `/api/healthz` `revision`, never the merge. See [deployment.md](deployment.md), "The deploy gate".
 - Deployment mapping and the Cloud Scheduler cron model are documented in [current-operating-state.md](current-operating-state.md).
 - `.vercel/` may still exist locally as inert, gitignored Vercel CLI leftovers from before the Cloud Run migration.
 

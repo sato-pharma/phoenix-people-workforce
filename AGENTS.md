@@ -74,7 +74,8 @@ cost, the deploy path or the region.
 - **Never commit directly onto local `main` in the primary checkout.** The push is then rejected (`enforce_admins: true`), and the commit strands on the one checkout every parallel session shares — where another session’s `git reset` destroys it. Branch first. If you already committed: `git branch <name> <sha>` then `git reset --keep origin/main` (**not** `--hard`, which would also wipe other sessions’ uncommitted work), then open a PR. Cost a real recovery on 2026-09-12 (#3728).
 - **Do NOT run `gh pr update-branch` reflexively** — "require branches up to date" is OFF (`strict: false`) and each run costs ~16 Actions minutes. Run it **only when the change depends on something newly on `main`**.
 - **`gh pr update-branch` acts on the SERVER** — `git fetch` and `git merge --ff-only origin/<branch>` before your next push; CI re-runs on the new head.
-- **A merge to `main` SHIPS TO PRODUCTION IMMEDIATELY** (Railway, full traffic, no smoke test). **Never merge what you would not have serving employees within minutes**; confirm with `/api/healthz` `revision`.
+- **A merge to `main` SHIPS TO PRODUCTION as soon as that commit's CI is green** (Railway, full traffic, no smoke test). **Never merge what you would not have serving employees within minutes**; confirm with `/api/healthz` `revision`.
+- 🔴 **THE DEPLOY IS GATED ON CI, AND THE GATE FAILS BY NOT SHIPPING — SILENTLY.** Railway "Wait for CI" holds the deploy until every check suite on the pushed commit finishes; **red, cancelled, or still queued = no deploy, and after 2 hours Railway SKIPS it with nothing turning red.** So a merge that never shipped now looks exactly like one that did — read `/api/healthz` `revision`, never the merge. Any workflow on that commit can hold it, not just `ci.yml` (a failed `staging-migrate` blocks production), and `railway variables --set` **bypasses the gate entirely**. Never remove `push: main` from `ci.yml` to save minutes — that silently un-gates production. Account: `docs/deployment.md`, "The deploy gate".
 - **There is a staging application**, wired to the staging Supabase project — §3.
 - **A hand-run typecheck must start cold:** `tsc --incremental false`.
 - **Never foreground-watch a long pipeline.** Background it and check at batched checkpoints.
@@ -442,7 +443,14 @@ can already see — before opening it, and push fixups in fewer, larger commits 
 superseded PR runs, so two pushes a minute apart bill twice and verify once). Splitting is still
 right when the parts need SEPARATE approval (a migration, a locked file, a protected rule) or when
 one part is urgent and the rest is not — never merely because the change feels tidier in pieces.
-Account: `docs/ci-self-hosted-runner.md`, "Why the volume is what it is".
+🔴 **MEASURE IN MINUTES, NEVER IN RUNS — the count lies.** Re-measured 2026-09-27 in billable
+minutes: `pull_request` **63.4%** · `push` to `main` **32.7%** · `workflow_dispatch` **3.9%** (26% of
+the RUNS but 1.2 min each, so "stop re-running CI" is worth ~$12/month, not the ~$78 a session
+reported off the count). `ci.yml` is 84.3% of the whole bill, so nothing outside it is worth touching;
+`main` already runs exactly once per commit; **2.18 runs per PR** is the real lever, and it is this
+rule. **And `main`'s 32.7% is NOT reclaimable — it is the production deploy gate** (§2), so the only
+lever left that costs no safety is the self-hosted runner. Account:
+`docs/ci-self-hosted-runner.md`, "Why the volume is what it is" and "Where the money actually is".
 
 ## 7. Validation
 
@@ -492,9 +500,12 @@ Coaching: Super Admin, CEO, SFE Manager, Training Manager, and Medical Rep when 
 affected. HR: Super Admin, CEO, HR Advisory, HR Operations, and Employee when portal behavior is
 affected. Do not claim role safety from code inspection alone when real role testing is possible.
 
-**Deploy verification.** Production is Railway auto-deploy on push to `main`. Confirm a deploy
-through `gh api repos/Gawish-1997/phoenix-people-workforce/deployments` or `railway status`, and what
-serves traffic via `/api/healthz` `revision`. Smoke-test on the live staging app (§3) before a risky
+**Deploy verification.** Production is Railway auto-deploy on push to `main`, **gated on that
+commit's Actions check suites** (Wait for CI — see §2). So a green CI is now a precondition of the
+deploy rather than a report on it, and the new failure mode is a deploy that never happened: confirm a
+deploy through `gh api repos/Gawish-1997/phoenix-people-workforce/deployments` or `railway status`, and
+what serves traffic via `/api/healthz` `revision` — **a merge plus a green PR is not evidence
+production moved.** Smoke-test on the live staging app (§3) before a risky
 production deploy when there is time. After a runtime-impacting production deploy, verify the public
 domain, smoke-test the changed workflow and inspect `railway logs`. When a page fails, capture the
 visible error, browser console, network/API response, deployment logs and database/RLS evidence

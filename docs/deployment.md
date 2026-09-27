@@ -18,8 +18,70 @@ retirement).
 | Attendance agent | Local Windows machine | — |
 | Rep-tablet management + remote screen | **Railway** (the same project) | Services `phoenix-headwind` (custom domain `mdm.satopharma.com`) and `headwind-db` (Postgres), region inherited `europe-west4`. 🔴 **This replaced a rented VPS on 2026-09-25 at the owner's instruction — no box is rented, and one should not be sought.** Its image is **built, not pulled**: Root Directory [`infra/headwind-phoenix-actions/`](../infra/headwind-phoenix-actions/) (see its `railway.toml`) extends the pinned image with the add-on carrying lock, lost mode, factory reset and screen-lock reset; on the stock image those four refuse. 🔴 **Watch Paths must stay `infra/headwind-phoenix-actions/**`** — without it every merge to `main` rebuilds the MDM server and a hundred tablets lose their check-in channel. The remote screen uses RustDesk's **own free EU relay** — no server at all. Nothing in CI builds or starts it; Railway deploys it on a push that touches those paths, and Phoenix otherwise only talks to it over HTTPS. [`docker-compose.headwind.yml`](../docker-compose.headwind.yml) is kept deliberately as the self-hosted path for the day the company wants to own the relay — Railway allows one TCP proxy port per service and no UDP, while RustDesk's ID server needs 21115–21119 TCP plus 21116 UDP. Ships dark — with `HEADWIND_MDM_*` unset, Rep Tablets is unchanged. See [devices/headwind-rustdesk.md](devices/headwind-rustdesk.md) |
 
-Railway is **GitHub-connected**: it deploys from this repo on push to the default branch. There is
-no deploy workflow in `.github/workflows/` that ships production any more.
+Railway is **GitHub-connected**: it deploys from this repo on push to the default branch, **gated on
+that commit's CI** (see "The deploy gate" below). There is no deploy workflow in
+`.github/workflows/` that ships production any more.
+
+## The deploy gate
+
+🔴 **Production deploys are gated on CI, and the gate fails by NOT shipping — silently.** Railway's
+**Wait for CI** is enabled on the `phoenix-people-workforce` service, environment `production`
+(owner's instruction, 2026-09-27: *"no i want 2 stop bad deploy"*). A merge is no longer the deploy;
+a merge **plus a green check suite on that commit** is.
+
+**This restores a guarantee the platform move silently dropped.** Under Cloud Run, production
+deployed from `main` *after CI passed*. Railway's GitHub auto-deploy has no such gate, so from the
+2026-08-01 cutover until 2026-09-27 **every merge shipped to full traffic without anyone asking
+whether it was sound** — and nothing recorded that the protection had been lost.
+
+**Why `main`'s own run is irreplaceable.** Two facts:
+
+- Branch protection runs **`strict: false`** — PRs need not be up to date — so a PR's green was
+  measured against a merge base that may no longer exist. `main`'s run is the **only** verification
+  the tree that actually serves employees ever gets. Two PRs can each pass alone and break `main`
+  together.
+- `next.config.ts` sets **`typescript: { ignoreBuildErrors: true }`**, so a red `main` builds,
+  deploys and serves perfectly. Without this run, nothing detects it at all.
+
+Measured 2026-09-27: `push` to `main` is **32.7% of `ci.yml`'s billable minutes** (~$98 of a $300.88
+month). That is the price of the gate, not waste to reclaim — see
+[ci-self-hosted-runner.md](ci-self-hosted-runner.md) for the full split and for the lever that makes
+those minutes cost nothing.
+
+### 🔴 The four failure modes
+
+1. **The two-hour timeout SKIPS the deploy, with nothing turning red.** If the check suites have not
+   all finished within two hours, Railway abandons the deployment. A run stuck `queued` therefore
+   means production never receives the commit and **no check is red anywhere** — observed live
+   2026-09-27, when `88f86ee57`'s `main` run sat `queued` for over an hour. `deploy-drift-check.yml`
+   (every 30 min, Telegram) is the alarm, and its message now names this cause first.
+2. **Any workflow on the commit can hold the deploy, not just `ci.yml`.** Railway waits on every
+   check suite on that commit. A main push may also trigger `staging-migrate.yml`,
+   `apps-script-push.yml`, `mobile-ota.yml` and `sync-railway-production-secrets.yml` — all
+   path-filtered, so most commits trigger only `ci.yml`. But **a failed staging migration now
+   withholds a production deploy**, and so would expired Google credentials in the Apps Script push.
+   `mobile-ota.yml` is safe by construction: without `EXPO_TOKEN` its steps are *skipped*, not
+   failed, and Railway ignores a skipped run.
+3. **A CANCELLED run blocks the deploy** unless another workflow on the same commit succeeded. This
+   is why `ci.yml` groups `main` by **commit** and never cancels — a setting that now has three
+   independent reasons to stay. Never dispatch `ci.yml` on a `main` commit that already has a push
+   run: a cancelled dispatch is exactly this case.
+4. **`railway variables --set` bypasses the gate entirely**
+   ([railwayapp/cli#640](https://github.com/railwayapp/cli/issues/640)) — setting a variable
+   redeploys *ungated*. Treat a variable change as an unverified deploy.
+
+### Reading it
+
+`/api/healthz` `revision` is the only answer to "did it ship?". A merged PR and a green check are now
+**necessary but not sufficient**, so reading the merge is worse than useless here.
+`gh run list --workflow=ci.yml --branch main --limit 3` shows whether the gate is holding.
+
+### Turning it off
+
+The toggle is in the Railway dashboard — service settings, per environment. **It is not exposed by
+the CLI** (`railway service` offers only
+`list/delete/link/source/status/logs/redeploy/restart/scale/files`) or by any documented public API,
+so it cannot be scripted and it will never appear in a diff here.
 
 **GCP is dead, not standby.** Billing account `01BDEA-A20B4C-CC568F` was closed 2026-08-01 over an
 unpaid balance; every API in project `phoenix-workforce-498619` returns `BILLING_DISABLED`.

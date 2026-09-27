@@ -55,6 +55,62 @@ or when one part is urgent and the rest is not. Never split merely because it re
 This composes with everything below: fewer runs, each cheaper (#4527), each billed at $0 (the
 runner).
 
+## 🔴 Where the money actually is — and why the run COUNT lies
+
+**Counting runs gives the wrong answer, and a session acted on it.** On 2026-09-27 the owner was told
+manual re-runs were "26% of the bill, ~$78/month" because they are ~26% of the *runs*. They are
+**3.9% of the minutes**. The correction matters because the obvious cost lever — "stop re-running CI"
+— is worth about **$12/month**, not $78, and chasing it would have cost more effort than it saved.
+
+Measured 2026-09-27 over **two independent samples, 240 `ci.yml` runs**:
+
+| trigger | share of CI minutes | avg billable min/run | of the $300.88 month |
+| --- | --- | --- | --- |
+| `pull_request` | **63.4%** | 13.2 | ~$191 |
+| `push` to `main` | **32.7%** | 13.5 | ~$98 |
+| `workflow_dispatch` | **3.9%** | **1.2** | ~$12 |
+
+Dispatch runs are cheap because most die in seconds — a skipped `full_e2e` no-op, a bad input, an
+outage. The older of the two 120-run samples contains **zero** of them, so the steady-state share is
+lower still.
+
+**`ci.yml` is 84.3% of the whole Actions bill** — 350 of 415 billable minutes across the last 80 runs
+of *every* workflow. Security Scan is 7.2%, Synthetic Journeys 4.1%, everything else under 3% each,
+and those two already carry comments recording earlier cost trims. **Nothing outside `ci.yml` is
+worth touching.**
+
+Two more facts that close off the obvious ideas:
+
+- **2.18 CI runs per PR** (109 `pull_request` runs across 50 distinct branches). That is the push
+  discipline the ONE WIDE PR rule above is aimed at, and it is the biggest remaining lever.
+- **`main` gets exactly one run per commit** — 51 commits, 51 runs, zero duplicates. No waste there.
+
+🔴 **And `main`'s 32.7% is no longer waste at all — it is the price of the production deploy gate.**
+Railway's Wait for CI reads the check suites on the pushed commit, so removing `push: main` from
+`ci.yml` to save that ~$98 would silently un-gate production. See [deployment.md](deployment.md),
+"The deploy gate". **That leaves the runner as the only lever that cuts the bill without cutting
+safety** — which is the whole argument of this document.
+
+### Reproducing the measurement
+
+GitHub's own `/timing` endpoint returns `{"billable":{}}` while an account is payment-restricted, so
+these figures were computed from per-job wall clock with **ceil-per-job** applied, the way GitHub
+charges:
+
+```bash
+gh run list --workflow=ci.yml --limit 240 --json databaseId,event \
+  --jq '.[] | "\(.databaseId)|\(.event)"' |
+while IFS='|' read -r id ev; do
+  m=$(gh api "repos/Gawish-1997/phoenix-people-workforce/actions/runs/$id/jobs" \
+    --jq '[.jobs[] | select(.started_at != null and .completed_at != null)
+           | ((.completed_at|fromdateiso8601) - (.started_at|fromdateiso8601)) / 60 | ceil] | add // 0')
+  echo "${m:-0}|$ev"
+done | awk -F'|' '{s[$2]+=$1; n[$2]++; t+=$1} END {for (e in s) printf "%7d min %5.1f%% %3d runs %s\n", s[e], 100*s[e]/t, n[e], e}'
+```
+
+The sample window is short — 240 runs was ~27 hours on that day. **Trust the shares, not a monthly
+projection from them**, and anchor the money to the real invoice.
+
 ## 🔴 The safety rules
 
 1. **PRIVATE REPOSITORIES ONLY.** A self-hosted runner executes whatever a workflow tells it to.
@@ -64,6 +120,24 @@ runner).
    the runner first.**
 2. **Never on the owner's laptop.** `AGENTS.md` §5 records that the 16 GB machine already
    hard-freezes under a build plus a dev server. A CI runner there guarantees it.
+   🔴 **This happened.** On 2026-09-27 a runner named `OMAR-GAWISH` (`self-hosted, Windows, X64`)
+   was registered and online, and with `CI_RUNNER=self-hosted` it took the jobs — see rule 2b for
+   what that did. Deregister it: `gh api -X DELETE repos/Gawish-1997/phoenix-people-workforce/actions/runners/<id>`,
+   and on the machine `cd C:\actions-runner && .\config.cmd remove`. A registered runner is not
+   idle — it competes for every job the moment the variable points at it.
+2b. 🔴 **THE RUNNER MUST BE LINUX. A WINDOWS RUNNER FAILS EVERY JOB IN SECONDS, AND LOOKS HEALTHY
+   DOING IT.** Every `run:` step here is bash; GitHub's default shell on a Windows runner is
+   PowerShell, which cannot parse `answer() { … }` or `[ "$X" = "y" ]`. Measured 2026-09-27 on
+   PR #4537: all four required checks failed in 11–25 s with `An expression was expected after '('`
+   and `Missing type name after '['`, from
+   `C:\WINDOWS\System32\WindowsPowerShell\v1.0\powershell.EXE`. Nothing reports "wrong OS" — the
+   runner shows `status: online`, the checks simply go red, and the failure reads like a broken
+   branch. **Under the production deploy gate this is far worse than a red PR:** every `main` run
+   would fail in seconds, so Railway would withhold every deploy and then skip it at the two-hour
+   timeout with nothing red to explain why (`deployment.md`, "The deploy gate", failure modes 1 and
+   3). `scripts/setup-self-hosted-runner.sh` is an Ubuntu script and refuses anything else; the
+   `runs-on` label must resolve to a **Linux x86_64** host, and a runner registered any other way
+   must be deregistered rather than left online.
 3. **The host has repository-level trust.** Anything in `.env` on that box, and any credential the
    workflows use, is reachable by any job. Treat it as production infrastructure: no shared logins,
    SSH keys only, firewall everything except SSH out.
@@ -99,6 +173,14 @@ runner is opt-in and the rollback is one command.
    are still downloaded and cached per run by `ci.yml`), registers the runner and installs it as a
    systemd service so it survives reboot.
 4. Confirm it shows **Idle** at `/settings/actions/runners`.
+4b. 🔴 **Confirm the OS before flipping the variable, and that NO other runner is registered** —
+   this is the step whose absence cost PR #4537 a full red cycle on 2026-09-27 (safety rule 2b):
+   ```bash
+   gh api repos/Gawish-1997/phoenix-people-workforce/actions/runners \
+     --jq '.runners[] | {name, os, status, labels: [.labels[].name]}'
+   ```
+   Every row must read `"os": "Linux"`. A `"Windows"` row will take the jobs and fail all of them in
+   seconds, and `status: online` tells you nothing about whether it can run bash.
 5. Flip CI onto it:
    ```bash
    gh variable set CI_RUNNER --repo Gawish-1997/phoenix-people-workforce --body 'self-hosted'
