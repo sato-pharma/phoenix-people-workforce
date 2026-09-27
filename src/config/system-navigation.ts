@@ -4112,6 +4112,13 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     roles: ["Super Admin", "CEO", "SFE Manager", "Training Manager"],
   },
   {
+    // 🔒 THE NAME STAYS "Location Integrity" — owner decision, 2026-09-27, asked directly once the
+    // board had grown past its name and answered in three words: "keep the name Location integrity".
+    // It now carries three kinds of case, not one: the position, the nightly photo sweep (D5) and
+    // the per-rep-per-month behaviour pass (D4). Do NOT re-propose a rename when a fourth detector
+    // lands, or as tidying — widen this description instead. The label is also pinned in
+    // tests/fixtures/sidebar-label-widths.json, so a rename drags a fixture regeneration with it.
+    //
     // Location integrity (the owner, 2026-09-25): the captures whose GPS the server could not
     // believe — a mock-location app the phone admitted to, a coordinate used before, a trip nobody
     // could have made. Nothing to confuse with /admin/crm-integrity above, which is the iReports360
@@ -4126,7 +4133,7 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     href: "/admin/phoenix-crm/integrity",
     icon: ShieldAlert,
     label: "Location Integrity",
-    description: "Visits and validated places that do not hold up — the position, and from 2026-09-27 the photograph too. Checked on every capture, shown to no rep.",
+    description: "Visits and validated places that do not hold up — the position, the photograph, and the shape of a rep's month. Checked without anyone being told, shown to no rep.",
     permissions: [{ resource: "phoenix_crm", action: "read" }],
     roles: ["Super Admin", "SFE Manager"],
   },

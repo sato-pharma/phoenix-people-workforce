@@ -12,10 +12,12 @@ export const dynamic = "force-dynamic";
  * Location integrity — the Super Admin's and the SFE Manager's board, and the ONLY screen that reads
  * the evidence (owner, 2026-09-26: "recorded in the admin and the SFE account").
  *
- * From 2026-09-27 it carries a SECOND detector: the nightly photo sweep, whose cases say "photo"
- * where the position checks say "position". The screen keeps its name and its sidebar entry — the
- * name is now narrower than what the board holds, which is worth the owner's word rather than a
- * rename taken here, since the sidebar's label widths are a pinned fixture and the wording is his.
+ * 🔒 IT CARRIES THREE DETECTORS AND KEEPS ITS NAME. The position checks judge one fix, the nightly
+ * photo sweep judges one picture (D5, source "photo"), and the behaviour pass judges a rep's whole
+ * month (D4, its own table and its own section below). The name says one of the three, and that was
+ * PUT TO THE OWNER on 2026-09-27 once it had stopped describing the board. He answered "keep the
+ * name Location integrity". Settled, not deferred: never re-propose a rename when a fourth detector
+ * lands — widen the description instead.
  *
  * It sits under /admin, which a rep cannot open at all. That is the whole reason it is a page of its
  * own rather than a tab inside Phoenix CRM: the CRM tabs are the same component tree the field app
@@ -83,7 +85,7 @@ export default async function PhoenixCrmIntegrityPage() {
       <AdminPageHero
         eyebrow="CRM"
         title="Location integrity"
-        description="Captures Phoenix could not account for — a mock location app the phone admitted to, a coordinate used before, a trip nobody could have made, or a photograph that had already been sent. Nothing here is a verdict and no rep is told: it is where to look, and what to look at."
+        description="Captures Phoenix could not account for — a mock location app the phone admitted to, a coordinate used before, a trip nobody could have made, a photograph that had already been sent, or a month whose shape no honest month has. Nothing here is a verdict and no rep is told: it is where to look, and what to look at."
         icon={<ShieldAlert className="h-3.5 w-3.5" />}
       />
 

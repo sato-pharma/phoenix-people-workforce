@@ -300,5 +300,29 @@ export function runPhoenixCrmBehaviourIntegrityTests(): void {
     assert.ok(page.includes("table-fixed"), "as a fixed table with a colgroup, never a min-width in a scroller");
   }
 
+  // ── 10. 🔒 The board KEEPS its name (owner decision, 2026-09-27) ───────────────────────────────
+  //
+  // It began as GPS evidence and now carries three kinds of case: the position, the photo sweep and
+  // this behaviour pass. The name says one of the three, which is why it was put to the owner once
+  // it had stopped describing the board — and he answered "keep the name Location integrity".
+  // Settled, not deferred. This pins it so a later session's tidy-up rename goes red in CI instead
+  // of quietly changing a screen he chose the wording of.
+  {
+    const nav = source("src/config/system-navigation.ts");
+    assert.ok(
+      nav.includes('label: "Location Integrity"'),
+      "🔒 the sidebar keeps the wording the owner chose — do not rename it, widen the description instead",
+    );
+
+    const page = source("app/(admin)/admin/phoenix-crm/integrity/page.tsx");
+    assert.ok(page.includes('title="Location integrity"'), "🔒 and so does the page it opens");
+
+    // The descriptions are what may grow, and they must name all three or the name misleads alone.
+    const navCard = nav.slice(nav.indexOf('label: "Location Integrity"'), nav.indexOf('label: "Location Integrity"') + 600);
+    for (const word of ["position", "photograph", "month"]) {
+      assert.ok(navCard.includes(word), `the sidebar description names the ${word} — the name cannot, so the description must`);
+    }
+  }
+
   console.log("phoenix-crm behaviour integrity: OK");
 }
