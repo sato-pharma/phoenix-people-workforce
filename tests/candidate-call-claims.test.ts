@@ -200,9 +200,28 @@ export async function runCandidateCallClaimTests() {
   const fileRoute = read(
     "../app/api/recruitment/hiring-manager/candidates/[candidateId]/files/[fileId]/route.ts",
   );
+  // An ALLOW-LIST, and the whole of it is pinned here. Until 2026-09-27 this route tested for one
+  // mode (`!== "base64"`); it now serves a second RENDER — `doc-text`, the lines of a Word 97-2003
+  // binary .doc read on the server, because no browser can open that format and the manager's card
+  // otherwise had only a sentence for it. What must never change is the shape: a closed list of
+  // modes that hand over a RENDER, refusing everything else, so the bare URL (a save-file prompt)
+  // and `?disposition=inline` (the same bytes one keystroke from being saved) stay refused.
+  assert.match(
+    fileRoute,
+    /RENDER_ONLY_FORMATS\s*=\s*new Set\(\["base64", "doc-text"\]\)/,
+    "the manager's file route must serve ONLY in-page renders, from a closed list — adding a mode that hands over the document itself is the download coming back",
+  );
+  assert.match(
+    fileRoute,
+    /if \(!format \|\| !RENDER_ONLY_FORMATS\.has\(format\)\) \{/,
+    "anything not on that list must be refused, including no format at all — the bare URL is the save-file prompt",
+  );
+  // `disposition` is refused by NOT being on that list, so the check is that the route never reads
+  // it as a branch of its own. Comments are stripped first: the route's own explanation names the
+  // mode it refuses, and raw source would match the explanation rather than the code.
   assert.ok(
-    fileRoute.includes('!== "base64"'),
-    "the manager's file route must serve ONLY the in-page base64 render — the bare URL is a save-file prompt and ?disposition=inline is the same bytes one keystroke from being saved",
+    !/disposition/.test(fileRoute.replace(/^[ \t]*\/\/.*$/gm, "")),
+    "the manager's route must never branch on ?disposition — that mode is the open-in-a-new-tab escape hatch and it stays refused",
   );
   assert.ok(
     !/NextResponse\.redirect/.test(fileRoute),

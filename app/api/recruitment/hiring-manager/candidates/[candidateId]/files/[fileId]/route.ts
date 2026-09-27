@@ -11,14 +11,29 @@ export const dynamic = "force-dynamic";
 const DOWNLOAD_BLOCKED =
   "CVs are read on screen here. Ask the recruitment team if you need a copy of this document.";
 
+/**
+ * The delivery modes that are a RENDER rather than a file, and so the only ones this route serves.
+ *
+ * Both hand the browser something to paint and neither hands over a document: no filename, no
+ * document content-type, no Content-Disposition, nothing a save-file prompt or a download-manager
+ * extension can act on (file-response.ts).
+ *
+ *   • `base64` — the bytes as plain text, decoded in the page and painted onto a canvas (PDF) or
+ *     into real DOM (a modern .docx).
+ *   • `doc-text` — the lines of a Word 97-2003 binary .doc, read on the server because no browser
+ *     can open that format at all. Added 2026-09-27: without it the ONE format the manager's
+ *     screen cannot render had nowhere to go, and his card said so in a sentence.
+ */
+const RENDER_ONLY_FORMATS = new Set(["base64", "doc-text"]);
+
 // Gated on the narrow `hiring_interviews` resource (not `recruitment`/`candidates`) — see
 // hiring-manager-view.ts for why.
 //
 // ── THIS ROUTE NO LONGER HANDS OVER A FILE ─────────────────────────────────────────────────────
 //
-// The owner, 2026-09-09: *"the download to be blocked of the cv"*. So of file-response.ts's three
-// delivery modes this route now serves exactly ONE — `?format=base64`, the plain-text encoding the
-// in-page renderer decodes and paints onto a canvas. The other two are refused:
+// The owner, 2026-09-09: *"the download to be blocked of the cv"*. So of file-response.ts's four
+// delivery modes this route serves only the two that are a RENDER — see RENDER_ONLY_FORMATS above.
+// The two that are a FILE are refused:
 //
 //   • the bare URL (Content-Disposition: attachment) — a save-file prompt, which is the download;
 //   • `?disposition=inline` — the open-in-a-new-tab escape hatch, which is the same bytes with the
@@ -47,7 +62,8 @@ export async function GET(
 
     // Asked BEFORE the file is fetched. A refusal that first downloads several megabytes out of
     // Drive is the same refusal with a bill attached.
-    if (new URL(request.url).searchParams.get("format") !== "base64") {
+    const format = new URL(request.url).searchParams.get("format");
+    if (!format || !RENDER_ONLY_FORMATS.has(format)) {
       return NextResponse.json(
         { error: "forbidden", message: DOWNLOAD_BLOCKED, success: false },
         { status: 403 },
@@ -64,8 +80,9 @@ export async function GET(
         { status: 403 },
       );
     }
-    // Reached only with format=base64, so this returns the plain-text encoding — no document
-    // content-type, no filename, no Content-Disposition. See file-response.ts.
+    // Reached only with a render format, so this returns the plain-text encoding of the bytes or
+    // the lines of a legacy .doc — no document content-type, no filename, no Content-Disposition
+    // either way. See file-response.ts.
     return recruitmentFileResponse(request, download);
   } catch (error) {
     return recruitmentApiError(error, "File download failed.");

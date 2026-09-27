@@ -156,12 +156,27 @@ export function CvDocumentView({
   // surfaced in production as a bare "Failed to fetch" with nothing rendered while the very same
   // URL downloaded fine through the extension. base64-as-text gives it nothing to match on.
   const bytesUrl = `${downloadUrl}${separator}format=base64`;
+  // The Word 97-2003 binary .doc, read into its own lines on the server. Nothing in a browser can
+  // open that format — see the legacy branch in the loader below, and legacy-doc-text.ts.
+  const docTextUrl = `${downloadUrl}${separator}format=doc-text`;
 
   const docxContainerRef = useRef<HTMLDivElement | null>(null);
   const pdfContainerRef = useRef<HTMLDivElement | null>(null);
   const [loading, setLoading] = useState(kind === "docx" || kind === "pdf" || kind === "image");
   const [error, setError] = useState<string | null>(null);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
+  /**
+   * The lines of a legacy .doc, once read. Null for every other format, and before they arrive.
+   *
+   * It carries the URL they came FROM, so nothing has to reset it: a reader moving from one legacy
+   * .doc to another — or from one to a PDF — would otherwise see the previous candidate's words
+   * under the new candidate's name for as long as the new read takes. Derived rather than cleared in
+   * the loader, because clearing it there is a setState in an effect body, which this repo's lint
+   * rules refuse (react-hooks/set-state-in-effect).
+   */
+  const [docText, setDocText] = useState<{ lines: string[]; truncated: boolean; url: string } | null>(null);
+  const docLines = docText && docText.url === docTextUrl ? docText.lines : null;
+  const docTruncated = Boolean(docText && docText.url === docTextUrl && docText.truncated);
 
   // ── Fit to the width we were actually given ────────────────────────────────
   //
@@ -188,8 +203,10 @@ export function CvDocumentView({
     // here and misleadingly close to the right one: measured live, a 816px Word page inside a
     // 637px pane reported scrollWidth 727, because the wrapper and the page each carry their own
     // padding and the overflow is only partly counted. `.docx` is docx-preview's page section and
-    // `canvas` is one rasterised PDF page; both are the real thing a reader is trying to fit.
-    const pages = content.querySelectorAll<HTMLElement>(".docx, canvas");
+    // `canvas` is one rasterised PDF page; `.cv-text-page` is a legacy .doc read as text, which is
+    // dressed at the same fixed Word width so it fits by the same mechanism as the other two. All
+    // three are the real thing a reader is trying to fit.
+    const pages = content.querySelectorAll<HTMLElement>(".docx, .cv-text-page, canvas");
     let measured = 0;
     for (const page of pages) measured = Math.max(measured, page.getBoundingClientRect().width);
     // Padding around the page, so "fit" leaves the document a margin instead of jamming it edge
@@ -452,20 +469,42 @@ export function CvDocumentView({
           return;
         }
 
-        // Only the modern .docx (OOXML) format is a ZIP archive ("PK\x03\x04"); docx-preview can
-        // render only that. detectCvFileKind maps the legacy binary .doc (application/msword) to
-        // "docx" too, so guard on the actual bytes and give those a clear "download to open"
-        // message instead of letting renderAsync throw an opaque unzip error. mammoth (the old
-        // text path) couldn't read legacy .doc either — this isn't a new limitation, just a
-        // clearer one.
+        // Only the modern .docx (OOXML) format is a ZIP archive ("PK\x03\x04"), and docx-preview can
+        // render only that. detectCvFileKind answers "docx" for the legacy binary .doc as well — it
+        // means "a Word file", not "the modern format" — so the fork is on the actual BYTES, never on
+        // the label, which this corpus proves wrong in both directions (cv-file-kind.ts). Handing a
+        // binary .doc to renderAsync throws an opaque unzip error; it goes down the branch below
+        // instead.
         const sig = bytes.subarray(0, 4);
         const isOoxmlZip = sig[0] === 0x50 && sig[1] === 0x4b && sig[2] === 0x03 && sig[3] === 0x04;
         if (!isOoxmlZip) {
-          // What to DO about it is left to the failure notice below, because the answer differs by
-          // caller: a recruiter is told to download it, and a manager — who may not — is told to ask
-          // for a readable copy. Baking one of those two into the thrown message gave the manager an
-          // instruction pointing at a button his screen does not have.
-          throw new CvPreviewNotice("This is an older Word (.doc) format that can't be previewed here.");
+          // ── A WORD 97-2003 .doc IS READ AS TEXT, ON THE SERVER ──────────────────────────────
+          //
+          // Until 2026-09-27 this was where the preview gave up: "This is an older Word (.doc)
+          // format that can't be previewed here", plus a link to download it and open it in Word —
+          // and for a manager, who may not download, not even that. The owner hit it on a CV that
+          // arrived the same day. There are 13 such files on production and they keep coming, since
+          // an applicant sending a CV he wrote in 2009 has no idea his file is a different format.
+          //
+          // The one reader for it runs only in Node (legacy-doc-text.ts), so the lines are fetched
+          // rather than parsed here. That IS a second request for the same document — these bytes
+          // cannot be re-used, because sending them back up would mean posting a CV to a route that
+          // then has to be trusted to be reading the file it was handed. For a format this rare the
+          // honest cost is one more GET.
+          const textRes = await fetch(docTextUrl);
+          httpStatus = textRes.status;
+          if (!textRes.ok) throw new Error("This Word 97-2003 document could not be read.");
+          const payload = (await textRes.json()) as { paragraphs?: string[]; truncated?: boolean };
+          const lines = payload.paragraphs ?? [];
+          // No text at all is not a failure to report: it is an OLE2 file that is not a Word
+          // document, or one whose content is a single scanned picture. Either way there is nothing
+          // to put on the screen, and saying so is the answer.
+          if (lines.length === 0) {
+            throw new CvPreviewNotice("This older Word (.doc) file holds no text that can be shown on screen.");
+          }
+          if (!active) return;
+          setDocText({ lines, truncated: Boolean(payload.truncated), url: docTextUrl });
+          return;
         }
         // docx-preview relies on browser-only APIs, so it's dynamically imported here rather than
         // at module scope (this component is "use client", but the import still must not run during
@@ -500,7 +539,8 @@ export function CvDocumentView({
         // is not a function" on every PDF CV while app_error_events recorded nothing at all. Kind,
         // stage and status go with it; the file name and the candidate do not — a CV is personal
         // data (src/lib/recruitment/cv-preview-failure-report.ts). A designed notice (a photograph a
-        // manager may not see, a legacy .doc) returns null there and is never reported. Reported
+        // manager may not see, an old .doc with no text in it) returns null there and is never
+        // reported — but a legacy .doc whose READ failed is a real failure and does report. Reported
         // even after unmount: the failure was real whether or not the reader waited for it.
         const report = buildCvPreviewFailureReport({
           caught,
@@ -527,8 +567,9 @@ export function CvDocumentView({
     // number, and one who releases it must see it painted out again, without a reload. It decides
     // the text layer too, and so does allowDownload: a page drawn while its text was allowed must
     // be drawn again, without the layer, the moment it is not. fileName is read only to scrub it out
-    // of a failure report; it changes together with bytesUrl.
-  }, [kind, bytesUrl, fileName, mimeType, redactPhones, allowDownload]);
+    // of a failure report; it changes together with bytesUrl, and so does docTextUrl — both are the
+    // same downloadUrl with a different mode on the end.
+  }, [kind, bytesUrl, docTextUrl, fileName, mimeType, redactPhones, allowDownload]);
 
 
   // A failed in-page render must never be a dead end. Whatever went wrong — a document the
@@ -587,6 +628,53 @@ export function CvDocumentView({
       <div className="min-h-full bg-slate-100 p-4">
         {loading ? <p className="p-1 text-sm text-slate-500">Loading preview…</p> : null}
         {failureNotice}
+        {docLines ? (
+          // ── A WORD 97-2003 DOCUMENT, AS THE ONE THING THAT FORMAT CAN GIVE ──────────────────
+          //
+          // Text on a page, not a rendering of the writer's layout: the binary .doc's fonts,
+          // columns and tables are not recoverable outside Word, and the alternative was a reader
+          // being told to go and find another computer. So it is dressed as a page — the same 816px
+          // Word width, the same paper, the same fit-to-width control through `.cv-text-page`
+          // below — and it says in one quiet line what it is, so nobody reads a plain CV as a
+          // broken one.
+          //
+          // SELECTABLE ONLY WHERE THE DOCUMENT ITSELF MAY BE TAKEN, which is the rule the PDF text
+          // layer already follows: where a manager may not have a copy, he may not lift the text
+          // out of the render either.
+          <div
+            // 816px is the Word page width docx-preview paints, and it is deliberately FIXED rather
+            // than capped at the pane: capping it would reflow the text to the column and then the
+            // fit-to-width zoom would shrink an already-fitted page a second time. One mechanism
+            // does the fitting for all three formats, and it is the one measured above.
+            className={`cv-text-page mx-auto w-[816px] bg-white px-14 py-12 shadow-[0_1px_3px_rgba(15,23,42,0.12)] ${
+              allowDownload ? "" : "select-none"
+            }`}
+            dir="auto"
+          >
+            <p className="mb-6 border-b border-slate-200 pb-2 text-phx-xs font-bold uppercase tracking-wide text-slate-400">
+              Word 97–2003 document — shown as text, without its original layout
+            </p>
+            {docLines.map((line, index) =>
+              line === "" ? (
+                // A blank line the writer left. A spacer rather than an empty <p>, so the gap is
+                // the same height whatever the surrounding text size is.
+                <div className="h-4" key={index} />
+              ) : (
+                // pre-wrap keeps the tab a table cell boundary became, and the indentation the
+                // writer typed, while still wrapping a long line inside the page.
+                <p className="whitespace-pre-wrap break-words text-sm leading-6 text-slate-900" dir="auto" key={index}>
+                  {redactPhones ? maskPhoneLike(line) : line}
+                </p>
+              ),
+            )}
+            {docTruncated ? (
+              <p className="mt-6 border-t border-slate-200 pt-2 text-phx-xs font-bold text-amber-700">
+                This document is longer than the preview shows. Ask the recruitment team for the file
+                itself to read the rest.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
         {/* docx-preview renders its own page-styled markup into this container. */}
         <div ref={docxContainerRef} />
       </div>

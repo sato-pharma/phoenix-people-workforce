@@ -145,9 +145,11 @@ export function runCvLinkedInAndSelectableTextTests() {
     /allowDownload=\{false\}/,
     "the manager's portal still refuses the download — which is what keeps its CVs un-copyable",
   );
+  // `docTextUrl` joined the list on 2026-09-27 with the legacy-.doc read — it is the same file URL
+  // in the doc-text mode, so it changes together with bytesUrl and adds no extra redraw.
   assert.match(
     viewer,
-    /\}, \[kind, bytesUrl, fileName, mimeType, redactPhones, allowDownload\]\);/,
+    /\}, \[kind, bytesUrl, docTextUrl, fileName, mimeType, redactPhones, allowDownload\]\);/,
     "a change to either switch redraws the page, with or without its layer",
   );
 

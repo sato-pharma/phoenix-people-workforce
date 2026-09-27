@@ -21,7 +21,9 @@ import type { CvFileKind } from "@/lib/recruitment/cv-file-kind";
 
 /**
  * A DESIGNED answer shown in place of the document, not a failure: a photographed CV that cannot be
- * redacted for a manager, or a legacy .doc the browser cannot render. Thrown through the same catch
+ * redacted for a manager, or an old .doc with no text in it to show. (A legacy .doc is itself READ
+ * as text since 2026-09-27 — legacy-doc-text.ts — so only an empty one still lands here; before
+ * that, every one of them did.) Thrown through the same catch
  * so the reader sees it in the same place, but never reported — it fires on every such CV by design,
  * and an error monitor full of decisions would bury the next real failure the way silence buried
  * this one.

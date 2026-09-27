@@ -94,10 +94,15 @@ export function CandidateCvActions({
   const loaded = Boolean(initialFiles) || fetchSettled;
 
   const cvFile = files.find((file) => file.kind === "cv");
-  // "unsupported" means the preview cannot render this file type — a legacy binary .doc, in
-  // practice. That used to be the one case where the CV button was allowed to be a download, and it
-  // no longer can be: there is nowhere left for such a file to go, so the card says so in words
-  // rather than opening a preview whose only content would be the same sentence.
+  // "unsupported" means the preview cannot render this file type at all. It used to be the one case
+  // where the CV button was allowed to be a download, and it no longer can be: there is nowhere left
+  // for such a file to go, so the card says so in words rather than opening a preview whose only
+  // content would be the same sentence.
+  //
+  // A WORD 97-2003 .doc IS NO LONGER ONE OF THEM. It answers "docx" here (a Word file), and since
+  // 2026-09-27 the preview reads it as text on the server — legacy-doc-text.ts. So a manager gets
+  // View CV for those 13 files instead of a sentence, and this branch is left for the formats that
+  // genuinely have no reader.
   const cvKind = cvFile ? detectCvFileKind(cvFile.mimeType ?? "", cvFile.fileName) : "unsupported";
   const href = cvFile ? `/api/recruitment/hiring-manager/candidates/${candidateId}/files/${cvFile.id}` : "";
 
