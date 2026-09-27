@@ -24,36 +24,100 @@ that commit's CI** (see "The deploy gate" below). There is no deploy workflow in
 
 ## The deploy gate
 
-🔴 **THE GATE IS NOT HOLDING YET — MEASURED 2026-09-27. Do not read the rest of this section as a
-guarantee.** Railway's **Wait for CI** on the `phoenix-people-workforce` service, environment
-`production`, is the intended design (owner's instruction, 2026-09-27: *"no i want 2 stop bad
-deploy"*), and everything below describes how it behaves once the toggle is on. It is not on yet:
-three consecutive commits reached full traffic **before a verdict existed**, and the deployment record
-appears about two seconds after the push — ungated auto-deploy timing.
+🔴 **PRODUCTION IS GATED AND PROVEN. STAGING'S TOGGLE IS ON BUT IS NOT ENFORCING — do not read
+them as one setting.** Railway's **Wait for CI** is switched on for the `phoenix-people-workforce`
+service in **both** environments (owner's instruction, 2026-09-27: *"no i want 2 stop bad deploy"*;
+both verified in the dashboard, `aria-checked="true"`, still true after a full reload). On production
+it holds. On staging the behaviour does not match the switch:
 
-| commit | CI started | CI finished | live (`status=success`) | live before its verdict by |
+| on `ddda75259` | |
+| --- | --- |
+| CI | created 18:27:12 → finished **18:31:49** |
+| **staging** | `in_progress` 18:27:14 → **`success` 18:29:28** — live **2m 21s BEFORE CI concluded** |
+| production | `in_progress` 18:27:14 → still holding |
+
+The staging record was CREATED after the toggle was flipped, so this is not a leftover in-flight
+deploy. Three hypotheses were open on that reading alone: propagation lag (it was flipped minutes
+earlier); the setting being honoured only for the service's production environment while the
+per-environment UI value is displayed but not enforced; or a superseded queued deploy not being
+re-gated (staging jumped `c2b9ac558` → `ddda75259`, skipping `c93a6269f`).
+
+🔴 **ONE COMMIT SETTLES IT, and excludes all three at once**, because both environments deployed from
+the same push and read the same verdict. `3754f77cc`: CI run `36341414366` was created **18:38:49Z**
+and concluded **SUCCESS at 18:44:11Z**.
+
+| on `3754f77cc` — one push, one CI run | `success` at | against the verdict |
+| --- | --- | --- |
+| **staging** (deployment `6696241112`) | **18:41:08Z** | **3m 03s BEFORE it existed** |
+| production (deployment `6696241078`) | 18:46:24Z | 2m 13s after it |
+
+Same commit, same run, opposite behaviours — so propagation lag, toggle timing and "CI was already
+green" are all excluded in a single reading, which two separate anecdotes could not do. **Railway's
+Wait for CI is honoured on the production environment and NOT on staging, whatever the staging toggle
+reads in the dashboard.** Staging is therefore gated instead by the branch `staging-branch-sync.yml`
+publishes (#4552). Measured by one session and re-verified independently against the deployment
+`statuses` endpoint by another before being written here — states, never timestamps alone (§2.3).
+
+🔴 **Until that resolves, staging still receives every merge ungated within about two minutes,
+including commits whose CI later goes red — and staging holds a REAL production clone, with real auth
+accounts and real payroll data.** So the honest wording today is *production gated and proven;
+staging enabled but not enforcing, under investigation* — never "both environments are gated".
+
+On production, a merge is no longer the deploy; a merge **plus a green check suite on that commit** is.
+
+🔴 **SO DO NOT POINT `CI_RUNNER` AT `self-hosted` WHILE ZERO RUNNERS ARE REGISTERED.** `ci.yml` resolves
+every job's `runs-on` through `${{ vars.CI_RUNNER || 'ubuntu-latest' }}` (four jobs), and a label with
+no online runner does **not** fall back to GitHub's — the job QUEUES. On `main` that means CI never
+concludes, and under the production gate above **a deploy that never concludes never happens**: no red
+check, no alarm, nothing to read, until Railway abandons it at the two-hour timeout. Measured
+2026-09-27: `actions/runners` returns `total_count: 0` — there is no self-hosted runner on this
+repository at all. The variable is currently **set** to `ubuntu-latest`, so the rollback is
+`gh variable set CI_RUNNER --body ubuntu-latest`; `gh variable delete CI_RUNNER` also works, because
+the `||` above falls back to the same value, but it leaves the variable absent rather than explicit.
+
+**The withholding is measured, not inferred** — from GitHub's own deployment status records:
+
+| | commit | CI | deployment | push-to-live |
 | --- | --- | --- | --- | --- |
-| `f84fb0fd8` | 16:41:59 | 16:46:44 | 16:42:41 | 4m 03s |
-| `98ed75c83` | 17:00:38 | 17:05:59 | 17:03:15 | 2m 44s |
-| `1c498d8fa` | 17:02:41 | 17:07:53 | 17:04:55 | 2m 58s |
+| **before the gate** | `65b8e35b9` | still running | `in_progress` 17:51:51 → `success` 17:52:32 | **41 seconds**, CI unfinished |
+| **after the gate** | `198f4e216` | 18:08:36 → 18:14:14 | `in_progress` 18:08:39 → `success` 18:16:50 | **8m 11s** |
 
-`98ed75c83` is the commit that added the gate, so its own push going ungated is expected. `1c498d8fa`
-came after it and still shipped ~3 minutes early. All three were green, so nothing broke — the
-protection simply is not there. Measured independently by two sessions against the deployments and
-runs APIs. 🔴 **And the toggle alone cannot fix it: a SECOND, undocumented Railway project —
-`superb-smile / production` (`83a26007-…`) — deploys this repo successfully on every push to `main`,
-106 times since 2026-09-25T21:12:51Z. Wait-for-CI is per service, so it cannot gate another project at all.**
-Account: [agents-production-hooks.md](agents-production-hooks.md). The toggle is dashboard-only (`railway service` has no settings command and there is no
-documented API), so switching it on is the owner's click and cannot be scripted from here.
+The load-bearing number is the last one: production advanced **2m 36s after CI went green**, not 41
+seconds after the push. That is the dependency doing its job.
 
-🔴 **The wording matters more than the gap.** A doc promising a protection that measurement
-contradicts is worse than one admitting the gap, because the next session merges trusting it. Do not
-restate "production deploys are gated on CI" as established fact here, in `AGENTS.md`,
-`docs/system-overview.md` or the runbook until a **withheld** deploy has actually been observed — a
-green one proves only that deploying happened, never that it waited. Until then this is **configured
-in the repo, unverified on the platform.**
+🔴 **WHAT IS STILL NOT PROVEN: a RED commit being refused.** Nobody has watched that happen — it is
+Railway's documented behaviour plus the dependency demonstrated above, and no one manufactured a red
+merge to `main` to test it. Say "withholding is demonstrated, refusal is not yet observed" rather
+than claiming the whole guarantee.
 
-Once it is on: a merge is no longer the deploy; a merge **plus a green check suite on that commit** is.
+**Why staging being gated matters as much as production.** Staging tracks `main` too, and it holds a
+real production clone — real auth accounts and real payroll data, not mock data. (The owner's memory
+slug `staging-is-now-mock-data-not-a-production-mirror` says the OPPOSITE of its own content; trust
+the content.) Before the flip, every merge reached that data ungated in about 40 seconds; after it, still ungated,
+just slower. The setting is **per environment**, so gating one never gates the other — and as the
+measurement above shows, a per-environment toggle reading ON is not evidence that it ENFORCES. Check
+the deploy-success time against the CI finish time, never the switch.
+
+🔴 **THE FAILURE MODE THE GATE CREATES, and it is silent.** It fails by NOT shipping: if the check
+suites do not all finish within **two hours**, Railway abandons the deployment and **nothing turns
+red anywhere**. Two ways to walk into that:
+
+- **A run that never STARTS.** A workflow file GitHub cannot compile, or a repo-wide `startup_failure`
+  like the 2026-09-27 entitlement lapse, produces no verdict for the gate to wait on — so nothing
+  deploys, silently. `tests/github-workflow-validity.test.ts` exists to catch the first cause on the PR.
+- **`CI_RUNNER` pointed at a runner that is not there.** Since the `OMAR-GAWISH` runner was
+  deregistered on 2026-09-27 there are **zero** self-hosted runners, and jobs do **not** fall back to
+  GitHub's: setting `CI_RUNNER=self-hosted` makes every `main` run **queue for ever** rather than
+  fail. Under the gate that is a production deploy that never happens, with no red check to notice.
+  **Do not set that variable until a Linux runner is actually online.**
+
+A **cancelled** `main` run withholds the deploy the same way, which is why §2.3's rule is never to
+leave a `main` commit whose only CI run is cancelled.
+
+**The stray second deployment target is gone.** `superb-smile / production` was deleted on
+2026-09-27; the merge commit `198f4e216` produced two deployment records rather than three, which is
+the proof. It mattered here because Wait-for-CI is per service and could never have gated a different
+project. Account: [agents-production-hooks.md](agents-production-hooks.md).
 
 **This restores a guarantee the platform move silently dropped.** Under Cloud Run, production
 deployed from `main` *after CI passed*. Railway's GitHub auto-deploy has no such gate, so from the
