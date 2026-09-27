@@ -1552,6 +1552,7 @@ import { runPhoenixCrmDoctorsDirectoryTests } from "./phoenix-crm-doctors-direct
 import { runPhoenixCrmPlaceLocationFrozenTests } from "./phoenix-crm-place-location-frozen.test.ts";
 import { runPhoenixCrmRetiredPilotRedirectTests } from "./phoenix-crm-retired-pilot-redirect.test.ts";
 import { runPhoenixCrmBlindHalfTests } from "./phoenix-crm-blind-half.test.ts";
+import { runPhoenixCrmFitsTheScreenTests } from "./phoenix-crm-fits-the-screen.test.ts";
 import { runPhoenixCrmLineNotOpenTests } from "./phoenix-crm-line-not-open.test.ts";
 import { runPhoenixCrmBrickGroupsTests } from "./phoenix-crm-brick-groups.test.ts";
 import { runPhoenixCrmTodayTests } from "./phoenix-crm-today.test.ts";
@@ -5223,6 +5224,11 @@ await runTest(
 await runTest(
   "PHOENIX CRM GOLDEN RULE #1, the BLIND half (owner, 2026-09-26: \"never make the medical rep feel that the system is here to catch him … never informed of any violation … recorded in the admin and the SFE account\" — the rep-facing surface is DERIVED and swept rather than listed, JSX text is read as well as string literals, no rep-callable route reaches the evidence, every reader of it is declared, the board's audience is one predicate naming the Super Admin and the SFE Manager, and it refuses with a 404 because a 403 naming the board is itself the disclosure)",
   runPhoenixCrmBlindHalfTests,
+);
+
+await runTest(
+  "THE FITS-THE-SCREEN GOLDEN RULE, pinned for the whole Phoenix CRM module (AGENTS.md §4: \"never a horizontal scroll, always mobile AND desktop friendly\" — the module was measured clean on 2026-09-28 and nothing held it there, because crm-mobile-table-cards sweeps the older src/components/crm and the repo-wide ratchet permits its count to sit still; every table in the module goes through CrmTable so it keeps w-full table-fixed and a colgroup, no file uses any of the four sideways-scroll spellings, every desktop-only table has a CrmCardsOnPhone path or a phone sees nothing at all, declared widths never exceed 100% and match their header cells because .admin-shell clips rather than scrolls, and crmTdClassName keeps break-words so a 52-character name wraps instead of being cut mid-word)",
+  runPhoenixCrmFitsTheScreenTests,
 );
 
 await runTest(
