@@ -54,14 +54,67 @@ and concluded **SUCCESS at 18:44:11Z**.
 Same commit, same run, opposite behaviours — so propagation lag, toggle timing and "CI was already
 green" are all excluded in a single reading, which two separate anecdotes could not do. **Railway's
 Wait for CI is honoured on the production environment and NOT on staging, whatever the staging toggle
-reads in the dashboard.** Staging is therefore gated instead by the branch `staging-branch-sync.yml`
-publishes (#4552). Measured by one session and re-verified independently against the deployment
-`statuses` endpoint by another before being written here — states, never timestamps alone (§2.3).
+reads in the dashboard.** The intended remedy was to give staging a branch of its own that only ever
+carries CI-green commits (`staging-branch-sync.yml`, #4552) — **that branch exists and works, and
+Railway did not follow it either: see the next subsection before describing staging as gated by
+anything.** Measured by one session and re-verified independently against the deployment `statuses`
+endpoint by another before being written here — states, never timestamps alone (§2.3).
 
-🔴 **Until that resolves, staging still receives every merge ungated within about two minutes,
-including commits whose CI later goes red — and staging holds a REAL production clone, with real auth
-accounts and real payroll data.** So the honest wording today is *production gated and proven;
-staging enabled but not enforcing, under investigation* — never "both environments are gated".
+### The repoint was made, and Railway did not apply it — 2026-09-27, 19:21Z
+
+🔴 **STAGING WAS REPOINTED AT THE `staging` BRANCH IN THE DASHBOARD, THE PAGE SHOWS IT, AND THE SERVICE
+KEPT DEPLOYING FROM `main`.** The setting persists across full reloads and
+`railway status --json -e staging` reports `activeDeployments[].meta.branch = "main"` at the same time.
+So do not describe staging as gated on any basis — not the toggle, not the branch, not both.
+
+| | deploys from | gated by |
+| --- | --- | --- |
+| **production** | `main` | Railway **Wait for CI** — enforced and measured, twice |
+| **staging** | `main`, still | **nothing.** Both of its environment settings — Wait for CI, and the source branch — display correctly in the dashboard and **neither is applied** |
+
+**It is ONE question, not two.** Two settings on the same service instance display and do not apply,
+which points at that instance's configuration not propagating rather than at two unrelated Railway
+bugs. Railway support has it as of 2026-09-27 (the owner posted it).
+
+**The proof is in the API alone, and it does not need the dashboard.** Both commits below deployed to
+staging **before their own CI concluded**, and the second is decisive about the branch as well: a
+staging deployment record existed for a commit that `refs/heads/staging` could not yet contain, because
+the sync only publishes after CI concludes.
+
+| commit | CI concluded | staging `success` | production `success` |
+| --- | --- | --- | --- |
+| `7e6411d88` | 19:37:23Z | **19:32:50Z** — 4m 33s BEFORE, and 35s after the record was created | 19:38:06Z — 43s after |
+| `bc049b3e4` | 19:42:51Z | **19:40:18Z** — 2m 33s BEFORE | 19:45:32Z — 2m 41s after |
+
+🔴 **CONVERGENCE HIDES ALL OF THIS, SO MEASURE AT A MERGE, NEVER AT REST.** Minutes later `main`, the
+`staging` branch and both serving revisions were one commit (`bc049b3e4`), and every reading then looks
+consistent with staging following the branch. The only readings that distinguish the two are taken
+while a commit's CI is still in flight. **A converged snapshot is not evidence either way.**
+
+**The branch itself is healthy and is not the problem.** `staging-branch-sync.yml` has run five times,
+all `success`, and correctly withheld an unverified commit while staging served it from `main` anyway.
+Two SHAs produced two runs each — a CI rerun on one commit fires a second `workflow_run` — and the
+duplicates were harmless no-ops, which exercises the `[ "$CUR_SHA" = "$NEW_SHA" ]` short-circuit in the
+wild rather than only in its test. **The branch is ready for the moment Railway obeys it.**
+
+🔴 **`STAGING_TRACKS_BRANCH` IS REMOVED AGAIN, DELIBERATELY** (confirmed: the variable API answers 404).
+Its documented precondition is to set it in the same change that repoints Railway *and not before*, and
+the repoint did not take. Left armed, `deploy-drift-check.yml`'s staging arm would have alarmed within
+30 minutes blaming "a sync that stopped firing" and an "ever-older commit" — the exact inverse of
+reality, since staging was serving a **newer** commit than its own branch. Set it only once staging is
+observed serving the branch.
+
+🔴 **AND WHEN THE REPOINT IS RETRIED, THE SELECTOR HAS A SILENT WRONG-BRANCH TRAP.** Never
+`railway service source connect` (§2.3: not environment-scoped — it once repointed PRODUCTION while
+being run with `--environment staging`). In the dashboard the branch selector is a combobox whose filter
+on "staging" matched **both** `staging` and a `codex/staging-…` feature branch, with the feature branch
+focused FIRST — so pressing Enter on the filtered list points staging at a feature branch, with nothing
+afterwards to notice. Read the highlighted row before committing, and **re-check production's own
+connected branch immediately afterwards**: that is the 2026-08-13 failure mode, and the click is made
+next to a Disconnect control.
+
+**Nothing is half-changed in the meantime:** production is gated and proven, staging is exactly as it
+was that morning, no false alarm is armed, and the branch is maintained and waiting.
 
 On production, a merge is no longer the deploy; a merge **plus a green check suite on that commit** is.
 

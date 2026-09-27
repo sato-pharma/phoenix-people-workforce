@@ -2279,6 +2279,69 @@ catalogue holds.
 
 `two-session-stores-two-retention-keys`
 
+## Three diffs answered "is any work stranded on this branch", and two of them over-reported — 2026-09-27
+
+Four worktrees were being retired. The only question that mattered for each was whether the branch
+held anything `main` did not, and two sessions asked it three different ways on the same branch —
+`codex/gate-proven`, tip `b5c76a3a3`, which had **no PR of its own** because a second session had
+taken it as the base for #4554 (merged as `76ff12607`). So the standard gate,
+`gh pr list --head <branch> --state merged`, returned nothing and could not answer.
+
+| reading | said | what it was actually showing |
+| --- | --- | --- |
+| `git diff origin/main...codex/gate-proven` | **137 insertions**, 5 files | the branch's WHOLE history since the fork point |
+| `git diff codex/gate-proven origin/main` — **unscoped** | **139 lines** | the branch's work PLUS everything `main` deleted since |
+| the same, **scoped to the branch's own files** | **6 lines** | the answer |
+
+**Why the three-dot lies.** A three-dot diff is computed from the merge base. A squash merge puts the
+branch's content on `main` as one new commit that is not a descendant of the branch, so the merge base
+stays at the original fork point for ever. The three-dot diff therefore shows everything the branch
+ever did, merged or not, and cannot distinguish the two. This is the `git branch -d` trap
+(`git-branch-d-is-not-a-safety-gate-after-a-squash-merge`) in diff form.
+
+**Why the unscoped two-dot lies, and why it is the more dangerous of the two.** `git diff A B` is
+symmetric about content, not about authorship: a line `main` has **removed** since the fork appears as
+an addition on the branch side, indistinguishable from work the branch added. Here that produced 139
+lines of business-review and `ReviewScopeFilter` code — `packLevel`, `payoutPercentageFor`,
+`filterParams` — that the branch never touched. That number grows with `main`'s churn and has nothing
+to do with the branch at all. The three-dot error is at least waved away as squash residue; this one
+shows real-looking code and argues **against** deleting a branch whose work has fully landed, so its
+failure mode is a merged branch kept alive indefinitely and a session hunting work that is not there.
+
+**The rule.** Scope the two-dot diff, and **derive the path list rather than choosing it**:
+
+```
+git log origin/main..<branch> --name-only          # the files the branch actually touched
+git diff <branch> origin/main -- <those files>     # a `-` line is branch content main LACKS
+```
+
+Hand-picking the paths is how the same question got a third wrong answer: passing two of the five
+files returned **2 lines**, which happened to support the right conclusion for the wrong reason.
+Omitting the filter returns 139. Only the derived list returns 6.
+
+**What the six lines were, and why the branch was safe.** Four were a `docs/deployment.md` paragraph
+reading "Three hypotheses, not yet separated"; two were a duplicated fragment in
+`scripts/check-migrations.mjs`'s rule-2c message. Both had been **deliberately replaced** on `main` —
+the paragraph because a later measurement settled all three hypotheses, the fragment by a print on the
+check's passing path. So every line absent from `main` was one somebody removed on purpose, which is
+the finding, and it is only visible once the count is small enough to read line by line.
+
+**The archive clause, same shape.** `node scripts/new-session.mjs --remove <task>` retires the
+worktree and says so; it does **not** push an archive, and `git update-ref refs/backups/<name> <tip>`
+succeeds silently in the local `.git`. `git branch -D` then prints `(was <sha>)` as though something
+kept it. Nothing in that sequence says the only copy is on this laptop, and the gap becomes visible
+exactly when it cannot be checked. Three tips were archived local-only this way on the same day, by a
+session that had read the rule that morning. The check is one command, and it belongs **after** the
+delete as well as before it:
+
+```
+git push origin <tip>:refs/backups/<name>-<YYYYMMDD>
+git ls-remote origin 'refs/backups/<name>-<YYYYMMDD>'   # must print the sha
+```
+
+`git-branch-d-is-not-a-safety-gate-after-a-squash-merge` ·
+`a-squash-merge-makes-a-stacked-branch-rebuild-not-merge`
+
 ## `AGENTS.md` §2.1 Session-level traps — as it stood before the 2026-09-12 condensation
 
 On 2026-09-12 `AGENTS.md` was cut to roughly half its size at the owner's request ("Load less of AGENTS.md"): every hook was reduced to its rule plus the one detail needed to obey it. This is that section's hook text **verbatim** from `origin/main` 3eea44aef, kept so that no measurement, date, count or diagnosis a condensed hook dropped is lost. Search it for the hook's wording. The accounts earlier in this file remain the fuller record.
