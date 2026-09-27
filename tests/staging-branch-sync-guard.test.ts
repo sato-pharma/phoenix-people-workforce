@@ -145,6 +145,72 @@ export function runStagingBranchSyncGuardTests(): void {
       "The repository has had zero self-hosted runners registered since 2026-09-27.",
   );
 
+  // ── THE RED HALF: only a `success` conclusion may publish ───────────────────────────────────
+  //
+  // This is the gate that actually refuses a bad commit on staging's path, now that staging deploys
+  // from `staging` rather than `main`. It cannot be proven by a live experiment: `ci.yml` runs on
+  // `push` to main/master only, so a commit pushed to the `staging` branch produces NO CI run at
+  // all — there is no red verdict for anything to react to, and a "test" of it would only deploy
+  // broken code to an environment holding a real production clone while proving nothing. So the
+  // condition is proven where it actually lives: by evaluating it against every conclusion GitHub
+  // can emit.
+  //
+  // 🔴 THE TRAP IS BROADENING, NOT DELETING. `== 'success'` is easy to "improve" into
+  // `!= 'failure'`, which reads equivalent and is not: it lets `cancelled`, `timed_out`,
+  // `startup_failure`, `stale`, `neutral`, `skipped` and `action_required` through. A cancelled or
+  // startup-failed run has tested NOTHING, and publishing its commit would put unverified code on
+  // the branch staging deploys from — silently, because the sync would report success.
+  const ifLine = yml
+    .split("\n")
+    .map((l) => l.trim())
+    .find((l) => l.startsWith("if:") && l.includes("workflow_run.conclusion"));
+  assert.ok(
+    ifLine,
+    `${WORKFLOW} no longer gates the job on the CI run's conclusion. Without it, a FAILED run would advance ` +
+      "`staging` to an unverified commit and staging would deploy it.",
+  );
+
+  // GitHub's full conclusion vocabulary. Only the first may publish.
+  const CONCLUSIONS = [
+    "success",
+    "failure",
+    "cancelled",
+    "timed_out",
+    "skipped",
+    "neutral",
+    "action_required",
+    "stale",
+    "startup_failure",
+  ];
+  const expr = (ifLine as string).replace(/^if:\s*/, "").replace(/^\$\{\{\s*/, "").replace(/\s*\}\}$/, "");
+  for (const conclusion of CONCLUSIONS) {
+    // Evaluate the workflow's OWN expression with this conclusion substituted in. Lifted, not
+    // re-implemented: a hard-coded `=== "success"` here would pass against a broadened workflow.
+    const js = expr
+      .replace(/github\.event\.workflow_run\.conclusion/g, JSON.stringify(conclusion))
+      .replace(/!=/g, "!==")
+      .replace(/(?<![=!<>])==(?!=)/g, "===")
+      .replace(/'/g, '"');
+    let publishes: boolean;
+    try {
+      publishes = Boolean(new Function(`return (${js});`)());
+    } catch (err) {
+      throw new Error(
+        `${WORKFLOW}'s job condition could not be evaluated after substitution — it has grown beyond a simple ` +
+          `comparison and this test can no longer verify the red half faithfully.\n  condition: ${expr}\n  as js: ${js}\n  ${String(err)}`,
+      );
+    }
+    assert.equal(
+      publishes,
+      conclusion === "success",
+      conclusion === "success"
+        ? "a SUCCESSFUL CI run must publish to `staging`, otherwise the branch never advances and staging goes stale — the 2026-08-13 failure."
+        : `a CI run concluding \`${conclusion}\` must NOT publish to \`staging\`. That run verified nothing, so advancing ` +
+          "the branch would put unverified code on the branch staging deploys from, silently. Condition under test: " +
+          expr,
+    );
+  }
+
   // ── The guard, executed ─────────────────────────────────────────────────────────────────────
 
   const guardLine = guardLineFromWorkflow(yml);
