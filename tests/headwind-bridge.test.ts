@@ -1658,6 +1658,30 @@ function runServerImageTests() {
     "into $BASE_DIR/files, the directory Headwind serves /files/ from — derived from the same BASE_DIR read out of the image, never hard-coded",
   );
 
+  // 🔴 AND THE PHOENIX CUSTOM LAUNCHER IS RE-PROVISIONED THE SAME WAY, for the same reason.
+  //
+  // The rep tablets enrol onto a custom launcher build (clean status bar, hidden drawer icon) that is
+  // not in Headwind's install-time seed, so like RustDesk it must be re-placed into $BASE_DIR/files on
+  // every start or a bare Railway work/ leaves the device-owner launcher a 404. It is fetched by its
+  // exact filename from the fork's immutable release, and — this is the load-bearing part — the block
+  // must never abort startup, because this entrypoint runs before Headwind's own and a bad release must
+  // not be able to take the whole MDM down.
+  assert.match(
+    entrypoint,
+    /hmdm-phoenix-6\.39\.apk/,
+    "the entrypoint re-provisions the Phoenix custom launcher by its exact filename — the name the launcher version url is pointed at",
+  );
+  assert.match(
+    entrypoint,
+    /releases\/download\/launcher-6\.39-r1\//,
+    "fetched from the immutable fork release asset, the public URL a bare Railway container can reach",
+  );
+  assert.match(
+    entrypoint,
+    /could not fetch a valid \$PHX_LAUNCHER_APK[\s\S]*it will retry next start/,
+    "a failed launcher fetch logs and falls through — it never aborts startup, so a bad release cannot down the MDM",
+  );
+
   // 🔴 THE CORE JAR IS FOUND BY THE CLASS IT CARRIES, NEVER BY ITS FILENAME.
   //
   // Headwind ships no `server-*.jar`. Measured 2026-09-26 by unpacking hmdm-5.40.1-os.war: 114 jars

@@ -141,4 +141,44 @@ else
   fi
 fi
 
+# 🔴 RE-PROVISION THE PHOENIX CUSTOM LAUNCHER — same reason as RustDesk above.
+#
+# The rep tablets enrol onto a CUSTOM build of the Headwind launcher (a clean status bar that hides
+# Android's forced "managed"/"location" notices while keeping the clock, battery and wifi, and a hidden
+# app-drawer icon) rather than the stock 6.37. Like RustDesk it is NOT in Headwind's install-time seed,
+# so Headwind's own entrypoint never re-fetches it and a bare Railway work/ would leave it a 404 the
+# enrolling tablet cannot download its device-owner launcher from. It is served under its OWN filename;
+# the launcher application's version url (app 46 / version 10045) is pointed at THIS file in the database
+# once, out of band — nothing here touches the database. Same defensive shape as RustDesk: temp download,
+# size + zip-magic check before it is moved into place, and it NEVER aborts startup — a failed fetch logs
+# and the server still boots, so a bad release can never take the whole MDM down. The release asset is
+# immutable, so its byte size is pinned and a wrong size is refused.
+PHX_LAUNCHER_APK="hmdm-phoenix-6.39.apk"
+PHX_LAUNCHER_URL="https://github.com/Gawish-1997/hmdm-android/releases/download/launcher-6.39-r1/${PHX_LAUNCHER_APK}"
+PHX_LAUNCHER_SIZE=6286121   # bytes — the exact size of the signed Phoenix launcher release asset
+PHX_DEST="$FILES_DIR/$PHX_LAUNCHER_APK"
+have_launcher="$([ -f "$PHX_DEST" ] && wc -c < "$PHX_DEST" | tr -d ' ' || echo 0)"
+if [ "$have_launcher" = "$PHX_LAUNCHER_SIZE" ]; then
+  echo "phoenix-entrypoint(files): $PHX_LAUNCHER_APK already present ($have_launcher bytes)"
+else
+  echo "phoenix-entrypoint(files): $PHX_LAUNCHER_APK missing or wrong size ($have_launcher) — fetching from the fork release"
+  PHX_TMP="$FILES_DIR/.$PHX_LAUNCHER_APK.part"
+  rm -f "$PHX_TMP"
+  phx_fetched=""
+  if command -v wget >/dev/null 2>&1; then
+    wget -q -O "$PHX_TMP" "$PHX_LAUNCHER_URL" && phx_fetched="yes" || true
+  elif command -v curl >/dev/null 2>&1; then
+    curl -fsSL -o "$PHX_TMP" "$PHX_LAUNCHER_URL" && phx_fetched="yes" || true
+  fi
+  phx_got="$([ -f "$PHX_TMP" ] && wc -c < "$PHX_TMP" | tr -d ' ' || echo 0)"
+  phx_magic="$([ -f "$PHX_TMP" ] && dd if="$PHX_TMP" bs=2 count=1 2>/dev/null || true)"
+  if [ -n "$phx_fetched" ] && [ "$phx_got" = "$PHX_LAUNCHER_SIZE" ] && [ "$phx_magic" = "PK" ]; then
+    mv -f "$PHX_TMP" "$PHX_DEST"
+    echo "phoenix-entrypoint(files): installed $PHX_LAUNCHER_APK ($phx_got bytes)"
+  else
+    rm -f "$PHX_TMP"
+    echo "phoenix-entrypoint(files): could not fetch a valid $PHX_LAUNCHER_APK (got $phx_got bytes) — it will retry next start" >&2
+  fi
+fi
+
 exec /docker-entrypoint.sh "$@"
