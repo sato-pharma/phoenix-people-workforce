@@ -1971,6 +1971,8 @@ import { runNativeClientCsrfExemptionTests } from "./native-client-csrf-exemptio
 import { runNativeLoginCsrfCookieTests } from "./native-login-csrf-cookie.test.ts";
 import { runMobileEvidenceStampParityTests } from "./mobile-evidence-stamp-parity.test.ts";
 import { runMobilePushLinkTests } from "./mobile-push-link.test.ts";
+import { runMobileModuleDirectoryTests } from "./mobile-module-directory.test.ts";
+import { runNativeWebHandoffTests } from "./native-web-handoff.test.ts";
 import { runMobileCrmVoiceCommentTests } from "./mobile-crm-voice-comment.test.ts";
 import { runMobileCrmVisitPharmacyFeedbackTests } from "./mobile-crm-visit-pharmacy-feedback.test.ts";
 import { runForceLogoutStopsPhoneAppPushTests } from "./force-logout-stops-phone-app-push.test.ts";
@@ -7345,6 +7347,15 @@ await runTest(
 await runTest(
   "TEST ACCOUNTS (owner, 2026-09-27): a production login that lives inside a real employee's portal and never saves as her — every write outside Phoenix CRM is refused in resolveAccessContext before a route runs, and a server action too; inside Phoenix CRM every read and save is a test entry whatever flag the screen sends; a test manager decides test entries only, as the reviewer he mirrors, never the SFE step; his reach is the mirrored person's, never the company; only an employee-portal role can be mirrored; and the nightly behaviour verdict and the hourly allowances never count a test row",
   runTestAccountTests,
+);
+
+await runTest(
+  "the Android app lists EVERY portal module this employee has, and cannot drift from the sidebar: the section titles and their order are re-derived from buildEmployeePortalSections itself, every registry href has a native placement filed under the sidebar section that holds it with a real Ionicons name, no placement outlives its module, the list de-duplicates the two modules the sidebar shows twice, carries the descriptive fullLabel and each queue's pending badge, follows the registry's own visibility flags, keeps a locked module as a padlocked row, and the route asserts the shell's own gate with the shell's own eight visibility inputs in order - while the screen never truncates a name and never scrolls sideways",
+  runMobileModuleDirectoryTests,
+);
+await runTest(
+  "opening a production portal module from the app grants nothing new: the sealed ticket round-trips to the SAME sid and ver, the browser cookie inherits the app session's own expiry and can never outlive it, no name / HR id / role is readable in the ticket, a tampered or expired ticket and an expired session all redeem to nothing, next can never leave /employee-portals (an open redirect there would hand a session to another host), and the halves stay split - the POST the app calls sets NO cookie, because React Native replays one and the CSRF guard then refuses every mutation as csrf_blocked, which is also why the phone uses a Custom Tab and never a WebView",
+  runNativeWebHandoffTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

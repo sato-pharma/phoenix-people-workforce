@@ -260,6 +260,82 @@ about a number.
 overview or landing screen for any role — not the amount, not the month label — and filtering it
 server-side means a future home-screen widget cannot leak it by accident.
 
+## Every portal module, in the app
+
+The app had three screens — Home, CRM, Profile — against the portal's sixty-odd modules, so one
+employee opening Phoenix on a tablet and in a browser saw two different products. The owner's
+instruction on 2026-09-28 was plain: **same modules, same design, same everything.** The **Modules**
+tab is that: the whole list this employee has in the portal, in the sidebar's own sections and the
+sidebar's own order, each row opening the module itself.
+
+**The list is not written twice.** `GET /api/employee-portals/navigation` resolves visibility with the
+exact call `EmployeePortalServerShell` makes — the same eight inputs in the same order — and reads
+`PORTAL_NAV_REGISTRY`, the registry that already feeds the web bottom nav and that
+`employee-portal-bottom-nav.test.ts` holds level with the sidebar in both directions. A module added
+to the sidebar therefore cannot reach the browser and miss the phone.
+
+Two things a registry row cannot carry across JSON are mirrored in
+`src/lib/employee-portal/native-module-directory.ts`: which **section** the row belongs to (the
+sidebar builds its sections inside a `"use client"` component whose rows are Lucide components) and an
+**Ionicons** name (a Lucide component neither serialises nor renders in React Native).
+`tests/mobile-module-directory.test.ts` re-derives the grouping from `employee-portal-layout.tsx`
+itself and fails in **either** direction — a module with no placement, or a placement left behind by a
+module that moved. Without that test the failure is silent: a new module simply never appears on the
+phone and nothing anywhere goes red.
+
+A row carries the module's **descriptive** name, never the bottom bar's width-bound short form ("Leave
+Approvals", not "Vac Appr"): the app has a full-width line, and the golden rule forbids both a
+horizontal scroll and shrinking or truncating type to fit — so a name too long for one line wraps. A
+queue's pending count rides its row as a figure, and a module an administrator has temporarily locked
+keeps its row wearing a padlock, exactly as the web sidebar keeps it.
+
+### Why a module opens the production page rather than a native rebuild
+
+A native copy of a module is a **second implementation** of a screen whose numbers a manager acts on,
+and two implementations of one payroll, leave or sales rule is exactly the drift the repo's
+domain-first rule exists to prevent: the app would look right the day it shipped and disagree with the
+browser a month later. There are 43,000 lines of portal screens behind those rows. So a module with no
+native screen opens as what it already is — the live page, same layout, same figures, same permissions,
+under the portal's own fits-the-screen rule.
+
+Native stays native where native is the point: signing in, Phoenix CRM, the camera, GPS, dictation,
+push, and working with no signal. None of those can be a web page in a pharmacy basement.
+
+### How it arrives signed in
+
+A browser tab cannot be handed an `Authorization` header, and asking a rep to type his password again
+to read his own plan is a support call, not a design. So:
+
+1. the app POSTs `/api/auth/web-session` with its bearer token and gets a one-trip URL back;
+2. the tab opens that URL; the route sets the ordinary `phoenix_session` cookie and **redirects** to
+   the module, so the ticket never becomes a page's address or its referrer.
+
+The ticket is an **AES-GCM sealed** blob (`src/lib/auth/native-web-handoff.ts`), valid sixty seconds —
+sealed rather than merely signed so no name, HR id or role ever appears in a URL, a history row or a
+log. It grants **nothing new**: the cookie is for the same `sid` and `ver` the app already holds and
+expires at the same second, so no second `app_sessions` row exists and "Log out everywhere" still ends
+the tab and the app together. `next` can only ever be a path under `/employee-portals` — anything else
+falls back to the portal home, because a redirect carrying a freshly set session cookie is a session
+hand-off to whatever host it names.
+
+Statelessness is what keeps this free of a table and a migration, and its one cost is that a ticket is
+not single-use: it is redeemable for its sixty seconds. That is bounded by the sealing (it cannot be
+forged or read), by the TTL, and by where it lives — the handset that already holds the full session
+token in its own keystore.
+
+🔴 **A system browser tab, not an embedded WebView, and that is a correctness decision.** On Android a
+`react-native-webview` shares its cookie jar with React Native's own networking, so a `phoenix_session`
+cookie set for the module would be replayed on the **app's** requests — which the CSRF guard reads as a
+browser session and refuses, breaking every mutation the app makes with `csrf_blocked`. That exact
+fault was measured against production on 2026-09-23 and is why `/api/auth/login` clears cookies for a
+native caller. A Custom Tab has Chrome's own jar, so the cookie cannot reach the app. Do not "upgrade"
+this to a WebView without solving that first. It also needs no new native module, so the module list
+ships over EAS Update rather than waiting on a managed-Play release.
+
+A tapped **notification** on a portal page now goes through the same hand-off. It used to rely on
+Chrome happening to be signed in, which landed an approval notification on the login page for anyone
+who had never signed into Phoenix in Chrome on that handset — most of the fleet.
+
 ## Authentication
 
 The app signs in through the ordinary `/api/auth/login` route and stores the resulting session

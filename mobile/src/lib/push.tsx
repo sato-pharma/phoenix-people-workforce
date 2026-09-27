@@ -2,9 +2,8 @@ import Constants, { ExecutionEnvironment } from "expo-constants";
 import * as Device from "expo-device";
 import { router } from "expo-router";
 import * as SecureStore from "expo-secure-store";
-import * as WebBrowser from "expo-web-browser";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { AppState } from "react-native";
+import { Appearance, AppState } from "react-native";
 import type {
   NotificationClickEvent,
   OneSignal as OneSignalNamespace,
@@ -13,6 +12,7 @@ import type {
 
 import { apiGetData, apiRequest } from "./api";
 import { apiBaseUrl } from "./config";
+import { openPhoenixUrl } from "./portal/open-module";
 import { resolvePushLink } from "./push-link";
 
 /**
@@ -144,8 +144,15 @@ async function askOnce(sdk: OneSignalApi): Promise<void> {
   }
 }
 
-/** Take the person where a tapped notification points — see `push-link.ts` for the rules. */
-function openNotificationLink(event: NotificationClickEvent): void {
+/**
+ * Take the person where a tapped notification points — see `push-link.ts` for the rules.
+ *
+ * `token` is the live session's, so a portal link opens through the signed-in hand-off rather than
+ * relying on Chrome happening to be signed in. It used to depend on exactly that: a tapped approval
+ * notification landed on the login page for anyone who had never signed into Phoenix in Chrome on
+ * that handset, which is most of the fleet.
+ */
+function openNotificationLink(event: NotificationClickEvent, token: string | null): void {
   const target = resolvePushLink(event?.result?.url ?? event?.notification?.launchURL, apiBaseUrl);
   if (!target) return;
 
@@ -153,9 +160,8 @@ function openNotificationLink(event: NotificationClickEvent): void {
     router.navigate(target.href);
     return;
   }
-  // A Custom Tab rather than leaving for Chrome: the person is one "close" away from the app, and
-  // the tab shares Chrome's sign-in, so a portal page opens signed in whenever Chrome is.
-  void WebBrowser.openBrowserAsync(target.url).catch(() => undefined);
+  // A Custom Tab rather than leaving for Chrome: the person is one "close" away from the app.
+  void openPhoenixUrl({ dark: Appearance.getColorScheme() === "dark", token, url: target.url });
 }
 
 /**
@@ -249,8 +255,11 @@ export function PushProvider({ children, token }: { children: ReactNode; token: 
 
       // A tap that launched the app is held by OneSignal until a click listener exists, so adding it
       // here still catches the notification that opened the app.
-      sdk.Notifications.addEventListener("click", openNotificationLink);
-      cleanups.push(() => sdk.Notifications.removeEventListener("click", openNotificationLink));
+      // Bound to THIS session's token, and removed by the same reference — a module-level handler
+      // could not reach the token at all, which is why the portal hand-off lives behind a closure.
+      const onClick = (event: NotificationClickEvent) => openNotificationLink(event, token);
+      sdk.Notifications.addEventListener("click", onClick);
+      cleanups.push(() => sdk.Notifications.removeEventListener("click", onClick));
 
       const onPermission = (granted: boolean) => {
         if (!cancelled) setStatus(granted ? "on" : "off");

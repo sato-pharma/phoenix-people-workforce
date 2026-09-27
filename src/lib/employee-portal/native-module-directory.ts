@@ -1,0 +1,216 @@
+import {
+  PORTAL_NAV_REGISTRY,
+  isEntryVisible,
+  type PortalNavEntry,
+} from "@/components/employee-portal/employee-portal-nav-registry";
+import type { EmployeePortalNavVisibility } from "@/lib/employee-portal/navigation";
+import { resolveLockedModuleForPath } from "@/lib/navigation/module-catalog";
+
+/**
+ * The portal's whole module list, as the native app can render it.
+ *
+ * WHY THIS EXISTS. The app had three screens — Home, CRM, Profile — against the portal's sixty-odd
+ * modules, so on a tablet it read as a different, smaller product than the one the same person opens
+ * in a browser. The owner's instruction (2026-09-28) was plain: same modules, same design, same
+ * everything. This is the "same modules" half — the app asks the server which modules THIS viewer
+ * has, and gets back exactly what the sidebar would have drawn for him, in the sidebar's own
+ * sections and the sidebar's own order.
+ *
+ * ONE SOURCE, NOT A SECOND LIST. Every entry comes from `PORTAL_NAV_REGISTRY` filtered by
+ * `isEntryVisible` against the same `EmployeePortalNavVisibility` the shell computes — the registry
+ * that already feeds the web bottom nav and the profile quick-nav grid, and that
+ * `employee-portal-bottom-nav.test.ts` holds level with the sidebar in BOTH directions. So a module
+ * added to the sidebar cannot reach the browser and miss the phone.
+ *
+ * What this file adds is the two things a registry row cannot carry across JSON:
+ *
+ *   - `section`: which sidebar group the row belongs to. The sidebar builds its sections inside a
+ *     `"use client"` component whose rows are Lucide components, so the grouping cannot be imported
+ *     here — it is mirrored, and `tests/mobile-module-directory.test.ts` re-derives the grouping from
+ *     `employee-portal-layout.tsx` itself and fails on any disagreement, in either direction.
+ *   - `icon`: an Ionicons name. A Lucide component does not serialise, and React Native does not
+ *     render one. Every registry href must have one, which the same test enforces, so a new module
+ *     cannot arrive on the phone as a blank row.
+ *
+ * NO BUSINESS LOGIC, and no second opinion about access: `visible` is the registry's own flag test,
+ * and the page behind every row still asserts its own permission when it opens. A row here is a door
+ * the viewer can see, never a grant.
+ */
+
+/** The sidebar's section titles, in the sidebar's order (buildEmployeePortalSections). */
+export const NATIVE_MODULE_SECTION_ORDER = [
+  "Training Manager",
+  "My Workspace",
+  "Approvals Hub",
+  "Sales",
+  "My Team",
+  "Field Activity",
+  "Marketing & ROI",
+  "Pay & Expenses",
+  "Pharmacovigilance",
+  "Leave & HR",
+] as const;
+
+export type NativeModuleSection = (typeof NATIVE_MODULE_SECTION_ORDER)[number];
+
+/**
+ * href → the sidebar section it sits in, and the Ionicons glyph the app draws.
+ *
+ * A module the sidebar lists in TWO sections (My Coaching Reports, Report It) is filed here under the
+ * FIRST one, because this list shows each module once — the same de-duplication
+ * `visiblePortalNavEntries` already does by href.
+ */
+const MODULE_PLACEMENT: Readonly<Record<string, { icon: string; section: NativeModuleSection }>> = {
+  // ── Training Manager ──────────────────────────────────────────────────────────────────────────
+  "/employee-portals/training-manager": { icon: "school-outline", section: "Training Manager" },
+  "/employee-portals/training-manager/coaching": { icon: "easel-outline", section: "Training Manager" },
+  "/employee-portals/training-manager/create-coaching-report": { icon: "create-outline", section: "Training Manager" },
+  "/employee-portals/training-manager/field-coaching": { icon: "walk-outline", section: "Training Manager" },
+  // ── My Workspace ──────────────────────────────────────────────────────────────────────────────
+  "/employee-portals/interview-calendar": { icon: "videocam-outline", section: "My Workspace" },
+  "/employee-portals/employee-360": { icon: "id-card-outline", section: "My Workspace" },
+  "/employee-portals/coaching": { icon: "clipboard-outline", section: "My Workspace" },
+  "/employee-portals/plans": { icon: "calendar-outline", section: "My Workspace" },
+  "/employee-portals/plans/calendar": { icon: "calendar-number-outline", section: "My Workspace" },
+  // ── Approvals Hub ─────────────────────────────────────────────────────────────────────────────
+  "/employee-portals/approvals/vacation": { icon: "sunny-outline", section: "Approvals Hub" },
+  "/employee-portals/approvals/excuse": { icon: "time-outline", section: "Approvals Hub" },
+  "/employee-portals/approvals/plan": { icon: "calendar-clear-outline", section: "Approvals Hub" },
+  "/employee-portals/marketing-requests/inbox": { icon: "mail-outline", section: "Approvals Hub" },
+  "/employee-portals/market-awareness/inbox": { icon: "mail-unread-outline", section: "Approvals Hub" },
+  "/employee-portals/approvals-hub": { icon: "file-tray-full-outline", section: "Approvals Hub" },
+  // ── Sales ─────────────────────────────────────────────────────────────────────────────────────
+  "/employee-portals/sales-vs-target": { icon: "speedometer-outline", section: "Sales" },
+  "/employee-portals/make-it-happen": { icon: "sparkles-outline", section: "Sales" },
+  "/employee-portals/source-of-sales": { icon: "bar-chart-outline", section: "Sales" },
+  "/employee-portals/weekly-sales": { icon: "stats-chart-outline", section: "Sales" },
+  "/employee-portals/weekly-stock": { icon: "cube-outline", section: "Sales" },
+  "/employee-portals/monthly-closing": { icon: "checkmark-done-outline", section: "Sales" },
+  "/employee-portals/business-review": { icon: "analytics-outline", section: "Sales" },
+  "/employee-portals/territory-drilldown": { icon: "git-branch-outline", section: "Sales" },
+  "/employee-portals/territory-management": { icon: "map-outline", section: "Sales" },
+  "/employee-portals/targets": { icon: "locate-outline", section: "Sales" },
+  "/employee-portals/direct-orders": { icon: "cart-outline", section: "Sales" },
+  "/employee-portals/direct-orders-in-my-area": { icon: "search-outline", section: "Sales" },
+  // ── My Team ───────────────────────────────────────────────────────────────────────────────────
+  "/employee-portals/team-performance": { icon: "trophy-outline", section: "My Team" },
+  "/employee-portals/med-reps-performance": { icon: "ribbon-outline", section: "My Team" },
+  "/employee-portals/dsms-performance": { icon: "medal-outline", section: "My Team" },
+  "/employee-portals/vacancies": { icon: "person-add-outline", section: "My Team" },
+  "/employee-portals/recruitment-candidates": { icon: "person-circle-outline", section: "My Team" },
+  "/employee-portals/probation": { icon: "checkbox-outline", section: "My Team" },
+  "/employee-portals/organogram": { icon: "business-outline", section: "My Team" },
+  "/employee-portals/team-expenses": { icon: "wallet-outline", section: "My Team" },
+  // ── Field Activity ────────────────────────────────────────────────────────────────────────────
+  "/employee-portals/visits": { icon: "navigate-outline", section: "Field Activity" },
+  "/employee-portals/field-crm": { icon: "briefcase-outline", section: "Field Activity" },
+  "/employee-portals/early-birds": { icon: "partly-sunny-outline", section: "Field Activity" },
+  "/employee-portals/visual-aids": { icon: "images-outline", section: "Field Activity" },
+  "/employee-portals/crm": { icon: "server-outline", section: "Field Activity" },
+  "/employee-portals/reps-list": { icon: "people-outline", section: "Field Activity" },
+  "/employee-portals/kpis": { icon: "pulse-outline", section: "Field Activity" },
+  "/employee-portals/double-visit-analytics": { icon: "git-compare-outline", section: "Field Activity" },
+  "/employee-portals/dv-planner": { icon: "duplicate-outline", section: "Field Activity" },
+  "/employee-portals/double-visit-report": { icon: "document-attach-outline", section: "Field Activity" },
+  "/employee-portals/coaching-analytics": { icon: "podium-outline", section: "Field Activity" },
+  "/employee-portals/team-calendar": { icon: "people-circle-outline", section: "Field Activity" },
+  // ── Marketing & ROI ───────────────────────────────────────────────────────────────────────────
+  "/employee-portals/market-awareness": { icon: "megaphone-outline", section: "Marketing & ROI" },
+  "/employee-portals/marketing-requests/validation": { icon: "shield-checkmark-outline", section: "Marketing & ROI" },
+  "/employee-portals/marketing-requests": { icon: "send-outline", section: "Marketing & ROI" },
+  "/employee-portals/marketing-requests/control": { icon: "options-outline", section: "Marketing & ROI" },
+  "/employee-portals/marketing-requests/all": { icon: "list-outline", section: "Marketing & ROI" },
+  "/employee-portals/marketing-requests/customer-database": { icon: "library-outline", section: "Marketing & ROI" },
+  "/employee-portals/roi": { icon: "trending-up-outline", section: "Marketing & ROI" },
+  "/employee-portals/roi-tracker": { icon: "flag-outline", section: "Marketing & ROI" },
+  // ── Pay & Expenses ────────────────────────────────────────────────────────────────────────────
+  "/employee-portals/incentive": { icon: "gift-outline", section: "Pay & Expenses" },
+  "/employee-portals/payslips": { icon: "document-text-outline", section: "Pay & Expenses" },
+  "/employee-portals/deductions": { icon: "receipt-outline", section: "Pay & Expenses" },
+  "/employee-portals/expenses": { icon: "car-outline", section: "Pay & Expenses" },
+  "/employee-portals/expense-dashboard": { icon: "cash-outline", section: "Pay & Expenses" },
+  "/employee-portals/expense-submissions": { icon: "albums-outline", section: "Pay & Expenses" },
+  "/employee-portals/submit-expense": { icon: "add-circle-outline", section: "Pay & Expenses" },
+  // ── Pharmacovigilance ─────────────────────────────────────────────────────────────────────────
+  "/employee-portals/report-it": { icon: "medkit-outline", section: "Pharmacovigilance" },
+  // ── Leave & HR ────────────────────────────────────────────────────────────────────────────────
+  "/employee-portals/vacation-request": { icon: "airplane-outline", section: "Leave & HR" },
+  "/employee-portals/vacation-report": { icon: "reader-outline", section: "Leave & HR" },
+  "/employee-portals/excuses": { icon: "alarm-outline", section: "Leave & HR" },
+  "/employee-portals/fingerprint-analytics": { icon: "finger-print-outline", section: "Leave & HR" },
+  "/employee-portals/contact-hr-support": { icon: "headset-outline", section: "Leave & HR" },
+};
+
+/** What the app renders for one module. */
+export type NativePortalModule = {
+  /** The live pending-count badge this destination carries, or null. Mirrors the web bottom bar's dot. */
+  badge: PortalNavEntry["navBadge"] | null;
+  href: string;
+  /** Ionicons glyph name. */
+  icon: string;
+  /** The descriptive name — the app has room for it, so it never shows the bottom bar's short form. */
+  label: string;
+  /**
+   * True when an administrator has temporarily locked this module. The row stays, wearing a padlock,
+   * exactly as the web sidebar keeps it: removing it would say "this was removed", which is a harsher
+   * message than the administrator chose to send.
+   */
+  locked: boolean;
+};
+
+export type NativePortalModuleSection = {
+  modules: NativePortalModule[];
+  title: NativeModuleSection;
+};
+
+/** Every placement, for the drift test. Not for rendering — the viewer's own list comes from below. */
+export function nativeModulePlacements(): Readonly<
+  Record<string, { icon: string; section: NativeModuleSection }>
+> {
+  return MODULE_PLACEMENT;
+}
+
+/**
+ * The viewer's modules, grouped and ordered as the sidebar groups and orders them.
+ *
+ * `lockedModuleKeys` is what `resolveModuleLocksForAccess` returned for this viewer — pass an empty
+ * array when locks could not be read, which is how the portal shell already fails (a lock read that
+ * goes wrong must never be able to take the portal away from an employee).
+ *
+ * An entry with no placement is DROPPED rather than guessed into a section: the test below makes that
+ * unreachable in a merged build, and silently mis-filing a live module is worse than a build-time
+ * failure.
+ */
+export function buildNativePortalModuleDirectory(input: {
+  lockedModuleKeys: readonly string[];
+  visibility: EmployeePortalNavVisibility;
+}): NativePortalModuleSection[] {
+  const locked = [...input.lockedModuleKeys];
+  const bySection = new Map<NativeModuleSection, NativePortalModule[]>();
+  const seen = new Set<string>();
+
+  for (const entry of PORTAL_NAV_REGISTRY) {
+    if (seen.has(entry.href)) continue;
+    if (!isEntryVisible(entry, input.visibility)) continue;
+
+    const placement = MODULE_PLACEMENT[entry.href];
+    if (!placement) continue;
+
+    seen.add(entry.href);
+
+    const modules = bySection.get(placement.section) ?? [];
+    modules.push({
+      badge: entry.navBadge ?? null,
+      href: entry.href,
+      icon: placement.icon,
+      label: entry.fullLabel,
+      locked: locked.length > 0 && resolveLockedModuleForPath(entry.href, locked) !== null,
+    });
+    bySection.set(placement.section, modules);
+  }
+
+  return NATIVE_MODULE_SECTION_ORDER.map((title) => ({
+    modules: bySection.get(title) ?? [],
+    title,
+  })).filter((section) => section.modules.length > 0);
+}
