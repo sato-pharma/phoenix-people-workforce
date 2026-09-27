@@ -396,6 +396,12 @@ jobs:
         run: pnpm run test:e2e:smoke
         env:
           NODE_ENV: test
+          # 🔴 The TEST'S OWN navigation, matched to the readiness poll in playwright.config.ts.
+          # `tests/e2e/auth.setup.ts` already reads this and falls back to `localhost`, so without it
+          # the poll would succeed on 127.0.0.1 and the very next request would go back to resolving
+          # `localhost` — `::1` first inside a container — and fail for the same reason one line later.
+          # Identical to `localhost` on GitHub's runners, where it resolves to 127.0.0.1 anyway.
+          PLAYWRIGHT_BASE_URL: http://127.0.0.1:3000
           # This test logs in as the hardcoded CI_SMOKE_LOGIN_ID account ("a-12", see
           # app/api/auth/login/route.ts). PHOENIX_CI_SMOKE_LOGIN mode deliberately skips
           # creating an app_sessions row, but SessionSecurityGuard still mounts for real on

@@ -21,7 +21,15 @@ export default defineConfig({
     command: process.env.CI ? "pnpm run start" : "pnpm run dev -- -p 3000",
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
-    url: "http://localhost:3000/login",
+    // 🔴 127.0.0.1, NEVER `localhost` — inside a container `localhost` can resolve to `::1` FIRST,
+    // and `next start` binds IPv4, so the readiness poll is refused for the whole 120 s while the
+    // server itself logs nothing at all. Measured 2026-09-27 on the self-hosted Railway runner: the
+    // same step passes hosted 0.4 s after the server's banner and times out in the container after
+    // 120 s, with identical server output up to that point — so the difference is the resolution
+    // order, not the server. On GitHub's runners `localhost` already resolves to 127.0.0.1, which
+    // is why this is not a special case for one environment but simply the unambiguous spelling.
+    // Pinned by tests/next-build-cpu-cap.test.ts.
+    url: "http://127.0.0.1:3000/login",
   },
   projects: [
     // Auth setup — runs first, saves authenticated browser state for Ali (NSM)

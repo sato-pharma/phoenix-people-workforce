@@ -109,4 +109,35 @@ export function runNextBuildCpuCapTests() {
         `nothing, and the log still said 47 workers. Found: ${JSON.stringify(live)}`,
     );
   }
+
+  // ── the OTHER container assumption in the same pipeline: localhost is not 127.0.0.1 ─────────────
+  //
+  // 🔴 `next start` binds IPv4, and inside a container `localhost` can resolve to `::1` FIRST — so a
+  // readiness poll on `localhost` is refused for the full 120s timeout while the server logs NOTHING,
+  // which reads as "the server never started". Measured 2026-09-27: the same step passes on a GitHub
+  // runner 0.4s after the server's banner and times out after 120s in the container, with identical
+  // server output. It is the resolution order, not the server. Both halves have to agree, and the
+  // second is easy to miss: the poll lives in playwright.config.ts, the test's own navigation reads
+  // PLAYWRIGHT_BASE_URL and falls back to `localhost`, so fixing only the poll moves the same failure
+  // one request later.
+  const playwrightConfig = readFileSync("playwright.config.ts", "utf8");
+  const webServer = /webServer:\s*\{([\s\S]*?)\n\s{2}\},/.exec(playwrightConfig);
+  assert.ok(webServer, "playwright.config.ts no longer has a `webServer: { … }` block this test can read");
+  assert.match(
+    webServer[1],
+    /url:\s*"http:\/\/127\.0\.0\.1:3000\//,
+    "playwright.config.ts's webServer readiness URL must use 127.0.0.1, never `localhost`: in a container " +
+      "`localhost` can resolve to ::1 first, `next start` binds IPv4, and the poll is then refused for the " +
+      "whole 120s timeout with no server output at all. On GitHub's runners the two are identical, so this " +
+      "costs nothing there and is the unambiguous spelling everywhere.",
+  );
+  const smokeStep = /- name: Run Playwright login smoke test\n([\s\S]*?)\n\n/.exec(workflow);
+  assert.ok(smokeStep, `${WORKFLOW} no longer has a "Run Playwright login smoke test" step this test can read`);
+  assert.match(
+    smokeStep[1],
+    /PLAYWRIGHT_BASE_URL:\s*http:\/\/127\.0\.0\.1:3000/,
+    `${WORKFLOW}'s smoke step must set PLAYWRIGHT_BASE_URL to 127.0.0.1. tests/e2e/auth.setup.ts falls back ` +
+      "to `localhost` when it is unset, so without it the readiness poll succeeds on 127.0.0.1 and the test's " +
+      "very next navigation goes back to resolving `localhost` — the same failure, one request later.",
+  );
 }
