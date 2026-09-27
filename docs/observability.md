@@ -363,6 +363,20 @@ policy):
    Reformat the table freely, but re-run `pnpm run test` — a parser that silently matches nothing
    turns the sync into a no-op that reports success.
 
+   🔴 **STANDING A JOB DOWN AND BRINGING IT BACK NEEDS `watchingSince`, or the restore alarms about
+   the gap.** A `job_heartbeats` row outlives its declaration: removing the slug stops it being
+   judged but leaves the row, still stamped with the ORIGINAL `first_seen_at`. Put the slug back and
+   the sweep judges it against the fires in between — mornings with no cron job behind them, which it
+   can never have reported — so it reads STRANDED on the first sweep and pages every Super Admin every
+   15 minutes about a job that is scheduled perfectly. `phoenix-crm-daily-digest` did exactly this:
+   declared 2026-09-26, stood down the next evening before a single message was sent, restored at
+   00:42 Cairo on 2026-09-28, and the alarm then ran from the 27th's 08:55 deadline until the row was
+   re-armed by hand. **A restored declaration carries `watchingSince` — the restore instant — in the
+   same edit** (`src/lib/observability/job-schedule.ts`), which floors the baseline once without ever
+   becoming a rolling window that could hide a job that has genuinely never worked. An unparseable or
+   future value is reported as `misdeclared` rather than obeyed. Pinned by
+   `tests/job-heartbeat-register.test.ts`.
+
    🔴 **THE HEALTHCHECKS ACCOUNT IS FULL AT 20 CHECKS — WHICH IS WHY THERE IS NOW A SECOND,
    IN-HOUSE BACKEND.** Measured 2026-08-30: `GET /api/v3/checks/` returns exactly **20**, every one
    of them declared here and legitimate, and `POST /checks/` for a 21st returns **HTTP 403 with an

@@ -144,7 +144,29 @@ export function assessJobHeartbeats(params: {
     }
     checked += 1;
 
-    const firstSeenMs = parseTimestamp(row.firstSeenAt) ?? nowMs;
+    // The baseline: "since when has anything been watching this job". Normally the row's own
+    // `first_seen_at`, but a RESTORED declaration carries `watchingSince` and the later of the two
+    // wins — the row outlives a stand-down, so without the floor the restored job is judged against
+    // fires that had no scheduler behind them. See the field's note in job-schedule.ts.
+    //
+    // A `watchingSince` that cannot be parsed, or one in the future, is MISDECLARED and nothing else:
+    // both would otherwise leave `hadAChanceToRun` false for ever, so this job would never strand
+    // again and its silence would stop meaning anything.
+    const rowFirstSeenMs = parseTimestamp(row.firstSeenAt) ?? nowMs;
+    const watchingSinceMs = declaration.watchingSince ? parseTimestamp(declaration.watchingSince) : null;
+    if (declaration.watchingSince && (watchingSinceMs === null || watchingSinceMs > nowMs)) {
+      misdeclared.push({
+        detail:
+          `${declaration.slug} declares watchingSince "${declaration.watchingSince}", which is ` +
+          `${watchingSinceMs === null ? "not a date" : "in the future"} — so its silence could never be judged.`,
+        kind: "misdeclared",
+        lastSuccessAt: row.lastSuccessAt,
+        overdueSince: null,
+        slug: declaration.slug,
+      });
+      continue;
+    }
+    const firstSeenMs = Math.max(rowFirstSeenMs, watchingSinceMs ?? 0);
     const lastSuccessMs = parseTimestamp(row.lastSuccessAt);
     const lastFailMs = parseTimestamp(row.lastFailAt);
 
