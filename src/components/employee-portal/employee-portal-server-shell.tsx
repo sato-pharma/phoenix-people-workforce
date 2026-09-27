@@ -137,6 +137,14 @@ export async function EmployeePortalServerShell({
         lockedModuleKeys={lockedModuleKeys}
         visibility={visibility}
       >
+        {access.testPersona ? (
+          // A TEST ACCOUNT (src/lib/auth/test-persona.ts) reads a real person's portal. Said on every
+          // page, so a test session can never be taken for the real one — by him, or over his shoulder.
+          <div className="mb-4 border border-orange-300 bg-orange-50 px-4 py-2.5 text-sm text-orange-900" role="status">
+            <span className="font-black">Test account.</span>{" "}
+            {`You are seeing ${data.employee.fullName}'s portal with the real data. Only Phoenix CRM saves, as test entries; every other save is refused.`}
+          </div>
+        ) : null}
         {lockedModuleForPage ? (
           <ModuleLockedNotice
             homeHref="/employee-portals"

@@ -17,9 +17,8 @@
  * test requests only.
  */
 
-import { forbiddenError } from "@/lib/http/api-errors";
 import type { OrgSeat } from "@/lib/phoenix-crm/scope";
-import { canReviewTerritory, readTestFlag, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { canReviewTerritory, testModeFor, testReadSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadReadiness, loadRequestRows, mapRequestRow, type ListRequest, type SeatReadiness } from "@/lib/phoenix-crm/server/list";
 import { loadPeopleNames } from "@/lib/phoenix-crm/server/people";
 import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
@@ -70,9 +69,8 @@ export type TeamView = {
 };
 
 export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknown }): Promise<TeamView> {
-  const isTest = readTestFlag(raw.test);
-  if (isTest && !viewer.isSuperAdmin) throw forbiddenError("Test entries are the Super Admin's.");
-  const seats: OrgSeat[] = isTest ? viewer.org.territories : viewer.scopeTerritories;
+  const isTest = testModeFor(viewer, raw.test);
+  const seats: OrgSeat[] = testReadSeats(viewer, isTest, viewer.scopeTerritories);
   const seatIds = seats.map((seat) => seat.seatId);
 
   const [readiness, requestRows, unplannedRows] = await Promise.all([

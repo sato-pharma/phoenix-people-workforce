@@ -330,12 +330,25 @@ export function usesHrNamespace(role: PhoenixRole): boolean {
   return hrNamespaceRoles.has(role);
 }
 
+/** A test account's link to the real employee whose portal it lives in (src/lib/auth/test-persona.ts). */
+export type TestPersonaLink = {
+  /** The test account's own login id (`TEST-…`). */
+  loginId: string;
+  /** The real employee it mirrors — the same value as the context's `hrId`. */
+  mirrorsHrId: string;
+};
+
 export type AccessContext = {
   hrId: string | null;
   loginId?: string | null;
   role: PhoenixRole;
   scope: AccessScope;
   source: "session" | "system" | "dev-header" | "guest";
+  /**
+   * Set ONLY on a test account's session. `hrId` and `role` are then the mirrored employee's, so every
+   * read is hers — and nothing may write as her: see src/lib/auth/test-persona.ts for the guard.
+   */
+  testPersona?: TestPersonaLink | null;
 };
 
 export type PermissionMap = Record<PhoenixRole, Partial<Record<PermissionResource, PermissionAction[]>>>;
@@ -1777,6 +1790,7 @@ export function createAccessContext(input: {
   loginId?: string | null;
   role?: string | null;
   source?: AccessContext["source"];
+  testPersona?: TestPersonaLink | null;
 }): AccessContext {
   const role = normalizeRole(input.role);
   const hrId = normalizeHrId(input.hrId);
@@ -1788,6 +1802,8 @@ export function createAccessContext(input: {
     role,
     scope: source === "guest" ? "none" : scopeForRole(role),
     source,
+    // Only present on a test account's session, so every other context keeps its exact shape.
+    ...(input.testPersona ? { testPersona: input.testPersona } : {}),
   };
 }
 

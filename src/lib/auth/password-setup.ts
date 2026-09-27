@@ -80,7 +80,7 @@ async function getAuthUser(loginIdInput: string) {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("app_auth_users")
-    .select("login_id,hr_id,name,email,role,is_active,line,manager_hr_id,auth_user_id,auth_email,force_password_reset,session_version")
+    .select("login_id,hr_id,name,email,role,is_active,line,manager_hr_id,auth_user_id,auth_email,force_password_reset,session_version,is_test_persona")
     .eq("login_id", loginId)
     .maybeSingle();
 
@@ -96,6 +96,7 @@ async function getAuthUser(loginIdInput: string) {
     force_password_reset?: boolean | null;
     hr_id?: string | null;
     is_active?: boolean | null;
+    is_test_persona?: boolean | null;
     line?: string | null;
     login_id: string;
     manager_hr_id?: string | null;
@@ -425,7 +426,9 @@ export async function completePasswordSetup(input: { password: string; token: st
     throw userError;
   }
 
-  try {
+  // A test account (src/lib/auth/test-persona.ts) has no HR id and no Supabase identity; minting one
+  // here would leave a Supabase user whose profile row the employees foreign key refuses.
+  if (currentUser.is_test_persona !== true) try {
     const identity = await provisionSupabaseAuthIdentity({
       authUserId: currentUser.auth_user_id ?? null,
       email: currentUser.email ?? null,

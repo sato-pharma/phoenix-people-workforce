@@ -4,7 +4,10 @@ import {
   parseRoleStrict,
   createAccessContext,
   type AccessContext,
+  type PhoenixRole,
+  type TestPersonaLink,
 } from "@/lib/auth/permissions";
+import { assertNotTestAccount, assertTestAccountMayRun, canBeMirrored } from "@/lib/auth/test-persona";
 import {
   refreshAppSessionIdle,
   validateAppSession,
@@ -86,11 +89,29 @@ const anonymousAccessContext = createAccessContext({
 type SessionUserRow = {
   hr_id: string | null;
   is_active: boolean;
+  is_test_persona?: boolean | null;
   login_id: string;
   name?: string | null;
   role: string;
   session_version?: number | null;
+  test_persona_of_hr_id?: string | null;
 };
+
+/**
+ * A test account's link, or the reason it cannot have one. It is refused, never downgraded to an
+ * ordinary session: a test row with no mirror, with an HR id of its own, or pointed at a role outside
+ * the employee portal would otherwise sign in as something nobody chose (src/lib/auth/test-persona.ts).
+ */
+function resolveTestPersonaLink(
+  row: SessionUserRow,
+  role: PhoenixRole,
+): { ok: true; link: TestPersonaLink } | { ok: false; reason: string } {
+  const mirrorsHrId = String(row.test_persona_of_hr_id ?? "").trim();
+  if (!mirrorsHrId) return { ok: false, reason: "test_persona_without_mirror" };
+  if (String(row.hr_id ?? "").trim()) return { ok: false, reason: "test_persona_with_own_hr_id" };
+  if (!canBeMirrored(role)) return { ok: false, reason: "test_persona_role_outside_portal" };
+  return { ok: true, link: { loginId: row.login_id, mirrorsHrId } };
+}
 
 export type ViewerIdentity = {
   displayName: string;
@@ -252,7 +273,7 @@ export async function resolveSessionState(
     ),
     supabase
       .from("app_auth_users")
-      .select("login_id, hr_id, role, is_active, session_version")
+      .select("login_id, hr_id, role, is_active, session_version, is_test_persona, test_persona_of_hr_id")
       .eq("login_id", payload.loginId)
       .maybeSingle()
       .then(
@@ -354,19 +375,39 @@ export async function resolveSessionState(
     return null;
   }
 
+  // A TEST ACCOUNT reads as the employee it mirrors (src/lib/auth/test-persona.ts). Anything short of
+  // a clean link is a rejected session, audited like every other rejection here.
+  let testPersona: TestPersonaLink | null = null;
+  if (row.is_test_persona === true) {
+    const link = resolveTestPersonaLink(row, role);
+    if (!link.ok) {
+      await auditSessionRejection({
+        entityId: row.login_id,
+        loginId: row.login_id,
+        newValues: { reason: link.reason, sessionId: payload.sid },
+        oldValues: { role },
+        summary: "Session rejected: test account is not linked to an employee-portal employee",
+      });
+      return null;
+    }
+    testPersona = link.link;
+  }
+  const effectiveHrId = testPersona ? testPersona.mirrorsHrId : row.hr_id;
+
   // Read-time lifecycle governance: do not rely on app_auth_users.is_active alone.
   // Reject the session if the linked employee is terminal (resigned/terminated/
   // non-renewed/inactive) while is_active is stale, OR if the lifecycle lookup
   // fails unexpectedly (fail closed — never silently allow when it cannot verify).
   // Missing employee row / unset status remain allowed. See
   // src/lib/auth/session-lifecycle.ts. (Read-only; no mutation.)
-  // The gate must be evaluated on the FRESH app_auth_users hr_id. The speculative
+  // The gate must be evaluated on the FRESH app_auth_users hr_id — for a test account, on the
+  // employee it mirrors, so a test account stops the day that person leaves. The speculative
   // parallel lookup above was keyed on payload.hrId; reuse it only when both keys
-  // normalize to the same employees lookup key, otherwise re-run on row.hr_id.
+  // normalize to the same employees lookup key, otherwise re-run on the effective HR id.
   const lifecycleGate =
-    String(row.hr_id ?? "").trim() === String(payload.hrId ?? "").trim()
+    String(effectiveHrId ?? "").trim() === String(payload.hrId ?? "").trim()
       ? speculativeLifecycleGate
-      : await resolveEmployeeLifecycleGate(supabase, row.hr_id);
+      : await resolveEmployeeLifecycleGate(supabase, effectiveHrId);
   if (!lifecycleGate.allowed) {
     await auditSessionRejection({
       entityId: row.login_id,
@@ -409,12 +450,12 @@ export async function resolveSessionState(
   }
 
   const access = createAccessContext({
-    hrId: row.hr_id,
+    hrId: effectiveHrId,
     loginId: row.login_id,
     role,
     source: "session",
+    testPersona,
   });
-
 
   return {
     access,
@@ -479,6 +520,11 @@ async function resolveAccessContextInner(request: Request): Promise<AccessContex
 
 export async function resolveAccessContext(request: Request): Promise<AccessContext> {
   const access = await resolveAccessContextInner(request);
+  // THE TEST ACCOUNT WRITE GUARD — one choke point for every API route that resolves a caller, before
+  // the route runs a line of its own. A test account reads as a real employee, so a save it sent
+  // anywhere but Phoenix CRM would be written as her. Refused here, fail-closed; the routes' own
+  // try/catch turns it into a 403 with the sentence (src/lib/auth/test-persona.ts).
+  assertTestAccountMayRun(access, request);
   return access;
 }
 
@@ -527,6 +573,9 @@ const resolveAccessContextFromPageInner = cache(async (): Promise<AccessContext>
 
 export async function resolveAccessContextFromPage(): Promise<AccessContext> {
   const access = await resolveAccessContextFromPageInner();
+  // A server action arrives as a POST to a PAGE, which the API guard above never sees. Next marks
+  // it with the `next-action` header; a test account never runs one.
+  if (access.testPersona && (await headers()).get("next-action")) assertNotTestAccount(access);
   return access;
 }
 

@@ -30,7 +30,7 @@ import {
   type AdoptionReport,
 } from "@/lib/phoenix-crm/adoption-rules";
 import { territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
-import { readTestFlag, readsTeamReports, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { readsTeamReports, testModeFor, testReadSeats, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { chunk } from "@/lib/phoenix-crm/server/db";
 import { loadReadiness, type SeatReadiness } from "@/lib/phoenix-crm/server/list";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
@@ -156,11 +156,10 @@ export async function gatherAdoption(input: {
  */
 export async function loadAdoptionReport(viewer: PhoenixCrmViewer, raw: { test: unknown }): Promise<AdoptionView> {
   if (!readsTeamReports(viewer)) throw forbiddenError("The adoption report is for managers.");
-  const isTest = readTestFlag(raw.test);
-  if (isTest && !viewer.isSuperAdmin) throw forbiddenError("Test entries are the Super Admin's.");
+  const isTest = testModeFor(viewer, raw.test);
 
   const seen = new Set<string>();
-  const seats = (isTest ? viewer.org.territories : [...viewer.scopeTerritories, ...viewer.waitingScopeTerritories]).filter((seat) => {
+  const seats = testReadSeats(viewer, isTest, [...viewer.scopeTerritories, ...viewer.waitingScopeTerritories]).filter((seat) => {
     if (seen.has(seat.seatId)) return false;
     seen.add(seat.seatId);
     return true;

@@ -177,6 +177,7 @@ function resolveCiSmokeUser(loginId: string, password: string) {
       email: null as string | null,
       forcePasswordReset: false,
       hrId: "A-12",
+      isTestPersona: false,
       line: null as string | null,
       loginId: CI_SMOKE_LOGIN_ID,
       managerHrId: null as string | null,
@@ -346,7 +347,10 @@ export async function POST(request: Request) {
 
     // PHOENIX_SKIP_SUPABASE_AUTH_BRIDGE=true skips all Supabase Auth API calls.
     // Used in CI to prevent bridge network timeouts from blocking login.
-    const skipBridge = process.env.PHOENIX_SKIP_SUPABASE_AUTH_BRIDGE === "true";
+    // A test account (src/lib/auth/test-persona.ts) never gets one either: it has no HR id of its own,
+    // so the bridge would mint a Supabase user whose profile row its foreign key refuses — and nothing
+    // a test account opens reads through the bridge.
+    const skipBridge = process.env.PHOENIX_SKIP_SUPABASE_AUTH_BRIDGE === "true" || user.isTestPersona;
 
     if (!skipBridge) try {
       supabaseSession = await createSupabaseAuthSession(user.loginId, password);

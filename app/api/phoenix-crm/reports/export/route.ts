@@ -4,7 +4,7 @@ import { writeAuditLog } from "@/lib/admin/audit";
 import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContext } from "@/lib/auth/server";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
-import { readsTeamReports, resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { readsTeamReports, reportIncludesTest, resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadBrickCoverageReport } from "@/lib/phoenix-crm/server/brick-report";
 import { loadAdoptionReport } from "@/lib/phoenix-crm/server/adoption";
 import { loadExceptionsBoard } from "@/lib/phoenix-crm/server/exceptions";
@@ -60,7 +60,7 @@ export async function GET(request: Request) {
       month: search.get("month"),
       compare: search.get("compare"),
     };
-    const includeTest = viewer.isSuperAdmin && search.get("includeTest") === "true";
+    const includeTest = reportIncludesTest(viewer, search.get("includeTest"));
     const managerSections = readsTeamReports(viewer);
 
     // Loaded together; each service applies the viewer's scope again. `managers` is asked for even

@@ -54,6 +54,8 @@ import {
   canReviewTerritory,
   canWriteAsRep,
   readTestFlag,
+  testModeFor,
+  testReadSeats,
   territoryForRead,
   territoryForRepWrite,
   type PhoenixCrmViewer,
@@ -541,12 +543,11 @@ const REVIEW_ORDER: Record<PhoenixCrmPlanStatus | "none", number> = { submitted:
  * Admin's test plans only.
  */
 export async function loadMonthlyPlanReviews(viewer: PhoenixCrmViewer, raw: { test: unknown; month: unknown }): Promise<MonthlyReviewView> {
-  const isTest = readTestFlag(raw.test);
-  if (isTest && !viewer.isSuperAdmin) throw forbiddenError("Test entries are the Super Admin's.");
+  const isTest = testModeFor(viewer, raw.test);
   const months = plannableMonths(viewer.cairoToday);
   const monthStart = resolveMonth(raw.month, months);
 
-  const territories = isTest ? viewer.org.territories : viewer.scopeTerritories;
+  const territories = testReadSeats(viewer, isTest, viewer.scopeTerritories);
   const territoryById = new Map(territories.map((seat) => [seat.seatId, seat]));
   const supabase = getSupabaseAdmin();
   const headerQuery = (seatIds: string[] | null) =>
@@ -559,7 +560,7 @@ export async function loadMonthlyPlanReviews(viewer: PhoenixCrmViewer, raw: { te
       { cursorColumn: "id", cursorOf: (row) => String(row.id) },
     );
   let headerRows: Row[];
-  if (isTest || viewer.basis === "all") {
+  if ((isTest && viewer.isSuperAdmin) || viewer.basis === "all") {
     headerRows = await headerQuery(null);
   } else {
     headerRows = [];

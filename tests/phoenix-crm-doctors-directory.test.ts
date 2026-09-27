@@ -70,7 +70,9 @@ function runRouteTests() {
   assert.match(route, /assertPermission\(access, "phoenix_crm", "read"\)/, "the route checks the matrix before anything else");
   assert.match(route, /resolvePhoenixCrmViewer\(access\)/, "the route resolves the viewer, so the organogram narrows the permission again");
   assert.match(route, /loadDoctorDirectory\(viewer, isTest\)/, "the route hands the viewer to the loader, which settles the scope");
-  assert.match(route, /if \(isTest && !viewer\.isSuperAdmin\)/, "test entries are the Super Admin's, here as everywhere else");
+  // Settled by the one helper every cross-territory read uses: the Super Admin's own choice, always on
+  // for a test login (src/lib/auth/test-persona.ts), refused to everyone else who asks.
+  assert.match(route, /const isTest = testModeFor\(viewer, searchOf\(request\)\.get\("test"\)\)/, "test entries are the Super Admin's, here as everywhere else");
 
   // The registry and the route must agree, or the boundary test's on-disk sweep fails.
   const registry = source("src/lib/security/access-registry.ts");

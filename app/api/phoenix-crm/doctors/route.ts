@@ -2,8 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContext } from "@/lib/auth/server";
-import { forbiddenError } from "@/lib/http/api-errors";
-import { readTestFlag, resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { resolvePhoenixCrmViewer, testModeFor } from "@/lib/phoenix-crm/server/access";
 import { loadDoctorDirectory } from "@/lib/phoenix-crm/server/doctors";
 import { phoenixCrmFailure, searchOf } from "@/lib/phoenix-crm/server/http";
 
@@ -18,8 +17,7 @@ export async function GET(request: Request) {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "phoenix_crm", "read");
     const viewer = await resolvePhoenixCrmViewer(access);
-    const isTest = readTestFlag(searchOf(request).get("test"));
-    if (isTest && !viewer.isSuperAdmin) throw forbiddenError("Test entries are the Super Admin's.");
+    const isTest = testModeFor(viewer, searchOf(request).get("test"));
     const directory = await loadDoctorDirectory(viewer, isTest);
     return NextResponse.json({ directory, success: true });
   } catch (error) {
