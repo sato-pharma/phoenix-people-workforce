@@ -240,7 +240,15 @@ export function runPhoenixCrmDuplicatePhotosTests(): void {
     assert.ok(sweep.includes("downloadPhoto"), "and the bucket is opened by photos.ts, never here");
 
     const migration = sql(MIGRATION);
-    assert.ok(migration.includes("order by c.captured_at"), "🔴 OLDEST first — a newest-first sweep leaves an old backlog permanently behind");
+    // 🔴 Anchored on the absence of `desc`, not on the presence of the clause: "order by
+    // c.captured_at" is a substring of "order by c.captured_at desc", so the obvious assertion
+    // passes on the very change it exists to catch. It did, the first time this was written.
+    assert.ok(/\border by c\.captured_at\s*\n/.test(migration), "the backlog is ordered by when the photo was captured");
+    assert.equal(
+      /\border by (?:c|picked)\.captured_at\s+desc/.test(migration),
+      false,
+      "🔴 OLDEST first — a newest-first sweep with a nightly cap leaves an old backlog permanently behind fresher work, and a photo never hashed can be re-used for ever",
+    );
     assert.ok(migration.includes("constraint phoenix_crm_photo_fingerprints_photo unique (photo_path)"), "the photo path is the identity");
   }
 
