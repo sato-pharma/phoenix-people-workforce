@@ -1,6 +1,6 @@
-/*! Phoenix pdf.js browser polyfill v1 — prepended by scripts/sync-pdfjs-assets.mjs, not part of pdf.js.
- * Keeps a CV opening on phone browsers older than roughly Chrome 119 / Safari 17.4, which
- * pdfjs-dist 6 stopped polyfilling for. Source and reasoning: scripts/pdfjs-browser-polyfill.mjs */
+/*! Phoenix pdf.js browser polyfill v2 — prepended by scripts/sync-pdfjs-assets.mjs, not part of pdf.js.
+ * Keeps a CV opening on phone browsers older than roughly Chrome 124, and on Safari, which lack
+ * built-ins pdfjs-dist 6 calls without a fallback. Source and reasoning: scripts/pdfjs-browser-polyfill.mjs */
 (function () {
   "use strict";
 
@@ -46,6 +46,68 @@
         return undefined;
       },
     });
+  }
+  // ReadableStream async iteration: what `for await (const chunk of stream)` calls. Shaped as the
+  // Streams specification's values(): read() until done, release the lock at the end or on an
+  // error, and on an early exit (break, throw or return inside the loop) CANCEL the stream unless
+  // the caller passed { preventCancel: true }.
+  if (
+    typeof ReadableStream === "function" &&
+    typeof Symbol === "function" &&
+    typeof Symbol.asyncIterator === "symbol" &&
+    typeof ReadableStream.prototype[Symbol.asyncIterator] !== "function"
+  ) {
+    var streamValues = function values(options) {
+      var preventCancel = Boolean(options && options.preventCancel);
+      var reader = this.getReader();
+      var finished = false;
+      var finish = function () {
+        finished = true;
+        reader.releaseLock();
+      };
+      var iterator = {
+        next: function () {
+          if (finished) return Promise.resolve({ value: undefined, done: true });
+          return reader.read().then(
+            function (result) {
+              if (result.done) {
+                finish();
+                return { value: undefined, done: true };
+              }
+              return { value: result.value, done: false };
+            },
+            function (error) {
+              finish();
+              throw error;
+            },
+          );
+        },
+        return: function (value) {
+          if (finished) return Promise.resolve({ value: value, done: true });
+          var cancelled = preventCancel ? Promise.resolve() : reader.cancel(value);
+          finish();
+          return cancelled.then(function () {
+            return { value: value, done: true };
+          });
+        },
+      };
+      iterator[Symbol.asyncIterator] = function () {
+        return this;
+      };
+      return iterator;
+    };
+    Object.defineProperty(ReadableStream.prototype, Symbol.asyncIterator, {
+      configurable: true,
+      writable: true,
+      value: streamValues,
+    });
+    if (typeof ReadableStream.prototype.values !== "function") {
+      Object.defineProperty(ReadableStream.prototype, "values", {
+        configurable: true,
+        writable: true,
+        value: streamValues,
+      });
+    }
   }
 })();
 /**

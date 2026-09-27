@@ -353,10 +353,35 @@ export function CvDocumentView({
             // is one run in the PDF's own layout, which for a contact line is the number by itself,
             // and measuring a sub-span means re-deriving glyph advances from a font this code has
             // not loaded. Covering the run errs towards hiding, which is the safe direction here.
+            //
+            // AND IT FAILS TOWARDS HIDING. Reading the text can itself throw — pdf.js 6 drains its
+            // text stream with `for await`, which every Safari and Chromium before 124 cannot do
+            // over a ReadableStream (scripts/pdfjs-browser-polyfill.mjs now covers it, and that is
+            // the fix). But a page whose text cannot be read is a page whose numbers cannot be
+            // found, and the canvas beside it is already painted with them on it. So the catch
+            // covers the WHOLE page rather than letting it through: the reader gets a blank sheet
+            // and the monitor gets a row, never a phone number the screen was built to hide.
             if (redactPhones) {
               const context = canvas.getContext("2d");
-              const content = await page.getTextContent();
-              if (context) {
+              let content: Awaited<ReturnType<typeof page.getTextContent>> | null = null;
+              try {
+                content = await page.getTextContent();
+              } catch (redactionError) {
+                if (context) {
+                  context.fillStyle = "#0f172a";
+                  context.fillRect(0, 0, canvas.width, canvas.height);
+                }
+                const report = buildCvPreviewFailureReport({
+                  caught: redactionError,
+                  fileName,
+                  httpStatus,
+                  kind,
+                  route: typeof window !== "undefined" ? window.location.pathname : null,
+                  stage: "redaction",
+                });
+                if (report) reportClientError(report);
+              }
+              if (context && content) {
                 context.fillStyle = "#0f172a";
                 for (const item of content.items) {
                   const textItem = item as { str?: string; transform?: number[]; width?: number; height?: number };

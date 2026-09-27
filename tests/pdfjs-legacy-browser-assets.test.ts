@@ -121,6 +121,20 @@ export function runPdfjsLegacyBrowserAssetsTests() {
         definedAs: "union",
         since: "Chrome 122 / Safari 17",
       },
+      // Not a method call at all, which is why the 2026-09-23 list missed it: `for await` over a
+      // ReadableStream needs ReadableStream.prototype[Symbol.asyncIterator], which no Safari and no
+      // Chromium before 124 has and core-js has never polyfilled. pdf.js 6's getTextContent drains
+      // its text stream that way, and on 2026-09-24 → 26 managers on iPhones and Samsung Internet
+      // 20 got "e is not async iterable" out of the CV preview's phone-redaction pass. EVERY
+      // `for await` is counted, not only the ones over a stream: iterating an async generator needs
+      // nothing, but a minified bundle cannot tell the two apart, so the coverage has to be in
+      // place whenever one exists at all.
+      {
+        label: "ReadableStream.prototype[Symbol.asyncIterator]",
+        calledBy: /for await\(/g,
+        definedAs: "Symbol.asyncIterator]",
+        since: "Chrome 124 / any Safari",
+      },
     ];
 
     // The vendor's core-js is read by ITS shape. Ours is not written that way — it installs each
@@ -131,11 +145,15 @@ export function runPdfjsLegacyBrowserAssetsTests() {
       vendor.includes(`${prop}:function ${prop}(`) || vendor.includes(`${prop}:function(`);
 
     for (const label of PDFJS_POLYFILLED_BUILTINS) {
-      const prop = label.split(".").pop();
+      // A symbol-keyed built-in ("X.prototype[Symbol.asyncIterator]") is installed by the symbol
+      // itself and never by a quoted name, so it is read by the key it is defined with.
+      const symbolKey = /\[(Symbol\.\w+)\]$/.exec(label)?.[1];
+      const prop = symbolKey ?? label.split(".").pop();
+      const installedAs = symbolKey ? `, ${symbolKey}, {` : `"${prop}"`;
       assert.ok(
         PDFJS_BROWSER_POLYFILL.includes(`Object.defineProperty`) &&
-          PDFJS_BROWSER_POLYFILL.includes(`"${prop}"`),
-        `scripts/pdfjs-browser-polyfill.mjs lists ${label} as covered but its source never defines "${prop}" — the coverage list must not be able to lie, or a real gap reads as handled`,
+          PDFJS_BROWSER_POLYFILL.includes(installedAs),
+        `scripts/pdfjs-browser-polyfill.mjs lists ${label} as covered but its source never defines ${prop} — the coverage list must not be able to lie, or a real gap reads as handled`,
       );
     }
 

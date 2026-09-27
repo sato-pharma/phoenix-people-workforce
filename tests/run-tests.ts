@@ -1917,6 +1917,7 @@ import { runBackgroundFolderFilingGateTests } from "./background-folder-filing-g
 import { runPhoenixOfficialLogoTests } from "./phoenix-official-logo.test.ts";
 import { runPdfjsLegacyBrowserAssetsTests } from "./pdfjs-legacy-browser-assets.test.ts";
 import { runPdfjsBrowserPolyfillTests } from "./pdfjs-browser-polyfill.test.ts";
+import { runCvPreviewAsyncIterationTests } from "./cv-preview-async-iteration.test.ts";
 import { runCvPreviewFailureReportTests } from "./cv-preview-failure-report.test.ts";
 import { runCvLinkedInAndSelectableTextTests } from "./cv-linkedin-and-selectable-text.test.ts";
 import { runInterviewCalendarTests } from "./interview-calendar.test.ts";
@@ -6765,6 +6766,11 @@ await runTest(
 await runTest(
   "a CV that fails to open is reported to the error monitor with its kind, never its file name or candidate, and designed notices stay out",
   runCvPreviewFailureReportTests,
+);
+
+await runTest(
+  "a manager's redacted PDF CV opens on an iPhone and on Samsung Internet: `for await` over pdf.js's text stream works from our own polyfill, and a page whose text cannot be read is covered whole rather than shown with its phone numbers on it",
+  runCvPreviewAsyncIterationTests,
 );
 
 await runTest(
