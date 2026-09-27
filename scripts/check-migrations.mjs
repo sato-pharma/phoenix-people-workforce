@@ -119,7 +119,45 @@ try {
   mainFiles = null; // no origin/main, no git, shallow clone — skip, do not fail
 }
 
+// WHICH origin/main it read, printed on the PASSING path too — because the silent pass is the
+// dangerous one. The caveat belongs here and not only in the failure text: a session that has not
+// fetched since the colliding migration merged gets a GREEN local run, pushes, and still reads a red
+// `validate` over a file that is not on its branch — the exact loop 2c exists to end, now with local
+// reassurance behind it. Nothing can fetch on its own inside a pre-flight check (needing no network
+// is the whole point), so name the commit and its age and let the reader judge. Measured 2026-09-27:
+// origin/main moved 65b8e35b9 → 5e5c87228 inside ten minutes on this machine, and a concurrent fetch
+// aborted with "cannot lock ref".
+let mainRef = null;
+try {
+  const [sha, when] = execFileSync('git', ['log', '-1', '--format=%h %cI', 'origin/main'], {
+    cwd: path.join(__dirname, '..'),
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+    timeout: 15000,
+  })
+    .trim()
+    .split(' ');
+  const ageHours = (Date.now() - Date.parse(when)) / 3600000;
+  if (sha && Number.isFinite(ageHours)) {
+    mainRef = {
+      sha,
+      age: ageHours < 1 ? `${Math.round(ageHours * 60)} min old` : `${ageHours.toFixed(1)} h old`,
+      stale: ageHours > 1,
+    };
+  }
+} catch {
+  mainRef = null; // same fail-open as the ls-tree above — never refuse over a ref you cannot read
+}
+
 if (mainFiles && mainFiles.size > 0) {
+  console.log(
+    `[migration-check] cross-branch timestamp check compared against origin/main at ` +
+      `${mainRef ? `${mainRef.sha} (${mainRef.age})` : 'an unreadable commit'}, ${mainFiles.size} migration(s) there.` +
+      (mainRef?.stale
+        ? ' 🔴 That ref is over an hour old, so a migration merged since is INVISIBLE to this check —'
+          + ' `git fetch` and re-run before treating a green here as proof.'
+        : '')
+  );
   const onMainByStamp = new Map();
   for (const name of mainFiles) onMainByStamp.set(name.slice(0, 14), name);
   for (const file of files) {
@@ -131,8 +169,6 @@ if (mainFiles && mainFiles.size > 0) {
     fail(
       `"${file}" uses timestamp "${ts}", which "${clash}" already carries on origin/main. ` +
         'CI judges the MERGE ref, so this is red there and green here — the file it collides with is not ' +
-      'on your branch. NOTE: this compares against the LAST-FETCHED origin/main, so a stale ref can ' +
-      'still miss a collision with something merged since your last fetch; fetch first for certainty. ' +
         'on your branch. Rename this migration to a timestamp later than every file on main: ' +
         'the new-migration skill mints one for you, or take the greatest stamp on main and add a second.'
     );

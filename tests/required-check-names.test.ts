@@ -31,6 +31,17 @@ import path from "node:path";
  * not have quietly come back as jobs, and no file a session ACTS on may still name a retired check
  * as a gate.
  *
+ * 🔴 SO A GREEN HERE IS NOT PROOF THAT THE DOCUMENTED LIST MATCHES THE GATE. It proves the docs and
+ * the workflows agree with EACH OTHER. Repoint protection to a fifth arrangement and leave every doc
+ * and job name mutually consistent, and this test stays green while every doc misstates the real
+ * gate — the same failure it exists to prevent, one level up. `RETIRED_CHECK_NAMES` below is a
+ * hand-maintained literal for the same reason, and whoever does the next rename has to extend it.
+ * Nothing inside a test run can close that, deliberately: a live `gh api` read would make a REQUIRED
+ * check depend on network and auth, so it would have to fail open, and a check that fails open is not
+ * something to rely on. The durable half is the instruction in AGENTS.md §2 and the ship skill — read
+ * `branches/main/protection/required_status_checks` live and count passes against what it returns,
+ * never this file's verdict and never a number from a doc.
+ *
  * Node builtins only, and no YAML parser — the same rule tests/ci-gate-parity.test.ts records at its
  * line 125. Job ids are read as top-level two-space keys under `jobs:`, which is how ci-gate-parity
  * already reads them.

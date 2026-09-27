@@ -184,6 +184,25 @@ export function runWorkflowDispatchGuardTests() {
       );
     }
 
+    // THE NEGATIVE CONTROL for the two cases above, and they need one. Both widen what counts as
+    // exempt — a bare ref now reads as main, and the ref is now read out of the RAW command — so the
+    // failure direction is exempting EVERYTHING. If a heredoc body were ignored again, or an
+    // unreadable ref were treated as main too eagerly, every assertion above would still pass while
+    // the cap had quietly stopped existing. A branch ref fed the same way must still reach it.
+    const heredocBranch = [
+      "curl -sS -X POST https://api.github.com/repos/o/r/actions/workflows/ci.yml/dispatches -d @- <<'JSON'",
+      '{"ref":"codex/heredoc-branch"}',
+      "JSON",
+    ].join("\n");
+    assert.equal(runGuard(heredocBranch, { session: "HD-NEG" }).decision, "allow");
+    assert.equal(runGuard(heredocBranch, { session: "HD-NEG" }).decision, "allow");
+    assert.equal(
+      runGuard(heredocBranch, { session: "HD-NEG" }).decision,
+      "deny",
+      "a heredoc-fed dispatch on a BRANCH must still cap on the third — otherwise the main exemption "
+        + "has swallowed every ref and the clause no longer does anything",
+    );
+
     // A flag before the positional must not be read as the workflow — otherwise `main` would be
     // taken for the workflow name and the exemption would silently not apply.
     for (let i = 1; i <= 3; i += 1) {
