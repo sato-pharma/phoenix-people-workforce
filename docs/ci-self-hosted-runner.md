@@ -410,8 +410,37 @@ runner is opt-in and the rollback is one command.
    are still downloaded and cached per run by `ci.yml`), registers the runner and installs it as a
    systemd service so it survives reboot.
 4. Confirm it shows **Idle** at `/settings/actions/runners`.
-4b. 🔴 **Confirm the OS before flipping the variable, and that NO other runner is registered** —
-   this is the step whose absence cost PR #4537 a full red cycle on 2026-09-27 (safety rule 2b):
+4a. 🔴 **GIVE THE HOST ITS OWN LABEL AND POINT `CI_RUNNER` AT THAT, NOT AT `self-hosted`.**
+   `runs-on: self-hosted` matches **every** self-hosted runner on the repo, and this repo has ten
+   registered from the Railway rollout — three of them online, all labelled
+   `self-hosted,X64,Linux,phoenix`, and all of them abort `validate` in the Build step. Flip
+   `CI_RUNNER` to `self-hosted` with those present and roughly half your jobs land on the runners that
+   fail, on a box you have just paid for.
+
+   🔴 **And "just deregister them" does NOT work here.** Step 4b below says to delete a stray
+   registration, which is right for a one-off laptop runner and wrong for Railway: the service
+   re-registers a replica as soon as one cycles, so `gh api -X DELETE .../runners/<id>` is a loop, not
+   a fix. Stopping that project is the owner's dashboard decision, not a prerequisite for this.
+
+   So label the new host distinctly and select it by that label — the Railway runners can then never
+   match, nothing of anyone else's is deleted, and the rollback is still one command:
+
+   ```bash
+   # on the host, BEFORE running the setup script
+   export RUNNER_LABELS=self-hosted,linux,x64,phoenix,hetzner
+   ```
+   ```bash
+   # then, to switch CI over
+   gh variable set CI_RUNNER --body hetzner
+   ```
+   `scripts/setup-self-hosted-runner.sh` DEFAULTS to `self-hosted,linux,x64,phoenix` — byte-identical
+   to the Railway labels — so the override is the whole point. `PHX_BUILD_CPUS` is unaffected: it
+   gates on `runner.environment == 'self-hosted'`, which is true for any self-hosted runner whatever
+   its labels.
+
+4b. 🔴 **Confirm the OS before flipping the variable, and that no runner you did NOT intend
+   carries the label you are about to select** — this is the step whose absence cost PR #4537 a full
+   red cycle on 2026-09-27 (safety rule 2b):
    ```bash
    gh api repos/Gawish-1997/phoenix-people-workforce/actions/runners \
      --jq '.runners[] | {name, os, status, labels: [.labels[].name]}'

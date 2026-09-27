@@ -32,6 +32,11 @@ RUNNER_VERSION="2.331.0"
 RUNNER_DIR="${RUNNER_DIR:-$HOME/actions-runner}"
 RUNNER_NAME="${RUNNER_NAME:-phoenix-ci-$(hostname -s)}"
 # `self-hosted` is implicit; these are what ci.yml's CI_RUNNER variable will be set to.
+# 🔴 This default is byte-identical to the labels the Railway runners carry, and `runs-on: self-hosted`
+# matches EVERY self-hosted runner on the repo. A host registered with the default competes with them
+# for jobs, and theirs abort the Build step — so a new host wants its own extra label and `CI_RUNNER`
+# set to THAT, never to `self-hosted`. See docs/ci-self-hosted-runner.md step 4a.
+#   export RUNNER_LABELS=self-hosted,linux,x64,phoenix,hetzner
 RUNNER_LABELS="${RUNNER_LABELS:-self-hosted,linux,x64,phoenix}"
 NODE_MAJOR="24"
 
