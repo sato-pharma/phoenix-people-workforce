@@ -35,6 +35,7 @@ import {
 } from "@/lib/phoenix-crm/entry-rules";
 import { checkVisitLocation, formatDistance } from "@/lib/phoenix-crm/geo";
 import { pickLastVisitProducts, type LastVisitProducts } from "@/lib/phoenix-crm/last-visit-products";
+import { deriveOfflineCaptureTime, parseOfflineCaptureClaim } from "@/lib/phoenix-crm/offline-clock";
 import { describeSamples, narrowSamplesToLine, parseSamplesGiven } from "@/lib/phoenix-crm/samples";
 import {
   pickLastNextStep,
@@ -54,6 +55,7 @@ import { ensureReferenceCustomers, loadMonthVisitCounts, loadTerritoryCustomers 
 import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
 import { photoSlotIssuedAt } from "@/lib/phoenix-crm/server/photos";
+import { readTimeAnchor } from "@/lib/phoenix-crm/server/time-anchor";
 import { lineProductsByFamily, type LineProductFamily } from "@/lib/phoenix-crm/server/products";
 import { describeTerritory, seatTierTitle, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
 import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmVisitKind } from "@/lib/phoenix-crm/types";
@@ -717,6 +719,34 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown): Promise
 
   const reviewer = territoryReviewer(viewer.org, seat.seatId);
   const supabase = getSupabaseAdmin();
+
+  /**
+   * A1 · WAS THIS VISIT CAPTURED WITH NO SIGNAL, AND IF SO WHEN?
+   *
+   * 🔴 The phone sends an anchor id and an ELAPSED DURATION, never a timestamp — the owner's
+   * requirement (2026-09-27: "I don't want the time on the phone because they may install an app
+   * that changes the time in the phone"). The server reads its own anchor row and does the
+   * arithmetic, so `offlineCapturedAt` is DERIVED here and never copied out of the body.
+   *
+   * Every failure is SILENT and non-fatal. A missing, borrowed, stale or impossible claim leaves
+   * this null, the save falls through to the photo slot exactly as it always did, and the rep is
+   * told nothing (Golden Rule #1). A rep must never lose a real visit to an argument about a clock.
+   */
+  const offlineClaim = parseOfflineCaptureClaim(body);
+  let offlineCapturedAt: string | null = null;
+  let offlineAnchorId: string | null = null;
+  if (offlineClaim) {
+    const anchor = await readTimeAnchor(offlineClaim.anchorId).catch(() => null);
+    const verdict = deriveOfflineCaptureTime(anchor, offlineClaim, {
+      receivedAt: new Date(),
+      hrId: viewer.hrId,
+      seatId: seat.seatId,
+    });
+    if (verdict.ok) {
+      offlineCapturedAt = verdict.capturedAt.toISOString();
+      offlineAnchorId = offlineClaim.anchorId;
+    }
+  }
   const [placesResult, issuedAt] = await Promise.all([
     supabase
       .from("phoenix_crm_places")
@@ -797,6 +827,10 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown): Promise
       distance_meters: distance,
       location_flag: flag,
       device_skew_minutes: issuedAt ? deviceClockSkewMinutes(visit.deviceCapturedAt, new Date(issuedAt)) : null,
+      // 🔴 A1. DERIVED ABOVE, never read from `body`. The database then re-checks it against now()
+      // and a one-day floor, so the value passes two independent fences before it dates anything.
+      offline_captured_at: offlineCapturedAt,
+      time_anchor_id: offlineAnchorId,
     },
   });
 

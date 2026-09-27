@@ -446,6 +446,10 @@ const LATER_MIGRATIONS = [
   // in the database on purpose: that is the one value in the offline design a phone must never be
   // able to set.
   "supabase/migrations/20260927190000_phoenix_crm_time_anchors.sql",
+  // The offline capture (A1 phase 3). It REPLACES phoenix_crm_save_visit, so it must stay LAST among
+  // the migrations that do — liveMigrationSql applies each replacement in order and the last one
+  // wins. Four columns on phoenix_crm_visits and no new table.
+  "supabase/migrations/20260927200000_phoenix_crm_offline_capture.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */
