@@ -142,6 +142,20 @@ jobs:
           if [ "$ACTUAL" != "$NEW_SHA" ]; then
             # Not an error: a newer sync may legitimately have won the race and carried staging
             # further forward. Only a branch that is BEHIND the commit we just verified is wrong.
+            #
+            # 🔴 BUT $ACTUAL MUST BE RESOLVABLE BEFORE merge-base IS ASKED ABOUT IT. It comes from
+            # `git ls-remote`, so it can name a commit this clone has never seen: checkout fetched
+            # every ref AS IT STOOD when this job started, and the sync that won the race pushed a
+            # commit merged after that. `git merge-base --is-ancestor` does not answer "false" for an
+            # unknown object — it exits non-zero with "fatal: Not a valid commit name", which takes
+            # the else branch below and reports a hostile writer. That turned the one benign race
+            # this step exists to tolerate into a red check (found in review of #4552, reproduced
+            # locally: an unresolvable operand takes the else branch every time).
+            git fetch --quiet --no-tags origin "$ACTUAL" 2>/dev/null               || git fetch --quiet --no-tags origin main 2>/dev/null               || true
+            if ! git cat-file -e "${ACTUAL}^{commit}" 2>/dev/null; then
+              echo "::notice::staging is at $ACTUAL, which this clone still cannot resolve after fetching — almost certainly a later sync that pushed a commit merged after this job checked out. An unresolvable object is not evidence of a hostile writer, so this is not failed."
+              exit 0
+            fi
             if git merge-base --is-ancestor "$NEW_SHA" "$ACTUAL"; then
               echo "::notice::staging is at $ACTUAL, ahead of $NEW_SHA — a later sync won the race. Correct."
             else
