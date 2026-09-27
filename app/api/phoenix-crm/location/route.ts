@@ -25,8 +25,9 @@ export async function POST(request: Request) {
     if (csrf) return csrf;
     const access = await resolveAccessContext(request);
     await assertPermission(access, "phoenix_crm", "create");
+    // A test login is counted as itself, never against the allowance of the rep it mirrors.
     await assertApiRateLimit({
-      identifier: rateLimitIdentity({ actor: access.hrId || access.loginId, request }),
+      identifier: rateLimitIdentity({ actor: access.testPersona ? access.loginId : access.hrId || access.loginId, request }),
       limit: LOOKUPS_PER_HOUR,
       scope: "phoenix_crm_location",
       windowMs: 60 * 60 * 1000,

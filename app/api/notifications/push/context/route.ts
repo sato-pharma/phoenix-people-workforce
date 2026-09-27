@@ -27,7 +27,11 @@ export async function GET(request: Request) {
     // the form push_subscriptions.hr_id is stored/queried in. OneSignal External IDs are
     // case-sensitive, so OneSignal.login() must use the identical form or a real user with
     // a non-uppercase stored hr_id would silently never receive anything.
-    const hrId = access.hrId ? access.hrId.trim().toUpperCase() : null;
+    //
+    // A test login gets NO push identity: its hrId is the real person it mirrors, and OneSignal.login()
+    // with that id would move this device onto HER push user — every notice sent to her would then also
+    // ring the test device (src/lib/auth/test-persona.ts; risk review, 2026-09-28).
+    const hrId = access.testPersona ? null : access.hrId ? access.hrId.trim().toUpperCase() : null;
     return NextResponse.json({ data: { appId: onesignalAppId(), hrId }, success: true });
   } catch (error) {
     if (isForbiddenError(error)) return NextResponse.json({ error: "forbidden" }, { status: 403 });

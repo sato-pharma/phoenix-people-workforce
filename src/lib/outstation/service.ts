@@ -793,7 +793,7 @@ async function getEmployeeIdentity(access: AccessContext) {
 
 export async function getOutstationEmployeeContext(access: AccessContext) {
   const identity = await getEmployeeIdentity(access);
-  const residence = await getResidenceLocationForEmployee(identity.employeeHrId);
+  const residence = await getResidenceLocationForEmployee(identity.employeeHrId, { persist: !access.testPersona });
 
   return {
     employeeArea: identity.employeeArea,
@@ -849,7 +849,7 @@ async function getMedicalRepExpenseIdentity(access: AccessContext) {
   // The page reads this refusal through the same module — see medical-rep-expense-viewer.ts.
   assertMedicalRepExpenseRole(identity.employeeRole);
   const residence =
-    (await getResidenceLocationForEmployee(identity.employeeHrId)) ??
+    (await getResidenceLocationForEmployee(identity.employeeHrId, { persist: !access.testPersona })) ??
     fallbackResidenceFromEmployee(identity.employee);
   const fromLocation = residence ? residenceSummary(residence) : "";
 
@@ -874,7 +874,11 @@ export async function getMedicalRepExpenseContext(access: AccessContext) {
   };
 }
 
-export async function getResidenceLocationForEmployee(employeeHrId: string) {
+/**
+ * `persist: false` geocodes for the answer but writes nothing: a test login (src/lib/auth/test-persona.ts)
+ * opening the real person's expense pages must never fill in HER residence coordinates.
+ */
+export async function getResidenceLocationForEmployee(employeeHrId: string, options: { persist?: boolean } = {}) {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("employee_locations")
@@ -918,7 +922,10 @@ export async function getResidenceLocationForEmployee(employeeHrId: string) {
         .join(", "),
     ).catch(() => null);
 
-    if (geocoded) {
+    if (geocoded && options.persist === false) {
+      residence.residenceLatitude = geocoded.lat;
+      residence.residenceLongitude = geocoded.lng;
+    } else if (geocoded) {
       await supabase
         .from("employee_locations")
         .update({
@@ -1920,7 +1927,7 @@ export async function submitOutstationRequest(
   });
 
   const identity = await getEmployeeIdentity(access);
-  const residence = await getResidenceLocationForEmployee(identity.employeeHrId);
+  const residence = await getResidenceLocationForEmployee(identity.employeeHrId, { persist: !access.testPersona });
   const supabase = getSupabaseAdmin();
   // Stored for EVERY transportation type, not car only. validateLiveArrivalEvidence() above
   // already refuses a train or bus request that carries no arrival photo, so gating the

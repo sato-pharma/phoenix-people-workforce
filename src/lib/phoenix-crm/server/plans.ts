@@ -549,7 +549,12 @@ export async function transitionPlan(
   let actorRole: "rep" | "reviewer" | "sfe_manager";
   let decidedAs: "reviewer" | "sfe" = "reviewer";
   if (action === "submit" || action === "reopen") {
-    territoryForRepWrite(viewer, seat.seatId, isTest);
+    // The gate ANSWERS with the world this viewer writes in, and the plan found by id must be in it. A
+    // test login always writes the test world, so a REAL plan reached by its id is not his to submit or
+    // reopen — refused as if it were not there (risk review, 2026-09-28).
+    if (territoryForRepWrite(viewer, seat.seatId, isTest).isTest !== isTest) {
+      throw notFoundError("This plan is no longer there. Reload the page.");
+    }
     actorRole = "rep";
     if (editablePlanDays(String(planRow.week_start), today).length === 0) {
       throw conflictError("This week has passed. Reload the planner.");

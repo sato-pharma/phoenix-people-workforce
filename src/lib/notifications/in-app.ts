@@ -195,7 +195,9 @@ async function archiveStaleApprovalNotifications(access: AccessContext, rows: In
     }
   }
 
-  if (stale.size > 0) {
+  // A test login (src/lib/auth/test-persona.ts) reads the real person's bell, so it keeps the filter
+  // below for THIS response but never writes her archive state — that row is hers.
+  if (stale.size > 0 && !access.testPersona) {
     const identity = viewerIdentity(access);
     const now = new Date().toISOString();
     try {

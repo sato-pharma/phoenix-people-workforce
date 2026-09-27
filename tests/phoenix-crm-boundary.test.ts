@@ -837,7 +837,7 @@ function runServiceReviewFixTests() {
   // check and before the body is read; a refusal answers 429, not a server error.
   const location = methodBlocks(source(`${API_ROOT}/location/route.ts`)).get("POST") ?? "";
   const gateAt = location.indexOf('await assertPermission(access, "phoenix_crm", "create");');
-  const limitAt = location.search(/await assertApiRateLimit\(\{\n\s*identifier: rateLimitIdentity\(\{ actor: access\.hrId \|\| access\.loginId, request \}\),\n\s*limit: LOOKUPS_PER_HOUR,\n\s*scope: "phoenix_crm_location",\n\s*windowMs: 60 \* 60 \* 1000,\n\s*\}\);/);
+  const limitAt = location.search(/await assertApiRateLimit\(\{\n\s*identifier: rateLimitIdentity\(\{ actor: access\.testPersona \? access\.loginId : access\.hrId \|\| access\.loginId, request \}\),\n\s*limit: LOOKUPS_PER_HOUR,\n\s*scope: "phoenix_crm_location",\n\s*windowMs: 60 \* 60 \* 1000,\n\s*\}\);/);
   assert.ok(gateAt >= 0 && limitAt > gateAt, "the location lookup is limited per person, after its permission check");
   assert.ok(limitAt < location.indexOf("request.json("), "the limit is checked before the body is read");
   assert.match(source(`${API_ROOT}/location/route.ts`), /const LOOKUPS_PER_HOUR = \d+;/);

@@ -254,6 +254,38 @@ export function runTestAccountTests(): void {
     }
   }
 
+  // ── The risk review's holes (2026-09-28) stay closed ─────────────────────────────────────────────
+  {
+    // HIGH: a real plan found by its id must not be submitted or reopened by a test login — the gate
+    // answers with the test world, so its answer is compared, never thrown away.
+    const plans = source("src/lib/phoenix-crm/server/plans.ts");
+    assert.ok(
+      /if \(territoryForRepWrite\(viewer, seat\.seatId, isTest\)\.isTest !== isTest\) \{\s*throw notFoundError/.test(plans),
+      "submit and reopen compare the gate's world with the plan's, so a test login cannot move a REAL plan",
+    );
+    const testRep = viewerFor("B-7", "Medical Rep", { testPersona: true });
+    assert.notEqual(territoryForRepWrite(testRep, REP.seatId, false).isTest, false, "the gate never answers 'real' to a test login");
+
+    // MEDIUM: no push identity — OneSignal.login(her id) would move the device onto HER push user.
+    assert.ok(
+      /const hrId = access\.testPersona \? null :/.test(source("app/api/notifications/push/context/route.ts")),
+      "a test login is given no push identity",
+    );
+
+    // Reads that write: none of them may write for a test login.
+    assert.ok(/if \(stale\.size > 0 && !access\.testPersona\)/.test(source("src/lib/notifications/in-app.ts")), "the bell never archives HER rows for a test login");
+    assert.ok(/assertNotTestAccount\(access\);/.test(source("app/api/recruitment/interview-calendar/my-calendar-feed/route.ts")), "no lasting link to HER interview calendar");
+    assert.ok(/if \(input\.access\.testPersona\) return;/.test(source("src/lib/marketing-requests/roi-report-service.ts")), "no export audit row names her");
+    const outstation = source("src/lib/outstation/service.ts");
+    assert.equal((outstation.match(/getResidenceLocationForEmployee\(identity\.employeeHrId, \{ persist: !access\.testPersona \}\)/g) ?? []).length, 3, "her residence is never geocoded into her row by a test login");
+    assert.ok(/if \(geocoded && options\.persist === false\) \{/.test(outstation), "persist: false answers without writing");
+
+    // Every password path skips the Supabase bridge for a test login.
+    assert.ok(/if \(row\.is_test_persona !== true\) try \{/.test(source("src/lib/auth/change-password.ts")), "change-password skips the bridge");
+    assert.ok(/if \(currentUser\.is_test_persona !== true\) try \{/.test(source("src/lib/auth/password-setup.ts")), "password setup skips the bridge");
+    assert.ok(/PHOENIX_SKIP_SUPABASE_AUTH_BRIDGE === "true" \|\| user\.isTestPersona/.test(source("app/api/auth/login/route.ts")), "sign-in skips the bridge");
+  }
+
   // ── The one test-row leak into a real verdict stays closed ───────────────────────────────────────
   {
     const behaviour = source("src/lib/phoenix-crm/server/behaviour.ts");

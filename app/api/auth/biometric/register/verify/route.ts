@@ -92,7 +92,8 @@ export async function POST(request: Request) {
     }
 
     const outcome = await completeRegistration({
-      hrId: sessionState.access.hrId ?? null,
+      // A test login's hrId is the real person it mirrors; its passkey is its own (test-persona.ts).
+      hrId: sessionState.access.testPersona ? null : sessionState.access.hrId ?? null,
       loginId,
       relyingParty,
       response: response as RegistrationResponseJSON,
