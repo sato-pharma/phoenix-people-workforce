@@ -51,6 +51,9 @@ export async function issuePhotoSlot(input: {
     .from("phoenix_crm_photo_uploads")
     .select("path", { count: "exact", head: true })
     .eq("issued_to_hr_id", input.hrId)
+    // Counted per world: a test account files its slots under the rep it mirrors, and its try-outs
+    // must never use up that rep's own hourly allowance.
+    .eq("is_test", input.isTest)
     .gte("issued_at", since);
   throwIfError(recent.error);
   if ((recent.count ?? 0) >= SLOTS_PER_HOUR) {
@@ -165,7 +168,8 @@ export async function signPhotoPaths(viewer: PhoenixCrmViewer, rawPaths: unknown
   );
   for (const path of paths) {
     const owner = photoPathTerritory(path);
-    if (!owner || (owner.isTest && !viewer.isSuperAdmin) || !readable.has(owner.seatSegment)) {
+    // A test account sees the test photos of its own reach, as it sees every other test entry there.
+    if (!owner || (owner.isTest && !viewer.isSuperAdmin && !viewer.isTestPersona) || !readable.has(owner.seatSegment)) {
       throw new ApiError(403, "forbidden", "A photo you asked for is outside your scope.");
     }
   }

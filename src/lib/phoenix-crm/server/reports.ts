@@ -49,7 +49,7 @@ import {
 } from "@/lib/phoenix-crm/report-rules";
 import { monthEndOf } from "@/lib/phoenix-crm/calendar";
 import { heldManagerSeats, managersInScope, territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
-import { readTestFlag, readsTeamReports, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { readsTeamReports, reportIncludesTest, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, chunk, numberOrNull, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { formatDistance } from "@/lib/phoenix-crm/geo";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
@@ -92,7 +92,7 @@ function chooseTerritories(viewer: PhoenixCrmViewer, raw: ReportFilterInput): Ch
     seats = seats.filter((seat) => seat.seatId === seatId);
     if (seats.length === 0) throw forbiddenError("This territory is outside your scope.");
   }
-  return { seats, includeTest: viewer.isSuperAdmin && readTestFlag(raw.includeTest) };
+  return { seats, includeTest: reportIncludesTest(viewer, raw.includeTest) };
 }
 
 function periodOf(viewer: PhoenixCrmViewer, raw: ReportFilterInput): ReportPeriod {

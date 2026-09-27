@@ -105,6 +105,11 @@ export async function transcribeVoiceNote(viewer: PhoenixCrmViewer, raw: unknown
   if (!path || !voicePathTerritory(path)) {
     throw validationError("That recording could not be found. Speak again, or type the comment.");
   }
+  // A test account files its notes under the rep it mirrors, so "his own note" below would also match
+  // that rep's REAL recordings. It writes out test notes only.
+  if (viewer.isTestPersona && !voicePathTerritory(path)?.isTest) {
+    throw new ApiError(403, "forbidden", "That recording is not one you just made. Speak again, or type the comment.");
+  }
   const contentType = voiceContentType(path);
   if (!contentType) throw validationError("That recording format is not one Phoenix accepts.");
 

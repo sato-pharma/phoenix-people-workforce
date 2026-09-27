@@ -421,6 +421,11 @@ export const accessRegistry = [
   // `admin:read` — this route CLOSES a module on somebody's account, so it declares the update it
   // actually performs and carries the CSRF requirement a mutation owes.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST", "DELETE"], pattern: "/api/admin/module-locks", permission: { resource: "admin", action: "update" }, csrfRequired: true }),
+  // Test accounts (src/lib/auth/test-persona.ts). Its own entries rather than the /api/admin/** blanket
+  // below: these routes CREATE logins and mint their one-time password links, so they declare the
+  // user-administration update they perform (the service also demands the Super Admin role).
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST", "PATCH"], pattern: "/api/admin/test-accounts", permission: { resource: "user_admin", action: "update" }, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/test-accounts/password-link", permission: { resource: "user_admin", action: "update" }, guard: "domain-helper", csrfRequired: true }),
   // WhatsApp screening questions, and the AI question-prompt helper beside them. Their own
   // entries rather than the /api/admin/** blanket below, which states `admin:read`, because
   // that is no longer what gates them. On 2026-09-01 the owner asked for this screen to reach

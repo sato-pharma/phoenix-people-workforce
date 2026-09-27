@@ -8,7 +8,8 @@
  *   - Pickers are never wider than the viewer (scope runs downward only).
  *   - A line's people use the module from the line's opening day; before it the page says when.
  *   - The Super Admin works in test mode on any territory; "waiting for you" counts test entries then,
- *     because the Super Admin never decides a real one.
+ *     because the Super Admin never decides a real one. A test account (src/lib/auth/test-persona.ts)
+ *     works as the person it mirrors, and its "waiting for you" counts test entries for the same reason.
  */
 
 import { plannableWeeks } from "@/lib/phoenix-crm/calendar";
@@ -38,6 +39,8 @@ export type PhoenixCrmOverview = {
     role: string;
     isSuperAdmin: boolean;
     isSfeManager: boolean;
+    /** A test account: every entry it reads and saves is a test entry. */
+    isTestPersona: boolean;
     /** Holds a territory as its rep (in an open line). */
     isRep: boolean;
     /** Holds a manager seat. */
@@ -122,15 +125,19 @@ export async function loadPhoenixCrmOverview(viewer: PhoenixCrmViewer): Promise<
             ownSeatIds.includes(seat.seatId) || managerChain(viewer.org, seat.seatId).some((member) => member.hrId === viewer.hrId),
         )
       : [];
-  // Real decisions are the reviewer's; the Super Admin decides test entries only.
-  const reviewSeatIds = viewer.isSuperAdmin ? null : scope.filter((seat) => canReviewTerritory(viewer, seat, false)).map((seat) => seat.seatId);
+  // Real decisions are the reviewer's; the Super Admin decides test entries only, and so does a test
+  // account — on the territories the person it mirrors reviews.
+  const waitingIsTest = viewer.isSuperAdmin || viewer.isTestPersona;
+  const reviewSeatIds = viewer.isSuperAdmin
+    ? null
+    : scope.filter((seat) => canReviewTerritory(viewer, seat, viewer.isTestPersona)).map((seat) => seat.seatId);
 
   const [names, requests, plans] = await Promise.all([
     loadPeopleNames([viewer.hrId, ...territoryPeople(viewer.org, [...scope, ...viewer.waitingTerritories])]),
-    reviewSeatIds !== null && reviewSeatIds.length === 0 ? 0 : countWaiting("phoenix_crm_list_requests", "pending", viewer.isSuperAdmin, reviewSeatIds),
+    reviewSeatIds !== null && reviewSeatIds.length === 0 ? 0 : countWaiting("phoenix_crm_list_requests", "pending", waitingIsTest, reviewSeatIds),
     reviewSeatIds !== null && reviewSeatIds.length === 0
       ? 0
-      : countWaiting("phoenix_crm_plans", "submitted", viewer.isSuperAdmin, reviewSeatIds, plannableWeeks(viewer.cairoToday)[0]),
+      : countWaiting("phoenix_crm_plans", "submitted", waitingIsTest, reviewSeatIds, plannableWeeks(viewer.cairoToday)[0]),
   ]);
 
   const territories = scope
@@ -157,6 +164,7 @@ export async function loadPhoenixCrmOverview(viewer: PhoenixCrmViewer): Promise<
       role: viewer.role,
       isSuperAdmin: viewer.isSuperAdmin,
       isSfeManager: viewer.isSfeManager,
+      isTestPersona: viewer.isTestPersona,
       isRep: ownSeatIds.length > 0,
       isManager: viewer.managerSeats.length > 0,
     },
@@ -173,7 +181,7 @@ export async function loadPhoenixCrmOverview(viewer: PhoenixCrmViewer): Promise<
       territory: describeTerritory(viewer.org, seat, names),
       message: lineOpeningText(viewer, seat),
     })),
-    waitingForYou: { requests, plans, isTest: viewer.isSuperAdmin },
+    waitingForYou: { requests, plans, isTest: waitingIsTest },
     closedMessage: closedMessage(viewer),
   };
 }

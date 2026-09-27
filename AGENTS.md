@@ -135,6 +135,7 @@ cost, the deploy path or the region.
 **Production data**
 
 - **NEVER rotate the Supabase DB password with `ALTER ROLE`** — dashboard only. `28P01` is a stale password, `XX000` a wrong host.
+- 🔴 **A `TEST-…` login is a TEST ACCOUNT (`app_auth_users.is_test_persona`): it READS as the real employee in `test_persona_of_hr_id` and must never WRITE as her.** `resolveAccessContext` refuses its writes outside `/api/phoenix-crm/` and `/api/auth/`; never widen that list — give a module a test world first. Its Phoenix CRM rows carry HER hr id with `is_test = true`, so every `phoenix_crm_*` read keyed by a person must filter `is_test`. Account: `docs/test-accounts.md`.
 - **`expense_claims` is the ONE live RLS read path in production.** Put a precondition in every shared-queue production `WHERE`; **"Log out everywhere" is THREE writes.**
 - **The 255 lower-cased `ats_candidate_status_events.actor_hr_id` rows STAY, by owner decision** — `canonicalHrIdKey` already matches them. Do not re-propose a repair or disable the trigger.
 - **The `expense_claims` mirror builds `claimed_total` and `approved_total` from TWO tables**, so a stale request header breaches `expense_claims_approved_total_range`. **Read the expense components before touching an approved amount**; the rebuild flags `data_quality_hold`.

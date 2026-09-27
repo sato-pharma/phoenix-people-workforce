@@ -368,8 +368,15 @@ export async function runAuthSessionTests() {
   );
   assert.match(
     serverSource,
-    /resolveEmployeeLifecycleGate\(supabase, row\.hr_id\)/,
+    /resolveEmployeeLifecycleGate\(supabase, effectiveHrId\)/,
     "session resolution must evaluate the linked employee lifecycle gate",
+  );
+  // ...keyed on the FRESH row's own HR id — or, for a test login, on the employee it mirrors, so a test
+  // login stops the day that person leaves (src/lib/auth/test-persona.ts).
+  assert.match(
+    serverSource,
+    /const effectiveHrId = testPersona \? testPersona\.mirrorsHrId : row\.hr_id;/,
+    "the lifecycle gate's HR id is the fresh row's own for every real account",
   );
   assert.match(
     serverSource,
@@ -428,13 +435,20 @@ export async function runAuthSessionTests() {
   );
   assert.match(
     credentialsSource,
-    /if \(await isLinkedEmployeeAccessRevoked\(row\.hr_id\)\) return null/,
+    /if \(await isLinkedEmployeeAccessRevoked\(lifecycleHrIdOf\(row\)\)\) return null/,
     "authenticateLoginId must deny sign-in once a linked employee's departure has taken effect",
+  );
+  // The HR id that gate reads is the row's own — or, for a test login, the employee it mirrors
+  // (src/lib/auth/test-persona.ts), so a test login stops the day that person leaves.
+  assert.match(
+    credentialsSource,
+    /return row\.is_test_persona === true \? row\.test_persona_of_hr_id \?\? null : row\.hr_id;/,
+    "the sign-in lifecycle gate reads the account's own HR id for every real account",
   );
   // Passkey sign-in resolves the account AFTER the WebAuthn signature, with no password to compare,
   // so it must apply the same gate or a passkey becomes a way around it. Both call sites, not one.
   assert.equal(
-    credentialsSource.split("if (await isLinkedEmployeeAccessRevoked(row.hr_id)) return null").length - 1,
+    credentialsSource.split("if (await isLinkedEmployeeAccessRevoked(lifecycleHrIdOf(row))) return null").length - 1,
     2,
     "both password and passwordless sign-in must apply the lifecycle gate",
   );

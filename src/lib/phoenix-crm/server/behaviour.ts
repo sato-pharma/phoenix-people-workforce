@@ -152,7 +152,9 @@ async function recomputeMonth(month: string, landed: ReadonlySet<string>): Promi
       : supabase.from("phoenix_crm_territory_readiness").select("seat_id, reference_total, dropped").in("seat_id", seatIds),
     seatIds.length === 0
       ? Promise.resolve({ data: [] as Row[], error: null })
-      : supabase.from("phoenix_crm_places").select("seat_id, area_code").in("seat_id", seatIds),
+      : // Real places only. Test places sit on real seats too (the Super Admin's try-outs, and every
+        // test account's), and without this their area codes fed the real rep's sales-area verdict.
+        supabase.from("phoenix_crm_places").select("seat_id, area_code").in("seat_id", seatIds).eq("is_test", false),
     // 🔴 Only a month whose distributor files have LANDED can say anything about sales at all.
     landed.has(month) ? salesByLine(lines, month) : Promise.resolve(new Map<string, { areas: Set<string>; sold: boolean }>()),
   ]);

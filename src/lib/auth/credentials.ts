@@ -11,6 +11,8 @@ export type AppAuthUser = {
   email?: string | null;
   forcePasswordReset: boolean;
   hrId: string | null;
+  /** A test account (src/lib/auth/test-persona.ts): signs in as itself, reads as the employee it mirrors. */
+  isTestPersona: boolean;
   line?: string | null;
   loginId: string;
   managerHrId?: string | null;
@@ -26,6 +28,7 @@ type AppAuthUserDbRow = {
   force_password_reset?: boolean | null;
   hr_id: string | null;
   is_active: boolean;
+  is_test_persona?: boolean | null;
   line?: string | null;
   login_id: string;
   manager_hr_id?: string | null;
@@ -33,7 +36,16 @@ type AppAuthUserDbRow = {
   password_hash: string;
   role: string;
   session_version?: number | null;
+  test_persona_of_hr_id?: string | null;
 };
+
+/**
+ * The employee whose departure ends this login: its own, or — for a test account — the employee it
+ * mirrors, so a test account stops working the day that person's departure takes effect.
+ */
+function lifecycleHrIdOf(row: Pick<AppAuthUserDbRow, "hr_id" | "is_test_persona" | "test_persona_of_hr_id">): string | null {
+  return row.is_test_persona === true ? row.test_persona_of_hr_id ?? null : row.hr_id;
+}
 
 export function normalizeLoginId(value: string | null | undefined) {
   return String(value ?? "").trim();
@@ -44,7 +56,7 @@ async function findActiveAuthUserRow(identifierInput: string): Promise<AppAuthUs
   if (!identifier) return null;
 
   const supabase = getSupabaseAdmin();
-  const baseQuery = "login_id, password_hash, role, hr_id, is_active, auth_user_id, auth_email, email, line, manager_hr_id, name, session_version, force_password_reset";
+  const baseQuery = "login_id, password_hash, role, hr_id, is_active, auth_user_id, auth_email, email, line, manager_hr_id, name, session_version, force_password_reset, is_test_persona, test_persona_of_hr_id";
 
   const loginLookup = await supabase
     .from("app_auth_users")
@@ -120,6 +132,7 @@ function mapAuthUserRow(row: AppAuthUserDbRow): AppAuthUser {
     email: row.email ?? null,
     forcePasswordReset: Boolean(row.force_password_reset),
     hrId: row.hr_id?.trim() || row.login_id.trim(),
+    isTestPersona: row.is_test_persona === true,
     line: row.line ?? null,
     loginId: row.login_id,
     managerHrId: row.manager_hr_id ?? null,
@@ -141,7 +154,7 @@ export async function authenticateLoginId(loginIdInput: string, password: string
 
   // An employee whose departure has taken effect can never sign in, even if their login was left
   // active. Someone serving out notice still can — the block is dated, not filed.
-  if (await isLinkedEmployeeAccessRevoked(row.hr_id)) return null;
+  if (await isLinkedEmployeeAccessRevoked(lifecycleHrIdOf(row))) return null;
 
   return mapAuthUserRow(row);
 }
@@ -162,7 +175,7 @@ export async function resolveAuthUserForPasswordlessLogin(
   const row = await findActiveAuthUserRow(loginId);
   if (!row) return null;
 
-  if (await isLinkedEmployeeAccessRevoked(row.hr_id)) return null;
+  if (await isLinkedEmployeeAccessRevoked(lifecycleHrIdOf(row))) return null;
 
   return mapAuthUserRow(row);
 }

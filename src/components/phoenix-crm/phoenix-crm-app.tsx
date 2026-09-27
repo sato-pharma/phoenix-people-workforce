@@ -152,7 +152,7 @@ function openingTab(overview: PhoenixCrmOverview, requested: string | null): Tab
   const allowed = allowedTabs(overview.tabs);
   if (isTabKey(requested) && allowed.includes(requested)) return requested;
   const { tabs, viewer, visitSeatIds, waitingForYou } = overview;
-  const decisions = waitingForYou.isTest ? 0 : waitingForYou.plans + waitingForYou.requests;
+  const decisions = waitingForYou.isTest && !viewer.isTestPersona ? 0 : waitingForYou.plans + waitingForYou.requests;
   if (tabs.team && !viewer.isRep && decisions > 0) return "team";
   if (tabs.team && !viewer.isSuperAdmin && visitSeatIds.length === 0) return "team";
   // A2 (owner, 2026-09-26): he opens the app onto his DAY, not onto a tab bar. A manager with a real
@@ -292,7 +292,7 @@ export function PhoenixCrmApp({
   }, []);
 
   const { viewer } = overview;
-  const test = viewer.isSuperAdmin && testMode;
+  const test = viewer.isTestPersona || (viewer.isSuperAdmin && testMode);
   const tabs = allowedTabs(overview.tabs);
   const activeTab: TabKey = tabs.includes(tab) ? tab : (tabs[0] ?? "visits");
   const seats: Record<SeatTab, string | null> = {
@@ -412,7 +412,7 @@ export function PhoenixCrmApp({
 
   /** Visits entered on this territory, where the List offers Add Visit after a place is saved. */
   function entersVisits(seatId: string): boolean {
-    return test || (!viewer.isSuperAdmin && overview.visitSeatIds.includes(seatId));
+    return (test && viewer.isSuperAdmin) || (!viewer.isSuperAdmin && overview.visitSeatIds.includes(seatId));
   }
 
   function settingsChanged(change: "numbers" | "line" | "ramadan") {
@@ -442,7 +442,28 @@ export function PhoenixCrmApp({
 
   // ── What the page draws ──
 
+  /** A test account's standing note: what it is working on, and that none of it is real. */
+  function testAccountPanel() {
+    return (
+      <CrmPanel>
+        <CrmBlock>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-base font-black text-slate-950">Test login</h2>
+              <CrmPill tone="orange">Test entries</CrmPill>
+            </div>
+            <p className="mt-1 text-sm text-slate-600">
+              You are working as {viewer.name}. Every visit, plan, request and decision you make here is a test entry: the real
+              person&apos;s entries never change, and nothing you do reaches a real report.
+            </p>
+          </div>
+        </CrmBlock>
+      </CrmPanel>
+    );
+  }
+
   function testModePanel() {
+    if (viewer.isTestPersona) return testAccountPanel();
     if (!viewer.isSuperAdmin) return null;
     return (
       <CrmPanel>

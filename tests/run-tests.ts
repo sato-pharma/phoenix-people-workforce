@@ -2019,6 +2019,7 @@ import { runRequiredCheckNamesTests } from "./required-check-names.test.ts";
 import { runWorkflowDispatchGuardTests } from "./workflow-dispatch-guard.test.ts";
 import { runNextBuildCpuCapTests } from "./next-build-cpu-cap.test.ts";
 import { runAttributionFreezesPublishedMonthsTests } from "./attribution-freezes-published-months.test.ts";
+import { runTestAccountTests } from "./test-accounts.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -7329,6 +7330,10 @@ await runTest(
 await runTest(
   "a published month's attribution is frozen: the last definition of phx_write_monthly_store_split_net and f_refresh_monthly_attribution each consults monthly_closing_publications, gates on unpublished_at is null, and returns early for a published period, so no later import can move a published month's store split or achievement rollup off the announced closing",
   runAttributionFreezesPublishedMonthsTests,
+);
+await runTest(
+  "TEST ACCOUNTS (owner, 2026-09-27): a production login that lives inside a real employee's portal and never saves as her — every write outside Phoenix CRM is refused in resolveAccessContext before a route runs, and a server action too; inside Phoenix CRM every read and save is a test entry whatever flag the screen sends; a test manager decides test entries only, as the reviewer he mirrors, never the SFE step; his reach is the mirrored person's, never the company; only an employee-portal role can be mirrored; and the nightly behaviour verdict and the hourly allowances never count a test row",
+  runTestAccountTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

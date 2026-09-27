@@ -105,6 +105,8 @@ export async function issueVoiceSlot(input: {
     .from("phoenix_crm_voice_uploads")
     .select("path", { count: "exact", head: true })
     .eq("issued_to_hr_id", input.hrId)
+    // Counted per world, as the photo slots are: a test account never uses up the real rep's allowance.
+    .eq("is_test", input.isTest)
     .gte("issued_at", since);
   throwIfError(recent.error);
   if ((recent.count ?? 0) >= SLOTS_PER_HOUR) {
@@ -164,7 +166,7 @@ export async function signVoicePaths(viewer: PhoenixCrmViewer, rawPaths: unknown
   );
   for (const path of paths) {
     const owner = voicePathTerritory(path);
-    if (!owner || (owner.isTest && !viewer.isSuperAdmin) || !readable.has(owner.seatSegment)) {
+    if (!owner || (owner.isTest && !viewer.isSuperAdmin && !viewer.isTestPersona) || !readable.has(owner.seatSegment)) {
       throw new ApiError(403, "forbidden", "A voice note you asked for is outside your scope.");
     }
   }

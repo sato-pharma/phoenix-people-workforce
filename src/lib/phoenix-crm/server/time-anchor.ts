@@ -74,6 +74,8 @@ export async function issueTimeAnchor(viewer: PhoenixCrmViewer, raw: unknown): P
     .from("phoenix_crm_time_anchors")
     .select("id", { count: "exact", head: true })
     .eq("hr_id", viewer.hrId)
+    // Counted per world: a test account's anchors are filed under the rep it mirrors.
+    .eq("is_test", isTest)
     .gte("issued_at", since);
   throwIfError(recent.error);
   if ((recent.count ?? 0) >= ANCHORS_PER_HOUR) {

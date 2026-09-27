@@ -42,7 +42,7 @@ import {
 } from "@/lib/phoenix-crm/brick-report";
 import { resolveReportPeriod, type ReportPeriod } from "@/lib/phoenix-crm/report-rules";
 import { territoryName, type OrgSeat } from "@/lib/phoenix-crm/scope";
-import { readTestFlag, readsTeamReports, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { readsTeamReports, reportIncludesTest, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm } from "@/lib/phoenix-crm/server/db";
 import { loadAreaBrickMaster, loadClosingBrickSales, upperCode } from "@/lib/sales/closing-brick-sales";
 import { withoutMaskedSourceRows } from "@/lib/sales/closing-source-mask";
@@ -124,7 +124,7 @@ export async function loadBrickCoverageReport(
     seats = seats.filter((seat) => seat.seatId === wantedSeat);
     if (seats.length === 0) throw forbiddenError("This territory is outside your scope.");
   }
-  const includeTest = viewer.isSuperAdmin && readTestFlag(raw.includeTest);
+  const includeTest = reportIncludesTest(viewer, raw.includeTest);
 
   if (seats.length === 0) {
     return {

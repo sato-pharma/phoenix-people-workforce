@@ -2893,6 +2893,13 @@ export const accessCommunicationPageItems: readonly AdminToolsPageItem[] = [
     roles: ["Super Admin"],
   },
   {
+    href: "/admin/test-accounts",
+    icon: UserCog,
+    label: "Test Accounts",
+    description: "Your own logins that live inside a real person's employee portal and never save as them.",
+    roles: ["Super Admin"],
+  },
+  {
     href: "/admin/screening-questions",
     icon: ListChecks,
     label: "WhatsApp Screening Questions",
@@ -4814,6 +4821,7 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
           "/admin/access",
           "/admin/scope-visibility",
           "/admin/module-locks",
+          "/admin/test-accounts",
           "/admin/screening-questions",
         ],
       },
