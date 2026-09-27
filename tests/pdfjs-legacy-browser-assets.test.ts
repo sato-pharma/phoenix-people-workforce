@@ -84,7 +84,18 @@ export function runPdfjsLegacyBrowserAssetsTests() {
     //    even in 5.4.296 — the build that has served the field correctly since 2026-09-14 — so
     //    checking them would fail on a known-good build. Every entry below was verified to report
     //    truthfully against 5.4.296 before being added.
-    const RISKY_BUILTINS: { label: string; calledBy: RegExp; definedAs: string; since: string }[] = [
+    //    `mustBeCalled` marks one we KNOW this pdfjs major uses, and it turns a zero count from a
+    //    skip into a failure. Without it the whole check is one stale pattern away from silence: a
+    //    regex that stops matching reads exactly like a vendor that stopped calling, and this file
+    //    would go green while covering nothing (the shape of trap AGENTS.md §2.1 names, where a gate
+    //    reads zero and reports clean).
+    const RISKY_BUILTINS: {
+      label: string;
+      calledBy: RegExp;
+      definedAs: string;
+      since: string;
+      mustBeCalled?: boolean;
+    }[] = [
       {
         label: "Promise.withResolvers",
         calledBy: /Promise\.withResolvers/g,
@@ -129,11 +140,18 @@ export function runPdfjsLegacyBrowserAssetsTests() {
       // `for await` is counted, not only the ones over a stream: iterating an async generator needs
       // nothing, but a minified bundle cannot tell the two apart, so the coverage has to be in
       // place whenever one exists at all.
+      //
+      // The whitespace is optional in the pattern although today's minifier emits none (measured:
+      // `for await(` twice in pdf.min.mjs and once in pdf.worker.min.mjs, `for await (` never), so
+      // a future build that formats it differently still matches. And it is read from the VENDOR
+      // file, never the served one — the served copy carries this same phrase inside our own
+      // polyfill's comments, which would satisfy the scanner with our text instead of pdf.js's.
       {
         label: "ReadableStream.prototype[Symbol.asyncIterator]",
-        calledBy: /for await\(/g,
+        calledBy: /for await\s*\(/g,
         definedAs: "Symbol.asyncIterator]",
         since: "Chrome 124 / any Safari",
+        mustBeCalled: true,
       },
     ];
 
@@ -159,6 +177,10 @@ export function runPdfjsLegacyBrowserAssetsTests() {
 
     for (const builtin of RISKY_BUILTINS) {
       const calls = (vendor.match(builtin.calledBy) ?? []).length;
+      assert.ok(
+        calls > 0 || !builtin.mustBeCalled,
+        `the scanner for ${builtin.label} matched NOTHING in pdfjs-dist ${installedVersion}'s legacy/build/${file}, and this major is known to use it. Either the pattern went stale — in which case every check below it has been passing on an empty count — or the vendor really did stop, which is a deliberate decision to record by dropping mustBeCalled, never something to leave reading as covered.`,
+      );
       if (calls === 0) continue;
       assert.ok(
         vendorDefines(builtin.definedAs) || PDFJS_POLYFILLED_BUILTINS.includes(builtin.label),
