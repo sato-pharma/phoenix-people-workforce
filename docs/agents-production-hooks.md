@@ -48,7 +48,17 @@ production-ops guidance. They stay in the index.
   and Railway then SKIPS it outright with nothing turning red — a second, larger way for "a merge that
   never shipped" to look like one that did. 🔴 **CORRECTED 2026-09-27: a RED conclusion skips it within
   MINUTES, not after two hours.** Measured on `2b654dd73` and `371200082`, merged 86 seconds apart and
-  both `SKIPPED` about five minutes later, as soon as their CI concluded red. The two-hour timeout is
+  both `SKIPPED` about five minutes later, as soon as their CI concluded red. 🔴 **A red `ci.yml` is only
+  the commonest cause, not the rule — ANY failed suite on the commit does it.** Measured 2026-09-27 on
+  `cd9e0be03`: `checks`, `mobile` and `validate` were all `success` and the deploy was still withheld,
+  because a **scheduled** `Deploy Drift Check` run attached a second `github-actions` suite to that sha
+  and it concluded `failure` at 22:35:35Z — Railway marked the deployment SKIPPED at 22:35:40Z, five
+  seconds later. So `gh run list --workflow=ci.yml` can read fully green on a withheld commit; read
+  `gh api repos/<repo>/commits/<sha>/check-suites` instead. 🔴 **And read them with the right
+  expectation: `sentry`, `claude`, `vercel` and `railway-app` are `queued` on EVERY commit and never
+  report** — `1825e0b45` and `b91bd8c0c` both deployed `success` with all four queued — so a
+  *failed or cancelled* suite is the thing that withholds, a still-*running* Actions suite is the gate
+  working, and those four are neither. The two-hour timeout is
   the case for a suite that never finishes at all; do not wait two hours before believing a red merge
   was withheld. 🔴 **And re-running that CI GREEN afterwards does NOT resurrect the deploy** — main's
   head was green from 23:11 Cairo and production stayed on the older commit. `railway deployment list`
@@ -73,7 +83,14 @@ production-ops guidance. They stay in the index.
   Europe" needs an explicit scale on every new service and a re-read afterwards. The successful
   cut-over that followed: `phoenix-headwind` in EU West, `headwind-db-eu` on a
   `europe-west4-drams3a` volume with 52 tables, the `sfo` database frozen at 0 backends as the
-  rollback, and latency 426 ms → ~245 ms, level with `phoenix-hr.satopharma.com`. Reported by the
+  rollback, and latency 426 ms → ~245 ms, level with `phoenix-hr.satopharma.com`. 🔴 **THAT ROLLBACK
+  IS GONE — `headwind-db` was DELETED on 2026-09-28 (~02:0x Cairo) at the owner's instruction once EU
+  West was proven**, after confirming nothing in production or staging referenced
+  `postgres.railway.internal`, the volume was attached to nothing else, the database had 0 non-self
+  backends and three dumps verified at 52/52 TABLE DATA. **So the recovery story is now three hand
+  dumps in `F:\PHX backup\headwind-db\` plus whatever orphaned volume Railway has not yet purged —
+  verified live, not assumed** (see the volume hook in AGENTS.md §2.3: one of the two orphans has no
+  purge date at all). Reported by the
   session that did it; the `=0` rule and the read-back are the parts that generalise.
 - **`railway service source connect` is NOT environment-scoped — `--environment staging` REPOINTED
   PRODUCTION** (relocated from `MEMORY.md` 2026-08-28 together with its index line). The flag reads
@@ -713,8 +730,11 @@ hides a wrong answer: the link lives in `~/.railway/config.json`, keyed by absol
 | `F:\Phoenix Workforce\phoenix-workforce` (the PRIMARY) | **`phoenix-headwind`** — device management |
 | every `F:\Phoenix Workforce\_wt-*` worktree | `phoenix-people-workforce` — the app |
 
-The project holds four services — `phoenix-people-workforce`, `phoenix-headwind`, `headwind-db`,
-`phoenix-cron` — so "linked to production" never identifies one.
+The project holds four services — `phoenix-cron`, `phoenix-people-workforce`, `phoenix-headwind`,
+`headwind-db-eu` — so "linked to production" never identifies one. (Read live 2026-09-28. It was
+`headwind-db` until that database was deleted for `headwind-db-eu`; a service list in a doc goes
+stale the moment one is added or removed, so re-read it with `railway status --json` rather than
+quoting this line.)
 
 **Why this is worse than a wrong default.** `railway run -- <cmd>` from the primary injects only the
 `RAILWAY_*` built-ins: 119 variables reach the child and `CRON_SECRET` and `CRONJOB_API_KEY` both

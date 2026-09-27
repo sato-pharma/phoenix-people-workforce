@@ -18,9 +18,28 @@ name: Deploy Drift Check
 # how the run was triggered, and needs no checkout) against the `revision` production's own
 # /api/healthz reports it is running.
 #
-# GRACE PERIOD. A normal Railway build+deploy takes a few minutes, so a single mismatch is
-# expected right after every merge and is not drift. On a mismatch this waits 3 minutes and
-# checks once more before treating it as real — avoids paging on every ordinary deploy.
+# WHY THE REFERENCE IS A SETTLED COMMIT, NOT main HEAD (rewritten 2026-09-28).
+# 🔴 THIS CHECK USED TO CAUSE THE VERY DRIFT IT MEASURES, and that is worth understanding before
+# touching the comparison. It compared production against main HEAD for equality, with a
+# 3-minute grace. That grace was written 2026-08-13, when a merge deployed immediately. The
+# deploy is now GATED on that commit's own CI (Railway "Wait for CI"), so it does not even
+# START until CI concludes — 5m24s on the commit below. And a scheduled run's check suite
+# attaches to whatever commit is main HEAD at the time, while Railway withholds a deploy when
+# ANY suite on the commit fails. So this workflow's own false alarm withheld the deploy it was
+# measuring. Measured on cd9e0be03 (#4579), all times UTC:
+#     22:29:46  merge            22:29:49  ci.yml starts (deploy blocked until it ends)
+#     22:32:24  this check fires — production is legitimately still the older revision
+#     22:35:13  ci.yml GREEN     22:35:35  this check concludes FAILURE (grace expired 22s early)
+#     22:35:40  Railway marks the deployment SKIPPED — five seconds later
+# ci.yml was 100% green; the only red suite on that commit was THIS workflow. The false
+# positive made itself true, and the next merge carried production forward, which is why it
+# went unnoticed for as long as it did.
+# THE FIX, two parts. (1) Compare against the newest commit already older than SETTLE_MINUTES —
+# one that has genuinely had time to ship — never against a HEAD that merged seconds ago.
+# (2) Test ANCESTRY, not equality: this repo merges every few minutes, so production is
+# legitimately a commit or two behind HEAD almost always, and equality reads that as drift. The
+# 3-minute grace stays as a cheap second chance. Real drift (a stale Railway source branch)
+# persists for hours and is still caught on the very next run.
 #
 # COST. Deliberately no checkout, no Node, no pnpm install — this needs nothing but curl, so a
 # normal (in-sync) run finishes in a few seconds. Actions cost in this repo has hit the spending
@@ -56,28 +75,53 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Compare production's deployed revision against main HEAD
+      - name: Compare production's deployed revision against a SETTLED commit
         if: ${{ !inputs.test_alert }}
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
+          # How long a merge is given to reach the environment before its absence counts as
+          # drift. It MUST exceed CI + build, because the deploy does not start until CI ends.
+          SETTLE_MINUTES: "15"
         run: |
           set -euo pipefail
+
+          api() { curl -fsS --max-time 10 -H "Authorization: Bearer ${GH_TOKEN}" "$@"; }
 
           fetch_live_revision() {
             curl -fsS --max-time 10 https://phoenix-hr.satopharma.com/api/healthz \
               | jq -r '.revision // empty'
           }
 
-          MAIN_SHA=$(curl -fsS --max-time 10 -H "Authorization: Bearer ${GH_TOKEN}" \
-            "https://api.github.com/repos/${REPO}/commits/main" | jq -r '.sha')
-          echo "main HEAD: $MAIN_SHA"
+          HEAD_SHA=$(api "https://api.github.com/repos/${REPO}/commits/main" | jq -r '.sha')
+          echo "main HEAD: $HEAD_SHA"
+
+          # NOT HEAD — see this file's header, "WHY THE REFERENCE IS A SETTLED COMMIT". A commit
+          # merged moments ago has not had time to ship: its deploy waits for its own CI first.
+          UNTIL=$(date -u -d "-${SETTLE_MINUTES} minutes" +%Y-%m-%dT%H:%M:%SZ)
+          REF_SHA=$(api "https://api.github.com/repos/${REPO}/commits?sha=main&until=${UNTIL}&per_page=1" \
+            | jq -r '.[0].sha // empty')
+          if [ -z "$REF_SHA" ]; then
+            echo "Nothing is older than ${SETTLE_MINUTES}m, so nothing has had time to ship. In sync by construction."
+            exit 0
+          fi
+          echo "settled ref (${SETTLE_MINUTES}m): $REF_SHA"
+
+          # In sync means the live revision CONTAINS the settled commit — ancestry, not equality,
+          # and no checkout: one compare call. behind/diverged is the only real drift.
+          contains_ref() {
+            [ -n "${1:-}" ] || return 1
+            local status
+            status=$(api "https://api.github.com/repos/${REPO}/compare/${REF_SHA}...${1}" \
+              | jq -r '.status // empty') || return 1
+            echo "  compare ${REF_SHA:0:9}...${1:0:9} = ${status:-<unknown>}" >&2
+            case "$status" in identical | ahead) return 0 ;; *) return 1 ;; esac
+          }
 
           LIVE_SHA="$(fetch_live_revision || true)"
-          echo "production revision (check 1): ${LIVE_SHA:-<unreachable>}"
-
-          if [ "$LIVE_SHA" = "$MAIN_SHA" ]; then
-            echo "In sync."
+          echo "production (check 1): ${LIVE_SHA:-<unreachable>}"
+          if contains_ref "$LIVE_SHA"; then
+            echo "In sync — production contains the settled commit."
             exit 0
           fi
 
@@ -85,15 +129,14 @@ jobs:
           sleep 180
 
           LIVE_SHA="$(fetch_live_revision || true)"
-          echo "production revision (check 2): ${LIVE_SHA:-<unreachable>}"
-
-          if [ "$LIVE_SHA" = "$MAIN_SHA" ]; then
+          echo "production (check 2): ${LIVE_SHA:-<unreachable>}"
+          if contains_ref "$LIVE_SHA"; then
             echo "Caught up during the grace window. In sync."
             exit 0
           fi
 
           echo "DRIFT_SCOPE=PRODUCTION" >> "$GITHUB_ENV"
-          echo "::error::Production is NOT serving main HEAD after a 3-minute grace period. main=$MAIN_SHA production=${LIVE_SHA:-<unreachable>}. This is the exact failure mode fixed 2026-08-13 (production silently tracking the wrong Railway source branch). Check: railway status --project dc218ad3-99b7-4aff-be38-953a57524a71 --environment production --json, then inspect .environments.edges[0].node.serviceInstances.edges[].node.latestDeployment.meta.branch — it must read \"main\"."
+          echo "::error::Production is NOT serving a main commit that is already ${SETTLE_MINUTES} minutes old. settled_ref=$REF_SHA main=$HEAD_SHA production=${LIVE_SHA:-<unreachable>}. READ THE CHECK SUITES ON main HEAD FIRST — gh api repos/${REPO}/commits/$HEAD_SHA/check-suites — because ANY failed or cancelled suite withholds the deploy, not just ci.yml, so a green ci.yml proves nothing on its own. Ignore sentry, claude, vercel and railway-app: they sit at queued forever on every commit and do not hold the gate. If every suite is green, this is the failure mode fixed 2026-08-13 (Railway production tracking the wrong source branch): railway status --project dc218ad3-99b7-4aff-be38-953a57524a71 --environment production --json, then inspect .environments.edges[0].node.serviceInstances.edges[].node.latestDeployment.meta.branch — it must read \"main\"."
           exit 1
 
       # STAGING, once it has a branch of its own (added 2026-09-27, dormant until then).
@@ -110,43 +153,69 @@ jobs:
       # exactly the 2026-08-13 shape described in this file's header, which is the incident that
       # created this workflow. Production's check above cannot see it, because staging drifts against
       # its own branch rather than against `main`.
-      - name: Compare staging's deployed revision against its source branch
+      - name: Compare staging's deployed revision against a SETTLED commit
         if: ${{ !inputs.test_alert && vars.STAGING_TRACKS_BRANCH != '' }}
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           BRANCH: ${{ vars.STAGING_TRACKS_BRANCH }}
+          # How long a merge is given to reach the environment before its absence counts as
+          # drift. It MUST exceed CI + build, because the deploy does not start until CI ends.
+          SETTLE_MINUTES: "15"
         run: |
           set -euo pipefail
 
-          fetch_staging_revision() {
-            curl -fsS --max-time 10 https://phoenix-people-workforce-staging.up.railway.app/api/healthz               | jq -r '.revision // empty'
+          api() { curl -fsS --max-time 10 -H "Authorization: Bearer ${GH_TOKEN}" "$@"; }
+
+          fetch_live_revision() {
+            curl -fsS --max-time 10 https://phoenix-people-workforce-staging.up.railway.app/api/healthz \
+              | jq -r '.revision // empty'
           }
 
-          BRANCH_SHA=$(curl -fsS --max-time 10 -H "Authorization: Bearer ${GH_TOKEN}"             "https://api.github.com/repos/${REPO}/commits/${BRANCH}" | jq -r '.sha')
-          echo "${BRANCH} HEAD: $BRANCH_SHA"
+          HEAD_SHA=$(api "https://api.github.com/repos/${REPO}/commits/${BRANCH}" | jq -r '.sha')
+          echo "${BRANCH} HEAD: $HEAD_SHA"
 
-          LIVE_SHA="$(fetch_staging_revision || true)"
-          echo "staging revision (check 1): ${LIVE_SHA:-<unreachable>}"
+          # NOT HEAD — see this file's header, "WHY THE REFERENCE IS A SETTLED COMMIT". A commit
+          # merged moments ago has not had time to ship: its deploy waits for its own CI first.
+          UNTIL=$(date -u -d "-${SETTLE_MINUTES} minutes" +%Y-%m-%dT%H:%M:%SZ)
+          REF_SHA=$(api "https://api.github.com/repos/${REPO}/commits?sha=${BRANCH}&until=${UNTIL}&per_page=1" \
+            | jq -r '.[0].sha // empty')
+          if [ -z "$REF_SHA" ]; then
+            echo "Nothing is older than ${SETTLE_MINUTES}m, so nothing has had time to ship. In sync by construction."
+            exit 0
+          fi
+          echo "settled ref (${SETTLE_MINUTES}m): $REF_SHA"
 
-          if [ "$LIVE_SHA" = "$BRANCH_SHA" ]; then
-            echo "In sync."
+          # In sync means the live revision CONTAINS the settled commit — ancestry, not equality,
+          # and no checkout: one compare call. behind/diverged is the only real drift.
+          contains_ref() {
+            [ -n "${1:-}" ] || return 1
+            local status
+            status=$(api "https://api.github.com/repos/${REPO}/compare/${REF_SHA}...${1}" \
+              | jq -r '.status // empty') || return 1
+            echo "  compare ${REF_SHA:0:9}...${1:0:9} = ${status:-<unknown>}" >&2
+            case "$status" in identical | ahead) return 0 ;; *) return 1 ;; esac
+          }
+
+          LIVE_SHA="$(fetch_live_revision || true)"
+          echo "staging (check 1): ${LIVE_SHA:-<unreachable>}"
+          if contains_ref "$LIVE_SHA"; then
+            echo "In sync — staging contains the settled commit."
             exit 0
           fi
 
           echo "Mismatch (or healthz unreachable) — waiting 3 minutes for an in-flight Railway build to land before treating this as real drift..."
           sleep 180
 
-          LIVE_SHA="$(fetch_staging_revision || true)"
-          echo "staging revision (check 2): ${LIVE_SHA:-<unreachable>}"
-
-          if [ "$LIVE_SHA" = "$BRANCH_SHA" ]; then
+          LIVE_SHA="$(fetch_live_revision || true)"
+          echo "staging (check 2): ${LIVE_SHA:-<unreachable>}"
+          if contains_ref "$LIVE_SHA"; then
             echo "Caught up during the grace window. In sync."
             exit 0
           fi
 
           echo "DRIFT_SCOPE=STAGING" >> "$GITHUB_ENV"
-          echo "::error::Staging is NOT serving ${BRANCH} HEAD after a 3-minute grace period. ${BRANCH}=$BRANCH_SHA staging=${LIVE_SHA:-<unreachable>}. Most likely the staging-branch-sync workflow has stopped advancing the branch, or Railway's staging source was changed. Read: gh run list --workflow=staging-branch-sync.yml --limit 5, and git ls-remote origin refs/heads/${BRANCH}."
+          echo "::error::Staging is NOT serving a ${BRANCH} commit that is already ${SETTLE_MINUTES} minutes old. settled_ref=$REF_SHA ${BRANCH}=$HEAD_SHA staging=${LIVE_SHA:-<unreachable>}. Most likely the staging-branch-sync workflow has stopped advancing the branch, or Railway staging source was changed. Read: gh run list --workflow=staging-branch-sync.yml --limit 5, and git ls-remote origin refs/heads/${BRANCH}."
           exit 1
 
       # SELF-TEST, same convention as migration-drift-check.yml: workflow_dispatch with
@@ -226,7 +295,7 @@ jobs:
             if [ "${DRIFT_SCOPE:-PRODUCTION}" = "STAGING" ]; then
               TEXT=$(printf '%s\n\nStaging is not serving its source branch HEAD, 3 minutes after first noticing.\n\nCHECK THIS FIRST: staging deploys from the staging branch, which is published ONLY from CI-green main commits by staging-branch-sync.yml. A sync that stopped firing leaves staging serving an ever-older commit with nothing red anywhere. Read: gh run list --workflow=staging-branch-sync.yml --limit 5, then git ls-remote origin refs/heads/staging\n\nIf that branch IS current, then the Railway staging source was changed - check the staging service settings.\n\nPRODUCTION IS NOT IMPLICATED: this check compares staging against its OWN branch, and production has a separate check in the same workflow.\n\nAccount: docs/deployment.md, "The deploy gate".\n\n%s' "$HEADER" "$RUN_URL")
             else
-              TEXT=$(printf '%s\n\nProduction is not serving main HEAD, 3 minutes after first noticing.\n\nCHECK THIS FIRST, it is now the most likely cause: production deploys are GATED on the commit (Railway Wait for CI). A red, cancelled or still-queued check suite on main HEAD withholds the deploy, and after two hours Railway SKIPS it outright with nothing turning red. Read main HEAD run: gh run list --workflow=ci.yml --branch main --limit 3\n\nIf every suite on that commit is green, then this is the failure mode fixed 2026-08-13 (Railway production tracking the wrong source branch) — check railway status for the production service source branch.\n\nAccount: docs/deployment.md, "The deploy gate".\n\n%s' "$HEADER" "$RUN_URL")
+              TEXT=$(printf '%s\n\nProduction is not serving main HEAD, 3 minutes after first noticing.\n\nCHECK THIS FIRST, it is now the most likely cause: production deploys are GATED on the commit (Railway Wait for CI). ANY failed or cancelled check suite on main HEAD withholds the deploy — not just ci.yml — and Railway then marks it SKIPPED within MINUTES of that conclusion, with nothing turning red. So read every suite, not the CI run: gh api repos/%s/commits/MAIN_HEAD/check-suites\n\nAND CHECK WHETHER THIS ALARM IS ITS OWN CAUSE: a scheduled run of this workflow attaches its OWN check suite to main HEAD, so a false alarm here withholds the very deploy it is measuring. That is what happened on cd9e0be03 (2026-09-27), and it is why the reference is now a settled commit rather than HEAD.\n\nIf every suite on that commit is green, then this is the failure mode fixed 2026-08-13 (Railway production tracking the wrong source branch) — check railway status for the production service source branch.\n\nAccount: docs/deployment.md, "The deploy gate".\n\n%s' "$HEADER" "$REPO" "$RUN_URL")
             fi
           fi
           HTTP=$(curl -sS --max-time 20 -X POST \

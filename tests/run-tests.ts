@@ -1952,6 +1952,7 @@ import { runDevServerExitReasonTests } from "./dev-server-exit-reason.test.ts";
 import { runDevServerHeapCapTests } from "./dev-server-heap-cap.test.ts";
 import { runRawNextDevGuardTests } from "./raw-next-dev-guard.test.ts";
 import { runLocalTypecheckGuardTests } from "./local-typecheck-guard.test.ts";
+import { runDeployDriftSettledRefTests } from "./deploy-drift-settled-ref.test.ts";
 import { runAutorunGuardFalseArmingTests } from "./autorun-guard-false-arming.test.ts";
 import { runTrapInjectorClustersTests } from "./trap-injector-clusters.test.ts";
 import { runHookCommandsResolveTests } from "./hook-commands-resolve.test.ts";
@@ -6972,6 +6973,11 @@ await runTest(
 await runTest(
   "bash-guard C8 refuses a local typecheck in every spelling the watchdog log records it being killed in (node with a raised heap, typescript/bin/tsc, lib/tsc.js, a backslash path, a quoted path with spaces, pnpm/npm/yarn run typecheck, npx, pnpm exec, .bin/tsc, bare tsc) and hands back a stand-down in the dialect that asked, while pnpm run ci, a real emit, and commands, commit messages, heredocs and here-strings that only mention it stay allowed",
   runLocalTypecheckGuardTests,
+);
+
+await runTest(
+  "the deploy drift check compares a SETTLED commit by ancestry, so it can never fail about a deploy that is still legitimately in flight and thereby withhold it (2026-09-27, cd9e0be03: a green ci.yml withheld because this workflow own scheduled run went red on the same sha)",
+  runDeployDriftSettledRefTests,
 );
 
 await runTest(

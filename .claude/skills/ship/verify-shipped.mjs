@@ -21,6 +21,10 @@
 //     goes live, so the earlier commit can carry the later created_at and serve while the newer one
 //     is still in_progress. One in_progress beside one success is a queue, not a revert.
 //   * main's own CI run is the only place a red main shows - it builds, ships and serves anyway.
+//   * A WITHHELD deploy is NOT always a red ci.yml: the gate waits on every check suite on the
+//     commit, so a scheduled workflow that merely landed on that sha can withhold it while
+//     ci.yml reads fully green (measured 2026-09-27, cd9e0be03). When a deploy is withheld this
+//     names the suites that were bad, because the CI line alone will look innocent.
 
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
@@ -346,6 +350,35 @@ function report(verdict, code, why) {
     L.push('            WITHHELD = inactive having NEVER succeeded: the gate refused it and Railway');
     L.push('            marked it SKIPPED. Re-running that CI green does NOT resurrect it — the next');
     L.push('            merge carries production forward, or the owner redeploys in the dashboard.');
+    L.push('            🔴 A GREEN ci.yml DOES NOT RULE THIS OUT. The gate waits on EVERY check suite');
+    L.push('            on the commit, and a SCHEDULED workflow attaches its suite to whatever commit');
+    L.push('            is main HEAD when it fires — so any flaky cron here can withhold a deploy.');
+    L.push('            But sentry/claude/vercel/railway-app sit at queued FOREVER and do NOT hold');
+    L.push('            the gate (measured on two commits that deployed) — never chase those four.');
+    // Name the suites rather than leaving the reader to hunt for them. Added 2026-09-28, after
+    // cd9e0be03 was withheld with checks/mobile/validate ALL green: the red suite was this repo's
+    // own scheduled Deploy Drift Check, which was raising a false alarm about the very deploy it
+    // thereby withheld. A reader who trusts the CI line alone concludes the tool is lying.
+    //
+    // Best-effort by construction — wrapped, and only concluded-bad suites are named. The app
+    // suites here (sentry, vercel, claude, railway-app) sit at queued/- forever and are NOT a
+    // cause, so listing every non-success suite would bury the real one in permanent noise.
+    for (const d of out.deployments.filter((x) => x.withheld)) {
+      let suites = null;
+      try {
+        suites = ghJson(['api', `repos/${REPO}/commits/${d.sha}/check-suites`]);
+      } catch {
+        suites = null;
+      }
+      const bad = ((suites && suites.check_suites) || []).filter((x) =>
+        ['failure', 'cancelled', 'timed_out', 'action_required', 'startup_failure'].includes(x.conclusion),
+      );
+      if (bad.length) {
+        const named = bad.map((x) => `${(x.app && x.app.slug) || '?'}=${x.conclusion}`).join(' · ');
+        L.push(`    ${d.short} was withheld while these suites were bad: ${named}`);
+        L.push('    → if that is not ci.yml, the cause is another workflow on the same commit.');
+      }
+    }
   }
   if (out.deployments && out.deployments.some((d) => d.withheld && d.isThisMerge)) {
     L.push('  🔴 THIS MERGE WAS WITHHELD, not queued and not superseded — it is merged, green and NOT serving.');
