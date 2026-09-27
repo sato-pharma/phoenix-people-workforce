@@ -32,7 +32,7 @@ import {
   referenceLastVisitText,
   territoryLine,
 } from "@/lib/crm/labels";
-import type { CrmCapturedPhoto } from "@/lib/crm/photo";
+import { isStoredPhoto, type CrmCapturedPhoto, type CrmStoredPhoto } from "@/lib/crm/photo";
 import { useSession } from "@/lib/session";
 import { emptyPlaceDraft, placeDraftProblem, placePayload, ramadanHoursNote, type PlaceDraftState } from "@/features/crm/place-draft";
 import type { PendingValidate, PendingVisit } from "@/features/crm/handoff";
@@ -666,7 +666,7 @@ function ValidateScreen({
     return placeDraftProblem(draft, { needsPhoto: true });
   }
 
-  function payloadFor(photo: CrmCapturedPhoto, allowSameName: boolean): Record<string, unknown> {
+  function payloadFor(photo: CrmStoredPhoto, allowSameName: boolean): Record<string, unknown> {
     const place = placePayload(photo, draft);
     if (subject.mode === "reference") return { seatId, test, mode: "reference", referenceContactCrmId: subject.contactCrmId, place };
     return {
@@ -688,7 +688,11 @@ function ValidateScreen({
     if (saving) return;
     const gap = clientProblem();
     const photo = draft.photo;
-    if (gap || !photo) {
+    // A place needs a photo Phoenix is HOLDING: the server resolves the brick, area, region and
+    // clean address from these coordinates at capture, so unlike a visit it cannot wait on the
+    // phone. The place camera never asks for an offline photo, so this only ever fires if a later
+    // change makes it — which is exactly when it should.
+    if (gap || !photo || !isStoredPhoto(photo)) {
       setProblem(gap ?? PHOTO_NEEDED);
       return;
     }

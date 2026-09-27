@@ -33,7 +33,17 @@ import {
   pendingVisitsText,
   territoryLine,
 } from "@/lib/crm/labels";
+import { drainOutbox, listOutbox, outboxCount, queueVisit } from "@/lib/crm/outbox";
+import {
+  describeOutbox,
+  OUTBOX_FULL_MESSAGE,
+  outboxHasRoom,
+  outboxIsStale,
+  outboxOrder,
+  outboxVerdict,
+} from "@/lib/crm/outbox-rules";
 import type { CrmCapturedPhoto } from "@/lib/crm/photo";
+import { ensureTimeAnchor, offlineClaimNow } from "@/lib/crm/time-anchor";
 import { appendCrmDictated, type CrmVoiceNote } from "@/lib/crm/voice";
 import { SAMPLE_MATERIALS, SAMPLE_QUANTITY_MAX, type SamplesGiven } from "@/lib/crm/samples";
 import {
@@ -43,7 +53,7 @@ import {
   type VisitNextStep,
   type VisitObjection,
 } from "@/lib/crm/visit-outcome";
-import { ApiError } from "@/lib/api";
+import { ApiError, NetworkError } from "@/lib/api";
 import { useSession } from "@/lib/session";
 import { hairline, radius, space, type } from "@/theme/tokens";
 import { usePalette } from "@/theme/use-palette";
@@ -275,6 +285,10 @@ export function VisitsScreen({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  // How many visits are waiting on this phone. Read from disk on mount so the line appears with no
+  // signal at all, and again after every drain.
+  const [waiting, setWaiting] = useState(() => outboxCount());
+  const [queued, setQueued] = useState<string | null>(null);
   const runRef = useRef(0);
 
   const handoff = pendingVisit && pendingVisit.seatId === seatId && pendingVisit.test === test ? pendingVisit : null;
@@ -295,6 +309,10 @@ export function VisitsScreen({
       if (runRef.current !== run) return;
       setView(day);
       setError(null);
+      // The read just proved there is a connection, so this is the moment to take a fresh time
+      // anchor and push anything the phone is holding. Both are silent and neither can fail loudly.
+      void ensureTimeAnchor(token, seatId, test);
+      void syncOutbox(token).then((count) => setWaiting(count));
     } catch (caught) {
       if (caught instanceof ApiError && caught.isSessionExpired) return void handleExpiredSession();
       if (runRef.current !== run) return;
@@ -315,6 +333,7 @@ export function VisitsScreen({
   function moveTo(next: string) {
     if (next > cairoToday) return;
     setSaved(null);
+    setQueued(null);
     setDate(next);
   }
 
@@ -326,9 +345,19 @@ export function VisitsScreen({
           setAdding(false);
           if (handoff) onPendingVisitDone();
         }}
+        onQueued={(customerName) => {
+          setAdding(false);
+          if (handoff) onPendingVisitDone();
+          // There is no saved visit to show and no day to reload — it has not reached Phoenix yet.
+          // 🔴 What he is told is that it is SAFE, in the same place a saved visit is confirmed.
+          setSaved(null);
+          setQueued(customerName);
+          setWaiting(outboxCount());
+        }}
         onSaved={(visit, customerName, validate) => {
           setAdding(false);
           if (handoff) onPendingVisitDone();
+          setQueued(null);
           setSaved({ visit, customerName, validate });
           setDate(visit.visitDate);
           void load(visit.visitDate, "refresh");
@@ -391,6 +420,14 @@ export function VisitsScreen({
           <Text style={[type.meta, { color: palette.inkSoft }]}>Visits are added on the day, at the clinic.</Text>
         </View>
       ) : null}
+
+      {/*
+        🔴 GOLDEN RULE #1. A visit waiting on the phone is SAFE, and that is all he is told: no error,
+        no count of attempts, no retry button, nothing about why a send has not happened. The wording
+        is `describeOutbox`, in the shared rules, so there is one place it can be checked.
+      */}
+      {queued ? <CrmNote title={`Visit saved: ${queued}`} tone="good">It is on this phone and will send itself when there is signal.</CrmNote> : null}
+      {describeOutbox(waiting) ? <CrmNote tone="info">{describeOutbox(waiting)}</CrmNote> : null}
 
       {saved ? (
         <SavedNote
@@ -750,15 +787,36 @@ function FamilyStock({
 
 type Draft = { ok: true; payload: Record<string, unknown>; customerName: string } | { ok: false; problem: string };
 
+/**
+ * The queue's rules, handed to the drain rather than re-implemented inside it, so there is one
+ * definition of what "final" means and `phoenix-crm-mobile-mirrors` can pin it to the web original.
+ */
+const OUTBOX_RULES = { isStale: outboxIsStale, order: outboxOrder, verdict: outboxVerdict };
+
+/**
+ * Send whatever is waiting and report how many still are.
+ *
+ * 🔴 Never throws and never shows anything: it runs after a day loads and after a save, where no one
+ * is watching. A rep is told how many visits are SAFE on his phone, never that a send was attempted.
+ */
+async function syncOutbox(token: string | null): Promise<number> {
+  if (!token) return outboxCount();
+  await drainOutbox(token, OUTBOX_RULES);
+  return outboxCount();
+}
+
 function AddVisit({
   handoff,
   onClose,
+  onQueued,
   onSaved,
   seatId,
   test,
 }: {
   handoff: PendingVisit | null;
   onClose: () => void;
+  /** The visit is held on this phone until there is signal. Same ending as a save, for the rep. */
+  onQueued: (customerName: string) => void;
   onSaved: (visit: SavedVisit, customerName: string, validate: number | null) => void;
   seatId: string;
   test: boolean;
@@ -1013,11 +1071,56 @@ function AddVisit({
     visitIdRef.current = visitId;
     setSaving(true);
     setProblem(null);
+
+    // The stamped bytes, kept by the camera when it was told an offline save is allowed. Without
+    // them nothing can be queued: the photo IS the visit's evidence, and a visit with no photo is
+    // not a visit. A reused place photo has none, which is why `hold` refuses below rather than
+    // inventing one.
+    const evidenceBytes = (placePhoto ?? photo)?.imageBase64 ?? null;
+
+    /**
+     * Hold this visit on the phone. Returns false when it could not be held, and the caller then
+     * falls back to telling the rep what actually went wrong.
+     *
+     * 🔴 The claim is read HERE, at the press, for the same reason `savedAt` is: `offlineClaimNow`
+     * reads the monotonic clock, and a re-render must never be able to move it.
+     */
+    function hold(): boolean {
+      if (!evidenceBytes) return false;
+      if (!outboxHasRoom(listOutbox())) {
+        setProblem(OUTBOX_FULL_MESSAGE);
+        setSaving(false);
+        return true;
+      }
+      try {
+        queueVisit({ offline: offlineClaimNow(seatId, test), payload: next.payload, photoBase64: evidenceBytes, visitId });
+      } catch {
+        return false;
+      }
+      onQueued(next.customerName);
+      return true;
+    }
+
+    // The upload never reached Phoenix, so there is no path and no point trying the save: hold it
+    // now. The queue mints a fresh upload slot when the signal returns.
+    if (!(placePhoto ?? photo)?.path) {
+      if (hold()) return;
+      setProblem("The photo did not reach Phoenix. Take it again where the signal is better.");
+      setSaving(false);
+      return;
+    }
+
     try {
       const savedVisit = await crmPost<SavedVisit>("/api/phoenix-crm/visits", "visit", next.payload, token);
       onSaved(savedVisit, next.customerName, customer?.pending ? customer.referenceContactCrmId : null);
+      // Signal is good right now, so take a fresh anchor and push anything still waiting.
+      void ensureTimeAnchor(token, seatId, test);
+      void syncOutbox(token);
     } catch (caught) {
       if (caught instanceof ApiError && caught.isSessionExpired) return void handleExpiredSession();
+      // 🔴 The photo got through and the save did not — the connection died between two requests.
+      // Hold it rather than make him take the photo again: he did the work and he is at the door.
+      if (caught instanceof NetworkError && hold()) return;
       const code = crmErrorCode(caught);
       let message = crmErrorMessage(caught);
       if (code === "phoenix_crm_photo_not_issued" && placePhoto) {
@@ -1399,6 +1502,9 @@ function AddVisit({
           </View>
         ) : customer ? (
           <CrmLivePhoto
+            // 🔴 The visit camera, and only this one, keeps a photo the connection would not carry.
+            // A place cannot: the server resolves its brick, area and address at capture.
+            allowOffline
             disabled={saving}
             onChange={(next) => {
               setProblem(null);

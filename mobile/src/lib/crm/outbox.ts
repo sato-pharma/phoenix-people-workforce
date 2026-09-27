@@ -64,8 +64,15 @@ export type QueuedVisit = {
   queuedAtIso: string;
   /** The save payload, exactly as an online save would have sent it, minus the photo path. */
   payload: Record<string, unknown>;
-  /** The anchor and the elapsed reading, so the SERVER can work out when the door was photographed. */
-  offline: { anchorId: string; elapsedMs: number; bootId: string };
+  /**
+   * The anchor and the elapsed reading, so the SERVER can work out when the door was photographed.
+   *
+   * Null when the phone never got an anchor — it went offline before one could be taken, or the app
+   * restarted and the old one died with the process. The visit is still queued, still sent and still
+   * counted; the server simply dates it when it arrives and marks it for the manager's board. 🔴 A
+   * missing anchor is never a reason to refuse a rep's visit, and he is never told about it.
+   */
+  offline: { anchorId: string; elapsedMs: number; bootId: string } | null;
   /** Set once the photo has reached storage, so a retry never burns a second upload slot. */
   photoPath: string | null;
   attempts: number;
@@ -136,7 +143,7 @@ export function outboxCount(): number {
 export function queueVisit(input: {
   visitId: string;
   payload: Record<string, unknown>;
-  offline: { anchorId: string; elapsedMs: number; bootId: string };
+  offline: { anchorId: string; elapsedMs: number; bootId: string } | null;
   photoBase64: string;
 }): void {
   ensureRoot();

@@ -178,5 +178,39 @@ export function runPhoenixCrmOutboxTests(): void {
     assert.equal(drain.includes("OUTBOX_SETTLED_CODES"), false, "so the phone holds no second copy of the settled list to drift from");
   }
 
+  // ── 8. 🔴 Every settled code is one the SERVER can actually send ──────────────────────────────
+  //
+  // This is the check that would have caught the defect #4560 shipped. The list was written in the
+  // DATABASE's spelling (`phoenix_crm:already_visited`) while the phone receives the API's
+  // (`phoenix_crm_already_visited`), so not one entry matched: every permanent refusal read as
+  // "retry", and a visit the server would never accept sat in the queue for a week. It failed safe
+  // — nothing was deleted — but the queue could not drain and the rep's line would never clear.
+  //
+  // Resolving against `db.ts`'s own REFUSALS table rather than a second hard-coded list is what
+  // makes this a pin and not a restatement: rename a refusal there and this goes red.
+  {
+    const db = source("src/lib/phoenix-crm/server/db.ts");
+
+    // The prefix is built, not written, so read it from the line that builds it.
+    assert.ok(
+      /new ApiError\(refusal\.status, `phoenix_crm_\$\{match\[1\]\}`/.test(db),
+      "🔴 db.ts no longer builds the wire code as `phoenix_crm_<name>` — the settled list's spelling is derived from that line",
+    );
+
+    const start = db.indexOf("const REFUSALS");
+    const table = db.slice(start, db.indexOf("\n};", start));
+    const known = new Set([...table.matchAll(/(^|\n)\s{2}([a-z_]+):/g)].map((match) => `phoenix_crm_${match[2]}`));
+    assert.ok(known.size >= 20, `REFUSALS was read as ${known.size} entries, so this test swept almost nothing`);
+
+    for (const code of OUTBOX_SETTLED_CODES) {
+      assert.ok(
+        known.has(code),
+        `🔴 "${code}" is not a refusal the server can send — a settled code the server never emits deletes nothing and settles nothing`,
+      );
+      assert.ok(code.startsWith("phoenix_crm_"), `"${code}" must be the API spelling, underscore and not colon`);
+      assert.equal(code.includes(":"), false, `🔴 "${code}" uses the database's colon spelling, which never reaches the phone`);
+    }
+  }
+
   console.log("phoenix-crm outbox: OK");
 }

@@ -126,5 +126,54 @@ export function runPhoenixCrmMobileMirrorsTests(): void {
     assert.ok(phoneTabs.includes(key), `the phone's tabs mirror is missing \`${key}\``);
   }
 
+  // ── 3. The phone's outbox rules equal the web's, line for line ────────────────────────────────
+  //
+  // This mirror exists because `@/*` resolves to `mobile/src/*` and nothing else, so the web
+  // `outbox-rules.ts` is unreachable from the phone. `drainOutbox` takes its rules as an argument to
+  // keep ONE definition — and with no mobile file able to supply them the queue shipped uncallable
+  // (#4560). The mirror fixes that and this is what stops the copy drifting.
+  //
+  // Three kinds of drift, all silent: a bigger ceiling lets the phone hold visits the server's rules
+  // never agreed to; a settled code on one side only deletes a rep's work on one side only; and a
+  // reworded line breaks Golden Rule #1 in the one place the rep actually reads.
+  {
+    const web = read("src/lib/phoenix-crm/outbox-rules.ts");
+    const phone = read("mobile/src/lib/crm/outbox-rules.ts");
+
+    for (const name of ["OUTBOX_MAX_ITEMS", "OUTBOX_MAX_AGE_HOURS"]) {
+      const webValue = new RegExp(`export const ${name} = ([^;]+);`).exec(web);
+      const phoneValue = new RegExp(`export const ${name} = ([^;]+);`).exec(phone);
+      assert.ok(webValue, `${name} is gone from the web outbox rules`);
+      assert.ok(phoneValue, `${name} is missing from the phone's mirror`);
+      assert.equal(
+        phoneValue![1].trim(),
+        webValue![1].trim(),
+        `${name} differs between the phone and the web module — the phone would hold a queue the server's rules never sized`,
+      );
+    }
+
+    const codesOf = (code: string): string[] => {
+      const block = /OUTBOX_SETTLED_CODES: readonly string\[\] = \[([\s\S]*?)\]/.exec(code);
+      assert.ok(block, "OUTBOX_SETTLED_CODES is no longer a literal array — this comparison reads it as one");
+      return [...block![1].matchAll(/"([^"]+)"/g)].map((match) => match[1]);
+    };
+    const webCodes = codesOf(web);
+    assert.ok(webCodes.length >= 5, `the settled list was read as ${webCodes.length} codes, so this swept nothing`);
+    assert.deepEqual(
+      codesOf(phone),
+      webCodes,
+      "🔴 the settled refusal codes differ between the phone and the web module — one side would throw a rep's visit away that the other keeps",
+    );
+
+    // The exact sentences, because these are the only words about the queue a rep ever sees.
+    for (const sentence of [
+      "1 visit is saved on this phone. It will send itself when there is signal.",
+      "This phone is holding as many visits as it can. Find signal for a moment so they can send, then carry on.",
+    ]) {
+      assert.ok(web.includes(sentence), `the web rules no longer say "${sentence}"`);
+      assert.ok(phone.includes(sentence), `🔴 the phone's mirror no longer says "${sentence}" — the rep reads the phone's copy`);
+    }
+  }
+
   console.log("phoenix-crm mobile mirrors: OK");
 }
