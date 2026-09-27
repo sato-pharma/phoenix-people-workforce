@@ -413,6 +413,7 @@ export function cvLibraryRowFromCandidate(
   // above comes from `candidateScreeningFacts` rather than being re-derived from the governorate.
   const background = judgeBackground({
     declaredBackground: candidate.declaredBackground,
+    degree: candidate.degree,
     faculty: candidate.faculty,
   });
   return {
