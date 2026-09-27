@@ -31,6 +31,17 @@ import path from "node:path";
  * not have quietly come back as jobs, and no file a session ACTS on may still name a retired check
  * as a gate.
  *
+ * 🔴 SO A GREEN HERE IS NOT PROOF THAT THE DOCUMENTED LIST MATCHES THE GATE. It proves the docs and
+ * the workflows agree with EACH OTHER. Repoint protection to a fifth arrangement and leave every doc
+ * and job name mutually consistent, and this test stays green while every doc misstates the real
+ * gate — the same failure it exists to prevent, one level up. `RETIRED_CHECK_NAMES` below is a
+ * hand-maintained literal for the same reason, and whoever does the next rename has to extend it.
+ * Nothing inside a test run can close that, deliberately: a live `gh api` read would make a REQUIRED
+ * check depend on network and auth, so it would have to fail open, and a check that fails open is not
+ * something to rely on. The durable half is the instruction in AGENTS.md §2 and the ship skill — read
+ * `branches/main/protection/required_status_checks` live and count passes against what it returns,
+ * never this file's verdict and never a number from a doc.
+ *
  * Node builtins only, and no YAML parser — the same rule tests/ci-gate-parity.test.ts records at its
  * line 125. Job ids are read as top-level two-space keys under `jobs:`, which is how ci-gate-parity
  * already reads them.
@@ -90,7 +101,15 @@ function declaredRequiredChecks(agents: string): { count: number; names: string[
     "AGENTS.md §2 must carry a bullet reading `branch-protected with **N required checks** — `a`, `b`, …`. " +
       "It is the declaration every other file in the repo is held against; without it this test proves nothing.",
   );
-  const count = Number(/\*\*(\d+) required checks\*\*/.exec(bullet)![1]);
+  // Never a non-null assertion here: if §2's wording drifts, `![1]` throws a bare TypeError with no
+  // diagnostic — the same "no reason, so the session retries" shape C8 and C9 exist to stop.
+  const countMatch = /\*\*(\d+) required checks\*\*/.exec(bullet);
+  assert.ok(
+    countMatch,
+    "AGENTS.md §2's required-checks bullet no longer states a count in the form `**N required checks**`, " +
+      `so this test cannot parse the declaration it holds every other file against:\n  ${bullet.trim().slice(0, 200)}`,
+  );
+  const count = Number(countMatch[1]);
   // Only the names BEFORE the first semicolon: `allow_auto_merge: false` and the rot warning follow.
   const listPart = bullet.slice(bullet.indexOf("required checks**")).split(";")[0];
   const names = [...listPart.matchAll(/`([a-z][a-z0-9-]*)`/g)].map((m) => m[1]);

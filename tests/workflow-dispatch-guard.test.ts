@@ -154,6 +154,55 @@ export function runWorkflowDispatchGuardTests() {
           "recovery, and since #4537 main's CI run is the production deploy gate",
       );
     }
+    // 🔴 THE BARE FORM — the one a session actually types when it is already on main. `gh workflow
+    // run ci.yml` with no flag targets the repository's DEFAULT branch, which is main. The first
+    // version of C9 keyed it as `ci@(default)`, counted it, and denied the third call while
+    // `--ref main` stayed exempt: measured 2026-09-27, allow/allow/DENY against allow/allow/allow.
+    // Every one of the fifteen cases in this suite's first draft passed an explicit --ref, which is
+    // exactly why it shipped. During an outage there is no reason to name a ref you are already on,
+    // and since #4537 that denial lands on a commit already serving production with no verdict.
+    for (let i = 1; i <= 4; i += 1) {
+      assert.equal(
+        runGuard("gh workflow run ci.yml", { session: "BARE" }).decision,
+        "allow",
+        `a bare dispatch targets the DEFAULT branch, which is main, so it must never be capped (run ${i})`,
+      );
+    }
+
+    // The same exemption has to survive a heredoc-fed curl: withoutHeredocBodies strips the very
+    // body carrying the ref, so reading it from the stripped text lost main and made it countable.
+    const heredocCurl = [
+      "curl -sS -X POST https://api.github.com/repos/o/r/actions/workflows/ci.yml/dispatches -d @- <<'JSON'",
+      '{"ref":"main"}',
+      "JSON",
+    ].join("\n");
+    for (let i = 1; i <= 3; i += 1) {
+      assert.equal(
+        runGuard(heredocCurl, { session: "HEREDOC" }).decision,
+        "allow",
+        `a heredoc-fed dispatch naming main must keep the exemption (run ${i})`,
+      );
+    }
+
+    // THE NEGATIVE CONTROL for the two cases above, and they need one. Both widen what counts as
+    // exempt — a bare ref now reads as main, and the ref is now read out of the RAW command — so the
+    // failure direction is exempting EVERYTHING. If a heredoc body were ignored again, or an
+    // unreadable ref were treated as main too eagerly, every assertion above would still pass while
+    // the cap had quietly stopped existing. A branch ref fed the same way must still reach it.
+    const heredocBranch = [
+      "curl -sS -X POST https://api.github.com/repos/o/r/actions/workflows/ci.yml/dispatches -d @- <<'JSON'",
+      '{"ref":"codex/heredoc-branch"}',
+      "JSON",
+    ].join("\n");
+    assert.equal(runGuard(heredocBranch, { session: "HD-NEG" }).decision, "allow");
+    assert.equal(runGuard(heredocBranch, { session: "HD-NEG" }).decision, "allow");
+    assert.equal(
+      runGuard(heredocBranch, { session: "HD-NEG" }).decision,
+      "deny",
+      "a heredoc-fed dispatch on a BRANCH must still cap on the third — otherwise the main exemption "
+        + "has swallowed every ref and the clause no longer does anything",
+    );
+
     // A flag before the positional must not be read as the workflow — otherwise `main` would be
     // taken for the workflow name and the exemption would silently not apply.
     for (let i = 1; i <= 3; i += 1) {
