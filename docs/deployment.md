@@ -24,11 +24,30 @@ that commit's CI** (see "The deploy gate" below). There is no deploy workflow in
 
 ## The deploy gate
 
-🔴 **THE GATE IS HOLDING — DEMONSTRATED 2026-09-27, and BOTH environments are gated.** Railway's
-**Wait for CI** is on for the `phoenix-people-workforce` service in **`production`** AND in
-**`staging`** (owner's instruction, 2026-09-27: *"no i want 2 stop bad deploy"*; both verified in the
-dashboard, `aria-checked="true"`, still true after a reload, with every sibling switch left false).
-A merge is no longer the deploy; a merge **plus a green check suite on that commit** is.
+🔴 **PRODUCTION IS GATED AND PROVEN. STAGING'S TOGGLE IS ON BUT IS NOT ENFORCING — do not read
+them as one setting.** Railway's **Wait for CI** is switched on for the `phoenix-people-workforce`
+service in **both** environments (owner's instruction, 2026-09-27: *"no i want 2 stop bad deploy"*;
+both verified in the dashboard, `aria-checked="true"`, still true after a full reload). On production
+it holds. On staging the behaviour does not match the switch:
+
+| on `ddda75259` | |
+| --- | --- |
+| CI | created 18:27:12 → finished **18:31:49** |
+| **staging** | `in_progress` 18:27:14 → **`success` 18:29:28** — live **2m 21s BEFORE CI concluded** |
+| production | `in_progress` 18:27:14 → still holding |
+
+The staging record was CREATED after the toggle was flipped, so this is not a leftover in-flight
+deploy. Three hypotheses, not yet separated: propagation lag (it was flipped minutes earlier); the
+setting being honoured only for the service's production environment while the per-environment UI
+value is displayed but not enforced; or a superseded queued deploy not being re-gated (staging jumped
+`c2b9ac558` → `ddda75259`, skipping `c93a6269f`) — though the fresh record time argues against it.
+
+🔴 **Until that resolves, staging still receives every merge ungated within about two minutes,
+including commits whose CI later goes red — and staging holds a REAL production clone, with real auth
+accounts and real payroll data.** So the honest wording today is *production gated and proven;
+staging enabled but not enforcing, under investigation* — never "both environments are gated".
+
+On production, a merge is no longer the deploy; a merge **plus a green check suite on that commit** is.
 
 **The withholding is measured, not inferred** — from GitHub's own deployment status records:
 
@@ -48,9 +67,10 @@ than claiming the whole guarantee.
 **Why staging being gated matters as much as production.** Staging tracks `main` too, and it holds a
 real production clone — real auth accounts and real payroll data, not mock data. (The owner's memory
 slug `staging-is-now-mock-data-not-a-production-mirror` says the OPPOSITE of its own content; trust
-the content.) Before this flip, every merge reached that data ungated in about 40 seconds, including
-commits whose CI later went red. The setting is **per environment**, so gating one never gates the
-other — check both.
+the content.) Before the flip, every merge reached that data ungated in about 40 seconds; after it, still ungated,
+just slower. The setting is **per environment**, so gating one never gates the other — and as the
+measurement above shows, a per-environment toggle reading ON is not evidence that it ENFORCES. Check
+the deploy-success time against the CI finish time, never the switch.
 
 🔴 **THE FAILURE MODE THE GATE CREATES, and it is silent.** It fails by NOT shipping: if the check
 suites do not all finish within **two hours**, Railway abandons the deployment and **nothing turns
