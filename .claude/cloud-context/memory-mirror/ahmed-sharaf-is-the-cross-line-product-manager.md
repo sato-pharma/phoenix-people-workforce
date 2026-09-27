@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 29be4ad6-ad17-4122-b3c4-9beec0e01c2d
-  modified: 2026-09-27T23:30:42.640Z
+  modified: 2026-09-27T23:43:17.598Z
 ---
 
 **Ahmed Sharaf Eldeen (HR_ID `B-155`, Product Manager, `manager_hr_id = A-8`) is the PM for FOUR
@@ -22,6 +22,17 @@ Guamusin and Ivyronc along side with his current products."* Applied to producti
 His `employees` row says Pedia only (`line_id = 2`); that single line is NOT his scope.
 `line_scope_override = {Pedia, Anti Infective}` and `sales_scope_override = LINE` carry the HR/org
 half; the four codes are the product half.
+
+🔴 **FOUR products assigned, but his marketing picker shows TWO — and that is CORRECT, not a
+half-applied change.** The drafts workspace loads `marketing_products` with
+`.or("active.is.null,active.eq.true")`, so an `active=false` row never reaches the picker at all.
+Tigogrow and Osteosat are both pre-launch, so today he picks Guamusin and Ivyronc and nothing else.
+Measured by executing the shipped path on production 2026-09-28: 21 catalogue rows offered,
+2 pickable, `canCreateDraft=true`; with the pre-2026-09-28 list `{TG001, OS001}` the same call
+returns **0**, and with the list cleared to NULL it also returns **0**. When either product
+launches (real `factory_price`, `active=true`) it appears for him with no further scope change.
+`resolveSalesAccessScope` is unaffected by `active` and returns all four codes with
+`businessScope=LINE` and lines `{Pedia, Anti Infective}`.
 
 🔴 **NEVER clear his `product_scope_override` to NULL.** He is the one HR_ID inside
 `PRODUCT_SCOPE_EXCLUSIVE_HR_IDS` (`src/lib/marketing-requests/service.ts`), which hard-clamps his

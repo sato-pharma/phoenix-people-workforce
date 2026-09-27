@@ -1700,12 +1700,16 @@ export async function runMarketingRequestServiceTests() {
   /* ---------------------------------------------------------------------- */
 
   const b155Requester = { areaId: 30, hrId: "B-155", lineId: 7, lineName: "Pedia", managerHrId: "A-8" };
+  // The fixture mirrors his real assignment since 2026-09-28: Guamusin IS his, and Lacto Advanced
+  // is the product on his own line that is NOT — so Lacto is the one the clamp must still reject.
+  // Guamusin used to play that excluded role here, which now reads as contradicting production.
   const b155Products = [
-    { active: true, factory_price: 6, id: 10, line: "Pedia", line_id: 7, product_code: "GU001", product_name: "Guamusin" },
+    { active: true, factory_price: 270, id: 10, line: "Pedia", line_id: 7, product_code: "LA001", product_name: "Lacto Advanced 1" },
     { active: true, factory_price: 0, id: 11, line: "Pedia", line_id: 7, product_code: "TG001", product_name: "Tigogrow" },
     { active: true, factory_price: 0, id: 12, line: "Anti infective", line_id: 1, product_code: "OS001", product_name: "Osteosat" },
+    { active: true, factory_price: 60.75, id: 13, line: "Pedia", line_id: 7, product_code: "GU001", product_name: "Guamusin" },
   ];
-  const b155AllowedCodes = new Set(["TG001", "OS001"]);
+  const b155AllowedCodes = new Set(["TG001", "OS001", "GU001"]);
 
   const b155Scope = buildMarketingDraftProductScope({
     access: createAccessContext({ hrId: "B-155", role: "Product Manager" }),
@@ -1715,8 +1719,8 @@ export async function runMarketingRequestServiceTests() {
   });
   assert.deepEqual(
     b155Scope.products.map((product) => product.id).sort((a, b) => a - b),
-    [11, 12],
-    "B-155 exception: product picker is EXACTLY his override codes, excluding his own native-line product (Guamusin) which isn't one of them",
+    [11, 12, 13],
+    "B-155 exception: product picker is EXACTLY his override codes, excluding his own native-line product (Lacto Advanced) which isn't one of them",
   );
 
   assert.throws(
@@ -1733,7 +1737,7 @@ export async function runMarketingRequestServiceTests() {
         allowedProductCodes: b155AllowedCodes,
       }),
     /assigned line/i,
-    "B-155 exception: his own native-line product (Guamusin) is rejected on submit because it's not in his override",
+    "B-155 exception: his own native-line product (Lacto Advanced) is rejected on submit because it's not in his override",
   );
 
   const b155Submit = prepareMarketingRequestDraft({

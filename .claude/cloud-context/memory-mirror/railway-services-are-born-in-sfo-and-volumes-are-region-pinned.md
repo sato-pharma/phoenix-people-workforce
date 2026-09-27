@@ -139,3 +139,24 @@ Report the DATE, never "deleted".
 EU Postgres, `pg_restore` the cut-over dump into it → **52 tables, 1,297 rows, 456 device-log rows, 2
 users**, then `dropdb`. That is what made "the dumps are enough" a verified statement instead of a hope,
 and a scratch database beside the live one costs nothing and touches no production table.
+
+### Railway backups: a schedule has to be ASKED FOR, and `kinds` is the whole set
+
+**A new Railway service gets NO backup schedule — nothing inherits one, just as nothing inherits a
+region.** `headwind-db-eu` ran for three days with zero schedules and zero backups until the owner
+instructed one on 2026-09-28; `volumeInstanceBackupScheduleList` and `volumeInstanceBackupList` both
+returned 0 the whole time. **A Postgres service on Railway is not backed up unless someone says so.**
+
+- `volumeInstanceBackupScheduleUpdate(volumeInstanceId, kinds)` — 🔴 **`kinds` is the WHOLE SET, not an
+  addition.** Passing `["DAILY"]` where a weekly exists REMOVES the weekly. Enum: `DAILY · WEEKLY ·
+  MONTHLY`.
+- 🔴 **There is no cron and no retention argument — Railway assigns both.** Daily came back as
+  `34 14 * * *` (17:34 Cairo) with 518,400 s = 6 days. Do not promise an hour or a retention to the
+  owner; read them back from `volumeInstanceBackupScheduleList` after setting it.
+- `volumeInstanceBackupCreate(volumeInstanceId, name)` returns a **`WorkflowId`**, so it needs a subfield
+  selection (`{ workflowId }`) or the query is rejected; the backup appears in the list a few seconds
+  later. Use it to avoid waiting a day for the first copy.
+- Enabling more kinds costs more stored copies, so **which kinds are on is the owner's decision**, not a
+  tidy-up.
+
+Related: [[a-red-main-ci-makes-railway-skip-the-deploy-for-good]]

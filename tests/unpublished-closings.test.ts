@@ -169,7 +169,10 @@ export function runUnpublishedClosingsTests() {
   );
   assert.doesNotMatch(
     body,
-    /catch\s*\{[^}]*return\s*\[\]/s,
+    // No `s` (dotAll) flag: this repo's tsconfig target is below es2018, so it is a TS1501 build
+    // error rather than a runtime one — and a local typecheck is denied here (bash-guard C8), so CI
+    // is where it surfaces. The class `[^}]*` already spans newlines, so the flag bought nothing.
+    /catch\s*\{[^}]*return\s*\[\]/,
     "listUnpublishedClosings swallows its error into an empty array. Everywhere else in this file `[]` " +
       "means \"treat as unpublished, leak no draft\"; here it means \"every month is published, nothing " +
       "needs you\" — the opposite direction, and the exact under-report this module exists to prevent. " +

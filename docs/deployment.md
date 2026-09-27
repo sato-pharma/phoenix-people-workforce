@@ -165,6 +165,52 @@ and `371200082`, each `true`). Railway deploys `main`'s HEAD, so a later merge n
 commit the gate skipped. **Nothing had to be redeployed, and `railway redeploy` would have been the
 wrong move throughout.**
 
+### The check that caused the drift it measures (2026-09-27)
+
+🔴 **A FULLY GREEN `ci.yml` WAS WITHHELD, AND THE CAUSE WAS ONE OF THIS REPO'S OWN SCHEDULED
+WORKFLOWS.** Everything above describes a red `main` CI. This is the same withhold with a green one,
+and it is the shape that will fool a reader, because every instinct says to check `ci.yml` first.
+
+On `cd9e0be03` (#4579) `checks`, `mobile` and `validate` were all `success`. The commit's check
+suites held a **second** `github-actions` entry reading `completed/failure`: a **scheduled** run of
+`deploy-drift-check.yml`. A scheduled run attaches its suite to whatever commit is `main` HEAD when
+it fires, and Railway's gate waits on *every* suite — so the drift check withheld the deploy.
+
+The drift check was measuring that very deploy. All times UTC:
+
+```
+22:29:46  merge cd9e0be03
+22:29:49  ci.yml starts — the deploy cannot begin until it concludes
+22:32:24  drift check fires; production is legitimately still the older revision
+22:35:13  ci.yml GREEN — Railway is finally free to build
+22:35:35  drift check concludes FAILURE (its 3-minute grace expired 22 seconds earlier)
+22:35:40  deployment marked SKIPPED — five seconds later
+```
+
+Its 3-minute grace was written 2026-08-13, when a merge deployed immediately. Once the deploy became
+**gated on the commit's own CI**, the deploy could no longer even *start* inside that grace — CI alone
+took 5m24s here. So the false positive made itself true, and the next merge carried production
+forward, which is why it went unnoticed.
+
+✅ **THE FIX, and the counterfactual is measured rather than argued.** The check now compares against
+the newest commit already older than `SETTLE_MINUTES` (15) and tests **ancestry**, not equality —
+production is legitimately a commit or two behind HEAD almost always here, and equality reads that as
+drift. At 22:32:24 the settled ref would have been `287872eb7`; production was already serving
+`b91bd8c0c` (`success` at 22:26:03Z); `compare 287872eb7...b91bd8c0c` returns `ahead` → in sync →
+exit 0 → no failing suite → no withheld deploy. Pinned by `tests/deploy-drift-settled-ref.test.ts`,
+whose eight assertions were each confirmed to fire by breaking the fix.
+
+🔴 **AND WHAT DOES *NOT* HOLD THE GATE, measured the same night so nobody chases it:** the four
+third-party app suites — `sentry`, `claude`, `vercel`, `railway-app` — are `queued` on *every* commit
+and never report. `1825e0b45` and `b91bd8c0c` both reached deployment `success` with all four sitting
+at `queued`. So "still queued = no deploy" is misleading: an Actions suite still **running** holds the
+deploy (that is the gate working), a **failed or cancelled** one withholds it, and a third-party suite
+that never reports does neither.
+
+🔴 **THE GENERAL LESSON, worth more than this one workflow: any flaky scheduled job in this repo can
+withhold a production deploy**, because its suite lands on `main` HEAD and the gate counts it. When a
+deploy is missing and `ci.yml` is green, read the commit's suites before believing anything else.
+
 🔴 **WHICH IS EXACTLY WHY IT GOES UNNOTICED.** On a busy night the withhold self-heals within minutes,
 so by the time anyone looks, production is serving the commit and every reading is consistent. **The
 window, not the outcome, is what to check** — `railway deployment list` for `SKIPPED`, never only the

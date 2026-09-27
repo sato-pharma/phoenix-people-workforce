@@ -143,10 +143,12 @@ const PEDIA_LINE = "Pedia";
 const ANTI_INFECTIVE_LINE = "Anti Infective";
 const CNS_LINE = "CNS";
 
-// B-155 (Ahmed Sharaf Eldeen) is the Product Manager for 2 named cross-line products
+// B-155 (Ahmed Sharaf Eldeen) is the Product Manager for a named set of cross-line products
 // spanning Pedia + Anti Infective, not a generic "two-line PM" — see
 // PRODUCT_SCOPE_EXCLUSIVE_HR_IDS in marketing-requests/service.ts for the same
-// named-exception pattern applied to this one person's sales/marketing scope.
+// named-exception pattern applied to this one person's sales/marketing scope. The products
+// themselves live in app_auth_users.product_scope_override (four codes since 2026-09-28); this
+// calendar rule is deliberately line-shaped and does not read them.
 const AHMED_SHARAF_HR_ID = "B-155";
 
 export type CalendarViewerContext = {

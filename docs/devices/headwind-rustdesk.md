@@ -844,15 +844,33 @@ Use a long unique password for the Headwind admin account regardless, and do not
 🔴 **One thing, and the fleet is unrecoverable without it: the `headwind-db-eu` Postgres service.** It
 holds every tablet, its configuration, its rules and its history.
 
-🔴 **RE-MEASURED 2026-09-28, AFTER THE MOVE TO EU WEST: THE NEW DATABASE ALSO HAS ZERO SCHEDULES AND
-ZERO BACKUPS.** `volumeInstanceBackupScheduleList` on `headwind-db-eu-volume` returns `0` and
-`volumeInstanceBackupList` returns `0`. **A new service inherits nothing — not the region, and not a
-backup schedule.** So the fleet's entire recovery story today is three hand dumps taken during the
-cut-over, in `F:\PHX backup\headwind-db\` (the last is
-`headwind-db-2026092722361-CUTOVER.dump`, 52/52 TABLE DATA, md5 `58bb23c2a8113351212684fc22cb9eb0`),
-plus the orphaned `sfo` volume `postgres-volume-0WKb` until Railway purges it on 2026-09-30.
+✅ **A DAILY SCHEDULE NOW EXISTS, set 2026-09-28 02:42 Cairo at the owner's instruction, and the first
+backup is taken.** Read back from the API rather than assumed:
 
-🔴 **MEASURED 2026-09-26 on the old database, and it still reads the same way:** An earlier
+| | |
+| --- | --- |
+| schedule | `DAILY`, cron `34 14 * * *` = **17:34 Cairo**, retention **6 days** |
+| first backup | `first-backup-after-eu-cutover`, 2026-09-28 02:42 Cairo, `bb3baa15-…` |
+
+🔴 **The mutation is `volumeInstanceBackupScheduleUpdate(volumeInstanceId, kinds)` and `kinds` is the
+WHOLE set, not an addition** — passing `["DAILY"]` when a weekly exists would remove the weekly. The enum
+is `DAILY · WEEKLY · MONTHLY`; **retention is Railway's to set, not ours** (6 days for daily), and so is
+the hour — there is no cron argument, Railway assigned 14:34 UTC. `volumeInstanceBackupCreate` takes one
+on demand and returns a `WorkflowId`, so it needs a subfield selection and the backup appears in the list
+a few seconds later.
+
+**A new service still inherits nothing** — not the region, and not a backup schedule. This one had to be
+asked for, three days after the service was created.
+
+The dumps remain the offline copy: `F:\PHX backup\headwind-db\`, the last being
+`headwind-db-2026092722361-CUTOVER.dump` (52/52 TABLE DATA, md5 `58bb23c2a8113351212684fc22cb9eb0`), and
+that one is **proven to restore** — restored into a scratch database beside the live one on 2026-09-28
+and read back as 52 tables / 1,297 rows / 456 device-log rows / 2 users, then dropped. 🔴 **`pg_restore -l`
+proves a table of contents, not a database; restore before you rely on it.** Both `sfo` orphans are
+scheduled to purge on 2026-09-30 (`postgres-volume-we4X` 00:09, `postgres-volume-0WKb` 02:38), so after
+that date the dumps and Railway's own backups are the whole story.
+
+🔴 **MEASURED 2026-09-26 on the old database, and it read the same way until the schedule above:** An earlier
 revision of this section said Railway "takes its own backups of a Postgres service" and to check the
 retention. That is wrong, and it is the most dangerous kind of wrong — it reads as reassurance.
 Railway's own API is unambiguous: `volumeInstanceBackupScheduleList` for this volume returns `[]` and
@@ -860,10 +878,11 @@ Railway's own API is unambiguous: `volumeInstanceBackupScheduleList` for this vo
 about Supabase's backup story covers this database either — it is a separate Postgres service from
 payroll, deliberately.
 
-A schedule is added on **headwind-db-eu → Settings → Backups**. It bills storage, so it is a cost
-decision and belongs to the owner on that screen. Until one exists, **take one by hand before any
-image-tag change** and understand that losing this volume means re-enrolling the fleet tablet by
-tablet.
+A schedule is changed on **headwind-db-eu → Settings → Backups**, or with the mutation above. It bills
+storage, so **which kinds are enabled stays the owner's decision** — the daily above is the one he asked
+for; adding `WEEKLY` or `MONTHLY` costs more stored copies and is his call, not a tidy-up. **Still take
+one by hand before any image-tag change**, because a daily at 17:34 can be up to 24 hours stale, and
+understand that losing this volume means re-enrolling the fleet tablet by tablet.
 
 🔴 **The relay key pair is no longer a thing that can be lost, and that is a real gain from §4.5.**
 On the rented box, losing `rustdesk-data` meant re-pairing **every** tablet by hand. On the public
@@ -1500,9 +1519,9 @@ relay:**
    is typed **there**, never sent here: Railway's variable screen puts it straight into the secret
    store, a chat message puts it in a transcript forever. 🔴 **Nothing RustDesk** — both its variables
    stay empty, and empty is the working setting.
-9. Decide the **`headwind-db-eu` backup schedule** (§4.8) — it bills storage, so it is his screen.
-   🔴 **Still open, and re-measured 2026-09-28: the new EU database has ZERO schedules and ZERO
-   backups.** The move to EU West did not carry one over, because a new service inherits nothing.
+9. ~~Decide the **`headwind-db-eu` backup schedule** (§4.8).~~ ✅ **done** — he instructed it on
+   2026-09-28 and a `DAILY` schedule (17:34 Cairo, 6-day retention) plus a first on-demand backup are in
+   place. Adding `WEEKLY` or `MONTHLY` costs more stored copies and is still his call.
 10. ~~Approve the merge.~~ ✅ **done** — #4444 merged 2026-09-26 03:11 Cairo, #4450 (the delivery gate
     and the certificate watch) at 03:35, serving as revision `8b5208d11`.
 11. Run the pilot on PHX-TAB-0002.
