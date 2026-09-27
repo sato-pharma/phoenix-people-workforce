@@ -34,7 +34,7 @@
 
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { callHeadwind } from "@/lib/devices/headwind/client";
-import { deviceRecordsFromSearch } from "@/lib/devices/headwind/devices";
+import { deviceRecordsFromSearch, deviceWriteBody } from "@/lib/devices/headwind/devices";
 
 export class HeadwindConfigurationError extends Error {
   constructor(message: string) {
@@ -410,7 +410,7 @@ export async function moveHeadwindDeviceToConfiguration(
 
   await callHeadwind(
     "/rest/private/devices",
-    { body: JSON.stringify({ ...device, configurationId: input.configurationId }), method: "PUT" },
+    { body: JSON.stringify(deviceWriteBody(device, { configurationId: input.configurationId })), method: "PUT" },
     fetchImpl,
     env,
   );

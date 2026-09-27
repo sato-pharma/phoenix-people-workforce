@@ -215,6 +215,23 @@ export function deviceRecordsFromSearch(payload: unknown): RawRecord[] {
 }
 
 /**
+ * The body for a `PUT /rest/private/devices` that changes one field of a device the search returned.
+ *
+ * 🔴 THE ROUND-TRIP STAYS OPAQUE — the server replaces the device wholesale, so the whole record goes
+ * back with one field changed, or the tablet loses every group it was in. But the record the search
+ * hands back carries `info` as an OBJECT, and the PUT deserializer wants `info` as a JSON STRING:
+ * sending the object back verbatim answers 400 `Cannot deserialize instance of java.lang.String out of
+ * START_OBJECT … Device["info"]`. So `info` is stringified on the way out when it arrived as an object;
+ * a string (some builds already send one) is left untouched. Both `PUT /rest/private/devices` callers —
+ * the remote-screen-ID write and the configuration move — go through here so neither can regress.
+ */
+export function deviceWriteBody(device: RawRecord, patch: RawRecord): RawRecord {
+  const body: RawRecord = { ...device, ...patch };
+  if (body.info && typeof body.info === "object") body.info = JSON.stringify(body.info);
+  return body;
+}
+
+/**
  * The configuration names the same reply carries beside the devices, by configuration id.
  *
  * 🔴 A DEVICE ROW DOES NOT NAME ITS OWN CONFIGURATION. The live list hands back
