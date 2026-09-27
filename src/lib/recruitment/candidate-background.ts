@@ -113,8 +113,19 @@ const DISCIPLINE_PATTERNS: ReadonlyArray<{ code: CandidateBackgroundCode; patter
   // 2026-08-31: *"add chemistry to be approved with pharma vet science."* Folded INTO `science` rather
   // than made a sixth code: it is a science degree, not its own discipline, and is deliberately NOT a
   // row in the applicant's question. Geology — the other science department in those same missed CVs —
-  // was left out on purpose; the owner named chemistry only, so geology stays paramedical until he
-  // says otherwise.
+  // was left out on purpose; the owner named chemistry only.
+  //
+  // 🔒 A COMBINED "CHEMISTRY AND GEOLOGY" DEPARTMENT IS SCIENCE — the owner, 2026-09-28, asked
+  // directly: *"Chemistry and Geology SCIENCE."* Egyptian science faculties commonly run the two as
+  // ONE department, and four candidates on production carry exactly that string ("Chemistry and
+  // Geology", "Chemistry and geology department", "Faculty of Science of Chemistry & Geology") — one
+  // of them already sent to a hiring manager. `chemist\w*` already matches them, so this ruling
+  // CHANGES NOTHING today; it is written down because the line above reads like a reason to exclude
+  // them, and a future reader "fixing" that would silently reverse his decision. Pinned by
+  // tests/candidate-background-eligibility.test.ts.
+  //
+  // GEOLOGY ALONE IS STILL NOT SCIENCE, and that half is unchanged — he has named chemistry and the
+  // combined department, never geology on its own.
   { code: "science", pattern: /\b(science|sciences|biotechnolog\w*|biochemist\w*|microbiolog\w*|chemist\w*)\b|علوم|كيمياء/iu },
 ];
 
@@ -223,6 +234,26 @@ export type BackgroundSubject = {
   declaredBackground?: string | null;
   /** What the extractor read off the CV. An inference — never overrules the declared answer. */
   faculty?: string | null;
+  /**
+   * The degree line off the same CV — "Bachelor of Pharmacy", "BSc in Biotechnology". A LAST RESORT,
+   * read only where the two above leave the verdict UNKNOWN.
+   *
+   * WHY IT IS HERE (added 2026-09-28). An Egyptian CV very often names the degree and not the
+   * faculty, and this module read only the faculty — so those candidates came back `unknown`, and
+   * `unknown` is never auto-filable, which means the CV waited for a human who had no reason to look
+   * at it. Measured on production that day: **241 candidates were `unknown`, 112 of them still live
+   * in the pipeline, and 44 of the 241 (32 of them live) had a degree line that classifies on its
+   * own** — "Bachelor of Pharmacy" for a candidate already sent to a hiring manager, "Bachelor's
+   * degree in Veterinary Medical Sciences" for a shortlisted one.
+   *
+   * WHY IT IS LAST, AND ONLY EVER FILLS A GAP. The faculty is the more direct statement of the
+   * discipline, and the one direction that must never happen by accident is paramedical → eligible
+   * (see the note above `DISCIPLINES`). A recognised non-eligible faculty — law, commerce,
+   * engineering — therefore stays paramedical no matter what the degree line says, because
+   * "Bachelor of Science in Business Administration" beside a Faculty of Commerce is a commerce
+   * graduate, not a science graduate. The degree is consulted at the two UNKNOWN exits only.
+   */
+  degree?: string | null;
 };
 
 /**
@@ -270,12 +301,47 @@ export function judgeBackground(subject: BackgroundSubject | null | undefined): 
     if (matchesKnownOther(faculty)) {
       return { autoFilable: false, discipline: null, evidence: faculty, outcome: "paramedical", source: "cv" };
     }
+    // The faculty could not be parsed. Before settling for UNKNOWN, ask the degree line — see the
+    // `degree` note on BackgroundSubject. Reached ONLY here, past the known-other branch above, so a
+    // recognised non-eligible faculty can never be overturned by a degree.
+    const fromDegree = judgeDegreeLine(subject?.degree);
+    if (fromDegree) return fromDegree;
     // Treating a parsing failure as grounds for exclusion is how unreadable strings become quiet
     // removals, so this stays UNKNOWN and says so on screen.
     return { autoFilable: false, discipline: null, evidence: faculty, outcome: "unknown", source: "cv" };
   }
 
+  // No declared answer and no faculty at all — the commonest shape of an `unknown`, and the one the
+  // degree line answers most often.
+  const fromDegree = judgeDegreeLine(subject?.degree);
+  if (fromDegree) return fromDegree;
+
   return { autoFilable: false, discipline: null, evidence: null, outcome: "unknown", source: null };
+}
+
+/**
+ * The verdict the degree line alone supports, or null when it supports none.
+ *
+ * Deliberately the same shape of decision as the faculty branch — eligible when it names one of the
+ * five, paramedical when it names something we RECOGNISE as other, null when it parses to neither —
+ * because the asymmetry that matters is not faculty-versus-degree, it is that NOTHING here
+ * auto-files an exclusion. Both non-eligible answers return `autoFilable: false`, so the widening
+ * can only ever move a row from "nobody can tell" to "somebody knows what this is".
+ *
+ * `matchDiscipline` carries the false-friend guard with it, so "Bachelor of Computer Science" and
+ * "Licence en Sciences Commerciales" do not read as science graduates here either.
+ */
+function judgeDegreeLine(value: string | null | undefined): BackgroundVerdict | null {
+  const degree = cleanText(value);
+  if (!degree) return null;
+  const discipline = matchDiscipline(degree);
+  if (discipline) {
+    return { autoFilable: true, discipline, evidence: degree, outcome: "eligible", source: "cv" };
+  }
+  if (matchesKnownOther(degree)) {
+    return { autoFilable: false, discipline: null, evidence: degree, outcome: "paramedical", source: "cv" };
+  }
+  return null;
 }
 
 /** True when this candidate may be filed without anybody looking — eligible, and only eligible. */

@@ -60,6 +60,7 @@ export type BackgroundReviewCandidate = Pick<
   | "status"
   | "folder"
   | "faculty"
+  | "degree"
   | "declaredBackground"
   | "backgroundConfirmedOutcome"
   | "backgroundConfirmedAt"
@@ -87,6 +88,7 @@ export function resolveBackgroundStanding(
 ): BackgroundStanding {
   const verdict = judgeBackground({
     declaredBackground: candidate?.declaredBackground,
+    degree: candidate?.degree,
     faculty: candidate?.faculty,
   });
 

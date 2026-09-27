@@ -114,6 +114,13 @@ export type DistrictFolderCandidate = Pick<
   | "address"
   | "governorate"
   | "faculty"
+  // The degree line joins the eligibility rule here for the same reason it joined it in
+  // candidate-background.ts (2026-09-28): this routing reads `resolveBackgroundStanding`, so a Pick
+  // without `degree` would judge a CV on its faculty alone while every other screen judged it on
+  // both — the same candidate routing in one place and not the other. The typechecker caught exactly
+  // that, and `degree` is already in CANDIDATE_COLUMNS_WITHOUT_REPEATING_BLOCKS, so the loader that
+  // fills these rows pays nothing for it.
+  | "degree"
   | "declaredBackground"
   | "backgroundConfirmedOutcome"
   | "backgroundConfirmedAt"

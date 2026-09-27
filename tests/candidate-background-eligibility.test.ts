@@ -14,6 +14,7 @@
 // how many veterinary graduates are in the pool. So the ordering is asserted here directly.
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   canAutoFileBackground,
@@ -195,4 +196,94 @@ export function runCandidateBackgroundEligibilityTests(): void {
   // vocabulary, and re-exported here so this module can name the shelf it files onto without holding
   // a second copy of the string.
   assert.equal(PARAMEDICAL_FOLDER_KEY, "Paramedical", "the owner named this folder himself");
+
+  // ── 🔒 A COMBINED CHEMISTRY AND GEOLOGY DEPARTMENT IS SCIENCE (owner, 2026-09-28) ─────────────
+  // Egyptian science faculties commonly run the two as ONE department, and four candidates on
+  // production carry exactly these strings — one already sent to a hiring manager. `chemist\w*`
+  // already matched them, so the ruling changed no behaviour; it is pinned here because the comment
+  // beside the science pattern reads like a reason to exclude them, and a future reader tightening
+  // that would silently reverse his decision.
+  for (const faculty of [
+    "Chemistry and Geology",
+    "Chemistry and geology department",
+    "Faculty of Science of Chemistry & Geology",
+    "كيمياء وجيولوجيا",
+  ]) {
+    const verdict = judgeBackground({ faculty });
+    assert.equal(verdict.outcome, "eligible", `"${faculty}" is a combined science department — the owner ruled it SCIENCE`);
+    assert.equal(verdict.discipline, "science", `"${faculty}" files under science, not its own discipline`);
+  }
+  // GEOLOGY ALONE is a different question and he has not ruled it science. It must NOT read eligible.
+  for (const faculty of ["Geology", "Geology Department", "Faculty of Geology", "Geology and Geophysics"]) {
+    assert.notEqual(
+      judgeBackground({ faculty }).outcome,
+      "eligible",
+      `"${faculty}" names no chemistry — the owner has approved chemistry and the combined department, never geology on its own`,
+    );
+  }
+
+  // ── EVERY Pick THAT FEEDS THE RULE MUST CARRY THE DEGREE ──────────────────────────────────────
+  // BackgroundSubject.degree is OPTIONAL, so a caller handing over a candidate shape without it
+  // compiles cleanly and simply judges on the faculty alone — the same CV routing in one screen and
+  // not another. The typechecker caught district-manager-folders.ts only because its own Pick made
+  // the field required; nothing would have caught the next one. So this reads the source: any
+  // Pick of Candidate that takes "faculty" takes "degree" too.
+  for (const file of [
+    "src/lib/recruitment/background-review.ts",
+    "src/lib/recruitment/district-manager-folders.ts",
+    "src/lib/recruitment/whatsapp-application-form.ts",
+  ]) {
+    const source = readFileSync(file, "utf8");
+    assert.ok(source.includes("| \"faculty\""), file + " is expected to pick faculty — if it stopped, drop it from this list");
+    assert.ok(
+      source.includes("| \"degree\""),
+      file + " picks faculty for the eligibility rule, so it must pick degree too, or that screen judges a CV on half the evidence",
+    );
+  }
+
+  // ── THE DEGREE LINE, ADDED 2026-09-28 ─────────────────────────────────────────────────────────
+  // An Egyptian CV very often names the degree and not the faculty, and this module read only the
+  // faculty. Measured on production that day: 241 candidates read UNKNOWN, 112 of them still live,
+  // and 44 had a degree line that classifies on its own. UNKNOWN is never auto-filable, so those
+  // CVs waited for a human who had no reason to open them.
+  const byDegree = judgeBackground({ degree: "Bachelor of Pharmacy" });
+  assert.equal(byDegree.outcome, "eligible", "a degree line alone must answer when nothing else can");
+  assert.equal(byDegree.discipline, "pharmacy");
+  assert.equal(byDegree.source, "cv", "a degree is a CV reading, not a declared answer");
+  assert.equal(byDegree.evidence, "Bachelor of Pharmacy", "the admin sees the words that decided it");
+  assert.equal(canAutoFileBackground({ degree: "Bachelor's degree in Veterinary Medical Sciences" }), true);
+
+  // 🔴 THE ONE DIRECTION THAT MUST NEVER HAPPEN BY ACCIDENT: paramedical -> eligible.
+  // A faculty we RECOGNISE as something else outranks the degree line, always. "Bachelor of Science
+  // in Business Administration" beside a Faculty of Commerce is a commerce graduate.
+  const commerce = judgeBackground({ degree: "Bachelor of Science in Business Administration", faculty: "Faculty of Commerce" });
+  assert.equal(commerce.outcome, "paramedical", "a recognised non-eligible faculty can never be overturned by a degree");
+  assert.equal(commerce.evidence, "Faculty of Commerce", "…and the faculty stays the evidence");
+  // A declared answer outranks it too — the applicant's own word about their own degree.
+  const declaredWins = judgeBackground({ declaredBackground: "Commerce", degree: "Bachelor of Pharmacy" });
+  assert.equal(declaredWins.outcome, "paramedical", "the applicant's own answer is never overruled by a CV reading");
+  assert.equal(declaredWins.source, "declared");
+
+  // An UNPARSEABLE faculty is a gap, not a verdict, so the degree may fill that one.
+  const gapFilled = judgeBackground({ degree: "Bachelor of Pharmacy", faculty: "Bi-technology Dep." });
+  assert.equal(gapFilled.outcome, "eligible", "a faculty nobody can parse leaves a gap the degree answers");
+
+  // The false-friend guard travels with matchDiscipline, so it holds on the degree line too.
+  assert.equal(judgeBackground({ degree: "Bachelor of Computer Science" }).outcome, "paramedical");
+  assert.notEqual(judgeBackground({ degree: "Bachelor of Computer Science" }).discipline, "science");
+  // And a degree that parses to nothing at all still reads UNKNOWN rather than becoming an exclusion.
+  assert.equal(judgeBackground({ degree: "Bachelor" }).outcome, "unknown", "a bare Bachelor names no discipline at all");
+
+  // A widened signature nobody passes degree to would be inert — pin all three call sites.
+  for (const [file, label] of [
+    ["src/lib/recruitment/candidate-screening-facts.ts", "the screening checks"],
+    ["src/lib/recruitment/background-review.ts", "the background review queue"],
+    ["src/lib/cv/cv-library.ts", "the CV library row"],
+  ] as const) {
+    const source = readFileSync(file, "utf8");
+    assert.ok(
+      /degree: candidate\??\.degree,/.test(source),
+      label + " must pass the degree through, or the widening is dead code",
+    );
+  }
 }
