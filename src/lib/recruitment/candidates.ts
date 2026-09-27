@@ -698,7 +698,7 @@ export const CANDIDATE_COLUMNS_WITHOUT_REPEATING_BLOCKS =
   "has_medical_rep_experience,has_prior_work_experience,id,linkedin_url,manager_notified_area," +
   "manager_notified_at,manager_notified_hr_id,manager_notified_job_title,manager_notified_name," +
   "manager_notified_region,marital_status,medical_rep_employer,medical_rep_experience_from," +
-  "medical_rep_experience_to,military_status,national_id,nationality,notes,notice_period,phone," +
+  "medical_rep_experience_to,military_status,national_id,nationality,notes,notice_period,offer_id,phone," +
   "place_of_birth,preferences_declared_at,preferred_area_name,preferred_region_code," +
   "preferred_region_name,professional_summary,rated_at,rated_by_hr_id,rating,screening_extra_answers," +
   "sent_for_area,sent_for_job_title," +

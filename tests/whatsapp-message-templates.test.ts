@@ -295,11 +295,23 @@ export function runWhatsAppMessageTemplateTests() {
   // NEVER matched by name or email. Measured 2026-09-08 on the three live offers: 0 of 3 matched a
   // candidate by email, 1 of 3 by name. A wrong match puts the wrong first working day into a
   // welcome message, so only the stored pointer may be trusted.
-  const resolver = contextSrc.match(/async function resolveOfferStartDate[\s\S]*?\n\}/)?.[0] ?? "";
-  assert.ok(resolver.length > 0, "the start-date resolver must still be here — re-point this test if it moved");
+  // THE WHOLE START-DATE PATH, not one function. Since 2026-09-28 there are TWO stored pointers and
+  // the resolver reads them through a helper each: `ats_candidates.offer_id` first — the one that can
+  // answer for an offer written to somebody with no application, which is most of them — then
+  // `ats_applications.offer_id` as the fallback. Slicing at the first helper and taking everything to
+  // the end of the resolver keeps this assertion on the real path rather than on whichever function
+  // happens to hold the query today. The direction and the preference are pinned in
+  // tests/candidate-offer-pointer.test.ts, which owns that decision.
+  const resolverStart = contextSrc.indexOf("async function candidateOfferId");
+  const resolverEnd = contextSrc.indexOf("export type CandidateSendContext");
+  assert.ok(
+    resolverStart > 0 && resolverEnd > resolverStart,
+    "the start-date resolution path must still be here — re-point this test if it moved",
+  );
+  const resolver = contextSrc.slice(resolverStart, resolverEnd);
   assert.ok(
     resolver.includes("offer_id"),
-    "the start date must be resolved through the stored offer_id pointer",
+    "the start date must be resolved through a stored offer_id pointer",
   );
   for (const forbidden of ["candidate_name", "candidate_email", "full_name", "ilike"]) {
     assert.ok(

@@ -301,6 +301,27 @@ export type Candidate = {
   medicalRepEmployer: string | null;
   medicalRepExperienceFrom: string | null;
   medicalRepExperienceTo: string | null;
+  /**
+   * The job offer letter currently in play for this person — `offers.id`, or null, which is where
+   * every row starts and where most stay.
+   *
+   * 🔴 THE POINTER LIVES HERE, ON THE RECRUITMENT SIDE, AND THAT DIRECTION IS THE WHOLE DESIGN.
+   * `src/lib/offers/types.ts` carries the owner's instruction that the offers module is deliberately
+   * independent of recruitment — an offer may be issued to somebody who never entered the ATS, and
+   * "the two must not be merged". A `candidate_id` column on `offers` is the obvious implementation
+   * and it breaks that: it was written, caught by a test and reverted on 2026-09-28. So `offers`
+   * learns nothing and the candidate points AT the letter.
+   *
+   * WHY IT IS ON THE CANDIDATE AND NOT THE APPLICATION. `ats_applications.offer_id` exists and is
+   * still read as a fallback, but it can only ever be written where an application exists — and
+   * production holds 27 offers against 15 applications, which is exactly why it read 0 of 15. An
+   * offer belongs to a PERSON, not to an application, so the pointer follows the person.
+   *
+   * ONE POINTER IS TRUTHFUL, not lossy. Every candidate holding more than one offer on production
+   * (measured 2026-09-28) has exactly one distinct title-and-territory across them: each extra is a
+   * RE-SEND of the same offer, so a single column loses nothing that happened.
+   */
+  offerId: string | null;
   // The repeating CV blocks — workHistory, educationHistory, certifications, skills, languages —
   // keyed by the `storage: "jsonb"` field keys in src/lib/recruitment/cv-field-schemas.ts. They
   // live here rather than in columns because they are variable-length arrays; every scalar
