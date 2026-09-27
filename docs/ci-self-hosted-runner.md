@@ -6,21 +6,67 @@ Why this exists, how to turn it on, how to turn it off, and the rules that keep 
 
 Measured 2026-09-27 against the live account and the Actions API:
 
+🔴 **THE INVOICE IS THE ONLY AUTHORITY ON THE MONEY, AND MEASURED MINUTES MUST NEVER BE CONVERTED
+INTO ONE.** On 2026-09-27 a session measured every job of the month, multiplied by GitHub's published
+$0.008/min, and reported **~$559** for September. The owner's answer: *"I never paid this value. The
+maximum value I paid is the September value"* — **$300.88, the highest Actions invoice he has ever
+paid.** The invoice is real money; the derivation was arithmetic on top of an assumed rate and an
+assumed allowance. **The invoice wins.**
+
+**The gap is roughly 2x and is NOT explained.** Three candidate causes were tested and all three
+failed, so do not re-run them: queue time inside a job's `started_at` accounts for only **2.6%**;
+**zero** jobs of 25 September ran on a self-hosted runner (all 1,235 were GitHub-hosted); and
+excluding zero-duration skipped jobs changes nothing. Even billing the raw unrounded wall clock
+(2,615 min that day instead of 3,230) still lands well above the invoice. The rate that would
+reconcile is ~$0.0043/min, almost exactly half the published Linux rate — which points at a plan
+allowance, a spending cap or a discount that **cannot be read from here: the billing endpoints need a
+`user` token scope no session has.**
+
+🔴 **So the rule is: measure MINUTES, report MINUTES, and anchor every dollar to the invoice.** A
+session that converts minutes to money will overstate it and be contradicted by the owner, who is the
+only one who can see the bill.
+
 | | |
 | --- | --- |
-| Billable Actions minutes, September | **37,610** ($300.88 ÷ $0.008/min) |
-| Included with GitHub Pro | **3,000 / month** |
-| `ci.yml` runs, 7 days | **1,105** (591 `pull_request` · 338 `push` · 71 dispatch) |
-| Billable minutes per full run | **14** |
-| August bill | $240.77 · **September** | $300.88 |
+| **September invoice — the anchor** | **$300.88** (owner, the most ever paid) · August $240.77 |
+| Measured billable job minutes, 25 Sep, `ci.yml` | **3,230** (3,624 across all workflows) |
+| `ci.yml` runs, 09-01..09-26 | **4,304** (2,657 `pull_request` · 1,647 `push` · ~8 dispatch) |
+| Billable minutes per full run | **14** before #4527 · **10.9** after |
+| **Owner's target** | **$60/month TOTAL** — not a $60 saving (owner, 2026-09-27) |
+
+**The minute measurement is reproducible and internally consistent** — a model built from real
+per-day run counts predicts 3,233 billable `ci.yml` minutes for 25 September against **3,230
+measured**, and 3,628 across all workflows against **3,624**, 0.1% out on both. Trust it for
+*ratios*, which is what it is for. Never for a monthly total.
 
 14 billable minutes for 4m33s of wall clock, because **GitHub bills each job separately and
 rounds every job UP to a whole minute** (measured on run `36277556391`: validate 273s→5,
 typecheck 196s→4, test 139s→3, lint 50s→1, mobile 8s→1).
 
-GitHub charges **$0/minute for self-hosted runners** — you pay only for the machine. A ~$12/month
-8 GB VPS provides ~43,200 minutes of wall clock a month, which covers 37,610 outright. That is a
-fixed cost that does not climb with the commit rate, against a metered one that does.
+GitHub charges **$0/minute for self-hosted runners** — you pay only for the machine. That is a fixed
+cost which does not climb with the commit rate, against a metered one that does.
+
+🔴 **BUT CAPACITY IS SPENT IN RUNNER-SECONDS, NOT IN BILLABLE MINUTES, AND THE TWO ARE 35% APART.**
+This document previously concluded that one ~$12 8 GB VPS "covers 37,610 outright" by comparing
+billable minutes against a machine's wall clock. They are different quantities: GitHub's ceil-per-job
+rounding inflates what it CHARGES above the work actually done, while a self-hosted box owes only the
+work. Measured over every job of 25 September: **3,858 billable minutes against 2,850 runner-minutes
+of real work — 35.4% of the bill is rounding.** That gap is exactly where the saving comes from; it is
+also why the capacity sum must use the smaller number.
+
+At September's average volume with post-#4527 per-run cost, real demand is **~1,650 runner-minutes a
+day**. A 2-vCPU box supplies 1,440 a day *at 100% utilisation, serially* — which no CI runner reaches,
+because a run wants its four jobs concurrent and peak days are twice the average. So the honest
+requirement is **two to three boxes, not one**, and the ~$12 single-VPS figure was never achievable.
+Two 4-vCPU instances (~€27/month together) give 8 concurrent job slots and ~11,500 runner-minutes a
+day of headroom.
+
+🔴 **AND THIS IS THE ONLY LEVER THAT REACHES THE OWNER'S $60/MONTH TOTAL.** Against the $300.88
+invoice, $60 is an **80% cut**. #4527's per-run saving is 16.5%; driving re-pushes from 1.61 runs per
+PR to a perfect 1.0 adds ~20% more; together they land near $190, not $60. **No combination of
+pipeline tuning and push discipline gets there** — only taking the per-minute price to $0 and paying
+a fixed machine cost instead, which two 4-vCPU boxes do at roughly half the target. Say that plainly
+rather than offering another trim.
 
 **This is a separate lever from [#4527](https://github.com/Gawish-1997/phoenix-people-workforce/pull/4527)**,
 which merges `lint`+`typecheck`+`test` into one job and cuts ~14% off every run. They compose:
@@ -62,32 +108,44 @@ manual re-runs were "26% of the bill, ~$78/month" because they are ~26% of the *
 **3.9% of the minutes**. The correction matters because the obvious cost lever — "stop re-running CI"
 — is worth about **$12/month**, not $78, and chasing it would have cost more effort than it saved.
 
-Measured 2026-09-27 over **two independent samples, 240 `ci.yml` runs**:
+🔴 **AND A SAMPLE LIES TOO.** The shares below were first measured over 240 runs and were wrong by
+enough to matter. These are counted from **every run of 09-01..09-26**, per event, with per-run cost
+measured over a full day:
 
-| trigger | share of CI minutes | avg billable min/run | of the $300.88 month |
+| trigger | runs | share of CI minutes | avg billable min/run |
 | --- | --- | --- | --- |
-| `pull_request` | **63.4%** | 13.2 | ~$191 |
-| `push` to `main` | **32.7%** | 13.5 | ~$98 |
-| `workflow_dispatch` | **3.9%** | **1.2** | ~$12 |
+| `pull_request` | 2,657 | **60.5%** | 12.8 |
+| `push` to `main` | 1,647 | **39.5%** | 13.5 |
+| `workflow_dispatch` | ~8 | **~0.0%** | 1.2 |
 
-Dispatch runs are cheap because most die in seconds — a skipped `full_e2e` no-op, a bad input, an
-outage. The older of the two 120-run samples contains **zero** of them, so the steady-state share is
-lower still.
+Dispatch is a **rounding error** — not the 3.9% a sample showed, and certainly not the 26% a run count
+showed. September holds about eight of them in total.
 
-**`ci.yml` is 84.3% of the whole Actions bill** — 350 of 415 billable minutes across the last 80 runs
-of *every* workflow. Security Scan is 7.2%, Synthetic Journeys 4.1%, everything else under 3% each,
-and those two already carry comments recording earlier cost trims. **Nothing outside `ci.yml` is
+🔴 **The trap that produced every wrong figure in this document: the Actions runs API caps at 1,000
+rows and truncates the OLDEST silently.** Four separate wide queries came back with *exactly* 1,000
+rows and looked like complete months. Count the rows; if the answer is exactly 1,000, narrow the
+window and query again.
+
+**`ci.yml` is 89.1% of the whole Actions bill** — 3,230 of 3,624 billable minutes across every run of
+every workflow on 25 September, a full day rather than a tail of recent runs. Security Scan is 6.3% at
+1.3 min/run, Synthetic Journeys 2.1%, everything else under 1.5% each. **Nothing outside `ci.yml` is
 worth touching.**
 
 Two more facts that close off the obvious ideas:
 
-- **2.18 CI runs per PR** (109 `pull_request` runs across 50 distinct branches). That is the push
-  discipline the ONE WIDE PR rule above is aimed at, and it is the biggest remaining lever.
+- 🔴 **1.61 CI runs per PR, and 1,652 PRs in 26 days — THE LEVER IS THE 1,652, NOT THE 1.61.**
+  Counted over the whole month: 2,657 `pull_request` runs across **1,652 distinct branches**. The
+  earlier "2.18 runs per PR" came from a 50-branch sample and overstated the re-push waste; on
+  2026-09-27 the measured figure was **1.27**, close to the floor of 1.0. So push discipline is
+  nearly exhausted as a saving: driving 1.61 to a perfect 1.0 would reclaim ~$103/month and demands
+  that no PR ever gets a second push. **Sixty-four PRs a day is the actual cost driver**, which is
+  what the ONE WIDE PR rule attacks — batching five narrow PRs into one saves four PR runs *and*
+  four `main` runs, roughly ten times what a re-push costs.
 - **`main` gets exactly one run per commit** — 51 commits, 51 runs, zero duplicates. No waste there.
 
-🔴 **And `main`'s 32.7% is no longer waste at all — it is the price of the production deploy gate.**
+🔴 **And `main`'s 39.5% is no longer waste at all — it is the price of the production deploy gate.**
 Railway's Wait for CI reads the check suites on the pushed commit, so removing `push: main` from
-`ci.yml` to save that ~$98 would silently un-gate production. See [deployment.md](deployment.md),
+`ci.yml` to save that ~$197 would silently un-gate production. See [deployment.md](deployment.md),
 "The deploy gate". **That leaves the runner as the only lever that cuts the bill without cutting
 safety** — which is the whole argument of this document.
 
@@ -125,15 +183,35 @@ allocation:
 | memory | $0.00000386 / GB / sec | **$10.14 per GB** |
 | vCPU | $0.00000772 / vCPU / sec | **$20.29 per vCPU** |
 
-Workload from this document's own measurements: 1,105 `ci.yml` runs/week ≈ 158/day, and ~10.1 min of
-real single-job time per full run since #4527 folded three jobs into one (it was 666s across five:
-273 + 196 + 139 + 50 + 8, less two ~29s preambles). That is ~800 busy hours/month. At ~2 vCPU and
-~4 GB while busy: ~$44 CPU + ~$44 memory + ~$8 idle across replicas ≈ **$95**, against **$300.88**
-billed in September.
+Workload, corrected to measured runner-second demand rather than to billable minutes:
+**~1,650 runner-minutes/day ≈ 835 busy hours/month** at September's average volume. At ~2 vCPU and
+~4 GB while busy: ~$44 CPU + ~$44 memory + ~$8 idle across replicas ≈ **$95** — but that buys ONE
+box's capacity, and the section above establishes the requirement is two to three. 🔴 **At ~$95 per
+box Railway does NOT reach the owner's $60 total, and two of them are three times it** — a flat-rate
+VPS does, which is why the comparison matters and why Railway's metered compute is the wrong shape for
+this job even though it is the platform already in use.
 
-🔴 **The assumption most likely to be wrong is memory, and nobody has measured it.** No one has
-recorded the actual RSS or CPU of these jobs on a runner. If the build really sits at 6 GB rather
-than 4 while busy, memory alone moves to ~$66 and the total to ~$120. Quote the range and the
+🔴 **MEMORY WAS THE ASSUMPTION NOBODY HAD MEASURED, AND THE FIRST REAL ATTEMPT FAILED ON IT.** A
+Railway-hosted runner rollout on 2026-09-27 (`CI_RUNNER=self-hosted`, set 20:01:18Z) failed `validate`
+reproducibly on two different runners, in the Build step, with an identical signature:
+
+    OS can't spawn worker thread: Resource temporarily unavailable (os error 11)
+    fatal runtime error: failed to initiate panic, error 5, aborting
+
+Job ids `36346183612` and `36346466953`. That is a thread or process limit in the container —
+RLIMIT_NPROC, or a pids/memory cap — **not vCPU count, so adding replicas will not help and may hurt**
+by splitting the same allowance. A second job on that rollout printed every test as PASS and then took
+`The runner has received a shutdown signal`, which is a replica cycling mid-job, not a test failing.
+**So the ~4 GB figure above is too low for the Build step.** The knobs are the container's
+process/thread limit and its memory, plus pinning the build's own concurrency. Rolled back with
+`gh variable set CI_RUNNER --body ubuntu-latest` at 20:04:38Z; set it explicitly rather than deleting
+it, so the repo variables still read safe.
+
+🔴 **A BROKEN RUNNER ROLLOUT TURNS `main` RED, AND THE DEPLOY GATE THEN CORRECTLY PINS PRODUCTION.**
+That is the gate working, but it is invisible until somebody reads it, and Railway abandons the
+withheld deployment at the two-hour mark with nothing turning red. On 2026-09-27 two commits were
+withheld this way. **Never flip `CI_RUNNER` without watching the first `main` run to a verdict**, and
+roll back on the first failure instead of debugging while production is held. Quote the range and the
 assumption, never the $95 alone.
 
 ### Four constraints, each one evidenced
