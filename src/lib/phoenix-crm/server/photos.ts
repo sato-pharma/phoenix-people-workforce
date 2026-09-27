@@ -186,3 +186,24 @@ export async function photoSlotIssuedAt(path: string): Promise<string | null> {
   const issuedAt = (data as { issued_at?: unknown } | null)?.issued_at;
   return typeof issuedAt === "string" ? issuedAt : null;
 }
+
+/**
+ * The raw bytes of one stored photo, for the server's own reading of it.
+ *
+ * THIS FILE OPENS THE BUCKET AND ITS CALLERS DO NOT — the same rule the voice notes keep. A second
+ * module reaching into the bucket on its own is how a path check gets skipped once and then copied,
+ * so anything that needs pixels asks here and gets bytes back.
+ *
+ * Unsigned and unscoped on purpose, and that is safe for exactly one reason: the only caller is the
+ * nightly sweep, which runs as the system over photos it found in the database rather than over a
+ * path somebody asked for. Never wire this to a request — `signPhotoPaths` is the scoped read, and
+ * it is scoped for a reason.
+ *
+ * Returns null rather than throwing on a missing or unreadable object: a photo that cannot be read
+ * is a fact to record, never a reason to take a batch down.
+ */
+export async function downloadPhoto(path: string): Promise<Uint8Array | null> {
+  const { data, error } = await getSupabaseAdmin().storage.from(PHOENIX_CRM_PHOTO_BUCKET).download(path);
+  if (error || !data) return null;
+  return new Uint8Array(await data.arrayBuffer());
+}

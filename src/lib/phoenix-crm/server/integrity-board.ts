@@ -1,5 +1,10 @@
 /**
- * Phoenix CRM — the location-integrity board, for the Super Admin and the SFE Manager.
+ * Phoenix CRM — the integrity board, for the Super Admin and the SFE Manager.
+ *
+ * TWO DETECTORS FILE HERE, and from 2026-09-27 the row says which. The position checks judge where
+ * the phone said it was; the photo sweep judges whether the picture is a new picture. They share
+ * this table and nothing else — a capture can carry one verdict from each, which is why `source` is
+ * part of the unique key rather than a label bolted on afterwards.
  *
  * This is the ONLY reader of `phoenix_crm_location_integrity`. It lives behind `/admin`, which no rep
  * can open at all, so the evidence cannot leak into the field app through a role mistake in a tab or
@@ -21,6 +26,7 @@
  */
 
 import { notFoundError } from "@/lib/http/api-errors";
+import { PHOENIX_CRM_PHOTO_LABELS, type PhoenixCrmPhotoFlag } from "@/lib/phoenix-crm/duplicate-photos";
 import { PHOENIX_CRM_INTEGRITY_LABELS, type PhoenixCrmIntegrityFlag } from "@/lib/phoenix-crm/location-integrity";
 import { type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { throwIfError } from "@/lib/phoenix-crm/server/db";
@@ -28,6 +34,30 @@ import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 type Row = Record<string, unknown>;
+
+/** Which detector filed a case. The board is the one place the two are read together. */
+export type IntegritySource = "gps" | "photo" | "behaviour";
+
+export type IntegrityBoardFlag = PhoenixCrmIntegrityFlag | PhoenixCrmPhotoFlag;
+
+/**
+ * Every flag's plain English, from both detectors.
+ *
+ * Merged HERE rather than in either rules module, deliberately: the position checks and the photo
+ * checks share nothing but this screen, and a single union living in one of them would be the first
+ * step towards the phone importing the other.
+ */
+const FLAG_LABELS: Record<string, string> = { ...PHOENIX_CRM_INTEGRITY_LABELS, ...PHOENIX_CRM_PHOTO_LABELS };
+
+const SOURCE_LABELS: Record<IntegritySource, string> = {
+  gps: "Position",
+  photo: "Photo",
+  behaviour: "Pattern",
+};
+
+export function integritySourceLabel(source: IntegritySource): string {
+  return SOURCE_LABELS[source] ?? source;
+}
 
 export type IntegrityCase = {
   id: string;
@@ -41,7 +71,9 @@ export type IntegrityCase = {
   capturedAt: string;
   visitDate: string | null;
   strong: boolean;
-  flags: PhoenixCrmIntegrityFlag[];
+  /** Which detector filed it — the position, the photo, or the pattern. */
+  source: IntegritySource;
+  flags: IntegrityBoardFlag[];
   /** Those flags in plain English, ready to print. */
   reasons: string[];
   lat: number | null;
@@ -58,6 +90,8 @@ export type IntegrityBoard = {
   strongCount: number;
   /** Reps appearing in the list, most cases first — where a pattern shows rather than an incident. */
   byRep: { repHrId: string; repName: string; cases: number; strongCases: number }[];
+  /** How many cases each detector filed, so a silent detector is visible as a zero. */
+  bySource: { source: IntegritySource; label: string; cases: number }[];
 };
 
 const BOARD_LIMIT = 200;
@@ -82,7 +116,7 @@ export async function loadIntegrityBoard(viewer: PhoenixCrmViewer, options: { in
   const supabase = getSupabaseAdmin();
   let query = supabase
     .from("phoenix_crm_location_integrity")
-    .select("id, subject_kind, subject_id, seat_id, rep_hr_id, customer_id, captured_at, visit_date, lat, lon, accuracy_meters, device_mocked, flags, strong, signals, is_test")
+    .select("id, subject_kind, subject_id, source, seat_id, rep_hr_id, customer_id, captured_at, visit_date, lat, lon, accuracy_meters, device_mocked, flags, strong, signals, is_test")
     .order("strong", { ascending: false })
     .order("captured_at", { ascending: false })
     .limit(BOARD_LIMIT);
@@ -93,7 +127,7 @@ export async function loadIntegrityBoard(viewer: PhoenixCrmViewer, options: { in
   const { data, error } = await query;
   throwIfError(error);
   const rows = (data ?? []) as Row[];
-  if (rows.length === 0) return { cases: [], strongCount: 0, byRep: [] };
+  if (rows.length === 0) return { cases: [], strongCount: 0, byRep: [], bySource: [] };
 
   const customerIds = [...new Set(rows.map((row) => (row.customer_id ? String(row.customer_id) : null)).filter((id): id is string => Boolean(id)))];
   const [people, customers] = await Promise.all([
@@ -106,7 +140,7 @@ export async function loadIntegrityBoard(viewer: PhoenixCrmViewer, options: { in
   for (const row of ((customers as { data?: Row[] }).data ?? []) as Row[]) customerNames.set(String(row.id), String(row.name ?? ""));
 
   const cases: IntegrityCase[] = rows.map((row) => {
-    const flags = (Array.isArray(row.flags) ? row.flags : []).map((flag) => String(flag)) as PhoenixCrmIntegrityFlag[];
+    const flags = (Array.isArray(row.flags) ? row.flags : []).map((flag) => String(flag)) as IntegrityBoardFlag[];
     const repHrId = String(row.rep_hr_id ?? "");
     const customerId = row.customer_id ? String(row.customer_id) : null;
     return {
@@ -120,8 +154,9 @@ export async function loadIntegrityBoard(viewer: PhoenixCrmViewer, options: { in
       capturedAt: String(row.captured_at),
       visitDate: row.visit_date ? String(row.visit_date) : null,
       strong: row.strong === true,
+      source: row.source === "photo" || row.source === "behaviour" ? row.source : "gps",
       flags,
-      reasons: flags.map((flag) => PHOENIX_CRM_INTEGRITY_LABELS[flag] ?? flag),
+      reasons: flags.map((flag) => FLAG_LABELS[flag] ?? flag),
       lat: row.lat === null || row.lat === undefined ? null : Number(row.lat),
       lon: row.lon === null || row.lon === undefined ? null : Number(row.lon),
       accuracyMeters: row.accuracy_meters === null || row.accuracy_meters === undefined ? null : Number(row.accuracy_meters),
@@ -143,5 +178,9 @@ export async function loadIntegrityBoard(viewer: PhoenixCrmViewer, options: { in
     cases,
     strongCount: cases.filter((entry) => entry.strong).length,
     byRep: [...perRep.values()].sort((left, right) => right.strongCases - left.strongCases || right.cases - left.cases),
+    bySource: (["gps", "photo", "behaviour"] as const).flatMap((source) => {
+      const count = cases.filter((entry) => entry.source === source).length;
+      return count === 0 ? [] : [{ source, label: integritySourceLabel(source), cases: count }];
+    }),
   };
 }

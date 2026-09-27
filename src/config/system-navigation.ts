@@ -4126,7 +4126,7 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     href: "/admin/phoenix-crm/integrity",
     icon: ShieldAlert,
     label: "Location Integrity",
-    description: "Visits and validated places whose position does not hold up — checked on every capture, shown to no rep.",
+    description: "Visits and validated places that do not hold up — the position, and from 2026-09-27 the photograph too. Checked on every capture, shown to no rep.",
     permissions: [{ resource: "phoenix_crm", action: "read" }],
     roles: ["Super Admin", "SFE Manager"],
   },

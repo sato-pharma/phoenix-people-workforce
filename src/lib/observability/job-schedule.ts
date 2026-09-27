@@ -78,6 +78,7 @@ export const JOB_SCHEDULES: readonly JobScheduleDeclaration[] = [
   // Thursday before, which is what keeps its heartbeat a straight daily one. Must match
   // scripts/cronjob-sync.mjs exactly, or the heartbeat judges a job that fires perfectly to be late.
   { slug: "phoenix-crm-daily-digest", kind: "cron", schedule: "55 6 * * *", graceSeconds: 2 * HOUR },
+  { slug: "phoenix-crm-integrity-sweep", kind: "cron", schedule: "35 3 * * *", graceSeconds: 3 * HOUR },
   { slug: "phoenix-retention-risk-sweep", kind: "cron", schedule: "40 7 * * *", graceSeconds: 1 * HOUR },
   // Day 25 only. The pre-payroll half of the same feature: Part 1 pays at the start of the month,
   // so the 25th leaves several working days to check on someone before any money moves. The other

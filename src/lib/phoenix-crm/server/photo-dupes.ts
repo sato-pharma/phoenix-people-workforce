@@ -1,0 +1,287 @@
+/**
+ * Phoenix CRM — fingerprinting the photos, and filing what the comparison finds.
+ *
+ * The judgement itself is pure and lives in `@/lib/phoenix-crm/duplicate-photos`; this file is its
+ * I/O: it finds photos with no fingerprint, reads each one ONCE, computes the two hashes, and then
+ * compares the new ones against the recent corpus and writes the evidence.
+ *
+ * THREE RULES GOVERN EVERYTHING HERE.
+ *
+ *   1. THE REP MUST NOT KNOW (owner, 2026-09-25, Golden Rule #1). Nothing in this file runs on a
+ *      rep's request, changes a response, or writes a column any rep-facing read selects. It runs at
+ *      night, as the system, and its output goes to a table the field app cannot reach.
+ *
+ *   2. EVERY PHOTO IS READ ONCE, FOREVER. A fingerprint row is written for every photo the sweep
+ *      touches — including one it could not read, which is recorded with a `failure` so it is never
+ *      downloaded again and so the board can tell NOT CHECKED from clean. Re-reading the bucket
+ *      nightly would cost more egress every night for an answer that cannot change.
+ *
+ *   3. IT MUST NEVER COST A REP HIS VISIT, and it must never take a night's sweep down over one bad
+ *      object. Every photo is wrapped on its own; a failure is a row, not an exception.
+ *
+ * WHY `sharp` IS IMPORTED INSIDE THE FUNCTION. A top-level `import sharp` has taken this repository
+ * down once already by 500ing a whole page when the native binary did not load. It is a native
+ * module, this file is reachable from the route graph, and the cost of being wrong is a blank page
+ * rather than a missed hash — so it is loaded lazily, inside the one function that needs it.
+ */
+
+import crypto from "node:crypto";
+
+import {
+  dhashFromGreyscale,
+  judgePhotoDuplicate,
+  PHOTO_HASH_HEIGHT,
+  PHOTO_HASH_WIDTH,
+  type PhotoFingerprint,
+} from "@/lib/phoenix-crm/duplicate-photos";
+import { throwIfError } from "@/lib/phoenix-crm/server/db";
+import { downloadPhoto } from "@/lib/phoenix-crm/server/photos";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
+
+type Row = Record<string, unknown>;
+
+/** How many photos one night reads. A field day is a few hundred; this drains a backlog too. */
+export const PHOTO_SWEEP_LIMIT = 400;
+
+/**
+ * How far back the fuzzy comparison looks.
+ *
+ * Six months, not forever. A re-used photograph is re-used soon — the whole point of it is to stand
+ * in for a visit that should have happened this week — and an unbounded corpus turns one nightly
+ * read into a table scan that grows for the life of the system. The exact-match half is not bounded
+ * this way: a sha256 lookup is one indexed read whatever the table holds.
+ */
+export const PHOTO_COMPARE_DAYS = 180;
+
+/** A ceiling on the in-memory corpus, so one night can never pull an unbounded table into RAM. */
+export const PHOTO_CORPUS_MAX = 20_000;
+
+export type PhotoSweepResult = {
+  /** Photos that had no fingerprint and were read this run. */
+  fingerprinted: number;
+  /** Of those, how many could not be read at all. */
+  failed: number;
+  /** Captures the comparison filed evidence about. */
+  flagged: number;
+  /** True when the sweep stopped on its own limit — there is more backlog waiting. */
+  moreWaiting: boolean;
+};
+
+type Candidate = {
+  subjectKind: "visit" | "place";
+  subjectId: string;
+  photoPath: string;
+  seatId: string | null;
+  repHrId: string;
+  customerId: string | null;
+  capturedAt: Date;
+  isTest: boolean;
+};
+
+function toCandidate(row: Row): Candidate | null {
+  const photoPath = String(row.photo_path ?? "");
+  const subjectId = String(row.subject_id ?? "");
+  const capturedAt = new Date(String(row.captured_at));
+  const repHrId = String(row.rep_hr_id ?? "").toUpperCase();
+  if (!photoPath || !subjectId || Number.isNaN(capturedAt.getTime())) return null;
+  return {
+    subjectKind: row.subject_kind === "place" ? "place" : "visit",
+    subjectId,
+    photoPath,
+    seatId: row.seat_id ? String(row.seat_id) : null,
+    repHrId,
+    customerId: row.customer_id ? String(row.customer_id) : null,
+    capturedAt,
+    isTest: row.is_test === true,
+  };
+}
+
+async function loadCandidates(limit: number, includeTest: boolean): Promise<Candidate[]> {
+  const { data, error } = await getSupabaseAdmin().rpc("phoenix_crm_photos_to_fingerprint", {
+    p: { limit, include_test: includeTest },
+  });
+  throwIfError(error);
+  const rows = Array.isArray(data) ? (data as Row[]) : [];
+  return rows.map(toCandidate).filter((entry): entry is Candidate => entry !== null);
+}
+
+/**
+ * The two hashes of one photo's bytes.
+ *
+ * `sharp` is asked for a raw greyscale thumbnail and nothing else — the bit arithmetic that turns it
+ * into a hash is pure and lives in the rules module, where it is tested against pixels written by
+ * hand rather than against whatever an image library happens to produce this version.
+ */
+async function hashBytes(bytes: Uint8Array): Promise<{ sha256: string; dhash: string | null }> {
+  const sha256 = crypto.createHash("sha256").update(bytes).digest("hex");
+  let dhash: string | null = null;
+  try {
+    const { default: sharp } = await import("sharp");
+    const thumbnail = await sharp(Buffer.from(bytes))
+      .greyscale()
+      .resize(PHOTO_HASH_WIDTH, PHOTO_HASH_HEIGHT, { fit: "fill" })
+      .raw()
+      .toBuffer();
+    dhash = dhashFromGreyscale(thumbnail);
+  } catch {
+    // A picture sharp cannot decode still has a sha256, which catches the easy re-send. The fuzzy
+    // half simply does not apply to it, and that is recorded as a null rather than as a clean hash.
+    dhash = null;
+  }
+  return { sha256, dhash };
+}
+
+/** Everything a new photo is compared against: the recent fingerprints, in one read. */
+async function loadCorpus(includeTest: boolean): Promise<PhotoFingerprint[]> {
+  const since = new Date(Date.now() - PHOTO_COMPARE_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  let query = getSupabaseAdmin()
+    .from("phoenix_crm_photo_fingerprints")
+    .select("subject_kind, subject_id, photo_path, rep_hr_id, customer_id, captured_at, sha256, dhash")
+    .gte("captured_at", since)
+    .order("captured_at", { ascending: false })
+    .limit(PHOTO_CORPUS_MAX);
+  if (!includeTest) query = query.eq("is_test", false);
+  const { data, error } = await query;
+  throwIfError(error);
+  const out: PhotoFingerprint[] = [];
+  for (const row of (data ?? []) as Row[]) {
+    const capturedAt = new Date(String(row.captured_at));
+    if (Number.isNaN(capturedAt.getTime())) continue;
+    out.push({
+      subjectKind: row.subject_kind === "place" ? "place" : "visit",
+      subjectId: String(row.subject_id ?? ""),
+      photoPath: String(row.photo_path ?? ""),
+      repHrId: String(row.rep_hr_id ?? "").toUpperCase(),
+      customerId: row.customer_id ? String(row.customer_id) : null,
+      capturedAt,
+      sha256: row.sha256 ? String(row.sha256) : null,
+      dhash: row.dhash ? String(row.dhash) : null,
+    });
+  }
+  return out;
+}
+
+const cairoDay = (when: Date): string =>
+  new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo", year: "numeric", month: "2-digit", day: "2-digit" }).format(when);
+
+/**
+ * Read every photo that has none, hash it, and judge the new ones against the recent corpus.
+ *
+ * Returns a count and throws nothing a caller has to handle per photo: a photo that fails is a row
+ * with a `failure` on it. It DOES let a failure of the batch reads themselves escape, so the cron's
+ * dead-man's switch records a night that did not run rather than reporting a silent success.
+ */
+export async function runPhoenixCrmPhotoSweep(options: { limit?: number; includeTest?: boolean } = {}): Promise<PhotoSweepResult> {
+  const limit = Math.max(1, Math.min(2_000, options.limit ?? PHOTO_SWEEP_LIMIT));
+  const includeTest = options.includeTest === true;
+  const candidates = await loadCandidates(limit, includeTest);
+  const result: PhotoSweepResult = { fingerprinted: 0, failed: 0, flagged: 0, moreWaiting: candidates.length >= limit };
+  if (candidates.length === 0) return result;
+
+  const supabase = getSupabaseAdmin();
+  const fresh: PhotoFingerprint[] = [];
+  const rows: Row[] = [];
+
+  for (const candidate of candidates) {
+    let sha256: string | null = null;
+    let dhash: string | null = null;
+    let failure: string | null = null;
+    let sizeBytes: number | null = null;
+    try {
+      const bytes = await downloadPhoto(candidate.photoPath);
+      if (!bytes || bytes.length === 0) {
+        failure = "the object is missing or empty";
+      } else {
+        sizeBytes = bytes.length;
+        const hashes = await hashBytes(bytes);
+        sha256 = hashes.sha256;
+        dhash = hashes.dhash;
+      }
+    } catch (error) {
+      failure = String(error instanceof Error ? error.message : error).slice(0, 200);
+    }
+
+    result.fingerprinted += 1;
+    if (failure !== null) result.failed += 1;
+    rows.push({
+      photo_path: candidate.photoPath,
+      subject_kind: candidate.subjectKind,
+      subject_id: candidate.subjectId,
+      seat_id: candidate.seatId,
+      rep_hr_id: candidate.repHrId || null,
+      customer_id: candidate.customerId,
+      captured_at: candidate.capturedAt.toISOString(),
+      sha256,
+      dhash,
+      size_bytes: sizeBytes,
+      failure,
+      is_test: candidate.isTest,
+    });
+    if (sha256 !== null) {
+      fresh.push({
+        subjectKind: candidate.subjectKind,
+        subjectId: candidate.subjectId,
+        photoPath: candidate.photoPath,
+        repHrId: candidate.repHrId,
+        customerId: candidate.customerId,
+        capturedAt: candidate.capturedAt,
+        sha256,
+        dhash,
+      });
+    }
+  }
+
+  // `ignoreDuplicates` because the photo path is the identity and two sweeps overlapping must not
+  // fight: the first fingerprint of a photo is the only one that ever needs to exist.
+  const written = await supabase.from("phoenix_crm_photo_fingerprints").upsert(rows, { onConflict: "photo_path", ignoreDuplicates: true });
+  throwIfError(written.error);
+
+  if (fresh.length === 0) return result;
+
+  // One corpus read for the whole batch, taken AFTER the insert so this run's own photos compare
+  // against each other — a rep who sent the same picture twice in one day is the obvious case, and a
+  // corpus read beforehand would be blind to exactly it.
+  const corpus = await loadCorpus(includeTest);
+  const byPath = new Map(candidates.map((entry) => [entry.photoPath, entry]));
+  const evidence: Row[] = [];
+  for (const photo of fresh) {
+    const verdict = judgePhotoDuplicate(photo, corpus);
+    if (verdict.flags.length === 0) continue;
+    const candidate = byPath.get(photo.photoPath);
+    evidence.push({
+      subject_kind: photo.subjectKind,
+      subject_id: photo.subjectId,
+      source: "photo",
+      seat_id: candidate?.seatId ?? null,
+      rep_hr_id: photo.repHrId || null,
+      customer_id: photo.customerId,
+      captured_at: photo.capturedAt.toISOString(),
+      visit_date: cairoDay(photo.capturedAt),
+      flags: verdict.flags,
+      strong: verdict.strong,
+      signals: { ...verdict.signals, photoPath: photo.photoPath },
+      is_test: candidate?.isTest === true,
+    });
+  }
+
+  if (evidence.length > 0) {
+    // 🔴 `source` is part of the conflict target. Without it this write would REPLACE the GPS verdict
+    // on the same visit instead of sitting beside it — see the migration's header.
+    const filed = await supabase.from("phoenix_crm_location_integrity").upsert(evidence, { onConflict: "subject_kind,subject_id,source" });
+    throwIfError(filed.error);
+    result.flagged = evidence.length;
+  }
+
+  return result;
+}
+
+/**
+ * The nightly sweep, as the cron calls it. Returns nothing and swallows nothing it should not.
+ *
+ * Kept as its own thin wrapper so D4's behaviour pass can join it here rather than in the route: one
+ * cron, one dead-man's switch, one place where the order of the two passes is written down.
+ */
+export async function runPhoenixCrmIntegritySweep(options: { limit?: number } = {}): Promise<{ photos: PhotoSweepResult }> {
+  const photos = await runPhoenixCrmPhotoSweep({ limit: options.limit });
+  return { photos };
+}

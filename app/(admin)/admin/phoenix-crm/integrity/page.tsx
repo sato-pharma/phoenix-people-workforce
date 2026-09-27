@@ -4,13 +4,18 @@ import { Eye, ShieldAlert, Users } from "lucide-react";
 import { AdminCallout, AdminPageHero, AdminStatCard, AdminTableShell } from "@/components/admin/admin-design-system";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
-import { canReadIntegrityBoard, loadIntegrityBoard, type IntegrityCase } from "@/lib/phoenix-crm/server/integrity-board";
+import { canReadIntegrityBoard, integritySourceLabel, loadIntegrityBoard, type IntegrityCase } from "@/lib/phoenix-crm/server/integrity-board";
 
 export const dynamic = "force-dynamic";
 
 /**
  * Location integrity — the Super Admin's and the SFE Manager's board, and the ONLY screen that reads
  * the evidence (owner, 2026-09-26: "recorded in the admin and the SFE account").
+ *
+ * From 2026-09-27 it carries a SECOND detector: the nightly photo sweep, whose cases say "photo"
+ * where the position checks say "position". The screen keeps its name and its sidebar entry — the
+ * name is now narrower than what the board holds, which is worth the owner's word rather than a
+ * rename taken here, since the sidebar's label widths are a pinned fixture and the wording is his.
  *
  * It sits under /admin, which a rep cannot open at all. That is the whole reason it is a page of its
  * own rather than a tab inside Phoenix CRM: the CRM tabs are the same component tree the field app
@@ -59,7 +64,7 @@ export default async function PhoenixCrmIntegrityPage() {
       <AdminPageHero
         eyebrow="CRM"
         title="Location integrity"
-        description="Captures whose position Phoenix could not believe — a mock location app the phone admitted to, a coordinate used before, a trip nobody could have made. Nothing here is a verdict and no rep is told: it is where to look, and what to look at."
+        description="Captures Phoenix could not account for — a mock location app the phone admitted to, a coordinate used before, a trip nobody could have made, or a photograph that had already been sent. Nothing here is a verdict and no rep is told: it is where to look, and what to look at."
         icon={<ShieldAlert className="h-3.5 w-3.5" />}
       />
 
@@ -93,8 +98,17 @@ export default async function PhoenixCrmIntegrityPage() {
       {board.cases.length === 0 ? (
         <AdminCallout tone="success">
           <span>
-            Nothing flagged. Every position captured in Phoenix CRM so far has been one the server could account for — and the checks run on every
-            visit and every validated place, whether or not the phone reports anything.
+            Nothing flagged. Every position and every photograph captured in Phoenix CRM so far has been one the server could account for — and the
+            checks run on every visit and every validated place, whether or not the phone reports anything.
+          </span>
+        </AdminCallout>
+      ) : null}
+
+      {board.bySource.length > 1 ? (
+        <AdminCallout tone="neutral">
+          <span>
+            {board.bySource.map((entry) => `${entry.label.toLowerCase()} ${entry.cases}`).join(" · ")} — which check filed each case. A capture can carry
+            one from each, and they are counted apart because a re-used photograph and an impossible journey are different things to look at.
           </span>
         </AdminCallout>
       ) : null}
@@ -124,9 +138,9 @@ export default async function PhoenixCrmIntegrityPage() {
             <table className="w-full table-fixed border-collapse">
               <colgroup>
                 <col className="w-[16%]" />
-                <col className="w-[18%]" />
-                <col className="w-[18%]" />
-                <col className="w-[34%]" />
+                <col className="w-[17%]" />
+                <col className="w-[17%]" />
+                <col className="w-[36%]" />
                 <col className="w-[14%]" />
               </colgroup>
               <thead>
@@ -143,7 +157,9 @@ export default async function PhoenixCrmIntegrityPage() {
                   <tr key={entry.id} className="border-b border-slate-100 align-top even:bg-slate-50/60">
                     <td className="px-5 py-4 text-sm text-slate-700">
                       <div className="font-semibold text-slate-900">{cairo(entry.capturedAt)}</div>
-                      <div className="text-xs text-slate-500">{entry.subjectKind === "place" ? "Validating a place" : "A visit"}</div>
+                      <div className="text-xs text-slate-500">
+                        {entry.subjectKind === "place" ? "Validating a place" : "A visit"} · {integritySourceLabel(entry.source).toLowerCase()}
+                      </div>
                     </td>
                     <td className="px-5 py-4 text-sm font-semibold text-slate-900">{entry.repName}</td>
                     <td className="px-5 py-4 text-sm text-slate-700">{entry.customerName}</td>
@@ -175,7 +191,7 @@ export default async function PhoenixCrmIntegrityPage() {
                   <span className="text-xs text-slate-500">{cairo(entry.capturedAt)}</span>
                 </div>
                 <p className="mt-1 text-sm text-slate-700">
-                  {entry.customerName} · {entry.subjectKind === "place" ? "validating a place" : "a visit"}
+                  {entry.customerName} · {entry.subjectKind === "place" ? "validating a place" : "a visit"} · {integritySourceLabel(entry.source).toLowerCase()}
                 </p>
                 <div className="mt-3">
                   <Reasons entry={entry} />

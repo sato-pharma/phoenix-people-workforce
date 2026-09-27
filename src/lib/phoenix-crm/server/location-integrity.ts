@@ -145,6 +145,12 @@ export async function judgeCapture(input: JudgeCaptureInput): Promise<void> {
       {
         subject_kind: input.subjectKind,
         subject_id: input.subjectId,
+        // 🔴 Which detector is speaking, and it is part of the unique key. Before 2026-09-27 it was
+        // not: this upsert conflicted on the capture alone, so a second detector filing evidence
+        // about the same visit would have REPLACED this verdict rather than sitting beside it — the
+        // write succeeds, the row is there, and the flags are simply somebody else's. The photo
+        // sweep files under 'photo' against the same visit.
+        source: "gps",
         seat_id: input.seatId,
         rep_hr_id: repHrId,
         customer_id: input.customerId,
@@ -159,7 +165,7 @@ export async function judgeCapture(input: JudgeCaptureInput): Promise<void> {
         signals: verdict.signals,
         is_test: input.isTest,
       },
-      { onConflict: "subject_kind,subject_id" },
+      { onConflict: "subject_kind,subject_id,source" },
     );
     if (error) {
       // Logged, never surfaced: the rep's save has already returned successfully by this point.
