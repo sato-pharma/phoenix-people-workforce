@@ -197,6 +197,31 @@ export function runCandidateBackgroundEligibilityTests(): void {
   // a second copy of the string.
   assert.equal(PARAMEDICAL_FOLDER_KEY, "Paramedical", "the owner named this folder himself");
 
+  // ── 🔒 A COMBINED CHEMISTRY AND GEOLOGY DEPARTMENT IS SCIENCE (owner, 2026-09-28) ─────────────
+  // Egyptian science faculties commonly run the two as ONE department, and four candidates on
+  // production carry exactly these strings — one already sent to a hiring manager. `chemist\w*`
+  // already matched them, so the ruling changed no behaviour; it is pinned here because the comment
+  // beside the science pattern reads like a reason to exclude them, and a future reader tightening
+  // that would silently reverse his decision.
+  for (const faculty of [
+    "Chemistry and Geology",
+    "Chemistry and geology department",
+    "Faculty of Science of Chemistry & Geology",
+    "كيمياء وجيولوجيا",
+  ]) {
+    const verdict = judgeBackground({ faculty });
+    assert.equal(verdict.outcome, "eligible", `"${faculty}" is a combined science department — the owner ruled it SCIENCE`);
+    assert.equal(verdict.discipline, "science", `"${faculty}" files under science, not its own discipline`);
+  }
+  // GEOLOGY ALONE is a different question and he has not ruled it science. It must NOT read eligible.
+  for (const faculty of ["Geology", "Geology Department", "Faculty of Geology", "Geology and Geophysics"]) {
+    assert.notEqual(
+      judgeBackground({ faculty }).outcome,
+      "eligible",
+      `"${faculty}" names no chemistry — the owner has approved chemistry and the combined department, never geology on its own`,
+    );
+  }
+
   // ── THE DEGREE LINE, ADDED 2026-09-28 ─────────────────────────────────────────────────────────
   // An Egyptian CV very often names the degree and not the faculty, and this module read only the
   // faculty. Measured on production that day: 241 candidates read UNKNOWN, 112 of them still live,

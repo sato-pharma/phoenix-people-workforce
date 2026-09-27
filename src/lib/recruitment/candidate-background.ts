@@ -113,8 +113,19 @@ const DISCIPLINE_PATTERNS: ReadonlyArray<{ code: CandidateBackgroundCode; patter
   // 2026-08-31: *"add chemistry to be approved with pharma vet science."* Folded INTO `science` rather
   // than made a sixth code: it is a science degree, not its own discipline, and is deliberately NOT a
   // row in the applicant's question. Geology — the other science department in those same missed CVs —
-  // was left out on purpose; the owner named chemistry only, so geology stays paramedical until he
-  // says otherwise.
+  // was left out on purpose; the owner named chemistry only.
+  //
+  // 🔒 A COMBINED "CHEMISTRY AND GEOLOGY" DEPARTMENT IS SCIENCE — the owner, 2026-09-28, asked
+  // directly: *"Chemistry and Geology SCIENCE."* Egyptian science faculties commonly run the two as
+  // ONE department, and four candidates on production carry exactly that string ("Chemistry and
+  // Geology", "Chemistry and geology department", "Faculty of Science of Chemistry & Geology") — one
+  // of them already sent to a hiring manager. `chemist\w*` already matches them, so this ruling
+  // CHANGES NOTHING today; it is written down because the line above reads like a reason to exclude
+  // them, and a future reader "fixing" that would silently reverse his decision. Pinned by
+  // tests/candidate-background-eligibility.test.ts.
+  //
+  // GEOLOGY ALONE IS STILL NOT SCIENCE, and that half is unchanged — he has named chemistry and the
+  // combined department, never geology on its own.
   { code: "science", pattern: /\b(science|sciences|biotechnolog\w*|biochemist\w*|microbiolog\w*|chemist\w*)\b|علوم|كيمياء/iu },
 ];
 
