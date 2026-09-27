@@ -395,6 +395,87 @@ fills its disk or loses network, every PR silently stops getting CI, which is pr
 this repository spent 2026-09-27 living through for a different reason. With the variable, the
 runner is opt-in and the rollback is one command.
 
+### Click by click — two CPX32s from nothing to green
+
+Written out because steps 1–4 below assume a host that already exists and a shell that is already
+non-root. **Hetzner's Ubuntu image logs you in as `root`, and `setup-self-hosted-runner.sh` refuses to
+run as root** (`[ "$(id -u)" -ne 0 ] || die`) — so the doc as written stopped dead at that line with
+the servers already bought. Step B2 is that missing step.
+
+**A — order (browser, console.hetzner.com).** Prices read from Hetzner's own data 2026-09-28; they
+rose ~170% on 15 June 2026, so re-read them rather than trusting this table later.
+
+| field | value | why |
+| --- | --- | --- |
+| **Add server** | in the project, **Servers** → **Add server** | |
+| Location | **Nuremberg (NBG1)** | EU. `sfo` is the default for a new service elsewhere in this account — not here, but check it |
+| Image | **Ubuntu 24.04** | the script installs Node 24 itself |
+| Type | **Shared vCPU · AMD · CPX32** — 4 vCPU, 8 GB, 160 GB, 20 TB | €35.49/mo each. **NOT CPX31** — US-only, 3 TB, €62.49 |
+| Networking | leave **Public IPv4 + IPv6** on | the runner needs outbound only, but SSH in is how you set it up |
+| SSH key | **add your public key** | without one Hetzner emails a root password, which is worse in every way |
+| Volumes / Firewalls / Backups / Placement | skip | a runner holds no state worth backing up |
+| Name | `phx-ci-1` | `RUNNER_NAME` defaults to `phoenix-ci-$(hostname -s)`, so distinct names give distinct runners |
+| quantity | **2** if the console offers a count, otherwise repeat for `phx-ci-2` | |
+| | **CREATE & BUY NOW** | |
+
+**B — on EACH box.** B2 is the step the old procedure was missing.
+
+```bash
+# B1  from your machine, as root (Hetzner's default)
+ssh root@<server-ip>
+
+# B2  make a non-root sudo user and give it your key — the script REFUSES to run as root
+adduser --disabled-password --gecos "" phx
+usermod -aG sudo phx
+install -d -m 700 -o phx -g phx /home/phx/.ssh
+cp /root/.ssh/authorized_keys /home/phx/.ssh/authorized_keys
+chown phx:phx /home/phx/.ssh/authorized_keys && chmod 600 /home/phx/.ssh/authorized_keys
+exit
+
+# B3  back in as that user
+ssh phx@<server-ip>
+git clone https://github.com/Gawish-1997/phoenix-people-workforce
+cd phoenix-people-workforce
+
+# B4  the label override — the whole point of step 4a above
+export RUNNER_LABELS=self-hosted,linux,x64,phoenix,hetzner
+
+# B5  a registration token, valid ~1 HOUR, from
+#     /settings/actions/runners/new  (get a fresh one per box if the first expires)
+export RUNNER_TOKEN=<paste>
+
+bash scripts/setup-self-hosted-runner.sh
+```
+
+It installs Node 24 + corepack/pnpm and Playwright's system libraries, registers the runner, and
+installs it as a systemd service so it survives reboot. It warns below 7 GB — a CPX32 reports 8, so
+that warning appearing means you bought the wrong plan.
+
+**C — switch CI over (one command, and the rollback is the same command).**
+
+```bash
+gh variable set CI_RUNNER --body hetzner
+```
+
+`hetzner`, **never `self-hosted`** — see step 4a. Roll back with
+`gh variable set CI_RUNNER --body ubuntu-latest`.
+
+**D — prove it, and prove it on the right hardware.** A green run is not evidence on its own; read
+which runner took the job:
+
+```bash
+gh api repos/Gawish-1997/phoenix-people-workforce/actions/runners \
+  --jq '.runners[] | select([.labels[].name] | index("hetzner")) | "\(.name) \(.status) \(.os)"'
+gh run list --workflow=ci.yml --limit 1 --json databaseId --jq '.[0].databaseId'
+gh api repos/Gawish-1997/phoenix-people-workforce/actions/runs/<id>/jobs \
+  --jq '.jobs[] | "\(.name) on \(.runner_name)"'
+```
+
+Every job's `runner_name` must start `phoenix-ci-phx-ci`. A `phoenix-ci-<uuid>` name is a **Railway**
+replica and means the label selection did not hold. 🔴 **Watch that first `main` run to a verdict** —
+a red `main` makes Railway skip the production deploy within minutes and a green re-run does not
+resurrect it.
+
 1. Provision a host — Ubuntu 22.04/24.04, **x86_64, 8 GB RAM minimum** (`ci.yml` runs typecheck
    with `--max-old-space-size=6144`, and the build peaks around 4 GB), ~40 GB disk.
 2. Get a registration token: **Settings → Actions → Runners → New self-hosted runner**
