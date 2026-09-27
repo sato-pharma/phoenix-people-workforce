@@ -12,6 +12,7 @@
 // safely — that is `resolveReviewWindow`'s job on the server, and it says what it changed.
 
 import { periodLabel } from "@/lib/business-review/period-format";
+import { hiddenEntries, type HiddenFields } from "./hidden-fields";
 
 type Props = {
   /** Where the form submits — the page's own path. */
@@ -20,8 +21,8 @@ type Props = {
   available: string[];
   from: string;
   to: string;
-  /** Params that must survive the navigation (the line switcher, mainly). */
-  hidden?: Record<string, string>;
+  /** Params that must survive the navigation (the line switcher and the territory narrowing). */
+  hidden?: HiddenFields;
 };
 
 const FIELD =
@@ -41,8 +42,8 @@ export function ReviewPeriodFilter({ action, available, from, to, hidden }: Prop
 
   return (
     <form method="get" action={action} className="flex flex-wrap items-center gap-2">
-      {Object.entries(hidden ?? {}).map(([name, value]) => (
-        <input key={name} type="hidden" name={name} value={value} />
+      {hiddenEntries(hidden).map(([name, value], i) => (
+        <input key={`${name}:${i}`} type="hidden" name={name} value={value} />
       ))}
       <label className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
         <span className="whitespace-nowrap">From</span>

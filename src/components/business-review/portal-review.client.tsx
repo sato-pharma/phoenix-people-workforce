@@ -30,6 +30,7 @@ import type { ReviewWindow } from "@/lib/business-review/period";
 import type { AreaSummary, CompanyLineRow, DmSummary, ProductRow } from "@/lib/business-review/types";
 import { CoverageBanner, HardEmptyWindow } from "./coverage.client";
 import { ReviewPeriodFilter } from "./review-filter.client";
+import type { HiddenFields } from "./hidden-fields";
 import { CustomersByAreaTable } from "./rollups.client";
 import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
 
@@ -79,7 +80,7 @@ type Props = {
    * Params the PERIOD filter must carry so changing the window keeps the territory narrowing.
    * Without it, picking a different month silently resets the view to the whole scope.
    */
-  windowHidden?: Record<string, string>;
+  windowHidden?: HiddenFields;
   headline: string;
   scopeLabel: string;
   months: string[];

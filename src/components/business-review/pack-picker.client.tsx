@@ -23,11 +23,13 @@ import {
 } from "@/lib/business-review/pack/metrics";
 import { cn } from "@/lib/utils";
 
+import { hiddenEntries, type HiddenFields } from "./hidden-fields";
+
 type Props = {
   /** Where the form submits — the page's own path. */
   action: string;
-  /** Params that must survive the navigation: the window, the line switcher. */
-  hidden?: Record<string, string>;
+  /** Params that must survive the navigation: the window, the line switcher, the territory narrowing. */
+  hidden?: HiddenFields;
   level: PackLevel;
   selected: readonly ReviewMetricId[];
 };
@@ -38,8 +40,8 @@ type Props = {
  * Built from the params that must survive rather than from the current location, so it cannot carry
  * a stale `m` back: what is not in `hidden` is not in the link.
  */
-function resetHref(action: string, hidden?: Record<string, string>): string {
-  const params = new URLSearchParams(hidden ?? {});
+function resetHref(action: string, hidden?: HiddenFields): string {
+  const params = new URLSearchParams(hiddenEntries(hidden));
   const query = params.toString();
   return query ? `${action}?${query}` : action;
 }
@@ -57,10 +59,10 @@ function resetHref(action: string, hidden?: Record<string, string>): string {
  */
 function packHref(
   format: "pdf" | "pptx" | "xlsx",
-  hidden: Record<string, string> | undefined,
+  hidden: HiddenFields | undefined,
   selected: readonly string[],
 ): string {
-  const params = new URLSearchParams(hidden ?? {});
+  const params = new URLSearchParams(hiddenEntries(hidden));
   params.set("format", format);
   for (const id of selected) params.append("m", id);
   return `/api/business-review/pack?${params.toString()}`;
@@ -86,8 +88,8 @@ export function PackPicker({ action, hidden, level, selected }: Props) {
       </summary>
 
       <form action={action} className="border-t border-border px-4 py-3" method="get">
-        {Object.entries(hidden ?? {}).map(([name, value]) => (
-          <input key={name} name={name} type="hidden" value={value} />
+        {hiddenEntries(hidden).map(([name, value], i) => (
+          <input key={`${name}:${i}`} name={name} type="hidden" value={value} />
         ))}
 
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">

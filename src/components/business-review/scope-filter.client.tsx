@@ -29,13 +29,15 @@
 
 import type { AppliedReviewFilter, ReviewFilterChoices } from "@/lib/business-review/scope-filter";
 
+import { hiddenEntries, type HiddenFields } from "./hidden-fields";
+
 type Props = {
   /** Where the form submits — the page's own path. */
   action: string;
   choices: ReviewFilterChoices;
   applied: AppliedReviewFilter;
   /** Params that must survive the navigation: the window. */
-  hidden?: Record<string, string>;
+  hidden?: HiddenFields;
   /**
    * The metrics currently applied, carried through as hidden inputs.
    *
@@ -46,6 +48,11 @@ type Props = {
   metrics: readonly string[];
   /** Anything asked for and refused, so a forwarded link does not lie about what it shows. */
   dropped?: readonly string[];
+  /**
+   * Hide the Line control. The admin page picks the line with its own view tabs, so a second Line
+   * control there would be two ways to set one thing. The portal has no tabs, so it keeps Line.
+   */
+  hideLine?: boolean;
 };
 
 const FIELD =
@@ -54,25 +61,35 @@ const FIELD =
 
 const LABEL = "flex items-center gap-1.5 text-sm font-medium text-muted-foreground";
 
-export function ReviewScopeFilter({ action, applied, choices, dropped = [], hidden, metrics }: Props) {
-  const { areas, districts, lines, regions } = choices;
+// Region and area are MULTI-select — the owner picks several at once (2026-09-27). A `<select multiple>`
+// submits one `region=`/`area=` param per chosen option, which the server reads with `getAll`. It is
+// top-aligned (the list has height) and keeps square edges like every other control here.
+const MULTI_LABEL = "flex min-w-0 items-start gap-1.5 text-sm font-medium text-muted-foreground";
+const MULTI_FIELD =
+  "min-w-[9rem] max-w-full rounded-lg border border-border bg-card px-2 py-1 text-sm font-semibold " +
+  "text-foreground outline-none focus:border-primary";
+const multiSize = (n: number) => Math.min(Math.max(n, 2), 6);
 
-  // Nothing to narrow — a rep with one area, say. Rendering four empty dropdowns would look broken.
-  const anything = lines.length > 1 || regions.length > 1 || districts.length > 1 || areas.length > 1;
+export function ReviewScopeFilter({ action, applied, choices, dropped = [], hidden, hideLine = false, metrics }: Props) {
+  const { areas, districts, lines, regions } = choices;
+  const showLine = !hideLine && lines.length > 1;
+
+  // Nothing to narrow — a rep with one area, say. Rendering empty dropdowns would look broken.
+  const anything = showLine || regions.length > 1 || districts.length > 1 || areas.length > 1;
   if (!anything) return null;
 
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
       <form action={action} className="flex flex-wrap items-center gap-2" method="get">
-        {Object.entries(hidden ?? {}).map(([name, value]) => (
-          <input key={name} name={name} type="hidden" value={value} />
+        {hiddenEntries(hidden).map(([name, value], i) => (
+          <input key={`${name}:${i}`} name={name} type="hidden" value={value} />
         ))}
         {/* The chosen metrics ride along, so narrowing the territory does not reset what is shown. */}
         {metrics.map((metric) => (
           <input key={metric} name="m" type="hidden" value={metric} />
         ))}
 
-        {lines.length > 1 && (
+        {showLine && (
           <label className={LABEL}>
             <span className="whitespace-nowrap">Line</span>
             <select className={FIELD} defaultValue={applied.line ?? ""} name="line">
@@ -87,10 +104,10 @@ export function ReviewScopeFilter({ action, applied, choices, dropped = [], hidd
         )}
 
         {regions.length > 1 && (
-          <label className={LABEL}>
-            <span className="whitespace-nowrap">Region</span>
-            <select className={FIELD} defaultValue={applied.region ?? ""} name="region">
-              <option value="">All regions</option>
+          <label className={MULTI_LABEL}>
+            <span className="whitespace-nowrap pt-1.5">Regions</span>
+            {/* Multiple: leaving all unselected means every region. */}
+            <select className={MULTI_FIELD} defaultValue={applied.regions} multiple name="region" size={multiSize(regions.length)}>
               {regions.map((region) => (
                 <option key={region} value={region}>
                   {region}
@@ -117,10 +134,11 @@ export function ReviewScopeFilter({ action, applied, choices, dropped = [], hidd
         )}
 
         {areas.length > 1 && (
-          <label className={LABEL}>
-            <span className="whitespace-nowrap">Area</span>
-            <select className={FIELD} defaultValue={applied.areaCode ?? ""} name="area">
-              <option value="">All areas</option>
+          <label className={MULTI_LABEL}>
+            <span className="whitespace-nowrap pt-1.5">Areas</span>
+            {/* Multiple: leaving all unselected means every area. A code repeats across lines, so the
+                option is keyed by line and code, but the value is the code the server narrows on. */}
+            <select className={MULTI_FIELD} defaultValue={applied.areaCodes} multiple name="area" size={multiSize(areas.length)}>
               {areas.map((area) => (
                 <option key={`${area.line}:${area.code}`} value={area.code}>
                   {area.name}

@@ -377,4 +377,58 @@ export function runBusinessReviewScopeFilterTests() {
       `${PORTAL}: the merged column was reversed by the owner on 2026-09-26 ("no leave separated").`,
     );
   }
+
+  // ------------------------------------------------------------------ 12. multiple regions and areas
+  //
+  // Owner, 2026-09-27: "make me able to filter by region or by area ... and also multiple regions
+  // and multiple areas." Several values narrow to their UNION, and the widening guarantee holds for
+  // a list exactly as it does for one value — an out-of-scope entry is dropped, never added.
+  {
+    const scoped = territoriesInScope(company, BY_LINE);
+
+    const twoRegions = resolveReviewFilter(company, scoped, { region: ["Alex-BHR", "Cairo"] });
+    assert.deepEqual(codes(twoRegions.territories), ["cns:AX1", "cns:AX2", "cns:CA1", "pedia:AX1"], "the union of both regions");
+    assert.equal(twoRegions.level, "district");
+    assert.deepEqual([...twoRegions.applied.regions].sort(), ["Alex-BHR", "Cairo"]);
+    assert.equal(twoRegions.label, "All lines · 2 regions");
+    assert.deepEqual(filterParams(twoRegions.applied).region, ["Alex-BHR", "Cairo"], "several regions serialize as repeated params");
+
+    const twoAreas = resolveReviewFilter(company, scoped, { area: ["AX2", "CA1"], line: "cns" });
+    assert.deepEqual(codes(twoAreas.territories), ["cns:AX2", "cns:CA1"]);
+    assert.equal(twoAreas.label, "CNS · 2 areas");
+    assert.deepEqual(filterParams(twoAreas.applied).area, ["AX2", "CA1"]);
+
+    // 🔴 A LIST CANNOT WIDEN EITHER. A district manager asking for his own area and a foreign one
+    // keeps only his; the foreign one is dropped and named, never added.
+    const dmScoped = territoriesInScope(dmScope, BY_LINE);
+    const mixed = resolveReviewFilter(dmScope, dmScoped, { area: ["AX2", "CA1"] });
+    assert.deepEqual(codes(mixed.territories), ["cns:AX2"], "the in-scope area applies; the foreign one is not added");
+    assert.match(mixed.dropped.join(" "), /not in your scope/);
+    assert.deepEqual(mixed.applied.areaCodes, ["AX2"]);
+
+    // A single value still serializes as a plain string, so one-value links are byte-identical.
+    const one = resolveReviewFilter(company, scoped, { region: "Cairo" });
+    assert.equal(filterParams(one.applied).region, "Cairo");
+  }
+
+  // ------------------------------------------------------------------ 13. the admin page wires it too
+  //
+  // Owner, 2026-09-27: he asked for the filter on the ADMIN account, for district managers and reps.
+  // The admin page must narrow through the SAME module — a param read straight as scope is the defect
+  // the whole file guards — and it must NOT show a Line control, because its own view tabs set the line.
+  {
+    const admin = stripComments(readFileSync("app/(admin)/business-review/page.tsx", "utf8"));
+    assert.ok(
+      admin.includes("territoriesInScope(scope,") && admin.includes("resolveReviewFilter("),
+      "app/(admin)/business-review/page.tsx: the admin filter must narrow through the same module the export route uses.",
+    );
+    assert.ok(
+      admin.includes("hideLine"),
+      "app/(admin)/business-review/page.tsx: the admin filter must hide its Line control — the view tabs own the line.",
+    );
+    assert.ok(
+      !/loadReviewPortalScope\(\{[^}]*params\./.test(admin),
+      "app/(admin)/business-review/page.tsx: no request value may reach loadReviewPortalScope — scope is the session's alone.",
+    );
+  }
 }

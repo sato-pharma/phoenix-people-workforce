@@ -48,6 +48,17 @@ type Shared = {
   /** The export pack: which metric catalogue this view offers, and what is currently ticked. */
   packLevel: PackLevel;
   packMetrics: ReviewMetricId[];
+  /** The region/district/area narrowing control, rendered in the header (admin page). */
+  scopeFilter?: React.ReactNode;
+  /** The applied narrowing as URL params, carried into the pack export so a scoped screen exports a
+   *  scoped pack. Region and area may each be several. */
+  exportParams?: Record<string, string | string[]>;
+  /** True when a region/district/area narrowing is applied. The achievement, sales, target and spend
+   *  tiles are exact for the narrowed set (area-summed); the customer/visit UNION tiles are not
+   *  summable, so they defer to the per-row figures in the tables instead of printing a wrong total. */
+  narrowed?: boolean;
+  /** The subject's own name when narrowed — e.g. "CNS · Cairo region" — for the header. */
+  scopeLabel?: string;
 };
 /** Discriminated on `view`: the company rollup consolidates every line's areas and DM
  * seats; a line view carries exactly one dataset. Keeps each branch free of null checks. */
@@ -269,6 +280,8 @@ function ReviewHeader({
   available,
   packLevel,
   packMetrics,
+  scopeFilter,
+  exportParams,
   children,
 }: {
   title: string;
@@ -278,8 +291,15 @@ function ReviewHeader({
   available: string[];
   packLevel: PackLevel;
   packMetrics: ReviewMetricId[];
+  scopeFilter?: React.ReactNode;
+  exportParams?: Record<string, string | string[]>;
   children?: React.ReactNode;
 }) {
+  // The window and the current line ride every export and navigation; the applied region/area/district
+  // narrowing rides the pack export too, so a scoped screen hands over a scoped pack.
+  const base: Record<string, string | string[]> =
+    current === "company" ? { from: window.from, to: window.to } : { from: window.from, line: current, to: window.to };
+  const packHidden = { ...base, ...(exportParams ?? {}) };
   return (
     <header className="space-y-3 border-b border-border pb-4">
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -300,19 +320,15 @@ function ReviewHeader({
         available={available}
         from={window.from}
         to={window.to}
-        hidden={{ line: current }}
+        hidden={{ line: current, ...(exportParams ?? {}) }}
       />
-      {/* The self-service export pack, the same one the employee portal offers. The pack link
-          carries the current line as a FILTER (hidden), and the route resolves the SCOPE from the
-          session — so a Super Admin on the CNS tab exports a CNS pack, never wider than his own scope.
-          The line is passed only when it IS a line: "company" is not one the pack route would accept,
-          and sending it would surface a needless "dropped" note. */}
-      <PackPicker
-        action="/business-review"
-        hidden={current === "company" ? { from: window.from, to: window.to } : { from: window.from, line: current, to: window.to }}
-        level={packLevel}
-        selected={packMetrics}
-      />
+      {/* Region / district / area narrowing (admin). It submits to this same page, carrying the window
+          and the current line, so applying it re-runs the server role gate on the narrowed view. */}
+      {scopeFilter}
+      {/* The self-service export pack, the same one the employee portal offers. The pack link carries
+          the current line AND the applied narrowing as a FILTER (hidden); the route resolves the SCOPE
+          from the session, so a filter can only narrow, never widen, whatever a URL says. */}
+      <PackPicker action="/business-review" hidden={packHidden} level={packLevel} selected={packMetrics} />
     </header>
   );
 }
@@ -329,6 +345,8 @@ export function BusinessReviewDashboard(props: Props) {
           available={props.available}
           packLevel={props.packLevel}
           packMetrics={props.packMetrics}
+          scopeFilter={props.scopeFilter}
+          exportParams={props.exportParams}
           title={`Business Review — ${props.window.label}`}
           subtitle={`No data in this window · viewing as ${props.viewerRole}`}
         />
@@ -343,6 +361,7 @@ export function BusinessReviewDashboard(props: Props) {
 function CompanyDashboard({
   company, viewerRole, companyDms, companyAreas, companyProductTables, companyThresholds, restatementNotice,
   window: reviewWindow, coverage, provenance, available, packLevel, packMetrics,
+  scopeFilter, exportParams, narrowed = false, scopeLabel,
 }: Extract<Props, { view: "company" }>) {
   const [tab, setTab] = useState<TabId>("achievers");
   const [excludeVacant, setExcludeVacant] = useState(false);
@@ -353,6 +372,28 @@ function CompanyDashboard({
   const customersOk = hasFigures(coverage, "customers");
   const marketingOk = hasFigures(coverage, "marketing");
   const outstationOk = hasFigures(coverage, "outstation");
+  // A distinct-customer or visiting-rep total is a UNION, not a sum, so it cannot be recomputed for a
+  // narrowed set from the area rows. Rather than print a whole-company figure under a filtered heading,
+  // the tile points at the per-area rows in the table, which ARE the narrowed figures.
+  const unionValue = (v: number | null | undefined, ok: boolean) => (narrowed ? "in the table" : numOrNA(v, ok));
+  const unionSub = (s: string) => (narrowed ? "counted per area, below" : s);
+  // The summable totals for the tiles. When narrowed they are recomputed EXACTLY from the shown areas
+  // and districts — area-summed sales/target/graded is exact, and spend sums the shown districts.
+  const ct = useMemo(() => {
+    if (!narrowed) {
+      return { ach: T.allProducts.ach, marketingCost: T.marketingCost, outstationCost: T.outstationCost, sales: T.allProducts.sales, target: T.allProducts.target };
+    }
+    const sales = companyAreas.reduce((s, a) => s + a.allProducts.sales, 0);
+    const target = companyAreas.reduce((s, a) => s + a.allProducts.target, 0);
+    const graded = companyAreas.reduce((s, a) => s + a.allProducts.graded, 0);
+    return {
+      ach: target > 0 ? (100 * graded) / target : null,
+      marketingCost: companyDms.reduce((s, d) => s + d.marketingCost, 0),
+      outstationCost: companyDms.reduce((s, d) => s + d.outstationCost, 0),
+      sales,
+      target,
+    };
+  }, [narrowed, companyAreas, companyDms, T]);
 
   const vDms = useMemo(() => (excludeVacant ? companyDms.filter((d) => !d.vacant) : companyDms), [companyDms, excludeVacant]);
   const vAreas = useMemo(() => (excludeVacant ? companyAreas.filter((a) => !a.vacant) : companyAreas), [companyAreas, excludeVacant]);
@@ -369,8 +410,10 @@ function CompanyDashboard({
         available={available}
         packLevel={packLevel}
         packMetrics={packMetrics}
-        title={`All Company — ${figureWindowLabel(coverage)}`}
-        subtitle={`${company.meta.lines.length} lines consolidated · ≥90% = earner · viewing as ${viewerRole}`}
+        scopeFilter={scopeFilter}
+        exportParams={exportParams}
+        title={narrowed && scopeLabel ? `${scopeLabel} — ${figureWindowLabel(coverage)}` : `All Company — ${figureWindowLabel(coverage)}`}
+        subtitle={narrowed ? `filtered view · ≥90% = earner · viewing as ${viewerRole}` : `${company.meta.lines.length} lines consolidated · ≥90% = earner · viewing as ${viewerRole}`}
       >
         <label className="flex items-center gap-2.5 rounded-lg border border-border bg-card px-3 py-2">
           <Switch checked={excludeVacant} onChange={setExcludeVacant} label="Exclude vacant territories" />
@@ -382,17 +425,17 @@ function CompanyDashboard({
       <CoverageBanner coverage={coverage} />
 
       <section className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-        <Kpi label="Company achievement" value={coverage.ungradeable ? "not gradeable" : pct(T.allProducts.ach)} sub={coverage.ungradeable ? "no targets loaded for this window" : `all 3 lines · all areas · ${figureWindowLabel(coverage)}, period to date`} accent={coverage.ungradeable ? undefined : achColor(T.allProducts.ach)} />
-        <Kpi label="Sales (total)" value={egp(T.allProducts.sales)} sub={coverage.ungradeable ? "value only" : `of ${egp(T.allProducts.target)}`} />
+        <Kpi label={narrowed ? "Achievement" : "Company achievement"} value={coverage.ungradeable ? "not gradeable" : pct(ct.ach)} sub={coverage.ungradeable ? "no targets loaded for this window" : `${narrowed ? "filtered scope" : "all 3 lines · all areas"} · ${figureWindowLabel(coverage)}, period to date`} accent={coverage.ungradeable ? undefined : achColor(ct.ach)} />
+        <Kpi label="Sales (total)" value={egp(ct.sales)} sub={coverage.ungradeable ? "value only" : `of ${egp(ct.target)}`} />
         {/* "Customers", not "Doctors": one in seven of these is a pharmacy, and a pharmacy is never
             a doctor (owner golden rule). The three figures are reported apart, never joined by a
             slash, and PM is the only one that may be called doctors. */}
-        <Kpi label="Customers reached" value={numOrNA(T.customersTotal, customersOk)} sub={customersOk ? customerSplitLabel(T) : "no CRM rows in this window"} />
-        <Kpi label="Marketing + exp." value={marketingOk || outstationOk ? egp(T.marketingCost + T.outstationCost) : "no data"} sub={`${egpOrNA(T.marketingCost, marketingOk)} + ${egpOrNA(T.outstationCost, outstationOk)}`} />
-        <Kpi label="Visits" value={numOrNA(T.visits, visitsOk)} sub={visitsOk ? splitLabel(T.visitSplit) : "no CRM rows in this window"} />
+        <Kpi label="Customers reached" value={unionValue(T.customersTotal, customersOk)} sub={unionSub(customersOk ? customerSplitLabel(T) : "no CRM rows in this window")} />
+        <Kpi label="Marketing + exp." value={marketingOk || outstationOk ? egp(ct.marketingCost + ct.outstationCost) : "no data"} sub={`${egpOrNA(ct.marketingCost, marketingOk)} + ${egpOrNA(ct.outstationCost, outstationOk)}`} />
+        <Kpi label="Visits" value={unionValue(T.visits, visitsOk)} sub={unionSub(visitsOk ? splitLabel(T.visitSplit) : "no CRM rows in this window")} />
         {/* The denominator a visit count is actually per. This tile printed reps with SALES until
             2026-09-26 — 85 against the 122 who really visited, so visits-per-rep read 44% high. */}
-        <Kpi label="Reps in the field" value={numOrNA(T.visitingReps, visitsOk)} sub={visitsOk ? `${num(T.doubleVisits)} double visits · ${num(T.reps)} reps carried sales` : "no CRM rows in this window"} />
+        <Kpi label="Reps in the field" value={unionValue(T.visitingReps, visitsOk)} sub={unionSub(visitsOk ? `${num(T.doubleVisits)} double visits · ${num(T.reps)} reps carried sales` : "no CRM rows in this window")} />
       </section>
 
       {/* Two-up on a phone, one row from sm. Four `flex-1` buttons in a 359px row left 82px for
@@ -427,6 +470,7 @@ function CompanyDashboard({
 function LineDashboard({
   ds, dms, areas, viewerRole, view: currentLine, restatementNotice,
   window: reviewWindow, coverage, provenance, available, company, packLevel, packMetrics,
+  scopeFilter, exportParams, narrowed = false, scopeLabel,
 }: Extract<Props, { ds: ReviewDataset }>) {
   const [tab, setTab] = useState<TabId>("achievers");
   const [excludeVacant, setExcludeVacant] = useState(false);
@@ -449,6 +493,35 @@ function LineDashboard({
   // per-product columns in Performance Gaps / Deep Analysis.
   const keyProducts = useMemo(() => ds.products.filter((p) => p.include).map((p) => p.product), [ds.products]);
 
+  // When a region/district/area narrowing is applied, the achievement, sales, target and spend tiles
+  // are EXACT for the narrowed set — summing area sales/target/graded is exact (the same method the
+  // portal documents as agreeing with this page's headline), and spend sums the shown districts. The
+  // customer/visit UNION tiles are not summable and defer to the per-area rows below.
+  const nLine = useMemo(() => {
+    if (!narrowed) return null;
+    const sales = areas.reduce((s, a) => s + a.allProducts.sales, 0);
+    const target = areas.reduce((s, a) => s + a.allProducts.target, 0);
+    const graded = areas.reduce((s, a) => s + a.allProducts.graded, 0);
+    return {
+      ach: target > 0 ? (100 * graded) / target : null,
+      marketingCost: dms.reduce((s, d) => s + d.marketingCost, 0),
+      outstationApproved: dms.reduce((s, d) => s + d.outstationApproved, 0),
+      outstationCost: dms.reduce((s, d) => s + d.outstationCost, 0),
+      sales,
+      target,
+    };
+  }, [narrowed, areas, dms]);
+  const lt = nLine ?? {
+    ach: line.ach,
+    marketingCost: ds.line.marketingCost,
+    outstationApproved: ds.line.outstationApproved,
+    outstationCost: ds.line.outstationCost,
+    sales: line.sales,
+    target: line.target,
+  };
+  const unionValue = (v: number | null | undefined, ok: boolean) => (narrowed ? "in the table" : numOrNA(v, ok));
+  const unionSub = (s: string) => (narrowed ? "counted per area, below" : s);
+
   return (
     <div className="space-y-5">
       <ReviewHeader
@@ -457,8 +530,10 @@ function LineDashboard({
         available={available}
         packLevel={packLevel}
         packMetrics={packMetrics}
-        title={`${ds.meta.line} Line — ${figureWindowLabel(coverage)}`}
-        subtitle={`all products · ≥90% = earner · viewing as ${viewerRole}`}
+        scopeFilter={scopeFilter}
+        exportParams={exportParams}
+        title={narrowed && scopeLabel ? `${scopeLabel} — ${figureWindowLabel(coverage)}` : `${ds.meta.line} Line — ${figureWindowLabel(coverage)}`}
+        subtitle={narrowed ? `filtered view · ≥90% = earner · viewing as ${viewerRole}` : `all products · ≥90% = earner · viewing as ${viewerRole}`}
       >
         <label className="flex items-center gap-2.5 rounded-lg border border-border bg-card px-3 py-2">
           <Switch checked={excludeVacant} onChange={setExcludeVacant} label="Exclude vacant territories" />
@@ -470,17 +545,17 @@ function LineDashboard({
       <CoverageBanner coverage={coverage} />
 
       <section className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-        <Kpi label="Line achievement" value={ds.line.allProducts.target > 0 ? pct(line.ach) : "not gradeable"} sub={ds.line.allProducts.target > 0 ? `all areas · all products · ${figureWindowLabel(coverage)}, period to date` : "no targets loaded for this window"} accent={ds.line.allProducts.target > 0 ? achColor(line.ach) : undefined} />
-        <Kpi label="Sales (total)" value={egp(line.sales)} sub={line.target > 0 ? `of ${egp(line.target)}` : "value only"} />
-        <Kpi label="Customers reached" value={numOrNA(ds.line.customersTotal, customersOk)} sub={customersOk ? customerSplitLabel(ds.line) : "no CRM rows in this window"} />
-        <Kpi label="Marketing cost" value={egpOrNA(ds.line.marketingCost, marketingOk)} sub={marketingOk ? "committed only" : "no requests in this window"} />
-        <Kpi label="Outstation exp." value={egpOrNA(ds.line.outstationCost, outstationOk)} sub={outstationOk ? `${egp(ds.line.outstationApproved)} HR-approved` : "no claims in this window"} />
-        <Kpi label="Visits / rep / mo" value={numOrNA(ds.line.visitsAvgPerRepPerMonth, visitsOk)} sub={visitsOk ? `${num(ds.line.visits)} total · ${num(ds.line.visitingReps)} reps` : "no CRM rows in this window"} />
+        <Kpi label="Line achievement" value={lt.target > 0 ? pct(lt.ach) : "not gradeable"} sub={lt.target > 0 ? `${narrowed ? "filtered areas" : "all areas"} · all products · ${figureWindowLabel(coverage)}, period to date` : "no targets loaded for this window"} accent={lt.target > 0 ? achColor(lt.ach) : undefined} />
+        <Kpi label="Sales (total)" value={egp(lt.sales)} sub={lt.target > 0 ? `of ${egp(lt.target)}` : "value only"} />
+        <Kpi label="Customers reached" value={unionValue(ds.line.customersTotal, customersOk)} sub={unionSub(customersOk ? customerSplitLabel(ds.line) : "no CRM rows in this window")} />
+        <Kpi label="Marketing cost" value={egpOrNA(lt.marketingCost, marketingOk)} sub={marketingOk ? "committed only" : "no requests in this window"} />
+        <Kpi label="Outstation exp." value={egpOrNA(lt.outstationCost, outstationOk)} sub={outstationOk ? `${egp(lt.outstationApproved)} HR-approved` : "no claims in this window"} />
+        <Kpi label="Visits / rep / mo" value={unionValue(ds.line.visitsAvgPerRepPerMonth, visitsOk)} sub={unionSub(visitsOk ? `${num(ds.line.visits)} total · ${num(ds.line.visitingReps)} reps` : "no CRM rows in this window")} />
       </section>
 
       {/* The three figures apart, at line level. Never joined by a slash — the separator is the
           middle dot, and a pharmacy call is never counted among the PM doctors. */}
-      {visitsOk && (
+      {visitsOk && !narrowed && (
         <p className="text-phx-xs text-muted-foreground">
           Visits {splitLabel(ds.line.visitSplit)} · customers {customerSplitLabel(ds.line)}
         </p>

@@ -117,10 +117,12 @@ export async function GET(request: Request) {
     // NOW the request is read, and only to REMOVE. Owner, 2026-09-26: "I want everyone to be able to
     // export as he is filtered or as his scope."
     const filter = resolveReviewFilter(scope, territoriesInScope(scope, areasByLine), {
-      area: params.get("area"),
+      // region and area are read with getAll — the owner exports several regions or areas at once
+      // (2026-09-27). resolveReviewFilter still only ever narrows, so a list cannot widen a scope.
+      area: params.getAll("area"),
       dm: params.get("dm"),
       line: params.get("line"),
-      region: params.get("region"),
+      region: params.getAll("region"),
     });
     if (filter.territories.length === 0) {
       return NextResponse.json(
@@ -163,10 +165,10 @@ export async function GET(request: Request) {
         const keep =
           scope.kind === "rep"
             ? person.hrId.toUpperCase() === scope.hrId
-            : filter.applied.areaCode != null
-              // An AREA was chosen, so a colleague in the same district but a different area is not
+            : filter.applied.areaCodes.length > 0
+              // AREAS were chosen, so a colleague in the same district but a different area is not
               // in this pack. Keying on the seat here would quietly widen the people back out to the
-              // whole district while every sales figure showed one area.
+              // whole district while every sales figure showed the chosen areas.
               ? person.areaCode != null && survivingCodes.has(person.areaCode)
               : person.dmSeatId != null && keptSeats.has(person.dmSeatId);
         if (keep) people.push(person);
