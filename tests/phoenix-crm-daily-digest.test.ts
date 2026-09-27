@@ -154,27 +154,42 @@ export function runPhoenixCrmDailyDigestTests(): void {
     assert.ok(runner.includes("logError("), "and logged");
   }
 
-  // ── Registered where the heartbeat can see it ─────────────────────────────────────────────────
+  // ── 🔴 DELIBERATELY NOT SCHEDULED — the owner's decision, 2026-09-27 ──────────────────────────
+  //
+  // This section used to assert the opposite: that the digest was in JOB_SCHEDULES, in
+  // scripts/cronjob-sync.mjs and in the observability table. It was, and it was right to be, until
+  // he looked at what it would do and said "donot create this digest i donot want it" — before a
+  // single message had been sent to anybody.
+  //
+  // Everything that BUILDS the digest is untouched and still tested above: the route, the message,
+  // the per-manager-per-day key, the clean-manager-gets-nothing rule. What is gone is the
+  // SCHEDULE, in all three places at once, and all three matter for different reasons:
+  //
+  //   JOB_SCHEDULES            a declaration with no job behind it reads to the heartbeat sweep as
+  //                            a job that has STOPPED. Once one 06:55 passes after bootstrap it
+  //                            goes STRANDED and alarms every Super Admin, in-app, Telegram and
+  //                            push, every sweep, for ever — about a job nobody ever created.
+  //   docs/observability.md    the register test pins it against JOB_SCHEDULES, so the two move
+  //                            together or CI goes red.
+  //   scripts/cronjob-sync.mjs that file is a list of jobs someone is about to create. Re-adding a
+  //                            declaration there is the same keystroke as creating the job.
+  //
+  // If he ever wants it, all three go back together AND the cron job is created in the same sitting
+  // — never one without the others.
   {
-    const job = JOB_SCHEDULES.find((entry) => entry.slug === DIGEST_JOB_SLUG);
-    assert.ok(job, `${DIGEST_JOB_SLUG} is in JOB_SCHEDULES, or nothing notices when it stops`);
-    // 🔴 The expression must match cron-job.org's declaration exactly, or the heartbeat judges a job
-    // that is firing perfectly well to be late — and a false "job is down" is how a real one gets
-    // ignored later.
-    assert.equal(job.schedule, DIGEST_CRON);
-    assert.equal(DIGEST_CRON, "55 6 * * *", "06:55 Cairo");
+    assert.equal(
+      JOB_SCHEDULES.find((entry) => entry.slug === DIGEST_JOB_SLUG),
+      undefined,
+      "🔴 the digest is NOT scheduled (owner, 2026-09-27) — a declaration with no cron job behind it alarms for ever about a job that never runs",
+    );
+    assert.equal(DIGEST_CRON, "55 6 * * *", "the intended minute is still recorded, for the day he wants it");
 
     const sync = readFileSync(new URL("../scripts/cronjob-sync.mjs", import.meta.url), "utf8");
-    assert.ok(sync.includes('"phoenix-crm-daily-digest": {'), "and in the cron-job.org declaration");
-    assert.ok(sync.includes("schedule: { hours: [6], minutes: [55], mdays: [-1], months: [-1], wdays: [-1] }"), "at the same minute");
-    assert.ok(sync.includes('path: "/api/cron/phoenix-crm-daily-digest"'));
-
-    // :55 is shared with nothing else in the account, so a red execution names one job.
-    const minute55 = [...sync.matchAll(/minutes: \[([^\]]*)\]/g)].filter((match) => match[1].split(",").map((part) => part.trim()).includes("55"));
-    assert.equal(minute55.length, 1, "no other job fires on :55 — a shared minute makes a red execution ambiguous");
+    assert.equal(sync.includes('"phoenix-crm-daily-digest": {'), false, "no declaration to apply — adding one back is the same as creating the job");
+    assert.ok(sync.includes("donot create this digest"), "and his words are left in that file, so the absence reads as a decision rather than a gap");
 
     const docs = readFileSync(new URL("../docs/observability.md", import.meta.url), "utf8");
-    assert.ok(docs.includes("| `phoenix-crm-daily-digest` | `55 6 * * *` |"), "and in the observability table, which a required test pins");
+    assert.equal(docs.includes("| `phoenix-crm-daily-digest` |"), false, "nor a row in the table the register test pins");
   }
 
   // ── The route: authorised, watched, and safe to fire twice ────────────────────────────────────
