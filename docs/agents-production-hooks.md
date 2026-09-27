@@ -43,6 +43,13 @@ production-ops guidance. They stay in the index.
 - **A deploy applies NO migrations**, and **auto-deploy can silently SKIP a race.** A merge that
   never shipped looks identical to one that did until you read `/api/healthz`.
   `railway-deploy-applies-no-migrations` · `railway-auto-deploy-can-silently-skip-a-race`
+- 🔴 **THE DEPLOY IS GATED ON CI (Railway Wait for CI, 2026-09-27) AND THE GATE FAILS BY NOT
+  SHIPPING.** Red, cancelled or still-queued check suites on the pushed commit withhold the deploy,
+  and after **two hours Railway SKIPS it outright with nothing turning red** — a second, larger way
+  for "a merge that never shipped" to look like one that did. **Any** workflow on that commit counts,
+  so a failed `staging-migrate` withholds production; `railway variables --set` bypasses the gate
+  entirely. Never remove `push: main` from `ci.yml` to save minutes. Account:
+  `docs/deployment.md`, "The deploy gate".
 - **`railway variables --stdin` stores a BOM**, which then travels inside the value.
   `railway-stdin-bom-trap`
 - **`railway ssh` JOINS argv and lands as ROOT** - the command you think you are quoting is not the

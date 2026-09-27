@@ -13,7 +13,7 @@
 > | Fact | Now |
 > |---|---|
 > | Host | Railway — project `Phoenix-HR-Workforce`, env `production`, service `phoenix-people-workforce` (region `europe-west4-drams3a`, Amsterdam/EU West since 2026-08-09 — colocated with the Frankfurt Supabase project on purpose; a rebuild must stay in Europe) |
-> | Deploy trigger | push/merge to `main` (GitHub-connected auto-deploy) — **the merge is the deploy**: full traffic, within minutes, no staged rollout, no smoke test |
+> | Deploy trigger | push/merge to `main` (GitHub-connected auto-deploy), **gated on that commit's Actions check suites** (Railway Wait for CI) — the merge plus a green CI is the deploy: then full traffic, within minutes, no staged rollout, no smoke test. 🔴 **The gate fails by NOT shipping, silently** — red/cancelled/queued withholds the deploy and a 2-hour timeout abandons it with nothing red. Never read the merge; read `revision` below. See [deployment.md](deployment.md), "The deploy gate" |
 > | Confirm what's live | `curl https://phoenix-hr.satopharma.com/api/healthz` → read `revision` |
 > | Migrations | applied by hand, **before** the merge — the Railway build runs none |
 > | Scheduler | third-party **cron-job.org**, outside this repo (§7) — not GCP Cloud Scheduler (still fires, always 401s, ignore it) and not Railway's own `phoenix-cron` (disabled, never worked) |
