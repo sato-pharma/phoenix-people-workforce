@@ -37,6 +37,8 @@ export type CandidateMergeResult = {
   leftBehind: string[];
   movedApplications: number;
   movedFiles: number;
+  /** Booked interviews carried onto the survivor. Reported because a human already promised one. */
+  movedInterviews: number;
   summary: string;
 };
 
@@ -56,9 +58,28 @@ export type CandidateMergeResult = {
  *
  * `ats_candidate_source_context` is NOT here and must never be added — it is a VIEW over
  * `ats_cv_intake_events`, so it follows that table automatically.
+ *
+ * ── `ats_interview_bookings` — THE BOOKED INTERVIEW, ADDED 2026-09-27 ──────────────────────────
+ *
+ * It carries `candidate_id` with `ON DELETE CASCADE` and sat in none of the three lists, so a merge
+ * DELETED the duplicate's booked interview. Silently: a cascade is not a refusal, so nothing was
+ * reported and nothing was left behind to notice. The 2026-09-04 pass that rescued the five tables
+ * below missed this one.
+ *
+ * And it is the likeliest row of all to be on the duplicate rather than the survivor, because
+ * booking an interview is what CREATED these duplicates: `createInterviewBooking` makes a candidate
+ * for an outside person, so the record a recruiter merges away is precisely the one holding the
+ * interview. Measured on production 2026-09-27, all three byte-identical-CV duplicate pairs were one
+ * intake record with 0 bookings and one calendar record with exactly 1 — merging the calendar record
+ * away, which is the direction the owner chose on the Norhan Gamal Hamed pair, would have destroyed
+ * three booked interviews and told nobody.
+ *
+ * Safe as a plain reassign: the only UNIQUE index on the table is its primary key on `id`, so
+ * moving `candidate_id` cannot collide, and two interviews for one person is an ordinary state.
  */
 const childTables = [
   "ats_applications",
+  "ats_interview_bookings",
   "ats_files",
   "ats_candidate_cv_extractions",
   "ats_cv_intake_events",
@@ -554,10 +575,15 @@ export async function mergeCandidates(
   // Step 3.
   let movedApplications = 0;
   let movedFiles = 0;
+  let movedInterviews = 0;
   for (const table of childTables) {
     const moved = await reassign(table, duplicateId, survivorId);
     if (table === "ats_applications") movedApplications = moved;
     if (table === "ats_files") movedFiles = moved;
+    // Counted and reported, not merely moved. An interview is the one thing on a merged record that
+    // a human has already promised to another human, so the recruiter has to be told which record
+    // it now sits on — a silent move would leave them looking for it on the row that is gone.
+    if (table === "ats_interview_bookings") movedInterviews = moved;
   }
 
   // Step 4. An INSERT is the only verb these tables permit, so their rows are copied, not moved —
@@ -606,6 +632,7 @@ export async function mergeCandidates(
     movedApplications,
     movedDeduped,
     movedFiles,
+    movedInterviews,
   });
   await recordMergeEvent({
     actorHrId: access.hrId ?? null,
@@ -642,6 +669,7 @@ export async function mergeCandidates(
     leftBehind,
     movedApplications,
     movedFiles,
+    movedInterviews,
     summary,
   };
 }
@@ -684,9 +712,15 @@ function buildSummary(input: {
   movedApplications: number;
   movedDeduped: readonly { count: number; plural: string; singular: string }[];
   movedFiles: number;
+  movedInterviews: number;
 }): string {
   const parts: string[] = [`Merged the duplicate record for ${input.duplicateName}.`];
   const moved: string[] = [];
+  // Interviews lead the list: of everything a merge moves, the booked interview is the only row a
+  // person is already expecting to happen, so it is the one the recruiter must see first.
+  if (input.movedInterviews > 0) {
+    moved.push(countedNoun(input.movedInterviews, "booked interview", "booked interviews"));
+  }
   if (input.movedFiles > 0) moved.push(countedNoun(input.movedFiles, "file", "files"));
   if (input.movedApplications > 0) {
     moved.push(countedNoun(input.movedApplications, "application", "applications"));
