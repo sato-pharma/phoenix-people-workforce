@@ -198,7 +198,10 @@ reproducibly on two different runners, in the Build step, with an identical sign
     OS can't spawn worker thread: Resource temporarily unavailable (os error 11)
     fatal runtime error: failed to initiate panic, error 5, aborting
 
-Job ids `36346183612` and `36346466953`. A second job on that rollout printed every test as PASS and
+Runs `36346183612` and `36346466953`; the failing **jobs** inside them are `108695670880` and
+`108696483287`. 🔴 **Those two were labelled "job ids" here until 2026-09-28, and that mislabel costs
+real time: `gh api actions/jobs/36346183612/logs` returns EMPTY with no error**, which reads as "the log
+expired" rather than "wrong id". A second job on that rollout printed every test as PASS and
 then took `The runner has received a shutdown signal`, which is a replica cycling mid-job, not a test
 failing. Rolled back with `gh variable set CI_RUNNER --body ubuntu-latest` at 20:04:38Z; set it
 explicitly rather than deleting it, so the repo variables still read safe.
