@@ -2020,6 +2020,7 @@ import { runWorkflowDispatchGuardTests } from "./workflow-dispatch-guard.test.ts
 import { runNextBuildCpuCapTests } from "./next-build-cpu-cap.test.ts";
 import { runAttributionFreezesPublishedMonthsTests } from "./attribution-freezes-published-months.test.ts";
 import { runTestAccountTests } from "./test-accounts.test.ts";
+import { runNeedsYouBoardTests } from "./needs-you-board.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -7334,6 +7335,10 @@ await runTest(
 await runTest(
   "TEST ACCOUNTS (owner, 2026-09-27): a production login that lives inside a real employee's portal and never saves as her — every write outside Phoenix CRM is refused in resolveAccessContext before a route runs, and a server action too; inside Phoenix CRM every read and save is a test entry whatever flag the screen sends; a test manager decides test entries only, as the reviewer he mirrors, never the SFE step; his reach is the mirrored person's, never the company; only an employee-portal role can be mirrored; and the nightly behaviour verdict and the hourly allowances never count a test row",
   runTestAccountTests,
+);
+await runTest(
+  "the tier-1 needs-you board never under-reports: GitHub's own mergeStateStatus decides the bucket (never a count against a required-check list, the drift that has rotted four times), every state it does not model - UNKNOWN, empty, null, a value GitHub adds later - lands in COULD NOT READ rather than in his section, a blocked PR is explained from the LIVE protection contexts with an unreported required check named as waiting (the mobile case) and an unreadable protection list never promotes it, three dead reads render the COULD NOT READ heading rather than a quiet all-clear, a production revision behind main names redeploy and re-merge as forbidden (AGENTS.md 2.3), and nothing it prints carries an ellipsis or exceeds the terminal width",
+  runNeedsYouBoardTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
