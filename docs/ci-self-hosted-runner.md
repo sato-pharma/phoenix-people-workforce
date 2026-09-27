@@ -26,6 +26,35 @@ fixed cost that does not climb with the commit rate, against a metered one that 
 which merges `lint`+`typecheck`+`test` into one job and cuts ~14% off every run. They compose:
 fewer billable minutes per run, and those minutes billed at $0.
 
+## Why the volume is what it is
+
+The pipeline is already tuned close to its limit. **The spend is driven by how many times it runs,
+and that is self-inflicted by how agent sessions ship.** Measured 2026-09-27:
+
+| | |
+| --- | --- |
+| Pushes to `main`, 7 days | **338** (~48/day) — each a full CI run |
+| PRs merged, 7 days | **≥100** (query capped at 100) |
+| PRs touching **≤3 files** | **41%** |
+| PRs changing **≤50 lines** | **23%** |
+| Billing per shipped change | **~28 billable minutes** (≈14 on the PR + ≈14 on the merge to `main`) |
+
+A three-file change costs the same ~28 minutes as a three-hundred-file one, because billing is
+per-job-rounded-up, not per-line. `AGENTS.md` §0 records the shipping pattern — "~46 commits/day,
+6.7 files per commit" — as a neutral fact about how this repo is run; at $0.008/minute it is also
+the single largest line in the bill.
+
+**The rule this produced** (owner, 2026-09-27: *"you make many prs and many merges you can wider the
+contact of the pr to make less merges"*) is in `AGENTS.md` §6 under Git hygiene: batch related work
+into one branch and one PR, and push fixups in fewer, larger commits — concurrency cancels
+superseded PR runs, so two pushes a minute apart bill twice and verify once.
+
+Still split when the parts need **separate approval** (a migration, a locked file, a protected rule)
+or when one part is urgent and the rest is not. Never split merely because it reads tidier.
+
+This composes with everything below: fewer runs, each cheaper (#4527), each billed at $0 (the
+runner).
+
 ## 🔴 The safety rules
 
 1. **PRIVATE REPOSITORIES ONLY.** A self-hosted runner executes whatever a workflow tells it to.

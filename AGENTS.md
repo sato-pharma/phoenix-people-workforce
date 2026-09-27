@@ -430,6 +430,20 @@ temporary scripts, unrelated lockfile changes or unrelated user edits. Use conve
 never edit it directly. `delete_branch_on_merge` is on, so GitHub deletes the **remote** branch
 automatically; the local branch and worktree survive and still need approval to remove.
 
+🔴 **ONE WIDE PR, NOT FIVE NARROW ONES — EVERY MERGE COSTS ~28 BILLABLE CI MINUTES** (owner,
+2026-09-27: "you make many prs and many merges you can wider the contact of the pr to make less
+merges"). A merge pays a full CI run on the PR **and** another on `main`, ~14 billable minutes each,
+because GitHub rounds every job up to a whole minute. Measured that day: **338 pushes to `main` in 7
+days**, ≥100 PRs merged, **41% of them touching ≤3 files** and 23% changing ≤50 lines — ~28 minutes
+of billing to ship a 3-file change. That volume is what produced 37,610 billable minutes and
+$300.88 in September, not the pipeline, which is already tuned to its limit. **So batch related work
+into ONE branch and ONE PR**: finish the whole task — the fix, its test, its doc, the follow-ups you
+can already see — before opening it, and push fixups in fewer, larger commits (concurrency cancels
+superseded PR runs, so two pushes a minute apart bill twice and verify once). Splitting is still
+right when the parts need SEPARATE approval (a migration, a locked file, a protected rule) or when
+one part is urgent and the rest is not — never merely because the change feels tidier in pieces.
+Account: `docs/ci-self-hosted-runner.md`, "Why the volume is what it is".
+
 ## 7. Validation
 
 **CI is the gate. Do not run a local full validation.**
