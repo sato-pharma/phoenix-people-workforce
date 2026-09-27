@@ -426,6 +426,12 @@ const LATER_MIGRATIONS = [
   // column, no view, and it replaces nothing, so where it sits in this list cannot disturb the
   // save_visit ordering above it.
   "supabase/migrations/20260927003000_phoenix_crm_report_brick_coverage.sql",
+  // The photo fingerprints (D5). One brand-new table, one brand-new function, and one ALTER of the
+  // evidence table's unique key — it replaces no save_visit, so it appends safely at the end. The
+  // ALTER is the load-bearing part: judgeCapture conflicted on (subject_kind, subject_id) alone, so
+  // the photo sweep's verdict would have OVERWRITTEN the GPS verdict on the same visit rather than
+  // sitting beside it, with nothing anywhere going red.
+  "supabase/migrations/20260927120000_phoenix_crm_photo_fingerprints.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */

@@ -143,6 +143,18 @@ const JOBS = {
     // mornings it sends nothing at all, which is the feature rather than a fault.
     requestTimeout: 300,
   },
+  "phoenix-crm-integrity-sweep": {
+    title: "Phoenix — CRM integrity sweep",
+    path: "/api/cron/phoenix-crm-integrity-sweep",
+    // 03:35 Cairo, every night. On :35 so it shares a minute with nothing else in this account and a
+    // red execution names one job. It is the only Phoenix CRM job that downloads anything, so it runs
+    // while the field is asleep and three hours before the digest.
+    schedule: { hours: [3], minutes: [35], mdays: [-1], months: [-1], wdays: [-1] },
+    // Reads at most a few hundred photos it has never seen, then one comparison pass in memory. The
+    // platform still cuts at 30s regardless; a night cut short simply finds the rest tomorrow,
+    // oldest first, which is why the backlog drains from the old end rather than the new one.
+    requestTimeout: 300,
+  },
   "job-heartbeat-sweep": {
     title: "Phoenix — job heartbeat sweep",
     path: "/api/cron/job-heartbeat-sweep",

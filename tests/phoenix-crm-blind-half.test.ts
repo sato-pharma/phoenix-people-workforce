@@ -48,7 +48,13 @@ const REP_FACING_ROOTS: ReadonlyArray<{ dir: string; floor: number }> = [
  * the server, and it is where the evidence is SUPPOSED to live — and so is the one pure module that
  * exists to describe the checks themselves.
  */
-const REP_FACING_PURE_EXCLUDED = new Set(["location-integrity.ts"]);
+const REP_FACING_PURE_EXCLUDED = new Set([
+  "location-integrity.ts",
+  // Same reason, for the photo half (2026-09-27): a module whose whole job is to describe the checks
+  // cannot also be forbidden from naming them. Neither file is reachable from the rep's bundle —
+  // check 2 below is what proves that, by refusing the import anywhere a rep can see.
+  "duplicate-photos.ts",
+]);
 
 /**
  * Words that must never reach the rep's eyes, checked against strings and JSX TEXT.
@@ -99,10 +105,10 @@ const NEVER_SERVED_TO_A_REP = new Set([
 const SILENT_COLUMNS: ReadonlyArray<string> = ["dwell_seconds", "form_open_seconds"];
 
 /** Tables only the blind readers may touch. */
-const SILENT_TABLES: ReadonlyArray<string> = ["phoenix_crm_location_integrity"];
+const SILENT_TABLES: ReadonlyArray<string> = ["phoenix_crm_location_integrity", "phoenix_crm_photo_fingerprints"];
 
 /** Modules only the blind readers may import. */
-const SILENT_MODULES: ReadonlyArray<string> = ["location-integrity", "integrity-board"];
+const SILENT_MODULES: ReadonlyArray<string> = ["location-integrity", "integrity-board", "duplicate-photos", "photo-dupes"];
 
 /**
  * The only files allowed to read a silent table. Every one of them is also asserted to gate on the
@@ -111,10 +117,20 @@ const SILENT_MODULES: ReadonlyArray<string> = ["location-integrity", "integrity-
 const BLIND_READERS: ReadonlyArray<string> = [
   "src/lib/phoenix-crm/server/location-integrity.ts",
   "src/lib/phoenix-crm/server/integrity-board.ts",
+  "src/lib/phoenix-crm/server/photo-dupes.ts",
   "app/(admin)/admin/phoenix-crm/integrity/page.tsx",
 ];
 
-/** The judges that must never be able to cost a rep his visit. */
+/**
+ * The judges that must never be able to cost a rep his visit.
+ *
+ * 🔴 The photo sweep is deliberately NOT here, and that is not an omission. This list is for judges
+ * that run INSIDE a rep's own save, where throwing would turn a working visit into a failure for a
+ * rep standing in front of a doctor. The sweep runs at night, as the system, from a cron with a
+ * dead-man's switch — and there it must be allowed to throw, or a night that never ran would report
+ * a silent success. What keeps it away from a rep is check 4 below, which refuses the import from
+ * every route his app can call; the invariant is the same and it is proved in a different place.
+ */
 const SILENT_RUNNERS: ReadonlyArray<string> = ["src/lib/phoenix-crm/server/location-integrity.ts"];
 
 function read(path: string): string {
