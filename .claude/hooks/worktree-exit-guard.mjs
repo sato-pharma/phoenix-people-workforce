@@ -53,10 +53,21 @@ import { fileURLToPath } from "node:url";
 
 import { classifyBranchPr, listBranchPrs } from "../../scripts/branch-pr-state.mjs";
 
+// FAIL OPEN. The settings.json command lost its `2>/dev/null || true` wrapper on 2026-09-27 (the
+// shell operators had to go so the command parses under cmd.exe and PowerShell too), and this is a
+// reporter, never a gate — a throw in it must not turn a session's exit into an error.
+process.on("uncaughtException", () => process.exit(0));
+
 const flags = new Set(process.argv.slice(2).filter((arg) => arg.startsWith("--")));
 const positional = process.argv.slice(2).filter((arg) => !arg.startsWith("--"));
 const PRE_REMOVAL = flags.has("--pre-removal");
-const cwd = positional[0] || process.cwd();
+// CLAUDE_PROJECT_DIR is the session's OWN worktree (never the primary), which is exactly the folder
+// this hook reports on, so it outranks cwd. It used to arrive as `positional[0]` from a shell-expanded
+// `"$DIR"`; that argument is gone and nothing replaced it, leaving cwd as the only answer. When cwd
+// is not the session's worktree, `gitDir === commonDir` matches below and the hook exits silently as
+// "primary checkout — leave it alone", dropping the uncommitted-work and unpushed-commit warnings
+// that are its whole purpose. `--pre-removal` callers still pass the folder positionally.
+const cwd = positional[0] || process.env.CLAUDE_PROJECT_DIR || process.cwd();
 
 /** git at an explicit directory, never throwing — a missing ref or deleted cwd yields null. */
 function gitAt(at, args, { timeout = 10000 } = {}) {

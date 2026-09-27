@@ -13,8 +13,11 @@
 // informational breadcrumb in the warning message.
 //
 // ONE LOCK PER FOLDER. The lock lives in `<projectDir>/.claude/session.lock`,
-// and settings.json passes CLAUDE_PROJECT_DIR — the session's OWN worktree —
-// so a worktree session reads its worktree's lock, never the primary's.
+// resolved from CLAUDE_PROJECT_DIR — the session's OWN worktree — which this
+// script reads from its own environment, so a worktree session reads its
+// worktree's lock, never the primary's. It is NOT passed as an argument: the
+// settings.json command carries no shell operators so it parses identically
+// under bash, cmd.exe and PowerShell.
 //
 // A LIVE SESSION REFRESHES ITS LOCK ("beat", on PreToolUse). Until 2026-09-17
 // the lock was written once, at SessionStart, and staleness was its age — so
@@ -42,6 +45,22 @@ const BEAT_EVERY_MS = 5 * 60 * 1000; // a beat rewrites the lock at most this of
 // BEAT_EVERY_MS: a live session rewrites the lock at most every 5 minutes, so
 // a lock younger than three beats cannot belong to a dead holder.
 const LIVE_MS = 3 * BEAT_EVERY_MS; // 15 minutes
+
+// FAIL OPEN, ALWAYS — and it has to live here, not in the command.
+//
+// This runs as a PreToolUse hook on Bash|PowerShell|Edit|Write, i.e. on EVERY tool call. Until
+// 2026-09-27 the settings.json command ended `2>/dev/null || true`, which forced exit 0 no matter
+// what threw; that wrapper was removed so the command parses under cmd.exe and PowerShell as well
+// as bash, and nothing replaced it. An unwritable lock (EPERM/EBUSY — antivirus, a held husk, a
+// read-only checkout) would then exit non-zero on every tool call, and a runtime that treats a
+// non-zero hook as a denial refuses the whole session. A lock is a guard, never a gate: if it
+// cannot be written, the tool call still goes through.
+//
+// `uncaughtException` catches a throw in this module's own top-level evaluation (verified), so it
+// covers the unguarded `writeLock`/`emit` at the foot of the file without wrapping 90 lines in a
+// try block. bash-guard, trap-injector, primary-write-guard and autorun-guard all carry the same
+// guarantee as a trailing `} catch { process.exit(0) }`.
+process.on("uncaughtException", () => process.exit(0));
 
 function readHookInput() {
   try {
