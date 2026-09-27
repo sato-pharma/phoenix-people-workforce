@@ -40,6 +40,29 @@ export type JobScheduleDeclaration = {
    * {@link watchedJobSchedules}.
    */
   vendorSync?: true;
+  /**
+   * When this system started watching this job, as an ISO instant — set ONLY on a declaration that
+   * was RESTORED after being stood down, never on a new one.
+   *
+   * 🔴 WHY IT EXISTS, AND THE ALARM IT ENDS. The heartbeat row outlives the declaration: taking a
+   * slug out of this list stops it being judged but leaves its `job_heartbeats` row, whose
+   * `first_seen_at` still points at the ORIGINAL declaration. Put the slug back and the sweep judges
+   * the restored job against the fires in between — fires that had no cron job behind them and that
+   * it can never have reported — so `hadAChanceToRun` is true, there is no success, and it reads as
+   * STRANDED on the first sweep after the restore: an alarm to every Super Admin every 15 minutes
+   * about a job that is scheduled correctly and has simply not come round yet.
+   *
+   * Not hypothetical. `phoenix-crm-daily-digest` was built on 2026-09-26, stood down the next evening
+   * before a single message had been sent, and restored at 00:42 Cairo on 2026-09-28. Its row still
+   * read 2026-09-26, so the 06:55 of the 27th — a morning on which no cron job existed — counted
+   * against it, and the strand alarm ran from 08:55 that morning until the row was re-armed by hand.
+   *
+   * The floor is a FIXED instant, deliberately: it moves the baseline once, to a date a human wrote
+   * down, so it can never widen into a rolling window that hides a job which has genuinely never
+   * worked. A value that cannot be parsed, or one in the future, is reported as MISDECLARED rather
+   * than quietly ignored — either would otherwise blind the sweep for this job for good.
+   */
+  watchingSince?: string;
 };
 
 /**
@@ -88,7 +111,18 @@ export const JOB_SCHEDULES: readonly JobScheduleDeclaration[] = [
   // once one 06:55 passes, `hadAChanceToRun` is true, it has never reported a success, and it goes
   // STRANDED — an in-app, Telegram and push alarm to every Super Admin, every sweep, for ever,
   // about a job nobody created. Merging this without running the cron-job.org sync IS that alarm.
-  { slug: "phoenix-crm-daily-digest", kind: "cron", schedule: "55 6 * * *", graceSeconds: 2 * HOUR },
+  //
+  // `watchingSince` is the restore instant, and it is what stops the SAME alarm arriving for the
+  // stand-down window: the row survived it still reading 2026-09-26, so the 06:55 of the 27th — a
+  // morning with no cron job behind it — counted against this job until the baseline was re-armed.
+  // Read the field's own note before changing or removing this date.
+  {
+    slug: "phoenix-crm-daily-digest",
+    kind: "cron",
+    schedule: "55 6 * * *",
+    graceSeconds: 2 * HOUR,
+    watchingSince: "2026-09-27T21:42:07Z",
+  },
   { slug: "phoenix-crm-integrity-sweep", kind: "cron", schedule: "35 3 * * *", graceSeconds: 3 * HOUR },
   { slug: "phoenix-retention-risk-sweep", kind: "cron", schedule: "40 7 * * *", graceSeconds: 1 * HOUR },
   // Day 25 only. The pre-payroll half of the same feature: Part 1 pays at the start of the month,

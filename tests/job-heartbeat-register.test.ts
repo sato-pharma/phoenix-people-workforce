@@ -188,6 +188,63 @@ export async function runJobHeartbeatRegisterTests() {
   );
 
   // ---------------------------------------------------------------------------
+  // 5b. A RESTORED declaration is judged from the restore, not from the original one.
+  // ---------------------------------------------------------------------------
+  // The incident this pins (phoenix-crm-daily-digest, 2026-09-27/28): the heartbeat row outlives a
+  // stand-down, so its first_seen_at still pointed at the ORIGINAL declaration days earlier. On the
+  // restore the sweep judged the job against a fire that had no cron job behind it — never reported,
+  // so STRANDED, alarming every Super Admin every 15 minutes about a job scheduled perfectly well.
+  const restored: JobScheduleDeclaration = { ...DAILY_0636, watchingSince: "2026-08-30T08:50:00.000Z" };
+  const restoredQuiet = assessJobHeartbeats({
+    declarations: [restored],
+    now: noon,
+    // The row is ancient — the very row that stranded just above — but watching resumed at 08:50.
+    rows: [row({ firstSeenAt: "2026-08-27T00:00:00.000Z", lastOutcome: null, slug: restored.slug })],
+  });
+  assert.equal(
+    restoredQuiet.healthy,
+    true,
+    "a restored job must be judged from watchingSince, not from a first_seen_at that predates the stand-down",
+  );
+
+  // 🔴 AND THE ALARM MUST STILL BITE. The floor moves the baseline ONCE; the next fire after it
+  // counts, or a restored job could never strand again and its silence would stop meaning anything.
+  const restoredThenMissed = assessJobHeartbeats({
+    declarations: [restored],
+    now: new Date("2026-08-31T09:00:00.000Z"), // the day AFTER the restore, past 06:36 + 1h grace
+    rows: [row({ firstSeenAt: "2026-08-27T00:00:00.000Z", lastOutcome: null, slug: restored.slug })],
+  });
+  assert.deepEqual(
+    restoredThenMissed.stranded.map((problem) => problem.slug),
+    [restored.slug],
+    "once a fire passes AFTER watchingSince with no success, the restored job is stranded as normal",
+  );
+
+  // A floor nobody can read, or one in the future, would leave hadAChanceToRun false for ever — so it
+  // is reported rather than obeyed. Silently ignoring either would blind the sweep for that job.
+  for (const bad of ["not a date", "2099-01-01T00:00:00.000Z"]) {
+    const verdict = assessJobHeartbeats({
+      declarations: [{ ...DAILY_0636, watchingSince: bad }],
+      now: noon,
+      rows: [row({ firstSeenAt: "2026-08-27T00:00:00.000Z", lastOutcome: null, slug: DAILY_0636.slug })],
+    });
+    assert.deepEqual(
+      verdict.misdeclared.map((problem) => problem.slug),
+      [DAILY_0636.slug],
+      `watchingSince "${bad}" must be reported as misdeclared, never obeyed`,
+    );
+    assert.equal(verdict.stranded.length, 0, `a misdeclared job is named once, not twice (${bad})`);
+  }
+
+  // The live declaration carries the restore instant, and it must stay a real past date.
+  const digest = JOB_SCHEDULES.find((declaration) => declaration.slug === "phoenix-crm-daily-digest");
+  assert.ok(digest, "phoenix-crm-daily-digest must stay declared — the owner asked for it back on 2026-09-28");
+  assert.ok(
+    digest?.watchingSince && Number.isFinite(Date.parse(digest.watchingSince)) && Date.parse(digest.watchingSince) < Date.now(),
+    "the restored digest must carry a parseable, past watchingSince, or its stand-down window alarms again",
+  );
+
+  // ---------------------------------------------------------------------------
   // 6. "Ran and reported failure" — the signal the external switch only ever showed on a dashboard.
   // ---------------------------------------------------------------------------
   const failing = assessJobHeartbeats({
