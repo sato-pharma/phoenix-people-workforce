@@ -55,6 +55,62 @@ or when one part is urgent and the rest is not. Never split merely because it re
 This composes with everything below: fewer runs, each cheaper (#4527), each billed at $0 (the
 runner).
 
+## 🔴 Where the money actually is — and why the run COUNT lies
+
+**Counting runs gives the wrong answer, and a session acted on it.** On 2026-09-27 the owner was told
+manual re-runs were "26% of the bill, ~$78/month" because they are ~26% of the *runs*. They are
+**3.9% of the minutes**. The correction matters because the obvious cost lever — "stop re-running CI"
+— is worth about **$12/month**, not $78, and chasing it would have cost more effort than it saved.
+
+Measured 2026-09-27 over **two independent samples, 240 `ci.yml` runs**:
+
+| trigger | share of CI minutes | avg billable min/run | of the $300.88 month |
+| --- | --- | --- | --- |
+| `pull_request` | **63.4%** | 13.2 | ~$191 |
+| `push` to `main` | **32.7%** | 13.5 | ~$98 |
+| `workflow_dispatch` | **3.9%** | **1.2** | ~$12 |
+
+Dispatch runs are cheap because most die in seconds — a skipped `full_e2e` no-op, a bad input, an
+outage. The older of the two 120-run samples contains **zero** of them, so the steady-state share is
+lower still.
+
+**`ci.yml` is 84.3% of the whole Actions bill** — 350 of 415 billable minutes across the last 80 runs
+of *every* workflow. Security Scan is 7.2%, Synthetic Journeys 4.1%, everything else under 3% each,
+and those two already carry comments recording earlier cost trims. **Nothing outside `ci.yml` is
+worth touching.**
+
+Two more facts that close off the obvious ideas:
+
+- **2.18 CI runs per PR** (109 `pull_request` runs across 50 distinct branches). That is the push
+  discipline the ONE WIDE PR rule above is aimed at, and it is the biggest remaining lever.
+- **`main` gets exactly one run per commit** — 51 commits, 51 runs, zero duplicates. No waste there.
+
+🔴 **And `main`'s 32.7% is no longer waste at all — it is the price of the production deploy gate.**
+Railway's Wait for CI reads the check suites on the pushed commit, so removing `push: main` from
+`ci.yml` to save that ~$98 would silently un-gate production. See [deployment.md](deployment.md),
+"The deploy gate". **That leaves the runner as the only lever that cuts the bill without cutting
+safety** — which is the whole argument of this document.
+
+### Reproducing the measurement
+
+GitHub's own `/timing` endpoint returns `{"billable":{}}` while an account is payment-restricted, so
+these figures were computed from per-job wall clock with **ceil-per-job** applied, the way GitHub
+charges:
+
+```bash
+gh run list --workflow=ci.yml --limit 240 --json databaseId,event \
+  --jq '.[] | "\(.databaseId)|\(.event)"' |
+while IFS='|' read -r id ev; do
+  m=$(gh api "repos/Gawish-1997/phoenix-people-workforce/actions/runs/$id/jobs" \
+    --jq '[.jobs[] | select(.started_at != null and .completed_at != null)
+           | ((.completed_at|fromdateiso8601) - (.started_at|fromdateiso8601)) / 60 | ceil] | add // 0')
+  echo "${m:-0}|$ev"
+done | awk -F'|' '{s[$2]+=$1; n[$2]++; t+=$1} END {for (e in s) printf "%7d min %5.1f%% %3d runs %s\n", s[e], 100*s[e]/t, n[e], e}'
+```
+
+The sample window is short — 240 runs was ~27 hours on that day. **Trust the shares, not a monthly
+projection from them**, and anchor the money to the real invoice.
+
 ## 🔴 The safety rules
 
 1. **PRIVATE REPOSITORIES ONLY.** A self-hosted runner executes whatever a workflow tells it to.

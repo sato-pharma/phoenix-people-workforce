@@ -57,6 +57,22 @@ name: CI
 # exactly one job, always, and a docs-only PR still costs seconds rather than four minutes.
 on:
   pull_request:
+  # 🔴 THE `push` TRIGGER IS THE PRODUCTION DEPLOY GATE. DO NOT REMOVE IT TO SAVE MONEY.
+  #
+  # Railway's "Wait for CI" is enabled on the production service, and it waits on the Actions check
+  # SUITES attached to the pushed commit. Delete `main` from this list and there is no suite to wait
+  # for, so Railway stops waiting and every merge ships unverified again — silently, with no red
+  # check and nothing in this file to show what broke. Un-gating production would look like a
+  # tidy-up diff.
+  #
+  # It is a tempting deletion, which is why this comment exists. Measured 2026-09-27: `push` is
+  # 32.7% of ci.yml's billable minutes (~$98 of a $300.88 month) and the jobs it runs are a repeat
+  # of the ones the PR already ran, so it reads like pure waste — a session proposed removing it
+  # that day and the owner's answer was "no i want 2 stop bad deploy". It is not waste; it is the
+  # only verification the MERGED tree ever gets, because branch protection runs `strict: false`
+  # (PRs need not be up to date), and it is the only detector of a red `main` at all, because
+  # next.config.ts sets `typescript: { ignoreBuildErrors: true }` — a red main builds, deploys and
+  # serves perfectly. Account: docs/deployment.md, "The deploy gate".
   push:
     branches:
       - main
@@ -75,20 +91,32 @@ on:
 # PR branches: group by ref and cancel the superseded run — pushing a fixup should not pay for
 # CI on the commit it just replaced.
 #
-# Pushes to main: group by COMMIT and never cancel. KEEP IT THAT WAY — the reason has changed,
-# the setting has not. The original hazard was the Cloud Run deploy gate, which shipped a commit
-# only if THAT exact SHA's CI concluded `success`, so a merge landing mid-run cancelled it and
-# left that commit permanently un-deployable. That workflow was deleted 2026-09-08 and Railway
-# deploys on push without consulting CI, so nothing is un-deployable now — but grouping by ref
-# would still cancel a main run and leave `main`'s own head with NO CI verdict, which is how a
-# red `main` ships unnoticed (§2.1: a red main still builds, ships and serves perfectly).
+# Pushes to main: group by COMMIT and never cancel. KEEP IT THAT WAY — and as of 2026-09-27 the
+# ORIGINAL reason is back, on top of the one that replaced it.
+#
+# The original hazard was the Cloud Run deploy gate, which shipped a commit only if THAT exact
+# SHA's CI concluded `success`, so a merge landing mid-run cancelled it and left that commit
+# permanently un-deployable. That workflow was deleted 2026-09-08, and for three weeks Railway
+# deployed on push without consulting CI, so nothing was un-deployable — the setting was kept
+# only because grouping by ref would cancel a main run and leave `main`'s own head with NO CI
+# verdict, which is how a red `main` ships unnoticed (§2.1: a red main still builds, ships and
+# serves perfectly).
+#
+# 🔴 RAILWAY "WAIT FOR CI" RESTORES THE CLOUD RUN HAZARD EXACTLY. Railway now holds the deployment
+# until the commit's check suites finish, and it treats a CANCELLED run as blocking unless another
+# workflow on the same commit succeeded. So a cancelled main run can once again leave a merged
+# commit undeployed — and this time Railway's own two-hour timeout then SKIPS the deployment
+# outright, with no red check anywhere. Both reasons now point the same way: never cancel a main
+# run, and never group main by ref.
 #
 # The cancellation itself is real and measured. Observed 2026-07-30: #1484, #1486 and #1487
 # merged ~1 minute apart and all three ended `cancelled`; only the last commit of the train ever
 # went green. Under Cloud Run that meant a commit the 2-hourly deploy cron would never ship,
-# announced only in a `::notice::` nobody reads. Under Railway the consequence INVERTED and got
-# quieter rather than louder: the commit ships regardless, immediately, and the cancelled run
-# means nobody ever finds out whether it was sound. Same setting, same reason to keep it.
+# announced only in a `::notice::` nobody reads. Under ungated Railway the consequence INVERTED and
+# got quieter rather than louder: the commit shipped regardless, immediately, and the cancelled run
+# meant nobody ever found out whether it was sound. With Wait for CI it has inverted BACK — a
+# cancelled run now withholds the deploy — so the train of three would today leave the first two
+# commits unshipped rather than unverified. Same setting, third distinct reason to keep it.
 #
 # Grouping by SHA rather than simply setting cancel-in-progress:false keeps the runs PARALLEL.
 # A shared main group with cancellation disabled would serialize the train instead (~4 min per
