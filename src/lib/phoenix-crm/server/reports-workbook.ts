@@ -35,6 +35,7 @@ import ExcelJS from "exceljs";
 import { buildHouseCoverSheet, writeHouseTable, type CellValue, type TableColumn } from "@/lib/export/house-table-workbook";
 import { houseGeneratedRow } from "@/lib/export/house-xlsx-identity";
 
+import type { AdoptionView } from "@/lib/phoenix-crm/server/adoption";
 import type { BrickCoverageView } from "@/lib/phoenix-crm/server/brick-report";
 import type { ExceptionsView } from "@/lib/phoenix-crm/server/exceptions";
 import type {
@@ -62,6 +63,7 @@ export type ReportsPackInput = {
   managers: ManagerReportView | null;
   locations: VisitLocationReportView | null;
   exceptions: ExceptionsView | null;
+  adoption: AdoptionView | null;
   bricks: BrickCoverageView | null;
 };
 
@@ -360,6 +362,37 @@ function writeBricks(workbook: ExcelJS.Workbook, view: BrickCoverageView): void 
   });
 }
 
+function writeAdoption(workbook: ExcelJS.Workbook, view: AdoptionView): void {
+  const sheet = workbook.addWorksheet("Who has started");
+  sheet.views = [{ showGridLines: false, state: "frozen", ySplit: 2 }];
+  writeHouseTable(sheet, 1, {
+    columns: [
+      { ...NAME, label: "Territory" },
+      column("Rep", { width: 22 }),
+      column("Line", { width: 16 }),
+      column("Where it has got to", { width: 30 }),
+      counted("Days open"),
+      column("First visit", { width: 14 }),
+      column("Overdue", { width: 10 }),
+    ],
+    note:
+      "Nothing is left out: a territory doing fine is the good news, and one whose line has not opened is the other half of "
+      + "the same question. A territory counts as never opened until something is entered — a validation, a drop, or a visit — "
+      + `and a line gets ${view.graceDays} days before that is called overdue.`,
+    rows: view.rows.map((row) => [
+      row.territoryName,
+      row.repName ?? "No rep",
+      row.lineName ?? "—",
+      row.label,
+      // 🔴 An em dash, never 0: an undated line is "we do not know", and a zero would read as "today".
+      row.daysOpen === null ? "—" : row.daysOpen,
+      row.firstVisitOn ?? "None yet",
+      row.overdue ? "Yes" : "",
+    ]),
+    title: `Who has started · as at ${view.cairoToday}`,
+  });
+}
+
 // ── The pack ────────────────────────────────────────────────────────────────────────────────────
 
 /** The sheets this pack would hold, in order — used by the cover and by the test. */
@@ -372,6 +405,7 @@ export function packSections(input: ReportsPackInput): string[] {
     input.bricks ? "Coverage against sales" : null,
     input.managers ? "Double and chain visits" : null,
     input.locations ? "Where the visit was saved" : null,
+    input.adoption ? "Who has started" : null,
   ].filter((name): name is string => name !== null);
 }
 
@@ -404,6 +438,7 @@ export async function buildPhoenixCrmReportsWorkbook(input: ReportsPackInput): P
   if (input.bricks) writeBricks(workbook, input.bricks);
   if (input.managers) writeManagers(workbook, input.managers);
   if (input.locations) writeLocations(workbook, input.locations);
+  if (input.adoption) writeAdoption(workbook, input.adoption);
 
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }

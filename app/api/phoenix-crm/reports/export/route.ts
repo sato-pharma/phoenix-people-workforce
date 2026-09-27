@@ -6,6 +6,7 @@ import { resolveAccessContext } from "@/lib/auth/server";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { readsTeamReports, resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { loadBrickCoverageReport } from "@/lib/phoenix-crm/server/brick-report";
+import { loadAdoptionReport } from "@/lib/phoenix-crm/server/adoption";
 import { loadExceptionsBoard } from "@/lib/phoenix-crm/server/exceptions";
 import { phoenixCrmFailure, searchOf } from "@/lib/phoenix-crm/server/http";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
@@ -65,7 +66,7 @@ export async function GET(request: Request) {
     // Loaded together; each service applies the viewer's scope again. `managers` is asked for even
     // when the viewer has none — the service answers with an empty list, and a manager sheet with no
     // rows is a real finding, unlike a section the viewer may not read at all.
-    const [names, scope, visits, plan, coverage, managers, locations, exceptions, bricks] = await Promise.all([
+    const [names, scope, visits, plan, coverage, managers, locations, exceptions, bricks, adoption] = await Promise.all([
       // The cover says who it was prepared for, by NAME — the owner's standing rule, and a saved
       // workbook is exactly the artefact where an HR code would outlive anyone who could decode it.
       loadPeopleNames([viewer.hrId]),
@@ -77,12 +78,14 @@ export async function GET(request: Request) {
       managerSections ? loadVisitLocationReport(viewer, filters) : Promise.resolve(null),
       managerSections ? loadExceptionsBoard(viewer, { test: filters.includeTest }) : Promise.resolve(null),
       managerSections ? loadBrickCoverageReport(viewer, filters) : Promise.resolve(null),
+      managerSections ? loadAdoptionReport(viewer, { test: filters.includeTest }) : Promise.resolve(null),
     ]);
 
     const chosenLine = scope.lines.find((line) => line.lineCode === filters.lineCode)?.lineName ?? null;
     const chosenTerritory = scope.territories.find((territory) => territory.seatId === filters.seatId)?.name ?? null;
 
     const buffer = await buildPhoenixCrmReportsWorkbook({
+      adoption,
       bricks,
       coverage,
       exceptions,

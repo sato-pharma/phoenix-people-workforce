@@ -68,6 +68,7 @@ export type {
   VisitLocationRow,
   VisitsReportView,
 } from "@/lib/phoenix-crm/server/reports";
+export type { AdoptionView } from "@/lib/phoenix-crm/server/adoption";
 export type { ExceptionsView } from "@/lib/phoenix-crm/server/exceptions";
 export type { BrickCoverageView } from "@/lib/phoenix-crm/server/brick-report";
 export type { PhotoSlot } from "@/lib/phoenix-crm/server/photos";

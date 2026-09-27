@@ -50,6 +50,7 @@ import {
   type PillTone,
 } from "@/components/phoenix-crm/ui";
 import { fieldWeekStart, isIsoDay, monthStartOf, weekdayOfIsoDay } from "@/lib/phoenix-crm/calendar";
+import type { AdoptionStage } from "@/lib/phoenix-crm/adoption-rules";
 import type { BrickCoverageStatus } from "@/lib/phoenix-crm/brick-report";
 import {
   daysInPeriod,
@@ -61,6 +62,7 @@ import {
   type VisitCounts,
 } from "@/lib/phoenix-crm/report-rules";
 import type {
+  AdoptionView,
   BrickCoverageView,
   CoverageReportView,
   ReportComparison,
@@ -81,7 +83,7 @@ import type {
 import { downloadXlsxFrom } from "@/lib/export/download-xlsx-client";
 import { cn } from "@/lib/utils";
 
-type ReportSection = "exceptions" | "visits" | "plan" | "coverage" | "bricks" | "managers" | "locations";
+type ReportSection = "exceptions" | "visits" | "plan" | "coverage" | "bricks" | "managers" | "locations" | "adoption";
 type PeriodPreset = "today" | "yesterday" | "this_week" | "last_week" | "this_month" | "last_month";
 type Period = { from: string; to: string };
 type Presence = "all" | "with" | "without";
@@ -1444,6 +1446,121 @@ function BricksSection({ idPrefix, resource }: { idPrefix: string; resource: Crm
   );
 }
 
+const ADOPTION_TONE: Record<AdoptionStage, { tone: PillTone; accent: string }> = {
+  not_open: { tone: "neutral", accent: "border-l-slate-300" },
+  never_touched: { tone: "bad", accent: "border-l-rose-500" },
+  started: { tone: "warn", accent: "border-l-amber-500" },
+  ready: { tone: "warn", accent: "border-l-amber-500" },
+  working: { tone: "good", accent: "border-l-emerald-500" },
+};
+
+/**
+ * How far the rollout has got (F3).
+ *
+ * 🔴 **Unlike the exceptions board, nothing is dropped here.** That one answers "what needs you
+ * today" and a clean seat is noise; this answers "how far has the rollout got", and a question about
+ * coverage cannot be answered by a list that leaves out the territories doing fine. A `working` row
+ * is the good news and belongs on the page.
+ *
+ * It also lists territories whose line has NOT opened, which `scopeTerritories` alone would drop —
+ * a rollout that looks complete because the unopened half is invisible is the failure this avoids.
+ */
+function AdoptionSection({ idPrefix, resource }: { idPrefix: string; resource: CrmResource<AdoptionView> }) {
+  const report = resource.data;
+  if (!report) return <SectionWaiting error={resource.error} label="Reading how far the rollout has got" onRetry={resource.reload} />;
+  const { summary } = report;
+
+  return (
+    <>
+      <RefreshFailed error={resource.error} />
+      <CrmBlock className="border-t border-slate-100" title="How far the rollout has got">
+        <CrmStatGrid>
+          <CrmStat label="Territories" note="Everything in your scope" value={countText(summary.territories)} />
+          <CrmStat label="On an open line" note="The only ones that can adopt" value={countText(summary.open)} />
+          <CrmStat
+            label="Never opened it"
+            note={`Past ${countText(report.graceDays)} days: ${countText(summary.overdue)}`}
+            tone={summary.overdue > 0 ? "warn" : summary.neverTouched > 0 ? "neutral" : "good"}
+            value={countText(summary.neverTouched)}
+          />
+          <CrmStat label="Working" note="Visits are being entered" tone="good" value={countText(summary.working)} />
+        </CrmStatGrid>
+        {summary.byStage.length > 0 ? (
+          <div className="mt-3 flex min-w-0 flex-wrap gap-1.5">
+            {summary.byStage.map((entry) => (
+              <CrmPill key={entry.stage} tone={ADOPTION_TONE[entry.stage].tone}>{`${entry.label} · ${countText(entry.count)}`}</CrmPill>
+            ))}
+          </div>
+        ) : null}
+        <p className="mt-3 break-words text-xs font-semibold leading-5 text-slate-500">
+          {`A territory counts as never opened until something is entered — a validation, a drop, or a visit. A line gets ${countText(report.graceDays)} days before that is called overdue, because a rollout lands on a line and not on a person.`}
+        </p>
+      </CrmBlock>
+      {report.rows.length === 0 ? (
+        <div className="border-t border-slate-100">
+          <CrmEmpty message="A territory shows here once it exists in the seat model." title="No territories in your scope" />
+        </div>
+      ) : (
+        <ReportList
+          columns={["26%", "20%", "24%", "16%", "14%"]}
+          explain="Worst first, then the longest-open. A territory on a line that has not opened is listed too — it is the other half of the same question, and leaving it out would make a rollout look finished."
+          hasData={(row) => row.stage !== "not_open"}
+          headers={["Territory", "Rep", "Where it has got to", "Days open", "First visit"]}
+          idPrefix={`${idPrefix}-adoption`}
+          items={report.rows}
+          keyOf={(row) => row.seatId}
+          renderCard={(row) => (
+            <CrmCard
+              accent={ADOPTION_TONE[row.stage].accent}
+              meta={[row.lineName, row.repName ?? "No rep in this territory"].filter(Boolean).join(" · ")}
+              status={<CrmPill tone={ADOPTION_TONE[row.stage].tone}>{row.label}</CrmPill>}
+              title={row.territoryName}
+            >
+              <div className="grid min-w-0 gap-1 text-xs font-semibold leading-5 text-slate-600">
+                <p className="break-words">{row.why}</p>
+                {row.detail ? <p className="break-words font-black text-slate-800">{row.detail}</p> : null}
+                {row.overdue ? <p className="break-words font-black text-rose-700">Past the grace</p> : null}
+              </div>
+            </CrmCard>
+          )}
+          renderCells={(row) => (
+            <>
+              <td className={crmTdClassName}>
+                <p className="break-words font-black text-slate-950">{row.territoryName}</p>
+                {row.lineName ? <p className="mt-0.5 break-words text-xs text-slate-500">{row.lineName}</p> : null}
+              </td>
+              <td className={crmTdClassName}>
+                <p className="break-words">{row.repName ?? "No rep"}</p>
+              </td>
+              <td className={crmTdClassName}>
+                <p className={cn("break-words font-black", row.overdue ? "text-rose-700" : "text-slate-800")}>{row.label}</p>
+                {row.detail ? <p className="mt-0.5 break-words text-xs text-slate-500">{row.detail}</p> : null}
+              </td>
+              <td className={crmTdClassName}>
+                {/* 🔴 Null is "we do not know when this opened", never 0 — the two must not read alike. */}
+                <p className="break-words">{row.daysOpen === null ? "—" : plural(row.daysOpen, "day", "days")}</p>
+              </td>
+              <td className={crmTdClassName}>
+                <p className="break-words">{row.firstVisitOn ? dayLabel(row.firstVisitOn) : "None yet"}</p>
+              </td>
+            </>
+          )}
+          searchWords={(row) => [row.territoryName, row.repName, row.lineName, row.label]}
+          words={{
+            all: "All",
+            noneMatch: "No territory matches",
+            searchLabel: "Find a territory",
+            searchPlaceholder: "Territory, rep or line",
+            title: "Worst first",
+            with: "On an open line",
+            without: "Line not open",
+          }}
+        />
+      )}
+    </>
+  );
+}
+
 // ── The tab ─────────────────────────────────────────────────────────────────────────────────────
 
 const SECTION_TITLES: Record<ReportSection, string> = {
@@ -1452,12 +1569,16 @@ const SECTION_TITLES: Record<ReportSection, string> = {
   plan: "Plan against actual",
   coverage: "Coverage and frequency",
   bricks: "Coverage against sales",
+  adoption: "Who has started",
   managers: "Double and chain visits",
   locations: "Where the visit was saved",
 };
 
 /** The three sections a comparison means anything for. The others are lists, not measures. */
 const COMPARABLE_SECTIONS: ReadonlyArray<ReportSection> = ["visits", "plan", "coverage"];
+
+/** Sections that read neither a period nor a month — they are about right now. */
+const TIMELESS_SECTIONS: ReadonlyArray<ReportSection> = ["exceptions", "adoption"];
 
 const COMPARE_OPTIONS: ReadonlyArray<CrmChoiceOption<ComparisonMode>> = [
   { value: "off", label: "Nothing", note: "The figures alone" },
@@ -1495,13 +1616,13 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
   const chosen = seatId ? lineTerritories.filter((territory) => territory.seatId === seatId) : lineTerritories;
   const activeSection: ReportSection =
     (section === "managers" && view && !view.hasManagers) ||
-    ((section === "locations" || section === "exceptions" || section === "bricks") && view && !view.canSeeLocations)
+    ((section === "locations" || section === "exceptions" || section === "bricks" || section === "adoption") && view && !view.canSeeLocations)
       ? "visits"
       : section;
   const withTest = Boolean(view?.canIncludeTest) && includeTest;
   // Neither of these two reads a period: coverage asks for a month, and the exceptions board is about
   // today and resolves its own days on the server. A period error must not blank either of them.
-  const readsPeriod = activeSection !== "coverage" && activeSection !== "exceptions";
+  const readsPeriod = activeSection !== "coverage" && !TIMELESS_SECTIONS.includes(activeSection);
   const problem = readsPeriod ? periodProblem(period, today, view?.maxDays ?? REPORT_MAX_DAYS) : null;
 
   function sectionUrl(name: ReportSection): string | null {
@@ -1512,7 +1633,9 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
     const filters = { section: name, lineCode: lineCode || null, seatId: seatId || null, includeTest: withTest, compare: comparing };
     // The board is about the viewer's whole scope today; a line or territory filter would turn "what
     // needs you" into "what needs you here", which is the Team tab's question and not this one.
-    if (name === "exceptions") return crmUrl(REPORTS_PATH, { section: name, includeTest: withTest });
+    // Neither is filtered by line or territory: both are about the viewer's WHOLE reach, and a
+    // filter would turn "how far has the rollout got" into "how far has it got here".
+    if (name === "exceptions" || name === "adoption") return crmUrl(REPORTS_PATH, { section: name, includeTest: withTest });
     if (name === "coverage") return crmUrl(REPORTS_PATH, { ...filters, month });
     return problem ? null : crmUrl(REPORTS_PATH, { ...filters, from: period.from, to: period.to });
   }
@@ -1533,7 +1656,8 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
   const locations = useCrmGet<VisitLocationReportView>(sectionUrl("locations"), "report");
   const exceptions = useCrmGet<ExceptionsView>(sectionUrl("exceptions"), "report");
   const bricks = useCrmGet<BrickCoverageView>(sectionUrl("bricks"), "report");
-  const active = { bricks, coverage, exceptions, locations, managers, plan, visits }[activeSection];
+  const adoption = useCrmGet<AdoptionView>(sectionUrl("adoption"), "report");
+  const active = { adoption, bricks, coverage, exceptions, locations, managers, plan, visits }[activeSection];
 
   if (!view) {
     return (
@@ -1613,6 +1737,8 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
     { value: "coverage", label: SECTION_TITLES.coverage, note: "The list, month by month" },
     // Same gate again: a board comparing bricks ACROSS a team is the manager's (owner, 2026-09-26).
     ...(view.canSeeLocations ? [{ value: "bricks" as const, label: SECTION_TITLES.bricks, note: "Per brick, with the caveat" }] : []),
+    // A board naming who has never opened the module must not reach the field (F3) — same gate.
+    ...(view.canSeeLocations ? [{ value: "adoption" as const, label: SECTION_TITLES.adoption, note: "How far the rollout got" }] : []),
     ...(view.hasManagers ? [{ value: "managers" as const, label: SECTION_TITLES.managers, note: "Per manager" }] : []),
     // Managers, SFE and the Super Admin only — and the server refuses it too, so the chip is not the
     // gate (system-navigation hiding a link is UX; the boundary is server side).
@@ -1793,6 +1919,8 @@ export function ReportsTab({ cairoToday, test }: { cairoToday: string; test: boo
         <ExceptionsSection idPrefix={idPrefix} resource={exceptions} />
       ) : activeSection === "bricks" ? (
         <BricksSection idPrefix={idPrefix} resource={bricks} />
+      ) : activeSection === "adoption" ? (
+        <AdoptionSection idPrefix={idPrefix} resource={adoption} />
       ) : activeSection === "locations" ? (
         <LocationsSection idPrefix={idPrefix} resource={locations} />
       ) : (

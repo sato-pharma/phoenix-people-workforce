@@ -1560,6 +1560,7 @@ import { runPhoenixCrmSamplesTests } from "./phoenix-crm-samples.test.ts";
 import { runPhoenixCrmVisitDwellTests } from "./phoenix-crm-visit-dwell.test.ts";
 import { runPhoenixCrmExceptionsTests } from "./phoenix-crm-exceptions.test.ts";
 import { runPhoenixCrmDailyDigestTests } from "./phoenix-crm-daily-digest.test.ts";
+import { runPhoenixCrmAdoptionTests } from "./phoenix-crm-adoption.test.ts";
 import { runPhoenixCrmReportComparisonTests } from "./phoenix-crm-report-comparison.test.ts";
 import { runPhoenixCrmReportsExportTests } from "./phoenix-crm-reports-export.test.ts";
 import { runPhoenixCrmBrickCoverageReportTests } from "./phoenix-crm-brick-coverage-report.test.ts";
@@ -5239,6 +5240,11 @@ await runTest(
 await runTest(
   "Phoenix CRM reads a figure against something, without turning it into a scoreboard (C3 — owner's plan, Phase 4: \"the period before\" is the same LENGTH of days and never the previous calendar MONTH, because a manager reads the 1st to today and eleven days against a whole August shows every territory collapsing; a rise from a baseline of zero has NO percentage, since +100% off nothing is invented and an invented number costs the real ones their credibility; peer mode is an AVERAGE and never a ranking — every territory is read against the SAME district figure, no name, no rank, no position out of N, and the screen may not re-sort by it; the peer set is the viewer's WHOLE scope, because narrowing it to the filter compares a territory with itself and answers +0% for ever; a territory with nothing still divides the average; the headline figure is a COUNT in all three sections, since the difference between two percentages is percentage POINTS; it is manager-only and refused in the SERVICE, not by hiding the control; and it is a second LINE inside the cell, never a second column, which on a phone would be the horizontal scroll the fits-the-screen rule bans)",
   runPhoenixCrmReportComparisonTests,
+);
+
+await runTest(
+  "Phoenix CRM says how far the ROLLOUT has got, not how the work is going (F3 — owner's plan, Phase 4: a closed line is NOBODY'S FAULT, so it can never be overdue, carries no days-open and sorts LAST rather than first, where it would bury the territories that were given the module and ignored it; an undated line has NO age and prints an em dash on screen AND in the saved workbook, because 0 reads as \"opened today\" and a saved file outlives the screen that explained it; \"touched\" is wider than \"visited\" — a validation, a drop or even a drop REQUEST is a start, so a rep three customers in is never listed beside a territory that has done literally nothing; finishing the carried-over list is a MILESTONE and not the goal, so a territory that went ready and then entered no visit gets its own rung; NOTHING is dropped, unlike the exceptions board, because a question about coverage of a rollout cannot be answered by a list that omits the territories doing fine; the viewer's WAITING territories are read too, since `scopeTerritories` is already filtered to open lines and using it alone would make a rollout look finished; and the whole company is four reads, gated by the same predicate as the exceptions board — a board naming who has never opened the module must not reach the field)",
+  runPhoenixCrmAdoptionTests,
 );
 
 await runTest(
