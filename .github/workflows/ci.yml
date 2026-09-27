@@ -412,9 +412,39 @@ jobs:
   # Split out of the old lint-typecheck job so it runs beside `typecheck` instead of
   # in front of it. eslint keeps its own incremental --cache; the restore-keys fallback
   # matters more than the exact key here, since a partial cache still skips most files.
-  lint:
+  # ONE JOB FOR LINT + TYPECHECK + TESTS (2026-09-27). It was three jobs; they shared a
+  # byte-identical preamble (checkout, docs-only detect, corepack, setup-node, pnpm install)
+  # and diverged only in their final step.
+  #
+  # WHY, AND WHY IT IS A COST CHANGE RATHER THAN A SPEED ONE. Everything above this line was
+  # tuned for WALL CLOCK, and splitting work across parallel runners is the right move for
+  # latency. It is the wrong move for BILLING: GitHub bills each job separately and rounds it
+  # UP to a whole minute, so five jobs pay five roundings and five preambles.
+  #
+  # MEASURED on run 36277556391 (a normal code PR):
+  #   validate 273s -> 5 min | typecheck 196s -> 4 | test 139s -> 3 | lint 50s -> 1 | mobile 8s -> 1
+  #   = 14 billable minutes for 4m33s of wall clock.
+  # The preamble is ~29s of that per job (set up job 1s, checkout 4s, corepack 1s, node 11s,
+  # install 12s). Dropping two redundant copies and two roundings puts lint+typecheck+test at
+  # 29 + 21 + 167 + 110 = ~327s -> 6 billable minutes, against 8 for the same work before.
+  # ~2 minutes per run, over ~929 PR+push runs/week, is ~12,000 minutes a month.
+  #
+  # THE TRADE IS EXPLICIT: these three now run in SERIES, so the run's wall clock moves from
+  # validate's ~273s to this job's ~327s (+~55s). That was accepted deliberately to cut the
+  # bill; if latency ever matters more than cost again, splitting them back out is the lever.
+  #
+  # `mobile` IS DELIBERATELY NOT FOLDED IN. It is npm with its own package-lock.json and is
+  # excluded from the root tsconfig.json and eslint.config.mjs, so it shares no preamble with
+  # this job — merging it would buy one rounding at disproportionate risk.
+  #
+  # 🔴 THE REQUIRED CHECK NAMES CHANGED. `lint`, `typecheck` and `test` no longer exist as
+  # check names; this one job reports as `checks`. Branch protection lists the names, and a
+  # required check that never reports blocks every PR forever. So `checks` must be ADDED and
+  # the three old names REMOVED on the repository in the same window this merges. Only the
+  # owner can do that.
+  checks:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
 
     steps:
       - name: Check out repository
@@ -501,72 +531,9 @@ jobs:
         if: steps.detect.outputs.docs_only != 'true'
         run: pnpm run lint
 
-  # Split out of the old lint-typecheck job — see the note on `lint`.
-  typecheck:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          # depth 2 is enough: for a pull_request, GitHub checks out the MERGE commit, whose
-          # first parent is the base branch. `HEAD^1..HEAD` is therefore exactly this PR's
-          # changed files, with no need to fetch the base branch separately.
-          fetch-depth: 2
-
-      # Answered inline, per job — see the note on this step in `validate`.
-      - name: Detect whether this PR is documentation only
-        id: detect
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-        run: |
-          set -u
-          answer() { echo "docs_only=$1" >> "$GITHUB_OUTPUT"; echo "docs_only=$1 ($2)"; exit 0; }
-
-          [ "$EVENT_NAME" = "pull_request" ] || answer false "not a pull_request — always run everything"
-          git rev-parse --verify HEAD^2 >/dev/null 2>&1 || answer false "HEAD is not a merge commit; cannot identify the PR's files"
-
-          files="$(git diff --name-only HEAD^1 HEAD)" || answer false "git diff failed"
-          [ -n "$files" ] || answer false "no files resolved; refusing to assume docs-only"
-
-          echo "Changed files:"; echo "$files" | sed 's/^/  /'
-          # NOT every .md / docs/ path is inert. CLAUDE.md, AGENTS.md and docs/agents-*.md are the
-          # auto-loaded instruction files, and tests in the `test` job exist ONLY to police them:
-          # the autoload footprint budget (CLAUDE.md + AGENTS.md), the memory-index reachability
-          # scan (a memory slug orphaned by an AGENTS.md edit), and the long-hook docs-pointer
-          # check. If those files took the docs-only fast path, the very checks that guard them
-          # would skip, and a PR that grew AGENTS.md past its byte budget or orphaned a memory would
-          # go green on five of six required checks and merge — surfacing only afterwards as a red
-          # `main`, which still ships to production (§2.1). So they are NOT documentation for this
-          # purpose: matched FIRST, they force the full suite. (Still shell, no third-party action —
-          # see the note above the step.)
-          if echo "$files" | grep -qE '(^AGENTS\.md$|^CLAUDE\.md$|^docs/agents-.*\.md$)'; then
-            answer false "auto-loaded instruction files changed; the tests that police them are in the full suite"
-          fi
-          # One non-doc path is enough to need the full suite. Mirrors the old paths-ignore list.
-          if echo "$files" | grep -qvE '(\.md$|^docs/|^\.github/ISSUE_TEMPLATE/|^\.github/PULL_REQUEST_TEMPLATE/)'; then
-            answer false "code or config changed"
-          fi
-          answer true "documentation only"
-
-
-      # corepack must be enabled BEFORE setup-node runs — see the note in `validate`.
-      - name: Enable Corepack (pnpm)
-        if: steps.detect.outputs.docs_only != 'true'
-        run: corepack enable
-
-      - name: Set up Node.js
-        if: steps.detect.outputs.docs_only != 'true'
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
-        with:
-          node-version: ${{ env.CI_NODE_VERSION }}
-          cache: pnpm
-
-      - name: Install dependencies
-        if: steps.detect.outputs.docs_only != 'true'
-        run: pnpm install --frozen-lockfile
-
+      # TYPECHECK — folded in from the former standalone `typecheck` job (2026-09-27). It shared a
+      # byte-identical preamble with `lint` and `test` (checkout, detect, corepack, setup-node,
+      # install) and nothing else, so standing alone it paid ~29s of setup twice over for no gate.
       - name: Generate Next.js route types
         if: steps.detect.outputs.docs_only != 'true'
         run: pnpm exec next typegen
@@ -581,92 +548,11 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=6144
 
-  # Split out of `validate` on 2026-09-17, the third application of the same idea as `lint`
-  # and `typecheck` above: `pnpm run test` shares nothing with the build but node_modules.
-  #
-  # MEASURED on the two most recent code PRs before the split, runs 35258637196 and
-  # 35257651146 — `validate`'s Test step was 96s and 98s of a 364s and 371s job, and it sat
-  # in front of a 184s/190s build that does not read a single thing it produces. Standing on
-  # its own this job pays ~33s of setup it did not pay before (checkout, corepack, node,
-  # install — measured off `typecheck`, which has the same preamble) and lands near 135s,
-  # under `typecheck`'s 164s/176s, so it does not become the new critical path. `validate`
-  # drops to ~268s/273s and the run's wall clock with it. Extra cost is one more parallel
-  # runner; no gate is relaxed and no step is skipped.
-  #
-  # NO `needs:` AND NO `if:` ON THE JOB, deliberately, for the reason given on `validate`:
-  # a skipped job reports no status, and a required check with no status blocks a PR forever.
-  # Only the expensive steps are conditional.
-  #
-  # THIS JOB GATES NOTHING UNLESS BRANCH PROTECTION LISTS `test` AS A REQUIRED CHECK — added
-  # 2026-09-18, a day late. It was not a detail to get to later: the same commit that created
-  # this job took the tests out of `validate`, which IS required, so for that whole day a red
-  # test suite blocked nothing at all. The required names are set on the repository, not in this
-  # file, and only the owner can add one.
-  test:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          # depth 2 is enough: for a pull_request, GitHub checks out the MERGE commit, whose
-          # first parent is the base branch. `HEAD^1..HEAD` is therefore exactly this PR's
-          # changed files, with no need to fetch the base branch separately.
-          fetch-depth: 2
-
-      # Answered inline, per job — see the note on this step in `validate`.
-      - name: Detect whether this PR is documentation only
-        id: detect
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-        run: |
-          set -u
-          answer() { echo "docs_only=$1" >> "$GITHUB_OUTPUT"; echo "docs_only=$1 ($2)"; exit 0; }
-
-          [ "$EVENT_NAME" = "pull_request" ] || answer false "not a pull_request — always run everything"
-          git rev-parse --verify HEAD^2 >/dev/null 2>&1 || answer false "HEAD is not a merge commit; cannot identify the PR's files"
-
-          files="$(git diff --name-only HEAD^1 HEAD)" || answer false "git diff failed"
-          [ -n "$files" ] || answer false "no files resolved; refusing to assume docs-only"
-
-          echo "Changed files:"; echo "$files" | sed 's/^/  /'
-          # NOT every .md / docs/ path is inert. CLAUDE.md, AGENTS.md and docs/agents-*.md are the
-          # auto-loaded instruction files, and tests in the `test` job exist ONLY to police them:
-          # the autoload footprint budget (CLAUDE.md + AGENTS.md), the memory-index reachability
-          # scan (a memory slug orphaned by an AGENTS.md edit), and the long-hook docs-pointer
-          # check. If those files took the docs-only fast path, the very checks that guard them
-          # would skip, and a PR that grew AGENTS.md past its byte budget or orphaned a memory would
-          # go green on five of six required checks and merge — surfacing only afterwards as a red
-          # `main`, which still ships to production (§2.1). So they are NOT documentation for this
-          # purpose: matched FIRST, they force the full suite. (Still shell, no third-party action —
-          # see the note above the step.)
-          if echo "$files" | grep -qE '(^AGENTS\.md$|^CLAUDE\.md$|^docs/agents-.*\.md$)'; then
-            answer false "auto-loaded instruction files changed; the tests that police them are in the full suite"
-          fi
-          # One non-doc path is enough to need the full suite. Mirrors the old paths-ignore list.
-          if echo "$files" | grep -qvE '(\.md$|^docs/|^\.github/ISSUE_TEMPLATE/|^\.github/PULL_REQUEST_TEMPLATE/)'; then
-            answer false "code or config changed"
-          fi
-          answer true "documentation only"
-
-
-      # corepack must be enabled BEFORE setup-node runs — see the note in `validate`.
-      - name: Enable Corepack (pnpm)
-        if: steps.detect.outputs.docs_only != 'true'
-        run: corepack enable
-
-      - name: Set up Node.js
-        if: steps.detect.outputs.docs_only != 'true'
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
-        with:
-          node-version: ${{ env.CI_NODE_VERSION }}
-          cache: pnpm
-
-      - name: Install dependencies
-        if: steps.detect.outputs.docs_only != 'true'
-        run: pnpm install --frozen-lockfile
-
+      # TESTS — folded in from the former standalone `test` job (2026-09-27). It was split out of
+      # `validate` on 2026-09-17 to get it off the build's critical path, which it achieved; the
+      # split is preserved here (the tests still never sit behind the build). What is dropped is
+      # only its THIRD copy of the shared preamble.
+      #
       # No typegen and no build in front of it: tests/run-tests.ts is run straight by node
       # with --experimental-strip-types, exactly as it was when this step lived in `validate`.
       - name: Test
@@ -763,7 +649,9 @@ jobs:
     runs-on: ubuntu-latest
     # `test` joined this list when it was split out of `validate` (2026-09-17) — dropping it
     # here would have quietly stopped the full E2E suite waiting on the unit tests.
-    needs: [validate, lint, typecheck, test]
+    # `lint`, `typecheck` and `test` merged into `checks` on 2026-09-27 — a `needs:` naming a
+    # job that no longer exists is a workflow-level error, not a skipped dependency.
+    needs: [validate, checks]
     timeout-minutes: 60
 
     steps:
