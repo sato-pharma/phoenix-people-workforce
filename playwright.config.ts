@@ -15,20 +15,36 @@ export default defineConfig({
   fullyParallel: false,
   outputDir: "output/playwright",
   webServer: {
-    // In CI: serve the pre-built production bundle (no HMR, no Turbopack lazy-compile
-    // latency — avoids the networkidle / login-timeout flakiness seen with `next dev`).
-    // Locally: use the dev server for hot-reload convenience.
-    command: process.env.CI ? "pnpm run start" : "pnpm run dev -- -p 3000",
+    // 🔴 IN CI, RUN THE ARTIFACT PRODUCTION RUNS — `node server.js` out of `.next/standalone`,
+    // which is the Dockerfile's own `CMD ["node", "server.js"]` (Dockerfile:173) with its `PORT` and
+    // `HOSTNAME` (169, 171). Locally: the dev server, for hot reload.
+    //
+    // It used to be `pnpm run start`, i.e. `next start`, and Next warns on every run that
+    // `"next start" does not work with "output: standalone"`. That warning was read as advisory
+    // because it appears on GitHub-hosted runners too, where the step passes — and on 2026-09-27 it
+    // was measured NOT advisory on the self-hosted Railway runner: identical output up to the
+    // warning, then NOTHING for the full 120 s timeout, no bind, no error, no server. Hosted
+    // satisfied the poll 0.62 s after that same warning.
+    //
+    // 🔴 The decisive fact is that PRODUCTION NEVER USED `next start`. `output: "standalone"` is
+    // unconditional (see above) and the Dockerfile runs the standalone server, so CI was starting the
+    // app in a mode that ships nowhere while the real artifact went untested. Running the artifact
+    // fixes the environment difference and closes that gap in the same change — and the standalone
+    // server is a plain Node process, so it also cannot hit the worker-pool ceiling that made the
+    // Build step abort in that container.
+    //
+    // The two static copies the standalone output requires are made by ci.yml's
+    // "Assemble the standalone runtime" step, mirroring Dockerfile:113 and 122. Pinned by
+    // tests/next-build-cpu-cap.test.ts.
+    command: process.env.CI ? "node server.js" : "pnpm run dev -- -p 3000",
+    cwd: process.env.CI ? ".next/standalone" : undefined,
+    env: process.env.CI ? { PORT: "3000", HOSTNAME: "127.0.0.1" } : undefined,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
-    // 🔴 127.0.0.1, NEVER `localhost` — inside a container `localhost` can resolve to `::1` FIRST,
-    // and `next start` binds IPv4, so the readiness poll is refused for the whole 120 s while the
-    // server itself logs nothing at all. Measured 2026-09-27 on the self-hosted Railway runner: the
-    // same step passes hosted 0.4 s after the server's banner and times out in the container after
-    // 120 s, with identical server output up to that point — so the difference is the resolution
-    // order, not the server. On GitHub's runners `localhost` already resolves to 127.0.0.1, which
-    // is why this is not a special case for one environment but simply the unambiguous spelling.
-    // Pinned by tests/next-build-cpu-cap.test.ts.
+    // 127.0.0.1 rather than `localhost`: unambiguous in a container, where `localhost` can resolve to
+    // `::1` first, and identical on GitHub's runners. This was NOT the cause of the timeout above —
+    // changing it did not fix that run — but it is the spelling to keep, and `HOSTNAME` above binds
+    // the server to the same address so the two cannot disagree.
     url: "http://127.0.0.1:3000/login",
   },
   projects: [
