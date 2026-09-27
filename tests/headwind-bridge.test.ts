@@ -2552,9 +2552,53 @@ async function runRemoteScreenIdTests() {
   );
   assert.equal(lied.calls.filter((call) => call.init.method === "PUT").length, 1, "it tried exactly once");
 
+  // 🔴 THE BUG THIS GUARDS: the search hands `info` back as an OBJECT, and the PUT deserializer wants a
+  // JSON STRING — `Cannot deserialize instance of java.lang.String out of START_OBJECT … Device["info"]`
+  // (measured 2026-09-26, worked round by hand at the time). `deviceWriteBody` stringifies it. Every
+  // fixture above omits `info`, which is exactly why the object was re-sent verbatim and nothing caught it.
+  // Driven down the read-back-fails path (like `lied` above) so the write never reaches the audit row,
+  // which cannot persist without a service-role key here; the PUT body is captured all the same, and that
+  // is where the fix lives.
+  resetHeadwindTokenCache();
+  const infoObject = makeFetch({
+    api: [
+      {
+        body: {
+          data: {
+            devices: {
+              items: [
+                { custom1: null, groups: [{ id: 4 }], id: 7, info: { batteryLevel: 88, model: "TB328XU" }, number: "PHX-TAB-0002" },
+              ],
+            },
+          },
+          status: "OK",
+        },
+        status: 200,
+      },
+      { body: { status: "OK" }, status: 200 },
+      { body: { data: { devices: { items: [{ id: 7, number: "PHX-TAB-0002" }] } }, status: "OK" }, status: 200 },
+    ],
+  });
+  await assert.rejects(
+    () => setHeadwindRemoteScreenId({ deviceNumber: "PHX-TAB-0002", remoteScreenId: "123456789" }, "B-10", infoObject.fetch, ENV),
+    HeadwindRemoteScreenIdError,
+    "the read-back does not confirm here, so the write stops before the audit row",
+  );
+  const put = infoObject.calls.find((call) => call.init.method === "PUT");
+  assert.ok(put, "the change is written");
+  const putBody = JSON.parse(String(put!.init.body)) as Record<string, unknown>;
+  assert.equal(typeof putBody.info, "string", "`info` goes back to Headwind as a JSON string, never as the object the search returned");
+  assert.deepEqual(
+    JSON.parse(putBody.info as string),
+    { batteryLevel: 88, model: "TB328XU" },
+    "and it is the same info, only stringified",
+  );
+  assert.ok(Array.isArray(putBody.groups), "the opaque round-trip still carries the tablet's groups");
+  assert.equal(putBody.custom1, "123456789", "with the new ID set");
+
   // The write itself carries the register-free parts at source: the opaque round-trip, the audit row.
   const writer = stripComments(source("src/lib/devices/headwind/remote-screen-id.ts"));
-  assert.match(writer, /\{ \.\.\.device, custom1: next \}/, "an OPAQUE round-trip — a hand-built body drops the tablet's groups");
+  assert.match(writer, /deviceWriteBody\(device, \{ custom1: next \}\)/, "an OPAQUE round-trip that stringifies info — a hand-built body drops the tablet's groups or 400s on info");
   assert.match(writer, /entityType: "headwind_device_command"/, "and the change writes a REQUIRED audit row");
   assert.match(writer, /oldValues: \{ remoteScreenId: previous \}/, "naming what it was before, so a wrong ID can be traced");
 

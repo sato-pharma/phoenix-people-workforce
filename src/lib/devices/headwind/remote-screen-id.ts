@@ -21,7 +21,7 @@
 
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { callHeadwind } from "@/lib/devices/headwind/client";
-import { deviceRecordsFromSearch } from "@/lib/devices/headwind/devices";
+import { deviceRecordsFromSearch, deviceWriteBody } from "@/lib/devices/headwind/devices";
 
 export class HeadwindRemoteScreenIdError extends Error {
   constructor(message: string) {
@@ -109,7 +109,7 @@ export async function setHeadwindRemoteScreenId(
 
   await callHeadwind(
     "/rest/private/devices",
-    { body: JSON.stringify({ ...device, custom1: next }), method: "PUT" },
+    { body: JSON.stringify(deviceWriteBody(device, { custom1: next })), method: "PUT" },
     fetchImpl,
     env,
   );
