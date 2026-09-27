@@ -182,10 +182,22 @@ at all and no route reaches out — `/devices/tablets` is byte-for-byte the Mana
 today. That is deliberate: the bridge merges to production before the server exists, and the owner
 turns it on by setting these variables once the box is up.
 
-**Why a separate box and not Railway or Supabase.** RustDesk's relay needs fixed raw TCP *and* UDP
-ports (21115–21119) with the real client addresses visible, which Railway does not offer; and a
-device-management server talking to reps' tablets all day does not belong beside the payroll
-database. It is one small dedicated VPS, about $5–6/month, **in Europe** like everything else here.
+🔴 **It runs on RAILWAY, and no box is rented — corrected 2026-09-27; this paragraph used to say
+"one small dedicated VPS, about $5–6/month".** Since 2026-09-25, at the owner's instruction, Headwind
+is the `phoenix-headwind` service in the existing Phoenix project, with its own `headwind-db`
+Postgres, so the region is inherited and stays `europe-west4`. The VPS plan was dropped after an
+evening across three providers: **Hetzner's verification refuses Egyptian customers and takes no
+PayPal**, and OVH split the account across two regions that do not share a sign-in. Do not go
+looking for that box, and do not propose renting one.
+
+**What Railway genuinely cannot host is the RustDesk relay.** Its ID server needs fixed raw TCP
+*and* UDP ports (21115–21119, plus 21116 UDP) with the real client addresses visible, and Railway
+allows one TCP proxy port per service and no UDP at all. So the company uses RustDesk's **own free
+EU relay** — NaCl end-to-end encrypted, so it carries ciphertext it cannot read — and
+`docker-compose.headwind.yml` is kept, unchanged and ready, for the day owning the relay matters
+(an SLA and custody, never secrecy). The original concern that a device-management server "does not
+belong beside the payroll database" is answered by `headwind-db` being its own Postgres service, not
+the Supabase project.
 
 🔴 **THE BOX MUST RUN THE PHOENIX-BUILT IMAGE, NOT THE STOCK `headwind/hmdm` ONE — there is no
 variable for this and no error that says it.** Lock, lost mode, factory reset and reset-the-screen-lock
