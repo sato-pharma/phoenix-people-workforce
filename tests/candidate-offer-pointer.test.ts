@@ -175,7 +175,8 @@ export function runCandidateOfferPointerTests(): void {
     assert.ok(
       !resolver.includes(forbidden),
       `the resolver must never match an offer by ${forbidden} — free-text matching put the wrong start `
-        + "date in reach, and one address on production is the recipient on six different people's offers",
+        + "date in reach — and the address on a letter can be the SENDER'S: the owner's own inbox is "
+        + "the recipient on six of production's 27 letters (his ruling, 2026-09-28)",
     );
   }
   assert.match(
@@ -228,8 +229,8 @@ export function runCandidateOfferPointerTests(): void {
   // file, because the file's own comment names both columns to say it must not use them.
   assert.ok(
     !/\.(eq|ilike|or)\((\s*)"candidate_(name|email)"/.test(writerSrc),
-    "the writer must never resolve a letter by the name or e-mail printed on it — one address on "
-      + "production is the recipient on six different people's offers",
+    "the writer must never resolve a letter by the name or e-mail printed on it — the recipient "
+      + "address can be the SENDER'S, and the owner's own inbox is on six of production's 27 letters",
   );
 
   // ── 7 · The route that records a human's answer is gated as an UPDATE ──────────────────────────
