@@ -105,6 +105,24 @@ function arabicMark(): string {
   return arabicCache.html;
 }
 
+// Amiri Quran (SIL OFL 1.1) embedded as a data URI. Every brick name and most customer names are
+// Arabic, and no Chromium this runs on installs an Arabic face by default — the production image ships
+// `font-noto` only and CI ships none — so without an embedded face the names render as tofu or in a
+// non-joining fallback. Embedding it the way the award cheque does makes the shaping deterministic
+// everywhere. The serif naskh also sits right beside the Latin Noto Serif figures.
+const fontCache = { uri: undefined as string | undefined };
+function amiriFace(): string {
+  if (fontCache.uri === undefined) {
+    try {
+      const ttf = readFileSync(join(process.cwd(), "public", "fonts", "amiri-quran-regular.ttf"));
+      fontCache.uri = `data:font/ttf;base64,${ttf.toString("base64")}`;
+    } catch {
+      fontCache.uri = "";
+    }
+  }
+  return fontCache.uri;
+}
+
 /** The bracket corner — two strokes meeting at a right angle. The Spotlight sheet's corner. */
 const BRACKET_SVG = `<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
   <polyline points="0,40 0,0 40,0" fill="none" stroke="${C.ink}" stroke-width="3.2"/>
@@ -126,7 +144,7 @@ function sectionTable(section: PackSection, rows: readonly PackCell[][]): string
   const head =
     `<thead><tr>` +
     section.columns
-      .map((label, i) => `<th class="${section.align[i] === "right" ? "r" : "l"}">${escapeHtml(label)}</th>`)
+      .map((label, i) => `<th class="${section.align[i] === "right" ? "r" : "l"}" dir="auto">${escapeHtml(label)}</th>`)
       .join("") +
     `</tr></thead>`;
   const body =
@@ -137,7 +155,9 @@ function sectionTable(section: PackSection, rows: readonly PackCell[][]): string
           .map((_, i) => {
             const align = section.align[i] === "right" ? "r" : "l";
             const cls = `${align}${section.align[i] === "right" ? " fig" : ""}`;
-            return `<td class="${cls}">${escapeHtml(cellText(row[i] ?? null))}</td>`;
+            // `dir="auto"` so an Arabic name gets RTL bidi ordering while a figure or a Latin name
+            // stays LTR — the alignment class still fixes which edge the column sits against.
+            return `<td class="${cls}" dir="auto">${escapeHtml(cellText(row[i] ?? null))}</td>`;
           })
           .join("");
         return `<tr class="${r % 2 === 1 ? "zebra" : ""}">${cells}</tr>`;
@@ -237,9 +257,12 @@ const CSS = `
   :root {
     --deep:${C.deep}; --blue:${C.blue}; --light:${C.light}; --tint:${C.tint}; --hair:${C.hair};
     --muted:${C.muted}; --body:${C.body}; --crest:${C.crest}; --ink:${C.ink}; --wash:${C.wash}; --rule:${C.rule};
-    --display:"Noto Serif","Times New Roman",Georgia,serif;
-    --text:"Noto Sans","Segoe UI",Calibri,Helvetica,Arial,sans-serif;
-    --arabic:"Noto Naskh Arabic","Noto Sans Arabic","Segoe UI",Tahoma,Arial,sans-serif;
+    /* Arabic falls to Amiri Quran (embedded) then Noto Naskh, so a brick or customer name shapes and
+       joins on any Chromium — a Latin face earlier in each list has no Arabic glyphs, so per-glyph
+       fallback reaches the Arabic face for exactly the characters that need it. */
+    --display:"Noto Serif","Times New Roman",Georgia,"Amiri Quran","Noto Naskh Arabic",serif;
+    --text:"Noto Sans","Segoe UI",Calibri,Helvetica,Arial,"Amiri Quran","Noto Naskh Arabic",Tahoma,sans-serif;
+    --arabic:"Amiri Quran","Noto Naskh Arabic","Noto Sans Arabic","Segoe UI",Tahoma,Arial,sans-serif;
     --hair-w:0.5pt; --u:3.2mm;
   }
   * { box-sizing:border-box; margin:0; padding:0; border-radius:0; }
@@ -320,7 +343,10 @@ const CSS = `
   thead th.r { text-align:right; }
   td { padding:1.9mm 2.2mm; font-size:8.6pt; color:var(--body); vertical-align:baseline;
     border-bottom:var(--hair-w) solid var(--rule); overflow-wrap:anywhere; }
-  td.l { text-align:left; }
+  /* A name column wraps on WORD boundaries, never anywhere — Arabic joins cursively and a break
+     between two letters splits a word into disconnected forms, so an Arabic name must break only at
+     its spaces. */
+  td.l { text-align:left; overflow-wrap:break-word; word-break:normal; }
   td.l:first-child { color:var(--ink); font-weight:600; }
   td.r { text-align:right; }
   /* Figures in the serif display, tabular — the Spotlight leaderboard's own voice for a number. */
@@ -372,8 +398,11 @@ export function packDocumentHtml(pack: SalesReviewPack): string {
   const total = bodies.length;
   const pages = bodies.map((body, i) => pageShell(pack, body, i + 1, total, i === total - 1));
 
+  // The embedded Arabic face is injected before the static CSS so the @font-face lands once, lazily —
+  // the font is read from disk the first time a pack is built, not at module import.
+  const fontFace = `@font-face{font-family:"Amiri Quran";font-weight:400;font-style:normal;src:url("${amiriFace()}") format("truetype");}`;
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
-<title>Sales Review — ${escapeHtml(pack.subject.title)}</title><style>${CSS}</style></head>
+<title>Sales Review — ${escapeHtml(pack.subject.title)}</title><style>${fontFace}${CSS}</style></head>
 <body>${pages.join("\n")}</body></html>`;
 }
 
@@ -382,6 +411,10 @@ export async function renderPackPdf(pack: SalesReviewPack): Promise<Buffer> {
   const bytes = await withChromiumPage(async (page) => {
     await page.setContent(html, { waitUntil: "networkidle0" });
     await page.emulateMediaType("print");
+    // The embedded Amiri face decodes asynchronously; printing before it is ready falls the Arabic
+    // back to a non-joining system font for the first render. Wait for it — as a STRING, which is the
+    // evaluate signature this page type takes (see award-cheque.ts).
+    await page.evaluate("document.fonts.ready.then(() => document.fonts.size)");
     return page.pdf({
       format: "A4",
       landscape: true,

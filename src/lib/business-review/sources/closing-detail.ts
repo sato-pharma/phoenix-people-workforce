@@ -124,6 +124,23 @@ export async function loadClosingDetailFacts(input: {
   if (periods.length === 0 || input.lines.length === 0) return empty;
 
   const db = getSupabaseAdmin();
+
+  // Brick NAMES, never the code. `phx_closing_customers` returns a brick_id only, so without this a
+  // brick prints as "B215-2" rather than "كوم حماده" — and the owner's standing rule is names, never
+  // codes, everywhere in the system. The master is one small indexed read (701 rows, all named on
+  // production), and a failed load falls back to the id rather than taking the whole pack down.
+  const brickNames = new Map<string, string>();
+  try {
+    const { data } = await db.from("source_of_sales_bricks").select("brick_id, brick_name");
+    for (const b of (data ?? []) as { brick_id?: unknown; brick_name?: unknown }[]) {
+      const id = text(b.brick_id);
+      const name = text(b.brick_name);
+      if (id && name) brickNames.set(id, name);
+    }
+  } catch {
+    // The section still ships, keyed by id, rather than failing the export over a lookup.
+  }
+
   const jobs: { line: ClosingDetailLine; period: string }[] = [];
   for (const line of input.lines) for (const period of periods) jobs.push({ line, period });
 
@@ -173,7 +190,8 @@ export async function loadClosingDetailFacts(input: {
       // A brick with no id cannot be ranked against the named ones, and dropping the row would lose
       // real money — so it becomes one explicit bucket rather than many anonymous ones.
       brickId: row.brickId || "(no brick)",
-      brickName: row.brickId || "No brick recorded",
+      // The master's NAME when known, the id only as a last resort, never as the label of choice.
+      brickName: brickNames.get(row.brickId) || row.brickId || "No brick recorded",
       channel: channelOfClosingRow(row),
       clientCode: row.clientCode,
       clientName: row.clientName || row.clientCode,
