@@ -1569,6 +1569,7 @@ import { runPhoenixCrmMobileMirrorsTests } from "./phoenix-crm-mobile-mirrors.te
 import { runPhoenixCrmLocationIntegrityTests } from "./phoenix-crm-location-integrity.test.ts";
 import { runPhoenixCrmDuplicatePhotosTests } from "./phoenix-crm-duplicate-photos.test.ts";
 import { runPhoenixCrmBehaviourIntegrityTests } from "./phoenix-crm-behaviour-integrity.test.ts";
+import { runPhoenixCrmOfflineClockTests } from "./phoenix-crm-offline-clock.test.ts";
 import { runPhoenixCrmPortalSidebarTests } from "./phoenix-crm-portal-sidebar.test.ts";
 import { runPhoenixCrmAmPmWordTests } from "./phoenix-crm-am-pm-words.test.ts";
 import { runPhoenixCrmDoctorPharmaciesTests } from "./phoenix-crm-doctor-pharmacies.test.ts";
@@ -5237,6 +5238,11 @@ await runTest(
 await runTest(
   "Phoenix CRM judges the SHAPE of a rep's month, silently (D4 — owner, 2026-09-25: the position checks judge one fix and the photo sweep one picture, and both are satisfied by a rep entering twelve real-looking visits from one pavement; six signals over a rep-month, only the three a person CANNOT do standing on their own; half of every fixture is deliberately innocent, so four visits in an hour in one hospital building, durations a second apart, a light day, a rep who never saw the outcome field and a month whose distributor files never landed are all clean; a month under the floor is NOT CHECKED rather than clean, because leave must not read as honest work; it reads the RAW visits table and not the countable view, since an off-plan visit awaiting approval is the one most worth judging; and it does NOT apply the El Qema mask, which would remove real money from a total and manufacture \"the area sold nothing\" for every territory that distributor serves)",
   runPhoenixCrmBehaviourIntegrityTests,
+);
+
+await runTest(
+  "Phoenix CRM can date a visit captured with no signal, without trusting the phone's clock (A1 phase 1 — owner, 2026-09-27: \"I want the Cairo time, but I don't want the time on the phone because they may install an app that changes the time in the phone\"; the phone sends a DURATION measured on the monotonic clock, never a timestamp, against an ANCHOR the server wrote and looks up, so capturedAt = the server's own anchor time plus the elapsed time; the claim must fit inside the window the server brackets at both ends itself, which makes the bound physics rather than trust; a correction can only ever pull a claim back towards the truth and never past the server's own receipt; a delta measured across a reboot is refused because the monotonic clock resets, while two UNKNOWN boot ids are not a match; a borrowed anchor is refused; and the visit files under the Cairo day it was CAPTURED, never the day it arrived)",
+  runPhoenixCrmOfflineClockTests,
 );
 
 await runTest(
