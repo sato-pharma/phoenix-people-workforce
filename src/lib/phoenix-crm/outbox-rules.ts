@@ -62,14 +62,26 @@ export const OUTBOX_MAX_AGE_HOURS = 7 * 24;
  * the server can never come back from: the day already holds that visit, the customer has left the
  * list, or the id belongs to another seat. Adding a code here throws a rep's work away, so nothing
  * joins it without a reason of that kind.
+ *
+ * 🔴 THE SPELLING IS THE API CODE, NOT THE DATABASE'S. `db.ts` catches `phoenix_crm:<name>` out of a
+ * Postgres exception and re-throws it as `new ApiError(status, \`phoenix_crm_${name}\`, …)`, so what
+ * reaches the phone is UNDERSCORE-separated. This list first shipped with the colon form (#4560) and
+ * therefore matched nothing at all: every permanent refusal read as "retry", and a visit the server
+ * would never accept sat in the queue for a week. It failed SAFE — no rep lost work — but the queue
+ * could not drain and the rep's "saved on this phone" line would never clear. `runPhoenixCrmOutboxTests`
+ * now resolves every entry against `db.ts`'s own REFUSALS table so the two cannot drift again.
+ *
+ * Deliberately NOT here: `phoenix_crm_conflict`, the bare 23505 race. It does mean the visit is
+ * already stored, but it is minted outside REFUSALS and is rare by construction, and keeping a visit
+ * too long is the safe direction while deleting one is not.
  */
 export const OUTBOX_SETTLED_CODES: readonly string[] = [
-  "phoenix_crm:already_visited",
-  "phoenix_crm:customer_dropped",
-  "phoenix_crm:id_conflict",
-  "phoenix_crm:customer_not_found",
-  "phoenix_crm:bad_input",
-  "phoenix_crm:bad_participants",
+  "phoenix_crm_already_visited",
+  "phoenix_crm_customer_dropped",
+  "phoenix_crm_id_conflict",
+  "phoenix_crm_customer_not_found",
+  "phoenix_crm_bad_input",
+  "phoenix_crm_bad_participants",
 ];
 
 export type OutboxItem = {

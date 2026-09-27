@@ -43,7 +43,21 @@ export type CrmPhotoStep = "opening" | "locating" | "address" | "stamping" | "se
 
 /** The upload the screens keep: the stored path plus what a save and a preview need. */
 export type CrmCapturedPhoto = {
-  path: string;
+  /**
+   * Where the server stored the bytes — null ONLY when the upload could not reach Phoenix and the
+   * caller asked for `allowOffline`, in which case `imageBase64` carries the same evidence and the
+   * queue uploads it on reconnect. Where a path is required, take a `CrmStoredPhoto`.
+   */
+  path: string | null;
+  /**
+   * The stamped JPEG itself, kept only when the caller asked for `allowOffline`.
+   *
+   * It is kept even after a SUCCESSFUL upload, because the upload and the save are two requests and
+   * the connection can die between them. Re-uploading these bytes at sync costs one extra slot out
+   * of sixty an hour; the alternative — queueing against a path whose slot expires in two hours —
+   * would see the visit refused permanently once a rep had been offline for an afternoon.
+   */
+  imageBase64: string | null;
   /** A `file://` URI to show the thumbnail; not a URL the server can fetch. */
   previewUri: string;
   lat: number;
@@ -58,6 +72,21 @@ export type CrmCapturedPhoto = {
   /** The single-line place label the stamp resolved, for the "at …" caption under the photo. */
   locationLabel: string;
 };
+
+/**
+ * A photo that REACHED Phoenix.
+ *
+ * Validating a customer's place requires one: the server resolves the brick, area, region and clean
+ * address from the coordinates at capture and writes them once (owner, 2026-09-23), so a place
+ * cannot be held on the phone the way a visit can. Saying that in the type is what stops a later
+ * change quietly queueing a place.
+ */
+export type CrmStoredPhoto = CrmCapturedPhoto & { path: string };
+
+/** Narrow a photo to one Phoenix is holding. The place save is the caller that must not skip this. */
+export function isStoredPhoto(photo: CrmCapturedPhoto): photo is CrmStoredPhoto {
+  return typeof photo.path === "string" && photo.path.length > 0;
+}
 
 export type CrmPhotoOutcome =
   | { status: "captured"; photo: CrmCapturedPhoto }
@@ -110,6 +139,10 @@ function describeMissingLocation(access: LocationAccess): string {
  *
  * `purpose` is "place" when validating a customer, "visit" when entering a visit — the server issues
  * the matching slot. `title` is the name burned onto the reference line (the customer's name).
+ *
+ * 🔴 `allowOffline` changes ONE thing: a dropped connection on the upload stops being a failure the
+ * rep has to act on. The photo is stamped and kept, `path` comes back null, and the caller queues
+ * the visit. Only the VISIT camera passes it — a place cannot be queued (see `CrmStoredPhoto`).
  */
 export async function captureCrmPhoto(input: {
   purpose: "place" | "visit";
@@ -119,9 +152,11 @@ export async function captureCrmPhoto(input: {
   /** The customer's name, put on the reference line so the photo names who it is of. */
   title: string;
   token: string | null;
+  /** Keep the stamped bytes and accept a failed upload, so the caller can hold the visit. */
+  allowOffline?: boolean;
   onStep?: (step: CrmPhotoStep) => void;
 }): Promise<CrmPhotoOutcome> {
-  const { purpose, seatId, test, employeeHrId, title, token, onStep } = input;
+  const { purpose, seatId, test, employeeHrId, title, token, allowOffline = false, onStep } = input;
 
   onStep?.("opening");
   const access = await prepareLocation();
@@ -169,6 +204,19 @@ export async function captureCrmPhoto(input: {
     return { message: "The stamped photo came out larger than Phoenix accepts. Take it again.", status: "failed" };
   }
 
+  // Everything the caller keeps except where the bytes ended up — built once so the online and the
+  // held photo cannot drift apart in any field that matters as evidence.
+  const evidence = {
+    accuracyMeters: fix.accuracyMeters,
+    deviceCapturedAt: capturedAt,
+    deviceMocked: fix.mocked,
+    imageBase64: allowOffline ? stamped.base64 : null,
+    lat: fix.latitude,
+    locationLabel: location.label,
+    lon: fix.longitude,
+    previewUri: shot.photo.uri,
+  };
+
   onStep?.("sending");
   try {
     const uploaded = await crmUpload<{ path: string; issuedAt: string }>(
@@ -177,22 +225,14 @@ export async function captureCrmPhoto(input: {
       { imageDataUrl: `data:image/jpeg;base64,${stamped.base64}`, purpose, seatId, test },
       token,
     );
-    return {
-      photo: {
-        accuracyMeters: fix.accuracyMeters,
-        deviceCapturedAt: capturedAt,
-        deviceMocked: fix.mocked,
-        lat: fix.latitude,
-        locationLabel: location.label,
-        lon: fix.longitude,
-        path: uploaded.path,
-        previewUri: shot.photo.uri,
-      },
-      status: "captured",
-    };
+    return { photo: { ...evidence, path: uploaded.path }, status: "captured" };
   } catch (error) {
     if (error instanceof ApiError && error.isSessionExpired) return { status: "session-expired" };
     if (error instanceof NetworkError) {
+      // 🔴 With `allowOffline` this is not a failure and the rep is told nothing. The stamped photo
+      // is real evidence already — the location, the time and the territory are burned into it —
+      // and the queue mints a fresh upload slot when the signal returns.
+      if (allowOffline) return { photo: { ...evidence, path: null }, status: "captured" };
       return { message: "The photo did not reach Phoenix — the connection dropped. Take it again where the signal is better.", status: "failed" };
     }
     return { message: crmErrorMessage(error), status: "failed" };
