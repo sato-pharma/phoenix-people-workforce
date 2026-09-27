@@ -272,8 +272,8 @@ async function loadVisitRows(seatId: string, isTest: boolean, date: string): Pro
 /** Whether the viewer may enter this territory's visits (territoryForVisit, answered for a screen). */
 export function canEnterVisits(viewer: PhoenixCrmViewer, seatId: string, isTest: boolean): boolean {
   try {
-    territoryForVisit(viewer, seatId, isTest);
-    return true;
+    // The answer's world must be the one asked about: a test login enters test visits only.
+    return territoryForVisit(viewer, seatId, isTest).isTest === isTest;
   } catch {
     return false;
   }

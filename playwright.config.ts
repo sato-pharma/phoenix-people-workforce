@@ -15,20 +15,41 @@ export default defineConfig({
   fullyParallel: false,
   outputDir: "output/playwright",
   webServer: {
-    // In CI: serve the pre-built production bundle (no HMR, no Turbopack lazy-compile
-    // latency — avoids the networkidle / login-timeout flakiness seen with `next dev`).
-    // Locally: use the dev server for hot-reload convenience.
-    command: process.env.CI ? "pnpm run start" : "pnpm run dev -- -p 3000",
+    // 🔴 `PORT` IS THE WHOLE STORY, AND IT IS THE ONE LINE THAT MUST NOT BE REMOVED. A self-hosted
+    // runner inherits its Railway service's entire environment, and that service sets `PORT=8080`.
+    // Both `next start` and the standalone server bind `process.env.PORT`, falling back to 3000 only
+    // when it is UNSET — which is the case on GitHub's hosted runners and nowhere else. So the server
+    // came up healthily on 8080 while the readiness poll watched 3000, and the step burned its full
+    // 120 s timeout against a port nothing was listening on.
+    //
+    // Proved from inside the container on 2026-09-28, not inferred:
+    //
+    //     $ printenv PORT
+    //     8080
+    //     $ timeout 10 ./node_modules/.bin/next start
+    //     ▲ Next.js 16.3.3   - Local: http://localhost:8080   ✓ Ready in 93ms
+    //
+    // 🔴 SO TWO EARLIER READINGS OF THIS TIMEOUT WERE BOTH WRONG, and the record should say so. It was
+    // not IPv6 (`127.0.0.1` changed nothing — there was nothing to connect to on any address), and it
+    // was not `output: "standalone"`. The `"next start" does not work with "output: standalone"`
+    // warning IS advisory: the server prints it and serves anyway, 93 ms later. Every symptom followed
+    // from the port alone — the silence, the 120 s, the instant success on hosted.
+    //
+    // WHY THE STANDALONE COMMAND STAYS ANYWAY, on its own merits rather than as the fix: the Dockerfile
+    // ships `CMD ["node", "server.js"]` (Dockerfile:173) with `PORT`/`HOSTNAME` (169, 171), so running
+    // the artifact makes the smoke test exercise what production actually runs instead of a mode that
+    // ships nowhere. Its two static copies are made by ci.yml's "Assemble the standalone runtime" step,
+    // mirroring Dockerfile:113 and 122. Pinned by tests/next-build-cpu-cap.test.ts.
+    command: process.env.CI ? "node server.js" : "pnpm run dev -- -p 3000",
+    cwd: process.env.CI ? ".next/standalone" : undefined,
+    env: process.env.CI ? { PORT: "3000", HOSTNAME: "127.0.0.1" } : undefined,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
-    // 🔴 127.0.0.1, NEVER `localhost` — inside a container `localhost` can resolve to `::1` FIRST,
-    // and `next start` binds IPv4, so the readiness poll is refused for the whole 120 s while the
-    // server itself logs nothing at all. Measured 2026-09-27 on the self-hosted Railway runner: the
-    // same step passes hosted 0.4 s after the server's banner and times out in the container after
-    // 120 s, with identical server output up to that point — so the difference is the resolution
-    // order, not the server. On GitHub's runners `localhost` already resolves to 127.0.0.1, which
-    // is why this is not a special case for one environment but simply the unambiguous spelling.
-    // Pinned by tests/next-build-cpu-cap.test.ts.
+    // 127.0.0.1 rather than `localhost`: unambiguous in a container, and identical on GitHub's
+    // runners. It was NOT the cause of the timeout above and did not fix it, but it is the spelling to
+    // keep, and `HOSTNAME` above binds the server to the same address so the two cannot disagree. The
+    // PORT in this URL and the PORT in `env` above are the pair that has to match — that is the whole
+    // failure, so keep them on adjacent lines where a reader cannot change one and miss the other.
     url: "http://127.0.0.1:3000/login",
   },
   projects: [

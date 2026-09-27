@@ -107,6 +107,25 @@ export const accessRegistry = [
   tokenApi({ authMode: "public-token", methods: ["POST"], pattern: "/api/auth/login", reason: "Credential bootstrap endpoint; no existing Phoenix session is expected." }),
   tokenApi({ authMode: "public-token", methods: ["POST"], pattern: "/api/auth/logout", reason: "Session teardown endpoint accepts an existing cookie but does not expose data." }),
   tokenApi({ authMode: "public-token", methods: ["POST"], pattern: "/api/auth/heartbeat", reason: "Session heartbeat endpoint validates the Phoenix session token directly." }),
+  // The native app opening a production portal module, already signed in. Two halves, declared apart
+  // because they genuinely differ (src/lib/auth/native-web-handoff.ts):
+  //
+  // POST is the APP asking, with its bearer token — a full session route, gated on the same
+  // employee_profile:read the portal shell asserts. It is CSRF-exempt because it mints ONLY for a
+  // bearer caller: a cookie-bearing browser request, which is all a cross-site form can produce,
+  // gets 401 before any ticket exists. It sets no cookie of its own, deliberately — React Native
+  // replays one and the CSRF guard then refuses every later mutation as `csrf_blocked`.
+  sessionApi({
+    csrfExemptReason: "Mints only for an Authorization: Bearer caller; a cross-site form or cookie-only request cannot obtain a ticket, and the response sets no cookie.",
+    methods: ["POST"],
+    pattern: "/api/auth/web-session",
+    permission: { resource: "employee_profile", action: "read" },
+  }),
+  // GET is the BROWSER TAB redeeming, and no Phoenix session exists in that tab yet — the same shape
+  // as /api/auth/login above, with a sealed one-trip ticket in place of the password. It grants
+  // nothing new: the cookie it sets is for the same session id and version the app already holds and
+  // expires at the same second, and `next` can only ever be a path under /employee-portals.
+  tokenApi({ authMode: "public-token", methods: ["GET"], pattern: "/api/auth/web-session", reason: "Credential redemption endpoint; the sealed 60-second ticket IS the credential and no Phoenix session exists in the opening tab yet. It mints a cookie for the session the app already holds — same sid, same version, same expiry — and redirects only within /employee-portals." }),
   tokenApi({ authMode: "public-token", methods: ["POST"], pattern: "/api/auth/password-setup/:token", reason: "Password setup/reset is protected by a one-time token." }),
   // Live Direct Orders report links (owner request, 2026-08-05). Unauthenticated ON PURPOSE: the
   // recipient has no Phoenix account, and a Google Sheet's IMPORTDATA formula cannot log in.
@@ -508,6 +527,12 @@ export const accessRegistry = [
   // your own landing screen is not an access event. The route drops `latestPayslip` before
   // answering — no payslip belongs on any landing surface for any role.
   sessionApi({ methods: readOnly, pattern: "/api/employee-portals/home", permission: { resource: "employee_profile", action: "read" } }),
+  // Which portal modules this viewer has, for the app's Modules tab — the native counterpart of the
+  // web sidebar. Same gate and same reasoning as `home` above: it resolves visibility with the exact
+  // call EmployeePortalServerShell makes and returns a list of destinations, never any module's data,
+  // so reading your own navigation is not an access event. Every page behind a row still asserts its
+  // own permission when it opens; a row is a door the viewer can see, never a grant.
+  sessionApi({ methods: readOnly, pattern: "/api/employee-portals/navigation", permission: { resource: "employee_profile", action: "read" } }),
   sessionApi({ methods: allMethods, pattern: "/api/excuses/**", permission: { resource: "employee_profile", action: "read" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/exports", permission: { resource: "probation", action: "export" }, guard: "domain-helper" }),
   // Split for the same reason the hiring pack below is: the blanket said `read` for a PATCH that

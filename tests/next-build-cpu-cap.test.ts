@@ -110,16 +110,19 @@ export function runNextBuildCpuCapTests() {
     );
   }
 
-  // ── the OTHER container assumption in the same pipeline: localhost is not 127.0.0.1 ─────────────
+  // ── CI must start the artifact PRODUCTION runs, not a mode that ships nowhere ────────────────────
   //
-  // 🔴 `next start` binds IPv4, and inside a container `localhost` can resolve to `::1` FIRST — so a
-  // readiness poll on `localhost` is refused for the full 120s timeout while the server logs NOTHING,
-  // which reads as "the server never started". Measured 2026-09-27: the same step passes on a GitHub
-  // runner 0.4s after the server's banner and times out after 120s in the container, with identical
-  // server output. It is the resolution order, not the server. Both halves have to agree, and the
-  // second is easy to miss: the poll lives in playwright.config.ts, the test's own navigation reads
-  // PLAYWRIGHT_BASE_URL and falls back to `localhost`, so fixing only the poll moves the same failure
-  // one request later.
+  // 🔴 `output: "standalone"` is unconditional and the Dockerfile runs `node server.js`
+  // (Dockerfile:173). CI used to run `pnpm run start`, i.e. `next start`, which Next warns does not
+  // work with that output — so the smoke test exercised a mode production never uses AND the real
+  // artifact went untested. Measured 2026-09-27 on the self-hosted runner: identical output up to the
+  // warning, then nothing for the full 120s timeout — no bind, no error, no server — while a hosted
+  // runner satisfied the poll 0.62s after the same warning.
+  //
+  // 🔴 AND THE EARLIER READING OF THAT TIMEOUT AS AN IPv6 PROBLEM WAS WRONG. Moving the poll to
+  // 127.0.0.1 changed nothing, because nothing was listening on ANY address. The address is still the
+  // right spelling and is still asserted below, but it is not what fixed this — do not let the two
+  // assertions imply otherwise.
   const playwrightConfig = readFileSync("playwright.config.ts", "utf8");
   const webServer = /webServer:\s*\{([\s\S]*?)\n\s{2}\},/.exec(playwrightConfig);
   assert.ok(webServer, "playwright.config.ts no longer has a `webServer: { … }` block this test can read");
@@ -127,10 +130,72 @@ export function runNextBuildCpuCapTests() {
     webServer[1],
     /url:\s*"http:\/\/127\.0\.0\.1:3000\//,
     "playwright.config.ts's webServer readiness URL must use 127.0.0.1, never `localhost`: in a container " +
-      "`localhost` can resolve to ::1 first, `next start` binds IPv4, and the poll is then refused for the " +
-      "whole 120s timeout with no server output at all. On GitHub's runners the two are identical, so this " +
-      "costs nothing there and is the unambiguous spelling everywhere.",
+      "`localhost` can resolve to ::1 first, and the server is bound to 127.0.0.1 by HOSTNAME below, so the " +
+      "two must not be able to disagree. On GitHub's runners they are identical, so this costs nothing there.",
   );
+  assert.match(
+    webServer[1],
+    /command:\s*process\.env\.CI\s*\?\s*"node server\.js"/,
+    "in CI the webServer must run `node server.js` — the artifact the Dockerfile ships (`CMD [\"node\", " +
+      '"server.js"]`). `next start` is the mode Next warns does not work with `output: "standalone"`, it ' +
+      "produced no server at all on the self-hosted runner, and using it means the smoke test never exercises " +
+      "what production actually runs.",
+  );
+  assert.match(
+    webServer[1],
+    /cwd:\s*process\.env\.CI\s*\?\s*"\.next\/standalone"/,
+    "the CI webServer must run from `.next/standalone` — that is where Next emits `server.js`, and the " +
+      "Dockerfile copies that folder to the image root before running it",
+  );
+  assert.match(
+    webServer[1],
+    /HOSTNAME:\s*"127\.0\.0\.1"/,
+    "the CI webServer must bind HOSTNAME=127.0.0.1 so the server and the readiness poll cannot resolve to " +
+      "different addresses — the standalone server reads HOSTNAME and PORT, exactly as Dockerfile:169-171 sets them",
+  );
+  // 🔴 THE ONE ASSERTION THAT COVERS THE ACTUAL 2026-09-27 FAILURE. A self-hosted runner inherits its
+  // Railway service's whole environment, including `PORT=8080`. Both `next start` and the standalone
+  // server bind `process.env.PORT` and fall back to 3000 only when it is UNSET — true on GitHub's
+  // runners, false in the container. Measured from inside it: `printenv PORT` -> 8080, and `next start`
+  // -> "Local: http://localhost:8080  ✓ Ready in 93ms" while the poll watched 3000 for 120s. Inheriting
+  // the port is the bug; pinning it is the fix.
+  // Deliberately NOT a literal "3000" here: that would make the agreement check below unreachable,
+  // since any wrong port would fail this assertion first. Pinned-at-all and pinned-to-the-same-number
+  // are two different mistakes, so they get two assertions that can each actually fire.
+  const pinnedPort = /PORT:\s*"(\d+)"/.exec(webServer[1]);
+  assert.ok(
+    pinnedPort,
+    "the CI webServer must PIN a PORT rather than inherit one. A self-hosted runner inherits its Railway " +
+      "service's environment, where PORT=8080, and the server then comes up healthily on a port nothing is " +
+      "watching — no error, no clue, just the full readiness timeout. This single line is what fixed the " +
+      "2026-09-27 smoke-test failure; neither the IPv6 spelling nor the standalone command did.",
+  );
+  const urlPort = /url:\s*"http:\/\/127\.0\.0\.1:(\d+)\//.exec(webServer[1]);
+  assert.ok(urlPort, "playwright.config.ts's readiness URL must name the port it polls");
+  assert.equal(
+    pinnedPort[1],
+    urlPort[1],
+    "the PORT the CI webServer binds and the port its readiness URL polls must be the SAME number. Them " +
+      "disagreeing IS the 2026-09-27 failure, and it is silent: the server is healthy, the poll times out, and " +
+      `nothing in the log names either port. Found server ${pinnedPort[1]} vs poll ${urlPort[1]}.`,
+  );
+  const assemble = /- name: Assemble the standalone runtime[\s\S]*?\n\n/.exec(workflow);
+  assert.ok(
+    assemble,
+    `${WORKFLOW} must assemble the standalone runtime before the smoke test. Next does NOT emit \`public\` or ` +
+      "`.next/static` into `.next/standalone`, so without those copies the server starts and serves a page with " +
+      "no CSS and no client bundle — a failure that looks like a broken app rather than a missing copy.",
+  );
+  for (const [needle, why] of [
+    ["cp -r public .next/standalone/public", "mirrors Dockerfile:113"],
+    ["cp -r .next/static .next/standalone/.next/static", "mirrors Dockerfile:122"],
+    ["test -f .next/standalone/server.js", "fails loudly if the build stopped emitting the standalone output, rather than timing out later"],
+  ] as const) {
+    assert.ok(
+      assemble[0].includes(needle),
+      `${WORKFLOW}'s standalone assembly step must run \`${needle}\` (${why})`,
+    );
+  }
   const smokeStep = /- name: Run Playwright login smoke test\n([\s\S]*?)\n\n/.exec(workflow);
   assert.ok(smokeStep, `${WORKFLOW} no longer has a "Run Playwright login smoke test" step this test can read`);
   assert.match(

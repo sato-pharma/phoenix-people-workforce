@@ -370,6 +370,25 @@ jobs:
         if: steps.detect.outputs.docs_only != 'true'
         run: node scripts/verify-standalone-canvas.mjs
 
+      # 🔴 The two copies `output: "standalone"` REQUIRES, mirroring the Dockerfile exactly —
+      # Dockerfile:113 `COPY /app/public ./public` and Dockerfile:122
+      # `COPY /app/.next/static ./.next/static`. Next emits neither into `.next/standalone`, so the
+      # server starts and then serves a page with no CSS and no client bundle. playwright.config.ts's
+      # webServer runs `node server.js` from that folder in CI, which is the Dockerfile's own
+      # `CMD ["node", "server.js"]` — so this step is what makes the smoke test exercise the artifact
+      # production actually ships, instead of `next start`, a mode Next warns about and production has
+      # never used.
+      - name: Assemble the standalone runtime (mirrors the Dockerfile)
+        if: steps.detect.outputs.docs_only != 'true'
+        run: |
+          set -euo pipefail
+          test -f .next/standalone/server.js || { echo "::error::.next/standalone/server.js is missing — the build did not emit the standalone output"; exit 1; }
+          mkdir -p .next/standalone/.next
+          cp -r public .next/standalone/public
+          cp -r .next/static .next/standalone/.next/static
+          echo "standalone runtime assembled:"
+          ls -1 .next/standalone | sed 's/^/  /'
+
       - name: Cache Playwright browsers
         if: steps.detect.outputs.docs_only != 'true'
         id: playwright-cache

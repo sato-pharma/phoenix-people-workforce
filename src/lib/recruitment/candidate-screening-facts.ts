@@ -82,6 +82,8 @@ export type ScreeningFactsCandidateRow = {
   declaredExperience?: string | null;
   /** The salary they typed, VERBATIM. "Negotiable" and "25 k to 30 k" are answers, not noise. */
   declaredExpectedSalary?: string | null;
+  /** The degree line off the CV — the degree rule's LAST resort, where the faculty leaves it unknown. */
+  degree?: string | null;
   /** The parsed figure, for the rows that predate the verbatim column or were typed into the ATS. */
   expectedSalary?: number | null;
   /** What the CV reader made of their faculty. Feeds the degree rule, never overrules the answer. */
@@ -535,6 +537,7 @@ export function candidateScreeningChecks(
 ): readonly ScreeningCheck[] {
   const verdict = judgeBackground({
     declaredBackground: candidate.declaredBackground,
+    degree: candidate.degree,
     faculty: candidate.faculty,
   });
   const degree =

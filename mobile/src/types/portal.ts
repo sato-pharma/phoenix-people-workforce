@@ -84,3 +84,29 @@ export type DeparturePhotoDue = {
   tripEndDate: string;
   tripStartDate: string;
 };
+
+/**
+ * One module in the portal's own module list, from `/api/employee-portals/navigation`.
+ *
+ * `icon` is an Ionicons glyph name chosen server-side, in
+ * `src/lib/employee-portal/native-module-directory.ts`, because a Lucide component does not cross
+ * JSON and React Native cannot render one. `badge` names a pending-count badge the web bottom bar
+ * shows as a dot; the counts themselves come from the home snapshot.
+ */
+export type PortalModule = {
+  badge: string | null;
+  href: string;
+  icon: string;
+  label: string;
+  /** Temporarily locked by an administrator. The row stays, wearing a padlock, as the sidebar keeps it. */
+  locked: boolean;
+};
+
+export type PortalModuleSection = {
+  modules: PortalModule[];
+  title: string;
+};
+
+export type PortalModuleDirectory = {
+  sections: PortalModuleSection[];
+};

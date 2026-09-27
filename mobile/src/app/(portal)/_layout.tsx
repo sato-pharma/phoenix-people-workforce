@@ -9,12 +9,22 @@ import { usePalette } from "@/theme/use-palette";
 /**
  * The portal's bottom tab bar — the native counterpart of `EmployeePortalBottomNav` in the web app.
  *
- * Four tabs only, and that is a ceiling rather than a starting point: the web portal's bottom nav
- * is capped and customisable for the same reason, because a rep uses two or three destinations all
- * day and a crowded bar makes all of them harder to hit. Phoenix CRM earns a tab because a rep lives
- * in it all day (the web gave it its own portal row for the same reason); everything else reaches the
- * app through the Home screen, not through another tab. A viewer with no CRM territory still sees the
- * tab and opens a plain "not open for you yet" panel — the server, not this bar, decides access.
+ * Four tabs, and that is a ceiling rather than a starting point: the web portal's bottom nav is
+ * capped and customisable for the same reason, because a rep uses two or three destinations all day
+ * and a crowded bar makes all of them harder to hit.
+ *
+ * WHAT EACH ONE IS FOR, because the division is the whole design:
+ *
+ *   Home    — the command centre, native, and the one screen that still works with no signal.
+ *   CRM     — Phoenix CRM, native, because it is camera, GPS, dictation and an offline outbox. A rep
+ *             lives in it all day; the web gave it its own portal row for the same reason.
+ *   Modules — EVERY other portal module this employee has, the same list the web sidebar draws, each
+ *             opening the production page itself so that the app and the browser cannot become two
+ *             products (owner, 2026-09-28: "same module same design same everything").
+ *   Profile — who is signed in, which server this build talks to, and the way out.
+ *
+ * A viewer with no CRM territory still sees the CRM tab and opens a plain "not open for you yet"
+ * panel — the server, not this bar, decides access.
  *
  * Push starts here rather than at the root because it belongs to a signed-in session: this layout
  * exists only while someone is signed in, and a tapped notification needs the tabs mounted to open
@@ -50,6 +60,13 @@ export default function PortalTabsLayout() {
           options={{
             tabBarIcon: ({ color, size }) => <Ionicons color={color as string} name="briefcase-outline" size={size} />,
             title: "CRM",
+          }}
+        />
+        <Tabs.Screen
+          name="modules"
+          options={{
+            tabBarIcon: ({ color, size }) => <Ionicons color={color as string} name="grid-outline" size={size} />,
+            title: "Modules",
           }}
         />
         <Tabs.Screen

@@ -1552,6 +1552,7 @@ import { runPhoenixCrmDoctorsDirectoryTests } from "./phoenix-crm-doctors-direct
 import { runPhoenixCrmPlaceLocationFrozenTests } from "./phoenix-crm-place-location-frozen.test.ts";
 import { runPhoenixCrmRetiredPilotRedirectTests } from "./phoenix-crm-retired-pilot-redirect.test.ts";
 import { runPhoenixCrmBlindHalfTests } from "./phoenix-crm-blind-half.test.ts";
+import { runPhoenixCrmFitsTheScreenTests } from "./phoenix-crm-fits-the-screen.test.ts";
 import { runPhoenixCrmLineNotOpenTests } from "./phoenix-crm-line-not-open.test.ts";
 import { runPhoenixCrmBrickGroupsTests } from "./phoenix-crm-brick-groups.test.ts";
 import { runPhoenixCrmTodayTests } from "./phoenix-crm-today.test.ts";
@@ -1744,6 +1745,7 @@ import {
 import { runPushActionUrlResolutionTests } from "./push-action-url-resolution.test.ts";
 import { runAttendanceAgentBrowserTokenSplitTests } from "./attendance-agent-browser-token-split.test.ts";
 import { runCandidateBackgroundEligibilityTests } from "./candidate-background-eligibility.test.ts";
+import { runCandidateOfferPointerTests } from "./candidate-offer-pointer.test.ts";
 import { runHrProvisioningGuardTests } from "./hr-provisioning-guard.test.ts";
 import { runHrNavNoEmptyInboxRowsTests } from "./hr-nav-no-empty-inbox-rows.test.ts";
 
@@ -1969,6 +1971,8 @@ import { runNativeClientCsrfExemptionTests } from "./native-client-csrf-exemptio
 import { runNativeLoginCsrfCookieTests } from "./native-login-csrf-cookie.test.ts";
 import { runMobileEvidenceStampParityTests } from "./mobile-evidence-stamp-parity.test.ts";
 import { runMobilePushLinkTests } from "./mobile-push-link.test.ts";
+import { runMobileModuleDirectoryTests } from "./mobile-module-directory.test.ts";
+import { runNativeWebHandoffTests } from "./native-web-handoff.test.ts";
 import { runMobileCrmVoiceCommentTests } from "./mobile-crm-voice-comment.test.ts";
 import { runMobileCrmVisitPharmacyFeedbackTests } from "./mobile-crm-visit-pharmacy-feedback.test.ts";
 import { runForceLogoutStopsPhoneAppPushTests } from "./force-logout-stops-phone-app-push.test.ts";
@@ -5230,6 +5234,11 @@ await runTest(
 );
 
 await runTest(
+  "THE FITS-THE-SCREEN GOLDEN RULE, pinned for the whole Phoenix CRM module (AGENTS.md §4: \"never a horizontal scroll, always mobile AND desktop friendly\" — the module was measured clean on 2026-09-28 and nothing held it there, because crm-mobile-table-cards sweeps the older src/components/crm and the repo-wide ratchet permits its count to sit still; every table in the module goes through CrmTable so it keeps w-full table-fixed and a colgroup, no file uses any of the four sideways-scroll spellings, every desktop-only table has a CrmCardsOnPhone path or a phone sees nothing at all, declared widths never exceed 100% and match their header cells because .admin-shell clips rather than scrolls, and crmTdClassName keeps break-words so a 52-character name wraps instead of being cut mid-word)",
+  runPhoenixCrmFitsTheScreenTests,
+);
+
+await runTest(
   "Phoenix CRM says a line is not open instead of vanishing (2026-09-26 — a District Manager whose whole district sits on an unopened line used to get no sidebar row, no page and no word at all, because `scopeTerritories` is already filtered to open lines; the viewer now carries the waiting half of his own scope, the overview hands him the dated sentence, and someone holding no seat anywhere still gets nothing)",
   runPhoenixCrmLineNotOpenTests,
 );
@@ -6177,6 +6186,10 @@ await runTest(
 await runTest(
   "paramedical split: veterinary and dental medicine never read as medicine, and no exclusion auto-files",
   runCandidateBackgroundEligibilityTests,
+);
+await runTest(
+  "a standalone offer points at its candidate from the recruitment side, and offers learns nothing",
+  runCandidateOfferPointerTests,
 );
 await runTest(
   "new-hire login provisioning admits HR Operations, the one seat that can reach it",
@@ -7354,6 +7367,15 @@ await runTest(
 await runTest(
   "payroll awaiting publish can be asked across ALL months, which nothing in the domain could answer before (findActiveRun takes a month and a year and ends in maybeSingle), and it avoids the four traps of that domain: it gates on the FINANCE actor because it is a read rather than the publisher gate which guards an act, it carries no month or year filter because that absence is the whole new capability, it never derives publish state from salary_batches (written BY publish, so a month reads published the moment finalizeApproved runs) and never re-assembles a settled month, a missing table THROWS instead of returning an empty result that would render as no months are open, the .in() is chunked because several hundred ids return zero rows and no error, an uncountable hold is null rather than zero, and every row carries a month NAME and a person's name with nowhere to put an HR id",
   runPayrollAwaitingPublishTests,
+);
+
+await runTest(
+  "the Android app lists EVERY portal module this employee has, and cannot drift from the sidebar: the section titles and their order are re-derived from buildEmployeePortalSections itself, every registry href has a native placement filed under the sidebar section that holds it with a real Ionicons name, no placement outlives its module, the list de-duplicates the two modules the sidebar shows twice, carries the descriptive fullLabel and each queue's pending badge, follows the registry's own visibility flags, keeps a locked module as a padlocked row, and the route asserts the shell's own gate with the shell's own eight visibility inputs in order - while the screen never truncates a name and never scrolls sideways",
+  runMobileModuleDirectoryTests,
+);
+await runTest(
+  "opening a production portal module from the app grants nothing new: the sealed ticket round-trips to the SAME sid and ver, the browser cookie inherits the app session's own expiry and can never outlive it, no name / HR id / role is readable in the ticket, a tampered or expired ticket and an expired session all redeem to nothing, next can never leave /employee-portals (an open redirect there would hand a session to another host), and the halves stay split - the POST the app calls sets NO cookie, because React Native replays one and the CSRF guard then refuses every mutation as csrf_blocked, which is also why the phone uses a Custom Tab and never a WebView",
+  runNativeWebHandoffTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

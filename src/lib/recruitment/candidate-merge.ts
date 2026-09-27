@@ -70,6 +70,19 @@ export const mergeableFields = [
   { column: "medical_rep_employer", key: "medicalRepEmployer", label: "medical rep employer" },
   { column: "medical_rep_experience_from", key: "medicalRepExperienceFrom", label: "medical rep experience start" },
   { column: "medical_rep_experience_to", key: "medicalRepExperienceTo", label: "medical rep experience end" },
+  // The offer letter pointer. It belongs here for a reason the fields above do not share: a merge is
+  // where a duplicate record's offer would otherwise be LOST OUTRIGHT. Every other borrowed field is
+  // also written on the CV, so a dropped one can be re-read from the document; an offer letter is
+  // connected to a person by one pointer and nothing else, and the duplicate row is deleted in step
+  // 6. Left out of this list, merging the record that holds the offer into the record that does not
+  // would silently disconnect a real letter from the person it was written for.
+  //
+  // The standing never-overwrite rule does the right thing on its own: the survivor inherits the
+  // pointer only when it has none, so a record that already has an offer keeps its own rather than
+  // having it quietly replaced. Two DIFFERENT live offers on one person is a thing only a human can
+  // resolve — and because a skip here strands a real letter, `mergeCandidates` says so in the merge
+  // summary instead of leaving it silent the way a skipped ordinary field can be.
+  { column: "offer_id", key: "offerId", label: "job offer letter" },
 ] as const;
 
 export type MergeableField = (typeof mergeableFields)[number];

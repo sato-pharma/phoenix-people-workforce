@@ -297,8 +297,41 @@ Three tested flips, each reverted on anything but success:
 | `checks` | **success**, 201s | ~254s hosted — **faster**, and this is the dominant job |
 | `validate` | **failure**, 97s | the `Build` step only; steps 1–12 pass. Fixed above. |
 
-**So the last mile is one `CI_RUNNER` flip with the worker cap merged** — the hosted half of that cap
-is proven by CI, and nothing else stands in the way.
+🔴 **STOP — THE OWNER HAS HALTED THIS TESTING UNTIL `CI_RUNNER` HAS A PER-BRANCH SWITCH.** His ruling,
+typed in another session's window on 2026-09-28 and relayed here; it reached this file as a relay rather
+than directly, and it is recorded because it *stops* an action, which is the safe direction to err in.
+**Do not flip `CI_RUNNER` again until that switch exists**, however green the checks look. The reason is
+below: a flip cannot be made safe by watching, only by scoping.
+
+### What the three flips actually established — 2026-09-28
+
+| job | on the runner | against GitHub-hosted |
+| --- | --- | --- |
+| `mobile` | **success**, 33s | — |
+| `checks` | **success**, 201–212s | ~254s hosted — **faster**, and it is the dominant job |
+| `validate` | **failure** | `Build` fixed by the CPU cap; then the smoke test, cause below |
+
+🔴 **ONE `validate` PASS ON THE RUNNER IS NOT EVIDENCE — run `36353275114` was docs-only.** Its head
+`3dfc8fd8b` changes `docs/observability.md` and nothing else (verified: one file), so `ci.yml`'s
+docs-only fast path skipped the build and the Playwright step entirely. The `checks` and `mobile` passes
+are real; that one is not. **Check the head's file list before citing any green as progress.**
+
+🔴 **AND THE SMOKE TEST'S CAUSE WAS THE INHERITED `PORT`, NOT ANYTHING ABOUT NEXT.** The runner inherits
+its Railway service's whole environment, which sets `PORT=8080`; `next start` and the standalone server
+both bind `process.env.PORT`, defaulting to 3000 only when it is unset — true on GitHub's runners, false
+here. Measured inside the container: `printenv PORT` → `8080`, and `next start` → `Local:
+http://localhost:8080  ✓ Ready in 93ms`. The server was healthy on a port nothing watched.
+
+**Two wrong diagnoses were published before that one, and both are retracted in the code:** `::1`
+resolution order (#4570 — changed nothing) and `output: "standalone"` (#4577 — the warning is advisory;
+the server serves 93 ms after printing it). **#4577 is nevertheless the fix**, because its
+`env: { PORT: "3000", … }` overrides the inherited 8080 — `webServer.env` is spread last over
+`process.env` in playwright 1.63 — and #4579 corrects the stated reason. Pinned by
+`tests/next-build-cpu-cap.test.ts`, including that the bound port and the polled port are the same
+number.
+
+**So the remaining work is not a flip.** It is the per-branch switch the owner asked for; until then
+`CI_RUNNER` stays `ubuntu-latest` and the registered runners sit idle.
 
 **Two traps this rollout paid for:**
 

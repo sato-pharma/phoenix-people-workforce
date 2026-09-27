@@ -18,11 +18,54 @@ import { toWhatsAppDialNumber } from "@/lib/recruitment/whatsapp-templates/send-
 import { AUTO_VARIABLE_KEYS, type AutoVariableKey } from "@/lib/recruitment/whatsapp-templates/variables";
 
 /**
+ * The offer letter pointed at from the CANDIDATE row, or null.
+ *
+ * This is the pointer a STANDALONE offer uses — one written for somebody with no application behind
+ * it, which on production is most of them: 27 offers against 15 applications. See the `offerId` note
+ * on `Candidate` for why it sits on the person rather than on the application.
+ */
+async function candidateOfferId(candidateId: string): Promise<string | null> {
+  const supabase = recruitmentDb();
+  const { data, error } = await supabase
+    .from("ats_candidates")
+    .select("offer_id")
+    .eq("id", candidateId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return textOrNull((data as Record<string, unknown> | null)?.offer_id);
+}
+
+/**
+ * The offer letter reached through one of this candidate's APPLICATIONS, or null.
+ *
+ * The older half of the pointer, still read because the offer-letter bridge has written it since
+ * 2026-09-08 (see `recordApplicationOfferLetter`) and rows carry it. A candidate may have several
+ * applications; the most recently updated one carrying a link wins, because that is the offer
+ * currently in play.
+ */
+async function applicationOfferId(candidateId: string): Promise<string | null> {
+  const supabase = recruitmentDb();
+  const { data, error } = await supabase
+    .from("ats_applications")
+    .select("offer_id,updated_at")
+    .eq("candidate_id", candidateId)
+    .not("offer_id", "is", null)
+    .order("updated_at", { ascending: false })
+    .limit(1);
+  if (error) throw new Error(error.message);
+  return textOrNull((data ?? [])[0]?.offer_id);
+}
+
+/**
  * The agreed first working day for a candidate, or "" when nothing reliable says.
  *
- * Follows `ats_applications.offer_id`, which the offer-letter bridge stores (see
- * `recordApplicationOfferLetter`). A candidate may have several applications; the most recently
- * updated one carrying a link wins, because that is the offer currently in play.
+ * TWO POINTERS, THE CANDIDATE'S FIRST. `ats_candidates.offer_id` is the one that can answer for an
+ * offer written to somebody with no application — the ordinary case, and the reason the application
+ * column read 0 of 15 rows for as long as it was the only one. The application pointer stays as the
+ * fallback: it is written by the bridge, it is already populated, and dropping it would lose the
+ * answer for every row that has one.
+ *
+ * BOTH ARE STORED POINTERS. Neither branch matches an offer to a person by anything a human typed.
  *
  * NEVER THROWS. `getOffer` raises `OfferNotFoundError` for a letter that has since been deleted,
  * and a deleted letter must degrade to "type the date yourself" rather than failing the whole send
@@ -30,24 +73,14 @@ import { AUTO_VARIABLE_KEYS, type AutoVariableKey } from "@/lib/recruitment/what
  */
 async function resolveOfferStartDate(candidateId: string): Promise<string> {
   try {
-    const supabase = recruitmentDb();
-    const { data, error } = await supabase
-      .from("ats_applications")
-      .select("offer_id,updated_at")
-      .eq("candidate_id", candidateId)
-      .not("offer_id", "is", null)
-      .order("updated_at", { ascending: false })
-      .limit(1);
-    if (error) throw new Error(error.message);
-
-    const offerId = textOrNull((data ?? [])[0]?.offer_id);
+    const offerId = (await candidateOfferId(candidateId)) ?? (await applicationOfferId(candidateId));
     if (!offerId) return "";
 
     const offer = await getOffer(offerId);
     return textOrNull(offer.startDate) ?? "";
   } catch {
-    // Any miss — no application, no link, a deleted letter, a read failure — is an empty string, and
-    // the send screen then asks for the date. Nothing here may invent one.
+    // Any miss — no pointer on either side, a deleted letter, a read failure — is an empty string,
+    // and the send screen then asks for the date. Nothing here may invent one.
     return "";
   }
 }
@@ -142,9 +175,10 @@ export async function loadCandidateSendContext(
   const dialNumber = whatsappColumn ?? phoneColumn;
   const numberSource = whatsappColumn ? "whatsapp" : phoneColumn ? "phone" : null;
 
-  // The agreed first working day, read through the link the bridge now stores.
+  // The agreed first working day, read through the pointer recruitment stores.
   //
-  //   candidate -> ats_applications.offer_id -> offers.start_date
+  //   candidate -> ats_candidates.offer_id           -> offers.start_date
+  //   candidate -> ats_applications.offer_id         -> offers.start_date   (the fallback)
   //
   // 🔴 THE DIRECTION IS THE DESIGN. `src/lib/offers/types.ts` carries the owner's instruction that
   // the offers module is independent of recruitment — an offer may go to somebody who never entered
@@ -152,7 +186,7 @@ export async function loadCandidateSendContext(
   // follows a pointer recruitment already holds, and calls the offers module's own `getOffer`, the
   // same one-way import the bridge uses.
   //
-  // EVERY MISS IS AN EMPTY STRING, never a guess. No application, no offer_id, a letter since
+  // EVERY MISS IS AN EMPTY STRING, never a guess. No pointer on either side, a letter since
   // deleted, or a letter with no date — all leave this blank, `renderTemplate` reports it MISSING,
   // and the send is refused until a human types the real day. Guessing a start date is worse than
   // asking for one: it reaches a new hire as the day they are expected at work.
