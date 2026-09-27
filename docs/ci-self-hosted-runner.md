@@ -111,6 +111,70 @@ done | awk -F'|' '{s[$2]+=$1; n[$2]++; t+=$1} END {for (e in s) printf "%7d min 
 The sample window is short — 240 runs was ~27 hours on that day. **Trust the shares, not a monthly
 projection from them**, and anchor the money to the real invoice.
 
+## 🔴 THE DECISION: the runner goes on Railway — owner, 2026-09-27
+
+*"Railway's own compute maths came out around $95/month ok accepted."* So the host is a Railway
+container, not the owner's laptop and not a rented VPS.
+
+**The arithmetic, with its assumptions attached — this is an ESTIMATE, not a quote.** Railway's
+published standard-compute rates, converted from per-second, billed on actual usage rather than
+allocation:
+
+| | rate | per month |
+| --- | --- | --- |
+| memory | $0.00000386 / GB / sec | **$10.14 per GB** |
+| vCPU | $0.00000772 / vCPU / sec | **$20.29 per vCPU** |
+
+Workload from this document's own measurements: 1,105 `ci.yml` runs/week ≈ 158/day, and ~10.1 min of
+real single-job time per full run since #4527 folded three jobs into one (it was 666s across five:
+273 + 196 + 139 + 50 + 8, less two ~29s preambles). That is ~800 busy hours/month. At ~2 vCPU and
+~4 GB while busy: ~$44 CPU + ~$44 memory + ~$8 idle across replicas ≈ **$95**, against **$300.88**
+billed in September.
+
+🔴 **The assumption most likely to be wrong is memory, and nobody has measured it.** No one has
+recorded the actual RSS or CPU of these jobs on a runner. If the build really sits at 6 GB rather
+than 4 while busy, memory alone moves to ~$66 and the total to ~$120. Quote the range and the
+assumption, never the $95 alone.
+
+### Four constraints, each one evidenced
+
+1. 🔴 **LINUX x86_64, NEVER WINDOWS — the day's most expensive lesson.** The `OMAR-GAWISH` runner was
+   Windows/X64 and failed **all three jobs in 18–30 seconds**, because every `run:` step here is bash
+   and GitHub's default shell on Windows is PowerShell: `set -euo pipefail` becomes
+   `Set-Variable : A parameter cannot be found that matches parameter name 'euo'`. A Railway container
+   is Linux, so this is satisfied by construction — it is written down anyway, because the next person
+   to stand one up by hand on a laptop will hit it again.
+2. **A SEPARATE Railway project, not a service beside production.** The safety rules below already say
+   the host has repository-level trust and must be treated as production infrastructure; a runner
+   executes whatever any workflow tells it to. The Phoenix project is also where cross-service
+   `${{...}}` variable references are the documented pattern. And `superb-smile` demonstrated on
+   2026-09-25 exactly what an extra project connected to this repo does when nobody is watching it.
+3. **2–3 replicas minimum.** A runner takes one job at a time and the work is ~26.6 h per 24 h day, so
+   a single runner queues behind itself — which from the outside is indistinguishable from the
+   2026-09-27 startup-failure outage. Pro allows 42 replicas at 24 vCPU / 24 GB each, so this is a
+   configuration choice, not a ceiling.
+4. **The rollback stays ONE command:** `gh variable delete CI_RUNNER`, or set it back to
+   `ubuntu-latest`. **Never hard-code `self-hosted` in a `runs-on`.**
+
+### An open question nobody has settled
+
+Railway now sells **Sandboxes** — in its own words, *"isolated Linux VMs for agents, builds, and
+untrusted code"* — billed only while running, at roughly $50/GB-month and $50/vCPU-month while
+active. That is the product literally designed for untrusted code, and for a bursty CI load it may
+beat standard compute or be far worse, depending entirely on how the idle listener is billed. It
+could not be settled from the pricing page, and it has not been guessed at. **Price it before
+choosing standard compute, and record the answer here.**
+
+### Who does what
+
+Creating the Railway project and service is a **money move on a production surface — the owner's
+dashboard click**, per the standard `docs/devices/headwind-rustdesk.md` §4 sets: *a session prepares;
+it does not press.* What is ours is the last step only: flipping `CI_RUNNER` once the runner reads
+**Idle**, and reverting it the moment anything queues. 🔴 **Do not flip it while zero runners are
+registered** — since the `OMAR-GAWISH` deregistration there are none, and jobs do **not** fall back
+to GitHub's: `main` runs would queue for ever rather than fail, which under the production deploy
+gate means no deploy at all, silently, until Railway abandons it at the two-hour timeout.
+
 ## 🔴 The safety rules
 
 1. **PRIVATE REPOSITORIES ONLY.** A self-hosted runner executes whatever a workflow tells it to.
