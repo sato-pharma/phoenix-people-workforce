@@ -1566,6 +1566,7 @@ import { runPhoenixCrmBrickCoverageReportTests } from "./phoenix-crm-brick-cover
 import { runPhoenixCrmMobileManagerTests } from "./phoenix-crm-mobile-manager.test.ts";
 import { runPhoenixCrmMobileMirrorsTests } from "./phoenix-crm-mobile-mirrors.test.ts";
 import { runPhoenixCrmLocationIntegrityTests } from "./phoenix-crm-location-integrity.test.ts";
+import { runPhoenixCrmDuplicatePhotosTests } from "./phoenix-crm-duplicate-photos.test.ts";
 import { runPhoenixCrmPortalSidebarTests } from "./phoenix-crm-portal-sidebar.test.ts";
 import { runPhoenixCrmAmPmWordTests } from "./phoenix-crm-am-pm-words.test.ts";
 import { runPhoenixCrmDoctorPharmaciesTests } from "./phoenix-crm-doctor-pharmacies.test.ts";
@@ -5219,6 +5220,11 @@ await runTest(
 await runTest(
   "Phoenix CRM tells a District Manager at 06:55 what needs him (B1 — owner, 2026-09-26: a CLEAN MANAGER IS TOLD NOTHING, because a digest that arrives every morning whatever happened is muted within a week and a muted one is worse than none; one message per manager, worst first, names and never HR codes; the key is per manager per DAY so a retry or a double fire reaches nobody twice; it judges nothing itself but calls the board's own gathering over ONE field day where the board reads six; email cannot escape, since the guard filters on the module key and not on any call site; and the cron expression matches cron-job.org exactly on a minute no other job uses)",
   runPhoenixCrmDailyDigestTests,
+);
+
+await runTest(
+  "Phoenix CRM catches a photo that was sent before, silently (D5 — owner, 2026-09-25, \"close this hole whithout reps knowing\": a sha256 for the same FILE re-sent and a 64-bit difference hash for the same PICTURE re-encoded, which a sha256 misses; THE SAME-DOOR RULE means a near-identical match fires only across a different customer or a different rep, because a rep at one doctor every month photographs the same door from the same spot and accusing him is worse than every catch it would buy; a blank wall's collapsed hash is refused rather than matched; a retried upload of one capture is not a duplicate of itself; a photo that could not be read is NOT CHECKED and is never fetched again; and the evidence carries its source in the unique key, without which this detector would have OVERWRITTEN the position detector's verdict on the same visit with nothing anywhere going red)",
+  runPhoenixCrmDuplicatePhotosTests,
 );
 
 await runTest(

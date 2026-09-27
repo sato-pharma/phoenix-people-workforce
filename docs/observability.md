@@ -304,12 +304,13 @@ policy):
    One row is deliberately **Simple** rather than a cron expression: it is pinged on an interval,
    not at a wall-clock time.
 
-   Two rows are marked **in-house only**. They are declared here and in `JOB_SCHEDULES` like every
+   Several rows are marked **in-house only**. They are declared here and in `JOB_SCHEDULES` like every
    other job — the heartbeat register watches them and alerts in-app, Telegram and push when one
    stops reporting — but `scripts/healthchecks-sync.mjs` deliberately does not push them to
    Healthchecks. The project is at its check limit, creating a further check answers HTTP 403 with
    an empty body, and the owner has ruled out raising the plan (2026-09-08). Without the marker the
-   sync reports two permanent `CREATE … FAILED` lines for jobs that are working perfectly, which is
+   sync reports a permanent `CREATE … FAILED` line for each of them although they are working
+   perfectly, which is
    the "always red, so ignored" failure this whole page exists to prevent.
 
    The marker withholds the external push, never the watch. What is given up is the outside observer
@@ -328,6 +329,7 @@ policy):
    | `phoenix-mapping-guard-notify` | `5,20,35,50 * * * *` | 1h | cron-job.org job `8427700` |
    | `phoenix-interview-reminders` | `3,13,23,33,43,53 * * * *` | 1h | cron-job.org job `8478976` · **in-house only** |
    | `phoenix-crm-daily-digest` | `55 6 * * *` | 2h | cron-job.org (created on `--apply`) · **in-house only** |
+   | `phoenix-crm-integrity-sweep` | `35 3 * * *` | 3h | cron-job.org (created on `--apply`) · **in-house only** |
    | `phoenix-retention-risk-sweep` | `40 7 * * *` | 1h | cron-job.org job `8397172` · **in-house only** |
    | `phoenix-retention-risk-pre-payroll` | `45 7 25 * *` | 2h | cron-job.org job `8397174` · **in-house only** |
    | `phoenix-mailbox-offboarding-sweep` | `15 8 * * *` | 1h | cron-job.org job `8350624` |
