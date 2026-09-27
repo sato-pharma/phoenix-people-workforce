@@ -1303,6 +1303,7 @@ import { runHrIdCoreHelpersTests } from "./hrid-core-helpers.test.ts";
 import { runMarketingRoiCohortsTests } from "./marketing-roi-cohorts.test.ts";
 import { runGithubWorkflowValidityTests } from "./github-workflow-validity.test.ts";
 import { runCiGateParityTests, runCiDocsOnlyClassifierTests } from "./ci-gate-parity.test.ts";
+import { runStagingBranchSyncGuardTests } from "./staging-branch-sync-guard.test.ts";
 import { runPasswordSetupEmailResolutionTests } from "./password-setup-email-resolution.test.ts";
 import { runSchemaShapeCheckTests } from "./schema-shape-check.test.ts";
 import { runSecretPinsCheckTests } from "./secret-pins-check.test.ts";
@@ -4330,6 +4331,10 @@ await runTest("HR_ID core helpers (canonical alias, cross-format match, lookup k
 await runTest("marketing ROI cohorts (efficiency, coverage, forecast accuracy, multi-role fan-out)", runMarketingRoiCohortsTests);
 await runTest("GitHub workflow validity (no `secrets` context inside `if:` — it invalidates the whole file)", runGithubWorkflowValidityTests);
 await runTest("CI <-> package.json gate parity (a check:* in the gate must run in a workflow)", runCiGateParityTests);
+await runTest(
+  "staging-branch-sync's ordering guard refuses an out-of-order CI completion that would rewind what staging serves - the real `merge-base --is-ancestor` line is lifted from the live YAML and executed, so swapping its operands (which inverts the guard silently) fails here",
+  runStagingBranchSyncGuardTests,
+);
 await runTest("CI docs-only classifier (AGENTS.md/CLAUDE.md/docs/agents-* must NOT skip the suite that polices them)", runCiDocsOnlyClassifierTests);
 await runTest("password setup email resolution (work_email fallback, never the synthetic auth address)", runPasswordSetupEmailResolutionTests);
 await runTest("schema shape check (catches the 2026-07-31 grant wipe AND the skeleton-schema restore)", runSchemaShapeCheckTests);
