@@ -77,7 +77,17 @@ export const JOB_SCHEDULES: readonly JobScheduleDeclaration[] = [
   // job. Daily rather than field-days-only: the job runs on a Friday too and simply finds the
   // Thursday before, which is what keeps its heartbeat a straight daily one. Must match
   // scripts/cronjob-sync.mjs exactly, or the heartbeat judges a job that fires perfectly to be late.
-  { slug: "phoenix-crm-daily-digest", kind: "cron", schedule: "55 6 * * *", graceSeconds: 2 * HOUR },
+  // 🔴 NO phoenix-crm-daily-digest HERE, and that is the owner's decision, not an oversight
+  // (2026-09-27: "donot create this digest i donot want it"). The route, the message builder and
+  // their tests all still exist and are merged — what is gone is the SCHEDULE, so nothing fires it
+  // and nobody is messaged at 06:55.
+  //
+  // It has to leave THIS list too, not just cron-job.org, and that is the whole reason this comment
+  // is here: a declaration with no job behind it is read by the sweep as a job that has STOPPED.
+  // Once a 06:55 passes after bootstrap, `hadAChanceToRun` is true, it has never reported a
+  // success, and it goes STRANDED — an in-app, Telegram and push alarm to every Super Admin, every
+  // sweep, for ever, about a job that was never meant to run. Restoring the line without creating
+  // the cron job is that alarm.
   { slug: "phoenix-crm-integrity-sweep", kind: "cron", schedule: "35 3 * * *", graceSeconds: 3 * HOUR },
   { slug: "phoenix-retention-risk-sweep", kind: "cron", schedule: "40 7 * * *", graceSeconds: 1 * HOUR },
   // Day 25 only. The pre-payroll half of the same feature: Part 1 pays at the start of the month,
