@@ -718,6 +718,7 @@ export const accessRegistry = [
   // The Doctors directory: validated customers across territories. Scope is settled in
   // loadDoctorDirectory — a directory role reads the company, everyone else reads downward only.
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/doctors", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/time-anchor", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/photos/upload-slot", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
   // The native app's live photo: it sends the stamped JPEG as a base64 data URL and the server does the
   // PUT the browser makes to the slot directly (React Native cannot PUT binary to a signed URL). Same
