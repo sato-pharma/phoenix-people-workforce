@@ -39,12 +39,27 @@ import { ACTIVE_EMPLOYMENT_STATUSES_IN_LIST } from "@/lib/auth/session-lifecycle
 import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 import { isUuid } from "@/lib/http/uuid";
 import { createSystemNotification } from "@/lib/notifications/system";
+import { logError } from "@/lib/observability/log";
+import { calendarCandidateNotice, resolveCalendarCandidate } from "@/lib/recruitment/calendar-candidate-resolve";
 import { candidateStatusLabels, normalizeCandidateStatus, statusChangeRefusal } from "@/lib/recruitment/candidate-status";
-import { createCandidate, getCandidate, setCandidateRating, updateCandidateStatus } from "@/lib/recruitment/candidates";
+import {
+  createCandidate,
+  findCandidatesByPhoneNorm,
+  getCandidate,
+  setCandidateRating,
+  updateCandidateStatus,
+} from "@/lib/recruitment/candidates";
 import { recruitmentDb } from "@/lib/recruitment/db";
 import { mirrorCandidateCvsToDrive } from "@/lib/recruitment/drive-cv-mirror";
 import { getRecruitmentFileStorage } from "@/lib/recruitment/file-storage";
-import { getFileForDownload, listCandidateFiles, uploadCandidateFile, type FileDownload } from "@/lib/recruitment/files";
+import {
+  cvContentFingerprint,
+  findCandidateIdByContentFingerprint,
+  getFileForDownload,
+  listCandidateFiles,
+  uploadCandidateFile,
+  type FileDownload,
+} from "@/lib/recruitment/files";
 import {
   bestCalendarRole,
   effectiveCalendarRole,
@@ -1664,15 +1679,36 @@ export async function createInterviewBooking(
   if (candidateId) {
     name = await candidateNameFor(candidateId);
   } else if (input.external && addToRecruitment) {
-    const result = await createCandidate(
-      { email: input.external.email, fullName: input.external.name, phone: input.external.phone, source: "interview_calendar" },
-      caller.access,
+    // The same three questions inbound CV intake asks, in the same order and for the same reason:
+    // the attached CV's own bytes first, then National ID and e-mail inside createCandidate. Booking
+    // asked only the second pair until 2026-09-27, and a WhatsApp applicant has neither — so all
+    // four byte-identical duplicate pairs on production were one `whatsapp` record and one
+    // `interview_calendar` record. See calendar-candidate-resolve.ts for the measurement, and for
+    // why the shared phone number is reported to the booker instead of deciding anything.
+    const resolution = await resolveCalendarCandidate(
+      { email: input.external.email, fullName: input.external.name, phone: input.external.phone },
+      cv ? cv.bytes : null,
+      {
+        createCandidate: (identity) =>
+          createCandidate({ ...identity, source: "interview_calendar" }, caller.access),
+        fingerprintCv: cvContentFingerprint,
+        findCvOwnerId: (contentMd5) => findCandidateIdByContentFingerprint(contentMd5),
+        findPhoneTwins: (phoneNorm, excludeCandidateId) => findCandidatesByPhoneNorm(phoneNorm, excludeCandidateId),
+        getCandidateById: async (id) => {
+          const found = await getCandidate(id);
+          return found ? { fullName: found.fullName, id: found.id } : null;
+        },
+        onLookupFailure: (stage, error) => {
+          logError("Interview booking could not check whether this person is already on file", {
+            error,
+            labels: { event: `calendar_candidate_${stage}_lookup_failed` },
+          });
+        },
+      },
     );
-    candidateId = result.candidate.id;
-    name = result.candidate.fullName?.trim() || input.external.name;
-    if (!result.created) {
-      notice = `${name} was already in Recruitment, so the interview is on that record${cv ? " and the CV was added to it" : ""}.`;
-    }
+    candidateId = resolution.candidateId;
+    name = resolution.fullName || input.external.name;
+    notice = calendarCandidateNotice(resolution, { cvAttached: Boolean(cv) });
     if (cv) {
       await uploadCandidateFile(caller.access, {
         bytes: cv.bytes,

@@ -243,6 +243,42 @@ async function loadMatchKeys(): Promise<MatchableCandidate[]> {
   }));
 }
 
+/**
+ * Candidates already carrying this canonical phone key, by name — ADVISORY ONLY.
+ *
+ * Callers pass a key from `normalizePhone`, which is the same function `candidatePayload` and
+ * `updateCandidate` write into `phone_norm`, so 01017210988, +201017210988 and 201017210988 all ask
+ * the same question here. Verified on production 2026-09-27: of 1,220 candidates holding a phone,
+ * zero have a `phone_norm` that disagrees with the normalizer, so exact equality on the column IS
+ * the format-proof comparison — no LIKE, no tail match, and no second normalizer written in SQL.
+ *
+ * A TARGETED read on purpose. The advisory duplicate flag on the pool scans every row because it
+ * indexes the whole pool at once; a single arrival needs one number, and this runs on every
+ * interview booking.
+ *
+ * NOT an identity lookup, and it must never become one: phone stopped deciding a match on
+ * 2026-08-30 after it merged three different applicants into one record (candidate-matching.ts).
+ * Five of the twelve candidate pairs sharing a number on production today are unrelated people
+ * whose CVs were forwarded from one handset. This answers "somebody should look", never "these are
+ * the same person".
+ */
+export async function findCandidatesByPhoneNorm(
+  phoneNorm: string,
+  excludeCandidateId?: string | null,
+): Promise<Array<{ id: string; fullName: string }>> {
+  const key = String(phoneNorm ?? "").trim();
+  if (!key) return [];
+  const supabase = recruitmentDb();
+  let query = supabase.from("ats_candidates").select("id,full_name").eq("phone_norm", key);
+  if (excludeCandidateId) query = query.neq("id", excludeCandidateId);
+  const { data, error } = await query;
+  if (error) throw error;
+  return ((data ?? []) as Array<{ id?: unknown; full_name?: unknown }>).map((row) => ({
+    id: String(row.id),
+    fullName: textOrNull(row.full_name) ?? "",
+  }));
+}
+
 // Loads each candidate's most-recent intake event (from the ats_candidate_source_context view)
 // and reduces it to the display shape, keyed by candidate id. Best-effort: if the view is missing
 // (migration not yet applied) or the query fails, returns an empty map so candidates still list —

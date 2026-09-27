@@ -1697,6 +1697,7 @@ import { runRepoDoctorArchiveRefsTests, runStrandedArchiveCases } from "./repo-d
 
 import { runCvExtractionNulByteTests } from "./cv-extraction-nul-bytes.test.ts";
 import { runCvContentFingerprintTests } from "./cv-content-fingerprint.test.ts";
+import { runCalendarCandidateDedupeTests } from "./calendar-candidate-dedupe.test.ts";
 import { runCvRereadAppliesWhatItReadsTests } from "./cv-reread-applies-what-it-reads.test.ts";
 import { runCandidateNameFromCvTests } from "./candidate-name-from-cv.test.ts";
 import { runLegacyDocCvTests } from "./recruitment-legacy-doc-cv.test.ts";
@@ -5948,6 +5949,12 @@ await runTest(
   "CV content fingerprint (stays MD5 so it compares against storage's eTag, is written at upload, "
     + "and is consulted BEFORE createCandidate — after it, the duplicate record already exists)",
   runCvContentFingerprintTests,
+);
+
+await runTest(
+  "booking an interview asks whether the person is already on file (the byte-identical CV first, "
+    + "and a shared mobile is reported to the booker — never merged, whatever format it was typed in)",
+  runCalendarCandidateDedupeTests,
 );
 
 await runTest(
