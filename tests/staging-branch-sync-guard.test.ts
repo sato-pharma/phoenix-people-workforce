@@ -196,6 +196,63 @@ export function runStagingBranchSyncGuardTests(): void {
       /\[\s*"\$CUR_SHA"\s*=\s*"\$NEW_SHA"\s*\]/,
       `${WORKFLOW} must short-circuit when staging is already at the verified commit, before the ancestry guard.`,
     );
+
+    // ── The verify step's operand must be RESOLVABLE before merge-base is asked about it ───────
+    //
+    // `merge-base --is-ancestor` does not answer "false" for an object this clone has never seen —
+    // it exits NON-ZERO with "fatal: Not a valid commit name", which lands in the else branch. In
+    // the verify step that else branch reports a hostile writer, so an unfetched commit made the one
+    // benign race the step exists to tolerate go RED. Establish the underlying git behaviour first,
+    // because it is the entire reason the resolution check has to exist.
+    const bogus = "0000000000000000000000000000000000000001";
+    let erroredOnUnknownObject = false;
+    try {
+      execFileSync("git", ["merge-base", "--is-ancestor", a, bogus], {
+        cwd: repo,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+    } catch {
+      erroredOnUnknownObject = true;
+    }
+    assert.equal(
+      erroredOnUnknownObject,
+      true,
+      "git no longer errors on `merge-base --is-ancestor` with an unresolvable operand. If it now returns a clean " +
+        "false instead, the `git cat-file -e` resolution check in the verify step is no longer load-bearing and the " +
+        "comment explaining it is misleading — revisit both rather than deleting this assertion.",
+    );
+
+    // Comments stripped again, and for the second time in this file it is load-bearing rather than
+    // tidiness: the verify step's own comment EXPLAINS the merge-base failure mode, so it contains
+    // the string `--is-ancestor` above the `cat-file` line and an index comparison over the raw text
+    // reads the prose as the call. A test that greps a file documenting itself has to ignore the
+    // documentation.
+    const verifyStep = yml
+      .slice(yml.indexOf("Verify the remote actually moved"))
+      .split("\n")
+      .filter((l) => !l.trim().startsWith("#"))
+      .join("\n");
+    const catFileAt = verifyStep.indexOf("cat-file -e");
+    const mergeBaseAt = verifyStep.indexOf("--is-ancestor");
+    assert.ok(
+      catFileAt !== -1,
+      `${WORKFLOW}'s verify step must resolve \`$ACTUAL\` with \`git cat-file -e\` before comparing it. Without that, ` +
+        "a commit pushed by a later sync — merged after this job checked out, so absent from this clone — makes the " +
+        "step report `Something else is writing this branch` and fail. That is a FALSE RED on the exact race the " +
+        "step was written to tolerate (found in review of #4552).",
+    );
+    assert.ok(
+      catFileAt < mergeBaseAt,
+      `${WORKFLOW}'s verify step calls \`merge-base --is-ancestor\` BEFORE resolving \`$ACTUAL\` with \`cat-file -e\`. ` +
+        "The order is the fix: resolving afterwards cannot prevent the false red, because merge-base has already " +
+        "exited non-zero and taken the hostile-writer branch.",
+    );
+    assert.match(
+      verifyStep,
+      /git fetch[^\n]*origin "\$ACTUAL"/,
+      `${WORKFLOW}'s verify step must try to FETCH \`$ACTUAL\` before giving up on resolving it; otherwise every ` +
+        "raced sync degrades to a notice instead of actually being checked.",
+    );
   } finally {
     rmSync(repo, { recursive: true, force: true });
   }

@@ -213,7 +213,21 @@ jobs:
           else
             HEADER="${DRIFT_SCOPE:-PRODUCTION} DEPLOY DRIFT DETECTED"
             [ -n "$STREAK_LINE" ] && HEADER=$(printf '%s\n%s' "$HEADER" "$STREAK_LINE")
-            TEXT=$(printf '%s\n\nProduction is not serving main HEAD, 3 minutes after first noticing.\n\nCHECK THIS FIRST, it is now the most likely cause: production deploys are GATED on the commit (Railway Wait for CI). A red, cancelled or still-queued check suite on main HEAD withholds the deploy, and after two hours Railway SKIPS it outright with nothing turning red. Read main HEAD run: gh run list --workflow=ci.yml --branch main --limit 3\n\nIf every suite on that commit is green, then this is the failure mode fixed 2026-08-13 (Railway production tracking the wrong source branch) — check railway status for the production service source branch.\n\nAccount: docs/deployment.md, "The deploy gate".\n\n%s' "$HEADER" "$RUN_URL")
+            # The BODY has to follow the scope, not just the title. A STAGING-titled alert that
+            # carries production wording points the reader at the production gate and at
+            # `railway status --environment production`, neither of which is the cause - and it
+            # arrives at 4am. Same class of defect as the "Nothing on production is affected" line
+            # corrected in staging-migrate.yml; introduced here by making only the HEADER
+            # scope-aware, caught in review of #4552.
+            #
+            # Note the production check runs FIRST and exits non-zero, so when production drifts
+            # the staging step never runs and DRIFT_SCOPE stays PRODUCTION. That ordering is
+            # deliberate: production is the one that pays salaries.
+            if [ "${DRIFT_SCOPE:-PRODUCTION}" = "STAGING" ]; then
+              TEXT=$(printf '%s\n\nStaging is not serving its source branch HEAD, 3 minutes after first noticing.\n\nCHECK THIS FIRST: staging deploys from the staging branch, which is published ONLY from CI-green main commits by staging-branch-sync.yml. A sync that stopped firing leaves staging serving an ever-older commit with nothing red anywhere. Read: gh run list --workflow=staging-branch-sync.yml --limit 5, then git ls-remote origin refs/heads/staging\n\nIf that branch IS current, then the Railway staging source was changed - check the staging service settings.\n\nPRODUCTION IS NOT IMPLICATED: this check compares staging against its OWN branch, and production has a separate check in the same workflow.\n\nAccount: docs/deployment.md, "The deploy gate".\n\n%s' "$HEADER" "$RUN_URL")
+            else
+              TEXT=$(printf '%s\n\nProduction is not serving main HEAD, 3 minutes after first noticing.\n\nCHECK THIS FIRST, it is now the most likely cause: production deploys are GATED on the commit (Railway Wait for CI). A red, cancelled or still-queued check suite on main HEAD withholds the deploy, and after two hours Railway SKIPS it outright with nothing turning red. Read main HEAD run: gh run list --workflow=ci.yml --branch main --limit 3\n\nIf every suite on that commit is green, then this is the failure mode fixed 2026-08-13 (Railway production tracking the wrong source branch) — check railway status for the production service source branch.\n\nAccount: docs/deployment.md, "The deploy gate".\n\n%s' "$HEADER" "$RUN_URL")
+            fi
           fi
           HTTP=$(curl -sS --max-time 20 -X POST \
             "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
