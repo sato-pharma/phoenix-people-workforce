@@ -146,6 +146,7 @@ status, give it its own line.
 - **A new workbook builder takes three checks, and none substitutes for another.** — `verifying-a-new-workbook-builder-takes-three-layers` **(inline — load-bearing)**
 - **A keyword scan over source text matches a COMMENT exactly as it matches a call — read the imports before reporting what a generator reads.** — `regen-readslivedata-flag-matches-a-comment-not-a-call` **(inline — load-bearing)**
 - **Auto mode refuses an `Edit` to `settings.json` as `[Self-Modification]`; his instruction clears it, his own grant does not.** — `automode-allow-cannot-authorize-editing-the-permission-config` **(inline — load-bearing)**
+- **`apply-sql-file.mjs`'s DEFAULT POOLER HOST IS WRONG FOR PRODUCTION — it rewrites the direct URL to aws-0-eu-central-1, which does not resolve; production's pooler is aws-1, and only staging really is `aws-0`.** — `apply-sql-file-default-pooler-host-is-wrong-for-production` **(inline — load-bearing)**
 
 ## 2.2 The memory index
 
@@ -171,6 +172,8 @@ status, give it its own line.
 - **A LOCAL run writes PRODUCTION but silently skips every email** — `local-run-against-prod-db-silently-skips-every-email` · `local-resend-key-is-restricted-use-railway-run-to-send-from-production`
 - **STAGING cannot rehearse a PRODUCTION shape.** — `staging-cannot-rehearse-shapes-only-prod-surgery-made`
 - **APP_ENV was UNSET on Railway staging, so staging identified itself as PRODUCTION** — `app-env-unset-on-staging-made-it-look-like-production`
+- **A RED `main` CI MAKES RAILWAY MARK THE PRODUCTION DEPLOY `SKIPPED` WITHIN MINUTES, NOT AFTER TWO HOURS — and re-running that CI green does NOT resurrect it.** The commit is then merged, green and not serving, with nothing red anywhere; only a NEW commit ships. — `a-red-main-ci-makes-railway-skip-the-deploy-for-good` **(inline — load-bearing)**
+- **The `railway` CLI link in the PRIMARY checkout points at `phoenix-headwind`, NOT the app** — so `railway run` there injects the wrong service's variables and `CRON_SECRET` reads as ABSENT, which looks like a half-rotated secret and sends a session chasing a rotation §2.3 forbids. — `railway-cli-is-linked-to-phoenix-headwind-not-the-app` **(inline — load-bearing)**
 
 ## 3. Stable Environment Facts
 
@@ -206,11 +209,13 @@ status, give it its own line.
 - **Four sales-attribution facts that silently change a number.** `ez-is-credited-evenly-across-cairo-giza-cns-reps` **(inline — load-bearing)** `closing-reads-distributor-product-rollup-not-fact-rollup` **(inline — load-bearing)** `a-case-duplicate-line-map-row-doubled-a-whole-line` **(inline — load-bearing)** `owner-sheet-vocabulary-stores-is-office-upa-is-a-channel` **(inline — load-bearing)**
 - **THE DIRECT-ORDER MONTH GOLDEN RULE — the month Finance books is the month the order COUNTS, at that pharmacy’s own brick and area.** `direct-orders-are-counted-in-the-month-finance-books-them` **(inline — load-bearing)**
 - **NOT every distributor uploads every month — "N of 17 missing" is never a finding.** `not-every-distributor-uploads-every-month` **(inline — load-bearing)**
+- **THE CALL RATE'S LEAVER AND WINDOW RULINGS ARE DECIDED, not defects** (owner chose B2/C1/D2): a leaver or new hire is divided by the WHOLE month's working days, a resigned rep DROPS OUT the moment HR marks him, and every call rate scores through YESTERDAY — the rate only. — `reps-list-rulings-b2-c1-d2-leavers-keep-whole-month` **(inline — load-bearing)**
+- **THE 06:55 CRM DAILY DIGEST IS REFUSED — never schedule it** (owner, "donot create this digest i donot want it", before a single message had been sent). The route and builder stay; the schedule is gone from all three places. — `the-0655-crm-digest-is-refused-never-schedule-it` **(inline — load-bearing)**
 
 ## 4.1 Marketing customer, venue and licence validation
 
 - **Venue validation is GPS + a live picture ALWAYS — and leg 3 (the registered code,…** — `venue-validation-rule-gps-photo-then-code-or-licence`
-- **A wholesaler / makhzan is NEVER shown as a candidate nor validated as a venue (both flows; two tiers).** — `wholesaler-makhzan-never-shown-or-validated-as-a-venue`
+- **A wholesaler / makhzan is NEVER shown as a candidate nor validated as a venue (both flows; two tiers).** — `wholesaler-makhzan-never-shown-or-validated-as-a-venue` **(inline — load-bearing)**
 - **Marketing pharmacies are TERRITORIAL, and a NULL area_id makes one invisible.** — `seeded-marketing-pharmacies-have-no-area-and-are-invisible`
 - **A licence verdict is PERMANENT and has no correction path.** — `a-licence-verdict-is-permanent-and-has-no-correction-path`
 - **system_validated means NO HUMAN LOOKED.** — `marketing-system-validated-means-no-human-looked`
