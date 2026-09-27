@@ -38,8 +38,13 @@ export class CvPreviewNotice extends Error {
  *
  * "text-layer" is the one stage that does NOT fail the preview: the PDF page is already on screen
  * and only its selectable text is lost, so it is reported and the reader keeps the document.
+ *
+ * "redaction" is the opposite case and the reason it is its own stage: the page renders fine, but
+ * its text could not be read, so the phone numbers on it could not be found. That page is covered
+ * whole rather than shown — a redacted CV that fails silently would hand a manager the number the
+ * screen exists to withhold, and a row saying which page went blank is how that is noticed.
  */
-export type CvPreviewStage = "fetch" | "decode" | "render" | "text-layer";
+export type CvPreviewStage = "fetch" | "decode" | "render" | "text-layer" | "redaction";
 
 export type CvPreviewFailureInput = {
   caught: unknown;

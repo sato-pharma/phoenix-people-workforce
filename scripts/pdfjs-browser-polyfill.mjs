@@ -28,18 +28,26 @@
 //   * Array.prototype.findLast — absent in both, but only CALLED in v6 (once, as [...x].findLast
 //     in the filename-from-URL helper). Same defect class, found by the same measurement, so it
 //     is covered here rather than left to bite later.
-// Both guards are `if (!existing)`, so on a build that still ships its own polyfill — today's
-// 5.4.296 does, for withResolvers — this is a no-op and the vendor's implementation is untouched.
+//   * ReadableStream async iteration (ReadableStream.prototype[Symbol.asyncIterator] / .values)
+//     — added in v2 after the field proved it. pdf.js 6's PDFPageProxy.getTextContent drains
+//     streamTextContent() with `for await (const t of stream)`, and both files do the same over a
+//     DecompressionStream's readable side. core-js has never polyfilled stream iteration, so the
+//     "every built-in the vendor calls is defined by somebody" check could not see it: WebKit
+//     (every iPhone browser, iOS 18 and 26 alike) and Chromium before 124 (Samsung Internet 20)
+//     threw "e is not async iterable" / "undefined is not a function (near '...t of e...')" from
+//     getTextContent, 2026-09-24 → 26, on the phone-redaction pass of the managers' CV preview.
+// Every guard is `if (!existing)`, so on a build or browser that already provides one — today's
+// 5.4.296 does, for withResolvers — this is a no-op and the native implementation is untouched.
 //
 // Pinned by tests/pdfjs-browser-polyfill.test.ts (behaviour, executed with the built-ins deleted)
 // and tests/pdfjs-legacy-browser-assets.test.ts (that the served files actually carry it).
 
 // Bump when the polyfill body changes, so a stale public/pdfjs copy is obvious in a diff.
-export const PDFJS_POLYFILL_VERSION = 1;
+export const PDFJS_POLYFILL_VERSION = 2;
 
 export const PDFJS_BROWSER_POLYFILL = `/*! Phoenix pdf.js browser polyfill v${PDFJS_POLYFILL_VERSION} — prepended by scripts/sync-pdfjs-assets.mjs, not part of pdf.js.
- * Keeps a CV opening on phone browsers older than roughly Chrome 119 / Safari 17.4, which
- * pdfjs-dist 6 stopped polyfilling for. Source and reasoning: scripts/pdfjs-browser-polyfill.mjs */
+ * Keeps a CV opening on phone browsers older than roughly Chrome 124, and on Safari, which lack
+ * built-ins pdfjs-dist 6 calls without a fallback. Source and reasoning: scripts/pdfjs-browser-polyfill.mjs */
 (function () {
   "use strict";
 
@@ -86,10 +94,76 @@ export const PDFJS_BROWSER_POLYFILL = `/*! Phoenix pdf.js browser polyfill v${PD
       },
     });
   }
+  // ReadableStream async iteration: what \`for await (const chunk of stream)\` calls. Shaped as the
+  // Streams specification's values(): read() until done, release the lock at the end or on an
+  // error, and on an early exit (break, throw or return inside the loop) CANCEL the stream unless
+  // the caller passed { preventCancel: true }.
+  if (
+    typeof ReadableStream === "function" &&
+    typeof Symbol === "function" &&
+    typeof Symbol.asyncIterator === "symbol" &&
+    typeof ReadableStream.prototype[Symbol.asyncIterator] !== "function"
+  ) {
+    var streamValues = function values(options) {
+      var preventCancel = Boolean(options && options.preventCancel);
+      var reader = this.getReader();
+      var finished = false;
+      var finish = function () {
+        finished = true;
+        reader.releaseLock();
+      };
+      var iterator = {
+        next: function () {
+          if (finished) return Promise.resolve({ value: undefined, done: true });
+          return reader.read().then(
+            function (result) {
+              if (result.done) {
+                finish();
+                return { value: undefined, done: true };
+              }
+              return { value: result.value, done: false };
+            },
+            function (error) {
+              finish();
+              throw error;
+            },
+          );
+        },
+        return: function (value) {
+          if (finished) return Promise.resolve({ value: value, done: true });
+          var cancelled = preventCancel ? Promise.resolve() : reader.cancel(value);
+          finish();
+          return cancelled.then(function () {
+            return { value: value, done: true };
+          });
+        },
+      };
+      iterator[Symbol.asyncIterator] = function () {
+        return this;
+      };
+      return iterator;
+    };
+    Object.defineProperty(ReadableStream.prototype, Symbol.asyncIterator, {
+      configurable: true,
+      writable: true,
+      value: streamValues,
+    });
+    if (typeof ReadableStream.prototype.values !== "function") {
+      Object.defineProperty(ReadableStream.prototype, "values", {
+        configurable: true,
+        writable: true,
+        value: streamValues,
+      });
+    }
+  }
 })();
 `;
 
 // The built-ins the polyfill above installs, as the property names a bundle would call them by.
 // tests/pdfjs-legacy-browser-assets.test.ts reads this to decide whether a gap in a freshly
 // synced vendor build is one we already cover, or a NEW one that needs a decision.
-export const PDFJS_POLYFILLED_BUILTINS = ["Promise.withResolvers", "Array.prototype.findLast"];
+export const PDFJS_POLYFILLED_BUILTINS = [
+  "Promise.withResolvers",
+  "Array.prototype.findLast",
+  "ReadableStream.prototype[Symbol.asyncIterator]",
+];
