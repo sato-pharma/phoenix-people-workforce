@@ -1,0 +1,151 @@
+name: Staging Branch Sync
+
+# WHY THIS EXISTS (added 2026-09-27). It is the prerequisite for pointing Railway's `staging`
+# environment at a branch of its own instead of at `main`, and it must land BEFORE that repoint.
+#
+# Today both Railway environments deploy from `main`. That has two consequences:
+#   * staging takes every merge ~2 minutes after it lands, BEFORE CI concludes (measured on
+#     ddda75259: staging deployment succeeded 18:29:28, its CI finished 18:31:49 — 2m 21s early),
+#     even though staging holds a real production clone with real auth accounts and payroll data;
+#   * nothing can rehearse a deliberately-red commit anywhere that is not production's own source,
+#     which is why the production deploy gate's negative half has never been directly observed.
+#
+# 🔴 AND THE OBVIOUS FIX IS THE ONE THAT ALREADY FAILED HERE. Repointing staging at a branch nobody
+# keeps fresh reproduces the 2026-08-13 incident documented in deploy-drift-check.yml's header:
+# production's service was source-configured to a branch literally named `staging`, that branch went
+# stale, and FIVE already-merged, already-green PRs (#2093, #2095, #2094, #2098, #2097) sat unshipped
+# in production for hours — no error, no failed check, no signal, found only by a manual
+# `railway status`. So the branch gets an owner before it gets a consumer: this workflow.
+#
+# WHAT IT DOES. After a `CI` run on `main` concludes SUCCESS, it fast-forwards `refs/heads/staging`
+# to exactly the commit that run tested. The branch therefore only ever holds CI-green commits, which
+# makes staging gated BY CONSTRUCTION rather than by a Railway setting — strictly better than today,
+# and it does not depend on Railway's "Wait for CI" behaving, which on the staging environment it
+# currently does not.
+#
+# TRIGGER CHOICE. `workflow_run` is the only event that carries a CI verdict; `push` fires before CI
+# has an answer, and a schedule cannot tell a green commit from a red one. This is the first
+# `workflow_run` TRIGGER in this repository (the four existing matches for that word are
+# `.workflow_runs[]` API paths in the drift checks), so two of its rules are worth stating outright:
+#   * `workflow_run` only fires for the workflow file as it exists on the DEFAULT branch. This
+#     workflow therefore does nothing at all until it is merged to `main`, and cannot be exercised
+#     on a PR. Do not read a quiet PR as a broken workflow.
+#   * it runs with the repository's own token in the base-repo context, which is why pushing is
+#     possible here at all.
+#
+# NO LOOP. `ci.yml` triggers on `push` to `main`/`master` only, so pushing to `staging` starts no CI
+# run, and therefore no further `workflow_run` event. Verified against ci.yml's `on:` block.
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+
+# The push below is the whole point of the job.
+permissions:
+  contents: write
+
+# Never cancel a queued sync. A cancelled one is indistinguishable in its effects from a sync that
+# never ran — staging silently stops advancing — which is the failure this workflow exists to
+# prevent. Same reasoning as ci.yml's main-push concurrency, for the same reason.
+concurrency:
+  group: staging-branch-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    # Only a green run publishes. A failed, cancelled, skipped or timed-out CI run leaves `staging`
+    # exactly where it was, which is the correct outcome: staging keeps serving the last commit that
+    # was actually verified.
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+
+    # DELIBERATELY NOT `${{ vars.CI_RUNNER || 'ubuntu-latest' }}`, unlike ci.yml. This job is
+    # infrastructure that must always run, so it follows the drift checks' precedent of a literal
+    # label instead. If CI_RUNNER were ever pointed at a label with no online runner, a job does NOT
+    # fall back — it QUEUES — and a queued sync means staging stops advancing with nothing red
+    # anywhere. As of 2026-09-27 the repository has zero self-hosted runners registered, which makes
+    # that a live hazard rather than a theoretical one.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # Full history: the ancestry guard below needs merge-base, which a shallow clone cannot do.
+          fetch-depth: 0
+          # Explicit rather than relying on the default, because this job's only purpose is a push.
+          persist-credentials: true
+
+      - name: Fast-forward staging to the commit CI just verified
+        env:
+          # The SHA THAT RUN TESTED — never `main`'s current tip. By the time a CI run finishes, main
+          # has usually moved: measured 2026-09-27, four merges landed in nine minutes while a run
+          # takes ~5. Using the tip would publish a commit whose own CI has not concluded, which is
+          # precisely what this workflow exists to stop.
+          NEW_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          set -euo pipefail
+
+          echo "CI run: $RUN_URL"
+          echo "verified commit: $NEW_SHA"
+
+          git fetch origin "+refs/heads/staging:refs/remotes/origin/staging" 2>/dev/null || true
+
+          if git rev-parse --verify -q refs/remotes/origin/staging >/dev/null; then
+            CUR_SHA="$(git rev-parse refs/remotes/origin/staging)"
+            echo "staging currently: $CUR_SHA"
+
+            if [ "$CUR_SHA" = "$NEW_SHA" ]; then
+              echo "Already at the verified commit. Nothing to do."
+              exit 0
+            fi
+
+            # 🔴 THE ORDERING GUARD, and the reason this workflow is not three lines long.
+            #
+            # CI runs finish OUT OF ORDER. Commit A merges, then B; B's run can conclude before A's,
+            # so A's sync fires last. Without this check that sync moves `staging` BACKWARDS to A,
+            # and staging then silently serves older code than it did a minute earlier — the same
+            # stale-staging failure as 2026-08-13, just arrived by a different route and even harder
+            # to spot, because the branch looks freshly updated.
+            #
+            # A rejected fast-forward is also the right answer if `main`'s history was ever rewritten:
+            # better a loud no-op than a silent rewind of what staging serves.
+            if ! git merge-base --is-ancestor "$CUR_SHA" "$NEW_SHA"; then
+              echo "::notice::$NEW_SHA is not a descendant of staging ($CUR_SHA) — an out-of-order CI completion, or rewritten history. NOT moving staging backwards. A newer commit's own sync will carry it forward."
+              exit 0
+            fi
+          else
+            echo "staging does not exist yet — this run creates it."
+          fi
+
+          # `<sha>:refs/heads/staging` creates the branch on the first run and fast-forwards it after,
+          # so nothing has to pre-create it. NEVER --force: a rejected push here means an assumption
+          # above broke, and that is worth a red check rather than a silent overwrite.
+          git push origin "$NEW_SHA:refs/heads/staging"
+          echo "staging -> $NEW_SHA"
+
+      # A push that silently does nothing is the failure mode this whole area keeps being bitten by,
+      # so assert the end state from the REMOTE rather than trusting the push's exit code.
+      - name: Verify the remote actually moved
+        env:
+          NEW_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          ACTUAL="$(git ls-remote origin refs/heads/staging | cut -f1)"
+          echo "remote staging: ${ACTUAL:-<absent>}"
+          if [ -z "$ACTUAL" ]; then
+            echo "::error::refs/heads/staging does not exist on origin after the push step. Staging has no source branch, so once Railway is repointed it would serve nothing."
+            exit 1
+          fi
+          if [ "$ACTUAL" != "$NEW_SHA" ]; then
+            # Not an error: a newer sync may legitimately have won the race and carried staging
+            # further forward. Only a branch that is BEHIND the commit we just verified is wrong.
+            if git merge-base --is-ancestor "$NEW_SHA" "$ACTUAL"; then
+              echo "::notice::staging is at $ACTUAL, ahead of $NEW_SHA — a later sync won the race. Correct."
+            else
+              echo "::error::staging is at $ACTUAL, which is neither $NEW_SHA nor a descendant of it. Something else is writing this branch."
+              exit 1
+            fi
+          fi
