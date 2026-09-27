@@ -584,6 +584,7 @@ try {
         .trim()
         .toLowerCase() || '(prompted)';
 
+    const rawCommand = cmd;
     const readsAsDispatch = (text) => {
       const tokens = argvTokens(text);
       let i = 0;
@@ -613,7 +614,13 @@ try {
       if (/^(?:curl(?:\.exe)?|wget(?:\.exe)?|invoke-restmethod|invoke-webrequest|irm|iwr)$/.test(bin)) {
         const hit = rest.map((w) => DISPATCH_URL.exec(w)).find(Boolean);
         if (hit) {
-          const inBody = /["']ref["']\s*:\s*["']([^"']+)["']/.exec(text);
+          // Read the ref from the RAW command, not from `text`: by the time a segment reaches here,
+          // withoutHeredocBodies/withoutHereStringBodies have removed the very body that carries
+          // {"ref":"main"} — so a heredoc-fed curl reported NO ref and silently lost the main
+          // exemption. `-d @file.json` can never carry a readable ref at all (and per §2.1 that is
+          // the only form that works on Windows), which is why an unreadable ref falls back to the
+          // default branch rather than to a countable key.
+          const inBody = /["']ref["']\s*:\s*["']([^"']+)["']/.exec(rawCommand) ?? /["']ref["']\s*:\s*["']([^"']+)["']/.exec(text);
           return { workflow: hit[2], ref: inBody ? inBody[1] : null, how: bin + ' … /dispatches' };
         }
       }
@@ -635,10 +642,19 @@ try {
     }
 
     // `main` is exempt before any state is touched: nothing about a main dispatch is countable.
+    //
+    // 🔴 AN ABSENT `--ref` IS MAIN, AND MISSING THAT DEFEATED THE WHOLE EXEMPTION. `gh workflow run
+    // ci.yml` with no flag targets the repository's DEFAULT branch, which is `main` here — and that
+    // bare form is exactly what a session already working on main types during an outage, because
+    // there is no reason to pass a ref it is already on. The first version of this clause keyed it as
+    // `ci@(default)`, counted it, and denied the third one: measured 2026-09-27, bare form
+    // allow/allow/DENY while `--ref main` stayed allow/allow/allow. Since #4537 that denial would
+    // land on a commit already serving production with no verdict — the exact case the exemption
+    // exists for. The suite missed it because all fifteen of its cases passed an explicit --ref.
     const ref = dispatch ? (dispatch.ref ?? '(default)') : null;
-    const exemptRef = ref === 'main' || ref === 'refs/heads/main';
+    const exemptRef = ref === 'main' || ref === 'refs/heads/main' || ref === '(default)';
     const sessionId = String(input?.session_id ?? '').replace(/[^A-Za-z0-9_-]/g, '');
-    const home = process.env.PHX_DISPATCH_STATE_DIR || process.env.USERPROFILE || process.env.HOME || '';
+    const home = process.env.USERPROFILE || process.env.HOME || '';
     const stateDir = process.env.PHX_DISPATCH_STATE_DIR
       ? process.env.PHX_DISPATCH_STATE_DIR
       : home
@@ -691,7 +707,7 @@ try {
             already +
             ' time' +
             (already === 1 ? '' : 's') +
-            ' in this session, and a third will not help.\n' +
+            ' in this session, and one more will not help.\n' +
             'A dispatch CANNOT unblock a PR: its check runs never enter the PR\'s statusCheckRollup, so ' +
             'branch protection ignores them however green they are - and ci.yml already triggers on push ' +
             'and pull_request, so the head has its own run.\n' +
@@ -726,6 +742,10 @@ try {
       }
       state.updatedAt = now;
       if (state.dispatches.length > DISPATCH_MAX_ENTRIES) {
+        // Evict the LEAST RECENTLY TOUCHED, never by array position: a positional slice can drop the
+        // entry that was just incremented, which silently resets that target's count to zero and
+        // hands the loop back its third, fourth and fifth attempt.
+        state.dispatches.sort((a, b) => String(a.lastAt).localeCompare(String(b.lastAt)));
         state.dispatches = state.dispatches.slice(-DISPATCH_MAX_ENTRIES);
       }
       try {

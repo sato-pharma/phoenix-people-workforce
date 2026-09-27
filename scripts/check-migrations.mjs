@@ -131,12 +131,18 @@ if (mainFiles && mainFiles.size > 0) {
     fail(
       `"${file}" uses timestamp "${ts}", which "${clash}" already carries on origin/main. ` +
         'CI judges the MERGE ref, so this is red there and green here — the file it collides with is not ' +
+      'on your branch. NOTE: this compares against the LAST-FETCHED origin/main, so a stale ref can ' +
+      'still miss a collision with something merged since your last fetch; fetch first for certainty. ' +
         'on your branch. Rename this migration to a timestamp later than every file on main: ' +
         'the new-migration skill mints one for you, or take the greatest stamp on main and add a second.'
     );
   }
 } else {
-  console.log('[migration-check] origin/main not readable here — skipped the cross-branch timestamp check (this is normal in a shallow CI checkout).');
+  // Two different causes, and saying the wrong one sends the reader to the wrong place.
+  const why = mainFiles === null
+    ? 'origin/main is not readable here (no such ref, no git, or a shallow checkout)'
+    : 'origin/main is readable but lists no migrations';
+  console.log(`[migration-check] ${why} — skipped the cross-branch timestamp check. This is normal in a shallow CI checkout.`);
 }
 
 // 2b. A grandfathered entry must still name a REAL duplicate.
