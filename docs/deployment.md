@@ -37,10 +37,26 @@ it holds. On staging the behaviour does not match the switch:
 | production | `in_progress` 18:27:14 → still holding |
 
 The staging record was CREATED after the toggle was flipped, so this is not a leftover in-flight
-deploy. Three hypotheses, not yet separated: propagation lag (it was flipped minutes earlier); the
-setting being honoured only for the service's production environment while the per-environment UI
-value is displayed but not enforced; or a superseded queued deploy not being re-gated (staging jumped
-`c2b9ac558` → `ddda75259`, skipping `c93a6269f`) — though the fresh record time argues against it.
+deploy. Three hypotheses were open on that reading alone: propagation lag (it was flipped minutes
+earlier); the setting being honoured only for the service's production environment while the
+per-environment UI value is displayed but not enforced; or a superseded queued deploy not being
+re-gated (staging jumped `c2b9ac558` → `ddda75259`, skipping `c93a6269f`).
+
+🔴 **ONE COMMIT SETTLES IT, and excludes all three at once**, because both environments deployed from
+the same push and read the same verdict. `3754f77cc`: CI run `36341414366` was created **18:38:49Z**
+and concluded **SUCCESS at 18:44:11Z**.
+
+| on `3754f77cc` — one push, one CI run | `success` at | against the verdict |
+| --- | --- | --- |
+| **staging** (deployment `6696241112`) | **18:41:08Z** | **3m 03s BEFORE it existed** |
+| production (deployment `6696241078`) | 18:46:24Z | 2m 13s after it |
+
+Same commit, same run, opposite behaviours — so propagation lag, toggle timing and "CI was already
+green" are all excluded in a single reading, which two separate anecdotes could not do. **Railway's
+Wait for CI is honoured on the production environment and NOT on staging, whatever the staging toggle
+reads in the dashboard.** Staging is therefore gated instead by the branch `staging-branch-sync.yml`
+publishes (#4552). Measured by one session and re-verified independently against the deployment
+`statuses` endpoint by another before being written here — states, never timestamps alone (§2.3).
 
 🔴 **Until that resolves, staging still receives every merge ungated within about two minutes,
 including commits whose CI later goes red — and staging holds a REAL production clone, with real auth
@@ -48,6 +64,16 @@ accounts and real payroll data.** So the honest wording today is *production gat
 staging enabled but not enforcing, under investigation* — never "both environments are gated".
 
 On production, a merge is no longer the deploy; a merge **plus a green check suite on that commit** is.
+
+🔴 **SO DO NOT POINT `CI_RUNNER` AT `self-hosted` WHILE ZERO RUNNERS ARE REGISTERED.** `ci.yml` resolves
+every job's `runs-on` through `${{ vars.CI_RUNNER || 'ubuntu-latest' }}` (four jobs), and a label with
+no online runner does **not** fall back to GitHub's — the job QUEUES. On `main` that means CI never
+concludes, and under the production gate above **a deploy that never concludes never happens**: no red
+check, no alarm, nothing to read, until Railway abandons it at the two-hour timeout. Measured
+2026-09-27: `actions/runners` returns `total_count: 0` — there is no self-hosted runner on this
+repository at all. The variable is currently **set** to `ubuntu-latest`, so the rollback is
+`gh variable set CI_RUNNER --body ubuntu-latest`; `gh variable delete CI_RUNNER` also works, because
+the `||` above falls back to the same value, but it leaves the variable absent rather than explicit.
 
 **The withholding is measured, not inferred** — from GitHub's own deployment status records:
 
