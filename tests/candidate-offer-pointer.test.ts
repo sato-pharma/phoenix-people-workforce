@@ -34,6 +34,7 @@ import { readFileSync, readdirSync } from "node:fs";
 
 import { borrowableFields, describeBorrowedFields, mergeableFields } from "@/lib/recruitment/candidate-merge";
 import { mapCandidate } from "@/lib/recruitment/db";
+import { offerCanGiveAStartDate } from "@/lib/recruitment/whatsapp-templates/candidate-context";
 
 function read(file: string): string {
   return readFileSync(file, "utf8");
@@ -185,6 +186,52 @@ export function runCandidateOfferPointerTests(): void {
     "the candidate pointer must be read from ats_candidates.offer_id",
   );
 
+  // ── 5b · A DEAD LETTER GIVES NO START DATE ─────────────────────────────────────────────────────
+  //
+  // 🔒 THE OWNER'S RULING, 2026-09-28: "exclude declined and withdrawn letters from the start date".
+  //
+  // The live case that produced it: Yasmeen Adel's only letter reads `declined` and still carries
+  // 01 October 2026, and her candidate row was wired to it the same night. Before this rule a template
+  // aimed at her filled in a first working day from an offer she had turned down.
+  //
+  // `draft` and `sent` still count, deliberately — a recruiter sends the document request on a verbal
+  // yes while the letter still reads `sent`, and narrowing this to `accepted` would make the ordinary
+  // case ask for a date already agreed and on file.
+  const expectedByStatus: Record<string, boolean> = {
+    accepted: true,
+    declined: false,
+    draft: true,
+    sent: true,
+    withdrawn: false,
+  };
+  for (const [status, allowed] of Object.entries(expectedByStatus)) {
+    assert.equal(
+      offerCanGiveAStartDate(status),
+      allowed,
+      `a ${status} letter must ${allowed ? "still give" : "NEVER give"} its start date`,
+    );
+  }
+  // Stored values are read back as text, so the check must not depend on their shape.
+  assert.equal(offerCanGiveAStartDate(" Declined "), false, "the check must survive case and padding");
+  assert.equal(offerCanGiveAStartDate(""), true, "an unknown state is not a reason to withhold a date");
+
+  // EVERY status the offers module defines is answered for. A sixth one added later — "expired",
+  // "cancelled" — would otherwise silently default to handing over its date, which is the same defect
+  // this rule exists to close, one status along.
+  const offerStatusUnion = read("src/lib/offers/types.ts").match(/export type OfferStatus =([^;]+);/)?.[1] ?? "";
+  const declaredStatuses = [...offerStatusUnion.matchAll(/"([a-z]+)"/g)].map((match) => match[1]);
+  assert.ok(declaredStatuses.length >= 5, "OfferStatus must still be a string union — re-point this test if it moved");
+  assert.deepEqual(
+    declaredStatuses.filter((status) => !(status in expectedByStatus)),
+    [],
+    "every OfferStatus needs an explicit answer here — a new one must not inherit 'hand over the date'",
+  );
+
+  assert.match(
+    resolver,
+    /if \(!offerCanGiveAStartDate\(offer\.status\)\) return "";/,
+    "the resolver must apply the ruling, and before it reads the date",
+  );
   // ── 6 · Both writers, and what each one is allowed to do ───────────────────────────────────────
   //
   // The bridge stamps the person as well as the application, so the two pointers cannot disagree
@@ -224,6 +271,12 @@ export function runCandidateOfferPointerTests(): void {
     setter,
     /if \(isOfferNotFound\(error\)\) throw new Error/,
     "an id that names no letter is refused in words, never stored as a pointer to nothing",
+  );
+  // THE POINTER IS UNTOUCHED BY THE START-DATE RULING above. A declined letter stays linked to the
+  // person it was written for — that is history and it is true — and only the DATE is withheld.
+  assert.ok(
+    !/status/.test(setter),
+    "the writer must not filter on a letter's status: the link is history, the date is the judgement",
   );
   // …and it never looks a letter up by anything a human typed. Asserted on the QUERY rather than the
   // file, because the file's own comment names both columns to say it must not use them.
