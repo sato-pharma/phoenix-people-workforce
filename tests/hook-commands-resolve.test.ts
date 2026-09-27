@@ -43,9 +43,27 @@ const SETTINGS = ".claude/settings.json";
 const SCRIPT_PATH = /[^\s"';|&()]*\.(?:mjs|sh)\b/g;
 
 /**
- * Shell syntax, in the spellings that actually appear in a hook command. `${VAR}`/`$(...)` are
- * expansions no other shell performs; `||`, `&&`, `;` and `>` are operators cmd.exe and PowerShell
- * either reject or read differently. A command carrying any of them only works under bash.
+ * `${CLAUDE_PROJECT_DIR}` is the ONE expansion a hook command may use without declaring a shell,
+ * and it is the only thing that makes a command independent of the directory it is launched from.
+ * Claude Code handles it in both shells it runs hooks under: bash expands it natively, and for
+ * PowerShell the CLI rewrites `${CLAUDE_PROJECT_DIR}` to `${env:CLAUDE_PROJECT_DIR}` itself before
+ * running the command. Read out of the shipped binary, 2026-09-27.
+ */
+const PROJECT_DIR_TOKEN = /\$\{CLAUDE_PROJECT_DIR\}/g;
+
+/**
+ * The BARE form is a trap, and the CLI says so in its own words: "PowerShell hook command
+ * references $CLAUDE_PROJECT_DIR, which PowerShell reads as an undefined variable ($null). Use
+ * $env:CLAUDE_PROJECT_DIR or ${CLAUDE_PROJECT_DIR} instead." An unexpanded `$null` leaves the path
+ * rooted at `/`, so the hook is not found and guards nothing — silently.
+ */
+const BARE_PROJECT_DIR = /\$CLAUDE_PROJECT_DIR\b/;
+
+/**
+ * Shell syntax, in the spellings that actually appear in a hook command. `$(...)` is an expansion
+ * no other shell performs; `||`, `&&`, `;` and `>` are operators cmd.exe and PowerShell either
+ * reject or read differently. A command carrying any of them only works under bash. `${…}` beyond
+ * the sanctioned token above counts too, which is why it is stripped before this runs.
  */
 const SHELL_SYNTAX = [/\$\{/, /\$\(/, /\|\|/, /&&/, /;/, /\d?>/, /\[\s/];
 
@@ -64,8 +82,33 @@ export function runHookCommandsResolveTests() {
   const entries = hookEntries();
   assert.ok(entries.length >= 9, `expected the hook wiring to still be in ${SETTINGS}, found ${entries.length} entries`);
 
-  // 1. EVERY SCRIPT A COMMAND NAMES IS ON DISK. Resolved from the repo root, which is the cwd a
-  //    hook runs with and therefore what a relative command resolves against.
+  // 0. EVERY NODE HOOK LOCATES ITSELF FROM ${CLAUDE_PROJECT_DIR}, NOT FROM cwd. This is the whole
+  //    point: a bare `node .claude/hooks/x.mjs` resolves against whatever directory the hook
+  //    process happens to start in. Start `claude` in a subdirectory — `…/phoenix-workforce/src` —
+  //    and node exits 1 "Cannot find module", so C6 (pnpm in a worktree), C7 (raw `next dev`) and
+  //    C8 (local typecheck) stop denying and session-lock stops writing the one guard against two
+  //    sessions in one folder. None of it says anything. `${CLAUDE_PROJECT_DIR}` is the session's
+  //    OWN worktree, so it is also what keeps a worktree session off the primary's lock.
+  for (const { event, entry } of entries) {
+    const command = entry.command ?? "";
+    assert.ok(
+      !BARE_PROJECT_DIR.test(command.replace(PROJECT_DIR_TOKEN, "")),
+      `the ${event} hook command uses the BARE $CLAUDE_PROJECT_DIR. PowerShell reads that as an `
+        + `undefined variable ($null), which roots the path at "/" and the hook is never found. `
+        + `Write \${CLAUDE_PROJECT_DIR} — the CLI rewrites that form for PowerShell itself: ${command}`,
+    );
+    for (const raw of command.match(SCRIPT_PATH) ?? []) {
+      if (!raw.includes(".claude/hooks/")) continue; // a helper script, not a hook entry point
+      assert.ok(
+        /^\$\{CLAUDE_PROJECT_DIR\}\//.test(raw) || /^\$DIR\//.test(raw),
+        `the ${event} hook runs "${raw}" as a path relative to cwd. Prefix it with `
+          + `\${CLAUDE_PROJECT_DIR}/ so it resolves from the session's own project directory `
+          + `whatever folder the hook process is launched in.`,
+      );
+    }
+  }
+
+  // 1. EVERY SCRIPT A COMMAND NAMES IS ON DISK.
   let checked = 0;
   for (const { event, entry } of entries) {
     const command = entry.command ?? "";
@@ -87,14 +130,17 @@ export function runHookCommandsResolveTests() {
   }
   assert.ok(checked >= 9, `expected at least 9 hook script paths to verify, checked ${checked}`);
 
-  // 2. A COMMAND WITHOUT "shell": "bash" CARRIES NO SHELL SYNTAX, and vice versa. This is the whole
-  //    of #4520: a node-only command must parse identically under bash, cmd.exe and PowerShell, so
-  //    it may not contain an operator or an expansion — and it therefore has no reason to declare a
-  //    shell and pay a Git Bash spawn on every tool call.
+  // 2. A COMMAND WITHOUT "shell": "bash" CARRIES NO SHELL SYNTAX BEYOND ${CLAUDE_PROJECT_DIR}, and
+  //    vice versa. This is #4520: the shell-expanded form errored under any runtime that reads this
+  //    file and ignores `"shell": "bash"` — cmd.exe answered `'true' is not recognized`, PowerShell
+  //    `token '||' is not a valid statement separator` — and the runtime then denied every tool
+  //    call. Those two errors came from the OPERATORS (`|| true`, `2>/dev/null`), not from the
+  //    variable, which is why a command can be both cwd-independent and operator-free. No operators
+  //    also means no reason to declare a shell and pay a Git Bash spawn on every tool call.
   const bashEntries = entries.filter(({ entry }) => entry.shell === "bash");
   for (const { event, entry } of entries) {
     const command = entry.command ?? "";
-    const offending = SHELL_SYNTAX.filter((pattern) => pattern.test(command));
+    const offending = SHELL_SYNTAX.filter((pattern) => pattern.test(command.replace(PROJECT_DIR_TOKEN, "")));
     if (entry.shell === "bash") {
       assert.ok(
         offending.length > 0,

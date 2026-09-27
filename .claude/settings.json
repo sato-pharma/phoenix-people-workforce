@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/hooks/bash-guard.mjs"
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/bash-guard.mjs\""
           }
         ]
       },
@@ -15,7 +15,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/hooks/trap-injector.mjs",
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/trap-injector.mjs\"",
             "timeout": 10
           }
         ]
@@ -25,7 +25,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/hooks/session-lock.mjs beat",
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/session-lock.mjs\" beat",
             "timeout": 5
           }
         ]
@@ -35,7 +35,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/hooks/primary-write-guard.mjs"
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/primary-write-guard.mjs\""
           }
         ]
       }
@@ -45,7 +45,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/hooks/autorun-guard.mjs"
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/autorun-guard.mjs\""
           }
         ]
       }
@@ -55,7 +55,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/hooks/session-lock.mjs start"
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/session-lock.mjs\" start"
           },
           {
             "type": "command",
@@ -65,7 +65,7 @@
           },
           {
             "type": "command",
-            "command": "node .claude/hooks/memory-index-guard.mjs",
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/memory-index-guard.mjs\"",
             "statusMessage": "Checking memory index budget"
           },
           {
@@ -83,11 +83,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/hooks/session-lock.mjs end"
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/session-lock.mjs\" end"
           },
           {
             "type": "command",
-            "command": "node .claude/hooks/worktree-exit-guard.mjs",
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/worktree-exit-guard.mjs\"",
             "timeout": 45,
             "statusMessage": "Checking worktree state"
           }

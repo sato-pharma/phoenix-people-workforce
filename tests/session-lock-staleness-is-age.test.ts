@@ -220,10 +220,13 @@ function testTheHeartbeatIsWired() {
   const settings = JSON.parse(readFileSync(".claude/settings.json", "utf8")) as {
     hooks?: Record<string, Array<{ matcher?: string; hooks?: Array<{ command?: string; timeout?: number }> }>>;
   };
+  // The mode is the first argument AFTER the script path, and the path is quoted because it is
+  // built from ${CLAUDE_PROJECT_DIR} (which can hold spaces — it does on this machine). So match
+  // across the closing quote rather than assuming `…session-lock.mjs <mode>` sits adjacent.
   const entries = (event: string, mode: string) =>
     (settings.hooks?.[event] ?? []).flatMap((group) =>
       (group.hooks ?? [])
-        .filter((h) => (h.command ?? "").includes(`session-lock.mjs ${mode}`))
+        .filter((h) => new RegExp(String.raw`session-lock\.mjs"?\s+${mode}\b`).test(h.command ?? ""))
         .map((h) => ({ ...h, matcher: group.matcher ?? "" })),
     );
 
