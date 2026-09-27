@@ -39,9 +39,14 @@ export type LinkedOfferSummary = {
  *
  * NEVER MATCHED BY NAME OR EMAIL, on purpose and permanently. The letters carry `candidate_name` and
  * `candidate_email` as free text with no key — measured on 2026-09-08, 0 of 3 live offers matched a
- * candidate by email and 1 of 3 by name, and one e-mail address on production
- * (achieverrr303@gmail.com) is the recipient on six DIFFERENT people's offers. A human says which
- * letter belongs to whom; this function only records the answer.
+ * candidate by email and 1 of 3 by name.
+ *
+ * 🔴 AND `candidate_email` IS NOT NECESSARILY THE CANDIDATE'S AT ALL — the owner's own inbox is the
+ * recipient on six of production's 27 letters (his ruling, 2026-09-28: "this my email not theirs"),
+ * because that is how he sends one to himself to read or forward. So the address on a letter can
+ * belong to the SENDER, and six letters sharing one address is not a duplicate, not a data defect,
+ * and nothing to merge — do not "clean it up". It also means e-mail can never seed a backfill: a
+ * human says which letter belongs to whom, and this function only records the answer.
  *
  * REPLACING A POINTER IS ALLOWED, and is the point: a re-sent or corrected letter supersedes the
  * one before it. The letter that stops being pointed at is untouched in Offers.
