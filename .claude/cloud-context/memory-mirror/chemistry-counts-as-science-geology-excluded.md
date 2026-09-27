@@ -1,11 +1,11 @@
 ---
 name: chemistry-counts-as-science-geology-excluded
-description: "Recruitment eligibility — chemistry graduates count as an eligible Science degree; geology is deliberately excluded. Do not \"fix\" the asymmetry."
+description: "Which DEGREES are eligible for the field force (Medical Rep, District Manager): the five disciplines are pharmacy, science, VETERINARY, medicine, dentistry — plus chemistry folded into science. Geology is deliberately excluded. Read this before treating any degree as paramedical or as an open question."
 metadata: 
   node_type: memory
   type: project
   originSessionId: 740bdda2-506d-4f2a-a34c-9e2b9322b1d9
-  modified: 2026-08-31T20:06:30.104Z
+  modified: 2026-09-27T18:26:35.052Z
 ---
 
 A **chemistry** graduate is an ELIGIBLE field-force background, folded into the `science` discipline
@@ -25,6 +25,15 @@ adjective **"chemical"** (Chemical Engineering) also stays out — it is enginee
 **Why:** the chemistry/geology split looks like an inconsistency and is exactly the kind of thing a
 later session would "fix" by adding geology or by making chemistry its own code. It is neither — it is
 the owner's explicit, narrow decision.
+
+**VETERINARY IS SETTLED AND IS NOT AN OPEN QUESTION — re-confirmed by the owner 2026-09-27** (*"veterinary
+counts as science, not paramedical"*), which changed nothing: `vet` has been one of the five eligible
+disciplines since 2026-08-31, is tested FIRST in `DISCIPLINE_PATTERNS` so "Veterinary Medicine" can never
+be misfiled as `medicine`, and production already held 46 veterinary graduates. A session asked him
+anyway on 2026-09-27, about a real District Manager applicant whose faculty was already stored as
+`Veterinary` — the cost of reading only the paramedical rule (see [[paramedical-is-a-field-force-exclusion-not-a-company-one]])
+and not the eligible-discipline list. **Never put a degree to him as an eligibility question without
+first reading `DISCIPLINE_PATTERNS` and the candidate's own stored `faculty` / `declared_background`.**
 
 **How to apply:** never extend the eligible set to geology (or widen `chemist\w*` to `chemical`) without
 the owner asking; when re-judging queued CVs, chemistry is eligible and needs NO write — the verdict is

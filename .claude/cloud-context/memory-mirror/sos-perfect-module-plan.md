@@ -1,48 +1,60 @@
 ---
 name: sos-perfect-module-plan
-description: "The owner-approved 7-phase plan for the Source-of-Sales upload, and the decisions he made at each phase. THE MODULE IS BUILT — /sales carries upload, import, normalizer, truth-check, diagnostics, missing-data, customer-mapping and monthly-closing surfaces — so read this for WHY each phase was shaped that way, not as remaining work."
-metadata: 
+description: "The Source-of-Sales upload module is BUILT and live on /sales (upload, import, normalizer, truth-check, diagnostics, missing-data, customer-mapping, database-mapping, closing-corrections, monthly-closing, distributor-profiles, targets, territory-management). Read this for the owner's locked design DECISIONS — WHY it is shaped this way — not as remaining work: detection verifies the picked distributor AND cross-checks (warn, never block), AI fires only when recognition is stuck (header text only), and new distributors are onboarded through a governed DB-backed profile store. Monthly onboards a new distributor by mapping; weekly is edit-only and a new weekly distributor needs an ADAPTER."
+metadata:
   node_type: memory
   type: project
   originSessionId: 33188cea-8df8-4c8b-b41a-3129969f44d0
+  modified: 2026-09-26T01:53:23.856Z
 ---
 
-Owner asked (2026-06-20) to build the SoS ingestion into a "perfect module". Locked DECISIONS:
-1. SCOPE = whole pipeline (/sales/upload monthly+weekly, Mapping Database, Diagnostics, normalizer, validation, governance).
-2. DETECTION = BOTH verify-against-the-picked-distributor (primary) AND auto-detect cross-check ("did you pick the wrong one?", warn never block).
-3. AI = rule-based normally; LLM ONLY when unrecognized/ambiguous (explain + suggest mapping; header text only, exclude LA003/LA004/SS001; graceful no-key).
-4. NEW DISTRIBUTOR = in-app "map it & save" → re-introduce a governed DB-backed editable profile store MERGED over code (reverses the migration that dropped it; service-role-only writes + RLS + audit).
-BASELINE: scan >10 header rows, all worksheets, Arabic normalization, validation-noise reduction.
+## This is the rationale, not a backlog — the module is built
 
-CADENCE: ship each phase as its own gate-green PR; **ask owner before EVERY prod merge** (their choice). Each phase branch cut clean from origin/main (worktrees pin main=_wt-main, so `gh pr merge` errors on local checkout but the REMOTE merge still succeeds — verify with `gh pr view --json state`).
+The owner asked (2026-06-20) to build SoS ingestion into a "perfect module"; **it is built and live.**
+The `/sales` surface carries `upload/`, `import/`, `normalizer/`, `truth-check/`, `diagnostics/`,
+`missing-data/`, `customer-mapping/`, `database-mapping/`, `closing-corrections/`, `monthly-closing/`,
+`monthly-dashboard/`, `distributor-profiles/`, `customer-directory/`, `targets/` and
+`territory-management/`. Read this file for the **reasoning behind the design**, not as work to do. The
+operative rules have since moved into standing form (the monthly closing is the only sales truth; the
+closing golden rule forbids publishing during the month it covers; the old monthly-closing export is
+frozen; the normalizer is Super Admin only). Page context: [[sales-upload-two-pages-weekly-wizard]].
 
-PHASES (see [[sales-upload-two-pages-weekly-wizard]] for the page): P1 robust recognition core (Arabic+deep+all-sheets, shared normalizer) → P2 verify-picked + loud cross-check → P3 noise reduction + per-finding ack → P4 weekly-in-wizard + diagnostics parity → P5 AI-when-stuck (shared provider, ai-explain) → P6 governed DB-backed merged profile store (migration, staging-first) → P7 in-app profile editor + write API. P1 blocks P2/P5/P6; P6 then P7 last.
+## The owner's locked decisions (the WHY)
 
-PROGRESS:
-- #362 routine negative-qty returns no longer flagged — MERGED to prod (a6d583da).
-- P1 robust recognition core — **MERGED to prod (PR #364, eceba8b5, deploy success, smoke 200)**. New `src/lib/sales/normalizer/header-normalize.ts` (normalizeHeaderKey, foldArabicDigits, HEADER_SCAN_ROWS=30); engine.pickBestSheet + knownHeaderKeys; all 3 readers (engine buildHeaderMap/validateSheetHeaders, detect-distributor.normalizeHeader, distributor-detection.extractHeaders all-sheets) share the normalizer; resolvers fold Arabic digits. Test tests/sales-header-normalize.test.ts. CI GOTCHA: the first re-run flaked (nav test + coverage failed spuriously on a stale merge); merging origin/main into the branch + local harden green + re-push gave an honest green. Always reproduce a CI fail locally before assuming it's real.
-- P2 verify-against-pick + cross-check — PR #365 (commit 82deaf43), CI green, AWAITING owner merge approval. New ValidationContext.detectorCrossCheck + DistributorCrossCheck (upload-validation.ts); analyze+commit run detectDistributorFromBuffer (buildDistributorCrossCheck in sales-upload.ts) → `detector_disagrees_with_pick` WARNING (blocks-until-ack, never hard-block) only when confidence=high + different code. Flows through existing ValidationPanel (no UI change). Test in tests/sales-upload-validation.test.ts.
-- P3 quieter warnings + per-finding ack — PR #366 (commit c1e12d85), CI green, AWAITING owner merge approval. zero_qty warning→info; new pure `unacknowledgedWarningCodes(report, acknowledged)` (upload-validation.ts) drives BOTH server gate (commitMonthlyUpload: input acknowledgeWarnings boolean → acknowledgedWarningCodes string[]) AND UI (per-warning checkbox, "X/N acknowledged"); commit route parses comma-sep acknowledgedWarningCodes. analyze==commit kept.
-- P4 one upload home (weekly hand-off + diagnostics parity) — PR #367 (commit 0b991780), CI green, AWAITING owner merge approval. /sales/upload weekly section = polished hand-off card → /sales/weekly (canonical WeeklyUploadWorkspace; no duplicate weekly UI). Diagnostics workspace surfaces strict-checks summary (error/warn counts + each error/warning incl. detector_disagrees_with_pick) + hero copy (all-sheets/Arabic/wrong-distributor); diagnostics lib unchanged (already routes through detect+analyze). Presentational; no tests added. NOTE: weekly 3-step wizard already existed at /sales/weekly — owner chose hand-off over embedding.
-- P5 AI helper when stuck — **MERGED to prod (PR #369, b38ffc08, deploy success, smoke 200)**. New src/lib/sales/ai/provider.ts (shared OpenAI-compatible resolver + aiChatJson) + src/lib/sales/normalizer/ai-explain.ts (explainHeaderMismatch, pure buildHeaderMismatchMessages). Triggers ONLY on header_error (analyzeMonthlyUpload); engine.headerRowTexts → recognize returns observedHeaders → analyze attaches aiExplanation → workspace renders under rejection callout. Privacy: column titles only (no data/products); no key ⇒ aiUsed=false no-op, never throws. Test tests/sales-ai-explain.test.ts.
-- P6 = TWO separate editors (owner reframed): MONTHLY (Sales Operations) + WEEKLY (Weekly Sales), both shipped to prod.
-  - P6 Part A (MONTHLY) — **MERGED to prod (PR #371, dceabdc8) + migration 20260621140000 applied to prod (table source_of_sales_distributor_profile, RLS service-role-only, smoke 200)**. distributor-profile-store.ts (DB-first merge, fails-closed) + distributor-profile-admin.ts + /sales/distributor-profiles editor + route. Supports onboarding NEW distributors (monthly engine is generic name-alias).
-  - P6 Part B (WEEKLY sales+stock) — **MERGED to prod (PR #373, f804181c) + migrations 20260621150000 (weekly_sales_distributor_column_profile) + 20260621160000 (audit CHECK +distributor_profile/+weekly_distributor_profile) applied to prod, smoke 200**. KEY: weekly parser was hardcoded adapters; made CONTRACT-DRIVEN (parser.ts reads col index/header-row/matrix from a resolved contract, defaults to code contract → byte-identical with no override, proven by golden weekly-sales-import test + an override test). weekly-column-profile-store.ts + admin + /sales/weekly/distributor-editor. EDIT-ONLY for the 6 built-in distributors (EG/RM/IS/IS-S/SF/PS) — a NEW weekly distributor needs an adapter, NOT just a mapping (unlike monthly). Locked boundary: only column index + header row editable; role/formField/semantic/PS-matrix fixed in code. ai-verify resolves the SAME contract (no green-lie).
-  - BUG FIXED in Part B: source_of_sales_mapping_audit CHECK omitted 'distributor_profile' → monthly editor audits were silently dropped by the best-effort try/catch. 20260621160000 fixes it (audit table EXISTS in prod; no-op-guarded for envs without it).
-  - P7 onboarding absorbed: both editors have the "create/edit" path (monthly = new distributor; weekly = edit-only). Optional follow-up: deep-link editor from "couldn't recognize" panel.
-- DEFERRED (follow-ups): (1) service.learnFromCleanedFile still scans first sheet/first 10 rows — bring onto pickBestSheet/HEADER_SCAN_ROWS. (2) dedup ai-suggest.ts + weekly/ai-verify.ts onto src/lib/sales/ai/provider.ts. (3) optional: real-data browser smoke of both editors on prod (Super Admin edits a column, re-uploads, confirms parse change, resets).
-- Earlier same session: #358 confirm-to-continue escape hatch, #360 header-row pick (most known-headers not widest) — both MERGED to prod.
-- ALL 7 PHASES COMPLETE + shipped to prod as of 2026-06-20 (P1/P5/Part A/Part B + #358/#360/#362). P2/P3/P4 were merged earlier as #365/#366/#367.
-- EDITOR SAFETY/QUALITY ENHANCEMENTS — **SHIPPED to prod (PR #396, de46a3f2, deploy success, pages 200)**: (1) live header preview in BOTH editors (upload a sample file → see the real header at each configured column/alias before saving; new preview routes reuse loadExcelWorkbook/extractHeaders, files read for headers only never persisted); (2) recent-changes audit panel (listMappingAuditEntries + GET /api/sales/mapping-audit + reusable MappingAuditHistory); (3) weekly_sales_batches.column_contract_source stamp ('code'|'override') via resolveWeeklyContractWithSource — migration applied to staging+prod BEFORE merge so the insert never hit a missing column; (4) quick wins: learnFromCleanedFile→pickBestSheet+HEADER_SCAN_ROWS, ai-suggest/ai-verify resolver dedup onto src/lib/sales/ai/provider.ts (ai-suggest keeps gpt-4o). Built in isolated worktree (primary tree held a parallel session's Action Center WIP). GOTCHA: a parallel marketing session consumed migration timestamps up to 20260622120000 — my weekly batch migration had to bump to 20260622235900 to dodge a collision (CI check:migrations catches dupes). The two editors are EDIT-ONLY safety surfaces; the parser's "no override == byte-identical" guarantee is unchanged.
+- **Scope = the whole pipeline** — `/sales/upload` monthly + weekly, Mapping Database, Diagnostics, the
+  shared normalizer, validation, governance.
+- **Detection is BOTH-and:** verify against the distributor the user picked (primary) AND run an
+  independent auto-detect cross-check ("did you pick the wrong one?"). The cross-check **warns, never
+  blocks** — it raises `detector_disagrees_with_pick` as a blocks-until-ack WARNING only when its
+  confidence is high and the detected code differs, and it flows through the existing ValidationPanel.
+- **AI is a last resort, not the normal path:** rule-based normally; the LLM fires **only** when a header
+  is unrecognized/ambiguous, to explain and suggest a mapping. **Header/column titles ONLY — never row
+  data or products** — and it excludes `LA003`/`LA004`/`SS001`. **With no API key it is a silent no-op
+  that never throws.**
+- **A new distributor is onboarded in-app** ("map it & save") through a **governed, DB-backed, editable
+  profile store merged OVER the code defaults** (DB-first merge, fails-closed), with service-role-only
+  writes, RLS and an audit trail — deliberately reversing the earlier migration that had dropped it.
+- **Baseline recognition:** scan the first 30 header rows (`HEADER_SCAN_ROWS`), across ALL worksheets,
+  with Arabic normalization and validation-noise reduction.
+- **Cadence the owner chose:** ship each phase as its own gate-green PR and **ask before EVERY production
+  merge.**
 
-## 2026-09-04 — the module is built; this is the rationale, not a backlog
+## The durable architecture that resulted
 
-The description ended **"with decisions + ship progress"**, which reads as a plan still being
-worked. The SoS surface on `main` is extensive and live: `upload/`, `import/`, `normalizer/`,
-`truth-check/`, `diagnostics/`, `missing-data/`, `customer-mapping/`, `database-mapping/`,
-`closing-corrections/`, `monthly-closing/`, `monthly-dashboard/`, `distributor-profiles/`,
-`customer-directory/`, `targets/` and `territory-management/`.
-
-Read it for the reasoning. The operative rules have since moved into standing form — the monthly
-closing is the only sales truth, the closing golden rule forbids publishing during the month it
-covers, the old monthly closing export is frozen, and the normalizer is Super Admin only.
+- **One shared header normalizer** — `src/lib/sales/normalizer/header-normalize.ts` (`normalizeHeaderKey`,
+  `foldArabicDigits`, `HEADER_SCAN_ROWS`); all three readers (engine header map/validation,
+  detect-distributor, distributor-detection's all-sheets header extract) go through it, and the resolvers
+  fold Arabic digits. Header-row pick prefers the row with the most KNOWN headers, not the widest row.
+- 🔴 **Monthly vs weekly distributor editors differ fundamentally:**
+  - **MONTHLY** (`source_of_sales_distributor_profile`, Sales Operations) — the monthly engine is a
+    generic name-alias matcher, so a **NEW monthly distributor can be onboarded by mapping alone.**
+  - **WEEKLY** (`weekly_sales_distributor_column_profile`, Weekly Sales) — the weekly parser was made
+    **contract-driven** (it reads column index / header row / matrix from a resolved contract, defaulting
+    to the code contract so **"no override == byte-identical"**). But it is **EDIT-ONLY for the 6 built-in
+    distributors (EG / RM / IS / IS-S / SF / PS)** — **a NEW weekly distributor needs an ADAPTER, not just
+    a mapping.** Locked boundary: only the **column index + header row** are editable; role, form field,
+    semantics and the PS matrix are fixed in code. The AI-verify path resolves the SAME contract, so it
+    cannot green-lie about an override.
+- Both editors are **edit-only safety surfaces** — they carry a live header preview (a sample file is read
+  for headers only, never persisted) and a recent-changes audit panel — and they do not weaken the
+  parser's byte-identical guarantee.
