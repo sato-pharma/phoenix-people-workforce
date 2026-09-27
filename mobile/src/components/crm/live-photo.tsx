@@ -29,6 +29,7 @@ const STEP_LABELS: Record<CrmPhotoStep, string> = {
 };
 
 export function CrmLivePhoto({
+  allowOffline = false,
   disabled = false,
   hint,
   onChange,
@@ -38,6 +39,11 @@ export function CrmLivePhoto({
   title,
   value,
 }: {
+  /**
+   * Let a dropped connection keep the photo instead of refusing it. The visit camera passes this;
+   * the place camera never can, because the server resolves a place's territory at capture.
+   */
+  allowOffline?: boolean;
   disabled?: boolean;
   /** A line under the camera, e.g. where to stand. Omitted on the visit camera (owner, 2026-09-23). */
   hint?: string;
@@ -59,6 +65,7 @@ export function CrmLivePhoto({
     setProblem(null);
     setStep("opening");
     const outcome = await captureCrmPhoto({
+      allowOffline,
       employeeHrId: user?.hrId ?? "",
       onStep: setStep,
       purpose,

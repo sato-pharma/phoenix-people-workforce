@@ -10,7 +10,7 @@
  */
 
 import { dayLabelWithYear } from "@/lib/crm/format";
-import type { CrmCapturedPhoto } from "@/lib/crm/photo";
+import type { CrmCapturedPhoto, CrmStoredPhoto } from "@/lib/crm/photo";
 import { parseTimings, timingsToDrafts } from "@/lib/crm/timings";
 import type { CrmTiming, PlacePayload } from "@/lib/crm/types";
 
@@ -36,7 +36,7 @@ export function placeDraftProblem(draft: PlaceDraftState, options: { needsPhoto:
  * name and the timings. No address, no part of town, no brick — the server resolves the whole location
  * from these coordinates and writes it once (owner, 2026-09-23).
  */
-export function placePayload(photo: CrmCapturedPhoto, draft: PlaceDraftState): PlacePayload {
+export function placePayload(photo: CrmStoredPhoto, draft: PlaceDraftState): PlacePayload {
   return {
     photoPath: photo.path,
     lat: photo.lat,

@@ -1571,6 +1571,7 @@ import { runPhoenixCrmLocationIntegrityTests } from "./phoenix-crm-location-inte
 import { runPhoenixCrmDuplicatePhotosTests } from "./phoenix-crm-duplicate-photos.test.ts";
 import { runPhoenixCrmBehaviourIntegrityTests } from "./phoenix-crm-behaviour-integrity.test.ts";
 import { runPhoenixCrmOfflineClockTests } from "./phoenix-crm-offline-clock.test.ts";
+import { runPhoenixCrmOfflineWireTests } from "./phoenix-crm-offline-wire.test.ts";
 import { runPhoenixCrmOutboxTests } from "./phoenix-crm-outbox.test.ts";
 import { runPhoenixCrmPortalSidebarTests } from "./phoenix-crm-portal-sidebar.test.ts";
 import { runPhoenixCrmAmPmWordTests } from "./phoenix-crm-am-pm-words.test.ts";
@@ -5251,6 +5252,11 @@ await runTest(
 await runTest(
   "Phoenix CRM can date a visit captured with no signal, without trusting the phone's clock (A1 phase 1 — owner, 2026-09-27: \"I want the Cairo time, but I don't want the time on the phone because they may install an app that changes the time in the phone\"; the phone sends a DURATION measured on the monotonic clock, never a timestamp, against an ANCHOR the server wrote and looks up, so capturedAt = the server's own anchor time plus the elapsed time; the claim must fit inside the window the server brackets at both ends itself, which makes the bound physics rather than trust; a correction can only ever pull a claim back towards the truth and never past the server's own receipt; a delta measured across a reboot is refused because the monotonic clock resets, while two UNKNOWN boot ids are not a match; a borrowed anchor is refused; and the visit files under the Cairo day it was CAPTURED, never the day it arrived)",
   runPhoenixCrmOfflineClockTests,
+);
+
+await runTest(
+  "Phoenix CRM's save button reaches the queue, so a rep in a dead spot keeps his visit (A1, the wiring — until now the queue had NO caller and could not have one, because `@/*` resolves only to `mobile/src/*` and no phone file could supply `drainOutbox` its rules, so it shipped uncallable; BOTH failure points now end in the queue rather than in a message — a photo upload that never landed is held without even attempting the save, and a save whose connection died after the photo got through is held rather than sending him back to the door; a visit is NEVER held without its stamped photo, because one that can never be sent would never leave; a full queue refuses the NEWEST capture with an instruction he can act on and discards nothing older; the elapsed reading is taken at the PRESS from the monotonic clock, and the claim carries an anchor id, a run id and a duration with no timestamp of any kind; every word he reads says the visit is SAVED on his phone, in green, in the same place a sent visit is confirmed; and a PLACE can never be queued, because the server resolves its brick, area and address from the coordinates at capture)",
+  runPhoenixCrmOfflineWireTests,
 );
 
 await runTest(
