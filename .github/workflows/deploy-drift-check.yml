@@ -92,7 +92,61 @@ jobs:
             exit 0
           fi
 
+          echo "DRIFT_SCOPE=PRODUCTION" >> "$GITHUB_ENV"
           echo "::error::Production is NOT serving main HEAD after a 3-minute grace period. main=$MAIN_SHA production=${LIVE_SHA:-<unreachable>}. This is the exact failure mode fixed 2026-08-13 (production silently tracking the wrong Railway source branch). Check: railway status --project dc218ad3-99b7-4aff-be38-953a57524a71 --environment production --json, then inspect .environments.edges[0].node.serviceInstances.edges[].node.latestDeployment.meta.branch — it must read \"main\"."
+          exit 1
+
+      # STAGING, once it has a branch of its own (added 2026-09-27, dormant until then).
+      #
+      # 🔴 GATED ON A VARIABLE ON PURPOSE. While staging still deploys from `main` this check would
+      # be comparing the wrong two things and would alarm constantly, and an alarm that cries wolf is
+      # worse than no alarm. Set `STAGING_TRACKS_BRANCH=staging` (a repository variable) in the SAME
+      # change that repoints Railway's staging environment, and not before:
+      #   gh variable set STAGING_TRACKS_BRANCH --body staging
+      # Unset it again if staging is ever pointed back at `main`.
+      #
+      # WHY IT MATTERS. Staging's source branch is written by staging-branch-sync.yml, so a broken or
+      # never-triggered sync leaves staging serving an ever-older commit with nothing red anywhere —
+      # exactly the 2026-08-13 shape described in this file's header, which is the incident that
+      # created this workflow. Production's check above cannot see it, because staging drifts against
+      # its own branch rather than against `main`.
+      - name: Compare staging's deployed revision against its source branch
+        if: ${{ !inputs.test_alert && vars.STAGING_TRACKS_BRANCH != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ vars.STAGING_TRACKS_BRANCH }}
+        run: |
+          set -euo pipefail
+
+          fetch_staging_revision() {
+            curl -fsS --max-time 10 https://phoenix-people-workforce-staging.up.railway.app/api/healthz               | jq -r '.revision // empty'
+          }
+
+          BRANCH_SHA=$(curl -fsS --max-time 10 -H "Authorization: Bearer ${GH_TOKEN}"             "https://api.github.com/repos/${REPO}/commits/${BRANCH}" | jq -r '.sha')
+          echo "${BRANCH} HEAD: $BRANCH_SHA"
+
+          LIVE_SHA="$(fetch_staging_revision || true)"
+          echo "staging revision (check 1): ${LIVE_SHA:-<unreachable>}"
+
+          if [ "$LIVE_SHA" = "$BRANCH_SHA" ]; then
+            echo "In sync."
+            exit 0
+          fi
+
+          echo "Mismatch (or healthz unreachable) — waiting 3 minutes for an in-flight Railway build to land before treating this as real drift..."
+          sleep 180
+
+          LIVE_SHA="$(fetch_staging_revision || true)"
+          echo "staging revision (check 2): ${LIVE_SHA:-<unreachable>}"
+
+          if [ "$LIVE_SHA" = "$BRANCH_SHA" ]; then
+            echo "Caught up during the grace window. In sync."
+            exit 0
+          fi
+
+          echo "DRIFT_SCOPE=STAGING" >> "$GITHUB_ENV"
+          echo "::error::Staging is NOT serving ${BRANCH} HEAD after a 3-minute grace period. ${BRANCH}=$BRANCH_SHA staging=${LIVE_SHA:-<unreachable>}. Most likely the staging-branch-sync workflow has stopped advancing the branch, or Railway's staging source was changed. Read: gh run list --workflow=staging-branch-sync.yml --limit 5, and git ls-remote origin refs/heads/${BRANCH}."
           exit 1
 
       # SELF-TEST, same convention as migration-drift-check.yml: workflow_dispatch with
@@ -157,7 +211,7 @@ jobs:
           if [ "$IS_TEST" = "true" ]; then
             TEXT=$(printf 'ALERT SELF-TEST (not an incident)\n\nSomeone ran the deploy drift check with the test flag to confirm this channel still works.\n\nIf you are reading this, a real production deploy-drift failure would also reach you.\n\n%s' "$RUN_URL")
           else
-            HEADER='PRODUCTION DEPLOY DRIFT DETECTED'
+            HEADER="${DRIFT_SCOPE:-PRODUCTION} DEPLOY DRIFT DETECTED"
             [ -n "$STREAK_LINE" ] && HEADER=$(printf '%s\n%s' "$HEADER" "$STREAK_LINE")
             TEXT=$(printf '%s\n\nProduction is not serving main HEAD, 3 minutes after first noticing.\n\nCHECK THIS FIRST, it is now the most likely cause: production deploys are GATED on the commit (Railway Wait for CI). A red, cancelled or still-queued check suite on main HEAD withholds the deploy, and after two hours Railway SKIPS it outright with nothing turning red. Read main HEAD run: gh run list --workflow=ci.yml --branch main --limit 3\n\nIf every suite on that commit is green, then this is the failure mode fixed 2026-08-13 (Railway production tracking the wrong source branch) — check railway status for the production service source branch.\n\nAccount: docs/deployment.md, "The deploy gate".\n\n%s' "$HEADER" "$RUN_URL")
           fi
