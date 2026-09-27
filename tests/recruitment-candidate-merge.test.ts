@@ -258,12 +258,54 @@ export function runRecruitmentCandidateMergeTests() {
     "ats_candidate_views",
     "ats_candidate_comments",
     "ats_candidate_manager_folders",
+    // The sixth, found on 2026-09-27 and missed by the pass that rescued the other five.
+    "ats_interview_bookings",
   ]) {
     assert.ok(
       childTables.includes(table) || deduped.includes(table) || appendOnly.includes(table),
       `${table} carries candidate_id, so a merge that never moves its rows loses them when the duplicate is deleted`,
     );
   }
+
+  // ── The booked interview ──────────────────────────────────────────────────────────────────────
+  // `ats_interview_bookings.candidate_id` is ON DELETE CASCADE, so a merge that did not move it
+  // DESTROYED the interview — and a cascade is not a refusal, so nothing was reported and nothing
+  // was left behind to notice. It is also the row most likely to be on the duplicate rather than the
+  // survivor, because booking an interview is what creates these duplicates in the first place:
+  // `createInterviewBooking` makes a candidate for an outside person. Measured on production
+  // 2026-09-27, all three byte-identical-CV pairs were one intake record with 0 bookings and one
+  // calendar record with exactly 1. Merging the calendar record away — the direction the owner chose
+  // on the Norhan Gamal Hamed pair — would have deleted three promised interviews in silence.
+  assert.ok(
+    childTables.includes("ats_interview_bookings"),
+    "ats_interview_bookings must be in childTables — its candidate_id cascades on delete, so a merge that does not move it destroys a booked interview and reports nothing",
+  );
+  // It belongs on the PLAIN list and nowhere else: its only UNIQUE index is the primary key on `id`,
+  // so a blind reassign cannot collide, and two interviews for one person is an ordinary state.
+  assert.equal(
+    deduped.includes("ats_interview_bookings"),
+    false,
+    "ats_interview_bookings is not unique on (candidate_id, anything) — treating it as deduped would drop a real interview as a predicted collision",
+  );
+  assert.equal(
+    appendOnly.includes("ats_interview_bookings"),
+    false,
+    "a booking accepts an UPDATE, so copying it would leave the duplicate's own interview to die with the row",
+  );
+  // And the recruiter is TOLD. A moved interview that nobody mentions leaves a human looking for it
+  // on the record that no longer exists.
+  assert.ok(
+    /if \(table === "ats_interview_bookings"\) movedInterviews = moved;/.test(service),
+    "the merge must count the interviews it moved, or the summary cannot report them",
+  );
+  assert.ok(
+    /movedInterviews: number;/.test(service),
+    "CandidateMergeResult must carry movedInterviews so a caller can show it",
+  );
+  assert.ok(
+    /countedNoun\(input\.movedInterviews, "booked interview", "booked interviews"\)/.test(service),
+    "the summary must name the booked interview in the recruiter's words, never leave the move silent",
+  );
 
   // ats_candidate_views HAS NO `id` COLUMN — its primary key IS (candidate_id, viewer_hr_id). The
   // plain reassign path selects "id" to count what moved, which answers 42703 there, so this table
