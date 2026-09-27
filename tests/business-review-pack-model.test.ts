@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 
 import { buildConcentration, type ReviewSalesDetail } from "@/lib/business-review/concentration";
 import { buildSalesReviewPack, type PackInput } from "@/lib/business-review/pack/model";
+import { packDocumentHtml } from "@/lib/business-review/pack/pdf";
 import { buildSpecialtyMix } from "@/lib/business-review/specialty-mix";
 import { stripComments } from "./support/comment-strip.ts";
 
@@ -236,5 +237,39 @@ export function runBusinessReviewPackModelTests() {
       );
     }
     assert.ok(model.includes("note:"), `${MODEL}: sections must carry their note.`);
+  }
+
+  // ------------------------------------------------------------------ 9. the PDF renders Arabic, not tofu
+  //
+  // Brick names and many customer names are Arabic. The owner reported both a brick showing its CODE
+  // and the Arabic reading wrong. The renderer must embed an Arabic face (no Chromium this runs on —
+  // production, CI — installs one), reach it through the fallback stack, and mark cell direction so an
+  // Arabic run orders and shapes correctly. `packDocumentHtml` is pure, so this needs no Chromium.
+  {
+    const rows: ReviewSalesDetail[] = [
+      { areaCode: "CA1", brickId: "B215-2", brickName: "كوم حماده", channel: "distributor", clientCode: "C1", clientName: "مخزن القادسية", period: "2026-07", value: 800 },
+      { areaCode: "CA1", brickId: "B2", brickName: "زفته", channel: "wholesaler", clientCode: "C2", clientName: "Two", period: "2026-07", value: 200 },
+    ];
+    const pack = buildSalesReviewPack(
+      input({ concentration: buildConcentration(rows), selection: ["brick-spread", "customer-concentration"] }),
+    );
+    const html = packDocumentHtml(pack);
+    assert.match(html, /@font-face\{font-family:"Amiri Quran"/, "an Arabic face is embedded so a name is never tofu on a font-less server");
+    assert.match(html, /data:font\/ttf;base64,[A-Za-z0-9+/]{500,}/, "and the face is actually inlined, not just named");
+    assert.ok(html.includes('dir="auto"'), "cells carry dir=auto so an Arabic run orders and shapes correctly");
+    assert.match(html, /--text:[^;]*Amiri Quran/, "the text face falls back to the Arabic face for Arabic glyphs");
+    assert.ok(html.includes("كوم حماده"), "the Arabic brick NAME travels into the file — never the code");
+  }
+
+  // ------------------------------------------------------------------ 10. the brick label is a NAME, never the code
+  {
+    const src = stripComments(readFileSync("src/lib/business-review/sources/closing-detail.ts", "utf8"));
+    assert.match(src, /source_of_sales_bricks/, "brick names are resolved from the master, not invented");
+    assert.match(src, /brick_name/, "and read the master's name column");
+    assert.match(src, /brickNames\.get\(row\.brickId\)/, "the label prefers the resolved name over the id");
+    assert.ok(
+      !/brickName:\s*row\.brickId\s*\|\|\s*"No brick recorded"/.test(src),
+      "closing-detail.ts: the brick label must not be the code alone — the owner's rule is names, never codes.",
+    );
   }
 }
