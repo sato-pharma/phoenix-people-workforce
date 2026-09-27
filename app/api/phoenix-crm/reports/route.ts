@@ -6,6 +6,7 @@ import { validationError } from "@/lib/http/api-errors";
 import { resolvePhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { phoenixCrmFailure, searchOf } from "@/lib/phoenix-crm/server/http";
 import { loadBrickCoverageReport } from "@/lib/phoenix-crm/server/brick-report";
+import { loadAdoptionReport } from "@/lib/phoenix-crm/server/adoption";
 import { loadExceptionsBoard } from "@/lib/phoenix-crm/server/exceptions";
 import {
   loadCoverageReport,
@@ -35,6 +36,9 @@ export const dynamic = "force-dynamic";
 //             natively from the places captured in this module; the sales half comes through the
 //             shared closing loader with the EL QEMA MASK applied in the service, never here. Same
 //             gate again, and the view carries a fixed caveat: brick sales never sum to the area.
+//   adoption  how far the ROLLOUT has got — who has never opened the module at all (F3). Same gate,
+//             and it reads the viewer's WAITING territories too, since a territory whose line has
+//             not opened is the other half of the same question. Nothing on it acts.
 // Filters: seatId, lineCode, from, to, month, includeTest (the Super Admin's only). Scope runs
 // downward only and is applied in the service.
 export async function GET(request: Request) {
@@ -63,6 +67,7 @@ export async function GET(request: Request) {
     else if (section === "locations") report = await loadVisitLocationReport(viewer, filters);
     else if (section === "exceptions") report = await loadExceptionsBoard(viewer, { test: filters.includeTest });
     else if (section === "bricks") report = await loadBrickCoverageReport(viewer, filters);
+    else if (section === "adoption") report = await loadAdoptionReport(viewer, { test: filters.includeTest });
     else throw validationError("Choose a report.");
     return NextResponse.json({ report, section, success: true });
   } catch (error) {
