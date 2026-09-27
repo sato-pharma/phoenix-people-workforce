@@ -6,26 +6,38 @@ Why this exists, how to turn it on, how to turn it off, and the rules that keep 
 
 Measured 2026-09-27 against the live account and the Actions API:
 
-🔴 **CORRECTED 2026-09-27, and the correction is large: the $300.88 this document was built on is a
-MONTH-TO-DATE figure read around 16-17 September, not September.** Reconstructing the month from real
-per-day run counts puts cumulative spend at $284.92 on 09-16 and $309.33 on 09-17 — $300.88 lands
-between them — and the 37,610 minutes derived from it matches this model's 09-15 cumulative of 37,667.
-August's **$240.77 is a closed month** and so comparable; September's was not, and setting them side
-by side made the growth look flat when it roughly doubled. **Never quote a GitHub cost figure without
-the date it was read on.**
+🔴 **THE INVOICE IS THE ONLY AUTHORITY ON THE MONEY, AND MEASURED MINUTES MUST NEVER BE CONVERTED
+INTO ONE.** On 2026-09-27 a session measured every job of the month, multiplied by GitHub's published
+$0.008/min, and reported **~$559** for September. The owner's answer: *"I never paid this value. The
+maximum value I paid is the September value"* — **$300.88, the highest Actions invoice he has ever
+paid.** The invoice is real money; the derivation was arithmetic on top of an assumed rate and an
+assumed allowance. **The invoice wins.**
+
+**The gap is roughly 2x and is NOT explained.** Three candidate causes were tested and all three
+failed, so do not re-run them: queue time inside a job's `started_at` accounts for only **2.6%**;
+**zero** jobs of 25 September ran on a self-hosted runner (all 1,235 were GitHub-hosted); and
+excluding zero-duration skipped jobs changes nothing. Even billing the raw unrounded wall clock
+(2,615 min that day instead of 3,230) still lands well above the invoice. The rate that would
+reconcile is ~$0.0043/min, almost exactly half the published Linux rate — which points at a plan
+allowance, a spending cap or a discount that **cannot be read from here: the billing endpoints need a
+`user` token scope no session has.**
+
+🔴 **So the rule is: measure MINUTES, report MINUTES, and anchor every dollar to the invoice.** A
+session that converts minutes to money will overstate it and be contradicted by the owner, who is the
+only one who can see the bill.
 
 | | |
 | --- | --- |
-| Billable Actions minutes, September | **~72,800** (26 measured days scaled to 30) |
-| September cost at $0.008/min after the free 3,000 | **~$559** |
-| Included with GitHub Pro | **3,000 / month** |
+| **September invoice — the anchor** | **$300.88** (owner, the most ever paid) · August $240.77 |
+| Measured billable job minutes, 25 Sep, `ci.yml` | **3,230** (3,624 across all workflows) |
 | `ci.yml` runs, 09-01..09-26 | **4,304** (2,657 `pull_request` · 1,647 `push` · ~8 dispatch) |
 | Billable minutes per full run | **14** before #4527 · **10.9** after |
-| August bill (closed month) | $240.77 |
+| **Owner's target** | **$60/month TOTAL** — not a $60 saving (owner, 2026-09-27) |
 
-**Model validation, which is the only reason to trust the figures above:** it predicts 3,233 billable
-`ci.yml` minutes for 25 September against **3,230 measured**, and 3,628 across all workflows against
-**3,624 measured** — 0.1% out on both.
+**The minute measurement is reproducible and internally consistent** — a model built from real
+per-day run counts predicts 3,233 billable `ci.yml` minutes for 25 September against **3,230
+measured**, and 3,628 across all workflows against **3,624**, 0.1% out on both. Trust it for
+*ratios*, which is what it is for. Never for a monthly total.
 
 14 billable minutes for 4m33s of wall clock, because **GitHub bills each job separately and
 rounds every job UP to a whole minute** (measured on run `36277556391`: validate 273s→5,
@@ -48,6 +60,13 @@ because a run wants its four jobs concurrent and peak days are twice the average
 requirement is **two to three boxes, not one**, and the ~$12 single-VPS figure was never achievable.
 Two 4-vCPU instances (~€27/month together) give 8 concurrent job slots and ~11,500 runner-minutes a
 day of headroom.
+
+🔴 **AND THIS IS THE ONLY LEVER THAT REACHES THE OWNER'S $60/MONTH TOTAL.** Against the $300.88
+invoice, $60 is an **80% cut**. #4527's per-run saving is 16.5%; driving re-pushes from 1.61 runs per
+PR to a perfect 1.0 adds ~20% more; together they land near $190, not $60. **No combination of
+pipeline tuning and push discipline gets there** — only taking the per-minute price to $0 and paying
+a fixed machine cost instead, which two 4-vCPU boxes do at roughly half the target. Say that plainly
+rather than offering another trim.
 
 **This is a separate lever from [#4527](https://github.com/Gawish-1997/phoenix-people-workforce/pull/4527)**,
 which merges `lint`+`typecheck`+`test` into one job and cuts ~14% off every run. They compose:
@@ -167,9 +186,10 @@ allocation:
 Workload, corrected to measured runner-second demand rather than to billable minutes:
 **~1,650 runner-minutes/day ≈ 835 busy hours/month** at September's average volume. At ~2 vCPU and
 ~4 GB while busy: ~$44 CPU + ~$44 memory + ~$8 idle across replicas ≈ **$95** — but that buys ONE
-box's capacity, and the section above establishes the requirement is two to three. Against a **~$559**
-month rather than the ~$301 once written here, the payback case survives paying for the extra boxes
-and is stronger than this document claimed.
+box's capacity, and the section above establishes the requirement is two to three. 🔴 **At ~$95 per
+box Railway does NOT reach the owner's $60 total, and two of them are three times it** — a flat-rate
+VPS does, which is why the comparison matters and why Railway's metered compute is the wrong shape for
+this job even though it is the platform already in use.
 
 🔴 **MEMORY WAS THE ASSUMPTION NOBODY HAD MEASURED, AND THE FIRST REAL ATTEMPT FAILED ON IT.** A
 Railway-hosted runner rollout on 2026-09-27 (`CI_RUNNER=self-hosted`, set 20:01:18Z) failed `validate`

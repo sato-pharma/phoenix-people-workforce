@@ -438,11 +438,13 @@ automatically; the local branch and worktree survive and still need approval to 
 merges"). A merge pays a full CI run on the PR **and** another on `main`, ~14 billable minutes each,
 because GitHub rounds every job up to a whole minute. Measured that day: **338 pushes to `main` in 7
 days**, ≥100 PRs merged, **41% of them touching ≤3 files** and 23% changing ≤50 lines — ~28 minutes
-of billing to ship a 3-file change. That volume, not the pipeline, is the whole bill. 🔴 **The
-$300.88 / 37,610-minute figure this rule was first written against was a MONTH-TO-DATE reading taken
-around 16-17 September, not September** — re-measured from real per-day run counts, the month is
-~72,800 billable minutes, about **$559**. Never quote a GitHub cost figure without the date it was
-read on. **So batch related work
+of billing to ship a 3-file change. That volume, not the pipeline, is the whole bill. 🔴 **THE ONLY
+AUTHORITY ON WHAT THIS COSTS IS THE INVOICE, AND IT SAYS $300.88 FOR SEPTEMBER — the highest the
+owner has ever paid** (his own statement, 2026-09-27, correcting a session that had derived ~$559
+from measured job minutes). **Never convert measured minutes into a monthly bill**: doing that
+overstated it by roughly 2x, and the billing API needs a token scope no session here has, so a
+session cannot check its own arithmetic. Measure minutes, report minutes, and anchor money to the
+invoice the owner can read. **So batch related work
 into ONE branch and ONE PR**: finish the whole task — the fix, its test, its doc, the follow-ups you
 can already see — before opening it, and push fixups in fewer, larger commits (concurrency cancels
 superseded PR runs, so two pushes a minute apart bill twice and verify once). Splitting is still
