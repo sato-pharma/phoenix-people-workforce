@@ -108,19 +108,68 @@ function extractDocsOnlyDecisions(ciYml: string): string[] {
   return ciYml.match(re) ?? [];
 }
 
+/**
+ * The jobs that actually gate a step on `docs_only`, read out of `ci.yml` itself.
+ *
+ * DERIVED, NOT HARD-CODED, AND THAT IS THE POINT. This assertion used to read `=== 4`, naming
+ * validate/lint/typecheck/test. Merging lint+typecheck+test into one `checks` job (2026-09-27, to
+ * stop paying GitHub's per-job minute rounding four times) legitimately took it to 2, and a
+ * hard-coded count cannot tell that apart from a copy being DELETED — which is the thing this test
+ * exists to catch. Counting the jobs that consume the decision keeps the real invariant: every job
+ * that takes the fast path must carry the full classifier.
+ *
+ * `mobile` is deliberately not counted. It has an `id: detect` step too, but it answers
+ * `mobile_changed`, not `docs_only`, so it is not a docs-only job — which is why counting
+ * `id: detect` (3) would be wrong where counting the consumers (2) is right.
+ *
+ * Node builtins only: this file has no YAML parser and must not grow one.
+ */
+function jobsGatedOnDocsOnly(ciYml: string): string[] {
+  const lines = ciYml.split("\n");
+  const start = lines.findIndex((line) => /^jobs:\s*$/.test(line));
+  // Only look below `jobs:` — `on:` also has two-space keys (`pull_request:`, `push:`).
+  const body = start === -1 ? [] : lines.slice(start + 1);
+  const gated: string[] = [];
+  let job: string | null = null;
+  let uses = false;
+  const flush = () => {
+    if (job && uses) gated.push(job);
+  };
+  for (const line of body) {
+    const header = /^ {2}([A-Za-z0-9_-]+):\s*$/.exec(line);
+    if (header) {
+      flush();
+      job = header[1];
+      uses = false;
+      continue;
+    }
+    if (job && line.includes("steps.detect.outputs.docs_only")) uses = true;
+  }
+  flush();
+  return gated;
+}
+
 export function runCiDocsOnlyClassifierTests() {
   const ciYml = readFileSync(path.join(WORKFLOW_DIR, "ci.yml"), "utf8");
 
-  // There are four docs-only jobs — validate, lint, typecheck, test — each answering inline. If the
-  // extraction finds a different count, either a copy was removed (a job would skip its policing
-  // tests) or the fix never landed in every copy. Either way the guarantee is broken.
+  // Every job that gates a step on `docs_only` must answer the question inline, with the full
+  // classifier. A job missing its copy would take the fast path and skip the tests that police the
+  // auto-loaded instruction files; a count that no longer matches means a copy was removed or the
+  // fix never landed in all of them. Either way the guarantee is broken.
   const decisions = extractDocsOnlyDecisions(ciYml);
+  const gated = jobsGatedOnDocsOnly(ciYml);
+  assert.ok(
+    gated.length >= 2,
+    `expected at least two jobs gating on docs_only (validate plus the lint/typecheck/test job), ` +
+      `found ${gated.length}: ${gated.join(", ") || "none"}. Zero would make the equality below ` +
+      `pass vacuously with every classifier deleted.`,
+  );
   assert.equal(
     decisions.length,
-    4,
-    `expected 4 identical docs-only decision blocks (validate/lint/typecheck/test), each forcing ` +
-      `the suite when an auto-loaded instruction file changed. Found ${decisions.length}. The block ` +
-      `must lead with \`grep -qE '(^AGENTS\\.md$|^CLAUDE\\.md$|^docs/agents-.*\\.md$)'\` before the ` +
+    gated.length,
+    `expected one identical docs-only decision block per job that gates on it — ${gated.length} ` +
+      `job(s): ${gated.join(", ")} — but found ${decisions.length} block(s). The block must lead ` +
+      `with \`grep -qE '(^AGENTS\\.md$|^CLAUDE\\.md$|^docs/agents-.*\\.md$)'\` before the ` +
       `inert-docs check, in EVERY copy — a change to AGENTS.md/CLAUDE.md/docs/agents-*.md must not ` +
       `take the docs-only fast path, or the tests that police those files skip and a red rule merges.`,
   );
