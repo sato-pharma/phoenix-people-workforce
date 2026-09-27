@@ -184,8 +184,15 @@ turns it on by setting these variables once the box is up.
 
 🔴 **It runs on RAILWAY, and no box is rented — corrected 2026-09-27; this paragraph used to say
 "one small dedicated VPS, about $5–6/month".** Since 2026-09-25, at the owner's instruction, Headwind
-is the `phoenix-headwind` service in the existing Phoenix project, with its own `headwind-db`
-Postgres, so the region is inherited and stays `europe-west4`. The VPS plan was dropped after an
+is the `phoenix-headwind` service in the existing Phoenix project, with its own `headwind-db-eu`
+Postgres. 🔴 **The region is NOT inherited — this paragraph claimed it was, and that was false.** A new
+Railway service in this account is created in `sfo`, so both Headwind services ran in the United States
+from 2026-09-25 until they were moved to `europe-west4-drams3a` on 2026-09-28 at the owner's instruction
+(426 ms → ~245 ms, level with `phoenix-hr.satopharma.com`). The `sfo` database `headwind-db` was deleted
+the same night once the move was verified, so **`headwind-db-eu` is the only Headwind database** and
+`postgres.railway.internal` no longer resolves to anything. Nothing holds a new service in Europe by
+itself, so §3's "it must stay in Europe" needs an explicit
+`railway service scale europe-west4-drams3a=1 <old-region>=0` and a re-read. The VPS plan was dropped after an
 evening across three providers: **Hetzner's verification refuses Egyptian customers and takes no
 PayPal**, and OVH split the account across two regions that do not share a sign-in. Do not go
 looking for that box, and do not propose renting one.
@@ -196,7 +203,7 @@ allows one TCP proxy port per service and no UDP at all. So the company uses Rus
 EU relay** — NaCl end-to-end encrypted, so it carries ciphertext it cannot read — and
 `docker-compose.headwind.yml` is kept, unchanged and ready, for the day owning the relay matters
 (an SLA and custody, never secrecy). The original concern that a device-management server "does not
-belong beside the payroll database" is answered by `headwind-db` being its own Postgres service, not
+belong beside the payroll database" is answered by `headwind-db-eu` being its own Postgres service, not
 the Supabase project.
 
 🔴 **THE BOX MUST RUN THE PHOENIX-BUILT IMAGE, NOT THE STOCK `headwind/hmdm` ONE — there is no

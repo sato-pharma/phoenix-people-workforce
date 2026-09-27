@@ -125,11 +125,26 @@ the exact values written out. A session prepares; it does not press.
 ### 4.1 The service and its database
 
 In the **existing** Phoenix Railway project — the one already serving
-`phoenix-hr.satopharma.com` — so that the region is inherited and stays `europe-west4`:
+`phoenix-hr.satopharma.com`:
 
-1. **New → Database → Add PostgreSQL.** Name it `headwind-db`. Headwind's own documentation is
+🔴 **THE REGION IS NOT INHERITED. This section said it was, and that was false — both Headwind services
+ran in the United States from 2026-09-25 until 2026-09-28.** A new service in this account is created in
+`sfo` whatever the project's other services do, and **a volume's region is fixed when the volume is
+created**, so a database cannot be moved afterwards by scaling — it has to be created in the right
+region or migrated by dump and restore. The live services are now `phoenix-headwind` and
+`headwind-db-eu`, both in `europe-west4-drams3a`; the original `sfo` database `headwind-db` was deleted
+on 2026-09-28 once the move was verified, so `postgres.railway.internal` no longer resolves.
+
+1. **New → Database → Add PostgreSQL**, and **set its region to EU West in the dashboard's own picker
+   before it is created.** Name it `headwind-db-eu`. Headwind's own documentation is
    explicit that a database *inside* the application container does not work, so this is a real
    separate service, exactly as it was a separate container before.
+   🔴 **The CLI cannot do this one** — `railway add` has no region flag, so a CLI-created database lands
+   in `sfo` with its volume pinned there. The API can: `VolumeCreateInput` takes a `region`, so the
+   working order is service with **no source** → variables → `volumeCreate` with
+   `region: "europe-west4-drams3a"` → only then set the image, so the first boot happens in the right
+   place. Railway co-locates a container with its volume, and `serviceInstance.region` reads `null` even
+   when it is correct — **read the VOLUME's region, or `railway status`, never that field.**
 2. **New → GitHub Repo → `Gawish-1997/phoenix-people-workforce`.** Name the service
    `phoenix-headwind`.
 3. On that service, **Settings → Build**:
@@ -158,11 +173,18 @@ value from the Postgres service rather than copying a password into a second pla
 | `PROTOCOL` | `http` |
 | `BASE_DOMAIN` | `mdm.satopharma.com` |
 | `ADMIN_EMAIL` | your own address — but see the 🔴 below: it does **not** reach the admin account |
-| `SQL_HOST` | `${{headwind-db.PGHOST}}` |
-| `SQL_PORT` | `${{headwind-db.PGPORT}}` |
-| `SQL_BASE` | `${{headwind-db.PGDATABASE}}` |
-| `SQL_USER` | `${{headwind-db.PGUSER}}` |
-| `SQL_PASS` | `${{headwind-db.PGPASSWORD}}` |
+| `SQL_HOST` | `headwind-db-eu.railway.internal` |
+| `SQL_PORT` | `5432` |
+| `SQL_BASE` | `railway` |
+| `SQL_USER` | `postgres` |
+| `SQL_PASS` | `${{headwind-db-eu.POSTGRES_PASSWORD}}` |
+
+🔴 **These are LITERALS on the live service, not `${{headwind-db.*}}` references — this table used to
+show references and they no longer resolve, because the service they named was deleted on 2026-09-28.**
+Read the live values before trusting any of them. The one that matters is `SQL_HOST`: the 2026-09-28
+cut-over to EU West changed **only** that variable, because the new database was given the old one's
+`POSTGRES_*` values deliberately so no password had to be handled. Set it with `skipDeploys` and let the
+region change be the single redeploy.
 
 🔴 **`PROTOCOL=http` is what makes Railway possible at all, and it is Headwind's own supported
 setting, not a workaround.** Its published Docker README documents `http` for exactly this case — an
@@ -819,10 +841,18 @@ Use a long unique password for the Headwind admin account regardless, and do not
 
 ### 4.8 Backups
 
-🔴 **One thing, and the fleet is unrecoverable without it: the `headwind-db` Postgres service.** It
+🔴 **One thing, and the fleet is unrecoverable without it: the `headwind-db-eu` Postgres service.** It
 holds every tablet, its configuration, its rules and its history.
 
-🔴 **MEASURED 2026-09-26: THERE IS NO BACKUP SCHEDULE AND THERE ARE ZERO BACKUPS.** An earlier
+🔴 **RE-MEASURED 2026-09-28, AFTER THE MOVE TO EU WEST: THE NEW DATABASE ALSO HAS ZERO SCHEDULES AND
+ZERO BACKUPS.** `volumeInstanceBackupScheduleList` on `headwind-db-eu-volume` returns `0` and
+`volumeInstanceBackupList` returns `0`. **A new service inherits nothing — not the region, and not a
+backup schedule.** So the fleet's entire recovery story today is three hand dumps taken during the
+cut-over, in `F:\PHX backup\headwind-db\` (the last is
+`headwind-db-2026092722361-CUTOVER.dump`, 52/52 TABLE DATA, md5 `58bb23c2a8113351212684fc22cb9eb0`),
+plus the orphaned `sfo` volume `postgres-volume-0WKb` until Railway purges it on 2026-09-30.
+
+🔴 **MEASURED 2026-09-26 on the old database, and it still reads the same way:** An earlier
 revision of this section said Railway "takes its own backups of a Postgres service" and to check the
 retention. That is wrong, and it is the most dangerous kind of wrong — it reads as reassurance.
 Railway's own API is unambiguous: `volumeInstanceBackupScheduleList` for this volume returns `[]` and
@@ -830,7 +860,7 @@ Railway's own API is unambiguous: `volumeInstanceBackupScheduleList` for this vo
 about Supabase's backup story covers this database either — it is a separate Postgres service from
 payroll, deliberately.
 
-A schedule is added on **headwind-db → Settings → Backups**. It bills storage, so it is a cost
+A schedule is added on **headwind-db-eu → Settings → Backups**. It bills storage, so it is a cost
 decision and belongs to the owner on that screen. Until one exists, **take one by hand before any
 image-tag change** and understand that losing this volume means re-enrolling the fleet tablet by
 tablet.
@@ -846,12 +876,25 @@ Postgres service from the payroll database, deliberately — a device-management
 tablets all day does not belong beside payroll — so nothing about Supabase's backup story covers it.
 
 🔴 **AND IT HAS NO PUBLIC ENDPOINT, SO NOTHING OUTSIDE RAILWAY CAN READ IT — INCLUDING A SESSION
-TRYING TO VERIFY THE ADD-ON'S TABLE.** Measured 2026-09-26: `headwind-db` carries `DATABASE_URL` only,
-pointed at `postgres.railway.internal`, and **no `DATABASE_PUBLIC_URL`** — no TCP proxy is enabled on
-it, so from a laptop the host does not even resolve (`ENOTFOUND`). That is the right posture for the
-database that holds the whole fleet and it should stay that way, but it means the obvious way to check
-`phoenix_pending_actions` — connect and `select` — **is not available**, and a session will spend a few
-minutes finding that out. **The evidence that the add-on's schema is live is the server's own startup
+TRYING TO VERIFY THE ADD-ON'S TABLE.** Measured 2026-09-26 and unchanged after the move:
+`headwind-db-eu` carries `DATABASE_URL` pointed at its private domain and **no `DATABASE_PUBLIC_URL`** —
+no TCP proxy is enabled on it, so from a laptop the host does not even resolve (`ENOTFOUND`). That is the
+right posture for the database that holds the whole fleet and it should stay that way, but it means the
+obvious way to check `phoenix_pending_actions` — connect and `select` — **is not available by default**,
+and a session will spend a few minutes finding that out.
+
+🔴 **When a migration genuinely needs psql, open a proxy and CLOSE IT AGAIN — it is a public endpoint on
+the fleet database while it exists.** `railway tcp-proxy create --port 5432` prints a
+`*.proxy.rlwy.net` host and port; delete it afterwards with
+`railway tcp-proxy delete --service <svc> --yes <id>`, where **the id is a POSITIONAL argument** — without
+it the command only prints its usage and removes nothing. The API's `tcpProxyCreate` answers
+`Not Authorized` with the CLI's own token, so the CLI is the only way in. The 2026-09-28 cut-over used
+exactly this, for about a minute at each end.
+
+🔴 **`railway ssh` can run psql inside the container instead, but it JOINS argv**, so any SQL carrying
+`||`, `&&` or `>` is mangled and comes back EMPTY with a null exit — which reads exactly like an auth
+failure. A single-quoted whole command works; an argv array through `spawnSync` does not. It also resolves
+the link from the **exact current directory**, so it must be run from the linked folder. **The evidence that the add-on's schema is live is the server's own startup
 log:** `ensureSchema()` prints `Phoenix actions add-on: table ready.` after every deploy, readable with
 `railway logs` on the service. 🔴 **Do not open a TCP proxy on this database to make a verification
 easier** — it would put the fleet's database on the public internet to save one command.
@@ -1457,7 +1500,9 @@ relay:**
    is typed **there**, never sent here: Railway's variable screen puts it straight into the secret
    store, a chat message puts it in a transcript forever. 🔴 **Nothing RustDesk** — both its variables
    stay empty, and empty is the working setting.
-9. Decide the **`headwind-db` backup schedule** (§4.8) — it bills storage, so it is his screen.
+9. Decide the **`headwind-db-eu` backup schedule** (§4.8) — it bills storage, so it is his screen.
+   🔴 **Still open, and re-measured 2026-09-28: the new EU database has ZERO schedules and ZERO
+   backups.** The move to EU West did not carry one over, because a new service inherits nothing.
 10. ~~Approve the merge.~~ ✅ **done** — #4444 merged 2026-09-26 03:11 Cairo, #4450 (the delivery gate
     and the certificate watch) at 03:35, serving as revision `8b5208d11`.
 11. Run the pilot on PHX-TAB-0002.
