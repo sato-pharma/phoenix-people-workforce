@@ -1568,6 +1568,7 @@ import { runPhoenixCrmMobileManagerTests } from "./phoenix-crm-mobile-manager.te
 import { runPhoenixCrmMobileMirrorsTests } from "./phoenix-crm-mobile-mirrors.test.ts";
 import { runPhoenixCrmLocationIntegrityTests } from "./phoenix-crm-location-integrity.test.ts";
 import { runPhoenixCrmDuplicatePhotosTests } from "./phoenix-crm-duplicate-photos.test.ts";
+import { runPhoenixCrmBehaviourIntegrityTests } from "./phoenix-crm-behaviour-integrity.test.ts";
 import { runPhoenixCrmPortalSidebarTests } from "./phoenix-crm-portal-sidebar.test.ts";
 import { runPhoenixCrmAmPmWordTests } from "./phoenix-crm-am-pm-words.test.ts";
 import { runPhoenixCrmDoctorPharmaciesTests } from "./phoenix-crm-doctor-pharmacies.test.ts";
@@ -5226,6 +5227,11 @@ await runTest(
 await runTest(
   "Phoenix CRM catches a photo that was sent before, silently (D5 — owner, 2026-09-25, \"close this hole whithout reps knowing\": a sha256 for the same FILE re-sent and a 64-bit difference hash for the same PICTURE re-encoded, which a sha256 misses; THE SAME-DOOR RULE means a near-identical match fires only across a different customer or a different rep, because a rep at one doctor every month photographs the same door from the same spot and accusing him is worse than every catch it would buy; a blank wall's collapsed hash is refused rather than matched; a retried upload of one capture is not a duplicate of itself; a photo that could not be read is NOT CHECKED and is never fetched again; and the evidence carries its source in the unique key, without which this detector would have OVERWRITTEN the position detector's verdict on the same visit with nothing anywhere going red)",
   runPhoenixCrmDuplicatePhotosTests,
+);
+
+await runTest(
+  "Phoenix CRM judges the SHAPE of a rep's month, silently (D4 — owner, 2026-09-25: the position checks judge one fix and the photo sweep one picture, and both are satisfied by a rep entering twelve real-looking visits from one pavement; six signals over a rep-month, only the three a person CANNOT do standing on their own; half of every fixture is deliberately innocent, so four visits in an hour in one hospital building, durations a second apart, a light day, a rep who never saw the outcome field and a month whose distributor files never landed are all clean; a month under the floor is NOT CHECKED rather than clean, because leave must not read as honest work; it reads the RAW visits table and not the countable view, since an off-plan visit awaiting approval is the one most worth judging; and it does NOT apply the El Qema mask, which would remove real money from a total and manufacture \"the area sold nothing\" for every territory that distributor serves)",
+  runPhoenixCrmBehaviourIntegrityTests,
 );
 
 await runTest(

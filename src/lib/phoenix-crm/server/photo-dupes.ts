@@ -27,6 +27,7 @@
 
 import crypto from "node:crypto";
 
+import { runPhoenixCrmBehaviourSweep, type BehaviourSweepResult } from "@/lib/phoenix-crm/server/behaviour";
 import {
   dhashFromGreyscale,
   judgePhotoDuplicate,
@@ -276,12 +277,21 @@ export async function runPhoenixCrmPhotoSweep(options: { limit?: number; include
 }
 
 /**
- * The nightly sweep, as the cron calls it. Returns nothing and swallows nothing it should not.
+ * The nightly sweep, as the cron calls it: the photos first, then the month's shape.
  *
- * Kept as its own thin wrapper so D4's behaviour pass can join it here rather than in the route: one
- * cron, one dead-man's switch, one place where the order of the two passes is written down.
+ * 🔴 THE ORDER IS LOAD-BEARING, not tidiness. The behaviour pass reads the month whole and is
+ * recomputed whole, so it must run after anything that could add evidence about the same month —
+ * and a duplicate photograph found tonight is exactly that. Reversing them would leave the
+ * behaviour verdict one night stale, every night, for ever.
+ *
+ * Both passes are allowed to throw. That is the opposite of the rule inside a rep's save, and it is
+ * right here: a night that failed must reach the dead-man's switch as a night that failed, or the
+ * sweep goes quiet and reports a silent success for as long as nobody looks.
  */
-export async function runPhoenixCrmIntegritySweep(options: { limit?: number } = {}): Promise<{ photos: PhotoSweepResult }> {
+export async function runPhoenixCrmIntegritySweep(
+  options: { limit?: number; today?: string } = {},
+): Promise<{ photos: PhotoSweepResult; behaviour: BehaviourSweepResult }> {
   const photos = await runPhoenixCrmPhotoSweep({ limit: options.limit });
-  return { photos };
+  const behaviour = await runPhoenixCrmBehaviourSweep({ today: options.today });
+  return { photos, behaviour };
 }
