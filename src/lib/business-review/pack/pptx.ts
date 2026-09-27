@@ -317,16 +317,30 @@ function tableCell(
 }
 
 /**
- * Column widths, measured from what the column HOLDS rather than split evenly.
+ * Column widths, measured from what each column ACTUALLY HOLDS — its header or its widest cell.
  *
- * A name column and a percentage column given the same width wastes half the slide on white space
- * and wraps "Nermeen Salah Abdelaty Abohussien" onto three lines. Left-aligned columns carry names
- * and get the room; right-aligned ones carry figures and do not.
+ * 🔴 THIS REPLACES A FIXED left-2.4/right-1 SPLIT, which sized every right column the same however
+ * wide its content. The "AM · PM · Pharmacies" column carries a ~32-character triple
+ * ("AM 125 · PM 481 · Pharmacies 289") yet was given a figure's narrow width, so it wrapped to two
+ * lines in EVERY row — twelve double-height rows then overran the field and slid the last rep under
+ * the plinth, with the capped-rows line landing on top of a data row. Sizing each column to its own
+ * widest content keeps every row on one line, and twelve one-line rows fit the slide.
+ *
+ * A left column earns a little more room per character (prose reads wider than a snug figure), and
+ * every column keeps a small floor so a short header like "VISITS" is never crushed.
  */
 function columnWidths(section: PackSection): number[] {
-  const weights = section.columns.map((_, i) => (section.align[i] === "left" ? 2.4 : 1));
-  const total = weights.reduce((sum, w) => sum + w, 0);
-  const widths = weights.map((w) => Math.floor((TABLE_W * w) / total));
+  const shown = section.rows.slice(0, ROW_CAP);
+  const chars = section.columns.map((label, i) => {
+    let max = label.length;
+    for (const row of shown) {
+      const text = cellText(row[i] ?? null);
+      if (text.length > max) max = text.length;
+    }
+    return Math.max(max, 6) * (section.align[i] === "left" ? 1.15 : 1);
+  });
+  const total = chars.reduce((sum, c) => sum + c, 0);
+  const widths = chars.map((c) => Math.floor((TABLE_W * c) / total));
   // Rounding lands on the last column, so the grid totals the table's own width exactly.
   widths[widths.length - 1] += TABLE_W - widths.reduce((sum, w) => sum + w, 0);
   return widths;
