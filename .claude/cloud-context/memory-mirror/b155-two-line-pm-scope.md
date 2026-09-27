@@ -1,11 +1,16 @@
 ---
 name: b155-two-line-pm-scope
-description: "B-155 (Ahmed Sharaf) is the Product Manager for 2 SPECIFIC cross-line products (not a two-line PM) — LIVE in production since 2026-07-03"
+description: "HOW the B-155 named-product clamp was BUILT (2026-07-03 build record) — the product LIST is now four codes, see ahmed-sharaf-is-the-cross-line-product-manager for the current one"
 metadata: 
   node_type: memory
   type: project
   originSessionId: 79edc018-f0ed-43ae-a1f8-31ecd901936e
 ---
+
+🔴 **DATED BUILD RECORD — the product LIST below is SUPERSEDED.** The owner added Guamusin (GU001)
+and Ivyronc (IV001) on 2026-09-28, so the live array is four codes, not two:
+[[ahmed-sharaf-is-the-cross-line-product-manager]] is the current fact. Everything below still
+describes the MECHANISM correctly and is kept as the account of how it was built.
 
 **LIVE IN PRODUCTION as of 2026-07-03.** B-155 = Ahmed Sharaf Eldeen, Product Manager. Final model (clarified over the course of the fix): he is NOT a generic "PM who covers two lines" — he is the PM for **exactly 2 named cross-line products**, Tigogrow (`TG001`, Pedia) and Osteosat (`OS001`, Anti infective). Line-level scope (Pedia + Anti infective) applies to HR/org modules; product-level modules (sales AND marketing) are hard-clamped to exactly those 2 products, not his whole line's catalog. His manager (A-8, GPM Rasha) and reporting chain **B-155 → A-8 → A-9** (A-9 = Marketing Manager Hossam, Head Office line) are unchanged — confirmed still `employees.line_id=2, manager_hr_id=A-8` throughout (scope-only fix, no `manager_hr_id` touched).
 
