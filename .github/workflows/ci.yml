@@ -119,7 +119,7 @@ jobs:
   # forever — the exact breakage ci-docs-fallback.yml was invented to paper over. Only the
   # expensive steps below are conditional.
   validate:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 20
 
     steps:
@@ -413,7 +413,7 @@ jobs:
   # in front of it. eslint keeps its own incremental --cache; the restore-keys fallback
   # matters more than the exact key here, since a partial cache still skips most files.
   lint:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 15
 
     steps:
@@ -503,7 +503,7 @@ jobs:
 
   # Split out of the old lint-typecheck job — see the note on `lint`.
   typecheck:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 15
 
     steps:
@@ -603,7 +603,7 @@ jobs:
   # test suite blocked nothing at all. The required names are set on the repository, not in this
   # file, and only the owner can add one.
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 15
 
     steps:
@@ -701,7 +701,7 @@ jobs:
   # Playwright and has no mobile surface, so a broken mobile lockfile should not be able to block
   # a manual E2E run.
   mobile:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 10
 
     steps:
@@ -760,7 +760,7 @@ jobs:
 
   full-e2e:
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.full_e2e == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     # `test` joined this list when it was split out of `validate` (2026-09-17) — dropping it
     # here would have quietly stopped the full E2E suite waiting on the unit tests.
     needs: [validate, lint, typecheck, test]
