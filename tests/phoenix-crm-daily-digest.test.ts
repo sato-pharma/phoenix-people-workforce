@@ -154,42 +154,45 @@ export function runPhoenixCrmDailyDigestTests(): void {
     assert.ok(runner.includes("logError("), "and logged");
   }
 
-  // ── 🔴 DELIBERATELY NOT SCHEDULED — the owner's decision, 2026-09-27 ──────────────────────────
+  // ── 🔴 SCHEDULED, AND IN-APP OR TELEGRAM ONLY — the owner's decision, 2026-09-28 ─────────────
   //
-  // This section used to assert the opposite: that the digest was in JOB_SCHEDULES, in
-  // scripts/cronjob-sync.mjs and in the observability table. It was, and it was right to be, until
-  // he looked at what it would do and said "donot create this digest i donot want it" — before a
-  // single message had been sent to anybody.
+  // He stood this digest down on 2026-09-27 ("donot create this digest i donot want it") and asked
+  // for it back the next day with one condition: "i want it in app or telegram only". Nothing had
+  // ever been sent in between, so there was nothing in the field to undo either way.
   //
-  // Everything that BUILDS the digest is untouched and still tested above: the route, the message,
-  // the per-manager-per-day key, the clean-manager-gets-nothing rule. What is gone is the
-  // SCHEDULE, in all three places at once, and all three matter for different reasons:
+  // His condition was already how it was built, and it is already pinned ABOVE — "Email cannot
+  // escape, whatever this feature asks for" calls `enforcePhoenixCrmEmailBlock` itself, so it
+  // proves the guard behaviourally rather than by reading the source. Do not add a second copy of
+  // that check here; this section is only about the SCHEDULE. The
+  // three schedule halves are pinned TOGETHER, because the failure mode of restoring them apart is
+  // worse than not restoring them at all:
   //
-  //   JOB_SCHEDULES            a declaration with no job behind it reads to the heartbeat sweep as
-  //                            a job that has STOPPED. Once one 06:55 passes after bootstrap it
-  //                            goes STRANDED and alarms every Super Admin, in-app, Telegram and
-  //                            push, every sweep, for ever — about a job nobody ever created.
-  //   docs/observability.md    the register test pins it against JOB_SCHEDULES, so the two move
-  //                            together or CI goes red.
-  //   scripts/cronjob-sync.mjs that file is a list of jobs someone is about to create. Re-adding a
-  //                            declaration there is the same keystroke as creating the job.
+  //   JOB_SCHEDULES            a declaration with no cron job behind it reads to the heartbeat
+  //                            sweep as a job that has STOPPED. Once one 06:55 passes it goes
+  //                            STRANDED and alarms every Super Admin, in-app, Telegram and push,
+  //                            every sweep, for ever — about a job nobody created.
+  //   scripts/cronjob-sync.mjs the list of jobs someone is about to create, which is what closes
+  //                            that gap on `--apply`.
+  //   docs/observability.md    the register test pins the table against JOB_SCHEDULES, so the two
+  //                            move together or CI goes red.
   //
-  // If he ever wants it, all three go back together AND the cron job is created in the same sitting
-  // — never one without the others.
+  // 🔴 So this file cannot prove the cron job EXISTS — only cron-job.org knows that. What it can
+  // prove is that the three halves never drift apart, which is the part a session gets wrong.
   {
-    assert.equal(
-      JOB_SCHEDULES.find((entry) => entry.slug === DIGEST_JOB_SLUG),
-      undefined,
-      "🔴 the digest is NOT scheduled (owner, 2026-09-27) — a declaration with no cron job behind it alarms for ever about a job that never runs",
-    );
-    assert.equal(DIGEST_CRON, "55 6 * * *", "the intended minute is still recorded, for the day he wants it");
+    const declared = JOB_SCHEDULES.find((entry) => entry.slug === DIGEST_JOB_SLUG);
+    assert.ok(declared, "the digest is scheduled again (owner, 2026-09-28: \"i want it in app or telegram only\")");
+    assert.equal(declared!.schedule, DIGEST_CRON, "and at the minute the module itself records");
+    assert.equal(DIGEST_CRON, "55 6 * * *", "06:55 Cairo, before the field day starts");
 
     const sync = readFileSync(new URL("../scripts/cronjob-sync.mjs", import.meta.url), "utf8");
-    assert.equal(sync.includes('"phoenix-crm-daily-digest": {'), false, "no declaration to apply — adding one back is the same as creating the job");
-    assert.ok(sync.includes("donot create this digest"), "and his words are left in that file, so the absence reads as a decision rather than a gap");
+    assert.ok(
+      sync.includes('"phoenix-crm-daily-digest": {'),
+      "🔴 and there is a declaration to apply — a JOB_SCHEDULES line without one alarms every Super Admin for ever",
+    );
+    assert.ok(sync.includes("hours: [6], minutes: [55]"), "at the same minute, or the heartbeat calls a job that fires perfectly late");
 
     const docs = readFileSync(new URL("../docs/observability.md", import.meta.url), "utf8");
-    assert.equal(docs.includes("| `phoenix-crm-daily-digest` |"), false, "nor a row in the table the register test pins");
+    assert.ok(docs.includes("| `phoenix-crm-daily-digest` | `55 6 * * *` | 2h |"), "and the observability table carries the same row");
   }
 
   // ── The route: authorised, watched, and safe to fire twice ────────────────────────────────────
