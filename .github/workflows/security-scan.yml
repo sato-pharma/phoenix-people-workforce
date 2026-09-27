@@ -48,6 +48,7 @@ concurrency:
 
 permissions:
   contents: read
+  actions: read # read this workflow own past runs, to count the failure streak
 
 env:
   GITLEAKS_VERSION: "8.30.1"
@@ -223,3 +224,82 @@ jobs:
           name: semgrep-report
           path: semgrep-report.sarif
           retention-days: 14
+
+      # ── THE ALARM THIS JOB WAS ALWAYS SUPPOSED TO HAVE ────────────────────────────────
+      # The header above says the value of a red daily run is that "a regression surfaces within a
+      # day, with a notification". The notification was never built, and it cost exactly what you
+      # would expect: sast-scan failed 8 of the 10 scheduled runs between 2026-09-16 and 09-25 on
+      # THREE REAL blocking Semgrep findings, and nobody was told. They were eventually fixed by
+      # #4441 and #4445 (09-26 reads 0 findings over 448 rules on 6,853 files) — but for eight days
+      # the only vulnerability scanner this repository has was red, and its verdict lived in a job
+      # summary nobody opens. secret-scan needs no alarm: it runs on pull_request, where GitHub
+      # notifies on the PR. This job runs ONLY on schedule and dispatch, so silence is total.
+      #
+      # Copied deliberately from migration-drift-check.yml's step rather than invented: that one has
+      # been delivering for weeks and carries three hard-won constraints. Do not undo them.
+      #   1. NO parse_mode. A lone underscore in the text opened an italic span Telegram never
+      #      closed, and the whole message came back HTTP 400. An alert must never fail on format.
+      #   2. Capture the BODY, not just the status. A silent non-2xx is how that step once reported
+      #      success while delivering nothing.
+      #   3. continue-on-error PLUS exit 1. A Telegram outage must never mask — or manufacture — a
+      #      security verdict, but a broken alarm must never look healthy either.
+      #
+      # The streak line is scoped to event=schedule on purpose. A manual dispatch fired to inspect
+      # something must not reset a nightly streak; counting every event once hid a 21-night run at
+      # "6". Age is the thing that goes unseen here, not delivery — this check's own history proves
+      # delivery was never the problem.
+      - name: Notify Telegram on failure
+        if: ${{ failure() }}
+        continue-on-error: true
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_ALERT_CHAT_ID: ${{ secrets.TELEGRAM_ALERT_CHAT_ID }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          EVENT: ${{ github.event_name }}
+          WF_FILE: security-scan.yml
+        run: |
+          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_ALERT_CHAT_ID" ]; then
+            echo "::warning::Telegram alert not sent — TELEGRAM_BOT_TOKEN or TELEGRAM_ALERT_CHAT_ID is unset. The SAST scan FAILED and reached nobody, which is the condition this step exists to prevent."
+            exit 0
+          fi
+          STREAK_LINE=""
+          RUNS=$(gh api "repos/${REPO}/actions/workflows/${WF_FILE}/runs?per_page=50&status=completed&event=${EVENT}" --jq '.workflow_runs[] | [(.id|tostring), .conclusion, .created_at] | join(" ")' 2>/dev/null || true)
+          if [ -n "$RUNS" ]; then
+            STREAK=1
+            FIRST_SEEN=""
+            while read -r rid rconc rdate; do
+              [ -z "$rid" ] && continue
+              [ "$rid" = "$RUN_ID" ] && continue
+              if [ "$rconc" = "failure" ]; then
+                STREAK=$((STREAK + 1))
+                FIRST_SEEN="$rdate"
+              else
+                break
+              fi
+            done <<< "$RUNS"
+            if [ "$STREAK" -gt 1 ]; then
+              STREAK_LINE=$(printf 'Consecutive failure #%s' "$STREAK")
+              if [ -n "$FIRST_SEEN" ]; then
+                STREAK_LINE=$(printf '%s, first seen %s' "$STREAK_LINE" "${FIRST_SEEN%%T*}")
+              fi
+              STREAK_LINE=$(printf '%s. A climbing number means nobody is acting on this.' "$STREAK_LINE")
+            fi
+          fi
+          HEADER='SECURITY SCAN FAILED (Semgrep)'
+          [ -n "$STREAK_LINE" ] && HEADER=$(printf '%s\n%s' "$HEADER" "$STREAK_LINE")
+          TEXT=$(printf '%s\n\nThe daily SAST scan over main is red. This is the only vulnerability scanner this repository has - GHAS is not purchasable on a personal account and CodeQL is disabled.\n\nIt is either a real finding or a scan that did not run. Both need a human: open the run, read the Findings count, and fix at the line or suppress at the line with a reason.\n\nThis alarm exists because the same job was red for 8 of 10 nights in September on three real findings and told nobody.\n\n%s' "$HEADER" "$RUN_URL")
+          HTTP=$(curl -sS --max-time 20 -X POST \
+            "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d "chat_id=${TELEGRAM_ALERT_CHAT_ID}" \
+            -d "disable_web_page_preview=true" \
+            --data-urlencode "text=${TEXT}" \
+            -o /tmp/tg-response.json -w '%{http_code}')
+          echo "telegram sendMessage HTTP ${HTTP}"
+          if [ "$HTTP" != "200" ]; then
+            echo "::error::Telegram alert FAILED to deliver (HTTP ${HTTP}). The SAST result reached nobody. Response: $(cat /tmp/tg-response.json 2>/dev/null | head -c 500)"
+            exit 1
+          fi
+          echo "Telegram alert delivered."

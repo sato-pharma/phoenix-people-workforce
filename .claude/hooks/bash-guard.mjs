@@ -23,7 +23,7 @@
 //       If jq ever disappears from PATH again, restore the check rather than reasoning around it.
 // FAILS OPEN: any parse/logic error exits 0 (allow). A hook bug must never block a real command.
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -497,6 +497,245 @@ try {
           'For a one-off you will sit and watch, stand this guard down for that one command:\n' +
           `  ${once}`,
       );
+    }
+  }
+
+  // C9 — a REPEAT workflow_dispatch in one session, on a branch that a dispatch cannot help.
+  //
+  // WHY. On 2026-09-27 one session ran `gh workflow run` against ci.yml on
+  // codex/backup-tables-out-of-public SEVENTY-ONE times between 07:04 and 10:11 Cairo. Every run came
+  // back startup_failure: GitHub creates the run, refuses to compile the workflow, and returns no
+  // logs, no job list and no workflow name (it files them under a synthetic `BuildFailed` workflow,
+  // id 303299204, state "deleted"). There was nothing to read, so the session simply tried again —
+  // 58% of that day's failed runs, from one loop. Same shape as C8: an outcome carrying NO diagnostic
+  // reads as a command typed wrong, so the session retries instead of trying something else.
+  //
+  // The real cause was nothing the session could have fixed by retrying. The repository had lost its
+  // Pro entitlement: branches/main/protection returned 403 "Upgrade to GitHub Pro or make this
+  // repository public to enable this feature" and branches/main read protected:false, so Actions
+  // could not compile any workflow AND protection could not be enforced. #4524, #4525 and #4526
+  // merged inside 25 seconds at 10:12Z with ZERO check-runs on their head SHAs.
+  //
+  // WHAT THIS IS NOT. It is not a cost control. Measured the same day: a ci.yml dispatch averages 1.2
+  // billable minutes and a startup_failure bills essentially nothing, so those 71 runs cost about
+  // zero. Arguing this clause from money would get it deleted by the next person who measured it.
+  // The argument is that a dispatch on a PR branch is USELESS BY CONSTRUCTION — its check runs never
+  // enter the PR's statusCheckRollup, so branch protection ignores them however green they are.
+  //
+  // WHAT IT MUST NEVER TOUCH, each one a real recovery someone needed:
+  //   * `main` — exempt entirely, no counter. A dispatch there is AGENTS.md §2.1's own outage
+  //     recovery, main is not gated by a PR so the rollup caveat does not apply, and since #4537
+  //     main's CI run is the production deploy gate: a commit already serving production with no
+  //     verdict is worse than any number of wasted runs. One session needed exactly this at 14:37 on
+  //     2026-09-27, after a push run was stranded with self-hosted labels baked in at creation.
+  //   * `gh run rerun <id>` — never counted. It is the sanctioned recovery, keeps the original
+  //     event, and so its checks DO reach the rollup. This deny points at it.
+  //   * the FIRST dispatch of anything, and the second — the cap starts at the third, so a workflow
+  //     meant to be fired by hand (staging-migrate, mobile-build, apps-script-push,
+  //     direct-orders-sweeps, synthetic-journeys, migration-drift-check's test_alert) is untouched in
+  //     normal use, and a legitimate retry after a real fix still goes through.
+  //
+  // FAIL OPEN, ALWAYS. No session id, no state directory, an unreadable or corrupt or wrong-version
+  // state file: all of them count as ZERO dispatches and allow. The deny can only ever come from a
+  // record that parsed. A counter that cannot be read must never block a command — and a fail-closed
+  // read would refuse a legitimate first dispatch during an outage, which is exactly when it is
+  // needed. State lives under HOME keyed by session id, not beside this hook, because a session's
+  // project dir can move mid-session (EnterWorktree) and a repo-relative counter would silently
+  // reset on every hop.
+  const DISPATCH_SHAPED = /\bworkflow\s+run\b|\/dispatches\b/i;
+  const DISPATCH_STAND_DOWN = /(?:^|[\s;&|(])\s*(?:\$env:)?PHX_DISPATCH_OK\s*=\s*['"]?1['"]?(?![\w.])/i;
+  if (DISPATCH_SHAPED.test(cmd)) {
+    const DISPATCH_STATE_VERSION = 1;
+    const DISPATCH_MAX_AGE_DAYS = 7;
+    const DISPATCH_MAX_ENTRIES = 20;
+    const DISPATCH_PER_TARGET_CAP = 2;
+
+    // Flags that CONSUME the next token, so `--ref main ci.yml` never reads `main` as the workflow.
+    const VALUE_FLAGS =
+      /^(?:-r|--ref|-f|-F|--field|--raw-field|-R|--repo|-X|--method|-H|--header|-q|--jq|--input|--hostname|-d|--data|-o|--output|-u|--user|-w|--write-out)$/i;
+    const positionals = (tokens) => {
+      const out = [];
+      for (let i = 0; i < tokens.length; i += 1) {
+        if (VALUE_FLAGS.test(tokens[i])) {
+          i += 1;
+          continue;
+        }
+        if (tokens[i].startsWith('-')) continue;
+        out.push(tokens[i]);
+      }
+      return out;
+    };
+    const flagValue = (tokens, names) => {
+      for (let i = 0; i < tokens.length; i += 1) {
+        for (const name of names) {
+          if (tokens[i] === name) return tokens[i + 1] ?? null;
+          if (tokens[i].startsWith(name + '=')) return tokens[i].slice(name.length + 1);
+        }
+      }
+      return null;
+    };
+    const DISPATCH_URL = /(?:repos\/([^/\s"']+\/[^/\s"']+)\/)?actions\/workflows\/([^/\s"']+)\/dispatches/i;
+    // ci.yml, .github/workflows/ci.yml, CI and ci are ONE workflow. A NUMERIC id stays its own key:
+    // resolving it needs a network call, which a PreToolUse hook must never make.
+    const workflowKey = (value) =>
+      String(value ?? '')
+        .replace(/^.*[\\/]/, '')
+        .replace(/\.ya?ml$/i, '')
+        .trim()
+        .toLowerCase() || '(prompted)';
+
+    const readsAsDispatch = (text) => {
+      const tokens = argvTokens(text);
+      let i = 0;
+      while (i < tokens.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[i])) i += 1;
+      if (i >= tokens.length) return null;
+      const bin = binName(tokens[i]);
+      const rest = tokens.slice(i + 1);
+      const words = positionals(rest);
+      if (/^gh(?:\.exe)?$/.test(bin)) {
+        // The VERB PAIR, so `gh workflow list|view|enable|disable` can never match.
+        if (words[0] === 'workflow' && words[1] === 'run') {
+          return {
+            workflow: words[2] ?? '(prompted for)',
+            ref: flagValue(rest, ['--ref', '-r']),
+            how: 'gh workflow run',
+          };
+        }
+        if (words[0] === 'api') {
+          const hit = words.slice(1).map((w) => DISPATCH_URL.exec(w)).find(Boolean);
+          if (hit) {
+            const refField = rest.find((t) => /^ref=/.test(t));
+            return { workflow: hit[2], ref: refField ? refField.slice(4) : null, how: 'gh api … /dispatches' };
+          }
+        }
+        return null;
+      }
+      if (/^(?:curl(?:\.exe)?|wget(?:\.exe)?|invoke-restmethod|invoke-webrequest|irm|iwr)$/.test(bin)) {
+        const hit = rest.map((w) => DISPATCH_URL.exec(w)).find(Boolean);
+        if (hit) {
+          const inBody = /["']ref["']\s*:\s*["']([^"']+)["']/.exec(text);
+          return { workflow: hit[2], ref: inBody ? inBody[1] : null, how: bin + ' … /dispatches' };
+        }
+      }
+      return null;
+    };
+
+    // Both readings of each segment, as C8 does: unwrapped() strips a leading quote and so
+    // unbalances a line whose first token is a quoted path — and on this machine it often is.
+    let dispatch = null;
+    for (const segment of commandSegments(withoutHereStringBodies(withoutHeredocBodies(cmd)))) {
+      for (const text of [segment.trim(), unwrapped(segment)]) {
+        const hit = readsAsDispatch(text);
+        if (hit) {
+          dispatch = { ...hit, segment: segment.trim() };
+          break;
+        }
+      }
+      if (dispatch) break;
+    }
+
+    // `main` is exempt before any state is touched: nothing about a main dispatch is countable.
+    const ref = dispatch ? (dispatch.ref ?? '(default)') : null;
+    const exemptRef = ref === 'main' || ref === 'refs/heads/main';
+    const sessionId = String(input?.session_id ?? '').replace(/[^A-Za-z0-9_-]/g, '');
+    const home = process.env.PHX_DISPATCH_STATE_DIR || process.env.USERPROFILE || process.env.HOME || '';
+    const stateDir = process.env.PHX_DISPATCH_STATE_DIR
+      ? process.env.PHX_DISPATCH_STATE_DIR
+      : home
+        ? join(home, '.claude', 'relay', 'state')
+        : '';
+
+    if (dispatch && !exemptRef && sessionId && stateDir) {
+      const stateFile = join(stateDir, 'dispatch-' + sessionId + '.json');
+      // Sweep, filtered on the `dispatch-` prefix: this directory is shared with trap-injector.mjs's
+      // `traps-<session>.json`, and an unfiltered sweep would delete every session's cluster state.
+      try {
+        const cutoff = Date.now() - DISPATCH_MAX_AGE_DAYS * 86400000;
+        for (const name of readdirSync(stateDir)) {
+          if (!name.startsWith('dispatch-')) continue;
+          const f = join(stateDir, name);
+          if (statSync(f).mtimeMs < cutoff) rmSync(f, { force: true });
+        }
+      } catch {
+        /* the directory does not exist yet — nothing to clean */
+      }
+
+      let state = null;
+      try {
+        const parsed = JSON.parse(readFileSync(stateFile, 'utf8'));
+        // A version this clause did not write is not a count this clause would have made.
+        if (parsed && parsed.version === DISPATCH_STATE_VERSION && Array.isArray(parsed.dispatches)) {
+          state = parsed;
+        }
+      } catch {
+        state = null; // absent, unreadable, corrupt, half-written — all mean "nothing recorded"
+      }
+      if (!state) state = { version: DISPATCH_STATE_VERSION, sessionId, dispatches: [] };
+
+      const key = workflowKey(dispatch.workflow) + '@' + ref;
+      const prior = state.dispatches.find((entry) => entry.key === key) ?? null;
+      const already = prior ? Number(prior.count) || 0 : 0;
+      const standDown = DISPATCH_STAND_DOWN.test(cmd) || process.env.PHX_DISPATCH_OK === '1';
+
+      if (!standDown && already >= DISPATCH_PER_TARGET_CAP) {
+        const once =
+          input.tool_name === 'PowerShell'
+            ? '$env:PHX_DISPATCH_OK=1; ' + dispatch.segment
+            : 'PHX_DISPATCH_OK=1 ' + dispatch.segment;
+        deny(
+          'A repeat workflow_dispatch is refused - `' +
+            dispatch.workflow +
+            '` on `' +
+            ref +
+            '` has already been dispatched ' +
+            already +
+            ' time' +
+            (already === 1 ? '' : 's') +
+            ' in this session, and a third will not help.\n' +
+            'A dispatch CANNOT unblock a PR: its check runs never enter the PR\'s statusCheckRollup, so ' +
+            'branch protection ignores them however green they are - and ci.yml already triggers on push ' +
+            'and pull_request, so the head has its own run.\n' +
+            'On 2026-09-27 a session ran one of these 71 times between 07:04 and 10:11 and every run came ' +
+            'back startup_failure: GitHub creates the run, refuses to compile the workflow, and returns no ' +
+            'logs, no jobs and no workflow name, so there was nothing to read and retrying felt like ' +
+            'progress. It was 58% of that day\'s failed runs, and the real cause was the repository losing ' +
+            'its Pro entitlement - nothing a retry could reach.\n' +
+            'Do this instead:\n' +
+            '  gh api repos/Gawish-1997/phoenix-people-workforce/branches/main --jq .protected   # false = the gate is off, entitlement lapsed\n' +
+            '  gh run list --workflow=ci.yml --branch <branch> --limit 5 --json databaseId,event,status,conclusion\n' +
+            '  gh run rerun <id>   # the pull_request-sourced run: it keeps the event, so its checks reach the rollup\n' +
+            'Then WAIT - dispatch lags 20-30 minutes during an Actions outage and events are not dropped. ' +
+            'A dispatch on `main` is never refused here, because main is not gated by a PR and its CI run ' +
+            'is the production deploy gate.\n' +
+            'If this really is a different thing - a workflow meant to be fired by hand, or the same one ' +
+            'again after a real fix - stand this guard down for that one command:\n' +
+            '  ' +
+            once,
+        );
+      }
+
+      // Allowing. Record it on the allow path only: a denied command never ran, and counting it
+      // would inflate the number the next deny quotes. A stood-down dispatch IS recorded, so the
+      // count stays truthful for the moment the stand-down lapses.
+      const now = new Date().toISOString();
+      if (prior) {
+        prior.count = already + 1;
+        prior.lastAt = now;
+      } else {
+        state.dispatches.push({ key, workflow: dispatch.workflow, ref, how: dispatch.how, count: 1, firstAt: now, lastAt: now });
+      }
+      state.updatedAt = now;
+      if (state.dispatches.length > DISPATCH_MAX_ENTRIES) {
+        state.dispatches = state.dispatches.slice(-DISPATCH_MAX_ENTRIES);
+      }
+      try {
+        mkdirSync(stateDir, { recursive: true });
+        const tmp = stateFile + '.' + process.pid + '.tmp';
+        writeFileSync(tmp, JSON.stringify(state), 'utf8');
+        renameSync(tmp, stateFile);
+      } catch {
+        /* a counter that cannot be persisted must never block a command */
+      }
     }
   }
 

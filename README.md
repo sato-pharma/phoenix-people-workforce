@@ -202,8 +202,9 @@ All variables are documented in [`.env.example`](.env.example) with comments. Se
 |---|---|
 | `pnpm run ci` | The whole gate in one command — only when you actually need the answer before pushing |
 
-**CI is the gate.** Push the branch and let the PR's checks answer: `validate`, `lint`, `typecheck`,
-`test`, `secret-scan` and `mobile` are required and block a red merge. There is no local pre-push gate — the old
+**CI is the gate.** Push the branch and let the PR's checks answer: `validate`, `checks`, `mobile`
+and `secret-scan` are required and block a red merge (`checks` carries lint, typecheck and the unit
+suite as steps since 2026-09-27). There is no local pre-push gate — the old
 `check:harden` script was retired on 2026-08-18 because it only duplicated, slowly, what CI was
 about to run anyway. **`check:edit` (a `typecheck` alias) joined it on 2026-09-25:** this repo has
 outgrown a local `tsc`, which now needs 4.0–4.5 GB of heap and OOMs at node's own default on a 16 GB

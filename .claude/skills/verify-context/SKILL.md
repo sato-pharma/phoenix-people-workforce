@@ -35,10 +35,13 @@ point there. **This skill never changes infra, settings, or the database — it 
    gh api repos/Gawish-1997/phoenix-people-workforce/branches/main/protection \
      --jq '{checks:[.required_status_checks.checks[]|"\(.context) app=\(.app_id)"], reviews:.required_pull_request_reviews.required_approving_review_count}'
    ```
-   Expect the 6 required checks (`validate`, `lint`, `typecheck`, `test`, `secret-scan`, `mobile`),
-   every one of them `app=15368` (GitHub Actions — a context with `app_id: null` can be satisfied by
-   any app that reports that name), and `reviews: 0` (solo owner can't self-approve). AGENTS.md §2
-   must match.
+   Expect the 4 required checks (`validate`, `checks`, `mobile`, `secret-scan`), every one of them
+   `app=15368` (GitHub Actions — a context with `app_id: null` can be satisfied by any app that
+   reports that name), and `reviews: 0` (solo owner can't self-approve). AGENTS.md §2 must match.
+   🔴 **This command IS the source of truth — do not "correct" it from a doc.** The list has changed
+   four times (4 → 5 → 6 → 4); `lint`, `typecheck` and `test` stopped existing as check names on
+   2026-09-27 (#4527 folded them into `checks`). If what it returns disagrees with AGENTS.md §2, the
+   API is right and §2 is the bug.
 
 5. **Supabase project refs** (§3, §8)
    Call `mcp__supabase-production__list_projects`. Expect exactly production `ozucdzovmcqvepbozvqf`

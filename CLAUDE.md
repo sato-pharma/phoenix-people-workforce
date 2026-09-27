@@ -36,8 +36,10 @@ All commands run from the repo root.
 | Whole gate, by hand — **only when the owner names it** | `pnpm run ci` |
 
 **CI is the gate. Do not run a local full validation** — no "quick subset" of lint + typecheck
-before pushing, no `pnpm run ci` as a pre-push ritual. Push the branch and let the PR's six
-required checks answer. Migrations and production deploys are the two things CI never sees. Full
+before pushing, no `pnpm run ci` as a pre-push ritual. Push the branch and let the PR's four
+required checks answer — `validate`, `checks`, `mobile`, `secret-scan`; `lint`, `typecheck` and
+`test` are STEPS of `checks` since 2026-09-27 (#4527), not check names, so never wait for them by
+name. Migrations and production deploys are the two things CI never sees. Full
 rule, the retired `check:harden`, and the per-change matrix: [AGENTS.md §7](AGENTS.md).
 
 🔴 **A local typecheck is no longer a "fast editing gate" — it does not fit on the owner's machine,

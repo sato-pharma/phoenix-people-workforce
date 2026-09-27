@@ -680,3 +680,92 @@ and the diagnosis traps that nearly sent each the wrong way — is in
 - **The `APP_ENV`/cron-secret hole is CLOSED — do not re-chase it.** **Treat `!isProductionRuntime()` as an auth fallback with suspicion anyway:** it reads as "only in dev" and means "anywhere not labelled production".
 - **The `railway` CLI is linked to `production` here**, so every variable command needs an explicit `-e staging`. Omitting it writes to PRODUCTION — and for `APP_ENV=staging` that would redirect **real employee email** into test inboxes. Setting a variable **does** trigger a redeploy (unless `--skip-deploys`), and the change is inert until that deploy reaches `SUCCESS`.
 - **That deploy fires in SECONDS but serves in MINUTES — reading the gap as "no deploy" is a mistake already made here.** **Confirm by listing DEPLOYMENTS, never by probing the running app**, and never `railway redeploy` to make a variable "take".
+
+## The Railway CLI link names an environment, never a service
+
+**Measured 2026-09-27.** `AGENTS.md` §2.3 has always said "the `railway` CLI is linked to
+`production`". That is true about the *environment* and silent about the *service*, and the silence
+hides a wrong answer: the link lives in `~/.railway/config.json`, keyed by absolute path, and
+
+| path | service |
+| --- | --- |
+| `F:\Phoenix Workforce\phoenix-workforce` (the PRIMARY) | **`phoenix-headwind`** — device management |
+| every `F:\Phoenix Workforce\_wt-*` worktree | `phoenix-people-workforce` — the app |
+
+The project holds four services — `phoenix-people-workforce`, `phoenix-headwind`, `headwind-db`,
+`phoenix-cron` — so "linked to production" never identifies one.
+
+**Why this is worse than a wrong default.** `railway run -- <cmd>` from the primary injects only the
+`RAILWAY_*` built-ins: 119 variables reach the child and `CRON_SECRET` and `CRONJOB_API_KEY` both
+read as **absent**. `scripts/cronjob-sync.mjs` then answers *"CRON_SECRET is not set (environment or
+.env.local). Nothing done."* — which reads as a missing or half-rotated secret. There is a standing
+hook one line away warning that a partial `CRON_SECRET` rotation leaves two fingerprints, so a
+session that believes the message goes hunting a rotation that never happened, against the standing
+rule **rotate NOTHING**. The bearer was verified healthy the same day: `len` 71, matching a job
+firing 200s.
+
+**The fix is one flag:** `railway run --service phoenix-people-workforce -- <cmd>`.
+
+**From a worktree** the CLI answers `No linked project found` instead, because `scripts/new-session.mjs`
+copies `.env.local` but not `~/.railway/config.json`, and writing that file is refused as unauthorized
+persistence. So from a worktree: use the `--service` flag from the primary, or have the owner run
+`railway link` once.
+
+## A second Railway project deploys this repo, and nothing documents it
+
+**Measured 2026-09-27, read-only from the GitHub deployments API.** Every push to `main` produces
+**three** deployment records, not two:
+
+| environment | project |
+| --- | --- |
+| `Phoenix-HR-Workforce / production` | `dc218ad3-99b7-4aff-be38-953a57524a71` — the documented one |
+| `Phoenix-HR-Workforce / staging` | same project |
+| **`superb-smile / production`** | **`83a26007-1a15-4356-aff8-91ef9092bc98` — documented nowhere** |
+
+It is **not failing** — its deployments reach `success`, the previous record going `inactive` as the
+next takes over, which is a service genuinely being replaced per merge rather than a build retrying.
+`railway list` confirms `superb-smile` is a real project in the account.
+
+**106 deployments, 1:1 with `main`, from 2026-09-25T21:12:51Z to 2026-09-27T17:51:50Z.**
+
+🔴 **AND THE FIRST ONE NAMES THE ORIGIN.** That earliest deployment is sha `56f57245f` =
+**`Run Headwind on Railway, and use RustDesk own relay` (#4434)**, merged 2026-09-25 23:44 Cairo — the
+stray project first built **28 minutes after that commit landed**. The mechanism is almost certainly
+this repository own runbook: [devices/headwind-rustdesk.md](devices/headwind-rustdesk.md) step 133
+reads *"New -> GitHub Repo -> `Gawish-1997/phoenix-people-workforce`. Name the service
+phoenix-headwind."* Run from the Railway dashboard ROOT rather than from inside the existing project,
+that creates a NEW auto-named project wired to the repo default branch instead of a service in the old
+one — and `superb-smile` is exactly Railway auto-generated project-name style. So this is one misclick
+during a setup the runbook asked for, not an intrusion and not `railway service source connect`.
+**OWNERSHIP IS ANSWERED; THE MECHANISM IS NOT — and the difference decides what to ask him.**
+**Ownership:** the owner has stated, unprompted and in his own words, that he did not create this
+project (his reply to a session that asked him directly, 2026-09-27). That is his statement, not an
+inference, so **do not ask him again whether it is his** — he runs a dozen sessions and the same
+question arriving twice in an evening is a real cost to him.
+**Mechanism:** still unconfirmed. The runbook-misclick theory above is evidenced by the 28-minute gap
+and the auto-generated name, but he has not said he clicked New Project, and he would have no reason
+to remember doing so if it was a misclick. **Confirm the mechanism before writing it as settled
+history** — and note that the two halves have different standards of proof.
+
+🔴 **METHOD, because it caught two sessions on the same afternoon: an unfiltered or unpaginated
+deployments query UNDERSTATES a per-environment floor.** An unfiltered 100-record page dilutes this
+environment 1-in-3 and put its start 22 hours late; a filtered page that is itself full put it 1h 46m
+late, and reads like a real answer. Only `gh api --paginate` with `?environment=` returns all 106. The
+tell is the same one as every other page-edge trap in these docs: the oldest row being also the
+"first" row.
+
+**Two consequences.**
+
+1. **It is the second reason "production deploys are gated on CI" is false.** Railway's Wait-for-CI is
+   a per-service setting; a toggle on `phoenix-people-workforce` cannot gate a *different project*.
+   Separately, the primary deployment record is created at or one second BEFORE the first check-run
+   exists on the commit (`98ed75c83`: first check-run 17:00:41Z, deployment 17:00:40Z), so there may
+   be nothing for the gate to wait on at evaluation time. See [deployment.md](deployment.md).
+2. **Nobody is watching it.** A second deployment of a payroll application, outside every runbook,
+   every drift check and every health probe in this repository.
+
+🔴 **Do not touch that project.** Creating or deleting a Railway project is a production surface and a
+money move — the owner's dashboard, his click. A plausible origin, worth confirming with him before
+it is written as history: §2.3 already records that `railway service source connect` is **not**
+environment-scoped and once repointed production while being run with `--environment staging`, so a
+session trying to stage a branch could have created a fresh project instead.

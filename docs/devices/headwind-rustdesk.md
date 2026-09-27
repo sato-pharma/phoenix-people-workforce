@@ -1181,7 +1181,7 @@ does lock, erase, lost-mode-with-a-message and a **full-volume five-minute ring 
 any tablet signed into a company Google account. It has no API, so it is a browser and a person — but
 it means nobody is without those four for a single day of this build.
 
-🔴 **The add-on is Java and is OUTSIDE the six required CI checks**, which are TypeScript. It is built
+🔴 **The add-on is Java and is OUTSIDE every required CI check**, all of which are TypeScript. It is built
 by **Railway**, from the Dockerfile, when the `phoenix-headwind` service deploys (§4.1) — so a green
 PR says nothing at all about it, and the first proof it compiles is that deploy. Its Phoenix side is
 ordinary TypeScript and is covered normally. Anything the add-on has not been seen to do on a real

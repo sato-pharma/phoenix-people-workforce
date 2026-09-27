@@ -74,7 +74,7 @@ They are kept here with their answers, because the *reasoning* for why they were
 still correct and any change to this directory re-opens both.
 
 - ~~**This Java has never been compiled.**~~ ✅ **It compiles**, and has since the sixth build
-  (`04fbaff7f`). The six required CI checks on the Phoenix repository are still TypeScript and still do
+  (`04fbaff7f`). The required CI checks on the Phoenix repository are all still TypeScript and still do
   not see this directory at all — **the Railway build is the only thing that compiles it**, so a change
   here that breaks the build shows up as a failed deploy, never as a red check.
 - ~~**The Guice/Jersey wiring is the part most likely to need a correction.**~~ ✅ **It is picked up.**

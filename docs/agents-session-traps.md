@@ -302,9 +302,17 @@ coming undone. Fixed by mapping the whole list in one pass (PR #3541).
 **CI and PRs**
 
 - **CI jobs failing in SECONDS mean billing, not code.** `ci-jobs-failing-in-seconds-means-billing-not-code`
-- **`secret-scan` is a required check — there are 6 total** (`validate`, `lint`, `typecheck`, `test`,
-  `secret-scan`, `mobile`; the last two were added on 2026-09-18), because a personal account has no
-  GHAS/OSS scanning. `github-personal-account-no-ghas-oss-scanning` **It is the one required check
+- **`secret-scan` is a required check — there are 4 total** (`validate`, `checks`, `mobile`,
+  `secret-scan`), because a personal account has no GHAS/OSS scanning.
+  `github-personal-account-no-ghas-oss-scanning`
+  🔴 **THE LIST HAS ROTTED FOUR TIMES AND THE COUNT IS THE PART THAT ROTS: 4 → 5 (2026-08) → 6
+  (2026-09-18, `test` and `mobile`) → 4 (2026-09-27, #4527 folded `lint`+`typecheck`+`test` into one
+  `checks` job).** `lint`, `typecheck` and `test` are now STEPS of `checks`, not check names, so a
+  session waiting on them by name waits for something that can never report. Every time this changed,
+  the docs lagged: after 09-27 nineteen places in this repo still said six, including the `ship` and
+  `verify-context` skills that sessions follow to merge. **Read
+  `branches/main/protection/required_status_checks` live before stating or counting anything; never
+  quote this paragraph, AGENTS.md, or a skill as the source.** **It is the one required check
   that never runs on a `main` push** — `security-scan.yml` is `on: pull_request` + a daily `schedule`,
   deliberately not `push` (Actions cost). Its absence from a merge commit's check-runs is CORRECT,
   not a missed gate: it ran on the PR head against the identical tree. Do not hunt for it after a
@@ -320,9 +328,13 @@ coming undone. Fixed by mapping the whole list in one pass (PR #3541).
   only `secret-scan` had reported, and a live read a moment later was five of six still pending. It
   was one step from merging a PR whose CI had not started. This is the same shape as every other
   empty-result trap in this file: an absence read as a verdict, exactly like a mangled `git show`
-  piped into `grep -c`. Gate on the **count of PASSES against the expected 6** required checks, and
-  require the head SHA unchanged across two consecutive polls — so the gate can neither fire into a
-  push nor score a list that does not exist yet.
+  piped into `grep -c`. Gate on the **count of PASSES against the required list read LIVE from the
+  protection API**, and require the head SHA unchanged across two consecutive polls — so the gate can
+  neither fire into a push nor score a list that does not exist yet. 🔴 **Do NOT hard-code the
+  expected number.** This paragraph said "the expected 6" until 2026-09-27, when #4527 took the real
+  answer to 4 — a watcher built on that sentence now waits forever for `lint`, `typecheck` and `test`,
+  which no longer exist as checks. The count is the part of every version of this rule that has
+  rotted; the live read is the part that has not.
 - **ONE new hub page trips FOUR separate CI gates.** `adding-a-hub-page-trips-four-separate-ci-gates`
 - **A red `main` still builds, ships, and serves perfectly** — `ignoreBuildErrors` (see the
   exhaustive-`Record` entry under Validation below) hides it from the product, and a green PR is not
@@ -2314,7 +2326,7 @@ it for the hook's wording. Which memory backs which hook:
 **CI and PRs**
 
 - **CI jobs failing in SECONDS mean billing, not code.**
-- **`secret-scan` is a required check — there are 6 (`test` and `mobile` joined 2026-09-18) — and it is the one that never runs on a `main` push.** Its absence from a merge commit is CORRECT.
+- **`secret-scan` is a required check — there are 4 (`validate`, `checks`, `mobile`, `secret-scan`) — and it is the one that never runs on a `main` push.** Its absence from a merge commit is CORRECT. 🔴 **`lint`, `typecheck` and `test` are STEPS of `checks` since 2026-09-27 (#4527), NOT check names — read the protection API, never a doc.**
 - **`gh pr checks` LAGS behind the real job state.**
 - **`check-runs: 0` also means CONFLICTED** — a conflicted PR runs no CI at all, which reads as "not started".
 - **ONE new hub page trips FOUR separate CI gates.**

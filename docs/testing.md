@@ -82,15 +82,15 @@ These test against real data and require valid credentials.
 
 ## CI Integration
 
-CI runs six required checks — five from `.github/workflows/ci.yml`, one from
-`.github/workflows/security-scan.yml`:
+CI runs four required checks — three from `.github/workflows/ci.yml`, one from
+`.github/workflows/security-scan.yml`. 🔴 **Read the list from
+`branches/main/protection/required_status_checks`, not from this table** — it has been wrong twice,
+and the names below changed on 2026-09-27:
 
 | Check | Workflow | What it runs |
 |---|---|---|
 | `validate` | ci.yml | Structural checks (routes, migrations, sql-backups, deductions contract, stale-domains), `pnpm audit`, the production **build**, and the Playwright **login smoke test** — all in one job. |
-| `test` | ci.yml | The **unit/integration suite** (`pnpm run test`, i.e. `tests/run-tests.ts`) on its own parallel job. **It left `validate` on 2026-09-17 (#3950)** — it read nothing the build produced, and was 96s of a 364s job; `validate` came back at 267s and the new job at 129s, under `typecheck`, so the wait fell by the whole 96s. **Anything that says a pinned test "runs in the required `validate` job" means this one.** |
-| `lint` | ci.yml | `pnpm run lint` (parallel job). |
-| `typecheck` | ci.yml | `next typegen` + `pnpm run typecheck` (parallel job). |
+| `checks` | ci.yml | `pnpm run lint`, `pnpm exec next typegen`, `pnpm run typecheck` and the **unit/integration suite** (`pnpm run test`, i.e. `tests/run-tests.ts`) — four **steps** of one job. 🔴 **They were three separate jobs named `lint`, `typecheck` and `test` until 2026-09-27 (#4527)**, which merged them so GitHub's per-job minute rounding is paid once instead of three times (~14% fewer billable minutes). Those three names **no longer exist as check names**, so a gate waiting for them waits forever. The unit suite left `validate` for its own job on 2026-09-17 (#3950) and landed here ten days later. **Anything that says a pinned test "runs in the required `validate` job", or in a required `test` job, means this one.** |
 | `mobile` | ci.yml | `npm ci` and `npm run typecheck` inside `mobile/` — the Expo app, which keeps its own npm lockfile outside the pnpm workspace. **Added 2026-09-18 (#3974)**, after #3970 found `mobile/package-lock.json` could not be installed without `--legacy-peer-deps` and nothing in CI would ever have noticed. The job always runs and always reports; a detect step decides whether to do the work, so a PR that leaves `mobile/` alone pays about nine seconds. |
 | `secret-scan` | security-scan.yml | gitleaks (pinned v8.30.1, checksum-verified) over the checked-out tree, `--no-git --redact`, ~13s. **Blocking** — any finding fails the check. |
 
