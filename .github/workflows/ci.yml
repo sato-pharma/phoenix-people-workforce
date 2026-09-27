@@ -119,7 +119,7 @@ jobs:
   # forever — the exact breakage ci-docs-fallback.yml was invented to paper over. Only the
   # expensive steps below are conditional.
   validate:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 20
 
     steps:
@@ -443,7 +443,9 @@ jobs:
   # the three old names REMOVED on the repository in the same window this merges. Only the
   # owner can do that.
   checks:
-    runs-on: ubuntu-latest
+    # The switchable runner came from #4528, which merged while this branch was open. `CI_RUNNER`
+    # is unset, so this stays `ubuntu-latest` until a self-hosted runner is actually stood up.
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 30
 
     steps:
@@ -587,7 +589,7 @@ jobs:
   # Playwright and has no mobile surface, so a broken mobile lockfile should not be able to block
   # a manual E2E run.
   mobile:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 10
 
     steps:
@@ -646,7 +648,7 @@ jobs:
 
   full-e2e:
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.full_e2e == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     # `test` joined this list when it was split out of `validate` (2026-09-17) — dropping it
     # here would have quietly stopped the full E2E suite waiting on the unit tests.
     # `lint`, `typecheck` and `test` merged into `checks` on 2026-09-27 — a `needs:` naming a
