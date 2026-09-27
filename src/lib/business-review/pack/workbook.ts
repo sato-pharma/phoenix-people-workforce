@@ -200,7 +200,10 @@ export async function renderPackWorkbook(pack: SalesReviewPack): Promise<Buffer>
   cover.getRow(1).height = 46;
   const logo = crestLogo();
   if (logo) {
-    const imageId = book.addImage({ buffer: logo, extension: "png" });
+    // `base64`, not `buffer`: readFileSync returns Buffer<ArrayBufferLike>, which no longer
+    // satisfies ExcelJS's own Buffer type (it wants the resizable-ArrayBuffer members), so the
+    // buffer form fails typecheck. Every other addImage call site in this repo passes base64.
+    const imageId = book.addImage({ base64: logo.toString("base64"), extension: "png" });
     // Height ~40px keeps the mark inside the 46px band; the aspect (401:158) sets the width.
     const h = 38;
     cover.addImage(imageId, { tl: { col: 0.25, row: 0.12 }, ext: { width: Math.round(h * (401 / 158)), height: h } });
