@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
+
+// The parse and the retired-name list come from the SHARED module, not a copy. `scripts/
+// check-required-checks.mjs` holds the same declaration against the LIVE gate, and two copies of this
+// parse could disagree about what AGENTS.md says — which is the exact class of drift this area exists
+// to stop. Importing the real thing also means this test drives the parse the script uses.
+import { RETIRED_CHECK_NAMES, declaredRequiredChecks } from "../scripts/required-check-names.mjs";
 
 /**
  * The required-check list must not drift between branch protection, the workflows that produce the
@@ -48,8 +54,8 @@ import path from "node:path";
  */
 const WORKFLOW_DIR = ".github/workflows";
 
-/** The three names that stopped being checks on 2026-09-27 (#4527). */
-const RETIRED_CHECK_NAMES = ["lint", "typecheck", "test"] as const;
+/** The live-gate half, which this test cannot perform and must not be mistaken for. */
+const LIVE_CHECK_SCRIPT = "scripts/check-required-checks.mjs";
 
 /**
  * Files a session ACTS on. A doc that narrates the history may — must, in fact — mention the retired
@@ -88,37 +94,41 @@ function jobIds(source: string): string[] {
 }
 
 /**
- * The list AGENTS.md §2 declares: "branch-protected with **N required checks** — `a`, `b`, `c`, `d`".
- * Parsed rather than restated, so the count and the names cannot disagree with each other — the
- * exact shape tests/supabase-project-refs.test.ts uses to hold AGENTS.md §3's project table.
+ * AGENTS.md §2's declaration, through the SHARED parse. The module returns a named `error` rather
+ * than throwing, so the failure is phrased here for a test reader and in the script for its own.
  */
-function declaredRequiredChecks(agents: string): { count: number; names: string[] } {
-  const bullet = agents
-    .split("\n")
-    .find((line) => /branch-protected with \*\*\d+ required checks\*\*/.test(line));
+function declared(agents: string): { count: number; names: string[] } {
+  const parsed = declaredRequiredChecks(agents);
   assert.ok(
-    bullet,
-    "AGENTS.md §2 must carry a bullet reading `branch-protected with **N required checks** — `a`, `b`, …`. " +
-      "It is the declaration every other file in the repo is held against; without it this test proves nothing.",
+    !parsed.error,
+    `${parsed.error}\n  (parsed by scripts/required-check-names.mjs, which ${LIVE_CHECK_SCRIPT} shares)`,
   );
-  // Never a non-null assertion here: if §2's wording drifts, `![1]` throws a bare TypeError with no
-  // diagnostic — the same "no reason, so the session retries" shape C8 and C9 exist to stop.
-  const countMatch = /\*\*(\d+) required checks\*\*/.exec(bullet);
-  assert.ok(
-    countMatch,
-    "AGENTS.md §2's required-checks bullet no longer states a count in the form `**N required checks**`, " +
-      `so this test cannot parse the declaration it holds every other file against:\n  ${bullet.trim().slice(0, 200)}`,
-  );
-  const count = Number(countMatch[1]);
-  // Only the names BEFORE the first semicolon: `allow_auto_merge: false` and the rot warning follow.
-  const listPart = bullet.slice(bullet.indexOf("required checks**")).split(";")[0];
-  const names = [...listPart.matchAll(/`([a-z][a-z0-9-]*)`/g)].map((m) => m[1]);
-  return { count, names };
+  return { count: parsed.count as number, names: parsed.names as string[] };
 }
 
 export function runRequiredCheckNamesTests() {
   const agents = readFileSync("AGENTS.md", "utf8");
-  const { count, names } = declaredRequiredChecks(agents);
+  const { count, names } = declared(agents);
+
+  // ── 0. THE LIVE HALF MUST EXIST AND BE WIRED, because this test cannot perform it ────────────
+  // Everything below compares the docs to the WORKFLOWS. Nothing below reads branch protection, so a
+  // green here never proves the documented list matches the gate. That half is
+  // scripts/check-required-checks.mjs, reported by repo-doctor. If it is deleted or unwired, this
+  // test keeps passing and the only thing that checks the real gate is gone — silently, which is how
+  // the list rotted four times.
+  assert.ok(
+    existsSync(LIVE_CHECK_SCRIPT),
+    `${LIVE_CHECK_SCRIPT} is missing. It is the ONLY thing that compares AGENTS.md §2 to what branch `
+      + "protection actually requires; this test only compares the docs to the workflows, so without it a "
+      + "green here means the docs and the workflows agree with each other and nothing more.",
+  );
+  const doctor = readFileSync("scripts/repo-doctor.mjs", "utf8");
+  assert.ok(
+    doctor.includes("required-check-names.mjs") && doctor.includes("REQUIRED CHECKS"),
+    "scripts/repo-doctor.mjs must run the live required-check comparison and print it under a "
+      + "REQUIRED CHECKS heading. A live check nobody runs is not a check — repo-doctor is where it "
+      + "surfaces without being remembered, and it already pages a live API so it is the right home.",
+  );
 
   // ── 1. The declaration must be internally consistent ────────────────────────────────────────
   assert.ok(names.length >= 3, `expected AGENTS.md §2 to name at least three required checks, parsed ${names.length}`);

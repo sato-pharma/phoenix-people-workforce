@@ -127,6 +127,8 @@ import {
   parseLooseObjectCount,
 } from "./repo-doctor-git-maintenance.mjs";
 import { archivePushTarget, listArchiveRefs, strandedArchives } from "./repo-doctor-archive-refs.mjs";
+// NOT from check-required-checks.mjs: that file is a CLI and runs its whole report at import time.
+import { compareToProtection, declaredRequiredChecks, readProtectionContexts } from "./required-check-names.mjs";
 import { classifySupabaseLink } from "./repo-doctor-supabase-link.mjs";
 import { sessionHoldReason } from "./repo-doctor-session-hold.mjs";
 import { buildCacheIdleMinutes, livenessVerdict, readHolderProbe } from "./worktree-liveness.mjs";
@@ -1412,6 +1414,72 @@ let autoloadedIndexBytes = null;
         }
         console.log("  -> these commits exist on this disk ONLY. The lines above are ADDITIVE and");
         console.log("     safe: each creates a new ref on origin and changes no branch, no history.");
+      }
+    }
+  }
+}
+
+// ── THE REQUIRED-CHECK LIST AGAINST THE LIVE GATE (read-only) ───────────────────────
+//
+// `tests/required-check-names.test.ts` holds AGENTS.md §2's declaration against the workflows' job
+// names, which is the half that lives in files. It cannot read branch protection: CI has no `gh` auth
+// for it, and a REQUIRED check that needs network and auth would have to fail open, which is a worse
+// property than the gap it would close. So its green proves the docs and the workflows agree with
+// EACH OTHER — never with the gate.
+//
+// This is where the live half belongs, because this command already pages a live API and is nobody's
+// merge gate. The list has rotted four times (4 -> 5 -> 6 -> 4, the last on 2026-09-27 when #4527
+// folded `lint`+`typecheck`+`test` into one `checks` job), and each time a file went on stating the
+// old answer: nineteen of them that day, including the two skills a session follows in order to
+// merge. A session that counted to six sat waiting on three checks that can never report again.
+//
+// READ-ONLY, and it never touches the exit code — the same reasoning as the sections above. Honours
+// `--no-auth`, which is what a reader passes when they are offline or without credentials.
+{
+  console.log("");
+  console.log("REQUIRED CHECKS (AGENTS.md §2's declaration against what branch protection requires)");
+
+  if (skipAuth) {
+    console.log("  -> skipped (--no-auth). The declaration is in AGENTS.md §2; this check reads the live gate.");
+  } else {
+    // The PRIMARY's AGENTS.md, never a worktree's: §2's declaration is one fact for the repository,
+    // and a worktree holding a half-finished edit to it must not be read as the repo's answer.
+    let agentsSource = null;
+    try {
+      agentsSource = fs.readFileSync(path.join(primaryRoot, "AGENTS.md"), "utf8");
+    } catch {
+      agentsSource = null; // absent or unreadable — reported below, never read as clean
+    }
+    const declared = agentsSource === null ? { error: "AGENTS.md could not be read" } : declaredRequiredChecks(agentsSource);
+
+    if (declared.error) {
+      console.log(`  -> COULD NOT READ the declaration: ${declared.error.split("\n")[0]}`);
+    } else {
+      const live = readProtectionContexts();
+      if (live.skipped) {
+        // Not clean and not broken: a reading it never obtained. Saying which keeps the next reader
+        // off the wrong trail — a 403 here was a real three-hour Pro-entitlement lapse on 2026-09-27.
+        console.log(`  ${num(declared.names.length)} declared: ${declared.names.join(", ")}`);
+        console.log(`  -> COULD NOT READ the gate (${live.skipped}). Do NOT read this as clean.`);
+      } else {
+        const verdict = compareToProtection(declared.names, live.contexts);
+        console.log(`  gate requires ${num(live.contexts.length)}: ${live.contexts.join(", ")}`);
+        console.log(`  AGENTS.md §2 declares ${num(declared.count)}: ${declared.names.join(", ")}`);
+        if (verdict.ok && declared.count === declared.names.length) {
+          console.log("  -> OK. The declared list matches the live gate.");
+        } else {
+          for (const name of verdict.documentedButNotRequired) {
+            console.log(`  -> DRIFT: the docs state \`${name}\` and the gate does NOT require it — a session waits forever.`);
+          }
+          for (const name of verdict.requiredButNotDocumented) {
+            console.log(`  -> DRIFT: the gate requires \`${name}\` and the docs omit it — a session counts to the wrong total.`);
+          }
+          if (declared.count !== declared.names.length) {
+            console.log(`  -> DRIFT: §2's count says ${num(declared.count)} but it lists ${num(declared.names.length)} names.`);
+          }
+          console.log("     Fix the DOCS to match protection, and every file that states the list in ONE PR:");
+          console.log("     node scripts/check-required-checks.mjs   # the same reading, with the file list");
+        }
       }
     }
   }
