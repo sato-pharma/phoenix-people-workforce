@@ -1,0 +1,201 @@
+# Needs You — the whole module
+
+One question, asked once: **what is waiting on a decision only the owner can make?**
+
+| Surface | When | What it carries |
+| --- | --- | --- |
+| `/admin/needs-you` | on demand, Super Admin only | the full board, five bands |
+| `node scripts/needs-you.mjs` | on demand, terminal | PRs and the production revision — tier 1, no model, no credentials |
+| Telegram + in-app digest | every morning, 06:36 Cairo | the board, fitted to 900 characters |
+| Email | Sundays, 06:36 Cairo | the board, **complete** — every item and all sixteen source verdicts |
+| Claude Code status bar | when a session opens | one line: the oldest thing waiting, and how old the reading is |
+
+Tier 1 has its own page — [tier-1-needs-you.md](tier-1-needs-you.md) — because it is a different
+thing: dev-ops facts, read from GitHub with no database and no session. This doc is the business
+board and the four ways it reaches him.
+
+## Why it exists
+
+Merging, publishing and approving are actions this system never takes on his behalf (AGENTS.md §6).
+So at any moment some number of things sit waiting on a click only B-10 makes, and before this the
+only way to learn what they were was to open a session and ask, or to walk a dozen admin screens.
+
+The app already had **three** half-overlapping "needs attention" aggregators and none was a superset:
+`getCeoAdminSignals`, `getAwaitingMyActionItems`, and `GET /api/approvals/badge-counts`. Each was
+blind to things the others saw. This module is one domain service with several front doors — and one
+fewer aggregator at the end, not one more.
+
+## 🔴 The rule that shapes every line of it
+
+**A board that under-reports is worse than no board.** If it says nothing is waiting while something
+is — or while a read simply failed — it costs the decision more surely than no board would, because
+the looking has been delegated.
+
+That is enforced structurally, not by discipline:
+
+```ts
+type NeedsYouSourceState =
+  | { status: "ok";             items: readonly NeedsYouItem[] }
+  | { status: "not-applicable"; because: string }   // no permission — a TRUE zero
+  | { status: "unavailable";    because: string };  // it did not answer — NOT a zero
+```
+
+- A failed source produces **no item**, so there is no `number` field a failure can write to.
+- `allClearProvable` is computed once, in `classify.ts`. Nothing else decides the empty state, and
+  in particular never `yours.length === 0`.
+- `board.sources` carries **one entry per source id, always** — pinned by a test, so a source lost to
+  a dropped `await` fails CI instead of rendering as calm.
+- `not-applicable` is a third state so that nine permission refusals do not become nine permanent
+  amber rows, which is how a reader learns to ignore amber.
+- **The could-not-be-read section renders FIRST in every channel.** Telegram is 900 characters of
+  plain text sliced from the END, mid-word, with no marker, so a section rendered last is one that
+  silently disappears.
+
+## The sources
+
+Sixteen adapters, one fan-out, an 8-second per-source timeout. A source that has not answered in
+eight seconds is a source whose contents are unknown, and it renders amber rather than empty.
+
+`action-inbox` · `plan-approvals` · `leave-approvals` · `excuse-approvals` ·
+`direct-order-approvals` · `direct-order-unbooked` · `direct-order-validations` ·
+`marketing-approvals` · `market-awareness-approvals` · `monthly-closings` · `payroll-publish` ·
+`resignations` · `contract-renewals` · `probation-decisions` · `coaching-red-zone` · `salary-flags`
+
+Each adapter owns its own `assertPermission` call. Leaning on the page being Super-Admin-only would
+be true today and the wrong shape: the module would then be correct only because of a caller, and
+`not-applicable` could never be reached.
+
+🔴 **Never source these from `GET /api/approvals/badge-counts`.** It is an HTTP hop from a server
+component back into its own app: it needs the session cookie, doubles the latency, and — fatally —
+inherits that route's deliberate `{count: 0}` fallback, which is correct for a badge and is the one
+shape this module must never have. Call the functions underneath it instead. For marketing that
+means `getMarketingApproverBadge`, which already drops the `assigned_hr_id` filter for a
+`canViewMarketingOversightQueue` viewer and **throws** rather than returning 0 — never
+`getApproverPendingRequests`.
+
+🔴 **One call, never a deferred or streaming second phase.** Several of these reads take seconds, so
+the tempting shape is a fast band plus a `<Suspense>` band that fills in later. That re-opens the
+exact hole this module closes: a deferred band that fails renders *nothing*, and a missing source
+becomes invisible again — the under-report, dressed as a performance win. The page is
+`force-dynamic` and a reload is the refresh. There is no polling.
+
+## Who produces what
+
+🔴 **The adapters are the single producer for the three signals the CEO command centre also shows** —
+contracts expiring, probation decisions due, and coaching red-zone reps. `getCeoAdminSignals` reads
+them through `adaptersFor` + `loadNeedsYouSources`, and holds no copy of any of those rules.
+
+That collapse fixed a live divergence. Both files had their own copy, and they had drifted: the CEO's
+probation count filtered to people still employed and read the window from
+`lifecycleRiskWindows.probationCriticalDays`; the adapter did neither, so it billed **leavers** as
+decisions he still owed — the same defect that reached production once before as PD-0003.
+
+**Do not call `getNeedsYouBoard` from the command centre.** It runs all sixteen sources, and that
+screen needs three, on the owner's heaviest landing page. `adaptersFor` runs exactly the ones asked
+for. A test refuses the "simplification".
+
+## Delivery
+
+**No cron job of its own.** Both digests ride `/api/notifications/daily`, which already fires 06:36
+Cairo. A dedicated schedule would cost a `JOB_SCHEDULES` declaration, a `cronjob-sync` row, a request
+against cron-job.org's **100-per-DAY** cap, and the heartbeat-parity contract — a declared job that
+stops reporting pages every Super Admin every 15 minutes, for ever.
+
+🔴 **That route destructures its `Promise.all` positionally, and its own comments record the day a job
+was added without its name**: every later result was captured one position off, and only the
+diagnostic JSON showed it. `totalJobs` is hand-maintained beside it and feeds the run summary and the
+dead man's switch. Those three lists are now pinned against each other by
+`tests/needs-you-daily-digest.test.ts`. **Append, never insert.**
+
+**Daily is Telegram and in-app; weekly is email.** One email to him is already *three* deliveries —
+`send-phoenix-email.ts` always BCCs `ADMIN_STANDING_EMAIL` and mirrors a preview to his Telegram, with
+no opt-out. That is why email is weekly, and why the weekly never also requests the `telegram`
+channel.
+
+**The email reaches exactly one person, guarded twice.** The job resolves him by his own hr id and is
+skipped and audited if it cannot; `enforceNeedsYouOwnerOnlyEmail` then strips `email` at the end of
+`basePolicyChannels` unless the recipient is provably him — using `isSamePerson`, because he also
+signs in as PHX-1 and admin-HR. It **fails closed**: an absent or unresolved recipient strips email
+rather than allowing it. A sent email cannot be recalled.
+
+## Tier 2 — the written summary
+
+One `gpt-5.4` call a morning: roughly 1,200 in + 300 out, about **$2.75 a year**. Cheapness is bought
+by the cadence, not the model, so there is no nano→premium ladder — it would save $2.52 a year for a
+second prompt to keep in step.
+
+Three structural facts make a falsely calm summary impossible, any one sufficient:
+
+1. The delivered message is *always* the deterministic render. `lead` is a **prefix string**, and
+   `attachableSummary`'s return type cannot express a board, an item or a count.
+2. The model is never invoked when a source could not be read. That day spends no token.
+3. When nothing is waiting the summary is `null` unconditionally — the model never sees that board.
+
+Six refusals, each printed in the digest rather than swallowed: unparseable JSON · an `order` that is
+not a permutation (how a model silently drops an item) · a lead claiming completeness · a digit the
+board does not hold · an ellipsis · over 220 characters.
+
+🔴 **The lead spends the body's budget.** It is prepended outside `buildNeedsYouTelegram`, so it is
+declared as a `reserve` that the builder counts before it starts filling. Measured before that
+existed: a 20-item board plus a 220-character summary rendered **1053** characters against Telegram's
+900 — and the overflow is the *board*. The feature meant to help him read it faster would have been
+the thing hiding it.
+
+## The status bar
+
+A **name and the age of the reading, never a bare count** — a count read 9 for hours and nobody acted,
+because a number needs a second lookup and that lookup is the step nobody takes.
+
+```
+> Needs you: merge 4571 - green on every required check (+1 more) - read 07:12 Cairo
+> Needs you: UNKNOWN - 1 thing on the board could not be read - read 06:31 Cairo (41m old)
+```
+
+It **prints nothing when nothing is waiting**: a row saying "nothing needs you" every session is one
+he stops reading, and it is the sentence that becomes a lie the moment a source fails.
+
+Laptop files, outside this repo: `~/.claude/hooks/needs-you-status.mjs` (SessionStart) writes a
+pre-rendered line that `~/.claude/hooks/statusline.mjs` only reads. The statusline spawns nothing and
+makes no network call — so the reading can be stale, which is why the age is printed rather than
+hidden. The hook imports the repo's own `buildBoard` rather than re-deriving the bucket rule.
+
+🔴 **Nothing refreshes that cache automatically.** It is written when `scripts/needs-you.mjs` runs, so
+the row reflects a *known* state, not a live one.
+
+## What it deliberately does not do
+
+- **It links, it never acts.** Every row's only control is a `<Link>` to the screen that already owns
+  the decision. No form, no button, no server action, no non-GET fetch under the route.
+- **No sidebar badge.** `NavBadge` does `if (!count) return null;` and the badge route degrades to
+  `{count: 0}` — the under-report rule broken in the most-seen pixel in the product.
+- **The nav row is gated by `roles`, never `permissions`.** That list is OR-ed, so a `permissions`
+  entry would *widen* the gate rather than narrow it. It is the first item of the existing
+  `command-center` section, with no `hubPageItemGroups` entry.
+- **No WhatsApp push** (owner chose a share button): a free-form send needs him to have messaged the
+  bot within 24h and fails silently as `131047` otherwise, and a template cannot carry line breaks.
+- **No new `PermissionResource`.** That would need 17 matrix rows and would make the board *lockable*.
+- **Nothing built on `getOverviewDashboard`** — it is dead, has zero consumers, and its name will
+  convince the next reader it is the aggregator.
+
+## Where it is pinned
+
+Each is registered in `tests/run-tests.ts` and therefore a step of the required `checks` job — a test
+file that is not registered never runs.
+
+| Test | What it refuses |
+| --- | --- |
+| `needs-you-never-under-reports` | a dead source rendering as calm; `not-applicable` collapsed into `unavailable`; a dropped source |
+| `needs-you-board` | the tier-1 CLI's bucket rule and its COULD NOT READ section |
+| `needs-you-source-health` | a `.catch(() => null)` inside the awaiting-action fan-out; a badge with no `available` |
+| `needs-you-ceo-single-producer` | either file re-implementing a shared rule; the CEO borrowing a number on failure |
+| `needs-you-daily-digest` | the route's three hand-kept lists disagreeing; a crashed job reporting a zero |
+| `needs-you-weekly-email` | the body or the source roster truncated; email to anyone but him |
+| `needs-you-tier2-summary` | a summary that pushes the board past Telegram's ceiling |
+| `needs-you-summary-guard` | the six refusals |
+| `needs-you-email-owner-only` | the guard chain and its fail-closed direction |
+| `needs-you-telegram-budget` | the 900-character fit, by construction rather than truncation |
+| `needs-you-fits-the-screen` · `needs-you-page-never-decides` | horizontal scroll, rounded corners, any write path |
+
+**A fixture has to be able to reach the limit it tests.** The budget assertion first used a 12-item
+board, which renders 889 characters when broken — *under* the 900 ceiling — so it passed with and
+without the fix and proved nothing. The board saturates at 20, where the same break gives 1053.
