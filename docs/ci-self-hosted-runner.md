@@ -449,9 +449,23 @@ export RUNNER_LABELS=self-hosted,linux,x64,phoenix,hetzner
 gh variable set CI_RUNNER_LABEL --body hetzner    # or railway-eu, which already exists
 ```
 
-🔴 **Neither variable is set today, deliberately.** `gh variable list` shows no `CI_RUNNER_LABEL` and
-no `CI_SELF_HOSTED`, so every job is hosted. Arming the switch is the owner's call while the runner
-rollout is halted — the label existing is not the same thing as the switch being on.
+🔴 **ARMED SINCE 2026-09-28T00:22:00Z: `CI_RUNNER_LABEL = railway-eu`.** `CI_SELF_HOSTED` is still
+absent, which leaves the kill switch available. So a same-repo `ci-runner/<task>` PR runs on the three
+Railway replicas **right now**; `main`, `master`, `workflow_dispatch` and `schedule` stay hosted, which is
+the property the four conditions above guarantee and which was proved live on dispatch `36362005374` with
+the label already set — `validate`, `checks` and `mobile` all on `ubuntu-latest` while the replicas sat
+idle. Set at the owner's instruction, after PR #4599 took all four required checks on `railway-eu`
+including the Playwright smoke test.
+
+🔴 **This paragraph said the opposite until 2026-09-28 — "neither variable is set today, so every job is
+hosted" — and it was false from 00:22 that morning.** Not unsafe, because `main` is hosted either way, but
+it is the paragraph someone reads before touching the switch, so it reported the state backwards to the
+one person checking. **Read `gh variable list` rather than this line**; a doc that names a variable's value
+is stale the moment someone sets it, and this file has now been wrong about a live value twice in one
+night (the other was the cost, corrected in #4607).
+
+Arming is still the owner's call, and **the label existing is not the same thing as the switch being on** —
+that sentence was the useful half and it survives. What changed is only which of those two is true today.
 
 `scripts/setup-self-hosted-runner.sh` defaults `RUNNER_LABELS` to `self-hosted,linux,x64,phoenix` —
 byte-identical to what the Railway replicas carry — so the override is the whole point. Deregistering
