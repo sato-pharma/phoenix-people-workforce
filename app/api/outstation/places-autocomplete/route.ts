@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { isMedicalRepExpenseViewer } from "@/lib/outstation/medical-rep-expense-viewer";
 import {
   fetchPlacePredictions,
   isPlacesNotConfiguredError,
@@ -35,6 +36,32 @@ export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "outstation", "create");
+
+    // 🔴 SECOND GATE, and it is the one that matters. `outstation:create` alone admits TWELVE
+    // roles — District Manager, Product Manager, SFE Manager and the generic **Employee** among
+    // them — because it is the permission for filing ANY outstation expense. The submission this
+    // route serves is narrower: `submitMedicalRepSimpleExpenseRequest` also calls
+    // `assertMedicalRepExpenseRole`, so only a Medical Rep can actually file one.
+    //
+    // Matching only the permission and not the second check left every Employee able to spend
+    // billable Google Places calls on the company key while being unable to file the expense
+    // those calls are for. Measured against the live permission matrix on 2026-09-28, after the
+    // first version of this route had already merged (#4644).
+    //
+    // The check is the SESSION role, deliberately — the same one that gates the page this picker
+    // renders on (`app/employee-portals/expense-dashboard/page.tsx`). Whoever can SEE the field
+    // can use it, and nobody else. It is also a plain in-memory read: the submit path's
+    // job-function lookup hits the employee record, which is far too heavy for a route that fires
+    // on every keystroke. Where the two disagree, this one is the stricter, so it fails closed.
+    if (!isMedicalRepExpenseViewer(access)) {
+      return NextResponse.json(
+        {
+          error: "forbidden",
+          message: "Only Medical Rep users can search destinations for a simple expense.",
+        },
+        { status: 403 },
+      );
+    }
 
     const { searchParams } = new URL(request.url);
     const predictions = await fetchPlacePredictions(
