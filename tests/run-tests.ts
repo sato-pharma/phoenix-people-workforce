@@ -77,6 +77,7 @@ import { runUnifiedNotificationsTests } from "./unified-notifications.test.ts";
 import { runNotificationStepRunnerTests } from "./notification-step-runner.test.ts";
 import { runPayslipEmailBlockTests } from "./payslip-email-block.test.ts";
 import { runActiveRosterOnlyTests } from "./active-roster-only.test.ts";
+import { runLeaverNameHideTests } from "./leaver-name-hide.test.ts";
 import { runActingDmLandingExcludesSelfTests } from "./acting-dm-landing-excludes-self.test.ts";
 import { runEarlyBirdsEmailBlockTests } from "./early-birds-email-block.test.ts";
 import { runMarketingSlaEmailBlockTests } from "./marketing-sla-email-block.test.ts";
@@ -2245,6 +2246,7 @@ await runTest("candidate pushed to a hiring manager never emails (in-app + Teleg
 await runTest("a rejected expense never emails the employee (in-app + Telegram + push)", runOutstationRejectionEmailBlockTests);
 await runTest("a candidate send is its own alert and its own row (39 sends had collapsed into 12 alerts; a re-send silently emptied the previous manager's list)", runCandidateSendAlertIdentityTests);
 await runTest("active roster only (resigned reps never reach a board)", runActiveRosterOnlyTests);
+await runTest("leaver name hide (a resigned/terminated coach's name is withheld on the DV dashboard; manager-name filter set)", runLeaverNameHideTests);
 await runTest("acting District Manager landing never lists her own row (My Reps, Team Size, CRM board)", runActingDmLandingExcludesSelfTests);
 await runTest("telegram operations", runTelegramOperationsTests);
 await runTest("telegram admin control center", runTelegramAdminControlCenterTests);

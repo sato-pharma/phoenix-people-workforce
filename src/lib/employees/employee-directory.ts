@@ -284,6 +284,7 @@ type LookupRow = {
   name?: string | null;
   nickname?: string | null;
   title?: string | null;
+  employment_status?: string | null;
 };
 
 type EmployeeCompensationDbRow = {
@@ -817,13 +818,18 @@ async function loadManagerNames(hrIds: string[]) {
   }
 
   const params = new URLSearchParams({
-    select: "hr_id,full_name,nickname",
+    select: "hr_id,full_name,nickname,employment_status",
     hr_id: textInFilter(lookupHrIds),
   });
   const rows = await supabaseRest<LookupRow[]>(`employees?${params}`);
 
   const names = new Map<string, string>();
   rows.forEach((row) => {
+    // A leaver's name is never surfaced as a live manager label (owner, 2026-09-29: a resigned/
+    // terminated employee shows only in the Resignations module). The row still nests by manager_hr_id
+    // — only the NAME is withheld — so an active report of a departed manager renders no manager name
+    // until the seat is reassigned (pendingManagerReplacementForHrId already flags that gap).
+    if (!isActiveLifecycleStatus(row.employment_status)) return;
     const hrId = String(row.hr_id);
     const name = resolveEmployeeDisplayName(String(row.full_name ?? ""), row.nickname, hrId);
     names.set(hrId, name);

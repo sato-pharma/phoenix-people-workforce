@@ -769,6 +769,29 @@ export function isActiveEmployee(employee: EmployeeDirectoryRow) {
   return status === "active" || status === "on_leave";
 }
 
+/**
+ * The set of canonical HR-id keys for LEAVERS (resigned/terminated/inactive) in the directory.
+ *
+ * A leaver's NAME is never surfaced as a live double-visitor on the current dashboard (owner,
+ * 2026-09-29: a resigned/terminated employee shows only in the Resignations module). This is a
+ * DISPLAY concern only — every count, KPI, heatmap and executive score is built from HR-ids in
+ * buildScopedDoubleVisitDashboardCore and is untouched, so hiding the name changes no number.
+ */
+export function leaverVisitorKeySet(employees: EmployeeDirectoryRow[]): Set<string> {
+  return new Set(
+    employees
+      .filter((employee) => !isActiveEmployee(employee))
+      .map((employee) => canonicalHrIdKey(employee.hrId))
+      .filter((key): key is string => Boolean(key)),
+  );
+}
+
+/** True when this double-visitor HR-id belongs to a leaver, so their name must not be shown. */
+export function isLeaverVisitorHrId(hrId: string | null | undefined, leaverKeys: Set<string>): boolean {
+  const key = canonicalHrIdKey(hrId);
+  return key ? leaverKeys.has(key) : false;
+}
+
 const allowedDoubleVisitorRoles = [
   "Medical Rep",
   "District Manager",
@@ -1541,7 +1564,21 @@ export async function getDoubleVisitDashboardData(input: {
   const lineBuckets = Array.from(new Set(activeScopeEmployees.map((employee) => nullableText(employee.lineName)).filter((value): value is string => Boolean(value)))).sort();
   const areas = Array.from(new Set(filteredRows.map((row) => nullableText(row.area_name)).filter((value): value is string => Boolean(value)))).sort();
   const lines = Array.from(new Set(filteredRows.map((row) => nullableText(row.line_name)).filter((value): value is string => Boolean(value)))).sort();
-  const doubleVisitors = Array.from(new Set(filteredRows.map((row) => nullableText(row.double_visitor_name) ?? nullableText(row.double_visitor_hr_id)).filter((value): value is string => Boolean(value)))).sort();
+  // A leaver's NAME is never surfaced as a live double-visitor (owner, 2026-09-29: a resigned/
+  // terminated employee shows only in the Resignations module). This is DISPLAY-only — the rows,
+  // KPIs, heatmap and executive scoring are all built from hr_ids in buildScopedDoubleVisitDashboardCore
+  // above and are untouched, so no count changes; only the filter-dropdown option and the log's
+  // shown coach name are withheld for a departed visitor.
+  const leaverVisitorKeys = leaverVisitorKeySet(employees);
+  const isLeaverVisitor = (hrId: string | null | undefined) => isLeaverVisitorHrId(hrId, leaverVisitorKeys);
+  const doubleVisitors = Array.from(
+    new Set(
+      filteredRows
+        .filter((row) => !isLeaverVisitor(row.double_visitor_hr_id))
+        .map((row) => nullableText(row.double_visitor_name) ?? nullableText(row.double_visitor_hr_id))
+        .filter((value): value is string => Boolean(value)),
+    ),
+  ).sort();
 
   const visitLog: DoubleVisitLogEntry[] = filteredRows
     .map((row) => ({
@@ -1549,7 +1586,7 @@ export async function getDoubleVisitDashboardData(input: {
       countBucket: doubleVisitCountBucket(row),
       date: row.activity_date,
       doubleVisitorHrId: nullableText(row.double_visitor_hr_id),
-      doubleVisitorName: nullableText(row.double_visitor_name),
+      doubleVisitorName: isLeaverVisitor(row.double_visitor_hr_id) ? null : nullableText(row.double_visitor_name),
       period: row.period,
       visitCount: asNumber(row.visit_count),
       visitedHrId: nullableText(row.visited_employee_hr_id),
