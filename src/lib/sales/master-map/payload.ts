@@ -158,6 +158,12 @@ function renderTab(workbook: CachedWorkbook, title: string, sheetId: number): Re
   if (title === GAPS_TAB) {
     return renderGapsSheet(workbook.tree, workbook.distributorName, sheetId);
   }
+  // The per-region renderer STAYS, although tabTitles no longer lists one, and deliberately.
+  //
+  // A script mid-repaint holds a queue cut from the PREVIOUS plan, and that queue can still name a
+  // region tab. Answering it with a real slice lets that run finish cleanly; returning null would
+  // make the route 404, which the script treats as fatal and does not retry (see fetchJson), so the
+  // one tick that straddles this change would die instead of draining.
   const region = workbook.tree.regions.find((candidate) => candidate.regionName === title);
   if (!region) return null;
   return renderSheet(renderRegionRows(region, workbook.distributorName), sheetId, {
@@ -172,16 +178,26 @@ function renderTab(workbook: CachedWorkbook, title: string, sheetId: number): Re
  * an answer. "Lists" trails because it is hidden plumbing, and it must come AFTER the flat tab it
  * reads: on a first run the tabs are created in this order, and its formulas resolve to #REF!
  * until "All customers" exists.
+ *
+ * THE TEN PER-REGION TABS ARE GONE, by the owner's decision on 2026-09-28, and this is the whole
+ * change: they repeated what "Master" already groups, region by region, and cost 1.4 MILLION of the
+ * workbook's 10,000,000 cells — 115,741 rows across twelve columns, measured live. The master grew
+ * 50,622 -> 63,510 -> 73,937 shops in six weeks, so the ceiling was roughly two months away at that
+ * rate; dropping these puts the workbook at about 4.45 million and moves the ceiling out to around
+ * 165,000 shops.
+ *
+ * Every region is still on the sheet. "Master" holds all of them, grouped and banded, and the
+ * finder searches all of them. What is lost is the one-region-at-a-time view, which is why this
+ * needed the owner's word rather than being a tidy-up.
+ *
+ * 🔴 A TITLE REMOVED FROM THIS LIST MUST ALSO BE RETIRED BY THE SCRIPT, or it is worse than leaving
+ * it. Nothing in Apps Script ever deleted a tab before this change: a tab Phoenix stops serving
+ * simply stops being repainted, so it sits there holding the day's data for ever, looking exactly
+ * as current as the tabs beside it. `retireTabs` in Code.gs closes that, and it is the reason this
+ * list is not just edited.
  */
-function tabTitles(workbook: CachedWorkbook): string[] {
-  return [
-    LOOKUP_TAB,
-    MASTER_TAB,
-    FLAT_TAB,
-    GAPS_TAB,
-    ...workbook.tree.regions.map((region) => region.regionName),
-    LISTS_TAB,
-  ];
+function tabTitles(): string[] {
+  return [LOOKUP_TAB, MASTER_TAB, FLAT_TAB, GAPS_TAB, LISTS_TAB];
 }
 
 /**
@@ -204,7 +220,7 @@ export async function getMasterMapPlan(): Promise<MasterMapPlan> {
   const workbook = await getWorkbook(null);
   const tabs: MasterMapTabPlan[] = [];
 
-  for (const title of tabTitles(workbook)) {
+  for (const title of tabTitles()) {
     // sheetId 0 is a placeholder — the plan needs only the text, never the formatting requests,
     // and the real tab id is supplied by the caller when it comes back for the slices.
     const rendered = renderTab(workbook, title, 0);
