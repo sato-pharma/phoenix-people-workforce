@@ -43,7 +43,13 @@ export default function PortalModuleScreen() {
 
   const [uri, setUri] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const webRef = useRef<WebView>(null);
+  // 🔴 `WebView<object>`, not a bare `WebView`, and the same on the element below. The package's own
+  // root declaration is `class WebView<P = undefined> extends Component<WebViewProps & P>`, and
+  // `WebViewProps & undefined` reduces to `never` — so the default instantiation types EVERY prop as
+  // never and tsc reports "No overload matches this call" for correct code. The generic exists for
+  // callers to widen props with; `object` is the identity for that intersection, so this is the
+  // package's own escape hatch rather than a cast.
+  const webRef = useRef<WebView<object>>(null);
   const canGoBack = useRef(false);
 
   // The hand-off URL is minted once, for this screen. It is good for sixty seconds and sets the
@@ -133,12 +139,12 @@ export default function PortalModuleScreen() {
       ) : !uri ? (
         <LoadingScreen label="Opening…" />
       ) : (
-        <WebView
+        <WebView<object>
           // The tab is signed in by the hand-off, so nothing here carries a token of its own.
           allowsBackForwardNavigationGestures
           forceDarkOn={dark}
           onShouldStartLoadWithRequest={onNavigation}
-          onNavigationStateChange={(event) => {
+          onNavigationStateChange={(event: WebViewNavigation) => {
             canGoBack.current = event.canGoBack;
           }}
           originWhitelist={[`${apiBaseUrl}/*`]}
