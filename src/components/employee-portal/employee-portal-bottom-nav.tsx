@@ -9,11 +9,11 @@ import { ApprovalNavBadge } from "@/components/layout/nav-badge";
 import type { EmployeePortalNavVisibility } from "@/lib/employee-portal/navigation";
 import { resolveDeepestActiveHref } from "@/lib/navigation/active-path";
 import {
-  DEFAULT_BOTTOM_NAV_HREFS,
   HOME_ENTRY,
   MAX_BOTTOM_NAV_CUSTOM,
   PROFILE_ENTRY,
   type PortalNavEntry,
+  defaultBottomNavHrefs,
   entryByHref,
   visiblePortalNavEntries,
 } from "./employee-portal-nav-registry";
@@ -52,7 +52,7 @@ export function EmployeePortalBottomNav({
   const pinned = selected.filter((href) => visibleHrefs.has(href));
   const middleHrefs = (pinned.length > 0
     ? pinned
-    : DEFAULT_BOTTOM_NAV_HREFS.filter((href) => visibleHrefs.has(href))
+    : defaultBottomNavHrefs(visibility).filter((href) => visibleHrefs.has(href))
   ).slice(0, MAX_BOTTOM_NAV_CUSTOM);
 
   const middle = middleHrefs

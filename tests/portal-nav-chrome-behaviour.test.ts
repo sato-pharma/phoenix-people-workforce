@@ -2,11 +2,11 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import {
-  DEFAULT_BOTTOM_NAV_HREFS,
   HOME_ENTRY,
   MAX_BOTTOM_NAV_CUSTOM,
   PORTAL_NAV_REGISTRY,
   PROFILE_ENTRY,
+  defaultBottomNavHrefs,
   visiblePortalNavEntries,
 } from "../src/components/employee-portal/employee-portal-nav-registry.ts";
 import { resolveEmployeePortalNavVisibility } from "../src/lib/employee-portal/navigation.ts";
@@ -73,8 +73,27 @@ function componentBody(source: string, name: string): string {
 /** The middle tabs the bar shows when the person has pinned nothing — the component's own rule. */
 function defaultBarHrefs(visibility: ReturnType<typeof resolveEmployeePortalNavVisibility>): string[] {
   const visible = new Set(visiblePortalNavEntries(visibility).map((entry) => entry.href));
-  const middle = DEFAULT_BOTTOM_NAV_HREFS.filter((href) => visible.has(href)).slice(0, MAX_BOTTOM_NAV_CUSTOM);
+  const middle = defaultBottomNavHrefs(visibility).filter((href) => visible.has(href)).slice(0, MAX_BOTTOM_NAV_CUSTOM);
   return [HOME_ENTRY.href, ...middle, PROFILE_ENTRY.href];
+}
+
+/** Visibility for a role, with no device mapping, no shared calendar and Phoenix CRM open. */
+function visibilityFor(role: string, options?: { hrId?: string; line?: string }) {
+  return resolveEmployeePortalNavVisibility(
+    role,
+    role,
+    options?.line ?? null,
+    null,
+    options?.hrId ?? null,
+    false,
+    false,
+    true,
+  );
+}
+
+/** Which sidebar rows a viewer is offered, by href. */
+function sidebarHrefs(visibility: ReturnType<typeof resolveEmployeePortalNavVisibility>): Set<string> {
+  return new Set(visiblePortalNavEntries(visibility).map((entry) => entry.href));
 }
 
 export function runPortalNavChromeBehaviourTests() {
@@ -248,6 +267,100 @@ export function runPortalNavChromeBehaviourTests() {
   assert.doesNotMatch(bell, /\.replace\(\/_\/g, " "\)/, "The bell must not print a module or category code with its underscores swapped for spaces.");
   assert.match(bell, /\{notificationCodeLabel\(moduleName\)\}/, "The module filter must show names.");
   assert.match(bell, /\{notificationCodeLabel\(notification\.category\)\}/, "The category chip must show a name.");
+
+  // ── 12. The owner's four rulings of 2026-09-29 ──────────────────────────────────────────────
+  //
+  // (a) The Head-Office "Manager" rung loses the five rows it inherited through the District
+  //     Manager alias and could never use. It keeps everything else that alias gives it.
+  const managerRung = visibilityFor("Manager");
+  const managerRows = sidebarHrefs(managerRung);
+  for (const href of [
+    "/employee-portals/team-performance",
+    "/employee-portals/sales-vs-target",
+    "/employee-portals/monthly-closing",
+    "/employee-portals/early-birds",
+    "/employee-portals/plans",
+  ]) {
+    assert.ok(!managerRows.has(href), `The Head-Office Manager rung must not be offered ${href} — it opens empty or refuses.`);
+  }
+  assert.ok(managerRows.has("/employee-portals/plans/calendar"), "The rung keeps the READ-ONLY Planning Calendar, which works for it.");
+  assert.ok(managerRows.has("/employee-portals/coaching"), "Hiding those five must not take the rung's coaching reports away.");
+  assert.ok(managerRows.has("/employee-portals/probation"), "…nor its probation tracker.");
+  // A-3 is on that rung, so her 2026-06-10 Plans override goes with it — the builder always
+  // refused her — while her Planning Calendar stays.
+  const a3 = visibilityFor("Manager", { hrId: "A-3" });
+  assert.equal(a3.showPlansTab, false, "A-3's Plans row goes with the rung: submitting was always Forbidden for her.");
+  assert.equal(a3.showPlanningCalendarTab, true, "A-3 keeps the read-only Planning Calendar.");
+  // The District Manager proper is untouched by all of this.
+  const districtManager = visibilityFor("District Manager");
+  for (const href of [
+    "/employee-portals/team-performance",
+    "/employee-portals/sales-vs-target",
+    "/employee-portals/monthly-closing",
+    "/employee-portals/early-birds",
+    "/employee-portals/plans",
+  ]) {
+    assert.ok(sidebarHrefs(districtManager).has(href), `A real District Manager keeps ${href}.`);
+  }
+
+  // (b) The Training Manager gets the two rows he could already open.
+  const trainingManager = visibilityFor("Training Manager");
+  assert.equal(trainingManager.showProbationTab, true, "Training Manager: canViewAllProbation admits him, so the row must exist.");
+  assert.equal(trainingManager.showVacanciesTab, true, "Training Manager: he holds vacancies:read and sees the whole company.");
+
+  // (c) Report It reaches every portal role, as one row or the other, never both.
+  for (const role of [
+    "Medical Rep",
+    "District Manager",
+    "Regional Manager",
+    "National Sales Manager",
+    "Product Manager",
+    "Group Product Manager",
+    "Marketing Manager",
+    "Training Manager",
+    "Manager",
+    "Employee",
+  ]) {
+    const visibility = visibilityFor(role);
+    assert.ok(
+      visibility.showReportItTab || visibility.showReportItDashboardTab,
+      `${role} can submit a Report It, so ${role} must have a row for it.`,
+    );
+    assert.ok(
+      !(visibility.showReportItTab && visibility.showReportItDashboardTab),
+      `${role} must not be offered Report It twice.`,
+    );
+    assert.ok(sidebarHrefs(visibility).has("/employee-portals/report-it"), `${role}: the Report It destination must be reachable.`);
+  }
+
+  // (d) The Medical Rep's default phone bar, and everyone else's left exactly as it was.
+  assert.deepEqual(
+    defaultBarHrefs(visibilityFor("Medical Rep")),
+    [
+      "/employee-portals",
+      "/employee-portals/field-crm",
+      "/employee-portals/incentive",
+      "/employee-portals/monthly-closing",
+      "/employee-portals/profile",
+    ],
+    "The Medical Rep's default bar is Phoenix CRM · Incentive · Monthly Closing (owner, 2026-09-29).",
+  );
+  const UNCHANGED_DEFAULT_BARS: Record<string, string[]> = {
+    "District Manager": ["/employee-portals/plans", "/employee-portals/plans/calendar", "/employee-portals/source-of-sales", "/employee-portals/team-performance"],
+    "Regional Manager": ["/employee-portals/plans", "/employee-portals/plans/calendar", "/employee-portals/source-of-sales", "/employee-portals/marketing-requests"],
+    "National Sales Manager": ["/employee-portals/plans", "/employee-portals/plans/calendar", "/employee-portals/source-of-sales", "/employee-portals/marketing-requests"],
+    "Product Manager": ["/employee-portals/plans", "/employee-portals/plans/calendar", "/employee-portals/source-of-sales", "/employee-portals/report-it"],
+    "Group Product Manager": ["/employee-portals/plans", "/employee-portals/plans/calendar", "/employee-portals/source-of-sales", "/employee-portals/report-it"],
+    "Marketing Manager": ["/employee-portals/plans", "/employee-portals/plans/calendar", "/employee-portals/source-of-sales", "/employee-portals/report-it"],
+    "Training Manager": ["/employee-portals/plans", "/employee-portals/plans/calendar", "/employee-portals/report-it", "/employee-portals/expense-dashboard"],
+  };
+  for (const [role, middle] of Object.entries(UNCHANGED_DEFAULT_BARS)) {
+    assert.deepEqual(
+      defaultBarHrefs(visibilityFor(role)),
+      ["/employee-portals", ...middle, "/employee-portals/profile"],
+      `${role}'s default phone bar must be exactly what it was before 2026-09-29 — opening Report It to every role must not displace anyone's tabs.`,
+    );
+  }
 
   // ── 8. A portaled option is part of the menu that holds it ─────────────────────────────────
   assert.match(

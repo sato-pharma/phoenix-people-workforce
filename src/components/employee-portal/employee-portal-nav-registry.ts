@@ -252,6 +252,43 @@ export const DEFAULT_BOTTOM_NAV_HREFS = [
   "/employee-portals/coaching",
 ];
 
+/**
+ * The Medical Rep's own default bar: **Phoenix CRM · Incentive · Monthly Closing** (owner,
+ * 2026-09-29, in those words).
+ *
+ * The shared list above is one global priority order, so a rep fell through it to Source of Sales,
+ * outstation expenses and Incentive — three slots, and no door to Phoenix CRM, the module that IS
+ * his working day. Reordering the shared list to fix that would have moved every other role's tabs
+ * too, so the rep gets his own list and nobody else's bar changes.
+ *
+ * Still filtered by visibility like any other: a rep whose line is not yet open in
+ * `phoenix_crm_line_rollout` simply drops the CRM tab.
+ */
+export const MEDICAL_REP_BOTTOM_NAV_HREFS = [
+  "/employee-portals/field-crm",
+  "/employee-portals/incentive",
+  "/employee-portals/monthly-closing",
+];
+
+/**
+ * The default middle tabs for THIS viewer, before any pinning — the rep's own list, else the
+ * shared one.
+ *
+ * `showMedicalRepExpensesTab` is the Medical Rep flag (`isMedicalRep`, navigation.ts) and is the
+ * only rep-exclusive flag in the visibility bag.
+ *
+ * Report It is kept only for the roles that had it BEFORE it was opened to everyone on 2026-09-29.
+ * It is now visible to every portal role, and it sits fourth in the shared list, so without this
+ * it would have displaced a District Manager's Team Performance tab and an NSM's Marketing
+ * Requests tab — a change to their phones that nobody asked for. The pharmacovigilance roles keep
+ * it exactly where it was; everyone else can still pin it.
+ */
+export function defaultBottomNavHrefs(visibility: EmployeePortalNavVisibility): string[] {
+  if (visibility.showMedicalRepExpensesTab) return MEDICAL_REP_BOTTOM_NAV_HREFS;
+  if (visibility.showReportItDashboardTab) return DEFAULT_BOTTOM_NAV_HREFS;
+  return DEFAULT_BOTTOM_NAV_HREFS.filter((href) => href !== "/employee-portals/report-it");
+}
+
 
 export function isEntryVisible(entry: PortalNavEntry, visibility: EmployeePortalNavVisibility): boolean {
   if (!entry.flags || entry.flags.length === 0) return true;
