@@ -80,7 +80,15 @@ const HEADER_PX = 19.8; // a single-line header row
 const HEADER_LINE_PX = 12.0; // each wrapped header line (6.6pt caps, tighter than a body line)
 const CUT_NOTE_PX = 28.0; // the "N more rows are in the Excel version" line
 const CELL_PAD_PX = 16.6; // 2.2mm of padding either side
-const CHAR_PX = 5.73; // an average glyph at 8.6pt
+/**
+ * A glyph at 8.6pt — 0.6 em, not the 0.5 em an average suggests.
+ *
+ * 🔴 Measured, and the same correction the chart labels already needed: the real advances across
+ * these names run 0.496–0.598 em. At 0.5 a 31-character district-manager name was predicted to fit
+ * a 34.8-character column, wrapped anyway, and the Cairo region pack's third page finished 3.8px
+ * past its footer. The estimate has to cover the WORST case, not the average one.
+ */
+const CHAR_PX = 6.88;
 const CHART_MARGIN_PX = 15.7; // .chart's own margin-top
 const CHART_CAP_PX = 26.0; // the note under a chart that plots fewer than the table holds
 /**
