@@ -10,6 +10,12 @@
  * morning whatever happened is muted within a week, and a muted digest is worse than none because
  * everybody believes it is working.
  *
+ * 🔴 AND A TERRITORY NOBODY HAS STARTED IS NOT AN EXCEPTION (owner, 2026-09-28). On the first
+ * morning this fired, every manager in the company was messaged about every territory beneath him
+ * because no rep had used Phoenix CRM yet. A territory now joins the digest the first time real work
+ * appears on it — see `seatsWithRealActivity` — so the digest is quiet during the rollout and turns
+ * itself on, territory by territory, as the field moves across. The BOARD still shows everything.
+ *
  * ## It judges nothing of its own
  *
  * Every row comes from `gatherExceptions`, the same call the board makes, so the digest and the
@@ -35,11 +41,13 @@ import {
   PHOENIX_CRM_NOTIFICATION_MODULE,
   PHOENIX_CRM_PORTAL_PATH,
 } from "@/lib/phoenix-crm/server/notifications";
+import { chunk, throwIfError } from "@/lib/phoenix-crm/server/db";
 import { gatherExceptions } from "@/lib/phoenix-crm/server/exceptions";
 import { loadPhoenixCrmOrg } from "@/lib/phoenix-crm/server/org";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { loadPhoenixCrmConfig, openLineCodes } from "@/lib/phoenix-crm/server/settings";
 import { isManagerTier, territoriesBelow, type OrgIndex, type OrgSeat } from "@/lib/phoenix-crm/scope";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /** The digest reads the single previous field day — see the header. */
 const DIGEST_WINDOW_FIELD_DAYS = 1;
@@ -66,6 +74,48 @@ export function digestRecipientsFrom(org: OrgIndex, names: (hrId: string) => str
     .sort((left, right) => left.hrId.localeCompare(right.hrId));
 }
 
+/**
+ * The territories that have EVER carried real Phoenix CRM work, out of the ones asked about.
+ *
+ * "Started" is deliberately the widest, cheapest signal — a visit, a captured place, a plan of either
+ * kind, a recorded day, or a list request. Any one of them means a human opened the app and did
+ * something on that territory, which is all this gate needs to know; a narrower test (say, a visit
+ * only) would keep a rep who is planning but not yet visiting out of his manager's digest.
+ *
+ * 🔴 REAL ROWS ONLY. Every query filters `is_test`, or a Super Admin's try-out — or a test login's,
+ * which carries the mirrored rep's own HR id (src/lib/auth/test-persona.ts) — would switch a real
+ * manager's 06:55 message on for a territory nobody has really touched.
+ *
+ * Errors are not swallowed: a failed read here would silently empty the digest for everybody, which
+ * looks exactly like a quiet morning. The cron route reports the throw instead.
+ */
+export async function seatsWithRealActivity(seatIds: ReadonlyArray<string>): Promise<Set<string>> {
+  const started = new Set<string>();
+  if (seatIds.length === 0) return started;
+  const supabase = getSupabaseAdmin();
+  const tables = [
+    "phoenix_crm_visits",
+    "phoenix_crm_places",
+    "phoenix_crm_plans",
+    "phoenix_crm_monthly_plans",
+    "phoenix_crm_day_activities",
+    "phoenix_crm_list_requests",
+  ] as const;
+
+  for (const part of chunk([...seatIds], 200)) {
+    const reads = await Promise.all(
+      tables.map((table) => supabase.from(table).select("seat_id").eq("is_test", false).in("seat_id", part)),
+    );
+    for (const read of reads) {
+      throwIfError(read.error);
+      for (const row of (read.data ?? []) as Array<{ seat_id?: string | null }>) {
+        if (row.seat_id) started.add(String(row.seat_id));
+      }
+    }
+  }
+  return started;
+}
+
 export type PhoenixCrmDigestRun = {
   day: string;
   territories: number;
@@ -73,6 +123,12 @@ export type PhoenixCrmDigestRun = {
   recipients: number;
   delivered: number;
   failed: number;
+  /**
+   * Territories in an open line whose rep has not started yet, and which the digest therefore did
+   * not read. Reported so a silent morning can be told apart from a broken one: while the rollout is
+   * young this is most of them, and the day it reaches zero the digest is watching the whole field.
+   */
+  waitingForFirstUse: number;
 };
 
 async function deliver(digest: PhoenixCrmDigest): Promise<void> {
@@ -109,8 +165,27 @@ export async function runPhoenixCrmDailyDigest(
   // Open lines only. A territory whose line has not opened has nothing to report and its rep has no
   // app to have used — putting it on a manager's 06:55 message would be an accusation about a
   // decision that is the owner's, not the rep's.
-  const seats: OrgSeat[] = org.territories.filter((seat) => Boolean(seat.lineCode && openLines.has(seat.lineCode)));
+  const openSeats: OrgSeat[] = org.territories.filter((seat) => Boolean(seat.lineCode && openLines.has(seat.lineCode)));
   const day = lastFinishedFieldDay(cairoToday);
+
+  // 🔴 AND ONLY THE TERRITORIES WHOSE REP HAS ACTUALLY STARTED (owner, 2026-09-28).
+  //
+  // The line opening is the owner's decision; a rep beginning to use the app is not, and on the
+  // first morning it fired this digest told every manager in the company about every territory
+  // beneath him — 24 recipients, up to 38 lines each — because not one rep had used Phoenix CRM
+  // yet, so "no visits yesterday" was true everywhere. That is the shape the whole feature exists
+  // to avoid: a message that arrives every morning whatever happened is muted inside a week.
+  //
+  // So a territory joins the digest on its own, the first time anything real appears on it, and the
+  // digest stays silent until then. It needs no stand-down to undo and nothing to remember: as reps
+  // move across from iReports360 the digest turns itself on territory by territory, and the first
+  // message a manager gets is about a rep who was actually working.
+  //
+  // THE BOARD IS DELIBERATELY UNCHANGED — the exceptions screen still shows every territory, because
+  // a manager who opens it is ASKING, and "nobody has started" is exactly what he needs to see there.
+  // This narrows what is PUSHED at 06:55, never what can be read.
+  const started = await seatsWithRealActivity(openSeats.map((seat) => seat.seatId));
+  const seats = openSeats.filter((seat) => started.has(seat.seatId));
 
   const board = await gatherExceptions({
     seats,
@@ -147,5 +222,6 @@ export async function runPhoenixCrmDailyDigest(
     recipients: digests.length,
     delivered,
     failed,
+    waitingForFirstUse: openSeats.length - seats.length,
   };
 }
