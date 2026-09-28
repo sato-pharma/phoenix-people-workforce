@@ -449,23 +449,30 @@ export RUNNER_LABELS=self-hosted,linux,x64,phoenix,hetzner
 gh variable set CI_RUNNER_LABEL --body hetzner    # or railway-eu, which already exists
 ```
 
-🔴 **ARMED SINCE 2026-09-28T00:22:00Z: `CI_RUNNER_LABEL = railway-eu`.** `CI_SELF_HOSTED` is still
-absent, which leaves the kill switch available. So a same-repo `ci-runner/<task>` PR runs on the three
-Railway replicas **right now**; `main`, `master`, `workflow_dispatch` and `schedule` stay hosted, which is
-the property the four conditions above guarantee and which was proved live on dispatch `36362005374` with
-the label already set — `validate`, `checks` and `mobile` all on `ubuntu-latest` while the replicas sat
-idle. Set at the owner's instruction, after PR #4599 took all four required checks on `railway-eu`
-including the Playwright smoke test.
+🔴 **DO NOT READ THE CURRENT SWITCH STATE FROM THIS FILE — read `gh variable list`.** These are
+repository variables: they change without a commit, so any value written here is a snapshot that
+begins rotting the moment it is written. This paragraph used to assert *"neither variable is set
+today, deliberately"*, and it went false about twenty minutes later, when `CI_RUNNER_LABEL` was set
+to `railway-eu` on the owner's instruction (2026-09-28T00:22:00Z). A session reading it would have
+believed every job was hosted while `ci-runner/` PRs were already going to the replicas. The file had
+been wrong about a live value twice that night — the other was the cost figure, corrected in #4607.
 
-🔴 **This paragraph said the opposite until 2026-09-28 — "neither variable is set today, so every job is
-hosted" — and it was false from 00:22 that morning.** Not unsafe, because `main` is hosted either way, but
-it is the paragraph someone reads before touching the switch, so it reported the state backwards to the
-one person checking. **Read `gh variable list` rather than this line**; a doc that names a variable's value
-is stale the moment someone sets it, and this file has now been wrong about a live value twice in one
-night (the other was the cost, corrected in #4607).
+| what `gh variable list` shows | what it means |
+| --- | --- |
+| `CI_RUNNER_LABEL` **unset** | every job hosted, whatever the branch — the switch cannot fire at all |
+| `CI_RUNNER_LABEL` **set** | a same-repo `ci-runner/<task>` PR runs on that label; `main`, dispatches, schedules and every other PR stay hosted |
+| `CI_SELF_HOSTED=off` | kill switch, wins over everything, takes effect on a new run **attempt** |
 
-Arming is still the owner's call, and **the label existing is not the same thing as the switch being on** —
-that sentence was the useful half and it survives. What changed is only which of those two is true today.
+✅ **A DATED MEASUREMENT IS SAFE TO WRITE DOWN HERE; A CURRENT VALUE IS NOT** — which is why the
+evidence below stays and the state above does not. On 2026-09-28, **with `CI_RUNNER_LABEL` already
+armed**, dispatch `36362005374` put `validate`, `checks` and `mobile` on `ubuntu-latest` while the
+replicas sat idle, and PR #4599 took all four required checks on the replicas including the Playwright
+login smoke test. Both arms of the prefix condition, demonstrated on real events rather than computed
+from the expression. Those readings are true for ever because they carry their date; "the label is
+set today" is not.
+
+**Arming it is the owner's call**, and *the label existing is not the same thing as the switch being
+on* — that sentence stays true whatever the variables happen to read today.
 
 `scripts/setup-self-hosted-runner.sh` defaults `RUNNER_LABELS` to `self-hosted,linux,x64,phoenix` —
 byte-identical to what the Railway replicas carry — so the override is the whole point. Deregistering
