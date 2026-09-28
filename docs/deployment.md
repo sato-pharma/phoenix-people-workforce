@@ -86,6 +86,28 @@ the sync only publishes after CI concludes.
 | `7e6411d88` | 19:37:23Z | **19:32:50Z** — 4m 33s BEFORE, and 35s after the record was created | 19:38:06Z — 43s after |
 | `bc049b3e4` | 19:42:51Z | **19:40:18Z** — 2m 33s BEFORE | 19:45:32Z — 2m 41s after |
 
+🔴 **RE-MEASURED 2026-09-28, A DAY LATER, ON THREE CONSECUTIVE MERGES — UNCHANGED, SO NOT A
+TRANSIENT.** The support follow-up rests on this set, and it is stronger than the pair above in three
+ways: it is three for three, every timestamp is GitHub REST API (no dashboard, no `railway` CLI), and
+it pins the trigger.
+
+| commit | merged | staging deploy CREATED | staging `success` | `main` CI concluded | `staging` branch reached it |
+| --- | --- | --- | --- | --- | --- |
+| `7a6a6438e` | 20:52:14Z | 20:52:20Z (**+6s**) | 20:54:37Z | 20:57:16Z | — |
+| `bad302365` | 20:53:47Z | 20:53:53Z (**+6s**) | 20:56:32Z | 20:59:15Z | 21:00:15Z |
+| `58947898d` | 21:00:41Z | 21:00:47Z (**+6s**) | 21:03:28Z | 21:05:59Z | 21:06:25Z |
+
+**The +6 seconds is the tell.** A staging deployment record appears six seconds after every merge, the
+same second as production's, which pins the trigger to the push to `main` and nothing else. And in both
+rows where the sync is visible, `refs/heads/staging` reached the commit **6m 22s and 5m 38s AFTER the staging
+deployment already existed** — a deployment cannot originate from a branch that does not yet contain the
+commit. That ordering is the one proof that survives anyone doubting a dashboard or a CLI reading.
+
+🔴 **THE EXPOSURE, STATED AS A NUMBER: STAGING SERVES UNVERIFIED CODE FOR ROUGHLY 2m 30s – 2m 45s
+AFTER EVERY MERGE.** Measured 2m 39s, 2m 43s and 2m 31s, in the row order above. Staging is a clone of
+production and holds real employee and payroll data (§3), so that window is a real exposure and not a
+cosmetic defect — which is the reason the ticket is open rather than filed and forgotten.
+
 🔴 **CONVERGENCE HIDES ALL OF THIS, SO MEASURE AT A MERGE, NEVER AT REST.** Minutes later `main`, the
 `staging` branch and both serving revisions were one commit (`bc049b3e4`), and every reading then looks
 consistent with staging following the branch. The only readings that distinguish the two are taken
