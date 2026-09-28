@@ -380,6 +380,10 @@ function isSalesPositionTitle(value: string | null | undefined) {
   return (
     isMedicalRepTitle(normalized) ||
     normalized.includes("district sales manager") ||
+    // "Senior District Manager" carries neither the word "sales" nor the "district sales manager"
+    // phrase, so without this clause the promotion would have taken a real district manager out of
+    // the sales branch of this form (B-94, 2026-09-29).
+    normalized.includes("district manager") ||
     normalized === "dsm" ||
     normalized.includes("sales")
   );

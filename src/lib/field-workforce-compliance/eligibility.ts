@@ -33,6 +33,7 @@ const ELIGIBLE_TITLES = new Set<string>([
   "employee medical rep",
   "district sales manager",
   "district manager",
+  "senior district manager",
   "dsm",
   "regional sales manager",
   "regional manager",

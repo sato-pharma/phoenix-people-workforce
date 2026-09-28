@@ -51,6 +51,11 @@ export function runTitlePermissionGovernanceTests() {
     "R and D Manager",
     "Research and Development Manager",
     "District Sales Manager",
+    // The most senior-SOUNDING title the company has, and still only a label: B-94's district
+    // access comes from his assigned "District Manager" app role, never from these words. The
+    // provisioning allowlist in access-role.ts was DELIBERATELY not widened for it — the owner
+    // approved exactly two titles there in 2026-08, and a promotion is not a new hire.
+    "Senior District Manager",
     "Medical Representative",
     "Regional Sales Manager",
   ]) {
@@ -60,6 +65,8 @@ export function runTitlePermissionGovernanceTests() {
       `"${title}" is a job-title label, not a permission role.`,
     );
   }
+  assert.equal(resolveEmployeeAccessRole({ jobTitle: "Senior District Manager" }), "Employee");
+  assert.equal(resolveEmployeeAccessRole({ positionTitle: "Senior District Manager" }), "Employee");
   // R&D Manager is the Research and Development Manager label only — not admin.
   assert.notEqual(normalizeRole("R&D Manager"), "Super Admin");
   assert.notEqual(normalizeRole("R&D Manager"), "Manager");

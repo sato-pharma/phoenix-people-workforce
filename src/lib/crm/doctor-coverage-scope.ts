@@ -118,6 +118,11 @@ const SEAT_RANK = new Map<string, number>([
   ["medical representative", 1],
   ["district manager", 2],
   ["district sales manager", 2],
+  // A SENIORITY grade on the same district seat, not a rung between DM and RSM — ranking it 2
+  // keeps his own reps inside his scope and keeps him inside his NSM's, exactly as before the
+  // promotion (B-94, 2026-09-29). The lookup is exact, and an unranked title is EXCLUDED from a
+  // line scope by design, so leaving it off would have deleted a real district from the boards.
+  ["senior district manager", 2],
   ["product manager", 2],
   ["regional manager", 3],
   ["regional sales manager", 3],

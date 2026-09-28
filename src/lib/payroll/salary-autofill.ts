@@ -56,6 +56,10 @@ export const DEFAULT_EXTRA_COST_OF_LIVING = 1500;
 export const EXTRA_COST_OF_LIVING_BY_TITLE: Readonly<Record<string, number>> = {
   "medical representative": 2000,
   "district sales manager": 3000,
+  // The same district allowance under a seniority grade (B-94, promoted 2026-09-29). It is listed
+  // rather than derived because this map is an exact-key lookup: an absent title silently fills
+  // the 1,500 office default into the form, and the form is the base payroll then pays on.
+  "senior district manager": 3000,
   "product manager": 3000,
   "group product manager": 3000,
   "marketing manager": 3000,

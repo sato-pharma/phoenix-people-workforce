@@ -24,6 +24,14 @@ const JOB_FUNCTION_BY_TITLE: Record<string, PhoenixRole> = {
   "district sales manager": "District Manager",
   "district manager": "District Manager",
   dsm: "District Manager",
+  // A SENIOR District Manager is a district manager with a seniority grade, not a different job.
+  // He runs the same district, on the same seat, with the same app role — so every rule that keys
+  // off the job FUNCTION (outstation tier, portal routing, coaching mode, Employee 360, expense
+  // analysis) must land in the same place it did the day before the promotion. Added 2026-09-29
+  // for B-94's promotion; without it the title falls through to normalizeRole and classifies as
+  // the baseline "Employee", which is silent and wrong in about fifty call sites.
+  "senior district manager": "District Manager",
+  "senior district sales manager": "District Manager",
   "regional sales manager": "Regional Manager",
   "regional manager": "Regional Manager",
   "national sales manager": "National Sales Manager",

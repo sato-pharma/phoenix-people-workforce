@@ -78,7 +78,13 @@ export function standardExtraCostOfLiving(input: SalaryAllowanceInput) {
   if (
     /\bdsms?\b/.test(title) ||
     /\bdsms?\b/.test(compactTitle) ||
-    title.includes("district sales manager")
+    title.includes("district sales manager") ||
+    // "district manager" also admits "Senior District Manager" (B-10's promotion of B-94,
+    // 2026-09-29) and "Acting District Manager". A seniority grade in front of the title does not
+    // change the district allowance, and WITHOUT this clause the promotion quietly moved him to
+    // DEFAULT_EXTRA_COST_OF_LIVING — a 1,500 EGP cut nobody asked for and nothing would have
+    // reported. The NSM clause above runs first, so this can never steal a national manager.
+    title.includes("district manager")
   ) {
     return 3000;
   }

@@ -166,6 +166,10 @@ export function selectContactSyncSlice<T>(targets: T[], slice: number, of: numbe
 export const CONTACT_LIST_JOB_TITLES = [
   "Medical Representative",
   "District Sales Manager",
+  // Spelled exactly as `employees.job_title` spells it, because this list is handed straight to a
+  // PostgREST `.in()` — a title missing here is not a smaller sweep, it is a district manager whose
+  // contact list silently stops being mirrored with nothing to see. Added for B-94's promotion.
+  "Senior District Manager",
 ] as const;
 
 /**
