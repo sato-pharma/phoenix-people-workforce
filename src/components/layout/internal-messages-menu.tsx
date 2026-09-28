@@ -5,7 +5,7 @@ import { CheckCircle2, Loader2, Mail, RefreshCw, Search, Send, XCircle } from "l
 
 import { PersonalMailboxPanel, type PersonalMailboxOpenRequest } from "@/components/layout/personal-mailbox-panel";
 import { systemUiText } from "@/config/system-settings";
-import { placeAnchoredPanel, type PanelPlacement } from "@/lib/navigation/panel-position";
+import { HEADER_PANEL_MAX_HEIGHT, placeAnchoredPanel, type PanelPlacement } from "@/lib/navigation/panel-position";
 import { unreadBadgeLabel } from "@/lib/personal-mailbox/rules";
 import { cn } from "@/lib/utils";
 import { useDismissOnOutsideInteraction } from "@/hooks/use-dismiss-on-outside-interaction";
@@ -59,6 +59,11 @@ const emptyForm = {
   subject: "",
 };
 
+/**
+ * Cairo wall-clock, whatever zone the reader's device is set to. `createdAt` is an instant this app
+ * stamped, so Africa/Cairo is its true local time; without `timeZone` it printed in the device's own
+ * zone, and a laptop left on another zone read every message hours off.
+ */
 function formatMessageTime(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "Now";
@@ -67,6 +72,7 @@ function formatMessageTime(value: string) {
     hour: "2-digit",
     minute: "2-digit",
     month: "short",
+    timeZone: "Africa/Cairo",
   }).format(date);
 }
 
@@ -150,7 +156,27 @@ export function InternalMessagesMenu({ isAdminMode }: { isAdminMode: boolean }) 
   const inboxMessages = useMemo(() => messages.filter((message) => message.direction === "inbox"), [messages]);
   const sentMessages = useMemo(() => messages.filter((message) => message.direction === "sent"), [messages]);
 
-  const loadMessages = useCallback(async () => {
+  // Every inbox message is shown whole in the open panel — there is no separate "open a message"
+  // step — so the panel being open on this tab IS the reading. Nothing ever called the read route
+  // before, so an unread count, once it appeared, never went down again.
+  const markInboxRead = useCallback(async (list: InternalMessageView[]) => {
+    const unread = list.filter((message) => message.direction === "inbox" && !message.readAt);
+    if (unread.length === 0) return;
+    const results = await Promise.allSettled(
+      unread.map(async (message) => {
+        const response = await fetch(`/api/messages/${encodeURIComponent(message.id)}/read`, { method: "PATCH" });
+        if (!response.ok) throw new Error("Message read failed.");
+        return message.id;
+      }),
+    );
+    const readIds = new Set(results.flatMap((result) => (result.status === "fulfilled" ? [result.value] : [])));
+    if (readIds.size === 0) return;
+    const readAt = new Date().toISOString();
+    setMessages((current) => current.map((message) => (readIds.has(message.id) ? { ...message, readAt: message.readAt ?? readAt } : message)));
+    setUnreadCount((count) => Math.max(0, count - readIds.size));
+  }, []);
+
+  const loadMessages = useCallback(async (options?: { markRead?: boolean }) => {
     setLoading(true);
     setError(null);
 
@@ -160,18 +186,27 @@ export function InternalMessagesMenu({ isAdminMode }: { isAdminMode: boolean }) 
       if (!response.ok) throw new Error(payload.message ?? "Messages failed to load.");
       setMessages(payload.messages ?? []);
       setUnreadCount(payload.unreadCount ?? 0);
+      if (options?.markRead) void markInboxRead(payload.messages ?? []);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Messages failed to load.");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [markInboxRead]);
+
+  // Once when the header mounts, so the envelope's badge counts unread Phoenix messages BEFORE the
+  // panel is first opened. It loaded only on open, so the badge — the only unread signal on a phone —
+  // stayed blank for someone with messages waiting until they happened to open it anyway.
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => void loadMessages(), 0);
+    return () => window.clearTimeout(timeoutId);
+  }, [loadMessages]);
 
   useEffect(() => {
     if (!open) return;
-    const timeoutId = window.setTimeout(() => void loadMessages(), 0);
+    const timeoutId = window.setTimeout(() => void loadMessages({ markRead: tab === "internal" }), 0);
     return () => window.clearTimeout(timeoutId);
-  }, [loadMessages, open]);
+  }, [loadMessages, open, tab]);
 
   useDismissOnOutsideInteraction(containerRef, open, setOpen);
   useRepositionOnViewportChange(open, repositionPanel);
@@ -269,14 +304,15 @@ export function InternalMessagesMenu({ isAdminMode }: { isAdminMode: boolean }) 
       {open ? (
         <div
           className={cn(
-            "absolute left-0 top-full z-30 mt-1.5 overflow-hidden rounded border shadow-lg",
-            // On a phone the two columns stack, so the panel is taller than the screen, and it hangs
-            // from a header that does not scroll away: past the screen's bottom it could never be
-            // reached. There it stops at the screen and scrolls itself instead.
-            "max-sm:max-h-[calc(100dvh-5rem)] max-sm:overflow-y-auto",
+            // The two columns stack below `xl`, so the panel is taller than the screen on a phone, a
+            // tablet AND a 1024-1279px laptop, and it hangs from a header that does not scroll away:
+            // past the screen's bottom it could never be reached. It stops at the screen — and above
+            // the portal's phone bottom bar — and scrolls itself, at every width. It used to do so
+            // only below `sm`, which left the Send button about 250px under a 1024x768 screen.
+            "absolute left-0 top-full z-30 mt-1.5 overflow-x-hidden overflow-y-auto rounded border shadow-lg",
             isAdminMode ? "border-[#333333] bg-[#050505]" : "border-phx-line bg-white",
           )}
-          style={{ marginLeft: placement.offsetLeft, width: placement.width }}
+          style={{ marginLeft: placement.offsetLeft, maxHeight: HEADER_PANEL_MAX_HEIGHT, width: placement.width }}
         >
           <div className={cn("flex border-b", isAdminMode ? "border-[#333333]" : "border-phx-line")} role="tablist">
             {([

@@ -440,6 +440,10 @@ export function SearchableSelect({
               ref={dropdownRef}
               role="listbox"
               aria-label={placeholder ?? "Options"}
+              // Portaled out of whatever menu holds this select, so a menu's outside-click dismiss
+              // (useDismissOnOutsideInteraction) would read a press on an option as "outside" and
+              // close the menu. The marker tells it this list belongs to the menu.
+              data-floating-layer=""
               className="fixed z-[1000] max-h-64 w-max overflow-x-hidden overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-[0_16px_36px_rgba(15,23,42,0.14)]"
               id={`${id ?? "searchable-select"}-options`}
               style={{

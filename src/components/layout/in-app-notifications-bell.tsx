@@ -6,7 +6,7 @@ import Link from "next/link";
 
 import { systemUiText } from "@/config/system-settings";
 import { cn } from "@/lib/utils";
-import { placeAnchoredPanel, type PanelPlacement } from "@/lib/navigation/panel-position";
+import { HEADER_PANEL_MAX_HEIGHT, placeAnchoredPanel, type PanelPlacement } from "@/lib/navigation/panel-position";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useDismissOnOutsideInteraction } from "@/hooks/use-dismiss-on-outside-interaction";
 import { useRepositionOnViewportChange } from "@/hooks/use-reposition-on-viewport-change";
@@ -41,6 +41,7 @@ const pendingStatuses = new Set(["pending", "scheduled", "awaiting", "action_req
 const NOTIFICATION_PANEL_WIDTH = 380;
 const NOTIFICATION_PANEL_GUTTER = 12;
 
+/** Cairo wall-clock, whatever zone the device is on — the instant is one this app stamped. */
 function formatNotificationTime(value: string | null) {
   if (!value) return "Now";
   const date = new Date(value);
@@ -50,7 +51,27 @@ function formatNotificationTime(value: string | null) {
     hour: "2-digit",
     minute: "2-digit",
     month: "short",
+    timeZone: "Africa/Cairo",
   }).format(date);
+}
+
+const NOTIFICATION_CODE_ACRONYMS = new Set(["crm", "hr", "kpi", "roi", "sos"]);
+
+/**
+ * A module or category CODE as a name: `phoenix_crm` → "Phoenix CRM", `direct_order_request` →
+ * "Direct Order Request". The filter printed the code with its underscores swapped for spaces —
+ * "phoenix crm", "crm account setup" — which is a code, not a name.
+ */
+function notificationCodeLabel(code: string) {
+  return code
+    .split(/[_\s-]+/)
+    .filter(Boolean)
+    .map((word) =>
+      NOTIFICATION_CODE_ACRONYMS.has(word.toLowerCase())
+        ? word.toUpperCase()
+        : `${word.charAt(0).toUpperCase()}${word.slice(1)}`,
+    )
+    .join(" ");
 }
 
 /** A notification needs action when it has an action, links somewhere, or is pending. */
@@ -185,6 +206,7 @@ export function InAppNotificationsBell({ isAdminMode }: { isAdminMode: boolean }
   return (
     <div className="relative block" ref={containerRef}>
       <button
+        aria-expanded={open}
         aria-label="Notifications"
         className={cn(
           "relative inline-flex h-9 w-9 items-center justify-center rounded",
@@ -222,12 +244,15 @@ export function InAppNotificationsBell({ isAdminMode }: { isAdminMode: boolean }
           // viewport (see panel-position.ts), and it is the same mechanism the nav row's "+" uses.
           // `rounded` rather than `rounded-xl` — the house radius, and what the messages menu beside
           // it already uses.
+          // Capped to the screen (and above the portal's phone bottom bar) and scrolling itself: it
+          // hangs from a header that never scrolls away, and at 320x568 its header plus a 420px list
+          // ran about 110px past the bottom, where nothing could reach it. HEADER_PANEL_MAX_HEIGHT.
           className={cn(
-            "absolute left-0 top-full z-30 mt-1.5 overflow-hidden rounded border shadow-lg",
+            "absolute left-0 top-full z-30 mt-1.5 overflow-x-hidden overflow-y-auto rounded border shadow-lg",
             panelText.border,
             panelText.bg,
           )}
-          style={{ marginLeft: placement.offsetLeft, width: placement.width }}
+          style={{ marginLeft: placement.offsetLeft, maxHeight: HEADER_PANEL_MAX_HEIGHT, width: placement.width }}
         >
           <div className={cn("border-b px-4 py-3", panelText.border)}>
             <div className="flex items-start justify-between gap-3">
@@ -303,7 +328,7 @@ export function InAppNotificationsBell({ isAdminMode }: { isAdminMode: boolean }
                 <option value="all">All modules</option>
                 {moduleOptions.map((moduleName) => (
                   <option key={moduleName} value={moduleName}>
-                    {moduleName.replace(/_/g, " ")}
+                    {notificationCodeLabel(moduleName)}
                   </option>
                 ))}
               </SearchableSelect>
@@ -402,7 +427,7 @@ export function InAppNotificationsBell({ isAdminMode }: { isAdminMode: boolean }
                         ) : null}
                         <div className="mt-2 flex flex-wrap items-center gap-2">
                           <span className="rounded bg-phx-accent-soft px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-accent-press">
-                            {notification.category.replace(/_/g, " ")}
+                            {notificationCodeLabel(notification.category)}
                           </span>
                           {notification.priority ? (
                             <span className={cn("rounded px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.12em]", panelText.chip)}>

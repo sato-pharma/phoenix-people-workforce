@@ -344,7 +344,11 @@ function buildEmployeePortalSections({
         // so without this twin a DM/RM/NSM had no targets surface at all. A Medical Rep gets the same
         // link and is served their own targets only (owner, 2026-09-16).
         ...(showTargetsTab ? [{ href: "/employee-portals/targets", label: "Targets", icon: Target }] : []),
-        ...(showDirectOrdersTab ? [{ href: "/employee-portals/direct-orders", label: "Direct Orders", icon: ReceiptText }] : []),
+        // The badge the catalog seed and the phone bar have always carried. #2020 (2026-08-11) folded
+        // Direct Orders into one workspace and wired `direct-orders-needs-action` into the type, the
+        // render switch and the seed — but never onto THIS row, so a manager with orders waiting on his
+        // rung saw no count anywhere on a desktop (the Approvals Hub count does not include them).
+        ...(showDirectOrdersTab ? [{ href: "/employee-portals/direct-orders", label: "Direct Orders", icon: ReceiptText, navBadge: "direct-orders-needs-action" as const }] : []),
         // A Medical Rep's VIEW-ONLY window onto the direct orders their District Manager booked on
         // pharmacies in the rep's own area (owner, 2026-09-24). Distinct from the requester's Direct
         // Orders workspace above — the rep never raises one, only watches them land in his territory.
@@ -764,6 +768,7 @@ export function EmployeePortalTopNav({
   // underneath it.
   const userMenuRef = useRef<HTMLDivElement>(null);
   useDismissOnOutsideInteraction(userMenuRef, userMenuOpen, setUserMenuOpen);
+  const lockedModuleKeys = useLockedModuleKeys();
   const closeMobileMenu = () => setMobileMenuOpen(false);
   const employeeName = data.employee.fullName.trim();
   const firstName = employeeName.split(/\s+/)[0] || "Employee";
@@ -907,8 +912,14 @@ export function EmployeePortalTopNav({
                 role="listbox"
               >
                 {searchMatches.length > 0 ? (
-                  searchMatches.map((item, index) => (
+                  searchMatches.map((item, index) => {
+                    // The padlock the sidebar row wears, here too — a locked module offered with its
+                    // normal icon reads as open until the notice page says otherwise.
+                    const locked = isNavItemLockedFor({ href: item.href }, lockedModuleKeys);
+                    const ResultIcon = locked ? Lock : item.icon;
+                    return (
                     <button
+                      aria-label={locked ? `${item.label} — locked` : undefined}
                       aria-selected={index === activeSearchIndex}
                       className={`flex w-full items-center gap-3 border-b border-slate-100 px-3 py-2.5 text-left transition last:border-b-0 hover:bg-orange-50 ${
                         index === activeSearchIndex ? "bg-orange-50" : ""
@@ -923,18 +934,20 @@ export function EmployeePortalTopNav({
                       tabIndex={-1}
                       type="button"
                     >
-                      <item.icon className="h-4 w-4 shrink-0 text-orange-500" />
+                      <ResultIcon className={`h-4 w-4 shrink-0 ${locked ? "text-amber-600" : "text-orange-500"}`} />
                       {/* WRAPS, never `whitespace-nowrap`: this panel is exactly as wide as the search
-                          box, which gives up width to everything else in the header — about 230px at
-                          a 1024px window, where "My Outstation Expenses" or "All Marketing Requests"
-                          plus the icon no longer fit, and the panel's `overflow-hidden` cut the label
-                          mid-word with no ellipsis to show it. */}
-                      <span className="min-w-0">
+                          box, which gives up width to everything else in the header — roughly 180-230px
+                          at a 1024px window once the date, Live Performance and zoom controls appear,
+                          where "Weekly / Monthly Plan" or "Territory Management" plus the icon no
+                          longer fit, and the panel's `overflow-hidden` cut the label mid-word with no
+                          ellipsis to show it. */}
+                      <span className={`min-w-0 ${locked ? "opacity-70" : ""}`}>
                         <span className="block text-sm font-bold text-slate-800">{item.label}</span>
                         <span className="block text-phx-xs font-semibold uppercase tracking-[0.12em] text-slate-400">{item.section}</span>
                       </span>
                     </button>
-                  ))
+                    );
+                  })
                 ) : (
                   <div className="px-3 py-3 text-sm font-semibold text-slate-500">
                     No matching portal pages.
@@ -1012,12 +1025,14 @@ export function EmployeePortalTopNav({
         </div>
       </header>
 
-      {/* Mobile Sidebar Overlay */}
+      {/* Mobile Sidebar Overlay — inert while closed like the drawer below, or its invisible
+          full-screen "Close menu" button stays the first stop in the Tab order. */}
       <button
         aria-label="Close menu"
         className={`fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-sm transition-opacity duration-200 lg:hidden ${
           mobileMenuOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"
         }`}
+        inert={!mobileMenuOpen}
         onClick={closeMobileMenu}
         type="button"
       />
@@ -1025,8 +1040,8 @@ export function EmployeePortalTopNav({
       {/* Mobile Sidebar Content */}
       {/* `inert` while closed, as the admin drawer (MobileSidebar) is. A closed drawer is only slid
           off-screen, so without it every link inside stayed in the Tab order: a keyboard user tabbed
-          through every one of its invisible rows before reaching the page, and `aria-hidden` over focusable links
-          is itself an accessibility fault. */}
+          through every one of its invisible rows before reaching the page, and `aria-hidden` over
+          focusable links is itself an accessibility fault. */}
       <div
         aria-hidden={!mobileMenuOpen}
         className="fixed inset-y-0 left-0 z-50 flex h-dvh max-h-dvh w-[min(88vw,320px)] flex-col border-r border-slate-200 bg-white shadow-2xl transition-transform duration-300 ease-in-out will-change-transform lg:hidden"
