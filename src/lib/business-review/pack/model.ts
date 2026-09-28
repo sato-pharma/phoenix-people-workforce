@@ -44,6 +44,38 @@ export type PackDm = DmSummary & { lineLabel?: string | null };
 export type PackCell = string | number | null;
 export type PackAlign = "left" | "right";
 
+/** One bar. `value` is null when the figure is not gradeable — the bar is then drawn as absent, never 0. */
+export type PackChartItem = { label: string; value: number | null; note?: string | null };
+
+/**
+ * A chart drawn above a section's table.
+ *
+ * 🔴 IT CARRIES NO FIGURE THE SECTION DOES NOT ALREADY HOLD. The model builds it from the very rows
+ * the table lists, so a reader cannot find a bar that disagrees with the line under it — the same
+ * reason `lineComparison` rolls up from this pack's own areas. The renderers DRAW it and compute
+ * nothing, exactly as they draw the rows.
+ */
+export type PackChart = {
+  kind: "bars";
+  /**
+   * What a bar's length means. `pct` is achievement, always scaled against 100 so a bad month cannot
+   * flatter itself; `share` is a share of the window's value; `count` is a plain tally or an amount
+   * in EGP, scaled to its own largest bar.
+   *
+   * 🔴 A `count` chart may only plot figures that genuinely ADD — a visit belongs to one rep, a
+   * claim to one district. Customers and visiting reps are UNIONS, and a chart of them summed would
+   * count one doctor twice. That is why "Unique customers per month" carries no chart.
+   */
+  unit: "pct" | "share" | "count";
+  /** Appended after a `count` bar's figure — "EGP", "visits". Never used for a percentage. */
+  countSuffix?: string | null;
+  /** A dotted rule across the plot — the 90% earner mark, where achievement is the unit. */
+  reference?: { value: number; label: string } | null;
+  /** Said ON the chart when it plots fewer items than the table holds — never a silent truncation. */
+  capNote?: string | null;
+  items: PackChartItem[];
+};
+
 export type PackSection = {
   metric: ReviewMetricId;
   title: string;
@@ -53,6 +85,8 @@ export type PackSection = {
   /** Per column, so the workbook and the PDF align the same way. */
   align: PackAlign[];
   rows: PackCell[][];
+  /** Drawn above the table by the PDF and the deck. Absent where a picture would say nothing. */
+  chart?: PackChart | null;
 };
 
 export type SalesReviewPack = {
@@ -138,9 +172,40 @@ export function buildSalesReviewPack(input: PackInput): SalesReviewPack {
   };
 }
 
+/**
+ * Bars a reader can actually take in. Above this the chart says on its own face what it plotted, and
+ * the table under it still holds every row. The PDF gives a chart this tall a page of its own.
+ */
+const CHART_BARS = 12;
+/** The earner mark every achievement table in this system is read against. */
+const EARNER = { label: "90% earner", value: 90 };
+
 function areaPerformance({ areas, visitsAvailable }: PackInput): PackSection {
   const withLine = areas.some((area) => area.lineLabel);
+  // Graded areas only: an ungradeable one has no percentage to draw, and a 0% bar would accuse a
+  // territory of failing when the truth is that it carried no target.
+  const ranked = areas
+    .filter((area) => area.allProducts.ach != null)
+    .sort((a, b) => (b.allProducts.ach ?? -1) - (a.allProducts.ach ?? -1));
+  const plotted = ranked.slice(0, CHART_BARS);
   return {
+    chart:
+      plotted.length >= 2
+        ? {
+            capNote:
+              ranked.length > plotted.length
+                ? `The ${plotted.length} highest of ${ranked.length} graded areas — this section's table holds every one.`
+                : null,
+            items: plotted.map((area) => ({
+              label: area.area,
+              note: area.dm,
+              value: area.allProducts.ach,
+            })),
+            kind: "bars",
+            reference: EARNER,
+            unit: "pct",
+          }
+        : null,
     align: withLine
       ? ["left", "left", "left", "right", "right", "right", "right"]
       : ["left", "left", "right", "right", "right", "right"],
@@ -187,6 +252,17 @@ function lineComparison({ areas }: PackInput): PackSection | null {
   }
   if (byLine.size < 2) return null;
   return {
+    chart: {
+      capNote: null,
+      items: [...byLine.entries()].map(([line, row]) => ({
+        label: line,
+        note: `${row.areas} areas`,
+        value: row.target > 0 ? (row.sales / row.target) * 100 : null,
+      })),
+      kind: "bars",
+      reference: EARNER,
+      unit: "pct",
+    },
     align: ["left", "right", "right", "right", "right"],
     columns: ["Line", "Achievement", "Sales", "Target", "Areas"],
     metric: "line-comparison",
@@ -209,6 +285,17 @@ function spread(
   noun: string,
 ): PackSection {
   return {
+    // Share of the window's value, largest first — the shape of "is it spread or is it one".
+    chart:
+      facts.top.length >= 2
+        ? {
+            capNote: facts.count > facts.top.length ? `The ${facts.top.length} largest of ${facts.count}.` : null,
+            items: facts.top.map((row) => ({ label: row.label, note: null, value: row.share })),
+            kind: "bars",
+            reference: null,
+            unit: "share",
+          }
+        : null,
     align: ["left", "right", "right"],
     columns: [noun, "Sales", "Share"],
     metric,
@@ -221,7 +308,22 @@ function spread(
 function channels(facts: ConcentrationFacts): PackSection {
   const share = (value: number) =>
     facts.totalValue > 0 ? `${((value / facts.totalValue) * 100).toFixed(1)}%` : "—";
+  const pctOf = (value: number) => (facts.totalValue > 0 ? (value / facts.totalValue) * 100 : null);
   return {
+    chart:
+      facts.totalValue > 0
+        ? {
+            capNote: null,
+            items: [
+              { label: "Through distributors", note: null, value: pctOf(facts.channels.distributor) },
+              { label: "Through wholesalers", note: null, value: pctOf(facts.channels.wholesaler) },
+              { label: "Direct orders", note: null, value: pctOf(facts.channels.direct) },
+            ],
+            kind: "bars",
+            reference: null,
+            unit: "share",
+          }
+        : null,
     align: ["left", "right", "right"],
     columns: ["Channel", "Sales", "Share"],
     metric: "channel-split",
@@ -254,7 +356,32 @@ function specialty(mix: SpecialtyMix, districtName: string): PackSection | null 
 
 function repRows({ areas, people, visitsAvailable }: PackInput): PackSection {
   const areaByCode = new Map(areas.filter((a) => a.areaCode).map((a) => [a.areaCode as string, a]));
+  // Visits, never the percentage beside them: the achievement on a rep's row is his AREA's, shared
+  // with everyone standing in it, so a bar per rep would read as a personal score it is not. A visit
+  // belongs to exactly one rep, so these bars are his own and they genuinely add.
+  const visited = people
+    .filter((person) => person.areaCode != null && person.fieldVisits > 0)
+    .sort((a, b) => b.fieldVisits - a.fieldVisits);
+  const plottedReps = visited.slice(0, CHART_BARS);
   return {
+    chart:
+      visitsAvailable && plottedReps.length >= 2
+        ? {
+            capNote:
+              visited.length > plottedReps.length
+                ? `Field visits — the ${plottedReps.length} busiest of ${visited.length} reps. This section's table holds every one, and the percentage beside a rep is his area's.`
+                : "Field visits. The percentage beside a rep in the table is his AREA's, not his own.",
+            countSuffix: "visits",
+            items: plottedReps.map((person) => ({
+              label: person.name,
+              note: areaByCode.get(person.areaCode as string)?.area ?? null,
+              value: person.fieldVisits,
+            })),
+            kind: "bars",
+            reference: null,
+            unit: "count",
+          }
+        : null,
     align: ["left", "left", "right", "right", "right"],
     columns: ["Rep", "Area he stands in", "Area achievement", "Visits", "AM · PM · Pharmacies"],
     metric: "rep-rows",
@@ -298,7 +425,30 @@ function customersPerMonth({ months, people, visitsAvailable }: PackInput): Pack
 
 function spend({ dms }: PackInput): PackSection {
   const withLine = dms.some((dm) => dm.lineLabel);
+  // Total spend, not spend per point: on that measure a LONGER bar is a WORSE result, and a chart
+  // whose winner is its shortest bar is read backwards in a room. Marketing plus outstation is money
+  // committed, each pound belonging to exactly one district, so the bars add.
+  const spenders = dms
+    .map((dm) => ({ label: dm.dm, note: dm.lineLabel ?? null, value: dm.marketingCost + dm.outstationCost }))
+    .filter((row) => row.value > 0)
+    .sort((a, b) => b.value - a.value);
+  const plottedDms = spenders.slice(0, CHART_BARS);
   return {
+    chart:
+      plottedDms.length >= 2
+        ? {
+            capNote:
+              (spenders.length > plottedDms.length
+                ? `Marketing plus outstation, EGP — the ${plottedDms.length} largest of ${spenders.length} districts. `
+                : "Marketing plus outstation, EGP. ") +
+              "What it bought is the achievement beside it in the table; the bar is a cost, never a score.",
+            countSuffix: "EGP",
+            items: plottedDms,
+            kind: "bars",
+            reference: null,
+            unit: "count",
+          }
+        : null,
     align: withLine
       ? ["left", "left", "right", "right", "right", "right"]
       : ["left", "right", "right", "right", "right"],

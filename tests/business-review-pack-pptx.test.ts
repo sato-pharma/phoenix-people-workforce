@@ -233,4 +233,66 @@ export async function runBusinessReviewPackPptxTests() {
     );
     assert.ok(source.includes('from "jszip"'), `${PPTX}: the deck is written with the zip tool the repo already has.`);
   }
+
+  // ------------------------------------------------------------------ 11. a charted section gets its own slide
+  // 🔴 NOT a native PowerPoint chart. One of those carries its own embedded workbook — a SECOND copy
+  // of the figures inside the file, free to drift from the table on the next slide. These are
+  // rectangles sized from the model's own numbers, so a bar and its row can never disagree.
+  {
+    const charted = pack();
+    charted.sections[0].chart = {
+      capNote: "The 2 highest of 9 graded areas — this section's table holds every one.",
+      items: [
+        { label: "Tanta & Mahalla", note: "Sons & Co <Holdings>", value: 131.1 },
+        { label: "O'Brien Area", note: null, value: 92 },
+      ],
+      kind: "bars",
+      reference: { label: "90% earner", value: 90 },
+      unit: "pct",
+    };
+    const { zip } = await open(charted);
+    const names = Object.keys(zip.files).filter((n) => /^ppt\/slides\/slide\d+\.xml$/.test(n));
+    assert.equal(names.length, 3, "cover, then the chart on its own slide, then the table it was read from");
+
+    const chart = await read(zip, "ppt/slides/slide2.xml");
+    assert.equal((chart.match(/name="Bar"/g) ?? []).length, 2, "one bar per plotted item");
+    assert.equal((chart.match(/name="Track"/g) ?? []).length, 2, "each on its own track, so a short bar is still readable");
+    assert.match(chart, /<a:t>131\.1%<\/a:t>/, "the bar carries the very figure the table prints");
+    assert.match(chart, /<a:t>90% earner<\/a:t>/, "and the earner mark it is read against");
+    assert.match(chart, /Tanta &amp; Mahalla/, "XML-hostile names are escaped on the chart slide too");
+    assert.ok(!/<c:chart|chart\d+\.xml/.test(chart), "no embedded chart part — that would be a second copy of the figures");
+    assert.ok(!/roundRect/.test(chart), "square corners, like everything else in the deck");
+
+    // Every shape on the slide sits inside the slide. A bar or a name running off the edge is
+    // invisible in review and obvious in the room.
+    for (const m of chart.matchAll(/<a:off x="(-?\d+)" y="(-?\d+)"\/><a:ext cx="(\d+)" cy="(\d+)"\/>/g)) {
+      const [x, y, cx, cy] = m.slice(1).map(Number);
+      assert.ok(x >= 0 && y >= 0, `a shape starts off-slide at ${x},${y}`);
+      assert.ok(x + cx <= 12192001 && y + cy <= 6858001, `a shape runs off-slide to ${x + cx},${y + cy}`);
+    }
+
+    // Shape ids must be unique within a slide or PowerPoint refuses the file outright.
+    const ids = [...chart.matchAll(/<p:cNvPr id="(\d+)"/g)].map((m) => m[1]);
+    assert.equal(new Set(ids).size, ids.length, "duplicate shape ids would stop the deck opening at all");
+
+    // The sheet counter has to count the chart slides it just added.
+    assert.match(chart, /Sheet 2 of 3/, "the chart slide numbers itself within the real total");
+    assert.match(await read(zip, "ppt/slides/slide3.xml"), /Sheet 3 of 3/);
+  }
+
+  // ------------------------------------------------------------------ 12. a counted bar names its unit
+  {
+    const counted = pack();
+    counted.sections[0].chart = {
+      capNote: null,
+      countSuffix: "EGP",
+      items: [{ label: "DM One", note: null, value: 35946 }, { label: "DM Two", note: null, value: 238 }],
+      kind: "bars",
+      reference: null,
+      unit: "count",
+    };
+    const chart = await read((await open(counted)).zip, "ppt/slides/slide2.xml");
+    assert.match(chart, /<a:t>35,946 EGP<\/a:t>/, "a counted bar is grouped and carries its unit — never a bare percentage");
+    assert.ok(!/<a:t>35946<\/a:t>/.test(chart), "and never an ungrouped figure");
+  }
 }

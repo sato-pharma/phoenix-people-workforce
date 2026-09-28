@@ -50,7 +50,7 @@ import JSZip from "jszip";
 
 import { HOUSE_COLORS } from "@/lib/hiring-pack/house-identity";
 
-import type { PackCell, PackSection, SalesReviewPack } from "./model";
+import type { PackCell, PackChart, PackSection, SalesReviewPack } from "./model";
 
 // ── geometry ───────────────────────────────────────────────────────────────────────────────────
 // EMU: 914,400 per inch. 16:9 widescreen, which is what a meeting room projects.
@@ -567,6 +567,124 @@ function sectionSlide(
   return slideXml(shapes.join(""));
 }
 
+/**
+ * The chart slide — the same bars the PDF draws, as DrawingML rectangles.
+ *
+ * Not a native PowerPoint chart: one of those carries its own embedded workbook, which would put a
+ * SECOND copy of the figures inside the file, free to drift from the table on the next slide. These
+ * are rectangles sized from the model's own numbers, so the bar and its row can never disagree. Flat
+ * fills, square corners, no shadow — the deck's whole voice.
+ *
+ * Ids start at 100: the crest (30-33), the field (50-59) and the plinth (60-69) own the low range.
+ */
+/** A bar's own figure, in the unit the model gave it. Formatting only — nothing is computed here. */
+function chartValueLabel(chart: PackChart, value: number): string {
+  if (chart.unit !== "count") return `${value.toFixed(1)}%`;
+  const n = new Intl.NumberFormat("en-US").format(Math.round(value));
+  return chart.countSuffix ? `${n} ${chart.countSuffix}` : n;
+}
+
+function chartSlide(
+  section: PackSection,
+  chart: PackChart,
+  index: number,
+  total: number,
+  hasLogo: boolean,
+  windowLabel: string,
+  sheetNo: number,
+  sheetTotal: number,
+): string {
+  const inner = SLIDE_W - MARGIN * 2;
+  const top = TABLE_Y;
+  const bottom = inch(6.34);
+  const availH = bottom - top;
+  // Wide enough for a four-part Egyptian name. A PowerPoint text box WRAPS rather than clipping, so
+  // the label box is also given the row's whole height — a name that does take two lines then sits
+  // centred in its row instead of spilling over the bar above it. Never an ellipsis, never a cut.
+  const labelW = inch(3.45);
+  // A counted figure carries separators and a unit ("1,204,880 EGP"); a percentage does not.
+  const valueW = chart.unit === "count" ? inch(1.95) : inch(1.15);
+  const gap = inch(0.14);
+  const plotX = MARGIN + labelW + gap;
+  const plotW = inner - labelW - gap - valueW;
+
+  const n = Math.max(chart.items.length, 1);
+  // Few bars must not become slabs: the row height is capped and the block centred in the field.
+  const rowH = Math.min(Math.floor(availH / n), inch(0.52));
+  const barH = Math.min(Math.round(rowH * 0.42), inch(0.24));
+  const startY = top + Math.round((availH - rowH * n) / 2);
+
+  const values = chart.items.map((item) => (item.value == null ? 0 : item.value));
+  const max = Math.max(chart.unit === "pct" ? 100 : 0, ...values, 1);
+
+  let id = 100;
+  const parts: string[] = [];
+  if (chart.reference) {
+    const x = plotX + Math.round((plotW * Math.min(chart.reference.value, max)) / max);
+    parts.push(
+      rectShape(id++, "Reference", { h: rowH * n + inch(0.1), w: inch(0.012), x, y: startY - inch(0.05) }, INK),
+      textShape(id++, "Reference label", { h: inch(0.24), w: inch(1.8), x: x + inch(0.06), y: startY - inch(0.34) },
+        paragraph(chart.reference.label, { bold: true, color: INK, size: 850 }), null),
+    );
+  }
+  chart.items.forEach((item, i) => {
+    const mid = startY + i * rowH + Math.round(rowH / 2);
+    parts.push(
+      textShape(
+        id++,
+        "Bar label",
+        // With a note under it the name takes the row's top 60%, so the two never sit on each other.
+        item.note
+          ? { h: Math.round(rowH * 0.6), w: labelW, x: MARGIN, y: mid - Math.round(rowH * 0.5) }
+          : { h: rowH, w: labelW, x: MARGIN, y: mid - Math.round(rowH / 2) },
+        paragraph(item.label, { align: "r", color: INK, size: 1000 }),
+        null,
+      ),
+      rectShape(id++, "Track", { h: barH, w: plotW, x: plotX, y: mid - Math.round(barH / 2) }, WASH),
+    );
+    if (item.value == null) {
+      parts.push(
+        textShape(id++, "Not gradeable", { h: inch(0.26), w: inch(2.2), x: plotX + inch(0.08), y: mid - inch(0.13) },
+          paragraph("not gradeable", { color: MUTED, italic: true, size: 900 }), null),
+      );
+      return;
+    }
+    // Below the earner mark the bar goes pale — short is legible at a glance, with no second legend.
+    const short = chart.reference != null && item.value < chart.reference.value;
+    const w = Math.max(Math.round((plotW * Math.min(item.value, max)) / max), inch(0.01));
+    parts.push(
+      rectShape(id++, "Bar", { h: barH, w, x: plotX, y: mid - Math.round(barH / 2) }, short ? HAIR : LIGHT),
+      textShape(id++, "Value", { h: inch(0.28), w: valueW, x: plotX + plotW + gap, y: mid - inch(0.14) },
+        paragraph(chartValueLabel(chart, item.value), { align: "r", bold: true, color: INK, font: SERIF, size: 1000 }), null),
+    );
+    if (item.note) {
+      parts.push(
+        textShape(id++, "Bar note", { h: Math.round(rowH * 0.4), w: labelW, x: MARGIN, y: mid + Math.round(rowH * 0.1) },
+          paragraph(item.note, { align: "r", color: MUTED, size: 750 }), null),
+      );
+    }
+  });
+
+  const shapes = [
+    crestShapes(hasLogo),
+    fieldFrame(),
+    textShape(2, "Eyebrow", { h: inch(0.26), w: inner, x: MARGIN, y: EYEBROW_Y },
+      paragraph(`SECTION ${String(index + 1).padStart(2, "0")} / ${String(total).padStart(2, "0")}`, { color: BLUE, bold: true, size: 900, spc: 120 }), null),
+    tick(33, MARGIN, inch(1.13)),
+    textShape(3, "Title", { h: TITLE_H, w: inner, x: MARGIN, y: TITLE_Y },
+      paragraph(section.title, { bold: true, color: INK, size: 2200, font: SERIF }), null),
+    textShape(4, "Note", { h: NOTE_H, w: inner, x: MARGIN, y: NOTE_Y },
+      paragraph(section.note, { color: MUTED, italic: true, size: 950 }), null),
+    parts.join(""),
+    chart.capNote
+      ? textShape(5, "Chart cap", { h: inch(0.3), w: inner, x: MARGIN, y: inch(6.48) },
+          paragraph(chart.capNote, { color: MUTED, italic: true, size: 850 }), null)
+      : "",
+    plinthShapes(`Sato Pharma  ·  Sales Review  ·  ${windowLabel}`, `Sheet ${sheetNo} of ${sheetTotal}  ·  SATO-DIS-2026-01 v1.0`),
+  ];
+  return slideXml(shapes.join(""));
+}
+
 function emptySlide(hasLogo: boolean, windowLabel: string): string {
   const inner = SLIDE_W - MARGIN * 2;
   return slideXml(
@@ -641,13 +759,25 @@ export async function renderPackPptx(pack: SalesReviewPack): Promise<Buffer> {
   const logo = crestLogo();
   const hasLogo = logo !== null;
   const total = pack.sections.length;
-  const sheetTotal = pack.sections.length === 0 ? 2 : pack.sections.length + 1;
-  const slides = [
-    coverSlide(pack, generated, hasLogo, sheetTotal),
-    ...(pack.sections.length === 0
-      ? [emptySlide(hasLogo, pack.subject.windowLabel)]
-      : pack.sections.map((section, i) => sectionSlide(section, i, total, hasLogo, pack.subject.windowLabel, i + 2, sheetTotal))),
-  ];
+  const charted = pack.sections.filter((section) => section.chart).length;
+  const sheetTotal = pack.sections.length === 0 ? 2 : pack.sections.length + charted + 1;
+
+  const body: string[] = [];
+  if (pack.sections.length === 0) {
+    body.push(emptySlide(hasLogo, pack.subject.windowLabel));
+  } else {
+    let sheet = 2;
+    pack.sections.forEach((section, i) => {
+      // A chart leads its section, then the table every one of its bars was read from.
+      if (section.chart) {
+        body.push(chartSlide(section, section.chart, i, total, hasLogo, pack.subject.windowLabel, sheet, sheetTotal));
+        sheet += 1;
+      }
+      body.push(sectionSlide(section, i, total, hasLogo, pack.subject.windowLabel, sheet, sheetTotal));
+      sheet += 1;
+    });
+  }
+  const slides = [coverSlide(pack, generated, hasLogo, sheetTotal), ...body];
 
   const zip = new JSZip();
   if (hasLogo && logo) zip.file("ppt/media/image1.png", logo);
