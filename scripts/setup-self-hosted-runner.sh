@@ -28,6 +28,10 @@
 set -euo pipefail
 
 REPO_URL="https://github.com/Gawish-1997/phoenix-people-workforce"
+# This pin is the BOOTSTRAP version, not the running one: the Actions runner self-updates after
+# registration, and this script passes no `--disableupdate` (verified 2026-09-28 — the flag appears
+# nowhere in this file). So a pin drifting months behind GitHub's latest is harmless, and bumping it
+# buys nothing but a slightly shorter first update. Do not "fix" it as though it pinned production.
 RUNNER_VERSION="2.331.0"
 RUNNER_DIR="${RUNNER_DIR:-$HOME/actions-runner}"
 RUNNER_NAME="${RUNNER_NAME:-phoenix-ci-$(hostname -s)}"
