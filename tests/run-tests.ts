@@ -698,6 +698,7 @@ import { runBusinessReviewPackMetricsTests } from "./business-review-pack-metric
 import { runBusinessReviewPreviousWindowTests } from "./business-review-previous-window.test.ts";
 import { runBusinessReviewSpecialtyMixTests } from "./business-review-specialty-mix.test.ts";
 import { runBusinessReviewClosingDetailTests } from "./business-review-closing-detail.test.ts";
+import { runBusinessReviewResignedVacancyTests } from "./business-review-resigned-vacancy.test.ts";
 import { runBusinessReviewScopeFilterTests } from "./business-review-scope-filter.test.ts";
 import { runBusinessReviewPackModelTests } from "./business-review-pack-model.test.ts";
 import { runBusinessReviewPackPptxTests } from "./business-review-pack-pptx.test.ts";
@@ -4560,6 +4561,10 @@ await runTest(
 await runTest(
   "business review closing detail (the customer-grain source: a direct order is direct whoever bought it, a warehouse buying from a distributor is a wholesaler row decided by the one channel authority, El Qema is masked on the RAW rows before anything is derived from them, the load is cut to the figure window, and the module reads the closing's own aggregate RPC rather than re-grouping raw import rows)",
   runBusinessReviewClosingDetailTests,
+);
+await runTest(
+  "business review resigned vacancy (a rep or DM who has since left the company no longer holds the seat: the area/DM reads vacant so \"Exclude vacant\" clears it, the people table drops resigned reps under the same toggle, and their sales stay in the area/line totals; one shared isResignedStatus authority for the seat builder, the vacancy check and the people table)",
+  runBusinessReviewResignedVacancyTests,
 );
 await runTest(
   "business review specialty mix (what a list is made of, at every level: customers are UNIONED and never summed, so a doctor two reps visited is one doctor in their district and a doctor seen in two months is one doctor in the window; an unseen vendor value is surfaced rather than folded into the doctor panel, which is how a fifth of it was once mis-scored; a visit with no contact keeps its visit and adds no customer; and the headline states a share without judging the mix)",

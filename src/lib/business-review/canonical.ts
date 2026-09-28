@@ -84,6 +84,7 @@ import {
   type ReviewWindow,
 } from "./period";
 import { buildAttributionMap, hrKey, type AttributionMap, type Placement } from "./sources/attribution";
+import { isResignedStatus } from "./employment-status";
 import { MARKETING_ORIGIN, MARKETING_RULE, loadMarketingFacts, type MarketingLoad } from "./sources/marketing";
 import { OUTSTATION_ORIGIN, OUTSTATION_RULE, loadOutstationFacts, type OutstationLoad } from "./sources/outstation";
 import {
@@ -388,8 +389,18 @@ function buildAreas(line: ReviewLine, rows: AchievementRow[], ctx: BuildContext)
 
       // Vacancy AS OF the end of the window — the single-status view a review is asking for. An
       // area whose latest period has no rep occupant reads vacant even if it was staffed earlier.
+      // A seat whose only occupant has since RESIGNED reads vacant too (owner, 2026-09-28): a rep who
+      // has left the company no longer holds the territory, so "Exclude vacant" clears it. His sales
+      // stay in the area/line totals — vacancy is display state and never changes a figure.
       const lastPeriodWithRows = areaRows.reduce((max, r) => (r.period > max ? r.period : max), "");
-      const vacant = !areaRows.some((r) => r.period === lastPeriodWithRows && r.repHrId);
+      const lastOccupants = [
+        ...new Set(
+          areaRows
+            .filter((r) => r.period === lastPeriodWithRows && r.repHrId)
+            .map((r) => String(r.repHrId).trim()),
+        ),
+      ];
+      const vacant = lastOccupants.every((id) => isResignedStatus(ctx.directory.get(hrKey(id))?.employmentStatus));
 
       const products: Record<string, Slice> = {};
       for (const [code, productRows] of groupBy(includeRows, (r) => r.productCode.toUpperCase())) {
@@ -460,6 +471,9 @@ function buildDms(line: ReviewLine, rows: AchievementRow[], areas: AreaSummary[]
       const seatAreas = areasBySeat.get(seatKey) ?? [];
       const activeAreaNames = new Set(seatAreas.filter((a) => !a.vacant).map((a) => a.area));
       const dmHrId = latest(seatRows, (r) => r.dmHrId);
+      // A district manager who has since RESIGNED no longer holds the seat — it reads vacant, exactly
+      // as an unoccupied one does (owner, 2026-09-28).
+      const dmResigned = !!dmHrId && isResignedStatus(ctx.directory.get(hrKey(dmHrId))?.employmentStatus);
       const region = regionName(latest(seatRows, (r) => r.regionCode)) || "Unassigned region";
 
       const includeRows = seatRows.filter((r) => includeCodes.has(r.productCode.toUpperCase()));
@@ -483,7 +497,7 @@ function buildDms(line: ReviewLine, rows: AchievementRow[], areas: AreaSummary[]
         dm: isUnmanaged ? NO_DM_NAME : dmHrId ? ctx.names.employee(dmHrId) : `${region} (vacant)`,
         dmSeatId: isUnmanaged ? null : seatKey,
         region,
-        vacant: !isUnmanaged && !dmHrId,
+        vacant: !isUnmanaged && (!dmHrId || dmResigned),
         areas: seatAreas.map((a) => a.area),
         activeAreas: [...activeAreaNames],
         includeOnly: sliceOf(totalRows(includeRows, graded)),
