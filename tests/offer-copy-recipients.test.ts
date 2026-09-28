@@ -143,6 +143,15 @@ export function runOfferCopyRecipientsTests() {
     /truncate|text-ellipsis/,
     "a copy list is never cut off with an ellipsis — reading every address is the point of it",
   );
+  // The phone card's status badge must not shrink. Measured on production 2026-09-28 at 375px: the
+  // first card carrying a copy line clipped "Sent" to 33 of its 36px, because a long copy line
+  // widened the text column and flex took the difference out of the badge too.
+  const phoneCard = composer.slice(composer.indexOf('<div className="flex flex-col gap-3 px-5 py-5 md:hidden">'));
+  assert.match(
+    phoneCard,
+    /<Badge className="shrink-0 capitalize" variant=\{STATUS_VARIANT\[offer\.status\]\}>/,
+    "the phone card's status badge must be shrink-0, or a long copy line clips it",
+  );
 
   const migration = readFileSync("supabase/migrations/20260928225001_add_offer_copy_recipients.sql", "utf8");
   assert.match(migration, /add column if not exists cc_recipients text\[\] not null default '\{\}'::text\[\]/);
