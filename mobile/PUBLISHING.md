@@ -92,6 +92,13 @@ So the sequence is:
 3. ~~Upload the `.aab` from `npm run build:aab` on the Private apps page.~~ **The AAB exists** — the
    first one was built 2026-09-25 (`production` profile, `STORE`, versionCode 1). **The upload itself
    is the owner's click and is the ONLY step left.**
+   🔴 **`versionCode 1` IS ALREADY TAKEN IN THE STORE** (owner, 2026-09-28), so it is now **2** in
+   `app.json` and the next upload must be the build made from that. `appVersionSource` is `local`, so
+   **EAS never increments it — a rebuild at the same number produces an `.aab` Play refuses**, and the
+   refusal comes twenty minutes after the build rather than before it. The bump is safe to make freely:
+   `versionCode` is NOT one of the Android config keys the fingerprint hashes (those are `adaptiveIcon`,
+   `blockedPermissions`, `package`, `permissions`, `predictiveBackGestureEnabled`), so raising it leaves
+   the runtime version alone and does not strand the OTA updates already published against it.
 4. It auto-approves for the organization and is **typically ready for distribution within about ten
    minutes**.
 
