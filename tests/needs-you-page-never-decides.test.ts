@@ -6,6 +6,7 @@ import {
   permissionMatrix,
   type PhoenixRole,
 } from "../src/lib/auth/permissions.ts";
+import { stripCommentsCompact } from "./support/comment-strip.ts";
 import { hasEntryExit, isShellGated } from "./support/page-gate-reader.ts";
 
 /**
@@ -37,20 +38,34 @@ const FILES = [
 ] as const;
 
 /**
- * Strip `//` and block comments, and string/template literals too.
+ * Comments out, then string and template literals blanked. What is left is code.
  *
- * The literals go because the page PRINTS sentences about what it does not do — "Finance books the
- * month; nothing here changes one." — and a search for `method` or `form` across them would hit
- * ordinary English. What is left is code.
+ * 🔴 THE COMMENTS GO THROUGH `stripCommentsCompact`, NEVER A HAND-ROLLED REGEX. A bare
+ * `source.replace(/\/\*[\s\S]*?\*\//g, "")` cannot tell a comment from a string literal: given a
+ * route pattern like `"/api/auth/*"` it reads the `*` as a comment opener and deletes everything to
+ * the next close delimiter, usually hundreds of lines away. Measured across this repo it eats real
+ * code from 39 files — 53% of `system-navigation.ts` among them — and a test that strips one of
+ * those and then asserts an ABSENCE is checking a third of a file and reporting a pin. Nothing goes
+ * red; the guard is simply decorative. `tests/comment-strip-ratchet.test.ts` exists to catch exactly
+ * that, and this file is not going to be the next entry in it.
  *
- * `[\s\S]` and not the `s` (dotAll) flag: this repository targets ES2017, where TypeScript rejects
- * that flag outright as TS1501, and a local typecheck is denied here (bash-guard C8) so it would only
+ * COMPACT rather than plain `stripComments` because the gate checks below slice a fixed-SIZE window
+ * (`pageCode.slice(at, at + 160)`). The offset-preserving strip blanks a comment in place and KEEPS
+ * its bytes, so the long explanation sitting above this page's guards would push the `redirect(`
+ * straight out of that window and turn the test red on correct code — the documented failure that
+ * `stripCommentsCompact` was added for.
+ *
+ * The literals are blanked afterwards because the page PRINTS sentences about what it does not do —
+ * "Finance books the month; nothing here changes one." — and a search for `method` or `form` across
+ * ordinary English hits it. Those three regexes run over code that is already comment-free, which is
+ * what makes them safe; they are not a general-purpose tokenizer.
+ *
+ * `[\s\S]` and never the `s` (dotAll) flag: this repository targets ES2017, where TypeScript rejects
+ * it outright as TS1501, and a local typecheck is denied here (bash-guard C8) so it would only ever
  * surface as a red `checks` job.
  */
 function codeOnly(source: string): string {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, " ")
-    .replace(/(^|[^:])\/\/[^\n]*/g, "$1 ")
+  return stripCommentsCompact(source)
     .replace(/`(?:[^`\\]|\\[\s\S])*`/g, "``")
     .replace(/"(?:[^"\\]|\\[\s\S])*"/g, '""')
     .replace(/'(?:[^'\\]|\\[\s\S])*'/g, "''");

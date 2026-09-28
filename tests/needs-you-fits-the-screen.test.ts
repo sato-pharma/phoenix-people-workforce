@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { stripComments } from "./support/comment-strip.ts";
+
 /**
  * 🔒 THE NEEDS YOU BOARD AGAINST THE OWNER'S TWO LOCKED LOOK RULES (AGENTS.md §4):
  *
@@ -73,7 +75,14 @@ function appliedClassTokens(source: string): Set<string> {
 }
 
 export function runNeedsYouFitsTheScreenTests() {
-  const source = readFileSync(BOARD, "utf8");
+  const raw = readFileSync(BOARD, "utf8");
+  // Comments out first, through the SHARED stripper — the component's header explains in prose why
+  // there is no `overflow-x-auto` and no `rounded-` in it, and a future comment showing a snippet of
+  // markup would otherwise be read as the markup itself. Never a hand-rolled regex here: a naive
+  // block strip cannot tell a comment from a string and eats real code, which
+  // `tests/comment-strip-ratchet.test.ts` exists to catch. Offsets are preserved (plain
+  // `stripComments`, not the compact form) because the colgroup match below reports positions.
+  const source = stripComments(raw);
   const tokens = appliedClassTokens(source);
 
   // A control on the instrument itself. If the extractor silently stopped finding classes, every
