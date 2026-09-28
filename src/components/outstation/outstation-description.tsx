@@ -20,7 +20,15 @@ export function OutstationDescription({
   value: string | null | undefined;
 }) {
   const parts = parseOutstationDescription(value);
-  const noteLines = (parts.note ?? "").split("\n").filter((line) => line.trim().length > 0);
+  // Blank lines INSIDE the note are kept: a rep who left a gap between two paragraphs meant it, and
+  // dropping it runs their paragraphs together. Only leading and trailing blanks go, because those
+  // are an artefact of how the machine audit lines were appended, not something anyone typed.
+  const allLines = (parts.note ?? "").split("\n");
+  let first = 0;
+  let last = allLines.length - 1;
+  while (first <= last && allLines[first].trim() === "") first += 1;
+  while (last >= first && allLines[last].trim() === "") last -= 1;
+  const noteLines = first <= last ? allLines.slice(first, last + 1) : [];
 
   if (noteLines.length === 0 && parts.allowanceNotices.length === 0 && parts.evidence.length === 0) {
     return <p className={`leading-relaxed text-slate-700 ${className}`}>{empty}</p>;
@@ -32,7 +40,8 @@ export function OutstationDescription({
         <div className="space-y-0.5">
           {noteLines.map((line, index) => (
             <p className="break-words leading-relaxed text-slate-800" dir="auto" key={index}>
-              {line}
+              {/* An empty line still has to occupy one, or the gap the writer left disappears. */}
+              {line.trim() === "" ? " " : line}
             </p>
           ))}
         </div>
