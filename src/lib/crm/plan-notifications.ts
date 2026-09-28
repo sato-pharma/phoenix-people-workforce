@@ -324,7 +324,18 @@ export async function notifyRepPlanStatusChanged(input: {
       module: "crm",
       priority: "normal",
       recipientHrId: input.repHrId,
-      ...(input.verifiedByHrId ? { subjectHrId: input.verifiedByHrId } : {}),
+      // THE REP IS THE SUBJECT — it is his plan. `subjectHrId: input.verifiedByHrId` stood here
+      // until 2026-09-28 and named the VERIFIER, while `email.employeeHrId` five lines up named the
+      // rep, so resolvedEmailIdentity() saw two different people in the one subject slot and
+      // refused the mail rather than guess which of them it was about. Every plan_verified and
+      // plan_unverified email ever sent died that way: 15 rows on production between 2026-08-29 and
+      // 2026-09-25, "Email identity guard failed: Conflicting subject HR IDs", zero delivered, with
+      // the in-app copy landing normally so nothing ever looked broken.
+      // This is the SAME defect #3354 fixed in announcePlansAwaitingVerification directly above —
+      // that pass repaired the one call site it was looking at and left its twin here.
+      // The verifier is not lost: he is already `actorId` three lines from the top, which is where
+      // "who did this" belongs, and he is named in the message and the summary.
+      subjectHrId: input.repHrId,
       title,
     });
     return { reason: null, sent: true };
