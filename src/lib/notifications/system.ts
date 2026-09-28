@@ -2204,7 +2204,21 @@ async function createWorkflowEmailEnvelopeNotification(
 
   const ccRecipients = recipients.filter((_, index) => index !== primaryIndex);
   const primaryEmail = pickDeliverableEmail(primary.email);
-  const cc = deliverableAddresses(ccRecipients);
+  // MERGED, not overwritten. A caller-supplied `email.cc` used to be dropped here — and only here,
+  // so the same call kept its cc when it resolved to ONE recipient and silently lost it at two.
+  // That is the worst shape a bug can take: it works while you are testing it with one approver and
+  // stops the moment a real request has two. The derived addresses come first so the people the
+  // event is actually addressed to stay at the head of the line, then whoever the domain asked to
+  // be copied; `deliverableAddresses`/`pickDeliverableEmail` drop anything undeliverable and the Set
+  // removes a person who is both a recipient and on the caller's list.
+  const cc = Array.from(
+    new Set([
+      ...deliverableAddresses(ccRecipients),
+      ...(input.email?.cc ?? [])
+        .map((address) => pickDeliverableEmail(address))
+        .filter((address): address is string => Boolean(address)),
+    ]),
+  ).filter((address) => address !== primaryEmail);
   const primaryKey = recipientKey(primary);
 
   return createSystemNotificationForRecipient({

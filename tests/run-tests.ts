@@ -1875,6 +1875,7 @@ import { runSosDashboardIncompleteReadIsVisibleTests } from "./sos-dashboard-inc
 import { runEmployeeRlsPolicyLockTests } from "./employee-rls-policy-lock.test.ts";
 import { runImportDiagnosticsVerdictTests } from "./import-diagnostics-verdict.test.ts";
 import { runMarketAwarenessTests } from "./market-awareness.test.ts";
+import { runNotificationChannelWiringTests } from "./notification-channel-wiring.test.ts";
 import { runMonthlySalesRunReconcileTests } from "./monthly-sales-run-reconcile.test.ts";
 import { runWorktreeNodeModulesJunctionTests } from "./worktree-node-modules-junction.test.ts";
 import { runChannelsByRepPharmacyOverrideTests } from "./channels-by-rep-pharmacy-override.test.ts";
@@ -6568,6 +6569,10 @@ await runTest(
 await runTest(
   "market awareness (manager step by identity, approved is locked, Head Office never targetable)",
   runMarketAwarenessTests,
+);
+await runTest(
+  "notification channel wiring (both telegram gates, the workflow cc, one subject per email)",
+  runNotificationChannelWiringTests,
 );
 await runTest(
   "sales upload analyze matches the commit gate (a file commit refuses can no longer report Validation passed)",

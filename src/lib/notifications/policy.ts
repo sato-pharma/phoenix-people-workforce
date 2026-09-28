@@ -139,6 +139,22 @@ const policyTable: Record<string, Partial<NotificationPolicy>> = {
   "excuse.*": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], priority: "high", recipientStrategy: ["direct_manager"], telegramAllowed: true },
   "field_workforce_compliance.*": { channels: ["in_app", "email", "push"], recipientStrategy: ["permission_based"] },
   "internal_messages.*": { channels: ["in_app", "email", "push"], recipientStrategy: ["employee"] },
+  // Market Awareness had NO row here at all until 2026-09-28, so every one of its notices fell
+  // through to `defaultPolicy` — whose `telegramAllowed` is false. Each of the four notifiers in
+  // src/lib/market-awareness/notifications.ts passes a `telegram: { ctaLabel, ctaUrl }` block, and
+  // all four were silently discarded: measured on production, 10 events since 2026-09-07 produced
+  // 9 in-app, 8 email, 9 push and ZERO Telegram deliveries, with nothing failed and nothing logged.
+  // A missing row is indistinguishable from a deliberate one, which is exactly why it went unseen
+  // for three weeks. Channels are stated in full rather than left to defaultPolicy so email can
+  // never fall back to a recipient's `preferred_channel` either: this is an approval chain that
+  // commits money, and the people on it read mail, not the bell.
+  "market_awareness.*": {
+    actionUrlRequired: true,
+    channels: ["in_app", "email", "telegram", "push"],
+    priority: "high",
+    recipientStrategy: ["assigned_approver", "request_owner"],
+    telegramAllowed: true,
+  },
   // Email retired for the 2 SLA reminder types (owner request 2026-07-25, after this
   // exact notification type produced a real incident: 93 undecidable requests re-escalating an
   // unactionable "critical" email every morning) -- also hard-enforced in system.ts's
