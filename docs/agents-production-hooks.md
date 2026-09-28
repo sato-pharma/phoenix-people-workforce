@@ -810,3 +810,24 @@ money move — the owner's dashboard, his click. A plausible origin, worth confi
 it is written as history: §2.3 already records that `railway service source connect` is **not**
 environment-scoped and once repointed production while being run with `--environment staging`, so a
 session trying to stage a branch could have created a fresh project instead.
+
+## An orphaned Railway volume's purge date appears on a delay
+
+🔴 **AN ORPHANED VOLUME'S PURGE DATE APPEARS ON A DELAY, AND AN ABSENT DATE IS NOT "never".**
+Measured 2026-09-28, after `headwind-db` was deleted. `railway volume list` is the only readout that
+says anything true here — the CLI's own `volume delete` prints `Volume "<name>" deleted` while the
+volume stays listed, `volumeDelete` returns clean, and the GraphQL `Volume` type has no `deletedAt`
+field at all, so a query keeps returning it as if nothing happened.
+
+The two orphans looked like different species and were not:
+
+| volume | first read | read ~2 h later |
+| --- | --- | --- |
+| `postgres-volume-we4X` (238 MB) | `Deletes on: Sep 30 2026 12:09 AM` | unchanged |
+| `postgres-volume-0WKb` (931 MB) | **no schedule at all** | `Deletes on: Sep 30 2026 2:38 AM` |
+
+A session (this one) wrote a hook saying 0WKb "has no schedule and will sit there until someone
+removes it", and put it to the owner as a decision. Acting on that would have hand-deleted 931 MB
+Railway was already going to purge — and the recovery story it was weighed against is three dumps in
+`F:\PHX backup\headwind-db\` totalling 720 KB, which is the whole of it. **Read the list twice,
+hours apart, before concluding an orphan is permanent.**
