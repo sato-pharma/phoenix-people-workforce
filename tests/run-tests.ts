@@ -4168,7 +4168,9 @@ await runTest(
 await runTest(
   "offer CC and BCC (several addresses on each line, any address with no reason by owner ruling, a bad "
     + "entry stops the whole send and names its box, redundant copies are left off and said, and the "
-    + "confidence gate's ceiling covers every copy the send allows so a copied offer is never held)",
+    + "confidence gate's ceiling covers every copy the send allows so a copied offer is never held; "
+    + "who was copied is stored in the same update that marks the offer sent and shown on both the "
+    + "desktop row and the phone card of the Offers list)",
   runOfferCopyRecipientsTests,
 );
 await runTest("sales null-vs-zero dashboard", runSalesNullVsZeroTests);

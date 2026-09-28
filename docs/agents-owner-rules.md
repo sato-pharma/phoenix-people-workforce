@@ -3204,8 +3204,13 @@ reason, or anyone with no reason. **He chose anyone, no reason.**
 - Up to **10** copies, CC and BCC together. `offers/offer_letter` carries an `always` ceiling of 11 in
   the Notification Confidence Gate: the offer's baseline was one recipient for its whole life, so
   without it every offer copied to three or more people would be HELD.
-- CC and BCC are not stored on the offer row — they are not part of the letter. The send's audit row
-  (`entity_type = job_offer`) records both, and it is the only record of who else read the salary.
+- Who was copied is SHOWN on the Offers list, under the candidate's address, on the desktop row and
+  the phone card alike (owner, same evening: *"show who was copied on each offer in the offers
+  list"*). `offers.cc_recipients` / `offers.bcc_recipients` (migration `20260928225001`, `text[] not
+  null default '{}'`) are written by `markOfferSent` in the same UPDATE that stamps `sent_at`, from
+  exactly what was handed to the provider — never from the draft, which does not carry them. The
+  send's audit row (`entity_type = job_offer`) records both as well, with who pressed Send. The 28
+  offers on file when the columns landed read empty, which is true: none had been copied.
 
 ### The trap
 

@@ -109,4 +109,42 @@ export function runOfferCopyRecipientsTests() {
     /call\(`\/api\/offers\/\$\{id\}\/send`, "POST", \{ bcc: copies\.bcc, cc: copies\.cc \}\)/,
     "the Send button must post the copies it shows",
   );
+
+  // ── Who was copied, SHOWN on the Offers list (owner, same evening) ──
+  // The copies are stored on the offer in the SAME update that marks it sent, from exactly what was
+  // handed to the provider — so the list can never name a copy that was not sent, or miss one that was.
+  const service = readFileSync("src/lib/offers/service.ts", "utf8");
+  const markSent = service.slice(service.indexOf("export async function markOfferSent("));
+  const markSentBody = markSent.slice(0, markSent.indexOf("\n}\n"));
+  assert.match(markSentBody, /bcc_recipients: copies\.bcc,/, "markOfferSent must write the BCC list");
+  assert.match(markSentBody, /cc_recipients: copies\.cc,/, "markOfferSent must write the CC list");
+  assert.match(markSentBody, /\.eq\("status", "draft"\)/, "in the same guarded update that stamps the send");
+  assert.match(
+    send,
+    /options\.sentBy \?\? null,[\s\S]{0,200}\{ bcc: copies\.bcc, cc: copies\.cc \},\s*\)/,
+    "the send must hand markOfferSent the copies it actually sent",
+  );
+  assert.match(
+    service,
+    /bccRecipients: Array\.isArray\(row\.bcc_recipients\) \? row\.bcc_recipients : \[\]/,
+    "a row read from a database without the column must read as nobody copied, never throw",
+  );
+  assert.match(service, /ccRecipients: Array\.isArray\(row\.cc_recipients\) \? row\.cc_recipients : \[\]/);
+
+  // One rendering, used by BOTH the desktop row and the phone card — counted, not matched, because
+  // one occurrence passes while the phone (how these are read) shows nothing.
+  assert.equal(
+    composer.match(/<OfferCopiedTo offer=\{offer\} \/>/g)?.length ?? 0,
+    2,
+    "who was copied must show on the desktop row AND the phone card",
+  );
+  assert.doesNotMatch(
+    composer.slice(composer.indexOf("function OfferCopiedTo"), composer.indexOf("export function OfferComposer")),
+    /truncate|text-ellipsis/,
+    "a copy list is never cut off with an ellipsis — reading every address is the point of it",
+  );
+
+  const migration = readFileSync("supabase/migrations/20260928225001_add_offer_copy_recipients.sql", "utf8");
+  assert.match(migration, /add column if not exists cc_recipients text\[\] not null default '\{\}'::text\[\]/);
+  assert.match(migration, /add column if not exists bcc_recipients text\[\] not null default '\{\}'::text\[\]/);
 }

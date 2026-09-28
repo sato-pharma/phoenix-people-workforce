@@ -55,8 +55,9 @@ import type { OfferFields, OfferJobTitle, OfferRecord, OfferStatus, OfferTemplat
 type Draft = Omit<OfferFields, "costOfLiving" | "totalMonthly"> & {
   /**
    * Who else gets a copy, as typed — several addresses separated by commas. Held here and sent with
-   * the send request, never saved on the offer: they are not part of the letter, and the audit row
-   * written at send time is where who was copied is recorded.
+   * the send request, never saved with the DRAFT: they are not part of the letter. The server writes
+   * what it actually sent to `offers.cc_recipients` / `bcc_recipients` in the same update that marks
+   * the offer sent, which is what the Offers list below reads.
    */
   bcc: string;
   cc: string;
@@ -107,6 +108,32 @@ const STATUS_VARIANT: Record<OfferStatus, "danger" | "neutral" | "success" | "wa
   sent: "warning",
   withdrawn: "neutral",
 };
+
+/**
+ * Who else received an offer, under the candidate's address (owner, 2026-09-28: "show who was
+ * copied on each offer in the offers list").
+ *
+ * ONE rendering for the desktop row and the phone card, so the two can never disagree about who was
+ * copied. Nothing at all when nobody was: a "CC: none" line on every row would bury the few that
+ * matter. `[overflow-wrap:anywhere]` rather than an ellipsis — the point of the line is reading every
+ * address in full, and a long list must wrap rather than push the row sideways.
+ */
+function OfferCopiedTo({ offer }: { offer: OfferRecord }) {
+  const lines = [
+    { addresses: offer.ccRecipients, label: "CC" },
+    { addresses: offer.bccRecipients, label: "BCC" },
+  ].filter((line) => line.addresses.length > 0);
+  if (lines.length === 0) return null;
+  return (
+    <>
+      {lines.map((line) => (
+        <span className="mt-0.5 block text-xs text-slate-500 [overflow-wrap:anywhere]" key={line.label}>
+          <span className="font-bold text-phx-ink-soft">{line.label}</span> {line.addresses.join(", ")}
+        </span>
+      ))}
+    </>
+  );
+}
 
 export function OfferComposer({
   canManage,
@@ -608,10 +635,12 @@ export function OfferComposer({
               : "Blank uses the candidate name.",
           )}
           {text("candidateEmail", "Email address", "name@example.com", "The offer and its PDF go here.")}
+          {/* One address as the example, not two: measured on production at 375px the pair was cut
+              off at "hr@sa" in a 275px box. The hint underneath is what says several may go. */}
           {copyField(
             "cc",
             "CC",
-            "manager@satopharma.com, hr@satopharma.com",
+            "manager@satopharma.com",
             "Copied openly to",
             "Optional. The candidate sees who is copied here. Separate several addresses with commas.",
           )}
@@ -839,6 +868,7 @@ export function OfferComposer({
                     <span className="block font-bold text-slate-900">{offer.candidateName}</span>
                     {/* `break-all`: an email address has no space to break at. */}
                     <span className="block break-all text-xs text-slate-500">{offer.candidateEmail}</span>
+                    <OfferCopiedTo offer={offer} />
                   </td>
                   <td className="break-words px-5 py-3 text-slate-600">{offer.title}</td>
                   <td className="break-words px-5 py-3 text-right tabular-nums text-slate-900">
@@ -913,6 +943,7 @@ export function OfferComposer({
                       at, and no `truncate` because a half-shown address is worse than a wrapped one:
                       the whole value of this line is telling two addresses apart. */}
                   <p className="mt-0.5 break-all text-xs text-slate-500">{offer.candidateEmail}</p>
+                  <OfferCopiedTo offer={offer} />
                   <p className="mt-0.5 text-xs text-slate-500">{offer.title}</p>
                 </div>
                 <Badge className="capitalize" variant={STATUS_VARIANT[offer.status]}>

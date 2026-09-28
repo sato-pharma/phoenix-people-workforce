@@ -222,6 +222,9 @@ export async function sendOfferEmail(
           variant: template.variant,
         },
         options.sentBy ?? null,
+        // Exactly what was handed to the provider above, so the Offers list can never name a copy
+        // that was not sent, or miss one that was.
+        { bcc: copies.bcc, cc: copies.cc },
       );
 
   return {

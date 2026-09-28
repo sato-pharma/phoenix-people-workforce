@@ -51,7 +51,8 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
         // whom" — a salary, a start date and a stranger's address. `template_snapshot` on the offer
         // holds the letter as sent; this holds the terms, so neither question needs the other.
         // CC and BCC too: a salary copied to somebody is part of "to whom", and the owner allowed any
-        // address without a reason (2026-09-28) — so this row is the only record of who else read it.
+        // address without a reason (2026-09-28). The offer row carries the same two lists for the
+        // Offers screen; this row is the one that also says WHO pressed Send, and when.
         newValues: {
           attachmentIncluded: outcome.attachmentIncluded,
           bcc: outcome.bcc,
