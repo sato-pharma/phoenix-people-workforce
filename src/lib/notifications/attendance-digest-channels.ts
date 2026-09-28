@@ -19,13 +19,25 @@
 
 const ATTENDANCE_DIGEST_MODULE = "attendance_digest";
 
+/**
+ * The "what needs you" daily board (src/lib/needs-you/). It is a LIST — a section heading, then one
+ * item per paragraph — so it needs the same treatment as the attendance letter for a different
+ * reason: without paragraphs, `cleanTelegramText` collapses every break and the whole board arrives
+ * as one run-on sentence, which at 900 characters is also the shape most likely to be cut mid-word.
+ */
+const NEEDS_YOU_MODULE = "needs_you";
+
 export function isAttendanceDigestModule(module: string | null | undefined): boolean {
   return String(module ?? "").trim().toLowerCase() === ATTENDANCE_DIGEST_MODULE;
 }
 
+export function isNeedsYouModule(module: string | null | undefined): boolean {
+  return String(module ?? "").trim().toLowerCase() === NEEDS_YOU_MODULE;
+}
+
 /** Whether a Telegram message for this module keeps its paragraph breaks and drops the "Module:" line. */
 export function telegramKeepsParagraphs(module: string | null | undefined): boolean {
-  return isAttendanceDigestModule(module);
+  return isAttendanceDigestModule(module) || isNeedsYouModule(module);
 }
 
 /**
@@ -37,5 +49,11 @@ export function telegramKeepsParagraphs(module: string | null | undefined): bool
  * mails are a single line, so this changes nothing for them.
  */
 export function emailKeepsLineBreaks(module: string | null | undefined): boolean {
-  return isAttendanceDigestModule(module) || String(module ?? "").trim().toLowerCase() === "outstation";
+  return (
+    isAttendanceDigestModule(module) ||
+    // The board is a list, and an email body is HTML where a bare break collapses into a space —
+    // without this its sections and items arrive as one paragraph.
+    isNeedsYouModule(module) ||
+    String(module ?? "").trim().toLowerCase() === "outstation"
+  );
 }
