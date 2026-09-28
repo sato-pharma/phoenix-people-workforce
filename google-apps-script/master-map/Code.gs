@@ -116,38 +116,61 @@ function runSync(deadline) {
   }
 
   const hashes = readJson(properties, PROP_HASHES, {});
+  let restarted = false;
 
-  while (queue.length > 0 && Date.now() < deadline) {
-    const job = queue[0];
+  // THE QUEUE IS SAVED EVEN IF THE PAINT THROWS, and that is the whole point of the try/finally.
+  //
+  // These two writes used to sit after the loop, so ANY exception from paintTab skipped them and
+  // the remaining tabs vanished from Script Properties — while planWork had ALREADY recorded the
+  // change stamp. The next tick then found an empty queue, probed, saw a stamp that matched, and
+  // returned believing the sheet was up to date. It is not: it is half painted, and it stays that
+  // way until the hourly full check comes round.
+  //
+  // Measured on the live workbook 2026-09-28. A truncated response killed the run partway through
+  // "All customers"; the three ticks that followed each completed in about ONE SECOND doing
+  // nothing, and the flat tab sat holding 28,000 of its 73,938 rows for a quarter of an hour. The
+  // finder reads that tab, so the sheet was quietly wrong while the script reported success.
+  //
+  // With the queue persisted, a crash costs one tick: the next one resumes exactly where this
+  // stopped, which is what the queue was built for in the first place.
+  try {
+    while (queue.length > 0 && Date.now() < deadline) {
+      const job = queue[0];
 
-    // Don't start a tab we are unlikely to finish. A tab is only half-visible while it is being
-    // painted, so it is better to leave last sync's correct version up for another five minutes
-    // than to tear it down and run out of time. A tab too big for a whole window is started
-    // anyway — otherwise it would never be painted at all.
-    if (job.part === "clear") {
-      const estimate = (job.valueChunks + job.requestChunks + 1) * 2500;
-      if (Date.now() + estimate > deadline && estimate < DEADLINE_MS) break;
+      // Don't start a tab we are unlikely to finish. A tab is only half-visible while it is being
+      // painted, so it is better to leave last sync's correct version up for another five minutes
+      // than to tear it down and run out of time. A tab too big for a whole window is started
+      // anyway — otherwise it would never be painted at all.
+      if (job.part === "clear") {
+        const estimate = (job.valueChunks + job.requestChunks + 1) * 2500;
+        if (Date.now() + estimate > deadline && estimate < DEADLINE_MS) break;
+      }
+
+      const outcome = paintTab(job, deadline);
+
+      if (outcome === "restart") {
+        // The data moved underneath us. Drop everything and re-plan on the next tick rather than
+        // stitching one tab together out of two different snapshots.
+        Logger.log("Phoenix changed mid-repaint — restarting on the next tick.");
+        restarted = true;
+        properties.deleteProperty(PROP_QUEUE);
+        properties.deleteProperty(PROP_STAMP);
+        return;
+      }
+      if (outcome === "paused") break;
+
+      hashes[job.title] = job.hash;
+      queue.shift();
+      Logger.log("Finished " + job.title + " (" + job.rows + " rows)");
     }
-
-    const outcome = paintTab(job, deadline);
-
-    if (outcome === "restart") {
-      // The data moved underneath us. Drop everything and re-plan on the next tick rather than
-      // stitching one tab together out of two different snapshots.
-      Logger.log("Phoenix changed mid-repaint — restarting on the next tick.");
-      properties.deleteProperty(PROP_QUEUE);
-      properties.deleteProperty(PROP_STAMP);
-      return;
+  } finally {
+    // Never on the restart path: that branch deliberately cleared both, and rewriting them here
+    // would resurrect a queue cut from a snapshot that no longer exists.
+    if (!restarted) {
+      properties.setProperty(PROP_HASHES, JSON.stringify(hashes));
+      properties.setProperty(PROP_QUEUE, JSON.stringify(queue));
     }
-    if (outcome === "paused") break;
-
-    hashes[job.title] = job.hash;
-    queue.shift();
-    Logger.log("Finished " + job.title + " (" + job.rows + " rows)");
   }
-
-  properties.setProperty(PROP_HASHES, JSON.stringify(hashes));
-  properties.setProperty(PROP_QUEUE, JSON.stringify(queue));
 
   if (queue.length === 0) {
     orderTabs(properties);
@@ -445,11 +468,31 @@ function fetchJson(path) {
       muteHttpExceptions: true,
     });
     const code = response.getResponseCode();
-    if (code === 200) return JSON.parse(response.getContentText());
-
-    lastError = code + " " + response.getContentText().slice(0, 300);
-    // 401 and 404 will not fix themselves; anything else is worth another try.
-    if (code === 401 || code === 404 || code === 400) break;
+    if (code === 200) {
+      // A 200 WHOSE BODY ARRIVED TRUNCATED IS A RETRYABLE FAILURE, and it used to be the one
+      // failure this loop could not survive.
+      //
+      // JSON.parse sat on the return line, outside any catch, so a short body threw straight past
+      // the retry and killed the whole execution. Measured 2026-09-28 on a values slice of
+      // "All customers": the endpoint served 1,156,437 bytes and parsed perfectly when fetched
+      // independently, while Apps Script received 57,476 and died with "Unterminated string in
+      // JSON at position 57476". The run stopped halfway through that tab and left the flat tab
+      // holding 28,000 of its 73,938 rows — and the finder reads that tab, so a cut connection on
+      // one slice quietly made the whole sheet wrong.
+      //
+      // A truncated body is the most retryable thing that can happen: nothing is wrong with the
+      // request, the server or the data. Treat it exactly like a 5xx.
+      const body = response.getContentText();
+      try {
+        return JSON.parse(body);
+      } catch (parseError) {
+        lastError = "200 but the body did not parse at " + body.length + " bytes: " + parseError;
+      }
+    } else {
+      lastError = code + " " + response.getContentText().slice(0, 300);
+      // 401 and 404 will not fix themselves; anything else is worth another try.
+      if (code === 401 || code === 404 || code === 400) break;
+    }
     Utilities.sleep(2000 * Math.pow(2, attempt));
   }
   throw new Error("Phoenix request failed (" + path + "): " + lastError);
