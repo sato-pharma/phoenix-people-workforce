@@ -27,6 +27,7 @@ import { PackPicker } from "./pack-picker.client";
 import type { PackLevel, ReviewMetricId } from "@/lib/business-review/pack/metrics";
 import { PortalDesktopTable, PortalResponsiveDataList } from "@/components/employee-portal/portal-primitives";
 import { CustomersByAreaTable, PeopleActivityTable, RoleActivityTable } from "./rollups.client";
+import { isResignedStatus } from "@/lib/business-review/employment-status";
 import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
 
 type DmRow = DmSummary & { payoutPct: number; band: string; activePayoutPct: number; activeBand: string };
@@ -416,8 +417,8 @@ function CompanyDashboard({
         subtitle={narrowed ? `filtered view · ≥90% = earner · viewing as ${viewerRole}` : `${company.meta.lines.length} lines consolidated · ≥90% = earner · viewing as ${viewerRole}`}
       >
         <label className="flex items-center gap-2.5 rounded-lg border border-border bg-card px-3 py-2">
-          <Switch checked={excludeVacant} onChange={setExcludeVacant} label="Exclude vacant territories" />
-          <span className="text-sm font-medium">Exclude vacant</span>
+          <Switch checked={excludeVacant} onChange={setExcludeVacant} label="Exclude vacant and resigned territories" />
+          <span className="text-sm font-medium">Exclude vacant &amp; resigned</span>
         </label>
       </ReviewHeader>
 
@@ -460,6 +461,7 @@ function CompanyDashboard({
           months={M}
           productTables={companyProductTables}
           customersOk={customersOk}
+          people={excludeVacant ? company.people.filter((p) => !isResignedStatus(p.employmentStatus)) : company.people}
         />
       )}
       {tab === "coverage" && <CoverageTab coverage={coverage} provenance={provenance} />}
@@ -536,8 +538,8 @@ function LineDashboard({
         subtitle={narrowed ? `filtered view · ≥90% = earner · viewing as ${viewerRole}` : `all products · ≥90% = earner · viewing as ${viewerRole}`}
       >
         <label className="flex items-center gap-2.5 rounded-lg border border-border bg-card px-3 py-2">
-          <Switch checked={excludeVacant} onChange={setExcludeVacant} label="Exclude vacant territories" />
-          <span className="text-sm font-medium">Exclude vacant</span>
+          <Switch checked={excludeVacant} onChange={setExcludeVacant} label="Exclude vacant and resigned territories" />
+          <span className="text-sm font-medium">Exclude vacant &amp; resigned</span>
         </label>
       </ReviewHeader>
 
@@ -584,7 +586,7 @@ function LineDashboard({
           keyProducts={keyProducts}
           customersOk={customersOk}
           roles={ds.roles}
-          people={ds.people}
+          people={excludeVacant ? ds.people.filter((p) => !isResignedStatus(p.employmentStatus)) : ds.people}
         />
       )}
       {tab === "coverage" && <CoverageTab coverage={coverage} provenance={provenance} />}
@@ -1692,7 +1694,7 @@ function CompanyFailsTab({ dms, areas, thresholds }: { dms: CoDmRow[]; areas: Co
 }
 
 function CompanyDeepTab({
-  company, dms, areas, months, productTables, customersOk,
+  company, dms, areas, months, productTables, customersOk, people,
 }: {
   company: ReviewCompany;
   dms: CoDmRow[];
@@ -1700,6 +1702,7 @@ function CompanyDeepTab({
   months: string[];
   productTables: { id: ReviewLine; label: string; products: ProductRow[] }[];
   customersOk: boolean;
+  people: ReviewCompany["people"];
 }) {
   const T = company.total;
   return (
@@ -1835,7 +1838,7 @@ function CompanyDeepTab({
       />
 
       <RoleActivityTable roles={company.roles} scopeNote="all three lines" />
-      <PeopleActivityTable people={company.people} scopeNote="all three lines" />
+      <PeopleActivityTable people={people} scopeNote="all three lines" />
     </div>
   );
 }

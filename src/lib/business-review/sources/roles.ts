@@ -44,6 +44,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 
 import { hrKey, type AttributionMap } from "./attribution";
+import { isResignedStatus } from "../employment-status";
 import type { MarketingLoad } from "./marketing";
 import type { OutstationLoad } from "./outstation";
 import type { VisitsLoad } from "./visits";
@@ -497,7 +498,7 @@ function collect(input: RoleFactsInput, lineCode: string | null): RoleFacts {
   const headcountResolvable = lineCode == null || scopeLineId != null;
   if (headcountResolvable) {
     for (const entry of directory.values()) {
-      if (/resign|terminat|exit/i.test(entry.employmentStatus)) continue;
+      if (isResignedStatus(entry.employmentStatus)) continue;
       if (scopeLineId != null && entry.lineId !== scopeLineId) continue;
       roleOf(entry.role).headcount += 1;
     }
