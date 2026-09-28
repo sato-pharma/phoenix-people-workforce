@@ -23,6 +23,10 @@ import {
   PortalSection,
   PortalSegmentedTabs,
 } from "@/components/employee-portal/portal-primitives";
+import {
+  EXPENSE_PLACES_ENDPOINT,
+  PlacesAutocompleteInput,
+} from "@/components/outstation/places-autocomplete-input";
 import { Input } from "@/components/ui/input";
 import { LoadingSpinner } from "@/components/ui/loading-state";
 import type { OutstationExpenseRequest } from "@/lib/outstation/types";
@@ -233,6 +237,9 @@ export function MedicalRepExpensesWorkspace({
   const [tripStartDate, setTripStartDate] = useState("");
   const [tripEndDate, setTripEndDate] = useState("");
   const [toLocation, setToLocation] = useState("");
+  // The Google place id behind `toLocation`. Empty until a suggestion is actually chosen, which
+  // is what separates a resolved place from whatever the rep happened to type.
+  const [toPlaceId, setToPlaceId] = useState("");
   const [notes, setNotes] = useState("");
   const [goTicketAmount, setGoTicketAmount] = useState("");
   const [returnTicketAmount, setReturnTicketAmount] = useState("");
@@ -312,6 +319,7 @@ export function MedicalRepExpensesWorkspace({
     formData.set("tripStartDate", tripStartDate);
     formData.set("tripEndDate", tripEndDate);
     formData.set("toLocation", toLocation);
+    formData.set("toPlaceId", toPlaceId);
     formData.set("notes", notes);
     formData.set("goTicketAmount", goTicketAmount);
     formData.set("returnTicketAmount", returnTicketAmount);
@@ -335,6 +343,7 @@ export function MedicalRepExpensesWorkspace({
       setTripStartDate("");
       setTripEndDate("");
       setToLocation("");
+      setToPlaceId("");
       setNotes("");
       setGoTicketAmount("");
       setReturnTicketAmount("");
@@ -489,11 +498,18 @@ export function MedicalRepExpensesWorkspace({
 
               <div className="md:col-span-6">
                 <Field label="To">
-                  <Input
-                    className="h-12 rounded-none border-slate-200 bg-white"
-                    onChange={(event) => setToLocation(event.target.value)}
-                    placeholder="Destination"
-                    required
+                  {/* Was a free-text box. The one submission ever made through this path stored
+                      "Baniseaf" as the trip's destination — a misspelling of Beni Suef that no
+                      report could group, match or map. Picking from real Egyptian places costs the
+                      rep FEWER keystrokes, not more, which is the only version of this change
+                      worth making to his screen. */}
+                  <PlacesAutocompleteInput
+                    endpoint={EXPENSE_PLACES_ENDPOINT}
+                    onSelect={(prediction) => {
+                      setToLocation(prediction.description);
+                      setToPlaceId(prediction.placeId);
+                    }}
+                    placeholder="Search destination…"
                     value={toLocation}
                   />
                 </Field>
