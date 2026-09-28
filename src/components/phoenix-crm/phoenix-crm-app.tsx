@@ -22,7 +22,7 @@
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 
-import { crmGet, messageOf } from "@/components/phoenix-crm/api";
+import { crmGet, crmUrl, messageOf } from "@/components/phoenix-crm/api";
 import { DoctorsTab } from "@/components/phoenix-crm/doctors-tab";
 import { countText, plural } from "@/components/phoenix-crm/format";
 import { ListTab } from "@/components/phoenix-crm/list-tab";
@@ -564,6 +564,45 @@ export function PhoenixCrmApp({
     );
   }
 
+  /**
+   * The one-page start guide, in English or Arabic.
+   *
+   * IT IS SHOWN TO EVERYONE IN THE MODULE, THE MEDICAL REP INCLUDED, and that is the point rather
+   * than an oversight. Golden Rule #1 draws its line at WHOSE WORK IT IS: learning to use his own
+   * app is his, the way his plan and his day are his. The page names no rep, no customer and no
+   * figure, so there is nothing on it a scope could narrow and nothing it could disclose.
+   *
+   * It opens in a new tab rather than navigating, because a rep who taps it in the middle of
+   * entering a visit must come back to a form he has not lost — and it is a link to a document, not
+   * a step added to his day, which would need the owner's word first.
+   *
+   * Quiet on purpose: one line of small type under the tabs, no panel, no border, no fill. A card
+   * here would compete with the tab he actually came to press.
+   */
+  function startGuideLink() {
+    const linkClass = "font-black text-slate-700 underline underline-offset-2 hover:text-orange-700";
+    return (
+      <p className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
+        <span className="min-w-0">New here? The one-page guide to recording a visit:</span>
+        <a className={linkClass} href={crmUrl("/api/phoenix-crm/start-guide", { lang: "en" })} rel="noreferrer" target="_blank">
+          English
+        </a>
+        <span aria-hidden>·</span>
+        {/* Its own direction, never a mixed run — the Arabic name of the same page. */}
+        <a
+          className={linkClass}
+          dir="rtl"
+          href={crmUrl("/api/phoenix-crm/start-guide", { lang: "ar" })}
+          lang="ar"
+          rel="noreferrer"
+          target="_blank"
+        >
+          العربية
+        </a>
+      </p>
+    );
+  }
+
   function territoryPicker(seatTab: SeatTab) {
     const options = territoriesFor(overview, seatTab);
     const seatId = seats[seatTab];
@@ -749,6 +788,7 @@ export function PhoenixCrmApp({
       {notice ? <CrmNote tone="warn">{notice}</CrmNote> : null}
       {waitingNote()}
       {tabBar()}
+      {startGuideLink()}
       {seatTab ? territoryPicker(seatTab) : null}
       {questionNote()}
       {tabs.map((key) => {

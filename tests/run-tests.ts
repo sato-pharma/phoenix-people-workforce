@@ -1597,6 +1597,7 @@ import { runPhoenixCrmVoiceNoteTests } from "./phoenix-crm-voice-note.test.ts";
 import { runPhoenixCrmMonthlyPlanTests } from "./phoenix-crm-monthly-plan.test.ts";
 import { runPhoenixCrmPlanFiltersTests } from "./phoenix-crm-plan-filters.test.ts";
 import { runPhoenixCrmPlanCopyTests } from "./phoenix-crm-plan-copy.test.ts";
+import { runPhoenixCrmStartGuideTests } from "./phoenix-crm-start-guide.test.ts";
 import { runPhoenixCrmUnsavedVoiceNoteTests } from "./phoenix-crm-unsaved-voice-note.test.ts";
 import { runPhoenixCrmUnplannedVisitTests } from "./phoenix-crm-unplanned-visit.test.ts";
 import { runPhoenixCrmCountableVisitsTests } from "./phoenix-crm-countable-visits.test.ts";
@@ -5472,6 +5473,11 @@ await runTest(
 await runTest(
   "Phoenix CRM unplanned visit (owner, 2026-09-26: the rep chooses the KIND of visit before the doctor — a planned visit offers only the doctors on a plan he has SENT for today, an unplanned one opens his whole list and asks him why he went, and it counts in nothing until his direct manager approves it and then SFE does; one refusal at either step ends it, a territory with no manager above it starts at the SFE step so nothing lands in a queue nobody owns, \"ok\" is not a reason, and neither off-plan figure may ever enter plan-kept %, whose denominator is what the rep PLANNED)",
   runPhoenixCrmUnplannedVisitTests,
+);
+
+await runTest(
+  "Phoenix CRM's start guide is a system document (the one page a District Manager sends a rep, in English and Arabic, generated from the house identity module rather than kept as a file somebody made once — built after a rep on production recorded NINE voice notes across a working day, every one reaching the bucket and not one attached to a saved visit, because the photo is what records a visit and he never took one. The English button names stay English on the Arabic page because they are English on his screen, and EVERY one is isolated in <bdi> and unbreakable: an English run inside an Arabic paragraph drags the neutral punctuation beside it to the wrong end, and a split \"Unplanned visit\" is a name he has to reassemble before he can match it. The Arabic page stays Arabic-led, the corners stay square, and the BLIND half is left to the derived surface in phoenix-crm-blind-half rather than copied weakly here)",
+  runPhoenixCrmStartGuideTests,
 );
 
 await runTest(
