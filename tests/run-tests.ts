@@ -1597,6 +1597,7 @@ import { runPhoenixCrmVoiceNoteTests } from "./phoenix-crm-voice-note.test.ts";
 import { runPhoenixCrmMonthlyPlanTests } from "./phoenix-crm-monthly-plan.test.ts";
 import { runPhoenixCrmPlanFiltersTests } from "./phoenix-crm-plan-filters.test.ts";
 import { runPhoenixCrmPlanCopyTests } from "./phoenix-crm-plan-copy.test.ts";
+import { runPhoenixCrmUnsavedVoiceNoteTests } from "./phoenix-crm-unsaved-voice-note.test.ts";
 import { runPhoenixCrmUnplannedVisitTests } from "./phoenix-crm-unplanned-visit.test.ts";
 import { runPhoenixCrmCountableVisitsTests } from "./phoenix-crm-countable-visits.test.ts";
 import { runPhoenixCrmBrickTintsTests } from "./phoenix-crm-brick-tints.test.ts";
@@ -5456,6 +5457,11 @@ await runTest(
 await runTest(
   "Phoenix CRM plan filters (owner, 2026-09-25: while building a plan the rep narrows the doctor list by brick, by AM or PM, and by 'receives on this day between X and Y'; the narrowings are independent and each is met by any of a customer's places; a window reads only with a weekday; in Ramadan the special timings win and fall back to the normal ones)",
   runPhoenixCrmPlanFiltersTests,
+);
+
+await runTest(
+  "Phoenix CRM warns a rep leaving a recorded voice note unsaved (owner, 2026-09-28, after a rep on production recorded NINE notes across a working day and lost every one — a note is kept only when the visit is saved, and nothing said so at the moment it mattered. It WARNS and never refuses: the second press leaves every time, because a guard he cannot get out of is a trap on the one screen he must use daily. It never interrupts a save in flight, it says what he loses rather than what he did wrong — no \"you forgot\", no \"unsaved changes\" — and BOTH exits on BOTH platforms go through the one guard, which the phone's back arrow and Cancel button did not before, each calling onClose directly)",
+  runPhoenixCrmUnsavedVoiceNoteTests,
 );
 
 await runTest(

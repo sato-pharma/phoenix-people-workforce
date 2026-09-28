@@ -175,5 +175,50 @@ export function runPhoenixCrmMobileMirrorsTests(): void {
     }
   }
 
+  // ── 4. The unsaved voice-note warning reads the same on both ──────────────────────────────────
+  //
+  // THE REP READS THE PHONE'S COPY. This warning exists because a rep lost nine recordings in one
+  // day, so a sentence that drifts here — or a phone whose second press never lets him out — is the
+  // whole defect coming back on the platform that caused it. Compared sentence for sentence and
+  // behaviour for behaviour, not merely "the file exists".
+  {
+    const web = read("src/lib/phoenix-crm/unsaved-voice-note.ts");
+    const phone = read("mobile/src/lib/crm/unsaved-voice-note.ts");
+
+    for (const name of [
+      "UNSAVED_VOICE_NOTE_WARNING",
+      "UNSAVED_VOICE_NOTE_STAY_LABEL",
+      "UNSAVED_VOICE_NOTE_LEAVE_LABEL",
+    ]) {
+      const pattern = new RegExp(`export const ${name} =\\s*("[^"]*")`);
+      const webValue = pattern.exec(web);
+      const phoneValue = pattern.exec(phone);
+      assert.ok(webValue, `${name} is gone from the web module`);
+      assert.ok(phoneValue, `${name} is gone from the phone's mirror`);
+      assert.equal(
+        phoneValue![1],
+        webValue![1],
+        `🔴 ${name} differs between the phone and the web module — the rep reads the phone's copy`,
+      );
+    }
+
+    // The words that would turn it from a fact about the app into an accusation about him. Golden
+    // Rule #1: he is never made to feel caught, and "you forgot" is exactly that in miniature.
+    for (const forbidden of [/you forgot/i, /\bunsaved changes\b/i, /\bwarning\b/i, /\berror\b/i]) {
+      assert.ok(!forbidden.test(web), `the web warning must not say ${forbidden}`);
+      assert.ok(!forbidden.test(phone), `the phone's warning must not say ${forbidden}`);
+    }
+
+    // IT WARNS, IT NEVER REFUSES — the one-shot guard, on both sides. A mirror that dropped the
+    // `warned` check would show the same message on every press and trap the rep in the form.
+    for (const [label, code] of [
+      ["web", web],
+      ["phone", phone],
+    ] as const) {
+      assert.match(code, /if \(state\.warned\) return false;/, `the ${label} guard is no longer one-shot — a rep could not leave`);
+      assert.match(code, /if \(state\.saving\) return false;/, `the ${label} guard would interrupt a save in flight`);
+    }
+  }
+
   console.log("phoenix-crm mobile mirrors: OK");
 }

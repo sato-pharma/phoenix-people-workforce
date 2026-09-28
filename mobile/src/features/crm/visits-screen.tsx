@@ -23,6 +23,12 @@ import { crmErrorCode, crmErrorMessage, crmGet, crmPost, crmUrl, newClientId } f
 import { brickTintColorMap } from "@/components/crm/brick-tints";
 import { clusterByBrick, NO_BRICK_KEY } from "@/lib/crm/brick-groups";
 import { cairoClock, dayLabel, dayLabelLong, shiftIsoDay } from "@/lib/crm/format";
+import {
+  shouldWarnUnsavedVoiceNote,
+  UNSAVED_VOICE_NOTE_LEAVE_LABEL,
+  UNSAVED_VOICE_NOTE_STAY_LABEL,
+  UNSAVED_VOICE_NOTE_WARNING,
+} from "@/lib/crm/unsaved-voice-note";
 import { PendingVisit, PendingValidate, reuseWindowOver } from "@/features/crm/handoff";
 import {
   customerMetaText,
@@ -854,6 +860,9 @@ function AddVisit({
   const [usePlacePhoto, setUsePlacePhoto] = useState(Boolean(handoff?.photo));
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  // He pressed Cancel or the back arrow once with a recording on the form and was told what it would
+  // cost. Reset the moment he goes back, so it is per ATTEMPT to leave rather than once per form.
+  const [leaveWarned, setLeaveWarned] = useState(false);
   const visitIdRef = useRef<string | null>(null);
   // 🔴 SILENT (Golden Rule #1, the BLIND half). Nothing on this screen says it exists, nothing shows
   // it back, and it can never refuse a save — `clampFormOpenSeconds` drops anything odd. It is read
@@ -1160,13 +1169,41 @@ function AddVisit({
     }
   }
 
+  /**
+   * Leaving the form.
+   *
+   * The FIRST press with an unsaved recording stops and says what he is about to lose; the second
+   * leaves, with nothing asked again. Both exits — the back arrow at the top and Cancel at the
+   * bottom — come through here, so there is one rule rather than two that can drift apart. Before
+   * this, each of them called `onClose` directly and that is exactly how they would have.
+   */
+  function close() {
+    if (saving) return;
+    if (shouldWarnUnsavedVoiceNote({ hasVoiceNote: voiceNote !== null, saving, warned: leaveWarned })) {
+      setLeaveWarned(true);
+      return;
+    }
+    onClose();
+  }
+
   return (
     <ScrollView
       contentContainerStyle={{ gap: space.lg, paddingBottom: insets.bottom + space.xl, paddingHorizontal: space.lg, paddingTop: space.md }}
       keyboardShouldPersistTaps="handled"
       style={{ backgroundColor: palette.paper }}
     >
-      <CrmBackBar backLabel="Visits" onBack={() => (saving ? undefined : onClose())} title="Add a visit" />
+      <CrmBackBar backLabel="Visits" onBack={close} title="Add a visit" />
+      {/* He tried to leave with a recording on the form. Both doors are open — "Leave without it"
+          always works, because a guard he cannot get out of is a trap. */}
+      {leaveWarned && voiceNote ? (
+        <CrmNote tone="info">
+          <Text style={[type.body, { color: palette.ink }]}>{UNSAVED_VOICE_NOTE_WARNING}</Text>
+          <View style={{ gap: space.sm, marginTop: space.sm }}>
+            <PrimaryButton label={UNSAVED_VOICE_NOTE_STAY_LABEL} onPress={() => setLeaveWarned(false)} />
+            <SecondaryButton label={UNSAVED_VOICE_NOTE_LEAVE_LABEL} onPress={close} />
+          </View>
+        </CrmNote>
+      ) : null}
       <Text style={[type.meta, { color: palette.inkSoft }]}>{territoryLine(form.territory)}</Text>
 
       <CrmSection title="1 · Customer">
@@ -1534,7 +1571,7 @@ function AddVisit({
 
       {problem ? <CrmNote tone="bad">{problem}</CrmNote> : null}
       <PrimaryButton busy={saving} busyLabel="Saving the visit…" label="Save the visit" onPress={() => void save(Date.now())} />
-      <SecondaryButton label="Cancel" onPress={() => (saving ? undefined : onClose())} />
+      <SecondaryButton label="Cancel" onPress={close} />
     </ScrollView>
   );
 }
