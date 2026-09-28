@@ -59,7 +59,12 @@ async function CandidateContent({ access, rawId }: { access: AccessContext; rawI
   // An edited or cut-off link is checked before the database is asked: a malformed id makes the
   // query fail outright rather than answer "no such candidate".
   const candidateId = parseCandidatePageId(rawId);
-  const record = candidateId ? await loadCandidateRecord(candidateId) : null;
+  // The offer letter is read ONLY for a viewer who may see offer letters. `candidates: read` is a
+  // wider set of seats than `offers: read`, and a letter is where the salary lives — so this is a
+  // separate question from "may they open the record", and it is asked separately.
+  const record = candidateId
+    ? await loadCandidateRecord(candidateId, { withOffer: await canAccess(access, "offers", "read") })
+    : null;
   if (!record) {
     return (
       <p className="border border-slate-200 bg-white p-6 text-sm text-slate-600">

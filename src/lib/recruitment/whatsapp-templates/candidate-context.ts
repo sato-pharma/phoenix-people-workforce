@@ -14,6 +14,7 @@ import { candidateSuppliedDocumentList } from "@/lib/hiring-documents/candidate-
 // only one; nothing under src/lib/offers/ imports anything from recruitment.
 import { getOffer } from "@/lib/offers/service";
 import { recruitmentDb, textOrNull } from "@/lib/recruitment/db";
+import { offerCanGiveAStartDate } from "@/lib/recruitment/offer-start-date-rule";
 import { toWhatsAppDialNumber } from "@/lib/recruitment/whatsapp-templates/send-link";
 import { AUTO_VARIABLE_KEYS, type AutoVariableKey } from "@/lib/recruitment/whatsapp-templates/variables";
 
@@ -57,29 +58,15 @@ async function applicationOfferId(candidateId: string): Promise<string | null> {
 }
 
 /**
- * Whether a letter in this state may still hand over its first working day.
+ * 🔒 The owner's ruling of 2026-09-28 — "exclude declined and withdrawn letters from the start date".
  *
- * 🔒 THE OWNER'S RULING, 2026-09-28: *"exclude declined and withdrawn letters from the start date"*.
- *
- * A DECLINED OR WITHDRAWN LETTER IS DEAD, AND ITS DATE IS A LIE. The live case is real: one wired
- * candidate's only letter reads `declined` and still carries 01 October 2026, so before this rule a
- * template aimed at her filled in a first working day from an offer she turned down — grammatical,
- * plausible, and wrong about the one fact a new hire acts on.
- *
- * `draft` AND `sent` STILL COUNT, deliberately. A recruiter routinely sends the document request or
- * the welcome message on a verbal yes, while the letter itself still reads `sent` — narrowing this to
- * `accepted` alone would make the ordinary case ask for a date that is already agreed and on file.
- * The rule withholds a date from a letter that is FINISHED, not from one that is merely unconfirmed.
- *
- * THE POINTER ITSELF IS UNTOUCHED. A declined letter stays linked to the person it was written for —
- * that is history and it is true. What is withheld is only the date, and `renderTemplate` then
- * reports it MISSING so a human types the real one.
+ * The rule itself lives in `offer-start-date-rule.ts` and is re-exported here, where it has always
+ * been imported from. It had to move out of this file because the candidate record PAGE reads the same
+ * rule, and that page is a client component: importing it from here dragged the database client and
+ * the offers service — server-only, service-role credential — into the browser bundle. One rule, one
+ * copy, two readers.
  */
-const OFFER_STATUSES_WITH_NO_START_DATE = new Set(["declined", "withdrawn"]);
-
-export function offerCanGiveAStartDate(status: string): boolean {
-  return !OFFER_STATUSES_WITH_NO_START_DATE.has(String(status ?? "").trim().toLowerCase());
-}
+export { offerCanGiveAStartDate } from "@/lib/recruitment/offer-start-date-rule";
 
 /**
  * The agreed first working day for a candidate, or "" when nothing reliable says.

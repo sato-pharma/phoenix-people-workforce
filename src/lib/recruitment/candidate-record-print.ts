@@ -135,10 +135,19 @@ export type CandidateRecordPrintInput = {
   now: Date;
 };
 
-/** What each part is called when it could not be read — in the reader's words, never a code. */
+/**
+ * What each part is called when it could not be read — in the reader's words, never a code.
+ *
+ * `offer` is here for completeness and is not expected to appear: the print loader calls
+ * `loadCandidateRecord` without `withOffer`, so the printed record never reads an offer letter at all
+ * and that part can never fail. Whether a printed record SHOULD carry the letter is a separate
+ * decision — a printout has no viewer to check a permission against, and the letter is where the
+ * salary lives. Until somebody decides that, the paper copy says nothing about it.
+ */
 const PART_WORDS: Record<CandidateRecordPart, string> = {
   extraction: "the CV reader's last read",
   folders: "the folders this CV is in",
+  offer: "the job offer letter",
   questions: "the wording of the WhatsApp questions",
   sends: "the sends to managers",
   viewers: "who has opened this CV",

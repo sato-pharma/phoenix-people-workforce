@@ -68,7 +68,11 @@ async function CandidateContent({ access, candidateId }: { access: AccessContext
     );
   }
 
-  const record = candidateId ? await loadCandidateRecord(candidateId) : null;
+  // Same separate question as the admin page: `candidates: read` is a wider set of seats than
+  // `offers: read`, and an offer letter is where the salary lives.
+  const record = candidateId
+    ? await loadCandidateRecord(candidateId, { withOffer: await canAccess(access, "offers", "read") })
+    : null;
   if (!record) {
     return (
       <EmployeePortalEmptyState

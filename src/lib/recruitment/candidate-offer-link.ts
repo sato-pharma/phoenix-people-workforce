@@ -20,13 +20,21 @@ import { isOfferNotFound, getOffer } from "@/lib/offers/service";
 import { mapCandidate, recruitmentDb, textOrNull, type CandidateDbRow } from "@/lib/recruitment/db";
 import type { Candidate } from "@/lib/recruitment/types";
 
-/** What the pointer is worth showing as, for a confirmation line. */
+/**
+ * What the pointer is worth showing as.
+ *
+ * 🔴 NO MONEY ON THIS SHAPE, and that is deliberate. An offer letter carries `total_monthly` and a
+ * cost-of-living figure, and the candidate record is read by every seat that can read the pool —
+ * which is a wider set than the seats holding the `offers` permission. So this summary carries only
+ * what identifies the letter: never a salary, and nothing a reader could infer one from.
+ */
 export type LinkedOfferSummary = {
   id: string;
   /** The name ON THE LETTER — free text the letter carries, never matched against the candidate. */
   candidateName: string;
   startDate: string;
   status: string;
+  territory: string;
   title: string;
 };
 
@@ -96,6 +104,7 @@ export async function linkedOfferFor(candidate: Pick<Candidate, "offerId">): Pro
       id: offer.id,
       startDate: offer.startDate,
       status: offer.status,
+      territory: offer.territory,
       title: offer.title,
     };
   } catch (error) {

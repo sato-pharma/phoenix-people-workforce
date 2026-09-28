@@ -26,6 +26,8 @@
 // SERVER ONLY. Reaches the database. The page component receives the plain object this returns.
 
 import { isBatchActor } from "@/lib/recruitment/batch-actor";
+// recruitment -> offers is the one permitted direction, and this module only ever reads through it.
+import { linkedOfferFor, type LinkedOfferSummary } from "@/lib/recruitment/candidate-offer-link";
 import { attachAppliedFor, getCandidateProfile, type CandidateProfile } from "@/lib/recruitment/candidates";
 import {
   canonicalViewerHrId,
@@ -60,7 +62,7 @@ export type CandidateRecordFolder = {
 };
 
 /** The parts read beside the candidate, each of which can fail without taking the page with it. */
-export type CandidateRecordPart = "extraction" | "questions" | "sends" | "viewers" | "folders";
+export type CandidateRecordPart = "extraction" | "questions" | "sends" | "viewers" | "folders" | "offer";
 
 export type CandidateRecord = {
   profile: CandidateProfile;
@@ -72,6 +74,19 @@ export type CandidateRecord = {
   /** Everybody who has opened this CV, most recent reader first. */
   viewers: CandidateRecordViewer[];
   cvFolders: CandidateRecordFolder[];
+  /**
+   * The job offer letter this candidate points at, or null.
+   *
+   * 🔴 ONLY READ FOR A VIEWER WHO HOLDS `offers: read` — the page passes `withOffer`, and it is FALSE
+   * by default, so a caller that has not thought about it shows nothing rather than leaking. The
+   * candidate record is open to every seat that can read the pool, which is wider than the seats that
+   * may see offer letters, and a letter is where the salary lives. `LinkedOfferSummary` carries no
+   * money for the same reason; this gate is the second half of it.
+   *
+   * Null also means "no letter" and "a letter that has since been deleted" — `linkedOfferFor` folds
+   * those together on purpose, because a record must not fail over an offer it merely mentions.
+   */
+  linkedOffer: LinkedOfferSummary | null;
   /**
    * Every HR id the record names, spelled exactly as it is stored, mapped to that person's name.
    *
@@ -181,7 +196,10 @@ function hrIdsNamedOn(
  * The id must already be a well-formed uuid (`parseCandidatePageId`): a malformed one makes Postgres
  * refuse the query outright rather than answer "no such row".
  */
-export async function loadCandidateRecord(candidateId: string): Promise<CandidateRecord | null> {
+export async function loadCandidateRecord(
+  candidateId: string,
+  options: { withOffer?: boolean } = {},
+): Promise<CandidateRecord | null> {
   const profile = await getCandidateProfile(candidateId);
   if (!profile) return null;
 
@@ -195,12 +213,18 @@ export async function loadCandidateRecord(candidateId: string): Promise<Candidat
     }
   };
 
-  const [extraction, screeningQuestions, sends, viewerRows, cvFolders] = await Promise.all([
+  const [extraction, screeningQuestions, sends, viewerRows, cvFolders, linkedOffer] = await Promise.all([
     settle("extraction", getLatestCvExtraction(candidateId), null),
     settle<ScreeningQuestionLabel[] | null>("questions", listScreeningQuestionLabels(), null),
     settle("sends", listSendsForCandidate(candidateId), [] as ManagerSend[]),
     settle("viewers", listViewersOfCandidate(candidateId), []),
     settle("folders", loadCandidateFolders(candidateId), [] as CandidateRecordFolder[]),
+    // Read ONLY when the caller says the viewer may see offer letters — see `linkedOffer` above. The
+    // false branch resolves to null without asking the offers module anything at all, so an
+    // unauthorised viewer costs no query and cannot be told apart from a candidate with no letter.
+    options.withOffer
+      ? settle<LinkedOfferSummary | null>("offer", linkedOfferFor(profile.candidate), null)
+      : Promise.resolve(null),
     // The job they are applying for, resolved down the same ladder the pool row uses — the CV read
     // and the vacancy included — so the page and the row the name was pressed on say the same thing.
     // A failure leaves the answer the record itself gives (`candidateRowAppliedFor` falls back to
@@ -234,6 +258,7 @@ export async function loadCandidateRecord(candidateId: string): Promise<Candidat
   return {
     cvFolders,
     extraction,
+    linkedOffer,
     people,
     profile,
     screeningQuestions,
