@@ -1,15 +1,36 @@
 ---
 name: sos-monthly-closing-is-the-only-sales-truth
-description: "OWNER'S #1 GOLDEN RULE: SoS Monthly Closing is the ONLY sales truth. The same person's same month must read identically in every place in his account. Weekly Sales excluded; Marketing ROI is the one legitimate exception. ALSO: a PUBLISHED closing is FROZEN - never correct a month people have already seen; apply every fix from the current month forward."
+description: "OWNER'S #1 GOLDEN RULE: the Monthly Closing module is the ONLY source of truth for any SALES *and* any TARGET figure, everywhere in the system (targets confirmed 2026-09-27). The same person's same month must read identically in every place in his account, and equal the PUBLISHED closing. Weekly Sales excluded; Marketing ROI is the one legitimate exception. ALSO: a PUBLISHED closing is FROZEN - never correct a month people have already seen; apply every fix from the current month forward."
 metadata: 
   node_type: memory
   type: feedback
   originSessionId: a86a1018-7cfd-4213-bb15-478c4eefca91
-  modified: 2026-09-05T10:56:19.279Z
+  modified: 2026-09-26T21:12:00.834Z
 ---
 
 **Stated by the owner 2026-08-13 as his number-one golden rule, to be kept at the top of memory and
 never trimmed or forgotten.**
+
+## TARGETS TOO, AND EVERYWHERE — reaffirmed 2026-09-27
+
+**"Your source of truth to calculate any sales any targets is the monthclosing module. Lock this
+golden rule everywhere in system."** His words, in full.
+
+The rule was always "any sales figure"; he has now made **targets** explicit and equal in weight.
+The Monthly Closing module is the single source of truth for **both halves of every achievement**:
+the sales *and* the target it is divided by. No surface may read a target from its own table,
+its own period convention, or a live re-derivation that can diverge from the closing — Sales vs
+Target, overviews, portal landings, command centres, incentive achievement, Employee 360, and the
+Business Review all included. An achievement shown anywhere must equal what the closing produces for
+that person and month.
+
+**What triggered the reaffirmation:** on the Business Review, CNS areas showed 150%+ achievement two
+months into a six-month semester. Traced to source, it was NOT a review bug — a large **August
+`Office` (stores) pool** spread across every area by the locked office-allocation golden rule lifted
+all areas ~2×, and August is a PUBLISHED month. The review was faithfully reflecting the closing.
+The lesson he drew: since the closing is the only truth, every surface must read *it* — and it must
+carry the target basis too, so a partial-window or per-page target can never inflate an achievement.
+See [[owner-office-allocation-rule-value-share]], [[never-fix-a-published-and-announced-month]].
 
 There are exactly **two trusted sources of sales**: the **Source of Sales module** and the
 **Direct Orders module**. Both push their sales into **Monthly Closing, per brick**. That closing is

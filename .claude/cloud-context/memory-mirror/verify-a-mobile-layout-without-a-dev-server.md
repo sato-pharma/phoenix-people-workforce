@@ -159,3 +159,25 @@ those and the page stays on its loading skeleton forever. Then run `$RV($RB)` on
 and screenshots worked even though `tabs_context` said the pane was hidden. This measures the real
 markup, real classes and real production strings. Nothing is copied by hand. Scripts: session
 af67af9f scratchpad `static-snapshot-server.cjs`.
+
+🔴 **AN ARABIC TOKEN IS NOT A CONTROL FOR AN UNBREAKABLE WORD — it wraps anyway, and the false clean
+looks exactly like a passing screen (2026-09-28).** Probing the Phoenix CRM Today table for the one
+failure `break-words` exists to stop, the obvious control was 60 repeated Arabic letters, since every
+long real customer name here is Arabic. It reported **zero overflow with `overflow-wrap: normal`
+forced on** — the script offers break opportunities between letters, so the "unbreakable" token broke
+at every character. **Use a Latin token** (`"Mohammed".repeat(8)`, 64 chars): with `break-words`
+removed it rendered **638px of ink inside a 207px cell**, 420px hanging past it and
+`td.scrollWidth - clientWidth = 419`, while `document.documentElement.scrollWidth` stayed at
+**exactly 1024** — the golden rule's own prescribed page check reading perfectly clean on a cell with
+420px off the side, because `.admin-shell { overflow-x: clip }` cuts rather than scrolls. With the
+class on, the same token measured 202px in 207px.
+
+**And the pane clears an emulated size mid-run, silently.** Halfway through that probe the tool
+reported the pane's width had changed, so the app dropped the `1024x800` emulation; the next five
+readings were taken at 659px and every one of them read clean. The tell was `pageScrollWidth: 659`
+against an expected 1024. **Re-assert `innerWidth` inside every batch** and set the size in the SAME
+batch as the measurement — a size set in an earlier call is not a size you still have. The 2026-09-16
+note above still holds: with an EXPLICIT size the numbers read true even while `visibility` is
+`hidden`, which is what makes this method work with the pane collapsed — but `innerWidth: 0` and
+`main.clientWidth: 24` is what a hidden pane with NO emulated size reports, and those zeros are the
+lie, not the measurement.

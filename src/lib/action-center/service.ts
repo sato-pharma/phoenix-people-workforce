@@ -2,6 +2,7 @@ import { hrIdsMatch, resolveNavigationMode, type AccessContext } from "@/lib/aut
 import { isSamePerson, sharedIdentityKeys } from "@/lib/auth/identity-aliases";
 import type { ActionHubItem, HistoricalApprovalItem, MyRequestItem, MyRequestStatusTone } from "@/components/action-center/types";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
+import { logStructured } from "@/lib/observability/log";
 // The same pager the Approvals Hub uses (#4273). One implementation, not a second copy: both
 // surfaces answer the same question — "every request this person decided" — and a cap on either
 // hides real decisions the same way.
@@ -454,10 +455,64 @@ function mapWeeklyPlanItem(
 
 export type ActionInboxAudience = "admin" | "portal";
 
-export async function getAwaitingMyActionItems(
+/**
+ * Mirrors `isForbiddenError` from `@/lib/auth/server` (same `Forbidden:` message prefix), and kept
+ * local for the same reason `src/lib/approvals-hub/service.ts:108` keeps its own copy: this service
+ * is imported directly by the Node test runner, which cannot load the `next/headers` dependency
+ * `@/lib/auth/server` pulls in.
+ *
+ * The distinction earns its place twice over here. A `Forbidden:` rejection means this viewer holds
+ * no rung on that queue — a TRUE zero, and nothing to report. Any other rejection means the queue
+ * did not answer, which is not a zero at all. Collapsing the two is what turns "I could not read
+ * resignations" into "there are no resignations".
+ */
+export function isForbiddenSourceError(error: unknown): boolean {
+  return error instanceof Error && error.message.toLowerCase().startsWith("forbidden:");
+}
+
+/** One awaiting-action source that did not answer, named the way a person would say it. */
+export type ActionSourceFailure = { source: string; because: string };
+
+/**
+ * Names for the seven reads below, in the SAME ORDER as the `Promise.allSettled` array — the index
+ * is the join. Exported so a test can hold the two lengths against each other: a source added to
+ * the fan-out without a label here would report as the generic "An approval queue", which is the
+ * quiet half of the failure this whole function exists to end.
+ */
+export const ACTION_SOURCE_LABELS = [
+  "Leave requests",
+  "Excuse requests",
+  "Resignations",
+  "Outstation requests",
+  "Contract renewals",
+  "Weekly and monthly plans",
+  "The employee directory",
+] as const;
+
+/**
+ * The awaiting-action inbox, PLUS which of its sources failed to answer.
+ *
+ * 🔴 WHY THIS EXISTS, AND WHY THE `.catch(() => null)` WRAPPERS HAD TO GO. Until 2026-09-28 the
+ * seven reads below each carried `.catch(() => null)` INSIDE the surrounding `Promise.allSettled`.
+ * That made the `allSettled` decorative: every settled result was `"fulfilled"`, every failure
+ * arrived as a `null` the item loops simply skipped, and this file contains no logging of any kind
+ * — so a dead resignations read produced a shorter list and total silence, in the function
+ * `/api/approvals/badge-counts` counts. A queue nobody could read was indistinguishable from a
+ * queue with nothing in it.
+ *
+ * That is survivable for an inbox someone is already looking at. It is not survivable for
+ * `src/lib/needs-you/`, whose entire job is to answer "is anything waiting on you" so he can stop
+ * looking — there, a swallowed failure rendering as zero says "nothing needs you" and the looking
+ * has already been delegated.
+ *
+ * `unavailable` is the reporting channel that matters, because it reaches the screen; the
+ * structured log below is for after the fact. A source that refuses with `Forbidden:` is NOT listed
+ * — the viewer holds no rung on it, which is a real zero.
+ */
+export async function getAwaitingMyActionItemsWithHealth(
   access: AccessContext,
   audience: ActionInboxAudience,
-): Promise<ActionHubItem[]> {
+): Promise<{ items: ActionHubItem[]; unavailable: ActionSourceFailure[] }> {
   // Marketing is intentionally excluded everywhere — it keeps its own dedicated inbox.
   // Outstation: admin-only AND restricted to real approval authority — listOutstationRequests()
   // is an unscoped company-wide read, and only Super Admin can act on these requests
@@ -467,15 +522,40 @@ export async function getAwaitingMyActionItems(
   // Contract renewal: always included — already access-scoped via canSeeContractRow(access, employee).
   const includeOutstationAdminSource =
     audience === "admin" && canUseAdminOutstationWorkspace(access, "approve");
+  // No `.catch()` on any of these — a rejection has to reach `allSettled` as a rejection, or the
+  // failure is indistinguishable from an empty queue. The outstation slot resolves to `null` when
+  // this viewer holds no approval authority, which is a real "nothing here", not a failure.
   const settled = await Promise.allSettled([
-    getVacationActionCenterData(access).catch(() => null),
-    getManagerPendingExcuses(access).catch(() => null),
-    getResignationsDashboardData(access).catch(() => null),
-    includeOutstationAdminSource ? listOutstationRequests().catch(() => null) : Promise.resolve(null),
-    getContractRenewalDashboardData(access).catch(() => null),
-    getPlansAwaitingAction(access).catch(() => null),
-    getEmployeeDirectory().catch(() => null),
+    getVacationActionCenterData(access),
+    getManagerPendingExcuses(access),
+    getResignationsDashboardData(access),
+    includeOutstationAdminSource ? listOutstationRequests() : Promise.resolve(null),
+    getContractRenewalDashboardData(access),
+    getPlansAwaitingAction(access),
+    getEmployeeDirectory(),
   ]);
+
+  const unavailable: ActionSourceFailure[] = [];
+  settled.forEach((result, index) => {
+    if (result.status !== "rejected") return;
+    const source = ACTION_SOURCE_LABELS[index] ?? "An approval queue";
+    if (isForbiddenSourceError(result.reason)) {
+      // No rung on this queue. A true zero — nothing to report and nothing to alarm about.
+      logStructured("DEBUG", "Action inbox source refused", {
+        labels: { event: "action_inbox_source_forbidden", source, hrId: access.hrId, role: access.role, scope: access.scope },
+        error: result.reason,
+      });
+      return;
+    }
+    const because = String((result.reason as Error | undefined)?.message ?? result.reason ?? "it did not answer")
+      .split("\n")[0]
+      .trim();
+    unavailable.push({ source, because: because || "it did not answer" });
+    logStructured("ERROR", "Action inbox source failed", {
+      labels: { event: "action_inbox_source_failed", source, hrId: access.hrId, role: access.role, scope: access.scope },
+      error: result.reason,
+    });
+  });
 
   const [leave, excuse, resignations, outstation, contract, plans, directoryResult] = settled;
   const employees = directoryResult.status === "fulfilled" && directoryResult.value ? directoryResult.value.employees : [];
@@ -514,13 +594,31 @@ export async function getAwaitingMyActionItems(
   // Vacation (leave), excuse & weekly/monthly plans now live on the dedicated Approvals Hub pages
   // (/…/approvals/vacation, /…/approvals/excuse, /…/approvals/plan) — exclude them here so this
   // residual "Other Approvals" inbox shows each request in exactly one place.
-  return items.filter(
-    (item) =>
-      item.module !== "leave" &&
-      item.module !== "excuse" &&
-      item.module !== "weekly_plan" &&
-      !hrIdsMatch(item.employeeHrId, access.hrId),
-  );
+  return {
+    items: items.filter(
+      (item) =>
+        item.module !== "leave" &&
+        item.module !== "excuse" &&
+        item.module !== "weekly_plan" &&
+        !hrIdsMatch(item.employeeHrId, access.hrId),
+    ),
+    unavailable,
+  };
+}
+
+/**
+ * The awaiting-action inbox, items only — the shape every existing caller already expects.
+ *
+ * Kept as a thin wrapper rather than changing the three call sites: those screens render a list and
+ * have nowhere to put a source-health notice, so handing them one would be a change with no reader.
+ * Callers that must not mistake a failure for an empty queue call
+ * {@link getAwaitingMyActionItemsWithHealth} instead.
+ */
+export async function getAwaitingMyActionItems(
+  access: AccessContext,
+  audience: ActionInboxAudience,
+): Promise<ActionHubItem[]> {
+  return (await getAwaitingMyActionItemsWithHealth(access, audience)).items;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

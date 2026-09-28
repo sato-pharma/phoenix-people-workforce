@@ -1,40 +1,70 @@
 ---
 name: la003-la004-confidential-products
-description: "LA003/LA004 (\"Lacto Basic 1&2\") sales visible ONLY to CEO + Super Admin. App-layer leaks closed (PR #348/#410, verified prod). NEW 2026-07-02: Metabase/analytics_readonly BI-role leak found + fixed via PR #674, staging-verified, PRODUCTION MIGRATION STILL PENDING APPROVAL."
-metadata: 
+description: "LOCKED RULE — LA003 + LA004 (\"Lacto Basic 1 & 2\") and SS001 (\"Satoslim\") sales, in EVERY form (totals, KPIs, charts, tables, filter lists, exports, per-product breakdowns, weekly and monthly), are visible ONLY to CEO + Super Admin. Single source of truth is src/lib/sales/access-scope.ts. Two traps: the app ALWAYS passes the explicit exclude list (the TS constant), which OVERRIDES the geo-RPC default — so bumping the DB default alone does nothing; and the TS-layer guard does NOT protect BI/Metabase (analytics_readonly) direct-SQL access, which is a SEPARATE surface needing its own audit."
+metadata:
   node_type: memory
   type: project
   originSessionId: 0301d2f4-3c83-41bf-a608-5416a288ebee
+  modified: 2026-09-26T00:19:59.027Z
 ---
 
-LOCKED RULE (owner, CRITICAL): products **LA003** + **LA004** ("Lacto Basic 1 & 2") AND **SS001** ("Satoslim", SHIPPED to prod 2026-06-20 via PR #350 e0ffc731 + migration 20260620160000 applied — geo RPC default now `{LA003,LA004,SS001}`, grants postgres/service_role only) — their sales (weekly, monthly, and anything related: totals, KPIs, charts, tables, filter lists, exports, per-product breakdowns) are visible ONLY to **CEO** and **Super Admin** ("system administrator"). Every other role must never see them. To add another confidential product: add its CODE to RESTRICTED_PRODUCT_CODES + its normalized NAME to RESTRICTED_PRODUCT_NAME_FALLBACKS in src/lib/sales/access-scope.ts (single source of truth — auto-propagates to SoS dashboard, weekly, SI RPCs via p_exclude_codes, and SMI name-strip); optionally bump the geo RPC default in a migration (defense-in-depth only — app passes the explicit list). Satoslim verified on prod = 195,402.24 in 2026-05.
+## The locked rule (owner, critical — 2026-06-19)
 
-**Why:** explicit owner directive 2026-06-19; these products are ~80% of Source-of-Sales value (per the SI v2 migration header).
+Products **LA003**, **LA004** ("Lacto Basic 1 & 2") and **SS001** ("Satoslim") — their sales in **every
+form** (weekly, monthly, totals, KPIs, charts, tables, filter lists, exports, per-product breakdowns,
+anything derived) are visible **ONLY to CEO and Super Admin**. Every other role must never see them.
+These products are **~80% of Source-of-Sales value**, which is why the lock matters.
 
-**How it works (already in repo):** `src/lib/sales/access-scope.ts` is the single source of truth — `RESTRICTED_PRODUCT_CODES=["LA003","LA004","SS001"]` (SS001 ADDED 2026-06-21, owner-confirmed via AskUserQuestion "Add SS001 globally"; branch codex/work-from-production, gates green, NOT yet committed/applied). GOTCHA: before that, the app constant was `["LA003","LA004"]` even though the geo-RPC DEFAULT was bumped to `{LA003,LA004,SS001}` — but the app ALWAYS passes the EXPLICIT exclude list (= the TS constant), which OVERRIDES the RPC default, so SS001 was still leaking through every app-constant-driven path (weekly, SI p_exclude_codes, SoS dashboard, exports, monthly-closing). The DB-default bump alone does nothing; the TS constant is what counts. `canViewRestrictedProducts(role)` (true only for CEO/Super Admin), `isRestrictedProductCode`. Live behavior = CEO/admin **always** see them, everyone else stripped (weekly's `weekly/access.ts` hardcodes `canViewRestricted:true` for CEO/admin — NO opt-in toggle is actually wired anywhere; I followed that same always-on-for-CEO/admin model).
+## Single source of truth — `src/lib/sales/access-scope.ts`
 
-**Two pipelines:** legacy Sales (`sales_records`, keyed by product NAME — no product_code col) vs Source-of-Sales / SI (`source_of_sales_*`, keyed by CODE). Code guards can't reach legacy → I added name guards: `restrictedProductNameSet()` (live master names ∪ fallbacks `["lacto basic 1","lacto basic 2","satoslim"]`, fail-closed, 5-min cache; SS001 master name verified on prod = "Satoslim", normalized "satoslim"), `stripRestrictedRowsByName`, `stripRestrictedProductNames`, `normalizeProductNameKey`. Test: `tests/sales-restricted-products.test.ts` (proves code-vs-name two-pipeline guard).
+- `RESTRICTED_PRODUCT_CODES = ["LA003","LA004","SS001"]` and
+  `RESTRICTED_PRODUCT_NAME_FALLBACKS = ["lacto basic 1","lacto basic 2","satoslim"]`.
+- **To add another confidential product:** add its CODE to `RESTRICTED_PRODUCT_CODES` and its normalized
+  NAME to `RESTRICTED_PRODUCT_NAME_FALLBACKS`. That auto-propagates to the SoS dashboard, weekly, the SI
+  RPCs (via `p_exclude_codes`) and the SMI name-strip. Optionally bump the geo-RPC default in a migration
+  — **defense-in-depth only.**
+- `canViewRestrictedProducts(role)` is true only for CEO / Super Admin; `isRestrictedProductCode` tests a
+  code. CEO/admin **always** see these products — there is no opt-in toggle wired anywhere.
 
-**Leaks I closed (branch work, gates green, NOT yet committed/pushed):**
-- Legacy `/sales` dashboard + employee-portal sales: `service.ts getSalesDashboard` strips records by NAME right after `filterSalesRecordsForAccess` (one chokepoint → cleans every total/chart/table/filter/transactions). Inherited by `overview/service.ts` + `getSalesPlatformMetrics`.
-- SoS products API `app/api/sales/source-of-sales/products/route.ts` (was `sales:read` = nearly every role).
-- Master workbook export `master-workbook.ts buildMasterWorkbookBuffer({includeRestricted})` + its route (was `sales:export` = nearly every role).
-- Monthly-closing PORTAL `monthly-closing-portal.ts`: new `stripRestrictedColumns` always-applied (territory DM/RM/NSM got `productCodes=null` → skipped the existing `scopeMatrixToProducts`).
-- Sales-Marketing-Intelligence `sales-marketing-intelligence/service.ts`: TS backstop strips `productRoi` + product filter (roles PM/GPM/Marketing/NSM/SFE).
-- Import workspace `app/(admin)/sales/import/page.tsx`: filters product lists + dashboard `byProduct` (SFE Manager also holds `sales:import`).
+🔴 **THE TS CONSTANT IS WHAT COUNTS, NOT THE DB DEFAULT.** The app always passes the **explicit** exclude
+list (= the TS constant) into the RPCs, and that **overrides** any geo-RPC default. So bumping the DB /
+geo-RPC default alone does NOTHING — SS001 once leaked through every app path while the DB default already
+listed it, because the TS constant still read `["LA003","LA004"]`. Change the TS constant.
 
-**Already-correct (no change):** weekly dashboard/export; SI `phx_si_*` RPCs (have `p_exclude_codes`); customer-directory + admin monthly-closing (Super-Admin-only = allowed).
+## Two pipelines need two kinds of guard
 
-**AGGREGATION-TOTALS FOLLOW-UP — SHIPPED TO PROD 2026-06-20 via PR #348 (squash e5ac6ec2, merged to main, prod deploy success, phoenix-workforce.vercel.app 200). Isolated onto a clean branch off main (cherry-picked 16f1434e + 8db206bd) to avoid the tangled outstation/payroll changes riding the old branch codex/sos-territory-template-registry — see [[outstation-payroll-notifications-dead-code]]:**
-- (1) **SoS import dashboard `loadSourceOfSalesDashboard`** — FIXED + VERIFIED on prod. New non-CEO path in `buildSourceOfSalesDashboard` (monthly-distributor-import.ts) re-derives grand totals/byLine/byDistributor from non-restricted PRODUCT summary rows (product summaries carry product_code + officialLine + batchId), and byRegion/byArea/byBrick from a new server-only RPC `phx_sos_geo_aggregates_without_restricted(p_batch_ids, p_exclude_codes)` that re-aggregates raw `source_of_sales_import_rows` excluding the codes. RPC applied to prod via MCP (recorded version `20260620074708`; repo file `20260620150000_sos_restricted_aggregation.sql` is idempotent create-or-replace → safe no-op if pipeline re-applies). RPC is `security definer`, **revoked from PUBLIC** (not just anon/auth — Postgres default-grants EXECUTE to PUBLIC), service_role+postgres only. PROOF on 2026-05 prod data: region=area=brick sum all = 5,059,145.36 = raw_all 27,093,841.08 − restricted 22,034,695.72 (leak was **81% of value**). `canViewRestricted` threaded through page.tsx + dashboard API route via `canViewRestrictedProducts(role)`.
-- (2) **SMI RPC `phx_marketing_roi_customer_dashboard`** — current prod exposure = **ZERO** (verified: 0 of 7 marketing_request_products map to LA003/LA004; the ROI dashboard attributes sales ONLY to products promoted in marketing requests). Did NOT add the `p_exclude_codes` RPC param. Instead `stripRestrictedFromMarketingSnapshot` (TS) now ALSO corrects `summary` totals (subtracts restricted productRoi contribution) + removes restricted-only lines from `lineRoi` — defense-in-depth that activates only if a confidential product is ever marketed. RESIDUAL (theoretical, currently zero): if a marketing request ever promotes LA003/LA004, `distributorRoi`/`regionRoi`/`customerImpact`/`requestReport` would blend its attributed value — closing that fully needs the `p_exclude_codes` RPC param AND a product decision on whether removing a confidential product reallocates its marketing-cost share to siblings (why the original author deferred it).
+- **Source-of-Sales / SI** (`source_of_sales_*`) is keyed by CODE — code guards reach it.
+- **Legacy Sales** (`sales_records`) has NO `product_code` column, keyed by product NAME — code guards
+  can't reach it, so it needs NAME guards: `restrictedProductNameSet()` (live master names ∪ the
+  fallbacks, **fail-closed**, 5-min cache), `stripRestrictedRowsByName`, `stripRestrictedProductNames`,
+  `normalizeProductNameKey`. `tests/sales-restricted-products.test.ts` pins the two-pipeline guard.
 
-**UPDATE 2026-06-21 — SHIPPED TO PROD (PR #410, squash f23d9b54, merged to main + deployed READY on phoenix-workforce.vercel.app; migration applied to prod recorded as `marketing_roi_exclude_codes`):** the SMI aggregate residual is now CLOSED. Migration `20260623090000_marketing_roi_exclude_codes.sql` adds `p_exclude_codes` to `phx_marketing_roi_customer_dashboard` (built via pg_get_functiondef→guarded string-replace on the LIVE def so it composes on top of the parallel-rewritten RPC; DROP 10-arg → CREATE 11-arg; re-applies `statement_timeout=45s` + service_role-only grants since DROP/CREATE resets them; guarded anchors RAISE on drift; idempotent — skips if 11-arg already exists). Exclusion injected into the materialized `req_products` CTE → ALL breakdowns + summary inherit it. Prod verified: only the 11-arg signature exists, acl `{postgres,service_role}`, both exclusion + default calls return objects. `service.ts` passes `p_exclude_codes = resolveMarketingExcludeCodes(access.role)` ([] for CEO/Super Admin else RESTRICTED_PRODUCT_CODES); per-product strip kept as defense-in-depth. PRODUCT DECISION resolved: filtering req_products RE-NORMALIZES value_share, so a hidden product's marketing-cost share REALLOCATES to its visible siblings (keeps summary↔breakdown consistent, no inferable gap) — zero-impact today (0 marketing requests promote restricted products). 
+**Geo aggregates re-derive, they don't just filter rows.** For a non-CEO viewer, grand totals are
+re-derived from the non-restricted product-summary rows, and region/area/brick totals come from a
+server-only RPC `phx_sos_geo_aggregates_without_restricted(p_batch_ids, p_exclude_codes)` that
+re-aggregates the raw import rows excluding the codes (`security definer`, **revoked from PUBLIC** — not
+just anon/auth, since Postgres default-grants EXECUTE to PUBLIC — service_role + postgres only). The
+marketing-ROI RPC takes `p_exclude_codes` via `resolveMarketingExcludeCodes(role)`; filtering its
+`req_products` **re-normalizes value_share**, so a hidden product's marketing-cost share reallocates to
+its visible siblings (a decided behavior, zero-impact today — no marketing request promotes a restricted
+product).
 
-WORKFLOW GOTCHA (cost me a redo): the working branch `codex/work-from-production` was STALE (7 ahead / 65 behind main) — main ALREADY had SS001 in RESTRICTED_PRODUCT_CODES + "satoslim" fallback (parallel/CEO-hardening shipped it) and the full parallel marketing-ROI rewrite. Merging the stale branch would have regressed prod. Correct fix: fresh worktree off `origin/main`, re-apply ONLY the still-missing pieces (RPC migration + service wiring + test; access-scope already on main), then PR→main. The redundant commit 4bca4bdc still sits on codex/work-from-production (harmless; that branch needs a sync-to-main). [[main-sync-and-wt-main]] [[parallel-session-swarm-hazard]]
+## 🔴 The BI / Metabase surface is SEPARATE — audit it on its own
 
-**UPDATE 2026-07-02 — NEW LEAK VECTOR FOUND + FIXED: Metabase/BI role (analytics_readonly), separate from the app-layer work above.** The `analytics` schema (migration `20260625155000_analytics_schema_views.sql`, added for Metabase) granted `analytics_readonly` EXECUTE on `phx_exec_brick`/`phx_exec_customers`/`phx_monthly_closing_matrix`/`phx_monthly_closing_direct` with a comment claiming they "handle confidential filtering internally" — **false**, none of those 4 RPC bodies had ever filtered LA003/LA004/SS001 (not a regression, they never had a filter param since they were first written 2026-06-04, back when they were service_role-only). `phx_exec_distributor_product` does have `p_exclude_codes` but it **defaults to `'{}'`**, so a Metabase question that doesn't pass it gets everything. Confirmed exploitable in PRODUCTION: a real login role `metabase` (`rolinherit=true`) is a member of `analytics_readonly`, so it inherits every one of these grants automatically — anyone with the Metabase connection creds could pull confidential product data. Fixed via PR #674 (migration `20260702130000_close_bi_confidential_product_leak.sql`, applied+verified on staging `izhmxvgiktiafqusolot`, NOT yet on production — needs separate approval): hard-coded the exclusion into the 4 unfiltered RPC bodies (same signature, grants carry over), and replaced `analytics_readonly`'s access to `phx_exec_distributor_product` with a no-override wrapper `phx_exec_distributor_product_bi`. Also note: the same review's other claim (`analytics.sos_fact_all`/`dim_products_all` granted to `analytics_readonly`) turned out to be STALE — already fixed the very next day by `20260626130000_analytics_views_client_code_and_grants.sql` (verified: no such grant in prod today) — always re-verify a pasted finding against current migration history + live grants before assuming it's still true.
+The `access-scope.ts` lockdown covers the in-app TypeScript layer thoroughly, but **BI/analytics-schema
+RPCs added for Metabase are a different surface with no shared enforcement point, and the TS guard does
+not protect direct-SQL/Metabase access at all.** A real login role `metabase` (`rolinherit=true`) is a
+member of `analytics_readonly` and inherits its grants automatically, so anyone with the Metabase
+connection creds could pull confidential data through any granted RPC that doesn't filter. Two failure
+shapes seen: (1) RPCs granted to `analytics_readonly` whose bodies **never filtered** the codes (the
+grant comment claimed "handles confidential filtering internally" — it didn't); (2) an RPC that HAS
+`p_exclude_codes` but **defaults it to `'{}'`**, so a Metabase question that omits the arg gets
+everything. **Any new `phx_*` or `analytics.*` object granted to `analytics_readonly` needs its own
+confidential-code audit** — either hard-code the exclusion into the body, or expose a no-override wrapper.
 
-**LESSON:** the LA003/LA004/SS001 lockdown covers the in-app TS layer (`access-scope.ts` + its callers) thoroughly, but BI/analytics-schema RPCs added later for Metabase are a SEPARATE surface with no shared enforcement point — any new `phx_*`/`analytics.*` object granted to `analytics_readonly` needs its own confidential-code audit; the TS-layer guard does not protect direct-SQL/Metabase access at all.
+**Verification lesson:** re-verify a pasted security finding against current migration history AND live
+grants before acting — one claimed leak (`analytics.sos_fact_all`/`dim_products_all` granted to
+`analytics_readonly`) had already been fixed by a later migration and was stale.
 
-Related: [[source-of-sales-rebuild-rules]], [[sos-brick-authoritative-geography]], [[match-module-design-before-building-ui]].
+Related: [[source-of-sales-rebuild-rules]], [[sos-brick-authoritative-geography]],
+[[match-module-design-before-building-ui]].

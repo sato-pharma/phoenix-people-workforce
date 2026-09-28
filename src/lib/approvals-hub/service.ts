@@ -365,20 +365,32 @@ export async function isVacationAwaitingOverdue(access: AccessContext): Promise<
  * dataset independently, so calling both (as the per-domain pending-count endpoint
  * does) fetches it twice per poll — this helper computes both answers, with the same
  * fallbacks, from a single fetch for the batched badge-counts endpoint.
+ *
+ * `available` is false when the read FAILED, and it exists because `count: 0` cannot tell a real
+ * zero from a dead query. A badge can live with that — a rail that goes quiet for one poll is a
+ * cosmetic fault — but `src/lib/needs-you/` answers "is anything waiting on you", and there a
+ * swallowed failure rendering as zero is the whole failure mode: it says "nothing needs you" and
+ * the looking has already been delegated. Same field, same meaning and the same reason as
+ * getPlanAwaitingBadge below, which has carried it since it was written.
+ *
+ * Additive on purpose: /api/approvals/badge-counts destructures `count`/`overdue` and is untouched.
  */
-export async function getVacationAwaitingBadge(access: AccessContext): Promise<{ count: number; overdue: boolean }> {
+export async function getVacationAwaitingBadge(
+  access: AccessContext,
+): Promise<{ count: number; overdue: boolean; available: boolean }> {
   try {
     const { awaiting } = await getVacationApprovalsForResponder(access);
     return {
       count: awaiting.length,
       overdue: awaiting.some((row) => slaTone(row.slaAgeDays, APPROVALS_SLA_THRESHOLDS.leave) === "overdue"),
+      available: true,
     };
   } catch (error) {
     logLoadFailure("Approvals hub vacation awaiting badge computation failed", {
       labels: { event: "approvals_hub_vacation_awaiting_badge_failed", hrId: access.hrId, role: access.role, scope: access.scope },
       error,
     });
-    return { count: 0, overdue: false };
+    return { count: 0, overdue: false, available: false };
   }
 }
 
@@ -432,20 +444,32 @@ export async function isExcuseAwaitingOverdue(access: AccessContext): Promise<bo
   }
 }
 
-/** Count + overdue flag from ONE responder fetch (see getVacationAwaitingBadge). */
-export async function getExcuseAwaitingBadge(access: AccessContext): Promise<{ count: number; overdue: boolean }> {
+/**
+ * Count + overdue flag from ONE responder fetch (see getVacationAwaitingBadge, including why
+ * `available` exists and why adding it changes nothing for the badge endpoint).
+ *
+ * 🔴 One shape to know before trusting a `0` here: getExcuseApprovalsForResponder swallows its OWN
+ * failure — getManagerPendingExcuses is wrapped in a `.catch` that logs and returns `[]` — so this
+ * try/catch is not the only path to an empty list, and `available: true` alongside `count: 0` does
+ * NOT prove the underlying read succeeded. Narrowing that is a change to the responder, not to this
+ * badge; until then the needs-you adapter treats an excuse zero as the weakest of its signals.
+ */
+export async function getExcuseAwaitingBadge(
+  access: AccessContext,
+): Promise<{ count: number; overdue: boolean; available: boolean }> {
   try {
     const { awaiting } = await getExcuseApprovalsForResponder(access);
     return {
       count: awaiting.length,
       overdue: awaiting.some((req) => slaTone(daysSinceCalendar(req.createdAt), APPROVALS_SLA_THRESHOLDS.excuse) === "overdue"),
+      available: true,
     };
   } catch (error) {
     logLoadFailure("Approvals hub excuse awaiting badge computation failed", {
       labels: { event: "approvals_hub_excuse_awaiting_badge_failed", hrId: access.hrId, role: access.role, scope: access.scope },
       error,
     });
-    return { count: 0, overdue: false };
+    return { count: 0, overdue: false, available: false };
   }
 }
 

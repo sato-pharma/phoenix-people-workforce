@@ -1,30 +1,62 @@
 ---
 name: sales-permission-security-audit-2026-07
-description: "Multi-finding security review of sales/export permission gates; tracks which findings are fixed vs still open."
-metadata: 
+description: "A 2026-07 sales/export permission audit, now fully closed — its durable residue is the RECURRING bug taxonomy to expect if handed another finding: a read-vs-import/export permission-matrix mismatch (a route gating on :read, which every role holds, instead of :import/:export), a missing scope filter on a service-role RLS-bypassing query, a DB grant/RPC that doesn't implement the filtering its own comment claims, an unguarded guest caller, or a CSRF same-origin gap. Plus the enforcement mechanisms that catch them and the process lessons."
+metadata:
   node_type: memory
   type: project
   originSessionId: 86ddb63c-e23b-45a8-b3ba-f8deb68c9b34
+  modified: 2026-09-26T00:25:26.471Z
 ---
 
-A lead/audit session produced a findings table (columns: #, Severity, Status, Domain, Location, Finding, Impact, Suggested Fix, Verification) covering permission-gate and data-scoping bugs across the app, delivered to working sessions one finding at a time.
+A lead session delivered a permission-gate / data-scoping findings table one row at a time. Every row
+picked up was fixed, merged and prod-verified in 2026-07 — the tracker itself is spent. What survives is
+the **pattern** to expect if a future session is handed another row from the same kind of audit.
 
-**Finding #2 — FIXED, merged, live in prod (2026-07-01/02):** `app/api/sales/weekly/export-batches/route.ts` checked `weekly_sales:read` instead of `:import`, letting Medical Rep/DM/RM/NSM/PM/GPM download a company-wide unfiltered workbook incl. confidential LA003/LA004/SS001. Fixed in PR #672 (`codex/fix-weekly-export-batches-permission` off `origin/main`, squash-merged to `main`, verified against the public prod domain). See [[weekly-sales-module-map]] gotcha (1) for detail.
+## The recurring bug taxonomy
 
-**Finding "Database / BI Grants" — FIXED, PR #674 merged, prod migration APPLIED and verified (2026-07-02):** `analytics_readonly` (Metabase) had EXECUTE on 5 `phx_*` RPCs with zero/optional confidential-code filtering, contradicting a migration comment claiming they filter internally. Confirmed live in prod (real `metabase` login role inherits `analytics_readonly`). Fixed in [[la003-la004-confidential-products]] (see that memory for full detail) via PR #674, branch `codex/bi-confidential-product-leak`, worktree `_wt-bi-confidential-leak` off fresh `origin/main`. Staging-verified; production migration NOT yet applied (needs separate explicit approval). NOTE: when I went to create this worktree/branch, NEITHER existed yet locally and no PR/branch with this name existed on GitHub — the earlier note below ("seen via git worktree list") did not hold up when re-checked; treat it as unconfirmed/stale rather than evidence of a duplicate in-flight session.
+1. **`read`-vs-`import`/`export` permission-matrix mismatch.** A route gates on a `:read` action that
+   *every* role holds when it should gate on `:import`/`:export` (Super Admin + SFE Manager only). Seen on
+   `weekly/export-batches` (leaked a company-wide unfiltered workbook incl. confidential LA003/LA004/SS001
+   to every sales role — [[weekly-sales-module-map]]) and `monthly-import/dashboard`. Note SFE Manager
+   *legitimately* needs the unscoped company-wide view for import validation, so the fix is `:import`, NOT
+   a "Super-Admin-only" gate that would wrongly block SFE Manager.
+2. **A missing scope filter on a service-role (RLS-bypassing) query.** `loadSourceOfSalesDashboard()` and
+   similar use the service-role client with zero region/area/brick/distributor/line scoping — only
+   confidential-product stripping — so the *route's* permission check is the only boundary; a wrong check
+   there hands any caller the full company breakdown.
+3. **A DB grant / RPC that doesn't implement the filtering its own comment claims.** `analytics_readonly`
+   (the `metabase` login inherits it) had EXECUTE on `phx_*` RPCs whose comment said they filter
+   confidential codes internally — they didn't ([[la003-la004-confidential-products]] holds the full BI
+   surface lesson).
+4. **An unguarded guest caller.** `GET /api/calendar` with no session cookie returned full company
+   calendar data — the service function never threw on `access.source === "guest"`.
+5. **A CSRF same-origin gap.** `assertSameOriginMutation(request)` applied to only a handful of mutating
+   routes. Defense-in-depth debt (SameSite cookies mitigate), not an active bypass.
 
-**Finding "Calendar guest leak" — FIXED, PR #673 merged 2026-07-01 (confirmed 2026-07-02):** `getCompanyCalendarWorkspace` didn't guard unauthenticated (guest) callers; `GET /api/calendar` with no session cookie returned full company calendar event data. Fixed by throwing Forbidden when `access.source === "guest"`. Done by a parallel session; branch `codex/fix-calendar-guest-leak` / worktree `_wt-calendar-guest-leak` are stale post-merge (safe to `git worktree remove` after checking nothing else is using them).
+## Enforcement mechanisms that catch these (durable)
 
-**Status snapshot as of 2026-07-02 (re-verified live, not from stale notes):** 6 findings picked up from this audit so far are closed end-to-end (code merged to `main` AND, where relevant, prod migration applied) — #2 export-batches, BI-grants (prod verified via direct SQL: `phx_exec_brick`/`phx_exec_customers`/`phx_monthly_closing_matrix`/`phx_monthly_closing_direct`/`phx_exec_distributor_product_bi` all contain hard-coded LA003 exclusion in production), calendar guest leak, monthly-import dashboard scope, and #27 activity-timeline scope (both below in this file). No further rows from the same audit table are in hand — next one would need to come from the user or the lead/audit session.
+- **CSRF coverage is self-enforcing:** `src/lib/security/access-registry.ts` declares per-route
+  `csrfRequired`, and `tests/access-registry-coverage.test.ts` **fails the build if a route marked
+  required doesn't call the guard.** So a new mutating route is caught by flipping its registry entry —
+  add the guard AND the entry together. (An older narrower `tests/csrf-route-coverage.test.ts` hardcoded
+  list is superseded by the registry check.)
+- **Per-employee authorization must mirror the attendance route's boundary.** When a route takes an
+  arbitrary `hrId` (e.g. activity timeline), copy `assertCanViewEmployeeAttendance`'s exact boundary:
+  self / whole-company for Super-Admin·CEO·company-or-system-scope / **DB-verified direct-report-only**.
+  A resource-level `user_activity:read` check alone (Super-Admin-only *today*) is fragile against a future
+  `role_permission_overrides` widening. Test it with the `B-1`-vs-`B-10` substring trap (a prefix match is
+  not a manager match), plus guest/no-scope/missing-identity denials.
 
-**Why this matters:** if a future session is handed another row from the same findings table, expect the same pattern — a `read`-vs-`import`/`export` permission-matrix mismatch, a missing scope filter on a service-role (RLS-bypassing) query, or (as with the BI-grants row) a DB grant/RPC that doesn't actually implement the filtering its own comment claims. Before starting, search GitHub for an existing PR/branch matching the finding (`gh api .../issues?q=...` or `search_issues`) rather than trusting a `git worktree list` snapshot alone — worktrees get created and removed by other sessions, so a name appearing (or not appearing) locally isn't proof of what's already shipped.
+## Process lessons
 
-**How to apply:** when picking up a numbered finding from this same audit, first check whether a sibling worktree/branch/PR already exists for it (avoid duplicate work), then follow the same isolated-worktree-off-origin/main → fix → verify roles → PR → merge → verify-prod flow used for finding #2.
-
-**Finding #27 — "Admin/Activity timeline fragile design" — FIXED, PR #696 merged, prod verified (2026-07-02):** `app/api/admin/activity/timeline/route.ts` accepted an arbitrary `hrId` query param behind only a resource-level `user_activity:read` check (hardcoded Super-Admin-only today) — no per-employee authorization gate, unlike the correctly-gated sibling attendance route (`assertCanViewEmployeeAttendance`). Not exploitable today (permission matrix hardcodes Super Admin), but flagged as fragile against a future `role_permission_overrides` widening. Fix: added `canViewEmployeeActivity`/`assertCanViewEmployeeActivity` to `src/lib/activity/service.ts`, copying the attendance route's exact security boundary (self / whole-company Super-Admin-CEO-or-company-or-system-scope / DB-verified direct-report-only), wired into the route right after the existing resource check. Added `tests/activity-manager-view-access.test.ts` mirroring `attendance-manager-view-access.test.ts` coverage (self, direct report, non-direct-report denial, `B-1`-vs-`B-10` substring trap, CEO/Super Admin whole-company, guest/no-scope denial, missing-identity denial). Worktree `_wt-activity-timeline-scope` off fresh `origin/main`, branch `codex/fix-activity-timeline-employee-scope`. Full `check:harden` (lint+typecheck+87 test groups+build) clean; PR #696 CI (validate/lint-typecheck/preview-smoke/Vercel preview/Seer review) all green; squash-merged to `main` (`c46f5550`); prod auto-deployed and verified live (`https://phoenix-workforce.vercel.app/api/admin/activity/timeline` unauthenticated → clean 401, no 500). Role-split behavior (Super Admin 200 vs. others 403) not independently re-tested against a live credentialed prod session — covered by the unit test + preview-smoke only, same caveat as the monthly-import-dashboard finding above.
-
-**Vercel scope name correction:** AGENTS.md's "Stable Environment Facts" lists the Vercel scope as `phoenix-workspace-s-projects`, but the actual working scope (confirmed via `vercel ls`) is `phoenix-hr-workspace-s-projects`. `vercel ls phoenix-workforce --scope phoenix-workspace-s-projects` errors with "scope does not exist"; use `phoenix-hr-workspace-s-projects` instead. AGENTS.md not yet corrected as of 2026-07-02 — flag this if a future session hits the same error.
-
-**Finding "API/CSRF coverage gap" — FIXED, PR #736 merged, prod verified (2026-07-03):** Squash-merged to `main` (`fd043288`), auto-deployed, and confirmed live at `https://phoenix-workforce.vercel.app` (correct alias on the new deployment, homepage 200, the newly-guarded routes now return clean `403 csrf_failed` for unauthenticated/no-origin POST/PATCH instead of falling through further, prod logs clean — no 500s). `assertSameOriginMutation` was applied to only ~5 of many mutating routes across messages, notifications/in-app, exports/table, attendance/exceptions, attendance/policies, and marketing-requests/*. Marked "Live - mitigated by SameSite cookies... this is defense-in-depth debt, not an active bypass" — explicitly not urgent, but handed off the same way as the other rows in this table. Confirmed the codebase already has a self-enforcing mechanism: `src/lib/security/access-registry.ts` declares per-route `csrf.required`, and `tests/access-registry-coverage.test.ts` fails if a route marked required doesn't call the guard (there's also an older, narrower `tests/csrf-route-coverage.test.ts` hardcoded-list check, superseded by the registry one, left untouched). Fix: added `assertSameOriginMutation(request)` to 13 route files (messages POST, messages/:id/read PATCH, notifications/in-app PATCH, exports/table POST, attendance/exceptions POST, attendance/exceptions/:id PATCH+DELETE, attendance/policies POST+DELETE, marketing-requests control/finance-evidence/drafts/bulk-upload/validation/roi-tracking-presets), flipped their registry entries to `csrfRequired: true`, and backfilled explicit registry entries for marketing-requests `decision`/`comment`/`resubmit` (code already had the guard, registry hadn't caught up) plus accurate exemption reasons for the two genuinely read-only POSTs (`reverse-geocode`, `roi-tracking` report) instead of the generic default reason. Scoped narrowly to exactly the domains the finding named — did NOT expand to other similar-looking gaps outside that list (e.g. `PATCH /api/notifications/settings`, `POST /api/integrations/telegram/*`) without being asked. Worktree `_wt-csrf-coverage` off fresh `origin/main`, branch `codex/fix-csrf-coverage-gaps`. Typecheck/lint/full test suite (152 groups incl. `access registry coverage` + `csrf route coverage`)/production build all clean. Done in `codex/agents-policy-v2` session while another Claude Code session was reportedly active in the primary checkout — worked entirely in the isolated worktree, never touched the primary working directory, to avoid the collision pattern in [[parallel-session-swarm-hazard]].
-
-**Finding "Monthly-import dashboard scope leak" — FIXED, PR not yet opened, awaiting commit/push approval (2026-07-02):** `app/api/sales/monthly-import/dashboard/route.ts` checked `sales:read` (every role has this) instead of `sales:import` (Super Admin + SFE Manager only — same roles the `/sales/import` page itself gates on via `canAccess(ctx,"sales","import")`). `loadSourceOfSalesDashboard()` uses the service-role Supabase client with zero region/area/brick/distributor/line scoping (only confidential-product stripping), so any authenticated user (e.g. a District Manager) could call the route directly and get a full company-wide breakdown. Same bug class as Finding #2 (read-vs-import mismatch), not a missing-scope-filter case — SFE Manager legitimately needs the unscoped company-wide view for import validation, so the monthly-closing/publish-style "Super Admin only" gate would have wrongly blocked SFE Manager. Fix: changed the one `assertPermission` call from `"read"` to `"import"`. Worktree `_wt-monthly-import-scope` off fresh `origin/main`, branch `codex/fix-monthly-import-dashboard-scope`. Typecheck/lint/full test suite (85 groups)/production build all clean, pre-push gate passed, PR #678 CI (validate/lint-typecheck/preview-smoke/Vercel preview) all green. Squash-merged to `main` 2026-07-02 (commit `59bff1de`), production auto-deployed and verified live at `https://phoenix-workforce.vercel.app` (alias confirmed on the new deployment, endpoint returns 403 for unauthenticated calls, prod logs clean, no 500s). NOTE: could not re-verify the role split (Super Admin/SFE Manager 200 vs. everyone-else 403) against prod itself — no live credentialed session available in this session; that distinction was covered by the local test suite and the pre-merge preview-smoke CI check on the same commit, not by a fresh prod-role test.
+- **Don't trust a `git worktree list` snapshot as proof of what's shipped.** Worktrees get created and
+  removed by other sessions, so a branch appearing (or not appearing) locally is not evidence. Before
+  starting a finding, search GitHub for an existing PR/branch matching it (`gh api .../issues`,
+  `search_issues`) to avoid duplicate work.
+- **Work each finding in an isolated worktree off fresh `origin/main`** → fix → verify the affected roles
+  (including the denial paths) → PR → merge → verify prod ([[parallel-session-swarm-hazard]]).
+- **Scope narrowly to exactly the routes the finding names** — do not expand to other similar-looking gaps
+  unasked (the CSRF fix deliberately left `PATCH /api/notifications/settings` and the telegram routes
+  alone).
+- A unit test + preview-smoke covers a fix, but does **not** re-prove the live role split (Super Admin 200
+  vs others 403) unless you run a credentialed prod-role test — state that caveat rather than implying it.

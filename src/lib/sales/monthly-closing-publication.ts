@@ -1,6 +1,17 @@
 import { invalidateClosingStoreSplitCache } from "@/lib/dashboard/invalidation";
 import { isHeadOfficeLine } from "@/lib/sales/access-scope";
-import { assertClosingPeriodComplete } from "@/lib/sales/closing-period-gate";
+import {
+  assertClosingPeriodComplete,
+  closingPeriodOpensOn,
+  isClosingPeriodComplete,
+} from "@/lib/sales/closing-period-gate";
+// Lines and periods come from the import module rather than being queried here, so the Head Office
+// exclusion (selectClosingLines) and the "validated batch only" rule hold by construction. No cycle:
+// monthly-distributor-import.ts does not import this file.
+import {
+  listMonthlyClosingLines,
+  listMonthlyClosingPeriods,
+} from "@/lib/sales/monthly-distributor-import";
 import { notifyClosingPublished } from "@/lib/sales/closing-publish-notification";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -178,6 +189,122 @@ export async function latestPublishedClosingPeriod(): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The COMPLEMENT: which closings have not been published.
+//
+// This is the only part of this file that answers a negative, and every other function here is
+// written the opposite way round, so read the two rules below before changing anything in it.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Every (line, period) that has EVER been published — withdrawn ones included.
+ *
+ * 🔴 THIS IS THE ONE FUNCTION THE COMPLEMENT MAY SUBTRACT, AND `listAllPublishedClosings` IS NOT IT.
+ * That one filters `.is("unpublished_at", null)`, which is correct for a publish-state map: a
+ * withdrawn month is not currently published. Subtract it here and August 2026 — published,
+ * announced, later withdrawn — reappears on the owner's board as a month that still needs
+ * publishing. A published and announced month is NEVER corrected (AGENTS.md §4), so putting it back
+ * in front of him as outstanding work is precisely the wrong thing for this module to do.
+ *
+ * Key shape is `${normalizedLine}|${period}` — normalized, because the same line reaches this table
+ * under more than one spelling and `normalizeClosingLine` is what settles them.
+ */
+export async function listEverPublishedClosingKeys(): Promise<Set<string>> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("monthly_closing_publications")
+    .select("line, normalized_line, period");
+  // Throws rather than returning an empty set — see listUnpublishedClosings for why this file's
+  // usual fail-safe-to-empty is the WRONG direction here.
+  if (error) throw new Error(`Could not read the closing publication history: ${error.message}`);
+  const keys = new Set<string>();
+  for (const row of data ?? []) {
+    const record = row as Record<string, unknown>;
+    const normalized = String(record.normalized_line ?? "") || normalizeClosingLine(String(record.line ?? ""));
+    const period = String(record.period ?? "");
+    if (normalized && period) keys.add(`${normalized}|${period}`);
+  }
+  return keys;
+}
+
+/** One month that is finished but is not fully published. Reported per PERIOD, never per line. */
+export type UnpublishedClosingPeriod = {
+  period: string;
+  /** The first day this period could have been published, Cairo. */
+  opensOn: string | null;
+  unpublishedLines: string[];
+  publishedLines: string[];
+};
+
+/**
+ * The complement, computed from injected facts so every calendar edge is testable without a clock
+ * or a database — the same pure-core split as `scripts/needs-you.mjs` and `branch-pr-state.mjs`.
+ *
+ * Reported per PERIOD rather than per (line, period) for two reasons. A validated import batch is
+ * per distributor file and not per line, so a per-line cross-product would claim a line had data it
+ * never had; and one merged row — "August 2026: CNS and Pedia published, Anti Infective is not" —
+ * is how this fits on the screen without a fourth column.
+ */
+export function selectUnpublishedClosings(input: {
+  lines: readonly string[];
+  periodsWithData: readonly string[];
+  everPublished: ReadonlySet<string>;
+  now: Date;
+}): UnpublishedClosingPeriod[] {
+  // Normalize for the LOOKUP, report the line as it was given. `normalizeClosingLine` lower-cases,
+  // so matching and displaying with the same string would print "anti infective" on a screen whose
+  // whole job is to be read at a glance — the owner's names-never-codes rule covers mangled casing
+  // just as much as it covers raw ids.
+  const lines = input.lines
+    .map((line) => ({ display: String(line ?? "").trim(), key: normalizeClosingLine(line) }))
+    .filter((line) => line.display && line.key);
+  const out: UnpublishedClosingPeriod[] = [];
+
+  for (const period of [...new Set(input.periodsWithData)].sort((a, b) => b.localeCompare(a))) {
+    // A month that has not finished has no closing at all, so it is not outstanding work. This is
+    // also what keeps the RUNNING month off the board, and it resolves in Cairo — a UTC reading
+    // would put the new month on the board three hours early on the 1st.
+    if (!isClosingPeriodComplete(period, input.now)) continue;
+
+    const unpublishedLines: string[] = [];
+    const publishedLines: string[] = [];
+    for (const line of lines) {
+      if (input.everPublished.has(`${line.key}|${period}`)) publishedLines.push(line.display);
+      else unpublishedLines.push(line.display);
+    }
+    if (unpublishedLines.length === 0) continue;
+    out.push({ period, opensOn: closingPeriodOpensOn(period), unpublishedLines, publishedLines });
+  }
+  return out;
+}
+
+/**
+ * Which finished months are not fully published yet.
+ *
+ * 🔴 IT THROWS, AND THAT BREAKS THIS FILE'S OWN CONVENTION DELIBERATELY. Every other read here
+ * returns `[]` / `false` / `null` on error, because their fail-safe direction is "treat it as
+ * unpublished, leak no draft". Here an empty array means the opposite — "every month is published,
+ * nothing needs you" — which is the under-report this whole module exists to prevent. The needs-you
+ * adapter catches it and renders the source as unavailable, in amber, with the reason. Do not
+ * helpfully restore the `catch { return []; }`.
+ *
+ * Head Office cannot appear: `listMonthlyClosingLines` runs every caller through
+ * `selectClosingLines`, which drops it and every non-sales sentinel. That rule holds here by
+ * construction rather than by being remembered.
+ *
+ * Periods come from `listMonthlyClosingPeriods`, i.e. only months with a VALIDATED import batch. A
+ * month nobody imported has nothing to close and must never be printed as outstanding work — which
+ * is also what stops this from listing every month since the data began.
+ */
+export async function listUnpublishedClosings(now: Date = new Date()): Promise<UnpublishedClosingPeriod[]> {
+  const [lines, periodsWithData, everPublished] = await Promise.all([
+    listMonthlyClosingLines(),
+    listMonthlyClosingPeriods(),
+    listEverPublishedClosingKeys(),
+  ]);
+  return selectUnpublishedClosings({ lines, periodsWithData, everPublished, now });
 }
 
 /**

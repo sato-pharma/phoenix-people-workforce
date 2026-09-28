@@ -1,40 +1,69 @@
 ---
 name: organogram-3line-reconciliation-2026-07
-description: "Anti Infective/Pedia/CNS organogram area reconciliation (2026-07-06) — fixed structure counts, shared-geography pattern, Nosiba Salah acting-DM, pending Pedia/CNS fix"
-metadata: 
+description: "How the sales organogram is actually built, learned reconciling all 3 lines to the owner's fixed structure. CRITICAL: the areas table is NOT partitioned per line — one physical area row is staffed by one rep from EACH of Anti Infective, Pedia and CNS at once, and areas.line_id marks only which line's naming owns the row, so NEVER 'fix' a shared area by changing its line_id. And the org chart has FOUR layers that must ALL reconcile — filled seats, vacant seats, manager parenting, and ghost (stale non-open) vacancy cards — so a fix that touches only employees.area_id leaves the chart still looking wrong."
+metadata:
   node_type: memory
   type: project
   originSessionId: 0ac40777-29b1-46d4-9f33-552b74b6673b
+  modified: 2026-09-26T00:32:44.559Z
 ---
 
-Owner (Anwar/CEO side) gave the authoritative "fixed structure" (job_title × area, per line) for all 3 sales lines and required the live organogram to match it exactly, permanently: **areas/seats are constant; only people are variable** (resignations/vacancies don't remove a seat).
+The owner (CEO side) gives an authoritative "fixed structure" (job_title × area, per line) the live
+organogram must match exactly and permanently: **areas/seats are constant, only people are variable** —
+a resignation or vacancy never removes a seat ([[organogram-vacancy-occupancy-truth]],
+[[never-change-the-organogram-skeleton]]). (The 2026-07-06 reconciliation of all three lines shipped and
+was verified live; its specific seat counts are long superseded by later org moves — do not quote them.)
 
-**Structural seat counts (from the owner's pasted lists, confirmed by line-by-line count, then corrected by owner):**
-- Anti Infective: 35 MR + 6 DSM + 1 NSM + 1 PM = 43
-- Pedia: 38 MR (owner corrected: Alex-Behiera is 6 seats not 7 — "Alex Center 1"/"Alex Center 2" in the original paste was a duplicate, collapsed to one "Alex Center" seat) + 6 DSM + 1 NSM + 1 GPM + 1 PM + 1 RM (Regional Sales Manager, "Alex-Delta" — owner added this after the fact, already correctly in DB as PD-0001 Hany Saad Mohamed Omar, area_id 1011) = 48
-- CNS: 34 MR + 6 DSM + 1 NSM = 41
-- Grand total: 107 MR / 18 DSM / 132 seats.
+## 🔴 Shared geography — the load-bearing design fact
 
-**Critical design discovery: shared geography across lines.** The `areas` table is NOT partitioned per line for scope purposes — the SAME physical territory (area row) is routinely staffed by one rep each from Anti Infective, Pedia, AND CNS simultaneously (verified via multiple areas: Cairo East 2, Dakahlia 1-3, Alex East, Gharbia 1/2, Kafr El-Sheikh, etc. each had 3 reps, one per line, on the identical area_id). `areas.line_id` marks which line's naming convention "owns" that specific row, not who's allowed to staff it. **Do not "fix" a shared area by changing its line_id** — that breaks the other two lines' org charts. Only two categories of real defect exist:
-1. **Double-booking**: two people from the same line sharing one generic row when the structure calls for a split (e.g. Anti Infective's Qena 1/Qena 2 both wired to Pedia's merged "Qena" — team_id already encoded which was which via team code suffix `qena_1_.../qena_2_...`, used to disambiguate and split correctly).
-2. **Name mismatch**: an active rep's displayed area name doesn't match what THAT line's list calls it (e.g. a Pedia rep showing "Gharbia (1)" when Pedia's own structure calls it "Mahalla") — fixed by repointing to that line's own already-existing (usually already-seeded, just unused) row of the correct name, or creating one if genuinely missing.
+The `areas` table is **NOT partitioned per line** for scope. The **same physical territory (one
+`area_id`) is routinely staffed by one rep from Anti Infective, Pedia AND CNS simultaneously** (Cairo East
+2, the Dakahlia areas, Alex East, the Gharbia areas, Kafr El-Sheikh… each carried three reps, one per
+line, on the identical `area_id`). **`areas.line_id` marks only which line's naming convention "owns" that
+row — not who may staff it.** **Never "fix" a shared area by changing its `line_id`** — that breaks the
+other two lines' org charts.
 
-Anti Infective's area master was the most incomplete (7 rows had to be created: Cairo East 2, Assuit 2, Dakahlia 1/2/3/4, Tanta; 1 rename Alex East 2→Alex East). Pedia's and CNS's own area masters were already very complete/well-seeded with exact-matching names (e.g. CNS's "Cairo East 1,2 - Abbasia & Kobbah (East-2)" already existed verbatim) — fixing those two lines is almost entirely repoints, not creation. See [organogram-vacancy-occupancy-truth](organogram-vacancy-occupancy-truth.md) for the general seats-are-fixed principle this extends.
+Only two things are ever real defects (the third looks like one and is not):
+1. **Double-booking** — two people from the *same* line on one generic row when the structure wants a
+   split. `team_id` already encodes which is which (team-code suffix, e.g. `qena_1_…`/`qena_2_…`); use it
+   to disambiguate and split.
+2. **Name mismatch** — a rep's displayed area name isn't what THAT line calls it (a Pedia rep showing
+   "Gharbia (1)" when Pedia's structure calls it "Mahalla").
 
-**Nosiba Salah Hussenin Moussa (B-1, Anti Infective, Minia 1, Upper Egypt)** is formally job_title "Medical Representative" but acts as an informal district manager: her own manager_hr_id is the NSM (B-157) directly, bypassing DSM Ahmed Nashaat (B-175), and she has her own direct reports (Aisha Ehab Mamdouh B-79 active on Minia 2; a resigned B-106; an open Bani Suef vacancy already lists her as manager). This is already correctly modeled in live data via manager_hr_id — not a bug, don't "fix" it. Owner confirmed (2026-07-06): leave as-is — job_title stays "Medical Representative," the informal manager_hr_id/direct-reports setup is the intended permanent arrangement, not a pending promotion.
+**The fix pattern: repoint the rep to that same line's OWN already-seeded row of the correct name; create
+a new row only when it is genuinely missing; and never touch a shared row's `line_id`.** An org migration
+should be idempotent, keyed by `areas.code` (globally unique) with FROM-join guards so `area_id` is never
+nulled when a target row is absent (re-applies as a true no-op).
 
-**Status: all 3 lines fully applied and verified live (2026-07-06).** Anti Infective (7 new area rows + 1 rename + 16 repoints), Pedia (1 renamed row "Alex Center 1"→"Alex Center" + 1 new "Mahalla" row + 5 repoints), CNS (11 repoints, no new rows needed) all landed on production (`ozucdzovmcqvepbozvqf`) and were re-verified against the owner's structure afterward. Owner corrected one count mid-session: Pedia's Alex-Behiera district is 6 MR seats not 7 — "Alex Center 1"/"Alex Center 2" in the original paste was a duplicate entry, collapsed to a single "Alex Center" seat (Pedia's own row, id 57, renamed). Final confirmed totals: Anti Infective 43 seats (35 MR/6 DSM/1 NSM/1 PM), Pedia 48 (38 MR/6 DSM/1 NSM/1 GPM/1 PM/1 RM), CNS 41 (34 MR/6 DSM/1 NSM) — grand total 132 seats, 107 MR. If asked to re-verify or extend this later, the fix pattern (repoint to same-line's own already-seeded row; only create new rows when genuinely missing; never touch a shared row's `line_id`) is the one to keep using.
+## 🔴 The org chart has FOUR layers — reconcile ALL of them
 
-**CRITICAL — the organogram has TWO layers, and "nothing changed" meant the SECOND one.** The org chart (`org-chart.tsx` via `getVacancyReport`) renders **filled seats (from `employees.area_id`) PLUS open/vacant seats (from `position_vacancies`)**. Fixing only the employees' `area_id` (first migration) makes filled cards correct but leaves the vacant-seat cards stale — so the user rightly kept saying "nothing fixed in the organogram" because they were looking at the empty seats. The vacant layer had: stale duplicates (an OPEN vacancy for a seat that is actually FILLED → ghost card next to the real one), a phantom (open CNS "Sharkia 2", not a CNS structure seat), and genuinely-empty structure seats with NO card at all. **Always reconcile BOTH layers.** To check a line matches its structure: `filled_count + open_vacancy_count == structure_seat_count` AND no area is both filled and has an open vacancy in the same line. `position_vacancies`: status ∈ {open,filled,cancelled}, `vacancy_code` UNIQUE, no user triggers, manager_hr_id FK→employees. Manually-seeded structural vacancies (e.g. `VAC-PEDIA-CAIRO-*`, null manager when that DSM is vacant) are an established pattern — safe to add more. Second migration `20260706110000_sales_vacancy_layer_reconciliation.sql` (PR [#887](https://github.com/Phoenix-HR/phoenix-people-workforce/pull/887)) closed 4 stale/phantom vacancies + opened 4 real empty seats + created AI "Heliopolis" area. Final verified per-line: AI 35 (27+8), Pedia 38 (26+12), CNS 34 (32+2).
+Fixing one layer and declaring victory is why "nothing changed in the organogram" survived migration after
+migration. `getVacancyReport` / `org-chart.tsx` render all of these together:
 
-**THIRD dimension — manager parenting (tree grouping).** Even with correct areas AND correct counts, the chart can still look wrong because it nests every seat under its `manager_hr_id`; a seat pointed at the NSM or null floats loose instead of grouping under its district DSM. To audit: list every MR seat (filled+vacant) whose parent's job_title is NOT 'District Sales Manager' — the ONLY legitimate exceptions are (a) AI Nosiba Salah B-1 acting-DM sub-team (Minia 1 under NSM; Minia 2 + Bani Suef under B-1), and (b) Pedia Cairo district which is genuinely vacant-DSM with only NASR CITY filled (owner confirmed 2026-07-06 this scatter is CORRECT — do NOT "fix" it). The one real defect found this way: CNS "Downtown" vacancy was parented to the NSM (B-122) instead of CNS Giza DSM (B-117) → fixed by third migration `20260706120000_cns_downtown_vacancy_reparent.sql` (PR [#888](https://github.com/Phoenix-HR/phoenix-people-workforce/pull/888)). After that, all 3 lines fully match the structure in all three dimensions (area label, filled/vacant count, manager grouping).
+1. **Filled seats** (`employees.area_id`). Fixing only this makes filled cards right and leaves vacant
+   cards stale.
+2. **Vacant seats** (`position_vacancies`; status ∈ {open, filled, cancelled}, `vacancy_code` UNIQUE,
+   `manager_hr_id` FK→employees). The chart draws filled seats PLUS open vacancies. Reconcile both:
+   `filled_count + open_vacancy_count == structure_seat_count`, AND no area is both filled and open in the
+   same line. Manually-seeded structural vacancies (`VAC-…`, null manager while that DSM is vacant) are an
+   established, safe pattern.
+3. **Manager parenting (tree grouping).** The chart nests each seat under its `manager_hr_id`; a seat
+   pointed at the NSM or null floats loose instead of grouping under its district DSM. Audit: list every
+   MR seat (filled + vacant) whose parent's job_title is NOT 'District Sales Manager'. Legitimate
+   exceptions are **acting-DMs** (an MR whose `manager_hr_id` bypasses the DSM straight to the NSM and who
+   has her own direct reports — owner-confirmed as the intended permanent arrangement, NOT a pending
+   promotion; [[acting-dm-authority-is-app-role-not-job-title]]) and a genuinely vacant-DSM district.
+4. 🔴 **GHOST vacancy cards.** The organogram filter passes ANY vacancy row that classifies as a
+   sales-structure role (including `medicalRep`) to the chart **even when `status = 'filled'` or
+   `'cancelled'`**. A stale `filled` MR-vacancy with no matching live employee in its slot survives as a
+   phantom VACANT card and inflates the line's MR count. **A `status='open'`-only SQL query MISSES these
+   (they are `filled`) — audit ghosts against the actual `/api/reports/organogram` payload (a worktree
+   dev-server + dev-auth), not against SQL counts.** The durable code fix is `&& level !== "medicalRep"` in
+   the filter, excluding non-open MR vacancies entirely.
 
-**Login note:** admin-HR login = HR_ID `PHX-1`, role Super Admin (company-wide organogram). Cannot browser-verify the live authenticated page (won't enter password); use local dev-server + dev-auth (`GET /api/dev-auth?role=Super Admin`) against prod DB, or verify via SQL on the parenting/area/count dimensions above.
+## Verification note
 
-**FOURTH dimension — GHOST vacancy cards (the real reason "still not fixed" persisted through 3 migrations).** On `origin/main`, `getVacancyReport`'s organogram filter is `status === "open" || classifyOrganogramStructureLevel(row) !== null` — so ANY vacancy row whose title classifies as a sales-structure role (incl. `medicalRep`) is passed to the chart even when `status='filled'` or `'cancelled'`; downstream slot-reconciliation then decides. A stale `filled` MR-vacancy row with no matching live employee in its exact area/manager slot survives as a phantom VACANT card. Two such rows (both `updated_at` May 2026) were the culprits: **position_vacancies id 11** = Pedia "Alex Center 2" (area 56, leftover from the Alex Center 1/2→single collapse) and **id 19** = CNS "Port said - Domiat" (area 62, dup of filled CN-0003). They made Pedia render 39 MR (not 38) and CNS 35 (not 34). Cancelling them fixed it (PR [#891](https://github.com/Phoenix-HR/phoenix-people-workforce/pull/891)). **Key lesson: a `status='open'`-only SQL query MISSES these — they were `filled`. To audit ghosts, verify against the actual `/api/reports/organogram` payload (run origin/main locally via worktree dev-server + dev-auth), not just SQL counts.** The `codex/agents-policy-v2` branch already has the durable CODE fix (`&& level !== "medicalRep"` in the filter) which excludes non-open MR vacancies entirely — if this recurs, that filter change on main is the permanent fix.
-
-**Infra note for local render:** two `next dev` from the SAME folder (primary + a parallel Claude session) corrupt `.next` and the server dies instantly; run the dev server from an isolated WORKTREE (`cd _wt-... && npx next dev -p 3210`) for a stable render. preview_start ignores worktree cwd. Then drive it via claude-in-chrome at `localhost:<port>` with dev-auth. The client page sometimes hangs on "Loading workspace" — fetch `/api/reports/organogram` via `javascript_tool` instead of fighting the visual render.
-
-**Shipped as a real migration (2026-07-06)**: `supabase/migrations/20260706100000_sales_line_area_reconciliation.sql`, PR [#885](https://github.com/Phoenix-HR/phoenix-people-workforce/pull/885), merged to `main`. Idempotent, keyed by `areas.code` (globally unique) with FROM-join guards so `area_id` is never nulled if a target row is missing — verified as a true no-op when re-applied to production. **Staging (`izhmxvgiktiafqusolot`) was deliberately NOT touched**: its `areas` table lacks the `is_active` column and enforces a stricter `UNIQUE(name)` constraint that production doesn't have — real, pre-existing schema drift on this table between the two projects, separate from this task. If staging ever needs the same area/employee fix, that schema drift has to be resolved first.
-
-`v_active_organogram` looked like a materialized view via `pg_matviews` in one query but `pg_class.relkind` said plain view (`'v'`) — trust `pg_class` over `pg_matviews` if they ever disagree again; it's the authoritative catalog.
+`pg_class.relkind` is the authoritative catalog — trust it over `pg_matviews` if they disagree
+(`v_active_organogram` read as a matview in `pg_matviews` but `relkind` said plain view `'v'`). Browser
+verification uses local dev-auth (`GET /api/dev-auth?role=Super Admin`) against the prod DB — the live
+authenticated page can't be driven (no password entry).

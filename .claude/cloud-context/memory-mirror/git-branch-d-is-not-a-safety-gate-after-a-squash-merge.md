@@ -1,6 +1,6 @@
 ---
 name: git-branch-d-is-not-a-safety-gate-after-a-squash-merge
-description: "`git branch -d` on a squash-merged branch reports it merged to its own STALE remote-tracking ref, not to main, and deletes it — so the safe flag would pass identically on unmerged work. Gate a branch deletion on the merged PR, and archive the tip to refs/backups/* before deleting."
+description: "`git branch -d` on a squash-merged branch reports it merged to its own STALE remote-tracking ref, not to main, and deletes it — so the safe flag would pass identically on unmerged work. Gate a branch deletion on the merged PR, and archive the tip to refs/backups/* before deleting, pushed to origin. Every DIFF reading of such a branch over-reports too: three-dot shows its whole history, an unscoped two-dot adds everything main deleted since, and only a two-dot scoped to the path list from git log main..branch --name-only answers whether anything is stranded."
 metadata: 
   node_type: memory
   type: project
@@ -57,6 +57,33 @@ CI (`ci.yml` fires on `pull_request` and pushes to `main`) and creates no PR, so
 After the delete, `-d` leaves the stale `refs/remotes/origin/<branch>` behind. Clear that one ref with
 `git update-ref -d refs/remotes/origin/<branch>` rather than `git remote prune origin` — remote-tracking
 refs live in the shared primary `.git` and ~30 worktrees plus other live sessions read them.
+
+**And every DIFF reading of the same branch over-reports, in two different ways.** Measured
+2026-09-27 on `codex/gate-proven` (tip `b5c76a3a3`), a branch with **no PR of its own** because another
+session took it as the base for #4554 — so the merged-PR gate returned nothing and could not answer:
+
+| reading | said | what it showed |
+| --- | --- | --- |
+| `git diff origin/main...branch` | 137 insertions | the branch's WHOLE history — a squash merge leaves the merge base at the fork point for ever |
+| `git diff branch origin/main`, **unscoped** | 139 lines | the branch's work PLUS everything `main` deleted since, rendered as `+` on the branch side |
+| the same, **scoped to the branch's own files** | **6 lines** | the answer |
+
+The unscoped two-dot is the dangerous one: it showed 139 lines of real-looking business-review code the
+branch never touched, it grows with `main`'s churn, and it argues AGAINST deleting a branch whose work
+has landed — so its failure mode is a merged branch kept alive for ever.
+
+**Derive the path list, never pick it.** Hand-picking two of the five files returned 2 lines, right
+conclusion for the wrong reason:
+
+```
+git log origin/main..<branch> --name-only          # the files the branch actually touched
+git diff <branch> origin/main -- <those files>     # a `-` line is branch content main LACKS
+```
+
+**A local `refs/backups/*` is not a backup, and nothing says so.** `new-session.mjs --remove` does not
+push one, `git update-ref` succeeds silently, and `git branch -D` prints `(was <sha>)` as though
+something kept it — so the gap shows up only when the disk is gone. Verify the PUSH with
+`git ls-remote origin 'refs/backups/<name>'`, **after** the delete as well as before.
 
 Related: [[main-is-not-the-primary-checkout]] ·
 [[gh-pr-merge-exits-nonzero-from-a-worktree-after-it-succeeded]]
