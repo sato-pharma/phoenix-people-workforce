@@ -1133,6 +1133,14 @@ function AddVisit({
         setUsePlacePhoto(false);
       } else if (code && code.startsWith("phoenix_crm_photo_")) {
         setPhoto(null);
+      } else if (code && code.startsWith("phoenix_crm_voice_")) {
+        // 🔴 The slot was spent, expired or never received the audio. Without this the note stays
+        // attached and every press of Save hits the SAME refusal — the rep cannot save a visit he
+        // has actually made, and nothing on screen tells him the recording is the reason. Dropping
+        // it lets him save now and record again if he wants to. The web screen has always done
+        // this; the phone did not, and the phone is where the recording is made.
+        // The photo is deliberately left alone — the visit itself is still good.
+        setVoiceNote(null);
       } else if (code === "phoenix_crm_clarification_required") {
         // The server's own test says this customer was not on a plan sent for today. Open the reason
         // box and keep the photo and the visit id: one line, and the SAME visit saves again.

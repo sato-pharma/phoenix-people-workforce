@@ -1574,6 +1574,7 @@ import { runPhoenixCrmDuplicatePhotosTests } from "./phoenix-crm-duplicate-photo
 import { runPhoenixCrmBehaviourIntegrityTests } from "./phoenix-crm-behaviour-integrity.test.ts";
 import { runPhoenixCrmOfflineClockTests } from "./phoenix-crm-offline-clock.test.ts";
 import { runPhoenixCrmOfflineWireTests } from "./phoenix-crm-offline-wire.test.ts";
+import { runPhoenixCrmRefusalMessagesTests } from "./phoenix-crm-refusal-messages.test.ts";
 import { runPhoenixCrmOutboxTests } from "./phoenix-crm-outbox.test.ts";
 import { runPhoenixCrmPortalSidebarTests } from "./phoenix-crm-portal-sidebar.test.ts";
 import { runPhoenixCrmAmPmWordTests } from "./phoenix-crm-am-pm-words.test.ts";
@@ -5283,6 +5284,11 @@ await runTest(
 await runTest(
   "Phoenix CRM's save button reaches the queue, so a rep in a dead spot keeps his visit (A1, the wiring — until now the queue had NO caller and could not have one, because `@/*` resolves only to `mobile/src/*` and no phone file could supply `drainOutbox` its rules, so it shipped uncallable; BOTH failure points now end in the queue rather than in a message — a photo upload that never landed is held without even attempting the save, and a save whose connection died after the photo got through is held rather than sending him back to the door; a visit is NEVER held without its stamped photo, because one that can never be sent would never leave; a full queue refuses the NEWEST capture with an instruction he can act on and discards nothing older; the elapsed reading is taken at the PRESS from the monotonic clock, and the claim carries an anchor id, a run id and a duration with no timestamp of any kind; every word he reads says the visit is SAVED on his phone, in green, in the same place a sent visit is confirmed; and a PLACE can never be queued, because the server resolves its brick, area and address from the coordinates at capture)",
   runPhoenixCrmOfflineWireTests,
+);
+
+await runTest(
+  "Every Phoenix CRM refusal the DATABASE can raise has words a rep can act on (found 2026-09-28 with six missing, four of them the voice note's whole family — `db.ts` falls back to \"This entry could not be saved. Reload the page and try again.\" for any refusal absent from REFUSALS, which does not crash, does not log and looks wrong nowhere, so the only way to see it is to compare what the SQL RAISES against what has a message; the advisory-lock keys `phoenix_crm:plan:`, `phoenix_crm:seat:` and `phoenix_crm:monthly:` share the prefix and are deliberately not counted, since five false positives would teach the next session to ignore this; and BOTH visit forms must DROP a refused recording rather than keep it attached, because otherwise every press of Save hits the same refusal and a real visit can never be entered at all — the phone did not do this until now, and the phone is where the recording is made)",
+  runPhoenixCrmRefusalMessagesTests,
 );
 
 await runTest(

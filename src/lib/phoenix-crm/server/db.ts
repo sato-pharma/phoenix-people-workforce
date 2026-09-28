@@ -31,6 +31,7 @@ const REFUSALS: Record<string, Refusal> = {
   already_pending: { status: 409, message: "A request for this customer is already waiting for a decision." },
   request_not_found: { status: 404, message: "This request is no longer there. Reload the page." },
   request_decided: { status: 409, message: "This request was already decided. Reload the page." },
+  already_decided: { status: 409, message: "This was already decided. Reload the page." },
   day_not_editable: { status: 409, message: "A day that has passed cannot be changed. Reload the planner." },
   version_conflict: { status: 409, message: "This plan was changed on another screen. Reload it and try again." },
   not_editable: { status: 409, message: "This plan is waiting for review or approved. Reopen it to change it." },
@@ -39,6 +40,7 @@ const REFUSALS: Record<string, Refusal> = {
   plan_not_found: { status: 404, message: "This plan is no longer there. Reload the page." },
   bad_transition: { status: 409, message: "This plan has already moved on. Reload it." },
   week_passed: { status: 409, message: "This week is over, so its plan can no longer change. Reload the page." },
+  month_passed: { status: 409, message: "This month is over, so its plan can no longer change. Reload the page." },
   empty_plan: { status: 409, message: "Place at least one customer before sending the plan." },
   bad_participants: { status: 400, message: "Choose who was on the visit." },
   id_conflict: { status: 409, message: "This visit could not be saved. Start the visit again." },
@@ -46,6 +48,14 @@ const REFUSALS: Record<string, Refusal> = {
   photo_used: { status: 409, message: "This photo is already used. Take a new photo." },
   photo_expired: { status: 409, message: "This photo was taken more than 2 hours ago. Take a new photo." },
   photo_missing: { status: 409, message: "The photo did not finish uploading. Check your connection and take the photo again." },
+  // The voice note's four, word-for-word beside the photo's because they are the same four states of
+  // the same kind of slot. Without them a rep whose recording slot lapsed was told only "this entry
+  // could not be saved", which names nothing he can act on — and re-recording is exactly what he has
+  // to do. The two hours are the slot's, set in phoenix_crm_take_voice.
+  voice_not_issued: { status: 400, message: "This recording was not made in Phoenix CRM. Record the note again." },
+  voice_used: { status: 409, message: "This recording is already on a visit. Record a new note." },
+  voice_expired: { status: 409, message: "This recording was made more than 2 hours ago. Record it again." },
+  voice_missing: { status: 409, message: "The recording did not finish uploading. Check your connection and record it again." },
   already_visited: { status: 409, message: "This customer's visit for today is already saved." },
   // The database's own sent-plan test disagreed with the form: the customer was not on a plan this rep
   // had sent for that day, so the visit needs a reason before it can be saved as an off-plan one.
