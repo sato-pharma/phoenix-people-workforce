@@ -55,8 +55,11 @@ env:
   SEMGREP_VERSION: "1.171.0"
 
 jobs:
+  # This `runs-on` is byte-identical to ci.yml's four and is pinned that way — `secret-scan` is a
+  # REQUIRED check, so it must move with them and never separately. The five conditions are
+  # explained once, above ci.yml's `validate` job. Do not edit one copy alone.
   secret-scan:
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ (vars.CI_SELF_HOSTED != 'off' && vars.CI_RUNNER_LABEL != '' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'ci-runner/')) && vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     timeout-minutes: 10
 
     steps:
@@ -158,7 +161,7 @@ jobs:
   sast-scan:
     # Never on a PR. github.event_name is `schedule` or `workflow_dispatch` here.
     if: github.event_name != 'pull_request'
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ (vars.CI_SELF_HOSTED != 'off' && vars.CI_RUNNER_LABEL != '' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'ci-runner/')) && vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     timeout-minutes: 15
 
     steps:

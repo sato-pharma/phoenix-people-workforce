@@ -60,12 +60,20 @@ jobs:
     # was actually verified.
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
 
-    # DELIBERATELY NOT `${{ vars.CI_RUNNER || 'ubuntu-latest' }}`, unlike ci.yml. This job is
-    # infrastructure that must always run, so it follows the drift checks' precedent of a literal
-    # label instead. If CI_RUNNER were ever pointed at a label with no online runner, a job does NOT
-    # fall back — it QUEUES — and a queued sync means staging stops advancing with nothing red
-    # anywhere. As of 2026-09-27 the repository has zero self-hosted runners registered, which makes
-    # that a live hazard rather than a theoretical one.
+    # DELIBERATELY a literal label, unlike ci.yml's computed `runs-on`. This job is infrastructure
+    # that must always run, so it follows the drift checks' precedent. If a job's label matches no
+    # ONLINE runner it does NOT fall back — it QUEUES — and a queued sync means staging stops
+    # advancing with nothing red anywhere.
+    #
+    # 🔴 That hazard is LIVE, and this comment used to get the reason backwards: it said the
+    # repository had ZERO self-hosted runners registered. Self-hosted runners ARE registered here.
+    # 🔴 Never quote a COUNT for them: it read ten and then three inside the same hour on 2026-09-28,
+    # because the Railway replicas register non-ephemerally and stale registrations accumulate until
+    # someone clears them, and a superseded registration keeps the OLD label set while it lingers.
+    # Read `actions/runners` and compare label SETS, never a total. The Railway replicas carry
+    # `railway-eu` as of 2026-09-28 (owner's instruction) so that pool can be named deliberately,
+    # which is why ci.yml's per-branch switch takes its label from a variable rather than hard-coding
+    # one — a hard-coded label that matches nothing does not fail, it queues.
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
