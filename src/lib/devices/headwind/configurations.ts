@@ -288,7 +288,7 @@ export async function setHeadwindBranding(
  * removes it. The deprecated `remove` boolean beside it is overwritten server-side and is not sent.
  */
 export async function linkHeadwindApp(
-  input: { applicationId: number; configurationId: number; action: 0 | 1 | 2 },
+  input: { applicationId: number; configurationId: number; action: 0 | 1 | 2; showIcon?: boolean },
   actor: string,
   fetchImpl: typeof fetch = fetch,
   env: NodeJS.ProcessEnv = process.env,
@@ -301,12 +301,30 @@ export async function linkHeadwindApp(
     throw new HeadwindConfigurationError("An app is either installed, hidden or removed — nothing else.");
   }
 
+  // 🔴 `showIcon` AND `remove` ARE REQUIRED IN EACH ENTRY, AND OMITTING THEM IS A 200 TOO. Headwind
+  // dereferences both while building the link row, so a minimal entry throws a bare
+  // `java.lang.NullPointerException` and the server answers `error.internal.server` under an HTTP
+  // **200** — measured on production 2026-09-28 linking the Phoenix app to configuration 3, where the
+  // same call succeeded the instant these two fields were added. `applicationId` inside the entry is
+  // NOT enough on its own; it was tried and failed identically.
+  //
+  // 🔴 `showIcon` HERE IS THE LINK'S OWN, not the application's. The app row carries one as well and
+  // they are separate rows in Headwind — this is whether the icon shows for tablets on THIS
+  // configuration, which is why it travels with the link and defaults to the app's own setting.
   await callHeadwind(
     "/rest/private/applications/configurations",
     {
       body: JSON.stringify({
         applicationId: input.applicationId,
-        configurations: [{ action: input.action, configurationId: input.configurationId }],
+        configurations: [
+          {
+            action: input.action,
+            applicationId: input.applicationId,
+            configurationId: input.configurationId,
+            remove: false,
+            showIcon: input.showIcon !== false,
+          },
+        ],
       }),
       method: "POST",
     },
