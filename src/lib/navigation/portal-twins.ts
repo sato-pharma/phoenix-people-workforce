@@ -115,6 +115,11 @@ const TWIN_RULES: readonly TwinRule[] = [
   // `week` ride across so the link lands on the plan they were told about, and the plans tab opens
   // when a `plan` is present. The admin page names this destination in its own source.
   { from: "/admin/plan-verification", to: "/employee-portals/reps-list", carryQuery: ["plan", "week"] },
+  // Field Activity (#4647, corrected here). Five of its eight roles — DM, RM, NSM, PM and GPM — are
+  // PORTAL seats, and the module shipped with only an /admin/ page, so the layout bounced every one
+  // of them to the portal home: the sidebar row they were given pointed at an address their own
+  // shell refuses. The portal half is a real page with the same gate; the admin page names it.
+  { from: "/admin/field-activity", to: "/employee-portals/field-activity" },
 
   // ── Direct orders ──────────────────────────────────────────────────────────
   { from: "/admin/direct-orders", to: "/employee-portals/direct-orders" },

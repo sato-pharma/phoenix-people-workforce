@@ -169,6 +169,18 @@ export type EmployeePortalNavVisibility = {
   showCoachingAnalyticsTab?: boolean;
   showDoubleVisitAnalyticsTab?: boolean;
   showDoubleVisitReportTab?: boolean;
+  // Field Activity — one person's field days end to end, at /employee-portals/field-activity.
+  //
+  // It shipped (#4647) with its ONLY catalog row in employeePortalNavigationSectionSeeds and an
+  // /admin/ href, which is the Early Birds trap below repeated: that catalog drives the command
+  // palette and Modules Control, never the portal rail, and app/(admin)/layout.tsx bounces every
+  // portal-mode viewer out of /admin/** before the page runs. So five of the module's eight roles
+  // — DM, RM, NSM, PM, GPM — could neither see it nor reach it by typing the address. The owner
+  // found it the same evening: "I CANNOT SEE IT IN NSM SIDEBAR?".
+  //
+  // The three roles absent here (SFE Manager, Super Admin, CEO) are ADMIN-mode and keep the
+  // /admin/field-activity page with its own row in adminNavigationSectionSeeds.
+  showFieldActivityTab?: boolean;
   // Early Birds — the fortnightly field-discipline board at /employee-portals/early-birds.
   //
   // The page shipped with NO portal sidebar row at all. Its only catalog entry sits in
@@ -890,6 +902,17 @@ export function resolveEmployeePortalNavVisibility(
       resolvedRole === "Product Manager" ||
       resolvedRole === "Group Product Manager" ||
       resolvedRole === "Training Manager",
+    // Field Activity — the PORTAL half of FIELD_ACTIVITY_ROLES (field-activity/access.ts), which is
+    // that list minus the three admin-mode seats. Training Manager is deliberately absent: it holds
+    // the DV board for its counts, not for one person's day. The link grants nothing on its own —
+    // resolveFieldActivityAccess re-checks the role AND the grant, and canOpenSubject narrows every
+    // request to the viewer's own org-tree scope.
+    showFieldActivityTab:
+      resolvedRole === "District Manager" ||
+      resolvedRole === "Regional Manager" ||
+      resolvedRole === "National Sales Manager" ||
+      resolvedRole === "Product Manager" ||
+      resolvedRole === "Group Product Manager",
     // Early Birds — mirrors the module's own catalog row in employeePortalNavigationSectionSeeds
     // (system-navigation.ts) exactly: every portal-mode role in its audience, MINUS Medical Rep,
     // hidden from the portal sidebar by owner instruction (2026-09-24) — the page and its
