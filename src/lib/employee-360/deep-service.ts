@@ -970,7 +970,15 @@ async function getEmployeeExpenses(hrId: string, window: Employee360Window): Pro
     claimedTotal += Number(o.claimed_total_amount ?? 0);
     expectedTotal += Number(o.expected_total_amount ?? 0);
     const eligIssue = o.eligibility_status != null && o.eligibility_status !== "eligible";
-    const territoryIssue = o.territory_validation_status != null && o.territory_validation_status !== "valid";
+    // 🔴 `"valid"` WAS NOT ONE OF THE THREE VALUES THIS COLUMN CAN HOLD. They are `matched`,
+    // `outside_expected_territory` and `not_available` — so `!== "valid"` was true for every row
+    // with a status at all, and none is null. This counted 153 of 153 outstation trips as
+    // territory-flagged, for every employee, always.
+    //
+    // Correcting the string alone would not have helped: `!== "matched"` still flags ~100%, because
+    // an outstation trip is BY DEFINITION outside the employee's own area. `matched` is the odd
+    // one — a claim for travel inside their own territory — so that is the flag.
+    const territoryIssue = o.territory_validation_status === "matched";
     if (eligIssue || territoryIssue) flaggedCount += 1;
   }
   const outstation: OutstationSummary = {

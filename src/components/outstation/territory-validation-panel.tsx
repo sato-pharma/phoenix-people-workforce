@@ -3,11 +3,15 @@
 import type { OutstationTerritoryValidationStatus } from "@/lib/outstation/types";
 import { Card } from "@/components/ui/card";
 
+// 🔴 THE COLOURS RUN THE OPPOSITE WAY TO WHAT THE NAMES SUGGEST, AND THAT IS CORRECT.
+// An outstation trip is by definition outside the employee's assigned area, so
+// `outside_expected_territory` is what a LEGITIMATE claim looks like — green. `matched` means the
+// destination was INSIDE their own area, i.e. no out-of-station travel to pay for — amber.
+// Until 2026-09-28 these were swapped, which put an amber badge on every request ever filed and
+// so told the approver nothing.
 function tone(status: OutstationTerritoryValidationStatus) {
-  if (status === "matched") return "bg-emerald-50 text-emerald-700 ring-emerald-100";
-  if (status === "outside_expected_territory") {
-    return "bg-amber-50 text-amber-700 ring-amber-100";
-  }
+  if (status === "outside_expected_territory") return "bg-emerald-50 text-emerald-700 ring-emerald-100";
+  if (status === "matched") return "bg-amber-50 text-amber-700 ring-amber-100";
   return "bg-slate-100 text-slate-700 ring-slate-200";
 }
 
