@@ -131,6 +131,7 @@ import { runPayrollMoneyTests } from "./payroll-money.test.ts";
 import { runSalesMoneyRoundingTests } from "./sales-money-rounding.test.ts";
 import { runExpenseTripDedupTests } from "./expense-trip-dedup.test.ts";
 import { runOutstationDecisionTests } from "./outstation-decision.test.ts";
+import { runOutstationTerritoryFlagIsInvertedTests } from "./outstation-territory-flag-is-inverted.test.ts";
 import { runOutstationWorkloadFreshnessTests } from "./outstation-workload-freshness.test.ts";
 import { runOutstationTripWorkloadPharmaciesTests } from "./outstation-trip-workload-pharmacies.test.ts";
 import { runOutstationExpenseImportTripIdTests } from "./outstation-expense-import-tripid.test.ts";
@@ -2059,6 +2060,10 @@ async function runTest(name: string, execute: () => void | Promise<void>) {
 
 await runTest("transactional email survives an unsubscribe (password reset must never be withheld)", runTransactionalEmailNotUnsubscribableTests);
 await runTest("module tab titles (every shell route names its module in the browser tab)", runModuleTabTitlesTests);
+await runTest(
+  "for an outstation claim matched is the EXCEPTION and outside_expected_territory is the normal case: a trip out of station is by definition outside the employee assigned area, so branching the manager-review recommendation on outside_expected_territory fired on all 153 requests ever filed and auto_approve was never once reached, and the Employee 360 territory check compared against the string valid which is not one of the three values the column can hold so it counted 153 of 153 trips as flagged for every employee always - correcting that string alone would not have helped because not-matched still flags ~100%; the badge colours follow the MEANING not the words, and the union stays at exactly three values so a fourth needs a decision at each read site rather than a default",
+  runOutstationTerritoryFlagIsInvertedTests,
+);
 await runTest(
   "an account is shown as its own job title, never the permission key (B-10 reads HR Section Head)",
   runAccountJobTitlesTests,

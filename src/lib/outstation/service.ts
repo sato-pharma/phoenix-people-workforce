@@ -675,13 +675,25 @@ function recommendationForResult(params: {
     };
   }
 
-  if (
-    params.eligibilityStatus === "needs_review" ||
-    params.territoryValidationStatus === "outside_expected_territory"
-  ) {
+  // 🔴 `matched` IS THE EXCEPTION, NOT THE PASS. This comparison used to be the other way round and
+  // it was tautological. Owner's decision, 2026-09-28.
+  //
+  // `validateTerritory` returns `matched` when the captured destination's area EQUALS the
+  // employee's assigned area. An outstation trip is by definition a trip OUTSIDE that area — that
+  // is what the word means and what the allowance pays for — so `outside_expected_territory` is the
+  // signature of a LEGITIMATE claim, while `matched` means somebody claimed an outstation allowance
+  // for a trip inside their own territory, which is the case actually worth a look.
+  //
+  // Measured on production before this flipped: across all 153 outstation requests ever recorded,
+  // the status was `outside_expected_territory` (80.4%) or `not_available` (19.6%) and NEVER
+  // `matched` — so this branch fired on every single one and the `auto_approve` below had never
+  // once been reached. A flag that is on for 100% of rows is not a flag.
+  if (params.eligibilityStatus === "needs_review" || params.territoryValidationStatus === "matched") {
     return {
       approvalReason:
-        "Location or timing checks require manager review before the request can move forward.",
+        params.territoryValidationStatus === "matched"
+          ? "The captured destination is inside the employee's own assigned area, so on the face of it this is not an outstation trip and a manager should look."
+          : "Location or timing checks require manager review before the request can move forward.",
       approvalRecommendation: "manager_review" as OutstationApprovalRecommendation,
     };
   }
@@ -1052,17 +1064,22 @@ async function validateTerritory(input: {
   const normalizedCapturedArea = normalizeArea(input.capturedArea);
   const employeeAreaKey = normalizeArea(input.employeeArea);
 
+  // 🔴 READ THESE TWO THE RIGHT WAY ROUND. `matched` is the ODD one for an outstation claim: the
+  // destination is inside the employee's own area, so there was no out-of-station travel to pay
+  // for. `outside_expected_territory` is what a genuine outstation trip looks like. The wording
+  // used to say the opposite and it drove the whole recommendation backwards — see
+  // `resolveApprovalRecommendation` above.
   if (employeeAreaKey && normalizedCapturedArea && employeeAreaKey === normalizedCapturedArea) {
     return {
-      reason: "Captured destination matches the employee area assignment.",
+      reason:
+        "Captured destination is inside the employee's own assigned area — an outstation claim would not normally be expected here.",
       status: "matched" as OutstationTerritoryValidationStatus,
     };
   }
 
   if (employeeAreaKey && normalizedCapturedArea && employeeAreaKey !== normalizedCapturedArea) {
     return {
-      reason:
-        "Captured destination is outside the employee's assigned area and should be reviewed manually.",
+      reason: "Captured destination is outside the employee's assigned area, as an outstation trip should be.",
       status: "outside_expected_territory" as OutstationTerritoryValidationStatus,
     };
   }
