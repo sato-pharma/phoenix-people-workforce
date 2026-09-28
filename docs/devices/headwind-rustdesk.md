@@ -844,13 +844,19 @@ Use a long unique password for the Headwind admin account regardless, and do not
 🔴 **One thing, and the fleet is unrecoverable without it: the `headwind-db-eu` Postgres service.** It
 holds every tablet, its configuration, its rules and its history.
 
-✅ **A DAILY SCHEDULE NOW EXISTS, set 2026-09-28 02:42 Cairo at the owner's instruction, and the first
+✅ **A DAILY AND A WEEKLY SCHEDULE NOW EXIST, both set 2026-09-28 at the owner's instruction, and a first
 backup is taken.** Read back from the API rather than assumed:
 
 | | |
 | --- | --- |
-| schedule | `DAILY`, cron `34 14 * * *` = **17:34 Cairo**, retention **6 days** |
+| daily | cron `34 14 * * *` = **17:34 Cairo**, retention **6 days** |
+| weekly | cron `47 3 * * 6` = **Saturday 06:47 Cairo**, retention **27 days** |
 | first backup | `first-backup-after-eu-cutover`, 2026-09-28 02:42 Cairo, `bb3baa15-…` |
+
+Together those give a ~4-week window rather than 6 days, which is what matters for a fleet database whose
+loss means re-enrolling every tablet by hand — a fault noticed in week two is inside the weekly retention
+and outside the daily. `MONTHLY` is available and still off; it costs further stored copies and stays the
+owner's call.
 
 🔴 **The mutation is `volumeInstanceBackupScheduleUpdate(volumeInstanceId, kinds)` and `kinds` is the
 WHOLE set, not an addition** — passing `["DAILY"]` when a weekly exists would remove the weekly. The enum
@@ -1520,8 +1526,8 @@ relay:**
    store, a chat message puts it in a transcript forever. 🔴 **Nothing RustDesk** — both its variables
    stay empty, and empty is the working setting.
 9. ~~Decide the **`headwind-db-eu` backup schedule** (§4.8).~~ ✅ **done** — he instructed it on
-   2026-09-28 and a `DAILY` schedule (17:34 Cairo, 6-day retention) plus a first on-demand backup are in
-   place. Adding `WEEKLY` or `MONTHLY` costs more stored copies and is still his call.
+   2026-09-28: `DAILY` (17:34 Cairo, 6-day retention), then `WEEKLY` (Saturday 06:47 Cairo, 27-day
+   retention), plus a first on-demand backup. `MONTHLY` is the only kind still off and stays his call.
 10. ~~Approve the merge.~~ ✅ **done** — #4444 merged 2026-09-26 03:11 Cairo, #4450 (the delivery gate
     and the certificate watch) at 03:35, serving as revision `8b5208d11`.
 11. Run the pilot on PHX-TAB-0002.
