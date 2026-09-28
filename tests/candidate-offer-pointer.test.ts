@@ -286,6 +286,120 @@ export function runCandidateOfferPointerTests(): void {
       + "address can be the SENDER'S, and the owner's own inbox is on six of production's 27 letters",
   );
 
+  // ── 6b · The record SHOWS the letter, and showing it carries no money and no leak ──────────────
+  //
+  // Until this row the pointer existed and no human could see it. Two things had to be true for it to
+  // be safe to show: `candidates: read` is a WIDER set of seats than `offers: read`, and an offer
+  // letter is where the salary lives.
+  const linkSrc = read("src/lib/recruitment/candidate-offer-link.ts");
+  const summary = linkSrc.match(/export type LinkedOfferSummary = \{[\s\S]*?\n\};/)?.[0] ?? "";
+  assert.ok(summary.length > 0, "LinkedOfferSummary must still be here — re-point this test if it moved");
+  for (const money of ["totalMonthly", "total_monthly", "costOfLiving", "salary"]) {
+    assert.ok(
+      !summary.includes(money),
+      `LinkedOfferSummary must never carry ${money} — it is rendered on a record that every seat which `
+        + "can read the pool can open, and the letter is where the salary lives",
+    );
+  }
+
+  // The loader asks the offers module ONLY when the caller says the viewer may see letters, and the
+  // default is off, so a caller that has not thought about it shows nothing rather than leaking.
+  const recordSrc = read("src/lib/recruitment/candidate-record.ts");
+  assert.match(
+    recordSrc,
+    /options: \{ withOffer\?: boolean \} = \{\}/,
+    "the offer read is opt-in with an off default — a caller that forgets must leak nothing",
+  );
+  assert.match(
+    recordSrc,
+    /options\.withOffer\s*\n?\s*\? settle<LinkedOfferSummary \| null>\("offer", linkedOfferFor\(profile\.candidate\), null\)\s*\n?\s*: Promise\.resolve\(null\)/,
+    "the false branch must not ask the offers module anything at all",
+  );
+
+  // BOTH pages ask the permission question separately from "may they open the record".
+  for (const page of [
+    "app/(admin)/recruitment/candidate/[id]/page.tsx",
+    "app/employee-portals/recruitment/candidate/[id]/page.tsx",
+  ]) {
+    assert.match(
+      read(page),
+      /withOffer: await canAccess\(access, "offers", "read"\)/,
+      `${page} must gate the offer letter on offers: read, not on candidates: read`,
+    );
+  }
+
+  // And the row itself renders the SAME wording for "not allowed to see it" as for "has none" — a row
+  // reading "hidden" would tell a reader that an offer exists, which is half the leak.
+  const recordPage = read("src/components/recruitment/candidate-record-page.tsx");
+  assert.match(recordPage, /label="Job offer"/, "the record must show the letter it points at");
+  assert.match(recordPage, /No offer letter/, "no letter and no permission read the same");
+  // Sliced FORWARD from the label so the row's own explanatory comment — which has to use the word
+  // "hidden" to explain why nothing is — cannot satisfy or break this.
+  const rowStart = recordPage.indexOf('label="Job offer"');
+  const rowBlock = recordPage.slice(rowStart, recordPage.indexOf("</KeyValue>", rowStart));
+  assert.ok(
+    !/hidden|withheld|not permitted|no access|restricted/i.test(rowBlock),
+    `the row must never say a letter is being withheld — that tells a reader one exists. Found: ${rowBlock}`,
+  );
+  assert.ok(
+    rowBlock.includes("No offer letter") && rowBlock.includes("Could not be read"),
+    "the row has exactly two fallbacks: nothing on file, and could not be read",
+  );
+
+  // ── 6c · The rule is READ by the screen, not copied — and reading it must not ship the server ───
+  //
+  // The record page prints "Declined" without a start date for the same reason the send screen sends
+  // none, so both must read ONE rule. The trap is where that rule lives: `candidate-context.ts`
+  // imports the database client and the offers service (server-only, service-role credential), and the
+  // record page is a CLIENT component — importing the rule from there pulls all of it into the browser
+  // bundle. Hence a module of its own that may import NOTHING.
+  const ruleSrc = read("src/lib/recruitment/offer-start-date-rule.ts");
+  assert.ok(
+    !/^\s*import\s/m.test(ruleSrc),
+    "offer-start-date-rule.ts must import nothing at all — it is read by a client component",
+  );
+  assert.match(
+    recordPage,
+    /import \{ offerCanGiveAStartDate \} from "@\/lib\/recruitment\/offer-start-date-rule"/,
+    "the record page reads the rule from the standalone module, never from candidate-context",
+  );
+  assert.ok(
+    !/from "@\/lib\/recruitment\/whatsapp-templates\/candidate-context"/.test(recordPage),
+    "the record page must never import candidate-context — that module reaches the database",
+  );
+  assert.ok(
+    !/OFFER_STATUSES_WITH_NO_START_DATE|"withdrawn"/.test(recordPage),
+    "the record page must not carry its own copy of the status list",
+  );
+  assert.match(
+    recordPage,
+    /if \(!offer\.startDate \|\| !offerCanGiveAStartDate\(offer\.status\)\) return standing;/,
+    "a dead letter shows its state on the record and withholds only its day",
+  );
+
+  // ── 6d · Every `Record<CandidateRecordPart, …>` names every part ────────────────────────────────
+  //
+  // 🔴 THIS IS THE ONE THAT COST TWO CI CYCLES. Adding a part to `CandidateRecordPart` breaks every
+  // exhaustive map of it, and the maps are in files nobody editing the loader would think to open —
+  // the print builder's copy was missed here, a whole-Candidate fixture was missed the night before,
+  // and BOTH were found only by tsc in CI, three minutes and ~14 billable minutes per round trip. A
+  // local typecheck is denied on this machine, so this stands in for it on the one union that keeps
+  // growing. It reads the members from the source rather than listing them, so a part added later is
+  // covered without touching this test.
+  const partUnion = recordSrc.match(/export type CandidateRecordPart =([^;]+);/)?.[1] ?? "";
+  const parts = [...partUnion.matchAll(/"([a-z]+)"/g)].map((match) => match[1]);
+  assert.ok(parts.length >= 6, "CandidateRecordPart must still be a string union — re-point this test if it moved");
+  for (const file of [
+    "src/components/recruitment/candidate-record-page.tsx",
+    "src/lib/recruitment/candidate-record-print.ts",
+  ]) {
+    const src = read(file);
+    const map = src.match(/Record<CandidateRecordPart, string> = \{[\s\S]*?\n\};/)?.[0] ?? "";
+    assert.ok(map.length > 0, `${file} must still hold a Record<CandidateRecordPart, string> — re-point this test`);
+    const missing = parts.filter((part) => !new RegExp(`^\\s*${part}:`, "m").test(map));
+    assert.deepEqual(missing, [], `${file} must name every part — missing: ${missing.join(", ")}`);
+  }
+
   // ── 7 · The route that records a human's answer is gated as an UPDATE ──────────────────────────
   const routeSrc = read("app/api/recruitment/candidates/[id]/offer-letter/route.ts");
   assert.match(

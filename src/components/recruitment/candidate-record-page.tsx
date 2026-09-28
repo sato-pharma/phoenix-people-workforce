@@ -56,6 +56,10 @@ import { candidateStatusLabel } from "@/lib/recruitment/candidate-status";
 import { primaryCvFile } from "@/lib/recruitment/cv-file-choice";
 import { defaultCvPositionKey, getCvPositionSchema } from "@/lib/recruitment/cv-field-schemas";
 import { applicationStageLabel, humanizeRecruitmentTerm } from "@/lib/recruitment/labels";
+// The one rule for "may this letter still give a first working day" — read, never re-implemented. It
+// lives in a module of its own precisely so this CLIENT component can read it without dragging the
+// database client and the offers service into the browser bundle.
+import { offerCanGiveAStartDate } from "@/lib/recruitment/offer-start-date-rule";
 import { isStatedNonEgyptian, nonEgyptianFlagTitle } from "@/lib/recruitment/nationality";
 import { managerLabel, UNNAMED_USER_LABEL } from "@/lib/recruitment/person-labels";
 import { positionFolderLabel } from "@/lib/recruitment/position-folder";
@@ -68,10 +72,26 @@ import type { Candidate, RecruitmentFile } from "@/lib/recruitment/types";
 const PART_WORDS: Record<CandidateRecordPart, string> = {
   extraction: "the CV reader's last read",
   folders: "the folders this CV is in",
+  offer: "the job offer letter",
   questions: "the wording of the WhatsApp questions",
   sends: "the sends to managers",
   viewers: "who has opened this CV",
 };
+
+/**
+ * "Accepted · starts 01 October 2026" — where an offer letter stands, for the hint under the row.
+ *
+ * 🔒 A DEAD LETTER SHOWS NO START DATE HERE EITHER, and it reads the same rule the send screen reads
+ * (`offerCanGiveAStartDate`, the owner's ruling of 2026-09-28) rather than a second copy of it. A
+ * declined letter still carries whatever day it was written for, and printing that beside the word
+ * "Declined" reads as a date somebody is expected — which is exactly the confusion the send-screen
+ * rule exists to prevent. The letter's state is still shown; only its day is withheld.
+ */
+function offerStandingLine(offer: { startDate: string; status: string }): string {
+  const standing = humanizeRecruitmentTerm(offer.status);
+  if (!offer.startDate || !offerCanGiveAStartDate(offer.status)) return standing;
+  return `${standing} · starts ${offer.startDate}`;
+}
 
 /** Session fold memory is keyed per section, so every candidate page opens the way you last left it. */
 const FOLD_KEY = "candidate-page";
@@ -237,7 +257,7 @@ export function CandidateRecordPage({ record }: { record: CandidateRecord }) {
   // The browser's own path decides which shell the links stay in: /hr/recruitment is rewritten onto
   // the admin page before the server sees it, so only the client can tell the HR shell apart.
   const root = recruitmentRootFromPathname(usePathname());
-  const { cvFolders, extraction, people, profile, screeningQuestions, unavailable, viewers } = record;
+  const { cvFolders, extraction, linkedOffer, people, profile, screeningQuestions, unavailable, viewers } = record;
   const { candidate } = profile;
   const failed = (part: CandidateRecordPart) => unavailable.includes(part);
 
@@ -394,6 +414,28 @@ export function CandidateRecordPage({ record }: { record: CandidateRecord }) {
                     );
                   })}
                 </ul>
+              )}
+            </KeyValue>
+            {/* The offer letter written for this person — the first screen that shows the pointer at
+                all. It is ABSENT, not empty, for a viewer who may not see offer letters: the loader
+                only reads it for `offers: read`, so this row renders "No offer letter" for them, the
+                same as for somebody who genuinely has none. That is deliberate — a row reading
+                "hidden" would tell a reader an offer exists, which is half the leak.
+
+                NO MONEY HERE. The letter carries a salary; `LinkedOfferSummary` does not, so there is
+                nothing on this row to infer one from. */}
+            <KeyValue
+              hint={linkedOffer ? offerStandingLine(linkedOffer) : undefined}
+              label="Job offer"
+            >
+              {failed("offer") ? (
+                <span className="text-phx-danger">Could not be read</span>
+              ) : linkedOffer ? (
+                <span className="block break-words">
+                  {[linkedOffer.title, linkedOffer.territory].filter(Boolean).join(" · ")}
+                </span>
+              ) : (
+                <span className="text-phx-ink-soft">No offer letter</span>
               )}
             </KeyValue>
             <KeyValue label="Managers">
