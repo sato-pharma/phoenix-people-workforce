@@ -157,6 +157,10 @@ const ROUTE_GATES: RouteGate[] = [
   // SHEETS the file holds is the access control, and a section the viewer may not read is never
   // loaded and writes none — so the export can never be a way round a refusal on the tab.
   exportGet("reports/export"),
+  // The one-page start guide, English or Arabic. A plain `read` and no audit: it is a help page whose
+  // content is identical for everyone who can open the module, holding no rep, no customer and no
+  // figure — there is nothing here for an organogram scope to narrow or for an export log to record.
+  get("start-guide"),
   // The time anchor (A1 phase 2): a server-minted starting point the phone measures elapsed
   // MONOTONIC time against, so an offline visit never needs a timestamp from a clock a rep can move.
   // Same permission and audience as entering a visit, because that is what it dates.
