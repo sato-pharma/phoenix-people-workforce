@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { STYLE } from "../src/lib/sales/master-map/sheet-render.ts";
 import {
   LISTS_COLUMN_COUNT,
@@ -294,6 +295,7 @@ export function runMasterMapFinderGridTests() {
   const lookup = renderLookupSheet(2);
   for (const [row, what] of [
     [0, "the title"],
+    [1, "the freshness line"],
     [5, "the count"],
     [6, "the hint"],
   ] as const) {
@@ -307,6 +309,60 @@ export function runMasterMapFinderGridTests() {
   // The same styles stay CENTRED where they belong. The grouped tabs are seven columns, about
   // 1,900 pixels, so their centre is on screen — the width of THIS tab is what makes centre wrong,
   // not the style, and changing the shared style would move every region band on the workbook.
+  // ---- The sheet says when it last refreshed ITSELF ----------------------------------------------
+  // The one thing on the workbook that can show the sheet has stopped. Every tab is painted from
+  // Phoenix and then left alone, so a stopped script leaves fifteen correct-looking tabs and no
+  // signal anywhere. On 2026-09-28 establishing that a sheet was stale took two hours of comparing
+  // layout versions — this cell answers it at a glance.
+  const freshness = formulaAt(lookup, 1, 0);
+  assert.ok(
+    freshness.includes("Lists!E1"),
+    "the freshness line reads the cell the sheet's own script stamps",
+  );
+  assert.ok(
+    freshness.includes("Cairo"),
+    "and labels it Cairo, which is the only timezone the owner reads",
+  );
+  assert.ok(
+    freshness.startsWith(`=IF(Lists!E1="",""`),
+    "blank until the sheet has stamped itself once — a workbook on an older Code.gs shows nothing rather than an alarming line",
+  );
+
+  // A TIMESTAMP MUST NEVER REACH THE RENDERED VALUES. The plan hashes each tab's text, so a time
+  // written into the values would move the hash on every plan fetch and repaint all fifteen tabs
+  // once an hour, for ever, to change one line. It has to be a formula over a cell the script
+  // writes, which is what the assertions above are really protecting.
+  for (const row of lookup.values) {
+    for (const cell of row) {
+      assert.ok(
+        !/\b(19|20)\d\d[-/]\d\d|\d\d:\d\d/.test(cell),
+        `"${cell}" looks like a timestamp in the rendered TEXT — that moves the tab's content hash every hour and repaints the whole workbook for ever`,
+      );
+    }
+  }
+
+  // The stamp cell sits left of the spill, so the results can never overwrite it.
+  const spillStartsAt = LISTS_COLUMN_COUNT - MASTER_MAP_FLAT_COLUMNS.length;
+  assert.ok(
+    4 < spillStartsAt,
+    "column E is before the column the results spill from — a stamp inside the spill would be erased on every recalculation",
+  );
+
+  // The script half: only the sheet knows whether a paint HAPPENED, so it is the sheet that stamps.
+  const script = readFileSync("google-apps-script/master-map/Code.gs", "utf8");
+  assert.ok(
+    /if \(queue\.length === 0\) \{[\s\S]{0,200}?stampRefreshedAt\(\)/.test(script),
+    "the stamp is written only once the queue has DRAINED — stamping mid-repaint would claim freshness for a half-painted sheet, the one lie this cell exists to prevent",
+  );
+  assert.ok(
+    script.includes('"Africa/Cairo"'),
+    "formatted in Cairo by the script, because the spreadsheet's own timezone is neither set nor checked anywhere in this repository",
+  );
+  assert.ok(
+    script.includes('getRange("E1")'),
+    "into the cell the finder reads",
+  );
+
   assert.equal(
     (STYLE.area as { align?: string }).align,
     "CENTER",
