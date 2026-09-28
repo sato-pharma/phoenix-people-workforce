@@ -63,6 +63,35 @@ const cairo = (iso) =>
     ? new Date(iso).toLocaleString('en-GB', { timeZone: 'Africa/Cairo', hour12: false }).replace(',', '') + ' Cairo'
     : '-';
 
+// WHY a withheld deploy needs CLASSIFYING rather than announcing. `WITHHELD` is two causes that
+// look identical in GitHub's vocabulary, and only one is a problem:
+//   * a FAILED or CANCELLED suite on the commit — the gate refused it. That is the real failure, and
+//     it is not always ci.yml: a SCHEDULED workflow attaches its suite to whatever commit is main
+//     HEAD when it fires, so any flaky cron here can withhold a deploy (2026-09-27, cd9e0be03).
+//   * every suite green — it was SUPERSEDED before its build started, because a newer merge landed
+//     while it waited for CI (2026-09-28, 047a33388: one `inactive` status, no `in_progress`, and the
+//     commit was inside what was serving). Benign, and needs no action.
+// The four third-party app suites (sentry, claude, vercel, railway-app) sit at `queued` FOREVER on
+// every commit and hold nothing — measured on two commits that deployed `success` — so `queued` must
+// not count as bad or every withheld deploy would read as refused.
+// Pure, and exported, so `--selftest` covers it without a network: the live refused case can age out
+// of the deployment window the report reads, which is exactly how it went unverified once already.
+export function classifyWithheld({ suites, hasNewerDeploy = false }) {
+  if (!suites || !Array.isArray(suites.check_suites)) {
+    return { refusedByGate: undefined, bad: [], why: 'its check suites could not be read, so the cause is unknown' };
+  }
+  const BAD = ['failure', 'cancelled', 'timed_out', 'action_required', 'startup_failure'];
+  const bad = suites.check_suites.filter((x) => BAD.includes(x.conclusion));
+  if (bad.length) return { refusedByGate: true, bad, why: 'the gate refused it' };
+  return {
+    refusedByGate: false,
+    bad: [],
+    why: hasNewerDeploy
+      ? 'a newer merge superseded it while it waited for CI, so this build never started'
+      : 'no failing suite and no newer deploy found; read railway deployment list directly',
+  };
+}
+
 // The verdict is one pure function of four facts, so it can be tested without touching GitHub and
 // so a change to it cannot quietly come to mean something else. `--selftest` runs the table below.
 export function decide({ state, mergeSha, contains, building, mainRed }) {
@@ -186,7 +215,48 @@ if (argv.includes('--selftest')) {
     console.log(`${bad.length ? 'FAIL' : 'PASS'}  ancestry: ${name}${bad.length ? '  ->  ' + bad.join('; ') : ''}`);
   }
 
-  console.log(`\nSELFTEST verify-shipped: ${CASES.length + ANC.length} cases, ${failed} failed`);
+  // The withheld classification. Its two answers must stay two DIFFERENT answers: calling a
+  // superseded deploy "refused" sends a reader hunting a failed suite that does not exist, and
+  // calling a refused one "superseded" hides a commit that is merged, green and not serving.
+  const suite = (slug, conclusion) => ({ app: { slug }, conclusion });
+  const QUEUED_APPS = [suite('sentry', null), suite('claude', null), suite('vercel', null), suite('railway-app', null)];
+  const WH = [
+    ['a failing Actions suite is the gate refusing it',
+      { suites: { check_suites: [...QUEUED_APPS, suite('github-actions', 'success'), suite('github-actions', 'failure')] }, hasNewerDeploy: true },
+      { refusedByGate: true, bad: 1 }],
+    ['a CANCELLED suite counts as refused too',
+      { suites: { check_suites: [suite('github-actions', 'cancelled')] } },
+      { refusedByGate: true, bad: 1 }],
+    ['every suite green plus a newer deploy is SUPERSEDED, not refused',
+      { suites: { check_suites: [...QUEUED_APPS, suite('github-actions', 'success')] }, hasNewerDeploy: true },
+      { refusedByGate: false, bad: 0, why: /superseded it while it waited/ }],
+    ['the four permanently-queued app suites alone are NOT bad',
+      { suites: { check_suites: QUEUED_APPS }, hasNewerDeploy: true },
+      { refusedByGate: false, bad: 0 }],
+    ['green with NO newer deploy says read railway directly rather than guessing',
+      { suites: { check_suites: [suite('github-actions', 'success')] }, hasNewerDeploy: false },
+      { refusedByGate: false, bad: 0, why: /read railway deployment list directly/ }],
+    // The DEFAULT, omitted on purpose. Without this case the `hasNewerDeploy = false` default is
+    // never exercised — breaking it left the selftest green, which is the dead-assertion shape that
+    // hid one in tests/next-build-cpu-cap.test.ts on 2026-09-27. Caught here by breaking it.
+    ['with hasNewerDeploy OMITTED it must default to false, not assume a supersession',
+      { suites: { check_suites: [suite('github-actions', 'success')] } },
+      { refusedByGate: false, bad: 0, why: /read railway deployment list directly/ }],
+    ['unreadable suites are UNKNOWN, never "refused" and never "superseded"',
+      { suites: null },
+      { refusedByGate: undefined, bad: 0, why: /could not be read/ }],
+  ];
+  for (const [name, input, want] of WH) {
+    const r = classifyWithheld(input);
+    const bad = [];
+    if (r.refusedByGate !== want.refusedByGate) bad.push(`refusedByGate expected=${want.refusedByGate} got=${r.refusedByGate}`);
+    if (r.bad.length !== want.bad) bad.push(`bad expected=${want.bad} got=${r.bad.length}`);
+    if (want.why && !want.why.test(r.why)) bad.push(`why did not match ${want.why} (got "${r.why}")`);
+    if (bad.length) failed++;
+    console.log(`${bad.length ? 'FAIL' : 'PASS'}  withheld: ${name}${bad.length ? '  ->  ' + bad.join('; ') : ''}`);
+  }
+
+  console.log(`\nSELFTEST verify-shipped: ${CASES.length + ANC.length + WH.length} cases, ${failed} failed`);
   process.exit(failed ? 1 : 0);
 }
 
@@ -370,12 +440,14 @@ function report(verdict, code, why) {
       } catch {
         suites = null;
       }
-      const bad = ((suites && suites.check_suites) || []).filter((x) =>
-        ['failure', 'cancelled', 'timed_out', 'action_required', 'startup_failure'].includes(x.conclusion),
-      );
+      const verdict = classifyWithheld({
+        suites,
+        hasNewerDeploy: out.deployments.some((x) => x.created && d.created && x.created > d.created),
+      });
+      const bad = verdict.bad;
+      d.refusedByGate = verdict.refusedByGate;
       if (bad.length) {
         const named = bad.map((x) => `${(x.app && x.app.slug) || '?'}=${x.conclusion}`).join(' · ');
-        d.refusedByGate = true;
         L.push(`    ${d.short} was withheld while these suites were bad: ${named}`);
         L.push('    → if that is not ci.yml, the cause is another workflow on the same commit.');
       } else if (suites) {
@@ -385,14 +457,8 @@ function report(verdict, code, why) {
         // it was still waiting for its own CI, so Railway never started the older build. Production
         // moved to the newer commit, which contains the older one. Saying "the gate refused it" here
         // sends a reader hunting a failed suite that does not exist.
-        const newer = out.deployments.filter((x) => x.created && d.created && x.created > d.created);
-        d.refusedByGate = false;
         L.push(`    ${d.short} was NOT refused — every check suite on it concluded success.`);
-        L.push(
-          newer.length
-            ? '    → a newer merge superseded it while it waited for CI, so this build never started.'
-            : '    → no failing suite and no newer deploy found; read railway deployment list directly.',
-        );
+        L.push(`    → ${verdict.why}.`);
       }
     }
   }
