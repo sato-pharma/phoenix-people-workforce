@@ -49,9 +49,17 @@ export function runSalesChannelsByRepClosingValueTests() {
   const { body, file } = newestBody("phx_sales_channels_by_rep");
 
   // ── The headline: a distributor row is paid units x factory price, a direct order its own value ──
+  //
+  // The price SOURCE moved on 2026-09-28: a factory price can differ by period (Saginko is 111.15
+  // through 2026-09 and 170.52 from 2026-10), so the body may read `p.factory_price` or
+  // `public.phx_factory_price(code, period)` — the resolver, which falls back to that same master
+  // price when no override covers the period. Either keeps what this pins: a distributor row is
+  // paid units x a factory price, and only a direct order reads the sheet's typed value. The
+  // `coalesce(r.value, 0)` count below is what stops the sheet value creeping back, and the live
+  // product-master join is still asserted a few lines down.
   assert.match(
     body,
-    /case when coalesce\(r\.is_direct, false\) then coalesce\(r\.value, 0\) else coalesce\(r\.qty, 0\) \* coalesce\(p\.factory_price, 0\) end as value/,
+    /case when coalesce\(r\.is_direct, false\) then coalesce\(r\.value, 0\) else coalesce\(r\.qty, 0\) \* coalesce\((?:p\.factory_price|public\.phx_factory_price\([^)]*\)), 0\) end as value/,
     `Channels by Rep must value a distributor row at paid units x factory price and a direct order at its own value, as the closing does (${file})`,
   );
   assert.equal(

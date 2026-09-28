@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -31,10 +31,18 @@ const PRICE_TABLE_SQL = readFileSync(
   "utf8",
 );
 
-const REPOINT_SQL = readFileSync(
-  fileURLToPath(new URL("20260928184708_sales_value_reads_the_period_price.sql", MIGRATIONS)),
-  "utf8",
-);
+// The repoint ships as ONE FILE PER FUNCTION, not a bundle. Several guards in this directory
+// resolve "the newest migration that defines X" and then read that whole file, so bundling made one
+// function's SQL answer for another's — tests/territory-units-effective failed on a
+// `sum(f.total_qty) as units` belonging to phx_closing_brick, four functions away. Concatenated here
+// because what this test asserts is a property of the set.
+const REPOINT_FILES = readdirSync(fileURLToPath(MIGRATIONS))
+  .filter((f) => f.endsWith("_reads_the_period_price.sql"))
+  .sort();
+
+const REPOINT_SQL = REPOINT_FILES.map((f) =>
+  readFileSync(fileURLToPath(new URL(f, MIGRATIONS)), "utf8"),
+).join("\n");
 
 /** Every function the repoint migration replaces, by the name it is created under. */
 const REPOINTED_FUNCTIONS = [
@@ -149,9 +157,22 @@ export function runProductPeriodPriceTests() {
   );
 
   // ── 3. Every money function reads the resolver ─────────────────────────────
+  assert.equal(
+    REPOINT_FILES.length,
+    REPOINTED_FUNCTIONS.length,
+    `one migration per repointed function — found ${REPOINT_FILES.length} files for ${REPOINTED_FUNCTIONS.length} functions`,
+  );
   for (const fn of REPOINTED_FUNCTIONS) {
-    const created = new RegExp(`CREATE OR REPLACE FUNCTION ${fn.replace(".", "\\.")}\\(`).test(REPOINT_SQL);
+    // Case-insensitive, but the files are lowercase on purpose: tests/au-seat-occupant-resolver
+    // extracts a function body behind `kind === "function"`, a case-SENSITIVE compare against its
+    // own regex capture, so an uppercase `CREATE` there silently cuts the body at the first
+    // semicolon and makes the rest of the function invisible to that guard.
+    const created = new RegExp(`create or replace function ${fn.replace(".", "\\.")}\\(`, "i").test(REPOINT_SQL);
     assert.ok(created, `${fn} must be repointed by the migration`);
+    assert.ok(
+      REPOINT_SQL.includes(`create or replace function ${fn}(`),
+      `${fn} must be declared in lowercase, or the seat-occupant guard reads a truncated body`,
+    );
   }
 
   // The body of the migration must contain no surviving read of the flat master price in a VALUE

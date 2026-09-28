@@ -59,8 +59,16 @@ export function runTerritoryUnitsEffectiveTests() {
   // The value basis must NOT be changed to close the gap the wrong way: a direct order keeps its
   // source value, and a non-direct row keeps effective_units × factory price. Reverting either to
   // total_qty would re-credit an area with goods the split rule sends elsewhere.
+  //
+  // The price SOURCE moved on 2026-09-28 — a factory price can differ by period, so the body may
+  // read `p.factory_price` or `public.phx_factory_price(code, period)`, which resolves an override
+  // and falls back to that same master price. The basis this guards is the UNITS side and the
+  // direct/non-direct split, neither of which that change touches.
   assert.ok(
-    sql.includes("case when r.is_direct then coalesce(r.direct_value, 0) else r.effective_units * coalesce(p.factory_price, 0) end"),
+    new RegExp(
+      String.raw`case when r\.is_direct then coalesce\(r\.direct_value, 0\) else r\.effective_units \* ` +
+        String.raw`coalesce\((?:p\.factory_price|public\.phx_factory_price\([^)]*\)), 0\) end`,
+    ).test(sql),
     `${newest}: the value basis (direct = source value, else effective_units × factory) must be unchanged`,
   );
 

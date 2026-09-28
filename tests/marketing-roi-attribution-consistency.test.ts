@@ -46,7 +46,13 @@ const SHARED_ATTRIBUTION_RES = [
   // coalesce(sp.factory_price, 0)` until the owner struck the discount factor out of the whole
   // system. A row is now worth qty x factory price, and NO_DISCOUNT_FACTOR_RE below pins the
   // other direction so the factor cannot come back in a body this file already guards.
-  /r\.qty\s*\*\s*coalesce\(sp\.factory_price,\s*0\)/i,
+  //
+  // The price SOURCE moved on 2026-09-28: a factory price can now differ by period (Saginko is
+  // 111.15 through 2026-09 and 170.52 from 2026-10), so the body may read the product master
+  // directly OR public.phx_factory_price(code, period), which resolves an override and falls back
+  // to that same master price. Either satisfies what this actually pins — a row is worth qty x A
+  // factory price, with no discount factor anywhere near it.
+  /r\.qty\s*\*\s*coalesce\((?:sp\.factory_price|public\.phx_factory_price\([^)]*\)),\s*0\)/i,
   /b\.status\s*=\s*'validated'/i,
   /r\.validation_state\s*=\s*'valid'/i,
 ];
