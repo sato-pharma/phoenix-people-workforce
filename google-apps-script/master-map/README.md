@@ -67,7 +67,7 @@ master is not readable by anyone who guesses the URL.
 On an unchanged database a tick costs one `probe` and stops. Nothing is repainted, and the sheet
 is not touched at all.
 
-### Three things worth knowing before changing it
+### Four things worth knowing before changing it
 
 **The hourly full check is not belt-and-braces padding.** None of the `source_of_sales_*` tables
 has an update trigger — verified against production, `pg_trigger` returns nothing for all five — so
@@ -86,6 +86,23 @@ current throughout, so there was nothing in the data to see it by. The height is
 the shop count is written into that tab's own header text on purpose — the plan hashes each tab's
 text, so the hash moves the moment the master grows, which is what makes the tab repaint and resize
 itself. Do not take the count back out of the text to tidy it.
+
+**The search box is handed to `SEARCH` as text, and the status line tells a broken finder from an
+unlucky one.** A customer code is all digits, so typing one into the box stores a *number*, and
+Google Sheets will not coerce a number into `SEARCH`'s first parameter: `SEARCH` errors on every
+row, `ISNUMBER` turns each error into `FALSE`, the whole clause is `0` everywhere, and `FILTER`
+matches nothing. Measured live on the production workbook on 2026-09-28 — Region *Delta (3)* plus
+`1547442` returned nothing while **All customers** held exactly one match, code `0001547442` — with
+the dropdowns narrowing correctly, the grid the right size and the feed current, because nothing
+else on the workbook hands a typed value to `SEARCH`. Searching a code is the main thing that box is
+for, so the box was dead for exactly the search that matters most. The key is now `TRIM(TO_TEXT(…))`
+and the cell itself carries a TEXT number format, so a typed `0012345` stays `0012345`.
+
+That was the second time this tab died in silence, and the reason both times was the same wrapper:
+`IFERROR(FILTER(…))` flattens *no shop matches what you picked* and *this formula could not run*
+into one blank cell, and the status line then blames the owner's filters for a broken sheet. The
+`FILTER` is now bare, and the status line reads the anchor cell: `#N/A` is nothing matched, any
+other error says the finder itself could not run. Do not put that wrapper back.
 
 **A tab is painted clear → text → formatting, in that order.** Apps Script kills an execution at
 six minutes and a big repaint spans two of them, so every intermediate state is one the owner can
