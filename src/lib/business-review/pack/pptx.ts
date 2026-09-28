@@ -693,7 +693,7 @@ function chartSlide(
     if (item.note) {
       parts.push(
         textShape(id++, "Bar note", { h: Math.round(rowH * 0.4), w: labelW, x: MARGIN, y: mid + Math.round(rowH * 0.1) },
-          paragraph(item.note, { align: "r", color: MUTED, size: 750 }), null),
+          markedParagraph(item.note, { align: "r", color: MUTED, size: 750 }), null),
       );
     }
   });

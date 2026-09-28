@@ -23,6 +23,9 @@ import type { SalesReviewPack } from "@/lib/business-review/pack/model";
  * print a name — another chart, another heading, a summary strip — fails this the moment it forgets
  * the mark, which is exactly how the first three got through.
  *
+ * MEASURED after both fixes, by re-cutting all eleven packs and counting red pixels on every page
+ * of every emitted PDF: 138 marks, 0 in plain ink, 0 packs affected.
+ *
  * The XLSX is deliberately NOT swept here: its section band is white on solid navy, where this red
  * is all but unreadable, and `workbook.ts` records that choice at the line that makes it. Its
  * cells are pinned in `business-review-pack-model.test.ts`.
@@ -49,6 +52,14 @@ function pack(): SalesReviewPack {
         chart: {
           kind: "bars",
           items: [
+            // A bar's NOTE names a person too — the area chart puts the district manager here, and
+            // it is the site the first sweep missed: the fixture had no note, so 11 marks across
+            // three packs still printed in plain ink after the label was fixed.
+            {
+              label: "Cairo 3",
+              note: "Gehad Khalifa (left 31 Aug 2026)",
+              value: 720,
+            },
             { label: "Gehad Khalifa (left 31 Aug 2026)", value: 720 },
             { label: "Yomna Salah Abdelrazik Algafar Mahmoud (left 15 Sept 2026)", value: 673 },
             { label: "A Serving Rep", value: 640 },
