@@ -2031,6 +2031,9 @@ import { runNeedsYouSummaryGuardTests } from "./needs-you-summary-guard.test.ts"
 import { runNeedsYouEmailOwnerOnlyTests } from "./needs-you-email-owner-only.test.ts";
 import { runNeedsYouBoardTests } from "./needs-you-board.test.ts";
 import { runNeedsYouSourceHealthTests } from "./needs-you-source-health.test.ts";
+import { runNeedsYouNeverUnderReportsTests } from "./needs-you-never-under-reports.test.ts";
+import { runNeedsYouPageNeverDecidesTests } from "./needs-you-page-never-decides.test.ts";
+import { runNeedsYouFitsTheScreenTests } from "./needs-you-fits-the-screen.test.ts";
 import { runUnpublishedClosingsTests } from "./unpublished-closings.test.ts";
 import { runPayrollAwaitingPublishTests } from "./payroll-awaiting-publish.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
@@ -7393,6 +7396,18 @@ await runTest(
 await runTest(
   "payroll awaiting publish can be asked across ALL months, which nothing in the domain could answer before (findActiveRun takes a month and a year and ends in maybeSingle), and it avoids the four traps of that domain: it gates on the FINANCE actor because it is a read rather than the publisher gate which guards an act, it carries no month or year filter because that absence is the whole new capability, it never derives publish state from salary_batches (written BY publish, so a month reads published the moment finalizeApproved runs) and never re-assembles a settled month, a missing table THROWS instead of returning an empty result that would render as no months are open, the .in() is chunked because several hundred ids return zero rows and no error, an uncountable hold is null rather than zero, and every row carries a month NAME and a person's name with nowhere to put an HR id",
   runPayrollAwaitingPublishTests,
+);
+await runTest(
+  "the Needs You board never under-reports: one dead source among fifteen live ones makes the clean board UNPROVABLE and keeps the all-clear sentence off the render (which is gated on allClearProvable and never on yours.length, also zero when every source is dead), a permission refusal stays a TRUE zero that does NOT spend the all-clear so nine refusals cannot become nine permanent amber rows, a failed source reports itemCount null rather than 0, the every-source band carries one row per NeedsYouSourceId for all-ok, all-failed, mixed AND nothing-reported-at-all (classify.ts walks the registry, so a source lost to a dropped await arrives as amber instead of vanishing), the adapter registry and the source union are the same set in both directions, every yours row has an href or an externalUrl, the headline counts only what is his, oldest sorts first with an undated row last, nothing printed carries an ellipsis, and could-not-be-read is band ONE",
+  runNeedsYouNeverUnderReportsTests,
+);
+await runTest(
+  "the Needs You page links and never decides: no server action, form, HTTP method, click handler, form-state hook, revalidate or action prop anywhere under the route, and no fetch at all (an HTTP hop back into this app would inherit /api/approvals/badge-counts' deliberate {count: 0} fallback, the one shape this page must never have), with the route force-dynamic and its gate a server-side redirect on canAccessSystemAdministratorWorkspace rather than a hidden nav row",
+  runNeedsYouPageNeverDecidesTests,
+);
+await runTest(
+  "the Needs You board fits the screen and stays square: table-fixed with a FOUR-column colgroup summing to 100% (count merged with OVERDUE, names merged with the oldest date - fit by merging, never by shrinking type), no min-width floor, none of the four overflow-scroll spellings, no rounded or truncate or line-clamp class even inside a conditional className, and an md:hidden card list beside every hidden md:block table",
+  runNeedsYouFitsTheScreenTests,
 );
 
 await runTest(
