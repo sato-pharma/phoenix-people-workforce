@@ -13,6 +13,7 @@ import { runRecruitmentDailyNotifications } from "@/lib/recruitment/notification
 import { expireStaleHeldNotifications } from "@/lib/notifications/confidence-gate";
 import { remindHeldNotifications } from "@/lib/notifications/held-notification-alert";
 import { runNeedsYouDailyDigest } from "@/lib/needs-you/deliver/daily";
+import { runNeedsYouWeeklyEmail } from "@/lib/needs-you/deliver/weekly";
 import { runTelegramDailyHrDigest } from "@/lib/notifications/telegram-operations";
 import { runWeeklySystemHealthDigest } from "@/lib/notifications/weekly-system-health-digest";
 import { runOutstationGeocodeWarmup } from "@/lib/outstation/geocode-warmup";
@@ -115,6 +116,8 @@ async function runDailyNotifications(request: Request) {
     // Position 26, added 2026-09-28. APPENDED, never inserted: positions 1-25 keep their meaning,
     // which is the only way to add one without re-running the off-by-one above.
     needsYouDailyDigest,
+    // Position 27, added 2026-09-28. Appended for the same reason as 26.
+    needsYouWeeklyEmail,
   ] = await Promise.all([
     runBirthdayNotifications(request).catch(
       onJobFailure("daily-birthday", (message) =>
@@ -266,6 +269,21 @@ async function runDailyNotifications(request: Request) {
         skipped: true,
       })),
     ),
+    // The WHOLE board by email, Sundays. It self-gates to the weekday and returns
+    // `skipped: "not the weekly email day"` on the other six, the same shape as
+    // runWeeklySystemHealthDigest — so it costs one cheap call a day and no schedule of its own.
+    //
+    // Email rather than Telegram because it is COMPLETE: every item in every lane plus all sixteen
+    // source verdicts, which cannot fit in Telegram's 900 characters. It never requests the telegram
+    // channel — the email already mirrors a preview there on its way out.
+    runNeedsYouWeeklyEmail().catch(
+      onJobFailure("needs-you-weekly-email", (message) => ({
+        delivered: 0,
+        notProven: 0,
+        reason: message,
+        skipped: true,
+      })),
+    ),
   ]);
   const [birthdays, contractRenewals, holidayConfirmation] = await Promise.all([
     birthdayResponse instanceof Response ? birthdayResponse.json() : birthdayResponse,
@@ -277,11 +295,12 @@ async function runDailyNotifications(request: Request) {
   // the dead-man's-switch ping (which only proves the route executed) — is the signal to alert on:
   // `event="cron_run_summary" job="notifications/daily" failedCount>0`.
   // Hand-maintained: bump this whenever a sub-job is added above, or the run summary silently
-  // under-reports (26 since the Needs You daily digest was added 2026-09-28; 25 since the
+  // under-reports (27 since the Needs You weekly email was added 2026-09-28, the same day as the
+  // daily digest below it; 26 since that daily digest; 25 since the
   // inactive-colleague digest moved here from the 5-minute cron on 2026-09-26; 24 since the
   // milestones due-notice pump was added 2026-09-23; 23 before that, since the FWC deductions
   // auto-sync was retired in the C6 cutover on 2026-08-30).
-  const totalJobs = 26;
+  const totalJobs = 27;
   if (failures.length > 0) {
     logError(
       `Daily notification run completed with ${failures.length} of ${totalJobs} sub-job(s) FAILED: ${failures.map((f) => f.job).join(", ")}`,
@@ -329,6 +348,7 @@ async function runDailyNotifications(request: Request) {
     milestoneDueNotices,
     marketingSla,
     needsYouDailyDigest,
+    needsYouWeeklyEmail,
     notificationRetention,
     outstationGeocodeWarmup,
     outstationSla,
