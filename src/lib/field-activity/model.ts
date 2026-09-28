@@ -334,15 +334,32 @@ export function buildFieldActivityReport(input: {
   // Check-ins are keyed by (recording agent, contact, day) — rule 2. A fix is attached to a visit
   // only when the same phone checked in at the same customer on that day, so the partner's own
   // later stops never appear on the subject's route.
-  const checkinKey = (agentCrmId: number | null, contactCrmId: number | null, day: string | null) =>
-    `${agentCrmId ?? "?"}|${contactCrmId ?? "?"}|${day ?? "?"}`;
+  //
+  // 🔴 A NON-REAL CONTACT NEVER MATCHES, ON EITHER SIDE. `0` is the vendor's "no contact"
+  // placeholder and NULL is an unresolved one, and the key used to carry both through — `0` as
+  // itself and NULL as `?`. So every contact-less row of one agent on one day collapsed onto a
+  // single key and matched every other: a Meeting or a Traveling row would have taken the GPS of
+  // whatever other contact-less row shared that phone and date, and been drawn as a stop with a
+  // time. Rejecting it on BOTH sides is the same rule `indexCheckinsByAgentContactDay` enforces in
+  // `@/lib/crm/checkin-match`, whose own comment records that this asymmetry was load-bearing
+  // rather than safe. Production has these rows — B-155's September carries four of them.
+  const realContact = (contactCrmId: number | null): number | null =>
+    contactCrmId != null && contactCrmId !== 0 ? contactCrmId : null;
+  const checkinKey = (agentCrmId: number | null, contactCrmId: number | null, day: string | null): string | null => {
+    const contact = realContact(contactCrmId);
+    if (agentCrmId == null || contact == null || !day) return null;
+    return `${agentCrmId}|${contact}|${day}`;
+  };
   const checkinIndex = new Map<string, FieldActivityCheckinRow>();
   for (const checkin of input.checkins) {
-    const day = calendarDay(checkin.checkedAt);
-    const key = checkinKey(checkin.agentCrmId, checkin.contactCrmId, day);
+    const key = checkinKey(checkin.agentCrmId, checkin.contactCrmId, calendarDay(checkin.checkedAt));
+    if (key == null) continue;
     const existing = checkinIndex.get(key);
     // The EARLIEST fix at a customer is the arrival; a rep who re-checks in at the same door later
-    // would otherwise move his own arrival forward.
+    // would otherwise move his own arrival forward. This is a DELIBERATE departure from
+    // `pickCheckinForVisit`, which breaks the same tie toward the save time because it is asking
+    // "which fix verifies this call". Here the question is "when did he get there", and the two
+    // agree wherever a customer has one fix that day, which is almost every stop.
     if (!existing || String(checkin.checkedAt) < String(existing.checkedAt)) checkinIndex.set(key, checkin);
   }
 
@@ -389,7 +406,8 @@ export function buildFieldActivityReport(input: {
         });
       }
 
-      const checkin = checkinIndex.get(checkinKey(visit.agentCrmId, visit.contactCrmId, dateIso));
+      const visitCheckinKey = checkinKey(visit.agentCrmId, visit.contactCrmId, dateIso);
+      const checkin = visitCheckinKey == null ? undefined : checkinIndex.get(visitCheckinKey);
       const savedClock = wallClock(visit.savedAt);
       const savedDay = calendarDay(visit.savedAt);
 

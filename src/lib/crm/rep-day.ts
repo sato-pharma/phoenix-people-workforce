@@ -25,7 +25,7 @@ import {
 } from "@/lib/crm/client";
 import { getIReports360Config, isIReports360Configured } from "@/lib/crm/config";
 import { addDaysIso, todayIso } from "@/lib/crm/dates";
-import { checkinAgentKey } from "@/lib/crm/checkin-match";
+import { checkinAgentKey, indexCheckinsByAgentContactDay, pickCheckinForVisit } from "@/lib/crm/checkin-match";
 import {
   buildParticipantHrIdOrFilter,
   collapseDuplicateVisitSubmissionsLiveShape,
@@ -258,6 +258,82 @@ function visitFromMirrorRow(row: RepDayVisitMirrorRow): RepDayVisitSource {
 }
 
 /**
+ * WHICH of an owner's check-ins are this person's route — the half `resolveRepDayCheckinOwnerKeys`
+ * does not answer.
+ *
+ * 🔴 THE DEFECT THIS CLOSES. The owner set says whose phone may speak for this person today. Until
+ * now EVERY check-in by one of those phones was attributed to him, for the whole day — so a manager
+ * who rode along for two calls in the morning was drawn as having made every stop the rep made
+ * afterwards, alone. The day then ended at the REP's last check-in, which is how this screen came
+ * to report a manager finishing at 15:20 on a day he was with that rep until lunch.
+ *
+ * The rule now: a person's OWN check-ins are his whole day, unchanged. A BORROWED check-in counts
+ * only when it is the fix for a call HE WAS ON — decided by {@link pickCheckinForVisit}, the one
+ * canonical agent + contact + day matcher the Visits Report and the CRM master tab already use, so
+ * a stop resolves the same way on every screen that shows one. A borrowed visit with no real
+ * contact (campaign, meeting, leave) matches nothing, which is correct: those rows carry no GPS.
+ *
+ * Pure and exported for its test — the surrounding builder fetches a driving route and cannot be
+ * unit-tested.
+ */
+export function selectRepDayCheckins<C extends RepDayCheckinSource>(input: {
+  checkins: readonly C[];
+  day: string;
+  dayVisits: readonly RepDayVisitSource[];
+  owners: ReadonlyMap<string, string | null>;
+  selfKey: string;
+}): Array<C & { via: string | null }> {
+  const { checkins, day, dayVisits, owners, selfKey } = input;
+  const ownerKeyOf = (checkin: RepDayCheckinSource) => repDayPersonKey(checkin.agentID, checkin.agentHrId) ?? "";
+  const onDay = checkins.filter(
+    (checkin) => owners.has(ownerKeyOf(checkin)) && String(checkin.checkDate ?? "").slice(0, 10) === day,
+  );
+
+  // The canonical matcher speaks snake_case mirror rows; these are the live client's shape. Same
+  // adapter pattern as collapseDuplicateVisitSubmissionsLiveShape, and it carries the original row
+  // back so the caller keeps every field it displays.
+  const index = indexCheckinsByAgentContactDay(
+    onDay.map((checkin) => ({
+      agent_crm_id: checkin.agentID ?? null,
+      agent_hr_id: checkin.agentHrId ?? null,
+      check_date: checkin.checkDate ?? null,
+      contact_crm_id: checkin.contactID ?? null,
+      source: checkin,
+    })),
+  );
+
+  const borrowed = new Set<C>();
+  for (const visit of dayVisits) {
+    const ownerKey = repDayPersonKey(visit.agentID, visit.agentHrId);
+    // His own rows are handled below — this loop only rescues the stops he rode along on.
+    if (ownerKey == null || ownerKey === selfKey) continue;
+    const matched = pickCheckinForVisit(
+      {
+        agentCrmId: visit.agentID ?? null,
+        agentHrId: visit.agentHrId ?? null,
+        contactCrmId: visit.contactID ?? null,
+        crmSaveDate: visit.saveDate ?? null,
+        visitDay: day,
+      },
+      index,
+    );
+    if (matched) borrowed.add(matched.source);
+  }
+
+  return onDay
+    .filter((checkin) => ownerKeyOf(checkin) === selfKey || borrowed.has(checkin))
+    .map((checkin) => ({ ...checkin, via: owners.get(ownerKeyOf(checkin)) ?? null }))
+    // Plain string comparison, not localeCompare: these are ISO timestamps, and locale collation
+    // gives digits/hyphens variable weight, so the order would depend on the runtime's locale + ICU
+    // data. The route legs are aligned to THIS order (leg[i] = stop[i] -> stop[i+1]).
+    .sort((left, right) => {
+      const a = String(left.checkDate ?? "");
+      const b = String(right.checkDate ?? "");
+      return a < b ? -1 : a > b ? 1 : 0;
+    });
+}
+
+/**
  * Shared post-processing: keep the records where the rep is the primary agent OR the joined
  * double-visit partner, annotate each visit (kind/role/mode/partner), sort check-ins by time,
  * and compute the cached driving route through the GPS stops. Identical for the live and mirror
@@ -328,20 +404,16 @@ async function buildRepDayResult(
   // submits while tagging the NSM. Derived from `dayVisits`, so departed-agent exclusion already
   // applies and a borrowed check-in can never come from a visit this page refuses to show.
   const checkinOwners = resolveRepDayCheckinOwnerKeys(selfKey, dayVisits);
-  const ownerKeyOf = (checkin: RepDayCheckinSource) => repDayPersonKey(checkin.agentID, checkin.agentHrId) ?? "";
 
-  const checkins: IReports360RepDayCheckin[] = allCheckins
-    .filter((checkin) => !excludedAgentIds.has(checkin.agentID))
-    .filter((checkin) => checkinOwners.has(ownerKeyOf(checkin)) && (checkin.checkDate ?? "").slice(0, 10) === day)
-    .map((checkin) => ({ ...checkin, via: checkinOwners.get(ownerKeyOf(checkin)) ?? null }))
-    // Plain string comparison, not localeCompare: these are ISO timestamps, and locale collation
-    // gives digits/hyphens variable weight, so the order would depend on the runtime's locale + ICU
-    // data. The route legs below are aligned to THIS order (leg[i] = stop[i] -> stop[i+1]).
-    .sort((left, right) => {
-      const a = String(left.checkDate ?? "");
-      const b = String(right.checkDate ?? "");
-      return a < b ? -1 : a > b ? 1 : 0;
-    });
+  // Owning a phone is not the same as owning its whole day — selectRepDayCheckins narrows a
+  // BORROWED phone to the calls this person was actually on. See its docblock for what that fixes.
+  const checkins: IReports360RepDayCheckin[] = selectRepDayCheckins({
+    checkins: allCheckins.filter((checkin) => !excludedAgentIds.has(checkin.agentID)),
+    day,
+    dayVisits,
+    owners: checkinOwners,
+    selfKey,
+  });
 
   // Cached Google driving route through the coordinate-bearing check-ins (in time order),
   // aligned to the same filter+sort the map uses so leg[i] is stop[i] -> stop[i+1].

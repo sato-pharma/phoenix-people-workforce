@@ -168,11 +168,33 @@ export function runFieldActivityReportTests() {
     assert.equal(day.unlocated[0].counts, false, "and it is marked as not counting");
   }
 
-  // ── a call saved with no contact attached still counts ───────────────────────────────────────
+  // ── a call saved with no contact attached still counts, and BORROWS NO GPS ───────────────────
+  //
+  // `0` is the vendor's "no contact" placeholder and NULL is an unresolved one. Keyed without a
+  // real-contact guard, every contact-less row of one agent on one day lands on ONE key — so a
+  // contact-less CALL would take the coordinates and the time of a contact-less CHECK-IN made
+  // somewhere else entirely, and be drawn on the map as a stop it can prove nothing about. The
+  // check-in below is deliberately hours later and 30 km away.
   {
-    const report = run({ visits: [visit({ ampm: "AM", contactCrmId: 0, contactName: null })] });
+    const strayFix = checkin({ checkedAt: "2026-09-20 19:40:00+00", contactCrmId: 0, contactName: null, lat: 30.79, lon: 30.99 });
+    const report = run({
+      checkins: [strayFix],
+      visits: [visit({ ampm: "AM", contactCrmId: 0, contactName: null })],
+    });
     assert.equal(report.days[0].counts.am, 1, "a regular call with no contact is still a call he made");
-    assert.equal(report.days[0].stops.length, 0, "it simply carries no GPS fix");
+    assert.equal(
+      report.days[0].stops.length,
+      0,
+      "it carries no GPS fix — and must never inherit an unrelated contact-less check-in's coordinates, which is what a key that lets 0 and NULL match itself would do",
+    );
+    assert.equal(report.days[0].unlocated.length, 1, "it is reported as a call without a fix, not silently dropped");
+
+    // The same guard on the CHECK-IN side: a real call is not matched by a contact-less fix either.
+    const realCall = run({
+      checkins: [strayFix],
+      visits: [visit({ ampm: "AM" })],
+    });
+    assert.equal(realCall.days[0].stops.length, 0, "a contact-less fix never answers for a call at a real contact");
   }
 
   // ── AN EMPTY DAY IS NOT AN IDLE DAY ──────────────────────────────────────────────────────────
