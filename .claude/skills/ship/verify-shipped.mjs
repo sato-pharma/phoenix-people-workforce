@@ -375,13 +375,47 @@ function report(verdict, code, why) {
       );
       if (bad.length) {
         const named = bad.map((x) => `${(x.app && x.app.slug) || '?'}=${x.conclusion}`).join(' · ');
+        d.refusedByGate = true;
         L.push(`    ${d.short} was withheld while these suites were bad: ${named}`);
         L.push('    → if that is not ci.yml, the cause is another workflow on the same commit.');
+      } else if (suites) {
+        // THE THIRD CAUSE, and it is BENIGN — measured 2026-09-28 on 047a33388, whose every suite
+        // read completed/success and whose deployment carried ONE status, `inactive`, with no
+        // `in_progress` at all. A newer merge (75ef39135, twenty seconds later) superseded it while
+        // it was still waiting for its own CI, so Railway never started the older build. Production
+        // moved to the newer commit, which contains the older one. Saying "the gate refused it" here
+        // sends a reader hunting a failed suite that does not exist.
+        const newer = out.deployments.filter((x) => x.created && d.created && x.created > d.created);
+        d.refusedByGate = false;
+        L.push(`    ${d.short} was NOT refused — every check suite on it concluded success.`);
+        L.push(
+          newer.length
+            ? '    → a newer merge superseded it while it waited for CI, so this build never started.'
+            : '    → no failing suite and no newer deploy found; read railway deployment list directly.',
+        );
       }
     }
   }
   if (out.deployments && out.deployments.some((d) => d.withheld && d.isThisMerge)) {
-    L.push('  🔴 THIS MERGE WAS WITHHELD, not queued and not superseded — it is merged, green and NOT serving.');
+    const self = out.deployments.find((d) => d.withheld && d.isThisMerge);
+    // This banner USED to assert "not superseded ... NOT serving" for EVERY withheld deploy. On a
+    // superseded one that is false twice over, and it contradicted the classification printed
+    // immediately above it — measured 2026-09-28 on 047a33388 (PR #4592), where every suite read
+    // success, the deploy was superseded twenty seconds later, and the commit WAS inside what was
+    // serving. Say only what has actually been established.
+    if (self && self.refusedByGate === false) {
+      L.push(
+        '  THIS MERGE\'S OWN BUILD NEVER STARTED — a newer merge superseded it while it waited for CI.',
+      );
+      L.push('  That is normal on a busy night and needs no action: the `contains it` line above is what');
+      L.push('  says whether production already carries this commit. Do NOT redeploy or re-merge.');
+    } else if (self && self.refusedByGate === true) {
+      L.push(
+        '  🔴 THIS MERGE WAS REFUSED BY THE GATE, not queued and not superseded — merged, green and NOT serving.',
+      );
+    } else if (self) {
+      L.push('  🔴 THIS MERGE WAS WITHHELD and its check suites could not be read, so the cause is unknown.');
+    }
   }
   if (out.mainCi) L.push(`  main's CI      ${out.mainCi.status}/${out.mainCi.conclusion || '-'}  ${out.mainCi.at}`);
   for (const n of out.notes) L.push(`  note: ${n}`);

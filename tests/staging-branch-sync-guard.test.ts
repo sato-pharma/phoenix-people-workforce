@@ -140,9 +140,12 @@ export function runStagingBranchSyncGuardTests(): void {
   );
   assert.ok(
     /^\s*runs-on:\s*ubuntu-latest\s*$/m.test(yml),
-    `${WORKFLOW} must pin \`runs-on\` to a literal label, not \`vars.CI_RUNNER\`. A job whose label matches no ` +
+    `${WORKFLOW} must pin \`runs-on\` to a literal label, never a computed one. A job whose label matches no ` +
       "ONLINE runner does not fall back — it QUEUES — and a queued sync means staging silently stops advancing. " +
-      "The repository has had zero self-hosted runners registered since 2026-09-27.",
+      "Self-hosted runners ARE registered here, every one carrying the identical label set " +
+      "self-hosted,X64,Linux,phoenix, so this is a live hazard rather than a theoretical one. (An earlier " +
+      "version of this message said zero were registered, which was already false. Do not replace that with " +
+      "a number either: the count read ten and then three inside one hour on 2026-09-28.)",
   );
 
   // ── THE RED HALF: only a `success` conclusion may publish ───────────────────────────────────

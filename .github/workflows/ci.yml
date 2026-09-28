@@ -146,8 +146,37 @@ jobs:
   # because a skipped job reports no status and a required check with no status blocks a PR
   # forever — the exact breakage ci-docs-fallback.yml was invented to paper over. Only the
   # expensive steps below are conditional.
+  # ── WHICH RUNNER, AND WHY IT IS AN EXPRESSION (2026-09-28) ─────────────────────────────────
+  # The six `runs-on` lines in this repo (four here, two in security-scan.yml) are BYTE-IDENTICAL
+  # and pinned that way by tests/ci-gate-parity.test.ts. Self-hosted is opt-in PER BRANCH: push a
+  # branch named `ci-runner/<task>` and its PR runs on the self-hosted label, everything else runs
+  # hosted. Five conditions, each of which exists for a reason a past incident paid for:
+  #
+  #   vars.CI_SELF_HOSTED != 'off'          a one-word kill switch that does not need you to
+  #                                         remember the label you configured
+  #   vars.CI_RUNNER_LABEL != ''            NOTHING is baked in. A job whose label has no online
+  #                                         runner does NOT fall back to hosted — it QUEUES, for
+  #                                         ever, with nothing red. So the label must be named
+  #                                         explicitly and an unset variable means hosted.
+  #   github.event_name == 'pull_request'   `main` can NEVER be self-hosted. main's CI IS the
+  #                                         production deploy gate (AGENTS.md §2): a runner that
+  #                                         fails or queues there stops shipping.
+  #   head.repo.full_name == repository     same-repo only. A fork PR on a self-hosted runner is
+  #                                         arbitrary code execution on our own machine.
+  #   startsWith(github.head_ref, …)        the opt-in is the branch NAME, so there is no variable
+  #                                         to flip and nothing to remember to revert. It also
+  #                                         cannot change mid-flight, unlike vars.*, which are
+  #                                         re-resolved on every new run ATTEMPT — the reason the
+  #                                         2026-09-27 repo-wide flip could not be made safe by
+  #                                         watching it.
+  #
+  # It replaced the repo-wide `CI_RUNNER` variable, which had no per-branch override and moved
+  # `secret-scan` — a REQUIRED check, in security-scan.yml — along with it, in a workflow nobody
+  # flipping it was watching. `PHX_BUILD_CPUS` below still keys off `runner.environment`, which is
+  # true on ANY self-hosted runner whatever its labels, so the CPU cap is unaffected.
+  # Turn-on procedure and the label situation: docs/ci-self-hosted-runner.md.
   validate:
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ (vars.CI_SELF_HOSTED != 'off' && vars.CI_RUNNER_LABEL != '' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'ci-runner/')) && vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     timeout-minutes: 20
 
     steps:
@@ -521,7 +550,7 @@ jobs:
   # same PR. tests/required-check-names.test.ts now fails if this job's name and the docs drift
   # apart, which is the only part of that a machine can hold.
   checks:
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ (vars.CI_SELF_HOSTED != 'off' && vars.CI_RUNNER_LABEL != '' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'ci-runner/')) && vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     timeout-minutes: 30
 
     steps:
@@ -665,7 +694,7 @@ jobs:
   # Playwright and has no mobile surface, so a broken mobile lockfile should not be able to block
   # a manual E2E run.
   mobile:
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ (vars.CI_SELF_HOSTED != 'off' && vars.CI_RUNNER_LABEL != '' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'ci-runner/')) && vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     timeout-minutes: 10
 
     steps:
@@ -724,7 +753,7 @@ jobs:
 
   full-e2e:
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.full_e2e == 'true'
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ (vars.CI_SELF_HOSTED != 'off' && vars.CI_RUNNER_LABEL != '' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'ci-runner/')) && vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     # `test` joined this list when it was split out of `validate` (2026-09-17) — dropping it
     # here would have quietly stopped the full E2E suite waiting on the unit tests.
     # `lint`, `typecheck` and `test` merged into `checks` on 2026-09-27 — a `needs:` naming a

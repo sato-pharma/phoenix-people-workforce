@@ -118,15 +118,17 @@ was that morning, no false alarm is armed, and the branch is maintained and wait
 
 On production, a merge is no longer the deploy; a merge **plus a green check suite on that commit** is.
 
-🔴 **SO DO NOT POINT `CI_RUNNER` AT `self-hosted` WHILE ZERO RUNNERS ARE REGISTERED.** `ci.yml` resolves
-every job's `runs-on` through `${{ vars.CI_RUNNER || 'ubuntu-latest' }}` (four jobs), and a label with
-no online runner does **not** fall back to GitHub's — the job QUEUES. On `main` that means CI never
-concludes, and under the production gate above **a deploy that never concludes never happens**: no red
-check, no alarm, nothing to read, until Railway abandons it at the two-hour timeout. Measured
-2026-09-27: `actions/runners` returns `total_count: 0` — there is no self-hosted runner on this
-repository at all. The variable is currently **set** to `ubuntu-latest`, so the rollback is
-`gh variable set CI_RUNNER --body ubuntu-latest`; `gh variable delete CI_RUNNER` also works, because
-the `||` above falls back to the same value, but it leaves the variable absent rather than explicit.
+🔴 **A SELF-HOSTED RUNNER ON `main` WOULD BREAK THIS GATE SILENTLY, WHICH IS WHY `main` CAN NO LONGER
+USE ONE.** A job whose label matches no ONLINE runner does **not** fall back to GitHub's — it QUEUES.
+On `main` that means CI never concludes, and under the gate above **a deploy that never concludes
+never happens**: no red check, no alarm, nothing to read. The repo-wide `CI_RUNNER` variable that made
+this reachable was retired on 2026-09-28; all six `runs-on` lines now compute the runner and require
+`github.event_name == 'pull_request'` plus a `ci-runner/` branch name, so `main`, a `workflow_dispatch`
+and every ordinary PR are hosted by construction. The label is also never hard-coded — an unset
+`CI_RUNNER_LABEL` means hosted — because the ten runners registered here (three online) all carry the
+same four labels and none distinguishes a host. Kill switch:
+`gh variable set CI_SELF_HOSTED --body off`. Procedure and the measurements:
+`docs/ci-self-hosted-runner.md`, "Turning it on".
 
 **The withholding is measured, not inferred** — from GitHub's own deployment status records:
 
@@ -199,6 +201,15 @@ drift. At 22:32:24 the settled ref would have been `287872eb7`; production was a
 `b91bd8c0c` (`success` at 22:26:03Z); `compare 287872eb7...b91bd8c0c` returns `ahead` → in sync →
 exit 0 → no failing suite → no withheld deploy. Pinned by `tests/deploy-drift-settled-ref.test.ts`,
 whose eight assertions were each confirmed to fire by breaking the fix.
+
+🔴 **A THIRD CAUSE OF `WITHHELD`, AND IT IS BENIGN: SUPERSEDED, NOT REFUSED.** Measured 2026-09-28 on
+`047a33388` — every check suite `completed/success`, no failed workflow anywhere, and a deployment
+record carrying exactly ONE status, `inactive`, with no `in_progress` at all. A newer merge
+(`75ef39135`, twenty seconds later) superseded it while it was still waiting for its own CI, so
+Railway never started the older build. `git merge-base --is-ancestor` puts it inside what is serving.
+**So `WITHHELD` alone is not a verdict — classify it:** a failed or cancelled suite on the commit means
+the gate refused it and that is the problem case; every suite green plus a newer deployment means it
+was merely superseded and production already carries it. `verify-shipped.mjs` prints which.
 
 🔴 **AND WHAT DOES *NOT* HOLD THE GATE, measured the same night so nobody chases it:** the four
 third-party app suites — `sentry`, `claude`, `vercel`, `railway-app` — are `queued` on *every* commit

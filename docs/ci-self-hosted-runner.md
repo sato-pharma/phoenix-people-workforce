@@ -383,17 +383,68 @@ for three. That is spend producing nothing, and parking them at 0 is a dashboard
 
 ## Turning it on
 
-The workflows do **not** hard-code `self-hosted`. Every job reads:
+The workflows do **not** hard-code `self-hosted`, and since 2026-09-28 they do not read a
+repo-wide `CI_RUNNER` either. All six `runs-on` lines — four in `ci.yml`, two in
+`security-scan.yml` — are byte-identical and read:
 
 ```yaml
-runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+runs-on: ${{ (vars.CI_SELF_HOSTED != 'off' && vars.CI_RUNNER_LABEL != '' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'ci-runner/')) && vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
 ```
 
-That default is deliberate and load-bearing. **A job whose `runs-on` matches no online runner does
-not fall back — it queues.** Hard-coding `self-hosted` means that the moment the box reboots,
-fills its disk or loses network, every PR silently stops getting CI, which is precisely the outage
-this repository spent 2026-09-27 living through for a different reason. With the variable, the
-runner is opt-in and the rollback is one command.
+**Self-hosted is opt-in PER BRANCH: push `ci-runner/<task>` and that PR runs on the label; every
+other branch, and `main`, runs hosted.** Each condition earns its place:
+
+| condition | why |
+| --- | --- |
+| `vars.CI_SELF_HOSTED != 'off'` | a one-word kill switch that does not require remembering the configured label |
+| `vars.CI_RUNNER_LABEL != ''` | **nothing is baked in.** A job whose label matches no online runner does **not** fall back — it QUEUES, for ever, with nothing red. An unset variable therefore means hosted |
+| `github.event_name == 'pull_request'` | **`main` can never be self-hosted.** main's CI *is* the production deploy gate, so a runner that fails or queues there stops shipping |
+| `head.repo.full_name == github.repository` | same-repo only — a fork PR on a self-hosted runner is arbitrary code execution on our own machine |
+| `startsWith(github.head_ref, 'ci-runner/')` | the opt-in is the branch **name**, so there is nothing to flip and nothing to remember to revert. It also cannot change mid-flight, unlike `vars.*`, which are re-resolved on every new run **attempt** |
+
+🔴 **WHY THE LABEL IS A VARIABLE AND NOT `self-hosted`, MEASURED 2026-09-28.** `runs-on: self-hosted`
+matches **every** self-hosted runner on the repo, so it can never mean "the box I provisioned" — and a
+label that matches no online runner **queues for ever** rather than failing. When this switch was
+written every runner here carried the same four labels (`self-hosted,X64,Linux,phoenix`), so nothing
+could be targeted deliberately at all.
+
+✅ **That has since been fixed at the owner's instruction (2026-09-28): the Railway replicas now also
+carry `railway-eu`**, kept alongside their existing labels rather than replacing them, so nothing that
+targeted them before broke. Verified live — three runners, all online, all carrying
+`self-hosted,X64,Linux,phoenix,railway-eu`. **So `CI_RUNNER_LABEL=railway-eu` names that pool on
+purpose, and the switch is provable end to end without new hardware.** A future Hetzner box takes its
+own label and is selected the same way.
+
+🔴 **Do not quote a runner COUNT from this or any doc.** It read **ten** and then **three** inside the
+same hour on 2026-09-28: the Railway replicas register non-ephemerally, so stale registrations pile up
+after each redeploy until someone clears them, and a session that had just written "ten" was stale
+within the hour. Read `gh api repos/<repo>/actions/runners` and compare the label **sets**. Register a new host with its own extra label and name that label here:
+
+```bash
+# on the host, BEFORE running the setup script
+export RUNNER_LABELS=self-hosted,linux,x64,phoenix,hetzner
+```
+```bash
+# then point the switch at it — and note this does NOT turn anything on by itself:
+# only a same-repo ci-runner/<task> PR is eligible
+gh variable set CI_RUNNER_LABEL --body hetzner    # or railway-eu, which already exists
+```
+
+🔴 **Neither variable is set today, deliberately.** `gh variable list` shows no `CI_RUNNER_LABEL` and
+no `CI_SELF_HOSTED`, so every job is hosted. Arming the switch is the owner's call while the runner
+rollout is halted — the label existing is not the same thing as the switch being on.
+
+`scripts/setup-self-hosted-runner.sh` defaults `RUNNER_LABELS` to `self-hosted,linux,x64,phoenix` —
+byte-identical to what the Railway replicas carry — so the override is the whole point. Deregistering
+those replicas is **not** a prerequisite and does not work as one: the service re-registers a replica
+whenever one cycles, so `gh api -X DELETE .../runners/<id>` is a loop, not a fix. Stopping that
+project is the owner's dashboard decision.
+
+`PHX_BUILD_CPUS` is unaffected — it gates on `runner.environment == 'self-hosted'`, which is true on
+any self-hosted runner whatever its labels.
+
+**The rollback is `gh variable set CI_SELF_HOSTED --body off`**, and because `vars.*` are re-resolved
+on a new run attempt, `gh run rerun --failed` then rescues a stuck `ci-runner/` PR.
 
 1. Provision a host — Ubuntu 22.04/24.04, **x86_64, 8 GB RAM minimum** (`ci.yml` runs typecheck
    with `--max-old-space-size=6144`, and the build peaks around 4 GB), ~40 GB disk.
