@@ -113,9 +113,24 @@ export async function uploadHeadwindApp(
 
   const serverPath = await uploadBytes(file, fetchImpl, env);
 
+  // 🔴 `type: "app"` IS NOT OPTIONAL, AND LEAVING IT OUT FAILS AS A 200. Headwind's `applications`
+  // table has NOT NULL on `type`, so without it the insert throws and the server answers
+  // `{"status":"ERROR","message":"error.internal.server"}` under an HTTP **200** — a message that
+  // names nothing and reads like the server being unwell. The real cause is only in the container's
+  // own log: `PSQLException: null value in column "type" of relation "applications" violates
+  // not-null constraint` (measured on production, 2026-09-28, uploading the Phoenix mdm APK). Every
+  // one of the 75 seeded catalogue rows carries `"app"`; nothing else appears.
+  //
+  // 🔴 AND A FAILED REGISTER CONSUMES THE UPLOADED TEMP FILE. The next attempt against the same
+  // `serverPath` dies with `FileNotFoundException … Could not move the uploaded .apk-file` — a
+  // DIFFERENT error that hides the first one, so retrying a body shape without re-uploading tests
+  // nothing and reads as a second, unrelated fault.
   const application = await callHeadwind<Record<string, unknown>>(
     "/rest/private/applications/android",
-    { body: JSON.stringify({ filePath: serverPath, showIcon: input.showIcon !== false }), method: "PUT" },
+    {
+      body: JSON.stringify({ filePath: serverPath, showIcon: input.showIcon !== false, type: "app" }),
+      method: "PUT",
+    },
     fetchImpl,
     env,
   );
@@ -143,7 +158,12 @@ export async function uploadHeadwindApp(
   let installed = false;
   if (applicationId !== null && Number.isInteger(input.configurationId)) {
     await linkHeadwindApp(
-      { action: 1, applicationId, configurationId: input.configurationId as number },
+      {
+        action: 1,
+        applicationId,
+        configurationId: input.configurationId as number,
+        showIcon: input.showIcon !== false,
+      },
       actor,
       fetchImpl,
       env,
