@@ -117,14 +117,37 @@ export function useCrmGet<T>(url: string | null, key: string): CrmResource<T> {
     if (url === null) return;
     const controller = new AbortController();
     const tag = `${nonce}|${url}`;
+    // 🔴 SUPERSEDED, NOT ABORTED. The old guard was `if (controller.signal.aborted) return`, which
+    // is right for OUR OWN cleanup — another run of this effect is already on its way with a new
+    // tag, so leaving the state alone is correct — and wrong for an abort from anywhere else. A
+    // phone drops in-flight requests when the tab is backgrounded or the network switches between
+    // 4G and WiFi, and a deploy drops them too. That rejection was then swallowed: `state` kept the
+    // PREVIOUS tag, so `loading` below stayed true for ever.
+    //
+    // A stuck `loading` is not a spinner. `data` survives (same URL), so the page renders normally
+    // with the last answer, and `error` stays null so no load error and no Retry is offered — but
+    // every screen derives `locked` from it, and every button is disabled on `locked`. The result
+    // is a page that looks perfectly healthy where Save, Send and the week switcher silently do
+    // NOTHING, with no message and nothing to press. It survives until the tab is reloaded, and
+    // `reload()` runs after every save, so one dropped request poisons the screen.
+    //
+    // So only our own cleanup may swallow the rejection; every other abort surfaces as a load error
+    // with a Retry, like any other failed read.
+    let superseded = false;
     crmGet<T>(url, key, controller.signal).then(
-      (data) => setState({ data, error: null, tag, url }),
+      (data) => {
+        if (superseded) return;
+        setState({ data, error: null, tag, url });
+      },
       (error: unknown) => {
-        if (controller.signal.aborted) return;
+        if (superseded) return;
         setState((current) => ({ data: current.url === url ? current.data : null, error: messageOf(error), tag, url }));
       },
     );
-    return () => controller.abort();
+    return () => {
+      superseded = true;
+      controller.abort();
+    };
   }, [key, nonce, url]);
 
   const reload = useCallback(() => setNonce((value) => value + 1), []);
