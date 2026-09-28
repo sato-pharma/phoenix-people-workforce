@@ -323,7 +323,20 @@ function unpushedCount(dir) {
  * command that fails is a worktree this refuses, never one it strips. `idleMin` is null when
  * the verdict was reached before idleness was measured, so a caller must not print it blind.
  */
-function stripIdleVerdict(dir, thresholdMin) {
+/**
+ * The live-session half of the strip gate: the reason a worktree is occupied, or null.
+ *
+ * A named function rather than an inline call so the one place that decides what --strip-idle
+ * deletes under keeps reading as a list of gates. `buildCacheIdleMinutes` is included because a
+ * running `next dev` rewrites `.next` continuously, and `.next` is half of what gets deleted here —
+ * stripping it under a live dev server breaks the server, not just the cache.
+ */
+function stripLivenessReason(dir, probe) {
+  const verdict = livenessVerdict({ cacheIdleMin: buildCacheIdleMinutes(dir), dir, probe });
+  return verdict.live ? verdict.reason : null;
+}
+
+function stripIdleVerdict(dir, thresholdMin, probe) {
   const status = git(["-C", dir, "status", "--porcelain"]);
   if (status === null) return { ok: false, reason: "cannot read git status", idleMin: null };
   const dirtyCount = status === "" ? 0 : status.split("\n").filter(Boolean).length;
@@ -346,6 +359,33 @@ function stripIdleVerdict(dir, thresholdMin) {
       idleMin: null,
     };
   }
+
+  // FOURTH GATE — THE MIRROR OF AN INVARIANT THIS REPO ALREADY STATES, AND NEVER WIRED BACK.
+  // `worktree-liveness.mjs` routed --strip-idle's own mtime measurement INTO the retirable gate, so
+  // nothing this pass refuses as possibly-mid-edit can be offered for DELETION by the same run. The
+  // reverse was never wired: the holder probe and the session transcripts that the retirable scan
+  // consults were never shown to THIS gate.
+  //
+  // Measured 2026-09-28. One run's husk section reported
+  // `.claude/worktrees/busy-hypatia-186800` as holding a live process (claude pid 17760, node pid
+  // 22696, powershell pid 21524) and the --strip-idle pass of the SAME run called it "idle 260 min"
+  // and emptied its node_modules under that session. Its files really had sat for 260 minutes —
+  // because the session was sitting AT A PROMPT, which is precisely the state an mtime cannot see
+  // and a process's PEB can. Nothing committed was lost (the strip only takes caches), but the next
+  // build in that folder fails with no stated cause, and the restore advice this script prints
+  // names `new-session.mjs --repair <task>`, which does not address a `.claude/worktrees/*` folder.
+  //
+  // `sourceIdleMin` is deliberately NOT passed. livenessVerdict would then apply its own fixed
+  // 120-minute window and pre-empt the threshold `--strip-idle=N` exists to set, and its refusal
+  // wording duplicates the one below — which `tests/repo-doctor-strip-idle-offer.test.ts` pins as
+  // appearing exactly once, because a second copy means a caller re-implementing a gate.
+  //
+  // Placed BEFORE the mtime check for the reason livenessVerdict gives for its own ordering: a
+  // holder read out of the PEB is direct evidence, an mtime is an inference, so when both would
+  // fire the reader gets the specific one. A broken probe answers `live`, so not knowing still
+  // reads as NOT eligible.
+  const heldBy = sessionHoldReason(dir) ?? stripLivenessReason(dir, probe);
+  if (heldBy) return { ok: false, reason: heldBy, idleMin: null };
 
   const idle = idleMinutes(dir);
   if (idle === null) {
@@ -900,7 +940,7 @@ if (!fix && !stripIdle) {
   for (const r of live) {
     const cached = cacheEntries(r.dir);
     if (cached === 0) continue; // already stripped, or never installed
-    const verdict = stripIdleVerdict(r.dir, idleThresholdMin);
+    const verdict = stripIdleVerdict(r.dir, idleThresholdMin, holderProbe);
     if (verdict.ok) {
       eligible++;
       reclaimable += cached;
@@ -1885,7 +1925,7 @@ if (stripIdle) {
     // number that was advertised and the number that is deleted cannot drift apart the way they
     // did before that function existed. Re-running them is the point; sharing them is what
     // stops a fourth gate being added to one caller and not the other.
-    const verdict = stripIdleVerdict(r.dir, idleThresholdMin);
+    const verdict = stripIdleVerdict(r.dir, idleThresholdMin, holderProbe);
     if (!verdict.ok) {
       console.log(`  SKIP  ${label.padEnd(52)} ${verdict.reason}`);
       continue;
