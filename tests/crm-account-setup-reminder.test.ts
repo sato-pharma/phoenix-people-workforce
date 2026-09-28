@@ -123,9 +123,16 @@ export function runCrmAccountSetupReminderTests(): void {
     );
     const daily = source("app/api/notifications/daily/route.ts");
     assert.ok(/runCrmAccountSetupReminder\(\)\.catch\(/.test(daily), "it runs in the daily job, with its own catch like every other pass");
-    assert.ok(/const totalJobs = 28;/.test(daily), "the hand-maintained sub-job count is bumped, or the run summary silently under-reports");
+    // The sub-job COUNT is checked mechanically in tests/dead-telegram-link-alert.test.ts, against
+    // the number of passes actually present. A literal here would break on every future sub-job,
+    // which teaches the next session to edit the number rather than read it.
     // APPENDED, never inserted: the file records two real off-by-one incidents from doing otherwise.
     const destructure = daily.slice(daily.indexOf("  const ["), daily.indexOf("] = await Promise.all(["));
-    assert.ok(/needsYouWeeklyEmail,\s*crmAccountSetupReminder,\s*$/.test(destructure), "named LAST in the destructure, after position 27");
+    // APPENDED, not inserted — asserted as ORDER rather than as "last", because "last" is only true
+    // until the next sub-job lands, and would then fail for a change that is perfectly correct.
+    assert.ok(
+      destructure.indexOf("crmAccountSetupReminder") > destructure.indexOf("needsYouWeeklyEmail"),
+      "named AFTER position 27, so positions 1-27 keep their meaning",
+    );
   }
 }
