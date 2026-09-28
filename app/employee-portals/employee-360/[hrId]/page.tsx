@@ -266,6 +266,7 @@ export default async function EmployeePortalEmployee360DetailPage({
           teamHealth={teamHealth}
           teamLifecycle={teamLifecycle}
           tmAnalytics={tmAnalytics}
+          suppressCoaching
         />
       </div>
     </Shell>

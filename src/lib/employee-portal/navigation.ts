@@ -583,10 +583,11 @@ export function resolveEmployeePortalNavVisibility(
   const showMarketingControlTab = canUseEmployeePortalMarketingControl(resolvedRole);
   const showMarketingRoiTrackingTab = canUseEmployeePortalMarketingRoiTracking(resolvedRole);
   const showMarketingCoverageReportTab = canUseEmployeePortalMarketingCoverageReport(resolvedRole);
-  // Regional Manager included: canAccessCoachingEmployee (coaching/service.ts) already scopes an RM
-  // to their full management subtree via isWithinManagerHierarchy, so the reports exist — only the
-  // sidebar link was missing.
-  const showTeamCoachingTab = showTeamPerformanceTab || showMedRepsPerformanceTab || isRegionalManager;
+  // Coaching is hidden from the employee portal system-wide (owner, 2026-09-29: "hide anything
+  // related to training manager and coaching anywhere system wide in employee portal"). This flag
+  // stays false for every role — DM/RM/NSM keep their coaching DATA access server-side, only the
+  // portal link is gone. The route itself is blocked by app/employee-portals/coaching/layout.tsx.
+  const showTeamCoachingTab = false;
   // Must stay in lockstep with WEEKLY_MONTHLY_PLAN_ELIGIBLE_JOB_TITLES (weekly-planning/plan-v1.ts):
   // a role listed here but not there sees the builder link and gets "Forbidden" on submit, and a
   // role eligible there but missing here can submit but has no way to reach the page. District
@@ -722,9 +723,13 @@ export function resolveEmployeePortalNavVisibility(
     // LINE scope (see getExpensesScope) already covers self + the whole line.
     showTeamExpensesTab: false,
     showTeamPerformanceTab,
-    showTrainingManagerCreateCoachingTab: isTrainingManager,
-    showTrainingManagerDashboardTab: isTrainingManager,
-    showTrainingManagerFieldCoachingTab: isTrainingManager,
+    // The whole Training Manager section is hidden from the employee portal (owner, 2026-09-29:
+    // "hide anything related to training manager and coaching anywhere system wide"). Coaching read
+    // access is unchanged server-side; only the portal links are gone, and the routes are blocked by
+    // app/employee-portals/training-manager/layout.tsx.
+    showTrainingManagerCreateCoachingTab: false,
+    showTrainingManagerDashboardTab: false,
+    showTrainingManagerFieldCoachingTab: false,
     // Regional Manager included: getEmployeePortalVacancies already has an RM branch that bounds
     // open seats to the RM's own line AND the regions in their management subtree, so the data was
     // there — the missing `vacancies` grant (added to defaultPermissionMatrix) and this flag were
@@ -891,7 +896,9 @@ export function resolveEmployeePortalNavVisibility(
       isProductManager ||
       isGroupProductManager ||
       isMarketingManager,
-    showCoachingAnalyticsTab: showSalesIntelligence,
+    // Coaching Analytics is hidden from the employee portal system-wide (owner, 2026-09-29). Route
+    // blocked by app/employee-portals/coaching-analytics/layout.tsx.
+    showCoachingAnalyticsTab: false,
     showDoubleVisitAnalyticsTab: showSalesIntelligence || isTrainingManager,
     // Double Visit Report — sidebar link mirrors the page's own DV_FOCUS_ROLES access gate
     // (home-snapshot.ts): DSM/RM/NSM/PM/GPM/TM. Each server-scopes its own data.
