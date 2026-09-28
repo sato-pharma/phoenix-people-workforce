@@ -125,11 +125,13 @@ export function runCiRunnerSwitchTests() {
     /startsWith\(github\.head_ref, 'ci-runner\/'\)/.test(expr),
     "the branch-name opt-in is gone. It is what makes this per-branch rather than repo-wide, and " +
       "unlike a variable it cannot change mid-flight. 🔴 IF YOU REMOVED IT TO WIDEN SELF-HOSTED CI TO " +
-      "EVERY PR, THAT IS AN OWNER RULING AND THE ANSWER IS NOT YET: he ruled on 2026-09-28 to wait for " +
-      "the CPX32s first. Measured that night, three replicas took FOUR required jobs and serialised — " +
-      "validate, checks and mobile queued behind secret-scan — so widening onto the current pool makes " +
-      "every PR slower than hosted CI, trading a real cost for an unreal one. Re-propose it when the " +
-      "Hetzner boxes are registered, not before.",
+      "EVERY PR, THAT IS AN OWNER RULING AND THE ANSWER IS NO. This message used to say \"not yet, wait " +
+      "for the CPX32s\" — the owner REFUSED that purchase on 2026-09-28 (\"I WILL NOT BUY THIS\"), so there " +
+      "is no arriving hardware and nothing to re-propose it after. Judge it on the pool that EXISTS: " +
+      "measured 2026-09-28, three replicas took FOUR required jobs and serialised — validate, checks and " +
+      "mobile queued behind secret-scan — so widening onto this pool makes every PR slower than hosted " +
+      "CI, trading a real cost for an unreal one. Widen only if the pool itself grows, and never by " +
+      "re-pitching the boxes.",
   );
 
   // 4 — the retired repo-wide variable must not come back, in any expression, in any workflow.

@@ -531,8 +531,16 @@ The numbered steps above assume a host that already exists and a shell that is a
 root** (`[ "$(id -u)" -ne 0 ] || die`) — so the procedure above stops dead at that line with the
 servers already bought. **Step B2 is the missing step.**
 
-**A — order (browser, `console.hetzner.com`).** Prices read from Hetzner's own data 2026-09-28; they
-rose about 170% on 15 June 2026, so re-read them rather than trusting this table later.
+🔴 **THIS ORDER WAS REFUSED AND THE SECTION IS KEPT ONLY AS COSTED RESEARCH — DO NOT ACT ON IT AND
+DO NOT RE-PITCH IT.** The owner's answer on 2026-09-28 was *"I WILL NOT BUY THIS"*, about exactly this
+pair at €70.98/month. It stays in the document because the price research, the region trap and the
+root-login trap below all cost real work to establish and would otherwise be re-derived — not because
+anything is pending. **Self-hosted CI already runs on the existing Railway pool** (the switch above);
+nothing here is required for that.
+
+**A — order (browser, `console.hetzner.com`), IF it is ever revisited.** Prices read from Hetzner's own
+data 2026-09-28; they rose about 170% on 15 June 2026, so re-read them rather than trusting this table
+later.
 
 | field | value | why |
 | --- | --- | --- |
@@ -619,9 +627,12 @@ deploy within minutes, and re-running it green does not resurrect it.
 
 ## Widening it beyond `ci-runner/` branches — the owner's ruling, 2026-09-28
 
-🔴 **NOT YET. He ruled to wait for the CPX32s before widening self-hosted CI to every PR**, and this is
-the obvious-looking improvement that a session reading the cost numbers will reach for, because the
-remaining share of the Actions bill genuinely does sit in ordinary pull requests.
+🔴 **NO — and no longer "not yet".** The earlier wording parked this behind buying two CPX32s. **The
+owner refused that purchase outright on 2026-09-28: *"I WILL NOT BUY THIS"*.** So there is no arriving
+hardware to wait for, and **widening is judged on the pool that exists or it is not judged at all**.
+This is still the obvious-looking improvement a session reading the cost numbers will reach for,
+because the remaining share of the Actions bill genuinely does sit in ordinary pull requests — and the
+measurement below is now the whole of the answer rather than an interim one.
 
 **The measurement that decided it.** On the night the switch was proven, two `ci-runner/` PRs ran on the
 pool and **four required jobs wanted three replicas**: `validate`, `checks` and `mobile` queued behind
