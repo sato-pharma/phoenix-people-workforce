@@ -34,7 +34,11 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     });
 
     const { id } = await context.params;
-    const outcome = await sendOfferEmail(id, { sentBy: access.hrId ?? null });
+    // The body is optional: a send with no copies posts nothing, exactly as it did before CC and BCC
+    // existed. The addresses are judged in `sendOfferEmail`, not here, so the screen and the server
+    // cannot disagree about which of them may go.
+    const body = (await request.json().catch(() => null)) as { bcc?: unknown; cc?: unknown } | null;
+    const outcome = await sendOfferEmail(id, { bcc: body?.bcc, cc: body?.cc, sentBy: access.hrId ?? null });
 
     // Only when mail actually left. A skipped send stamps nothing on the offer row and must not
     // leave a trail saying an offer was issued — that reading is worse than no row at all.
@@ -46,16 +50,23 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
         // What the row has to answer later is "what exactly did this person commit us to, and to
         // whom" — a salary, a start date and a stranger's address. `template_snapshot` on the offer
         // holds the letter as sent; this holds the terms, so neither question needs the other.
+        // CC and BCC too: a salary copied to somebody is part of "to whom", and the owner allowed any
+        // address without a reason (2026-09-28) — so this row is the only record of who else read it.
         newValues: {
           attachmentIncluded: outcome.attachmentIncluded,
+          bcc: outcome.bcc,
           candidateName: outcome.offer.candidateName,
+          cc: outcome.cc,
           from: outcome.from,
           jobTitle: outcome.offer.title,
           recipient: outcome.recipient,
           startDate: outcome.offer.startDate,
           totalMonthly: outcome.offer.totalMonthly,
         },
-        summary: `Offer of employment sent to ${outcome.offer.candidateName} <${outcome.recipient}> for ${outcome.offer.title}`,
+        summary:
+          `Offer of employment sent to ${outcome.offer.candidateName} <${outcome.recipient}> for ${outcome.offer.title}` +
+          (outcome.cc.length > 0 ? `; CC ${outcome.cc.join(", ")}` : "") +
+          (outcome.bcc.length > 0 ? `; BCC ${outcome.bcc.join(", ")}` : ""),
       });
     }
 

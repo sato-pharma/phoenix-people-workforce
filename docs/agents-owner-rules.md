@@ -3182,6 +3182,37 @@ This reads exactly like a data defect and it is not one. **A session "completing
 the defect.** The hook lives in `src/lib/recruitment/candidate-offer-link.ts`, next to the code that
 would have to be written to get it wrong.
 
+## An offer may be copied to anyone, with no reason — owner ruling, 2026-09-28
+
+His words, asking for the feature: *"add option to CC or BCC in the job offer module"*, then *"and to
+CC or BCC more than one recipient"*.
+
+### What was put to him
+
+An offer carries the candidate's salary, and the Sato Email Composer already refuses an outside address
+typed by hand unless the sender writes a reason (`src/lib/sato-email/typed-policy.ts`). So he was asked,
+as multiple choice, who may be copied: company addresses only (recommended), outside addresses with a
+reason, or anyone with no reason. **He chose anyone, no reason.**
+
+### What that means in the code
+
+- `src/lib/offers/copy-recipients.ts` judges an address on its SHAPE only. It refuses nothing for its
+  domain and asks for no justification. A bad address stops the whole send (never a partial send); a
+  redundant one — the candidate's own address, or a CC repeated on BCC — is left off and said.
+- Every copy is declared to the Recipient Assurance Guard as `externalRecipients`, because the guard
+  otherwise blocks any address that is not an employee's — after HR has already pressed Send.
+- Up to **10** copies, CC and BCC together. `offers/offer_letter` carries an `always` ceiling of 11 in
+  the Notification Confidence Gate: the offer's baseline was one recipient for its whole life, so
+  without it every offer copied to three or more people would be HELD.
+- CC and BCC are not stored on the offer row — they are not part of the letter. The send's audit row
+  (`entity_type = job_offer`) records both, and it is the only record of who else read the salary.
+
+### The trap
+
+A session reviewing email safety will find an outside address allowed on a message carrying a salary,
+with no reason asked, and read it as a leak to close. **It is his decision; closing it is the defect.**
+Pinned by `tests/offer-copy-recipients.test.ts`.
+
 ## `AGENTS.md` §4 Standing owner rules — as it stood before the 2026-09-12 condensation
 
 On 2026-09-12 `AGENTS.md` was cut to roughly half its size at the owner's request ("Load less of AGENTS.md"): every hook was reduced to its rule plus the one detail needed to obey it. This is that section's hook text **verbatim** from `origin/main` 3eea44aef, kept so that no measurement, date, count or diagnosis a condensed hook dropped is lost. Search it for the hook's wording. The accounts earlier in this file remain the fuller record.
