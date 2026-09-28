@@ -12,7 +12,7 @@ together.
 | The row | `app_auth_users` with `is_test_persona = true`, a `TEST-…` login id, **no `hr_id` of its own**, and `test_persona_of_hr_id` naming the real employee it mirrors. Two check constraints hold that shape (`supabase/migrations/20260927235452_app_auth_users_test_accounts.sql`). |
 | The session | `resolveSessionState` (`src/lib/auth/server.ts`) turns it into the MIRRORED person: `hrId` and `role` are hers, and `access.testPersona` is set. A test row with no mirror, with an HR id of its own, or pointed at an admin-shell role is **refused**, never downgraded. |
 | The write guard | `resolveAccessContext` refuses every write from a test account outside `/api/phoenix-crm/` and `/api/auth/`, before the route runs; `resolveAccessContextFromPage` refuses server actions. Fail-closed: a module with no test world does not save for a test account, and says so. |
-| Phoenix CRM | Every read and save is forced into the `is_test` world (`src/lib/phoenix-crm/server/access.ts`), with the mirrored person's own territories, scope and authority. A test manager decides **test** entries only, as the reviewer he mirrors — never a real one, never the SFE step. Nobody is notified of a test entry (`notifyPhoenixCrm` returns on `isTest`). |
+| Phoenix CRM | Every read and save is forced into the `is_test` world (`src/lib/phoenix-crm/server/access.ts`), with the mirrored person's own territories, scope and authority. A test manager decides **test** entries only, as the reviewer he mirrors — never a real one, never the SFE step. A test entry notifies the **test accounts** and nobody else (see below). |
 | The shell | Only an employee-portal role can be mirrored (`canBeMirrored`), so a test account always lands in the portal. Every portal page carries a "Test account" banner. |
 | The screen | `/admin/test-accounts`, Super Admin only: make one, point it at somebody else, switch it off, and copy its one-time set-password link. The link is never emailed; the Super Admin opens it in a private window and chooses the password himself. |
 
@@ -57,3 +57,37 @@ The copy of role, line and scope overrides is taken when the account is made or 
 (or make it again) if the real person's own account changes. Her departure is checked live.
 
 Pinned by `tests/test-accounts.test.ts`.
+
+## The test world tells the test accounts (owner, 2026-09-28)
+
+Until this date a test entry told nobody at all, which made the manager half impossible to try: the
+owner sent a weekly plan as `TEST-AYA` and `TEST-DF` was never pinged, so he had no way to see the
+approval arrive as a real manager sees it. His instruction was to make the test world notify the test
+accounts.
+
+**The hard part is that a notification is addressed by HR id, and a test account has none.** Its
+session carries the MIRRORED person's id, so anything addressed to it is addressed to her — and a
+notice landing on Dina Hamdy's real bell, or worse her Telegram, is the one outcome test accounts
+exist to prevent. So the notice is still addressed to her, because `employee_hr_id` and
+`recipients` are what the bell queries by, and a **marker** decides who may see it:
+
+| Piece | What it does |
+| --- | --- |
+| `notification_events.test_login_id` | The `TEST-` login allowed to see this row. **NULL on every real notification**, which is why nothing about a real person's bell changes. |
+| `metadata.testLoginId` | The same value, written as well as the column. `createNotificationEvent`'s fallback upsert (an old schema, no column) carries metadata but not columns — a marker kept only in the column would write a test notice as a real one. Two carriers keeps that path fail-**closed**. |
+| `testLoginMarkerOf` / `testNoticeVisibleToViewer` (`src/lib/notifications/in-app.ts`) | The reader. An unmarked row is everybody's, as before. A marked row belongs to **one** test login: not the employee it is addressed to, not another test login, not a Super Admin. |
+| `testAccountsMirroring` (`src/lib/auth/test-persona-directory.ts`) | Turns each real recipient into the ACTIVE test accounts mirroring him. A recipient nobody mirrors — a Super Admin playing in the test world — is **dropped**, never fallen back to the real person. |
+
+**A test notice is in-app and nothing else.** Her Telegram chat id, her push subscription and her
+email address are all hers. `notifyPhoenixCrm` asks for `["in_app"]`, and
+`createSystemNotificationForRecipient` narrows the resolved channels again from the marker, so
+neither a policy nor a channel preference can widen it back.
+
+🔴 **The test notice carries an idempotency key of its own** (`…:test:TEST-DF`). `notification_events`
+upserts on `event_key`, so reusing the real notice's key would **overwrite a real person's
+notification row** with a test one. That is not a tidiness point; it is the leak the suffix exists to
+prevent, and `tests/test-accounts.test.ts` pins it.
+
+Everything here is pinned in `tests/test-accounts.test.ts`, whose headline assertion is the plain
+one: **the real person never sees a test-world notice.** Each assertion was proved by breaking the
+code and watching that exact line fire.

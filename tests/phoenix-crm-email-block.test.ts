@@ -56,10 +56,18 @@ export function runPhoenixCrmEmailBlockTests() {
       1,
       "every Phoenix CRM notice goes out through one send, in-app and Telegram, and nothing else",
     );
+    // The test world used to tell nobody at all. Since 2026-09-28 (owner) it tells the TEST accounts
+    // — and the email ban has to survive that, because the test branch is a SECOND send. It does so
+    // twice over: the branch names in-app alone, and the module guard still keys on the module above.
     assert.match(
       notify,
-      /export async function notifyPhoenixCrm\(notice: PhoenixCrmNotice, isTest: boolean\): Promise<void> \{\s+if \(isTest\) return;/,
-      "a test entry tells nobody: the notifier returns before it describes or sends anything",
+      /const mirrors = await testAccountsMirroring\(delivery\.recipients\);/,
+      "a test entry is routed to the TEST- logins that mirror its recipients, never to the recipients themselves",
+    );
+    assert.equal(
+      (notify.match(/channels: \["in_app"\],/g) ?? []).length,
+      1,
+      "the test branch asks for in-app ALONE: her Telegram chat, her push subscription and her email are hers",
     );
     assert.match(notify, /module: PHOENIX_CRM_NOTIFICATION_MODULE,/, "the send carries the module the email guard keys on");
     assert.match(notify, /export const PHOENIX_CRM_NOTIFICATION_MODULE = "phoenix_crm";/);
@@ -103,7 +111,7 @@ export function runPhoenixCrmEmailBlockTests() {
           else if (call[end] === ")") depth -= 1;
           end += 1;
         }
-        assert.match(call.slice(0, end), /,\s*isTest,?\s*\)$/, `a notice in ${file} must pass the entry's test flag, so a Super Admin try-out tells nobody`);
+        assert.match(call.slice(0, end), /,\s*isTest,?\s*\)$/, `a notice in ${file} must pass the entry's test flag, or a test entry would be sent as a real one`);
       }
     }
   }

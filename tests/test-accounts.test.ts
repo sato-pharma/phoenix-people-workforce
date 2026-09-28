@@ -13,6 +13,7 @@ import {
   testAccountMayRun,
 } from "../src/lib/auth/test-persona.ts";
 import { ApiError } from "../src/lib/http/api-errors.ts";
+import { testLoginMarkerOf, testNoticeVisibleToViewer } from "../src/lib/notifications/in-app.ts";
 import {
   assertReviewer,
   assertUnplannedVisitApprover,
@@ -296,5 +297,67 @@ export function runTestAccountTests(): void {
     for (const path of ["src/lib/phoenix-crm/server/photos.ts", "src/lib/phoenix-crm/server/voice-notes.ts", "src/lib/phoenix-crm/server/time-anchor.ts"]) {
       assert.ok(/\.eq\("is_test", (input\.)?isTest\)\s*\.gte\("issued_at", since\)/.test(source(path)), `${path}: the hourly allowance is counted per world`);
     }
+  }
+
+  // ── The test world tells the TEST ACCOUNTS, and never the person they mirror (owner, 2026-09-28) ──
+  //
+  // A test-world notice is ADDRESSED to the real employee, because `employee_hr_id` / `recipients`
+  // is what the bell queries by. Only the marker keeps it off her bell — so the marker is the whole
+  // safety boundary, and every assertion below is about it holding in one more direction.
+  {
+    const marked = { metadata: {}, test_login_id: "TEST-DF" };
+    const viaMetadata = { metadata: { testLoginId: "test-df" }, test_login_id: null };
+    const real = { metadata: { seatId: "SEAT-AIF-REP-D13" }, test_login_id: null };
+
+    assert.equal(testLoginMarkerOf(marked), "TEST-DF", "the column marks the row");
+    assert.equal(testLoginMarkerOf(viaMetadata), "TEST-DF", "the metadata copy marks it too, upper-cased");
+    assert.equal(testLoginMarkerOf(real), null, "an ordinary notification carries no marker");
+
+    // 🔴 THE HEADLINE. Dina Hamdy signs in as herself; a plan her TEST manager was sent must not be
+    // on her bell. Everything else in this feature is a convenience; this is the promise.
+    assert.equal(testNoticeVisibleToViewer(null, marked), false, "the REAL person never sees a test-world notice");
+    assert.equal(testNoticeVisibleToViewer(null, viaMetadata), false, "not even when only the metadata copy survived");
+    assert.equal(testNoticeVisibleToViewer("", marked), false, "an empty viewer login is not a match");
+
+    assert.equal(testNoticeVisibleToViewer("TEST-DF", marked), true, "the test account it belongs to does see it");
+    assert.equal(testNoticeVisibleToViewer("test-df", marked), true, "case never decides who is told");
+    assert.equal(testNoticeVisibleToViewer("TEST-AYA", marked), false, "one test login never reads another's");
+
+    assert.equal(testNoticeVisibleToViewer(null, real), true, "a real notification is unchanged for a real viewer");
+    assert.equal(testNoticeVisibleToViewer("TEST-AYA", real), true, "and still reaches a test account reading her bell");
+
+    // The bell applies it, and asks the database for the column it reads.
+    const inApp = source("src/lib/notifications/in-app.ts");
+    assert.ok(/\.filter\(\(row\) => testNoticeVisibleToViewer\(identity\.testLoginId, row\)\)/.test(inApp), "the bell filters every row through the marker");
+    assert.ok(/event_type,test_login_id"/.test(inApp), "the bell selects the marker column");
+    assert.ok(/testLoginId: access\.testPersona\?\.loginId \?\? null,/.test(inApp), "the viewer's own test login is what it compares against");
+
+    // The writer: marker in BOTH carriers, in-app only, and a key of its own.
+    const system = source("src/lib/notifications/system.ts");
+    assert.ok(/test_login_id: testLoginId,/.test(system), "the column is written");
+    assert.ok(/\.\.\.\(testLoginId \? \{ testLoginId \} : \{\}\),/.test(system), "and the metadata copy, which is all the no-column fallback can carry");
+    assert.ok(
+      /const deliveryChannels = cleanText\(input\.testLoginId\) \? channels\.filter\(\(channel\) => channel === "in_app"\) : channels;/.test(system) &&
+        /for \(const channel of deliveryChannels\) \{/.test(system),
+      "a marked notice is in-app alone: her Telegram, push and email are HERS",
+    );
+
+    // Phoenix CRM: the test world resolves recipients through the mirror directory, never directly.
+    const crmNotify = source("src/lib/phoenix-crm/server/notifications.ts");
+    assert.ok(!/if \(isTest\) return;/.test(crmNotify), "the test world no longer tells nobody");
+    assert.ok(/const mirrors = await testAccountsMirroring\(delivery\.recipients\);/.test(crmNotify), "recipients become the TEST- logins that mirror them");
+    assert.ok(/testLoginId: mirror\.loginId,/.test(crmNotify), "and the notice carries that login as its marker");
+    assert.ok(/channels: \["in_app"\],/.test(crmNotify), "the test branch asks for in-app only");
+    assert.ok(
+      /idempotencyKey: `\$\{delivery\.idempotencyKey\}:test:\$\{mirror\.loginId\}`/.test(crmNotify),
+      "a key of its own — a shared event_key would overwrite a REAL person's notification row",
+    );
+    assert.ok(/\[mirror\.hrId\],/.test(crmNotify), "addressed to the mirrored employee, which is the id the bell queries by");
+
+    // The directory never guesses: inactive and malformed rows are dropped, not approximated.
+    const directory = source("src/lib/auth/test-persona-directory.ts");
+    assert.ok(/\.eq\("is_test_persona", true\)/.test(directory), "only a test account can mirror anybody");
+    assert.ok(/\.eq\("is_active", true\)/.test(directory), "a disabled test account is told nothing");
+    assert.ok(/if \(!loginId \|\| !hrId\) continue;/.test(directory), "a row that is not a usable test account is dropped, never fallen back on");
   }
 }
