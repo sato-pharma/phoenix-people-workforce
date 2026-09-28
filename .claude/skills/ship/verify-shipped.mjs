@@ -92,6 +92,55 @@ export function classifyWithheld({ suites, hasNewerDeploy = false }) {
   };
 }
 
+// 🔴 "NEVER SUCCEEDED" IS NOT ENOUGH TO CALL A DEPLOY WITHHELD, AND THIS FUNCTION EXISTS BECAUSE
+// THE ONE-LINE TEST IT REPLACES WOULD HAVE BLAMED THE GATE FOR A DEPLOY THAT SHIPPED.
+// The old test was: newest status `inactive` AND no `success` anywhere. It was written from the
+// 2026-09-27 pair, where that shape genuinely did mean Railway SKIPPED the build. But a deployment
+// row can also simply never post a terminal status at all — measured 2026-09-28 on production
+// deployment 6712985148 (merge 91774f5f3), whose ONLY status was `in_progress` while
+// /api/healthz served that exact revision for the next hour; staging's twin row posted `success`
+// 44 seconds after creation, so this is GitHub's row going quiet, not a build still running. The
+// moment any later deploy supersedes such a row, GitHub appends `inactive` and it matches the old
+// test EXACTLY — so this script would have printed WITHHELD and named the deploy gate as the cause
+// on a commit that was demonstrably live. Same defect as its sibling above had: a classifier
+// certain about a mechanism it never checked.
+//
+// The discriminator that survives is NOT in the status history at all — it is whether the commit is
+// inside what production is SERVING. And it fails to UNKNOWN, never to `withheld`: a false WITHHELD
+// sends a reader to `railway redeploy`, which AGENTS.md §2.3 forbids and which cannot help anyway,
+// because the next green merge carries a skipped deploy forward by itself.
+//
+// `inLive` is deliberately THREE-VALUED: true, false, or undefined for "could not be established".
+// Do not collapse it to a boolean — `git merge-base --is-ancestor` answers false both for "not an
+// ancestor" and for "that commit is not in this clone", and reading the second as the first is
+// exactly how a shallow or stale checkout would manufacture a production alarm out of nothing.
+export function classifyDeployRow({ statuses, inLive }) {
+  if (!Array.isArray(statuses)) return { state: null, withheld: false, label: '?', note: 'statuses unreadable' };
+  const state = statuses.length ? statuses[0].state : null;
+  const neverSucceeded = !statuses.some((s) => s.state === 'success');
+
+  // The shape the old one-liner keyed on. Necessary, and on its own not sufficient.
+  if (!!state && state === 'inactive' && neverSucceeded) {
+    if (inLive === true)
+      return { state, withheld: false, label: 'CARRIED',
+        note: 'never deployed on its own, but its commit IS in the serving code — a later merge carried it forward; do NOT redeploy' };
+    if (inLive === false)
+      return { state, withheld: true, label: 'WITHHELD',
+        note: 'never succeeded and NOT in the serving code — Railway SKIPPED it' };
+    return { state, withheld: false, label: 'inactive?',
+      note: 'never succeeded, but ancestry could not be established — NOT called withheld; read `railway deployment list` to settle it' };
+  }
+
+  // A row that is still non-terminal on a commit already serving is the 6712985148 case itself.
+  // Printing a bare `in_progress` for it reads as "building, wait a minute", an hour after it went
+  // live, so it is named rather than left to look in-flight.
+  if (neverSucceeded && inLive === true && state && state !== 'inactive')
+    return { state, withheld: false, label: state,
+      note: 'already in the serving revision — this row never posted a terminal status' };
+
+  return { state, withheld: false, label: state || '?', note: '' };
+}
+
 // The verdict is one pure function of four facts, so it can be tested without touching GitHub and
 // so a change to it cannot quietly come to mean something else. `--selftest` runs the table below.
 export function decide({ state, mergeSha, contains, building, mainRed }) {
@@ -256,7 +305,46 @@ if (argv.includes('--selftest')) {
     console.log(`${bad.length ? 'FAIL' : 'PASS'}  withheld: ${name}${bad.length ? '  ->  ' + bad.join('; ') : ''}`);
   }
 
-  console.log(`\nSELFTEST verify-shipped: ${CASES.length + ANC.length + WH.length} cases, ${failed} failed`);
+  // Per-deployment-row classification. The invariant worth stating plainly, because every case
+  // below is one way of breaking it: WITHHELD is an accusation that a deploy never happened, so it
+  // is only ever printed when BOTH halves are established — no success in the history, AND the
+  // commit provably absent from what is serving. Unknown ancestry prints no accusation at all.
+  const st = (state) => ({ state });
+  const SKIPPED_SHAPE = [st('inactive'), st('in_progress')];
+  const DR = [
+    ['the real 2026-09-27 shape — never succeeded and NOT serving — is still WITHHELD',
+      { statuses: SKIPPED_SHAPE, inLive: false }, { withheld: true, label: 'WITHHELD', note: /SKIPPED/ }],
+    ['the SAME status history is NOT withheld when the commit IS serving',
+      { statuses: SKIPPED_SHAPE, inLive: true }, { withheld: false, label: 'CARRIED', note: /do NOT redeploy/ }],
+    ['ancestry UNKNOWN never prints the accusation',
+      { statuses: SKIPPED_SHAPE, inLive: undefined }, { withheld: false, label: 'inactive?', note: /could not be established/ }],
+    // The row that produced this whole function: deployment 6712985148, whose only status was
+    // `in_progress` while healthz served that revision for an hour. Bare `in_progress` reads as
+    // "building, look again in a minute", which is what sent a session to re-check a live deploy.
+    ['a non-terminal row on a commit already serving says so instead of looking in-flight',
+      { statuses: [st('in_progress')], inLive: true }, { withheld: false, label: 'in_progress', note: /never posted a terminal status/ }],
+    ['an ordinary superseded row (success then inactive) is not withheld and carries no note',
+      { statuses: [st('inactive'), st('success')], inLive: false }, { withheld: false, label: 'inactive', note: /^$/ }],
+    ['a serving row is plain success',
+      { statuses: [st('success')], inLive: true }, { withheld: false, label: 'success', note: /^$/ }],
+    ['unreadable statuses are never an accusation',
+      { statuses: null, inLive: false }, { withheld: false, label: '?', note: /unreadable/ }],
+    // `inLive` must stay three-valued. If it is ever collapsed to a boolean, `undefined` becomes
+    // falsy, this case starts returning WITHHELD, and the alarm is back — silently.
+    ['an EMPTY status list is not withheld, whatever ancestry says',
+      { statuses: [], inLive: false }, { withheld: false, label: '?', note: /^$/ }],
+  ];
+  for (const [name, input, want] of DR) {
+    const r = classifyDeployRow(input);
+    const bad = [];
+    if (r.withheld !== want.withheld) bad.push(`withheld expected=${want.withheld} got=${r.withheld}`);
+    if (r.label !== want.label) bad.push(`label expected=${want.label} got=${r.label}`);
+    if (want.note && !want.note.test(r.note || '')) bad.push(`note did not match ${want.note} (got "${r.note}")`);
+    if (bad.length) failed++;
+    console.log(`${bad.length ? 'FAIL' : 'PASS'}  deploy row: ${name}${bad.length ? '  ->  ' + bad.join('; ') : ''}`);
+  }
+
+  console.log(`\nSELFTEST verify-shipped: ${CASES.length + ANC.length + WH.length + DR.length} cases, ${failed} failed`);
   process.exit(failed ? 1 : 0);
 }
 
@@ -350,21 +438,28 @@ out.deployments = [];
 for (const d of prod) {
   let state = null;
   let withheld = false;
+  let label = '?';
+  let note = '';
   try {
     const statuses = ghJson(['api', `repos/${REPO}/deployments/${d.id}/statuses`]) || [];
-    state = statuses.length ? statuses[0].state : null;
-    // 🔴 AN `inactive` THAT WAS NEVER `success` IS A DEPLOY THAT NEVER HAPPENED, NOT A SUPERSEDED ONE.
-    // Railway calls it SKIPPED; GitHub only ever says `inactive`, which this script used to print as
-    // "normal and not a failure" — so a withheld deploy read as healthy. Measured 2026-09-27: two
-    // merges 86 seconds apart went `in_progress` -> `inactive` with no `success` between them, while
-    // `railway deployment list` showed SKIPPED for both, and production stayed on an older commit even
-    // after main's CI was re-run GREEN on the same sha. The whole status history is what distinguishes
-    // the two; the newest row alone cannot.
-    withheld = !!state && state === 'inactive' && !statuses.some((s) => s.state === 'success');
+    // 🔴 AN `inactive` THAT WAS NEVER `success` IS A DEPLOY THAT NEVER HAPPENED — *IF* ITS COMMIT IS
+    // ALSO ABSENT FROM WHAT IS SERVING. Railway calls that SKIPPED; GitHub only ever says `inactive`,
+    // which this script once printed as "normal and not a failure", so a withheld deploy read as
+    // healthy. Measured 2026-09-27: two merges 86 seconds apart went `in_progress` -> `inactive` with
+    // no `success` between them, `railway deployment list` showed SKIPPED for both, and production
+    // stayed on an older commit even after main's CI was re-run GREEN on the same sha.
+    // The ancestry half was added 2026-09-28 — see classifyDeployRow for the row that proved the
+    // status history alone cannot carry this. Ancestry is established here and NOT inferred: a
+    // commit missing from this clone must leave `inLive` undefined, never false, because gitOk
+    // cannot tell "not an ancestor" from "not here" and the second must never print an alarm.
+    let inLive;
+    if (live && gitOk(['cat-file', '-e', `${d.sha}^{commit}`]) && gitOk(['cat-file', '-e', `${live}^{commit}`]))
+      inLive = gitOk(['merge-base', '--is-ancestor', d.sha, live]);
+    ({ state, withheld, label, note } = classifyDeployRow({ statuses, inLive }));
   } catch (e) {
     out.notes.push(`deployment ${d.id} statuses unreadable: ${String(e.message).trim()}`);
   }
-  out.deployments.push({ id: d.id, sha: d.sha, short: String(d.sha).slice(0, 9), created: cairo(d.created_at), state, withheld, isThisMerge: d.sha === out.mergeSha });
+  out.deployments.push({ id: d.id, sha: d.sha, short: String(d.sha).slice(0, 9), created: cairo(d.created_at), state, withheld, label, note, isThisMerge: d.sha === out.mergeSha });
 }
 const mine = out.deployments.find((d) => d.isThisMerge) || null;
 const building = out.deployments.some((d) => ['in_progress', 'queued', 'pending'].includes(d.state));
@@ -412,14 +507,19 @@ function report(verdict, code, why) {
   if (out.deployments && out.deployments.length) {
     L.push('  production deployments (newest first, STATES not timestamps):');
     for (const d of out.deployments) {
-      const label = d.withheld ? 'WITHHELD' : String(d.state || '?');
-      L.push(`    ${d.short}  ${label.padEnd(11)} ${d.created}${d.isThisMerge ? '   <- this merge' : ''}${d.withheld ? '   (never succeeded — Railway SKIPPED it)' : ''}`);
+      const label = String(d.label || d.state || '?');
+      L.push(`    ${d.short}  ${label.padEnd(11)} ${d.created}${d.isThisMerge ? '   <- this merge' : ''}${d.note ? `   (${d.note})` : ''}`);
     }
     L.push('    states: success = serving · in_progress/queued = building, that is a QUEUE not a revert');
     L.push('            inactive AFTER a success = superseded by a later deploy, which is normal');
-    L.push('            WITHHELD = inactive having NEVER succeeded: the gate refused it and Railway');
-    L.push('            marked it SKIPPED. Re-running that CI green does NOT resurrect it — the next');
-    L.push('            merge carries production forward, or the owner redeploys in the dashboard.');
+    L.push('            WITHHELD = never succeeded AND its commit is NOT in the serving code: the gate');
+    L.push('            refused it and Railway marked it SKIPPED. Re-running that CI green does NOT');
+    L.push('            resurrect it — the next merge carries production forward, or the owner');
+    L.push('            redeploys in the dashboard.');
+    L.push('            CARRIED = never succeeded, but its commit IS in the serving code. Benign: a');
+    L.push('            later merge carried it. NOT an incident, and never a reason to redeploy.');
+    L.push('            inactive? = never succeeded and ancestry unknown. Deliberately NOT called');
+    L.push('            withheld — read `railway deployment list` rather than acting on a guess.');
     L.push('            🔴 A GREEN ci.yml DOES NOT RULE THIS OUT. The gate waits on EVERY check suite');
     L.push('            on the commit, and a SCHEDULED workflow attaches its suite to whatever commit');
     L.push('            is main HEAD when it fires — so any flaky cron here can withhold a deploy.');
