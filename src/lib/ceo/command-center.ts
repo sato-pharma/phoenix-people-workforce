@@ -2,21 +2,23 @@ import { getSalaryFlags } from "@/lib/admin/service";
 import { hrIdsMatch, type AccessContext } from "@/lib/auth/permissions";
 import { getAttendanceAnalytics } from "@/lib/attendance/analytics";
 import { getApprovedLeaveDayMap } from "@/lib/attendance/working-days";
-import { buildCoachingReportAnalytics } from "@/lib/coaching/analytics";
-import { getCoachingReports } from "@/lib/coaching/service";
-import { getContractRenewalDashboardData } from "@/lib/contracts/service";
 import { addDaysIso, cairoTodayIso } from "@/lib/crm/dates";
 import { getSfeCrmFieldAnalytics, type SfeCrmFieldAnalytics } from "@/lib/crm/sfe-field-analytics";
 import { getSfeDoctorCoverage, type SfeDoctorCoverageBoard } from "@/lib/crm/sfe-doctor-coverage";
 import { getDoctorCoverageScope } from "@/lib/crm/doctor-coverage-scope";
 import { getDoubleVisitDashboardData } from "@/lib/double-visit-analytics/service";
-import { isActiveLifecycleStatus } from "@/lib/employees/employee-directory";
 import { lifecycleRiskWindows } from "@/lib/lifecycle-risk/metrics";
+import { adaptersFor } from "@/lib/needs-you/sources";
+import { loadNeedsYouSources } from "@/lib/needs-you/service";
+import {
+  needsYouSourceLabels,
+  type NeedsYouSourceId,
+  type NeedsYouSourceResult,
+} from "@/lib/needs-you/types";
 import { isDistrictManagerPlanTitle } from "@/lib/weekly-planning/plan-v1";
 import { planHasSecondApprover } from "@/lib/weekly-planning/second-approver";
 import { getOutstationExpenseCommandData } from "@/lib/outstation/expense-command";
 import { getPlatformMetrics, type PlatformMetrics, type UncomputedRate } from "@/lib/platform/metrics";
-import { getProbationRows, isProbationDecisionOutstanding } from "@/lib/probation/service";
 import { getResignationsDashboardData } from "@/lib/resignations/service";
 import { latestPublishedClosingPeriod } from "@/lib/sales/monthly-closing-publication";
 import { loadSourceOfSalesDashboard } from "@/lib/sales/monthly-distributor-import";
@@ -224,45 +226,14 @@ function healthScore(health: CeoAdminSignals["health"]) {
 }
 
 /**
- * Probation decisions still open, counted from the rows /probation renders.
+ * Probation, contracts and coaching are no longer counted in this file at all.
  *
- * An attention item is a LINK, so its number has to describe the page it opens.
- * This used to scan probation_evaluations directly for records whose
- * probation_end_date had passed and label them "overdue" — but getProbationRows,
- * the service behind the tracker this links to, ends with `days_remaining > 0`,
- * so that figure counted exactly the people the destination table cannot contain:
- * the CEO clicked 22 and landed on a list holding none of them. The raw scan also
- * never applied the tracker's medical-representative rule, so head-office roles
- * were billed as outstanding decisions. Sourcing the count from the tracker's own
- * service removes that at once and keeps the viewer's scope, which the
- * admin-client scan bypassed.
- *
- * The employment-status rule is still applied HERE and not inherited, because
- * getProbationRows deliberately does not apply one: it is built from the employee
- * directory's hire+90 window, the tracker's own status filter defaults to "all",
- * and the page is meant to keep showing a probationer who resigned mid-window so
- * HR can close the record. An executive "decisions due" tile is a different
- * question — a person who has left needs no decision — and in production a
- * resigned Medical Representative (PD-0003, 10 days remaining) was counted here
- * until this filter existed. The tile is therefore a subset of the page it links
- * to, never a disjoint set, which is the property the old count violated.
- *
- * There is deliberately no "overdue" count any more: no surface in the product
- * lists a probationer past their 90-day window, so any such number would be
- * another dead link. Re-adding one needs an overdue view on /probation first.
+ * `getCeoProbationCounts` lived here and has moved into the `probation-decisions` adapter in
+ * `src/lib/needs-you/sources.ts`, WITH the account of why its employment-status filter has to be
+ * applied at that layer rather than inherited — it cost a production defect (PD-0003) and is the
+ * kind of reason a later reader deletes if it travels without the rule. Read it there before
+ * changing the window or the filters.
  */
-async function getCeoProbationCounts(access: AccessContext): Promise<{ dueSoon: number }> {
-  const rows = await getProbationRows(access);
-
-  return {
-    dueSoon: rows.filter(
-      (row) =>
-        isActiveLifecycleStatus(row.employment_status) &&
-        isProbationDecisionOutstanding(row) &&
-        row.days_remaining <= lifecycleRiskWindows.probationCriticalDays,
-    ).length,
-  };
-}
 
 async function getCeoRecentHiresCount(): Promise<number> {
   const since = new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10);
@@ -340,7 +311,7 @@ export async function getCeoCommandCenterData(access: AccessContext): Promise<Ce
   const dataUnavailable: string[] = [];
   const platformPromise = getPlatformMetrics(access);
   // Share the in-flight platformPromise rather than chaining .then() after it —
-  // getCeoAdminSignals's own 6 aggregate fetches are independent of platform
+  // getCeoAdminSignals's own 5 aggregate fetches are independent of platform
   // metrics (only needed for the health/trends fallback at the very end), so
   // gating them behind platformPromise resolving first serialized two rounds
   // of executive-signal fetching that could run concurrently.
@@ -484,7 +455,7 @@ async function getCeoAdminSignals(
   access: AccessContext,
   platformMetrics?: PlatformMetrics | Promise<PlatformMetrics>,
 ): Promise<CeoAdminSignals> {
-  // Kick off the 6 independent aggregates and the platform-metrics resolution
+  // Kick off the 5 independent aggregates and the platform-metrics resolution
   // together — platformMetrics is only consumed at the bottom of this function
   // (health/trends/payroll fallback), so it must not gate these fetches from
   // starting. Promise.all (not allSettled) here preserves the original
@@ -496,22 +467,48 @@ async function getCeoAdminSignals(
       // The two approval counts only — never the whole leave report, which enriches every request
       // ever filed and was the slowest read behind /admin (11.7 s measured 2026-09-21).
       getVacationPendingApprovalCounts(access),
-      getContractRenewalDashboardData(access),
-      getCeoProbationCounts(access),
-      getCoachingReports({}, access).then(buildCoachingReportAnalytics),
+      // 🔴 CONTRACTS, PROBATION AND COACHING ARE NO LONGER COMPUTED HERE. They are three of the
+      // sixteen sources `src/lib/needs-you` already owns, and until this change both files carried
+      // their own copy of each rule — which had already drifted: this file's probation count filters
+      // to people still employed and reads `lifecycleRiskWindows.probationCriticalDays`, where the
+      // board's adapter did neither and so counted leavers. One producer per rule, from here on.
+      //
+      // The adapters, not `getNeedsYouBoard`: the board runs sixteen sources and this screen needs
+      // three, so calling it here would add thirteen reads to the owner's heaviest landing page to
+      // use none of them. `loadNeedsYouSources` runs exactly these three, with the same eight-second
+      // timeout and the same three-state result.
+      loadNeedsYouSources(access, adaptersFor(["contract-renewals", "probation-decisions", "coaching-red-zone"])),
       getSalaryFlags(),
       getCeoRecentHiresCount(),
     ]),
     platformMetrics ?? getPlatformMetrics(access),
   ]);
-  const [resignationsR, leavePendingR, contractsActiveR, probationCountsR, coachingR, flagsR, recentHiresR] = signalResults;
+  const [resignationsR, leavePendingR, sharedSourcesR, flagsR, recentHiresR] = signalResults;
   const dataUnavailable: string[] = [];
   if (resignationsR.status === "rejected") dataUnavailable.push("Resignation risk signals");
   if (leavePendingR.status === "rejected") dataUnavailable.push("Leave SLA risk signals");
-  if (contractsActiveR.status === "rejected") dataUnavailable.push("Contract renewal risk signals");
-  if (probationCountsR.status === "rejected") dataUnavailable.push("Probation risk signals");
-  if (coachingR.status === "rejected") dataUnavailable.push("Coaching risk signals");
   if (flagsR.status === "rejected") dataUnavailable.push("Salary flag risk signals");
+
+  /**
+   * The three shared signals, read out of the board's own source results.
+   *
+   * 🔴 A COUNT COMES BACK ONLY FROM `ok`. `unavailable` returns null and names itself in
+   * `dataUnavailable`, so the tile disappears rather than reading zero — the rule the whole module
+   * turns on, now reaching this screen too. `not-applicable` is a TRUE zero (no rung on that queue)
+   * and is not an alarm. If the whole load rejected, every one of the three is unknown.
+   */
+  const sharedSources: NeedsYouSourceResult[] = sharedSourcesR.status === "fulfilled" ? sharedSourcesR.value : [];
+  const sharedCount = (id: NeedsYouSourceId, itemKey: string): number | null => {
+    const result = sharedSources.find((entry) => entry.id === id);
+    if (!result || result.state.status === "unavailable") {
+      // Names, never codes — `needsYouSourceLabels` is a Record over the closed union, so a source
+      // added without a label is a compile error rather than a row reading `probation-decisions`.
+      dataUnavailable.push(`${needsYouSourceLabels[id]} risk signals`);
+      return null;
+    }
+    if (result.state.status === "not-applicable") return 0;
+    return result.state.items.find((item) => item.key === itemKey)?.count ?? 0;
+  };
 
   const daysFromNow = (iso: string | null | undefined): number | null => {
     if (!iso) return null;
@@ -538,29 +535,35 @@ async function getCeoAdminSignals(
   // rather than a false zero; the rejection is already recorded in dataUnavailable below.
   const leavePendingTotal =
     leavePendingR.status === "fulfilled" ? leavePendingR.value.pendingByStage.total : null;
-  const expiringContracts =
-    contractsActiveR.status === "fulfilled"
-      ? contractsActiveR.value.rows.filter((row) => {
-          const delta = daysFromNow(row.contract_renewal_date);
-          return delta !== null && delta >= 0 && delta <= 30;
-        }).length
-      : resolvedPlatformMetrics.lifecycleRisk.expiringContracts;
-  const probationCounts =
-    probationCountsR.status === "fulfilled" ? probationCountsR.value : { dueSoon: 0 };
-  // PEOPLE, not reports. `zoneCounts` is a distribution over REPORTS, and adding its two red
-  // buckets up under the label "Coaching red-zone reps" read 35 on production — against 45 reps
-  // who have ever been coached at all and 18 who have ever been red. The honest figure is 7.
-  const coachingRedZone = coachingR.status === "fulfilled" ? coachingR.value.redZoneRepCount : 0;
+  // 🔴 THE FALLBACK TO `resolvedPlatformMetrics.lifecycleRisk.expiringContracts` IS GONE, ON
+  // PURPOSE. It turned a failed contract read into a number from a different query, which is the
+  // precise defect the Needs You module was built to remove: a figure a failure was allowed to
+  // write. A contracts read that does not answer now removes the tile and says so in
+  // `dataUnavailable`, which is the honest shape. (`payroll.unresolvedSalaryFlags` below KEEPS its
+  // fallback — that field is a payroll figure this screen publishes elsewhere, not an attention
+  // tile, and changing it is a separate decision.)
+  const expiringContracts = sharedCount("contract-renewals", "contract-renewals:expiring");
+  const probationDueSoon = sharedCount("probation-decisions", "probation-decisions:due");
+  // PEOPLE, not reports — enforced in the adapter now. `zoneCounts` is a distribution over REPORTS,
+  // and adding its two red buckets up under the label "Coaching red-zone reps" read 35 on production
+  // against 45 reps ever coached and 18 ever red. The honest figure is 7.
+  const coachingRedZone = sharedCount("coaching-red-zone", "coaching-red-zone:reps");
   const unresolvedSalaryFlags =
     flagsR.status === "fulfilled" ? flagsR.value.unresolvedCount : resolvedPlatformMetrics.payroll.flags;
   const hiresLast30d = recentHiresR.status === "fulfilled" ? recentHiresR.value : 0;
 
   const signalAttention: CeoAttentionItem[] = [];
-  if (expiringContracts > 0) {
+  if (expiringContracts !== null && expiringContracts > 0) {
     signalAttention.push({ key: "contracts", label: "Contracts expiring soon", count: expiringContracts, href: "/contracts", tone: "blue" });
   }
-  if (probationCounts.dueSoon > 0) {
-    signalAttention.push({ key: "probationDue", label: "Probation decisions due (30d)", count: probationCounts.dueSoon, href: "/probation", tone: "amber" });
+  if (probationDueSoon !== null && probationDueSoon > 0) {
+    signalAttention.push({
+      key: "probationDue",
+      label: `Probation decisions due (${lifecycleRiskWindows.probationCriticalDays}d)`,
+      count: probationDueSoon,
+      href: "/probation",
+      tone: "amber",
+    });
   }
   if (pendingResignations > 0) {
     signalAttention.push({ key: "resignations", label: "Pending resignations", count: pendingResignations, href: "/resignations", tone: "rose" });
@@ -571,7 +574,7 @@ async function getCeoAdminSignals(
   if (unresolvedSalaryFlags > 0) {
     signalAttention.push({ key: "salaryFlags", label: "Unresolved salary flags", count: unresolvedSalaryFlags, href: "/admin/m-payroll", tone: "rose" });
   }
-  if (coachingRedZone > 0) {
+  if (coachingRedZone !== null && coachingRedZone > 0) {
     signalAttention.push({ key: "coaching", label: "Coaching red-zone reps", count: coachingRedZone, href: "/coaching", tone: "amber" });
   }
 

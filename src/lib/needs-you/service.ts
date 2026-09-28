@@ -111,13 +111,37 @@ async function loadWithTimeout(
  * reject would take the whole page down, and a page that errors is at least honest, but an `all`
  * whose rejection was caught upstream into an empty board would not be.
  */
-export async function getNeedsYouBoard(access: AccessContext, now: Date = new Date()): Promise<NeedsYouBoard> {
-  const results: NeedsYouSourceResult[] = await Promise.all(
-    needsYouAdapters.map(async (adapter) => ({
+/**
+ * Run a CHOSEN set of adapters, each with the same timeout and the same three-state result.
+ *
+ * 🔴 WHY THIS IS EXPORTED SEPARATELY FROM `getNeedsYouBoard`, AND WHY THE CEO SHARES THE ADAPTERS
+ * RATHER THAN THE BOARD. `getCeoAdminSignals` (`src/lib/ceo/command-center.ts`) held its own
+ * implementation of three signals this module also owns, and they had already drifted: its probation
+ * rule filters to people still employed and reads `lifecycleRiskWindows.probationCriticalDays`,
+ * where this module's adapter did neither. Two expressions of one rule is the whole defect.
+ *
+ * Calling the whole `getNeedsYouBoard` from there would have fixed the drift by adding THIRTEEN
+ * source reads to the owner's heaviest landing page in order to use three of them, and would have
+ * changed the leave tile's meaning (this module's leave source answers "awaiting YOU"; the CEO tile
+ * answers "pending anywhere"). Sharing the adapters costs nothing, changes no number, and leaves one
+ * producer per rule — and the caller still receives `unavailable`, so a failed read cannot become a
+ * zero on that screen either.
+ */
+export async function loadNeedsYouSources(
+  access: AccessContext,
+  adapters: readonly NeedsYouAdapter[],
+  now: Date = new Date(),
+): Promise<NeedsYouSourceResult[]> {
+  return Promise.all(
+    adapters.map(async (adapter) => ({
       id: adapter.id,
       state: await loadWithTimeout(adapter, access, now),
     })),
   );
+}
+
+export async function getNeedsYouBoard(access: AccessContext, now: Date = new Date()): Promise<NeedsYouBoard> {
+  const results: NeedsYouSourceResult[] = await loadNeedsYouSources(access, needsYouAdapters, now);
   const board = buildNeedsYouBoard(results, now);
   if (board.notProven.length > 0) {
     logStructured("WARNING", "Needs You board could not prove a clean read", {

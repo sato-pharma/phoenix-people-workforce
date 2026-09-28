@@ -227,19 +227,36 @@ export function runCeoLandingSeatAndProbationCountsTests() {
   }
 
   {
+    // `getCeoProbationCounts` lived in the CEO command centre and has moved into the
+    // `probation-decisions` adapter, now the single producer for this figure — and the move FIXED
+    // a live divergence: the adapter had its own copy of this rule carrying neither the
+    // employment-status filter nor the shared window, so the two screens answered the same
+    // question differently. The rule is unchanged and so are these assertions; only the file
+    // holding it moved, and the CEO half proves it is still wired to that source.
     const ceoSource = readFileSync("src/lib/ceo/command-center.ts", "utf8");
+    const adapterSource = readFileSync("src/lib/needs-you/sources.ts", "utf8");
     assert.match(
-      ceoSource,
-      /async function getCeoProbationCounts\(access: AccessContext\)[\s\S]*?getProbationRows\(access\)/,
+      adapterSource,
+      /const probationDecisions: NeedsYouAdapter[\s\S]*?getProbationRows\(access\)/,
       "the probation count must come from the service behind /probation — the page it links to — so the number and its destination cannot describe different people",
     );
-    assert.doesNotMatch(
-      ceoSource,
-      /\.from\("probation_evaluations"\)/,
-      "a raw probation_evaluations scan reads rows whose end date has passed, joins no employment_status and applies no medical-representative rule: every one of those people is absent from /probation",
-    );
     assert.match(
       ceoSource,
+      /adaptersFor\(\[[^\]]*"probation-decisions"/,
+      "the CEO probation tile must still ask for that source — an adapter it never requests renders no tile at all, which is the under-report with nothing to show it",
+    );
+    for (const [label, source] of [
+      ["the CEO command centre", ceoSource],
+      ["the needs-you probation adapter", adapterSource],
+    ] as const) {
+      assert.doesNotMatch(
+        source,
+        /\.from\("probation_evaluations"\)/,
+        `${label}: a raw probation_evaluations scan reads rows whose end date has passed, joins no employment_status and applies no medical-representative rule: every one of those people is absent from /probation`,
+      );
+    }
+    assert.match(
+      adapterSource,
       /isActiveLifecycleStatus\(row\.employment_status\)/,
       "getProbationRows applies NO employment-status filter — it is built from the directory's hire+90 window and the tracker's own status filter defaults to \"all\" — so without this the tile bills a resigned probationer (production: PD-0003, 10 days remaining) to the CEO as a decision he still owes",
     );
