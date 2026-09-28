@@ -6,6 +6,24 @@ import { apiBaseUrl, nativeClientId } from "./config";
  * Every screen goes through `apiRequest`, so authentication, error shape and session expiry are
  * handled once. A screen that calls `fetch` directly is a bug — it will silently miss the bearer
  * header and read as signed-out.
+ *
+ * 🔴 EVERY REQUEST HERE SETS `credentials: "omit"`, AND THAT IS LOAD-BEARING, NOT TIDINESS.
+ *
+ * This app carries its session as a bearer token and must never send a cookie. On Android the
+ * WebView's cookie jar IS React Native's own networking jar — the same `CookieManager` behind
+ * `ForwardingCookieHandler` — so a `phoenix_session` cookie set for an in-app portal module would
+ * otherwise ride every request this file makes. The server's CSRF guard reads a cookie-bearing
+ * request as a browser session and refuses it, so every mutation the app makes would come back
+ * `csrf_blocked`. That was measured against production on 2026-09-23, and is why `/api/auth/login`
+ * actively CLEARS all three cookies for a native caller.
+ *
+ * `credentials: "omit"` closes it at the source rather than by avoiding a WebView: React Native's
+ * own `NetworkingModule` switches that request's OkHttp client to `CookieJar.NO_COOKIES`, so no
+ * cookie is attached and none is stored, whatever the shared jar holds. With this in place the
+ * portal modules can render INSIDE the app instead of in a system browser tab.
+ *
+ * Do not remove it, and do not add a `fetch` here without it. `tests/native-web-handoff.test.ts`
+ * fails if either call site loses it.
  */
 
 /** Thrown for any non-2xx response. `status` lets a caller distinguish 401/403 from a real fault. */
@@ -80,6 +98,8 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   try {
     response = await fetch(`${apiBaseUrl}${path}`, {
       body: body === undefined ? undefined : JSON.stringify(body),
+      // 🔴 THIS APP NEVER SENDS A COOKIE, AND MUST NOT — see the header above.
+      credentials: "omit",
       headers: {
         accept: "application/json",
         "x-phoenix-client": nativeClientId,
@@ -172,6 +192,9 @@ export async function apiUpload<T>(
   try {
     response = await fetch(`${apiBaseUrl}${path}`, {
       body: form,
+      // 🔴 Same as `apiRequest` — see the header. An upload is a mutation, so this is the call the
+      // CSRF guard would refuse first if a cookie ever rode along.
+      credentials: "omit",
       headers: {
         accept: "application/json",
         "x-phoenix-client": nativeClientId,
