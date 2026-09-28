@@ -44,8 +44,8 @@ export const LOOKUP_TAB = "Find a pharmacy";
 /** Hidden. Holds the dropdown lists and the one live filter both halves of the tab read. */
 export const LISTS_TAB = "Lists";
 
-/** v10: the title, the count and the hint read from the LEFT, where the screen actually is. */
-const LAYOUT_VERSION = "v10";
+/** v11: the tab says when the sheet last refreshed itself, so a stopped script is visible. */
+const LAYOUT_VERSION = "v11";
 
 /** How many matching shops the tab shows at once. The true total is always stated beside it. */
 const VISIBLE_LIMIT = 500;
@@ -76,7 +76,24 @@ const RESULTS_LAST = columnLetter(RESULTS_FIRST_INDEX + COLUMN_COUNT - 1);
 /** Four dropdown lists in A-D, then the filter result spilling from F. */
 export const LISTS_COLUMN_COUNT = RESULTS_FIRST_INDEX + COLUMN_COUNT;
 
+/**
+ * Where the sheet records the last time it refreshed ITSELF.
+ *
+ * Column E on the hidden tab: after the four dropdown lists and before the spill, so it can never
+ * be overwritten by either. Written by the sheet's own Apps Script at the end of a tick that
+ * finished, and by nothing in this file.
+ *
+ * WHY THE SCRIPT WRITES IT AND NOT PHOENIX. Phoenix knows when it was ASKED for data; only the
+ * script knows whether the answer was ever PAINTED. Those differ in exactly the case that matters:
+ * a trigger deleted, an authorisation revoked, a quota exhausted. Every tab then keeps showing
+ * correct-looking figures for ever, and nothing in the data says they stopped moving — on
+ * 2026-09-28 it took two hours of comparing layout versions to establish that a sheet was stale,
+ * a question this one cell answers at a glance.
+ */
+const REFRESHED_AT_CELL = `${LISTS_TAB}!E1`;
+
 /** Where the controls live, 0-based. Row 4 on screen. */
+const FRESHNESS_ROW = 1;
 const INPUT_ROW = 3;
 const STATUS_ROW = 5;
 const HINT_ROW = 6;
@@ -358,7 +375,7 @@ export function renderLookupSheet(sheetId: number): RenderedSheet {
     },
   ];
 
-  const bandRows = [0, STATUS_ROW, HINT_ROW];
+  const bandRows = [0, FRESHNESS_ROW, STATUS_ROW, HINT_ROW];
 
   const requests: unknown[] = [
     {
@@ -398,6 +415,30 @@ export function renderLookupSheet(sheetId: number): RenderedSheet {
     // those are seven columns wide, about 1,900 pixels, and their centre is on screen. The width of
     // this tab is what makes the same style wrong here.
     repeatCellRequest(sheetId, 0, 1, { ...STYLE.region, align: "LEFT" }),
+    // The freshness line: quiet, and empty until the sheet has stamped itself once.
+    {
+      repeatCell: {
+        cell: {
+          userEnteredFormat: {
+            horizontalAlignment: "LEFT",
+            textFormat: {
+              bold: false,
+              fontFamily: FONT,
+              fontSize: 9,
+              foregroundColor: rgb(100, 116, 139),
+            },
+            verticalAlignment: "MIDDLE",
+          },
+        },
+        fields: "userEnteredFormat(horizontalAlignment,textFormat,verticalAlignment)",
+        range: {
+          endRowIndex: FRESHNESS_ROW + 1,
+          sheetId,
+          startColumnIndex: 0,
+          startRowIndex: FRESHNESS_ROW,
+        },
+      },
+    },
     repeatCellRequest(sheetId, 2, 3, STYLE.label),
     repeatCellRequest(sheetId, STATUS_ROW, STATUS_ROW + 1, { ...STYLE.area, align: "LEFT" }),
     repeatCellRequest(sheetId, HEADER_ROW, HEADER_ROW + 1, STYLE.columnHeader),
@@ -499,6 +540,20 @@ export function renderLookupSheet(sheetId: number): RenderedSheet {
     dropdownRequest(sheetId, 1, "B2:B", "Areas of the region you picked."),
     dropdownRequest(sheetId, 2, "C2:C", "Bricks of the area you picked."),
     dropdownRequest(sheetId, 3, "D2:D", "Pharmacy, Store or Hospital."),
+    // WHEN THE SHEET LAST REFRESHED ITSELF — a FORMULA, never a rendered value.
+    //
+    // The plan hashes each tab's TEXT, so a timestamp written into the values would move the hash
+    // on every plan fetch and repaint all fifteen tabs once an hour, for ever, to change one line.
+    // It reads a cell the script stamps instead, so the text this file renders never moves.
+    //
+    // Blank until the sheet has stamped itself once, so a workbook running an older Code.gs shows
+    // nothing rather than a wrong or alarming line.
+    updateCellFormula(
+      sheetId,
+      FRESHNESS_ROW,
+      0,
+      `=IF(${REFRESHED_AT_CELL}="","","Sheet refreshed "&${REFRESHED_AT_CELL}&" Cairo")`,
+    ),
     updateCellFormula(
       sheetId,
       STATUS_ROW,
