@@ -22,6 +22,7 @@ import {
   addDays,
   DEFAULT_OFFER_VALIDITY_DAYS,
   firstOfNextMonth,
+  parseLetterDate,
   todayInCairo,
   toLetterDate,
 } from "@/lib/offers/dates";
@@ -91,6 +92,37 @@ function blankDraft(templates: OfferTemplate[]): Draft {
     title: "",
     totalMonthly: "",
     validUntil: addDays(today, DEFAULT_OFFER_VALIDITY_DAYS),
+  };
+}
+
+/**
+ * A saved draft, back in the form (owner, 2026-09-28).
+ *
+ * Until this, a draft saved and then left — the form cleared, the page reloaded — could not be
+ * reached again: its row carried only a PDF button, so it could be neither edited nor sent. Alaa
+ * Mohsen's draft sat that way from 17 September. The stored dates are the letter's English form and
+ * the form speaks ISO, so they go back through `parseLetterDate`; one that cannot be read is left
+ * blank rather than guessed, and the draft checks then say so before anything is sent.
+ */
+function draftFromOffer(offer: OfferRecord, templates: OfferTemplate[]): Draft {
+  return {
+    // Copies are typed per send and never saved with a draft (see `Draft`), so an opened draft has none.
+    bcc: "",
+    candidateEmail: offer.candidateEmail,
+    candidateName: offer.candidateName,
+    cc: "",
+    contractTerm: offer.contractTerm,
+    costOfLiving: offer.costOfLiving > 0 ? String(offer.costOfLiving) : "",
+    dateOfIssue: parseLetterDate(offer.dateOfIssue) ?? "",
+    reference: offer.reference,
+    reportsTo: offer.reportsTo,
+    salutationName: offer.salutationName,
+    startDate: parseLetterDate(offer.startDate) ?? "",
+    templateId: offer.templateId ?? defaultOfferTemplateId(templates),
+    territory: offer.territory,
+    title: offer.title,
+    totalMonthly: offer.totalMonthly > 0 ? String(offer.totalMonthly) : "",
+    validUntil: parseLetterDate(offer.validUntil) ?? "",
   };
 }
 
@@ -372,6 +404,46 @@ export function OfferComposer({
     }
   }
 
+  /**
+   * Send a sent offer's letter again — the same letter, to the same address (owner, 2026-09-28).
+   *
+   * For the candidate who says it never arrived: on 2026-09-28 Resend accepted Norhan Gamal's offer
+   * and then failed it, the row read "sent", and the only way to reach her again was to withdraw the
+   * letter and compose a new one under a new reference. The server renders from the snapshot frozen
+   * at the first send and changes nothing on the row.
+   *
+   * Confirmed first: it puts the company's terms in a stranger's inbox and cannot be recalled. One
+   * request id per press, so a double-submit of that press still sends a single letter.
+   */
+  async function resendOffer(offer: OfferRecord) {
+    if (!window.confirm(`Send offer ${offer.reference} to ${offer.candidateEmail} again? The same letter goes out; nothing on the offer changes.`)) {
+      return;
+    }
+    setBusy(offer.id);
+    try {
+      const payload = (await call(`/api/offers/${offer.id}/resend`, "POST", { requestId: crypto.randomUUID() })) as {
+        attachmentWarning?: string | null;
+        from?: string;
+        recipient?: string;
+        skipped?: boolean;
+        skippedReason?: string | null;
+      };
+      if (payload.skipped) {
+        onReport(`The offer was NOT resent: ${payload.skippedReason ?? "the send was suppressed"}.`, "error");
+        return;
+      }
+      onReport(
+        `Offer ${offer.reference} resent to ${payload.recipient} from ${payload.from}.` +
+          (payload.attachmentWarning ? ` ${payload.attachmentWarning}` : " The PDF is attached."),
+        "success",
+      );
+    } catch (error) {
+      onReport(error instanceof Error ? error.message : "Could not resend this offer.", "error");
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function saveDraft(): Promise<string | null> {
     if (!fields.candidateName) {
       onReport("The candidate's name is required.", "error");
@@ -411,6 +483,18 @@ export function OfferComposer({
     }
   }
 
+  /**
+   * Put a saved draft back in the form, ready to check and send. Its stored reference is kept as
+   * typed, so the title-driven proposal can never renumber a letter that already has its number.
+   */
+  function openDraft(offer: OfferRecord) {
+    markReferenceTyped(true);
+    setSavedId(offer.id);
+    setDraft(draftFromOffer(offer, templates));
+    onReport(`Opened the draft for ${offer.candidateName} (${offer.reference}). Check it, then press Send offer.`, "success");
+    window.scrollTo({ behavior: "smooth", top: 0 });
+  }
+
   async function sendOffer() {
     if (!fields.candidateEmail) {
       onReport("An email address is required before the offer can be sent.", "error");
@@ -422,7 +506,11 @@ export function OfferComposer({
       onReport(copies.problems.join(" "), "error");
       return;
     }
-    const id = savedId ?? (await saveDraft());
+    // ALWAYS save first, even when the draft is already saved. Before this, Send used the saved id
+    // as it stood, so an edit made after the last save — a salary, a start date — was on the screen
+    // and in the preview but NOT in the letter that went out. Saving now is what makes the letter
+    // sent the letter shown.
+    const id = await saveDraft();
     if (!id) return;
 
     setBusy("send");
@@ -841,13 +929,16 @@ export function OfferComposer({
         */}
         <div className="hidden md:block">
           <table className="w-full table-fixed text-sm">
+            {/* The actions column carries four controls on a sent offer since Resend joined
+                Accepted, Declined and PDF (2026-09-28), so it takes 6 points from Title and
+                Package, which wrap. The controls still wrap too — never a sideways scroll. */}
             <colgroup>
-              <col className="w-[26%]" />
-              <col className="w-[18%]" />
-              <col className="w-[16%]" />
-              <col className="w-[13%]" />
-              <col className="w-[13%]" />
+              <col className="w-[25%]" />
+              <col className="w-[15%]" />
               <col className="w-[14%]" />
+              <col className="w-[13%]" />
+              <col className="w-[13%]" />
+              <col className="w-[20%]" />
             </colgroup>
             <thead>
               <tr className="border-b border-slate-200/80 bg-slate-50/60 text-left">
@@ -903,7 +994,27 @@ export function OfferComposer({
                           >
                             Declined
                           </Button>
+                          <Button
+                            disabled={busy !== null}
+                            onClick={() => void resendOffer(offer)}
+                            size="sm"
+                            type="button"
+                            variant="outline"
+                          >
+                            <Send className="h-3.5 w-3.5" /> Resend offer
+                          </Button>
                         </>
+                      ) : null}
+                      {canManage && offer.status === "draft" ? (
+                        <Button
+                          disabled={busy !== null}
+                          onClick={() => openDraft(offer)}
+                          size="sm"
+                          type="button"
+                          variant="outline"
+                        >
+                          <Eye className="h-3.5 w-3.5" /> Open draft
+                        </Button>
                       ) : null}
                       <Button asChild size="sm" type="button" variant="secondary">
                         <a href={`/api/offers/${offer.id}/pdf`} rel="noreferrer" target="_blank">
@@ -985,7 +1096,27 @@ export function OfferComposer({
                     >
                       Declined
                     </Button>
+                    <Button
+                      disabled={busy !== null}
+                      onClick={() => void resendOffer(offer)}
+                      size="sm"
+                      type="button"
+                      variant="outline"
+                    >
+                      <Send className="h-3.5 w-3.5" /> Resend offer
+                    </Button>
                   </>
+                ) : null}
+                {canManage && offer.status === "draft" ? (
+                  <Button
+                    disabled={busy !== null}
+                    onClick={() => openDraft(offer)}
+                    size="sm"
+                    type="button"
+                    variant="outline"
+                  >
+                    <Eye className="h-3.5 w-3.5" /> Open draft
+                  </Button>
                 ) : null}
                 <Button asChild size="sm" type="button" variant="secondary">
                   <a href={`/api/offers/${offer.id}/pdf`} rel="noreferrer" target="_blank">

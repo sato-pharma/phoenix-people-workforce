@@ -514,6 +514,7 @@ import { runRecruitmentScreeningClaimTests } from "./recruitment-screening-claim
 import { runRecruitmentTransitionsReachableTests } from "./recruitment-transitions-reachable.test.ts";
 import { runHiringPackActorStampTests } from "./hiring-pack-actor-stamp.test.ts";
 import { runRecruitmentOfferLetterBridgeTests } from "./recruitment-offer-letter-bridge.test.ts";
+import { runOfferResendTests } from "./offer-resend.test.ts";
 import { runRecruitmentHiringAnalyticsLayoutTests } from "./recruitment-hiring-analytics-layout.test.ts";
 import { runSourceOfHireTests } from "./source-of-hire.test.ts";
 import { runRecruitmentEveryStageHasAWayForwardTests } from "./recruitment-every-stage-has-a-way-forward.test.ts";
@@ -3179,6 +3180,7 @@ await runTest("screening claim and untouched (two screeners on one queue, withou
 await runTest("recruitment transitions are reachable (a registered stage move nothing can invoke is dead wiring)", runRecruitmentTransitionsReachableTests);
 await runTest("hiring pack actor stamp (an unknown editor must not erase the last known one)", runHiringPackActorStampTests);
 await runTest("offer bridge (an approved ATS offer pre-fills the letter, and nothing else does)", runRecruitmentOfferLetterBridgeTests);
+await runTest("resend offer (the same frozen letter, a fresh key, Send's gate, on both surfaces)", runOfferResendTests);
 await runTest("hiring analytics layout (desktop table, phone cards, square edges, no sideways scroll)", runRecruitmentHiringAnalyticsLayoutTests);
 await runTest("source of hire (manual tag beats tracked code, channel level is 100%, unknown is one honest bucket)", runSourceOfHireTests);
 await runTest("every application stage has a way forward (a stage nobody can leave reads as low adoption)", runRecruitmentEveryStageHasAWayForwardTests);

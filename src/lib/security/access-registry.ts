@@ -577,9 +577,13 @@ export const accessRegistry = [
   sessionApi({ methods: ["POST"], pattern: "/api/offers", permission: { resource: "offers", action: "create" }, csrfRequired: true }),
   sessionApi({ methods: readOnly, pattern: "/api/offers/:id", permission: { resource: "offers", action: "read" } }),
   sessionApi({ methods: ["PATCH"], pattern: "/api/offers/:id", permission: { resource: "offers", action: "update" }, csrfRequired: true }),
-  // The one irreversible route in the module, and the only one that audits. `create` rather than
-  // `update` because sending is what makes the offer exist to somebody outside the company.
+  // The module's irreversible route, and (with Resend below) the only ones that audit. `create`
+  // rather than `update` because sending is what makes the offer exist to somebody outside the company.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/offers/:id/send", permission: { resource: "offers", action: "create" }, csrfRequired: true }),
+  // Resend (owner, 2026-09-28): the SAME letter to the same address again, for a sent offer the
+  // candidate never received. It changes no offer row, but it puts the same binding figure in a
+  // stranger's inbox, so it carries Send's gate and audits every copy that leaves.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/offers/:id/resend", permission: { resource: "offers", action: "create" }, csrfRequired: true }),
   // The PDF of a single offer — one candidate's salary, to the person who could already read it on
   // screen. Not an export in the registry's sense (no list, no bulk, nothing filtered), which is
   // also why the export-audit guard's `template|export|download` match deliberately misses it.

@@ -3,11 +3,12 @@ import { isOfferPdfAvailable, offerPdfFilename, renderOfferPdf } from "@/lib/off
 import { renderOfferEmail } from "@/lib/offers/render-email";
 import { resolveOfferSender } from "@/lib/offers/identity";
 import { SATO_LOGO_CID_SRC, satoLogoAttachment, satoLogoUrl } from "@/lib/offers/brand";
-import { planOfferCopies } from "@/lib/offers/copy-recipients";
+import { planOfferCopies, type OfferCopyPlan } from "@/lib/offers/copy-recipients";
 import { systemDeployment } from "@/config/system-settings";
 import { sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
 import type { SendPhoenixEmailAttachment } from "@/lib/email/send-phoenix-email";
 import type { OfferFields, OfferRecord, OfferTemplate } from "@/lib/offers/types";
+import { offerResendIdempotencyKey, offerResendRefusal } from "@/lib/offers/resend-rules";
 
 /**
  * Sending an offer.
@@ -80,6 +81,11 @@ export function offerIdempotencyKey(offerId: string): string {
   return `offer-letter:${offerId}`;
 }
 
+/** The five things a letter's look is made of — a live template, or the snapshot frozen at send. */
+type OfferLetterDesign = Pick<OfferTemplate, "blocks" | "fontFamily" | "fontSizePt" | "theme" | "variant">;
+
+type OfferLetterDelivery = Omit<OfferSendOutcome, "offer" | "recipient">;
+
 export async function sendOfferEmail(
   offerId: string,
   options: { bcc?: unknown; cc?: unknown; logoUrl?: string; sentBy?: string | null } = {},
@@ -87,7 +93,7 @@ export async function sendOfferEmail(
   const offer = await getOffer(offerId);
 
   if (offer.status !== "draft") {
-    throw new Error("This offer has already been sent. Create a new one rather than resending it.");
+    throw new Error("This offer has already been sent. Use Resend on its row to send the same letter again.");
   }
   if (!offer.candidateEmail.trim()) {
     throw new Error("This offer has no candidate email address, so it cannot be sent.");
@@ -104,6 +110,75 @@ export async function sendOfferEmail(
     ? await getOfferTemplate(offer.templateId)
     : await defaultOfferTemplate();
 
+  const delivery = await deliverOfferLetter(offer, template, {
+    copies,
+    idempotencyKey: offerIdempotencyKey(offer.id),
+    logoUrl: options.logoUrl,
+  });
+
+  // Only stamp the row when the mail actually left. Marking a suppressed send as "sent" would
+  // hide, permanently, the one case where a candidate never received their offer — and the row
+  // can never be edited afterwards.
+  const stamped = delivery.skipped
+    ? offer
+    : await markOfferSent(
+        offer.id,
+        {
+          blocks: template.blocks,
+          fontFamily: template.fontFamily,
+          fontSizePt: template.fontSizePt,
+          theme: template.theme,
+          // The skin goes into the snapshot too. Without it a sent executive offer would re-render
+          // as the classic letter the next time HR downloaded a copy of it.
+          variant: template.variant,
+        },
+        options.sentBy ?? null,
+        // Exactly what was handed to the provider above, so the Offers list can never name a copy
+        // that was not sent, or miss one that was.
+        { bcc: copies.bcc, cc: copies.cc },
+      );
+
+  return { ...delivery, offer: stamped, recipient: offer.candidateEmail };
+}
+
+/**
+ * Send a SENT offer's letter again — the same letter, to the same address (owner, 2026-09-28).
+ *
+ * Rendered from `templateSnapshot`, the design frozen at the first send, never from today's
+ * template: a resend must be the letter the candidate was already promised. The offer row is not
+ * touched — no status change, no new `sent_at`, no new snapshot. The route writes the audit row.
+ */
+export async function resendOfferEmail(
+  offerId: string,
+  options: { logoUrl?: string; requestId: string },
+): Promise<OfferSendOutcome> {
+  const offer = await getOffer(offerId);
+  const refusal = offerResendRefusal(offer);
+  if (refusal || !offer.templateSnapshot) {
+    throw new Error(refusal ?? "This offer cannot be resent.");
+  }
+
+  // A snapshot taken before a second design existed carries no `variant`, and every such offer was
+  // classic (types.ts) — so absent means classic, the letter the candidate was actually sent.
+  const design: OfferLetterDesign = { ...offer.templateSnapshot, variant: offer.templateSnapshot.variant ?? "classic" };
+
+  const delivery = await deliverOfferLetter(offer, design, {
+    // The candidate only. The CC/BCC typed for the first send are not kept on the offer, and a
+    // resend is for the person who never received the letter — not a second round of copies.
+    copies: planOfferCopies({ candidateEmail: offer.candidateEmail }),
+    idempotencyKey: offerResendIdempotencyKey(offer.id, options.requestId),
+    logoUrl: options.logoUrl,
+  });
+
+  return { ...delivery, offer, recipient: offer.candidateEmail };
+}
+
+async function deliverOfferLetter(
+  offer: OfferRecord,
+  template: OfferLetterDesign,
+  options: { copies: OfferCopyPlan; idempotencyKey: string; logoUrl?: string },
+): Promise<OfferLetterDelivery> {
+  const { copies } = options;
   const fields = offerFields(offer);
   const sender = resolveOfferSender();
   const subject = offerSubject(offer);
@@ -163,7 +238,7 @@ export async function sendOfferEmail(
       console.log("Offer PDF render failed; sending body-only", {
         level: "warning",
         tags: { component: "offers" },
-        extra: { offerId, message: error instanceof Error ? error.message : String(error) },
+        extra: { offerId: offer.id, message: error instanceof Error ? error.message : String(error) },
       });
     }
   } else {
@@ -190,7 +265,7 @@ export async function sendOfferEmail(
     externalRecipients: [offer.candidateEmail, ...copies.cc, ...copies.bcc],
     from: sender.from,
     html,
-    idempotencyKey: offerIdempotencyKey(offer.id),
+    idempotencyKey: options.idempotencyKey,
     origin: {
       eventType: "offer_letter",
       module: "offers",
@@ -205,28 +280,6 @@ export async function sendOfferEmail(
   const skipped = result.skipped === true;
   const skippedReason = skipped ? (result as { reason: string }).reason : null;
 
-  // Only stamp the row when the mail actually left. Marking a suppressed send as "sent" would
-  // hide, permanently, the one case where a candidate never received their offer — and the row
-  // can never be edited or resent afterwards.
-  const stamped = skipped
-    ? offer
-    : await markOfferSent(
-        offer.id,
-        {
-          blocks: template.blocks,
-          fontFamily: template.fontFamily,
-          fontSizePt: template.fontSizePt,
-          theme: template.theme,
-          // The skin goes into the snapshot too. Without it a sent executive offer would re-render
-          // as the classic letter the next time HR downloaded a copy of it.
-          variant: template.variant,
-        },
-        options.sentBy ?? null,
-        // Exactly what was handed to the provider above, so the Offers list can never name a copy
-        // that was not sent, or miss one that was.
-        { bcc: copies.bcc, cc: copies.cc },
-      );
-
   return {
     // The PDF, and only the PDF. The letterhead mark is an inline part, not something HR should
     // ever be told "was attached" — reporting it here would turn a failed PDF render into a
@@ -237,8 +290,6 @@ export async function sendOfferEmail(
     cc: copies.cc,
     copyNotes: copies.notes,
     from: sender.from,
-    offer: stamped,
-    recipient: offer.candidateEmail,
     senderConfigured: sender.isConfigured,
     skipped,
     skippedReason,
