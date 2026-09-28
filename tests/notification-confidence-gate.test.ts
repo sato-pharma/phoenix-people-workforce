@@ -8,7 +8,8 @@ import {
   computeDecision,
   computeRealAudienceSize,
   computeRecipientVolumeCeiling,
-  FIRST_RUN_CEILING_OVERRIDES,
+  CEILING_OVERRIDES,
+  resolveCeilingOverride,
   HOLD_EXPIRY_EFFECTIVE_FROM,
   HOLD_EXPIRY_HOURS,
   isExemptFromVolumeChecks,
@@ -157,12 +158,58 @@ export function runNotificationConfidenceGateTests() {
   // (module,eventType) pair gets — that override is what checkRecipientVolume applies on top of
   // computeRecipientVolumeCeiling's own (unmodified) first-run result.
   assert.ok(
-    FIRST_RUN_CEILING_OVERRIDES["sales/closing_published"] >= 12,
+    CEILING_OVERRIDES["sales/closing_published"].ceiling >= 12,
     "sales/closing_published's first-run override must cover its known real recipient count",
   );
   assert.ok(
-    FIRST_RUN_CEILING_OVERRIDES["sales/closing_published"] > firstRunBigCompany.ceiling,
+    CEILING_OVERRIDES["sales/closing_published"].ceiling > firstRunBigCompany.ceiling,
     "the override must actually raise the ceiling above the generic first-run cap it replaces",
+  );
+
+  // ── appliesTo: which overrides survive a pair becoming established ─────────────────────────
+  // sales/closing_published stays first_run-only: its audience DESIGN never changed, so its own
+  // baseline is still a truthful description of it and this entry must not quietly become a
+  // permanent floor under it.
+  assert.equal(
+    resolveCeilingOverride("sales", "closing_published", "first_run"),
+    20,
+    "a first_run override must apply while the pair has no baseline of its own",
+  );
+  assert.equal(
+    resolveCeilingOverride("sales", "closing_published", "established"),
+    undefined,
+    "a first_run override must STOP applying once the pair has real history — that history is the better evidence",
+  );
+
+  // market_awareness/market_awareness_decision_pending is the opposite case, and the reason
+  // `appliesTo` exists. That notice went to exactly ONE person for its whole life; the owner's
+  // 2026-09-28 rule made it copy the requester, his manager and every approver. Its established
+  // baseline — measured live that day at ~1.1 (±0.3) over 7 prior sends, ceiling 3 — describes the
+  // single-recipient bug that was just fixed, so it held 3 of the first 4 corrected notices at 67%
+  // and the owner cleared them by hand within the minute. A baseline is evidence of what the code
+  // USED TO DO; it is not evidence of an incident when the code deliberately changed.
+  assert.equal(
+    resolveCeilingOverride("market_awareness", "market_awareness_decision_pending", "established"),
+    12,
+    "an `always` override must survive the pair being established — that is the entire point of it",
+  );
+  assert.ok(
+    resolveCeilingOverride("market_awareness", "market_awareness_decision_pending", "established")! >
+      computeRecipientVolumeCeiling([1, 1, 1, 1, 1, 1, 2], 200).ceiling,
+    "the override must clear the real production baseline (~1.1 over 7 sends) that held the refire",
+  );
+
+  // Nothing unlisted gains a floor. The gate's posture is no manual carve-outs; these are the
+  // exceptions, and an override that leaked to every pair would silently disarm the volume check.
+  assert.equal(
+    resolveCeilingOverride("recruitment", "candidate_assigned", "first_run"),
+    undefined,
+    "a pair with no entry must get no override in either basis",
+  );
+  assert.equal(
+    resolveCeilingOverride("recruitment", "candidate_assigned", "established"),
+    undefined,
+    "a pair with no entry must get no override in either basis",
   );
 
   // ── computeRealAudienceSize ────────────────────────────────────────────────────────────────
