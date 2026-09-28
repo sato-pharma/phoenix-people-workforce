@@ -215,20 +215,53 @@ export function runNativeWebHandoffTests() {
     "an expired or tampered ticket lands on the ordinary login page, not an API error",
   );
 
-  // The mobile side must keep using a system browser tab. On Android a WebView shares its cookie jar
-  // with React Native's own networking, which is the csrf_blocked fault above, by another door.
+  // ── 6. What makes the in-app WebView safe, and must never be quietly removed ────────────────────
+  // 🔴 THE MODULE RENDERS IN A WEBVIEW, AND ONE LINE IS WHY THAT IS NOT THE csrf_blocked FAULT AGAIN.
+  // On Android the WebView's cookie jar IS React Native's own networking jar, so the session cookie
+  // this hand-off sets would ride every request the app makes — which the CSRF guard refuses. The app
+  // opts out per request: React Native's NetworkingModule switches a request with `withCredentials`
+  // false to `CookieJar.NO_COOKIES`, and `credentials: "omit"` is what sets that. Both call sites in
+  // lib/api.ts must carry it — the upload is a mutation, so it is the one that would break first.
+  //
+  // This is the whole safety argument for the screen. Losing it looks like nothing locally and breaks
+  // every mutation on a real handset, so it is asserted here rather than trusted to a comment.
+  const apiClient = readFileSync("mobile/src/lib/api.ts", "utf8");
+  const fetchCalls = apiClient.match(/await fetch\(`\$\{apiBaseUrl\}\$\{path\}`, \{[\s\S]*?\n {4}\}\);/g) ?? [];
+  assert.equal(fetchCalls.length, 2, "lib/api.ts still has exactly its two fetch call sites");
+  for (const [index, call] of fetchCalls.entries()) {
+    assert.match(
+      call,
+      /credentials:\s*"omit"/,
+      `fetch call site ${index + 1} in lib/api.ts must set credentials: "omit" — without it the WebView's session cookie rides the app's own requests and every mutation comes back csrf_blocked`,
+    );
+  }
+
   const opener = readFileSync("mobile/src/lib/portal/open-module.ts", "utf8");
-  assert.match(opener, /expo-web-browser/, "the module opens in a Custom Tab");
-  // Comments stripped: that file's header explains at length WHY a WebView is wrong here, and a scan
-  // that reads its own explanation as the defect is a check that can only ever fail.
-  const openerCode = opener.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
-  assert.ok(
-    !/webview/i.test(openerCode),
-    "never a WebView: on Android its cookie jar is the app's own, so the handed-over session cookie would reach the app's fetch and break every mutation",
-  );
   assert.match(
     opener,
     /url\.startsWith\(`\$\{apiBaseUrl\}\//,
     "the app opens the hand-off URL only when it is on the server this build talks to",
+  );
+
+  // The screen itself: penned into this server's own portal space. It is signed in, so following a
+  // foreign link inside it is how a session leaks — a portal page can link anywhere.
+  const screen = readFileSync("mobile/src/app/(portal)/module.tsx", "utf8");
+  assert.match(screen, /react-native-webview/, "the module renders in an in-app WebView");
+  assert.match(
+    screen,
+    /onShouldStartLoadWithRequest/,
+    "every navigation inside the module is vetted before it loads",
+  );
+  assert.match(
+    screen,
+    /startsWith\(`\$\{apiBaseUrl\}\/`\)/,
+    "and only this server's own pages are allowed",
+  );
+  // Out of the tab bar: without `href: null` expo-router gives this route a fifth, iconless tab.
+  const layout = readFileSync("mobile/src/app/(portal)/_layout.tsx", "utf8");
+  assert.match(
+    layout,
+    /name="module"\s+options=\{\{\s*href:\s*null\s*\}\}/,
+    "the module route is pushed full-screen, never added to the bottom bar",
   );
 }
