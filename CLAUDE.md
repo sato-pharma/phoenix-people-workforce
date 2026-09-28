@@ -86,6 +86,7 @@ for one command. Pinned by `tests/local-typecheck-guard.test.ts`.
 | Migration safety harness, RLS, role alignment | [docs/security/](docs/security/) |
 | Deploy triggers and verification | [docs/deployment.md](docs/deployment.md) · [docs/observability.md](docs/observability.md) |
 | Test wiring — a test not registered in `tests/run-tests.ts` never runs | [docs/testing.md](docs/testing.md) |
+| What is waiting on the owner — the board, its four channels, and the rule that it never under-reports | [docs/needs-you.md](docs/needs-you.md) |
 
 ## Protected Files — OWNER APPROVAL REQUIRED
 
