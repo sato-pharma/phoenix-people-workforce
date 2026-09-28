@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { buildOutstationReviewDocument, outstationReviewFooter } from "@/lib/outstation/review-document";
 import { viewEligibilityReason } from "@/lib/outstation/eligibility-reason";
 import { buildRouteStaticMapUrl, decodePolyline, renderRouteDiagram } from "@/lib/outstation/review-map-image";
+import { renderRouteStreetMap } from "@/lib/outstation/review-map-render";
 import { parseOutstationDescription } from "@/lib/outstation/description-format";
 import type { OutstationExpenseRequest } from "@/lib/outstation/types";
 
@@ -105,14 +106,13 @@ function buildDoc(overrides: Partial<OutstationExpenseRequest> = {}): string {
   return buildOutstationReviewDocument({
     generatedOn: "29 Sept 2026 · 00:09",
     map: { caption: "A caption.", image: null },
-    mark: "",
     photos: [],
     request: realRequest(overrides),
     workload: { available: false },
   });
 }
 
-export function runOutstationReviewPdfTests() {
+export async function runOutstationReviewPdfTests() {
   // ── 1. THE MAP MUST NEVER PLOT A PLACEHOLDER AS A PLACE ──────────────────────────────────────
 
   const nullIsland = buildRouteStaticMapUrl({
@@ -258,7 +258,7 @@ export function runOutstationReviewPdfTests() {
 
   // 🔴 An explicit white ground. Without it the whole paper rendered near-black with near-black
   // text on a machine in dark mode — caught by screenshotting the real document on 2026-09-29.
-  assert.match(doc, /html, body \{[^}]*background: #FFFFFF/, "the document must set its own white ground");
+  assert.match(doc, /html, body \{[^}]*background: #ffffff/i, "the document must set its own white ground");
   assert.match(doc, /color-scheme: only light/, "and refuse the renderer's dark scheme outright");
 
   // THE SQUARE-EDGE GOLDEN RULE and THE FITS-THE-SCREEN GOLDEN RULE, on paper.
@@ -273,28 +273,52 @@ export function runOutstationReviewPdfTests() {
     "and no unwrappable run may force the page wider than the paper",
   );
 
-  // The house identity. The standard's number rides in the FOOTER, which Chromium prints on every
-  // page from its own template — so it is asserted against that, not against the body.
+  // 🔴 NOT a house document. Owner, 2026-09-29: "no, do not brand Sato, extract the exact view."
+  // The first version wore the Sato letterhead; this asserts it never comes back.
+  for (const fragment of ["SATO-DIS", "Sato Pharma", "sato-pharma-logo", "houseLetterhead"]) {
+    assert.ok(!doc.includes(fragment), `the printed review must carry no Sato branding — found ${fragment}`);
+  }
+
+  // It is the REVIEW SCREEN on paper: the dark bar, the orange eyebrow, the mono identity line and
+  // the status chip, in the panel's own words.
+  assert.match(doc, /class="bar__eyebrow">Trip under review</, "the screen's own eyebrow, verbatim");
+  assert.match(doc, /background: #0f172a/, "and its dark header bar");
+  assert.match(doc, /#fb923c/, "with the orange eyebrow the panel uses");
+  assert.match(doc, /#f97316/, "and the Phoenix accent (--phx-accent), not a house blue");
+  assert.ok(
+    !doc.includes("#0A527D") && !doc.includes("#0A6BA6") && !doc.includes("#1482C2"),
+    "none of the Sato identity inks may appear — this is the Phoenix screen, on paper",
+  );
+  // 🔴 And the palette is the LIGHT token values, hard-coded. tokens.css redefines every one of
+  // them under dark mode; inheriting those is what printed a near-black page on 2026-09-29.
+  assert.match(doc, /html \{ color-scheme: only light; \}/, "the document refuses the renderer's dark scheme");
+  assert.ok(
+    !doc.includes("var(--phx-"),
+    "it must not read the CSS variables: they resolve to the DARK palette on a dark-mode machine",
+  );
+
   const footer = outstationReviewFooter({ generatedOn: "29 Sept 2026 · 00:09", requestId: 148 });
-  assert.match(footer, /SATO-DIS-2026-01 v1\.0/, "every company document carries the standard's number");
-  assert.match(footer, /class="pageNumber"[\s\S]*class="totalPages"/, "and a flowing document numbers its own pages");
+  assert.match(footer, /Phoenix Workforce/, "the footer names Phoenix, not the Sato document standard");
+  assert.ok(!footer.includes("SATO-DIS"), "and carries no house recital");
+  assert.match(footer, /class="pageNumber"[\s\S]*class="totalPages"/, "a flowing document numbers its own pages");
   assert.ok(
     /style="/.test(footer) && !/class="foot__/.test(footer),
     "the footer template is rendered outside the document, so it cannot rely on the stylesheet — "
       + "its styles must be inline or it prints as unstyled black text",
   );
   assert.match(doc, /Outstation Trip Review/, "and the document says what it is");
-
-  // Names, never codes.
-  assert.match(doc, /Weaam Mahmoud Mohamed Mahmoud/, "the employee is named");
-  assert.ok(
-    !doc.includes("AI-0013"),
-    "🔴 and their HR code is not printed — names, never codes (the request's own reference stays)",
+  // The header line the panel itself prints: name, then HR id · request · role. The HR id IS on
+  // screen there, and this is the exact view — so it is on the paper too. (The names-never-codes
+  // rule is about not REPLACING a name with a code; the panel shows both, and so does this.)
+  assert.match(doc, /Weaam Mahmoud Mohamed Mahmoud/, "the employee is named, first and largest");
+  assert.match(
+    doc,
+    /AI-0013 &middot; OUTSTATION-148 &middot; District Manager/,
+    "and the panel's own identity line follows it, verbatim",
   );
-  assert.match(doc, /OUTSTATION-148/, "the request keeps its own reference, as an invoice has a number");
 
   // The three defects must not survive into the document.
-  for (const fragment of ["INVALID_ARGUMENT", '"code": 400', "draft_id=", "gps=", "source=live_camera", "hr_id="]) {
+  for (const fragment of ["INVALID_ARGUMENT", '"code": 400', "draft_id=", "gps=", "source=live_camera", "hr_id=AI-0013"]) {
     assert.ok(!doc.includes(fragment), `the printed review must not contain ${fragment}`);
   }
   assert.equal(
@@ -316,6 +340,53 @@ export function runOutstationReviewPdfTests() {
 
   // An unavailable CRM read is an unanswered question, never a zero.
   assert.match(doc, /it is an unanswered question/, "a source that did not answer must say so");
+
+  // ── 4b. THE REAL STREET MAP ──────────────────────────────────────────────────────────────────
+
+  // It needs Chromium, so only its refusals are exercised here; the rest is pinned at the source.
+  assert.equal(
+    await renderRouteStreetMap({ apiKey: null, destination: { lat: 30, lng: 31 }, home: null, polyline: null }),
+    null,
+    "with no key there is no map to draw, and it must not launch a browser to find that out",
+  );
+  assert.equal(
+    await renderRouteStreetMap({ apiKey: "k", destination: null, home: null, polyline: "abc" }),
+    null,
+    "and with nothing plottable it refuses before launching too",
+  );
+
+  const renderer = readFileSync(
+    new URL("../src/lib/outstation/review-map-render.ts", import.meta.url),
+    "utf8",
+  );
+  // Each of these cost a failed render on 2026-09-29 and is the reason the map draws at all.
+  assert.ok(
+    !renderer.includes("mapId"),
+    "a map id switches Google to the VECTOR renderer, which needs WebGL — this browser launches "
+      + "with --disable-gpu, so the tiles never arrive and the render times out with no error",
+  );
+  assert.match(
+    renderer,
+    /await page\.goto\(/,
+    "the browser key is referrer-restricted, so the page must carry the app's own origin — a page "
+      + "built by setContent alone is about:blank and Google answers gm_authFailure",
+  );
+  assert.ok(
+    !/goto\(`\$\{origin\}\/api\//.test(renderer),
+    "and that origin must be an HTML page: scripts do not execute inside a JSON document, so a "
+      + "/api/ endpoint loads nothing at all",
+  );
+  assert.match(
+    renderer,
+    /document\.createElement\("div"\)/,
+    "the map container must be created in the callback, not written in the markup — the origin "
+      + "page's React re-renders over the document and removes a div that was already there",
+  );
+  assert.match(
+    renderer,
+    /gm_authFailure/,
+    "a rejected key must surface as a reason, not as a silent timeout",
+  );
 
   // ── 5. THE ROUTE IS SERVED BY THE SAME GATE AS THE REVIEW ────────────────────────────────────
 

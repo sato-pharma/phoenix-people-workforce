@@ -21,17 +21,25 @@ import { isUnresolvedResidenceCoordinate } from "@/lib/outstation/distance-failu
 /** Google's documented ceiling for a Static Maps request URL. */
 const STATIC_MAPS_URL_LIMIT = 16_384;
 
-// The house palette (SATO-DIS-2026-01): Brand Deep for home, Brand Light for the destination,
-// Brand Blue for the road between them. Nothing on company paper is drawn in a colour of its own.
-const HOME_COLOUR = "0x0A527D";
-const DESTINATION_COLOUR = "0x1482C2";
-const ROUTE_COLOUR = "0x0A6BA6DD";
+// The Phoenix palette, not the Sato one: this picture goes on the review screen's own PDF, which is
+// the screen on paper (owner, 2026-09-29: "do not brand Sato, extract the exact view"). Slate for
+// home, accent orange for the destination and the road between them.
+const HOME_COLOUR = "0x0f172a";
+const DESTINATION_COLOUR = "0xf97316";
+const ROUTE_COLOUR = "0xf97316DD";
 
 type Point = { lat: number; lng: number };
 
 export type RouteStaticMapPlan = {
   /** What the caption under the picture says. Always set — a missing picture still explains itself. */
   caption: string;
+  /** The captured destination, or null when there is no usable one. */
+  destination: Point | null;
+  /**
+   * The employee's home, or null when it is unresolved. 🔴 THE GUARD LIVES HERE, and every renderer
+   * reads it rather than re-deciding: null island and the Egypt centroid are never plotted.
+   */
+  home: Point | null;
   /** The request to make, or null when there is nothing honest to draw. */
   url: string | null;
 };
@@ -49,17 +57,17 @@ export function buildRouteStaticMapUrl(input: {
   polyline: string | null | undefined;
   residence: { lat: number | null | undefined; lng: number | null | undefined };
 }): RouteStaticMapPlan {
-  if (!input.apiKey) {
-    return { caption: "The map could not be drawn: Google Maps is not configured on this server.", url: null };
-  }
-
   const destination = usable(input.destination) ? input.destination : null;
   const homeResolved =
     usable(input.residence) && !isUnresolvedResidenceCoordinate(input.residence.lat, input.residence.lng);
   const home = homeResolved ? (input.residence as Point) : null;
 
+  if (!input.apiKey) {
+    return { caption: "The map could not be drawn: Google Maps is not configured on this server.", destination, home, url: null };
+  }
+
   if (!destination && !home) {
-    return { caption: "No usable coordinate is on file for either end of this trip, so there is no map.", url: null };
+    return { caption: "No usable coordinate is on file for either end of this trip, so there is no map.", destination, home, url: null };
   }
 
   const params = [
@@ -99,7 +107,7 @@ export function buildRouteStaticMapUrl(input: {
         ? "H is the employee's registered home, D the captured destination, and the line the driving route the distance was measured along."
         : "H is the employee's registered home and D the captured destination. The driving route is too long to draw at this size; the distance above is the measured one.";
 
-  return { caption, url };
+  return { caption, destination, home, url };
 }
 
 /** Fetches the planned map as a data URI, or null. A map that fails to load never fails the PDF. */
@@ -221,22 +229,22 @@ export function renderRouteDiagram(input: {
 
   const parts: string[] = [
     // THE INK RULE: no filled ground. A hairline frame, and white.
-    `<rect x="1.5" y="1.5" width="${width - 3}" height="${height - 3}" fill="#FFFFFF" stroke="#D5DDE5" stroke-width="3"/>`,
+    `<rect x="1.5" y="1.5" width="${width - 3}" height="${height - 3}" fill="#FFFFFF" stroke="#e0dcd4" stroke-width="3"/>`,
   ];
   if (line.length > 1) {
     const d = line.map((p, i) => {
       const { x, y } = toXY(p);
       return `${i === 0 ? "M" : "L"}${x.toFixed(1)} ${y.toFixed(1)}`;
     }).join(" ");
-    parts.push(`<path d="${d}" fill="none" stroke="#0A6BA6" stroke-width="6" stroke-linejoin="round" stroke-linecap="round"/>`);
+    parts.push(`<path d="${d}" fill="none" stroke="#f97316" stroke-width="6" stroke-linejoin="round" stroke-linecap="round"/>`);
   }
   if (home) {
     const { x, y } = toXY(home);
-    parts.push(marker(x, y, "H", "#0A527D", "#FFFFFF", "#FFFFFF"));
+    parts.push(marker(x, y, "H", "#0f172a", "#FFFFFF", "#FFFFFF"));
   }
   if (destination) {
     const { x, y } = toXY(destination);
-    parts.push(marker(x, y, "D", "#FFFFFF", "#1482C2", "#0A527D"));
+    parts.push(marker(x, y, "D", "#FFFFFF", "#f97316", "#0f172a"));
   }
 
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">${parts.join("")}</svg>`;

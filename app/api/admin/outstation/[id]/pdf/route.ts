@@ -11,12 +11,10 @@
  * key to the image) and no Google API key, and Chromium needs no network to lay it out.
  */
 
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-
 import { NextResponse } from "next/server";
 
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { systemDeployment } from "@/config/system-settings";
 import { getRepTripVisitWorkload } from "@/lib/crm/visit-workload";
 import { cairoDateTime } from "@/lib/format/cairo-datetime";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
@@ -33,6 +31,7 @@ import {
   fetchRouteStaticMap,
   renderRouteDiagram,
 } from "@/lib/outstation/review-map-image";
+import { renderRouteStreetMap } from "@/lib/outstation/review-map-render";
 import { getOutstationRequestById } from "@/lib/outstation/service";
 import { approverTripPhotos } from "@/lib/outstation/trip-evidence-photos";
 import { resolveWorkloadFreshness } from "@/lib/outstation/workload-freshness";
@@ -46,15 +45,6 @@ export const maxDuration = 90;
 /** A photo larger than this is left out with a sentence rather than bloating the file. */
 const PHOTO_BYTE_LIMIT = 8 * 1024 * 1024;
 
-function houseMarkDataUri(): string {
-  try {
-    const svg = readFileSync(join(process.cwd(), "public", "brand", "sato-pharma-logo-on-light.svg"), "utf8");
-    return `data:image/svg+xml;base64,${Buffer.from(svg, "utf8").toString("base64")}`;
-  } catch {
-    // The mark is the letterhead, not the content. A document without it is still a true document.
-    return "";
-  }
-}
 
 async function imageDataUri(url: string | null): Promise<{ image: string | null; problem: string | null }> {
   if (!url) return { image: null, problem: null };
@@ -101,20 +91,35 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       polyline: outstation.routePolyline,
       residence: { lat: outstation.residenceLatitude, lng: outstation.residenceLongitude },
     });
-    // Google's street map when it answers; otherwise the route Phoenix already stored, drawn here.
-    // Measured 2026-09-29: the Maps Static API is not enabled on the project behind the local key,
-    // so the fallback is not an edge case — it is what prints until that API is switched on.
-    const streetMap = await fetchRouteStaticMap(mapPlan);
-    const diagram = streetMap
-      ? null
-      : renderRouteDiagram({
-          destination: { lat: outstation.capturedLatitude, lng: outstation.capturedLongitude },
-          polyline: outstation.routePolyline,
-          residence: { lat: outstation.residenceLatitude, lng: outstation.residenceLongitude },
-        });
+    // THE REAL STREET MAP FIRST, drawn by the Maps JavaScript API inside this same Chromium — the
+    // API the review screen itself uses. Measured 2026-09-29: the Maps STATIC API answers 403 "not
+    // activated on your API project" for both keys, so the URL route below can only ever be a
+    // fallback until that product is enabled; the JS API is enabled and draws today.
+    //
+    // `mapPlan` still decides WHAT may be plotted: it is where the unresolved-home guard lives, and
+    // every renderer takes its answer rather than re-deciding. A placeholder is never a place.
+    const streetMap = await renderRouteStreetMap({
+      apiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY ?? process.env.GOOGLE_MAPS_SERVER_KEY ?? null,
+      destination: mapPlan.destination,
+      home: mapPlan.home,
+      // The referrer the browser key is restricted to — the app is asking its own origin.
+      origin: systemDeployment.productionUrl,
+      polyline: mapPlan.home ? outstation.routePolyline : null,
+    });
+    const staticMap = streetMap ? null : await fetchRouteStaticMap(mapPlan);
+    const diagram =
+      streetMap || staticMap
+        ? null
+        : renderRouteDiagram({
+            destination: { lat: outstation.capturedLatitude, lng: outstation.capturedLongitude },
+            polyline: outstation.routePolyline,
+            residence: { lat: outstation.residenceLatitude, lng: outstation.residenceLongitude },
+          });
     const map = streetMap
-      ? { caption: mapPlan.caption, image: streetMap }
-      : diagram ?? { caption: mapPlan.caption, image: null };
+      ? { caption: mapPlan.caption, image: streetMap.image }
+      : staticMap
+        ? { caption: mapPlan.caption, image: staticMap }
+        : diagram ?? { caption: mapPlan.caption, image: null };
 
     // ── The two photos, exactly as the panel lists them ────────────────────────────────────────
     const photos: ReviewDocumentPhoto[] = [];
@@ -163,6 +168,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
             regular: day.regular,
           })),
           freshnessHeadline: freshness.verdict === "stale" ? freshness.headline : null,
+          matchStatus: live.matchStatus,
           live: {
             am: live.amWorkload,
             campaign: live.campaignVisits,
@@ -181,7 +187,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const html = buildOutstationReviewDocument({
       generatedOn,
       map,
-      mark: houseMarkDataUri(),
       photos,
       request: outstation,
       workload,
