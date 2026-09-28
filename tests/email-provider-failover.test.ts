@@ -3,13 +3,17 @@ import assert from "node:assert/strict";
 import { RetryableEmailError } from "../src/lib/email/email-errors.ts";
 import {
   brevoProvider,
+  checkResendAccepted,
+  resendAcceptedCheckDelaysMs,
   resendProvider,
   resolveEmailProviders,
   sendPreparedEmailWithFailover,
+  type AcceptedSendCheck,
   type EmailProvider,
   type PreparedEmail,
   type ProviderSendResult,
 } from "../src/lib/email/email-providers.ts";
+import { parseResendWebhookEvent, suppressionReasonForEvent } from "../src/lib/email/resend-webhook-events.ts";
 
 const sampleEmail: PreparedEmail = {
   from: "Phoenix <no-reply@phoenix.example>",
@@ -235,5 +239,112 @@ export async function runEmailProviderFailoverTests() {
       { email: "hr@satopharma.com" },
       "Brevo (backup only) honours the first reply-to mailbox",
     );
+  }
+
+  // 10) ACCEPTED, THEN FAILED. On 2026-09-28 Resend answered 200 with an id for every send from
+  //     13:00 Cairo and marked 52 of the next 56 `failed` — Norhan Gamal's job offer among them —
+  //     while Phoenix recorded each as sent and never reached Brevo. A `failed` verdict after the
+  //     200 must hand the SAME message to the backup, and the backup's id is what gets recorded.
+  function checkingProvider(name: string, id: string, check: AcceptedSendCheck, calls: string[]): EmailProvider {
+    return {
+      ...fakeProvider(name, { outcome: "sent", id }, calls),
+      async checkAccepted(checkedId) {
+        calls.push(`${name}:check:${checkedId}`);
+        return check;
+      },
+    };
+  }
+  {
+    const calls: string[] = [];
+    const primary = checkingProvider("resend", "R-accepted", { reason: "failed after accept", state: "failed" }, calls);
+    const backup = fakeProvider("brevo", { outcome: "sent", id: "<B10>" }, calls);
+    const result = await sendPreparedEmailWithFailover(sampleEmail, [primary, backup]);
+    assert.deepEqual(result, { id: "<B10>", provider: "brevo" }, "an accepted-then-failed send must reach the backup");
+    assert.deepEqual(calls, ["resend", "resend:check:R-accepted", "brevo"]);
+  }
+
+  // 11) Accepted and settled (delivered, or anything that is not `failed`) → the primary's id
+  //     stands and the backup is NEVER called: Resend stays the primary and the source of truth.
+  for (const state of ["settled", "pending"] as const) {
+    const calls: string[] = [];
+    const primary = checkingProvider("resend", "R-ok", { state }, calls);
+    const backup = fakeProvider("brevo", { outcome: "sent", id: "<B11>" }, calls);
+    const result = await sendPreparedEmailWithFailover(sampleEmail, [primary, backup]);
+    assert.deepEqual(result, { id: "R-ok", provider: "resend" }, `a ${state} check keeps the Resend send`);
+    assert.deepEqual(calls, ["resend", "resend:check:R-ok"], `a ${state} check must not wake the backup`);
+  }
+
+  // 12) No backup configured → nothing to hand to, so the check is not even asked (no added wait).
+  {
+    const calls: string[] = [];
+    const primary = checkingProvider("resend", "R-only", { reason: "x", state: "failed" }, calls);
+    const result = await sendPreparedEmailWithFailover(sampleEmail, [primary]);
+    assert.deepEqual(result, { id: "R-only", provider: "resend" });
+    assert.deepEqual(calls, ["resend"], "with no backup the accepted check is skipped");
+  }
+
+  // 13) checkResendAccepted reads Resend's own verdict. It waits between reads (stubbed here), stops
+  //     at the first verdict, and never throws — any trouble asking answers `pending`, which keeps the
+  //     accepted send exactly as it was before this check existed.
+  {
+    const realKey = process.env.RESEND_API_KEY;
+    process.env.RESEND_API_KEY = "re_test";
+    try {
+      const sleeps: number[] = [];
+      const sleep = async (ms: number) => {
+        sleeps.push(ms);
+      };
+      const reading = (events: Array<string | number>) => {
+        const urls: string[] = [];
+        const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
+          urls.push(`${init?.method ?? "GET"} ${String(input)}`);
+          const next = events.shift();
+          if (typeof next === "number") return new Response("{}", { status: next });
+          return new Response(JSON.stringify({ id: "R", last_event: next }), { status: 200 });
+        }) as typeof fetch;
+        return { fetchImpl, urls };
+      };
+
+      const failed = reading(["sent", "failed"]);
+      assert.equal((await checkResendAccepted("R 1", { fetchImpl: failed.fetchImpl, sleep })).state, "failed");
+      assert.deepEqual(failed.urls, ["GET https://api.resend.com/emails/R%201", "GET https://api.resend.com/emails/R%201"]);
+
+      assert.equal((await checkResendAccepted("R", { fetchImpl: reading(["delivered"]).fetchImpl, sleep })).state, "settled");
+      assert.equal((await checkResendAccepted("R", { fetchImpl: reading(["suppressed"]).fetchImpl, sleep })).state, "settled", "a Resend suppression is not ours to route around");
+      assert.equal((await checkResendAccepted("R", { fetchImpl: reading([429]).fetchImpl, sleep })).state, "pending", "a refused read keeps the send");
+      const queued = reading(["queued", "queued", "queued", "queued", "queued"]);
+      assert.equal((await checkResendAccepted("R", { fetchImpl: queued.fetchImpl, sleep })).state, "pending");
+      assert.equal(queued.urls.length, resendAcceptedCheckDelaysMs.length, "one read per wait, then stop");
+      const throwing = (async () => {
+        throw new Error("network down");
+      }) as typeof fetch;
+      assert.equal((await checkResendAccepted("R", { fetchImpl: throwing, sleep })).state, "pending", "a network error never throws");
+
+      assert.ok(sleeps.length > 0 && sleeps.every((ms) => ms > 0), "every read waits first");
+      // The outbox drains up to 10 rows inside one 30 s step; a longer wait per row would time the
+      // whole drain out and read as a stranded queue.
+      assert.ok(resendAcceptedCheckDelaysMs.reduce((sum, ms) => sum + ms, 0) <= 3000, "the check must stay within 3 s per email");
+
+      delete process.env.RESEND_API_KEY;
+      assert.equal((await checkResendAccepted("R", { fetchImpl: reading(["failed"]).fetchImpl, sleep })).state, "pending", "no key, no read");
+    } finally {
+      if (realKey === undefined) delete process.env.RESEND_API_KEY;
+      else process.env.RESEND_API_KEY = realKey;
+    }
+    assert.equal(typeof resendProvider.checkAccepted, "function", "the live Resend provider must carry the check");
+    assert.equal(brevoProvider.checkAccepted, undefined, "the backup is the end of the chain — it has nothing to hand to");
+  }
+
+  // 14) Resend's `email.failed` webhook states its cause under data.failed.reason — record it, and
+  //     never let a failed send suppress the address: the recipient did nothing wrong.
+  {
+    const row = parseResendWebhookEvent(
+      { created_at: "2026-09-28T18:45:50Z", data: { email_id: "R-f", failed: { reason: "reached_daily_quota" }, to: ["someone@example.com"] }, type: "email.failed" },
+      "evt-failed-1",
+    );
+    assert.equal(row.status, "failed");
+    assert.equal(row.failure_reason, "reached_daily_quota", "the failed reason must be recorded");
+    assert.equal(row.provider_message_id, "R-f");
+    assert.equal(suppressionReasonForEvent(row), null, "a provider-side failure must never suppress the recipient");
   }
 }
