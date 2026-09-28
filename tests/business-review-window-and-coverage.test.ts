@@ -7,7 +7,12 @@ import {
   buildCoverage,
   gradedRowsOf,
 } from "../src/lib/business-review/canonical.ts";
-import { describePeriods, figureWindowLabel, hasFigures } from "../src/lib/business-review/coverage.ts";
+import {
+  describePeriods,
+  figureWindowLabel,
+  figureWindowPeriods,
+  hasFigures,
+} from "../src/lib/business-review/coverage.ts";
 import {
   REVIEW_FLOOR,
   periodColumnLabel,
@@ -917,5 +922,58 @@ export async function runBusinessReviewWindowAndCoverageTests() {
     // visit feed. It stays, and the distinction is the whole reason the removal is safe.
     const roles = flat(SRC("src/lib/business-review/sources/roles.ts"));
     assert.ok(roles.includes("repsCoached: acc.reps.size"), "rides ridden with survive the coaching removal");
+  }
+  // ─────────── A HELD-OUT MONTH GETS NO COLUMN (owner ruling 2026-09-28) ───────────
+  //
+  // 🔴 A MONTHLY TABLE ITERATES THE FIGURE WINDOW, NEVER THE REQUESTED ONE. `meta.months` is the
+  // window that was ASKED for and `meta.period` is the window the figures ANSWER; a section that
+  // walks the first under a heading naming the second prints a column for a month deliberately
+  // held out, filled by `?? 0`. Measured on the 87 rep packs of 2026-09-28: every one carried a
+  // SEP column of zeros — including a rep with 147 customers in July and 151 in August — while
+  // the cover of that same sheet said September's 13,450 CRM rows were held out and were real.
+  // A reader sees "0 customers in September" for someone who worked all September. The owner's
+  // ruling: drop the month entirely, the cover already explains why it is out.
+  {
+    // AVAILABLE stops at August, and the resolver CLAMPS to it — so a window asked for with
+    // windowOf() here would silently be two months and this whole block would pass vacuously.
+    // September has to be in the available list for the held-out case to exist at all.
+    const requested = resolveReviewWindow("2026-07", "2026-09", [...AVAILABLE, "2026-09"]).window;
+    const rows = requested.periods.map((period) => salesRow({ period, hasTarget: true, targetValue: 900_000 }));
+    const coverage = buildCoverage({
+      window: requested, rows, uploaded: UPLOADED(requested),
+      marketing: NO_MARKETING, outstation: NO_OUTSTATION, visits: NO_VISITS,
+      unplaced: NO_UNPLACED, adjustment: null,
+      figureWindow: { label: "Jul - Aug 2026", periods: ["2026-07", "2026-08"] },
+    });
+    assert.equal(requested.periods.length, 3, "the fixture window must really hold three months");
+    const months = figureWindowPeriods(coverage);
+    assert.deepEqual(
+      [...months],
+      ["2026-07", "2026-08"],
+      "the months a pack renders are the FIGURE window's — a held-out month gets no column at all",
+    );
+    assert.ok(
+      !months.includes("2026-09"),
+      "September was held out of every figure, so it must not appear as a column of zeros",
+    );
+
+    // and with nothing held out, nothing is dropped
+    const plain = buildCoverage({
+      window: requested, rows, uploaded: UPLOADED(requested),
+      marketing: NO_MARKETING, outstation: NO_OUTSTATION, visits: NO_VISITS,
+      unplaced: NO_UNPLACED, adjustment: null,
+    });
+    assert.deepEqual(
+      [...figureWindowPeriods(plain)],
+      requested.periods,
+      "when the figure window IS the requested window, every month keeps its column",
+    );
+
+    // the caller that matters is pinned by source, because no unit test can render the route
+    const route = flat(SRC("app/api/business-review/pack/route.ts"));
+    assert.ok(
+      route.includes("months: figureWindowPeriods(coverage)"),
+      "the pack route must hand the model the FIGURE window's months, never meta.months",
+    );
   }
 }

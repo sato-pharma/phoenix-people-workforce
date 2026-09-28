@@ -199,6 +199,21 @@ export function figureWindowLabel(coverage: ReviewCoverage): string {
   return coverage.figureWindow?.label ?? coverage.window.label;
 }
 
+/**
+ * The months the figures actually answer — the figure window's, or the requested window's when the
+ * two are the same.
+ *
+ * 🔴 `meta.months` is the REQUESTED window, while `meta.period` is the FIGURE window, and a table
+ * that iterates the first under a heading naming the second prints a column for a month that was
+ * deliberately held out. It fills with `?? 0`, so the reader sees "0 customers in September" for a
+ * rep who worked all September — the misleading zero §7 forbids. Measured 2026-09-28 on the 87 rep
+ * packs: every one carried a SEP column of zeros, including reps with 151 customers in August,
+ * while the cover of the same sheet said September's 13,450 CRM rows were held out and were real.
+ */
+export function figureWindowPeriods(coverage: ReviewCoverage): readonly string[] {
+  return coverage.figureWindow?.periods ?? coverage.window.periods;
+}
+
 /** True when a figure fed by this source may be rendered as a number. When false the UI must
  *  print "no data" — never 0, and never a dash that reads like a zero. */
 export function hasFigures(coverage: ReviewCoverage, source: ReviewSourceId): boolean {

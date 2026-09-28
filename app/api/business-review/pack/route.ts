@@ -19,7 +19,7 @@ import { writeAuditLog } from "@/lib/admin/audit";
 import { resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { resolveAccessContext } from "@/lib/auth/server";
 import { concentrationForAreas } from "@/lib/business-review/concentration";
-import { figureWindowLabel, hasFigures } from "@/lib/business-review/coverage";
+import { figureWindowLabel, figureWindowPeriods, hasFigures } from "@/lib/business-review/coverage";
 import {
   defaultSelectionFor,
   narrowSelection,
@@ -196,7 +196,8 @@ export async function GET(request: Request) {
       concentration,
       coverageNote: coverage.notUploaded?.note ?? `Every figure covers ${windowLabel}.`,
       dms,
-      months: dsByLine.get(filter.lines[0])?.meta.months ?? [],
+      // The FIGURE window's months, never the requested one's — see figureWindowPeriods.
+      months: figureWindowPeriods(coverage),
       people,
       selection,
       subject: {
