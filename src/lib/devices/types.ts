@@ -21,20 +21,38 @@ export type DeviceCategory = "laptop" | "tablet" | "phone" | "other";
  *              which is what supports an insurance claim and can excuse the holder under البند (11).
  * `retired`  — end of life. Terminal.
  */
-export type DeviceStatus = "in_stock" | "assigned" | "repair" | "lost" | "stolen" | "retired";
+export type DeviceStatus =
+  | "in_stock"
+  | "assigned"
+  | "repair"
+  | "lost"
+  | "stolen"
+  | "retired"
+  /** Earmarked for a not-yet-hired holder. Not issuable to anyone else; owes nothing. */
+  | "reserved";
 
 /**
  * `outstanding` — he holds it. The only state that owes anything.
  * `returned`    — محضر رد العهدة completed. البند (8): nothing else proves a return.
  * `written_off` — closed without the device coming back, carrying a reason.
  */
-export type AssignmentStatus = "outstanding" | "returned" | "written_off";
+export type AssignmentStatus =
+  | "outstanding"
+  | "returned"
+  | "written_off"
+  /** A pre-provision earmark for a not-yet-hired holder — no hr_id, no value, nobody has signed. */
+  | "reserved"
+  /** A reservation cancelled before anyone signed. A signed custody never reaches this state. */
+  | "revoked";
 
 /** الحالة عند الرد. `damaged` and `incomplete` are the two البند (10) prices. */
 export type ReturnCondition = "good" | "damaged" | "incomplete";
 
-/** The statuses `phx_device_mark` accepts — `assigned` is what issuing MEANS, never typed. */
-export type MarkableDeviceStatus = Exclude<DeviceStatus, "assigned">;
+/**
+ * The statuses `phx_device_mark` accepts — `assigned` is what issuing MEANS and `reserved` is what
+ * reserving MEANS; neither is ever typed by hand into a mark.
+ */
+export type MarkableDeviceStatus = Exclude<DeviceStatus, "assigned" | "reserved">;
 
 /** The employment statuses that make a current holder a leaver. */
 export type HolderEmploymentState = "active" | "left" | "unknown";
@@ -249,6 +267,39 @@ export type WriteOffDeviceInput = {
   assignmentId: string;
   reason: string;
   settlementEgp?: number | null;
+};
+
+/** Earmark an in-stock device for a not-yet-hired holder, by a typed name. Freezes no value. */
+export type ReserveDeviceInput = {
+  deviceId: string;
+  placeholderName: string;
+  declarationNo?: string | null;
+  handoverPlace?: string | null;
+  note?: string | null;
+};
+
+/** Move a reservation to a different typed name — still nobody has signed. */
+export type ReassignPlaceholderInput = {
+  assignmentId: string;
+  newName: string;
+};
+
+/** Cancel a reservation before anyone signs. Never for a signed custody. */
+export type RevokeReservationInput = {
+  assignmentId: string;
+  reason?: string | null;
+};
+
+/**
+ * Day one: bind a reservation to the hired employee, which creates the real signed custody and
+ * freezes the device's value onto it (البند 9).
+ */
+export type ReconcileDeviceInput = {
+  assignmentId: string;
+  employeeHrId: string;
+  declarationNo?: string | null;
+  handoverPlace?: string | null;
+  issuedOn?: string | null;
 };
 
 /**

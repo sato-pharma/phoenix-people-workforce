@@ -887,6 +887,7 @@ import { runMailboxRobotSweepHookTests } from "./mailbox-robot-sweep-hook.test.t
 import { runMailboxOffboardingTableFitsTheScreenTests } from "./mailbox-offboarding-table-fits-the-screen.test.ts";
 import { runExpenseDashboardTripsTableFitsTheScreenTests } from "./expense-dashboard-trips-table-fits-the-screen.test.ts";
 import { runDeviceRegisterTests } from "./device-register.test.ts";
+import { runDeviceReservationTests } from "./device-reservation.test.ts";
 import { runDeviceRegisterFitsTheScreenTests } from "./device-register-fits-the-screen.test.ts";
 import { runDeviceBulkImportTests } from "./device-bulk-import.test.ts";
 import { runDeviceAction1SyncTests } from "./device-action1-sync.test.ts";
@@ -3753,6 +3754,12 @@ await runTest(
   + "frozen agreed value of البند (9), and a lost device NOT releasing its holder all live in the "
   + "plpgsql where a page cannot bypass them)",
   runDeviceRegisterTests,
+);
+await runTest(
+  "device custody reservations (a pre-provision earmark for a not-yet-hired holder owes nothing and "
+  + "freezes no value; the value is frozen on the day-one reconcile from البند 9, a signed custody is "
+  + "never revoked, the one-live-claim index covers reserved, and every new RPC stays service_role only)",
+  runDeviceReservationTests,
 );
 await runTest(
   "device register fits the screen (four table-fixed columns totalling 100%, the action column "

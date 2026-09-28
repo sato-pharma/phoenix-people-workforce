@@ -14,7 +14,11 @@ import {
   issueDevice,
   markDevice,
   parseAmount,
+  reassignPlaceholder,
+  reconcileDevice,
+  reserveDevice,
   returnDevice,
+  revokeReservation,
   setAssignmentItemValues,
   writeOffDevice,
 } from "@/lib/devices/service";
@@ -48,7 +52,7 @@ function deviceApiError(error: unknown) {
    * under a generic failure and send somebody looking at logs for a working guard.
    */
   const message = deviceErrorMessage(error);
-  if (/^(Device|No employee|A device|A return|A write-off|This custody|Unknown device|Issuing|Marking|A settlement)\b/.test(message)) {
+  if (/^(Device|No employee|A device|A return|A write-off|This custody|Unknown device|Issuing|Marking|A settlement|Reserving|A reservation|Only a reservation|Revoking|Reconciling)\b/.test(message)) {
     return { message, status: 400 };
   }
   return { message, status: 500 };
@@ -72,11 +76,23 @@ export async function POST(request: Request) {
 
     const access = await resolveAccessContext(request);
     const payload = (await request.json()) as {
-      action?: "register" | "issue" | "price_items" | "return" | "mark" | "write_off";
+      action?:
+        | "register"
+        | "issue"
+        | "price_items"
+        | "return"
+        | "mark"
+        | "write_off"
+        | "reserve"
+        | "reassign_placeholder"
+        | "revoke"
+        | "reconcile";
       device?: Record<string, unknown>;
       deviceId?: string;
       assignmentId?: string;
       employeeHrId?: string;
+      placeholderName?: string;
+      newName?: string;
       declarationNo?: string | null;
       handoverPlace?: string | null;
       issuedOn?: string | null;
@@ -240,6 +256,79 @@ export async function POST(request: Request) {
           assignmentId: payload.assignmentId,
           reason,
           settlementEgp: parseAmount(payload.settlementEgp),
+        },
+        actor,
+      );
+      return NextResponse.json(await getDeviceRegisterData());
+    }
+
+    // Earmark an in-stock device for a not-yet-hired holder. `update` (it moves custody), like issue.
+    if (payload.action === "reserve") {
+      await assertPermission(access, "company_devices", "update");
+      const placeholderName = String(payload.placeholderName ?? "").trim();
+      if (!payload.deviceId || !placeholderName) {
+        return NextResponse.json(
+          { error: "missing_reserve", message: "A device and the name it is being held for are required." },
+          { status: 400 },
+        );
+      }
+      await reserveDevice(
+        {
+          deviceId: payload.deviceId,
+          placeholderName,
+          declarationNo: payload.declarationNo ?? null,
+          handoverPlace: payload.handoverPlace ?? null,
+          note: payload.note ?? null,
+        },
+        actor,
+      );
+      return NextResponse.json(await getDeviceRegisterData());
+    }
+
+    if (payload.action === "reassign_placeholder") {
+      await assertPermission(access, "company_devices", "update");
+      const newName = String(payload.newName ?? "").trim();
+      if (!payload.assignmentId || !newName) {
+        return NextResponse.json(
+          { error: "missing_reassign", message: "A reservation and a new name are required." },
+          { status: 400 },
+        );
+      }
+      await reassignPlaceholder({ assignmentId: payload.assignmentId, newName }, actor);
+      return NextResponse.json(await getDeviceRegisterData());
+    }
+
+    if (payload.action === "revoke") {
+      await assertPermission(access, "company_devices", "update");
+      if (!payload.assignmentId) {
+        return NextResponse.json(
+          { error: "missing_revoke", message: "A reservation is required to revoke it." },
+          { status: 400 },
+        );
+      }
+      await revokeReservation({ assignmentId: payload.assignmentId, reason: payload.reason ?? null }, actor);
+      return NextResponse.json(await getDeviceRegisterData());
+    }
+
+    // Day one: bind the reservation to the hired employee, creating the real signed custody.
+    if (payload.action === "reconcile") {
+      await assertPermission(access, "company_devices", "update");
+      if (!payload.assignmentId || !payload.employeeHrId) {
+        return NextResponse.json(
+          {
+            error: "missing_reconcile",
+            message: "A reservation and the employee it is being handed to are required.",
+          },
+          { status: 400 },
+        );
+      }
+      await reconcileDevice(
+        {
+          assignmentId: payload.assignmentId,
+          employeeHrId: payload.employeeHrId,
+          declarationNo: payload.declarationNo ?? null,
+          handoverPlace: payload.handoverPlace ?? null,
+          issuedOn: payload.issuedOn ?? null,
         },
         actor,
       );
