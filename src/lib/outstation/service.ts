@@ -260,7 +260,33 @@ function numberValue(value: unknown) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+/**
+ * A database number, or null when the column held nothing.
+ *
+ * 🔴 `Number(null)` is **0**, and `Number.isFinite(0)` is **true** — so the obvious one-liner
+ * (`Number.isFinite(Number(v)) ? Number(v) : null`) turns a NULL column into a real zero and
+ * every downstream `x == null` guard stops firing. `Number("")` and `Number("  ")` are 0 too.
+ * Only `undefined` and unparseable text fall through to null on their own.
+ *
+ * That cost nine real expense claims across two people. `employee_locations.residence_latitude`
+ * was NULL, this returned 0, the submit-time guard in `validateCapturedLocation`
+ * ("Your registered residence location is missing or invalid. Please contact HR…") therefore
+ * never fired, and (0, 0) was frozen onto every row they filed: AI-0013 filed 8 claims worth
+ * 5,277 EGP between 2026-09-08 and 2026-09-27, and A-7 one worth 1,035 EGP on 2026-07-06 — two
+ * months apart, so this was never a one-off. Google answers those with
+ * `"Location coordinates must not be (0, 0)"` days later, so instead of being told at submit
+ * that HR needed to fix the address, they filed claims that could not be measured and a human
+ * was handed raw API JSON as the reason. Both hold real coordinates now. Measured 2026-09-28.
+ *
+ * A genuine numeric 0 in the column still returns 0 — only "there was nothing there" becomes null.
+ * Latent beyond coordinates: `report_meeting_amount`/`report_other_amount` map through here and
+ * `outstationReportOverride` treats 0 as a real override that beats the raw amount (see
+ * payroll-expense-mapping.ts), so a NULL override would have paid 0 instead of the raw figure.
+ * Not live — production has no NULL in either column today — but it is the same defect.
+ */
 function nullableNumber(value: unknown) {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "string" && value.trim() === "") return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
 }
