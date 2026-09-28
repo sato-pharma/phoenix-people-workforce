@@ -22,6 +22,7 @@
     "synthetic:test:headed": "playwright test --config=playwright.synthetic.config.ts --headed",
     "synthetic:report": "playwright show-report tests/synthetic/report/html",
     "ui:measure-sidebar-labels": "node --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs scripts/measure-sidebar-labels.ts",
+    "ui:measure-needs-you-fit": "node --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./scripts/needs-you-fit-loader.mjs scripts/measure-needs-you-fit.mjs",
     "verify:dm-area-scope": "node --env-file-if-exists=.env.local --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs scripts/verify-dm-area-scope.ts",
     "direct-orders:rebuild-chains": "node --env-file-if-exists=.env.local --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs scripts/direct-orders-rebuild-approval-chains.ts",
     "direct-orders:rebuild-chains:preview": "pnpm run direct-orders:rebuild-chains preview",

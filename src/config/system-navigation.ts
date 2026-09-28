@@ -254,6 +254,19 @@ export const adminNavigationSectionSeeds = [
   {
     id: "command-center",
     items: [
+      // FIRST in this section on purpose: it is the one row that answers "is anything waiting on
+      // me", which is the question every other row in here is a long way round to.
+      //
+      // `roles` ONLY, and never `permissions`. That list is OR-ed, so adding even one resource here
+      // would WIDEN the gate past the page's own `canAccessSystemAdministratorWorkspace` check —
+      // handing the row to roles that then get redirected, which reads as a broken link.
+      //
+      // AND NO BADGE IN v1. `NavBadge` does `if (!count) return null;` and the batched badge route
+      // degrades to `{count: 0}` on any failure, so a badge here would be the under-report rule
+      // broken in the most-seen pixel in the product: a dead read and a clean board would paint the
+      // identical nothing. A badge needs a count source that can say "I do not know", which the
+      // board itself has and the badge route does not.
+      { href: "/admin/needs-you", icon: BellRing, label: "Needs You", roles: ["Super Admin"] },
       { href: "/admin/ceo-command-center", icon: LayoutDashboard, label: "CEO Command Center", permissions: [{ resource: "admin" }, { resource: "overview" }], roles: ["CEO"] },
       // `roles` alone already keeps this off the CEO's sidebar, but NOT off Super Admin's — the
       // system-administrator workspace bypasses role gating. excludedRoles is now honoured through
