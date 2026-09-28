@@ -63,11 +63,13 @@ export async function runOutstationAdminApproveOutcomeTests() {
     "the settled-action gate needs a request id that survives `setActing(null)`",
   );
 
-  const actingStarts = source.match(/setActing\(\{ action: "(approve|reject|delete)", id: /g) ?? [];
+  const actingStarts = source.match(/setActing\(\{ action: "(approve|delete|fill-distance|reject)", id: /g) ?? [];
   assert.equal(
     actingStarts.length,
-    3,
-    "expected the approve / reject / delete actions to be the three that mark a request busy",
+    4,
+    "expected approve / delete / fill-distance / reject to be the four actions that mark a "
+      + "request busy — a new one must be added HERE too, or the pairing check below silently "
+      + "stops covering it",
   );
   const recordedIds = source.match(/setActionRequestId\(/g) ?? [];
   assert.equal(

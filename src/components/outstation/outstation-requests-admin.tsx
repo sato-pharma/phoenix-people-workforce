@@ -53,7 +53,7 @@ import {
 } from "@/components/employee-portal/portal-primitives";
 
 
-type AdminAction = "approve" | "delete" | "reject";
+type AdminAction = "approve" | "delete" | "fill-distance" | "reject";
 
 type ActionPayload = {
   linkedPayroll?: {
@@ -897,6 +897,51 @@ export function OutstationRequestsAdmin({
     }
   }
 
+  /**
+   * Fill in a distance the original lookup never produced — and nothing else.
+   *
+   * Separate from Edit on purpose. Edit reprices the claim from the distance it is given (fuel is
+   * distance x 2 x the rate, with ticket, travel cost and eligibility following), which is right
+   * when an admin is changing a claim and wrong when a measurement is merely being recovered. The
+   * route writes distance columns only, so every amount and every verdict here is untouched and the
+   * decision stays exactly where it was.
+   */
+  async function fillDistance(request: OutstationExpenseRequest) {
+    setActing({ action: "fill-distance", id: request.id });
+    setActionRequestId(request.id);
+    setActionError(null);
+    setActionMessage(null);
+    try {
+      const response = await fetch(`/api/admin/outstation/${request.id}/recalculate-distance`, {
+        method: "POST",
+      });
+      const payload = await response.json().catch(() => null) as
+        | { distanceKm?: number; durationMinutes?: number | null; message?: string }
+        | null;
+      if (!response.ok || typeof payload?.distanceKm !== "number") {
+        throw new Error(payload?.message ?? "Unable to recalculate the distance.");
+      }
+      const distanceKm = payload.distanceKm;
+      const durationMinutes = payload.durationMinutes ?? null;
+      setLocalRequests((current) =>
+        current.map((row) =>
+          row.id === request.id
+            ? { ...row, distanceFromResidenceKm: distanceKm, distanceKm, durationMinutes, routeError: null }
+            : row,
+        ),
+      );
+      setActionMessage(
+        `Distance filled: ${distanceKm.toFixed(2)} KM. No amount on this request was changed.`,
+      );
+    } catch (error) {
+      setActionError(
+        error instanceof Error ? error.message : "Unable to recalculate the distance.",
+      );
+    } finally {
+      setActing(null);
+    }
+  }
+
   async function deleteRequest(request: OutstationExpenseRequest) {
     const confirmed = window.confirm(
       `Delete outstation expense ${request.id}? This permanently removes the request, stored evidence files, and any linked expense row that has not been imported into payroll.`,
@@ -1143,6 +1188,18 @@ export function OutstationRequestsAdmin({
                           <Edit2 className="h-3.5 w-3.5" />
                           Edit
                         </Button>
+                        {request.distanceFromResidenceKm == null ? (
+                          <Button
+                            className="gap-1.5 rounded-none border border-[#DDE6F1] bg-white px-3 py-2 text-xs font-black text-phx-ink"
+                            disabled={acting?.id === request.id}
+                            onClick={() => fillDistance(request)}
+                            title="Measure the distance from the employee's home. No amount changes."
+                            type="button"
+                          >
+                            <MapPinned className="h-3.5 w-3.5" />
+                            Fill distance
+                          </Button>
+                        ) : null}
                       </>
                     }
                     key={request.id}
@@ -1247,6 +1304,21 @@ export function OutstationRequestsAdmin({
                               <Edit2 className="h-3.5 w-3.5" />
                               Edit
                             </Button>
+                            {request.distanceFromResidenceKm == null ? (
+                              <Button
+                                className="gap-1.5 rounded-none border border-[#DDE6F1] bg-white px-3 py-2 text-xs font-black text-phx-ink hover:bg-phx-accent-soft"
+                                disabled={acting?.id === request.id}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  fillDistance(request);
+                                }}
+                                title="Measure the distance from the employee's home. No amount changes."
+                                type="button"
+                              >
+                                <MapPinned className="h-3.5 w-3.5" />
+                                Fill distance
+                              </Button>
+                            ) : null}
                           </div>
                         </td>
                       </tr>
