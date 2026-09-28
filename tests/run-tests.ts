@@ -2036,6 +2036,7 @@ import { runNeedsYouSourceHealthTests } from "./needs-you-source-health.test.ts"
 import { runNeedsYouNeverUnderReportsTests } from "./needs-you-never-under-reports.test.ts";
 import { runNeedsYouPageNeverDecidesTests } from "./needs-you-page-never-decides.test.ts";
 import { runNeedsYouFitsTheScreenTests } from "./needs-you-fits-the-screen.test.ts";
+import { runNeedsYouDailyDigestTests } from "./needs-you-daily-digest.test.ts";
 import { runNeedsYouCeoSingleProducerTests } from "./needs-you-ceo-single-producer.test.ts";
 import { runUnpublishedClosingsTests } from "./unpublished-closings.test.ts";
 import { runPayrollAwaitingPublishTests } from "./payroll-awaiting-publish.test.ts";
@@ -7400,6 +7401,10 @@ await runTest(
 await runTest(
   "the CEO command centre and the needs-you board have ONE producer per rule, because two copies had already disagreed: the command centre re-implemented contracts-expiring, probation-due and coaching-red-zone from the same services, and its probation count filtered to people still EMPLOYED and read lifecycleRiskWindows.probationCriticalDays while the board's adapter did neither - so the same question had two answers and the board billed leavers (production defect PD-0003); the three signals now come from the adapters through adaptersFor + loadNeedsYouSources, the command centre holds no copy of any of the three rules or the services under them, it reads each count by the adapter's own item key (a wrong key silently reads 0, the under-report with no failure to show it), a FAILED contracts read no longer borrows a number from platform metrics but removes the tile and names itself in dataUnavailable, it calls the three adapters and never getNeedsYouBoard (sixteen sources to use three, on the owner's heaviest landing page), and adaptersFor THROWS for an id with no adapter rather than handing back a short list",
   runNeedsYouCeoSingleProducerTests,
+);
+await runTest(
+  "the needs-you daily digest rides the 06:36 route without under-reporting or bending its host: the could-not-be-read section renders FIRST in a channel that truncates from the END mid-word with no marker, the all-clear sentence is gated on the board's own allClearProvable and never on an empty list, a tier-2 summary can only PREFIX the deterministic render so no model can reassure over a board that did not prove itself, the daily route's destructure names and Promise.all entries and hand-maintained totalJobs all agree (a job added without its name captures every later result one position off, which this route's own comments record happening), a CRASHED job reports skipped with its reason rather than a zero indistinguishable from a quiet morning, the DAILY digest never requests email because one email to him is already three deliveries, the recipient is resolved by his own hr id and fails CLOSED rather than falling back to everyone holding a role, and a board with every lane full still fits Telegram's real budget with no ellipsis",
+  runNeedsYouDailyDigestTests,
 );
 await runTest(
   "a pending source can say it could not answer: the awaiting-action fan-out carries no .catch(() => null) inside its Promise.allSettled (which made the allSettled decorative and turned a dead queue into an empty one, silently, in the function the badge endpoint counts), its labels and its sources stay index-aligned and none of them reads like a code, a Forbidden refusal is classified as a TRUE zero while a network failure never is, and all three approvals badges return available on BOTH their success and their failure paths with no fabricated count in the catch",
