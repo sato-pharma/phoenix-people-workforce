@@ -536,8 +536,12 @@ export async function lookupOfferTemplateIdForTitle(title: string): Promise<stri
 // ────────────────────────────────────────────────────────────────────── offers ──
 
 type OfferRow = {
+  // Optional: `select("*")` against a database that has not had 20260928225001 applied returns no
+  // such key, and that must read as "nobody copied", not throw.
+  bcc_recipients?: string[] | null;
   candidate_email: string;
   candidate_name: string;
+  cc_recipients?: string[] | null;
   contract_term: string | null;
   cost_of_living: number | string | null;
   created_at: string | null;
@@ -565,8 +569,10 @@ function toOffer(row: OfferRow): OfferRecord {
     | null;
 
   return {
+    bccRecipients: Array.isArray(row.bcc_recipients) ? row.bcc_recipients : [],
     candidateEmail: row.candidate_email,
     candidateName: row.candidate_name,
+    ccRecipients: Array.isArray(row.cc_recipients) ? row.cc_recipients : [],
     contractTerm: row.contract_term ?? "",
     costOfLiving: Number(row.cost_of_living) || 0,
     createdAt: row.created_at,
@@ -746,16 +752,23 @@ export async function updateOffer(
  * The `.eq("status", "draft")` in the WHERE clause is a precondition, not decoration: two clicks
  * on Send, or a retry after a timeout, would otherwise each mark it sent and each move `sent_at`.
  * A zero-row result here means somebody else already sent it.
+ *
+ * Who was copied is written in the same UPDATE (owner, 2026-09-28: "show who was copied on each
+ * offer in the offers list"). One statement, so a sent offer can never exist without its copy list,
+ * and a draft never carries one.
  */
 export async function markOfferSent(
   id: string,
   template: Pick<OfferTemplate, "blocks" | "fontFamily" | "fontSizePt" | "theme" | "variant">,
   sentBy: string | null,
+  copies: { bcc: string[]; cc: string[] } = { bcc: [], cc: [] },
 ): Promise<OfferRecord> {
   const db = getSupabaseAdmin();
   const { data, error } = await db
     .from("offers")
     .update({
+      bcc_recipients: copies.bcc,
+      cc_recipients: copies.cc,
       sent_at: new Date().toISOString(),
       sent_by: sentBy,
       status: "sent",

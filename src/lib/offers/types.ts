@@ -173,6 +173,10 @@ export type OfferFields = {
 };
 
 export type OfferRecord = OfferFields & {
+  /** Who was secretly copied (BCC) when it was sent. Empty for a draft, and for an offer sent to the candidate alone. */
+  bccRecipients: string[];
+  /** Who was openly copied (CC) when it was sent. Empty for a draft, and for an offer sent to the candidate alone. */
+  ccRecipients: string[];
   createdAt: string | null;
   createdBy: string | null;
   id: string;
