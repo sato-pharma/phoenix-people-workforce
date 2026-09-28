@@ -445,11 +445,31 @@ function fetchJson(path) {
       muteHttpExceptions: true,
     });
     const code = response.getResponseCode();
-    if (code === 200) return JSON.parse(response.getContentText());
-
-    lastError = code + " " + response.getContentText().slice(0, 300);
-    // 401 and 404 will not fix themselves; anything else is worth another try.
-    if (code === 401 || code === 404 || code === 400) break;
+    if (code === 200) {
+      // A 200 WHOSE BODY ARRIVED TRUNCATED IS A RETRYABLE FAILURE, and it used to be the one
+      // failure this loop could not survive.
+      //
+      // JSON.parse sat on the return line, outside any catch, so a short body threw straight past
+      // the retry and killed the whole execution. Measured 2026-09-28 on a values slice of
+      // "All customers": the endpoint served 1,156,437 bytes and parsed perfectly when fetched
+      // independently, while Apps Script received 57,476 and died with "Unterminated string in
+      // JSON at position 57476". The run stopped halfway through that tab and left the flat tab
+      // holding 28,000 of its 73,938 rows — and the finder reads that tab, so a cut connection on
+      // one slice quietly made the whole sheet wrong.
+      //
+      // A truncated body is the most retryable thing that can happen: nothing is wrong with the
+      // request, the server or the data. Treat it exactly like a 5xx.
+      const body = response.getContentText();
+      try {
+        return JSON.parse(body);
+      } catch (parseError) {
+        lastError = "200 but the body did not parse at " + body.length + " bytes: " + parseError;
+      }
+    } else {
+      lastError = code + " " + response.getContentText().slice(0, 300);
+      // 401 and 404 will not fix themselves; anything else is worth another try.
+      if (code === 401 || code === 404 || code === 400) break;
+    }
     Utilities.sleep(2000 * Math.pow(2, attempt));
   }
   throw new Error("Phoenix request failed (" + path + "): " + lastError);

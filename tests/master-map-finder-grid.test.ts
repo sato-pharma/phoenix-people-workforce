@@ -363,6 +363,22 @@ export function runMasterMapFinderGridTests() {
     "into the cell the finder reads",
   );
 
+  // ---- A truncated body is retried, not fatal ----------------------------------------------------
+  // JSON.parse used to sit on fetchJson's return line, outside any catch, so a 200 whose body
+  // arrived SHORT threw straight past the retry loop and killed the whole execution. Measured
+  // 2026-09-28 on a values slice of "All customers": the endpoint served 1,156,437 bytes and parsed
+  // perfectly when fetched independently, Apps Script received 57,476, and the run stopped halfway
+  // through that tab — leaving the flat tab holding 28,000 of its 73,938 rows. The finder reads
+  // that tab, so one cut connection quietly made the whole sheet wrong.
+  assert.ok(
+    !/return JSON\.parse\(response\.getContentText\(\)\)/.test(script),
+    "fetchJson must not parse on the return line — a short body throws past the retry loop and takes the run down with it",
+  );
+  assert.ok(
+    /try \{[\s\S]{0,120}?JSON\.parse\(body\)[\s\S]{0,400}?catch/.test(script),
+    "the parse is inside a try, so a truncated body becomes a retry rather than a dead execution",
+  );
+
   assert.equal(
     (STYLE.area as { align?: string }).align,
     "CENTER",
