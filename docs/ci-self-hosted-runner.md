@@ -58,8 +58,22 @@ At September's average volume with post-#4527 per-run cost, real demand is **~1,
 day**. A 2-vCPU box supplies 1,440 a day *at 100% utilisation, serially* — which no CI runner reaches,
 because a run wants its four jobs concurrent and peak days are twice the average. So the honest
 requirement is **two to three boxes, not one**, and the ~$12 single-VPS figure was never achievable.
-Two 4-vCPU instances (~€27/month together) give 8 concurrent job slots and ~11,500 runner-minutes a
-day of headroom.
+Two 4-vCPU instances give **8 concurrent job slots**, which is the shape that matters: ~4 slots
+covers steady demand, so 8 leaves roughly 2x headroom and turns a 6-run burst from about half an hour
+of queueing on three slots into about ten minutes.
+
+🔴 **CORRECTED 2026-09-28 — THIS PARAGRAPH CARRIED THE COST AT ~€27/MONTH FOR THE PAIR, AND THE ORDER
+TABLE BELOW SAYS ~€35.49 EACH.** That is **~€71/month**, a 2.6x understatement, in the one paragraph
+someone would decide the purchase on. It is almost certainly the pre-increase price: Hetzner's rose
+about 170% on 15 June 2026, which is why the order table already says to re-read rather than trust it.
+**I could not confirm a current figure** — hetzner.com renders its prices client-side, so the public
+page yields nothing readable, and the authenticated console is the only authority. **Read the price in
+the console before buying; treat both numbers in this file as stale.**
+
+The second figure was wrong in a quieter way. "~11,500 runner-minutes a day of headroom" is 8 slots x
+1,440 minutes — the theoretical ceiling at 100% utilisation, which the sentence two lines above says no
+CI runner reaches. Usable is more like 7,000-8,000, against demand of ~1,650. The conclusion does not
+change; the word "headroom" for a ceiling is what made it read as spare capacity.
 
 🔴 **AND THIS IS THE ONLY LEVER THAT REACHES THE OWNER'S $60/MONTH TOTAL.** Against the $300.88
 invoice, $60 is an **80% cut**. #4527's per-run saving is 16.5%; driving re-pushes from 1.61 runs per

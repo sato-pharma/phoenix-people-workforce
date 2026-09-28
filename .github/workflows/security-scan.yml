@@ -158,6 +158,14 @@ jobs:
   # A real PR gate means removing the `if:` below and paying ~60 Actions minutes a day; that was
   # weighed and declined. What this failure DOES buy is a red daily run over `main` — a regression
   # surfaces within a day, with a notification, instead of sitting in a summary nobody opens.
+  # 🔴 sast-scan's `runs-on` CAN NEVER RESOLVE SELF-HOSTED, and that is fine — but an audit counting
+  # "six switched lines" should know one of them is dead. The `if:` below requires
+  # `github.event_name != 'pull_request'`, while the self-hosted branch of the expression requires
+  # `== 'pull_request'`: mutually exclusive, so on every event where this job actually runs the
+  # expression yields `ubuntu-latest`. Confirmed empirically too — `sast-scan` is `skipped` in every
+  # recent security run and has never had a runner assigned. The line is kept identical to the other
+  # five on purpose, so the six stay byte-identical and the parity test keeps its grip. **If semgrep is
+  # ever wanted on a replica, the `if:` is what has to change, not the label.**
   sast-scan:
     # Never on a PR. github.event_name is `schedule` or `workflow_dispatch` here.
     if: github.event_name != 'pull_request'
