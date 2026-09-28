@@ -44,8 +44,8 @@ export const LOOKUP_TAB = "Find a pharmacy";
 /** Hidden. Holds the dropdown lists and the one live filter both halves of the tab read. */
 export const LISTS_TAB = "Lists";
 
-/** v11: the tab says when the sheet last refreshed itself, so a stopped script is visible. */
-const LAYOUT_VERSION = "v11";
+/** v12: the search box also finds a distributor and the three district managers. */
+const LAYOUT_VERSION = "v12";
 
 /** How many matching shops the tab shows at once. The true total is always stated beside it. */
 const VISIBLE_LIMIT = 500;
@@ -111,8 +111,22 @@ const FLAT = {
   brickCode: "D",
   channel: "I",
   code: "G",
+  distributor: "F",
   pharmacy: "E",
 } as const;
+
+/**
+ * The three "<line> manager" columns, derived for the same reason the region columns below are.
+ *
+ * They are searchable because the owner reads a district manager's name off a band and then wants
+ * that manager's shops — and because the search cost no longer scales with the number of columns
+ * (see searchClause).
+ */
+const LINE_MANAGER_COLUMNS = MASTER_MAP_MANAGER_LINES.map((line) => {
+  const index = MASTER_MAP_FLAT_COLUMNS.indexOf(`${line} manager`);
+  if (index < 0) throw new Error(`"All customers" has no "${line} manager" column for the search box`);
+  return columnLetter(index);
+});
 
 /**
  * The three "<line> region" columns, derived rather than typed for the same reason FLAT_LAST is.
@@ -182,10 +196,28 @@ function regionListFormula(): string {
  */
 function searchClause(cell: string): string {
   const key = `TRIM(TO_TEXT(${LOOKUP}!${cell}))`;
-  const anyOf = [FLAT.pharmacy, FLAT.code, FLAT.brickCode, FLAT.address]
-    .map((column) => `ISNUMBER(SEARCH(${key},${SOURCE}!${column}2:${column}))`)
-    .join("+");
-  return `(${key}="")+${anyOf}`;
+  // ONE SEARCH OVER THE COLUMNS JOINED, NOT ONE SEARCH PER COLUMN — which is what lets the box
+  // cover eight columns for LESS work than the four it used to cover.
+  //
+  // Each ISNUMBER(SEARCH(...)) was a full pass over 73,937 rows, so the searchable set was chosen
+  // by what was affordable rather than by what is on the row: name, code, brick code, address, and
+  // nothing else. Eight of those passes would have doubled the cost of every keystroke. Joining the
+  // columns first is seven concatenations and ONE pass, so distributor and the three district
+  // managers come in and the recalculation gets cheaper at the same time.
+  //
+  // " | " as the joiner, not a space: it is the separator a person is least likely to type, so a
+  // search term cannot straddle two columns and match a row that contains neither.
+  const haystack = [
+    FLAT.pharmacy,
+    FLAT.code,
+    FLAT.brickCode,
+    FLAT.address,
+    FLAT.distributor,
+    ...LINE_MANAGER_COLUMNS,
+  ]
+    .map((column) => `${SOURCE}!${column}2:${column}`)
+    .join(`&" | "&`);
+  return `(${key}="")+ISNUMBER(SEARCH(${key},${haystack}))`;
 }
 
 /** One distinct, sorted column of "All customers", narrowed by whichever boxes are already set. */

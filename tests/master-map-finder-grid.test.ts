@@ -235,12 +235,34 @@ export function runMasterMapFinderGridTests() {
     ["G", "the customer code"],
     ["D", "the brick code"],
     ["J", "the address"],
+    ["F", "the distributor"],
+    ["L", "the Anti Infective manager"],
+    ["M", "the CNS manager"],
+    ["N", "the Pedia manager"],
   ] as const) {
     assert.ok(
-      results.includes(`ISNUMBER(SEARCH(${searchKey},'All customers'!${letter}2:${letter}))`),
-      `${what} is searched through a key coerced to text — a digits-only entry reaches SEARCH as a number otherwise, and column ${letter} never matches`,
+      results.includes(`'All customers'!${letter}2:${letter}`),
+      `${what} is in the searched span — the box finds what is on the row, not what one SEARCH per column could afford`,
     );
   }
+
+  // ONE SEARCH OVER THE COLUMNS JOINED, not one per column. Each ISNUMBER(SEARCH(...)) was a full
+  // pass over 73,937 rows, so the searchable set was chosen by cost rather than by usefulness —
+  // eight passes would have doubled the work of every keystroke. Joined, it is seven concatenations
+  // and ONE pass: twice the columns for less work than the four it replaced.
+  assert.equal(
+    (results.match(/ISNUMBER\(SEARCH\(/g) ?? []).length,
+    1,
+    "the search box makes exactly ONE pass over the master, whatever it searches",
+  );
+  assert.ok(
+    results.includes(`ISNUMBER(SEARCH(${searchKey},'All customers'!E2:E&" | "&`),
+    "the key is still coerced to text, and it searches the joined span — a digits-only entry reaches SEARCH as a number otherwise and nothing matches",
+  );
+  assert.ok(
+    results.includes(`&" | "&`),
+    'joined with " | ", the separator a person is least likely to type — a space would let a term straddle two columns and match a row containing neither',
+  );
   assert.ok(
     !results.includes(`SEARCH('Find a pharmacy'!$E$4,`),
     "no column may be searched against the raw cell: that is the exact formula that killed the code search",
@@ -393,6 +415,30 @@ export function runMasterMapFinderGridTests() {
   assert.ok(
     /\} finally \{[\s\S]{0,400}?setProperty\(PROP_HASHES/.test(script),
     "and so are the hashes, or a resumed run repaints tabs it already finished",
+  );
+
+  // ---- Dropping a tab requires retiring it ------------------------------------------------------
+  // The ten per-region tabs were retired by the owner on 2026-09-28: they repeated what "Master"
+  // already groups and cost 1.4 MILLION of the workbook's 10,000,000 cells (115,741 rows x 12
+  // columns, measured live). Removing a title from the plan is only HALF the change — nothing in
+  // Apps Script ever deleted a sheet, so a tab Phoenix stops serving would sit there holding the
+  // day's data for ever, looking exactly as current as the tabs beside it. That is this workbook's
+  // signature failure and it would have been introduced on purpose.
+  assert.ok(
+    /function retireTabs\(/.test(script),
+    "a tab dropped from the plan must be deleted from the workbook, or it goes stale in place and looks current",
+  );
+  assert.ok(
+    /retireTabs\(readJson\(properties, PROP_ORDER/.test(script),
+    "the candidates come from the PREVIOUS plan's stored order — a tab the owner made by hand was never in it and can never be deleted here",
+  );
+  assert.ok(
+    !/getSheets\(\)[\s\S]{0,200}?deleteSheet/.test(script),
+    "never walk every sheet and delete what the plan omits — one rename away from destroying the owner's own tabs",
+  );
+  assert.ok(
+    /retireTabs\([\s\S]{0,400}?setProperty\(PROP_ORDER/.test(script),
+    "retirement runs BEFORE the order is overwritten, or the list of what Phoenix used to serve is already gone",
   );
 
   assert.equal(
