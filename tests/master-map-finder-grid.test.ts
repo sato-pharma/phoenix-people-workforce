@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { STYLE } from "../src/lib/sales/master-map/sheet-render.ts";
 import {
   LISTS_COLUMN_COUNT,
   listsRowCount,
@@ -282,6 +283,59 @@ export function runMasterMapFinderGridTests() {
   assert.ok(textFormat, "the search box claims a TEXT number format");
   assert.equal(textFormat?.repeatCell?.range?.startColumnIndex, 4, "on column E");
   assert.equal(textFormat?.repeatCell?.range?.endColumnIndex, 5, "and on column E alone");
+
+  // ---- The banners read from the left, because the tab is 4,000 pixels wide ----------------------
+  // Each banner is one cell merged across all seventeen columns. Centred, it renders at about
+  // x=2,000 — a screen and a half right of column A — so the title, the count and the hint were all
+  // off the right-hand edge and the three rows showed as empty coloured bands. Measured live on the
+  // production workbook 2026-09-28: the finder had found the shop and put it on screen, while
+  // "Showing 1 of 1 matching shops" sat 2,000 pixels away where nobody would look, so a working
+  // search read as a broken one.
+  const lookup = renderLookupSheet(2);
+  for (const [row, what] of [
+    [0, "the title"],
+    [5, "the count"],
+    [6, "the hint"],
+  ] as const) {
+    assert.equal(
+      alignmentAt(lookup, row),
+      "LEFT",
+      `${what} is a merged banner across 17 columns — centred, it renders off the right-hand edge of any normal window and the row reads as an empty band`,
+    );
+  }
+
+  // The same styles stay CENTRED where they belong. The grouped tabs are seven columns, about
+  // 1,900 pixels, so their centre is on screen — the width of THIS tab is what makes centre wrong,
+  // not the style, and changing the shared style would move every region band on the workbook.
+  assert.equal(
+    (STYLE.area as { align?: string }).align,
+    "CENTER",
+    "the shared area-band style is untouched — only this tab overrides it",
+  );
+  assert.equal(
+    (STYLE.region as { align?: string }).align,
+    "CENTER",
+    "and so is the shared region-band style",
+  );
+}
+
+type AlignmentClaim = {
+  repeatCell?: {
+    cell?: { userEnteredFormat?: { horizontalAlignment?: string } };
+    range?: { endRowIndex?: number; startColumnIndex?: number; startRowIndex?: number };
+  };
+};
+
+/** The horizontal alignment the tab claims for a full-width row. */
+function alignmentAt(sheet: { requests: unknown[] }, row: number): string {
+  for (const request of sheet.requests as AlignmentClaim[]) {
+    const cell = request?.repeatCell;
+    if (!cell || cell.range?.startRowIndex !== row) continue;
+    if (cell.range?.startColumnIndex) continue; // a boxed control, not the full-width banner
+    const alignment = cell.cell?.userEnteredFormat?.horizontalAlignment;
+    if (alignment) return alignment;
+  }
+  throw new Error(`the finder claims no alignment for row ${row + 1}`);
 }
 
 type TextFormatClaim = {
