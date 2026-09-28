@@ -47,8 +47,8 @@ importers:
         specifier: ^12.0.1
         version: 12.0.1
       '@node-projects/excelforge':
-        specifier: 3.6.0
-        version: 3.6.0
+        specifier: 3.8.0
+        version: 3.8.0
       '@simplewebauthn/browser':
         specifier: ^13.3.0
         version: 13.3.0
@@ -967,8 +967,8 @@ packages:
     resolution: {integrity: sha512-jCs9ldd7NwzpgXDIf6P3+NrHh9/sD6CQdxHyjQI+h/6rDNo88ypBxxz45UDuZHz9r3tNz7N/VInSVoVdtXEI4A==}
     engines: {node: ^14.21.3 || >=16}
 
-  '@node-projects/excelforge@3.6.0':
-    resolution: {integrity: sha512-/RlWxHEETyLrCJScU14boUFscqZ8y6HMal4Ll+cyA8XiBDtibcJY5bvVDOybPJTq/i2TbfGMesn9h4B1xEie5Q==}
+  '@node-projects/excelforge@3.8.0':
+    resolution: {integrity: sha512-pGHDfVkVwR+cg3p3EaiiXrmpFKEj59Fjosgfh1f9eOuEZRZPtbcyZd2z5SZkF+ajyfdOEywTk/KuZur8h/NLgQ==}
 
   '@nodelib/fs.scandir@2.1.5':
     resolution: {integrity: sha512-vq24Bq3ym5HEQm2NKCr3yXDwjc7vTsEThRDnkp2DK9p1uqLR+DHurm/NOTo0KG7HYHU7eppKZj3MyqYuMBf62g==}
@@ -6261,7 +6261,7 @@ snapshots:
 
   '@noble/hashes@1.8.0': {}
 
-  '@node-projects/excelforge@3.6.0': {}
+  '@node-projects/excelforge@3.8.0': {}
 
   '@nodelib/fs.scandir@2.1.5':
     dependencies:

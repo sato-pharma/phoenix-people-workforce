@@ -138,7 +138,7 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@google-cloud/logging": "^12.0.1",
-    "@node-projects/excelforge": "3.6.0",
+    "@node-projects/excelforge": "3.8.0",
     "@simplewebauthn/browser": "^13.3.0",
     "@simplewebauthn/server": "^14.0.2",
     "@supabase/supabase-js": "^2.112.4",
