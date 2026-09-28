@@ -459,7 +459,7 @@ function chartSvg(chart: PackChart, targetPx = 0): string {
     );
     if (item.note) {
       parts.push(
-        `<text x="${LABEL_W.toFixed(1)}" y="${(mid + 14).toFixed(1)}" text-anchor="end" font-size="${noteFs.toFixed(2)}" fill="${C.muted}">${escapeHtml(item.note)}</text>`,
+        `<text x="${LABEL_W.toFixed(1)}" y="${(mid + 14).toFixed(1)}" text-anchor="end" font-size="${noteFs.toFixed(2)}" fill="${C.muted}">${svgLabel(item.note)}</text>`,
       );
     }
   });
