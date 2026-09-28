@@ -51,8 +51,12 @@ import type {
   LeaverHoldingDevices,
   MarkDeviceInput,
   MarkableDeviceStatus,
+  ReassignPlaceholderInput,
+  ReconcileDeviceInput,
+  ReserveDeviceInput,
   ReturnCondition,
   ReturnDeviceInput,
+  RevokeReservationInput,
   SetAssignmentItemValuesInput,
   WriteOffDeviceInput,
 } from "./types";
@@ -518,6 +522,26 @@ async function loadAssignableEmployees(): Promise<AssignableEmployee[]> {
       name: resolveEmployeeDisplayName(row.full_name, row.nickname, row.hr_id),
       jobTitle: row.job_title,
     }));
+}
+
+/**
+ * The live RESERVATIONS, by device — the reserved assignments getDeviceRegisterData does not surface
+ * because it maps only outstanding custody. The Rep Tablets fleet uses this to show a reserved tablet's
+ * held-for name and to target reconcile/revoke/reassign at the right assignment.
+ */
+export async function loadReservedAssignments(): Promise<
+  Array<{ deviceId: string; assignmentId: string; placeholderName: string | null }>
+> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("device_assignments")
+    .select("id, device_id, placeholder_name")
+    .eq("status", "reserved")
+    .limit(2000);
+  if (error) throw new Error(deviceErrorMessage(error));
+  return ((data ?? []) as Array<{ id: string; device_id: string; placeholder_name: string | null }>).map(
+    (row) => ({ assignmentId: row.id, deviceId: row.device_id, placeholderName: row.placeholder_name ?? null }),
+  );
 }
 
 export async function getDeviceRegisterData(): Promise<DeviceRegisterData> {
@@ -1008,6 +1032,143 @@ export async function markDevice(input: MarkDeviceInput, actor: string): Promise
   });
   if (error) throw new Error(deviceErrorMessage(error));
   return typeof data === "string" ? data : String(data ?? input.status);
+}
+
+/**
+ * Reserve an in-stock device for a not-yet-hired holder, by a typed name.
+ *
+ * A reservation is NOT a signed custody (the owner's decision, 2026-09-28): it freezes no value and
+ * owes nothing, because nobody has signed. `phx_device_reserve` earmarks the device (`reserved`) so it
+ * cannot be issued to anyone else. The real signed custody is created later, by `reconcileDevice`.
+ */
+export async function reserveDevice(input: ReserveDeviceInput, actor: string): Promise<string> {
+  const supabase = getSupabaseAdmin();
+
+  const { data, error } = await supabase.rpc("phx_device_reserve", {
+    p_device_id: input.deviceId,
+    p_placeholder_name: input.placeholderName,
+    p_actor: actor,
+    p_declaration_no: trimmed(input.declarationNo),
+    p_handover_place: trimmed(input.handoverPlace),
+    p_note: trimmed(input.note),
+  });
+  if (error) throw new Error(deviceErrorMessage(error));
+
+  const assignmentId = typeof data === "string" ? data : String(data ?? "");
+  await writeRequiredAuditLog({
+    actorLoginId: actor,
+    entityType: "device_assignment",
+    entityId: assignmentId,
+    summary: `Reserved device ${input.deviceId} for ${input.placeholderName.trim()}`,
+    newValues: {
+      deviceId: input.deviceId,
+      placeholderName: input.placeholderName.trim(),
+      declarationNo: trimmed(input.declarationNo),
+      handoverPlace: trimmed(input.handoverPlace),
+    },
+  });
+  return assignmentId;
+}
+
+/** Move a reservation to a different typed name — still nobody has signed. */
+export async function reassignPlaceholder(
+  input: ReassignPlaceholderInput,
+  actor: string,
+): Promise<string> {
+  const supabase = getSupabaseAdmin();
+
+  const { data: before } = await supabase
+    .from("device_assignments")
+    .select(ASSIGNMENT_COLUMNS)
+    .eq("id", input.assignmentId)
+    .maybeSingle();
+
+  await writeRequiredAuditLog({
+    actorLoginId: actor,
+    entityType: "device_assignment",
+    entityId: input.assignmentId,
+    summary: `Reassigned a device reservation to ${input.newName.trim()}`,
+    oldValues: (before as Record<string, unknown> | null) ?? null,
+    newValues: { placeholderName: input.newName.trim() },
+  });
+
+  const { data, error } = await supabase.rpc("phx_device_reassign_placeholder", {
+    p_assignment_id: input.assignmentId,
+    p_new_name: input.newName,
+    p_actor: actor,
+  });
+  if (error) throw new Error(deviceErrorMessage(error));
+  return typeof data === "string" ? data : String(data ?? input.assignmentId);
+}
+
+/** Cancel a reservation before anyone signs. A signed custody is returned or written off, never revoked. */
+export async function revokeReservation(
+  input: RevokeReservationInput,
+  actor: string,
+): Promise<string> {
+  const supabase = getSupabaseAdmin();
+
+  const { data: before } = await supabase
+    .from("device_assignments")
+    .select(ASSIGNMENT_COLUMNS)
+    .eq("id", input.assignmentId)
+    .maybeSingle();
+
+  await writeRequiredAuditLog({
+    actorLoginId: actor,
+    entityType: "device_assignment",
+    entityId: input.assignmentId,
+    summary: `Revoked a device reservation${trimmed(input.reason) ? ` (${trimmed(input.reason)})` : ""}`,
+    oldValues: (before as Record<string, unknown> | null) ?? null,
+    newValues: { status: "revoked", reason: trimmed(input.reason) },
+  });
+
+  const { data, error } = await supabase.rpc("phx_device_revoke", {
+    p_assignment_id: input.assignmentId,
+    p_actor: actor,
+    p_reason: trimmed(input.reason),
+  });
+  if (error) throw new Error(deviceErrorMessage(error));
+  return typeof data === "string" ? data : String(data ?? "revoked");
+}
+
+/**
+ * Day one: bind a reservation to the hired employee. THIS is the signed issue — البند (9)'s value is
+ * frozen onto the row here, from the device, and the device moves to `assigned`.
+ */
+export async function reconcileDevice(input: ReconcileDeviceInput, actor: string): Promise<string> {
+  const supabase = getSupabaseAdmin();
+
+  const { data: before } = await supabase
+    .from("device_assignments")
+    .select(ASSIGNMENT_COLUMNS)
+    .eq("id", input.assignmentId)
+    .maybeSingle();
+
+  await writeRequiredAuditLog({
+    actorLoginId: actor,
+    entityType: "device_assignment",
+    entityId: input.assignmentId,
+    summary: `Reconciled a device reservation to ${input.employeeHrId} (day-one custody)`,
+    oldValues: (before as Record<string, unknown> | null) ?? null,
+    newValues: {
+      employeeHrId: input.employeeHrId,
+      declarationNo: trimmed(input.declarationNo),
+      handoverPlace: trimmed(input.handoverPlace),
+      issuedOn: input.issuedOn || null,
+    },
+  });
+
+  const { data, error } = await supabase.rpc("phx_device_reconcile", {
+    p_assignment_id: input.assignmentId,
+    p_employee_hr_id: input.employeeHrId,
+    p_actor: actor,
+    p_declaration_no: trimmed(input.declarationNo),
+    p_handover_place: trimmed(input.handoverPlace),
+    p_issued_on: input.issuedOn || null,
+  });
+  if (error) throw new Error(deviceErrorMessage(error));
+  return typeof data === "string" ? data : String(data ?? input.assignmentId);
 }
 
 /** Which console reported the IMEI — it decides the audit row's wording, nothing else. */

@@ -93,6 +93,7 @@ const CATEGORY_LABEL: Record<DeviceCategory, string> = {
 
 const STATUS_LABEL: Record<DeviceStatus, string> = {
   in_stock: "In stock",
+  reserved: "Reserved",
   assigned: "With staff",
   repair: "In repair",
   lost: "Lost",
@@ -172,6 +173,7 @@ function MetricTile({
 function StatusChip({ device }: { device: CompanyDevice }) {
   const tone: Record<DeviceStatus, string> = {
     in_stock: "border-slate-300 bg-slate-50 text-slate-700",
+    reserved: "border-violet-300 bg-violet-50 text-violet-800",
     assigned: "border-sky-300 bg-sky-50 text-sky-800",
     repair: "border-amber-300 bg-amber-50 text-amber-800",
     lost: "border-rose-300 bg-rose-50 text-rose-800",

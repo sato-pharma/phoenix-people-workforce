@@ -22,7 +22,11 @@
 import { listHeadwindDevices, matchHeadwindToRegister, type HeadwindDevice } from "@/lib/devices/headwind/devices";
 import { autoRegisterHeadwindTablets, headwindImeisToRecord } from "@/lib/devices/headwind/register-sync";
 import { isRustDeskConfigured } from "@/lib/devices/rustdesk/config";
-import { getDeviceRegisterData } from "@/lib/devices/service";
+import { getDeviceRegisterData, loadReservedAssignments } from "@/lib/devices/service";
+import type { AssignableEmployee, DeviceStatus } from "@/lib/devices/types";
+
+/** Where a device's live reservation (id + held-for name) is looked up, keyed by register device id. */
+type ReservationByDevice = Map<string, { assignmentId: string; placeholderName: string | null }>;
 
 export type RepHeadwindRow = {
   /** The id a remote action targets — Headwind's device NUMBER, never its row id. A React key too. */
@@ -51,6 +55,14 @@ export type RepHeadwindRow = {
   assetTag: string | null;
   holderName: string | null;
   holderJobTitle: string | null;
+  /** The matched register device id — what a reserve/assign/mark action targets. Null if unregistered. */
+  registerDeviceId: string | null;
+  /** The register device's custody status: in_stock, reserved, assigned, repair, lost, stolen, retired. */
+  registerStatus: DeviceStatus | null;
+  /** The LIVE custody record — the outstanding holder's, or the reservation's. What return/reconcile/revoke target. */
+  assignmentId: string | null;
+  /** When the tablet is reserved for a not-yet-hired holder: the typed name it is held for. */
+  placeholderName: string | null;
   /** The register does not know this managed tablet. */
   unregistered: boolean;
 };
@@ -67,16 +79,23 @@ export type HeadwindFleetState = {
   imeisToRecord: number;
   /** Whether the company's RustDesk relay is set up, so the screen buttons can be offered. */
   remoteScreenReady: boolean;
+  /** Active employees a tablet can be assigned or reconciled to — the picker's options. */
+  assignable: AssignableEmployee[];
 };
 
 function toRow(
   device: HeadwindDevice,
   register: Parameters<typeof matchHeadwindToRegister>[1],
+  reservations: ReservationByDevice,
 ): RepHeadwindRow {
   const entry = matchHeadwindToRegister(device, register);
+  const reservation = entry ? reservations.get(entry.id) ?? null : null;
   return {
     agentVersion: device.agentVersion,
     assetTag: entry?.assetTag ?? null,
+    // The live custody record. The register match carries no assignment id, so the reservation lookup
+    // is the source when reserved; an assigned tablet shows its holder read-only and needs none.
+    assignmentId: reservation?.assignmentId ?? null,
     batteryCharging: device.batteryCharging,
     batteryLevel: device.batteryLevel,
     configurationName: device.configurationName,
@@ -94,7 +113,10 @@ function toRow(
     model: device.model,
     name: device.name,
     osVersion: device.osVersion,
+    placeholderName: reservation?.placeholderName ?? null,
     platformLabel: device.platformLabel,
+    registerDeviceId: entry?.id ?? null,
+    registerStatus: entry?.status ?? null,
     rustDeskId: device.rustDeskId,
     serialNumber: device.serialNumber,
     unregistered: entry === null,
@@ -118,7 +140,10 @@ export async function getHeadwindFleet(
   const loadRegister = () =>
     getDeviceRegisterData().catch(() => {
       registerError = true;
-      return { devices: [] as Awaited<ReturnType<typeof getDeviceRegisterData>>["devices"] };
+      return {
+        devices: [] as Awaited<ReturnType<typeof getDeviceRegisterData>>["devices"],
+        assignable: [] as AssignableEmployee[],
+      };
     });
 
   let register = await loadRegister();
@@ -132,13 +157,29 @@ export async function getHeadwindFleet(
     if (added.registered.length > 0 || added.error) register = await loadRegister();
   }
 
-  const rows = devices.map((device) => toRow(device, register.devices));
+  // The live reservations, so a reserved tablet shows who it is held for and its reconcile/revoke
+  // controls target the right assignment. A failure here never blocks the fleet — it just means no
+  // reservation detail this read.
+  let reservations: ReservationByDevice = new Map();
+  if (!registerError) {
+    try {
+      const reserved = await loadReservedAssignments();
+      reservations = new Map(
+        reserved.map((r) => [r.deviceId, { assignmentId: r.assignmentId, placeholderName: r.placeholderName }]),
+      );
+    } catch {
+      // Leave reservations empty; the fleet still renders every tablet.
+    }
+  }
+
+  const rows = devices.map((device) => toRow(device, register.devices, reservations));
   rows.sort((left, right) => {
     if (left.unregistered !== right.unregistered) return left.unregistered ? -1 : 1;
     return (left.assetTag ?? left.name).localeCompare(right.assetTag ?? right.name);
   });
 
   return {
+    assignable: register.assignable ?? [],
     autoRegisterError,
     autoRegistered,
     imeisToRecord: registerError ? 0 : headwindImeisToRecord(devices, register.devices).length,

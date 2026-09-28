@@ -40,6 +40,7 @@ import {
   useRead,
 } from "@/components/devices/headwind-panel-kit";
 import { cairoDateTime } from "@/lib/format/cairo-datetime";
+import type { AssignableEmployee, DeviceStatus } from "@/lib/devices/types";
 
 type DeviceFact = { label: string; value: string };
 type DeviceDetail = { deviceNumber: string; headline: DeviceFact[]; sections: Array<{ title: string; facts: DeviceFact[] }> };
@@ -598,14 +599,238 @@ function RemoteScreenIdPanel({
   );
 }
 
+/* ─────────────────────────────────────────────────────────────────────────────────────────────────
+ * Custody — assign, or reserve for a not-yet-hired holder, and the day-one reconcile.
+ * ───────────────────────────────────────────────────────────────────────────────────────────────── */
+
+type CustodyProps = {
+  deviceNumber: string;
+  /** The matched register device id — null while the register has not placed this tablet yet. */
+  registerDeviceId: string | null;
+  registerStatus: DeviceStatus | null;
+  /** The live custody record — the holder's, or the reservation's. */
+  assignmentId: string | null;
+  holderName: string | null;
+  holderJobTitle: string | null;
+  /** When reserved: the typed name it is held for. */
+  placeholderName: string | null;
+  assignable: AssignableEmployee[];
+  /** Re-read the fleet after a change, so the row and this panel catch up. */
+  onChanged?: () => void;
+};
+
+type CustodyMode = null | "assign" | "reserve" | "reconcile" | "reassign";
+
+type CustodyState = {
+  deviceNumber: string;
+  mode: CustodyMode;
+  /** The chosen employee (assign / reconcile). */
+  hrId: string;
+  /** The typed placeholder name (reserve / reassign). */
+  name: string;
+  armedRevoke: boolean;
+  busy: boolean;
+  notice: string | null;
+  failure: string | null;
+};
+
+const NO_CUSTODY_PENDING: Omit<CustodyState, "deviceNumber"> = {
+  armedRevoke: false,
+  busy: false,
+  failure: null,
+  hrId: "",
+  mode: null,
+  name: "",
+  notice: null,
+};
+
+/**
+ * 🔴 THE RESERVATION MODEL, NOT A SIGNED CUSTODY (owner, 2026-09-28). A reservation earmarks a tablet
+ * for a name before anyone is hired; it owes nothing and freezes no value. `Reconcile` on day one is
+ * the moment the real signed custody is created and the device's value is frozen onto it (البند 9).
+ * All of that is enforced in the database — this panel only chooses which verb to send.
+ */
+function CustodyPanel(props: CustodyProps) {
+  const { deviceNumber, registerDeviceId, registerStatus, assignmentId, assignable } = props;
+  const [state, setState] = useState<CustodyState>({ deviceNumber, ...NO_CUSTODY_PENDING });
+  // Derived during the render, never reset in an effect — the rule every panel here follows, so a
+  // half-filled form for one tablet never follows onto another rep's row.
+  const own = state.deviceNumber === deviceNumber ? state : { deviceNumber, ...NO_CUSTODY_PENDING };
+
+  async function send(body: Record<string, unknown>, fallback: string) {
+    setState({ ...own, busy: true, failure: null, notice: null });
+    try {
+      await postJson<unknown>("/api/devices", body);
+      setState({ deviceNumber, ...NO_CUSTODY_PENDING, notice: "Done." });
+      props.onChanged?.();
+    } catch (caught: unknown) {
+      setState({ ...own, busy: false, failure: failureText(caught, fallback) });
+    }
+  }
+
+  if (!registerDeviceId) {
+    return (
+      <Panel title="Custody">
+        <p className="text-[11px] font-semibold text-slate-500">
+          This tablet is not in the custody register yet. It adds itself the next time the fleet is read; then
+          it can be assigned or reserved from here.
+        </p>
+      </Panel>
+    );
+  }
+
+  const employeePicker = (verb: "assign" | "reconcile") => (
+    <label className="min-w-0 max-w-xs flex-1 basis-48">
+      <span className={`block ${MICRO_LABEL}`}>Employee</span>
+      <select
+        className={`mt-1 ${PANEL_INPUT}`}
+        onChange={(event) => setState({ ...own, failure: null, hrId: event.target.value })}
+        value={own.hrId}
+      >
+        <option value="">Choose an employee…</option>
+        {assignable.map((person) => (
+          <option key={person.hrId} value={person.hrId}>
+            {person.name}
+            {person.jobTitle ? ` — ${person.jobTitle}` : ""}
+          </option>
+        ))}
+      </select>
+      <button
+        className={`mt-1 ${PANEL_ACTION}`}
+        disabled={own.busy || !own.hrId}
+        onClick={() =>
+          void send(
+            verb === "assign"
+              ? { action: "issue", deviceId: registerDeviceId, employeeHrId: own.hrId }
+              : { action: "reconcile", assignmentId, employeeHrId: own.hrId },
+            verb === "assign" ? "Could not assign the tablet." : "Could not reconcile the reservation.",
+          )
+        }
+        type="button"
+      >
+        {own.busy ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> : null}
+        {verb === "assign" ? "Sign it out to this employee" : "Hand over to this employee"}
+      </button>
+    </label>
+  );
+
+  const namePicker = (verb: "reserve" | "reassign") => (
+    <label className="min-w-0 max-w-xs flex-1 basis-48">
+      <span className={`block ${MICRO_LABEL}`}>Held for (name)</span>
+      <input
+        className={`mt-1 ${PANEL_INPUT}`}
+        onChange={(event) => setState({ ...own, failure: null, name: event.target.value })}
+        placeholder="The person it is being kept for"
+        type="text"
+        value={own.name}
+      />
+      <button
+        className={`mt-1 ${PANEL_ACTION}`}
+        disabled={own.busy || !own.name.trim()}
+        onClick={() =>
+          void send(
+            verb === "reserve"
+              ? { action: "reserve", deviceId: registerDeviceId, placeholderName: own.name }
+              : { action: "reassign_placeholder", assignmentId, newName: own.name },
+            verb === "reserve" ? "Could not reserve the tablet." : "Could not reassign the reservation.",
+          )
+        }
+        type="button"
+      >
+        {own.busy ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> : null}
+        {verb === "reserve" ? "Reserve it for this name" : "Reassign to this name"}
+      </button>
+    </label>
+  );
+
+  return (
+    <Panel title="Custody">
+      {own.notice ? <Done message={own.notice} /> : null}
+      {own.failure ? <Failed message={own.failure} /> : null}
+
+      {registerStatus === "in_stock" ? (
+        <div className="space-y-2">
+          <p className="break-words text-[11px] font-semibold text-slate-500">
+            In stock. Sign it out to someone here now, or reserve it for a name until they start.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button className={PANEL_ACTION} disabled={own.busy} onClick={() => setState({ ...own, mode: own.mode === "assign" ? null : "assign", failure: null, notice: null })} type="button">
+              Assign to an employee
+            </button>
+            <button className={PANEL_ACTION} disabled={own.busy} onClick={() => setState({ ...own, mode: own.mode === "reserve" ? null : "reserve", failure: null, notice: null })} type="button">
+              Reserve for a name
+            </button>
+          </div>
+          {own.mode === "assign" ? <div className="flex flex-wrap items-end gap-2">{employeePicker("assign")}</div> : null}
+          {own.mode === "reserve" ? <div className="flex flex-wrap items-end gap-2">{namePicker("reserve")}</div> : null}
+        </div>
+      ) : null}
+
+      {registerStatus === "reserved" ? (
+        <div className="space-y-2">
+          <p className="break-words text-[11px] font-bold text-slate-900">
+            Reserved for {props.placeholderName ?? "someone"}
+          </p>
+          <p className="break-words text-[11px] font-semibold text-slate-500">
+            Nobody has signed for it yet. On day one, reconcile it to the hired employee — that creates the
+            signed custody and freezes the value.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button className={PANEL_ACTION} disabled={own.busy} onClick={() => setState({ ...own, mode: own.mode === "reconcile" ? null : "reconcile", failure: null, notice: null })} type="button">
+              Reconcile to an employee
+            </button>
+            <button className={PANEL_ACTION} disabled={own.busy} onClick={() => setState({ ...own, mode: own.mode === "reassign" ? null : "reassign", failure: null, notice: null })} type="button">
+              Reassign to a different name
+            </button>
+            <button
+              className={own.armedRevoke ? PANEL_ARMED : PANEL_ACTION}
+              disabled={own.busy}
+              onClick={() =>
+                own.armedRevoke
+                  ? void send({ action: "revoke", assignmentId }, "Could not revoke the reservation.")
+                  : setState({ ...own, armedRevoke: true, failure: null, notice: null })
+              }
+              type="button"
+            >
+              {own.busy ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> : null}
+              {own.armedRevoke ? "Press again to cancel the reservation" : "Revoke"}
+            </button>
+          </div>
+          {own.mode === "reconcile" ? <div className="flex flex-wrap items-end gap-2">{employeePicker("reconcile")}</div> : null}
+          {own.mode === "reassign" ? <div className="flex flex-wrap items-end gap-2">{namePicker("reassign")}</div> : null}
+        </div>
+      ) : null}
+
+      {registerStatus === "assigned" ? (
+        <p className="break-words text-[11px] font-semibold text-slate-500">
+          Signed out to{" "}
+          <span className="font-bold text-slate-900">{props.holderName ?? "someone"}</span>
+          {props.holderJobTitle ? ` (${props.holderJobTitle})` : ""}. Record its return on the Device custody page.
+        </p>
+      ) : null}
+
+      {registerStatus && !["in_stock", "reserved", "assigned"].includes(registerStatus) ? (
+        <p className="break-words text-[11px] font-semibold text-slate-500">
+          This tablet is marked {registerStatus} in the register, so it cannot be assigned or reserved until that
+          changes on the Device custody page.
+        </p>
+      ) : null}
+    </Panel>
+  );
+}
+
 export function HeadwindTabletPanel({
   deviceNumber,
   remoteScreenId = null,
   onRemoteScreenIdSaved,
+  custody,
+  onCustodyChanged,
 }: {
   deviceNumber: string;
   remoteScreenId?: string | null;
   onRemoteScreenIdSaved?: () => void;
+  custody?: Omit<CustodyProps, "deviceNumber" | "onChanged">;
+  onCustodyChanged?: () => void;
 }) {
   const query = encodeURIComponent(deviceNumber);
   const detail = useRead<DeviceDetail>(`/api/devices/headwind?deviceNumber=${query}&view=detail`);
@@ -636,6 +861,8 @@ export function HeadwindTabletPanel({
           )
         ) : null}
       </Panel>
+
+      {custody ? <CustodyPanel deviceNumber={deviceNumber} {...custody} onChanged={onCustodyChanged} /> : null}
 
       <RemoteScreenIdPanel current={remoteScreenId} deviceNumber={deviceNumber} onSaved={onRemoteScreenIdSaved} />
 

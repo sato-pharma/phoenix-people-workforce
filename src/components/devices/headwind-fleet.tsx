@@ -31,6 +31,7 @@ import { ChevronDown, ChevronRight, Loader2, MapPin, Monitor } from "lucide-reac
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { HeadwindTabletPanel } from "@/components/devices/headwind-tablet-panel";
+import type { AssignableEmployee, DeviceStatus } from "@/lib/devices/types";
 import { cairoDateTime } from "@/lib/format/cairo-datetime";
 
 const MICRO_LABEL = "text-[9px] font-black uppercase tracking-[0.14em] text-slate-500";
@@ -75,6 +76,10 @@ type FleetRow = {
   assetTag: string | null;
   holderName: string | null;
   holderJobTitle: string | null;
+  registerDeviceId: string | null;
+  registerStatus: DeviceStatus | null;
+  assignmentId: string | null;
+  placeholderName: string | null;
   unregistered: boolean;
 };
 type CommandDef = {
@@ -94,6 +99,7 @@ type FleetState = {
   imeisToRecord: number;
   remoteScreenReady: boolean;
   commands: CommandDef[];
+  assignable: AssignableEmployee[];
 };
 type LocationResult = { latitude: number | null; longitude: number | null; address: string | null; locatedAt: string | null };
 type CommandResult = { command: string; assetTag: string | null; message: string };
@@ -461,6 +467,7 @@ export function HeadwindFleet() {
                     onToggle={toggleOpen}
                     open={openDeviceNumber === row.deviceNumber}
                     remoteScreenReady={data?.remoteScreenReady ?? false}
+                    assignable={data?.assignable ?? []}
                     row={row}
                     variant="desktop"
                   />
@@ -488,6 +495,7 @@ export function HeadwindFleet() {
                 onToggle={toggleOpen}
                 open={openDeviceNumber === row.deviceNumber}
                 remoteScreenReady={data?.remoteScreenReady ?? false}
+                assignable={data?.assignable ?? []}
                 row={row}
                 variant="mobile"
               />
@@ -518,6 +526,8 @@ type BlockProps = {
   onToggle: (row: FleetRow) => void;
   /** Read the fleet again — a remote screen ID recorded in the panel has to reach the row above it. */
   onRefresh: () => void;
+  /** Active employees the custody panel can assign or reconcile a tablet to. */
+  assignable: AssignableEmployee[];
 };
 
 function TabletCell({ row }: { row: FleetRow }) {
@@ -728,7 +738,17 @@ function FleetRowBlock(props: BlockProps) {
           {error ? <p className="mt-2 break-words text-[11px] font-bold text-rose-700">{error}</p> : null}
           {open ? (
             <HeadwindTabletPanel
+              custody={{
+                assignable: props.assignable,
+                assignmentId: row.assignmentId,
+                holderJobTitle: row.holderJobTitle,
+                holderName: row.holderName,
+                placeholderName: row.placeholderName,
+                registerDeviceId: row.registerDeviceId,
+                registerStatus: row.registerStatus,
+              }}
               deviceNumber={row.deviceNumber}
+              onCustodyChanged={props.onRefresh}
               onRemoteScreenIdSaved={props.onRefresh}
               remoteScreenId={row.rustDeskId}
             />
@@ -757,7 +777,17 @@ function FleetRowBlock(props: BlockProps) {
           {error ? <p className="mt-2 break-words text-[11px] font-bold text-rose-700">{error}</p> : null}
           {open ? (
             <HeadwindTabletPanel
+              custody={{
+                assignable: props.assignable,
+                assignmentId: row.assignmentId,
+                holderJobTitle: row.holderJobTitle,
+                holderName: row.holderName,
+                placeholderName: row.placeholderName,
+                registerDeviceId: row.registerDeviceId,
+                registerStatus: row.registerStatus,
+              }}
               deviceNumber={row.deviceNumber}
+              onCustodyChanged={props.onRefresh}
               onRemoteScreenIdSaved={props.onRefresh}
               remoteScreenId={row.rustDeskId}
             />
