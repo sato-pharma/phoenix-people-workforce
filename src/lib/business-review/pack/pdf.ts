@@ -35,7 +35,7 @@ import { join } from "node:path";
 import { escapeHtml } from "@/lib/hiring-pack/render-shared";
 import { withChromiumPage } from "@/lib/pdf/chromium";
 
-import type { PackCell, PackSection, SalesReviewPack } from "./model";
+import type { PackCell, PackChart, PackSection, SalesReviewPack } from "./model";
 
 // ── Palette — the same values the Spotlight sheet uses ──────────────────────────────────────────
 const C = {
@@ -65,13 +65,95 @@ const ROW_CAP = 24;
  * plinth. Landscape A4 holds far fewer than the cap once a district name wraps to two lines, so the
  * shown rows are split across continuation pages. Wide tables (a name column that wraps) get fewer.
  */
-const WIDE_PER_PAGE = 12;
-const NARROW_PER_PAGE = 16;
+const CONTENT_PX = 1009.1; // 267mm — the table's usable width inside the page margins
+/**
+ * The table's own top (207.4px) down to where the page FOOTER sits when the page is not full
+ * (689.1px). 🔴 It is the footer that binds, NOT the plinth at 771px: the foot is inside the page
+ * column, so a table too tall pushes it down and out rather than sliding under it. Budgeting to the
+ * plinth reads as 82px of room that does not exist, and that is precisely how the first fix here
+ * still shipped two Rep-by-rep pages with the footer printed over the plinth.
+ */
+const TABLE_BOX_PX = 481.7;
+const ROW_PX = 32.3; // a single-line body row
+const EXTRA_LINE_PX = 17.0; // each wrapped line after the first
+const HEADER_PX = 19.8; // a single-line header row
+const HEADER_LINE_PX = 12.0; // each wrapped header line (6.6pt caps, tighter than a body line)
+const CUT_NOTE_PX = 28.0; // the "N more rows are in the Excel version" line
+const CELL_PAD_PX = 16.6; // 2.2mm of padding either side
+const CHAR_PX = 5.73; // an average glyph at 8.6pt
+const CHART_MARGIN_PX = 15.7; // .chart's own margin-top
+const CHART_CAP_PX = 26.0; // the note under a chart that plots fewer than the table holds
+/**
+ * One wrapped line held back. A percentage would not help: the way this estimate goes wrong is one
+ * cell wrapping a line more than predicted, which costs exactly EXTRA_LINE_PX, so that is what is
+ * reserved. It costs a row on a page only where the fit was that tight anyway.
+ */
+const HEADROOM_PX = EXTRA_LINE_PX;
 
-function chunk<T>(rows: readonly T[], size: number): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < rows.length; i += size) out.push(rows.slice(i, i + size));
-  return out.length > 0 ? out : [[]];
+/** Characters one line of a column holds, from the same weights `colgroup` lays the columns out on. */
+function columnChars(section: PackSection): number[] {
+  const weights = section.align.map((a) => (a === "left" ? 2.4 : 1));
+  const total = weights.reduce((sum, w) => sum + w, 0);
+  return weights.map((w) => Math.max(((w / total) * CONTENT_PX - CELL_PAD_PX) / CHAR_PX, 4));
+}
+
+function rowHeightPx(row: readonly PackCell[], chars: readonly number[]): number {
+  let lines = 1;
+  row.forEach((cell, i) => {
+    const fits = chars[i] ?? chars[chars.length - 1] ?? 10;
+    const n = Math.ceil(cellText(cell).length / fits);
+    if (n > lines) lines = n;
+  });
+  return ROW_PX + (lines - 1) * EXTRA_LINE_PX;
+}
+
+function headerHeightPx(section: PackSection, chars: readonly number[]): number {
+  let lines = 1;
+  section.columns.forEach((label, i) => {
+    // The header is tracked caps at 6.6pt — narrower per glyph than a body cell, hence the factor.
+    const n = Math.ceil((label.length * 0.86) / (chars[i] ?? 10));
+    if (n > lines) lines = n;
+  });
+  return HEADER_PX + (lines - 1) * HEADER_LINE_PX;
+}
+
+function chartHeightPx(chart: PackChart): number {
+  const top = chart.reference ? 16 : 4;
+  const svg = ((top + chart.items.length * 23 + 4) / 1000) * CONTENT_PX;
+  return CHART_MARGIN_PX + svg + (chart.capNote ? CHART_CAP_PX : 0);
+}
+
+/**
+ * Split a section's rows into pages, each filled to the height it actually has.
+ *
+ * `firstBudget` is what the first page has left over after whatever shares it — a chart. A page
+ * always takes at least one row, so a single freakishly tall row still renders rather than looping.
+ */
+function paginateByHeight(
+  section: PackSection,
+  rows: readonly PackCell[][],
+  firstBudget: number,
+  budget: number,
+): PackCell[][][] {
+  if (rows.length === 0) return [[]];
+  const chars = columnChars(section);
+  const out: PackCell[][][] = [];
+  let page: PackCell[][] = [];
+  let used = 0;
+  let cap = firstBudget;
+  for (const row of rows) {
+    const h = rowHeightPx(row, chars);
+    if (page.length > 0 && used + h > cap) {
+      out.push(page);
+      page = [];
+      used = 0;
+      cap = budget;
+    }
+    page.push(row);
+    used += h;
+  }
+  if (page.length > 0) out.push(page);
+  return out;
 }
 
 // ── The marks, read once and inlined as base64 data URIs (one image object, every page) ─────────
@@ -223,6 +305,116 @@ function coverBody(pack: SalesReviewPack, generated: string): string {
     </div>`;
 }
 
+/** A bar's own figure, in the unit the model gave it. Formatting only — nothing is computed here. */
+function chartValueLabel(chart: PackChart, value: number): string {
+  if (chart.unit !== "count") return `${value.toFixed(1)}%`;
+  const n = new Intl.NumberFormat("en-US").format(Math.round(value));
+  return chart.countSuffix ? `${n} ${chart.countSuffix}` : n;
+}
+
+/**
+ * A section's chart, as inline SVG.
+ *
+ * 🔴 VECTOR, NEVER A RASTER. Chromium turns a canvas or an image into a page-sized layer per page —
+ * the discipline the Spotlight sheet records at length and this file's header repeats. An SVG stays
+ * a handful of paths, prints at the printer's own resolution, and costs nothing per page.
+ *
+ * It DRAWS what the model handed it and computes no figure: every bar is a value the section's table
+ * also prints, so a reader cannot find a bar that disagrees with its own row.
+ *
+ * `targetPx` is the printed height the page has room for. The SVG scales to the width of its
+ * container, so its printed HEIGHT follows from its aspect ratio alone: a narrower viewBox over the
+ * same rows prints taller and larger. That is the one lever, and it is what stops a chart being a
+ * strip of bars above half a page of white — on its own page, or above a short table.
+ */
+function chartSvg(chart: PackChart, targetPx = 0): string {
+  const items = chart.items;
+  const ROW = 23;
+  const BAR = 11;
+  const TOP = chart.reference ? 16 : 4;
+  const H = TOP + items.length * ROW + 4;
+  // Printed height is H/W × the content width, so the viewBox width is what sets it. Clamped at 620
+  // so a three-bar chart cannot blow its own type up past the section title above it, and at 1000 so
+  // it never prints smaller than its natural size.
+  const W = targetPx > 0 ? Math.min(Math.max((H * CONTENT_PX) / targetPx, 620), 1000) : 1000;
+
+  /**
+   * 🔴 The label column is sized to the LONGEST label, never to a fixed fraction.
+   *
+   * A label is anchored at the column's right edge and runs leftward, so one too long for the
+   * column does not wrap or ellipsise — it runs off the left of the viewBox and is CLIPPED, silently.
+   * That is how "Hassan Mohamed Raffat Mohamed Elsherbiny" first printed as "hamed Raffat Mohamed
+   * Elsherbiny" on the rep chart, breaking the owner's no-truncation rule with no sign on the page.
+   * So: take the room the longest name needs, up to 42% of the chart, and below that shrink the type
+   * until it fits rather than cut a single character off anybody's name.
+   */
+  const LABEL_FS = 11.5;
+  const NOTE_FS = 8.4;
+  // 0.62 em per glyph. MEASURED in Chromium across this pack's own names, where the real advance
+  // ranged 0.496 to 0.598 — the first cut of this used 0.5, the average, and three rep names still
+  // ran off the left edge. It is the WORST case that has to fit, so the estimate sits above it.
+  const GLYPH = 0.62;
+  const longestLabel = Math.max(...items.map((item) => item.label.length), 1);
+  const longestNote = Math.max(...items.map((item) => (item.note ?? "").length), 0);
+  const needed = Math.max(longestLabel * LABEL_FS, longestNote * NOTE_FS) * GLYPH;
+  const LABEL_W = Math.max(Math.min(needed, W * 0.46), W * 0.286);
+  const labelFs = needed > LABEL_W ? LABEL_FS * (LABEL_W / needed) : LABEL_FS;
+  const noteFs = NOTE_FS * (labelFs / LABEL_FS);
+  // A counted figure carries thousands separators and a unit ("1,204,880 EGP"), so it needs a wider
+  // gutter than "84.2%" — without it the figure would run back over its own bar.
+  const VALUE_W = W * (chart.unit === "count" ? 0.2 : 0.104);
+  const PLOT_X = LABEL_W + W * 0.014;
+  const PLOT_W = W - PLOT_X - VALUE_W;
+
+  // Percentages are read against 100 even when nobody reached it — a chart that rescales to the best
+  // performer flatters a bad month. A share chart scales to its own largest slice.
+  const values = items.map((item) => (item.value == null ? 0 : item.value));
+  const max = Math.max(chart.unit === "pct" ? 100 : 0, ...values, 1);
+  const at = (value: number) => PLOT_X + (PLOT_W * Math.max(0, Math.min(value, max))) / max;
+
+  const parts: string[] = [];
+  if (chart.reference) {
+    const x = at(chart.reference.value);
+    parts.push(
+      `<line x1="${x.toFixed(1)}" y1="${TOP - 10}" x2="${x.toFixed(1)}" y2="${H - 4}" stroke="${C.ink}" stroke-width="1.1" stroke-dasharray="3 3"/>`,
+      `<text x="${(x + 4).toFixed(1)}" y="${TOP - 4}" font-size="10.5" font-weight="700" fill="${C.ink}">${escapeHtml(chart.reference.label)}</text>`,
+    );
+  }
+  items.forEach((item, i) => {
+    const y = TOP + i * ROW;
+    const mid = y + ROW / 2;
+    parts.push(
+      `<text x="${LABEL_W.toFixed(1)}" y="${(mid + 4).toFixed(1)}" text-anchor="end" font-size="${labelFs.toFixed(2)}" fill="${C.ink}">${escapeHtml(item.label)}</text>`,
+      `<rect x="${PLOT_X.toFixed(1)}" y="${(mid - BAR / 2).toFixed(1)}" width="${PLOT_W.toFixed(1)}" height="${BAR}" fill="${C.wash}"/>`,
+    );
+    if (item.value == null) {
+      parts.push(
+        `<text x="${(PLOT_X + 6).toFixed(1)}" y="${(mid + 4).toFixed(1)}" font-size="10.5" font-style="italic" fill="${C.muted}">not gradeable</text>`,
+      );
+      return;
+    }
+    // Below the earner mark the bar goes pale: short is legible at a glance, without a second legend.
+    const short = chart.reference != null && item.value < chart.reference.value;
+    const width = Math.max(at(item.value) - PLOT_X, 0.8);
+    parts.push(
+      `<rect x="${PLOT_X.toFixed(1)}" y="${(mid - BAR / 2).toFixed(1)}" width="${width.toFixed(1)}" height="${BAR}" fill="${short ? C.hair : C.light}"/>`,
+      // Anchored 2 units inside the edge: a glyph's own right bearing would otherwise sit exactly on
+      // the viewBox boundary, which is where a renderer is free to shave it.
+      `<text x="${(W - 2).toFixed(1)}" y="${(mid + 4).toFixed(1)}" text-anchor="end" font-size="11.5" font-weight="700" fill="${C.ink}">${escapeHtml(chartValueLabel(chart, item.value))}</text>`,
+    );
+    if (item.note) {
+      parts.push(
+        `<text x="${LABEL_W.toFixed(1)}" y="${(mid + 14).toFixed(1)}" text-anchor="end" font-size="${noteFs.toFixed(2)}" fill="${C.muted}">${escapeHtml(item.note)}</text>`,
+      );
+    }
+  });
+
+  return `<div class="chart">
+    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMin meet" role="img">${parts.join("")}</svg>
+    ${chart.capNote ? `<p class="chart__cap">${escapeHtml(chart.capNote)}</p>` : ""}
+  </div>`;
+}
+
 function sectionBody(
   section: PackSection,
   index: number,
@@ -232,6 +424,8 @@ function sectionBody(
   parts: number,
   offset: number,
   cut: number,
+  chart: PackChart | null,
+  chartTargetPx = 0,
 ): string {
   const eyebrow = `Section ${String(index + 1).padStart(2, "0")} / ${String(total).padStart(2, "0")}${parts > 1 ? ` · ${part} of ${parts}` : ""}`;
   const note =
@@ -243,7 +437,8 @@ function sectionBody(
     <h2 class="sectitle">${escapeHtml(section.title)}${part > 1 ? ` <span class="cont">continued</span>` : ""}</h2>
     <div class="ruleunder ruleunder--short"></div>
     ${note}
-    <section class="tbl">${sectionTable(section, rows)}</section>
+    ${chart ? chartSvg(chart, chartTargetPx) : ""}
+    ${rows.length > 0 ? `<section class="tbl">${sectionTable(section, rows)}</section>` : ""}
     ${
       cut > 0
         ? `<p class="cut">${cut} more row${cut === 1 ? "" : "s"} are in the Excel version of this pack — a page is a presentation, not the whole dataset.</p>`
@@ -334,6 +529,11 @@ const CSS = `
   .note { margin-top:calc(var(--u)*.7); max-width:240mm; font-size:7.8pt; font-style:italic; color:var(--muted); line-height:1.5; }
   .cut { margin-top:calc(var(--u)*.6); font-size:7.2pt; font-style:italic; color:var(--muted); }
 
+  /* the chart — vector, flat, no rounding and no shadow, like everything else on the sheet */
+  .chart { margin-top:calc(var(--u)*1.3); }
+  .chart svg { display:block; width:100%; height:auto; }
+  .chart__cap { margin-top:calc(var(--u)*.55); font-size:7.2pt; font-style:italic; color:var(--muted); }
+
   /* the table — the Spotlight leaderboard's voice */
   .tbl { margin-top:calc(var(--u)*1.1); }
   table { width:100%; table-layout:fixed; border-collapse:collapse; }
@@ -385,13 +585,52 @@ export function packDocumentHtml(pack: SalesReviewPack): string {
   pack.sections.forEach((section, i) => {
     const shown = section.rows.slice(0, ROW_CAP);
     const cut = section.rows.length - shown.length;
-    const per = section.columns.length >= 5 ? WIDE_PER_PAGE : NARROW_PER_PAGE;
-    const parts = chunk(shown, per);
-    parts.forEach((rows, ci) => {
-      const isLast = ci === parts.length - 1;
+    const chart = section.chart ?? null;
+    // What a page of this section's table has: its own box, less its header, less the cut note if
+    // the section is capped at all (reserved on every page rather than only the last — a page that
+    // has to shed one row is cheaper than a note printed over the plinth).
+    const budget =
+      TABLE_BOX_PX - headerHeightPx(section, columnChars(section)) - (cut > 0 ? CUT_NOTE_PX : 0) - HEADROOM_PX;
+    // A short chart rides on the section's first page and simply costs it rows. A tall one takes a
+    // page of its own: sharing would either shrink the bars past reading size or push the last rows
+    // under the plinth, which is the exact failure the budget above exists to prevent.
+    const chartPx = chart ? chartHeightPx(chart) : 0;
+    const inline = chart != null && chartPx <= budget * 0.45;
+    const ownPage = chart != null && !inline ? 1 : 0;
+    const tableParts = paginateByHeight(section, shown, inline ? budget - chartPx : budget, budget);
+    const parts = tableParts.length + ownPage;
+    // Then give the chart whatever that page has LEFT. On its own page that is the whole budget; on
+    // a page it shares, only what a table ending early leaves behind — and nothing at all when the
+    // rows already run on, where growing it would push them off the page it was just fitted to.
+    const chars = columnChars(section);
+    const firstPageRows = (tableParts[0] ?? []).reduce((sum, row) => sum + rowHeightPx(row, chars), 0);
+    const chartTargetPx =
+      ownPage === 1
+        ? budget
+        : tableParts.length === 1
+          ? Math.max(budget - firstPageRows - CHART_MARGIN_PX, chartPx)
+          : 0;
+    if (ownPage && chart) {
+      bodies.push(sectionBody(section, i, pack.sections.length, [], 1, parts, 0, 0, chart, chartTargetPx));
+    }
+    let offset = 0;
+    tableParts.forEach((rows, ci) => {
+      const isLast = ci === tableParts.length - 1;
       bodies.push(
-        sectionBody(section, i, pack.sections.length, rows, ci + 1, parts.length, ci * per, isLast ? cut : 0),
+        sectionBody(
+          section,
+          i,
+          pack.sections.length,
+          rows,
+          ci + 1 + ownPage,
+          parts,
+          offset,
+          isLast ? cut : 0,
+          ci === 0 && inline ? chart : null,
+          chartTargetPx,
+        ),
       );
+      offset += rows.length;
     });
   });
 

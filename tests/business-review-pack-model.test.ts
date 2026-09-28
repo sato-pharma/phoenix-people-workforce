@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { buildConcentration, type ReviewSalesDetail } from "@/lib/business-review/concentration";
-import { buildSalesReviewPack, type PackInput } from "@/lib/business-review/pack/model";
+import { buildSalesReviewPack, type PackCell, type PackInput } from "@/lib/business-review/pack/model";
 import { packDocumentHtml } from "@/lib/business-review/pack/pdf";
 import { buildSpecialtyMix } from "@/lib/business-review/specialty-mix";
 import { stripComments } from "./support/comment-strip.ts";
@@ -270,6 +270,148 @@ export function runBusinessReviewPackModelTests() {
     assert.ok(
       !/brickName:\s*row\.brickId\s*\|\|\s*"No brick recorded"/.test(src),
       "closing-detail.ts: the brick label must not be the code alone — the owner's rule is names, never codes.",
+    );
+  }
+
+  // ------------------------------------------------------------------ 11. a bar can never disagree with its row
+  // The whole reason the charts are built in the MODEL: every bar is a figure the section's own table
+  // also prints. A chart assembled in a renderer, or from a second query, is how a deck's picture comes
+  // to contradict the table under it in front of a room.
+  {
+    const areas = [area("CA1", 131.1, 500), area("CA2", 88.4, 300), area("CA3", null, 0)];
+    const pack = buildSalesReviewPack(input({ areas, selection: ["achievement"] }));
+    const section = pack.sections.find((s) => s.metric === "achievement");
+    assert.ok(section?.chart, "the areas section carries a chart");
+    assert.equal(section.chart.unit, "pct");
+    assert.deepEqual(
+      section.chart.items.map((i) => i.value),
+      [131.1, 88.4],
+      "graded areas only, best first — an ungradeable area has no percentage, and a 0% bar would accuse it of failing",
+    );
+    // Annotated: `assert.ok(row, …)` narrows `row`, which makes its own inferred type self-referential
+    // (TS7022). A local run cannot see that — `pnpm run test` strips types — so CI is the gate.
+    const rows: PackCell[][] = section.rows;
+    for (const item of section.chart.items) {
+      const row = rows.find((r) => r[0] === item.label);
+      assert.ok(row, `every bar is a row of this same table: ${item.label}`);
+      assert.equal(row[2], `${(item.value as number).toFixed(1)}%`, "and carries that row's own figure");
+    }
+    assert.deepEqual(section.chart.reference, { label: "90% earner", value: 90 }, "read against the earner mark");
+  }
+
+  // ------------------------------------------------------------------ 12. a UNION is never charted
+  // 🔴 Customers and visiting reps are unions across people — a doctor seen by two reps is ONE customer.
+  // Bars of a summed union would double-count him, so that section deliberately has no chart. The rep
+  // chart plots VISITS, which belong to one rep each and do add.
+  {
+    const pack = buildSalesReviewPack(input({ selection: ["customers-per-month", "rep-rows"] }));
+    const months = pack.sections.find((s) => s.metric === "customers-per-month");
+    assert.ok(months);
+    assert.ok(!months.chart, "unique customers per month carries NO chart — the months are unions and do not sum");
+
+    const reps = buildSalesReviewPack(
+      input({
+        people: [person("Rep A", "CA1", 40), person("Rep B", "CA1", 12)],
+        selection: ["rep-rows"],
+      }),
+    ).sections.find((s) => s.metric === "rep-rows");
+    assert.ok(reps?.chart);
+    assert.equal(reps.chart.unit, "count");
+    assert.equal(reps.chart.countSuffix, "visits");
+    assert.deepEqual(reps.chart.items.map((i) => i.value), [40, 12], "the bars are his visits, busiest first");
+    assert.ok(
+      !reps.chart.items.some((i) => String(i.value).includes("%")),
+      "never the percentage beside him — that one is his AREA's, shared with everyone standing in it",
+    );
+    assert.match(reps.chart.capNote ?? "", /AREA's/i, "and the chart says so on its own face");
+  }
+
+  // ------------------------------------------------------------------ 13. the cost chart is money, not a score
+  // Spend per point is a measure where a LONGER bar is a WORSE result. Charted, a room reads the winner
+  // as the longest bar and gets it exactly backwards, so the bars are total spend and the note says so.
+  {
+    const dms = [
+      { allProducts: { ach: 80 }, dm: "DM One", marketingCost: 1000, outstationCost: 500 },
+      { allProducts: { ach: 40 }, dm: "DM Two", marketingCost: 200, outstationCost: 0 },
+    ] as unknown as PackInput["dms"];
+    const section = buildSalesReviewPack(input({ dms, selection: ["marketing-committed"] })).sections.find(
+      (s) => s.metric === "marketing-committed",
+    );
+    assert.ok(section?.chart);
+    assert.equal(section.chart.countSuffix, "EGP");
+    assert.deepEqual(
+      section.chart.items.map((i) => i.value),
+      [1500, 200],
+      "marketing plus outstation, largest first — never spend per point",
+    );
+    assert.match(section.chart.capNote ?? "", /cost, never a score/i);
+  }
+
+  // ------------------------------------------------------------------ 14. no page runs under the plinth
+  // 🔴 The failure this guards: a body row is not one fixed height. A wrapped name grows it by half
+  // again, so paginating on a fixed COUNT put twelve wrapped rows on a page that holds ten and printed
+  // the footer over the plinth — measured in Chromium at 831.8px on a 793.7px sheet, clipped. Rows are
+  // packed by estimated height instead. This asserts the renderer still budgets rather than counts.
+  {
+    const src = stripComments(readFileSync("src/lib/business-review/pack/pdf.ts", "utf8"));
+    assert.ok(
+      !/const\s+(WIDE|NARROW)_PER_PAGE/.test(src),
+      "pdf.ts: a fixed rows-per-page constant is the bug — pages are budgeted by height.",
+    );
+    assert.match(src, /function paginateByHeight/, "pdf.ts: rows are packed by their estimated height");
+    assert.match(src, /rowHeightPx/, "and a row's height accounts for the lines it wraps to");
+    assert.match(src, /TABLE_BOX_PX\s*=\s*481\.7/, "pdf.ts: the box is the table top to the FOOTER (689.1px), never the plinth at 771.");
+
+    // A wide section whose every row wraps must split into more pages than one of short rows.
+    const long = (n: number) =>
+      Array.from({ length: n }, (_, i) =>
+        person(`Rep With A Very Long Four Part Egyptian Name Number ${i}`, "CA1", 500 - i),
+      );
+    const pack = buildSalesReviewPack(input({ people: long(24), selection: ["rep-rows"] }));
+    const html = packDocumentHtml(pack);
+    const perPage = [...html.matchAll(/<tbody>([\s\S]*?)<\/tbody>/g)].map(
+      (m) => (m[1].match(/<tr>/g) ?? []).length,
+    );
+    assert.ok(perPage.length >= 3, `24 wrapping rows need at least 3 pages, got ${perPage.length}`);
+    assert.ok(
+      perPage.every((n) => n <= 10),
+      `no page may carry more than ten wrapped rows — got ${perPage.join(",")}`,
+    );
+  }
+
+  // ------------------------------------------------------------------ 15. a chart label is never cut
+  // A bar label is anchored at the right of its column and runs LEFTWARD, so one too long does not wrap
+  // or ellipsise — it runs off the viewBox and is silently clipped. That is how a real rep first printed
+  // as "hamed Raffat Mohamed Elsherbiny". The owner's rule is no truncation, ever.
+  {
+    const src = stripComments(readFileSync("src/lib/business-review/pack/pdf.ts", "utf8"));
+    assert.match(src, /const GLYPH = 0\.62/, "pdf.ts: the glyph estimate must cover the WORST advance (0.598 measured), not the average.");
+    assert.match(src, /longestLabel/, "pdf.ts: the label column is sized to the longest label");
+    assert.match(src, /labelFs/, "and below the cap the type shrinks rather than the name being cut");
+
+    const people = [
+      person("Mahmoud Mohamed Ahmed Ibrahim AlSlamony Extended", "CA1", 90),
+      person("Short Name", "CA1", 10),
+    ];
+    const html = packDocumentHtml(buildSalesReviewPack(input({ people, selection: ["rep-rows"] })));
+    assert.ok(
+      html.includes("Mahmoud Mohamed Ahmed Ibrahim AlSlamony Extended"),
+      "the whole name is in the file — never an ellipsis, never a cut",
+    );
+    const chartSvg = html.match(/<div class="chart">\s*<svg viewBox="0 0 ([\d.]+) [\d.]+"[\s\S]*?<\/svg>/);
+    assert.ok(chartSvg, "the chart is inline SVG — vector, never a raster layer per page");
+    const width = Number(chartSvg[1]);
+    const label = chartSvg[0].match(/<text x="([\d.]+)" y="[\d.]+" text-anchor="end" font-size="([\d.]+)"/);
+    assert.ok(label, "the bar labels are anchored at the right of their own column");
+    const labelEnd = Number(label[1]);
+    const labelFs = Number(label[2]);
+    assert.ok(labelEnd <= width * 0.47, `the label column stays inside the chart: ${labelEnd} of ${width}`);
+    // 0.6 em is the real worst-case advance measured in Chromium for these names. The column must be
+    // wide enough for the longest one AT THE SIZE IT IS DRAWN — by widening, or by shrinking the type.
+    const longest = "Mahmoud Mohamed Ahmed Ibrahim AlSlamony Extended".length;
+    assert.ok(
+      longest * labelFs * 0.6 <= labelEnd + 1,
+      `the longest name needs ${(longest * labelFs * 0.6).toFixed(0)} units at ${labelFs}pt but the column is ${labelEnd} — it would be clipped`,
     );
   }
 }
