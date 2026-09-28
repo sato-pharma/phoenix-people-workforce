@@ -983,6 +983,15 @@ async function runConfigurationTests() {
   assert.match(configs, /const next = \{ \.\.\.current, \.\.\.patch \}/, "the whole object is read back and returned with one field changed");
   assert.match(configs, /"\/rest\/private\/applications\/configurations"/, "attaching ONE app uses the surgical endpoint, which rewrites nothing else");
   assert.match(configs, /"\/rest\/private\/web-ui-files\/configurations"/, "and so does attaching one file");
+  // 🔴 BOTH OF THESE FAIL AS AN HTTP 200 WHEN OMITTED, so nothing but the container's own log says why.
+  // Measured on production 2026-09-28 adding the Phoenix mdm APK: registering without `type` throws
+  // `PSQLException: null value in column "type" of relation "applications" violates not-null
+  // constraint`, and linking without `showIcon`/`remove` throws a bare `NullPointerException` — both
+  // surfacing only as `{"status":"ERROR","message":"error.internal.server"}` under a 200.
+  assert.match(configs, /showIcon: input\.showIcon !== false/, "the link entry carries showIcon — without it Headwind NPEs and answers a 200");
+  assert.match(configs, /remove: false/, "and remove, for the same reason");
+  const uploads = stripComments(source("src/lib/devices/headwind/uploads.ts"));
+  assert.match(uploads, /type: "app"/, "registering an APK sends type — the applications table has NOT NULL on it");
   // 🔴 A CONFIGURATION OBJECT CARRIES A PLAINTEXT PASSWORD — the Swagger's "MD5 hash" is wrong, the hash
   // is computed at device-sync time from a plaintext column. So the object must never be logged, and
   // never put in an audit row whole.
