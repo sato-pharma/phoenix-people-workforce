@@ -158,9 +158,87 @@ function testTheRestoreAdviceOnlyPrintsWhenSomethingWasStripped() {
   );
 }
 
+/** The body of `stripIdleVerdict`, comments already stripped, for gate-ordering assertions. */
+function stripIdleVerdictBody(code: string): string {
+  const from = code.indexOf("function stripIdleVerdict(");
+  assert.notEqual(from, -1, "stripIdleVerdict is gone - this test is pinning nothing");
+  // The next top-level declaration ends the body. Anchoring on a closing brace column would break
+  // on any reformat; a `\nfunction ` at column 0 cannot appear inside the body.
+  const rest = code.indexOf("\nfunction ", from + 1);
+  return code.slice(from, rest === -1 ? code.length : rest);
+}
+
+/**
+ * --strip-idle must consult the live-session signals the SAME RUN already computes.
+ *
+ * `worktree-liveness.mjs` wired --strip-idle's mtime measurement INTO the retirable gate, so that
+ * nothing the strip pass refuses as possibly-mid-edit can be offered for deletion by the same run.
+ * The reverse was never wired. On 2026-09-28 one run's husk section reported
+ * `.claude/worktrees/busy-hypatia-186800` as holding a live process - claude pid 17760 among them -
+ * and the --strip-idle pass of that same run called it "idle 260 min" and emptied its node_modules
+ * under that session. Both readings were correct: the files really had sat for 260 minutes, because
+ * the session was sitting AT A PROMPT. That is exactly the state an mtime cannot see and a
+ * process's PEB can, which is why two signals exist at all.
+ *
+ * Nothing committed is lost when this happens - the strip takes only caches - but the next build in
+ * that folder fails with no stated cause, and the restore advice this script prints names
+ * `new-session.mjs --repair <task>`, which does not address a `.claude/worktrees/*` folder.
+ *
+ * What this pins is the WIRING, not the wording: that the gate asks, that it asks inside the one
+ * shared verdict function rather than at a call site, that both callers hand it the probe, and that
+ * it asks BEFORE falling back to the mtime - because a holder is evidence and an mtime is an
+ * inference, which is the ordering `livenessVerdict` already gives its own rules.
+ */
+function testStripIdleAsksWhoIsSittingInTheWorktree() {
+  const code = doctorCode();
+  const body = stripIdleVerdictBody(code);
+
+  assert.ok(
+    body.includes("sessionHoldReason("),
+    "stripIdleVerdict must consult sessionHoldReason - the transcript signal is the only one that " +
+      "sees a session inside its just-closed grace window, which no process sweep can",
+  );
+
+  assert.ok(
+    body.includes("stripLivenessReason(") || body.includes("livenessVerdict("),
+    "stripIdleVerdict must consult the process-holder signal; without it a session idling AT A " +
+      "PROMPT reads as an idle worktree and has its node_modules deleted underneath it",
+  );
+
+  // The gate is worthless if the callers do not hand it the probe: a missing `probe` makes
+  // livenessVerdict answer `live` for every worktree, which fails SAFE but then strips nothing ever
+  // again - a second bug wearing this fix's clothes, and one no output would explain.
+  const calls = code.match(/stripIdleVerdict\(r\.dir[^)]*\)/g) ?? [];
+  assert.ok(
+    calls.length >= 2,
+    `expected both callers to invoke stripIdleVerdict(r.dir, ...); found ${calls.length}`,
+  );
+  for (const call of calls) {
+    assert.ok(
+      call.includes("holderProbe"),
+      `caller ${JSON.stringify(call)} must pass holderProbe; without it the liveness gate cannot ` +
+        "tell an occupied worktree from an empty one, and answers live for both",
+    );
+  }
+
+  const heldAt = body.indexOf("sessionHoldReason(");
+  const mtimeAt = body.indexOf("a session may be mid-edit");
+  assert.notEqual(
+    mtimeAt,
+    -1,
+    "the mtime refusal moved out of stripIdleVerdict; re-anchor this test",
+  );
+  assert.ok(
+    heldAt < mtimeAt,
+    "the holder check must precede the mtime refusal: a live process is direct evidence and an " +
+      "mtime is an inference, so when both would fire the reader must get the specific reason",
+  );
+}
+
 export function runRepoDoctorStripIdleOfferTests() {
   testTheGatesLiveInExactlyOnePlace();
   testTheOfferCannotSumEveryWorktreeAgain();
   testARefusedWorktreeIsNamedNotSwallowed();
   testTheRestoreAdviceOnlyPrintsWhenSomethingWasStripped();
+  testStripIdleAsksWhoIsSittingInTheWorktree();
 }
