@@ -2025,6 +2025,7 @@ import { runWorkflowDispatchGuardTests } from "./workflow-dispatch-guard.test.ts
 import { runNextBuildCpuCapTests } from "./next-build-cpu-cap.test.ts";
 import { runAttributionFreezesPublishedMonthsTests } from "./attribution-freezes-published-months.test.ts";
 import { runTestAccountTests } from "./test-accounts.test.ts";
+import { runNeedsYouTelegramBudgetTests } from "./needs-you-telegram-budget.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -7353,6 +7354,10 @@ await runTest(
 await runTest(
   "TEST ACCOUNTS (owner, 2026-09-27): a production login that lives inside a real employee's portal and never saves as her — every write outside Phoenix CRM is refused in resolveAccessContext before a route runs, and a server action too; inside Phoenix CRM every read and save is a test entry whatever flag the screen sends; a test manager decides test entries only, as the reviewer he mirrors, never the SFE step; his reach is the mirrored person's, never the company; only an employee-portal role can be mirrored; and the nightly behaviour verdict and the hourly allowances never count a test row",
   runTestAccountTests,
+);
+await runTest(
+  "the needs-you daily board survives Telegram's real budget without lying about what it left out: the channel is 900 characters of PLAIN text truncated from the end mid-word with no marker, so the could-not-be-read section is emitted FIRST (the CLI prints it last, which is right for a terminal and fatal here) and the budget is met BY CONSTRUCTION rather than by slicing — 42 items render whole, the message states how many it omitted with a link, and the omitted plus rendered counts add back to what was supplied; a board that is nothing BUT failures still renders them; an empty list says which KIND of empty it is, never claiming every source answered when one did not, and states that caveat even when the caller passed no not-proven section; and needs_you is in telegramKeepsParagraphs and emailKeepsLineBreaks without which every section flattens into one run-on line",
+  runNeedsYouTelegramBudgetTests,
 );
 
 await runTest(
