@@ -12,6 +12,7 @@ import { backfillMissingMarketingAssignmentEmails, runMarketingSlaDaily } from "
 import { runRecruitmentDailyNotifications } from "@/lib/recruitment/notifications";
 import { expireStaleHeldNotifications } from "@/lib/notifications/confidence-gate";
 import { remindHeldNotifications } from "@/lib/notifications/held-notification-alert";
+import { runNeedsYouDailyDigest } from "@/lib/needs-you/deliver/daily";
 import { runTelegramDailyHrDigest } from "@/lib/notifications/telegram-operations";
 import { runWeeklySystemHealthDigest } from "@/lib/notifications/weekly-system-health-digest";
 import { runOutstationGeocodeWarmup } from "@/lib/outstation/geocode-warmup";
@@ -111,6 +112,9 @@ async function runDailyNotifications(request: Request) {
     heldNotificationExpiry,
     milestoneDueNotices,
     inactiveUserDigest,
+    // Position 26, added 2026-09-28. APPENDED, never inserted: positions 1-25 keep their meaning,
+    // which is the only way to add one without re-running the off-by-one above.
+    needsYouDailyDigest,
   ] = await Promise.all([
     runBirthdayNotifications(request).catch(
       onJobFailure("daily-birthday", (message) =>
@@ -245,6 +249,23 @@ async function runDailyNotifications(request: Request) {
         reason: message,
       })),
     ),
+    // The Needs You board, once a morning, in-app and on Telegram — never email (one email to him is
+    // already three deliveries, so that one is weekly). It rides HERE rather than on a schedule of
+    // its own: a dedicated cron would cost a JOB_SCHEDULES declaration, a cronjob-sync row, a request
+    // against the 100-per-DAY REST cap, and the heartbeat-parity contract that pages every Super
+    // Admin every 15 minutes when a declared job stops reporting.
+    //
+    // 🔴 The fallback below reports `skipped: true` with the reason, and NEVER a zero that reads as
+    // "nothing was waiting". A board that under-reports is worse than no board, and that rule has to
+    // survive the job failing, not just the sources failing.
+    runNeedsYouDailyDigest().catch(
+      onJobFailure("needs-you-daily-digest", (message) => ({
+        delivered: 0,
+        notProven: 0,
+        reason: message,
+        skipped: true,
+      })),
+    ),
   ]);
   const [birthdays, contractRenewals, holidayConfirmation] = await Promise.all([
     birthdayResponse instanceof Response ? birthdayResponse.json() : birthdayResponse,
@@ -256,10 +277,11 @@ async function runDailyNotifications(request: Request) {
   // the dead-man's-switch ping (which only proves the route executed) — is the signal to alert on:
   // `event="cron_run_summary" job="notifications/daily" failedCount>0`.
   // Hand-maintained: bump this whenever a sub-job is added above, or the run summary silently
-  // under-reports (25 since the inactive-colleague digest moved here from the 5-minute cron on
-  // 2026-09-26; 24 since the milestones due-notice pump was added 2026-09-23; 23 before that,
-  // since the FWC deductions auto-sync was retired in the C6 cutover on 2026-08-30).
-  const totalJobs = 25;
+  // under-reports (26 since the Needs You daily digest was added 2026-09-28; 25 since the
+  // inactive-colleague digest moved here from the 5-minute cron on 2026-09-26; 24 since the
+  // milestones due-notice pump was added 2026-09-23; 23 before that, since the FWC deductions
+  // auto-sync was retired in the C6 cutover on 2026-08-30).
+  const totalJobs = 26;
   if (failures.length > 0) {
     logError(
       `Daily notification run completed with ${failures.length} of ${totalJobs} sub-job(s) FAILED: ${failures.map((f) => f.job).join(", ")}`,
@@ -306,6 +328,7 @@ async function runDailyNotifications(request: Request) {
     marketingAssignmentBackfill,
     milestoneDueNotices,
     marketingSla,
+    needsYouDailyDigest,
     notificationRetention,
     outstationGeocodeWarmup,
     outstationSla,
