@@ -19,6 +19,7 @@ import { runWeeklySystemHealthDigest } from "@/lib/notifications/weekly-system-h
 import { runOutstationGeocodeWarmup } from "@/lib/outstation/geocode-warmup";
 import { runExcuseSlaDaily } from "@/lib/excuses/service";
 import { runOutstationDeparturePhotoReminders, runOutstationSlaDaily } from "@/lib/outstation/service";
+import { runCrmAccountSetupReminder } from "@/lib/crm/account-setup-reminder";
 import { runResignationSlaDaily } from "@/lib/resignations/service";
 import { runWeeklyPlansDriftCheck } from "@/lib/weekly-planning/drift-check";
 import { runExcuseDriftCheck } from "@/lib/excuses/drift-check";
@@ -118,6 +119,8 @@ async function runDailyNotifications(request: Request) {
     needsYouDailyDigest,
     // Position 27, added 2026-09-28. Appended for the same reason as 26.
     needsYouWeeklyEmail,
+    // Position 28, added 2026-09-28. Appended for the same reason as 26 and 27.
+    crmAccountSetupReminder,
   ] = await Promise.all([
     runBirthdayNotifications(request).catch(
       onJobFailure("daily-birthday", (message) =>
@@ -284,6 +287,25 @@ async function runDailyNotifications(request: Request) {
         skipped: true,
       })),
     ),
+    // A new hire still waiting for an iReports360 account. The FIRST notice goes out when the
+    // employee is added and is never repeated, so until today a task nobody acted on aged in
+    // silence: seven were open on 2026-09-28, the oldest for eight days, and five medical reps
+    // could not use Phoenix CRM at all because of them, with nothing red anywhere.
+    //
+    // It rides this job rather than taking a schedule of its own: a JOB_SCHEDULES declaration whose
+    // cron job does not exist reads to job-heartbeat-assess as a job that has STOPPED, and Telegrams
+    // every Super Admin about it for ever.
+    //
+    // 🔴 A clean queue tells nobody, and neither does a task opened today — see the module header.
+    runCrmAccountSetupReminder().catch(
+      onJobFailure("crm-account-setup-reminder", (message) => ({
+        delivered: 0,
+        overdue: 0,
+        pending: 0,
+        recipients: 0,
+        skippedReason: message,
+      })),
+    ),
   ]);
   const [birthdays, contractRenewals, holidayConfirmation] = await Promise.all([
     birthdayResponse instanceof Response ? birthdayResponse.json() : birthdayResponse,
@@ -295,12 +317,13 @@ async function runDailyNotifications(request: Request) {
   // the dead-man's-switch ping (which only proves the route executed) — is the signal to alert on:
   // `event="cron_run_summary" job="notifications/daily" failedCount>0`.
   // Hand-maintained: bump this whenever a sub-job is added above, or the run summary silently
-  // under-reports (27 since the Needs You weekly email was added 2026-09-28, the same day as the
+  // under-reports (28 since the CRM account-setup reminder was added 2026-09-28; 27 since the
+  // Needs You weekly email, the same day as the
   // daily digest below it; 26 since that daily digest; 25 since the
   // inactive-colleague digest moved here from the 5-minute cron on 2026-09-26; 24 since the
   // milestones due-notice pump was added 2026-09-23; 23 before that, since the FWC deductions
   // auto-sync was retired in the C6 cutover on 2026-08-30).
-  const totalJobs = 27;
+  const totalJobs = 28;
   if (failures.length > 0) {
     logError(
       `Daily notification run completed with ${failures.length} of ${totalJobs} sub-job(s) FAILED: ${failures.map((f) => f.job).join(", ")}`,
@@ -348,6 +371,7 @@ async function runDailyNotifications(request: Request) {
     milestoneDueNotices,
     marketingSla,
     needsYouDailyDigest,
+    crmAccountSetupReminder,
     needsYouWeeklyEmail,
     notificationRetention,
     outstationGeocodeWarmup,

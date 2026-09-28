@@ -1581,6 +1581,7 @@ import { runPhoenixCrmOfflineClockTests } from "./phoenix-crm-offline-clock.test
 import { runPhoenixCrmOfflineWireTests } from "./phoenix-crm-offline-wire.test.ts";
 import { runPhoenixCrmRefusalMessagesTests } from "./phoenix-crm-refusal-messages.test.ts";
 import { runPhoenixCrmOutboxTests } from "./phoenix-crm-outbox.test.ts";
+import { runCrmAccountSetupReminderTests } from "./crm-account-setup-reminder.test.ts";
 import { runPhoenixCrmStuckLoadingTests } from "./phoenix-crm-stuck-loading.test.ts";
 import { runPhoenixCrmPortalSidebarTests } from "./phoenix-crm-portal-sidebar.test.ts";
 import { runPhoenixCrmAmPmWordTests } from "./phoenix-crm-am-pm-words.test.ts";
@@ -5321,6 +5322,11 @@ await runTest(
 await runTest(
   "Phoenix CRM holds a visit on the phone until there is signal, and never throws a rep's work away (A1, the queue — an item leaves only when the server ACCEPTED it or refused it for a reason that can never change, so every network failure and every 5xx is kept and retried, and a refusal code this build has never heard of is KEPT rather than deleted; when the queue is full the NEWEST capture is refused at the door with an instruction he can act on, never yesterday's visit discarded; a stale item stops being retried but stays on disk; the photo path is recorded the moment an upload succeeds so a retry cannot burn a second upload slot and rate-limit him out of his own work; the drain never throws, because it runs where no rep is watching; the elapsed reading comes from the monotonic clock and never Date.now(); and every word he sees says a held visit is SAVED, never failed — no error, no attempt count, no explanation)",
   runPhoenixCrmOutboxTests,
+);
+
+await runTest(
+  "A CRM account task nobody acted on is reminded about (the first notice fires once when the employee is added and is never repeated, so seven tasks aged up to eight days unseen and five medical reps could not use Phoenix CRM at all — no iReports360 account means no contacts to carry over, no customer list, and so no way to plan or record a visit; the reminder rides the daily job rather than declaring a schedule, because a JOB_SCHEDULES entry with no cron job behind it reads as a STOPPED job and Telegrams every Super Admin for ever; a clean queue tells NOBODY and neither does a task opened today; and it never names the email channel, because the first notice already emails and a second daily one is what gets the module filtered)",
+  runCrmAccountSetupReminderTests,
 );
 
 await runTest(
