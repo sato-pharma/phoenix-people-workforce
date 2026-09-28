@@ -44,8 +44,8 @@ export const LOOKUP_TAB = "Find a pharmacy";
 /** Hidden. Holds the dropdown lists and the one live filter both halves of the tab read. */
 export const LISTS_TAB = "Lists";
 
-/** v9: the search box is read as TEXT, and a finder that fails says so instead of "nothing matches". */
-const LAYOUT_VERSION = "v9";
+/** v10: the title, the count and the hint read from the LEFT, where the screen actually is. */
+const LAYOUT_VERSION = "v10";
 
 /** How many matching shops the tab shows at once. The true total is always stated beside it. */
 const VISIBLE_LIMIT = 500;
@@ -379,9 +379,27 @@ export function renderLookupSheet(sheetId: number): RenderedSheet {
         },
       },
     })),
-    repeatCellRequest(sheetId, 0, 1, STYLE.region),
+    // THE THREE BANNER ROWS READ FROM THE LEFT, NOT THE CENTRE, AND THAT IS NOT A STYLE CHOICE.
+    //
+    // Each of them is one cell merged across all seventeen columns of the flat tab. Those columns
+    // total about 4,000 pixels — Address alone is 600 and the three manager columns are 230 each —
+    // so a CENTRED banner renders at roughly x=2,000: a screen and a half to the right of column A.
+    // On any normal window the title, the count and the hint are all off the right-hand edge, and
+    // the three rows show as EMPTY coloured bands.
+    //
+    // Measured on the live workbook 2026-09-28. The owner searched a customer code, the finder
+    // found it and put the row on screen, and the line that says "Showing 1 of 1 matching shops"
+    // was 2,000 pixels to the right where nobody would look — so a working search read as a broken
+    // one, and we spent the evening chasing a finder that was already fixed. Scrolling right showed
+    // all three banners sitting there perfectly.
+    //
+    // LEFT is what makes the count land beside the boxes that produced it. Do not "tidy" these back
+    // to centre: STYLE.region and STYLE.area are CENTRED for the grouped tabs and correctly so —
+    // those are seven columns wide, about 1,900 pixels, and their centre is on screen. The width of
+    // this tab is what makes the same style wrong here.
+    repeatCellRequest(sheetId, 0, 1, { ...STYLE.region, align: "LEFT" }),
     repeatCellRequest(sheetId, 2, 3, STYLE.label),
-    repeatCellRequest(sheetId, STATUS_ROW, STATUS_ROW + 1, STYLE.area),
+    repeatCellRequest(sheetId, STATUS_ROW, STATUS_ROW + 1, { ...STYLE.area, align: "LEFT" }),
     repeatCellRequest(sheetId, HEADER_ROW, HEADER_ROW + 1, STYLE.columnHeader),
     // The five control cells: a pale box with a real border, so they read as things to fill in
     // rather than as more data.
@@ -446,12 +464,14 @@ export function renderLookupSheet(sheetId: number): RenderedSheet {
         top: { color: rgb(148, 163, 184), style: "SOLID", width: 1 },
       },
     },
-    // The hint line: quiet, so it explains itself once and then gets out of the way.
+    // The hint line: quiet, so it explains itself once and then gets out of the way — but LEFT,
+    // for the same reason the two bands above it are. Centred across seventeen columns it starts
+    // about 1,700 pixels out, so all a normal window shows of it is the tail of a sentence.
     {
       repeatCell: {
         cell: {
           userEnteredFormat: {
-            horizontalAlignment: "CENTER",
+            horizontalAlignment: "LEFT",
             textFormat: {
               bold: false,
               fontFamily: FONT,
