@@ -10,6 +10,13 @@
 // Excel cannot explain, so nothing here is duplicated in a renderer: a renderer may decide how to
 // DRAW a metric and never whether it exists, what it is called, or who may see it.
 //
+// 🔴 EVERYTHING THIS SCOPE CAN ANSWER, TICKED BY DEFAULT (owner, 2026-09-28): "show his all data …
+// as he filters, the pack is exported." Until then a fresh pack opened with a curated handful, and
+// ten of these metrics were drawn by nothing at all — a medical rep's pack came out as five sections
+// with every field KPI missing. Now `defaultAt` equals `levels` on every entry: the picker offers the
+// whole catalogue the scope can answer and ticks all of it; a viewer unticks what he does not want.
+// The FILTER still decides what the figures cover, and nothing here can widen a scope.
+//
 // A METRIC IS OFFERED ONLY WHERE IT CAN BE ANSWERED. A medical rep has no districts beneath him
 // and a district manager has no line comparison, so `levels` is not decoration — it is what stops
 // the picker offering a tick that would export an empty slide. `levelsFor` below is the only way
@@ -110,7 +117,7 @@ export const REVIEW_METRICS: readonly ReviewMetric[] = [
     levels: ALL,
   },
   {
-    defaultAt: [],
+    defaultAt: MANAGER,
     group: "sales",
     hint: "The same, with vacant territories left out — what the people in post delivered.",
     id: "achievement-ex-vacant",
@@ -134,7 +141,7 @@ export const REVIEW_METRICS: readonly ReviewMetric[] = [
     levels: ALL,
   },
   {
-    defaultAt: [],
+    defaultAt: MANAGER,
     group: "sales",
     hint: "The same, rolled up to product family.",
     id: "per-family",
@@ -150,7 +157,7 @@ export const REVIEW_METRICS: readonly ReviewMetric[] = [
     levels: ALL,
   },
   {
-    defaultAt: MANAGER,
+    defaultAt: ALL,
     group: "sales",
     hint: "The same span immediately before this one, where the data reaches back that far.",
     id: "vs-previous-window",
@@ -174,7 +181,7 @@ export const REVIEW_METRICS: readonly ReviewMetric[] = [
     label: "Brick spread",
     levels: ALL,
     needsClosingDetail: true,
-    defaultAt: ["district"],
+    defaultAt: ALL,
   },
   {
     group: "origin",
@@ -183,7 +190,7 @@ export const REVIEW_METRICS: readonly ReviewMetric[] = [
     label: "Customer concentration",
     levels: ALL,
     needsClosingDetail: true,
-    defaultAt: ["district"],
+    defaultAt: ALL,
   },
   {
     group: "origin",
@@ -192,7 +199,7 @@ export const REVIEW_METRICS: readonly ReviewMetric[] = [
     label: "Channel split",
     levels: ALL,
     needsClosingDetail: true,
-    defaultAt: ["district"],
+    defaultAt: ALL,
   },
 
   // ── Field activity ──────────────────────────────────────────────────────────
@@ -213,12 +220,12 @@ export const REVIEW_METRICS: readonly ReviewMetric[] = [
     levels: ALL,
   },
   {
-    defaultAt: ALL,
+    defaultAt: MANAGER,
     group: "activity",
     hint: "What the list is made of: doctors, against pharmacies, hospitals and accounts.",
     id: "specialty-mix",
     label: "Specialty mix of the list",
-    levels: ALL,
+    levels: MANAGER,
   },
   {
     defaultAt: ALL,
@@ -229,64 +236,64 @@ export const REVIEW_METRICS: readonly ReviewMetric[] = [
     levels: ALL,
   },
   {
-    defaultAt: [],
+    defaultAt: ALL,
     group: "activity",
     hint: "Rides delivered and received.",
     id: "double-visits",
     label: "Double visits",
-    levels: MANAGER,
+    levels: ALL,
   },
 
   // ── Cost ────────────────────────────────────────────────────────────────────
   {
-    defaultAt: MANAGER,
+    defaultAt: ALL,
     group: "cost",
     hint: "Committed marketing requests.",
     id: "marketing-committed",
     label: "Marketing",
-    levels: MANAGER,
+    levels: ALL,
   },
   {
-    defaultAt: MANAGER,
+    defaultAt: ALL,
     group: "cost",
     hint: "Outstation claimed, and the part HR has signed off.",
     id: "outstation-claimed",
     label: "Outstation expenses",
-    levels: MANAGER,
+    levels: ALL,
   },
   {
-    defaultAt: MANAGER,
+    defaultAt: ALL,
     group: "cost",
     hint: "Marketing plus outstation per point of achievement. Lower is better.",
     id: "spend-per-point",
     label: "Spend per point",
-    levels: MANAGER,
+    levels: ALL,
   },
   {
-    defaultAt: MANAGER,
+    defaultAt: ALL,
     group: "cost",
     hint: "What each area costs, read against whether its own sales are growing or falling.",
     id: "marketing-vs-trend",
     label: "Marketing against the trend",
-    levels: MANAGER,
+    levels: ALL,
   },
 
   // ── People ──────────────────────────────────────────────────────────────────
   {
-    defaultAt: ["line", "district"],
+    defaultAt: ALL,
     group: "people",
     hint: "Each rep's activity beside the achievement of the area he stands in.",
     id: "rep-rows",
     label: "Rep by rep",
-    levels: MANAGER,
+    levels: ALL,
   },
   {
-    defaultAt: [],
+    defaultAt: MANAGER,
     group: "people",
     hint: "Activity by job function — reps, district managers, product and training managers.",
     id: "role-activity",
     label: "By role",
-    levels: ["company", "line"],
+    levels: MANAGER,
   },
 ];
 

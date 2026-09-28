@@ -712,6 +712,7 @@ import { runBusinessReviewScopeFilterTests } from "./business-review-scope-filte
 import { runBusinessReviewPackModelTests } from "./business-review-pack-model.test.ts";
 import { runBusinessReviewPackPptxTests } from "./business-review-pack-pptx.test.ts";
 import { runBusinessReviewPackLeaverMarkTests } from "./business-review-pack-leaver-mark.test.ts";
+import { runBusinessReviewPackFullDataTests } from "./business-review-pack-full-data.test.ts";
 import { runBusinessReviewPackFilenameTests } from "./business-review-pack-filename.test.ts";
 import { runMonthlySalesRunTests } from "./monthly-sales-run.test.ts";
 import { runSosHeaderDetectionTests } from "./sos-header-detection.test.ts";
@@ -4606,6 +4607,11 @@ await runTest(
 await runTest(
   "business review pack leaver mark (owner, 2026-09-28 — the (left …) mark is RED WHEREVER IT APPEARS, not only in a table cell: the first cut coloured the cell alone and 35 of the 107 marks in the eleven packs shipped that day printed in plain ink, every one of them on a chart's own label column or in the cover's contents list; the sweep takes the emitted PDF HTML and every deck slide, finds each mark and proves it sits inside a red run, and proves the red never swallows the person's name)",
   runBusinessReviewPackLeaverMarkTests,
+);
+
+await runTest(
+  "business review pack full data (owner, 2026-09-28 — \"show his all data … as he filters, the pack is exported\": the picker offered 22 metrics and the model drew 9, so ten were ticked by default and silently exported NOTHING and a medical rep's pack came out as five sections with every field KPI missing; pins that every catalogue metric is drawn by some section, that a rep's pack carries his KPIs, that sumSlices totals by exactly totalAreas' rule, that AM · PM · Pharmacies stay three columns, that direction reads the FIGURE months not the requested window's trailing zero, that the comparison names its basis, that unions are never totalled, and that the route withholds the district row — his manager's whole district's list and money — from a rep)",
+  runBusinessReviewPackFullDataTests,
 );
 
 await runTest(
