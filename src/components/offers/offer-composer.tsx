@@ -25,6 +25,7 @@ import {
   todayInCairo,
   toLetterDate,
 } from "@/lib/offers/dates";
+import { OFFER_COPY_MAX, planOfferCopies } from "@/lib/offers/copy-recipients";
 import { offerDraftWarnings, offerWarningsFor, type OfferDraftWarning } from "@/lib/offers/draft-checks";
 import { deriveOfferPay } from "@/lib/offers/pay";
 import {
@@ -52,6 +53,13 @@ import type { OfferFields, OfferJobTitle, OfferRecord, OfferStatus, OfferTemplat
  * this component, one line before the values leave it.
  */
 type Draft = Omit<OfferFields, "costOfLiving" | "totalMonthly"> & {
+  /**
+   * Who else gets a copy, as typed — several addresses separated by commas. Held here and sent with
+   * the send request, never saved on the offer: they are not part of the letter, and the audit row
+   * written at send time is where who was copied is recorded.
+   */
+  bcc: string;
+  cc: string;
   costOfLiving: string;
   templateId: string;
   totalMonthly: string;
@@ -64,8 +72,10 @@ function blankDraft(templates: OfferTemplate[]): Draft {
   const today = todayInCairo();
 
   return {
+    bcc: "",
     candidateEmail: "",
     candidateName: "",
+    cc: "",
     contractTerm: "",
     costOfLiving: "",
     dateOfIssue: today,
@@ -184,6 +194,13 @@ export function OfferComposer({
         validUntil: draft.validUntil,
       }),
     [draft.candidateEmail, draft.dateOfIssue, draft.startDate, draft.validUntil, offers, savedId],
+  );
+
+  // The same reader the server runs before sending, so what this screen says will be copied is what
+  // the provider is handed.
+  const copies = useMemo(
+    () => planOfferCopies({ bcc: draft.bcc, candidateEmail: draft.candidateEmail, cc: draft.cc }),
+    [draft.bcc, draft.candidateEmail, draft.cc],
   );
 
   const template = templates.find((t) => t.id === draft.templateId) ?? templates[0] ?? null;
@@ -372,13 +389,22 @@ export function OfferComposer({
       onReport("An email address is required before the offer can be sent.", "error");
       return;
     }
+    // Refused here before anything is saved or sent, in the same words the server would use: one
+    // bad address stops the whole send rather than quietly going out without that person.
+    if (copies.problems.length > 0) {
+      onReport(copies.problems.join(" "), "error");
+      return;
+    }
     const id = savedId ?? (await saveDraft());
     if (!id) return;
 
     setBusy("send");
     try {
-      const payload = (await call(`/api/offers/${id}/send`, "POST")) as {
+      const payload = (await call(`/api/offers/${id}/send`, "POST", { bcc: copies.bcc, cc: copies.cc })) as {
         attachmentWarning?: string | null;
+        bcc?: string[];
+        cc?: string[];
+        copyNotes?: string[];
         from?: string;
         offer?: OfferRecord;
         recipient?: string;
@@ -405,9 +431,16 @@ export function OfferComposer({
       // reference from the offer just sent would suppress generation for every offer after it.
       markReferenceTyped(false);
       setDraft(blankDraft(templates));
+      // Read back from what the server actually handed the provider, not from the boxes — so the
+      // message names who really received a copy.
+      const sentCc = payload.cc ?? [];
+      const sentBcc = payload.bcc ?? [];
       onReport(
         `Offer sent to ${payload.recipient} from ${payload.from}.` +
-          (payload.attachmentWarning ? ` ${payload.attachmentWarning}` : " The signed-ready PDF is attached."),
+          (sentCc.length > 0 ? ` CC: ${sentCc.join(", ")}.` : "") +
+          (sentBcc.length > 0 ? ` BCC: ${sentBcc.join(", ")}.` : "") +
+          (payload.attachmentWarning ? ` ${payload.attachmentWarning}` : " The signed-ready PDF is attached.") +
+          ((payload.copyNotes ?? []).length > 0 ? ` ${(payload.copyNotes ?? []).join(" ")}` : ""),
         "success",
       );
     } catch (error) {
@@ -453,6 +486,48 @@ export function OfferComposer({
       {noteList(offerWarningsFor(warnings, key as OfferDraftWarning["field"]))}
     </div>
   );
+
+  /**
+   * A copy line — CC or BCC. Several addresses, separated by commas.
+   *
+   * Under the box, the addresses exactly as they will be sent: lower-cased, de-duplicated, the
+   * candidate's own address and CC repeats taken out. Same idea as the date fields' "Prints on the
+   * letter as" line — nobody has to trust that the parsing is right, they can read it.
+   */
+  const copyField = (key: "bcc" | "cc", label: string, placeholder: string, who: string, idle: string) => {
+    const list = copies[key];
+    const bad = copies.invalid[key];
+    // The notes that concern both lines together — the cap, the candidate's address, a CC repeated on
+    // BCC — are shown once, under BCC, the second of the pair.
+    const shared = key === "bcc" ? [...(copies.limitProblem ? [copies.limitProblem] : []), ...copies.notes] : [];
+    return (
+      <div key={key}>
+        <label className={offerLabelClassName} htmlFor={`offer-${key}`}>{label}</label>
+        <input
+          autoComplete="off"
+          className={offerInputClassName}
+          disabled={!canManage}
+          id={`offer-${key}`}
+          onChange={(event) => setDraft((current) => ({ ...current, [key]: event.target.value }))}
+          placeholder={placeholder}
+          spellCheck={false}
+          value={draft[key]}
+        />
+        {/* `[overflow-wrap:anywhere]`: an address has no space to break at, and a long one must wrap
+            rather than push the form sideways at 375px. Never an ellipsis — the whole point of this
+            line is reading every address in full. */}
+        <p className={cn(offerHintClassName, "[overflow-wrap:anywhere]")}>
+          {list.length > 0 ? `${who} ${list.join(", ")}` : idle}
+        </p>
+        {noteList([
+          ...(bad.length > 0
+            ? [`Not ${bad.length === 1 ? "an email address" : "email addresses"}: ${bad.join(", ")}. The offer cannot be sent until ${bad.length === 1 ? "it is" : "they are"} fixed or removed.`]
+            : []),
+          ...shared,
+        ])}
+      </div>
+    );
+  };
 
   /** A one-click date shortcut. Sets the field and nothing else. */
   const chip = (key: "dateOfIssue" | "startDate" | "validUntil", label: string, value: string) => (
@@ -533,6 +608,20 @@ export function OfferComposer({
               : "Blank uses the candidate name.",
           )}
           {text("candidateEmail", "Email address", "name@example.com", "The offer and its PDF go here.")}
+          {copyField(
+            "cc",
+            "CC",
+            "manager@satopharma.com, hr@satopharma.com",
+            "Copied openly to",
+            "Optional. The candidate sees who is copied here. Separate several addresses with commas.",
+          )}
+          {copyField(
+            "bcc",
+            "BCC",
+            "someone@satopharma.com",
+            "Copied secretly to",
+            `Optional. Nobody else sees who is copied here. Up to ${OFFER_COPY_MAX} copies across CC and BCC.`,
+          )}
 
           <div>
             <label className={offerLabelClassName} htmlFor="offer-title">Job title</label>

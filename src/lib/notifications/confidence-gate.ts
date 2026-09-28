@@ -372,6 +372,14 @@ export const CEILING_OVERRIDES: Record<string, CeilingOverride> = {
   // Stays first_run-only: its audience design has not changed, so its own baseline is still the
   // truthful description of it, and this entry must not quietly become a permanent floor.
   "sales/closing_published": { appliesTo: "first_run", ceiling: 20 },
+  // A job offer went to exactly ONE person — the candidate — until the owner asked for CC and BCC on
+  // 2026-09-28. Its baseline therefore reads ~1, ceiling 3, and would hold every offer copied to three
+  // or more people: an offer letter sitting in a review queue while a candidate waits. `always`, for
+  // the same reason as the market-awareness entry — the audience DESIGN changed, so the old baseline
+  // describes the one-recipient shape, not an incident. 11 is the candidate plus OFFER_COPY_MAX (10)
+  // copies; the send refuses more than that itself, so this ceiling can never be the thing that stops
+  // one. Pinned to OFFER_COPY_MAX by tests/offer-copy-recipients.test.ts.
+  "offers/offer_letter": { appliesTo: "always", ceiling: 11 },
 };
 
 /**

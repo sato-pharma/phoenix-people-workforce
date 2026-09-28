@@ -3,6 +3,7 @@ import { isOfferPdfAvailable, offerPdfFilename, renderOfferPdf } from "@/lib/off
 import { renderOfferEmail } from "@/lib/offers/render-email";
 import { resolveOfferSender } from "@/lib/offers/identity";
 import { SATO_LOGO_CID_SRC, satoLogoAttachment, satoLogoUrl } from "@/lib/offers/brand";
+import { planOfferCopies } from "@/lib/offers/copy-recipients";
 import { systemDeployment } from "@/config/system-settings";
 import { sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
 import type { SendPhoenixEmailAttachment } from "@/lib/email/send-phoenix-email";
@@ -27,6 +28,12 @@ export type OfferSendOutcome = {
   attachmentIncluded: boolean;
   /** Present when the PDF could not be produced — HR is shown this, never a silent omission. */
   attachmentWarning: string | null;
+  /** Who was copied secretly, exactly as handed to the provider. */
+  bcc: string[];
+  /** Who was copied openly, exactly as handed to the provider. */
+  cc: string[];
+  /** Redundant copies left off (the candidate's own address, a CC repeated on BCC) — shown to HR. */
+  copyNotes: string[];
   from: string;
   offer: OfferRecord;
   recipient: string;
@@ -75,7 +82,7 @@ export function offerIdempotencyKey(offerId: string): string {
 
 export async function sendOfferEmail(
   offerId: string,
-  options: { logoUrl?: string; sentBy?: string | null } = {},
+  options: { bcc?: unknown; cc?: unknown; logoUrl?: string; sentBy?: string | null } = {},
 ): Promise<OfferSendOutcome> {
   const offer = await getOffer(offerId);
 
@@ -84,6 +91,13 @@ export async function sendOfferEmail(
   }
   if (!offer.candidateEmail.trim()) {
     throw new Error("This offer has no candidate email address, so it cannot be sent.");
+  }
+
+  // Judged again here, whatever the screen showed: this is the last point before mail leaves, and
+  // a bad address refuses the WHOLE send rather than going out to everyone else without it.
+  const copies = planOfferCopies({ bcc: options.bcc, candidateEmail: offer.candidateEmail, cc: options.cc });
+  if (copies.problems.length > 0) {
+    throw new Error(`The offer cannot be sent. ${copies.problems.join(" ")}`);
   }
 
   const template: OfferTemplate = offer.templateId
@@ -163,10 +177,17 @@ export async function sendOfferEmail(
 
   const result = await sendPhoenixEmail({
     attachments: attachments.length > 0 ? attachments : undefined,
+    bcc: copies.bcc.length > 0 ? copies.bcc : undefined,
+    cc: copies.cc.length > 0 ? copies.cc : undefined,
     // A candidate has no employee record, so their address is unknown to the Recipient Assurance
     // Guard by definition. Without this declaration every offer would be blocked as an
     // unrecognised recipient.
-    externalRecipients: [offer.candidateEmail],
+    //
+    // The copies are declared too. HR typed each one for this send a moment ago, and the owner
+    // ruled that an offer may be copied to anyone without a reason (2026-09-28) — so an outside
+    // address on CC is intended, not a typo the guard should catch. Its shape was already checked
+    // by `planOfferCopies` above.
+    externalRecipients: [offer.candidateEmail, ...copies.cc, ...copies.bcc],
     from: sender.from,
     html,
     idempotencyKey: offerIdempotencyKey(offer.id),
@@ -209,6 +230,9 @@ export async function sendOfferEmail(
     // silently reassuring "attachment included".
     attachmentIncluded: Boolean(pdfAttachment),
     attachmentWarning,
+    bcc: copies.bcc,
+    cc: copies.cc,
+    copyNotes: copies.notes,
     from: sender.from,
     offer: stamped,
     recipient: offer.candidateEmail,

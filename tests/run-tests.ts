@@ -1077,6 +1077,7 @@ import { runOfferPdfRuntimeTests } from "./offer-pdf-runtime.test.ts";
 import { runOfferLetterheadInlineMarkTests } from "./offer-letterhead-inline-mark.test.ts";
 import { runOfferDatesTests } from "./offer-dates.test.ts";
 import { runOfferDraftCheckTests } from "./offer-draft-checks.test.ts";
+import { runOfferCopyRecipientsTests } from "./offer-copy-recipients.test.ts";
 import { runOfferOutstationClauseTests } from "./offer-outstation-clause.test.ts";
 import { runOfferPlaceholderTests } from "./offer-placeholders.test.ts";
 import { runOfferRichTextTests } from "./offer-rich-text.test.ts";
@@ -4159,6 +4160,12 @@ await runTest(
     + "produces exactly one note rather than several about the same pair, and a real address is "
     + "never rejected — being wrong that way costs a candidate their offer)",
   runOfferDraftCheckTests,
+);
+await runTest(
+  "offer CC and BCC (several addresses on each line, any address with no reason by owner ruling, a bad "
+    + "entry stops the whole send and names its box, redundant copies are left off and said, and the "
+    + "confidence gate's ceiling covers every copy the send allows so a copied offer is never held)",
+  runOfferCopyRecipientsTests,
 );
 await runTest("sales null-vs-zero dashboard", runSalesNullVsZeroTests);
 await runTest("sos analytics (MoM movers + pareto)", runSosAnalyticsTests);
