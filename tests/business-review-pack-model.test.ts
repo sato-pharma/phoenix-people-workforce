@@ -370,7 +370,7 @@ export function runBusinessReviewPackModelTests() {
     const pack = buildSalesReviewPack(input({ people: long(24), selection: ["rep-rows"] }));
     const html = packDocumentHtml(pack);
     const perPage = [...html.matchAll(/<tbody>([\s\S]*?)<\/tbody>/g)].map(
-      (m) => (m[1].match(/<tr>/g) ?? []).length,
+      (m) => (m[1].match(/<tr[ >]/g) ?? []).length,
     );
     assert.ok(perPage.length >= 3, `24 wrapping rows need at least 3 pages, got ${perPage.length}`);
     assert.ok(
@@ -412,6 +412,41 @@ export function runBusinessReviewPackModelTests() {
     assert.ok(
       longest * labelFs * 0.6 <= labelEnd + 1,
       `the longest name needs ${(longest * labelFs * 0.6).toFixed(0)} units at ${labelFs}pt but the column is ${labelEnd} — it would be clipped`,
+    );
+  }
+
+  // ------------------------------------------------------------------ 16. the TABLE estimate uses the same real glyph
+  // 🔴 The chart labels were corrected to 0.6 em but the row-height estimate was left at 0.5, so a
+  // 31-character district-manager name was predicted to fit a 34.8-character column, wrapped anyway,
+  // and the Cairo region pack's third page finished 3.8px past its footer. Both estimates read the
+  // same measured advance now, or a multi-line pack silently overruns again.
+  {
+    const src = stripComments(readFileSync("src/lib/business-review/pack/pdf.ts", "utf8"));
+    assert.match(
+      src,
+      /const CHAR_PX = 6\.88/,
+      "pdf.ts: a table cell's glyph estimate must cover the worst advance (0.6 em), like the chart's.",
+    );
+
+    // The real shape that overran: seven columns, a line column, and full four-part manager names.
+    const wide = Array.from({ length: 26 }, (_, i) =>
+      ({
+        allProducts: { ach: 90 - i, graded: 500, sales: 500, target: 1000 },
+        area: `Cairo East ${i}`,
+        areaCode: `CA${i}`,
+        customersTotal: 12,
+        dm: "Mina Farouk Nawar Rizkallah Ibra",
+        lineLabel: "Anti-Infective",
+      }) as unknown as PackInput["areas"][number],
+    );
+    const html = packDocumentHtml(buildSalesReviewPack(input({ areas: wide, selection: ["achievement"] })));
+    assert.ok(html.includes("Anti-Infective"), "the seven-column layout is the one under test");
+    const perPage = [...html.matchAll(/<tbody>([\s\S]*?)<\/tbody>/g)].map((m) => (m[1].match(/<tr[ >]/g) ?? []).length);
+    assert.ok(
+      perPage.every((n) => n <= 10),
+      `a page of wrapping seven-column rows holds at most ten — got ${perPage.join(",")}. ` +
+        "At 0.5 em these 32-character manager names are predicted to fit one line and twelve are packed " +
+        "onto a page; at the real 0.6 em they wrap and only eight do.",
     );
   }
 }
