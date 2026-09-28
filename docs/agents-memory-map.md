@@ -187,6 +187,7 @@ status, give it its own line.
 - **Ask business-fact questions IN CHAT as multiple choice, never in prose** — `ask-business-questions-as-in-chat-multiple-choice` **(inline — load-bearing)**
 - **A typed payroll Addition has NO ceiling — never re-propose one.** — `typed-payroll-additions-have-no-ceiling`
 - **A PUBLISHED AND ANNOUNCED MONTH IS NEVER CORRECTED, however wrong it is.** — `never-fix-a-published-and-announced-month` **(inline — load-bearing)**
+- **A price can differ by PERIOD — Saginko is 111.15 through 2026-09 and 170.52 from 2026-10, and the product master stays 111.15** — `saginko-repriced-retail-from-october-direct-from-today` **(inline — load-bearing)**
 - **THE FITS-THE-SCREEN GOLDEN RULE — never a horizontal scroll, always mobile AND…** — `never-horizontal-scroll-always-mobile-and-desktop-friendly` **(inline — load-bearing)**
 - **THE DOCUMENT IDENTITY — every company document wears SATO-DIS-2026-01 v1.0** — `the-house-document-identity-standard` **(inline — load-bearing)**
 - **A PHARMACY IS NOT A CONTACT — a CRM contact count is PM + AM only.** — `a-pharmacy-is-not-a-contact` **(inline — load-bearing)**
