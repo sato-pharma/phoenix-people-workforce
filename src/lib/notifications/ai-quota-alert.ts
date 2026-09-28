@@ -31,14 +31,30 @@ function cairoDayKey(): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo" }).format(new Date());
 }
 
-/** Pure message builder — no IO, so it is unit-testable without a database. */
-export function buildAiQuotaExhaustedMessage(): string {
+/**
+ * Pure message builder — no IO, so it is unit-testable without a database.
+ *
+ * 🔴 IT TAKES THE RECORD BECAUSE NOT EVERY CALLER IS OPENAI. `groq_transcription` shares this alarm
+ * deliberately — the CRM's spoken visit comment falls back to Groq's Whisper where the browser has
+ * no speech engine, on the owner's cost ruling of 2026-09-25, and a dead key there fails the same
+ * silent way. But this message hardcoded "OpenAI" and listed OpenAI's features, so a GROQ outage
+ * sent him to the wrong billing page and named six features that were working fine. During an
+ * outage, being pointed at the wrong account costs more than the outage.
+ */
+export function buildAiQuotaExhaustedMessage(record: AiCallRecord): string {
+  const groq = record.component === "groq_transcription";
+  const provider = groq ? "Groq" : "OpenAI";
+  const affected = groq
+    ? "Speech to text for CRM spoken visit comments is failing until it is topped up — on a browser with no speech engine of its own, that is the only way a rep can dictate one."
+    : "Every OpenAI feature is failing until it is topped up: CV extraction, the Sales normalizer's AI suggest, CRM campaign notes, the coach, expense notes, email assist and the What Needs You summary.";
   return [
-    "💳 OpenAI says the AI account is out of credit.",
+    `💳 ${provider} says the AI account is out of credit.`,
     "",
-    "Every AI feature is failing until it is topped up: CV extraction, the Sales normalizer's AI suggest,",
-    "CRM campaign notes, the coach, expense notes and email assist. Waiting will not fix it — the account",
-    "has no auto-recharge. Add credit on the OpenAI billing page and the features resume on their own.",
+    affected,
+    "",
+    // "No auto-recharge" is the owner's standing rule, never to be turned on — so "waiting will not
+    // fix it" is permanently true rather than a description of a setting someone might change.
+    `Waiting will not fix it — the account has no auto-recharge. Add credit on the ${provider} billing page and the features resume on their own.`,
   ].join("\n");
 }
 
@@ -68,7 +84,7 @@ export async function notifyAiQuotaExhausted(record: AiCallRecord): Promise<void
       return;
     }
 
-    const message = buildAiQuotaExhaustedMessage();
+    const message = buildAiQuotaExhaustedMessage(record);
     await Promise.all(
       recipients.map((recipient) =>
         createSystemNotification({

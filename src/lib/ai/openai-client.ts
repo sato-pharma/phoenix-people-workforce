@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 
-import { recordAiCall } from "@/lib/observability/ai-metrics";
+import { recordAiCall, type AiCallComponent } from "@/lib/observability/ai-metrics";
 import { logError } from "@/lib/observability/log";
 
 type OpenAiEnv = Record<string, string | undefined>;
@@ -172,6 +172,15 @@ export async function createOpenAiResponseText(params: {
   maxOutputTokens?: number;
   model?: string;
   purpose: string;
+  /**
+   * Which component this call belongs to on the AI telemetry board and the out-of-credit alarm.
+   *
+   * Defaults to `"openai_client"`, which every existing caller keeps. A caller that is its own
+   * feature — the Needs You written summary, say — passes its own so a cost or failure question
+   * can be answered per feature rather than per shared helper, and so the out-of-credit alert can
+   * name the right account.
+   */
+  component?: AiCallComponent;
   reasoning?: ResponseCreateInput["reasoning"];
   text: NonNullable<ResponseCreateInput["text"]>;
   /**
@@ -185,6 +194,7 @@ export async function createOpenAiResponseText(params: {
   timeoutMs?: number;
 }) {
   const model = params.model?.trim() || resolveOpenAiEmailModel();
+  const component = params.component ?? "openai_client";
   const startedAt = Date.now();
 
   try {
@@ -200,7 +210,7 @@ export async function createOpenAiResponseText(params: {
     const { data, request_id: requestId } = await openAiClient(undefined, params.timeoutMs).responses.create(request).withResponse();
 
     recordAiCall({
-      component: "openai_client",
+      component,
       inputTokens: data.usage?.input_tokens,
       latencyMs: Date.now() - startedAt,
       model,
@@ -217,7 +227,7 @@ export async function createOpenAiResponseText(params: {
   } catch (error) {
     const normalized = normalizeOpenAiError(error, params.purpose);
     recordAiCall({
-      component: "openai_client",
+      component,
       errorCode: normalized.code,
       latencyMs: Date.now() - startedAt,
       model,
