@@ -251,7 +251,19 @@ function appendAllowanceGuardNote(
   const skipped = (allowanceBreakdown?.rows ?? []).filter((row) => row.skipped && row.skipReason);
   if (skipped.length === 0) return notes;
 
-  const line = `Allowance guard: ${skipped.map((row) => row.skipReason).join(" ")}`;
+  // One sentence per DISTINCT reason, with the number of days it covered. The breakdown has a row
+  // per trip day, so a five-day Cairo trip used to write "No allowance: a trip to Cairo from a
+  // regional base does not earn an outstation per-diem allowance." five times in a row — measured
+  // on OUTSTATION-148, 2026-09-28. A reason that names its own date stays distinct by construction.
+  const counts = new Map<string, number>();
+  for (const row of skipped) {
+    const reason = String(row.skipReason).trim();
+    counts.set(reason, (counts.get(reason) ?? 0) + 1);
+  }
+  const sentences = [...counts].map(([reason, days]) =>
+    days > 1 ? `${reason.replace(/\.$/, "")} (${days} days).` : reason,
+  );
+  const line = `Allowance guard: ${sentences.join(" ")}`;
   return [notes, line].filter(Boolean).join("\n");
 }
 

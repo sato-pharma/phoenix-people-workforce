@@ -6,6 +6,7 @@ import {
   Camera,
   CheckCircle2,
   Clock,
+  Download,
   Edit2,
   Eye,
   ExternalLink,
@@ -24,6 +25,7 @@ import { startTransition, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { AdminManagerExpenseModal } from "@/components/outstation/admin-manager-expense-modal";
+import { OutstationDescription } from "@/components/outstation/outstation-description";
 
 import { AdminCallout, AdminInsightChip, AdminPageHero, AdminTableShell } from "@/components/admin/admin-design-system";
 import {
@@ -43,6 +45,7 @@ import { Input } from "@/components/ui/input";
 import type { ExportColumn, ExportRow } from "@/lib/export/table-workbook";
 import { formatDateTimeValue, formatDateValue } from "@/lib/i18n/format";
 import { resolveCaptureTimeliness } from "@/lib/outstation/capture-timeliness";
+import { viewEligibilityReason } from "@/lib/outstation/eligibility-reason";
 import { approverTripPhotos } from "@/lib/outstation/trip-evidence-photos";
 import type { OutstationExpenseRequest } from "@/lib/outstation/types";
 import { formatEmployeeDisplayName } from "@/lib/utils";
@@ -155,43 +158,6 @@ const stickyTripHeaderClassName = `${adminTableHeaderClassName} sticky left-[260
 const stickyEmployeeCellClassName = "sticky left-0 z-20 w-[260px] min-w-[260px] px-4 py-3 shadow-[10px_0_18px_rgba(15,23,42,0.05)]";
 const stickyTripCellClassName = "sticky left-[260px] z-20 w-[220px] min-w-[220px] px-4 py-3 shadow-[10px_0_18px_rgba(15,23,42,0.04)]";
 
-/**
- * Notes render per LINE, not as one block.
- *
- * Block-level `dir="auto"` is this repo's convention for single-language free text, and it is
- * WRONG here for a structural reason rather than an incidental one: `appendCarEvidenceNote` and
- * `appendAllowanceGuardNote` (`src/lib/outstation/service.ts`) both return
- * `[notes, line].filter(Boolean).join("\n")`, so a stored note is the rep's OWN free text —
- * Arabic on a real production row — followed by machine-written ENGLISH audit lines
- * ("Arrival photo evidence: source=… gps=… request_id=…").
- *
- * `dir="auto"` reads only the FIRST strong character of the element, so one Arabic opening line
- * would resolve the whole block RTL and render every English evidence line after it backwards.
- * A line is the unit these notes are actually composed in, so it is the unit direction belongs to.
- * Same fix and same reason as `MessageBody` in
- * `src/components/recruitment/whatsapp-replies-view.tsx`.
- */
-function NotesBody({ value }: { value: string | null | undefined }) {
-  if (!value) {
-    return <p className="mt-1 text-sm font-semibold text-phx-ink">No notes</p>;
-  }
-  return (
-    <div className="mt-1 text-sm font-semibold text-phx-ink">
-      {value.split("\n").map((line, index) => (
-        <span
-          className="block whitespace-pre-wrap break-words"
-          dir="auto"
-          // Position IS identity here: a stored note is never reordered, and two identical lines
-          // within one note are genuinely interchangeable.
-          key={index}
-        >
-          {/* An empty line still has to occupy one, or the gap the writer left disappears. */}
-          {line === "" ? " " : line}
-        </span>
-      ))}
-    </div>
-  );
-}
 
 function OutstationAdminShell({ children }: { children: ReactNode }) {
   return (
@@ -352,7 +318,7 @@ function RequestDetailsModal({
 
   return createPortal(
     <div className="fixed inset-0 z-[200] flex items-start justify-center overflow-y-auto bg-[#020617]/65 p-3 backdrop-blur-sm sm:p-6">
-      <div className="w-full max-w-4xl overflow-hidden rounded-lg border border-phx-line bg-white shadow-[0_28px_90px_rgba(15,23,42,0.3)]">
+      <div className="w-full max-w-4xl overflow-hidden rounded-none border border-phx-line bg-white shadow-[0_28px_90px_rgba(15,23,42,0.3)]">
         {/* Owner request (2026-08-04): a held request must read EXACTLY as the Expense Approval
             detail. This is that screen's header — dark bar, eyebrow, name, HR ID / id, status
             badge — and the fact grid below it is its fact grid. The shared pieces come from
@@ -367,12 +333,22 @@ function RequestDetailsModal({
               {request.employeeHrId || "HR ID not mapped"} · OUTSTATION-{request.id} · {request.employeeRole}
             </p>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <span className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ring-1 ${requestStatusTone(request.status)}`}>
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            <span className={`inline-flex rounded-none px-3 py-1 text-xs font-bold ring-1 ${requestStatusTone(request.status)}`}>
               {formatStatus(request.status)}
             </span>
+            {/* A plain GET link, never a button with a handler: the PDF is a second RENDERING of this
+                same review, read by the same gate, and downloading it changes nothing. */}
+            <a
+              className="inline-flex items-center gap-1.5 rounded-none border border-orange-400/60 bg-orange-500/10 px-3 py-2 text-xs font-black text-orange-200 hover:bg-orange-500/20"
+              download
+              href={`/api/admin/outstation/${request.id}/pdf`}
+            >
+              <Download aria-hidden className="h-3.5 w-3.5" />
+              Download PDF
+            </a>
             <button
-              className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-2 text-xs font-black text-slate-200 hover:bg-slate-700"
+              className="rounded-none border border-slate-700 bg-slate-800 px-4 py-2 text-xs font-black text-slate-200 hover:bg-slate-700"
               onClick={onClose}
               type="button"
             >
@@ -619,29 +595,54 @@ function RequestDetailsModal({
           </div>
 
           <Card className={`${panelClassName} p-5`}>
-            <div className="grid gap-4 lg:grid-cols-3">
-              <div className="flex items-start gap-3">
-                <CalendarDays className="mt-1 h-5 w-5 text-phx-accent-hover" />
-                <div>
-                  <p className="text-xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">Eligibility</p>
-                  <p className="mt-1 text-sm font-semibold text-phx-ink">{request.eligibilityReason}</p>
+            {(() => {
+              // The stored reason as a sentence — never the raw Google JSON rows written before
+              // 2026-09-28 carry — and, separately, what has been measured since. Never a new verdict.
+              const eligibility = viewEligibilityReason({
+                distanceKm: request.distanceFromResidenceKm,
+                minimumKm: request.minimumRequiredDistanceKm,
+                reason: request.eligibilityReason,
+              });
+              return (
+                <div className="grid gap-5 md:grid-cols-2">
+                  <div className="flex min-w-0 items-start gap-3">
+                    <CalendarDays aria-hidden className="mt-1 h-5 w-5 shrink-0 text-phx-accent-hover" />
+                    <div className="min-w-0">
+                      <p className="text-xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">Eligibility</p>
+                      <p className="mt-1 break-words text-sm font-semibold text-phx-ink">
+                        {formatStatus(request.eligibilityStatus)}
+                        {eligibility.recorded ? ` — ${eligibility.recorded}` : ""}
+                      </p>
+                      {eligibility.since ? (
+                        <p className="mt-2 break-words border-l-2 border-sky-400 bg-sky-50 px-2.5 py-1.5 text-xs font-semibold leading-snug text-sky-900">
+                          {eligibility.since}
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="flex min-w-0 items-start gap-3">
+                    <Clock aria-hidden className="mt-1 h-5 w-5 shrink-0 text-phx-accent-hover" />
+                    <div className="min-w-0">
+                      <p className="text-xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">Approval reason</p>
+                      <p className="mt-1 break-words text-sm font-semibold text-phx-ink">{request.approvalReason || "—"}</p>
+                    </div>
+                  </div>
+                  {/* Full width: the notes now carry photo cards, not a line of machine text. */}
+                  <div className="flex min-w-0 items-start gap-3 md:col-span-2">
+                    <MapPinned aria-hidden className="mt-1 h-5 w-5 shrink-0 text-phx-accent-hover" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">Notes</p>
+                      {/* Through the ONE formatter every other screen, email and export already
+                          uses: the rep's own words, each allowance reason once with its day count,
+                          and each photo stamp as a card in Cairo time — never the stored audit line
+                          with its UTC timestamp, raw GPS and draft id. Each note line keeps its own
+                          dir="auto" inside, so an Arabic first line cannot flip the rest. */}
+                      <OutstationDescription className="mt-1 text-sm" empty="No notes" value={request.notes} />
+                    </div>
+                  </div>
                 </div>
-              </div>
-              <div className="flex items-start gap-3">
-                <Clock className="mt-1 h-5 w-5 text-phx-accent-hover" />
-                <div>
-                  <p className="text-xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">Approval reason</p>
-                  <p className="mt-1 text-sm font-semibold text-phx-ink">{request.approvalReason}</p>
-                </div>
-              </div>
-              <div className="flex items-start gap-3">
-                <MapPinned className="mt-1 h-5 w-5 text-phx-accent-hover" />
-                <div>
-                  <p className="text-xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">Notes</p>
-                  <NotesBody value={request.notes} />
-                </div>
-              </div>
-            </div>
+              );
+            })()}
           </Card>
         </div>
         <div className="sticky bottom-0 z-10 border-t border-phx-line bg-white/98 px-5 py-4 backdrop-blur">
