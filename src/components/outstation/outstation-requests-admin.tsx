@@ -42,6 +42,7 @@ import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
 import { Input } from "@/components/ui/input";
 import type { ExportColumn, ExportRow } from "@/lib/export/table-workbook";
 import { formatDateTimeValue, formatDateValue } from "@/lib/i18n/format";
+import { resolveCaptureTimeliness } from "@/lib/outstation/capture-timeliness";
 import { approverTripPhotos } from "@/lib/outstation/trip-evidence-photos";
 import type { OutstationExpenseRequest } from "@/lib/outstation/types";
 import { formatEmployeeDisplayName } from "@/lib/utils";
@@ -381,6 +382,30 @@ function RequestDetailsModal({
         </div>
 
         <div className="space-y-5 p-5">
+          {/* Above the facts, not below them: the captured coordinate is what Distance, Captured
+              location, Captured brick and Location match are all derived from, so a reviewer has
+              to know it may belong to a different day BEFORE reading any of them. Flags only —
+              never a refusal, never an input to the decision (capture-timeliness.ts says why). */}
+          {(() => {
+            const capture = resolveCaptureTimeliness({
+              capturedAt: request.capturedAt,
+              tripEndDate: request.tripEndDate,
+            });
+            if (capture.verdict !== 'late' || !capture.headline) return null;
+            return (
+              <div className="flex items-start gap-2 rounded-none border border-amber-300 bg-amber-50 p-3">
+                <Clock aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                <div className="min-w-0">
+                  <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-amber-700">
+                    Location captured after the trip ended
+                  </p>
+                  <p className="mt-1 text-xs font-semibold leading-relaxed text-amber-900">
+                    {capture.headline}
+                  </p>
+                </div>
+              </div>
+            );
+          })()}
           {/* The Expense Approval's fact grid, same columns and same components. The
               request-only facts (captured geography, GPS accuracy, workload provenance) live in
               it too — that screen puts facts here, and these are facts. */}
