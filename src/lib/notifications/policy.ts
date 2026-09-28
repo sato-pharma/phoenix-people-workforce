@@ -169,6 +169,20 @@ const policyTable: Record<string, Partial<NotificationPolicy>> = {
   // exact keys above, so a future/uncovered event type still gets the full channel set
   // instead of silently falling back to the bare in_app+email default.
   "marketing_requests.*": { channels: ["in_app", "email", "telegram", "push"], priority: "high", recipientStrategy: ["assigned_approver", "request_owner"], telegramAllowed: true },
+  // "What needs you" — the owner's own board of decisions waiting on him.
+  //
+  // The default is in-app and Telegram, which is the DAILY digest (owner, 2026-09-28: Telegram daily,
+  // email weekly). Email is deliberately NOT in this default: one email to B-10 is already three
+  // deliveries, because send-phoenix-email.ts always BCCs his standing address and mirrors a preview
+  // to his Telegram — so asking for both channels on one message means four notifications a morning
+  // about one board. The weekly send passes `channels` explicitly at its own call site.
+  //
+  // 🔴 Email being absent here is the INTENT, never the guarantee. It re-enters from an explicit
+  // call-site `channels`, from resolveBasePolicyChannels' own defaults, and from the Telegram-failure
+  // fallback. needs-you-recipient-guard.ts is the enforcement: it fails closed and strips email
+  // unless the recipient is provably B-10. Recipients are passed explicitly by the digest builder,
+  // hence "cc" rather than a lookup — an admin-editable audience would make "B-10 only" a setting.
+  "needs_you.*": { actionUrlRequired: true, channels: ["in_app", "telegram"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
   "offers.*": { channels: ["in_app", "email", "push"], permissionResource: "offers", priority: "high", recipientStrategy: ["permission_based"] },
   "outstation.*": { channels: ["in_app", "email", "telegram", "push"], priority: "high", recipientStrategy: ["direct_manager"], telegramAllowed: true },
   // Owner request 2026-07-13: no payslip emails to employees — in-app + Telegram + push.

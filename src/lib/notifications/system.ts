@@ -27,6 +27,7 @@ import { enforceAttendanceAlertEmailBlock } from "@/lib/notifications/attendance
 import { enforceEarlyBirdsEmailBlock } from "@/lib/notifications/early-birds-channel-guard";
 import { isAttendanceDigestModule, telegramKeepsParagraphs } from "@/lib/notifications/attendance-digest-channels";
 import { enforcePhoenixCrmEmailBlock } from "@/lib/notifications/phoenix-crm-channel-guard";
+import { enforceNeedsYouOwnerOnlyEmail } from "@/lib/notifications/needs-you-recipient-guard";
 import { enforceMarketingSlaEmailBlock } from "@/lib/notifications/marketing-sla-channel-guard";
 import { enforceRecruitmentCvEmailBlock } from "@/lib/notifications/recruitment-cv-channel-guard";
 import { enforceCandidateAssignedEmailBlock } from "@/lib/notifications/recruitment-candidate-assigned-channel-guard";
@@ -398,10 +399,18 @@ function basePolicyChannels(input: CreateSystemNotificationInput, preferred: Sys
   // Placed BEFORE the Phoenix CRM block, not after: phoenix-crm-email-block.test.ts pins that block
   // as the chain's last line, and the two guard disjoint sets, so the order changes nothing.
   const withoutOutstationRejectionEmail = enforceOutstationRejectionEmailBlock(withoutCandidateAssignedEmail, input.module, input.eventType);
+  // "What needs you" keeps its email but restricts WHO gets it: the owner's own board reaches B-10
+  // and nobody else. A different axis from the blocks above — they ask whether a module may email at
+  // all — so it cannot be folded into one of them. It FAILS CLOSED: an unresolved recipient strips
+  // email rather than allowing it, because a misdirected copy of his decision queue cannot be
+  // recalled while a missing digest costs a morning. See needs-you-recipient-guard.ts.
+  // Placed BEFORE the Phoenix CRM block for the reason stated two comments up — that block is pinned
+  // as the chain's last line, and these two guard disjoint modules, so the order changes nothing.
+  const needsYouOwnerOnly = enforceNeedsYouOwnerOnlyEmail(withoutOutstationRejectionEmail, input.module, input.recipientHrId);
   // Same hard guarantee for Phoenix CRM (owner rule 2026-09-16): in-app and Telegram only, never
   // email — see phoenix-crm-channel-guard.ts. Keyed on its own module string; chained, never
   // replacing a block above, because each guards a disjoint set.
-  return enforcePhoenixCrmEmailBlock(withoutOutstationRejectionEmail, input.module);
+  return enforcePhoenixCrmEmailBlock(needsYouOwnerOnly, input.module);
 }
 
 function resolveBasePolicyChannels(input: CreateSystemNotificationInput, preferred: SystemNotificationChannel) {
@@ -1760,7 +1769,17 @@ async function createSystemNotificationForRecipient(input: CreateSystemNotificat
     priority: input.priority ?? "normal",
   });
 
-  const channels = basePolicyChannels({ ...input, priority: input.priority ?? policy.priority }, preferences.preferred_channel);
+  // `recipientHrId: recipient.hrId` mirrors what loadPreferences is handed six lines up, and it is
+  // load-bearing rather than tidy. A bare `...input` passes the CALLER's `recipientHrId`, which is
+  // optional and is absent whenever a caller identified the person by user id or email instead — so
+  // a guard that reads it saw `undefined` for a real, resolved recipient. Every guard in
+  // basePolicyChannels before today keyed on module and eventType only, so nothing noticed; the
+  // needs-you guard is the first to key on WHO, and it fails closed, which would have stripped email
+  // from the owner's own digest on exactly those calls.
+  const channels = basePolicyChannels(
+    { ...input, priority: input.priority ?? policy.priority, recipientHrId: recipient.hrId ?? input.recipientHrId ?? null },
+    preferences.preferred_channel,
+  );
   const deliveries: SystemNotificationDeliveryResult[] = [];
   let emailAttempted = false;
   const quietHoursActive = isWithinQuietHours(preferences);
