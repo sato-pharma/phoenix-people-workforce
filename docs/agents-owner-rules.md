@@ -3141,6 +3141,47 @@ payout record" — so the live reading is the one that answers the question bein
 - It is not a fourth carve-out waiting to happen. A surface that wants one needs his word, as this
   one got.
 
+## An offer letter with no candidate behind it is not a gap — owner ruling, 2026-09-28
+
+His words: *"leave Esraa Awad and Taha Sheeba without ATS records"*.
+
+### What was measured, and put to him
+
+`ats_candidates.offer_id` shipped that day and 12 candidates were wired to their letters by hand. The
+question was the remainder. Measured across all 27 production letters rather than the two that had
+been spotted:
+
+- **11 letters point at nobody**, because **nine people never entered the ATS at all** — Alaa Mohsen
+  (three copies of one letter), Esraa Fotouh Mosaad, Mery Shenouda, Noha Farraj, Rehab Samir, El Sayed
+  Rady, the owner's own Sheraton test letter, and the two below.
+- **Two of those nine are active employees**: **Esraa Awad Hemida** and **Taha Sheeba Alhammed**, both
+  Medical Representatives hired **01/10** on **accepted** letters. They were seated without passing
+  through recruitment.
+
+A session had first put "create the two records" to him as the open item. Measuring it properly
+reversed the recommendation, and he confirmed the reversal.
+
+### Why creating the records was refused
+
+1. **It buys nothing.** They are employees, and an employee's messages are built from
+   `employee-context.ts`, which never reads the candidate pointer. A start date wired through a
+   candidate record would never be used for either of them.
+2. **A record with no CV, no source and no application is a hollow row.** It then appears in the pool,
+   the screening queue and every count as though somebody applied.
+3. **The truthful state is "hired outside the ATS"**, which an empty pointer already says.
+
+### What it costs, stated rather than hidden
+
+Both hires are **invisible to source-of-hire reporting**, because that attribution runs off candidate
+records. Creating rows now would not fix that either — it would add two *unattributed* ones. The cost
+is accepted; it is not an argument for the backfill.
+
+### The trap
+
+This reads exactly like a data defect and it is not one. **A session "completing the funnel" here is
+the defect.** The hook lives in `src/lib/recruitment/candidate-offer-link.ts`, next to the code that
+would have to be written to get it wrong.
+
 ## `AGENTS.md` §4 Standing owner rules — as it stood before the 2026-09-12 condensation
 
 On 2026-09-12 `AGENTS.md` was cut to roughly half its size at the owner's request ("Load less of AGENTS.md"): every hook was reduced to its rule plus the one detail needed to obey it. This is that section's hook text **verbatim** from `origin/main` 3eea44aef, kept so that no measurement, date, count or diagnosis a condensed hook dropped is lost. Search it for the hook's wording. The accounts earlier in this file remain the fuller record.
