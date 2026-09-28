@@ -384,6 +384,12 @@ export function runMasterMapFinderGridTests() {
     script.includes('getRange("E1")'),
     "into the cell the finder reads",
   );
+  assert.ok(
+    /setNumberFormat\("@"\)/.test(script),
+    'E1 is forced to plain text before the Cairo string is written — without it Sheets parses the ' +
+      'string back into a date serial and the finder\'s `&` join renders "Sheet refreshed ' +
+      '46294.0111111111 Cairo" instead of the time (regressed on the live workbook 2026-09-29)',
+  );
 
   // ---- A truncated body is retried, not fatal ----------------------------------------------------
   // JSON.parse used to sit on fetchJson's return line, outside any catch, so a 200 whose body

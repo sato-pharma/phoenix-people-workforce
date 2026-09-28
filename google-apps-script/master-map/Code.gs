@@ -244,9 +244,16 @@ function stampRefreshedAt() {
   try {
     const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Lists");
     if (!sheet) return;
-    sheet
-      .getRange("E1")
-      .setValue(Utilities.formatDate(new Date(), "Africa/Cairo", "d MMM yyyy HH:mm"));
+    const cell = sheet.getRange("E1");
+    // Force the cell to plain text BEFORE writing, or Sheets parses the Cairo string
+    // "29 Sep 2026 00:14" straight back into a date serial the instant it lands. The finder joins
+    // this cell with `&` ("Sheet refreshed "&Lists!E1&" Cairo"), and `&` on a date renders the raw
+    // serial — so the line read "Sheet refreshed 46294.0111111111 Cairo" on the live workbook
+    // (seen 2026-09-29). A text cell keeps the string a string. The timezone stays honest: the
+    // string was already rendered in Africa/Cairo above, and nothing here re-reads it in the
+    // spreadsheet's own zone. Re-applied on every stamp because a repaint can recreate the Lists tab.
+    cell.setNumberFormat("@");
+    cell.setValue(Utilities.formatDate(new Date(), "Africa/Cairo", "d MMM yyyy HH:mm"));
   } catch (error) {
     Logger.log("Could not stamp the refresh time: " + error);
   }
