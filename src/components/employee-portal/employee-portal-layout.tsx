@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition, useSyncExternalStore, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, useTransition, useSyncExternalStore, type MouseEvent, type ReactNode } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -74,6 +74,7 @@ import {
 } from "@/components/layout/module-lock-context";
 import { RouteTransitionProvider } from "@/components/layout/route-transition-provider";
 import { PageTransition } from "@/components/ui/page-transition";
+import { useDismissOnOutsideInteraction } from "@/hooks/use-dismiss-on-outside-interaction";
 import type { EmployeePortalShellData } from "@/lib/employee-portal/service";
 import type { EmployeePortalNavVisibility } from "@/lib/employee-portal/navigation";
 import { isEmployeePortalOwnedRoute } from "@/lib/employee-portal/routes";
@@ -755,7 +756,14 @@ export function EmployeePortalTopNav({
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchActiveIndex, setSearchActiveIndex] = useState(0);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  // Outside click and Escape close the user menu — the admin Topbar has done this since 2026-07-24
+  // (8e7d3ca8d) and the portal header never got the same fix, so an opened menu stayed on screen
+  // over the page until its own button was pressed again, swallowing the clicks meant for what sat
+  // underneath it.
+  const userMenuRef = useRef<HTMLDivElement>(null);
+  useDismissOnOutsideInteraction(userMenuRef, userMenuOpen, setUserMenuOpen);
   const closeMobileMenu = () => setMobileMenuOpen(false);
   const employeeName = data.employee.fullName.trim();
   const firstName = employeeName.split(/\s+/)[0] || "Employee";
@@ -775,15 +783,23 @@ export function EmployeePortalTopNav({
       )
       .slice(0, 6)
     : [];
+  const activeSearchIndex = Math.min(searchActiveIndex, Math.max(searchMatches.length - 1, 0));
+  const searchListOpen = searchOpen && searchTerm.length > 0;
 
   useEffect(() => {
     if (!mobileMenuOpen) return;
 
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
+    // Escape closes the drawer, as it does every other overlay in the app.
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMobileMenuOpen(false);
+    };
+    document.addEventListener("keydown", handleKeyDown);
 
     return () => {
       document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", handleKeyDown);
     };
   }, [mobileMenuOpen]);
 
@@ -842,11 +858,16 @@ export function EmployeePortalTopNav({
           <div className="relative ml-auto hidden w-full max-w-sm items-center md:flex">
             <Search className="pointer-events-none absolute left-3 h-4 w-4 text-slate-400" />
             <input
+              aria-activedescendant={searchListOpen && searchMatches.length > 0 ? `employee-portal-search-option-${activeSearchIndex}` : undefined}
+              aria-autocomplete="list"
+              aria-controls="employee-portal-search-results"
+              aria-expanded={searchListOpen}
               aria-label="Search"
               className="h-10 w-full rounded-sm border border-slate-200 bg-slate-50/90 pl-9 pr-3 text-sm font-semibold text-slate-700 shadow-inner placeholder:text-slate-400 outline-none transition focus:border-orange-300 focus:bg-white focus:ring-2 focus:ring-orange-400/15"
               onBlur={() => window.setTimeout(() => setSearchOpen(false), 120)}
               onChange={(event) => {
                 setSearchQuery(event.target.value);
+                setSearchActiveIndex(0);
                 setSearchOpen(true);
               }}
               onFocus={() => setSearchOpen(true)}
@@ -855,37 +876,62 @@ export function EmployeePortalTopNav({
                   setSearchOpen(false);
                   return;
                 }
-                if (event.key === "Enter" && searchMatches[0]) {
+                // The list announced itself as a listbox but only Enter worked, and only on the
+                // first row: the other five results could be reached by mouse alone.
+                if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                  if (searchMatches.length === 0) return;
                   event.preventDefault();
-                  navigateToSearchResult(searchMatches[0].href);
+                  setSearchOpen(true);
+                  setSearchActiveIndex((index) =>
+                    event.key === "ArrowDown"
+                      ? Math.min(index + 1, searchMatches.length - 1)
+                      : Math.max(index - 1, 0),
+                  );
+                  return;
+                }
+                const chosen = searchMatches[activeSearchIndex];
+                if (event.key === "Enter" && chosen) {
+                  event.preventDefault();
+                  navigateToSearchResult(chosen.href);
                 }
               }}
               placeholder="Search portal pages..."
+              role="combobox"
               value={searchQuery}
               type="text"
             />
-            {searchOpen && searchQuery.trim().length > 0 ? (
+            {searchListOpen ? (
               <div
                 className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-hidden rounded border border-slate-200 bg-white shadow-[0_18px_46px_rgba(15,23,42,0.16)]"
+                id="employee-portal-search-results"
                 role="listbox"
               >
                 {searchMatches.length > 0 ? (
-                  searchMatches.map((item) => (
+                  searchMatches.map((item, index) => (
                     <button
-                      aria-selected={false}
-                      className="flex w-full items-center gap-3 border-b border-slate-100 px-3 py-2.5 text-left transition last:border-b-0 hover:bg-orange-50"
+                      aria-selected={index === activeSearchIndex}
+                      className={`flex w-full items-center gap-3 border-b border-slate-100 px-3 py-2.5 text-left transition last:border-b-0 hover:bg-orange-50 ${
+                        index === activeSearchIndex ? "bg-orange-50" : ""
+                      }`}
+                      id={`employee-portal-search-option-${index}`}
                       key={`${item.section}-${item.href}`}
                       onMouseDown={(event) => {
                         event.preventDefault();
                         navigateToSearchResult(item.href);
                       }}
                       role="option"
+                      tabIndex={-1}
                       type="button"
                     >
                       <item.icon className="h-4 w-4 shrink-0 text-orange-500" />
+                      {/* WRAPS, never `whitespace-nowrap`: this panel is exactly as wide as the search
+                          box, which gives up width to everything else in the header — about 230px at
+                          a 1024px window, where "My Outstation Expenses" or "All Marketing Requests"
+                          plus the icon no longer fit, and the panel's `overflow-hidden` cut the label
+                          mid-word with no ellipsis to show it. */}
                       <span className="min-w-0">
-                        <span className="block whitespace-nowrap text-sm font-bold text-slate-800">{item.label}</span>
-                        <span className="block whitespace-nowrap text-phx-xs font-semibold uppercase tracking-[0.12em] text-slate-400">{item.section}</span>
+                        <span className="block text-sm font-bold text-slate-800">{item.label}</span>
+                        <span className="block text-phx-xs font-semibold uppercase tracking-[0.12em] text-slate-400">{item.section}</span>
                       </span>
                     </button>
                   ))
@@ -911,7 +957,7 @@ export function EmployeePortalTopNav({
               <span className="whitespace-nowrap">Live Performance</span>
             </div>
           )}
-          <div className="relative flex shrink-0">
+          <div className="relative flex shrink-0" ref={userMenuRef}>
             <button
               aria-expanded={userMenuOpen}
               aria-haspopup="menu"
@@ -977,10 +1023,15 @@ export function EmployeePortalTopNav({
       />
 
       {/* Mobile Sidebar Content */}
+      {/* `inert` while closed, as the admin drawer (MobileSidebar) is. A closed drawer is only slid
+          off-screen, so without it every link inside stayed in the Tab order: a keyboard user tabbed
+          through every one of its invisible rows before reaching the page, and `aria-hidden` over focusable links
+          is itself an accessibility fault. */}
       <div
         aria-hidden={!mobileMenuOpen}
         className="fixed inset-y-0 left-0 z-50 flex h-dvh max-h-dvh w-[min(88vw,320px)] flex-col border-r border-slate-200 bg-white shadow-2xl transition-transform duration-300 ease-in-out will-change-transform lg:hidden"
         id="employee-portal-mobile-sidebar"
+        inert={!mobileMenuOpen}
         style={{ transform: mobileMenuOpen ? "translate3d(0, 0, 0)" : "translate3d(-100%, 0, 0)" }}
       >
         <div className="flex shrink-0 items-center justify-between px-4 pb-3 pt-4">

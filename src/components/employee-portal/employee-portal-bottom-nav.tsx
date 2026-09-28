@@ -7,6 +7,7 @@ import { Lock } from "lucide-react";
 import { isNavItemLockedFor, useLockedModuleKeys } from "@/components/layout/module-lock-context";
 import { ApprovalNavBadge } from "@/components/layout/nav-badge";
 import type { EmployeePortalNavVisibility } from "@/lib/employee-portal/navigation";
+import { resolveDeepestActiveHref } from "@/lib/navigation/active-path";
 import {
   DEFAULT_BOTTOM_NAV_HREFS,
   HOME_ENTRY,
@@ -18,10 +19,11 @@ import {
 } from "./employee-portal-nav-registry";
 import { useBottomNavPreference } from "./use-bottom-nav-preference";
 
-function isActiveHref(pathname: string, href: string) {
-  if (href === "/employee-portals") return pathname === href;
-  return pathname === href || pathname.startsWith(`${href}/`);
-}
+/**
+ * The portal root is lit on its own page only — every portal path starts with it. Same set the
+ * sidebar passes (EXACT_ONLY_PORTAL_HREFS in employee-portal-layout.tsx).
+ */
+const EXACT_ONLY_BOTTOM_NAV_HREFS = new Set(["/employee-portals"]);
 
 /**
  * Mobile-only global bottom tab bar for the employee portal. Presentation only —
@@ -58,6 +60,16 @@ export function EmployeePortalBottomNav({
     .filter((entry): entry is PortalNavEntry => Boolean(entry));
 
   const items: PortalNavEntry[] = [HOME_ENTRY, ...middle, PROFILE_ENTRY];
+  // ONE lit tab — the deepest matching href, as the sidebar does. A plain prefix test lit two tabs
+  // at once whenever a parent and its child were both on the bar: a District Manager's default bar
+  // carries Plans (/plans) AND Planning (/plans/calendar), so on the calendar both were highlighted
+  // and the bar could not say which page he was on. Same for Marketing + Inbox, Awareness + its
+  // inbox, and the Training Manager's Overview over every one of his own pages.
+  const activeHref = resolveDeepestActiveHref(
+    pathname,
+    items.map((item) => item.href),
+    EXACT_ONLY_BOTTOM_NAV_HREFS,
+  );
 
   return (
     <nav
@@ -67,7 +79,7 @@ export function EmployeePortalBottomNav({
     >
       <ul className="mx-auto flex max-w-[640px] items-stretch justify-around px-1">
         {items.map((item) => {
-          const active = isActiveHref(pathname, item.href);
+          const active = item.href === activeHref;
           const locked = isNavItemLockedFor({ href: item.href }, lockedModuleKeys);
           const Icon = locked ? Lock : item.icon;
           return (

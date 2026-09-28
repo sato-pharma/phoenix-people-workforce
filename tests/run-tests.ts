@@ -1820,6 +1820,7 @@ import { runMyVisitsTablesFitTests } from "./my-visits-tables-fit.test.ts";
 import { runPortalChromeNeverClipsTextTests } from "./portal-chrome-never-clips-text.test.ts";
 import { runShellChromeOverflowsTests } from "./shell-chrome-overflows.test.ts";
 import { runPortalRailScrollsNeverSquashesTests } from "./portal-rail-scrolls-never-squashes.test.ts";
+import { runPortalNavChromeBehaviourTests } from "./portal-nav-chrome-behaviour.test.ts";
 import { runAdminFilenameCellsNeverEllipsiseTests } from "./admin-filename-cells-never-ellipsise.test.ts";
 import { runSectionCardHeaderFitsAPhoneTests } from "./section-card-header-fits-a-phone.test.ts";
 import { runPortalToolsGridFitsAPhoneTests } from "./portal-tools-grid-fits-a-phone.test.ts";
@@ -6376,6 +6377,10 @@ await runTest(
 await runTest(
   "portal icon rail scrolls on a short window, never squashes (every section link keeps its 40px height with shrink-0, the 28px active marker fits its link, the nav scrolls with its bar hidden)",
   runPortalRailScrollsNeverSquashesTests,
+);
+await runTest(
+  "portal nav chrome behaves (one lit bottom-bar tab, the user menu closes on outside click and Escape, the closed drawer is inert, the header search is a keyboard combobox whose results wrap)",
+  runPortalNavChromeBehaviourTests,
 );
 await runTest(
   "admin filename cells never ellipsise (payroll batch File column, distributor import File column)",
