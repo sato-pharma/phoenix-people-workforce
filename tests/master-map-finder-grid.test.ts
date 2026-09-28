@@ -235,12 +235,34 @@ export function runMasterMapFinderGridTests() {
     ["G", "the customer code"],
     ["D", "the brick code"],
     ["J", "the address"],
+    ["F", "the distributor"],
+    ["L", "the Anti Infective manager"],
+    ["M", "the CNS manager"],
+    ["N", "the Pedia manager"],
   ] as const) {
     assert.ok(
-      results.includes(`ISNUMBER(SEARCH(${searchKey},'All customers'!${letter}2:${letter}))`),
-      `${what} is searched through a key coerced to text — a digits-only entry reaches SEARCH as a number otherwise, and column ${letter} never matches`,
+      results.includes(`'All customers'!${letter}2:${letter}`),
+      `${what} is in the searched span — the box finds what is on the row, not what one SEARCH per column could afford`,
     );
   }
+
+  // ONE SEARCH OVER THE COLUMNS JOINED, not one per column. Each ISNUMBER(SEARCH(...)) was a full
+  // pass over 73,937 rows, so the searchable set was chosen by cost rather than by usefulness —
+  // eight passes would have doubled the work of every keystroke. Joined, it is seven concatenations
+  // and ONE pass: twice the columns for less work than the four it replaced.
+  assert.equal(
+    (results.match(/ISNUMBER\(SEARCH\(/g) ?? []).length,
+    1,
+    "the search box makes exactly ONE pass over the master, whatever it searches",
+  );
+  assert.ok(
+    results.includes(`ISNUMBER(SEARCH(${searchKey},'All customers'!E2:E&" | "&`),
+    "the key is still coerced to text, and it searches the joined span — a digits-only entry reaches SEARCH as a number otherwise and nothing matches",
+  );
+  assert.ok(
+    results.includes(`&" | "&`),
+    'joined with " | ", the separator a person is least likely to type — a space would let a term straddle two columns and match a row containing neither',
+  );
   assert.ok(
     !results.includes(`SEARCH('Find a pharmacy'!$E$4,`),
     "no column may be searched against the raw cell: that is the exact formula that killed the code search",
