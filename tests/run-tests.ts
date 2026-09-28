@@ -2025,6 +2025,10 @@ import { runWorkflowDispatchGuardTests } from "./workflow-dispatch-guard.test.ts
 import { runNextBuildCpuCapTests } from "./next-build-cpu-cap.test.ts";
 import { runAttributionFreezesPublishedMonthsTests } from "./attribution-freezes-published-months.test.ts";
 import { runTestAccountTests } from "./test-accounts.test.ts";
+import { runNeedsYouBoardTests } from "./needs-you-board.test.ts";
+import { runNeedsYouSourceHealthTests } from "./needs-you-source-health.test.ts";
+import { runUnpublishedClosingsTests } from "./unpublished-closings.test.ts";
+import { runPayrollAwaitingPublishTests } from "./payroll-awaiting-publish.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -7353,6 +7357,22 @@ await runTest(
 await runTest(
   "TEST ACCOUNTS (owner, 2026-09-27): a production login that lives inside a real employee's portal and never saves as her — every write outside Phoenix CRM is refused in resolveAccessContext before a route runs, and a server action too; inside Phoenix CRM every read and save is a test entry whatever flag the screen sends; a test manager decides test entries only, as the reviewer he mirrors, never the SFE step; his reach is the mirrored person's, never the company; only an employee-portal role can be mirrored; and the nightly behaviour verdict and the hourly allowances never count a test row",
   runTestAccountTests,
+);
+await runTest(
+  "the tier-1 needs-you board never under-reports: GitHub's own mergeStateStatus decides the bucket (never a count against a required-check list, the drift that has rotted four times), every state it does not model - UNKNOWN, empty, null, a value GitHub adds later - lands in COULD NOT READ rather than in his section, a blocked PR is explained from the LIVE protection contexts with an unreported required check named as waiting (the mobile case) and an unreadable protection list never promotes it, three dead reads render the COULD NOT READ heading rather than a quiet all-clear, a production revision behind main names redeploy and re-merge as forbidden (AGENTS.md 2.3), and nothing it prints carries an ellipsis or exceeds the terminal width",
+  runNeedsYouBoardTests,
+);
+await runTest(
+  "a pending source can say it could not answer: the awaiting-action fan-out carries no .catch(() => null) inside its Promise.allSettled (which made the allSettled decorative and turned a dead queue into an empty one, silently, in the function the badge endpoint counts), its labels and its sources stay index-aligned and none of them reads like a code, a Forbidden refusal is classified as a TRUE zero while a network failure never is, and all three approvals badges return available on BOTH their success and their failure paths with no fabricated count in the catch",
+  runNeedsYouSourceHealthTests,
+);
+await runTest(
+  "the unpublished-closing complement never resurrects a settled month: August 2026 published on every line and later WITHDRAWN on one stays OFF the list (subtracting listAllPublishedClosings, which filters unpublished_at is null, would offer a published and announced month for correction), a genuinely unpublished line is reported per PERIOD with both the published and unpublished halves named, the running month is never offered while the month it covers is still open, the Cairo boundary is read on both sides of 1 October so a UTC reading cannot open a month three hours early, a month with no validated import batch is not work, and listUnpublishedClosings throws rather than swallowing into an empty array that would read as every month published",
+  runUnpublishedClosingsTests,
+);
+await runTest(
+  "payroll awaiting publish can be asked across ALL months, which nothing in the domain could answer before (findActiveRun takes a month and a year and ends in maybeSingle), and it avoids the four traps of that domain: it gates on the FINANCE actor because it is a read rather than the publisher gate which guards an act, it carries no month or year filter because that absence is the whole new capability, it never derives publish state from salary_batches (written BY publish, so a month reads published the moment finalizeApproved runs) and never re-assembles a settled month, a missing table THROWS instead of returning an empty result that would render as no months are open, the .in() is chunked because several hundred ids return zero rows and no error, an uncountable hold is null rather than zero, and every row carries a month NAME and a person's name with nowhere to put an HR id",
+  runPayrollAwaitingPublishTests,
 );
 
 await runTest(

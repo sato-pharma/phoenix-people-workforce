@@ -1,84 +1,92 @@
 ---
 name: outstation-expense-deep-audit-2026-07
-description: "How the Outstation & Expense module + employee portal submission works end-to-end (post-redesign auto-decide engine), plus open findings: portal never shows real accept/reject result, ticket-evidence UI/backend mismatch, duplicated wizard fields, RM missing from nav, stale workflow-registry roles, Finance Manager policy-edit over-permission"
+description: "How the Outstation & Expense module works end-to-end (post-redesign): 'expenses' IS outstation (src/lib/outstation/, no src/lib/expenses/); submit AUTO-DECIDES accept/reject and PERSISTS the rejection; payroll is an ADDITION to net pay, never a deduction; approve/override is Super Admin only though the permission matrix over-states DM/RM/NSM authority; the live eligibility logic is INLINE in service.ts (decision.ts is dead code); and two entry points skip the engine entirely. Holds the owner rulings and the open permission/UX findings."
 metadata: 
   node_type: memory
   type: project
   originSessionId: 4d2c7ad3-4ca0-47d6-8233-3a6e95d3b5bc
-  modified: 2026-07-28T19:20:42.210Z
+  modified: 2026-09-26T05:27:21.292Z
 ---
 
-Deep read-only audit of the Outstation & Expense module (2026-07-17, origin/main @ d96cb0af). Dossier artifact: https://claude.ai/code/artifact/f823a077-5720-451b-8cab-b5f3cd182773
+Deep read-only audit of the Outstation & Expense module (2026-07-17), then rebuilt and extended. The old
+fraud-score / variance / auto-APPROVE-on-submit model is HISTORICAL — below is the current behaviour.
 
-**How it works (durable mechanics):**
-- ONE module — "expenses" IS outstation; everything under `src/lib/outstation/`. No `src/lib/expenses/`.
-- **Auto-approve on submit**: `submitOutstationRequest` inserts row as `submitted` then immediately calls `approveOutstationRequestForPayroll(id, systemAccessContext)` (service.ts:1634) with role=Super Admin/scope=system → flips to `approved` + materialises a linked `outstation_expenses` row. No human pending queue; the daily SLA reminder only catches auto-approve *failures*.
-- Approve/reject/delete are **Super Admin only** (`assertOutstationAdminAccess`); Finance Manager + CEO hard-listed read-only (`executionOnlyOutstationRoles`). The permission MATRIX grants DM/RM/NSM `outstation:approve` but that does NOT reach admin routes — matrix over-states authority.
-- Payroll = **addition to net pay** (Part 2/additions), NOT a deduction. RPC `phx_import_approved_expenses_to_payroll`, joins on `lower(hr_id)`, delta-applied (idempotent), period = trip month + 1, refuses before Part 1 paid.
-- Eligibility: official 60 km / tolerance 58 km. Fuel = `distance × 2 × rate` (round-trip, default 1.8 EGP/km). Fraud score 0–100 (weights in service.ts:740). Recommendation ladder is advisory only, never blocks payment.
-- 6 tables, all RLS-enabled, but app uses service-role client everywhere (RLS bypassed at runtime — app-layer gate is the real boundary). Two Excel tables renamed payroll_expenses*→outstation_expenses* on 2026-07-13.
+## How it works (durable mechanics)
 
-**Open findings worth fixing (NOT yet actioned — owner not asked to fix):**
-- **F2 (MEDIUM, security)**: `app/api/outstation/workload-evidence/route.ts:16-21` — any `outstation:approve` role (DM/RM/NSM) can pass ANY `employeeHrId` and read that person's Double-Visit workload evidence; no team/hierarchy/line scoping. Should gate on `phx_can_access_employee` / canSeeEmployee, not just the approve action.
-- **R1 (MEDIUM, data-loss)**: Excel import gives TripID-less rows synthetic `ROW-<n>` and ledger upserts `onConflict:"trip_id"` — two uploads with a blank-ID row at the same position overwrite each other.
-- Lower: pending KPI includes rejected (R2), 2 totals helpers don't lowercase HR_ID (R3), manager team view fetched-then-discarded (R4), `other` hardcoded 0 on import (R6), dead code `notifyExpensesAddedToPayroll` + dormant `add_to_payroll` registry action.
+- **ONE module — "expenses" IS outstation.** Everything lives under `src/lib/outstation/`; there is no
+  `src/lib/expenses/`. 6 tables, all RLS-enabled, but the app uses the service-role client everywhere, so
+  RLS is bypassed at runtime — **the app-layer gate is the real boundary.**
+- **Submit AUTO-DECIDES and PERSISTS.** `submitOutstationRequest` runs the eligibility engine and writes
+  `accepted_by_system` / `rejected_by_system` (folded to approved/rejected by
+  `toOutstationExpenseWorkflowStatus`); a rejection is KEPT and the employee is notified (no throw). A Super
+  Admin OVERRIDE writes `accepted_by_admin` / `rejected_by_admin`, audit-logged. Status columns are free text,
+  so new values never need a migration. There is no human pending queue — EXCEPT the HOLD case: when the
+  destination governorate cannot be confirmed the request holds as status `submitted` (NOT pushed to payroll)
+  and notifies Super Admin (owner chose "hold when unconfirmed" over fail-open).
+- 🔴 **The live eligibility logic is INLINE in `service.ts` — `src/lib/outstation/decision.ts` is DEAD
+  CODE** (built during the redesign, never wired). The rules: distance ≥ 60 km (tolerance 58) AND destination
+  outside the RESIDENCE governorate (`resolveFirstGovernorate` walks city→area→address) AND, for a DM/TM
+  travelling, ≥1 double-visit and ≤2 campaign visits (`visitType -8` = campaign). Fuel = `distance × 2 × rate`
+  (round-trip, default 1.8 EGP/km). If asked to change the approval flow, change the inline `service.ts`
+  logic, not `decision.ts` and not a queue.
+- 🔴 **Two entry points SKIP the engine and self-approve on insert:** `submitMedicalRepSimpleExpenseRequest`
+  (distance/governorate/campaign never applied) and `createManagerExpenseAsAdmin` (distance-only). Only the
+  wizard and its offline wrapper run the full eligibility check.
+- **Payroll is an ADDITION to net pay** (Part 2 / additions), NEVER a deduction. RPC
+  `phx_import_approved_expenses_to_payroll` joins on `lower(hr_id)`, is delta-applied (idempotent), uses
+  period = trip month + 1, and refuses before Part 1 is paid. Accepted → payroll; rejected → not. (Owner
+  reversed an initial "remove payroll" ask — the linkage is KEPT.)
+- **Approve / reject / delete are Super Admin only** (`assertOutstationAdminAccess`); Finance Manager and CEO
+  are hard-listed read-only (`executionOnlyOutstationRoles`). 🔴 **The permission MATRIX grants DM/RM/NSM
+  `outstation:approve`, but that does NOT reach the admin routes** — the matrix over-states authority (the
+  stale DM/RM/NSM approve grant was later removed from the matrix; the DB workflow-registry may still list
+  extra roles, but the code gate wins).
+- **Tickets:** train/bus REQUIRES ≥1 ticket, hard-blocked both client and server (offline is exempt via
+  `!offlineCaptured`); tickets travel as base64 data URLs → `uploadOutstationTicketAttachments` → bucket
+  `outstation-evidence`, cols `ticket_attachment_paths`/`_metadata`. An employee can ADD extra tickets to
+  their own train/bus non-rejected request AFTER submit (add-only, pre-payment, audited) via
+  `addExtraTicketsToOwnOutstationRequest` — the extra cost ADDS to the total (recompute expected/claimed,
+  never touch the allowance) and re-syncs the unpaid linked payroll row through the existing
+  `syncLinkedOutstationPayrollExpense`. **Payroll lock:** `imported_to_payroll_at` /
+  `imported_payroll_batch_id` block any edit once the trip is paid. Car evidence is hard-blocked client-side.
 
-**Why:** owner asked for a deep audit "how it works + explain in detail." The auto-approve-on-submit and payroll-as-addition are the two non-obvious behaviours everyone gets wrong.
-**How to apply:** if asked to change approval flow, remember there is no human gate — the change is in the auto-approve call, not a queue. See [[outstation-expense-notifications-reject-only]] and [[expense-source-excel-vs-system]].
+## Owner rulings
 
----
+- Payroll linkage KEPT (the "remove payroll" task was dropped). Hold-when-governorate-unconfirmed over
+  fail-open. The employee's self-service extra-ticket control lives INSIDE `PersonalExpenseWorkloadDashboard`'s
+  per-row expand panel (desktop and mobile), gated to the viewer's OWN train/bus rows via a `viewerHrId` prop
+  — passed only from the employee-portal page, NEVER from the admin-shell's team-wide view of the same
+  component. The "Extra Tickets" count is also a column on that dashboard. Item 7 of the build list was
+  REVOKED — do not build it.
 
-**REDESIGN CODE SHIPPED TO PRODUCTION 2026-07-17 — both PRs MERGED (#1078→main c123b352, #1080→ce51bc64), prod auto-deployed (Cloud Run revision phoenix-hr-00222-ven @100%, healthz 200 on phoenix-hr.satopharma.com). All redesign BEHAVIOR is live (governorate + campaign rules, auto-decision + override, persist-rejected, no fraud/variance UI, F2/R1, remove-approve). The "no traces" DB migration's FIRST prod attempt was applied then EMERGENCY-ROLLED-BACK because it broke live CROSS-MODULE consumers the redesign missed (employee-360/deep-service.ts SELECTed variance_amount+fraud_flags_json and THREW; admin/system-cleanup.ts queried the dropped outstation_location_audit_logs; workflow-control/definitions.ts listed it in a label). RESOLVED via consumer-fix PR #1089 (→main b8b2bb97, prod revision phoenix-hr-00228-kej) which removed those reads; then BOTH migrations were RE-APPLIED to staging + prod and VERIFIED (prod: drop_cols_remaining=0, audit table gone, v_unified_audit_logs resolves 200410 rows, 3 requests kept, new e360 query OK, healthz 200). **"No traces" is now ACHIEVED on prod + staging, all consumers fixed.** LESSON (cost a full prod apply→rollback→fix→re-apply cycle): before dropping a DB column/table, grep ALL of src+app for its name — typecheck does NOT catch Supabase `.select("…col…")` strings or table-name string args. Much of the "how it works" above is now HISTORICAL for production:**
-- **PR #1078** `codex/outstation-expense-fixes` — F2 fixed (workload-evidence scoped via expenses access-scope, new `canViewEmployeeExpenseScope`), R1 fixed (import trip_id content-hashed, `syntheticTripId`), removed DM/RM/NSM `approve` matrix grant.
-- **PR #1080** `codex/outstation-expense-redesign` (12 commits):
-  - **Fraud system removed entirely, no traces** — no suspicion score / flags / `expense-risk.ts` / high-risk UI; `outstation_location_audit_logs` table dropped. Car live-camera + ticket evidence KEPT.
-  - **Variance removed** everywhere.
-  - **New eligibility engine** `src/lib/outstation/decision.ts` (pure, unit-tested): distance ≥60 km AND destination outside RESIDENCE governorate (`resolveGovernorate`, fail-open if unresolved) AND (DM/TM traveling ⇒ ≥1 double-visit & ≤2 campaign, `visitType -8`=campaign). `googleReverseGeocode` now returns governorate; DV evidence returns campaign/regular counts.
-  - **New status model**: submit AUTO-DECIDES + PERSISTS — `accepted_by_system`/`rejected_by_system` (folded to approved/rejected in `toOutstationExpenseWorkflowStatus`); rejected kept + employee notified (no throw). Super Admin OVERRIDE → `accepted_by_admin`/`rejected_by_admin`, audit-logged. Status cols are free text → no migration for new values.
-  - **Payroll linkage KEPT** (owner reversed the initial "remove payroll" ask): accepted → payroll; rejected → not. Original task #9 (remove payroll) DROPPED.
-Post-merge, the auto-approve/fraud/variance mechanics above are gone; the engine is `decision.ts`, submit persists rejected, Super Admin overrides.
+## Open findings (informed, not asked to fix)
 
----
+- **Finance Manager can edit GLOBAL policy** — `POST /api/outstation/policy` requires only generic
+  `outstation:update`, which Finance Manager holds, so it can rewrite eligibility/fuel/allowance policy for
+  everyone despite being execution-locked out of approving individual requests.
+- **Admin single-request GET is over-gated** — `app/api/admin/outstation/[id]` GET requires action
+  `"approve"` not `"read"`, so Finance Manager/CEO 403 even on read-only detail, contradicting the
+  admin-access comment that they should see outstation data.
+- **`workload-evidence` scoping** was the F2 fix — an `outstation:approve` role could read any employee's
+  Double-Visit workload; now scoped via `canViewEmployeeExpenseScope`. Excel import trip-id collisions (R1)
+  were fixed by content-hashing (`syntheticTripId`).
+- **Portal UX gaps:** the wizard shows a generic "submitted successfully" toast regardless of the real
+  accept/reject outcome (the decision surfaces only later on the Expense Dashboard status pill), and there is
+  no resubmit/edit/cancel path — a rejection means starting over. Held rows are surfaced via a
+  `PendingReviewRequestsCard`. Duplicated wizard fields (an editable copy beside a disabled
+  "auto-resolved after submission" copy bound to the same state) look like leftover markup.
 
-**RE-VERIFIED 2026-07-28** (owner asked to "dig deep" on portal submission + workflow; two independent agent reads, backend + frontend). Redesign mechanics above confirmed still accurate on `codex/inbound-intake-dashboard` (built on current main). Corrections + NEW findings not previously recorded:
+## The reusable lesson (cost a full prod apply→rollback→fix→re-apply cycle)
 
-- **`expense-risk.ts` is gone, not "may still exist"** — confirmed fully absent from `src/lib/outstation/`.
-- **Portal UX gap (new, not yet actioned)**: `MobileOutstationWizard` (`src/components/outstation/mobile-outstation-wizard.tsx:1160-1169`) shows a generic "submitted successfully" toast regardless of the actual `accepted_by_system`/`rejected_by_system` outcome — the employee isn't told the decision at submit time, only later via the Expense Dashboard status pill / Medical Rep badge. No resubmit/edit/cancel path exists anywhere; a rejection means starting over.
-- **Ticket-evidence enforcement mismatch (new)**: `decision.ts:96-106` can reject a train/bus trip for missing ticket evidence when policy requires it, but the wizard's ticket upload (`ticket-upload-card.tsx`) has no `required` gate — so an employee can submit without it and get silently rejected, discovered only later. Car evidence, by contrast, IS hard-blocked client-side (`mobile-outstation-wizard.tsx:1139-1142`), so this asymmetry is ticket-only.
-- **Duplicated wizard fields (new, looks like leftover markup not intentional UI)**: Meeting/Other amount fields and AM/PM workload fields each render twice bound to the same state in `mobile-outstation-wizard.tsx:1451-1538` — one editable copy, one disabled copy captioned "auto-resolved after submission," which is misleading since both are the same live state.
-- **Regional Manager missing from nav (new)**: `src/config/system-navigation.ts:597-619` role lists for both "Submit Expense" and "Expense Dashboard" include DM/NSM/PM/GPM/MM/Training Manager but NOT Regional Manager — unclear if intentional.
-- **Two entry points skip the eligibility engine entirely and self-approve on insert**: `submitMedicalRepSimpleExpenseRequest` (`service.ts:1610-1732`, distance/governorate/campaign rules never applied) and `createManagerExpenseAsAdmin` (`service.ts:2086-2250`, distance-only check). Only the wizard + its offline wrapper actually run `decision.ts`.
-- **Workflow-registry role list is stale**: DB-stored registry (`20260527083111_workflow_registry.sql`) still lists Super Admin/HR Specialist/Finance Manager/CEO as able to approve/reject outstation; actual code gate (`admin-access.ts`) is Super-Admin-only and wins in practice, but the stored data itself was never narrowed.
-- **Finance Manager can edit global policy**: `POST /api/outstation/policy` only requires generic `outstation:update`, which Finance Manager holds per `permissions.ts` — so Finance Manager can rewrite eligibility/fuel/allowance policy for everyone despite being execution-locked out of approving individual requests.
-- **Admin detail GET over-gated**: `app/api/admin/outstation/[id]/route.ts` GET (single-request detail + evidence URL) requires action `"approve"` not `"read"`, so Finance Manager/CEO 403 even on read-only detail view, contradicting `admin-access.ts`'s comment that they should see outstation data.
+🔴 **Before dropping a DB column or table, grep ALL of `src` + `app` for its name** — typecheck does NOT
+catch Supabase `.select("…col…")` strings or table-name string arguments. The redesign's "no traces"
+migration dropped `variance_amount`/`fraud_flags_json` and `outstation_location_audit_logs` while live
+cross-module consumers (`employee-360/deep-service.ts`, `admin/system-cleanup.ts`,
+`workflow-control/definitions.ts`) still read them by string and threw in production.
 
-**How to apply**: if asked to fix any of these, the ticket-evidence gap and duplicated wizard fields are the two with real user-facing impact; the rest are permission/data-hygiene oddities. None have been actioned yet — owner was only informed, not asked to fix, as of this note.
+**Dev-preview gotcha:** this module's worktree `.env.local` points at PRODUCTION Supabase.
+`/api/dev-auth?role=X&hrId=<real HR_ID>&next=<path>` impersonates a real employee — read-only browsing is
+safe, but **never click a submit/mutate action against a prod-pointed dev server**, and `next dev` 404s
+`/api/dev-auth` outside `NODE_ENV=development` (see [[local-browser-verify-gotchas]]).
 
----
-
-**IMPLEMENTATION 2026-07-28 (owner asked to build a 7-item list; item 7 draft REVOKED by owner → 6 items in 2 PRs).** Worktree `F:\Phoenix Workforce\_wt-outstation-portal`.
-
-**PR A SHIPPED (open, unmerged): [#1428](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1428)** branch `codex/outstation-portal-upgrades` (commit `ecf7f694`, off origin/main `64f86443`). typecheck/462 tests/lint/build all green. Contains:
-- **Same-governorate block + HOLD**: `validateCapturedLocation` (service.ts ~843) now resolves each governorate from multiple fields via new `resolveFirstGovernorate` (city→area→address). Same gov → reject (existing). NEW: governorate unconfirmed → `governorateReviewRequired` flag on `OutstationCaptureResult` (optional field) → `submitOutstationRequest` HOLDS as status `"submitted"` (NOT pushed to payroll), notifies Super Admin. Owner chose "hold when unconfirmed" over fail-open. `decision.ts` is STILL dead code — all live logic is inline in service.ts.
-- **RM nav**: added Regional Manager to Submit Expense + Expense Dashboard (`system-navigation.ts` 624-625).
-- **Area→rep dropdown**: new `src/lib/outstation/area-rep-options.ts` `getManagerAreaRepOptions()` reads `au_v_org_tree` (service-role), walks manager seat→REP subtree (DM 1-hop / RM/NSM multi-hop uniform), returns areas+occupying rep. Wizard shows Area select (auto-fills rep) when non-empty, else falls back to legacy rep picker. Wired in submit-expense/page.tsx.
-- **"evidence" word removed** from wizard + ticket-upload-card (copy only; all `carEvidence*` identifiers untouched).
-- **Held-alert clarity**: `notifyOutstationSubmitted(request, {heldForReview})` — high priority + "Action needed" banner. NOTE: kept literal `{label:"Status",value:"Submitted"}` because `tests/outstation-notifications.test.ts` RULE 1 asserts that exact string.
-- **Submitter sees held rows**: new `getOwnPendingOutstationReviewRequests()` + `PendingReviewRequestsCard` rendered above the (ledger-backed, accepted-only) Expense Dashboard.
-
-**PR B SHIPPED (open, unmerged, STACKED on PR A): [#1429](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1429)** branch `codex/outstation-tickets` (base = `codex/outstation-portal-upgrades`; commits `bcc5f59d` item6, `28674d18` item5). typecheck/462 tests/lint/build all green. Payroll-touching — flagged for explicit owner review before merge. No migration.
-- **Item 6 (real ticket persistence + mandatory)**: manager submit route was JSON-only and DISCARDED ticket files; now the wizard sends tickets as base64 data URLs (mirrors car-evidence), server decodes via new `parseOutstationTicketAttachmentDataUrl` (car-evidence-storage.ts, validates PDF/JPG/PNG + 5MB) → `uploadOutstationTicketAttachments` → stores `ticket_attachment_paths`/`_metadata`+`attachment_count`+go/return in insert. Train/bus REQUIRES ≥1 ticket: hard block client (wizard submit()) + server (submitOutstationRequest, `!offlineCaptured` so offline stays exempt). Rollback on insert fail. Submit route 400-mapping widened (too large/must be/empty). `submitOutstationRequest` now takes 3rd `options:{ticketAttachments}` param.
-- **Item 5 (+ extra ticket)** — commit `28674d18` then REWORKED per owner in commit `02ed336c`: owner wanted it (a) INLINE on each request row not a separate section, and (b) MULTIPLE tickets+amounts (his 4-ticket multi-leg example). Final: `addExtraTicketsToOwnOutstationRequest(requestId, access, {tickets: [{ticket, amount}], reason})` (PLURAL) — owner-only + train/bus-only + payroll-lock guards; summed extra cost ADDS to ticket_amount/report_travel_cost → recompute expected/claimed via `reportExpectedTotal` (allowance untouched); re-syncs unpaid linked payroll via EXISTING `syncLinkedOutstationPayrollExpense` (no new payroll write path); audit-logged; all uploads rolled back on fail. `getOwnTicketExpenseRequests` lists caller's train/bus non-rejected requests. `POST /api/outstation/[id]/extra-ticket` accepts `{tickets:[{dataUrl,name,amount}], reason}`. Client `ExtraTicketManager` = ROW list "My train/bus requests" on Expense Dashboard; each row expands INLINE to a multi-ticket editor (+ Add another ticket, each file+amount, one reason). **First path letting an EMPLOYEE change own payable amount post-submission (bounded: add-only/train-bus/pre-payment/audited).** NOTE: did NOT surgically integrate into the big ledger-backed `PersonalExpenseWorkloadDashboard` table (2 render paths, accepted-only, high risk) — the row list sits above it; if owner wants it literally inside that table, follow-up.
-
-**Item 5 placement REWORKED AGAIN 07-28 (commit `f2f9c512`)**: owner saw the "My train/bus requests" separate-card screenshot via live dev-auth-as-real-manager preview and rejected it — wanted the control literally on the request itself. Final placement: the control now lives INSIDE `PersonalExpenseWorkloadDashboard`'s existing per-row expand panel (both desktop click-to-expand `<tr>` and the mobile card) — the same ledger table the employee already uses to see their requests, not a separate section. Deleted `getOwnTicketExpenseRequests`/`OwnTicketExpenseRequest` (no longer needed — no separate dataset). `extra-ticket-manager.tsx` now exports only `ExtraTicketRowEditor` (no outer list/heading). New `PersonalExpenseWorkloadDashboard` prop `viewerHrId?: string|null` — opt-in, gates the self-service control to the viewer's OWN train/bus non-declined rows (derives request id from ledger `tripId` matching `OUTSTATION-<id>`; historical/Excel rows never match, correctly excluded). **Only passed from the employee-portal Expense Dashboard page** — the admin-shell's OWN `WorkspaceExpenseDashboardPage` (same component, `src/components/workspace/admin-shell-employee-pages.tsx:709`, can show a MANAGER'S WHOLE TEAM not just their own rows) deliberately does NOT pass it, so the control never appears there. Verified live via dev-auth-as-A-7 (real prod employee with a real bus request): row expand → "Add tickets" button → inline multi-ticket form, screenshotted and confirmed working.
-
-**Two more additions 07-28 (commit `09c39dd1`)**: (a) new "Extra Tickets" tracking column on the Expense Dashboard table itself (desktop+mobile) via new `getOwnOutstationTicketCounts()` (request id -> count map, new `ticketCountsByRequestId` prop, opt-in like `viewerHrId`) — owner explicitly wanted this trackable IN the table, not just inside the row-expand panel. (b) new REQUIRED "destination" field on the extra-ticket form (separate from "reason") — "where is he going" — threaded through the API route and `addExtraTicketsToOwnOutstationRequest`, folded into the persisted note + audit log. NOTE: an earlier same-session attempt misread "add a place for new entries in the table" as "add a new-expense-submission row into the table" (moving the existing floating Submit CTA into the table) — owner rejected this, it was reverted via `git checkout --` before commit (never pushed). Correct reading only emerged after a follow-up clarification.
-
-**Delivery status**: BOTH PRs open+unmerged. Owner approved building; has NOT approved merge/deploy. Worktree `_wt-outstation-portal` on branch `codex/outstation-tickets` (PR B, now 3 commits: `ecf7f694` base carries PR A, `bcc5f59d` item6, `28674d18`→`02ed336c`→`f2f9c512` item5 iterations). Item 7 (draft) was REVOKED — do not build.
-
-**Dev-preview-against-prod gotcha (07-28)**: this worktree's `.env.local` points `NEXT_PUBLIC_SUPABASE_URL` at PRODUCTION (`ozucdzovmcqvepbozvqf`), not staging. `next dev` on Windows repeatedly HUNG mid-compile on the first hit to a route (not just slow — same log line for minutes with zero CPU contention from other processes) after `.next` had previously held a production-build's artifacts; fix was `rm -rf .next` + fresh `next dev` process each time. `next start` (production serve) is NOT viable for this kind of manual QA since `/api/dev-auth` 404s outside `NODE_ENV=development` (`src/lib/auth/dev-preview.ts:53`). `dev-auth` accepts `&hrId=<real HR_ID>&next=<path>` to impersonate a specific real employee (read-only browsing is safe; never click a submit/mutate action against this pointed-at-prod server).
-
-**PR B TODO (superseded — now shipped, see above): items 6 + 5, payroll-touching.**
-- **CRITICAL foundation**: the manager submit route (`/api/outstation/submit`) is JSON and DISCARDS ticket files — it only sends `hasTicketAttachments:boolean`+`attachmentCount`. `uploadOutstationTicketAttachments` runs ONLY in the medical-rep multipart path (service.ts ~1658→bucket `outstation-evidence`, cols `ticket_attachment_paths`/`ticket_attachment_metadata` jsonb). So item 6 (mandatory ticket) AND item 5 (add ticket later) both require BUILDING real ticket persistence into the manager flow first.
-- **Item 6**: make train/bus ticket upload mandatory — hard-block submission (mirror car-evidence throw at service.ts ~1256; submit route maps `required|missing|requires`→400). Only ~2 ticket slots exist (go/return).
-- **Item 5**: "+ extra ticket" button on a submitted train/bus request → extra attachment + cost field; owner ruled the extra cost IS ADDED to the total (recompute, never touch allowance). No post-submission edit endpoint exists yet under `app/api/outstation/**` (all-new). Payroll lock: `imported_to_payroll_at`/`imported_payroll_batch_id` on `outstation_expenses` (joined by trip_id) — block edits once paid. Car trips excluded.
+See [[outstation-expense-notifications-reject-only]] and [[expense-source-excel-vs-system]].

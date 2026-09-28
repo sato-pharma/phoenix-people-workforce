@@ -1,69 +1,72 @@
 ---
 name: direct-order-request-module-build
-description: "Direct Order Request — governed direct-sales capture, approval and injection. BUILT AND LIVE: src/lib/direct-orders plus a consolidated admin workspace at app/(admin)/admin/direct-orders carrying approval-exceptions, caps, cleanup and held desks. The \"BUILDING / Phase-A / worktree\" framing is stale; the governance design recorded here is what still matters."
+description: "Direct Order Request — governed direct-sales capture, approval and injection, fixing the reps-get-0-of-direct-value gap. BUILT AND LIVE: src/lib/direct-orders/ + a consolidated admin workspace at app/(admin)/admin/direct-orders with approval-exceptions/caps/cleanup/held desks. Holds the LOCKED owner governance rules (approval ladder, 25% bonus cap, value = qty × factory price bonus-EXCLUDED, sales month = CEO-approval month, seat-model rep credit, separate distributor code, approvals only under the Approvals Hub) and the wiring."
 metadata: 
   node_type: memory
   type: project
   originSessionId: e809b225-37bc-4db0-b13f-de36f150f936
+  modified: 2026-09-26T05:38:37.228Z
 ---
 
-New money-critical module: **Direct Order Request** (governed replacement/parallel for the free-text `Direct Orders (4).xlsx`). Fixes the [[direct-orders-region-only-no-rep-attribution]] gap (reps get 0 of ~25% Anti / ~30% Pedia direct value). **Plan file: `C:\Users\satoh\.claude\plans\okay-now-look-i-clever-kahn.md` (owner-APPROVED 2026-07-18).**
+A money-critical module: a governed replacement/parallel for the free-text `Direct Orders (4).xlsx`, fixing
+the [[direct-orders-region-only-no-rep-attribution]] gap (reps got 0 of ~25% Anti / ~30% Pedia direct value).
+BUILT AND LIVE: `src/lib/direct-orders/` plus a consolidated admin workspace `app/(admin)/admin/direct-orders/`
+with dedicated desks `(desks)/{approval-exceptions,caps,cleanup,held}`.
 
-**Owner decisions (locked):** single-line requests; approval ladder = requester's ACTUAL managers up the sales line to CEO (DSM→RM→NSM→CEO, RM→NSM→CEO, NSM→CEO; **PM/GPM→straight to CEO**); bonus cap **25% of qty (Ivyronc 30%)**, hard block + **CEO override w/ reason**; **value = approvedQty × master factory_price, bonus IGNORED**; sales month = **CEO-approval month**; achievement credited to **the rep owning the pharmacy's area (seat model)**; **run PARALLEL** with manual Excel under a **separate distributor code** (double-count risk → reconciliation view); reversal = **reversing entry + re-approval**; **auto-generated Phoenix pharmacy code** per direct-order pharmacy (reusable registry, requester picks previous or codes new; optional distributor + that distributor's customer code); report access **tiered by role/scope**; notifications **email+in-app+telegram on every transition** to requester+next approver, **SFE Manager + Super Admin CC'd every step**.
+## Locked owner governance rules
 
-**Build env:** fresh worktree **`F:\Phoenix Workforce\_wt-direct-orders`** branch `codex/direct-orders` off latest origin/main (the `.claude/worktrees/youthful-thompson-9370de` checkout was ~40 commits STALE — missing `au` schema/attribution/targets; also shared with another session). Env synced, deps hardlinked.
+- **Single-line requests.** Approval ladder = the requester's ACTUAL managers up the sales line to CEO
+  (DSM→RM→NSM→CEO, RM→NSM→CEO, NSM→CEO; **PM/GPM go straight to CEO**). Chain resolved by walking
+  `getEmployeeDirectory` `managerHrId` → `ceoHrIds()`, with cycle + depth guards.
+- **Bonus cap = 25% of qty (Ivyronc / IV001 = 30%)** — hard block, with a **CEO override that requires a
+  reason**. Caps are UI-editable in `direct_order_caps` (`__GLOBAL__` sentinel + per-product overrides; Super
+  Admin edits, SFE + CEO view) — the Ivyronc special lives in data, not code.
+- 🔴 **value = approvedQty × master `factory_price`, bonus IGNORED.** Discount deal type instead computes
+  qty × `public_price` × (1 − disc%), no bonus. Pricing is LOCKED — [[direct-order-pricing-rule-locked]].
+- **Sales month = the CEO-approval month.** Only Finance books it, so a NULL sales month is never a bug —
+  [[direct-order-sales-month-is-finance-owned]].
+- **Achievement is credited to the rep owning the pharmacy's AREA (seat model).**
+- **Runs PARALLEL with the manual Excel under a SEPARATE distributor code (`DirectReq`, never `'Direct'`)** →
+  a double-count risk covered by a reconciliation view. Reversal = a reversing entry + re-approval.
+- **Each direct-order pharmacy gets an auto-generated Phoenix code** (reusable registry
+  `direct_order_pharmacies`, sequence `DOP-000001`; the requester reuses a previous one or codes a new one).
+  A pharmacy MUST carry ≥1 distributor + that distributor's customer code, with brick/area/region resolved
+  from `source_of_sales_customer_map`. `collection_date` ("Money collection date / تاريخ التحصيل") is REQUIRED
+  at submit; `pharmacy_address` optional.
+- **Report access is tiered by scope:** see-all = Super Admin / CEO / SFE Manager / NSM; RM = hierarchy
+  subtree (managerHrId BFS); DSM / PM = own. The report shows brick/area/region as BOTH name and code
+  (owner: "i need both names and codes").
+- **Notifications fire on EVERY transition** (in-app + email + telegram) to requester + next approver, with
+  SFE Manager + Super Admin CC'd every step.
+- 🔴 **Approvals happen ONLY on the "Direct Orders Approvals" tab UNDER the Approvals Hub** — the SOLE gate.
+  NO Action Center approve path and NO one-click email/Telegram approvals; notifications deep-link to
+  `/admin/approvals/direct-orders/{id}` only. Mirrors vacation's approvals-hub body + `decision-actions.tsx`.
 
-**Mirror map (confirmed by explore agents):** approval-flow ← `src/lib/vacation/approval-flow.ts`; CEO-role-step ← `src/lib/offers/approval-chain.ts` (`computeRequiredApprovers`/`canCastOfferApproval`); org chain ← vacation `managerChain` + `src/lib/workforce/hierarchy-resolver.ts`, `ceoHrIds()` (attendance/digest-recipients), SFE/SuperAdmin by role query, PHX-1=sysadmin; notifications ← `createSystemNotification` + vacation `notifyRecipients` fan-out, register `direct_orders` in notifications/policy.ts + system.ts module sets; workflow ← add `src/lib/direct-orders/workflow.ts` moduleKey `direct_orders` + workflow_registry_modules row; report ← Marketing ROI Tracking (`roi-filter-engine.tsx` + `phoenix-xlsx-style.ts` buildCoverSheet/writeTable + ui/sortable-table); SoS inject ← `persistDistributorSalesUpload`/`finalizeSosBatchAndAuditSupersede`/`phx_refresh_sos_fact_rollup` under a NEW distributor_code (never 'Direct'); rep credit ← `sales_records` sales_type='Direct'; marketing ← add `track_direct_sales` col + direct branch in `phx_marketing_request_roi_actuals_v2`. Action Center + Approvals Hub need EXPLICIT wiring (no auto-discovery).
+## Permission model and wiring
 
-**Progress (all GREEN — typecheck + targeted tests):**
-1. Pure core: `src/lib/direct-orders/types.ts`, `approval-flow.ts` (ladder, sequential gating, bonus cap, value) + `tests/direct-orders-approval-flow.test.ts` wired in.
-2. **Migration WRITTEN (not applied — staging-first/gated):** `supabase/migrations/20260718140000_direct_orders_module_foundation.sql` — direct_order_pharmacies (auto-code seq `DOP-000001`), _requests, _approval_steps, _events + `phx_apply_direct_order_decision` CAS RPC; RLS enabled NO policies (service-role-only).
-3. **`direct_orders` permission resource** added to permissions.ts union+array+matrix — DSM/RM/NSM = [read,create,update,approve,export]; PM/GPM = [read,create,update,export]; SFE = [read,export]; Finance = [read,update,export]; CEO = [read,approve,export] (SoD); Super Admin = allActions. permission tests (phase22/title-gov/modules-control/access-gov/access-registry) all pass.
+- **`direct_orders` permission resource:** DSM/RM/NSM = [read,create,update,approve,export]; PM/GPM =
+  [read,create,update,export]; SFE = [read,export]; Finance = [read,update,export]; CEO = [read,approve,export]
+  (separation of duties); Super Admin = all. (The submit gate also allows Super Admin explicitly.)
+- **Workflow:** `moduleKey direct_orders` (`src/lib/direct-orders/workflow.ts`) + a `workflow_registry_modules`
+  row with actions submit/approve_intermediate/approve_final/reject/return/reverse; decisions apply through
+  the **`phx_apply_direct_order_decision` CAS RPC** (a concurrent decision fires `40001`; `return` skips the
+  step update). Mirrors: approval-flow ← vacation; the CEO role-step ← offers `computeRequiredApprovers`.
+- **Data:** `direct_order_{pharmacies,requests,approval_steps,events}` + `direct_order_pharmacy_distributor_codes`
+  + `direct_order_caps`, all RLS-enabled with NO policies (service-role-only). Geo-variance (submitter brick vs
+  customer-map brick) is non-blocking → an admin Pharmacy Geography Variances desk (keep | apply-mapping).
+- **Action Center + Approvals Hub need EXPLICIT wiring** — there is no auto-discovery.
 
-4. **Workflow module + service DONE (typecheck GREEN):** `src/lib/direct-orders/workflow.ts` (moduleKey `direct_orders`, decision→action map, assert) + migration seed of the `direct_orders` workflow_registry_modules row (submit/approve_intermediate/approve_final/reject/return/reverse) + RPC updated so `return` skips the step update. `src/lib/direct-orders/service.ts` — chain resolution (actual managers via getEmployeeDirectory managerHrId walk → CEO by role; PM/GPM straight to CEO; cycle+depth guard), pharmacy registry create/list, submit (role gate + product/price snapshot from listSourceOfSalesProducts + bonus-cap + value + seed steps + notify first approver+CC + audit + event), decide (per-step approver authz + pure evaluate + workflow assert + `phx_apply_direct_order_decision` RPC + notify requester/next/CC + audit + event + Phase-C inject hook stub), reverse (reversing request + chain), reads. Added `direct_order_request` to AuditEntityType. Recipients: `hrIdsForRole` + CC = SFE Manager + Super Admin every transition.
+## Standing rules that now outrank the original plan
 
-**DEFERRED (small, next):** notification POLICY registration — `direct_orders` must be added to `src/lib/notifications/system.ts` module sets (criticalWorkflowModules/employeeSubjectWorkflowModules/workflowEmailEnvelopeModules) + a `policy.ts` entry so EMAIL+TELEGRAM fire (in-app works now; subjectHrId is set so email guard passes but envelope-module registration still needed).
+Pricing is LOCKED; only Finance books a sales month (a NULL is never a bug); `includedInClosing` means "feeds
+the distributor matrix" and must NEVER be flipped; and a shared distributor customer code CANNOT prove two
+venues are the same.
 
-**OWNER DECISION 2026-07-18 (approvals surface):** approvals happen ONLY on a new **"Direct Orders Approvals" sidebar tab UNDER the Approvals Hub** — this hub page is the SOLE gate to approve/reject/return. Do NOT add an Action Center approve path and NOT one-click email/Telegram approvals (notifications deep-link to the hub page only; service href already = `/admin/approvals/direct-orders/{id}`). Mirror vacation's approvals-hub body + decision-actions.
-
-5. **Approval surface DONE (typecheck + 397 tests + registry-coverage GREEN):** service approvals reads (`getDirectOrderWorkspaceData`/`countDirectOrderAwaiting`/`getDirectOrderApprovalDetail`, scoped to the assigned approver; Super Admin sees all) + 4 API routes (`app/api/direct-orders/{submit,[id]/decision,[id]/reverse,pharmacies}` — all registered in access-registry.ts, csrfRequired, domain-helper guard) + shared components `direct-order-approvals-body.tsx` + `direct-order-request-detail.tsx` (REUSES existing `decision-actions.tsx` with commentField="comment") + 4 pages (admin `app/(admin)/admin/approvals/direct-orders/{page,[id]/page}` + portal `app/employee-portals/approvals/direct-orders/{...}`, mode-redirect mirror of vacation) + nav tab "Direct Orders Approvals" under approvals-hub in BOTH admin+portal sections (icon ReceiptText, gated `direct_orders`/approve). Switched service `badRequest` to `validationError` (ApiError 400). Errors map via `toApiError`+`isForbiddenError`.
-
-**DEFERRED (small):** (a) notification POLICY registration — add `direct_orders` to `system.ts` module sets + `policy.ts` so EMAIL+TELEGRAM fire (in-app works now); (b) nav badge count (`/api/approvals/direct-orders/pending-count` + navBadge union in sidebar.tsx + employee-portal-layout.tsx) — tab works without it.
-
-6. **PHASE A CODE-COMPLETE (typecheck + 397 tests + lint all GREEN):**
-   - Notifications: `direct_orders` added to `system.ts` criticalWorkflowModules + employeeSubjectWorkflowModules (→ workflowEmailEnvelopeModules via spread) + `policy.ts` `"direct_orders.*"` entry (in_app+email+telegram, telegramAllowed, high). All 3 channels now fire.
-   - Submit UI: `src/components/direct-orders/direct-order-submit-form.tsx` (client; product select, qty, bonus with LIVE cap check importing pure `maxBonusUnits`/`computeDirectOrderSalesValue` from approval-flow, CEO-override reason when over cap, value preview, pharmacy picker = reuse-my-coded OR add-new-with-brick auto-deriving area/region, "My direct orders" table). Pages: admin `app/(admin)/admin/direct-orders/page.tsx` + portal `app/employee-portals/direct-orders/page.tsx` (canSubmit gate). Service adds `listMyDirectOrders`, `listDirectOrderProductOptions`, `listDirectOrderBrickOptions`. Nav: "Direct Orders" under admin `sales-source-of-sales` + portal `sales-operations` (gated direct_orders/create; portal roles DM/RM/NSM/PM/GPM).
-
-7. **STAGING DB APPLIED + VERIFIED (owner-approved 2026-07-18):** migration applied to staging `cifwmndunmlxjhyjugxa` via `mcp__supabase-production__execute_sql` with staging project_id (staging MCP token still broken per memory). Verified: 4 tables + RPC + workflow module (active, 6 actions) + RLS on all 4 + sequence. DB functional smoke test PASSED (DSM→RM→NSM→CEO chain: intermediate→pending, final→approved, sales_month=2026-07 set, value 3037.50 = 100×30.375 bonus-EXCLUDED, concurrency-guard 40001 fired, auto code DOP-000001). Smoke rows deleted (0 left). Migration is idempotent (safe for the real pipeline apply later).
-
-8. **BROWSER + E2E VERIFIED on staging (2026-07-18):** ran local dev (branch code) against staging DB via a gitignored `.env.development.local` overriding the 3 Supabase vars — creds sourced from the existing `.env.staging.rls.local` under the **`PHOENIX_STAGING_*`** prefix (NOT `PHOENIX_NEW_STAGING_*`, which is the OLD decommissioned izhmxvgiktiafqusolot — a naming trap my safety assert caught). dev-auth (`/api/dev-auth?role=&hrId=`) impersonated roles. RESULTS: submit page renders (28 products + 439 bricks from staging, live Ivyronc-30%-cap hint, "SALES VALUE (BONUS EXCLUDED) 3,038 EGP", brick auto-derives Area/Region, sidebar "Direct Orders" under Source of Sales); error UX renders. Full flow via real routes+service (HTTP+dev-auth+CSRF Origin): DM B-119 create-pharmacy(DOP-000003)→submit(pending, value 3037.5)→**RM B-122 approve**(stays pending, advances)→**CEO AA approve**(approved, sales_month 2026-07); persisted chain `b-122→aa`, events submitted,approve,approve. Approvals-hub page renders 200 with the pending request (Saginko 6,669, "Awaiting your response", waiting-on label). All staging test data deleted (0 rows). Dev server stopped, `.env.development.local` removed.
-   - **FIX from browser test:** `submitDirectOrder` gate excluded Super Admin though the page canSubmit + registry submit action both allow it → added `|| access.role === "Super Admin"`. (Real requester roles unaffected — B-119 DM flow worked.)
-   - Browser classifier went "temporarily unavailable" mid-run so the hub SCREENSHOT is missing, but its rendered HTML content was asserted instead.
-   - Staging Cloud Run still serves `main` (branch NOT deployed there). Nothing committed/pushed (ASK-before rule).
-
-9. **OWNER FIELDS + RE-VERIFY (2026-07-19):** added 2 owner-requested fields — `direct_order_requests.collection_date` (date, submitter-entered, REQUIRED at submit, YYYY-MM-DD, "Money collection date / تاريخ التحصيل") + `direct_order_pharmacies.pharmacy_address` (text, optional). Full stack: migration (create-table defs + idempotent `add column if not exists`), types, service (map/create/submit + required-validate), routes (submit + pharmacies), submit form (required date input + address in add-new + reset), approval detail (both shown). typecheck+lint+**397 tests** green. Applied both columns to STAGING (idempotent ALTERs) + rolled-back DB smoke PASSED (value 100×225.06=22506 bonus-excluded, sales_month set, collection_date+address persist). **BROWSER RE-VERIFIED on staging** (local dev :3011 via `.env.development.local`←PHOENIX_STAGING_* with staging-URL assert; dev-auth DM B-119→portal `/employee-portals/direct-orders`): form renders "MONEY COLLECTION DATE *" + التحصيل helper + "Pharmacy address" input; filled LA001×100 + date 2026-08-15 → SALES VALUE "27,000 EGP" (=100×270, bonus-excluded). Cleaned up: dev server killed, `.env.development.local` removed, local env reverted to prod, staging 0 rows. **Phase A DONE+VERIFIED.**
-
-10. **PHASE B DONE + BROWSER-VERIFIED on staging (2026-07-19):** premium report page (all fields + xlsx export, tiered scope). Files: `src/lib/direct-orders/types.ts` (`DirectOrderReportRow` — every field, + `DirectOrderReportScope`), service `getDirectOrderReport(access)` + `resolveDirectOrderReportScope` (see-all = Super Admin/CEO/SFE Manager/NSM; RM=`hierarchy` subtree via managerHrId BFS; DSM/PM=`own`), `src/lib/direct-orders/report-workbook.ts` (`buildDirectOrdersReportWorkbook` — Cover/Provenance + 34-col "Direct Orders" table + "By Status" sheet, reuses phoenix-xlsx-style writeTable/buildCoverSheet), export route `app/api/direct-orders/report/export/route.ts` (POST, assertExportRateLimit, audit `direct_order_request`, registered in access-registry classification "export", permission read... action export, csrfExemptReason), client `src/components/direct-orders/direct-order-report-workspace.tsx` (KPI band, status-chip filters, search, sortable headers, all cols, Export button → fetch blob), pages admin `app/(admin)/admin/direct-orders/report` + portal `app/employee-portals/direct-orders/report` (server-load rows + scope), nav "Direct Orders Report" (FileSpreadsheet, direct_orders/read) in admin + portal. typecheck+lint+**397 tests** (incl access-registry coverage) green. Browser on staging (2 seeded rows, deleted after): Super Admin→"COMPANY-WIDE" all 33 cols + KPIs (Total 33,660 / Approved 27,000 EGP) + names resolved + collection-date/address shown; DM B-119→"YOUR OWN"; export POST→200 xlsx 10,474 bytes. Cleaned up (staging 0 rows, dev server killed, override removed). **Owner add 2026-07-19: brick/area/region show BOTH name+code** (owner: "i need both names and codes") — added `brickName`/`areaName`/`regionName` to `DirectOrderReportRow`, resolved in `getDirectOrderReport` from `loadSalesReferenceData` (bricks ref carries brickName+areaName+regionName), split table+xlsx cols into name+code pairs; browser-verified (B41-23→ابوصير, GZ1→Giza - Giza Centers, GZ→Giza), export 200 valid xlsx, 397 tests green.
-
-11. **PHASE B2 — owner refinements DONE + staging-verified (2026-07-19):** (a) **mandatory multi-distributor customer codes** per pharmacy — child table `direct_order_pharmacy_distributor_codes` (unique pharmacy+distributor), by-name distributor dropdown (`listDirectOrderDistributorOptions`), ≥1 required, mapped brick/area/region resolved from `source_of_sales_customer_map` at entry; report shows joined `distributorCodesText`. (b) **Bonus|Discount deal type** — discount = qty × **public_price** × (1−disc%/100), no bonus; bonus unchanged (qty×factory). New `source_of_sales_products.public_price`. Request cols `deal_type/discount_pct/public_price_snapshot`. (c) **UI-editable caps** — `direct_order_caps` table (`__GLOBAL__` sentinel + per-product overrides; seeded 25/25 + IV001 bonus 30); pure `maxBonusUnits/validateBonus/validateDiscount` now take `capPct` (config-driven, Ivyronc special moved to data); `src/lib/direct-orders/caps.ts` loader+CRUD (Super Admin edit; SFE+CEO view). (d) **Geo-variance** — submitter brick vs customer-map brick, non-blocking → admin **Pharmacy Geography Variances** page (keep|apply-mapping). Two new admin pages `/admin/direct-orders/{caps,pharmacy-variances}` (SuperAdmin edit / SFE+CEO view) + nav tabs (Settings2/MapPinned) + routes `/api/direct-orders/{caps,variances}` registered. Form rewritten (deal toggle + discount + repeatable distributor rows + caps props). **typecheck+lint+397 tests green** (discount math unit: 100×92×25%=6900 ✓). Migration `20260719120000_...` applied to STAGING; browser (Super Admin): submit form Bonus/Discount toggle renders, caps page renders all sections incl Ivyronc override + public prices, **caps EDIT via API persisted (global discount 25→20, updated_by phx-1)**. Cleaned up (staging reset to seed, 0 rows, dev server killed, override removed). Discount form live-preview pixel not captured (client loading-shell flaky) but math unit-verified + form calls same pure fn.
-
-12b. **PR OPENED 2026-07-19 — [#1152](https://github.com/Phoenix-HR/phoenix-people-workforce/pull/1152)** `codex/direct-orders` → main (owner-approved commit+push+PR). Squashed my work into 1 feat commit (c39b2dd7), then **merged origin/main** (was 39 behind; 1 conflict = both-added import in `tests/run-tests.ts`, kept both) → branch now 0-behind. Post-merge full gate GREEN: pnpm install up-to-date, typecheck clean, **407 tests**, **production build succeeded**. Pushed (pre-push typecheck ran+passed). PR **MERGEABLE** (no conflicts), 39 files +4367, CI (lint-typecheck + validate) running. NOT merged (needs separate approval; merge → staging auto-deploy). **2 migrations still NOT on prod** (20260718140000 + 20260719120000) — need separate prod-migration approval.
-
-**NEXT: Phase C injection (money-critical: implement the decide() inject hook → SoS `DirectReq` distributor_code batch + weekly `sales_type='Direct'`, idempotent per request, reversible; discount rows use public×(1−disc) value; invariant tests) → Phase D marketing linkage. Phase C needs the `au` schema/monthly-attribution now present on the merged branch. ASK before merge / prod migration / Phase C commit.**
-
-**REMAINING:** optional nav badge count; Phase B report page (all fields + xlsx, tiered scope); Phase C money injection into SoS+weekly (idempotent/reversible + implement decide() inject hook + invariant tests); Phase D marketing direct-sales linkage (+ optional distributor/customer-code fields already on pharmacy registry). Then B report, C injection (money invariants+tests + implement the decide() inject hook), D marketing. **Migration NOT applied to any DB yet.** ASK before commit/push/PR. *(Superseded 2026-09-16 by the owner: commit, push and opening the PR are automatic now; a merge still needs his approval.)*
-
-## 2026-09-04 — built and consolidated into one workspace
-
-The description opened **"BUILDING"** and named a worktree. Both are long gone.
-
-On `main`: `src/lib/direct-orders/`, and an admin workspace at
-`app/(admin)/admin/direct-orders/` with dedicated desks — `(desks)/approval-exceptions`,
-`(desks)/caps`, `(desks)/cleanup`, `(desks)/held`. The consolidation landed as
-*feat(direct-orders): one consolidated workspace, and status names people can read* (#2020,
-2026-08-11).
-
-Several standing rules now govern this module and outrank anything in the plan above: pricing is
-LOCKED, only Finance books a sales month (a NULL is never a bug), `includedInClosing` means
-"feeds the distributor matrix" and must never be flipped, and a shared distributor customer code
-cannot prove two venues are the same.
+**Injection status:** Phases A/B/B2 (capture, approval surface, tiered report, multi-distributor codes,
+deal-type, editable caps, geo-variance) are built and live (the consolidation shipped as one workspace).
+🔴 **Phase C — the money injection (the `decide()` inject hook → a SoS `DirectReq` distributor-code batch +
+weekly `sales_type='Direct'`, idempotent per request and reversible, with invariant tests) — and Phase D
+(marketing direct-sales linkage) were the outstanding money-critical work as of mid-2026-07; verify their
+live state against production (`phx_closing_distributor_product` + `phx_monthly_closing_direct`) before
+assuming either way, given the age of this note.** Phase C credits value as approvedQty × factory (or
+public × (1−disc) for discount rows), never bonus.
