@@ -50,6 +50,7 @@ import JSZip from "jszip";
 
 import { HOUSE_COLORS } from "@/lib/hiring-pack/house-identity";
 
+import { splitLeaverLabel } from "../employment-status";
 import type { PackCell, PackChart, PackSection, SalesReviewPack } from "./model";
 
 // ── geometry ───────────────────────────────────────────────────────────────────────────────────
@@ -93,6 +94,8 @@ const HAIR = hex(HOUSE_COLORS.hair);
 const BODY = hex(HOUSE_COLORS.body);
 const MUTED = hex(HOUSE_COLORS.muted);
 const WHITE = "FFFFFF";
+// A leaver's mark, and the only non-blue ink in the deck (owner, 2026-09-28). Text, never a fill.
+const DANGER = "B91C1C";
 // The crest band and plinth — near-black, so a blue mark does not flatten against a blue ground.
 // The same value the Spotlight sheet uses.
 const CREST = "0E1720";
@@ -153,6 +156,34 @@ type TextOptions = {
 };
 
 /** One paragraph of one run. Every piece of text in this deck is built from this. */
+/**
+ * A paragraph whose leaver mark is set in RED — owner, 2026-09-28 ("make the left red colored").
+ *
+ * PowerPoint colours a RUN, not a substring, so the cell becomes two runs sharing one paragraph:
+ * the name in the table's own ink and the "(left …)" mark in red. Falls back to one plain run when
+ * the text carries no mark, so every other cell in the deck is byte-identical to before.
+ */
+function markedParagraph(text: string, options: TextOptions): string {
+  const parts = splitLeaverLabel(text);
+  if (!parts) return paragraph(text, options);
+  return (
+    `<a:p><a:pPr algn="${options.align ?? "l"}"/>` +
+    run(parts.name, options) +
+    run(parts.mark, { ...options, bold: true, color: DANGER }) +
+    `</a:p>`
+  );
+}
+
+function run(text: string, options: TextOptions): string {
+  const { bold = false, color, italic = false, size, font = "Calibri", spc } = options;
+  return (
+    `<a:r><a:rPr lang="en-US" sz="${size}" b="${bold ? 1 : 0}" i="${italic ? 1 : 0}"${spc != null ? ` spc="${spc}"` : ""} dirty="0">` +
+    `<a:solidFill><a:srgbClr val="${color}"/></a:solidFill>` +
+    `<a:latin typeface="${font}"/><a:cs typeface="${font}"/>` +
+    `</a:rPr><a:t>${esc(text)}</a:t></a:r>`
+  );
+}
+
 function paragraph(text: string, options: TextOptions): string {
   const { align = "l", bold = false, color, italic = false, size, font = "Calibri", spc } = options;
   return (
@@ -298,7 +329,7 @@ function tableCell(
     `<a:solidFill><a:srgbClr val="${options.bottomColor}"/></a:solidFill></a:lnB>`;
   return (
     `<a:tc><a:txBody><a:bodyPr/><a:lstStyle/>` +
-    paragraph(text, {
+    markedParagraph(text, {
       align: options.align,
       bold: options.bold,
       color: options.color,

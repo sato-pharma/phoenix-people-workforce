@@ -25,6 +25,7 @@ import { formatVisitCountSplit } from "@/lib/crm/visit-count-buckets";
 
 import type { ConcentrationFacts } from "../concentration";
 import { describeSpread } from "../concentration";
+import { isResignedStatus, leaverLabel } from "../employment-status";
 import { periodColumnLabel } from "../period-format";
 import type { ReviewPersonRow } from "../sources/roles";
 import { describeSpecialtyMix, type SpecialtyMix } from "../specialty-mix";
@@ -179,6 +180,20 @@ export function buildSalesReviewPack(input: PackInput): SalesReviewPack {
 const CHART_BARS = 12;
 /** The earner mark every achievement table in this system is read against. */
 const EARNER = { label: "90% earner", value: 90 };
+
+/**
+ * A person's name in the pack, marked when he has left — owner's ruling, 2026-09-28.
+ *
+ * He keeps his rows: a Jul–Aug review is about Jul–Aug, and seventeen reps and two district
+ * managers who worked those months have since resigned. Dropping them would leave their visits and
+ * their areas' sales with nobody who did the work. What the pack must not do is print them exactly
+ * like people who are still here.
+ */
+function personName(person: ReviewPersonRow): string {
+  return isResignedStatus(person.employmentStatus)
+    ? leaverLabel(person.name, person.lastWorkingDate)
+    : person.name;
+}
 
 function areaPerformance({ areas, visitsAvailable }: PackInput): PackSection {
   const withLine = areas.some((area) => area.lineLabel);
@@ -373,7 +388,7 @@ function repRows({ areas, people, visitsAvailable }: PackInput): PackSection {
                 : "Field visits. The percentage beside a rep in the table is his AREA's, not his own.",
             countSuffix: "visits",
             items: plottedReps.map((person) => ({
-              label: person.name,
+              label: personName(person),
               note: areaByCode.get(person.areaCode as string)?.area ?? null,
               value: person.fieldVisits,
             })),
@@ -393,7 +408,7 @@ function repRows({ areas, people, visitsAvailable }: PackInput): PackSection {
       .map((person) => {
         const area = areaByCode.get(person.areaCode as string) ?? null;
         return [
-          person.name,
+          personName(person),
           area?.area ?? "Area not resolved",
           pct(area?.allProducts.ach ?? null),
           visitsAvailable ? person.fieldVisits : NO_VISIT_DATA,
@@ -414,7 +429,7 @@ function customersPerMonth({ months, people, visitsAvailable }: PackInput): Pack
     note: "Each month is its own union — a doctor seen twice is one customer in each — so the months do NOT add up to the window.",
     rows: visitsAvailable
       ? shown.map((person) => [
-          person.name,
+          personName(person),
           person.customers,
           ...monthList.map((month) => person.customersByMonth[month] ?? 0),
         ])
