@@ -153,7 +153,7 @@
     "docx-preview": "^0.4.0",
     "dommatrix": "^1.0.3",
     "exceljs": "^4.4.0",
-    "framer-motion": "^12.42.2",
+    "framer-motion": "^13.4.0",
     "google-auth-library": "^11.1.0",
     "html-to-image": "^1.11.13",
     "imapflow": "^1.4.9",
