@@ -3087,7 +3087,7 @@ type LinkedOutstationPayrollExpense = {
   tripId: string;
 };
 
-async function getLinkedOutstationPayrollExpense(
+export async function getLinkedOutstationPayrollExpense(
   requestId: number,
 ): Promise<LinkedOutstationPayrollExpense | null> {
   const { data, error } = await getSupabaseAdmin()
