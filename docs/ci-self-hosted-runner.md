@@ -297,11 +297,16 @@ Three tested flips, each reverted on anything but success:
 | `checks` | **success**, 201s | ~254s hosted — **faster**, and this is the dominant job |
 | `validate` | **failure**, 97s | the `Build` step only; steps 1–12 pass. Fixed above. |
 
-🔴 **STOP — THE OWNER HAS HALTED THIS TESTING UNTIL `CI_RUNNER` HAS A PER-BRANCH SWITCH.** His ruling,
-typed in another session's window on 2026-09-28 and relayed here; it reached this file as a relay rather
-than directly, and it is recorded because it *stops* an action, which is the safe direction to err in.
-**Do not flip `CI_RUNNER` again until that switch exists**, however green the checks look. The reason is
-below: a flip cannot be made safe by watching, only by scoping.
+🔴 **THE OWNER HALTED THIS TESTING UNTIL THERE WAS A PER-BRANCH SWITCH** — his ruling, typed in another
+session's window on 2026-09-28 and relayed here, recorded because it *stopped* an action, which is the
+safe direction to err in. The reason is below: a flip cannot be made safe by watching, only by scoping.
+
+✅ **That condition has since been met.** The per-branch switch landed in #4594 (merge `9bde1c3a4`):
+the repo-wide `CI_RUNNER` is gone, all six `runs-on` lines compute the runner, and self-hosted is
+reachable only from a same-repo `ci-runner/<task>` PR. Verified on `main`'s own run for that merge —
+`validate`, `checks` and `mobile` all on `ubuntu-latest`. **Arming it is still a separate decision
+and still the owner's**; this file does not record whether the variable is currently set, because that
+changes without a commit — read `gh variable list`.
 
 ### What the three flips actually established — 2026-09-28
 
@@ -469,19 +474,118 @@ on a new run attempt, `gh run rerun --failed` then rescues a stuck `ci-runner/` 
    ```
    Every row must read `"os": "Linux"`. A `"Windows"` row will take the jobs and fail all of them in
    seconds, and `status: online` tells you nothing about whether it can run bash.
-5. Flip CI onto it:
+5. Point the switch at the label you gave it — **never at `self-hosted`**, which matches every
+   self-hosted runner on the repo:
    ```bash
-   gh variable set CI_RUNNER --repo Gawish-1997/phoenix-people-workforce --body 'self-hosted'
+   gh variable set CI_RUNNER_LABEL --repo Gawish-1997/phoenix-people-workforce --body 'hetzner'
    ```
-6. Watch the first run end-to-end before trusting it.
+   This alone turns nothing on: only a same-repo PR from a `ci-runner/<task>` branch is eligible.
+   `main`, dispatches, schedules and every other PR stay hosted.
+6. Open a PR from a `ci-runner/<task>` branch and watch that run end-to-end before trusting it —
+   including which machine took each job (section D below).
+
+## Click by click — from nothing to a proven runner
+
+Ported from PR #4583 (`codex/runner-label-guard`), which was closed once the per-branch switch landed:
+its `CI_RUNNER` instructions were superseded, but this procedure was not, and it is the half that
+matters when there is hardware on the desk. Reconciled with the switch, so the variable names here are
+the live ones.
+
+The numbered steps above assume a host that already exists and a shell that is already non-root.
+🔴 **Hetzner's Ubuntu image logs you in as `root`, and `setup-self-hosted-runner.sh` refuses to run as
+root** (`[ "$(id -u)" -ne 0 ] || die`) — so the procedure above stops dead at that line with the
+servers already bought. **Step B2 is the missing step.**
+
+**A — order (browser, `console.hetzner.com`).** Prices read from Hetzner's own data 2026-09-28; they
+rose about 170% on 15 June 2026, so re-read them rather than trusting this table later.
+
+| field | value | why |
+| --- | --- | --- |
+| **Add server** | in the project, **Servers** → **Add server** | |
+| Location | **Nuremberg (NBG1)** | EU. `sfo` is the default for a new service elsewhere in this account — not here, but check it |
+| Image | **Ubuntu 24.04** | the script installs Node 24 itself |
+| Type | **Shared vCPU · AMD · CPX32** — 4 vCPU, 8 GB, 160 GB, 20 TB | about €35.49/mo each. **NOT CPX31** — US-only, 3 TB, far dearer |
+| Networking | leave **Public IPv4 + IPv6** on | the runner needs outbound only, but SSH in is how you set it up |
+| SSH key | **add your public key** | without one Hetzner emails a root password, which is worse in every way |
+| Volumes / Firewalls / Backups / Placement | skip | a runner holds no state worth backing up |
+| Name | `phx-ci-1` | `RUNNER_NAME` defaults to `phoenix-ci-$(hostname -s)`, so distinct names give distinct runners — which is what makes step D readable |
+| quantity | **2** if the console offers a count, otherwise repeat for `phx-ci-2` | |
+
+**B — on EACH box.** B2 is the step the old procedure was missing.
+
+```bash
+# B1  from your machine, as root (Hetzner's default)
+ssh root@<server-ip>
+
+# B2  make a non-root sudo user and give it your key — the script REFUSES to run as root
+adduser --disabled-password --gecos "" phx
+usermod -aG sudo phx
+install -d -m 700 -o phx -g phx /home/phx/.ssh
+cp /root/.ssh/authorized_keys /home/phx/.ssh/authorized_keys
+chown phx:phx /home/phx/.ssh/authorized_keys && chmod 600 /home/phx/.ssh/authorized_keys
+exit
+
+# B3  back in as that user
+ssh phx@<server-ip>
+git clone https://github.com/Gawish-1997/phoenix-people-workforce
+cd phoenix-people-workforce
+
+# B4  the label override — the whole point of the section above
+export RUNNER_LABELS=self-hosted,linux,x64,phoenix,hetzner
+
+# B5  a registration token, valid about ONE HOUR, from
+#     /settings/actions/runners/new  (get a fresh one per box if the first expires)
+export RUNNER_TOKEN=<paste>
+
+bash scripts/setup-self-hosted-runner.sh
+```
+
+It installs Node 24 plus corepack/pnpm and Playwright's system libraries, registers the runner and
+installs it as a systemd service so it survives reboot. It warns below 7 GB — a CPX32 reports 8, so
+that warning appearing means you bought the wrong plan.
+
+**C — arm the switch.** Two variables, and neither is set today:
+
+```bash
+gh variable set CI_RUNNER_LABEL --body hetzner   # the label you gave the box in B4
+```
+
+Then push a branch named `ci-runner/<task>` and open a PR from it. **Nothing else becomes
+self-hosted** — not `main`, not a dispatch, not any other PR. Roll back with
+`gh variable set CI_SELF_HOSTED --body off`, which takes effect on `gh run rerun --failed` because
+`vars.*` re-resolve on a new attempt.
+
+**D — prove it, and prove it on the right hardware.** A green run is not evidence on its own; read
+which machine took each job:
+
+```bash
+gh api repos/Gawish-1997/phoenix-people-workforce/actions/runners \
+  --jq '.runners[] | select([.labels[].name] | index("hetzner")) | "\(.name) \(.status) \(.os)"'
+gh run list --workflow=ci.yml --limit 1 --json databaseId --jq '.[0].databaseId'
+gh api repos/Gawish-1997/phoenix-people-workforce/actions/runs/<id>/jobs \
+  --jq '.jobs[] | "\(.name) on \(.runner_name) \([.labels[]] | join(","))"'
+```
+
+Every job's `runner_name` must start `phoenix-ci-phx-ci`. **A `phoenix-ci-<uuid>` name is a Railway
+replica**, which means the label selection did not hold — those carry `railway-eu` as well as
+`phoenix`, so check the labels line too. 🔴 **And watch that first `main` run to a verdict**: `main` is
+never self-hosted under the switch, but a red `main` for any reason makes Railway skip the production
+deploy within minutes, and re-running it green does not resurrect it.
 
 ## Turning it off
 
 ```bash
-gh variable delete CI_RUNNER --repo Gawish-1997/phoenix-people-workforce
+gh variable set CI_SELF_HOSTED --repo Gawish-1997/phoenix-people-workforce --body off
 ```
 
-The next run goes back to GitHub-hosted. Nothing else changes, no workflow edit, no PR. Do this
+That is the kill switch and it wins over everything else, so it works without having to remember which
+label was configured. `gh variable delete CI_RUNNER_LABEL` also does it, by making the label unset —
+either way an eligible PR falls back to hosted rather than queueing. 🔴 **`gh variable delete CI_RUNNER`
+is the OLD command and now does nothing**: that variable was retired in #4594 and no workflow reads it.
+
+Because `vars.*` are re-resolved on each new run **attempt**, a run already in flight keeps the old
+value — `gh run rerun --failed` is what picks the kill switch up. The next run goes back to
+GitHub-hosted. Nothing else changes, no workflow edit, no PR. Do this
 first and diagnose afterwards whenever the runner misbehaves — a queued job reports no status, and
 a required check with no status blocks every PR.
 

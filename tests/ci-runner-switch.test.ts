@@ -189,6 +189,14 @@ export function runCiRunnerSwitchTests() {
       want: HOSTED,
     },
     {
+      // ci.yml's push trigger lists master as well as main, so both protected branches want an
+      // assertion a reader can see rather than infer. Contributed by the session that built the
+      // switch design (2026-09-28); its truth table had this case and mine did not.
+      why: "a push to master must NEVER be self-hosted either — it is in ci.yml's push trigger list",
+      ctx: { ...base, event_name: "push", head_ref: "" },
+      want: HOSTED,
+    },
+    {
       why: "a workflow_dispatch has no head_ref at all, so it must resolve hosted",
       ctx: { ...base, event_name: "workflow_dispatch", head_ref: "" },
       want: HOSTED,

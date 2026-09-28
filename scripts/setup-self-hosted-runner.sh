@@ -31,7 +31,13 @@ REPO_URL="https://github.com/Gawish-1997/phoenix-people-workforce"
 RUNNER_VERSION="2.331.0"
 RUNNER_DIR="${RUNNER_DIR:-$HOME/actions-runner}"
 RUNNER_NAME="${RUNNER_NAME:-phoenix-ci-$(hostname -s)}"
-# `self-hosted` is implicit; these are what ci.yml's CI_RUNNER variable will be set to.
+# `self-hosted` is implicit. 🔴 THIS DEFAULT IS BYTE-IDENTICAL TO WHAT THE RAILWAY REPLICAS CARRY,
+# and `runs-on: self-hosted` matches EVERY self-hosted runner on the repo — so a host registered with
+# the default cannot be selected apart from them. Give a new host its OWN extra label and point
+# `CI_RUNNER_LABEL` at THAT, never at `self-hosted`:
+#   export RUNNER_LABELS=self-hosted,linux,x64,phoenix,hetzner
+# A label that matches no ONLINE runner does not fall back to hosted — it QUEUES, for ever, with
+# nothing red. See docs/ci-self-hosted-runner.md, "Turning it on". (Ported from PR #4583.)
 RUNNER_LABELS="${RUNNER_LABELS:-self-hosted,linux,x64,phoenix}"
 NODE_MAJOR="24"
 
@@ -105,11 +111,16 @@ cat <<EOF
  It is now ONLINE but NOTHING USES IT YET — ci.yml still resolves to ubuntu-latest,
  by design, so a half-finished runner cannot wedge CI.
 
- TO SWITCH CI ONTO IT (one repository variable, instantly reversible):
-   gh variable set CI_RUNNER --repo Gawish-1997/phoenix-people-workforce --body 'self-hosted'
+ TO SWITCH CI ONTO IT (one repository variable, instantly reversible) - name the label you gave
+ this host above, NEVER 'self-hosted', which matches every self-hosted runner on the repo:
+   gh variable set CI_RUNNER_LABEL --repo Gawish-1997/phoenix-people-workforce --body 'hetzner'
 
- TO ROLL BACK AT ANY TIME (jobs return to GitHub-hosted on the next run):
-   gh variable delete CI_RUNNER --repo Gawish-1997/phoenix-people-workforce
+ That alone turns nothing on: only a same-repo PR from a ci-runner/<task> branch is eligible, and
+ main is never self-hosted. Open such a PR to exercise it.
+
+ TO ROLL BACK AT ANY TIME (jobs return to GitHub-hosted on the next run, or the next run ATTEMPT
+ of a run already in flight - use gh run rerun --failed):
+   gh variable set CI_SELF_HOSTED --repo Gawish-1997/phoenix-people-workforce --body off
 
  Verify it appears online first:
    ${REPO_URL}/settings/actions/runners
