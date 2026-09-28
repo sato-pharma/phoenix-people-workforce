@@ -273,6 +273,14 @@ export function resolvePendingDecisionRecipients(input: {
  * exactly — the notification must never reach someone the decision route would then refuse, and it
  * must never miss somebody who can act. `recipientHrIds` empty means the step has no holder; the
  * caller reports the count rather than assuming it landed.
+ *
+ * `notificationKey` exists so a hand-off can be RE-SENT on purpose. Without it the event key is a
+ * hash of the action url, event type, module, recipient and title — all identical on a second send
+ * for the same activity and step — so the delivery claim reads "already sent" and the re-send is
+ * skipped in silence, which looks exactly like a send that failed. The workflow never passes it:
+ * every ordinary hand-off must stay deduplicated, because that dedupe is what stops a retried write
+ * telling the CEO twice. Only a deliberate re-notify supplies one, and it carries a timestamp so
+ * two refires minutes apart are two events. Owner instruction 2026-09-28.
  */
 export async function notifyDecisionPending(input: {
   activity: MarketAwarenessActivity;
@@ -280,6 +288,8 @@ export async function notifyDecisionPending(input: {
   /** The CEO seat holders, resolved by the caller from the role directory. Ignored at the group step. */
   ceoHrIds: Array<string | null | undefined>;
   step: "group" | "manager" | "ceo";
+  /** Set ONLY by a deliberate re-notify. Absent for every workflow hand-off — see above. */
+  notificationKey?: string;
 }): Promise<{ notified: number }> {
   const { activity, step } = input;
 
@@ -316,6 +326,7 @@ export async function notifyDecisionPending(input: {
           areaCode: activity.areaCode,
           regionCode: activity.regionCode,
           step,
+          ...(input.notificationKey ? { idempotencyKey: input.notificationKey } : {}),
         },
         telegram: { ctaLabel: "Open the approvals inbox", ctaUrl: input.actionUrl },
       },
