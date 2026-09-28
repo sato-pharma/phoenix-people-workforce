@@ -85,6 +85,16 @@ const defaultTelegramPolicies: TelegramModulePolicy[] = [
   // "Your payslip is available." literal, which is a payslip message, not a deduction one, and
   // would mislead. Without this row the unknown-module fail-safe drops Telegram silently.
   { enabled: true, genericOnly: false, module: "deductions", notes: "Per-line deduction push notice to the employee and their manager chain; in-app and Telegram only, and the message carries no amount and no category.", optional: false },
+  // Market Awareness had no row here AND no row in policy.ts — the same two-gate miss this file
+  // already records for direct_orders and attendance, and it has to be closed in both places or in
+  // neither. policy.ts decides whether Telegram is REQUESTED; this table decides whether it is
+  // ALLOWED, and the unknown-module fail-safe below refuses anything not listed. Measured on
+  // production 2026-09-28: 10 market_awareness events since 2026-09-07, zero Telegram deliveries,
+  // while all four notifiers were passing a `telegram` block on every call.
+  // Not genericOnly: the activity, the area, the line and the requested value ARE what an approver
+  // decides on, and a generic "you have a notification" ping cannot be approved or rejected — the
+  // same reasoning direct_orders carries. These notices hold no salary and no personal data.
+  { enabled: true, genericOnly: false, module: "market_awareness", notes: "Awareness activity waiting for a decision, held, returned or approved; full content so the approver and the CEO can act from the message.", optional: false },
 ];
 
 function cleanModule(value: unknown) {

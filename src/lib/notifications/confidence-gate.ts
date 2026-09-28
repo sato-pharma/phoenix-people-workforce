@@ -325,23 +325,73 @@ export function audienceSizeFromReviewRow(row: {
 // ceiling.
 const RECIPIENT_VOLUME_MIN_HISTORY_SENDS = 5;
 
+export type CeilingOverride = {
+  /**
+   * When this override is consulted.
+   *
+   * `first_run` — only while the pair has no baseline of its own. Once it has real history, that
+   * history is trusted over anything written here.
+   *
+   * `always` — also once the pair is established, and ONLY for a pair whose AUDIENCE DESIGN changed
+   * after its history was measured. A baseline is a description of what the code used to do; when
+   * the code deliberately starts addressing more people, the baseline is not evidence of an
+   * incident, it is a record of the behaviour that was just fixed. Without this the gate holds every
+   * send of the corrected notice until 5 sends older than 24 hours accumulate — weeks, for anything
+   * that fires weekly — and a hold nobody clears is an undisclosed deletion (defect 3 above).
+   */
+  appliesTo: "always" | "first_run";
+  /** The floor this pair's ceiling is raised to. Never lowers a computed ceiling. */
+  ceiling: number;
+};
+
 /**
- * Per-(module,eventType) FIRST-RUN ceiling overrides — for a notification whose design already
- * knows its own real recipient count exceeds the generic 10-recipient first-run cap, so it does
- * not have to sit on hold every time until RECIPIENT_VOLUME_MIN_HISTORY_SENDS worth of real
- * history accumulates and an established baseline takes over on its own. Only ever RAISES the
- * ceiling (Math.max with the computed one below), and only while basis === "first_run" — once a
- * pair is established, its own real statistical baseline is trusted over any override here. Keep
- * this list short and each entry justified; it is a deliberate, per-notification exception to the
- * gate's general "no manual carve-outs" posture, not a place to quietly raise the bar everywhere.
+ * Per-(module,eventType) ceiling overrides — for a notification whose design already knows its own
+ * real recipient count exceeds the generic 10-recipient first-run cap, so it does not have to sit on
+ * hold every time until RECIPIENT_VOLUME_MIN_HISTORY_SENDS worth of real history accumulates. Only
+ * ever RAISES the ceiling (Math.max with the computed one below). Keep this list short and each
+ * entry justified; it is a deliberate, per-notification exception to the gate's general "no manual
+ * carve-outs" posture, not a place to quietly raise the bar everywhere.
  */
-export const FIRST_RUN_CEILING_OVERRIDES: Record<string, number> = {
+export const CEILING_OVERRIDES: Record<string, CeilingOverride> = {
+  // The market-awareness hand-off notice went to exactly ONE person for its whole life — the owner's
+  // 2026-09-28 rule made it copy the requester, his manager and every approver, which is 4-10 people.
+  // Its established baseline, measured live that day, was ~1.1 (±0.3) over 7 prior sends, giving a
+  // ceiling of 3: the first refire held 3 of 4 notices at 67% and the owner had to clear them by hand
+  // within the minute. `always`, not `first_run`, is the whole point — the pair IS established, and
+  // what it is established on is the single-recipient bug. Requester + manager + up to four approver
+  // slots + the CEO is ten by design; 12 is that with room for a slot being added, not a blank cheque.
+  "market_awareness/market_awareness_decision_pending": { appliesTo: "always", ceiling: 12 },
+  // The CEO-approval announcement: three execution roles on the To line (NSM, SFE Manager, Finance)
+  // plus the same copied workflow. No history at all yet, so first_run is enough — once it has its
+  // own baseline, that baseline will already describe the copied shape.
+  "market_awareness/market_awareness_activity_approved": { appliesTo: "first_run", ceiling: 12 },
   // Anti Infective/Pedia/CNS Monthly Closing publish notifies that line's District Managers plus
   // a fixed Cc/Bcc roster (CEO, Marketing Manager, SFE Manager, the line's NSM and Product
   // Manager, two named individuals) — routinely 10-15 recipients by design, confirmed live
   // 2026-08-08 (12 on Anti Infective's first send). Headroom to 20 for normal roster growth.
-  "sales/closing_published": 20,
+  // Stays first_run-only: its audience design has not changed, so its own baseline is still the
+  // truthful description of it, and this entry must not quietly become a permanent floor.
+  "sales/closing_published": { appliesTo: "first_run", ceiling: 20 },
 };
+
+/**
+ * The ceiling floor that applies to this pair, or undefined when none does.
+ *
+ * Pure and exported so the `always` vs `first_run` distinction is proven by a unit test rather than
+ * inferred from the gate's Supabase-bound path — an entry silently reverting to first_run-only would
+ * put every market-awareness notice back in the hold queue, which is invisible until somebody
+ * notices a queue nobody is clearing.
+ */
+export function resolveCeilingOverride(
+  moduleName: string,
+  eventType: string,
+  basis: "established" | "first_run",
+): number | undefined {
+  const configured = CEILING_OVERRIDES[`${moduleName}/${eventType}`];
+  if (!configured) return undefined;
+  if (configured.appliesTo === "always" || basis === "first_run") return configured.ceiling;
+  return undefined;
+}
 
 /**
  * Pure decision math for checkRecipientVolume, split out so it is unit-testable without Supabase:
@@ -422,12 +472,14 @@ async function checkRecipientVolume(input: ConfidenceGateInput): Promise<Confide
     const employees = await getEmployeeDirectoryRows().catch(() => []);
     const headcount = employees.length || 1;
     const { basis, ceiling: computedCeiling, mean, stddev } = computeRecipientVolumeCeiling(priorCounts, headcount);
-    const override = basis === "first_run" ? FIRST_RUN_CEILING_OVERRIDES[`${moduleName}/${eventType}`] : undefined;
+    const override = resolveCeilingOverride(moduleName, eventType, basis);
     const ceiling = override !== undefined ? Math.max(computedCeiling, override) : computedCeiling;
     const passed = currentRecipientCount <= ceiling;
     const detail =
       basis === "established"
-        ? `${currentRecipientCount} recipient(s) on this send vs an established baseline of ~${(mean ?? 0).toFixed(1)} (±${(stddev ?? 0).toFixed(1)} stddev) over ${priorCounts.length} prior sends of "${moduleName}/${eventType}".`
+        ? override !== undefined
+          ? `${currentRecipientCount} recipient(s) on this send vs an established baseline of ~${(mean ?? 0).toFixed(1)} (±${(stddev ?? 0).toFixed(1)} stddev) over ${priorCounts.length} prior sends of "${moduleName}/${eventType}" — judged against a known-design ceiling of ${ceiling} instead, because this notice's audience changed after that baseline was measured.`
+          : `${currentRecipientCount} recipient(s) on this send vs an established baseline of ~${(mean ?? 0).toFixed(1)} (±${(stddev ?? 0).toFixed(1)} stddev) over ${priorCounts.length} prior sends of "${moduleName}/${eventType}".`
         : override !== undefined
           ? `${currentRecipientCount} recipient(s) on this send for "${moduleName}/${eventType}" — no established history yet, but a known-design ceiling of ${ceiling} applies instead of the generic first-run cap.`
           : `${currentRecipientCount} recipient(s) on this send for "${moduleName}/${eventType}", which has no established history yet — capped at ${ceiling} while it's new.`;

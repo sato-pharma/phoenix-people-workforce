@@ -1,8 +1,10 @@
-import { canonicalHrIdKey } from "@/lib/hr-id";
+import { pickDeliverableEmail } from "@/lib/email/email-safety";
+import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
 import type { MarketAwarenessApproverSlot } from "@/lib/market-awareness/approvers";
-import type { MarketAwarenessActivity } from "@/lib/market-awareness/types";
+import type { MarketAwarenessActivity, MarketAwarenessDecision } from "@/lib/market-awareness/types";
 import { createSystemNotificationForRecipients } from "@/lib/notifications/system";
 import { logError } from "@/lib/observability/log";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /**
  * Who is told what, and when.
@@ -21,12 +23,142 @@ import { logError } from "@/lib/observability/log";
  * them a link to a page that refuses them. A notification is a door: closing the sidebar link while
  * this one still fired would have left the door standing.
  *
+ * EVERY NOTICE COPIES THE WHOLE WORKFLOW (owner rule, 2026-09-28). The email goes TO whoever must
+ * act and CCs the requester, his manager and every approver on the activity — see
+ * `resolveWorkflowCcHrIds`. The BCC half of that rule needs nothing here: `send-phoenix-email.ts`
+ * puts `ADMIN_STANDING_EMAIL` (omar.anwar@satopharma.com) on every automated email the system
+ * sends, and production delivery events confirm it on all eight sends this module has made.
+ *
+ * TELEGRAM WAS DEAD HERE UNTIL 2026-09-28 and nothing said so. All four notifiers below pass a
+ * `telegram` block, and `market_awareness` was listed in NEITHER `notifications/policy.ts` NOR
+ * `notifications/telegram-governance.ts` — two gates that must agree, both defaulting to refuse.
+ * Ten events on production produced nine in-app, eight email, nine push and zero Telegram, with
+ * nothing failed and nothing logged. Adding a row to one file alone changes nothing; if either row
+ * is ever removed, this module goes quiet on Telegram again in exactly the same silence.
+ *
  * Best-effort by contract. The activity row is already committed by the time this runs, so a
  * delivery failure is logged and swallowed — never thrown back into the write path, where it would
  * roll back an approval the CEO actually made.
  */
 
 export const MARKET_AWARENESS_NOTIFICATION_MODULE = "market_awareness";
+
+/**
+ * Everyone already on this activity's workflow, for the email's CC line.
+ *
+ * The owner's rule, 2026-09-28: the notice goes TO whoever must act, and everyone else on the
+ * workflow is COPIED — one email with the chain visible on it, not a private note to one person.
+ * (The BCC half of that rule is already in place and needs nothing here: `send-phoenix-email.ts`
+ * puts `ADMIN_STANDING_EMAIL` on every automated email the system sends, and production delivery
+ * events confirm it on all eight market-awareness sends to date.)
+ *
+ * Before this, a CEO notice read `To: the CEO, Cc: (nobody)` — the requester could not tell his
+ * request had reached the top, the manager who approved it could not tell it had moved on, and an
+ * approver who had already answered had no copy of what he had signed off. That is not a delivery
+ * failure, which is why nothing was ever logged: the mail went out, to a third of the room.
+ *
+ * PURE, and separate from the address lookup below, so the audience can be asserted without a
+ * database — the same reason `resolveApprovalAudience` and `resolvePendingDecisionRecipients` are.
+ *
+ * `exclude` is the To line. Copying a man on his own notice is how a thread reads as two messages.
+ *
+ * TAKES ONLY THE FOUR FIELDS IT READS, not `Pick<MarketAwarenessActivity, …>` — the same shape
+ * `resolvePendingDecisionRecipients` above already uses, and for the same reason. A whole activity
+ * still satisfies it structurally, so the four callers are unchanged, while a test can state a
+ * four-line fixture instead of casting one: a `Pick` of the activity drags in the full twelve-field
+ * approver slot and the full decision row, and an `as` cast past that does not even compile
+ * ("neither type sufficiently overlaps"). The alternative — `as unknown as` — would have silenced
+ * the very mismatch a fixture exists to expose.
+ */
+export function resolveWorkflowCcHrIds(
+  activity: {
+    approvers?: Array<Pick<MarketAwarenessApproverSlot, "assignedHrId">> | null;
+    decisions?: Array<Pick<MarketAwarenessDecision, "actorHrId">> | null;
+    managerHrId: string | null;
+    requesterHrId: string | null;
+  },
+  exclude: Array<string | null | undefined> = [],
+): string[] {
+  const excluded = new Set(
+    exclude.map((hrId) => canonicalHrIdKey(hrId)).filter((key): key is string => Boolean(key)),
+  );
+
+  const candidates: Array<string | null | undefined> = [
+    activity.requesterHrId,
+    activity.managerHrId,
+    ...(activity.approvers ?? []).map((slot) => slot.assignedHrId),
+    ...(activity.decisions ?? []).map((decision) => decision.actorHrId),
+  ];
+
+  const seen = new Set<string>();
+  const output: string[] = [];
+  for (const hrId of candidates) {
+    if (!hrId) continue;
+    const key = canonicalHrIdKey(hrId);
+    if (!key || seen.has(key) || excluded.has(key)) continue;
+    seen.add(key);
+    output.push(hrId);
+  }
+  return output;
+}
+
+/**
+ * Work emails for the CC line, keyed by nothing — the caller only wants the addresses.
+ *
+ * `hrIdLookupKeys` on every id rather than one normalized form, because `employees.hr_id` is stored
+ * in more than one casing here and an `.in()` on a single spelling silently returns fewer rows —
+ * which on a CC line looks exactly like "that person has no email" rather than "we asked wrongly".
+ *
+ * `src/lib/conversations/notify.ts` has its own copy of this lookup. It is deliberately NOT shared:
+ * that one is load-bearing for the owner's 2026-09-03 conversation-addressing rule and is working,
+ * and folding the two together to save fifteen lines would put this change inside it for no gain.
+ *
+ * Returns an empty list on any error. A CC line that could not be resolved must never stop the
+ * notification the person actually needs — the To line is resolved separately and is not affected.
+ */
+async function loadWorkflowCcAddresses(hrIds: string[]): Promise<string[]> {
+  if (hrIds.length === 0) return [];
+  const lookups = Array.from(new Set(hrIds.flatMap((hrId) => hrIdLookupKeys(hrId))));
+  if (lookups.length === 0) return [];
+
+  try {
+    const { data, error } = await getSupabaseAdmin()
+      .from("employees")
+      .select("hr_id,work_email")
+      .in("hr_id", lookups);
+    if (error) throw error;
+
+    const seen = new Set<string>();
+    const addresses: string[] = [];
+    for (const row of (data ?? []) as Array<{ hr_id?: string | null; work_email?: string | null }>) {
+      const address = pickDeliverableEmail(row.work_email);
+      if (!address || seen.has(address)) continue;
+      seen.add(address);
+      addresses.push(address);
+    }
+    return addresses;
+  } catch (error) {
+    logError("Market Awareness workflow cc lookup failed", {
+      labels: { event: "market_awareness_workflow_cc_lookup_failed" },
+      error,
+    });
+    return [];
+  }
+}
+
+/**
+ * The CC line for one notice: the workflow minus whoever it is addressed to.
+ *
+ * Wrapped so all four notifiers ask the same question in one call and cannot drift into copying
+ * different people — the exact failure mode `policy.ts` and `telegram-governance.ts` record for
+ * two config values that must agree.
+ */
+async function workflowCcAddresses(
+  activity: Parameters<typeof resolveWorkflowCcHrIds>[0],
+  toHrIds: Array<string | null | undefined>,
+): Promise<string[]> {
+  return loadWorkflowCcAddresses(resolveWorkflowCcHrIds(activity, toHrIds));
+}
 
 function activityLabel(activity: MarketAwarenessActivity): string {
   const name = activity.title?.trim();
@@ -141,6 +273,14 @@ export function resolvePendingDecisionRecipients(input: {
  * exactly — the notification must never reach someone the decision route would then refuse, and it
  * must never miss somebody who can act. `recipientHrIds` empty means the step has no holder; the
  * caller reports the count rather than assuming it landed.
+ *
+ * `notificationKey` exists so a hand-off can be RE-SENT on purpose. Without it the event key is a
+ * hash of the action url, event type, module, recipient and title — all identical on a second send
+ * for the same activity and step — so the delivery claim reads "already sent" and the re-send is
+ * skipped in silence, which looks exactly like a send that failed. The workflow never passes it:
+ * every ordinary hand-off must stay deduplicated, because that dedupe is what stops a retried write
+ * telling the CEO twice. Only a deliberate re-notify supplies one, and it carries a timestamp so
+ * two refires minutes apart are two events. Owner instruction 2026-09-28.
  */
 export async function notifyDecisionPending(input: {
   activity: MarketAwarenessActivity;
@@ -148,6 +288,8 @@ export async function notifyDecisionPending(input: {
   /** The CEO seat holders, resolved by the caller from the role directory. Ignored at the group step. */
   ceoHrIds: Array<string | null | undefined>;
   step: "group" | "manager" | "ceo";
+  /** Set ONLY by a deliberate re-notify. Absent for every workflow hand-off — see above. */
+  notificationKey?: string;
 }): Promise<{ notified: number }> {
   const { activity, step } = input;
 
@@ -176,11 +318,15 @@ export async function notifyDecisionPending(input: {
           `${activity.requesterName ?? activity.requesterHrId} submitted ${activityLabel(activity)} ` +
           `for ${where} on ${activity.primaryLine.name}, starting ${activity.startDate}. ` +
           `Requested value ${moneyLabel(activity)}.`,
+        // The whole chain is copied, never just the person whose turn it is — owner rule
+        // 2026-09-28. See `resolveWorkflowCcHrIds`.
+        email: { cc: await workflowCcAddresses(activity, recipientHrIds) },
         metadata: {
           activityCode: activity.activityCode,
           areaCode: activity.areaCode,
           regionCode: activity.regionCode,
           step,
+          ...(input.notificationKey ? { idempotencyKey: input.notificationKey } : {}),
         },
         telegram: { ctaLabel: "Open the approvals inbox", ctaUrl: input.actionUrl },
       },
@@ -242,6 +388,7 @@ export async function notifyActivityReturned(input: {
         message:
           `${decider} ${input.rejected ? "did not approve" : "sent back"} ${activityLabel(activity)}` +
           (note ? `: "${note}"` : "."),
+        email: { cc: await workflowCcAddresses(activity, [activity.requesterHrId]) },
         metadata: {
           activityCode: activity.activityCode,
           rejected: input.rejected,
@@ -303,6 +450,7 @@ export async function notifyActivityHeld(input: {
           `${holder} put ${activityLabel(activity)} on hold` +
           (reason ? `: "${reason}".` : ".") +
           " Nothing is needed from you — it will move again when the hold is lifted.",
+        email: { cc: await workflowCcAddresses(activity, [activity.requesterHrId]) },
         metadata: {
           activityCode: activity.activityCode,
           heldBy: activity.heldByHrId,
@@ -363,6 +511,10 @@ export async function notifyActivityApproved(input: {
           `${activity.requesterName ?? activity.requesterHrId} had ${activityLabel(activity)} approved ` +
           `for ${where} on ${activity.primaryLine.name}, starting ${activity.startDate}. ` +
           `Approved value ${moneyLabel(activity)}.`,
+        // The approval announcement goes TO the three execution roles; the requester, his manager
+        // and every approver who signed it off are copied, so the people who moved it learn it
+        // landed. Until now none of them was told at all once the CEO pressed approve.
+        email: { cc: await workflowCcAddresses(activity, audience.recipientHrIds) },
         metadata: {
           activityCode: activity.activityCode,
           areaCode: activity.areaCode,
