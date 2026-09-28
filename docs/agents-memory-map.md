@@ -148,6 +148,7 @@ status, give it its own line.
 - **A new workbook builder takes three checks, and none substitutes for another.** — `verifying-a-new-workbook-builder-takes-three-layers` **(inline — load-bearing)**
 - **A keyword scan over source text matches a COMMENT exactly as it matches a call — read the imports before reporting what a generator reads.** — `regen-readslivedata-flag-matches-a-comment-not-a-call` **(inline — load-bearing)**
 - **Auto mode refuses an `Edit` to `settings.json` as `[Self-Modification]`; his instruction clears it, his own grant does not.** — `automode-allow-cannot-authorize-editing-the-permission-config` **(inline — load-bearing)**
+- **"Never close the dev" is SCOPED, not repealed — one YOUR session started is yours to stop; `TaskStop` frees no memory, and a compile's first RAM reading lies.** — `i-may-stop-a-dev-server-i-started-myself` **(inline — load-bearing)**
 
 ## 2.2 The memory index
 
@@ -213,6 +214,7 @@ status, give it its own line.
 - **NOT every distributor uploads every month — "N of 17 missing" is never a finding.** `not-every-distributor-uploads-every-month` **(inline — load-bearing)**
 - **THE CALL RATE'S LEAVER AND WINDOW RULINGS ARE DECIDED, not defects** (owner chose B2/C1/D2): a leaver or new hire is divided by the WHOLE month's working days, a resigned rep DROPS OUT the moment HR marks him, and every call rate scores through YESTERDAY — the rate only. — `reps-list-rulings-b2-c1-d2-leavers-keep-whole-month` **(inline — load-bearing)**
 - **THE 06:55 CRM DAILY DIGEST IS LIVE AGAIN — never delete its schedule** (refused 2026-09-27, restored 2026-09-28: "i want it in app or telegram only"). A declaration and its cron job move in one sitting, and a restored one also carries `watchingSince`. — `the-0655-crm-digest-is-refused-never-schedule-it` **(inline — load-bearing)**
+- **MANAGED GOOGLE PLAY REACHES NO REP TABLET — the upload is dropped** (owner 2026-09-28). The enterprise has zero enrolled devices; the tablets are on Headwind, which installs an APK it hosts. The fleet artifact is `eas.json`'s `mdm` profile, never the store `.aab`. — `managed-play-cannot-reach-the-rep-tablets` **(inline — load-bearing)**
 
 ## 4.1 Marketing customer, venue and licence validation
 
