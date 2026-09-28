@@ -281,7 +281,7 @@ reclaim — see
 [ci-self-hosted-runner.md](ci-self-hosted-runner.md) for the full split and for the lever that makes
 those minutes cost nothing.
 
-### 🔴 The four failure modes
+### 🔴 The five failure modes
 
 1. **The two-hour timeout SKIPS the deploy, with nothing turning red.** If the check suites have not
    all finished within two hours, Railway abandons the deployment. A run stuck `queued` therefore
@@ -314,12 +314,64 @@ those minutes cost nothing.
 4. **`railway variables --set` bypasses the gate entirely**
    ([railwayapp/cli#640](https://github.com/railwayapp/cli/issues/640)) — setting a variable
    redeploys *ungated*. Treat a variable change as an unverified deploy.
+5. 🔴 **THE PUSH CREATES NO CI RUN AT ALL, AND RAILWAY CREATES NO DEPLOYMENT — SO THERE IS NOTHING
+   TO FIND.** The four modes above all assume a run *exists* and is queued, blocking, cancelled or
+   bypassed. This one leaves **no run, no check suite, no deployment row, and nothing red** — the
+   commit is simply invisible to both systems.
+
+   Measured 2026-09-28 on `d3bd3367941157bf568324ab5932a20abd801967` (#4636, merged 16:48:45Z).
+   `ci.yml`'s `push` trigger was correct and carries **no path filters**, and push concurrency
+   groups by `github.sha` with `cancel-in-progress: false`, so neither config could drop a run:
+
+   | commit | `ci.yml` push run |
+   | --- | --- |
+   | `07439c4de` | created 16:42:36Z |
+   | `a4b0806b9` | created 16:44:36Z |
+   | `d80c95a01` | created 16:46:53Z |
+   | **`d3bd33679`** (merged 16:48:45Z) | **none — zero runs, zero CI check suites** |
+   | `4a4dd8d3d` | created 17:03:43Z |
+
+   Railway matched it: `railway deployment list -s phoenix-people-workforce -e production` showed
+   its newest as `SUCCESS` at 19:46:51 +03:00 — the commit *before* the merge. **No deployment was
+   ever created for the merge.** A single failed push-event dispatch explains both consumers missing
+   it at once; that is inference, not proof, since Railway's webhook log is not visible from here.
+
+   🔴 **THE CHECK SUITES THAT ARE ON THE COMMIT WILL MISLEAD YOU.** `d3bd33679` carried three
+   `github-actions` suites, all `success` — from `Staging Branch Sync` (×2) and a `Synthetic
+   Journeys` dispatch. None was `ci.yml`. `workflow_run` and scheduled runs attach to whatever
+   `main` HEAD is when they fire (§2.3), so **their presence is not evidence CI ran**, and a glance
+   at the commit's checks reads green. Ask for `ci.yml` by path, and count.
+
+   **Recovery: do nothing.** The next merge carried it — `4a4dd8d3d` deployed and #4636 was live at
+   20:13:05 Cairo, 24 minutes after merging, with no intervention. **Never `railway redeploy` and
+   never re-merge** (§2.3). Unlike mode 3 there is no run to `gh run rerun`, and a fresh dispatch
+   would not help: nothing is being held, because no deployment was ever queued.
+
+   **The tell**, against mode 1: mode 1 leaves a deployment that is abandoned at the two-hour
+   timeout. This leaves *no row at all* — no `SKIPPED`, no `inactive`, nothing in the deployments
+   list to attribute. `verify-shipped.mjs` reports `NOT LIVE — merged, but the live revision does
+   not contain it and no build is in flight`, which is accurate but does not name the cause; read
+   `railway deployment list` to tell the two apart.
 
 ### Reading it
 
 `/api/healthz` `revision` is the only answer to "did it ship?". A merged PR and a green check are now
 **necessary but not sufficient**, so reading the merge is worse than useless here.
 `gh run list --workflow=ci.yml --branch main --limit 3` shows whether the gate is holding.
+
+🔴 **ASKING THE RUNS API WITH A SHORT SHA RETURNS `0` SILENTLY — it is not an error and not an
+empty repo, it is a non-match.** Measured 2026-09-28 while diagnosing mode 5, where the question
+being asked *is* "how many runs does this commit have", so a false zero reads exactly like the
+fault:
+
+```
+head_sha=4a4dd8d3d                                  -> 0 runs
+head_sha=4a4dd8d3d56cd2c3865af03b72fe45b621eb0a05   -> 1 run
+```
+
+Always pass the full 40-character sha (`git rev-parse <ref>`), and before believing a zero, run the
+same query against a neighbouring commit as a control — mode 5 was only distinguishable from a
+mistyped sha because the four commits either side each returned exactly one.
 
 ### Turning it off
 
