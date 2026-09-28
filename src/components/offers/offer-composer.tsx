@@ -1057,7 +1057,11 @@ export function OfferComposer({
                   <OfferCopiedTo offer={offer} />
                   <p className="mt-0.5 text-xs text-slate-500">{offer.title}</p>
                 </div>
-                <Badge className="capitalize" variant={STATUS_VARIANT[offer.status]}>
+                {/* `shrink-0`: the status never gives up width to the column beside it. Measured on
+                    production 2026-09-28 at 375px: once a card carried a long copy line, flex shrank
+                    both sides and "Sent" was clipped to 33 of its 36px. The text column wraps
+                    instead — it is `min-w-0`, and every line in it can break. */}
+                <Badge className="shrink-0 capitalize" variant={STATUS_VARIANT[offer.status]}>
                   {offer.status}
                 </Badge>
               </div>
