@@ -110,7 +110,37 @@ open the sheet and see. Clearing and formatting before writing the text would le
 banded *empty* Master tab for the length of the write, which reads as data loss. This order's worst
 visible state is correct text that has not been styled yet.
 
-## Installing it
+## Changing the script — `clasp push`, never a copy-paste
+
+🔴 **Do not ask the owner to paste `Code.gs` into the Apps Script editor.** That happened three
+times in one night on 2026-09-28 and it is the thing he was angriest about, fairly: every change to
+this file needed his hands, in an editor, at midnight.
+
+From this folder:
+
+```
+clasp push
+```
+
+`.clasp.json` here carries the script id, so the command is complete as written. It overwrites the
+script project's `Code` and `appsscript.json` with what is in this folder, which is the point — the
+repository is the source of truth and the deployed script is a copy of it.
+
+It authenticates as the person, not as a service account, so **nothing here needs a Google
+credential in the repository or in Railway** and the org policy that blocks service-account key
+creation does not apply. The credential lives in `~/.clasprc.json`, is created once by
+`clasp login`, and must be **the account that owns the script** — the execution log names it, and it
+is not necessarily the account the sheet is shared to. `clasp login` also needs the Apps Script API
+switched on once at <https://script.google.com/home/usersettings>.
+
+**The push does not run anything.** The five-minute trigger picks the new code up on its next tick;
+nothing repaints because of a push, and no execution is started by it.
+
+**Read what is deployed before assuming.** `clasp pull` into a scratch folder shows the script that
+is actually running, which is the one that matters when its behaviour and this file disagree. The
+remote file comes back named `Code.js` — same file as `Code.gs` here.
+
+## Installing it the first time
 
 Once, by hand. Steps 1–4 are in the sheet; step 5 is in Railway.
 
