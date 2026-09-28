@@ -2,7 +2,7 @@
   "expo": {
     "name": "Phoenix Workforce",
     "slug": "phoenix-workforce",
-    "version": "0.3.0",
+    "version": "0.4.0",
     "platforms": ["ios", "android"],
     "orientation": "portrait",
     "icon": "./assets/phoenix/icon.png",
@@ -20,7 +20,7 @@
     },
     "android": {
       "package": "com.satopharma.phoenixworkforce",
-      "versionCode": 3,
+      "versionCode": 4,
       "adaptiveIcon": {
         "backgroundColor": "#0d1015",
         "foregroundImage": "./assets/phoenix/adaptive-foreground.png"
