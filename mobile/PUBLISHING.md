@@ -92,7 +92,8 @@ So the sequence is:
 3. ~~Upload the `.aab` from `npm run build:aab` on the Private apps page.~~ **The AAB exists** — the
    first one was built 2026-09-25 (`production` profile, `STORE`, versionCode 1). **The upload itself
    is the owner's click and is the ONLY step left.**
-   🔴 **`versionCode 1` IS ALREADY TAKEN IN THE STORE** (owner, 2026-09-28), so it is now **2** in
+   🔴 **`versionCode 2` SHIPPED THE MODULES TAB; 3 IS THE IN-APP WEBVIEW BUILD.** Each of those is a
+   separate upload, because each needs its own binary. 🔴 **`versionCode 1` IS ALREADY TAKEN IN THE STORE** (owner, 2026-09-28), so it is now **2** in
    `app.json` and the next upload must be the build made from that. `appVersionSource` is `local`, so
    **EAS never increments it — a rebuild at the same number produces an `.aab` Play refuses**, and the
    refusal comes twenty minutes after the build rather than before it. The bump is safe to make freely:

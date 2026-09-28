@@ -147,12 +147,12 @@ async function askOnce(sdk: OneSignalApi): Promise<void> {
 /**
  * Take the person where a tapped notification points — see `push-link.ts` for the rules.
  *
- * `token` is the live session's, so a portal link opens through the signed-in hand-off rather than
- * relying on Chrome happening to be signed in. It used to depend on exactly that: a tapped approval
- * notification landed on the login page for anyone who had never signed into Phoenix in Chrome on
- * that handset, which is most of the fleet.
+ * A portal link opens on the app's own module screen, signed in by the hand-off. It used to rely on
+ * Chrome happening to be signed in, which landed a tapped approval notification on the login page
+ * for anyone who had never signed into Phoenix in Chrome on that handset — most of the fleet.
+ * Anything else on the server still opens in a browser tab; only the portal is offered in-app.
  */
-function openNotificationLink(event: NotificationClickEvent, token: string | null): void {
+function openNotificationLink(event: NotificationClickEvent): void {
   const target = resolvePushLink(event?.result?.url ?? event?.notification?.launchURL, apiBaseUrl);
   if (!target) return;
 
@@ -160,8 +160,7 @@ function openNotificationLink(event: NotificationClickEvent, token: string | nul
     router.navigate(target.href);
     return;
   }
-  // A Custom Tab rather than leaving for Chrome: the person is one "close" away from the app.
-  void openPhoenixUrl({ dark: Appearance.getColorScheme() === "dark", token, url: target.url });
+  void openPhoenixUrl({ dark: Appearance.getColorScheme() === "dark", url: target.url });
 }
 
 /**
@@ -255,11 +254,8 @@ export function PushProvider({ children, token }: { children: ReactNode; token: 
 
       // A tap that launched the app is held by OneSignal until a click listener exists, so adding it
       // here still catches the notification that opened the app.
-      // Bound to THIS session's token, and removed by the same reference — a module-level handler
-      // could not reach the token at all, which is why the portal hand-off lives behind a closure.
-      const onClick = (event: NotificationClickEvent) => openNotificationLink(event, token);
-      sdk.Notifications.addEventListener("click", onClick);
-      cleanups.push(() => sdk.Notifications.removeEventListener("click", onClick));
+      sdk.Notifications.addEventListener("click", openNotificationLink);
+      cleanups.push(() => sdk.Notifications.removeEventListener("click", openNotificationLink));
 
       const onPermission = (granted: boolean) => {
         if (!cancelled) setStatus(granted ? "on" : "off");

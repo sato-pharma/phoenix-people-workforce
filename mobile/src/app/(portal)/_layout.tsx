@@ -69,6 +69,10 @@ export default function PortalTabsLayout() {
             title: "Modules",
           }}
         />
+        {/* A module opens full-screen, pushed from the Modules list or a tapped notification — never
+            a tab of its own. `href: null` keeps it out of the bar; without it expo-router gives the
+            route a fifth, iconless tab, which is how a stray route announces itself. */}
+        <Tabs.Screen name="module" options={{ href: null }} />
         <Tabs.Screen
           name="profile"
           options={{

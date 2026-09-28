@@ -323,18 +323,37 @@ not single-use: it is redeemable for its sixty seconds. That is bounded by the s
 forged or read), by the TTL, and by where it lives — the handset that already holds the full session
 token in its own keystore.
 
-🔴 **A system browser tab, not an embedded WebView, and that is a correctness decision.** On Android a
-`react-native-webview` shares its cookie jar with React Native's own networking, so a `phoenix_session`
-cookie set for the module would be replayed on the **app's** requests — which the CSRF guard reads as a
-browser session and refuses, breaking every mutation the app makes with `csrf_blocked`. That exact
-fault was measured against production on 2026-09-23 and is why `/api/auth/login` clears cookies for a
-native caller. A Custom Tab has Chrome's own jar, so the cookie cannot reach the app. Do not "upgrade"
-this to a WebView without solving that first. It also needs no new native module, so the module list
-ships over EAS Update rather than waiting on a managed-Play release.
+🔴 **It renders in an in-app WebView, and ONE LINE ELSEWHERE is what makes that safe.** On Android a
+`react-native-webview` shares its cookie jar with React Native's own networking — the same
+`CookieManager` behind `ForwardingCookieHandler` — so the `phoenix_session` cookie set for a module
+would be replayed on the **app's** requests, which the CSRF guard reads as a browser session and
+refuses, breaking every mutation with `csrf_blocked`. That fault was measured against production on
+2026-09-23 and is why `/api/auth/login` clears cookies for a native caller.
 
-A tapped **notification** on a portal page now goes through the same hand-off. It used to rely on
-Chrome happening to be signed in, which landed an approval notification on the login page for anyone
-who had never signed into Phoenix in Chrome on that handset — most of the fleet.
+So this shipped first as a system browser tab, and the tab was replaced once the hazard was closed at
+its source rather than avoided: **`lib/api.ts` sets `credentials: "omit"` on every call**, and React
+Native's own `NetworkingModule` turns that into `CookieJar.NO_COOKIES` for the request
+(`NetworkingModule.kt`: `if (!withCredentials) { clientBuilder.cookieJar(CookieJar.NO_COOKIES) }`), so
+no cookie is attached and none is stored, whatever the shared jar holds.
+
+**If `credentials: "omit"` ever leaves `lib/api.ts`, the module must go back to a browser tab.**
+`tests/native-web-handoff.test.ts` asserts it at each of the two call sites and fails if either loses
+it — the upload is a mutation, so that is the one that breaks first.
+
+What the WebView buys is the last visible difference between the app and "the app": no address bar.
+The module gets the app's own square hairline bar with its name and one way back, Android's back
+gesture walks the page's history before leaving the screen, and every navigation is vetted against
+this server's own `/employee-portals` space — a portal page can link anywhere, and following a foreign
+link inside a signed-in view is how a session leaks.
+
+**It costs a native build.** `react-native-webview` moves the fingerprint, so this reaches a handset
+only in a new binary with a higher `versionCode` — not over EAS Update. That is the trade against the
+Custom Tab, which needed no build at all.
+
+A tapped **notification** on a portal page opens the same screen. It used to rely on Chrome happening
+to be signed in, which landed an approval notification on the login page for anyone who had never
+signed into Phoenix in Chrome on that handset — most of the fleet. Anything that is not a portal page
+still opens in a browser tab; only the portal is offered in-app.
 
 ## Authentication
 

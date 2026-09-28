@@ -1,11 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, RefreshControl, ScrollView, Text, TextInput, View, useColorScheme } from "react-native";
+import { Pressable, RefreshControl, ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ErrorNotice, LoadingScreen, MicroLabel, OfflineNotice } from "@/components/ui";
 import { describeCachedAt } from "@/lib/offline-cache";
-import { ModuleOpenError, openPortalModule } from "@/lib/portal/open-module";
+import { openPortalModule } from "@/lib/portal/open-module";
 import { useSession } from "@/lib/session";
 import { usePhoenixQuery } from "@/lib/use-phoenix-query";
 import { hairline, radius, space, type } from "@/theme/tokens";
@@ -46,7 +46,6 @@ function matches(module: PortalModule, needle: string): boolean {
 
 export default function PortalModulesScreen() {
   const palette = usePalette();
-  const dark = useColorScheme() === "dark";
   const insets = useSafeAreaInsets();
   const { token } = useSession();
 
@@ -57,8 +56,6 @@ export default function PortalModulesScreen() {
   const home = usePhoenixQuery<PortalHome>("/api/employee-portals/home");
 
   const [query, setQuery] = useState("");
-  const [opening, setOpening] = useState<string | null>(null);
-  const [openError, setOpenError] = useState<string | null>(null);
 
   const sections = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -74,18 +71,11 @@ export default function PortalModulesScreen() {
     [data],
   );
 
-  const open = async (module: PortalModule) => {
-    setOpenError(null);
-    setOpening(module.href);
-    try {
-      await openPortalModule({ dark, href: module.href, token });
-    } catch (failure) {
-      setOpenError(
-        failure instanceof ModuleOpenError ? failure.message : "Could not open that module. Try again.",
-      );
-    } finally {
-      setOpening(null);
-    }
+  // A plain navigation, not an await: the module screen mints its own hand-off, so the frame is on
+  // screen before the network is asked anything. A tap that waits on a round trip before drawing is
+  // what made the old browser-tab version feel like leaving the app.
+  const open = (module: PortalModule) => {
+    openPortalModule({ href: module.href, label: module.label });
   };
 
   if (loading) {
@@ -117,7 +107,6 @@ export default function PortalModulesScreen() {
 
       {cachedAt ? <OfflineNotice takenAt={describeCachedAt(cachedAt)} /> : null}
       {error ? <ErrorNotice message={error} /> : null}
-      {openError ? <ErrorNotice message={openError} /> : null}
 
       {moduleCount > 8 ? (
         <TextInput
@@ -167,7 +156,7 @@ export default function PortalModulesScreen() {
                   }
                   accessibilityRole="button"
                   key={module.href}
-                  onPress={() => void open(module)}
+                  onPress={() => open(module)}
                   style={({ pressed }) => ({
                     alignItems: "center",
                     backgroundColor: pressed ? palette.surface2 : palette.surface,
@@ -214,15 +203,11 @@ export default function PortalModulesScreen() {
                       <Text style={[type.meta, { color: palette.accent }]}>{String(count)}</Text>
                     </View>
                   ) : null}
-                  {opening === module.href ? (
-                    <ActivityIndicator color={palette.accent} />
-                  ) : (
-                    <Ionicons
-                      color={palette.inkFaint}
-                      name={module.locked ? "lock-closed-outline" : "chevron-forward"}
-                      size={18}
-                    />
-                  )}
+                  <Ionicons
+                    color={palette.inkFaint}
+                    name={module.locked ? "lock-closed-outline" : "chevron-forward"}
+                    size={18}
+                  />
                 </Pressable>
               );
             })}
