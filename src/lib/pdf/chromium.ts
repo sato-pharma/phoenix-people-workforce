@@ -83,6 +83,12 @@ export type ChromiumPage = {
   close: () => Promise<void>;
   emulateMediaType: (type: string) => Promise<void>;
   evaluate: (fn: string) => Promise<unknown>;
+  // Navigate, for the one case where the document's ORIGIN matters rather than its content: the
+  // Maps JavaScript API browser key is HTTP-referrer restricted, so a map drawn from `setContent`
+  // alone is refused with `gm_authFailure` — `about:blank` matches no referrer (measured 2026-09-29
+  // against both keys). Going to the app's own origin first and THEN calling `setContent` keeps
+  // that URL, so the referrer matches and the key is accepted. Nothing else here needs it.
+  goto: (url: string, options?: Record<string, unknown>) => Promise<unknown>;
   pdf: (options: Record<string, unknown>) => Promise<Uint8Array>;
   // A raster of the page, for the documents somebody needs as a PICTURE rather than as paper — a
   // keepsake to send in a message, a card to put in a slide. The resolution comes from the
