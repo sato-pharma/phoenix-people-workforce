@@ -1695,6 +1695,10 @@ const employeePortalNavigationSectionSeeds = [
       { href: "/employee-portals/double-visit-analytics", icon: Activity, label: "Double-Visit Analytics", permissions: [{ resource: "double_visit_analytics", action: "read" }], roles: ["Product Manager", "Group Product Manager", "Marketing Manager"] },
       { href: "/employee-portals/dv-planner", icon: CalendarDays, label: "DV Planner", permissions: [{ resource: "double_visit_analytics", action: "read" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Training Manager"] },
       { href: "/employee-portals/double-visit-report", icon: FileSpreadsheet, label: "Double Visit Report", permissions: [{ resource: "double_visit_analytics", action: "read" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Training Manager"] },
+      // Field Activity — one person's field days end to end. The role list is the module's own
+      // (src/lib/field-activity/access.ts) and deliberately omits the Medical Rep and the two staff
+      // seats that hold the DV board for its counts rather than for a person's day.
+      { href: "/admin/field-activity", icon: MapPinned, label: "Field Activity", permissions: [{ resource: "double_visit_analytics", action: "read" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "SFE Manager"] },
       { href: "/employee-portals/coaching-analytics", icon: ChartColumnBig, label: "Coaching Analytics", permissions: [{ resource: "coaching" }], roles: ["Product Manager", "Group Product Manager", "Marketing Manager"] },
     ],
     label: "Coaching",

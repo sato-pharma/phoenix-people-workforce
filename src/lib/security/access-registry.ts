@@ -397,6 +397,11 @@ export const accessRegistry = [
   // screen whose whole purpose is that somebody acted on a notification.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/crm/account-setup", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/admin/field-workforce-compliance/**", permission: { resource: "hr_calendar", action: "read" } }),
+  // Field Activity — one person's field days, read-only. The matrix key is the coarse gate; the fine
+  // one is `resolveFieldActivityAccess`, which refuses every role outside the module's own list (the
+  // Medical Rep above all — CRM golden rule #1 keeps the rep blind to what measures him) and then
+  // narrows to the viewer's org-tree scope. GET only: this module reads and never writes.
+  sessionApi({ methods: ["GET"], pattern: "/api/admin/field-activity/**", permission: { resource: "double_visit_analytics", action: "read" } }),
   // Unified Deductions module — the sole deductions pipeline as of the C6 cutover (2026-08-30); the
   // legacy deductions-governance routes it replaced were removed in the same change. Every route
   // self-gates with assertPermission + the Super-Admin-only assertDeductionsDecisionActor for

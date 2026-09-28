@@ -1,0 +1,453 @@
+/**
+ * Field Activity — the report as a house document.
+ *
+ * SATO-DIS-2026-01 v1.0: the company's identity on the company's paper, carried by line and type.
+ * The ink rule holds — no filled areas except the 6% zebra on data tables — and every corner is
+ * square. It prints LANDSCAPE, which is not a stylistic choice: a day page carries a route map
+ * beside a table of stops each of which needs its coordinates and its full address, and on portrait
+ * A4 that either spills to a second page or forces the address down to a size nobody reads.
+ *
+ * ONE PAGE PER DAY, and a deliberate second page when a day earns one. A day with more than eight
+ * GPS stops holds about twice the content of an ordinary one; rather than shrink the type or drop
+ * the address, such a day prints its summary, map and claim on the first page and its full stop
+ * list on a page headed "— every stop" and footed "(continued)". Nothing is lost and nothing is
+ * cramped.
+ */
+
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
+import { HOUSE_COLORS } from "@/lib/hiring-pack/house-identity";
+import type {
+  FieldActivityDay,
+  FieldActivityReport,
+  FieldActivityStop,
+} from "@/lib/field-activity/model";
+
+export type FieldActivityDayMap = { dateIso: string; svg: string; caption: string };
+
+const DENSE_STOPS = 8;
+
+function escapeHtml(value: unknown): string {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/**
+ * Direction PER RUN, never per block.
+ *
+ * Wrapping a mixed line in `dir="rtl"` is the bug: an address like "شرف - برج الحكمة, ش Gamal Abd
+ * El-Nasir, Qism Shebeen El-Kom" then reorders its Latin parts and throws the commas and full stops
+ * to the wrong end. Each Arabic run gets its own isolated span and the Latin around it is untouched.
+ */
+export function bidi(value: string | null | undefined): string {
+  const text = String(value ?? "");
+  if (!text) return "";
+  const runs = text.split(/([؀-ۿ][؀-ۿ\s،؛؟-]*)/);
+  return runs
+    .filter(Boolean)
+    .map((run) =>
+      /^[؀-ۿ]/.test(run)
+        ? `<span dir="rtl" lang="ar">${escapeHtml(run.trim())}</span>`
+        : `<span dir="ltr">${escapeHtml(run)}</span>`,
+    )
+    .join("");
+}
+
+/** The country and the postal number repeat on every row and locate nothing the coordinates do not. */
+export function tidyAddress(value: string | null | undefined): string {
+  return String(value ?? "")
+    .replace(/,?\s*(Egypt|مصر)\s*$/u, "")
+    .replace(/\s+\d{5,8}(?=,|$)/g, "")
+    .trim()
+    .replace(/,$/, "");
+}
+
+export function clock12(value: string | null | undefined): string {
+  if (!value) return "—";
+  const text = String(value).length > 8 ? String(value).slice(-8) : String(value);
+  const match = /^(\d{2}):(\d{2})/.exec(text);
+  if (!match) return "—";
+  const hour = Number(match[1]);
+  const suffix = hour < 12 ? "AM" : "PM";
+  return `${hour % 12 || 12}:${match[2]} ${suffix}`;
+}
+
+export function longDate(dateIso: string, weekday: string): string {
+  const date = new Date(`${dateIso}T00:00:00Z`);
+  const month = date.toLocaleString("en-GB", { month: "long", timeZone: "UTC" });
+  return `${weekday} ${date.getUTCDate()} ${month} ${date.getUTCFullYear()}`;
+}
+
+function money(value: number): string {
+  return value.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function duration(minutes: number | null): string {
+  if (minutes == null) return "—";
+  return `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, "0")} min`;
+}
+
+function houseMarkDataUri(): string {
+  try {
+    const svg = readFileSync(join(process.cwd(), "public", "brand", "sato-pharma-logo-on-light.svg"), "utf8");
+    return `data:image/svg+xml;base64,${Buffer.from(svg, "utf8").toString("base64")}`;
+  } catch {
+    // The mark is the letterhead, not the content. A document without it is still a true document.
+    return "";
+  }
+}
+
+function fact(label: string, value: string): string {
+  return `<div class="fact"><p class="fact__k">${escapeHtml(label)}</p><p class="fact__v">${value}</p></div>`;
+}
+
+function dayChip(day: FieldActivityDay): string {
+  switch (day.kind) {
+    case "field":
+      return "Field day";
+    case "field-no-gps":
+      return "Field record with no GPS";
+    case "leave":
+      return "Approved leave";
+    case "office":
+      return "Head office day";
+    case "weekend":
+      return "Weekend";
+    default:
+      return "No activity recorded";
+  }
+}
+
+function dayFacts(day: FieldActivityDay): string[] {
+  const facts: string[] = [];
+  if (day.partners.length > 0) {
+    facts.push(fact("Out with", day.partners.map((p) => escapeHtml(p.name)).join("<br>")));
+  }
+  if (day.leave) {
+    facts.push(
+      fact(
+        "Where he was",
+        `On approved leave<br><span class="thin">${escapeHtml(day.leave.type ?? "leave")} &middot; ${escapeHtml(day.leave.dayPart ?? "")} &middot; ${escapeHtml(day.leave.status ?? "")}</span>`,
+      ),
+    );
+    if (day.leave.reference) {
+      facts.push(
+        fact(
+          "Leave record",
+          `${escapeHtml(day.leave.reference)}<br><span class="thin">${escapeHtml(day.leave.paymentStatus ?? "")}${day.leave.managerName ? ` &middot; approved by ${escapeHtml(day.leave.managerName)}` : ""}</span>`,
+        ),
+      );
+    }
+  }
+  if (day.countedTotal > 0 || day.stops.length > 0) {
+    facts.push(
+      fact("Counted visits", `AM ${day.counts.am} &middot; PM ${day.counts.pm} &middot; Pharmacies ${day.counts.pharmacies}`),
+    );
+  }
+  if (day.firstCheckin && day.lastCheckin) {
+    facts.push(fact("GPS window", `${clock12(day.firstCheckin)} to ${clock12(day.lastCheckin)}`));
+    facts.push(fact("Time on territory", `${duration(day.onTerritoryMinutes)}<br><span class="thin">first to last check-in</span>`));
+  }
+  if (day.firstLog) {
+    const tail = day.logsLandedNextDay
+      ? `<br><span class="thin">the NEXT day &mdash; average ${((day.averageLogLagMinutes ?? 0) / 60).toFixed(1)} hours after the door</span>`
+      : day.averageLogLagMinutes != null
+        ? `<br><span class="thin">average ${day.averageLogLagMinutes} min after the door</span>`
+        : "";
+    facts.push(fact("Logging window", `${clock12(day.firstLog)} to ${clock12(day.lastLog)}${tail}`));
+  }
+  if (day.stops.length > 1) {
+    facts.push(
+      fact("Movement between stops", `${(day.movementMetres / 1000).toFixed(2)} km<br><span class="thin">straight-line, stop to stop</span>`),
+    );
+  }
+  if (day.trip?.capturedAt && day.trip.capturedLat != null && day.trip.capturedLon != null) {
+    facts.push(
+      fact(
+        "His own phone fix",
+        `${clock12(day.trip.capturedAt)}${day.trip.capturedAccuracyMeters != null ? ` &middot; accuracy ${Math.round(day.trip.capturedAccuracyMeters)} m` : ""}` +
+          `<br><span class="thin">${day.trip.capturedLat.toFixed(6)}, ${day.trip.capturedLon.toFixed(6)}</span>`,
+      ),
+    );
+  }
+  if (day.punches) {
+    facts.push(
+      fact(
+        "Fingerprint punch",
+        `${clock12(day.punches.firstTime)} to ${clock12(day.punches.lastTime)}<br><span class="thin">${day.punches.count} punch${day.punches.count === 1 ? "" : "es"}</span>`,
+      ),
+    );
+  }
+  if (day.kind === "weekend") facts.push(fact("Why the day is empty", "Friday is the weekend<br><span class=\"thin\">nothing is expected on this day</span>"));
+  if (day.kind === "empty") facts.push(fact("Records on this day", "None &mdash; no visit, no GPS, no punch, no trip"));
+  return facts;
+}
+
+function stopRowWide(stop: FieldActivityStop): string {
+  return `<tr>
+  <td class="num"><strong>${stop.index}</strong></td>
+  <td>${clock12(stop.checkedAt)} <span class="thin">${escapeHtml(stop.checkedAt.slice(-2))}s</span></td>
+  <td>${bidi(stop.customerName)}
+      <div class="addr">${stop.lat.toFixed(6)}, ${stop.lon.toFixed(6)}${stop.address ? ` &mdash; ${bidi(tidyAddress(stop.address))}` : ""}</div></td>
+  <td>${escapeHtml(stop.speciality ?? "—")} <span class="thin">&middot; ${escapeHtml(stop.grade ?? "—")}</span></td>
+  <td class="num">${escapeHtml(stop.ampm ?? "—")}</td>
+  <td>${clock12(stop.savedAt)} <span class="thin">${stop.logLagMinutes == null ? "" : `+${stop.logLagMinutes}m`}</span></td>
+  <td class="num">${stop.legMetres == null ? "&mdash;" : `${stop.legMetres} m`}</td>
+</tr>`;
+}
+
+function stopRowNarrow(stop: FieldActivityStop): string {
+  return `<tr>
+  <td class="num"><strong>${stop.index}</strong></td>
+  <td>${clock12(stop.checkedAt)}</td>
+  <td>${bidi(stop.customerName)} <span class="thin">&middot; ${escapeHtml(stop.speciality ?? "—")} ${escapeHtml(stop.grade ?? "")} &middot; ${escapeHtml(stop.ampm ?? "")}</span>
+      <div class="addr">${stop.lat.toFixed(6)}, ${stop.lon.toFixed(6)}${stop.address ? ` &mdash; ${bidi(tidyAddress(stop.address))}` : ""}${stop.legMetres == null ? "" : ` &mdash; ${stop.legMetres} m from the last stop`}</div></td>
+  <td class="num">${clock12(stop.savedAt)} <span class="thin">${stop.logLagMinutes == null ? "" : `+${stop.logLagMinutes}m`}</span></td>
+</tr>`;
+}
+
+function stopsTable(day: FieldActivityDay, compact: boolean): string {
+  const cols = compact
+    ? '<colgroup><col style="width:7%"><col style="width:20%"><col style="width:44%"><col style="width:29%"></colgroup>'
+    : '<colgroup><col style="width:4%"><col style="width:12%"><col style="width:39%"><col style="width:16%"><col style="width:9%"><col style="width:13%"><col style="width:7%"></colgroup>';
+  const head = compact
+    ? '<tr><th class="num">#</th><th>In</th><th>Customer and address</th><th class="num">Logged</th></tr>'
+    : '<tr><th class="num">#</th><th>Checked in</th><th>Customer, coordinates and address</th><th>Speciality, grade</th><th class="num">AM/PM</th><th>Logged at</th><th class="num">Leg</th></tr>';
+  const body = day.stops.map((stop) => (compact ? stopRowNarrow(stop) : stopRowWide(stop))).join("");
+  return `<table class="tbl">${cols}<thead>${head}</thead><tbody>${body}</tbody></table>`;
+}
+
+function tripBlock(day: FieldActivityDay): string {
+  const trip = day.trip;
+  if (!trip) return "";
+  const workload = trip.workload;
+  return `
+  <h2 class="h2">Outstation claim ${escapeHtml(trip.reference)}</h2>
+  <div class="facts facts--2">
+    ${fact("Destination", `${escapeHtml(trip.destination ?? "—")}<br><span class="thin">${escapeHtml(trip.transport ?? "")}${trip.distanceKm != null ? ` &middot; ${trip.distanceKm.toFixed(2)} km` : ""}${trip.durationMinutes != null ? ` &middot; ${Math.round(trip.durationMinutes)} min` : ""}${trip.minimumKm != null ? ` (minimum ${trip.minimumKm} km)` : ""}</span>`)}
+    ${fact("Money claimed", `<strong>${money(trip.claimedTotal)}</strong><br><span class="thin">fuel ${money(trip.fuel)} &middot; allowance ${money(trip.allowance)} &middot; tickets ${money(trip.tickets)} &middot; meeting and other ${money(trip.meeting + trip.other)}</span>`)}
+    ${fact("Decision", `${trip.approvedTotal != null ? money(trip.approvedTotal) : "Not decided"}<br><span class="thin">${escapeHtml(trip.status ?? "")} &middot; ${escapeHtml(trip.eligibility ?? "")} &middot; ${escapeHtml(trip.recommendation ?? "")}</span>`)}
+    ${fact("Gates", `${escapeHtml(trip.evidenceGate ?? "—")}<br><span class="thin">workload ${escapeHtml((trip.workloadGate ?? "").toLowerCase())} &mdash; AM ${workload.am ?? 0} &middot; PM ${workload.pm ?? 0} &middot; Ph ${workload.pharmacies ?? 0}</span>`)}
+  </div>`;
+}
+
+function masthead(mark: string, report: FieldActivityReport, period: string): string {
+  const subject = report.subject;
+  return `
+  <header class="mast">
+    ${mark ? `<img class="mast__mark" src="${mark}" alt="Sato Pharma">` : '<div class="mast__mark"></div>'}
+    <div class="mast__id">
+      <p class="mast__doc">Field Activity Report</p>
+      <p class="mast__sub">${escapeHtml(subject.name)}${subject.jobTitle ? ` &middot; ${escapeHtml(subject.jobTitle)}` : ""}${subject.lineName ? ` &middot; ${escapeHtml(subject.lineName)} line` : ""}</p>
+      <p class="mast__sub mast__sub--thin">${escapeHtml(period)}</p>
+    </div>
+  </header>
+  <div class="mast__rule"></div>`;
+}
+
+function footer(report: FieldActivityReport, page: number, total: number, generatedOn: string, suffix = ""): string {
+  return `
+  <footer class="foot">
+    <div class="foot__rule"></div>
+    <div class="foot__row">
+      <p class="foot__c"><strong>SATO-DIS-2026-01 v1.0</strong> &middot; Sato Pharma</p>
+      <p class="foot__c foot__c--mid">Employee record ${escapeHtml(report.subject.hrId)} &middot; read from the live system on ${escapeHtml(generatedOn)}, Cairo time</p>
+      <p class="foot__c foot__c--r">Page ${page} of ${total}${escapeHtml(suffix)}</p>
+    </div>
+  </footer>`;
+}
+
+export function buildFieldActivityDocument(input: {
+  report: FieldActivityReport;
+  maps: FieldActivityDayMap[];
+  generatedOn: string;
+}): string {
+  const { report } = input;
+  const mark = houseMarkDataUri();
+  const mapsByDay = new Map(input.maps.map((map) => [map.dateIso, map]));
+  const periodLabel = `${report.fromIso} to ${report.toIso}`;
+  const totalPages = report.days.length + 1;
+
+  const rows = report.days
+    .map((day) => {
+      const counted = day.countedTotal > 0 ? `${day.counts.am} &middot; ${day.counts.pm} &middot; ${day.counts.pharmacies}` : "&mdash;";
+      const gps = day.firstCheckin && day.lastCheckin ? `${clock12(day.firstCheckin)} &ndash; ${clock12(day.lastCheckin)}` : day.punches ? `${clock12(day.punches.firstTime)} &ndash; ${clock12(day.punches.lastTime)} (punch)` : "None";
+      const what =
+        day.kind === "field"
+          ? `Field day${day.partners.length > 0 ? ` &mdash; with ${escapeHtml(day.partners[0].name)}` : ""}`
+          : day.kind === "leave"
+            ? `Approved ${escapeHtml((day.leave?.type ?? "leave").toLowerCase())} leave${day.countedTotal > 0 ? " &mdash; and a visit recorded anyway" : ""}`
+            : day.kind === "field-no-gps"
+              ? "Field record with no GPS"
+              : day.kind === "office"
+                ? "Head office &mdash; fingerprint attendance"
+                : day.kind === "weekend"
+                  ? "Weekend"
+                  : "No record of any kind";
+      return `<tr><td><strong>${escapeHtml(longDate(day.dateIso, day.weekday))}</strong></td><td>${what}</td><td class="num">${counted}</td><td>${gps}</td><td class="num">${day.trip ? money(day.trip.claimedTotal) : "&mdash;"}</td></tr>`;
+    })
+    .join("");
+
+  const flagBlock =
+    report.flags.length > 0
+      ? `<h2 class="h2">What the report could not reconcile</h2><ul class="list">${report.flags
+          .map((flag) => `<li><strong>${escapeHtml(longDate(flag.dateIso, "")).trim()}</strong> &middot; ${escapeHtml(flag.message)}</li>`)
+          .join("")}</ul>`
+      : "";
+
+  const cover = `
+<section class="page">
+  ${masthead(mark, report, periodLabel)}
+  <h1 class="title">Field activity, day by day</h1>
+  <p class="lede">Every visit, every GPS fix, every logged time and every expense recorded for
+  ${escapeHtml(report.subject.name)} between ${escapeHtml(report.fromIso)} and ${escapeHtml(report.toIso)},
+  read from the live system on ${escapeHtml(input.generatedOn)}. One page per day follows this summary.</p>
+
+  <h2 class="h2">The period at a glance</h2>
+  <table class="tbl">
+    <colgroup><col style="width:24%"><col style="width:30%"><col style="width:13%"><col style="width:20%"><col style="width:13%"></colgroup>
+    <thead><tr><th>Day</th><th>What the day was</th><th class="num">AM &middot; PM &middot; Ph</th><th>GPS window</th><th class="num">Claimed</th></tr></thead>
+    <tbody>${rows}</tbody>
+    <tfoot><tr><td colspan="2">Total</td><td class="num"><strong>${report.totals.counts.am} &middot; ${report.totals.counts.pm} &middot; ${report.totals.counts.pharmacies}</strong></td><td>${report.totals.fieldDays} field day${report.totals.fieldDays === 1 ? "" : "s"}</td><td class="num"><strong>${money(report.totals.claimedTotal)}</strong></td></tr></tfoot>
+  </table>
+
+  <h2 class="h2">How to read this report</h2>
+  <div class="note">
+    <p><strong>A GPS check-in is where he stood. A logged time is when the call was typed in.</strong>
+    They are different clocks and both are shown on every stop, with the gap between them.</p>
+    <p><strong>A manager records no visits of his own.</strong> On a double visit the medical
+    representative enters the call and tags the manager on it, so the GPS fix is the
+    representative's. Every stop here is a call the subject was tagged on, and the map plots those
+    stops only &mdash; never the representative's own later rounds.</p>
+    <p><strong>The vendor's clock can read up to an hour early in summer.</strong> The phones sending
+    these times mostly sit on Egypt standard time while Cairo is on summer time, so an iReports360
+    time is not defensible to the minute. Fingerprint punches are exact.</p>
+  </div>
+  ${flagBlock}
+  ${footer(report, 1, totalPages, input.generatedOn)}
+</section>`;
+
+  const dayPages = report.days
+    .map((day, index) => {
+      const page = index + 2;
+      const map = mapsByDay.get(day.dateIso);
+      const dense = day.stops.length > DENSE_STOPS;
+      const mapBlock = map
+        ? `<h2 class="h2">Where his phone put him</h2><figure class="map">${map.svg}<figcaption>${escapeHtml(map.caption)}</figcaption></figure>`
+        : "";
+      const unlocated =
+        day.unlocated.length > 0
+          ? `<h2 class="h2">Recorded on this day with no GPS behind it</h2><ul class="list">${day.unlocated
+              .map(
+                (item) =>
+                  `<li><strong>${clock12(item.savedAt)}</strong>${item.savedOn ? ` <span class="thin">(${escapeHtml(item.savedOn)})</span>` : ""} &middot; ${escapeHtml(item.ampm ?? "—")} &middot; ${bidi(item.label)}${item.counts ? "" : " <span class=\"thin\">— not a customer call, counted in nothing</span>"}</li>`,
+              )
+              .join("")}</ul>`
+          : "";
+      const notes = day.notes.length > 0 ? `<p class="warn">${day.notes.map((note) => escapeHtml(note)).join(" ")}</p>` : "";
+      const solo =
+        day.partnerSoloCalls > 0
+          ? `<p class="tail">The medical representative recorded a further <strong>${day.partnerSoloCalls} call${day.partnerSoloCalls === 1 ? "" : "s"}</strong> on this day that ${escapeHtml(report.subject.name.split(" ")[0])} is not tagged on. They are the representative's own work, they are not on the map above, and they are counted nowhere in this report.</p>`
+          : "";
+
+      const stopsBlock = day.stops.length > 0 ? `<h2 class="h2">Every stop, in the order his phone recorded it</h2>${stopsTable(day, dense)}` : "";
+      const body = dense
+        ? `<div class="cols cols--even"><div>${mapBlock}</div><div>${tripBlock(day)}${unlocated}</div></div>`
+        : `<div class="cols"><div>${stopsBlock}${unlocated}</div><div>${mapBlock}${tripBlock(day)}</div></div>`;
+
+      const spill = dense
+        ? `
+<section class="page">
+  ${masthead(mark, report, longDate(day.dateIso, day.weekday))}
+  <div class="dayhead">
+    <h1 class="title">${escapeHtml(longDate(day.dateIso, day.weekday))} &mdash; every stop</h1>
+    <p class="chip">${day.stops.length} stops</p>
+  </div>
+  ${stopsBlock}
+  ${footer(report, page, totalPages, input.generatedOn, " (continued)")}
+</section>`
+        : "";
+
+      return `
+<section class="page">
+  ${masthead(mark, report, longDate(day.dateIso, day.weekday))}
+  <div class="dayhead">
+    <h1 class="title">${escapeHtml(longDate(day.dateIso, day.weekday))}</h1>
+    <p class="chip">${escapeHtml(dayChip(day))}</p>
+  </div>
+  <div class="facts">${dayFacts(day).join("")}</div>
+  ${body}
+  ${notes}
+  ${solo}
+  ${footer(report, page, totalPages, input.generatedOn)}
+</section>${spill}`;
+    })
+    .join("");
+
+  return `<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<title>Field Activity Report — ${escapeHtml(report.subject.name)} — ${escapeHtml(periodLabel)}</title>
+<style>${documentCss()}</style></head>
+<body>${cover}${dayPages}</body></html>`;
+}
+
+function documentCss(): string {
+  const c = HOUSE_COLORS;
+  return `
+@page { size: A4 landscape; margin: 10mm 11mm 10mm 11mm; }
+* { box-sizing: border-box; border-radius: 0 !important; }
+html, body { margin: 0; padding: 0; }
+body { font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; color: ${c.body}; font-size: 8pt; line-height: 1.34; }
+.page { page-break-after: always; position: relative; min-height: 188mm; padding-bottom: 9mm; }
+.page:last-child { page-break-after: auto; }
+.mast { display: flex; align-items: flex-start; justify-content: space-between; gap: 8mm; }
+.mast__mark { width: 30mm; height: auto; }
+.mast__id { text-align: right; }
+.mast__doc { margin: 0; font-size: 11pt; font-weight: 700; color: ${c.deep}; letter-spacing: .02em; }
+.mast__sub { margin: 1mm 0 0; font-size: 8pt; font-weight: 600; }
+.mast__sub--thin { color: ${c.muted}; font-weight: 400; }
+.mast__rule { height: 1.6pt; background: ${c.blue}; margin: 2mm 0 3mm; }
+.dayhead { display: flex; align-items: baseline; justify-content: space-between; gap: 6mm; }
+.title { margin: 0 0 1.5mm; font-size: 14.5pt; font-weight: 700; color: ${c.deep}; letter-spacing: -.01em; }
+.chip { margin: 0; font-size: 7.6pt; font-weight: 700; text-transform: uppercase; letter-spacing: .08em;
+        color: ${c.blue}; border: 1pt solid ${c.blue}; padding: .8mm 2.4mm; white-space: nowrap; }
+.lede { margin: 0 0 5mm; font-size: 9pt; max-width: 200mm; }
+.h2 { margin: 2.6mm 0 1.4mm; font-size: 8pt; font-weight: 700; text-transform: uppercase; letter-spacing: .1em;
+      color: ${c.deep}; border-bottom: 1pt solid ${c.blue}; padding-bottom: 1mm; }
+.thin { color: ${c.muted}; font-weight: 400; font-size: 7.2pt; }
+.addr { color: ${c.muted}; font-weight: 400; font-size: 6.3pt; line-height: 1.2; margin-top: .2mm; }
+.facts { display: grid; grid-template-columns: repeat(4, 1fr); border-top: .6pt solid ${c.hair}; border-left: .6pt solid ${c.hair}; }
+.facts--2 { grid-template-columns: repeat(2, 1fr); }
+.fact { border-right: .6pt solid ${c.hair}; border-bottom: .6pt solid ${c.hair}; padding: 1.2mm 2mm; }
+.fact__k { margin: 0 0 .8mm; font-size: 6.9pt; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: ${c.muted}; }
+.fact__v { margin: 0; font-size: 8.2pt; font-weight: 600; }
+.cols { display: grid; grid-template-columns: 1.3fr 1fr; gap: 6mm; align-items: start; }
+.cols--even { grid-template-columns: 1.1fr 1fr; }
+.map { margin: 0; }
+.map svg { width: 100%; height: auto; border: .8pt solid ${c.hair}; display: block; }
+.map figcaption { margin-top: 1.2mm; font-size: 6.9pt; color: ${c.muted}; }
+.tbl { width: 100%; table-layout: fixed; border-collapse: collapse; }
+.tbl th { text-align: left; font-size: 6.9pt; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+          color: ${c.deep}; border-bottom: 1pt solid ${c.deep}; padding: 1.6mm; }
+.tbl td { padding: .85mm 1.4mm; vertical-align: top; border-bottom: .5pt solid ${c.hair}; word-wrap: break-word; }
+.tbl tbody tr:nth-child(odd) td { background: ${c.tint}; }
+.tbl .num, .tbl th.num { text-align: right; }
+.tbl tfoot td { padding: 1.8mm 1.6mm; border-top: 1pt solid ${c.deep}; border-bottom: none; font-weight: 700; }
+.note { border-left: 2pt solid ${c.light}; padding-left: 3.5mm; }
+.note p { margin: 0 0 2mm; }
+.warn { margin: 2.5mm 0 0; border-left: 2pt solid ${c.deep}; padding-left: 3.5mm; }
+.tail { margin: 2.5mm 0 0; }
+.list { margin: 0; padding-left: 4.5mm; }
+.list li { margin-bottom: 1.4mm; }
+.foot { position: absolute; bottom: 0; left: 0; right: 0; }
+.foot__rule { height: .8pt; background: ${c.hair}; margin-bottom: 1.6mm; }
+.foot__row { display: flex; justify-content: space-between; gap: 4mm; }
+.foot__c { margin: 0; font-size: 6.8pt; color: ${c.muted}; }
+.foot__c--mid { text-align: center; }
+.foot__c--r { text-align: right; white-space: nowrap; }
+`;
+}
