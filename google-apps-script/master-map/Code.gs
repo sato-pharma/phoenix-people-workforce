@@ -204,6 +204,42 @@ function runSync(deadline) {
  * Best-effort by contract: a sync that painted every tab correctly must never report failure
  * because one cosmetic cell could not be written.
  */
+/**
+ * Delete tabs Phoenix used to serve and no longer does.
+ *
+ * WITHOUT THIS, DROPPING A TAB FROM THE PLAN IS WORSE THAN KEEPING IT. Nothing here ever deleted a
+ * sheet before: a tab Phoenix stops serving simply stops being repainted, so it sits on the
+ * workbook holding whatever it held on the day it was dropped — looking exactly as current as the
+ * tabs beside it, with nothing in the data to say otherwise. That is this workbook's signature
+ * failure, and it would have been introduced deliberately.
+ *
+ * THE SAFETY IS THAT IT ONLY EVER TOUCHES A TAB PHOENIX ITSELF OWNED. The candidates come from the
+ * PREVIOUS plan's stored order, so a tab the owner created by hand was never in that list and can
+ * never be deleted here, however it is named. That is why this reads the stored order rather than
+ * walking every sheet in the workbook and deleting whatever the plan does not mention — the obvious
+ * implementation, and one wrong rename away from destroying the owner's own work.
+ *
+ * Best-effort per tab: one failure must not abort a repaint, and a tab that survives this round is
+ * simply offered again next time.
+ */
+function retireTabs(previousTitles, currentTitles) {
+  if (!previousTitles || previousTitles.length === 0) return;
+
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  for (let index = 0; index < previousTitles.length; index += 1) {
+    const title = previousTitles[index];
+    if (currentTitles.indexOf(title) !== -1) continue;
+    try {
+      const sheet = spreadsheet.getSheetByName(title);
+      if (!sheet) continue;
+      spreadsheet.deleteSheet(sheet);
+      Logger.log("Retired " + title + " — Phoenix no longer serves it.");
+    } catch (error) {
+      Logger.log("Could not retire " + title + ": " + error);
+    }
+  }
+}
+
 function stampRefreshedAt() {
   try {
     const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Lists");
@@ -259,12 +295,14 @@ function planWork(properties) {
 
   const plan = fetchJson("/api/sales/master-map/sheet?plan=1");
   properties.setProperty(PROP_LAST_FULL, String(Date.now()));
+
+  const titles = plan.tabs.map(function (tab) { return tab.title; });
+  // Retire tabs Phoenix has stopped serving, BEFORE the order is overwritten with the new plan.
+  retireTabs(readJson(properties, PROP_ORDER, []), titles);
+
   // Remember the full reading order, not just the tabs that changed — the reorder happens after
   // the queue drains, by which point the plan is long gone.
-  properties.setProperty(
-    PROP_ORDER,
-    JSON.stringify(plan.tabs.map(function (tab) { return tab.title; })),
-  );
+  properties.setProperty(PROP_ORDER, JSON.stringify(titles));
 
   const hashes = readJson(properties, PROP_HASHES, {});
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();

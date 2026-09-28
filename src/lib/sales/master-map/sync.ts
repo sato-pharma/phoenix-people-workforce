@@ -19,7 +19,6 @@ import {
   flatShopCount,
   renderFlatRows,
   renderMasterRows,
-  renderRegionRows,
   type MasterMapTree,
 } from "@/lib/sales/master-map/tree";
 import { loadMasterMapSource } from "@/lib/sales/master-map/load";
@@ -35,7 +34,6 @@ import {
   renderFlatSheet,
   renderSheet,
   rgb,
-  tabColorFor,
 } from "@/lib/sales/master-map/sheet-render";
 import {
   batchUpdate,
@@ -238,19 +236,15 @@ export async function syncMasterMap(options: {
   written.push(GAPS_TAB);
   report(`${GAPS_TAB}: ${gaps.values.length} rows`);
 
-  // 3. One tab per region — including the two empty ones, which say so rather than not existing.
-  for (const region of tree.regions) {
-    const rows = renderRegionRows(region, distributorName);
-    const sheetId = await ensureTab(token, options.spreadsheetId, region.regionName, rows.length, 12);
-    await paint(
-      token,
-      options.spreadsheetId,
-      region.regionName,
-      renderSheet(rows, sheetId, { tabColor: tabColorFor(region.regionName) }),
-    );
-    written.push(region.regionName);
-    report(`${region.regionName}: ${rows.length} rows`);
-  }
+  // 3. NO PER-REGION TABS. Retired by the owner's decision on 2026-09-28: they repeated what
+  //    "Master" already groups, region by region, and cost 1.4 MILLION of the workbook's
+  //    10,000,000 cells — 115,741 rows across twelve columns, measured live. Every region is still
+  //    on the sheet, grouped and banded on "Master", and the finder searches all of them.
+  //
+  //    This path and tabTitles() in payload.ts must agree on the tab list. If they drift, the
+  //    direct push and the sheet's own script paint two different workbooks — and only the script
+  //    can retire a tab, so whichever tab one path writes and the other omits becomes an orphan
+  //    holding the day's data for ever.
 
   // 4. The two control tabs, in this order and last on purpose: both are formulas over
   // "All customers", so neither can resolve until that tab exists and is full.
