@@ -158,8 +158,15 @@ export async function GET(request: Request) {
       for (const area of areasByLine[line] ?? []) {
         if (keptAreas.has(`${line}:${area.areaCode ?? ""}`)) areas.push({ ...area, lineLabel });
       }
-      for (const dm of ds.dms) {
-        if (dm.dmSeatId != null && keptSeats.has(dm.dmSeatId)) dms.push({ ...dm, lineLabel });
+      // 🔴 A MEDICAL REP'S PACK HOLDS NO DISTRICT ROW. His territory carries his manager's seat, so
+      // `keptSeats` names the whole district — and the district row is the WHOLE district's list,
+      // marketing and outstation. "Own territory and nothing else" (owner, 2026-09-26) means the rep
+      // reads his own AREA, which carries its own figures; the model reads cost off the area when no
+      // district row is present. The same rule as the people filter directly below.
+      if (scope.kind !== "rep") {
+        for (const dm of ds.dms) {
+          if (dm.dmSeatId != null && keptSeats.has(dm.dmSeatId)) dms.push({ ...dm, lineLabel });
+        }
       }
       for (const person of ds.people) {
         const keep =

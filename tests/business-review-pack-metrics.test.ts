@@ -59,15 +59,30 @@ export function runBusinessReviewPackMetricsTests() {
     }
   }
 
-  // ------------------------------------------------------------------ 3. a rep is offered only his own
+  // ------------------------------------------------------------------ 3. a rep is offered everything HIS scope answers
+  //
+  // 🔴 Owner, 2026-09-28: "show his all data … as he filters, the pack is exported." A rep used to be
+  // offered a curated handful, and his pack came out as five sections with every field KPI missing.
+  // He is now offered every metric his OWN territory can answer — and still nothing that needs a
+  // district row, because the route gives a rep's pack none: his manager's whole district is not
+  // his territory.
   {
     const repIds = new Set(metricsForLevel("rep").map((m) => m.id));
+    for (const id of [
+      "achievement", "sales-vs-target", "per-product", "month-by-month", "vs-previous-window",
+      "brick-spread", "customer-concentration", "channel-split",
+      "visits-split", "customers-per-month", "coverage-frequency", "double-visits",
+      "marketing-committed", "outstation-claimed", "spend-per-point", "marketing-vs-trend",
+      "rep-rows",
+    ] as const) {
+      assert.ok(repIds.has(id), `a rep's own territory answers ${id}, so he must be offered it`);
+    }
+    // Structurally unanswerable for one person's own territory — offering them would export nothing.
     assert.ok(!repIds.has("line-comparison"), "a rep has no lines to compare");
-    assert.ok(!repIds.has("rep-rows"), "a rep has no reps beneath him");
-    assert.ok(!repIds.has("spend-per-point"), "spend is a district figure, not a rep's own");
-    assert.ok(repIds.has("achievement"), "but he does have his own achievement");
-    assert.ok(repIds.has("visits-split"), "and his own visits");
-    assert.ok(repIds.has("specialty-mix"), "and the make-up of his own list — the question that started this");
+    assert.ok(!repIds.has("achievement-ex-vacant"), "a rep's own area is never vacant — he is standing in it");
+    assert.ok(!repIds.has("per-family"), "the family rollup is a DISTRICT figure, and a rep's pack holds no district row");
+    assert.ok(!repIds.has("specialty-mix"), "the list mix is read off the district row, which is withheld from a rep");
+    assert.ok(!repIds.has("role-activity"), "a rep's pack holds one person, so there is no role to compare");
   }
 
   // ------------------------------------------------------------------ 4. line comparison is company only
@@ -121,15 +136,27 @@ export function runBusinessReviewPackMetricsTests() {
     );
   }
 
-  // ------------------------------------------------------------------ 7. defaults are a presentation
+  // ------------------------------------------------------------------ 7. everything offered is ticked
+  //
+  // 🔴 REVERSED by the owner, 2026-09-28. This block used to insist that "a pack of everything is not
+  // a presentation" and that no level may tick every metric it has. His ruling is the opposite: a
+  // fresh pack opens with everything the scope can answer, and the viewer unticks what he does not
+  // want. The FILTER governs what the figures cover; the picker no longer curates.
   {
-    // A pack of everything is not a presentation. Nothing may default to every metric it has.
     for (const level of PACK_LEVELS as readonly PackLevel[]) {
-      const available = metricsForLevel(level).length;
-      const defaults = defaultSelectionFor(level).length;
-      assert.ok(
-        defaults < available,
-        `${level} ticks all ${available} metrics by default — a pack of everything is not a presentation`,
+      const available = metricsForLevel(level).map((m) => m.id);
+      const defaults = defaultSelectionFor(level);
+      assert.deepEqual(
+        defaults,
+        available,
+        `${level} must open with every metric it can answer ticked — the owner asked for all of it`,
+      );
+    }
+    for (const metric of REVIEW_METRICS) {
+      assert.deepEqual(
+        [...metric.defaultAt],
+        [...metric.levels],
+        `${metric.id} is offered at a level where it is not ticked by default`,
       );
     }
   }

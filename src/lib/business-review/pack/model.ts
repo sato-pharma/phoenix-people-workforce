@@ -26,10 +26,12 @@ import { formatVisitCountSplit } from "@/lib/crm/visit-count-buckets";
 import type { ConcentrationFacts } from "../concentration";
 import { describeSpread } from "../concentration";
 import { isResignedStatus, leaverLabel } from "../employment-status";
-import { periodColumnLabel } from "../period-format";
+import { REVIEW_FLOOR } from "../period";
+import { periodColumnLabel, periodLabel, windowLabel } from "../period-format";
+import { comparisonBasisFor, deltaPct, deltaPoints, formatDelta } from "../previous-window";
 import type { ReviewPersonRow } from "../sources/roles";
 import { describeSpecialtyMix, type SpecialtyMix } from "../specialty-mix";
-import type { AreaSummary, DmSummary } from "../types";
+import type { AreaSummary, DmSummary, Slice } from "../types";
 import { metricById, type PackSubject, type ReviewMetricId } from "./metrics";
 
 /**
@@ -134,6 +136,21 @@ export function buildSalesReviewPack(input: PackInput): SalesReviewPack {
   if (wanted.has("achievement") || wanted.has("sales-vs-target")) {
     add(areaPerformance(input));
   }
+  if (wanted.has("achievement-ex-vacant")) {
+    add(achievementExVacant(input));
+  }
+  if (wanted.has("per-product")) {
+    add(perProduct(input));
+  }
+  if (wanted.has("per-family")) {
+    add(perFamily(input));
+  }
+  if (wanted.has("month-by-month")) {
+    add(monthByMonth(input));
+  }
+  if (wanted.has("vs-previous-window")) {
+    add(vsPrevious(input));
+  }
   if (wanted.has("brick-spread") && input.concentration) {
     add(spread(input.concentration.bricks, "brick-spread", "Bricks", "Brick"));
   }
@@ -143,17 +160,35 @@ export function buildSalesReviewPack(input: PackInput): SalesReviewPack {
   if (wanted.has("channel-split") && input.concentration) {
     add(channels(input.concentration));
   }
+  if (wanted.has("visits-split")) {
+    add(visitsSplit(input));
+  }
   if (wanted.has("specialty-mix")) {
     for (const dm of input.dms) add(specialty(dm.specialityMix, dm.dm));
   }
+  if (wanted.has("coverage-frequency")) {
+    add(coverageFrequency(input));
+  }
+  if (wanted.has("double-visits")) {
+    add(doubleVisitsByArea(input));
+    add(doubleVisitsByManager(input));
+  }
   if (wanted.has("rep-rows")) {
     add(repRows(input));
+  }
+  if (wanted.has("role-activity")) {
+    add(roleActivity(input));
   }
   if (wanted.has("customers-per-month")) {
     add(customersPerMonth(input));
   }
   if (wanted.has("marketing-committed") || wanted.has("outstation-claimed") || wanted.has("spend-per-point")) {
-    add(spend(input));
+    // A district pack reads the districts; a rep's pack holds no district row (the route withholds
+    // it — his manager's whole district is not his territory), so his cost is read off his area.
+    add(input.dms.length > 0 ? spend(input) : areaSpend(input));
+  }
+  if (wanted.has("marketing-vs-trend")) {
+    add(marketingVsTrend(input));
   }
 
   // Catalogue order, whatever order the caller ticked them in — so two people exporting the same
@@ -485,6 +520,537 @@ function spend({ dms }: PackInput): PackSection {
       ];
     }),
     title: "Cost",
+  };
+}
+
+// ── The sections the catalogue promised and this file never drew (owner, 2026-09-28) ──────────────
+//
+// 🔴 THE PICKER OFFERED 22 METRICS AND THIS FILE DREW 9. Achievement excluding vacant, per product,
+// per family, month by month, against the previous window, visits, coverage and frequency, double
+// visits, marketing against the trend and by role were all ticked in a fresh pack and silently
+// produced nothing, so a medical rep's pack came out as five sections with every field KPI missing.
+// The owner: "show the full data … as he filters, the pack is exported." Every builder below reads
+// data this scope already loaded; none recomputes a figure the engine owns.
+
+/**
+ * Total any set of slices by the review's own rule: sum(sales), sum(target), and achievement as the
+ * GRADED actual over the target, as a percentage, null when there is no target.
+ *
+ * It is `totalAreas` in canonical.ts restated for slices that are not whole areas — one product
+ * across areas, one month across areas. canonical.ts reaches the database, so it cannot be imported
+ * here; a test pins this against it instead, because a second rule would be a second opinion about
+ * achievement.
+ */
+export function sumSlices(slices: readonly (Slice | null | undefined)[]): Slice {
+  let sales = 0;
+  let target = 0;
+  let graded = 0;
+  for (const slice of slices) {
+    if (!slice) continue;
+    sales += num(slice.sales);
+    target += num(slice.target);
+    graded += num(slice.graded);
+  }
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+  return {
+    ach: target !== 0 ? round2((graded / target) * 100) : null,
+    graded: round2(graded),
+    sales: round2(sales),
+    target: round2(target),
+  };
+}
+
+/** A Line cell only when the pack spans more than one line; a column of one repeated value is noise. */
+function lineCells(withLine: boolean, label: string | null | undefined): PackCell[] {
+  return withLine ? [label ?? "—"] : [];
+}
+
+function achievementExVacant({ areas }: PackInput): PackSection | null {
+  const vacant = areas.filter((area) => area.vacant);
+  // Nothing to take out, or nothing left after taking it out: either way there is no comparison.
+  if (vacant.length === 0 || vacant.length === areas.length) return null;
+  const inPost = areas.filter((area) => !area.vacant);
+  const every = sumSlices(areas.map((area) => area.allProducts));
+  const held = sumSlices(inPost.map((area) => area.allProducts));
+  const empty = sumSlices(vacant.map((area) => area.allProducts));
+  const row = (label: string, slice: Slice, count: number): PackCell[] => [
+    label,
+    pct(slice.ach),
+    num(slice.sales),
+    num(slice.target),
+    count,
+  ];
+  return {
+    chart: {
+      capNote: null,
+      items: [
+        { label: "Every area", note: `${areas.length} areas`, value: every.ach },
+        { label: "Areas with someone in post", note: `${inPost.length} areas`, value: held.ach },
+      ],
+      kind: "bars",
+      reference: EARNER,
+      unit: "pct",
+    },
+    align: ["left", "right", "right", "right", "right"],
+    columns: ["Areas", "Achievement", "Sales", "Target", "Count"],
+    metric: "achievement-ex-vacant",
+    note: "The Monthly Closing's rule with vacant territories taken out of both halves — what the people in post delivered. A vacant area's sales are real; they are simply nobody's work yet.",
+    rows: [
+      row("Every area", every, areas.length),
+      row("Areas with someone in post", held, inPost.length),
+      row("Vacant areas", empty, vacant.length),
+    ],
+    title: "Achievement excluding vacant",
+  };
+}
+
+function perProduct({ areas }: PackInput): PackSection | null {
+  const names = [...new Set(areas.flatMap((area) => Object.keys(area.products ?? {})))];
+  const products = names
+    .map((name) => ({ name, slice: sumSlices(areas.map((area) => area.products?.[name])) }))
+    .filter((row) => row.slice.sales !== 0 || row.slice.target !== 0)
+    .sort((a, b) => b.slice.sales - a.slice.sales);
+  if (products.length === 0) return null;
+  const graded = products
+    .filter((row) => row.slice.ach != null)
+    .sort((a, b) => (b.slice.ach ?? -1) - (a.slice.ach ?? -1));
+  const plotted = graded.slice(0, CHART_BARS);
+  return {
+    chart:
+      plotted.length >= 2
+        ? {
+            capNote:
+              graded.length > plotted.length
+                ? `The ${plotted.length} highest of ${graded.length} graded products — this section's table holds every one.`
+                : null,
+            items: plotted.map((row) => ({ label: row.name, note: null, value: row.slice.ach })),
+            kind: "bars",
+            reference: EARNER,
+            unit: "pct",
+          }
+        : null,
+    align: ["left", "right", "right", "right"],
+    columns: ["Product", "Achievement", "Sales", "Target"],
+    metric: "per-product",
+    // Value, never units: two products' units are never added, and one product across areas is still
+    // one product, so its money sums.
+    note: "Include products — the ones the scheme counts. Each product's own sales in targeted months over its own target, summed across the areas in this pack in money, never as an average of their percentages.",
+    rows: products.map((row) => [row.name, pct(row.slice.ach), num(row.slice.sales), num(row.slice.target)]),
+    title: "Per product",
+  };
+}
+
+function perFamily({ dms }: PackInput): PackSection | null {
+  const withLine = dms.some((dm) => dm.lineLabel);
+  const rows: PackCell[][] = [];
+  for (const dm of dms) {
+    const families = Object.entries(dm.familyAch ?? {}).sort(([a], [b]) => a.localeCompare(b));
+    for (const [family, ach] of families) {
+      rows.push([dm.dm, ...lineCells(withLine, dm.lineLabel), family, pct(ach)]);
+    }
+  }
+  if (rows.length === 0) return null;
+  return {
+    align: withLine ? ["left", "left", "left", "right"] : ["left", "left", "right"],
+    columns: withLine
+      ? ["District manager", "Line", "Family", "Achievement"]
+      : ["District manager", "Family", "Achievement"],
+    metric: "per-family",
+    note: "Each product family's achievement inside each district, as the district rollup computes it. A percentage does not add, so families are not totalled across districts here.",
+    rows,
+    title: "Per family",
+  };
+}
+
+function monthByMonth({ areas, months, visitsAvailable }: PackInput): PackSection | null {
+  if (months.length === 0) return null;
+  const monthRows = months.map((month) => ({
+    label: periodColumnLabel(month, months),
+    slice: sumSlices(areas.map((area) => area.byMonth?.[month])),
+    visits: areas.reduce((sum, area) => sum + num(area.visitsByMonth?.[month] ?? 0), 0),
+  }));
+  if (monthRows.every((row) => row.slice.sales === 0 && row.slice.target === 0 && row.visits === 0)) return null;
+  const graded = monthRows.filter((row) => row.slice.ach != null);
+  return {
+    chart:
+      graded.length >= 2
+        ? {
+            capNote: null,
+            items: graded.map((row) => ({ label: row.label, note: null, value: row.slice.ach })),
+            kind: "bars",
+            reference: EARNER,
+            unit: "pct",
+          }
+        : null,
+    align: ["left", "right", "right", "right", "right"],
+    columns: ["Month", "Achievement", "Sales", "Target", "Field visits"],
+    metric: "month-by-month",
+    note: "Each month graded on its own sales over its own target. Field visits add across areas; unique customers do not, so they have a section of their own.",
+    rows: monthRows.map((row) => [
+      row.label,
+      pct(row.slice.ach),
+      num(row.slice.sales),
+      num(row.slice.target),
+      visitsAvailable ? row.visits : NO_VISIT_DATA,
+    ]),
+    title: "Month by month",
+  };
+}
+
+/**
+ * This window against the one before it — or, while the review floor forbids that, the last month
+ * against the month before it. `comparisonBasisFor` decides, and its label travels with the figures.
+ */
+function vsPrevious({ areas, months }: PackInput): PackSection | null {
+  const basis = comparisonBasisFor(months, REVIEW_FLOOR);
+  if (basis.kind === "none" || months.length === 0) return null;
+  const nowPeriods = basis.kind === "previous-month" ? [months[months.length - 1]] : [...months];
+  // A previous WINDOW sits outside what was loaded. Its months must actually be here, or this would
+  // compare the window against zeros and print the difference as a collapse.
+  const loaded = (period: string) => areas.some((area) => area.byMonth?.[period] != null);
+  if (!basis.periods.every(loaded) || !nowPeriods.every(loaded)) return null;
+
+  const nowLabel =
+    nowPeriods.length === 1
+      ? periodLabel(nowPeriods[0])
+      : windowLabel(nowPeriods[0], nowPeriods[nowPeriods.length - 1]);
+  const withLine = areas.some((area) => area.lineLabel);
+  const compared = areas
+    .map((area) => ({
+      area,
+      before: sumSlices(basis.periods.map((p) => area.byMonth?.[p])),
+      now: sumSlices(nowPeriods.map((p) => area.byMonth?.[p])),
+    }))
+    .filter((row) => row.now.sales !== 0 || row.before.sales !== 0)
+    .sort((a, b) => b.now.sales - a.now.sales);
+  if (compared.length === 0) return null;
+
+  const cells = (label: string, lineLabel: string | null | undefined, now: Slice, before: Slice): PackCell[] => [
+    label,
+    ...lineCells(withLine, lineLabel),
+    pct(now.ach),
+    pct(before.ach),
+    formatDelta(deltaPoints(now.ach, before.ach), "pts"),
+    num(now.sales),
+    num(before.sales),
+    formatDelta(deltaPct(now.sales, before.sales), "%"),
+  ];
+  const totalNow = sumSlices(compared.map((row) => row.now));
+  const totalBefore = sumSlices(compared.map((row) => row.before));
+  return {
+    align: withLine
+      ? ["left", "left", "right", "right", "right", "right", "right", "right"]
+      : ["left", "right", "right", "right", "right", "right", "right"],
+    columns: [
+      "Area",
+      ...(withLine ? ["Line"] : []),
+      "Achievement now",
+      "Achievement before",
+      "Points",
+      "Sales now",
+      "Sales before",
+      "Sales change",
+    ],
+    metric: "vs-previous-window",
+    note:
+      basis.kind === "previous-month"
+        ? `Now is ${nowLabel}, before is ${basis.label}. The review reads nothing before ${periodLabel(REVIEW_FLOOR)}, so no earlier window of the same length exists to compare with — the month before, inside this window, is the honest comparison.`
+        : `Now is ${nowLabel}, before is ${basis.label} — the same span immediately before it.`,
+    rows: [
+      ...compared.map((row) => cells(row.area.area, row.area.lineLabel, row.now, row.before)),
+      cells("Every area in this pack", withLine ? "—" : null, totalNow, totalBefore),
+    ],
+    title: "Against the previous window",
+  };
+}
+
+function visitsSplit({ people, visitsAvailable }: PackInput): PackSection | null {
+  if (!visitsAvailable) return null;
+  const active = people.filter((person) => person.fieldVisits > 0).sort((a, b) => b.fieldVisits - a.fieldVisits);
+  if (active.length === 0) return null;
+  const plotted = active.slice(0, CHART_BARS);
+  const total = active.reduce(
+    (sum, person) => ({
+      am: sum.am + num(person.visitSplit.am),
+      campaign: sum.campaign + num(person.campaignVisits),
+      pharmacies: sum.pharmacies + num(person.visitSplit.pharmacies),
+      pm: sum.pm + num(person.visitSplit.pm),
+      regular: sum.regular + num(person.regularVisits),
+      visits: sum.visits + num(person.fieldVisits),
+    }),
+    { am: 0, campaign: 0, pharmacies: 0, pm: 0, regular: 0, visits: 0 },
+  );
+  return {
+    chart:
+      plotted.length >= 2
+        ? {
+            capNote:
+              active.length > plotted.length
+                ? `Field visits — the ${plotted.length} busiest of ${active.length}. This section's table holds every one.`
+                : "Field visits.",
+            countSuffix: "visits",
+            items: plotted.map((person) => ({
+              label: personName(person),
+              note: person.jobTitle || person.role || null,
+              value: person.fieldVisits,
+            })),
+            kind: "bars",
+            reference: null,
+            unit: "count",
+          }
+        : null,
+    align: ["left", "right", "right", "right", "right", "right", "right"],
+    columns: ["Person", "Field visits", "AM", "PM", "Pharmacies", "Regular", "Campaign"],
+    metric: "visits-split",
+    // The owner's golden rule, carried with the figures that obey it.
+    note: "AM · PM · Pharmacies are three figures kept apart — a pharmacy is never counted inside PM or AM, and there is no combined call rate. A visit belongs to exactly one person, so these rows add.",
+    rows: [
+      ...active.map((person): PackCell[] => [
+        personName(person),
+        num(person.fieldVisits),
+        num(person.visitSplit.am),
+        num(person.visitSplit.pm),
+        num(person.visitSplit.pharmacies),
+        num(person.regularVisits),
+        num(person.campaignVisits),
+      ]),
+      ...(active.length > 1
+        ? [["Everyone above", total.visits, total.am, total.pm, total.pharmacies, total.regular, total.campaign]]
+        : []),
+    ],
+    title: "Visits",
+  };
+}
+
+function coverageFrequency({ people, visitsAvailable }: PackInput): PackSection | null {
+  if (!visitsAvailable) return null;
+  const reached = people.filter((person) => person.customers > 0).sort((a, b) => b.customers - a.customers);
+  if (reached.length === 0) return null;
+  return {
+    align: ["left", "right", "right", "right", "right", "right", "right"],
+    columns: ["Person", "Customers reached", "AM", "PM", "Pharmacies", "Regular visits", "Visits per customer"],
+    metric: "coverage-frequency",
+    note: "Reach and frequency from the visits themselves: the distinct customers each person saw, AM · PM · Pharmacies apart, and the regular visits each received on average. Coverage as a share of the PLANNED list is scored against the plan on the CRM KPIs board — this module holds the visits, not the plan, so it gives counts rather than a percentage. Customers are unions, so these rows are never totalled.",
+    rows: reached.map((person) => [
+      personName(person),
+      num(person.customers),
+      num(person.customersAm),
+      num(person.customersPm),
+      num(person.customersPharmacy),
+      num(person.regularVisits),
+      person.customers > 0 ? (num(person.regularVisits) / person.customers).toFixed(1) : "—",
+    ]),
+    title: "Coverage and frequency",
+  };
+}
+
+function doubleVisitsByArea({ areas }: PackInput): PackSection | null {
+  const withLine = areas.some((area) => area.lineLabel);
+  const ridden = areas.filter((area) => num(area.doubleVisits) > 0).sort((a, b) => b.doubleVisits - a.doubleVisits);
+  if (ridden.length === 0) return null;
+  const plotted = ridden.slice(0, CHART_BARS);
+  return {
+    chart:
+      plotted.length >= 2
+        ? {
+            capNote: ridden.length > plotted.length ? `The ${plotted.length} most ridden of ${ridden.length} areas.` : null,
+            countSuffix: "rides",
+            items: plotted.map((area) => ({ label: area.area, note: area.dm, value: area.doubleVisits })),
+            kind: "bars",
+            reference: null,
+            unit: "count",
+          }
+        : null,
+    align: withLine ? ["left", "left", "left", "right"] : ["left", "left", "right"],
+    columns: withLine
+      ? ["Area", "Line", "District manager", "Double visits"]
+      : ["Area", "District manager", "Double visits"],
+    metric: "double-visits",
+    note: "Visits a manager rode along on, counted in the area where they happened — the rides the people there RECEIVED.",
+    rows: ridden.map((area) => [area.area, ...lineCells(withLine, area.lineLabel), area.dm, num(area.doubleVisits)]),
+    title: "Double visits — received, by area",
+  };
+}
+
+function doubleVisitsByManager({ people }: PackInput): PackSection | null {
+  const riders = people.filter((person) => person.ridesLed > 0).sort((a, b) => b.ridesLed - a.ridesLed);
+  if (riders.length === 0) return null;
+  return {
+    align: ["left", "left", "right", "right"],
+    columns: ["Manager", "Role", "Rides led", "Reps ridden with"],
+    metric: "double-visits",
+    note: "Rides each manager LED, and how many different reps he rode with in the window.",
+    rows: riders.map((person) => [
+      personName(person),
+      person.jobTitle || person.role || "—",
+      num(person.ridesLed),
+      num(person.repsCoached),
+    ]),
+    title: "Double visits — led, by manager",
+  };
+}
+
+/**
+ * Activity by job function. Everything here ADDS — a visit, a ride or a claim belongs to one person.
+ * Customers are not in this table: they are unions, and the same doctor seen by a rep and by his
+ * manager is one customer, so a per-role total would count him twice.
+ */
+function roleActivity({ people, visitsAvailable }: PackInput): PackSection | null {
+  type Tally = {
+    people: number;
+    visits: number;
+    am: number;
+    pm: number;
+    pharmacies: number;
+    rides: number;
+    outstation: number;
+    marketing: number;
+  };
+  const byRole = new Map<string, Tally>();
+  for (const person of people) {
+    const role = person.role || person.jobTitle || "No role on record";
+    const tally =
+      byRole.get(role) ?? { am: 0, marketing: 0, outstation: 0, people: 0, pharmacies: 0, pm: 0, rides: 0, visits: 0 };
+    tally.people += 1;
+    tally.visits += num(person.fieldVisits);
+    tally.am += num(person.visitSplit.am);
+    tally.pm += num(person.visitSplit.pm);
+    tally.pharmacies += num(person.visitSplit.pharmacies);
+    tally.rides += num(person.ridesLed);
+    tally.outstation += num(person.outstationClaimed);
+    tally.marketing += num(person.marketingRequests);
+    byRole.set(role, tally);
+  }
+  // One role is not a comparison; that is the rep-by-rep section's job.
+  if (byRole.size < 2) return null;
+  const roles = [...byRole.entries()].sort((a, b) => b[1].visits - a[1].visits);
+  const plotted = roles.filter(([, tally]) => tally.visits > 0);
+  return {
+    chart:
+      visitsAvailable && plotted.length >= 2
+        ? {
+            capNote: "Field visits by role.",
+            countSuffix: "visits",
+            items: plotted.slice(0, CHART_BARS).map(([role, tally]) => ({
+              label: role,
+              note: `${tally.people} ${tally.people === 1 ? "person" : "people"}`,
+              value: tally.visits,
+            })),
+            kind: "bars",
+            reference: null,
+            unit: "count",
+          }
+        : null,
+    align: ["left", "right", "right", "left", "right", "right", "right"],
+    columns: ["Role", "People", "Field visits", "AM · PM · Pharmacies", "Rides led", "Outstation claimed", "Marketing requests"],
+    metric: "role-activity",
+    note: "Everything here adds — a visit, a ride or a claim belongs to one person. Customers are left out on purpose: the same doctor seen by a rep and by his manager is one customer, so a total per role would count him twice.",
+    rows: roles.map(([role, tally]) => [
+      role,
+      tally.people,
+      visitsAvailable ? tally.visits : NO_VISIT_DATA,
+      visitsAvailable ? formatVisitCountSplit({ am: tally.am, pharmacies: tally.pharmacies, pm: tally.pm }) : NO_VISIT_DATA,
+      tally.rides,
+      tally.outstation,
+      tally.marketing,
+    ]),
+    title: "By role",
+  };
+}
+
+/**
+ * Cost read off the AREAS, for a pack that holds no district row — a medical rep's.
+ *
+ * 🔴 The route gives a rep's pack no district row on purpose: his manager's whole district is not his
+ * territory, and the district row carries the whole district's marketing and outstation. His own
+ * area carries its own, so that is what is shown.
+ */
+function areaSpend({ areas }: PackInput): PackSection | null {
+  const withLine = areas.some((area) => area.lineLabel);
+  const spenders = areas.filter((area) => num(area.marketingCommitted) + num(area.outstationClaimed) > 0);
+  if (spenders.length === 0) return null;
+  return {
+    align: withLine
+      ? ["left", "left", "right", "right", "right", "right", "right", "right"]
+      : ["left", "right", "right", "right", "right", "right", "right"],
+    columns: [
+      "Area",
+      ...(withLine ? ["Line"] : []),
+      "Marketing committed",
+      "Requests",
+      "Outstation claimed",
+      "Outstation approved",
+      "Achievement",
+      "Spend per point",
+    ],
+    metric: "marketing-committed",
+    note: "Marketing committed and outstation claimed in this area. Spend per point is the two together over points of achievement — LOWER IS BETTER, and it is a cost rather than a score.",
+    rows: spenders.map((area) => {
+      const ach = area.allProducts.ach;
+      const total = num(area.marketingCommitted) + num(area.outstationClaimed);
+      return [
+        area.area,
+        ...lineCells(withLine, area.lineLabel),
+        num(area.marketingCommitted),
+        num(area.marketingRequests),
+        num(area.outstationClaimed),
+        num(area.outstationApproved),
+        pct(ach),
+        ach != null && ach > 0 ? Math.round(total / ach) : "—",
+      ];
+    }),
+    title: "Cost",
+  };
+}
+
+/**
+ * What each area costs, read against which way its own sales are moving.
+ *
+ * Direction is the area's sales in the LAST month of the figure window against the FIRST — read off
+ * `byMonth` over the months the figures answer, never `trend`, which walks the REQUESTED window and
+ * would put a held-out month in as a zero and call it a fall.
+ */
+function marketingVsTrend({ areas, months }: PackInput): PackSection | null {
+  if (months.length < 2) return null;
+  const first = months[0];
+  const last = months[months.length - 1];
+  const firstLabel = periodColumnLabel(first, months);
+  const lastLabel = periodColumnLabel(last, months);
+  const withLine = areas.some((area) => area.lineLabel);
+  const rows = areas
+    .filter((area) => num(area.marketingCommitted) > 0)
+    .map((area) => {
+      const before = num(area.byMonth?.[first]?.sales ?? 0);
+      const after = num(area.byMonth?.[last]?.sales ?? 0);
+      return { after, area, before, change: deltaPct(after, before) };
+    })
+    .sort((a, b) => num(b.area.marketingCommitted) - num(a.area.marketingCommitted));
+  if (rows.length === 0) return null;
+  return {
+    align: withLine
+      ? ["left", "left", "right", "right", "right", "right", "right"]
+      : ["left", "right", "right", "right", "right", "right"],
+    columns: [
+      "Area",
+      ...(withLine ? ["Line"] : []),
+      "Marketing committed",
+      "Requests",
+      `Sales ${firstLabel}`,
+      `Sales ${lastLabel}`,
+      "Direction",
+    ],
+    metric: "marketing-vs-trend",
+    note: `Marketing committed in each area, beside the area's own sales in ${lastLabel} against ${firstLabel}. A reading, not a verdict — a falling area may be falling less than it would have without the money.`,
+    rows: rows.map((row) => [
+      row.area.area,
+      ...lineCells(withLine, row.area.lineLabel),
+      num(row.area.marketingCommitted),
+      num(row.area.marketingRequests),
+      row.before,
+      row.after,
+      formatDelta(row.change, "%"),
+    ]),
+    title: "Marketing against the trend",
   };
 }
 
