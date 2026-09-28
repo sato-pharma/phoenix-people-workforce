@@ -89,10 +89,17 @@ export async function POST(request: Request) {
         residence.residenceLongitude,
       )
     ) {
-      const failure = unresolvedResidenceFailure(managerHrId);
+      // Pass the coordinate: the two unresolved shapes need different fixes, and the message
+      // says which. The Egypt centroid is a BAD address that geocoded to the country; (0, 0) is
+      // a MISSING one that was read through arithmetic (`Number(null)` is 0).
+      const failure = unresolvedResidenceFailure(managerHrId, {
+        latitude: residence.residenceLatitude,
+        longitude: residence.residenceLongitude,
+      });
       console.warn(
-        `[outstation] residence never geocoded for ${managerHrId} `
-          + "(stored as the Egypt country centroid, which has no road)",
+        `[outstation] residence not usable for ${managerHrId} `
+          + `(${residence.residenceLatitude}, ${residence.residenceLongitude}) — `
+          + "the Egypt country centroid or (0, 0); neither has a road",
       );
       return NextResponse.json(
         { error: failure.error, message: failure.message },

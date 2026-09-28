@@ -44,15 +44,58 @@ function formatCoordinate(value: number) {
 export { EGYPT_COUNTRY_CENTROID };
 
 /**
- * One definition, in src/lib/google-maps/geocode-precision.ts, so the check that REJECTS this
- * coordinate on the way in and the check that EXPLAINS it on the way out can never drift apart.
+ * (0, 0) — "null island", in the Gulf of Guinea. NOT a geocoder answer: it is what a NULL column
+ * becomes when it is read through arithmetic, because `Number(null)` is 0 and `Number.isFinite(0)`
+ * is true. `nullableNumber` in service.ts did exactly that until 2026-09-28, so two employees with
+ * no stored coordinate passed the submit-time "residence is missing" guard and froze (0, 0) onto
+ * nine claims worth 6,312 EGP between them. Google answers those with
+ * `"Location coordinates must not be (0, 0)"` — a 400, not the empty-routes 200 the centroid gives.
+ *
+ * The source is fixed, but rows already carrying it are not, so this stays: it is the difference
+ * between an admin reading raw API JSON and reading a sentence that names the cause.
  */
-export function isUnresolvedResidenceCoordinate(latitude: number, longitude: number) {
-  return isEgyptCountryCentroid(latitude, longitude);
+export const NULL_ISLAND = { lat: 0, lng: 0 } as const;
+
+/** Exactly (0, 0), to the precision a coordinate column stores. */
+export function isNullIslandCoordinate(latitude: number, longitude: number) {
+  return Math.abs(latitude) < 0.000001 && Math.abs(longitude) < 0.000001;
 }
 
-/** The employee has a stored coordinate, but it is the never-geocoded fallback. */
-export function unresolvedResidenceFailure(employeeHrId: string): DistanceFailure {
+/**
+ * One definition, in src/lib/google-maps/geocode-precision.ts, so the check that REJECTS this
+ * coordinate on the way in and the check that EXPLAINS it on the way out can never drift apart.
+ *
+ * Two shapes qualify, from opposite causes: the Egypt centroid (a geocode that resolved only to
+ * the country) and null island (a NULL that was read as a number). Both mean "this is not where
+ * anybody lives", and neither can produce a distance.
+ */
+export function isUnresolvedResidenceCoordinate(latitude: number, longitude: number) {
+  return isEgyptCountryCentroid(latitude, longitude) || isNullIslandCoordinate(latitude, longitude);
+}
+
+/**
+ * The employee has a stored coordinate, but it is not a real home.
+ *
+ * The coordinate is OPTIONAL so the existing caller keeps its wording unchanged; pass it and the
+ * message names the actual fault, because "centre of Egypt" and "no coordinate at all" need
+ * different fixes — one is a bad address, the other is a missing one.
+ */
+export function unresolvedResidenceFailure(
+  employeeHrId: string,
+  coordinate?: { latitude: number; longitude: number },
+): DistanceFailure {
+  if (coordinate && isNullIslandCoordinate(coordinate.latitude, coordinate.longitude)) {
+    return {
+      error: "residence_not_geocoded",
+      message:
+        `No home coordinate was ever stored for ${employeeHrId} — the request carries (0, 0), which `
+        + "is a placeholder rather than a place, so no distance can be measured from it. Set the "
+        + "residence location in the employee directory, then recalculate — or type the distance "
+        + "below.",
+      status: 422,
+    };
+  }
+
   return {
     error: "residence_not_geocoded",
     message:
