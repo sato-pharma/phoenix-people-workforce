@@ -572,6 +572,27 @@ replica**, which means the label selection did not hold — those carry `railway
 never self-hosted under the switch, but a red `main` for any reason makes Railway skip the production
 deploy within minutes, and re-running it green does not resurrect it.
 
+## Widening it beyond `ci-runner/` branches — the owner's ruling, 2026-09-28
+
+🔴 **NOT YET. He ruled to wait for the CPX32s before widening self-hosted CI to every PR**, and this is
+the obvious-looking improvement that a session reading the cost numbers will reach for, because the
+remaining share of the Actions bill genuinely does sit in ordinary pull requests.
+
+**The measurement that decided it.** On the night the switch was proven, two `ci-runner/` PRs ran on the
+pool and **four required jobs wanted three replicas**: `validate`, `checks` and `mobile` queued behind
+`secret-scan` and serialised. Widening the predicate — dropping the `startsWith(github.head_ref,
+'ci-runner/')` clause so every same-repo PR is eligible — would put *every* PR into that queue. That
+trades a measured saving for an unmeasured one and makes the pipeline slower than GitHub-hosted CI,
+which is the opposite of the point.
+
+**It is pinned, not merely written down.** `tests/ci-runner-switch.test.ts` requires that clause, and it
+runs in the required `checks` job — so removing it turns a PR red with the ruling in the failure
+message. Do not "fix" that test to widen the predicate; the test is the ruling.
+
+**When it changes:** once the Hetzner boxes are registered and carrying their own label, the pool is
+deep enough for the queue to stop being the bottleneck. Re-propose it then, with his word, as its own
+change — never bundled into something else.
+
 ## Turning it off
 
 ```bash
