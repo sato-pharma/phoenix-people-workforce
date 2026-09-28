@@ -2181,11 +2181,23 @@ async function runCloudflareAccessTests() {
     "and warns how to type the two credentials, because a BOM no screen displays would fail every sign-in with a password that looks correct",
   );
   // 🔴 THE OBVIOUS WAY TO VERIFY THE ADD-ON'S TABLE DOES NOT EXIST, AND THE RUNBOOK HAS TO SAY SO.
-  // `headwind-db` has no TCP proxy — DATABASE_URL points at postgres.railway.internal and there is no
+  // `headwind-db-eu` has no TCP proxy — DATABASE_URL points at its private domain and there is no
   // DATABASE_PUBLIC_URL — so a laptop cannot connect at all (measured: ENOTFOUND). Without this, the
   // next session reaches for psql, hits a DNS failure that looks like a broken connection string, and
   // may well "fix" it by opening a proxy — putting the fleet's database on the public internet to save
-  // one command. The runbook names the startup log as the evidence instead, and refuses the proxy.
+  // one command. The runbook names the startup log as the evidence instead.
+  //
+  // 🔴 THE SERVICE WAS RENAMED BY DELETION, NOT BY A RENAME: `headwind-db` in `sfo` was DELETED on
+  // 2026-09-28 after the fleet database moved to EU West, so `postgres.railway.internal` — which this
+  // comment used to name — now resolves to nothing at all. A stale hostname in a comment is worse than
+  // no comment: it reads as the thing to try.
+  //
+  // What this assertion pins is that there is no STANDING public endpoint. It is not a ban on ever
+  // opening one: the runbook documents `railway tcp-proxy create` for a migration that genuinely needs
+  // psql, together with deleting it afterwards and the fact that the delete takes the proxy id
+  // POSITIONALLY or removes nothing. The distinction is deliberate — "never open one" was unenforceable
+  // and got ignored under pressure, whereas "open it, use it, close it, and say so" is a procedure
+  // somebody can actually follow. The failure this guards against is the proxy nobody closed.
   assert.match(
     runbook,
     /no `DATABASE_PUBLIC_URL`/,
