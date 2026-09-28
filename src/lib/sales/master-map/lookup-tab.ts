@@ -44,8 +44,8 @@ export const LOOKUP_TAB = "Find a pharmacy";
 /** Hidden. Holds the dropdown lists and the one live filter both halves of the tab read. */
 export const LISTS_TAB = "Lists";
 
-/** v8: the Region box reads the organogram's three line regions instead of geography. */
-const LAYOUT_VERSION = "v8";
+/** v9: the search box is read as TEXT, and a finder that fails says so instead of "nothing matches". */
+const LAYOUT_VERSION = "v9";
 
 /** How many matching shops the tab shows at once. The true total is always stated beside it. */
 const VISIBLE_LIMIT = 500;
@@ -147,12 +147,28 @@ function regionListFormula(): string {
  * Brick code is in the list because the owner reads brick codes off the band labels ("الأزاريطه —
  * B108-2") and will type one straight into the box. Without it, a perfectly valid code returns
  * nothing, which reads as "that brick has no shops" rather than "this box does not search that".
+ *
+ * THE BOX IS READ AS TEXT, AND THAT IS THE WHOLE POINT OF THIS FUNCTION. A customer code is all
+ * digits, so typing one into the box stores a NUMBER in E4 — and Google Sheets does not coerce a
+ * number into SEARCH's first parameter. SEARCH then errors on every row, ISNUMBER turns each of
+ * those errors into FALSE, the whole clause is 0 everywhere, FILTER matches nothing and the status
+ * line says "Nothing matches those filters". Measured live on the production workbook 2026-09-28:
+ * Region "Delta (3)" plus 1547442 returned nothing while "All customers" held exactly one match
+ * (code 0001547442, دعاء احمد بكرى ابو حماد, Sharkia 1). Every other part of the tab was healthy —
+ * the dropdowns narrowed correctly, the grid was the right size, the feed was current — because
+ * nothing else on the sheet hands a typed value to SEARCH. Searching a code is the main thing this
+ * box is for, so the box was dead for exactly the search the owner uses most.
+ *
+ * TRIM goes with TO_TEXT rather than beside it: a pasted code arrives with a space on the end just
+ * as often, and it fails the same silent way. The emptiness test reads the SAME normalised key, so
+ * a box holding only spaces means "all of them" rather than "match a space".
  */
 function searchClause(cell: string): string {
+  const key = `TRIM(TO_TEXT(${LOOKUP}!${cell}))`;
   const anyOf = [FLAT.pharmacy, FLAT.code, FLAT.brickCode, FLAT.address]
-    .map((column) => `ISNUMBER(SEARCH(${LOOKUP}!${cell},${SOURCE}!${column}2:${column}))`)
+    .map((column) => `ISNUMBER(SEARCH(${key},${SOURCE}!${column}2:${column}))`)
     .join("+");
-  return `(${LOOKUP}!${cell}="")+${anyOf}`;
+  return `(${key}="")+${anyOf}`;
 }
 
 /** One distinct, sorted column of "All customers", narrowed by whichever boxes are already set. */
@@ -170,13 +186,23 @@ const BRICK_CELL = "$C$4";
 const CHANNEL_CELL = "$D$4";
 const SEARCH_CELL = "$E$4";
 
-const RESULT_FORMULA = `=IFERROR(FILTER(${SOURCE}!A2:${FLAT_LAST},${[
+/**
+ * The one filter, left BARE on purpose — no IFERROR around it.
+ *
+ * It used to be wrapped, and that wrapper is why this tab has now died silently twice: it flattens
+ * "no shop matches what you picked" and "this formula could not run" into the same blank cell, and
+ * the status line then tells the owner his filters are wrong when the sheet is the thing that is
+ * broken. Bare, FILTER says which it is — #N/A for no matches, any other error for a real failure —
+ * and the status line reads that distinction out loud. Nothing renders the error into the tab: the
+ * results cell on "Find a pharmacy" still wraps its ARRAY_CONSTRAIN in IFERROR.
+ */
+const RESULT_FORMULA = `=FILTER(${SOURCE}!A2:${FLAT_LAST},${[
   regionClause(REGION_CELL),
   optional(AREA_CELL, FLAT.area),
   optional(BRICK_CELL, FLAT.brick),
   optional(CHANNEL_CELL, FLAT.channel),
   searchClause(SEARCH_CELL),
-].join(",")}))`;
+].join(",")})`;
 
 function updateCellFormula(sheetId: number, row: number, column: number, formula: string): unknown {
   return {
@@ -386,6 +412,24 @@ export function renderLookupSheet(sheetId: number): RenderedSheet {
         },
       },
     },
+    // The search box is a TEXT cell, so a typed customer code stays the thing that was typed.
+    //
+    // The formula already coerces it, so this is the second of two layers rather than the fix — but
+    // it is the layer that keeps "0012345" from arriving as 12345, which no coercion downstream can
+    // undo. Only column E: the four boxes to its left take their values from dropdown lists.
+    {
+      repeatCell: {
+        cell: { userEnteredFormat: { numberFormat: { type: "TEXT" } } },
+        fields: "userEnteredFormat.numberFormat",
+        range: {
+          endColumnIndex: 5,
+          endRowIndex: INPUT_ROW + 1,
+          sheetId,
+          startColumnIndex: 4,
+          startRowIndex: INPUT_ROW,
+        },
+      },
+    },
     {
       updateBorders: {
         bottom: { color: rgb(148, 163, 184), style: "SOLID", width: 1 },
@@ -439,9 +483,17 @@ export function renderLookupSheet(sheetId: number): RenderedSheet {
       sheetId,
       STATUS_ROW,
       0,
-      `=IF(COUNTA(${LISTS_TAB}!${RESULTS_FIRST}2:${RESULTS_FIRST})=0,"Nothing matches those filters — clear one of the boxes above.",` +
+      // THREE OUTCOMES, NOT ONE. ISNA comes first and reads the anchor cell of the spill rather
+      // than a count: FILTER answers #N/A when nothing matched, and any other error when the
+      // formula itself could not run. Counting instead — which is what this line used to do —
+      // reports both as "nothing matches", which is how the finder stayed dead for three weeks in
+      // September 2026 with nobody able to tell a broken sheet from an unlucky search. The count
+      // branch is reached only when F2 holds a real row, so COUNTA never counts an error cell.
+      `=IF(ISNA(${LISTS_TAB}!${RESULTS_FIRST}2),"Nothing matches those filters — clear one of the boxes above.",` +
+        `IF(ISERROR(${LISTS_TAB}!${RESULTS_FIRST}2),` +
+        `"The finder itself could not run — this is not your filters. Nothing you type will help; the sheet needs a fix.",` +
         `"Showing "&TEXT(MIN(${VISIBLE_LIMIT},COUNTA(${LISTS_TAB}!${RESULTS_FIRST}2:${RESULTS_FIRST})),"#,##0")&" of "&` +
-        `TEXT(COUNTA(${LISTS_TAB}!${RESULTS_FIRST}2:${RESULTS_FIRST}),"#,##0")&" matching shops")`,
+        `TEXT(COUNTA(${LISTS_TAB}!${RESULTS_FIRST}2:${RESULTS_FIRST}),"#,##0")&" matching shops"))`,
     ),
     updateCellFormula(
       sheetId,

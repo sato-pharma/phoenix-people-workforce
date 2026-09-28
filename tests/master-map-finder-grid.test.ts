@@ -3,6 +3,7 @@ import {
   LISTS_COLUMN_COUNT,
   listsRowCount,
   renderListsSheet,
+  renderLookupSheet,
 } from "../src/lib/sales/master-map/lookup-tab.ts";
 import {
   MASTER_MAP_FLAT_COLUMNS,
@@ -212,7 +213,83 @@ export function runMasterMapFinderGridTests() {
       `${what} must not match the picked region against geography, or Upper Egypt 1 finds nothing`,
     );
   }
+
+  // ---- The search box is handed to SEARCH as TEXT ------------------------------------------------
+  // The second silent death of this tab, measured live on the production workbook 2026-09-28.
+  // A customer code is all digits, so typing one stores a NUMBER in E4, and Google Sheets will not
+  // coerce a number into SEARCH's first parameter: SEARCH errors on every row, ISNUMBER turns each
+  // error into FALSE, the clause is 0 everywhere, and FILTER matches nothing. Region "Delta (3)"
+  // plus 1547442 returned nothing while "All customers" held exactly one match, code 0001547442.
+  // Nothing else on the workbook was wrong, and nothing else hands a typed value to SEARCH.
+  const results = listsFormulaAt(rendered, 5);
+  const searchKey = `TRIM(TO_TEXT('Find a pharmacy'!$E$4))`;
+
+  assert.ok(
+    results.includes(`(${searchKey}="")`),
+    "the empty test reads the same normalised key, so a box holding only spaces means all of them",
+  );
+  for (const [letter, what] of [
+    ["E", "the pharmacy name"],
+    ["G", "the customer code"],
+    ["D", "the brick code"],
+    ["J", "the address"],
+  ] as const) {
+    assert.ok(
+      results.includes(`ISNUMBER(SEARCH(${searchKey},'All customers'!${letter}2:${letter}))`),
+      `${what} is searched through a key coerced to text — a digits-only entry reaches SEARCH as a number otherwise, and column ${letter} never matches`,
+    );
+  }
+  assert.ok(
+    !results.includes(`SEARCH('Find a pharmacy'!$E$4,`),
+    "no column may be searched against the raw cell: that is the exact formula that killed the code search",
+  );
+
+  // ---- A finder that failed must not be reported as an unlucky search ----------------------------
+  // The wrapper that used to sit here flattened "no shop matches" and "this formula could not run"
+  // into one blank cell, which is why both deaths of this tab looked like the owner's filters.
+  assert.ok(
+    results.startsWith("=FILTER("),
+    "the filter stays bare — wrapped in IFERROR it cannot tell the status line which of the two happened",
+  );
+
+  const status = formulaAt(renderLookupSheet(2), 5, 0);
+  assert.ok(
+    status.includes("ISNA(Lists!F2)"),
+    "no matches is #N/A on the anchor cell, and it is tested FIRST",
+  );
+  assert.ok(
+    status.includes("ISERROR(Lists!F2)"),
+    "any other error is a broken finder, and the status line has to say so",
+  );
+  assert.ok(
+    status.includes("could not run"),
+    "and it has to say it in words that stop the owner retyping his filters",
+  );
+  assert.ok(
+    status.includes(`COUNTA(Lists!F2:F)`),
+    "the real total is still counted when the filter answered with rows",
+  );
+  assert.ok(
+    status.indexOf("ISNA(") < status.indexOf("COUNTA("),
+    "COUNTA counts an error cell as one match — it must be reached only after both error tests",
+  );
+
+  // The box itself is a TEXT cell, which is the layer that keeps a typed "0012345" from arriving
+  // as 12345. Column E only: the four boxes left of it are filled from dropdown lists.
+  const textFormat = (renderLookupSheet(2).requests as TextFormatClaim[]).find(
+    (request) => request?.repeatCell?.cell?.userEnteredFormat?.numberFormat?.type === "TEXT",
+  );
+  assert.ok(textFormat, "the search box claims a TEXT number format");
+  assert.equal(textFormat?.repeatCell?.range?.startColumnIndex, 4, "on column E");
+  assert.equal(textFormat?.repeatCell?.range?.endColumnIndex, 5, "and on column E alone");
 }
+
+type TextFormatClaim = {
+  repeatCell?: {
+    cell?: { userEnteredFormat?: { numberFormat?: { type?: string } } };
+    range?: { endColumnIndex?: number; startColumnIndex?: number };
+  };
+};
 
 type FormulaWrite = {
   updateCells?: {
@@ -221,13 +298,18 @@ type FormulaWrite = {
   };
 };
 
-/** The formula the Lists tab writes into row 2 of a column. */
-function listsFormulaAt(sheet: { requests: unknown[] }, column: number): string {
+/** The formula a rendered tab writes into one cell, by 0-based row and column. */
+function formulaAt(sheet: { requests: unknown[] }, row: number, column: number): string {
   for (const request of sheet.requests as FormulaWrite[]) {
     const cells = request?.updateCells;
-    if (cells?.range?.startRowIndex !== 1 || cells.range.startColumnIndex !== column) continue;
+    if (cells?.range?.startRowIndex !== row || cells.range.startColumnIndex !== column) continue;
     const formula = cells.rows?.[0]?.values?.[0]?.userEnteredValue?.formulaValue;
     if (formula) return formula;
   }
-  throw new Error(`the Lists tab writes no formula into column ${column}`);
+  throw new Error(`that tab writes no formula into row ${row + 1}, column ${column}`);
+}
+
+/** The formula the Lists tab writes into row 2 of a column. */
+function listsFormulaAt(sheet: { requests: unknown[] }, column: number): string {
+  return formulaAt(sheet, 1, column);
 }
