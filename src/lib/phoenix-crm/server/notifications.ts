@@ -3,7 +3,14 @@
  *
  * Owner rules: in-app and Telegram, never email (the module's email is hard-blocked in
  * src/lib/notifications/phoenix-crm-channel-guard.ts; the policy row is the intent, the guard the
- * enforcement). The Super Admin's test entries tell nobody.
+ * enforcement).
+ *
+ * 🔴 THE TEST WORLD TELLS THE TEST ACCOUNTS, AND ONLY THEM (owner, 2026-09-28). A test-world notice
+ * is addressed to the employee it mirrors — that is the id the bell queries by — and carries the
+ * mirroring `TEST-` login as its marker, which is what keeps it off HER bell and on his. It is
+ * in-app only: her Telegram chat, her push subscription and her email address are hers, and a test
+ * entry reaching any of them is the one thing test accounts exist to prevent. An entry by a Super
+ * Admin playing in the test world, whom no test account mirrors, still tells nobody.
  *
  *   - a grade or drop request waits      → the territory's reviewing manager;
  *   - a request is decided               → the rep who asked;
@@ -21,6 +28,7 @@
 
 import { formatPhoenixLongDate, formatPhoenixMonth } from "@/lib/i18n/format";
 import { createSystemNotificationForRecipients } from "@/lib/notifications/system";
+import { testAccountsMirroring } from "@/lib/auth/test-persona-directory";
 import { logError } from "@/lib/observability/log";
 import { dropReasonLabel } from "@/lib/phoenix-crm/entry-rules";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
@@ -311,28 +319,54 @@ async function describe(notice: PhoenixCrmNotice): Promise<Delivery | null> {
 }
 
 export async function notifyPhoenixCrm(notice: PhoenixCrmNotice, isTest: boolean): Promise<void> {
-  if (isTest) return;
   try {
     const delivery = await describe(notice);
     if (!delivery) return;
     const actionUrl = `${PHOENIX_CRM_PORTAL_PATH}?tab=${delivery.tab}`;
-    await createSystemNotificationForRecipients(
-      {
-        actionUrl,
-        category: PHOENIX_CRM_NOTIFICATION_CATEGORY,
-        channels: ["in_app", "telegram"],
-        eventType: delivery.eventType,
-        message: delivery.message,
-        metadata: { idempotencyKey: delivery.idempotencyKey, seatId: notice.seat.seatId },
-        module: PHOENIX_CRM_NOTIFICATION_MODULE,
-        priority: "normal",
-        recordId: delivery.recordId,
-        subjectHrId: delivery.subjectHrId,
-        telegram: { ctaLabel: "Open Phoenix CRM", ctaUrl: actionUrl },
-        title: delivery.title,
-      },
-      delivery.recipients,
-    );
+    const base = {
+      actionUrl,
+      category: PHOENIX_CRM_NOTIFICATION_CATEGORY,
+      eventType: delivery.eventType,
+      message: delivery.message,
+      module: PHOENIX_CRM_NOTIFICATION_MODULE,
+      priority: "normal" as const,
+      recordId: delivery.recordId,
+      subjectHrId: delivery.subjectHrId,
+      title: delivery.title,
+    };
+
+    if (!isTest) {
+      await createSystemNotificationForRecipients(
+        {
+          ...base,
+          channels: ["in_app", "telegram"],
+          metadata: { idempotencyKey: delivery.idempotencyKey, seatId: notice.seat.seatId },
+          telegram: { ctaLabel: "Open Phoenix CRM", ctaUrl: actionUrl },
+        },
+        delivery.recipients,
+      );
+      return;
+    }
+
+    // The test world. Each recipient becomes the TEST- login that mirrors him, and a recipient no
+    // test account mirrors is dropped rather than told — never addressed to the real person.
+    const mirrors = await testAccountsMirroring(delivery.recipients);
+    for (const mirror of mirrors) {
+      await createSystemNotificationForRecipients(
+        {
+          ...base,
+          // In-app alone. `createSystemNotificationForRecipient` enforces this again from the
+          // marker, so neither a policy nor a preference can put a test entry on her Telegram.
+          channels: ["in_app"],
+          // A DIFFERENT key from the real notice's. They share an `event_key` upsert
+          // (onConflict: "event_key"), so reusing it would overwrite a real person's notification
+          // row with a test one — the leak this whole path is built to avoid.
+          metadata: { idempotencyKey: `${delivery.idempotencyKey}:test:${mirror.loginId}`, seatId: notice.seat.seatId },
+          testLoginId: mirror.loginId,
+        },
+        [mirror.hrId],
+      );
+    }
   } catch (error) {
     logError("Phoenix CRM notification failed", {
       labels: { event: "phoenix_crm_notify_failed", kind: notice.kind },

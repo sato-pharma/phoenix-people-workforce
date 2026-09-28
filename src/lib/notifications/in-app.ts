@@ -67,7 +67,39 @@ type InAppNotificationEventRow = {
   sent_at?: string | null;
   status?: string | null;
   subject?: string | null;
+  test_login_id?: string | null;
 };
+
+/**
+ * The `TEST-` login a notification row is reserved for, or null when it is an ordinary one.
+ *
+ * Read from the column and from the metadata, because `createNotificationEvent` writes both and its
+ * fallback path (an old schema, no column) can only carry the metadata copy. Either one marks the
+ * row, so a marker that survives in only one carrier still hides it from the real person.
+ */
+export function testLoginMarkerOf(row: { metadata?: unknown; test_login_id?: string | null }): string | null {
+  const column = typeof row.test_login_id === "string" ? row.test_login_id.trim().toUpperCase() : "";
+  if (column) return column;
+  const metadata = row.metadata;
+  if (!metadata || typeof metadata !== "object") return null;
+  const value = (metadata as { testLoginId?: unknown }).testLoginId;
+  const text = typeof value === "string" ? value.trim().toUpperCase() : "";
+  return text || null;
+}
+
+/**
+ * Whether this viewer may see this row.
+ *
+ * An unmarked row is everybody's as before — that is why nothing about a real person's bell changes.
+ * A marked row belongs to ONE test login and to no one else: not to the employee it is addressed to,
+ * not to another test login, and not to a Super Admin reading his own bell.
+ */
+export function testNoticeVisibleToViewer(viewerTestLoginId: string | null, row: { metadata?: unknown; test_login_id?: string | null }): boolean {
+  const marker = testLoginMarkerOf(row);
+  if (!marker) return true;
+  const viewer = typeof viewerTestLoginId === "string" ? viewerTestLoginId.trim().toUpperCase() : "";
+  return viewer !== "" && viewer === marker;
+}
 
 // Notification (module, event_type) pairs where at least SOME copies are sent to exactly the
 // one person whose turn it currently is — the rest of a fanned-out event's copies (a
@@ -271,6 +303,9 @@ function stateSchemaMissing(error: unknown) {
 function viewerIdentity(access: AccessContext) {
   return {
     hrId: normalizeHrId(resolveEmployeeIdentityId(access)),
+    // A test account reads the mirrored person's bell, so this is the ONLY thing that tells the two
+    // apart — and the only thing that lets a test-world notice be shown to one and not the other.
+    testLoginId: access.testPersona?.loginId ?? null,
     userId: access.loginId ?? null,
   };
 }
@@ -338,7 +373,8 @@ export async function listInAppNotificationsForViewer(
   try {
     const supabase = getSupabaseAdmin();
     const boundedLimit = Math.max(1, Math.min(limit, 20));
-    const selectColumns = "id,category,subject,scheduled_for,sent_at,status,metadata,recipients,employee_hr_id,created_at,module,priority,action_url,event_type";
+    const selectColumns =
+      "id,category,subject,scheduled_for,sent_at,status,metadata,recipients,employee_hr_id,created_at,module,priority,action_url,event_type,test_login_id";
 
     const allowedCategories = Array.from(PERSONAL_BELL_CATEGORIES);
 
@@ -386,6 +422,9 @@ export async function listInAppNotificationsForViewer(
           recipients: Array.isArray(row.recipients) ? row.recipients : [],
         }),
       )
+      // A Phoenix CRM test-world notice is addressed to the real person, so every filter above
+      // passes it. This is the one that keeps it off her bell and on her test login's.
+      .filter((row) => testNoticeVisibleToViewer(identity.testLoginId, row))
       .sort((left, right) => String(right.created_at ?? "").localeCompare(String(left.created_at ?? "")))
       .slice(0, boundedLimit);
 

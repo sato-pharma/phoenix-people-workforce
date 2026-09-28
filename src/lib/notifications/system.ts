@@ -60,6 +60,16 @@ export type CreateSystemNotificationInput = {
   recipientHrId?: string | null;
   recipientUserId?: string | null;
   subjectHrId?: string | null;
+  /**
+   * Phoenix CRM's test world only: the `TEST-` login that may SEE this notice.
+   *
+   * The notice is still addressed to the real person it mirrors, because that is what the bell's
+   * `employee_hr_id` / `recipients` query looks for — so the marker, not the address, is what keeps
+   * it away from her. Setting it also forces the notice to in-app alone: a Telegram chat id, a push
+   * subscription and an email address all belong to the REAL person, and a test entry must never
+   * reach any of them. Null on every real notification.
+   */
+  testLoginId?: string | null;
   telegram?: {
     buttons?: Array<{ label: string; url: string }> | null;
     ctaLabel?: string | null;
@@ -698,11 +708,17 @@ async function createNotificationEvent(input: CreateSystemNotificationInput, eve
   const now = new Date().toISOString();
   const category = categoryFor(input);
   const inAppContent = await renderChannelContent(input, "in_app");
+  const testLoginId = cleanText(input.testLoginId).toUpperCase() || null;
   const metadata = {
     ...(input.metadata ?? {}),
     href: input.actionUrl ?? null,
     message: inAppContent.message,
     title: inAppContent.title,
+    // Written into the metadata as well as the column ON PURPOSE. The fallback upsert below runs
+    // when the column is missing (an old schema), and it carries metadata but not the column — so a
+    // marker kept only in the column would write a TEST notice as a REAL one, visible to the person
+    // it mirrors. Two carriers, and the reader trusts either, keeps that path fail-CLOSED.
+    ...(testLoginId ? { testLoginId } : {}),
   };
   const row = {
     action_url: input.actionUrl ?? null,
@@ -720,6 +736,7 @@ async function createNotificationEvent(input: CreateSystemNotificationInput, eve
     sent_at: now,
     status: "sent",
     subject: inAppContent.title,
+    test_login_id: testLoginId,
     updated_at: now,
   };
 
@@ -1780,11 +1797,16 @@ async function createSystemNotificationForRecipient(input: CreateSystemNotificat
     { ...input, priority: input.priority ?? policy.priority, recipientHrId: recipient.hrId ?? input.recipientHrId ?? null },
     preferences.preferred_channel,
   );
+  // A test-world notice is in-app and nothing else, whatever the policy resolved. Every other
+  // channel addresses the MIRRORED person: the Telegram chat id, the push subscription and the
+  // email are hers, and a test entry reaching any of them is the one thing test accounts exist to
+  // prevent. Applied here, after the policy, so no caller and no preference can widen it.
+  const deliveryChannels = cleanText(input.testLoginId) ? channels.filter((channel) => channel === "in_app") : channels;
   const deliveries: SystemNotificationDeliveryResult[] = [];
   let emailAttempted = false;
   const quietHoursActive = isWithinQuietHours(preferences);
 
-  for (const channel of channels) {
+  for (const channel of deliveryChannels) {
     const idempotencyKey = `${eventKey}:${channel}:${recipient.userId ?? recipient.hrId ?? "unknown"}`;
     const claim = await claimDelivery({ channel, eventId, idempotencyKey, recipient });
     if (!claim.claimed) {
