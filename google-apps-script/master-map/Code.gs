@@ -305,6 +305,20 @@ function ensureTab(spreadsheet, title, rowsNeeded, columnsNeeded) {
   let sheet = spreadsheet.getSheetByName(title);
   if (!sheet) sheet = spreadsheet.insertSheet(title);
 
+  // Drop any filter sitting on the tab, because NOTHING ELSE EVER DOES.
+  //
+  // The repaint clears values, formatting and data validation through updateCells, and none of
+  // those touches a basic filter. So a filter created once by hand survives every repaint for
+  // ever — and a filter with criteria set HIDES rows: the finder would find a shop, the row would
+  // be hidden, and the tab would look exactly like a search that matched nothing, with every
+  // formula behind it perfectly correct. One was found sitting on "Find a pharmacy" on 2026-09-28.
+  //
+  // Done here, in Apps Script, rather than as a clearBasicFilter request from Phoenix: getFilter()
+  // is null-safe so a tab without one is a no-op, whereas a clearBasicFilter request against a tab
+  // that has no filter can fail the whole batch and strand the repaint mid-tab.
+  const existingFilter = sheet.getFilter();
+  if (existingFilter) existingFilter.remove();
+
   // A values write past the last row is rejected outright, and formatting past it is silently
   // clipped — which reads as "the formatting didn't work" rather than as a size problem.
   const wanted = Math.max(rowsNeeded + 20, 1000);
