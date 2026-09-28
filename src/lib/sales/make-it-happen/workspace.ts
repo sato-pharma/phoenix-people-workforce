@@ -17,9 +17,9 @@ import {
   loadEmployeeNameMap,
   loadProductFamilyMap,
   loadProductNameMap,
-  loadProductPriceMap,
   type AchievementRow,
 } from "@/lib/sales/monthly-targets";
+import { loadProductPeriodPrices } from "@/lib/sales/product-period-price";
 import {
   isRowPublished,
   loadAchievementRange,
@@ -112,7 +112,7 @@ export async function buildMakeItHappenWorkspace(
     loadAchievementRange(MAKE_IT_HAPPEN_FLOOR, rangeTo),
     loadPublishedPeriodKeys(MAKE_IT_HAPPEN_FLOOR, rangeTo),
     loadProductNameMap(),
-    loadProductPriceMap(),
+    loadProductPeriodPrices(),
     loadProductFamilyMap(),
     loadEmployeeNameMap(),
   ]);
@@ -202,7 +202,9 @@ export async function buildMakeItHappenWorkspace(
           productCode: code,
           name: productNames.get(code) ?? "Unnamed product",
           family: families.get(code) ?? "",
-          price: prices.get(code) ?? 0,
+          // One price for a concentration that spans months: the one in force at the END of
+          // the window, which is the price the plan being written will actually be sold at.
+          price: prices.priceFor(code, rangeTo) ?? 0,
           targetUnits: graded.targetUnits > 0 ? graded.targetUnits : null,
           targetValue: graded.targetValue > 0 ? graded.targetValue : null,
           actualUnits: graded.actualUnits,

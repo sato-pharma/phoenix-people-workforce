@@ -28,6 +28,11 @@ export const RESTORED_TABLES = [
   { table: "source_of_sales_bricks", key: ["brick_id"] },
   { table: "source_of_sales_distributors", key: ["distributor_code"] },
   { table: "source_of_sales_products", key: ["product_code"] },
+  // Period-scoped factory-price overrides (2026-09-28). RESTORED, not rebuilt: it is typed-in
+  // business fact that nothing can derive, and losing one row silently re-values every month from
+  // that period onward at the master price — which is the exact restatement the overrides exist to
+  // prevent. It references source_of_sales_products, so it restores after it.
+  { table: "source_of_sales_product_price_history", key: ["product_code", "effective_period"] },
   { table: "source_of_sales_area_regions", key: ["area_code"] },
   { table: "source_of_sales_distributor_profile", key: ["distributor_code"] },
   { table: "source_of_sales_distributor_certification", key: ["distributor_code"] },

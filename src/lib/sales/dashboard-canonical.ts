@@ -48,8 +48,8 @@ import {
   loadEmployeeNameMap,
   loadProductFamilyMap,
   loadProductNameMap,
-  loadProductPriceMap,
 } from "@/lib/sales/monthly-targets";
+import { loadProductPeriodPrices } from "@/lib/sales/product-period-price";
 import type { AchievementRow } from "@/lib/sales/monthly-targets";
 import type { SalesRecordInput } from "@/lib/sales/types";
 import {
@@ -185,7 +185,7 @@ const loadAllCanonicalDashboardRecords = cache(async (): Promise<CanonicalDashbo
       loadUploadedPeriodsInRange(SALES_HISTORY_FLOOR, to),
       loadProductNameMap(),
       loadProductFamilyMap(),
-      loadProductPriceMap(),
+      loadProductPeriodPrices(),
       loadAreaNameMap(),
       loadEmployeeNameMap(),
     ]);
@@ -221,7 +221,9 @@ const loadAllCanonicalDashboardRecords = cache(async (): Promise<CanonicalDashbo
       salesType: CANONICAL_SALES_TYPE,
       family: productFamilies.get(aggregate.productCode) ?? "",
       product: productNames.get(aggregate.productCode) ?? aggregate.productCode,
-      factoryPrice: productPrices.get(aggregate.productCode) ?? 0,
+      // Per PERIOD: a product can be valued differently before and after a price change, and
+      // this row already knows which month it is.
+      factoryPrice: productPrices.priceFor(aggregate.productCode, aggregate.period) ?? 0,
       month: Number(monthPart) || 0,
       year: Number(yearPart) || 0,
       salesUnits: aggregate.salesUnits,

@@ -124,7 +124,7 @@ export default async function PortalTargetsPage({
       resolvePortalTargetsBound(access),
       loadAllCanonicalAreaNames(),
       loadProductNameMap(),
-      loadProductPriceMap(),
+      loadProductPriceMap(selectedPeriod),
       loadEmployeeNameMap(),
     ]);
     const nameFor = (hrId: string | null): string | null => (hrId ? employeeNames.get(hrId) ?? hrId : null);

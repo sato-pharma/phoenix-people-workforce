@@ -1,6 +1,7 @@
 // Runtime-safe: closing-area-merges pulls only TYPES from monthly-distributor-import (erased at
 // build time), so this does not close the monthly-distributor-import -> monthly-targets value cycle.
 import { foldAreaCodeForLine, foldAreaOptionsForLine } from "@/lib/sales/closing-area-merges";
+import { loadProductPeriodPrices, loadProductPriceMapForPeriod } from "@/lib/sales/product-period-price";
 import { getSupabaseAdmin, rpcAll } from "@/lib/supabase/server";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -699,19 +700,19 @@ export async function loadProductNameMap(): Promise<Map<string, string>> {
   return map;
 }
 
-/** product_code (upper) -> factory price (EGP). Powers the grid's inline Units × Price → Value. */
-export async function loadProductPriceMap(): Promise<Map<string, number>> {
-  const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase.from("source_of_sales_products").select("product_code,factory_price");
-  if (error) throw error;
-  const map = new Map<string, number>();
-  for (const row of data ?? []) {
-    const record = row as Record<string, unknown>;
-    const code = str(record.product_code).trim().toUpperCase();
-    const price = optNum(record.factory_price);
-    if (code && price != null) map.set(code, price);
-  }
-  return map;
+/**
+ * product_code (upper) -> factory price (EGP). Powers the grid's inline Units × Price → Value.
+ *
+ * `period` is REQUIRED, and deliberately so. A price can differ by period since 2026-09-28 —
+ * Saginko is 111.15 through 2026-09 and 170.52 from 2026-10 — and a target valued at the wrong
+ * one inflates achievement, because `target_value` is STORED while the sales it is divided into
+ * are recomputed live. An optional argument would have let a call site keep the old behaviour
+ * silently; a required one makes the compiler name every place that has to decide. Pass null only
+ * where there genuinely is no period in hand — that falls back to the master price, which is the
+ * same answer `public.phx_factory_price()` gives for a null period.
+ */
+export async function loadProductPriceMap(period: string | null): Promise<Map<string, number>> {
+  return loadProductPriceMapForPeriod(period);
 }
 
 /** product_code (upper) -> family, for the family/therapeutic-area breakdowns. */
@@ -993,16 +994,28 @@ const LINE_TO_NORMALIZED_LINE: Record<string, string> = {
  * factory price. Feeds the smart upload template's Product dropdown and the unit-price /
  * value auto-fill. Confidential products (LA003/LA004/SS001) are excluded here for the same
  * reason validateTargetRows rejects them — a target row would otherwise surface the name.
+ *
+ * `period` is the period the targets being authored belong to, and the price is resolved for it —
+ * see loadProductPriceMap above for why that matters on the TARGET side. For a template spanning a
+ * quarter or a semester, pass the FIRST period of the span: a span that straddles a price change
+ * would otherwise have to carry two prices in one column, and every span the screen offers (a
+ * quarter, a semester) sits entirely on one side of 1 October.
  */
-export async function loadTargetableProducts(lineCode: string): Promise<TargetableProduct[]> {
+export async function loadTargetableProducts(
+  lineCode: string,
+  period: string | null,
+): Promise<TargetableProduct[]> {
   const supabase = getSupabaseAdmin();
   const normalizedLine = LINE_TO_NORMALIZED_LINE[lineCode] ?? lineCode;
-  const { data, error } = await supabase
-    .from("source_of_sales_products")
-    .select("product_code,product_name,factory_price,active,normalized_line")
-    .eq("normalized_line", normalizedLine)
-    .eq("active", true)
-    .order("product_name");
+  const [{ data, error }, prices] = await Promise.all([
+    supabase
+      .from("source_of_sales_products")
+      .select("product_code,product_name,factory_price,active,normalized_line")
+      .eq("normalized_line", normalizedLine)
+      .eq("active", true)
+      .order("product_name"),
+    loadProductPeriodPrices(),
+  ]);
   if (error) throw error;
   const products: TargetableProduct[] = [];
   for (const row of data ?? []) {
@@ -1012,7 +1025,7 @@ export async function loadTargetableProducts(lineCode: string): Promise<Targetab
     products.push({
       productCode: code,
       productName: str(record.product_name).trim() || code,
-      factoryPrice: optNum(record.factory_price),
+      factoryPrice: prices.priceFor(code, period) ?? optNum(record.factory_price),
     });
   }
   return products;

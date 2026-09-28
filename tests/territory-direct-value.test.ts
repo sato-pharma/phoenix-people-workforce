@@ -38,13 +38,23 @@ export function runTerritoryDirectValueTests() {
 
   const sql = strip(readFileSync(path.join(migDir, newest), "utf8")).toLowerCase().replace(/\s+/g, " ");
 
+  // The price SOURCE moved on 2026-09-28: a factory price can differ by period (Saginko is 111.15
+  // through 2026-09 and 170.52 from 2026-10), so the body may read `p.factory_price` or
+  // `public.phx_factory_price(code, period)`, which resolves an override and falls back to that
+  // same master price. What this pins is the SPLIT, not the source — a direct order takes
+  // `direct_value`, and only a non-direct row is priced at all — so both spellings satisfy it and
+  // the negative below rejects both.
+  const PRICE = String.raw`coalesce\((?:p\.factory_price|public\.phx_factory_price\([^)]*\)), 0\)`;
+
   assert.ok(
-    sql.includes("case when r.is_direct then coalesce(r.direct_value, 0) else r.effective_units * coalesce(p.factory_price, 0) end"),
+    new RegExp(
+      String.raw`case when r\.is_direct then coalesce\(r\.direct_value, 0\) else r\.effective_units \* ${PRICE} end`,
+    ).test(sql),
     `${newest}: a direct order must take its source value (direct_value), never units × factory price — ` +
       "the Territory Management pharmacies list overstated direct sales by 7-9% while it did",
   );
   assert.ok(
-    !/,\s*r\.effective_units \* coalesce\(p\.factory_price, 0\) as row_value/.test(sql),
+    !new RegExp(String.raw`,\s*r\.effective_units \* ${PRICE} as row_value`).test(sql),
     `${newest}: every row, direct ones included, is priced at factory again`,
   );
   assert.ok(
