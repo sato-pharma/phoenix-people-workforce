@@ -701,6 +701,7 @@ import { runBusinessReviewPreviousWindowTests } from "./business-review-previous
 import { runBusinessReviewSpecialtyMixTests } from "./business-review-specialty-mix.test.ts";
 import { runBusinessReviewClosingDetailTests } from "./business-review-closing-detail.test.ts";
 import { runBusinessReviewResignedVacancyTests } from "./business-review-resigned-vacancy.test.ts";
+import { runBusinessReviewReadsLiveClosingTests } from "./business-review-reads-live-closing.test.ts";
 import { runBusinessReviewScopeFilterTests } from "./business-review-scope-filter.test.ts";
 import { runBusinessReviewPackModelTests } from "./business-review-pack-model.test.ts";
 import { runBusinessReviewPackPptxTests } from "./business-review-pack-pptx.test.ts";
@@ -4582,6 +4583,10 @@ await runTest(
 await runTest(
   "business review resigned vacancy (a rep or DM who has since left the company no longer holds the seat: the area/DM reads vacant so \"Exclude vacant\" clears it, the people table drops resigned reps under the same toggle, and their sales stay in the area/line totals; one shared isResignedStatus authority for the seat builder, the vacancy check and the people table)",
   runBusinessReviewResignedVacancyTests,
+);
+await runTest(
+  "business review reads the LIVE closing engine (owner ruling, 2026-09-28 \"use the live one\": the Business Review pack is the third carve-out from the Monthly Closing source-of-truth rule, after Weekly Sales and Marketing ROI, because a direct order counts in the month Finance books it and a published month is never corrected — repointing it at phx_closing_publication_snapshot would understate real money and freeze a stale geography, and acknowledging the drift is the owner's decision about a month, never a step in rendering a pack)",
+  runBusinessReviewReadsLiveClosingTests,
 );
 await runTest(
   "business review specialty mix (what a list is made of, at every level: customers are UNIONED and never summed, so a doctor two reps visited is one doctor in their district and a doctor seen in two months is one doctor in the window; an unseen vendor value is surfaced rather than folded into the doctor panel, which is how a fifth of it was once mis-scored; a visit with no contact keeps its visit and adds no customer; and the headline states a share without judging the mix)",
