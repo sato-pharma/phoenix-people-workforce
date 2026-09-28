@@ -151,9 +151,45 @@ function runSync(deadline) {
 
   if (queue.length === 0) {
     orderTabs(properties);
+    stampRefreshedAt();
     Logger.log("Sheet is up to date.");
   } else {
     Logger.log(queue.length + " tab(s) still to paint; continuing on the next tick.");
+  }
+}
+
+/**
+ * Record, on the sheet itself, that this tick finished — the finder shows it.
+ *
+ * THIS IS THE ONLY THING ON THE WORKBOOK THAT CAN SAY THE SHEET IS STILL ALIVE. Every tab is
+ * painted from Phoenix and then left alone, so when this script stops — a deleted trigger, a
+ * revoked authorisation, an exhausted quota — the whole workbook goes on showing correct-looking
+ * figures for ever, and nothing in the data says they stopped moving. A stamp that stops moving IS
+ * the alarm. Phoenix cannot supply it: Phoenix knows when it was ASKED for data, never whether the
+ * answer was painted, and those differ in exactly the case that matters.
+ *
+ * ONLY WHEN THE QUEUE HAS DRAINED, which is why the call sits where it does. Stamping at the top
+ * of a tick would claim freshness for a sheet that is halfway through a repaint, which is the one
+ * lie this cell exists to prevent.
+ *
+ * Formatted HERE, in Africa/Cairo, and written as text. Writing a Date instead would render in the
+ * SPREADSHEET's timezone, which nothing in this repository sets or checks — so the "Cairo" label
+ * the finder prints beside it would be a claim rather than a fact the first time this workbook was
+ * recreated in another zone. The owner reads every time in Cairo, and a wrong time wearing the
+ * right label is worse than no time at all.
+ *
+ * Best-effort by contract: a sync that painted every tab correctly must never report failure
+ * because one cosmetic cell could not be written.
+ */
+function stampRefreshedAt() {
+  try {
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Lists");
+    if (!sheet) return;
+    sheet
+      .getRange("E1")
+      .setValue(Utilities.formatDate(new Date(), "Africa/Cairo", "d MMM yyyy HH:mm"));
+  } catch (error) {
+    Logger.log("Could not stamp the refresh time: " + error);
   }
 }
 
