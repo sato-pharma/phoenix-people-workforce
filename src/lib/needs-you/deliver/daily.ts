@@ -40,6 +40,8 @@ import { systemAccessContext } from "@/lib/auth/permissions";
 import { writeAuditLog } from "@/lib/admin/audit";
 import { createSystemNotification } from "@/lib/notifications/system";
 
+import { summaryDroppedNotice } from "../ai/summary";
+import { summarizeNeedsYouBoard } from "../ai/summarize";
 import { getNeedsYouBoard } from "../service";
 import { NEEDS_YOU_MODULE, buildNeedsYouTelegram, type TelegramSection } from "../render/telegram";
 import type { NeedsYouBoard } from "../types";
@@ -125,13 +127,18 @@ export function buildNeedsYouDailyMessage(input: {
   boardUrl: string;
   summaryLead?: string | null;
 }): string {
+  const lead = String(input.summaryLead ?? "").trim();
   const body = buildNeedsYouTelegram({
     title: NEEDS_YOU_DAILY_TITLE,
     sections: boardToTelegramSections(input.board),
     boardUrl: input.boardUrl,
     allClearProvable: input.board.allClearProvable,
+    // 🔴 THE LEAD SPENDS THE BODY'S BUDGET, and it has to be declared BEFORE the body is built.
+    // Measured 2026-09-28, before this line existed: a 12-item board is 739 characters, and a
+    // 220-character summary in front of it made 961 — past Telegram's 900, which slices from the
+    // END with no marker. The summary would have pushed the BOARD off the bottom of its own digest.
+    reserve: lead ? lead.length + 2 : 0,
   });
-  const lead = String(input.summaryLead ?? "").trim();
   return lead ? `${lead}\n\n${body}` : body;
 }
 
@@ -183,7 +190,31 @@ export async function runNeedsYouDailyDigest(now: Date = new Date()): Promise<Ne
     return { delivered: 0, notProven: 0, reason: reason || "the board could not be built", skipped: true };
   }
 
-  const message = buildNeedsYouDailyMessage({ board, boardUrl: NEEDS_YOU_BOARD_PATH });
+  // Tier 2. `summarizeNeedsYouBoard` never throws and never spends a token on a day with an
+  // unreadable source or nothing waiting, so this costs one call a morning at most.
+  //
+  // 🔴 A REFUSAL IS PRINTED, NOT SWALLOWED — except the two that mean "there was nothing to say".
+  // Silent degradation is what hid the masked-key defect for days on 2026-09-02: a summary that
+  // quietly stops appearing looks exactly like a quiet week. `summaryDroppedNotice` is the one
+  // phrasing, exported so this file cannot invent a second one, and it states that the list below
+  // is complete — because a missing summary must never read as a missing board.
+  const verdict = await summarizeNeedsYouBoard(board);
+  const readAtCairo = new Intl.DateTimeFormat("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Africa/Cairo",
+  }).format(now);
+  const silentRefusals = new Set([
+    "a source could not be read, so no summary was attempted",
+    "nothing is waiting, so there is nothing to lead with",
+  ]);
+  const summaryLead =
+    verdict.lead ??
+    (verdict.because && !silentRefusals.has(verdict.because)
+      ? summaryDroppedNotice(verdict.because, readAtCairo)
+      : null);
+
+  const message = buildNeedsYouDailyMessage({ board, boardUrl: NEEDS_YOU_BOARD_PATH, summaryLead });
 
   let recipient: { hrId: string; userId: string | null } | null = null;
   try {

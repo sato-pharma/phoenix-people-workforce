@@ -82,6 +82,18 @@ export type NeedsYouTelegramInput = {
    * whole module exists to keep apart.
    */
   allClearProvable: boolean;
+  /**
+   * Characters this message carries BEFORE the body — today, the tier-2 written summary that
+   * `buildNeedsYouDailyMessage` prepends.
+   *
+   * 🔴 IT MUST BE COUNTED HERE, NOT SUBTRACTED AFTERWARDS, and switching tier 2 on is what proved
+   * it. Measured 2026-09-28: a 12-item board renders 739 characters, and a maximum-length
+   * 220-character summary in front of it made 961 — past Telegram's 900, which slices from the END
+   * with no marker. The summary would have pushed the BOARD off the bottom, so the one feature
+   * meant to help him read the board faster would have been the thing hiding it. Anything
+   * preceding the body spends the same budget as the body, exactly like `title`.
+   */
+  reserve?: number;
 };
 
 /**
@@ -100,7 +112,8 @@ export function buildNeedsYouTelegram(input: NeedsYouTelegramInput): string {
   }
 
   const paragraphs: string[] = [];
-  let used = input.title.length + 2; // the title and the blank line after it
+  // The title, the blank line after it, and whatever the caller will put in front of the body.
+  let used = input.title.length + 2 + Math.max(0, Math.trunc(input.reserve ?? 0));
   let omitted = 0;
   let stopped = false;
 

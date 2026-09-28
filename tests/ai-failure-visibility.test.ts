@@ -169,7 +169,23 @@ export function runAiFailureVisibilityTests() {
     /out of credit/,
     "the error-monitor row must say out of credit in words",
   );
-  assert.match(buildAiQuotaExhaustedMessage(), /top(ped)? up|Add credit/i, "the alert must say what fixes it");
+  // 🔴 THE ALERT MUST NAME THE RIGHT ACCOUNT. `groq_transcription` shares this alarm deliberately,
+  // and until 2026-09-28 the message hardcoded "OpenAI" and listed OpenAI's features — so a Groq
+  // outage sent him to the wrong billing page and named six features that were working fine.
+  const openAiAlert = buildAiQuotaExhaustedMessage(record({ component: "openai_client" }));
+  const groqAlert = buildAiQuotaExhaustedMessage(record({ component: "groq_transcription" }));
+  for (const [label, text] of [["OpenAI", openAiAlert], ["Groq", groqAlert]] as const) {
+    assert.match(text, /top(ped)? up|Add credit/i, `the ${label} alert must say what fixes it`);
+    assert.match(text, /no auto-recharge/i, `the ${label} alert must say waiting cannot fix it`);
+    assert.match(text, new RegExp(`${label} billing page`), `the ${label} alert must name the ${label} billing page`);
+  }
+  assert.doesNotMatch(
+    groqAlert,
+    /OpenAI/,
+    "a Groq outage must not mention OpenAI at all — not the provider, and not its feature list: " +
+      "during an outage, being pointed at the wrong account costs more than the outage",
+  );
+  assert.doesNotMatch(groqAlert, /CV extraction|Sales normalizer/, "the Groq alert must not list OpenAI's features");
   assert.equal(
     aiQuotaAlertEnabled(),
     false,
