@@ -2,6 +2,13 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { payrollMonthLabel } from "../src/lib/automated-payroll/awaiting-publish.ts";
+// The repo's own stripper, not a hand-rolled one. A line-by-line filter judges a line by how it
+// STARTS, so nothing tracks whether a block comment is already open: a `//` written after code
+// survives, and a multi-line block's continuation lines are scanned as code. A negative assertion
+// then fails on comment text, and — far worse here — a positive one PASSES on a file that no longer
+// contains the thing it pins. `tests/comment-strip-safety.test.ts` fails CI over exactly that, and
+// it caught this file.
+import { stripComments } from "./support/comment-strip.ts";
 
 /**
  * Which payroll months are waiting to be published — asked across ALL months, which nothing in this
@@ -24,7 +31,7 @@ export function runPayrollAwaitingPublishTests() {
   const source = readFileSync(FILE, "utf8");
   // Comments explain the traps by naming them, so scanning raw source would match the prose rather
   // than the code. Strip line comments and block comments before asserting on what it DOES.
-  const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  const code = stripComments(source);
 
   // ── 1. The read is a read, and it is the widest gate that is still correct ──
   assert.match(
