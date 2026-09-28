@@ -49,9 +49,15 @@ export async function GET(request: Request) {
     // existing caller of this route expects, so it must stay reachable.
     const periods = PERIOD_RE.test(requestedPeriod) ? expandTargetPeriodScope(requestedPeriod, scope) : [];
 
+    // The template's unit-price column is resolved for the FIRST period of the span, because a
+    // price can differ by period and one column cannot carry two. Every span this route offers —
+    // a month, a quarter, a semester — sits entirely on one side of a price change in practice.
+    // A plain form with no period asked for falls back to the product master's current price.
+    const templatePeriod = periods[0] ?? (PERIOD_RE.test(requestedPeriod) ? requestedPeriod : null);
+
     const [areas, products] = await Promise.all([
       loadTargetableAreas(line.code),
-      loadTargetableProducts(line.code),
+      loadTargetableProducts(line.code, templatePeriod),
     ]);
 
     // `${period}|${areaCode}|${productCode}` -> the stored target. Loaded per month because

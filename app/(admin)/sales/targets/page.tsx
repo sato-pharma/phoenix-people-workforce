@@ -82,7 +82,7 @@ export default async function TargetsPage({
     // once rather than a Beni Suef cell that no screen can ever display.
     const [areas, products, targets] = await Promise.all([
       loadTargetableAreas(selectedLine),
-      loadTargetableProducts(selectedLine),
+      loadTargetableProducts(selectedLine, selectedPeriod),
       loadMonthlyTargets(selectedPeriod),
     ]);
 

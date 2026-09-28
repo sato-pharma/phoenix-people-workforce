@@ -146,7 +146,15 @@ export function runTargetsUnsavedEditGuardTests() {
   // ── 6. The rows come from the model, so an empty future month is typeable ───
   {
     assert.match(page, /loadTargetableAreas\(selectedLine\)/, "areas come from the canonical model");
-    assert.match(page, /loadTargetableProducts\(selectedLine\)/, "products too");
+    // The period argument is required since 2026-09-28: a factory price can differ by period, and
+    // the grid's Units × Price → Value must use the price of the month being authored rather than
+    // today's. Pinned rather than merely tolerated — a call that lost the period would value a Q4
+    // Saginko target at 111.15 against sales valued at 170.52 and inflate achievement by 53%.
+    assert.match(
+      page,
+      /loadTargetableProducts\(selectedLine, selectedPeriod\)/,
+      "products too, resolved for the period being authored",
+    );
     assert.match(
       page,
       /rows = areas\.flatMap\(\(area\) =>\s*products\.map\(/,
