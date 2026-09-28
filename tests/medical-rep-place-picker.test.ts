@@ -82,12 +82,42 @@ export function runMedicalRepPlacePickerTests() {
 
   assert.ok(
     repGet.includes('assertPermission(access, "outstation", "create")'),
-    "the rep route must be gated on outstation:create — the SAME permission the submission needs, "
-    + "so it grants no capability its caller did not already have",
+    "the rep route must be gated on outstation:create — the permission the submission needs",
   );
   assert.ok(
     !repGet.includes("assertOutstationAdminAccess"),
     "the rep route must not require admin access, or a rep gets 403 and an empty dropdown",
+  );
+
+  // 🔴 THE SECOND GATE, and it is the one that actually narrows anything.
+  //
+  // `outstation:create` alone admits TWELVE roles — measured against the live permission matrix
+  // on 2026-09-28 — including District Manager, Product Manager, SFE Manager and the generic
+  // **Employee**, because it is the permission for filing ANY outstation expense. The submission
+  // this route serves is narrower: the service also calls `assertMedicalRepExpenseRole`.
+  //
+  // Without this check every Employee could spend billable Google Places calls on the company key
+  // while being unable to file the expense those calls are for. The first version of this route
+  // shipped that way (#4644); this is the correction.
+  assert.ok(
+    repGet.includes("isMedicalRepExpenseViewer(access)"),
+    "the rep route must ALSO narrow to Medical Rep — outstation:create admits 12 roles including "
+    + "the generic Employee, far wider than the submission it serves",
+  );
+  assert.ok(
+    /isMedicalRepExpenseViewer\(access\)[\s\S]{0,400}status: 403/.test(repGet),
+    "failing the Medical Rep check must return 403, not fall through to a Google call",
+  );
+  // Order matters: the narrowing must run BEFORE anything is fetched, or a refused caller has
+  // already cost a billable lookup by the time they are told no.
+  assert.ok(
+    repGet.indexOf("isMedicalRepExpenseViewer(access)") < repGet.indexOf("fetchPlacePredictions("),
+    "the Medical Rep check must run before the Google call, not after it",
+  );
+  // The ADMIN route must NOT gain it — it exists for reviewers, who are not Medical Reps.
+  assert.ok(
+    !adminGet.includes("isMedicalRepExpenseViewer"),
+    "the admin route serves reviewers and must not be narrowed to Medical Rep",
   );
   assert.ok(
     adminGet.includes('assertOutstationAdminAccess(access, "approve")'),
