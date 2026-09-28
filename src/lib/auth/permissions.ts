@@ -39,6 +39,11 @@ export type PhoenixRole = (typeof phoenixRoles)[number];
 
 export const phoenixCompanyJobTitles = [
   "District Sales Manager",
+  // A seniority grade on the district seat, opened 2026-09-29 when the owner promoted B-94. It is
+  // a JOB TITLE and nothing else: it provisions as "Employee" like every title outside the
+  // two-name field-force allowlist (see access-role.ts), and the district access he holds comes
+  // from his explicitly-assigned "District Manager" app role, exactly as it did before.
+  "Senior District Manager",
   "Medical Representative",
   "National Sales Manager",
   "Product Manager",
@@ -2259,6 +2264,13 @@ const HR_ADVISORY_SALARY_REDACTED_HR_IDS = new Set(
  */
 export const HR_ADVISORY_COMPENSATION_JOB_TITLES = [
   "District Sales Manager",
+  // "the district managers" in his 2026-09-01 sentence is the SEAT, not the spelling of one man's
+  // title. B-94 became a Senior District Manager on 2026-09-29 and still runs Giza (Pedia); leaving
+  // this out would have quietly removed him from her payslip list and blanked his pay in her
+  // directory — narrowing, by accident, a boundary the owner drew by hand. Exact-after-lowercasing
+  // as the note above requires: this admits the senior grade and still never admits "Regional
+  // Sales Manager".
+  "Senior District Manager",
   "Medical Representative",
 ] as const;
 

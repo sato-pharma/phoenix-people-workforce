@@ -41,4 +41,10 @@ export const positionRules: Record<string, string> = {
   national_sales_manager: "National Sales Manager",
   nsm: "National Sales Manager",
   product_manager: "Product Manager",
+  // The seniority grade keeps its own spelling — it must NOT collapse onto "District Sales
+  // Manager" the way `district_manager` above does, or the next employee import would silently
+  // demote the title back. Listed so the canonical casing survives however the sheet spells it:
+  // the lists that read this title (allowances, attendance, compliance, seat rank) match exactly.
+  senior_district_manager: "Senior District Manager",
+  senior_district_sales_manager: "Senior District Manager",
 };

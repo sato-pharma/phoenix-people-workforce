@@ -2064,6 +2064,7 @@ import { runNeedsYouTier2SummaryTests } from "./needs-you-tier2-summary.test.ts"
 import { runNeedsYouCeoSingleProducerTests } from "./needs-you-ceo-single-producer.test.ts";
 import { runUnpublishedClosingsTests } from "./unpublished-closings.test.ts";
 import { runPayrollAwaitingPublishTests } from "./payroll-awaiting-publish.test.ts";
+import { runSeniorDistrictManagerTitleTests } from "./senior-district-manager-title.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -7554,6 +7555,11 @@ await runTest(
 await runTest(
   "the mobile version a human reads moves with the one Play counts: app.json version is 0.<versionCode>.0, never the 0.1.0 that three different binaries shipped under on 2026-09-28, the code is a whole number, and eas.json keeps appVersionSource local so app.json stays the source of truth - neither field is in the runtime fingerprint, so raising them strands no OTA and no installed build",
   runMobileVersionNamesTests,
+);
+
+await runTest(
+  "a promotion to \"Senior District Manager\" renames the man and nothing else: the job FUNCTION still resolves to District Manager so outstation, portal routing, coaching and Employee 360 land where they did, both allowance sources still answer 3,000 rather than the 1,500 office default, he stays inside attendance tracking, the workforce-compliance report, the Saturday working week, the CRM contact-list sweep and the HR Business Partner's payslip list - while the title still grants NOTHING on its own, because the field-force provisioning allowlist was deliberately left at the two titles the owner approved",
+  runSeniorDistrictManagerTitleTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

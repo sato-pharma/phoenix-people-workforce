@@ -30,13 +30,15 @@ export type PayslipCenterAudience =
   | { jobTitles: readonly string[]; kind: "job-titles"; selfHrId: string | null };
 
 /**
- * The two job titles the HR Business Partner may see. ONE list, shared with the Employee
- * Directory's salary columns — see HR_ADVISORY_COMPENSATION_JOB_TITLES in permissions.ts for why
- * the same sentence has to govern both screens, and for the case-insensitivity rule.
+ * The district and rep job titles the HR Business Partner may see. ONE list, shared with the
+ * Employee Directory's salary columns — see HR_ADVISORY_COMPENSATION_JOB_TITLES in permissions.ts
+ * for why the same sentence has to govern both screens, and for the case-insensitivity rule.
  *
  * Verified against production the day it was written: "Medical Representative" 553 rows / 119
  * people, "District Sales Manager" 123 rows / 25 people, both spelled exactly like this in
- * `salary_records.job_title`.
+ * `salary_records.job_title`. "Senior District Manager" joined the list on 2026-09-29 with no rows
+ * of its own yet — a promotion renames the employee, never the payslips already issued, so his
+ * historical rows keep answering under the title they were paid under.
  */
 export const HR_ADVISORY_PAYSLIP_JOB_TITLES = HR_ADVISORY_COMPENSATION_JOB_TITLES;
 

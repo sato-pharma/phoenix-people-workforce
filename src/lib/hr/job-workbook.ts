@@ -1277,6 +1277,12 @@ export const COMPANY_ROLE_WORKBOOKS: readonly CompanyRoleWorkbook[] = [
     hasWrittenJd: false,
   },
   {
+    jobTitle: "Senior District Manager",
+    role: "District Manager",
+    purpose: "The District Sales Manager seat at a seniority grade: same district, same authority.",
+    hasWrittenJd: false,
+  },
+  {
     jobTitle: "National Sales Manager",
     role: "National Sales Manager",
     purpose: "Owns a line nationally: targets, achievement, outstation and the approval chain above district level.",
