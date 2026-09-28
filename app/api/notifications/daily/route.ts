@@ -20,6 +20,7 @@ import { runOutstationGeocodeWarmup } from "@/lib/outstation/geocode-warmup";
 import { runExcuseSlaDaily } from "@/lib/excuses/service";
 import { runOutstationDeparturePhotoReminders, runOutstationSlaDaily } from "@/lib/outstation/service";
 import { runCrmAccountSetupReminder } from "@/lib/crm/account-setup-reminder";
+import { runDeadTelegramLinkAlert } from "@/lib/notifications/dead-telegram-link-alert";
 import { runResignationSlaDaily } from "@/lib/resignations/service";
 import { runWeeklyPlansDriftCheck } from "@/lib/weekly-planning/drift-check";
 import { runExcuseDriftCheck } from "@/lib/excuses/drift-check";
@@ -121,6 +122,8 @@ async function runDailyNotifications(request: Request) {
     needsYouWeeklyEmail,
     // Position 28, added 2026-09-28. Appended for the same reason as 26 and 27.
     crmAccountSetupReminder,
+    // Position 29, added 2026-09-28. Appended for the same reason as 26, 27 and 28.
+    deadTelegramLinkAlert,
   ] = await Promise.all([
     runBirthdayNotifications(request).catch(
       onJobFailure("daily-birthday", (message) =>
@@ -306,6 +309,22 @@ async function runDailyNotifications(request: Request) {
         skippedReason: message,
       })),
     ),
+    // Telegram messages being thrown away because the recipient has no working link. Measured
+    // 2026-09-28: NOT ONE link in the company was active, and 1,656 messages had been dropped that
+    // way — 448 to the CEO alone — with nothing red anywhere, because the delivery is recorded as
+    // "skipped", the same word used when a channel is deliberately switched off.
+    //
+    // 🔴 It alerts on LIVE loss in a 24h window, not on a list of broken links, so it falls silent
+    // by itself the moment the links are fixed. In-app ALONE: the channel it is about is the dead
+    // one, so a Telegram notice would be swallowed by the very fault it reports.
+    runDeadTelegramLinkAlert().catch(
+      onJobFailure("dead-telegram-link-alert", (message) => ({
+        delivered: 0,
+        dropped: 0,
+        people: 0,
+        skippedReason: message,
+      })),
+    ),
   ]);
   const [birthdays, contractRenewals, holidayConfirmation] = await Promise.all([
     birthdayResponse instanceof Response ? birthdayResponse.json() : birthdayResponse,
@@ -317,13 +336,14 @@ async function runDailyNotifications(request: Request) {
   // the dead-man's-switch ping (which only proves the route executed) — is the signal to alert on:
   // `event="cron_run_summary" job="notifications/daily" failedCount>0`.
   // Hand-maintained: bump this whenever a sub-job is added above, or the run summary silently
-  // under-reports (28 since the CRM account-setup reminder was added 2026-09-28; 27 since the
+  // under-reports (29 since the dead-Telegram-link alert was added 2026-09-28; 28 since the CRM
+  // account-setup reminder the same day; 27 since the
   // Needs You weekly email, the same day as the
   // daily digest below it; 26 since that daily digest; 25 since the
   // inactive-colleague digest moved here from the 5-minute cron on 2026-09-26; 24 since the
   // milestones due-notice pump was added 2026-09-23; 23 before that, since the FWC deductions
   // auto-sync was retired in the C6 cutover on 2026-08-30).
-  const totalJobs = 28;
+  const totalJobs = 29;
   if (failures.length > 0) {
     logError(
       `Daily notification run completed with ${failures.length} of ${totalJobs} sub-job(s) FAILED: ${failures.map((f) => f.job).join(", ")}`,
@@ -371,6 +391,7 @@ async function runDailyNotifications(request: Request) {
     milestoneDueNotices,
     marketingSla,
     needsYouDailyDigest,
+    deadTelegramLinkAlert,
     crmAccountSetupReminder,
     needsYouWeeklyEmail,
     notificationRetention,

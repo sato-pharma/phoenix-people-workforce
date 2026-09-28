@@ -1583,6 +1583,7 @@ import { runPhoenixCrmOfflineClockTests } from "./phoenix-crm-offline-clock.test
 import { runPhoenixCrmOfflineWireTests } from "./phoenix-crm-offline-wire.test.ts";
 import { runPhoenixCrmRefusalMessagesTests } from "./phoenix-crm-refusal-messages.test.ts";
 import { runPhoenixCrmOutboxTests } from "./phoenix-crm-outbox.test.ts";
+import { runDeadTelegramLinkAlertTests } from "./dead-telegram-link-alert.test.ts";
 import { runCrmAccountSetupReminderTests } from "./crm-account-setup-reminder.test.ts";
 import { runPhoenixCrmStuckLoadingTests } from "./phoenix-crm-stuck-loading.test.ts";
 import { runPhoenixCrmPortalSidebarTests } from "./phoenix-crm-portal-sidebar.test.ts";
@@ -5330,6 +5331,11 @@ await runTest(
 await runTest(
   "Phoenix CRM holds a visit on the phone until there is signal, and never throws a rep's work away (A1, the queue — an item leaves only when the server ACCEPTED it or refused it for a reason that can never change, so every network failure and every 5xx is kept and retried, and a refusal code this build has never heard of is KEPT rather than deleted; when the queue is full the NEWEST capture is refused at the door with an instruction he can act on, never yesterday's visit discarded; a stale item stops being retried but stays on disk; the photo path is recorded the moment an upload succeeds so a retry cannot burn a second upload slot and rate-limit him out of his own work; the drain never throws, because it runs where no rep is watching; the elapsed reading comes from the monotonic clock and never Date.now(); and every word he sees says a held visit is SAVED, never failed — no error, no attempt count, no explanation)",
   runPhoenixCrmOutboxTests,
+);
+
+await runTest(
+  "Telegram messages thrown away are reported (a delivery to somebody with no live link is written \"skipped\" with \"Telegram is not connected.\" — the SAME word a deliberate policy switch-off uses, so a dead link and a decision are identical in the data and neither turns anything red; measured 2026-09-28: NOT ONE link in the company was active and 1,656 messages had been dropped that way, 448 of them to the CEO; the alert reads a 24-hour window so it falls silent by itself once links are fixed, names the link state because never-linked and linked-and-broken need different fixes, rides the daily job rather than declaring a schedule, and is IN-APP ALONE because the channel it is about is the broken one)",
+  runDeadTelegramLinkAlertTests,
 );
 
 await runTest(
