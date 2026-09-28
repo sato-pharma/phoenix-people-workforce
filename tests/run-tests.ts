@@ -105,6 +105,7 @@ import { runResidenceGeocodePolicyTests } from "./residence-geocode-policy.test.
 import { runHiringPackResidenceAddressTests } from "./hiring-pack-residence-address.test.ts";
 import { runOutstationFuelPolicyTests } from "./outstation-fuel-policy.test.ts";
 import { runOutstationCaptureTimelinessTests } from "./outstation-capture-timeliness.test.ts";
+import { runOutstationReviewPdfTests } from "./outstation-review-pdf.test.ts";
 import { runOutstationDistanceBackfillTests } from "./outstation-distance-backfill.test.ts";
 import { runZeroResidenceCoordinateTests } from "./zero-residence-coordinate.test.ts";
 import { runMedicalRepPlacePickerTests } from "./medical-rep-place-picker.test.ts";
@@ -2256,6 +2257,7 @@ await runTest("hiring pack address block feeds the residence record (and a half-
 await runTest("outstation fuel policy (an unmeasurable car distance must block, a measured 0 must not)", runOutstationFuelPolicyTests);
 await runTest("zero residence coordinate (Number(null) is 0, so a NULL column must never freeze (0,0) onto a claim)", runZeroResidenceCoordinateTests);
 await runTest("outstation distance backfill (fills a lost distance and can never touch an amount or a verdict)", runOutstationDistanceBackfillTests);
+await runTest("outstation review PDF (the page as it stands: no placeholder plotted as a place, no raw API JSON, no repeated sentence)", runOutstationReviewPdfTests);
 await runTest("outstation capture timeliness (a coordinate captured after the trip records the filing place, and never decides anything)", runOutstationCaptureTimelinessTests);
 await runTest("medical rep destination picker (filer-gated route, no place id ever refuses a claim, and no distance gating is switched on)", runMedicalRepPlacePickerTests);
 await runTest("dead-man's-switch (Healthchecks.io ping helper)", runDeadMansSwitchTests);

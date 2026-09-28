@@ -26,34 +26,46 @@ export function PanelSection({ children, title }: { children: ReactNode; title: 
   );
 }
 
-/** One label/value cell of the fact grid under the dark header. */
+/**
+ * One label/value cell of the fact grid under the dark header.
+ *
+ * The value WRAPS. It used to be `whitespace-nowrap`, and a timestamp like "Sep 23, 2026, 12:59 PM"
+ * is wider than a quarter of the modal, so it ran straight into the next cell: the owner's own
+ * screenshot on 2026-09-28 read "12:59 PMSep 23, 2026, 12:56 PM" across Submitted and Captured time.
+ * `min-w-0` lets the grid cell shrink below its content so `break-words` has something to act on.
+ */
 export function Fact({ label, value }: { label: string; value: string }) {
   return (
-    <div>
+    <div className="min-w-0">
       <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">{label}</p>
-      <p className="mt-0.5 whitespace-nowrap text-sm font-semibold text-slate-900" dir="auto">{value || "—"}</p>
+      <p className="mt-0.5 break-words text-sm font-semibold text-slate-900" dir="auto">{value || "—"}</p>
     </div>
   );
 }
 
 /**
- * The from → to line. Phoenix-submitted trips carry a full postal address here, not a city — one
- * live row is 95 characters. It must not wrap and must not be truncated, so the line scrolls
- * horizontally WITHIN its own box and the page itself never moves.
+ * The route, as two labelled lines that WRAP — never a line that scrolls sideways.
+ *
+ * This used to be one unwrappable line inside its own `overflow-x-auto` box, on the reasoning that a
+ * 95-character postal address "must not wrap and must not be truncated". The owner overruled that on
+ * 2026-09-28 ("the route, make it no horizontal scrolling"), and his golden rule already settles the
+ * collision: never truncate, never scroll sideways, and where the two meet WRAPPING WINS. So the
+ * address is kept whole and simply allowed to take a second line.
+ *
+ * It spans the full width of the fact grid, so a long address wraps as little as possible. Each end
+ * keeps its own `dir="auto"`: residence addresses are Arabic in 70 of 70 production rows and the
+ * destination is Arabic-first in 19, so each resolves on its own rather than from its neighbour.
  */
 export function RouteFact({ from, to }: { from: string; to: string }) {
   return (
-    <div className="col-span-2 sm:col-span-2">
+    <div className="col-span-2 min-w-0 sm:col-span-4">
       <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">Route</p>
-      <div className="mt-0.5 -mx-1 overflow-x-auto px-1">
-        <p className="flex w-max items-center gap-1.5 text-sm font-semibold text-slate-900">
-          <span className="whitespace-nowrap" dir="auto">{from || "—"}</span>
-          <span aria-hidden className="shrink-0 text-slate-400">
-            →
-          </span>
-          <span className="whitespace-nowrap" dir="auto">{to || "—"}</span>
-        </p>
-      </div>
+      <dl className="mt-1 grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-3 gap-y-1 text-sm font-semibold text-slate-900">
+        <dt className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">From</dt>
+        <dd className="m-0 min-w-0 break-words" dir="auto">{from || "—"}</dd>
+        <dt className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">To</dt>
+        <dd className="m-0 min-w-0 break-words" dir="auto">{to || "—"}</dd>
+      </dl>
     </div>
   );
 }

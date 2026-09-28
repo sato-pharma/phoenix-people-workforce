@@ -66,7 +66,7 @@ import { stripComments } from "./support/comment-strip.ts";
  * covers it) the count drops and this test asks for the baseline to be lowered —
  * which is correct: the ground was genuinely won.
  */
-const BASELINE = 177;
+const BASELINE = 174;
 
 const ROOTS = ["app", "src/components"];
 

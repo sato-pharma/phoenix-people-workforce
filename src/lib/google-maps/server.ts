@@ -1,4 +1,5 @@
 import { isCountryLevelGeocode } from "@/lib/google-maps/geocode-precision";
+import { describeRoutesFailure } from "@/lib/google-maps/routes-error";
 
 type LatLng = { lat: number; lng: number };
 
@@ -230,9 +231,11 @@ async function computeRoutes(
 
     if (!response.ok) {
       const details = await response.text().catch(() => "");
-      throw new Error(
-        `Google Routes API failed with ${response.status}${details ? `: ${details.slice(0, 240)}` : ""}.`,
-      );
+      // The raw body is for whoever debugs the call, so it goes to the log. The thrown message is
+      // stored as an outstation request's eligibility reason and printed on the review card and
+      // in every export — until 2026-09-28 it carried this body verbatim, and reviewers read JSON.
+      console.warn(`[google-maps] Routes API ${response.status}: ${details.slice(0, 600)}`);
+      throw new Error(describeRoutesFailure(response.status, details));
     }
 
     return response;

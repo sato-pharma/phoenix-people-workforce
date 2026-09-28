@@ -160,6 +160,31 @@ function parseEvidence(kind: OutstationEvidenceKind, body: string): { stamp: Out
   };
 }
 
+/**
+ * One notice per DISTINCT sentence, with how many days it covered.
+ *
+ * The guard writes one reason per trip day, so rows stored before 2026-09-28 repeat a sentence once
+ * per day — OUTSTATION-148 printed "No allowance: a trip to Cairo from a regional base does not earn
+ * an outstation per-diem allowance." five times in a row. The source now writes each reason once
+ * with "(5 days)"; this reads the OLD rows the same way, so a person sees one sentence either way.
+ * A reason that names its own date ("Allowance for 2026-09-09 was already granted…") stays
+ * distinct by construction, because the date is part of the sentence.
+ */
+function distinctAllowanceSentences(body: string | null): string[] {
+  if (!body) return [];
+  const counts = new Map<string, number>();
+  for (const raw of body.split(/(?<=\.)\s+/)) {
+    const sentence = raw.trim();
+    if (sentence) counts.set(sentence, (counts.get(sentence) ?? 0) + 1);
+  }
+  return [...counts].map(([sentence, times]) => {
+    // "No allowance: <reason>" reads as a label glued to a label once it sits under its own
+    // heading, so the reason keeps a dash instead.
+    const labelled = sentence.replace(/^No allowance:\s*/i, "No allowance — ");
+    return times > 1 ? `${labelled.replace(/\.$/, "")} (${times} days).` : labelled;
+  });
+}
+
 /** Splits stored outstation notes (or an expense description) into the parts a person reads. */
 export function parseOutstationDescription(raw: string | null | undefined): OutstationDescriptionParts {
   const source = String(raw ?? "");
@@ -177,10 +202,9 @@ export function parseOutstationDescription(raw: string | null | undefined): Outs
     const label = marker[0].toLowerCase();
 
     if (label.startsWith("allowance guard")) {
-      // "No allowance: <reason>" reads as a label glued to a label once it sits under its own
-      // heading, so the reason keeps a dash instead.
-      const notice = tidy(body)?.replace(/^No allowance:\s*/i, "No allowance — ");
-      if (notice) allowanceNotices.push(writeOutCalendarDates(notice));
+      for (const notice of distinctAllowanceSentences(tidy(body))) {
+        allowanceNotices.push(writeOutCalendarDates(notice));
+      }
       return;
     }
 

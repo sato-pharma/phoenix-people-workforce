@@ -10,6 +10,7 @@ import {
   type GoogleMarkerHandle,
   type GooglePolylineHandle,
 } from "@/lib/google-maps/browser";
+import { isUnresolvedResidenceCoordinate } from "@/lib/outstation/distance-failure";
 import { buildReviewMapOptions, hasConfiguredMapId } from "@/lib/outstation/review-map-options";
 import type { OutstationExpenseRequest, OutstationRouteAlternative } from "@/lib/outstation/types";
 
@@ -56,11 +57,23 @@ function decodePolyline(encoded: string): Array<{ lat: number; lng: number }> {
   return points;
 }
 
+/**
+ * 🔴 `!= null` IS NOT ENOUGH, and the map proved it on production 2026-09-28: a request whose
+ * residence coordinate was (0, 0) plotted one pin in Egypt and one in the Gulf of Guinea, under a
+ * confident "FASTEST DISTANCE 209.62 KM". It is the same trap as everywhere else in this module —
+ * `Number(null)` is 0 and `Number.isFinite(0)` is true — so a placeholder passes every null check
+ * and is then RENDERED AS A PLACE.
+ *
+ * A map that draws a false origin is worse than no map at all: the number beside it looks
+ * measured, so a reviewer has no reason to doubt either. Refuse to plot an unresolved origin —
+ * the Egypt centroid and null island alike — and the panel simply does not render.
+ */
 function coordinatesReady(request: OutstationExpenseRequest | null) {
   return Boolean(
     request &&
       request.residenceLatitude != null &&
       request.residenceLongitude != null &&
+      !isUnresolvedResidenceCoordinate(request.residenceLatitude, request.residenceLongitude) &&
       Number.isFinite(request.capturedLatitude) &&
       Number.isFinite(request.capturedLongitude),
   );
@@ -148,6 +161,8 @@ export function OutstationReviewMap({
       !mapElement ||
       request.residenceLatitude == null ||
       request.residenceLongitude == null ||
+      // Second gate, same reason as coordinatesReady above: never plot a placeholder as a place.
+      isUnresolvedResidenceCoordinate(request.residenceLatitude, request.residenceLongitude) ||
       !Number.isFinite(request.capturedLatitude) ||
       !Number.isFinite(request.capturedLongitude) ||
       !googleMaps

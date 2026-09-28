@@ -33,24 +33,30 @@ import { stripComments } from "./support/comment-strip.ts";
 const ROOT = new URL("../", import.meta.url);
 const read = (rel: string) => readFileSync(fileURLToPath(new URL(rel, ROOT)), "utf8");
 
+// The per-line rendering moved on 2026-09-29: the admin review panel used to carry its own private
+// `NotesBody`, and now renders the SHARED `OutstationDescription` that the employee portal already
+// used — which also turns the machine audit line into a readable photo stamp instead of printing
+// `source=… gps=… draft_id=…` at a reviewer. The guard follows the code: the invariant is unchanged
+// and still asserted, just against the component that now owns it.
 const ADMIN_SOURCE = read("src/components/outstation/outstation-requests-admin.tsx");
+const NOTES_SOURCE = read("src/components/outstation/outstation-description.tsx");
 const PRIMITIVES_SOURCE = read("src/components/outstation/approval-detail-primitives.tsx");
 const SERVICE_SOURCE = read("src/lib/outstation/service.ts");
 
 export function runOutstationArabicTextDirectionTests() {
   // ── 1. HEADLINE: notes carry direction PER LINE, never on the block ─────────
   assert.match(
-    ADMIN_SOURCE,
-    /value\.split\("\\n"\)/,
+    NOTES_SOURCE,
+    /\.split\("\\n"\)/,
     "the notes body must be split into lines so each carries its own direction — a stored note is " +
       "the rep's free text followed by machine-written English audit lines, and one block cannot " +
       "be both RTL and LTR",
   );
   assert.match(
-    ADMIN_SOURCE,
-    /className="block whitespace-pre-wrap break-words"\s*\n?\s*dir="auto"/,
-    'the dir="auto" must sit on the same per-line span that carries whitespace-pre-wrap and ' +
-      "break-words, or the line keeps its direction but loses its line breaks or its wrapping",
+    NOTES_SOURCE,
+    /className="break-words leading-relaxed text-slate-800"\s*\n?\s*dir="auto"/,
+    'the dir="auto" must sit on the same per-line element that carries break-words, or the line ' +
+      "keeps its direction but loses its wrapping",
   );
   assert.ok(
     !/dir="auto"[^>]*>\s*\{request\.notes/.test(ADMIN_SOURCE),
@@ -60,15 +66,21 @@ export function runOutstationArabicTextDirectionTests() {
   );
   assert.match(
     ADMIN_SOURCE,
-    /<NotesBody value=\{request\.notes\} \/>/,
+    /<OutstationDescription[\s\S]{0,120}value=\{request\.notes\}/,
     "and the per-line component must actually be the thing the detail modal renders, or it is dead " +
       "code sitting next to the defect it was written to remove",
   );
   assert.match(
-    ADMIN_SOURCE,
-    /line === "" \? " " : line/,
+    NOTES_SOURCE,
+    /line\.trim\(\) === "" \? " " : line/,
     "an empty line must still occupy a line box, or a blank the rep left between two paragraphs " +
       "collapses and the lines run together",
+  );
+  // 🔴 And the reviewer must never be shown the raw audit line the formatter exists to translate.
+  assert.ok(
+    !/\{request\.notes\}/.test(stripComments(ADMIN_SOURCE).replace(/value=\{request\.notes\}/g, "")),
+    "request.notes must reach the screen only through OutstationDescription — printing the stored " +
+      "text directly puts `source=… gps=… draft_id=…` in front of an approver",
   );
 
   // ── 2. THE PREMISE the per-line treatment rests on ─────────────────────────
