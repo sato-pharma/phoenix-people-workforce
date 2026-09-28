@@ -138,7 +138,14 @@ Its exit code carries the answer, so a backgrounded run's notification is readab
 `0` shipped · `2` queued · `3` not live · `4` not merged · `5` cannot tell · `6` shipped but main is
 red. `--json` for the whole reading, `--simulate-live <sha>` to force the live revision, and
 `--selftest` for the verdict and ancestry tables — run that after editing the script, and expect
-`17 cases, 0 failed`.
+**`0 failed`**. 🔴 **Do not check the case COUNT against this page.** It said `17 cases` until
+2026-09-28, by which time the script printed `32`, so a session that edited it, ran the selftest and
+compared the two had to guess which to believe — with the doc being the thing that sounds
+authoritative. The count is meant to rise, and writing a rising number into prose guarantees the
+prose is wrong. `tests/verify-shipped-selftest.test.ts` is the authority: it runs the selftest in the
+required `checks` job, asserts `0 failed`, ratchets the count against its own `MIN_CASES` so cases can
+rise but never fall, and pins three cases by name so a hard one cannot be swapped for an easy one at
+the same count. **If you add cases, raise `MIN_CASES` there and leave this page alone.**
 
 **A `CANNOT TELL` names its own reason — read the note, do not assume a missing commit.** Ancestry
 needs a git checkout, and the script asks git in its own folder, falling back to yours. A copy
