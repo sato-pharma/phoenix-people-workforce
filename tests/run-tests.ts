@@ -2027,6 +2027,7 @@ import { runNextBuildCpuCapTests } from "./next-build-cpu-cap.test.ts";
 import { runAttributionFreezesPublishedMonthsTests } from "./attribution-freezes-published-months.test.ts";
 import { runTestAccountTests } from "./test-accounts.test.ts";
 import { runNeedsYouTelegramBudgetTests } from "./needs-you-telegram-budget.test.ts";
+import { runNeedsYouSummaryGuardTests } from "./needs-you-summary-guard.test.ts";
 import { runNeedsYouEmailOwnerOnlyTests } from "./needs-you-email-owner-only.test.ts";
 import { runNeedsYouBoardTests } from "./needs-you-board.test.ts";
 import { runNeedsYouSourceHealthTests } from "./needs-you-source-health.test.ts";
@@ -7364,6 +7365,10 @@ await runTest(
 await runTest(
   "TEST ACCOUNTS (owner, 2026-09-27): a production login that lives inside a real employee's portal and never saves as her — every write outside Phoenix CRM is refused in resolveAccessContext before a route runs, and a server action too; inside Phoenix CRM every read and save is a test entry whatever flag the screen sends; a test manager decides test entries only, as the reviewer he mirrors, never the SFE step; his reach is the mirrored person's, never the company; only an employee-portal role can be mirrored; and the nightly behaviour verdict and the hourly allowances never count a test row",
   runTestAccountTests,
+);
+await runTest(
+  "tier 2 may phrase and order but never reassure, count or quietly drop an item: a day where any source could not be read gets NO written summary whatever the model returned (the calm sentence on the morning something was waiting is the one failure this surface cannot survive), a lead claiming completeness is refused because that verdict is the board's and not the model's, a number the board does not hold is refused as a hallucinated fact while the board's own figures pass, an ordering that does not cover every item exactly once is refused because that is how a model silently omits one, a well-formed answer IS attached so the guard is not merely strict, the verdict type carries nothing but a lead and an ordering so no model output can ever replace a fact, the prompt is given no failure count and no verdict so the model has no vocabulary with which to reassure, and every refusal names a reason the digest prints rather than degrading silently",
+  runNeedsYouSummaryGuardTests,
 );
 await runTest(
   "the needs-you daily board survives Telegram's real budget without lying about what it left out: the channel is 900 characters of PLAIN text truncated from the end mid-word with no marker, so the could-not-be-read section is emitted FIRST (the CLI prints it last, which is right for a terminal and fatal here) and the budget is met BY CONSTRUCTION rather than by slicing — 42 items render whole, the message states how many it omitted with a link, and the omitted plus rendered counts add back to what was supplied; a board that is nothing BUT failures still renders them; an empty list says which KIND of empty it is, never claiming every source answered when one did not, and states that caveat even when the caller passed no not-proven section; and needs_you is in telegramKeepsParagraphs and emailKeepsLineBreaks without which every section flattens into one run-on line",
