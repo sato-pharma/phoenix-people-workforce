@@ -7,8 +7,20 @@ import type { PlacesPrediction } from "@/lib/outstation/types";
 
 const SESSION_TOKEN = Math.random().toString(36).slice(2);
 
+/** The admin-gated source. Left as the DEFAULT so every existing caller is unchanged. */
+export const ADMIN_PLACES_ENDPOINT = "/api/admin/outstation/places-autocomplete";
+
+/** The filer-gated source — `outstation:create`, for someone picking their own trip's destination. */
+export const EXPENSE_PLACES_ENDPOINT = "/api/outstation/places-autocomplete";
+
 type PlacesAutocompleteInputProps = {
   disabled?: boolean;
+  /**
+   * Which suggestions route to read. The two differ ONLY in who may call them, and picking the
+   * wrong one fails in a way that looks like "no results" rather than like a permission error:
+   * a medical rep hitting the admin route gets 403 and an empty dropdown with no explanation.
+   */
+  endpoint?: string;
   onSelect: (prediction: PlacesPrediction) => void;
   placeholder?: string;
   value?: string;
@@ -16,6 +28,7 @@ type PlacesAutocompleteInputProps = {
 
 export function PlacesAutocompleteInput({
   disabled,
+  endpoint = ADMIN_PLACES_ENDPOINT,
   onSelect,
   placeholder = "Search destination…",
   value,
@@ -56,7 +69,7 @@ export function PlacesAutocompleteInput({
     setLoading(true);
     setError(null);
     try {
-      const url = new URL("/api/admin/outstation/places-autocomplete", window.location.origin);
+      const url = new URL(endpoint, window.location.origin);
       url.searchParams.set("input", query);
       url.searchParams.set("sessiontoken", SESSION_TOKEN);
       const response = await fetch(url.toString());
@@ -79,7 +92,10 @@ export function PlacesAutocompleteInput({
     } finally {
       setLoading(false);
     }
-  }, []);
+    // `endpoint` MUST stay in here: without it this callback closes over whichever route was
+    // passed on first render, so a component that switches source keeps querying the old one —
+    // which, between the admin and filer routes, means silent 403s and an empty dropdown.
+  }, [endpoint]);
 
   function handleChange(event: React.ChangeEvent<HTMLInputElement>) {
     const query = event.target.value;

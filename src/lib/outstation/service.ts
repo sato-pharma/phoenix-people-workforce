@@ -3017,9 +3017,14 @@ export async function submitMedicalRepSimpleExpenseRequest(
         ...workloadPayload,
         meeting_amount: 0,
         other_amount: 0,
+        // `to_area` and `to_city` stay null: resolving them needs a SECOND Google call (place
+        // details), and this path measures no distance, so a governorate would buy nothing but
+        // another billable lookup and another failure mode. The place id is what makes the
+        // destination identifiable later; the label is what a human reads.
         to_area: null,
         to_city: null,
         to_label: normalized.toLocation,
+        to_place_id: normalized.toPlaceId,
         transportation_type: "other",
         trip_end_date: normalized.tripEndDate,
         trip_start_date: normalized.tripStartDate,

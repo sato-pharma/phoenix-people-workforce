@@ -13,6 +13,15 @@ export type MedicalRepSimpleExpenseInput = {
   pmWorkload?: number;
   returnTicketAmount: number;
   toLocation: string;
+  /**
+   * The Google place id behind `toLocation`, when the rep chose a suggestion rather than typing.
+   *
+   * OPTIONAL, and it must stay optional. This path's whole character is that it refuses nothing:
+   * it files a ticket amount with an attachment and sends the row to a human. Making a place id
+   * mandatory would reject a real claim because a lookup was slow or the key was down — the same
+   * shape of failure as the Maps outage that silently blanked residences in August.
+   */
+  toPlaceId?: string | null;
   tripEndDate: string;
   tripStartDate: string;
 };
@@ -24,6 +33,8 @@ export type NormalizedMedicalRepSimpleExpenseInput = {
   returnTicketAmount: number;
   ticketAmount: number;
   toLocation: string;
+  /** Null when nothing was chosen — never an empty string, so the column reads as absent. */
+  toPlaceId: string | null;
   tripEndDate: string;
   tripStartDate: string;
 };
@@ -96,6 +107,9 @@ export function validateMedicalRepSimpleExpenseInput(
     returnTicketAmount,
     ticketAmount,
     toLocation,
+    // Normalised to null rather than "" so `to_place_id` reads as absent in the database and in
+    // every `is null` query, instead of as a present-but-empty value that looks chosen.
+    toPlaceId: text(input.toPlaceId) || null,
     tripEndDate,
     tripStartDate,
   };

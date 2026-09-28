@@ -73,6 +73,9 @@ export async function POST(request: Request) {
       pmWorkload: Number(formText(formData, "pmWorkload") || "0"),
       returnTicketAmount: Number(formText(formData, "returnTicketAmount")),
       toLocation: formText(formData, "toLocation"),
+      // Empty when the rep typed without choosing a suggestion, or when an older client posts.
+      // Optional on purpose: a submission must never be refused for want of a place id.
+      toPlaceId: formText(formData, "toPlaceId") || null,
       tripEndDate: formText(formData, "tripEndDate"),
       tripStartDate: formText(formData, "tripStartDate"),
     });
