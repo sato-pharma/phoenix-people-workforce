@@ -3093,6 +3093,54 @@ visit's server-issued `captured_at`. A DRAFT plan and a RETURNED plan are both s
 neither is authority — deliberately narrower than `phoenix_crm_report_plan_vs_actual`'s `sent_days`,
 where the day is already past and a returned plan was genuinely sent.
 
+## The Business Review reads live — owner ruling, 2026-09-28
+
+The Monthly Closing is the one source of truth for every sales and target figure, and every surface
+must equal the **published** closing for that person and month. The Business Review pack is the
+third carve-out from that rule, after Weekly Sales and Marketing ROI. It reads the **live** closing
+engine — `au.f_monthly_achievement` — and not `phx_closing_publication_snapshot`.
+
+### What was put to him
+
+A run of Sales Review packs went out on the live engine. Before the last of them, the divergence was
+measured on production (`ozucdzovmcqvepbozvqf`, read-only) and put to him in plain figures:
+
+| Line · period | Drifted cells | Net effect | What it is |
+| --- | --- | --- | --- |
+| Pedia 2026-08 | 8 | **+191,226.30** (+1,402 units) | every one a DIRECT ORDER absent from the published snapshot |
+| CNS 2026-07 | 309 | 0.00 | value moved BETWEEN areas |
+| CNS 2026-08 | 283 | 0.00 | same — up to **±11,877** on a single area, nil on the line |
+| Anti-Infective, Pedia 2026-07 | 0 | — | clean |
+
+He was asked which basis the packs should use and answered: **"use the live one"**.
+
+### Why both sides are correct, which is the part that matters
+
+Neither number is wrong, and that is exactly why this needed a ruling rather than a fix.
+
+- **The published snapshot is right about what was announced.** A published and announced month is
+  never corrected, however justified the repair. That rule is not weakened by this one.
+- **The live engine is right about what happened.** A direct order counts in the month Finance books
+  it, and Finance booked those eight cells after August was published. The engine is also
+  period-aware: it resolves an area's region through `au.f_line_area_map_asof(period_end)`, so a
+  later territory move re-reads history correctly rather than freezing a stale geography.
+
+A pack quoting the snapshot would therefore understate real money that was genuinely sold, and would
+carry a geography the organogram has since corrected. A pack quoting the engine states what
+happened. The owner reads these as a REVIEW — the pack says so on its own cover, "Review, not a
+payout record" — so the live reading is the one that answers the question being asked of it.
+
+### What this does not license
+
+- 🔴 **It does not license republishing a month to make the two agree.** The Pedia gap is real money
+  booked late; the fix is not to restate August.
+- 🔴 **It does not license acknowledging the drift** (`phx_acknowledge_closing_drift`) to silence the
+  status. The drift is information, and the acknowledgement is the owner's decision about a month.
+- 🔴 **It does not spread to payout surfaces.** Incentive achievement, payroll and anything that pays
+  somebody still read the published closing. The carve-out is the Business Review pack alone.
+- It is not a fourth carve-out waiting to happen. A surface that wants one needs his word, as this
+  one got.
+
 ## `AGENTS.md` §4 Standing owner rules — as it stood before the 2026-09-12 condensation
 
 On 2026-09-12 `AGENTS.md` was cut to roughly half its size at the owner's request ("Load less of AGENTS.md"): every hook was reduced to its rule plus the one detail needed to obey it. This is that section's hook text **verbatim** from `origin/main` 3eea44aef, kept so that no measurement, date, count or diagnosis a condensed hook dropped is lost. Search it for the hook's wording. The accounts earlier in this file remain the fuller record.
