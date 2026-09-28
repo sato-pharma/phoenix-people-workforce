@@ -255,6 +255,7 @@ function buildEmployeePortalSections({
   showBusinessReviewTab = false,
   showDoubleVisitAnalyticsTab = false,
   showDoubleVisitReportTab = false,
+  showFieldActivityTab = false,
   showEarlyBirdsTab = false,
   showCoachingAnalyticsTab = false,
   showActionsTab = false,
@@ -419,6 +420,13 @@ function buildEmployeePortalSections({
         ...(showDoubleVisitAnalyticsTab ? [{ href: "/employee-portals/double-visit-analytics", label: "Double-Visit Analytics", icon: Activity }] : []),
         ...(showDoubleVisitReportTab ? [{ href: "/employee-portals/dv-planner", label: "DV Planner", icon: CalendarCheck2 }] : []),
         ...(showDoubleVisitReportTab ? [{ href: "/employee-portals/double-visit-report", label: "Double Visit Report", icon: FileSpreadsheet }] : []),
+        // Field Activity sits under the DV rows because it answers the next question about the same
+        // day: those boards are how many and with whom, this one is one person's day end to end —
+        // his stops, their GPS, the outstation claim against them. THE HREF IS THE PORTAL ONE. Its
+        // first shipped catalog row pointed at /admin/field-activity, which the (admin) layout
+        // bounces every portal-mode viewer away from, so this row is what actually makes the module
+        // reachable for the five field seats that hold it.
+        ...(showFieldActivityTab ? [{ href: "/employee-portals/field-activity", label: "Field Activity", icon: MapPinned }] : []),
         ...(showCoachingAnalyticsTab ? [{ href: "/employee-portals/coaching-analytics", label: "Coaching Analytics", icon: ChartColumnBig }] : []),
         ...(showTeamCalendarTab ? [{ href: "/employee-portals/team-calendar", label: "Team Calendar", icon: CalendarRange }] : []),
       ],

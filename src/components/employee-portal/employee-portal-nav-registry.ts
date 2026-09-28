@@ -179,6 +179,7 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   { label: "Double Visit", fullLabel: "Double-Visit Analytics", href: "/employee-portals/double-visit-analytics", icon: Activity, flags: ["showDoubleVisitAnalyticsTab"], permission: { resource: "double_visit_analytics", action: "read" } },
   { label: "DV Planner", fullLabel: "DV Planner", href: "/employee-portals/dv-planner", icon: CalendarCheck2, flags: ["showDoubleVisitReportTab"], permission: { resource: "double_visit_analytics", action: "read" } },
   { label: "DV Report", fullLabel: "Double Visit Report", href: "/employee-portals/double-visit-report", icon: FileSpreadsheet, flags: ["showDoubleVisitReportTab"], permission: { resource: "double_visit_analytics", action: "read" } },
+  { label: "Field Day", fullLabel: "Field Activity", href: "/employee-portals/field-activity", icon: MapPinned, flags: ["showFieldActivityTab"], permission: { resource: "double_visit_analytics", action: "read" } },
   // Training Manager
   { label: "Overview", fullLabel: "TM Overview", href: "/employee-portals/training-manager", icon: Home, flags: ["showTrainingManagerDashboardTab"] },
   { label: "TM coach", fullLabel: "Coaching Dashboard", href: "/employee-portals/training-manager/coaching", icon: ChartColumnBig, flags: ["showTrainingManagerDashboardTab"], permission: { resource: "coaching", action: "read" } },

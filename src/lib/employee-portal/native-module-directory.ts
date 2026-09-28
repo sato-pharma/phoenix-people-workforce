@@ -112,6 +112,7 @@ const MODULE_PLACEMENT: Readonly<Record<string, { icon: string; section: NativeM
   "/employee-portals/double-visit-analytics": { icon: "git-compare-outline", section: "Field Activity" },
   "/employee-portals/dv-planner": { icon: "duplicate-outline", section: "Field Activity" },
   "/employee-portals/double-visit-report": { icon: "document-attach-outline", section: "Field Activity" },
+  "/employee-portals/field-activity": { icon: "map-outline", section: "Field Activity" },
   "/employee-portals/coaching-analytics": { icon: "podium-outline", section: "Field Activity" },
   "/employee-portals/team-calendar": { icon: "people-circle-outline", section: "Field Activity" },
   // ── Marketing & ROI ───────────────────────────────────────────────────────────────────────────

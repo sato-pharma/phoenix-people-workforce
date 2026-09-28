@@ -16,6 +16,9 @@ import {
 import { bidi, clock12, tidyAddress } from "../src/lib/field-activity/document.ts";
 import { defaultPeriod, resolvePeriod, MAX_PERIOD_DAYS } from "../src/lib/field-activity/period.ts";
 import { FIELD_ACTIVITY_ROLES, isFieldActivityRole } from "../src/lib/field-activity/access.ts";
+import { getNavigationSections } from "../src/config/system-navigation.ts";
+import { isPortalShellRole } from "../src/lib/auth/portal-shell-roles.ts";
+import { resolvePortalTwin } from "../src/lib/navigation/portal-twins.ts";
 import { fitZoom, renderRouteSvg } from "../src/lib/field-activity/map.ts";
 
 const SUBJECT: FieldActivitySubject = {
@@ -328,6 +331,69 @@ export function runFieldActivityReportTests() {
     assert.ok(svg.includes("<rect"), "and the markers are SQUARE — the house rule has no round corners");
     assert.ok(!svg.includes("<circle cx") || svg.includes("leader"), "a circle appears only as a leader-line anchor");
     assert.ok(svg.includes("Street basemap unavailable"), "without a maps key the sheet says so rather than pretending");
+  }
+
+  // ── EVERY ROLE IT NAMES CAN ACTUALLY REACH IT ────────────────────────────────────────────────
+  //
+  // 🔴 THE DEFECT THIS EXISTS FOR. The module shipped with ONE page, under /admin/, and its only
+  // catalog row in the PORTAL seeds pointing at that /admin/ address. `app/(admin)/layout.tsx`
+  // redirects every portal-mode viewer out of the admin route group before any page in it runs, so
+  // five of the module's eight roles — District Manager, Regional Manager, National Sales Manager,
+  // Product Manager, Group Product Manager — could neither see the row nor reach the page by typing
+  // the address. Every unit test passed, the API was correct, the gate was correct, and the module
+  // was invisible to the people it was built for. The owner found it: "I CANNOT SEE IT IN NSM
+  // SIDEBAR?".
+  //
+  // A permission is not reach. This asserts reach, per role, from the real catalogs.
+  {
+    const rows = (mode: "admin" | "employee-portal") =>
+      getNavigationSections(mode)
+        .flatMap((section) => section.items)
+        .filter((item) => item.label === "Field Activity");
+
+    for (const role of FIELD_ACTIVITY_ROLES) {
+      const portalSeat = isPortalShellRole(role);
+      const mode = portalSeat ? "employee-portal" : "admin";
+      const offered = rows(mode).filter(
+        (item) => (!item.roles || item.roles.includes(role)) && !(item.excludedRoles ?? []).includes(role),
+      );
+      assert.equal(
+        offered.length >= 1,
+        true,
+        `${role} holds Field Activity but is offered no row in the ${mode} catalog — a grant with no way in is what shipped in #4647`,
+      );
+      // The half that actually bit: the shell of the href must match the shell the role renders.
+      for (const item of offered) {
+        assert.equal(
+          item.href.startsWith(portalSeat ? "/employee-portals/" : "/admin/"),
+          true,
+          `${role} renders the ${mode} shell, so its Field Activity row must not point at ${item.href} — the (admin) layout redirects a portal seat away from /admin/** before the page runs`,
+        );
+      }
+    }
+
+    // And no row anywhere may hand a portal seat an admin address.
+    for (const item of rows("employee-portal")) {
+      assert.equal(item.href.startsWith("/admin/"), false, "the portal catalog must never carry an /admin/ href for this module");
+    }
+
+    // A viewer who follows an admin link lands on the module, not on the portal home.
+    assert.equal(
+      resolvePortalTwin("/admin/field-activity", "National Sales Manager"),
+      "/employee-portals/field-activity",
+      "an NSM following a link to the admin address must be forwarded to the portal half, not dropped on the portal home",
+    );
+
+    // The portal RAIL is built by hand and reads neither catalog — a row in the seeds alone is
+    // exactly how Early Birds became URL-only. Pin the rail's own row and its flag.
+    const rail = readFileSync("src/components/employee-portal/employee-portal-layout.tsx", "utf8");
+    assert.match(
+      rail,
+      /showFieldActivityTab \? \[\{ href: "\/employee-portals\/field-activity"/,
+      "buildEmployeePortalSections must carry the Field Activity row — the portal sidebar is built here, not from system-navigation.ts",
+    );
+    const flags = readFileSync("src/lib/employee-portal/navigation.ts", "utf8");
+    assert.match(flags, /showFieldActivityTab:/, "the rail's flag must be resolved for the portal roles");
   }
 
   // ── the loader's source contract ─────────────────────────────────────────────────────────────

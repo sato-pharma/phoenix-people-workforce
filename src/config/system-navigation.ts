@@ -1698,7 +1698,18 @@ const employeePortalNavigationSectionSeeds = [
       // Field Activity — one person's field days end to end. The role list is the module's own
       // (src/lib/field-activity/access.ts) and deliberately omits the Medical Rep and the two staff
       // seats that hold the DV board for its counts rather than for a person's day.
-      { href: "/admin/field-activity", icon: MapPinned, label: "Field Activity", permissions: [{ resource: "double_visit_analytics", action: "read" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "SFE Manager"] },
+      //
+      // 🔴 THE HREF IS THE PORTAL ONE, and SFE Manager is NOT in this row. Both were wrong when the
+      // module shipped: an /admin/ href in the PORTAL catalog, listing a role that never renders
+      // this catalog at all. `app/(admin)/layout.tsx` bounces every portal-mode viewer out of
+      // /admin/**, so the row led its five field seats nowhere. SFE Manager, Super Admin and CEO are
+      // admin-mode and have their own row in adminNavigationSectionSeeds.
+      //
+      // This catalog drives the command palette and Modules Control. It does NOT drive the portal
+      // rail — that is built by hand in buildEmployeePortalSections, off showFieldActivityTab. A row
+      // here alone is exactly how Early Birds became URL-only; both halves move together or the
+      // module is invisible again.
+      { href: "/employee-portals/field-activity", icon: MapPinned, label: "Field Activity", permissions: [{ resource: "double_visit_analytics", action: "read" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager"] },
       { href: "/employee-portals/coaching-analytics", icon: ChartColumnBig, label: "Coaching Analytics", permissions: [{ resource: "coaching" }], roles: ["Product Manager", "Group Product Manager", "Marketing Manager"] },
     ],
     label: "Coaching",
@@ -3993,6 +4004,23 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     permissions: [{ resource: "hr_calendar" }],
   },
   {
+    // Field Activity, the ADMIN half. The other five roles in FIELD_ACTIVITY_ROLES are PORTAL
+    // seats and reach /employee-portals/field-activity instead — the (admin) layout bounces them
+    // out of this shell before any page in it runs, which is how the module shipped invisible to
+    // them in #4647.
+    //
+    // 🔴 A CARD ON THIS HUB, NOT A ROW IN A SEED SECTION. `promoteHubRows` replaces a hub door with
+    // its bands and keeps the section id, so a plain row left beside one ends up in a section whose
+    // id the promoted band ALSO uses — and `groupAdminSections` keys its map by id, so one of the
+    // two is silently overwritten and its rows stop being drawn. Both `crm` and `field-coaching`
+    // behave this way; tests/sidebar-domains caught each attempt as "197 rows in, 196 out".
+    href: "/admin/field-activity",
+    icon: MapPinned,
+    label: "Field Activity",
+    description: "One person's field days end to end: every stop, its GPS, the door clock against the log clock, and the outstation claim behind them.",
+    permissions: [{ resource: "double_visit_analytics", action: "read" }],
+  },
+  {
     href: "/admin/crm-integrity",
     icon: MapPinned,
     label: "CRM Integrity",
@@ -4713,6 +4741,7 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
           "/admin/double-visit-data-integrity",
           "/admin/brick-coverage",
           "/admin/field-workforce-compliance",
+          "/admin/field-activity",
           "/admin/phoenix-crm/integrity",
         ],
       },

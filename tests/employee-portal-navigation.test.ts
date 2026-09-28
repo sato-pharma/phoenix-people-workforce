@@ -590,6 +590,11 @@ export function runEmployeePortalNavigationTests() {
   // - Incentive stays hidden from Marketing Manager per portal policy
   // - Attendance Analytics is visible for team attendance oversight
   // - Double Visit Report is hidden: MM is NOT in DV_FOCUS_ROLES, so its page would reject MM
+  // - Field Activity is hidden for the SAME reason, one module along: MM is not in
+  //   FIELD_ACTIVITY_ROLES, which deliberately holds the seats that read one PERSON'S day rather
+  //   than the seats that read the DV board for its counts. resolveFieldActivityAccess would
+  //   refuse her, so a row here would be a link to a page that bounces her — which is precisely
+  //   the defect #4686 exists to fix, and it must not be reintroduced from the other direction.
   // - Direct Orders submit/report are hidden: MM is NOT in DIRECT_ORDER_REQUESTER_ROLES,
   //   so the module's own server-side gate would reject an MM submission anyway
   // - All Marketing Requests is VISIBLE to MM but not GPM: the company-wide request register is
@@ -607,11 +612,12 @@ export function runEmployeePortalNavigationTests() {
       showIncentiveTab: groupProductManagerDefault.showIncentiveTab,
       showFingerprintReportTab: groupProductManagerDefault.showFingerprintReportTab,
       showDoubleVisitReportTab: groupProductManagerDefault.showDoubleVisitReportTab,
+      showFieldActivityTab: groupProductManagerDefault.showFieldActivityTab,
       showDirectOrdersTab: groupProductManagerDefault.showDirectOrdersTab,
       showMarketingAllRequestsTab: groupProductManagerDefault.showMarketingAllRequestsTab,
     },
     groupProductManagerDefault,
-    "Marketing Manager sidebar visibility must mimic Group Product Manager (apart from the hidden Incentive tab, the Attendance Analytics tab, the Double Visit Report tab, Direct Orders submit/report, and the company-wide All Marketing Requests register)",
+    "Marketing Manager sidebar visibility must mimic Group Product Manager (apart from the hidden Incentive tab, the Attendance Analytics tab, the Double Visit Report and Field Activity tabs, Direct Orders submit/report, and the company-wide All Marketing Requests register)",
   );
   assert.equal(marketingManagerDefault.showMarketingAllRequestsTab, true, "Marketing Manager sees the company-wide request register");
   assert.equal(groupProductManagerDefault.showMarketingAllRequestsTab, false, "Group Product Manager stays scoped to its own subtree — no company-wide register");
