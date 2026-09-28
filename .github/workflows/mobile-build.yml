@@ -18,6 +18,15 @@
 # a store .aab instead, which is NOT directly installable; pick it only for a Play
 # Store submission.
 #
+# 🔴 AND `mdm`, WHICH IS THE ONLY PROFILE THAT REACHES A COMPANY TABLET. The rep tablets
+# are enrolled in the company's own Headwind MDM, which installs an APK it hosts at a
+# `/files/` URL and links to a configuration — it has no connection to managed Google
+# Play. Measured 2026-09-28: the enterprise `enterprises/LC017auv4o` had ZERO devices on
+# it, so a `production` .aab can never reach PHX-TAB-0002 however cleanly it publishes.
+# The artifact Headwind can serve is the `mdm` APK (arm64-only, channel `production`),
+# and it was missing from this list — which is why the only one ever built was three
+# days stale while four store builds shipped. Never read a store build as fleet cover.
+#
 # FAIL-SAFE: like Mobile OTA, every real step is gated on the EXPO_TOKEN secret being
 # present, so a run without the token no-ops with a clear message instead of failing.
 name: Mobile build
@@ -26,12 +35,13 @@ on:
   workflow_dispatch:
     inputs:
       profile:
-        description: "EAS build profile (preview = installable APK, production = store AAB)"
+        description: "EAS build profile (preview = installable APK, production = store AAB, mdm = APK for the Headwind fleet)"
         type: choice
         default: preview
         options:
           - preview
           - production
+          - mdm
 
 # Node version matches the mobile job in ci.yml and Mobile OTA. Keep them in step.
 env:
@@ -84,7 +94,7 @@ jobs:
       # `eas build` waits for the EAS build to finish, then --json prints the build
       # record (including the downloadable artifact URL) to stdout. The profile comes
       # from the dispatch input through an env var, never inlined, so it cannot inject
-      # shell; it is also constrained to the two choices above.
+      # shell; it is also constrained to the three choices above.
       - name: Build on EAS
         if: steps.guard.outputs.present == 'true'
         working-directory: mobile
