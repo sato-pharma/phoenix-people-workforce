@@ -229,6 +229,32 @@ export async function listEverPublishedClosingKeys(): Promise<Set<string>> {
   return keys;
 }
 
+/**
+ * The first period the board may call outstanding work. Owner's decision, 2026-09-28.
+ *
+ * 🔴 PUBLICATION BEGINS AT 2026-07, AND EVERYTHING BEFORE IT IS A DIFFERENT REGIME. Measured on
+ * production that day: `monthly_closing_publications` holds rows for 2026-07 and 2026-08 only, all
+ * three lines, none withdrawn. January to June have no publication row at all — they carry
+ * validated import batches, so they arrived here as six permanently outstanding months and sat at
+ * the top of the board, the oldest 240 days old, crowding out the rows that genuinely need him.
+ *
+ * They are not a backlog. The pre-July months are reconciled per customer × product and revalued at
+ * the CURRENT price with targets backfilled — a separate exercise from the monthly closing this
+ * board is asking about, and one that was never going to end in a publish.
+ *
+ * 🔴 A FIXED DATE, NEVER "THE EARLIEST PUBLISHED PERIOD". Deriving the floor from the data is the
+ * obvious-looking improvement and it is wrong: withdrawing July would move the floor and bring all
+ * six months back, so the board's contents would depend on an unrelated visibility toggle. Every
+ * dated rule in this repository works the same way — the August/Delta (3) and Upper Egypt splits
+ * each turn on a fixed date precisely so that later edits cannot reach backwards. The date is the
+ * mechanism.
+ *
+ * It bounds ONLY what the Needs You board lists. It is not a closing rule: nothing here publishes,
+ * unpublishes, locks, or changes a single sales or target figure, and `listMonthlyClosingPeriods`
+ * still returns every period with data for every other caller.
+ */
+export const NEEDS_YOU_CLOSING_FLOOR_PERIOD = "2026-07";
+
 /** One month that is finished but is not fully published. Reported per PERIOD, never per line. */
 export type UnpublishedClosingPeriod = {
   period: string;
@@ -263,6 +289,11 @@ export function selectUnpublishedClosings(input: {
   const out: UnpublishedClosingPeriod[] = [];
 
   for (const period of [...new Set(input.periodsWithData)].sort((a, b) => b.localeCompare(a))) {
+    // Below the floor is a different exercise, not a backlog — see NEEDS_YOU_CLOSING_FLOOR_PERIOD.
+    // `YYYY-MM` compares correctly as a string, which is why the periods above sort with
+    // `localeCompare` rather than a date parse.
+    if (period < NEEDS_YOU_CLOSING_FLOOR_PERIOD) continue;
+
     // A month that has not finished has no closing at all, so it is not outstanding work. This is
     // also what keeps the RUNNING month off the board, and it resolves in Cairo — a UTC reading
     // would put the new month on the board three hours early on the 1st.

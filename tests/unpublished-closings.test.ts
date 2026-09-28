@@ -3,7 +3,11 @@ import { readFileSync } from "node:fs";
 
 // The real selector, driven directly — it is pure precisely so this test needs no clock and no
 // database. Same split, same reason, as scripts/branch-pr-state.mjs and scripts/needs-you.mjs.
-import { normalizeClosingLine, selectUnpublishedClosings } from "../src/lib/sales/monthly-closing-publication.ts";
+import {
+  NEEDS_YOU_CLOSING_FLOOR_PERIOD,
+  normalizeClosingLine,
+  selectUnpublishedClosings,
+} from "../src/lib/sales/monthly-closing-publication.ts";
 
 /**
  * Which finished months are not fully published — and, far more importantly, which months must
@@ -142,13 +146,55 @@ export function runUnpublishedClosingsTests() {
   );
 
   // Newest month first — the board reads top-down and the freshest decision is the live one.
+  // Every period here sits at or above the floor; the floor's own cases are section 5b.
   const ordered = selectUnpublishedClosings({
     lines: ["CNS"],
-    periodsWithData: ["2026-06", "2026-08", "2026-07"],
+    periodsWithData: ["2026-07", "2026-09", "2026-08"],
     everPublished: new Set(),
-    now: NOW,
+    now: new Date("2026-10-15T09:00:00Z"),
   });
-  assert.deepEqual(ordered.map((row) => row.period), ["2026-08", "2026-07", "2026-06"]);
+  assert.deepEqual(ordered.map((row) => row.period), ["2026-09", "2026-08", "2026-07"]);
+
+  // ── 5b. Below the floor is a different exercise, not a backlog ──────────────
+  //
+  // 🔴 Owner's decision, 2026-09-28, taken from the board's first real run. January to June 2026
+  // carry validated import batches but have NO publication row at all, so they arrived as six
+  // permanently outstanding months — the oldest 240 days — sitting above every row that genuinely
+  // needed him. They are reconciled per customer × product and revalued at the CURRENT price; that
+  // exercise was never going to end in a publish.
+  const belowFloor = selectUnpublishedClosings({
+    lines: LINES,
+    periodsWithData: ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06"],
+    everPublished: new Set(),
+    now: new Date("2026-10-15T09:00:00Z"),
+  });
+  assert.deepEqual(
+    belowFloor,
+    [],
+    "no period before the floor may be called outstanding work. Six never-publishable months at the " +
+      "top of the board is how a board that is technically correct becomes one nobody reads.",
+  );
+
+  const straddling = selectUnpublishedClosings({
+    lines: ["CNS"],
+    periodsWithData: ["2026-05", "2026-06", "2026-07", "2026-08"],
+    everPublished: new Set(),
+    now: new Date("2026-10-15T09:00:00Z"),
+  });
+  assert.deepEqual(
+    straddling.map((row) => row.period),
+    ["2026-08", "2026-07"],
+    "the floor includes itself and excludes everything below it",
+  );
+
+  assert.equal(
+    NEEDS_YOU_CLOSING_FLOOR_PERIOD,
+    "2026-07",
+    "the floor is a FIXED date, and that is the mechanism. Deriving it from the earliest published " +
+      "period is the obvious-looking improvement and is wrong: withdrawing July would move the floor " +
+      "and bring all six pre-July months back, so the board's contents would depend on an unrelated " +
+      "visibility toggle. Every dated rule in this repository works this way, for this reason.",
+  );
 
   // ── 6. The two source rules that cannot be driven ───────────────────────────
   const source = readFileSync("src/lib/sales/monthly-closing-publication.ts", "utf8");
