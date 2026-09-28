@@ -307,17 +307,42 @@ function filterLabel(
     const area = territories.find((t) => t.areaCode === applied.areaCodes[0]);
     return `${lineBit} · ${area?.area ?? applied.areaCodes[0]}`;
   }
-  if (applied.areaCodes.length > 1) return `${lineBit} · ${applied.areaCodes.length} areas`;
+  if (applied.areaCodes.length > 1) {
+    const names = applied.areaCodes.map(
+      (code) => territories.find((t) => t.areaCode === code)?.area ?? code,
+    );
+    return `${lineBit} · ${nameList(names, "areas")}`;
+  }
   if (applied.dmSeatId) {
     const district = territories.find((t) => t.dmSeatId === applied.dmSeatId);
     return `${lineBit} · ${district?.dm ?? "District"}`;
   }
   if (applied.regions.length === 1) return `${lineBit} · ${applied.regions[0]} region`;
-  if (applied.regions.length > 1) return `${lineBit} · ${applied.regions.length} regions`;
+  if (applied.regions.length > 1) return `${lineBit} · ${nameList(applied.regions, "regions")}`;
   if (applied.line || scope.kind === "line") return `${lineBit} line`;
   if (scope.kind === "seats") return scope.label;
   if (scope.kind === "rep") return scope.label;
   return "All company";
+}
+
+/**
+ * Several things, NAMED — not counted.
+ *
+ * 🔴 "3 regions" told a reader nothing, and it is what the pack put on its cover AND in its own
+ * FILE NAME: `Sales Review — All lines · 3 regions Jul – Aug 2026.pdf` says less than a code would,
+ * and the owner's standing rule is human names in files exactly as on screen. So the names are
+ * spelled out while they fit, and beyond that the first two are named and the rest counted — never
+ * a bare number, and never an ellipsis.
+ *
+ * The 58-character ceiling is what keeps a twelve-area selection from producing a file name no
+ * operating system will show whole.
+ */
+const NAME_LIST_CHARS = 58;
+function nameList(names: readonly string[], noun: string): string {
+  const all = names.join(" · ");
+  if (all.length <= NAME_LIST_CHARS) return all;
+  const shown = names.slice(0, 2).join(" · ");
+  return `${shown} and ${names.length - 2} more ${noun}`;
 }
 
 /** The line's human name. Names, never codes — the owner's standing rule, in files as on screen. */

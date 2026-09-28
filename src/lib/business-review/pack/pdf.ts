@@ -35,6 +35,7 @@ import { join } from "node:path";
 import { escapeHtml } from "@/lib/hiring-pack/render-shared";
 import { withChromiumPage } from "@/lib/pdf/chromium";
 
+import { splitLeaverLabel } from "../employment-status";
 import type { PackCell, PackChart, PackSection, SalesReviewPack } from "./model";
 
 // ── Palette — the same values the Spotlight sheet uses ──────────────────────────────────────────
@@ -52,6 +53,10 @@ const C = {
   ink: "#111820",
   wash: "#EEF3F7",
   rule: "#D7DFE7",
+  // The ONE non-blue ink in this document, and it marks exactly one thing: the person named beside
+  // it has left the company (owner, 2026-09-28 — "make the left red colored"). Text colour only,
+  // never a fill, so the INK RULE is untouched.
+  danger: "#B91C1C",
 } as const;
 
 /**
@@ -81,14 +86,24 @@ const HEADER_LINE_PX = 12.0; // each wrapped header line (6.6pt caps, tighter th
 const CUT_NOTE_PX = 28.0; // the "N more rows are in the Excel version" line
 const CELL_PAD_PX = 16.6; // 2.2mm of padding either side
 /**
- * A glyph at 8.6pt — 0.6 em, not the 0.5 em an average suggests.
+ * A glyph at 8.6pt — 0.66 em. 🔴 THE ADVANCE IS LETTER-DEPENDENT, AND THIS COVERS THE WIDEST NAME,
+ * NOT AN AVERAGE. Averaging is how this has now been wrong twice.
  *
- * 🔴 Measured, and the same correction the chart labels already needed: the real advances across
- * these names run 0.496–0.598 em. At 0.5 a 31-character district-manager name was predicted to fit
- * a 34.8-character column, wrapped anyway, and the Cairo region pack's third page finished 3.8px
- * past its footer. The estimate has to cover the WORST case, not the average one.
+ * Measured in Chromium against real district-manager names in a 199.6px column:
+ *
+ *   "Weaam Mahmoud Mohamed Mahmoud"             29 chars  215.8px  0.649 em   WRAPS
+ *   "Yehya Mohamed Kamal eldeen Saad Mohamed"   39 chars  253.1px  0.566 em   wraps
+ *   "Nosiba Salah Hassanin Moussa"              28 chars  167.0px  0.520 em   one line
+ *
+ * A name full of M and W runs a quarter wider per character than one without, so "Weaam…" at
+ * exactly 29 characters overflowed a 29-character column and took the Upper Egypt pack's fourth
+ * page 52px past its footer — while a LONGER name on that same page fitted. 0.5 em missed it by a
+ * page, 0.6 em by a row; 0.66 covers the widest observed.
+ *
+ * Over-estimating costs at most a row on a page. Under-estimating deletes rows from the file with
+ * nothing on the page to say so, which is why this errs high deliberately.
  */
-const CHAR_PX = 6.88;
+const CHAR_PX = 7.57;
 const CHART_MARGIN_PX = 15.7; // .chart's own margin-top
 const CHART_CAP_PX = 26.0; // the note under a chart that plots fewer than the table holds
 /**
@@ -223,6 +238,20 @@ const BRACKET_SVG = `<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"
 const cellText = (value: PackCell): string =>
   value == null ? "—" : typeof value === "number" ? value.toLocaleString("en-US") : String(value);
 
+/**
+ * A cell, with a leaver's "(left …)" mark set in red — the owner's instruction, 2026-09-28.
+ *
+ * The NAME keeps the table's own ink; only the mark is coloured, so a reader's eye lands on the
+ * fact that the person has gone without the row shouting. Text colour only — no fill, so the house
+ * INK RULE is untouched.
+ */
+function cellHtml(value: PackCell): string {
+  const text = cellText(value);
+  const parts = splitLeaverLabel(text);
+  if (!parts) return escapeHtml(text);
+  return `${escapeHtml(parts.name)}<span class="left">${escapeHtml(parts.mark)}</span>`;
+}
+
 /** Column widths as percentages — names get the room, figures do not. Matches the deck's rule. */
 function colgroup(section: PackSection): string {
   const weights = section.align.map((a) => (a === "left" ? 2.4 : 1));
@@ -247,7 +276,7 @@ function sectionTable(section: PackSection, rows: readonly PackCell[][]): string
             const cls = `${align}${section.align[i] === "right" ? " fig" : ""}`;
             // `dir="auto"` so an Arabic name gets RTL bidi ordering while a figure or a Latin name
             // stays LTR — the alignment class still fixes which edge the column sits against.
-            return `<td class="${cls}" dir="auto">${escapeHtml(cellText(row[i] ?? null))}</td>`;
+            return `<td class="${cls}" dir="auto">${cellHtml(row[i] ?? null)}</td>`;
           })
           .join("");
         return `<tr class="${r % 2 === 1 ? "zebra" : ""}">${cells}</tr>`;
@@ -460,6 +489,7 @@ const CSS = `
   :root {
     --deep:${C.deep}; --blue:${C.blue}; --light:${C.light}; --tint:${C.tint}; --hair:${C.hair};
     --muted:${C.muted}; --body:${C.body}; --crest:${C.crest}; --ink:${C.ink}; --wash:${C.wash}; --rule:${C.rule};
+    --danger:${C.danger};
     /* Arabic falls to Amiri Quran (embedded) then Noto Naskh, so a brick or customer name shapes and
        joins on any Chromium — a Latin face earlier in each list has no Arabic glyphs, so per-glyph
        fallback reaches the Arabic face for exactly the characters that need it. */
@@ -536,6 +566,8 @@ const CSS = `
     text-transform:uppercase; color:var(--muted); vertical-align:middle; margin-left:3mm; }
   .note { margin-top:calc(var(--u)*.7); max-width:240mm; font-size:7.8pt; font-style:italic; color:var(--muted); line-height:1.5; }
   .cut { margin-top:calc(var(--u)*.6); font-size:7.2pt; font-style:italic; color:var(--muted); }
+  /* A leaver's mark. The one red in the document, and text only — never a fill. */
+  .left { color:var(--danger); font-weight:700; white-space:nowrap; }
 
   /* the chart — vector, flat, no rounding and no shadow, like everything else on the sheet */
   .chart { margin-top:calc(var(--u)*1.3); }

@@ -30,9 +30,16 @@ export function runBusinessReviewResignedVacancyTests() {
   // ── 2. a resigned OCCUPANT reads the seat vacant, in canonical, for BOTH area and DM ──────────
   {
     const src = stripComments(readFileSync(CANONICAL, "utf8"));
-    assert.ok(
-      src.includes('import { isResignedStatus } from "./employment-status"'),
+    // The named list grew when the pack gained `leaverLabel`; what this pins is that canonical reads
+    // the shared authority rather than carrying its own copy of the pattern.
+    assert.match(
+      src,
+      /import \{[^}]*isResignedStatus[^}]*\} from "\.\/employment-status"/,
       `${CANONICAL}: must use the one leaver authority, not a private regex.`,
+    );
+    assert.ok(
+      !/\/resign\|terminat\|exit\//.test(src),
+      `${CANONICAL}: the leaver pattern itself must live only in employment-status.ts.`,
     );
     // Area vacancy is decided against the last period's occupants and their CURRENT status.
     assert.ok(

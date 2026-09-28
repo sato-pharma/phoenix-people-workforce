@@ -84,7 +84,7 @@ import {
   type ReviewWindow,
 } from "./period";
 import { buildAttributionMap, hrKey, type AttributionMap, type Placement } from "./sources/attribution";
-import { isResignedStatus } from "./employment-status";
+import { isResignedStatus, leaverLabel } from "./employment-status";
 import { MARKETING_ORIGIN, MARKETING_RULE, loadMarketingFacts, type MarketingLoad } from "./sources/marketing";
 import { OUTSTATION_ORIGIN, OUTSTATION_RULE, loadOutstationFacts, type OutstationLoad } from "./sources/outstation";
 import {
@@ -241,6 +241,21 @@ function groupBy<T>(rows: readonly T[], key: (row: T) => string | null): Map<str
 }
 
 /** The value on the LATEST period that carries one — "as of the end of the window". */
+/**
+ * The manager's name as a REVIEW should print it: his own, and if he has left, the day he left.
+ *
+ * 🔴 `latest()` below skips a NULL, so a window whose later month has no occupant still resolves to
+ * the earlier one — which is correct (somebody DID run those sales) and was also how a resigned
+ * district manager came to be printed as the serving one. Measured on production: Pedia's Upper
+ * Egypt carried `dm_hr_id = B-23` through July and NULL through August, because he resigned on
+ * 31 August; the pack named him for the whole window with nothing saying he had gone.
+ */
+function dmDisplayName(ctx: BuildContext, dmHrId: string): string {
+  const name = ctx.names.employee(dmHrId);
+  const entry = ctx.directory.get(hrKey(dmHrId));
+  return isResignedStatus(entry?.employmentStatus) ? leaverLabel(name, entry?.lastWorkingDate) : name;
+}
+
 function latest<T>(rows: readonly AchievementRow[], pick: (row: AchievementRow) => T | null): T | null {
   let bestPeriod = "";
   let best: T | null = null;
@@ -424,7 +439,7 @@ function buildAreas(line: ReviewLine, rows: AchievementRow[], ctx: BuildContext)
         area: isUnattributed ? NO_AREA_NAME : ctx.names.area(lineCode, areaKey),
         areaCode: isUnattributed ? null : areaKey,
         dmSeatId: latest(areaRows, (r) => r.dmSeatId),
-        dm: dmHrId ? ctx.names.employee(dmHrId) : `${region} (vacant)`,
+        dm: dmHrId ? dmDisplayName(ctx, dmHrId) : `${region} (vacant)`,
         region,
         vacant,
         includeOnly: sliceOf(totalRows(includeRows, graded)),
@@ -494,7 +509,7 @@ function buildDms(line: ReviewLine, rows: AchievementRow[], areas: AreaSummary[]
       const activeMonths = overlay.visitsMonths || periods.length;
 
       return {
-        dm: isUnmanaged ? NO_DM_NAME : dmHrId ? ctx.names.employee(dmHrId) : `${region} (vacant)`,
+        dm: isUnmanaged ? NO_DM_NAME : dmHrId ? dmDisplayName(ctx, dmHrId) : `${region} (vacant)`,
         dmSeatId: isUnmanaged ? null : seatKey,
         region,
         vacant: !isUnmanaged && (!dmHrId || dmResigned),

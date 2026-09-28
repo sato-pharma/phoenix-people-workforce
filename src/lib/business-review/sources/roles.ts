@@ -58,6 +58,8 @@ export type ReviewDirectoryEntry = {
   lineId: number | null;
   employmentStatus: string;
   hireDate: string | null;
+  /** His last day. What the pack prints beside a leaver's name, so a document never reads as current. */
+  lastWorkingDate: string | null;
 };
 
 export type ReviewDirectory = Map<string, ReviewDirectoryEntry>;
@@ -100,6 +102,8 @@ export type ReviewPersonRow = {
   jobTitle: string;
   employmentStatus: string;
   hireDate: string | null;
+  /** His last day, so a PACK can mark a leaver's name. The screen reads the status instead (#4609). */
+  lastWorkingDate: string | null;
   fieldVisits: number;
   /** AM · PM · Pharmacies for this person's own field visits. */
   visitSplit: VisitCountSplit;
@@ -183,7 +187,9 @@ export async function loadReviewDirectory(): Promise<ReviewDirectory> {
       () =>
         supabase
           .from("employees")
-          .select("hr_id, full_name, nickname, job_title, line_id, employment_status, hire_date"),
+          .select(
+            "hr_id, full_name, nickname, job_title, line_id, employment_status, hire_date, last_working_date",
+          ),
       "hr_id",
     );
   } catch {
@@ -201,6 +207,7 @@ export async function loadReviewDirectory(): Promise<ReviewDirectory> {
       lineId: row.line_id == null ? null : Number(row.line_id),
       employmentStatus: String(row.employment_status ?? "").trim(),
       hireDate: row.hire_date == null ? null : String(row.hire_date).slice(0, 10),
+      lastWorkingDate: row.last_working_date == null ? null : String(row.last_working_date).slice(0, 10),
     });
   }
   return directory;
@@ -533,6 +540,7 @@ function collect(input: RoleFactsInput, lineCode: string | null): RoleFacts {
       jobTitle: entry?.jobTitle ?? "",
       employmentStatus: entry?.employmentStatus ?? "",
       hireDate: entry?.hireDate ?? null,
+      lastWorkingDate: entry?.lastWorkingDate ?? null,
       fieldVisits: acc.fieldVisits,
       visitSplit: { ...acc.visitSplit },
       regularVisits: acc.regularVisits,

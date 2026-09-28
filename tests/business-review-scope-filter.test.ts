@@ -390,12 +390,14 @@ export function runBusinessReviewScopeFilterTests() {
     assert.deepEqual(codes(twoRegions.territories), ["cns:AX1", "cns:AX2", "cns:CA1", "pedia:AX1"], "the union of both regions");
     assert.equal(twoRegions.level, "district");
     assert.deepEqual([...twoRegions.applied.regions].sort(), ["Alex-BHR", "Cairo"]);
-    assert.equal(twoRegions.label, "All lines · 2 regions");
+    // Named, not counted — see block 14. This read "All lines · 2 regions" until an Upper Egypt pack
+    // arrived whose own file name said "3 regions" and named none of them.
+    assert.equal(twoRegions.label, "All lines · Alex-BHR · Cairo");
     assert.deepEqual(filterParams(twoRegions.applied).region, ["Alex-BHR", "Cairo"], "several regions serialize as repeated params");
 
     const twoAreas = resolveReviewFilter(company, scoped, { area: ["AX2", "CA1"], line: "cns" });
     assert.deepEqual(codes(twoAreas.territories), ["cns:AX2", "cns:CA1"]);
-    assert.equal(twoAreas.label, "CNS · 2 areas");
+    assert.equal(twoAreas.label, "CNS · Alex East · Nasr City", "areas are named too, not counted");
     assert.deepEqual(filterParams(twoAreas.applied).area, ["AX2", "CA1"]);
 
     // 🔴 A LIST CANNOT WIDEN EITHER. A district manager asking for his own area and a foreign one
@@ -430,5 +432,43 @@ export function runBusinessReviewScopeFilterTests() {
       !/loadReviewPortalScope\(\{[^}]*params\./.test(admin),
       "app/(admin)/business-review/page.tsx: no request value may reach loadReviewPortalScope — scope is the session's alone.",
     );
+  }
+
+  // ------------------------------------------------------------------ 14. several regions are NAMED, not counted
+  // 🔴 The label is the document's own cover AND its file name. "All lines · 3 regions" told a reader
+  // nothing — the Upper Egypt pack arrived called `Sales Review — All lines · 3 regions Jul – Aug
+  // 2026.pdf`, which says less than a code would, against the owner's standing rule of human names
+  // in files exactly as on screen. Names while they fit; beyond that the first two named, rest counted.
+  {
+    const territories = territoriesInScope(company, BY_LINE);
+    const filter = resolveReviewFilter(company, territories, {
+      area: null,
+      dm: null,
+      line: null,
+      region: ["Alex-BHR", "Cairo"],
+    });
+    assert.deepEqual(filter.applied.regions, ["Alex-BHR", "Cairo"], "both regions were in scope and applied");
+    assert.ok(
+      filter.label.includes("Alex-BHR") && filter.label.includes("Cairo"),
+      `the label must NAME the regions it applied, not count them — got ${JSON.stringify(filter.label)}`,
+    );
+    assert.ok(!/\b2 regions\b/.test(filter.label), "a bare count is exactly what this replaced");
+    assert.ok(!filter.label.includes("…") && !filter.label.includes("..."), "never an ellipsis — the owner's rule");
+  }
+
+  // ------------------------------------------------------------------ 15. too many to name stays readable
+  // A twelve-region selection cannot be spelled out or the file name becomes unusable. Then the first
+  // two are STILL named and the remainder counted — never a bare number, and never a truncation.
+  {
+    const many = ["Alex-BHR", "Cairo", "Delta 1", "Delta 2", "Giza", "Others", "Upper Egypt"];
+    const byLine: Partial<Record<ReviewLine, AreaSummary[]>> = {
+      cns: many.map((r, i) => area("cns", `X${i}`, `Area ${i}`, `SEAT-${i}`, "A District Manager", r)),
+    };
+    const territories = territoriesInScope(company, byLine);
+    const wide = resolveReviewFilter(company, territories, { area: null, dm: null, line: null, region: many });
+    assert.equal(wide.applied.regions.length, many.length, "all seven were in scope");
+    assert.ok(wide.label.includes("Alex-BHR"), "the first regions are still NAMED");
+    assert.match(wide.label, /and \d+ more regions/, "and the rest counted, after names — never only a number");
+    assert.ok(wide.label.length < 90, `a label this long would break the file name: ${wide.label.length} chars`);
   }
 }

@@ -37,8 +37,10 @@ const person = (name: string, areaCode: string | null, fieldVisits: number) =>
     areaCode,
     customers: 9,
     customersByMonth: { "2026-07": 5, "2026-08": 7 },
+    employmentStatus: "active",
     fieldVisits,
     hrId: name,
+    lastWorkingDate: null,
     name,
     visitSplit: { am: 1, pharmacies: 1, pm: 2 },
   }) as unknown as PackInput["people"][number];
@@ -415,17 +417,21 @@ export function runBusinessReviewPackModelTests() {
     );
   }
 
-  // ------------------------------------------------------------------ 16. the TABLE estimate uses the same real glyph
-  // 🔴 The chart labels were corrected to 0.6 em but the row-height estimate was left at 0.5, so a
-  // 31-character district-manager name was predicted to fit a 34.8-character column, wrapped anyway,
-  // and the Cairo region pack's third page finished 3.8px past its footer. Both estimates read the
-  // same measured advance now, or a multi-line pack silently overruns again.
+  // ------------------------------------------------------------------ 16. the widest name, not the average one
+  // 🔴 THIS ESTIMATE HAS BEEN WRONG TWICE, BOTH TIMES BY AVERAGING. At 0.5 em a 32-character name was
+  // predicted to fit and the Cairo pack's third page finished 3.8px past its footer. At 0.6 em, this
+  // name — 29 characters, and full of M and W, so 0.649 em per glyph where a quieter name of the same
+  // length runs 0.520 — was predicted to fit a 29-character column, wrapped, and took the Upper Egypt
+  // pack's fourth page 52px past its footer while a LONGER name on that same page fitted.
+  //
+  // Over-estimating costs at most a row on a page. Under-estimating deletes rows from the file with
+  // nothing on the page to say so.
   {
     const src = stripComments(readFileSync("src/lib/business-review/pack/pdf.ts", "utf8"));
     assert.match(
       src,
-      /const CHAR_PX = 6\.88/,
-      "pdf.ts: a table cell's glyph estimate must cover the worst advance (0.6 em), like the chart's.",
+      /const CHAR_PX = 7\.57/,
+      "pdf.ts: the glyph estimate must cover the WIDEST name measured (0.649 em), never an average.",
     );
 
     // The real shape that overran: seven columns, a line column, and full four-part manager names.
@@ -435,7 +441,7 @@ export function runBusinessReviewPackModelTests() {
         area: `Cairo East ${i}`,
         areaCode: `CA${i}`,
         customersTotal: 12,
-        dm: "Mina Farouk Nawar Rizkallah Ibra",
+        dm: "Weaam Mahmoud Mohamed Mahmoud",
         lineLabel: "Anti-Infective",
       }) as unknown as PackInput["areas"][number],
     );
@@ -445,8 +451,60 @@ export function runBusinessReviewPackModelTests() {
     assert.ok(
       perPage.every((n) => n <= 10),
       `a page of wrapping seven-column rows holds at most ten — got ${perPage.join(",")}. ` +
-        "At 0.5 em these 32-character manager names are predicted to fit one line and twelve are packed " +
-        "onto a page; at the real 0.6 em they wrap and only eight do.",
+        "This 29-character name measures 215.8px in a 199.6px column, so it WRAPS. At 0.6 em the " +
+        "estimate says it fits and thirteen rows are packed onto a page that holds nine.",
+    );
+  }
+
+  // ------------------------------------------------------------------ 17. a leaver is NAMED and MARKED
+  // 🔴 Owner, 2026-09-28, after reading a pack that presented a resigned district manager as the
+  // serving one: "have resigned and you are still showing his name". Measured on production, Pedia's
+  // Upper Egypt carried dm_hr_id B-23 through July and NULL through August because he left on the
+  // 31st — and `latest()` skips a NULL, so the window resolved to him with nothing saying he had gone.
+  //
+  // He KEEPS his rows: a Jul-Aug review is about Jul-Aug, and 2 district managers and 17 reps in that
+  // window have since resigned. Dropping them would leave their work with nobody who did it. His
+  // ruling was to name him and mark him. The SCREEN's rule stays the opposite (#4609: resigned reads
+  // vacant), because it answers who holds the territory NOW.
+  {
+    const left = {
+      ...person("A Leaver", "CA1", 40),
+      employmentStatus: "resigned",
+      lastWorkingDate: "2026-08-31",
+    } as unknown as PackInput["people"][number];
+    const staying = person("Still Here", "CA1", 20);
+    const pack = buildSalesReviewPack(input({ people: [left, staying], selection: ["rep-rows"] }));
+    const section = pack.sections.find((s) => s.metric === "rep-rows");
+    assert.ok(section);
+    const names = section.rows.map((r) => String(r[0]));
+    assert.ok(
+      names.includes("A Leaver (left 31 Aug 2026)"),
+      `a leaver is named AND marked with his last day — got ${JSON.stringify(names)}`,
+    );
+    assert.ok(names.includes("Still Here"), "somebody still employed is not marked");
+    assert.ok(!names.includes("A Leaver"), "and the bare name must not survive beside the marked one");
+    assert.equal(section.rows.length, 2, "he keeps his row — his visits are not deleted from the window");
+
+    // The chart reads the same names, so a bar cannot disagree with the row under it.
+    assert.ok(
+      (section.chart?.items ?? []).some((i) => i.label === "A Leaver (left 31 Aug 2026)"),
+      "the chart marks him too",
+    );
+
+    // 🔴 THE MARK IS RED, AND ONLY THE MARK (owner, 2026-09-28: "make the left red colored").
+    // The name keeps the table's own ink so the row does not shout; text colour only, never a fill,
+    // so the house INK RULE is untouched. Measured in Chromium: rgb(185, 28, 28) on 15 marks.
+    const html = packDocumentHtml(pack);
+    assert.match(
+      html,
+      /A Leaver<span class="left"> \(left 31 Aug 2026\)<\/span>/,
+      "the mark is its own element, so it can be coloured apart from the name",
+    );
+    assert.match(html, /\.left \{ color:var\(--danger\)/, "and that element is red");
+    assert.match(html, /--danger:#B91C1C/, "from the pack's own danger ink");
+    assert.ok(
+      !/background[^;]*var\(--danger\)/.test(html),
+      "text colour only — a filled area would breach the INK RULE",
     );
   }
 }

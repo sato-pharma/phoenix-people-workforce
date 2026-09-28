@@ -27,6 +27,8 @@ import ExcelJS from "exceljs";
 
 import { HOUSE_COLORS } from "@/lib/hiring-pack/house-identity";
 
+import { splitLeaverLabel } from "../employment-status";
+
 import type { PackSection, SalesReviewPack } from "./model";
 
 /** ARGB, as ExcelJS wants it, from the house hex. */
@@ -37,6 +39,8 @@ const LIGHT = argb(HOUSE_COLORS.light);
 const TINT = argb(HOUSE_COLORS.tint);
 const HAIR = argb(HOUSE_COLORS.hair);
 const BODY = argb(HOUSE_COLORS.body);
+// The one non-blue ink in the workbook: a leaver's mark (owner, 2026-09-28). Font colour, no fill.
+const DANGER = "FFB91C1C";
 const MUTED = argb(HOUSE_COLORS.muted);
 const WHITE = "FFFFFFFF";
 // The crest band — near-black, so a blue mark does not flatten against a blue ground.
@@ -106,6 +110,9 @@ function writeSection(book: ExcelJS.Workbook, pack: SalesReviewPack, section: Pa
   // ── the deep title band ──
   sheet.mergeCells(1, 1, 1, width);
   const band = sheet.getCell(1, 1);
+  // A section title can carry a leaver's mark ("What the list is made of — <name> (left 31 Aug
+  // 2026)") and it stays WHITE here, deliberately: this band is white on solid navy, where the red
+  // would be all but unreadable. The words are still on the page; only the colour is dropped.
   band.value = section.title;
   band.font = { bold: true, color: { argb: WHITE }, name: FONT, size: 15 };
   band.fill = { fgColor: { argb: DEEP }, pattern: "solid", type: "pattern" };
@@ -150,7 +157,18 @@ function writeSection(book: ExcelJS.Workbook, pack: SalesReviewPack, section: Pa
     const line = sheet.getRow(6 + r);
     row.forEach((value, i) => {
       const cell = line.getCell(i + 1);
-      cell.value = value;
+      // A leaver's "(left …)" mark is set in RED (owner, 2026-09-28). Excel colours a RUN, so the
+      // cell becomes rich text: the name in body ink, the mark in red. Every other cell is plain,
+      // and a rich-text cell still reads as its own string to a filter or a formula.
+      const parts = typeof value === "string" ? splitLeaverLabel(value) : null;
+      cell.value = parts
+        ? {
+            richText: [
+              { font: { color: { argb: BODY }, name: FONT, size: 10 }, text: parts.name },
+              { font: { bold: true, color: { argb: DANGER }, name: FONT, size: 10 }, text: parts.mark },
+            ],
+          }
+        : value;
       cell.font = { color: { argb: BODY }, name: FONT, size: 10 };
       cell.alignment = { horizontal: section.align[i] === "right" ? "right" : "left", vertical: "middle", wrapText: true };
       cell.border = { bottom: HAIRLINE };
