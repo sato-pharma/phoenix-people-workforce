@@ -14,8 +14,10 @@ import {
 import {
   getEmployeeDirectory,
   upsertEmployee,
+  writeEmployeeResidenceLocation,
   type EmployeeMutationInput,
 } from "@/lib/employees/employee-directory";
+import { composeResidenceFromHiringAddress } from "@/lib/hiring-pack/residence-address";
 import { canonicalHrIdForDisplay, hrIdForStorage, hrIdsMatch } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { arabicDepartmentName } from "@/lib/hiring-pack/department-names";
@@ -1438,7 +1440,50 @@ export async function saveHiringPackProfile(
     );
 
   if (error) throw new Error(error.message);
+
+  // The address block this pack collects for Form 1 describes the same place the outstation
+  // distance is measured FROM. Until now the two lived in separate tables with nothing between
+  // them, so an address typed here never reached the residence record and never became a
+  // coordinate. Do it on the way out of the save, where the address is already in hand.
+  await syncResidenceFromHiringAddress(hrId, input);
+
   return getHiringPack(hrId);
+}
+
+/**
+ * Push a saved hiring address into the residence record, when it says something new.
+ *
+ * Three things this must not do, each of which has already gone wrong somewhere in this repo:
+ *
+ * 1. It must not re-geocode an address that has not changed. `residenceUnchanged` exists because
+ *    the Employee Management form re-geocoded and rewrote every residence on every save of any
+ *    field. A contract save touches a dozen unrelated fields, so the same trap is open here.
+ * 2. It must not overwrite a specific stored address with a vaguer one --
+ *    `composeResidenceFromHiringAddress` returns null for a block with no street or building.
+ * 3. It must not fail the caller. The profile row is already written and that is what the HR user
+ *    asked for; a geocoder outage is not a reason to reject a contract. But it says so out loud,
+ *    because the 2026-08-01 Maps billing failure went unnoticed for days on a silent failure path.
+ */
+async function syncResidenceFromHiringAddress(hrId: string, input: HiringPackProfileInput) {
+  const composed = composeResidenceFromHiringAddress(input);
+  if (!composed) return;
+
+  try {
+    const { data } = await getSupabaseAdmin()
+      .from("employee_locations")
+      .select("residence_address")
+      .eq("employee_hr_id", hrId)
+      .maybeSingle();
+
+    if (cleanText(data?.residence_address) === composed.residenceAddress) return;
+
+    await writeEmployeeResidenceLocation(hrId, composed);
+  } catch (syncError) {
+    console.warn(
+      `[hiring-pack] saved ${hrId}'s profile, but could not sync the residence address: `
+      + (syncError instanceof Error ? syncError.message : String(syncError)),
+    );
+  }
 }
 
 /**

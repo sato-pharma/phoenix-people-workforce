@@ -2075,9 +2075,34 @@ async function upsertEmployeeResidenceLocation(
   // Supabase client -- see the notes there for what each one cost.
   if (residenceUnchanged(input)) return;
 
-  const residenceAddress = compact(input.residenceAddress);
-  const residenceArea = compact(input.residenceArea);
-  const residenceCity = compact(input.residenceCity);
+  await writeEmployeeResidenceLocation(hrId, {
+    residenceAddress: input.residenceAddress ?? null,
+    residenceArea: input.residenceArea ?? null,
+    residenceCity: input.residenceCity ?? null,
+  });
+}
+
+/**
+ * Write one employee's residence, geocoding the address first.
+ *
+ * Exported because the hiring pack writes this same record from its structured address block --
+ * see src/lib/hiring-pack/residence-address.ts. That caller goes through HERE rather than carrying
+ * its own copy, because the rule below has already destroyed data once: under
+ * `resolution=merge-duplicates` a null coordinate OVERWRITES a good stored one, so
+ * `residenceCoordinateColumns` omits those columns entirely when the geocode produced nothing. A
+ * second copy of that would drift, and the drift would stay silent until an outstation claim failed.
+ */
+export async function writeEmployeeResidenceLocation(
+  hrId: string,
+  parts: {
+    residenceAddress: string | null;
+    residenceArea: string | null;
+    residenceCity: string | null;
+  },
+) {
+  const residenceAddress = compact(parts.residenceAddress);
+  const residenceArea = compact(parts.residenceArea);
+  const residenceCity = compact(parts.residenceCity);
   const geocodeQuery = residenceGeocodeQuery([residenceAddress, residenceArea, residenceCity]);
   const geocoded = geocodeQuery
     ? await googleGeocodeAddress(geocodeQuery).catch(() => null)
