@@ -28,6 +28,7 @@ import { logAppError } from "@/lib/error-monitor/service";
 // owner's cost ruling of 2026-09-25. It shares this alarm because a dead key fails the same silent way.
 export type AiCallComponent =
   | "groq_transcription"
+  | "needs_you_summary"
   | "openai_client"
   | "sales_ai_provider"
   | "sales_normalizer_ai_suggest"
@@ -50,6 +51,7 @@ export type AiCallRecord = {
 // Owner rule: human-readable names, never raw codes. These reach a screen someone triages from.
 const COMPONENT_LABELS: Record<AiCallComponent, string> = {
   groq_transcription: "CRM spoken comment — Groq speech to text",
+  needs_you_summary: "What needs you — the written summary on the daily board",
   openai_client: "Shared OpenAI client",
   sales_ai_provider: "Sales AI provider",
   sales_normalizer_ai_suggest: "Sales normalizer — AI suggest",
