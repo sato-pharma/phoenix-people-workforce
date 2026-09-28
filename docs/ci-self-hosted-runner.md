@@ -579,11 +579,21 @@ It installs Node 24 plus corepack/pnpm and Playwright's system libraries, regist
 installs it as a systemd service so it survives reboot. It warns below 7 GB — a CPX32 reports 8, so
 that warning appearing means you bought the wrong plan.
 
-**C — arm the switch.** Two variables, and neither is set today:
+**C — arm the switch. 🔴 READ `gh variable list` FIRST — this step is only an *arming* if
+`CI_RUNNER_LABEL` is unset.** If it already names another pool, the same keystroke is a **repoint**, and it
+moves every opted-in PR off that pool in one write with nothing to warn you.
 
 ```bash
-gh variable set CI_RUNNER_LABEL --body hetzner   # the label you gave the box in B4
+gh variable list                                  # what does CI_RUNNER_LABEL say NOW?
+gh variable set CI_RUNNER_LABEL --body hetzner    # the label you gave the box in B4
 ```
+
+This step said *"Two variables, and neither is set today"* until 2026-09-28, and it was false — the same
+claim §L452 carried, surviving twenty lines further down after that one was fixed. It is the worse of the
+two placements: L452 is read by someone **checking** state, this is read by someone **acting** on it, minutes
+after paying for hardware. Which is the rule the whole file now works to — **a dated measurement is safe to
+write down; a current value is not** — applied to an instruction rather than a description: do not tell the
+reader what the variable is, tell them to look, and say what each answer means for the command underneath.
 
 Then push a branch named `ci-runner/<task>` and open a PR from it. **Nothing else becomes
 self-hosted** — not `main`, not a dispatch, not any other PR. Roll back with
