@@ -33,7 +33,7 @@ import {
   getPlanAwaitingBadge,
   getVacationAwaitingBadge,
 } from "@/lib/approvals-hub/service";
-import type { AccessContext } from "@/lib/auth/permissions";
+import { assertPermission, type AccessContext } from "@/lib/auth/permissions";
 import { buildCoachingReportAnalytics } from "@/lib/coaching/analytics";
 import { getCoachingReports } from "@/lib/coaching/service";
 import { getContractRenewalDashboardData } from "@/lib/contracts/service";
@@ -139,7 +139,10 @@ const plural = (count: number, one: string, many: string) => (count === 1 ? one 
  */
 const actionInbox: NeedsYouAdapter = {
   id: "action-inbox",
-  load: async (access, now) => {
+  load: async (access) => {
+    // The SAME gate `/api/approvals/badge-counts` puts in front of this read. See `hubBadge` below
+    // for why the adapter asserts it rather than leaning on the page.
+    await assertPermission(access, "leave", "read");
     const { items, unavailable } = await getAwaitingMyActionItemsWithHealth(access, "admin");
     if (unavailable.length > 0) {
       return {
@@ -193,15 +196,25 @@ const actionInbox: NeedsYouAdapter = {
  * here: each one CATCHES its own failure and returns `{count: 0, overdue: false, available: false}`.
  * Reading only `count` would read a dead queue as an empty one — the badge shape, correct for a
  * badge, fatal here. So `available === false` becomes `unavailable`, in words.
+ *
+ * 🔴 AND THE PERMISSION IS ASSERTED HERE, not left to the page. None of these three asserts its own
+ * resource — `/api/approvals/badge-counts` wraps each in the `assertPermission` call the queue
+ * needs, and reading them bare would inherit the scoping without the gate. Leaning on
+ * `/admin/needs-you` being Super-Admin-only would be true today and is the wrong shape: the module
+ * would then be correct only because of a caller, and `not-applicable` — the third state this whole
+ * design turns on — could never be reached for these three at all.
  */
 function hubBadge(
   id: NeedsYouSourceId,
+  resource: "weekly_plans" | "leave",
   read: (access: AccessContext) => Promise<{ count: number; overdue: boolean; available: boolean }>,
   label: (count: number) => string,
 ): NeedsYouAdapter {
   return {
     id,
     load: async (access) => {
+      // Throws `Forbidden:` for a viewer with no rung, which `service.ts` classifies as a TRUE zero.
+      await assertPermission(access, resource, "read");
       const badge = await read(access);
       if (!badge.available) {
         return { status: "unavailable", because: "the queue did not answer (it reported itself unavailable)" };
@@ -213,18 +226,21 @@ function hubBadge(
 
 const planApprovals = hubBadge(
   "plan-approvals",
+  "weekly_plans",
   getPlanAwaitingBadge,
   (count) => `${count} weekly or monthly ${plural(count, "plan", "plans")} awaiting your approval`,
 );
 
 const leaveApprovals = hubBadge(
   "leave-approvals",
+  "leave",
   getVacationAwaitingBadge,
   (count) => `${count} leave ${plural(count, "request", "requests")} awaiting your approval`,
 );
 
 const excuseApprovals = hubBadge(
   "excuse-approvals",
+  "leave",
   getExcuseAwaitingBadge,
   (count) => `${count} excuse ${plural(count, "request", "requests")} awaiting your approval`,
 );

@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import {
   canAccessSystemAdministratorWorkspace,
   permissionMatrix,
+  type AccessScope,
   type PhoenixRole,
 } from "../src/lib/auth/permissions.ts";
 import { stripCommentsCompact } from "./support/comment-strip.ts";
@@ -180,14 +181,24 @@ export function runNeedsYouPageNeverDecidesTests() {
   // asserted here. A widened gate — a role added to `systemAdministratorRoles`, or the page's check
   // swapped for a looser one — turns this red instead of silently handing sixteen roles a board of
   // approval queues they cannot act on.
+  // EVERY non-system scope, not one sample. `canAccessSystemAdministratorWorkspace` is
+  // `scope === "system" || role === "Super Admin"`, so a sweep that fixed the scope would pass even
+  // if the role half were deleted and the scope half widened — the two have to be separated.
   const roles = Object.keys(permissionMatrix) as PhoenixRole[];
-  const admitted = roles.filter((role) => canAccessSystemAdministratorWorkspace({ role, scope: "own" }));
+  const nonSystemScopes: AccessScope[] = ["self", "team", "hierarchy", "line", "company", "none"];
+  const admitted = [
+    ...new Set(
+      nonSystemScopes.flatMap((scope) =>
+        roles.filter((role) => canAccessSystemAdministratorWorkspace({ role, scope })),
+      ),
+    ),
+  ];
   assert.deepEqual(
     admitted,
     ["Super Admin"],
-    `The Needs You gate admits ${JSON.stringify(admitted)} at scope "own". It must admit the Super ` +
-      `Admin and nobody else — this board composes sixteen approval queues, and every row on it ` +
-      `names a decision that is the owner's alone.`,
+    `The Needs You gate admits ${JSON.stringify(admitted)} at a non-system scope. It must admit the ` +
+      `Super Admin and nobody else — this board composes sixteen approval queues, and every row on ` +
+      `it names a decision that is the owner's alone.`,
   );
   assert.ok(
     roles.length > 10,
