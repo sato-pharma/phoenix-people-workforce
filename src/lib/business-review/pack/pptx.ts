@@ -571,9 +571,10 @@ function sectionSlide(
     textShape(2, "Eyebrow", { h: inch(0.26), w: inner, x: MARGIN, y: EYEBROW_Y },
       paragraph(`SECTION ${String(index + 1).padStart(2, "0")} / ${String(total).padStart(2, "0")}`, { color: BLUE, bold: true, size: 900, spc: 120 }), null),
     tick(33, MARGIN, inch(1.13)),
-    // The title in the serif display, in ink — the way the Spotlight sheet and the PDF set it.
+    // The title in the serif display, in ink — the way the Spotlight sheet and the PDF set it. A
+    // title that NAMES a person carries that person's leaver mark, in the same red as the rows.
     textShape(3, "Title", { h: TITLE_H, w: inner, x: MARGIN, y: TITLE_Y },
-      paragraph(section.title, { bold: true, color: INK, size: 2200, font: SERIF }), null),
+      markedParagraph(section.title, { bold: true, color: INK, size: 2200, font: SERIF }), null),
     // Every honesty rule the screen carries travels with its section — that the achievement beside
     // a rep is his AREA's, that the months do not sum. In the file, not only on the page.
     textShape(4, "Note", { h: NOTE_H, w: inner, x: MARGIN, y: NOTE_Y },
@@ -668,7 +669,8 @@ function chartSlide(
         item.note
           ? { h: Math.round(rowH * 0.6), w: labelW, x: MARGIN, y: mid - Math.round(rowH * 0.5) }
           : { h: rowH, w: labelW, x: MARGIN, y: mid - Math.round(rowH / 2) },
-        paragraph(item.label, { align: "r", color: INK, size: 1000 }),
+        // A bar's label is the same person as the row it was read from, so it wears the same mark.
+        markedParagraph(item.label, { align: "r", color: INK, size: 1000 }),
         null,
       ),
       rectShape(id++, "Track", { h: barH, w: plotW, x: plotX, y: mid - Math.round(barH / 2) }, WASH),
@@ -703,7 +705,7 @@ function chartSlide(
       paragraph(`SECTION ${String(index + 1).padStart(2, "0")} / ${String(total).padStart(2, "0")}`, { color: BLUE, bold: true, size: 900, spc: 120 }), null),
     tick(33, MARGIN, inch(1.13)),
     textShape(3, "Title", { h: TITLE_H, w: inner, x: MARGIN, y: TITLE_Y },
-      paragraph(section.title, { bold: true, color: INK, size: 2200, font: SERIF }), null),
+      markedParagraph(section.title, { bold: true, color: INK, size: 2200, font: SERIF }), null),
     textShape(4, "Note", { h: NOTE_H, w: inner, x: MARGIN, y: NOTE_Y },
       paragraph(section.note, { color: MUTED, italic: true, size: 950 }), null),
     parts.join(""),

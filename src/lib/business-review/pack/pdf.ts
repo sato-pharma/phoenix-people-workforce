@@ -320,7 +320,7 @@ function coverBody(pack: SalesReviewPack, generated: string): string {
       ? `<ol class="index">${pack.sections
           .map(
             (s, i) =>
-              `<li><span class="index__n">${String(i + 1).padStart(2, "0")}</span><span class="index__t">${escapeHtml(s.title)}</span></li>`,
+              `<li><span class="index__n">${String(i + 1).padStart(2, "0")}</span><span class="index__t">${cellHtml(s.title)}</span></li>`,
           )
           .join("")}</ol>`
       : `<p class="lede">No metrics were chosen, so this pack has no sections. Tick what you want on the Business Review page and export again.</p>`;
@@ -340,6 +340,24 @@ function coverBody(pack: SalesReviewPack, generated: string): string {
         ${index}
       </div>
     </div>`;
+}
+
+/**
+ * A label inside an SVG `<text>`, with a leaver's mark carried in the one red this pack owns.
+ *
+ * 🔴 A chart label is the SAME person as the row beneath it, so it wears the same mark. The table
+ * got that on 2026-09-28 and the chart did not: measured across the eleven packs shipped that day,
+ * 43 of 138 marks printed in plain ink — in 10 of the 11 packs — because they sat on a chart's own
+ * label column, a section heading or the cover's contents list rather than in a cell. One rule,
+ * one colour, everywhere the mark appears.
+ *
+ * A `<tspan>` flows inline inside its `<text>`, so `text-anchor="end"` still measures the whole
+ * string — the label neither moves nor re-wraps, it only changes colour past the bracket.
+ */
+function svgLabel(text: string): string {
+  const parts = splitLeaverLabel(text);
+  if (!parts) return escapeHtml(text);
+  return `${escapeHtml(parts.name)}<tspan fill="${C.danger}" font-weight="700">${escapeHtml(parts.mark)}</tspan>`;
 }
 
 /** A bar's own figure, in the unit the model gave it. Formatting only — nothing is computed here. */
@@ -421,7 +439,7 @@ function chartSvg(chart: PackChart, targetPx = 0): string {
     const y = TOP + i * ROW;
     const mid = y + ROW / 2;
     parts.push(
-      `<text x="${LABEL_W.toFixed(1)}" y="${(mid + 4).toFixed(1)}" text-anchor="end" font-size="${labelFs.toFixed(2)}" fill="${C.ink}">${escapeHtml(item.label)}</text>`,
+      `<text x="${LABEL_W.toFixed(1)}" y="${(mid + 4).toFixed(1)}" text-anchor="end" font-size="${labelFs.toFixed(2)}" fill="${C.ink}">${svgLabel(item.label)}</text>`,
       `<rect x="${PLOT_X.toFixed(1)}" y="${(mid - BAR / 2).toFixed(1)}" width="${PLOT_W.toFixed(1)}" height="${BAR}" fill="${C.wash}"/>`,
     );
     if (item.value == null) {
@@ -471,7 +489,7 @@ function sectionBody(
       : `<p class="note">Continued — rows ${offset + 1}–${offset + rows.length}.</p>`;
   return `
     ${opener(eyebrow)}
-    <h2 class="sectitle">${escapeHtml(section.title)}${part > 1 ? ` <span class="cont">continued</span>` : ""}</h2>
+    <h2 class="sectitle">${cellHtml(section.title)}${part > 1 ? ` <span class="cont">continued</span>` : ""}</h2>
     <div class="ruleunder ruleunder--short"></div>
     ${note}
     ${chart ? chartSvg(chart, chartTargetPx) : ""}
