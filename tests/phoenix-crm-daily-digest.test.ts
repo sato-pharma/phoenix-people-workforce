@@ -204,5 +204,64 @@ export function runPhoenixCrmDailyDigestTests(): void {
     assert.ok(route.includes("export const maxDuration = 60"), "its own clock, not the 30s /api/notifications/daily shares");
   }
 
+  // ── 🔴 A TERRITORY NOBODY HAS STARTED IS NOT AN EXCEPTION (owner, 2026-09-28) ──────────────────
+  //
+  // The first morning this fired, it messaged EVERY manager in the company about EVERY territory
+  // beneath him — 24 recipients, up to 38 lines each — because no rep had used Phoenix CRM yet, so
+  // "no visit yesterday" was true of all 111 open territories. Nothing was broken: the digest was
+  // faithfully reporting a field force that had not moved across from iReports360 yet. But it is
+  // precisely the shape "A CLEAN MANAGER IS TOLD NOTHING" exists to prevent, and a fortnight of it
+  // would have trained 24 managers to ignore the feature before it ever said anything true.
+  //
+  // The gate is per TERRITORY and it opens by itself, so nothing has to be remembered or undone.
+  {
+    const digest = stripComments(readFileSync(new URL("../src/lib/phoenix-crm/server/daily-digest.ts", import.meta.url), "utf8"));
+
+    // The filter is applied BEFORE the board is gathered, and the gathered set is the filtered one.
+    assert.match(
+      digest,
+      /const started = await seatsWithRealActivity\(openSeats\.map\(\(seat\) => seat\.seatId\)\);\s*const seats = openSeats\.filter\(\(seat\) => started\.has\(seat\.seatId\)\);/,
+      "the digest reads only the territories that have started — the open-line list alone is what flooded 24 managers",
+    );
+
+    // 🔴 REAL ROWS ONLY. A Super Admin try-out, or a test login (whose rows carry the mirrored rep's
+    // own HR id — src/lib/auth/test-persona.ts), must never switch a real manager's message on.
+    assert.match(
+      digest,
+      /\.select\("seat_id"\)\.eq\("is_test", false\)\.in\("seat_id", part\)/,
+      "every activity read filters is_test — a test row would start a territory nobody has touched",
+    );
+
+    // All six surfaces a rep can leave a mark on. A narrower list (visits only) keeps a rep who is
+    // planning but not yet visiting out of his own manager's digest.
+    for (const table of [
+      "phoenix_crm_visits",
+      "phoenix_crm_places",
+      "phoenix_crm_plans",
+      "phoenix_crm_monthly_plans",
+      "phoenix_crm_day_activities",
+      "phoenix_crm_list_requests",
+    ]) {
+      assert.ok(digest.includes(`"${table}"`), `${table} counts as having started — every surface a rep can touch does`);
+    }
+
+    // A failed read must not read as a quiet morning.
+    assert.ok(digest.includes("throwIfError(read.error)"), "a failed activity read throws rather than silently emptying the digest");
+
+    // 🔴 THE BOARD IS NOT GATED. The screen a manager OPENS still shows every territory: he is
+    // asking, and "nobody has started" is the answer he needs there. This narrows the PUSH only.
+    const exceptions = stripComments(readFileSync(new URL("../src/lib/phoenix-crm/server/exceptions.ts", import.meta.url), "utf8"));
+    assert.ok(
+      !exceptions.includes("seatsWithRealActivity"),
+      "the exceptions board must keep showing every territory — only the 06:55 message waits for first use",
+    );
+
+    // And the run says how many are still waiting, so a silent morning can be told from a broken one.
+    assert.ok(
+      digest.includes("waitingForFirstUse: openSeats.length - seats.length"),
+      "a silent morning is reported, not indistinguishable from a failure",
+    );
+  }
+
   console.log("phoenix-crm daily digest: OK");
 }
