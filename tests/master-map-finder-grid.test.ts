@@ -379,6 +379,22 @@ export function runMasterMapFinderGridTests() {
     "the parse is inside a try, so a truncated body becomes a retry rather than a dead execution",
   );
 
+  // ---- A crash mid-repaint must not lose the queue ------------------------------------------------
+  // The deeper half of the same incident. runSync saved the queue and the hashes only AFTER the
+  // loop, so an exception from paintTab skipped both and the remaining tabs vanished from Script
+  // Properties — while planWork had already recorded the change stamp. Every tick afterwards found
+  // an empty queue, probed, saw a matching stamp and returned in about ONE SECOND believing the
+  // sheet was current. Measured 2026-09-28: the flat tab sat holding 28,000 of its 73,938 rows for
+  // a quarter of an hour while three ticks reported success, and the finder reads that tab.
+  assert.ok(
+    /\} finally \{[\s\S]{0,400}?setProperty\(PROP_QUEUE/.test(script),
+    "the queue is persisted in a finally — a crash mid-repaint must cost one tick, not the whole remaining queue",
+  );
+  assert.ok(
+    /\} finally \{[\s\S]{0,400}?setProperty\(PROP_HASHES/.test(script),
+    "and so are the hashes, or a resumed run repaints tabs it already finished",
+  );
+
   assert.equal(
     (STYLE.area as { align?: string }).align,
     "CENTER",
