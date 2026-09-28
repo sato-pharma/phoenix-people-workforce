@@ -15,6 +15,21 @@
 // which is how the wrong first working day reaches a new hire. So the id is CONFIRMED against the
 // offers module before it is stored, and an id that names no letter is refused in words rather than
 // saved.
+//
+// 🔒 A LETTER WITH NO CANDIDATE BEHIND IT IS NOT A GAP TO FILL — owner's ruling, 2026-09-28: *"leave
+// Esraa Awad and Taha Sheeba without ATS records"*. On production that day, 11 of the 27 offer letters
+// pointed at nobody because nine people never entered the ATS at all, and TWO of them — Esraa Awad
+// Hemida and Taha Sheeba Alhammed — are active Medical Representatives hired 01/10 on accepted
+// letters. They were seated without passing through recruitment, and an empty pointer is the TRUTH
+// about them.
+//
+// SO DO NOT BACKFILL CANDIDATE RECORDS TO MAKE THE FUNNEL LOOK COMPLETE. It reads like a data defect
+// and it is not one. Three reasons it was refused: an employee's messages are built from
+// `employee-context.ts` and never read this pointer, so wiring them buys nothing; a record with no
+// CV, no source and no application is a hollow row that then appears in the pool, the screening queue
+// and every count as though somebody applied; and the cost of leaving it — those two hires being
+// invisible to source-of-hire reporting, which runs off candidate records — is NOT fixed by inventing
+// two unattributed rows. **The one thing that would be a real defect is a session "completing" this.**
 
 import { isOfferNotFound, getOffer } from "@/lib/offers/service";
 import { mapCandidate, recruitmentDb, textOrNull, type CandidateDbRow } from "@/lib/recruitment/db";
