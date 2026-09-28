@@ -137,11 +137,24 @@ function testRedZoneCountsPeopleNotReports() {
   assert.equal(draftOnly.redZoneRepCount, 0, "a DRAFT red report must not put a rep on the CEO's queue");
 
   // Both command centres must read the people count, never re-add the report buckets.
-  for (const path of ["src/lib/ceo/command-center.ts", "src/lib/admin/command-center.ts"]) {
-    const source = readFileSync(path, "utf8");
-    assert.match(source, /redZoneRepCount/, `${path} must read the PEOPLE count`);
+  // The CEO command centre no longer COMPUTES this figure: it reads the `coaching-red-zone`
+  // adapter in src/lib/needs-you/sources.ts, which is now the single producer. The positive
+  // assertion therefore follows the rule to its new home, while the negative one WIDENS to every
+  // file that could reintroduce the defect — including the one the rule just left.
+  for (const path of ["src/lib/needs-you/sources.ts", "src/lib/admin/command-center.ts"]) {
+    assert.match(
+      readFileSync(path, "utf8"),
+      /analytics\.redZoneRepCount/,
+      `${path} must read the PEOPLE count`,
+    );
+  }
+  for (const path of [
+    "src/lib/needs-you/sources.ts",
+    "src/lib/admin/command-center.ts",
+    "src/lib/ceo/command-center.ts",
+  ]) {
     assert.doesNotMatch(
-      source,
+      readFileSync(path, "utf8"),
       /zoneCounts\.critical_red[\s\S]{0,40}zoneCounts\.red_zone/,
       `${path} must not sum the REPORT buckets back into a headcount`,
     );

@@ -230,15 +230,32 @@ export function runCeoCommandCenterTests() {
     /getPlatformMetrics\(access\)/,
     "Dedicated CEO Command Center must use shared platform metrics",
   );
+  // Contracts, probation and coaching are no longer computed in this file. They are three of the
+  // sources src/lib/needs-you owns, read through adaptersFor + loadNeedsYouSources, because two
+  // copies of each rule had already drifted — the probation pair gave different answers. What must
+  // still be proven is unchanged: the CEO reaches the right SERVICE. So the assertion follows the
+  // rule to the file that now calls it, and a second one proves the CEO is still wired to it —
+  // an adapter the CEO never asks for renders no tile at all.
+  const needsYouSourcesSource = readFileSync("src/lib/needs-you/sources.ts", "utf8");
   assert.match(
-    ceoCommandCenterSource,
+    needsYouSourcesSource,
     /getContractRenewalDashboardData\(access\)/,
     "CEO contract risk must use the contract renewal dashboard service",
   );
   assert.match(
     ceoCommandCenterSource,
-    /getCeoProbationCounts\(access\)/,
-    "CEO probation risk must use the dedicated open-evaluation aggregate",
+    /adaptersFor\(\[[^\]]*"contract-renewals"/,
+    "the CEO contract tile must still ask for that source",
+  );
+  assert.match(
+    needsYouSourcesSource,
+    /getProbationRows\(access\)/,
+    "CEO probation risk must use the service behind /probation, not a second aggregate",
+  );
+  assert.match(
+    ceoCommandCenterSource,
+    /adaptersFor\(\[[^\]]*"probation-decisions"/,
+    "the CEO probation tile must still ask for that source",
   );
   // Inverted deliberately. This assertion used to REQUIRE the raw `from("probation_evaluations")`
   // scan, which is the defect itself: that scan counts rows whose probation window has already
@@ -247,11 +264,16 @@ export function runCeoCommandCenterTests() {
   // them out. The two sets were disjoint by construction, so the CEO clicked "22 overdue" and
   // landed on a table containing none of them. The count now comes from that same service; see
   // ceo-landing-seat-and-probation-counts.test.ts for the positive form.
-  assert.doesNotMatch(
-    ceoCommandCenterSource,
-    /from\("probation_evaluations"\)/,
-    "the CEO probation tile must not re-scan probation_evaluations — it must reuse the /probation service, or the number and its destination describe different people",
-  );
+  for (const [label, source] of [
+    ["the CEO command centre", ceoCommandCenterSource],
+    ["the needs-you probation adapter", needsYouSourcesSource],
+  ] as const) {
+    assert.doesNotMatch(
+      source,
+      /from\("probation_evaluations"\)/,
+      `${label} must not re-scan probation_evaluations — it must reuse the /probation service, or the number and its destination describe different people`,
+    );
+  }
   assert.doesNotMatch(
     ceoCommandCenterSource,
     /\.not\("decision"/,

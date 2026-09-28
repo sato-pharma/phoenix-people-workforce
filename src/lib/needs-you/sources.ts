@@ -8,8 +8,14 @@
  *
  *  - `getCeoAdminSignals` (`src/lib/ceo/command-center.ts`) is not exported, is welded to
  *    `getPlatformMetrics` through a `Promise.all` — so a metrics rejection rejects the whole thing —
- *    and returns health/trends/payroll alongside the attention list. The six services UNDER it are
- *    called here instead.
+ *    and returns health/trends/payroll alongside the attention list. The services UNDER it are
+ *    called here instead. 🔴 THE TRAFFIC NOW RUNS THE OTHER WAY for the three signals both sides
+ *    held: `contract-renewals`, `probation-decisions` and `coaching-red-zone` are produced HERE
+ *    and read there through `adaptersFor` + `loadNeedsYouSources`. They had drifted while there
+ *    were two copies — that file's probation rule filtered to people still employed and this one's
+ *    did not, so the same question had two answers. Never re-implement one of those three over
+ *    there, and never "simplify" the CEO's three-adapter call into `getNeedsYouBoard`: that runs
+ *    all sixteen sources to use three of them, on the owner's heaviest landing page.
  *  - `GET /api/approvals/badge-counts` is an HTTP hop from a server component back into its own app:
  *    it needs the session cookie, doubles the latency, and inherits the route's deliberate
  *    `{count: 0}` fallback — which is right for a badge and is the ONE shape this board must never
@@ -37,6 +43,8 @@ import { assertPermission, type AccessContext } from "@/lib/auth/permissions";
 import { buildCoachingReportAnalytics } from "@/lib/coaching/analytics";
 import { getCoachingReports } from "@/lib/coaching/service";
 import { getContractRenewalDashboardData } from "@/lib/contracts/service";
+import { isActiveLifecycleStatus } from "@/lib/employees/employee-directory";
+import { lifecycleRiskWindows } from "@/lib/lifecycle-risk/metrics";
 import { countDirectOrderPendingValidations } from "@/lib/direct-orders/pharmacy-validation";
 import { countDirectOrderAwaitingFast, getDirectOrderUnbookedBadge } from "@/lib/direct-orders/service";
 import { getMarketAwarenessDecisionBadge } from "@/lib/market-awareness/service";
@@ -607,14 +615,45 @@ const contractRenewals: NeedsYouAdapter = {
 /**
  * A probation decision is outstanding when the workflow has not reached a final state
  * (`isProbationDecisionOutstanding`, reused rather than re-expressed). `days_remaining` is the
- * probation module's OWN field, so reading it for the 30-day window and for "past its end date" is
- * reading upstream rather than inventing a second SLA here.
+ * probation module's OWN field, so reading it for the window and for "past its end date" is reading
+ * upstream rather than inventing a second SLA here.
+ *
+ * 🔴 THE EMPLOYMENT-STATUS FILTER IS APPLIED HERE AND NOT INHERITED, AND IT COST A PRODUCTION
+ * DEFECT TO LEARN. `getProbationRows` deliberately applies no status rule: it is built from the
+ * employee directory's hire+90 window, the tracker's own status filter defaults to "all", and
+ * /probation is MEANT to keep showing a probationer who resigned mid-window so HR can close the
+ * record. A "decisions due" figure is a different question — a person who has left needs no
+ * decision — and in production a resigned Medical Representative (PD-0003, 10 days remaining) was
+ * counted as outstanding until this filter existed. The count is therefore a SUBSET of the page it
+ * links to, never a disjoint set: an attention row is a LINK, so its number has to describe the
+ * page it opens. An older version of this count scanned `probation_evaluations` directly for
+ * people past their end date; `getProbationRows` ends with `days_remaining > 0`, so that figure
+ * counted exactly the people the destination table cannot contain — the CEO clicked 22 and landed
+ * on a list holding none of them.
+ *
+ * There is deliberately no "overdue" COUNT: no surface in the product lists a probationer past the
+ * 90-day window, so such a number would be another dead link. The `note` below says how many are
+ * past the date without offering it as its own row; a real overdue count needs an overdue view on
+ * /probation first.
+ *
+ * 🔴 THE TWO FILTERS ARE NOT DECORATION, and this adapter shipped without them. A
+ * probationer whose employment has already ENDED still carries an unresolved workflow row, so
+ * without `isActiveLifecycleStatus` this counted leavers as decisions the owner still owes — and
+ * the number it produced was therefore higher than the CEO command centre's, which has always
+ * filtered them. The window is `lifecycleRiskWindows.probationCriticalDays`, not a literal 30:
+ * that constant is the one place the product defines "due soon", and a second copy of the number
+ * here is how the two screens would disagree the day it moves.
  */
 const probationDecisions: NeedsYouAdapter = {
   id: "probation-decisions",
   load: async (access) => {
     const rows = await getProbationRows(access);
-    const outstanding = rows.filter((row) => isProbationDecisionOutstanding(row) && row.days_remaining <= 30);
+    const outstanding = rows.filter(
+      (row) =>
+        isActiveLifecycleStatus(row.employment_status) &&
+        isProbationDecisionOutstanding(row) &&
+        row.days_remaining <= lifecycleRiskWindows.probationCriticalDays,
+    );
     if (outstanding.length === 0) return EMPTY;
     const past = outstanding.filter((row) => row.days_remaining < 0);
     return ok([
@@ -623,7 +662,7 @@ const probationDecisions: NeedsYouAdapter = {
         sourceId: "probation-decisions",
         kind: "approval",
         lane: "yours",
-        label: `${outstanding.length} probation ${plural(outstanding.length, "decision is", "decisions are")} due within 30 days`,
+        label: `${outstanding.length} probation ${plural(outstanding.length, "decision is", "decisions are")} due within ${lifecycleRiskWindows.probationCriticalDays} days`,
         count: outstanding.length,
         people: [...new Set(outstanding.map((row) => row.full_name).filter(Boolean))],
         href: needsYouDestinations["probation-decisions"].href,
@@ -700,5 +739,24 @@ export const needsYouAdapters: readonly NeedsYouAdapter[] = [
   coachingRedZone,
   salaryFlags,
 ];
+
+/**
+ * The adapters for a named set of sources, in registry order — the door `getCeoAdminSignals` comes
+ * in through, so its three shared signals are produced HERE and not a second time over there.
+ *
+ * 🔴 IT THROWS on an id with no adapter rather than skipping it. A silent drop would hand the caller
+ * a shorter list than it asked for, and a caller that asked for three signals and got two would
+ * render two — the under-report this module exists to prevent, arriving through the one door left
+ * open. `needsYouSourceIds` is a closed union, so a typo is already a compile error; this guards
+ * the case the type cannot see, an id whose adapter was removed from the registry.
+ */
+export function adaptersFor(ids: readonly NeedsYouSourceId[]): readonly NeedsYouAdapter[] {
+  return ids.map((id) => {
+    const adapter = needsYouAdapters.find((entry) => entry.id === id);
+    if (!adapter) throw new Error(`needs-you: no adapter is registered for source "${id}"`);
+    return adapter;
+  });
+}
+
 
 export { isForbiddenSourceError };

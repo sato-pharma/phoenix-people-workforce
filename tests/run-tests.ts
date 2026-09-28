@@ -2036,6 +2036,7 @@ import { runNeedsYouSourceHealthTests } from "./needs-you-source-health.test.ts"
 import { runNeedsYouNeverUnderReportsTests } from "./needs-you-never-under-reports.test.ts";
 import { runNeedsYouPageNeverDecidesTests } from "./needs-you-page-never-decides.test.ts";
 import { runNeedsYouFitsTheScreenTests } from "./needs-you-fits-the-screen.test.ts";
+import { runNeedsYouCeoSingleProducerTests } from "./needs-you-ceo-single-producer.test.ts";
 import { runUnpublishedClosingsTests } from "./unpublished-closings.test.ts";
 import { runPayrollAwaitingPublishTests } from "./payroll-awaiting-publish.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
@@ -7395,6 +7396,10 @@ await runTest(
 await runTest(
   "the tier-1 needs-you board never under-reports: GitHub's own mergeStateStatus decides the bucket (never a count against a required-check list, the drift that has rotted four times), every state it does not model - UNKNOWN, empty, null, a value GitHub adds later - lands in COULD NOT READ rather than in his section, a blocked PR is explained from the LIVE protection contexts with an unreported required check named as waiting (the mobile case) and an unreadable protection list never promotes it, three dead reads render the COULD NOT READ heading rather than a quiet all-clear, a production revision behind main names redeploy and re-merge as forbidden (AGENTS.md 2.3), and nothing it prints carries an ellipsis or exceeds the terminal width",
   runNeedsYouBoardTests,
+);
+await runTest(
+  "the CEO command centre and the needs-you board have ONE producer per rule, because two copies had already disagreed: the command centre re-implemented contracts-expiring, probation-due and coaching-red-zone from the same services, and its probation count filtered to people still EMPLOYED and read lifecycleRiskWindows.probationCriticalDays while the board's adapter did neither - so the same question had two answers and the board billed leavers (production defect PD-0003); the three signals now come from the adapters through adaptersFor + loadNeedsYouSources, the command centre holds no copy of any of the three rules or the services under them, it reads each count by the adapter's own item key (a wrong key silently reads 0, the under-report with no failure to show it), a FAILED contracts read no longer borrows a number from platform metrics but removes the tile and names itself in dataUnavailable, it calls the three adapters and never getNeedsYouBoard (sixteen sources to use three, on the owner's heaviest landing page), and adaptersFor THROWS for an id with no adapter rather than handing back a short list",
+  runNeedsYouCeoSingleProducerTests,
 );
 await runTest(
   "a pending source can say it could not answer: the awaiting-action fan-out carries no .catch(() => null) inside its Promise.allSettled (which made the allSettled decorative and turned a dead queue into an empty one, silently, in the function the badge endpoint counts), its labels and its sources stay index-aligned and none of them reads like a code, a Forbidden refusal is classified as a TRUE zero while a network failure never is, and all three approvals badges return available on BOTH their success and their failure paths with no fabricated count in the catch",
