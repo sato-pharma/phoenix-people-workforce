@@ -1,7 +1,7 @@
 import { pickDeliverableEmail } from "@/lib/email/email-safety";
 import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
 import type { MarketAwarenessApproverSlot } from "@/lib/market-awareness/approvers";
-import type { MarketAwarenessActivity } from "@/lib/market-awareness/types";
+import type { MarketAwarenessActivity, MarketAwarenessDecision } from "@/lib/market-awareness/types";
 import { createSystemNotificationForRecipients } from "@/lib/notifications/system";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -61,9 +61,22 @@ export const MARKET_AWARENESS_NOTIFICATION_MODULE = "market_awareness";
  * database — the same reason `resolveApprovalAudience` and `resolvePendingDecisionRecipients` are.
  *
  * `exclude` is the To line. Copying a man on his own notice is how a thread reads as two messages.
+ *
+ * TAKES ONLY THE FOUR FIELDS IT READS, not `Pick<MarketAwarenessActivity, …>` — the same shape
+ * `resolvePendingDecisionRecipients` above already uses, and for the same reason. A whole activity
+ * still satisfies it structurally, so the four callers are unchanged, while a test can state a
+ * four-line fixture instead of casting one: a `Pick` of the activity drags in the full twelve-field
+ * approver slot and the full decision row, and an `as` cast past that does not even compile
+ * ("neither type sufficiently overlaps"). The alternative — `as unknown as` — would have silenced
+ * the very mismatch a fixture exists to expose.
  */
 export function resolveWorkflowCcHrIds(
-  activity: Pick<MarketAwarenessActivity, "approvers" | "decisions" | "managerHrId" | "requesterHrId">,
+  activity: {
+    approvers?: Array<Pick<MarketAwarenessApproverSlot, "assignedHrId">> | null;
+    decisions?: Array<Pick<MarketAwarenessDecision, "actorHrId">> | null;
+    managerHrId: string | null;
+    requesterHrId: string | null;
+  },
   exclude: Array<string | null | undefined> = [],
 ): string[] {
   const excluded = new Set(
@@ -141,7 +154,7 @@ async function loadWorkflowCcAddresses(hrIds: string[]): Promise<string[]> {
  * two config values that must agree.
  */
 async function workflowCcAddresses(
-  activity: Pick<MarketAwarenessActivity, "approvers" | "decisions" | "managerHrId" | "requesterHrId">,
+  activity: Parameters<typeof resolveWorkflowCcHrIds>[0],
   toHrIds: Array<string | null | undefined>,
 ): Promise<string[]> {
   return loadWorkflowCcAddresses(resolveWorkflowCcHrIds(activity, toHrIds));

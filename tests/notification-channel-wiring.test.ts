@@ -67,16 +67,14 @@ export function runNotificationChannelWiringTests() {
   );
 
   // ── The CC line: every notice copies the whole workflow (owner rule, 2026-09-28).
-  const activity = {
-    approvers: [
-      { assignedHrId: "A-9", decision: null },
-      { assignedHrId: "B-122", decision: "approve" },
-      { assignedHrId: null, decision: null },
-    ],
+  // No cast. `resolveWorkflowCcHrIds` takes only the four fields it reads, so a fixture states
+  // exactly those — and a wrong one is a compile error rather than something an `as` swallowed.
+  const activity: Parameters<typeof resolveWorkflowCcHrIds>[0] = {
+    approvers: [{ assignedHrId: "A-9" }, { assignedHrId: "B-122" }, { assignedHrId: null }],
     decisions: [{ actorHrId: "B-122" }, { actorHrId: "A-12" }],
     managerHrId: "A-2",
     requesterHrId: "B-185",
-  } as Parameters<typeof resolveWorkflowCcHrIds>[0];
+  };
 
   const ccForCeo = resolveWorkflowCcHrIds(activity, ["AA"]);
   assert.deepEqual(
@@ -100,7 +98,7 @@ export function runNotificationChannelWiringTests() {
   // tables here, and a case-sensitive compare would copy the same person twice or fail to drop him.
   assert.deepEqual(
     resolveWorkflowCcHrIds(
-      { approvers: [{ assignedHrId: "b-185", decision: null }], decisions: [], managerHrId: null, requesterHrId: "B-185" } as Parameters<typeof resolveWorkflowCcHrIds>[0],
+      { approvers: [{ assignedHrId: "b-185" }], decisions: [], managerHrId: null, requesterHrId: "B-185" },
       [],
     ),
     ["B-185"],
@@ -108,7 +106,7 @@ export function runNotificationChannelWiringTests() {
   );
   assert.deepEqual(
     resolveWorkflowCcHrIds(
-      { approvers: [], decisions: [], managerHrId: null, requesterHrId: "B-185" } as Parameters<typeof resolveWorkflowCcHrIds>[0],
+      { approvers: [], decisions: [], managerHrId: null, requesterHrId: "B-185" },
       ["b-185"],
     ),
     [],
