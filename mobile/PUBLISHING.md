@@ -205,6 +205,13 @@ Cloud Messaging.
 🔴 **Every upload needs a higher `versionCode` than the one before it**, and the refusal comes after
 the build, not before.
 
+🔴 **And the version NAME moves with it: `version` is `0.<versionCode>.0`.** Only the code is forced to
+change — Play refuses a lower one and says nothing whatever about the name — so on 2026-09-28 codes 1,
+2 and 3 all shipped as `0.1.0` and the company repository listed three different binaries under one
+string. Both fields live in `app.json` (`appVersionSource` is `local`, so EAS increments neither), and
+neither is part of the runtime fingerprint, so raising them strands no OTA and no installed build.
+Pinned by `tests/mobile-version-names.test.ts`.
+
 ---
 
 ## What the app reads from the phone

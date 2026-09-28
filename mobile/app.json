@@ -2,7 +2,7 @@
   "expo": {
     "name": "Phoenix Workforce",
     "slug": "phoenix-workforce",
-    "version": "0.1.0",
+    "version": "0.3.0",
     "platforms": ["ios", "android"],
     "orientation": "portrait",
     "icon": "./assets/phoenix/icon.png",

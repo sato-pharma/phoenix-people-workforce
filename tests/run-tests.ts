@@ -1978,6 +1978,7 @@ import { runMobileEvidenceStampParityTests } from "./mobile-evidence-stamp-parit
 import { runMobilePushLinkTests } from "./mobile-push-link.test.ts";
 import { runMobileModuleDirectoryTests } from "./mobile-module-directory.test.ts";
 import { runNativeWebHandoffTests } from "./native-web-handoff.test.ts";
+import { runMobileVersionNamesTests } from "./mobile-version-names.test.ts";
 import { runMobileCrmVoiceCommentTests } from "./mobile-crm-voice-comment.test.ts";
 import { runMobileCrmVisitPharmacyFeedbackTests } from "./mobile-crm-visit-pharmacy-feedback.test.ts";
 import { runForceLogoutStopsPhoneAppPushTests } from "./force-logout-stops-phone-app-push.test.ts";
@@ -7453,6 +7454,11 @@ await runTest(
 await runTest(
   "opening a production portal module from the app grants nothing new: the sealed ticket round-trips to the SAME sid and ver, the browser cookie inherits the app session's own expiry and can never outlive it, no name / HR id / role is readable in the ticket, a tampered or expired ticket and an expired session all redeem to nothing, next can never leave /employee-portals (an open redirect there would hand a session to another host), and the halves stay split - the POST the app calls sets NO cookie, because React Native replays one and the CSRF guard then refuses every mutation as csrf_blocked, which is also why the phone uses a Custom Tab and never a WebView",
   runNativeWebHandoffTests,
+);
+
+await runTest(
+  "the mobile version a human reads moves with the one Play counts: app.json version is 0.<versionCode>.0, never the 0.1.0 that three different binaries shipped under on 2026-09-28, the code is a whole number, and eas.json keeps appVersionSource local so app.json stays the source of truth - neither field is in the runtime fingerprint, so raising them strands no OTA and no installed build",
+  runMobileVersionNamesTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
