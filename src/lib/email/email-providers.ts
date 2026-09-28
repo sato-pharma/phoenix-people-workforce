@@ -4,7 +4,8 @@
 // we fail over to an optional independent BACKUP provider (Brevo) so mail never stops. The
 // hard rule that makes this safe against DUPLICATES:
 //
-//   • A cross-provider hand-off happens ONLY on a "definitely not sent" signal (429/401/402/403).
+//   • A cross-provider hand-off happens ONLY on a "definitely not sent" signal (429/401/402/403),
+//     or when the primary ACCEPTED the message and then reported it `failed` (checkAccepted).
 //   • An AMBIGUOUS failure (network / timeout / 5xx — the send MIGHT have gone out) NEVER fails
 //     over. It is retried on the SAME provider via the outbox, whose per-email dedupe + the
 //     provider idempotency key prevent a double send.
@@ -52,10 +53,24 @@ export type ProviderSendResult =
   // Hard, deterministic rejection (bad payload). A different provider would reject it too.
   | { outcome: "error"; reason: string };
 
+// What the provider says, moments after accepting a message, about whether it then went out.
+//   failed  → the provider accepted the request but did NOT send it. Safe to hand to the backup:
+//             the message never left, so there is nothing to duplicate.
+//   settled → it left, or reached a state that is not ours to second-guess (bounced, suppressed).
+//   pending → still queued when we stopped asking, or the provider could not be asked. Treated as
+//             sent — the same answer every send got before this check existed.
+export type AcceptedSendCheck = { state: "failed"; reason: string } | { state: "pending" } | { state: "settled" };
+
 export type EmailProvider = {
   name: string;
   isConfigured(): boolean;
   send(email: PreparedEmail): Promise<ProviderSendResult>;
+  /**
+   * Optional. Asked only when a backup exists to hand the message to. Resend can answer 200 with
+   * an id and then mark the message `failed` a moment later (2026-09-28: every Resend send from
+   * 13:00 Cairo onward, a job offer among them), and the 200 alone reads exactly like a delivery.
+   */
+  checkAccepted?(id: string): Promise<AcceptedSendCheck>;
 };
 
 const resendEndpoint = "https://api.resend.com/emails";
@@ -129,10 +144,63 @@ function resendReplyTo(value: string): string | string[] | undefined {
   return list.length === 1 ? list[0] : list;
 }
 
+// Resend's `last_event` values that mean "not decided yet". Anything else is a verdict.
+const resendPendingEvents = new Set(["", "queued", "scheduled", "sent"]);
+
+// How long to keep asking, in waits between reads: 3 s in all. A healthy Resend send reads
+// `delivered` at the first read, so only a stuck or failed one uses the whole budget. Keep it
+// short: the outbox drains up to 10 rows inside ONE 30 s step (scheduled-processing.ts), and the
+// busiest five minutes of the week before this shipped queued 7.
+export const resendAcceptedCheckDelaysMs = [1000, 2000];
+
+/**
+ * Ask Resend whether a message it accepted then went out.
+ *
+ * 🔴 A 200 from `POST /emails` is NOT a delivery. On 2026-09-28 Resend answered 200 with an id for
+ * every send from 13:00 Cairo and marked 52 of the next 56 `failed` — a job offer among them — while
+ * Phoenix recorded each as sent and never reached the backup, because the failover above only fires
+ * on a REFUSED request. This read closes that: a `failed` verdict hands the message to Brevo.
+ *
+ * Read-only, and it never throws: any trouble asking (network, 429, a missing key) answers
+ * `pending`, which keeps the pre-check behaviour — treat the accepted send as sent.
+ */
+export async function checkResendAccepted(
+  id: string,
+  options: { delaysMs?: number[]; fetchImpl?: typeof fetch; sleep?: (ms: number) => Promise<void> } = {},
+): Promise<AcceptedSendCheck> {
+  const apiKey = process.env.RESEND_API_KEY?.trim();
+  if (!apiKey || !id) return { state: "pending" };
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+
+  for (const delay of options.delaysMs ?? resendAcceptedCheckDelaysMs) {
+    await sleep(delay);
+    let lastEvent = "";
+    try {
+      const response = await fetchImpl(`${resendEndpoint}/${encodeURIComponent(id)}`, {
+        headers: { Authorization: `Bearer ${apiKey}` },
+        method: "GET",
+        signal: AbortSignal.timeout(providerTimeoutMs),
+      });
+      if (!response.ok) return { state: "pending" };
+      const payload = (await response.json().catch(() => null)) as { last_event?: string } | null;
+      lastEvent = String(payload?.last_event ?? "").trim().toLowerCase();
+    } catch {
+      return { state: "pending" };
+    }
+    if (lastEvent === "failed") return { reason: "Resend accepted the message, then marked it failed.", state: "failed" };
+    if (!resendPendingEvents.has(lastEvent)) return { state: "settled" };
+  }
+  return { state: "pending" };
+}
+
 export const resendProvider: EmailProvider = {
   name: "resend",
   isConfigured() {
     return Boolean(process.env.RESEND_API_KEY?.trim());
+  },
+  checkAccepted(id) {
+    return checkResendAccepted(id);
   },
   async send(email) {
     const apiKey = process.env.RESEND_API_KEY?.trim();
@@ -289,6 +357,22 @@ export async function sendPreparedEmailWithFailover(
     const result = await provider.send(email);
 
     if (result.outcome === "sent") {
+      // Accepted is not sent. Resend stays the primary and the source of truth; Brevo is used only
+      // when Resend did not send — and "accepted, then failed" is Resend not sending. Asked only
+      // when there is a backup to hand the message to; with none, the accepted id is all we have.
+      const hasBackup = index < providers.length - 1;
+      if (hasBackup && provider.checkAccepted) {
+        const check = await provider.checkAccepted(result.id);
+        if (check.state === "failed") {
+          console.log("Primary email provider accepted a message and then failed it; handing it to the backup", {
+            level: "warning",
+            tags: { component: "email", failover: "accepted_then_failed", provider: provider.name },
+            extra: { primaryMessageId: result.id, reason: check.reason },
+          });
+          lastFailover = { reason: `${provider.name}: ${check.reason}` };
+          continue;
+        }
+      }
       if (index > 0) {
         // Falling back to a backup means the primary was unavailable/exhausted — surface it so the
         // team notices Resend is capped, even though the email itself still went out.

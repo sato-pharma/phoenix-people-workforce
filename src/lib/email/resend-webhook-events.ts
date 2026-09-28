@@ -165,11 +165,16 @@ function firstText(...values: unknown[]) {
 
 function failureReason(data: Record<string, unknown>) {
   const bounce = typeof data.bounce === "object" && data.bounce ? data.bounce as Record<string, unknown> : null;
+  // `email.failed` carries its cause under `data.failed.reason` (a quota or account refusal) — the
+  // only place Resend states WHY a message it accepted never left.
+  const failed = typeof data.failed === "object" && data.failed ? data.failed as Record<string, unknown> : null;
   return firstText(
     data.reason,
     data.message,
     data.error,
     data.diagnostic_code,
+    failed?.reason,
+    failed?.message,
     bounce?.message,
     bounce?.reason,
     bounce?.diagnostic_code,
