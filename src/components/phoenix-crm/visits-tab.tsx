@@ -76,6 +76,12 @@ import { appendDictated } from "@/lib/phoenix-crm/dictation";
 import { PHARMACY_NAME_MAX, VISIT_COMMENT_MAX, VISIT_PRODUCTS_MAX, type ProductAvailability } from "@/lib/phoenix-crm/entry-rules";
 import type { PhoenixCrmListType, PhoenixCrmVisitKind } from "@/lib/phoenix-crm/types";
 import { UNPLANNED_REASON_MAX, UNPLANNED_REASON_MIN, type VisitTypeChoice } from "@/lib/phoenix-crm/unplanned-rules";
+import {
+  shouldWarnUnsavedVoiceNote,
+  UNSAVED_VOICE_NOTE_LEAVE_LABEL,
+  UNSAVED_VOICE_NOTE_STAY_LABEL,
+  UNSAVED_VOICE_NOTE_WARNING,
+} from "@/lib/phoenix-crm/unsaved-voice-note";
 import type {
   SavedVisit,
   VisitCustomerOption,
@@ -1101,8 +1107,24 @@ function AddVisit({
   }, []);
 
 
+  // He pressed Cancel or the back arrow once with a recording on the form and was told what it would
+  // cost. It is reset the moment he goes back, so the warning is per ATTEMPT to leave rather than
+  // once per form — a rep who returns, records a second note and leaves again is told again.
+  const [leaveWarned, setLeaveWarned] = useState(false);
+
+  /**
+   * Leaving the form.
+   *
+   * The FIRST press with an unsaved recording stops and says what he is about to lose; the second
+   * leaves, with nothing asked again. Both exits — the back arrow at the top and Cancel at the
+   * bottom — come through here, so there is one rule and not two that can drift apart.
+   */
   function close() {
     if (saving) return;
+    if (shouldWarnUnsavedVoiceNote({ hasVoiceNote: voiceNote !== null, saving, warned: leaveWarned })) {
+      setLeaveWarned(true);
+      return;
+    }
     releaseCapturedPhoto(photo);
     onClose();
   }
@@ -1356,6 +1378,19 @@ function AddVisit({
   return (
     <CrmPanel>
       {back}
+      {/* He tried to leave with a recording on the form. It states the mechanism and offers both
+          doors — "Leave without it" always works, because a guard he cannot get out of is a trap. */}
+      {leaveWarned && voiceNote ? (
+        <CrmNote className="mb-3" title="Your voice note" tone="info">
+          <p className="break-words">{UNSAVED_VOICE_NOTE_WARNING}</p>
+          <div className="mt-2 grid gap-2 sm:flex sm:flex-wrap">
+            <CrmButton onClick={() => setLeaveWarned(false)} variant="primary">
+              {UNSAVED_VOICE_NOTE_STAY_LABEL}
+            </CrmButton>
+            <CrmButton onClick={close}>{UNSAVED_VOICE_NOTE_LEAVE_LABEL}</CrmButton>
+          </div>
+        </CrmNote>
+      ) : null}
       <CrmBlock>
         <p className="break-words text-sm font-semibold text-slate-600">{territoryLine(loaded.territory)}</p>
       </CrmBlock>
