@@ -102,6 +102,7 @@ import { runPushRegisterHrIdGuardTests } from "./push-register-hr-id-guard.test.
 import { runLiveSheetStaleBannerTests } from "./live-sheet-stale-banner.test.ts";
 import { runBrevoKeepaliveTests } from "./brevo-keepalive.test.ts";
 import { runResidenceGeocodePolicyTests } from "./residence-geocode-policy.test.ts";
+import { runHiringPackResidenceAddressTests } from "./hiring-pack-residence-address.test.ts";
 import { runOutstationFuelPolicyTests } from "./outstation-fuel-policy.test.ts";
 import { runDeadMansSwitchTests } from "./dead-mans-switch.test.ts";
 import { runDirectOrdersSweepLivenessTests } from "./direct-orders-sweep-liveness.test.ts";
@@ -2235,6 +2236,7 @@ await runTest("telegram hardening", runTelegramHardeningTests);
 await runTest("telegram permanent-delivery-error classification", runTelegramDeliveryErrorsTests);
 await runTest("notification config drift guard", runConfigDriftTests);
 await runTest("residence geocode policy (a failed geocode must never null a stored coordinate)", runResidenceGeocodePolicyTests);
+await runTest("hiring pack address block feeds the residence record (and a half-filled block never overwrites a specific address)", runHiringPackResidenceAddressTests);
 await runTest("outstation fuel policy (an unmeasurable car distance must block, a measured 0 must not)", runOutstationFuelPolicyTests);
 await runTest("dead-man's-switch (Healthchecks.io ping helper)", runDeadMansSwitchTests);
 await runTest("direct orders sweeps stay watched (dead-man's-switch wiring)", runDirectOrdersSweepLivenessTests);
