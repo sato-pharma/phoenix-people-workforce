@@ -1,9 +1,11 @@
 "use client";
 
 import { ExternalLink, ImageOff, MapPinOff, TriangleAlert } from "lucide-react";
+import { useState } from "react";
 
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 import { formatDateTimeValue } from "@/lib/i18n/format";
+import { classifyPhotoFrame, measureImageFrame } from "@/lib/outstation/photo-frame";
 import type { ApproverTripPhoto } from "@/lib/outstation/trip-evidence-photos";
 
 /**
@@ -25,16 +27,48 @@ export function TripEvidencePhotos({
 }) {
   return (
     <div className="grid w-full gap-3 sm:grid-cols-2">
-      {photos.map((photo) => {
-        const capturedAt = photo.capturedAt ? formatDateTimeValue(photo.capturedAt) : "";
-        const caption = subject ? `${photo.label} · ${subject}` : photo.label;
-        return (
-          <figure className="m-0 flex min-w-0 flex-col border border-slate-200 bg-white" key={photo.kind}>
+      {photos.map((photo) => (
+        <TripEvidencePhoto key={photo.kind} photo={photo} subject={subject} />
+      ))}
+    </div>
+  );
+}
+
+/**
+ * One photo, with the one thing the stored review cannot tell the approver: whether the frame
+ * carries a picture at all.
+ *
+ * The gate checks a photo EXISTS, never that it shows anything, so a lens-covered capture passes
+ * it and the approver is shown a black rectangle with the Phoenix overlay on it — indistinguishable
+ * from a genuinely dark room (2 of 60 photos on production, measured 2026-09-29). Measured HERE,
+ * from the image the approver is already looking at: no server work, no second fetch, and — THE CRM
+ * GOLDEN RULE #1 — nothing whatever reaches the rep, who is never made to feel checked.
+ */
+function TripEvidencePhoto({
+  photo,
+  subject,
+}: {
+  photo: ApproverTripPhoto;
+  subject?: string | null;
+}) {
+  const [frame, setFrame] = useState<{ maxLuminance: number | null; meanLuminance: number | null }>({
+    maxLuminance: null,
+    meanLuminance: null,
+  });
+  const blankFrame = classifyPhotoFrame(frame);
+
+  const capturedAt = photo.capturedAt ? formatDateTimeValue(photo.capturedAt) : "";
+  const caption = subject ? `${photo.label} · ${subject}` : photo.label;
+  return (
+          <figure className="m-0 flex min-w-0 flex-col border border-slate-200 bg-white">
             {photo.url ? (
               <ZoomablePhoto
                 alt={subject ? `${photo.label} for ${subject}` : photo.label}
                 caption={caption}
                 className="block max-h-80 w-full bg-slate-900 object-contain"
+                // Measured once, when the browser has the pixels. A failure to read leaves the
+                // nulls in place, which classifies as "unknown" and says nothing.
+                onLoad={(event) => setFrame(measureImageFrame(event.currentTarget))}
                 src={photo.url}
               />
             ) : (
@@ -45,6 +79,12 @@ export function TripEvidencePhotos({
             )}
             <figcaption className="space-y-1.5 border-t border-slate-200 p-3">
               <p className="text-phx-xs font-black uppercase tracking-wide text-slate-600">{photo.label}</p>
+              {blankFrame.verdict === "no-image" && blankFrame.headline ? (
+                <p className="flex items-start gap-1.5 break-words border-l-2 border-amber-400 bg-amber-50 px-2 py-1.5 text-xs font-semibold leading-relaxed text-amber-900">
+                  <ImageOff className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  <span className="min-w-0">{blankFrame.headline}</span>
+                </p>
+              ) : null}
               {capturedAt ? <p className="text-xs font-semibold text-slate-900">{capturedAt}</p> : null}
               {photo.locationLabel ? (
                 <p className="break-words text-xs text-slate-600" dir="auto">
@@ -103,8 +143,5 @@ export function TripEvidencePhotos({
               ) : null}
             </figcaption>
           </figure>
-        );
-      })}
-    </div>
   );
 }

@@ -19,6 +19,7 @@ import { getRepTripVisitWorkload } from "@/lib/crm/visit-workload";
 import { cairoDateTime } from "@/lib/format/cairo-datetime";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { assertOutstationAdminAccess } from "@/lib/outstation/admin-access";
+import { classifyPhotoFrame, photoFrameMeasurementScript } from "@/lib/outstation/photo-frame";
 import { parseOutstationRequestId } from "@/lib/outstation/request-id";
 import {
   buildOutstationReviewDocument,
@@ -35,7 +36,7 @@ import { renderRouteStreetMap } from "@/lib/outstation/review-map-render";
 import { getOutstationRequestById } from "@/lib/outstation/service";
 import { approverTripPhotos } from "@/lib/outstation/trip-evidence-photos";
 import { resolveWorkloadFreshness } from "@/lib/outstation/workload-freshness";
-import { ChromiumUnavailableError, withChromiumPage } from "@/lib/pdf/chromium";
+import { type ChromiumPage, ChromiumUnavailableError, withChromiumPage } from "@/lib/pdf/chromium";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -130,6 +131,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         .join(" ");
       photos.push({
         capturedAtLabel: photo.capturedAt ? cairoDateTime(photo.capturedAt) : null,
+        // Filled after Chromium has decoded the picture — see the second pass below.
+        frameNote: null,
         image,
         label: photo.label,
         locationLabel: photo.locationLabel,
@@ -195,6 +198,35 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const pdf = await withChromiumPage(async (page) => {
       // Every image is already inline, so there is nothing to wait for on the network.
       await page.setContent(html, { timeout: 30_000, waitUntil: "domcontentloaded" });
+
+      // ── Is any evidence photo actually BLANK? ────────────────────────────────────────────────
+      //
+      // The review card flags a black frame, and this document's whole contract is to be that card
+      // on paper — so a note the screen carries and the PDF drops would make the PDF the less
+      // honest of the two, which is the opposite of the point.
+      //
+      // It has to happen HERE because nothing on the server can read a JPEG's pixels: Chromium is
+      // the only decoder in the runtime. So the document is rendered once, measured in the page it
+      // just became, and rendered again with the readings in. One extra parse of already-inline
+      // images, no second browser, and — on the ordinary trip where both photos are fine — no
+      // second render at all.
+      //
+      // It NEVER fails the document: an unreadable measurement classifies as "unknown", says
+      // nothing, and the PDF is produced exactly as it would have been.
+      const notes = await readBlankFrameNotes(page, photos.length);
+      if (notes.size > 0) {
+        await page.setContent(
+          buildOutstationReviewDocument({
+            generatedOn,
+            map,
+            photos: photos.map((photo, index) => ({ ...photo, frameNote: notes.get(index) ?? null })),
+            request: outstation,
+            workload,
+          }),
+          { timeout: 30_000, waitUntil: "domcontentloaded" },
+        );
+      }
+
       // Chromium applies `@media screen` by default even when producing a PDF.
       await page.emulateMediaType("print");
       const bytes = await page.pdf({
@@ -234,4 +266,41 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       { status: 500 },
     );
   }
+}
+
+/**
+ * Ask the rendered page which of its evidence photos carry no picture at all.
+ *
+ * The measurement is `measureImageFrame` itself, shipped into the page by
+ * `photoFrameMeasurementScript` — the same function the review card runs on the approver's screen,
+ * not a second copy of it. The verdict is then taken on THIS side, by the same pure classifier, so
+ * the sentence the PDF prints is the sentence the card shows, to the character.
+ *
+ * 🔴 It returns an EMPTY map on any trouble, and the document is produced unchanged. A photo that
+ * could not be measured is not a photo that is empty, and a PDF is not worth failing over a note.
+ */
+async function readBlankFrameNotes(page: ChromiumPage, photoCount: number): Promise<Map<number, string>> {
+  const notes = new Map<number, string>();
+  if (photoCount === 0) return notes;
+  try {
+    const readings = await page.evaluate(photoFrameMeasurementScript());
+    if (!Array.isArray(readings)) return notes;
+    for (const entry of readings) {
+      if (!entry || typeof entry !== "object") continue;
+      const { index, reading } = entry as { index?: unknown; reading?: unknown };
+      if (typeof index !== "number" || !Number.isInteger(index) || index < 0 || index >= photoCount) continue;
+      if (!reading || typeof reading !== "object") continue;
+      // Anything that is not a finite number arrives as undefined, which classifies as "unknown".
+      const { maxLuminance, meanLuminance } = reading as Record<string, unknown>;
+      const frame = classifyPhotoFrame({
+        maxLuminance: typeof maxLuminance === "number" ? maxLuminance : null,
+        meanLuminance: typeof meanLuminance === "number" ? meanLuminance : null,
+      });
+      if (frame.verdict === "no-image" && frame.headline) notes.set(index, frame.headline);
+    }
+  } catch {
+    // A page that cannot be evaluated says nothing about the photographs in it.
+    return new Map();
+  }
+  return notes;
 }

@@ -308,6 +308,7 @@ export function ZoomablePhoto({
   caption,
   className,
   onError,
+  onLoad,
   src,
 }: {
   alt: string;
@@ -317,6 +318,12 @@ export function ZoomablePhoto({
   caption?: string | null;
   className?: string;
   onError?: () => void;
+  /**
+   * Fires on the THUMBNAIL once the browser has the pixels. Threaded through for the one caller
+   * that measures the frame it just loaded (outstation evidence: is this photo black?), rather
+   * than having that caller drop back to a bare <img> and lose the tap-to-zoom.
+   */
+  onLoad?: (event: { currentTarget: HTMLImageElement }) => void;
   src: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -341,6 +348,7 @@ export function ZoomablePhoto({
           setOpen(true);
         }}
         onError={onError}
+        onLoad={onLoad}
         onKeyDown={(event) => {
           if (event.key !== "Enter" && event.key !== " ") return;
           event.preventDefault();

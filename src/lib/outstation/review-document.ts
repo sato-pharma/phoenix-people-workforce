@@ -33,6 +33,7 @@ import {
   parseOutstationDescription,
 } from "@/lib/outstation/description-format";
 import { viewEligibilityReason } from "@/lib/outstation/eligibility-reason";
+import { PHOTO_FRAME_INDEX_ATTRIBUTE } from "@/lib/outstation/photo-frame";
 import type { OutstationExpenseRequest } from "@/lib/outstation/types";
 
 /** The light-mode Phoenix tokens, pinned. See the header: dark mode must never reach paper. */
@@ -76,6 +77,12 @@ export type ReviewDocumentWorkload =
 
 export type ReviewDocumentPhoto = {
   capturedAtLabel: string | null;
+  /**
+   * "This photo carries no image…", when the frame was measured and found black. Filled on a SECOND
+   * pass, after Chromium has decoded the picture — nothing on the server can read a JPEG's pixels,
+   * so the first render leaves this null and the document is rebuilt once with the readings in.
+   */
+  frameNote: string | null;
   /** A data URI, never a signed URL — a signed URL is a key to the image and must not be printed. */
   image: string | null;
   label: string;
@@ -312,10 +319,11 @@ function photosBlock(photos: ReviewDocumentPhoto[]): string {
   if (photos.length === 0) return `<p class="thin">No photos are on file for this request.</p>`;
   return `<div class="photos">${photos
     .map(
-      (photo) => `<figure class="photo">
-        ${photo.image ? `<img src="${photo.image}" alt="${escapeHtml(photo.label)}">` : `<div class="photo__none">No picture</div>`}
+      (photo, index) => `<figure class="photo">
+        ${photo.image ? `<img src="${photo.image}" alt="${escapeHtml(photo.label)}" ${PHOTO_FRAME_INDEX_ATTRIBUTE}="${index}">` : `<div class="photo__none">No picture</div>`}
         <figcaption><span class="photo__k">${escapeHtml(photo.label)}</span>${photo.capturedAtLabel ? ` &middot; ${escapeHtml(photo.capturedAtLabel)}` : ""}
         ${photo.locationLabel ? `<br>${bidi(photo.locationLabel)}` : ""}
+        ${photo.frameNote ? `<br><span class="photo__blank">${escapeHtml(photo.frameNote)}</span>` : ""}
         ${photo.note ? `<br><span class="thin">${escapeHtml(photo.note)}</span>` : ""}</figcaption>
       </figure>`,
     )
@@ -467,5 +475,8 @@ body { font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; color: ${P.
 .photo__none { height: 62mm; border: .6pt dashed ${P.line}; display: flex; align-items: center; justify-content: center; color: ${P.inkFaint}; }
 .photo figcaption { margin-top: 1.2mm; font-size: 7.2pt; overflow-wrap: anywhere; }
 .photo__k { font-weight: 800; }
+/* The blank-frame note, carrying the amber the review card gives it. A left rule rather than a
+   filled box: the screen's own weighting, without a printed block of ink. */
+.photo__blank { display: block; margin-top: 1mm; padding-left: 1.6mm; border-left: 1.2pt solid #d97706; color: #92400e; font-weight: 700; }
 `;
 }
