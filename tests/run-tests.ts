@@ -1139,6 +1139,7 @@ import { runSosSeatAttributionPeriodTests } from "./sos-seat-attribution-period.
 import { runMonthlyClosingLockTests } from "./monthly-closing-lock.test.ts";
 import { runCaptureTrustReadoutTests } from "./capture-trust-readout.test.ts";
 import { runCaptureTrustTests } from "./capture-trust.test.ts";
+import { runCrmIntegrityPlaceDistanceTests } from "./crm-integrity-place-distance.test.ts";
 import { runClosingPeriodGateTests } from "./closing-period-gate.test.ts";
 import { runProductPeriodPriceTests } from "./product-period-price.test.ts";
 import { runVerifiedCapturesTests } from "./verified-captures.test.ts";
@@ -4315,6 +4316,7 @@ await runTest("SoS backfill matches the empty-string brick sentinel, not just NU
 await runTest("SoS seat attribution (today's wiring, departed reps keep their credit)", runSosSeatAttributionPeriodTests);
 await runTest('Monthly closing lock (database triggers, not a disabled button)', runMonthlyClosingLockTests);
 await runTest('CLOSING GOLDEN RULE (a month is never published during that month, Cairo boundary)', runClosingPeriodGateTests);
+await runTest('crm integrity board (how far a visit was saved from its place, read never recomputed)', runCrmIntegrityPlaceDistanceTests);
 await runTest('capture trust (the photo carries its OWN gps fix, never a copy of the location fix)', runCaptureTrustTests);
 await runTest('capture trust readout (the super admin sees photo vs location, and unmeasured is not suspicion)', runCaptureTrustReadoutTests);
 await runTest('PERIOD-SCOPED FACTORY PRICE (Saginko 170.52 from 2026-10; July/August must not move)', runProductPeriodPriceTests);
