@@ -1947,6 +1947,7 @@ import { runOverCapNeverBlocksTests } from "./over-cap-never-blocks.test.ts";
 import { runTargetsUnsavedEditGuardTests } from "./targets-unsaved-edit-guard.test.ts";
 import { runDirectOrderVenueGapsTests } from "./direct-order-venue-gaps.test.ts";
 import { runVacancyOptionLabelTests } from "./vacancy-option-label.test.ts";
+import { runOrganogramVacancyHireLinkTests } from "./organogram-vacancy-hire-link.test.ts";
 import { runOrganogramArabicSearchTests } from "./organogram-arabic-search.test.ts";
 import { runOrganogramTeamLabelTests } from "./organogram-team-label.test.ts";
 import { runWeeklyUploadLineNotificationTests } from "./weekly-upload-line-notification.test.ts";
@@ -6845,6 +6846,11 @@ await runTest(
 await runTest(
   "vacancy option label (a district vacancy names its district, not only the leaver own area)",
   runVacancyOptionLabelTests,
+);
+
+await runTest(
+  "organogram open seat -> Add Employee pre-filled (line, area, position and manager travel; gated on employees:update)",
+  runOrganogramVacancyHireLinkTests,
 );
 
 await runTest(

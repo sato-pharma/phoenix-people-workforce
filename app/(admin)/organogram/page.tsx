@@ -65,8 +65,14 @@ export default async function OrganogramPage() {
     initialError = organogramPageError(error);
   }
 
+  // The same capability POST /api/employees asserts. Decides only whether an OPEN SEAT
+  // popup offers the way through to a pre-filled Add Employee form — the organogram is
+  // readable by plenty of roles that may not hire.
+  const canAddEmployee = await canAccess(access, "employees", "update");
+
   return (
     <OrganogramReport
+      canAddEmployee={canAddEmployee}
       fixedLine={fixedLine}
       initialError={initialError}
       initialReport={initialReport}

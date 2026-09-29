@@ -6,7 +6,7 @@ import {
   EmployeePortalPageShell,
 } from "@/components/employee-portal/enterprise-shell";
 import { ScopeBadge } from "@/components/employee-portal/scope-badge";
-import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
+import { assertPermission, canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import {
   canAccessCompanyOrganogram,
@@ -103,6 +103,11 @@ export default async function EmployeePortalOrganogramPage() {
     initialError = initialReport.diagnostic.message;
   }
 
+  // The same capability POST /api/employees asserts. Decides only whether an OPEN SEAT
+  // popup offers the way through to a pre-filled Add Employee form — the organogram is
+  // readable by plenty of roles that may not hire.
+  const canAddEmployee = await canAccess(access, "employees", "update");
+
   if (initialError) {
     return (
       <EmployeePortalEmptyState
@@ -123,6 +128,7 @@ export default async function EmployeePortalOrganogramPage() {
         <ScopeBadge scope={access.scope} />
       </div>
       <EmployeeOrganogramDashboard
+        canAddEmployee={canAddEmployee}
         fixedLine={fixedLine}
         initialError={initialError}
         initialReport={initialReport}
