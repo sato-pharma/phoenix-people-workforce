@@ -1120,6 +1120,12 @@ try {
               'merging costs one more run on `main`, while closing and rebuilding the work later ' +
               'costs a fresh PR run AND that same `main` run. This clause is about what you OPEN, ' +
               'not about abandoning work already built and verified.\n\n' +
+              'TO SEE WHERE IT CAN GO, run:\n  node scripts/rollup-prs.mjs\n' +
+              'It reads every open PR and groups the ones whose file sets are DISJOINT into one ' +
+              'branch. A migration, a protected file or a frozen path is never folded in, and a ' +
+              'dependabot PR already subsumed by a hand-written one is reported as superseded ' +
+              'rather than merged twice. It writes nothing until `--apply`, and it never merges — ' +
+              'the roll-up is ONE approval from the owner in place of several.\n\n' +
               'If this one genuinely has to ship alone (an urgent fix, a locked file, a migration ' +
               'needing its own approval), run it again as:\n  ' +
               (String(input?.tool_name ?? '').toLowerCase().includes('powershell')

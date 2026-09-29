@@ -2021,6 +2021,7 @@ import { runRawNextDevGuardTests } from "./raw-next-dev-guard.test.ts";
 import { runLocalTypecheckGuardTests } from "./local-typecheck-guard.test.ts";
 import { runMobileFreezeTests } from "./mobile-freeze.test.ts";
 import { runMergeCooldownGuardTests, runSmokeDispatchGuardTests } from "./merge-cooldown-guard.test.ts";
+import { runRollupPrsTests } from "./rollup-prs.test.ts";
 import { runLoginPageMobileFitTests } from "./login-page-mobile-fit.test.ts";
 import { runPnpmOverrideScopeTests } from "./pnpm-override-scope.test.ts";
 import { runDeployDriftSettledRefTests } from "./deploy-drift-settled-ref.test.ts";
@@ -7274,6 +7275,11 @@ await runTest(
 await runTest(
   "bash-guard C10 refuses merging a PR too small to be worth its own two CI runs (measured 2026-09-29: 110 merges in a day, 41% of the week touching <=3 files) and refuses SIZE ONLY — two merges back to back are both allowed, because the owner cut the cooldown the same evening — while a 4-file PR, a large PR, both stand-down spellings, a merge with no PR number, an unreachable gh, gh pr view/list/checks, a git merge, a commit message and a heredoc that only quote the command all stay allowed",
   runMergeCooldownGuardTests,
+);
+
+await runTest(
+  "rollup-prs.mjs groups the open PRs into the fewest SAFE merges and writes nothing by default: two disjoint small PRs roll up, sharing one file keeps them apart (tests/run-tests.ts merges cleanly into a four-argument call), a migration or protected file or frozen path is never folded in, a SUPERSEDED bot PR does not disqualify the PR that supersedes it (which regressed on its first run), a lone small PR proposes nothing, a wide PR rides along but never forms a roll-up on its own, and `gh pr merge` appears nowhere in the script because merging stays the owner's word",
+  runRollupPrsTests,
 );
 
 await runTest(
