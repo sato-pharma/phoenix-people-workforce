@@ -16,6 +16,11 @@ import { unstable_cache } from "next/cache";
 
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
+import {
+  EMPLOYEE_LINE_SELECT,
+  resolveEmployeeLineName,
+  type EmployeeLineFields,
+} from "@/lib/employees/employee-org-labels";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export type CompanyVacationReportEmployeeOption = {
@@ -31,11 +36,10 @@ export type CompanyVacationReportFilterOptions = {
   lineNames: string[];
 };
 
-type EmployeeOptionRow = {
+type EmployeeOptionRow = EmployeeLineFields & {
   full_name: string | null;
   hr_id: string;
   job_title: string | null;
-  line_name: string | null;
   nickname: string | null;
 };
 
@@ -64,7 +68,10 @@ async function loadFilterOptionsRaw(): Promise<CompanyVacationReportFilterOption
   // with leave on record but no `employees` row (a real, recurring condition in this data) would
   // be missing from a roster-only dropdown — invisible in a filter that claims to list everyone.
   const [employeeResult, requestResult] = await Promise.all([
-    supabase.from("employees").select("hr_id,full_name,job_title,line_name,nickname"),
+    // The line comes from the `line_id` LINK, not from `employees.line_name` — that label is a
+    // denormalized copy nothing writes (1 of 198 rows carry it), so a roster read that took it
+    // alone offered a Line filter with one entry in it. See employee-line.ts.
+    supabase.from("employees").select(`hr_id,full_name,job_title,nickname,${EMPLOYEE_LINE_SELECT}`),
     supabase.from("v2_vacation_requests").select("employee_hr_id,employee_name,line_name"),
   ]);
 
@@ -82,7 +89,7 @@ async function loadFilterOptionsRaw(): Promise<CompanyVacationReportFilterOption
       hrId: employee.hr_id,
       jobTitle: employee.job_title,
       label: resolveEmployeeDisplayName(employee.full_name ?? employee.hr_id, employee.nickname),
-      lineName: employee.line_name,
+      lineName: resolveEmployeeLineName(employee),
     });
   }
   // Only fills gaps — an id already known from the roster keeps the roster's display name, which
