@@ -887,6 +887,127 @@ async function ensureProbationReminderEvents(employee: EmployeeScopeRow, directo
   if (error && !isProbationSchemaMissing(error)) throw error;
 }
 
+/**
+ * How often a stalled, past-deadline probation is re-chased. Seven days: the pre-deadline schedule
+ * (getProbationReminderSchedule) already fires three times in the run-up, so a weekly nudge after
+ * the deadline is escalation without becoming noise.
+ */
+export const OVERDUE_PROBATION_REMINDER_CADENCE_DAYS = 7;
+
+/** Whole days between two YYYY-MM-DD strings (to − from). Both are date-only, so UTC-anchored is exact. */
+function dateOnlyDaysBetween(from: string, to: string): number {
+  const a = Date.parse(`${from.slice(0, 10)}T00:00:00Z`);
+  const b = Date.parse(`${to.slice(0, 10)}T00:00:00Z`);
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return 0;
+  return Math.floor((b - a) / 86_400_000);
+}
+
+/**
+ * The PURE decision behind the overdue escalation: given a case's outstanding-ness, its probation
+ * end date and today, decide whether a weekly overdue reminder is due and which 7-day bucket it
+ * belongs to. Kept pure (no clock, no database) so tests can drive every calendar edge — the same
+ * split as selectUnpublishedClosings. `ensureOverdueProbationReminderEvents` is the I/O shell.
+ *
+ * 🔴 THE GAP THIS CLOSES. The three scheduled reminders all land BEFORE the deadline (the last at
+ * hire + 75, i.e. 15 days remaining). Once the 90 days lapse with the evaluation still open, nothing
+ * chased the manager and the case sat at `evaluation_requested` silently — six reached 46–60 days
+ * overdue on production before anyone noticed (2026-09-29). This fires weekly to DM + NSM + HR until
+ * a final decision is recorded; the send loop's own `isProbationDecisionOutstanding` gate means a
+ * case decided between weeks stops chasing on its own.
+ */
+export function planOverdueProbationReminder(input: {
+  outstanding: boolean;
+  probationEndDate: string | null | undefined;
+  today: string;
+  cadenceDays?: number;
+}): { create: boolean; daysOverdue: number; weekBucket: number } {
+  const none = { create: false, daysOverdue: 0, weekBucket: 0 };
+  if (!input.outstanding) return none; // already decided — nothing to chase
+  if (!input.probationEndDate) return none;
+  const daysOverdue = dateOnlyDaysBetween(input.probationEndDate, input.today);
+  if (daysOverdue < 1) return none; // not yet past the deadline — the pre-deadline schedule owns this
+  const cadence = input.cadenceDays ?? OVERDUE_PROBATION_REMINDER_CADENCE_DAYS;
+  return { create: true, daysOverdue, weekBucket: Math.floor(daysOverdue / cadence) };
+}
+
+/** Stable, collision-free key: one event per (employee, end date, 7-day bucket). */
+export function overdueProbationReminderEventKey(hrId: string, probationEndDate: string, weekBucket: number): string {
+  return `${hrId}:probation:probation_overdue:${probationEndDate}:w${weekBucket}`;
+}
+
+/**
+ * The I/O shell around planOverdueProbationReminder: writes one weekly `probation_overdue` event
+ * into notification_events for a past-deadline, still-open case. `ignoreDuplicates` on the bucketed
+ * event_key keeps a same-week re-run to one event, and a fresh bucket next week creates the next
+ * nudge. Recipients are DM + NSM + HR — the base cycle from ensureProbationReminderEvents.
+ */
+async function ensureOverdueProbationReminderEvents(
+  employee: EmployeeScopeRow,
+  row: Pick<ProbationRow, "workflow" | "probation_end_date">,
+  directory: EmployeeScopeRow[],
+) {
+  const probationEndDate = row.probation_end_date ?? canonicalProbationEndDate(employee.hireDate);
+  const plan = planOverdueProbationReminder({
+    outstanding: isProbationDecisionOutstanding(row),
+    probationEndDate,
+    today: todayDateOnly(),
+  });
+  if (!plan.create || !probationEndDate) return;
+
+  const hrApproverHrIds = await resolveActiveHrApproverHrIds();
+  const { nsmHrIds } = await resolveFeedbackExtraRecipients(employee, directory);
+  const workflowApproverHrIds = probationWorkflowApproverHrIds(employee, directory, hrApproverHrIds);
+  const recipientRoles = probationRecipientRoles(employee, directory, hrApproverHrIds);
+  const dmNormalized = normalizeHrId(managerOf(employee, directory)?.hrId);
+  const recipients = Array.from(
+    new Set([...(dmNormalized ? [dmNormalized] : []), ...nsmHrIds, ...hrApproverHrIds].filter(Boolean)),
+  );
+  if (recipients.length === 0) return; // no one to chase — an empty recipients array would send nowhere
+
+  const now = new Date().toISOString();
+  const overdueLabel = `${plan.daysOverdue} day${plan.daysOverdue === 1 ? "" : "s"}`;
+  const subject = `${employee.displayName}'s probation decision is overdue`;
+  const rows = [
+    {
+      category: "probation",
+      employee_hr_id: employee.hrId,
+      event_key: overdueProbationReminderEventKey(employee.hrId, probationEndDate, plan.weekBucket),
+      metadata: {
+        href: `/api/probation/redirect?employeeHrId=${employee.hrId}`,
+        message: `${employee.displayName}'s 90-day probation ended ${overdueLabel} ago and no decision has been recorded. Submit the manager evaluation and record the probation decision.`,
+        title: subject,
+        // Past the 90-day window, so it renders as day 90+overdue rather than a negative day count.
+        days_after_hire: lifecycleRiskWindows.probationDays + plan.daysOverdue,
+        days_remaining: -plan.daysOverdue,
+        days_overdue: plan.daysOverdue,
+        hire_date: employee.hireDate,
+        recipient_roles: recipientRoles,
+        reminder_type: "probation_overdue",
+        // Cycle 4 — after the three scheduled cycles (day-30 check, 30-remaining, 15-remaining).
+        cycle_number: 4,
+        workflowApproverHrIds,
+        details: [
+          { label: "Employee", value: `${employee.displayName} (${employee.hrId})` },
+          { label: "Probation ended", value: probationEndDate },
+          { label: "Overdue by", value: overdueLabel },
+          { label: "Status", value: "Decision overdue" },
+          { label: "Action", value: "Submit evaluation & decide" },
+        ],
+      },
+      recipients,
+      scheduled_for: todayDateOnly(),
+      status: "pending",
+      subject,
+      updated_at: now,
+    },
+  ];
+
+  const { error } = await getSupabaseAdmin()
+    .from("notification_events")
+    .upsert(rows, { onConflict: "event_key", ignoreDuplicates: true });
+  if (error && !isProbationSchemaMissing(error)) throw error;
+}
+
 async function ensureSystemProbationReview(employee: EmployeeScopeRow, probationEndDate: string) {
   const existingEvaluations = await loadEvaluationsByHrId().catch((error) => {
     if (isProbationSchemaMissing(error)) return new Map<string, ProbationWorkflowRecord>();
@@ -955,10 +1076,14 @@ export async function processDueProbationReminderEvents(limit = 25) {
   const employeesByHrId = new Map(employees.map((employee) => [normalizeHrId(employee.hrId), employee]));
 
   await Promise.all(
-    rows
-      .map((row) => employeesByHrId.get(normalizeHrId(row.hr_id)))
-      .filter((employee): employee is EmployeeScopeRow => Boolean(employee))
-      .map((employee) => ensureProbationReminderEvents(employee, employees)),
+    rows.map(async (row) => {
+      const employee = employeesByHrId.get(normalizeHrId(row.hr_id));
+      if (!employee) return;
+      // The three scheduled reminders (pre-deadline) …
+      await ensureProbationReminderEvents(employee, employees);
+      // … plus the weekly overdue escalation once the 90 days lapse with no decision recorded.
+      await ensureOverdueProbationReminderEvents(employee, row, employees);
+    }),
   );
 
   const { data, error } = await supabase
@@ -1027,6 +1152,14 @@ export async function processDueProbationReminderEvents(limit = 25) {
     const daysRemaining = Number(metadata.days_remaining ?? row.days_remaining);
     const daysAfterHire = Number(metadata.days_after_hire ?? 90 - daysRemaining);
     const daysRemainingValue = Number.isFinite(daysRemaining) ? daysRemaining : row.days_remaining;
+    // The overdue escalation reuses this send path; its copy must not read as "day 136 of a 90-day
+    // probation" or "−46 days remaining". Branch the human-facing strings on the reminder type.
+    const isOverdue = String(metadata.reminder_type ?? "") === "probation_overdue";
+    const daysOverdueValue = Number(metadata.days_overdue ?? (Number.isFinite(daysRemainingValue) ? -daysRemainingValue : 0));
+    const overdueLabel = `${daysOverdueValue} day${daysOverdueValue === 1 ? "" : "s"}`;
+    const reminderSummary = isOverdue
+      ? `${employee.displayName}'s 90-day probation ended ${overdueLabel} ago and no decision has been recorded.`
+      : `${employee.displayName} is at day ${Number.isFinite(daysAfterHire) ? daysAfterHire : "-"} of the fixed 90-day probation period.`;
     const reminderManagerName = employee.managerName ?? managerOf(employee, employees)?.displayName ?? "Team";
     const actionUrl = `/api/probation/redirect?employeeHrId=${encodeURIComponent(employee.hrId)}`;
     const notificationResult = await createSystemNotification({
@@ -1047,7 +1180,7 @@ export async function processDueProbationReminderEvents(limit = 25) {
         ],
         notificationType: "probation",
         subject: event.subject ?? `Probation reminder: ${employee.displayName}`,
-        summary: `${employee.displayName} is at day ${Number.isFinite(daysAfterHire) ? daysAfterHire : "-"} of the fixed 90-day probation period.`,
+        summary: reminderSummary,
         // The admin-editable probation_reminder template renders a detail table whose
         // cells use {{line}}/{{jobTitle}}/{{area}}/{{hireDate}}/{{endDate}}/{{duration}}
         // plus a "Dear {{managerName}}" greeting. The generic metric→context mapping in
@@ -1056,7 +1189,9 @@ export async function processDueProbationReminderEvents(limit = 25) {
         // is merged last into the render context, so it authoritatively fills them.
         templateContext: {
           area: employee.areaName ?? "—",
-          duration: `${daysRemainingValue} day${daysRemainingValue === 1 ? "" : "s"} remaining`,
+          duration: isOverdue
+            ? `${overdueLabel} overdue`
+            : `${daysRemainingValue} day${daysRemainingValue === 1 ? "" : "s"} remaining`,
           employeeHrId: employee.hrId,
           employeeName: employee.displayName,
           endDate: row.probation_end_date ?? "—",
@@ -1069,7 +1204,7 @@ export async function processDueProbationReminderEvents(limit = 25) {
         tone: row.days_remaining <= 15 ? "danger" : "warning",
       },
       eventType: "reminder_due",
-      message: `${employee.displayName} is at day ${Number.isFinite(daysAfterHire) ? daysAfterHire : "-"} of the fixed 90-day probation period.`,
+      message: reminderSummary,
       metadata: {
         ...metadata,
         actionUrl,
