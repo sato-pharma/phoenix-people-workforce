@@ -35,7 +35,6 @@
 
 import Link from "next/link";
 
-import { SeniorRepBadge } from "@/components/ui/senior-rep-badge";
 import { KPI_BAND_SHORT, type KpiBand } from "@/lib/crm/kpis-filters";
 
 // ── Tone ──────────────────────────────────────────────────────────────────────────────────────
@@ -399,14 +398,12 @@ export function KpiSortableTh({
  */
 export function KpiRepName({
   areaName,
-  hrId,
   jobTitle,
   lineName,
   name,
   rank,
 }: {
   areaName?: string | null;
-  hrId?: string | null;
   jobTitle?: string | null;
   lineName?: string | null;
   name: string;
@@ -417,11 +414,8 @@ export function KpiRepName({
     <span className="flex items-start gap-2">
       {rank != null ? <KpiRank rank={rank} /> : null}
       <span className="min-w-0 flex-1">
-        <span className="flex flex-wrap items-center gap-1.5">
-          <span className="font-semibold leading-5 text-slate-900" dir="auto">
-            {name || "Unnamed rep"}
-          </span>
-          <SeniorRepBadge hrId={hrId} />
+        <span className="block font-semibold leading-5 text-slate-900" dir="auto">
+          {name || "Unnamed rep"}
         </span>
         {/* Phone-only step up; from `sm` (and so in every desktop table) it is the measured 9px. */}
         {where ? <span className="block text-phx-2xs leading-4 text-slate-500 sm:text-phx-3xs">{where}</span> : null}

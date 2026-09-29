@@ -1,5 +1,4 @@
 import type { LineTopAchieversGroup } from "@/lib/employee-portal/service";
-import { SeniorRepBadge } from "@/components/ui/senior-rep-badge";
 
 /** Achievement-percentage → text color, matching the Medical Reps Performance page. */
 function achievementColor(pct: number): string {
@@ -47,10 +46,7 @@ export function LineTopAchieversCard({
                     {index + 1}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="flex flex-wrap items-center gap-1.5 break-words text-sm font-bold leading-snug text-slate-900">
-                      <span dir="auto">{achiever.name}</span>
-                      <SeniorRepBadge hrId={achiever.hrId} />
-                    </p>
+                    <p className="break-words text-sm font-bold leading-snug text-slate-900">{achiever.name}</p>
                     <p className="break-words text-phx-xs leading-snug text-slate-400">{achiever.areaName ?? "—"}</p>
                   </div>
                   <span className={`whitespace-nowrap text-base font-black tabular-nums ${achievementColor(achiever.achievementPercent)}`}>

@@ -23,7 +23,6 @@ import {
   pageHeaderRuleClassName,
 } from "@/components/admin/admin-design-tokens";
 import { Card } from "@/components/ui/card";
-import { SeniorRepBadge } from "@/components/ui/senior-rep-badge";
 import { cn } from "@/lib/utils";
 import { LineChart } from "./charts";
 import type {
@@ -635,7 +634,6 @@ function IdentityHero({
             <h1 className="min-w-0 break-words text-[1.05rem] font-black tracking-[-0.03em] text-slate-900 sm:text-[1.2rem]">
               {subject.displayName}
             </h1>
-            <SeniorRepBadge hrId={subject.hrId} />
             <span className="rounded-full border border-slate-300 bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-600">
               {subject.hrId.toUpperCase()}
             </span>

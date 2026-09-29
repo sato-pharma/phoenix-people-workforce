@@ -4,7 +4,6 @@ import { PlanStatusPicker } from "@/components/crm/plan-status-picker";
 import { PlanWeekPicker } from "@/components/crm/plan-week-picker";
 import { VerifyButton } from "@/components/crm/plan-verify-button";
 import { cairoStamp, Section, Tile } from "@/components/crm/reps-list-chrome";
-import { SeniorRepBadge } from "@/components/ui/senior-rep-badge";
 import { RepsListFilters } from "@/components/crm/reps-list-filters";
 import { PlanDoctorsTable } from "@/components/crm/reps-list-tables";
 import type { PlanSummary } from "@/lib/crm/plan-board";
@@ -155,10 +154,7 @@ function RepCard({ href, rep, weekIsFuture }: { href: string; rep: RepsWeeklyPla
       className="block border border-slate-200 bg-white px-4 py-3 transition-colors hover:border-orange-400 hover:bg-orange-50"
       href={href}
     >
-      <p className="flex flex-wrap items-center gap-1.5 text-sm font-black text-slate-900">
-        <span dir="auto">{rep.name}</span>
-        <SeniorRepBadge hrId={rep.hrId} />
-      </p>
+      <p className="text-sm font-black text-slate-900">{rep.name}</p>
       <p className="mt-0.5 text-phx-2xs font-semibold text-slate-500">
         {rep.areaNames.length > 0 ? rep.areaNames.join(" · ") : "No area on the seat"}
       </p>
