@@ -703,6 +703,7 @@ import { runClosingMatrixFoldTests } from "./closing-matrix-fold.test.ts";
 import { runClosingSummaryFitsTests } from "./closing-summary-fits.test.ts";
 import { runMasterWorkbookKeysetTests } from "./master-workbook-keyset.test.ts";
 import { runSalesVsTargetCacheTests } from "./sales-vs-target-cache.test.ts";
+import { runStagingHrSyncTests } from "./staging-hr-sync.test.ts";
 import { runBusinessReviewAchievementArithmeticTests } from "./business-review-achievement-arithmetic.test.ts";
 import { runTargetsRollupAchievementTests } from "./targets-rollup-achievement.test.ts";
 import { runClosingAndTargetsAgreeTests } from "./closing-and-targets-agree.test.ts";
@@ -3370,6 +3371,10 @@ await runTest("master workbook keyset (single keyset pass, raw_row folded, no OF
 await runTest(
   "sales vs target cache (freshness token in the key; rows gzipped under Next's 2MB data-cache limit)",
   runSalesVsTargetCacheTests,
+);
+await runTest(
+  "staging HR sync (production is only ever READ and staging only ever WRITTEN — production as the target is refused; FK dependency order holds; never deletes; triggers off but foreign keys on; dry run is the default)",
+  runStagingHrSyncTests,
 );
 await runTest("monthly sales run", runMonthlySalesRunTests);
 await runTest("sos resolveBrick precedence (area must not beat customer brick)", runSosResolveBrickPrecedenceTests);
