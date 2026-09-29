@@ -57,6 +57,7 @@ import {
   rowKey,
 } from "@/lib/reports/organogram-view-model";
 import { cn, formatEmployeeDisplayName } from "@/lib/utils";
+import { formatSeatOfferOut } from "@/lib/offers/seat-offer-label";
 
 export type OrgChartTheme = "admin" | "portal";
 
@@ -262,6 +263,27 @@ function PersonNode({
               </span>
             ) : null}
           </div>
+        ) : null}
+        {/* The letter already out against this empty chair (owner, 2026-09-29).
+            BESIDE the orange "Vacant" chip, never instead of it: the seat IS still vacant, and
+            replacing the word would say it is filled when nobody has been hired. What this adds is
+            the difference between an empty chair nobody has touched and one with a signed offer and
+            a start date on it — measured 2026-09-29, four of the forty-three open seats were
+            already spoken for and looked identical to the other thirty-nine.
+            Emerald for an accepted offer, sky for one still awaiting an answer, so the two read
+            apart at a glance and both read apart from the node's own orange. It wraps rather than
+            truncating: a half-shown candidate name is exactly what the no-ellipsis rule forbids. */}
+        {isVacancy && row.pendingOffer ? (
+          <p
+            className={cn(
+              "mt-1.5 whitespace-normal break-words rounded-md px-1.5 py-1 text-phx-2xs font-bold leading-tight",
+              row.pendingOffer.status === "accepted"
+                ? "bg-emerald-50 text-emerald-800"
+                : "bg-sky-50 text-sky-800",
+            )}
+          >
+            {formatSeatOfferOut(row.pendingOffer)}
+          </p>
         ) : null}
       </div>
     </>

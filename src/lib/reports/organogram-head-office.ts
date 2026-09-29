@@ -82,6 +82,7 @@
  */
 
 import { canonicalHrIdKey } from "@/lib/hr-id";
+import { offerSeatKeyForVacancy, type SeatOfferOut } from "@/lib/offers/seat-offer-label";
 import { hasWhatsAppNumber } from "@/lib/reports/organogram-whatsapp";
 import { isEmployeeVisibleInOrganogram, type OrganogramReportRow } from "@/lib/reports/vacancies";
 
@@ -137,6 +138,12 @@ export type HeadOfficeVacancyRow = {
 };
 
 export type BuildHeadOfficeRowsOptions = {
+  /**
+   * Seat-key -> the offer already out against that chair (owner, 2026-09-29). A Head Office
+   * vacancy has no AU seat, so it is found by `offerSeatKeyForVacancy(vacancy.id)`. Optional and
+   * defaulting to empty, so every existing caller emits exactly what it emitted before.
+   */
+  offerOutByVacancyKey?: Map<string, SeatOfferOut>;
   /**
    * The node key of the CEO seat as the seat model emitted it (its occupant HR ID, e.g.
    * "AA"). Head Office people who report to the CEO — and anyone whose manager cannot be
@@ -223,6 +230,7 @@ export function buildHeadOfficeOrganogramRows(
     ceoNodeKey,
     occupiedHrIds,
     vacancies = [],
+    offerOutByVacancyKey,
     // Default to the twin so an existing caller emits exactly what it emitted before.
     teamNameFor = (employee) => employee.team_name ?? null,
   } = options;
@@ -436,6 +444,7 @@ export function buildHeadOfficeOrganogramRows(
       positionTitle: title,
       regionName: null,
       replacementForHrId: null,
+      pendingOffer: offerOutByVacancyKey?.get(offerSeatKeyForVacancy(vacancy.id as number)) ?? null,
       seatId: nodeKey,
       sourceRowNumber: null,
       status: "open",

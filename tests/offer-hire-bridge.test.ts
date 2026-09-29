@@ -65,7 +65,10 @@ export function runOfferHireBridgeTests() {
   const withSeat = buildOfferHireDraft({ offer, vacancy: seat });
   assert.equal(withSeat.fullName, "Abdallah Saad");
   assert.equal(withSeat.hireDate, "2026-10-01");
-  assert.equal(withSeat.grossSalary, "18000", "the agreed package is carried across exactly as typed");
+  // The NET, corrected 2026-09-29 — this pinned `grossSalary` for half a day and that was wrong.
+  // The letter's total monthly package is take-home; the Employee Master derives gross ABOVE it.
+  // `tests/offer-out-on-seats.test.ts` checks the derivation against five real hires.
+  assert.equal(withSeat.netSalary, "18000", "the agreed package is carried across exactly as typed");
   assert.equal(withSeat.lineId, "2", "the seat's line");
   assert.equal(withSeat.areaId, "1089", "the seat's area");
   assert.equal(withSeat.departmentId, "1", "the seat's department — this is what keeps the vacancy closer department-safe");
@@ -83,7 +86,7 @@ export function runOfferHireBridgeTests() {
   const withoutSeat = buildOfferHireDraft({ offer, vacancy: null });
   assert.equal(withoutSeat.fullName, "Abdallah Saad", "the person is still carried");
   assert.equal(withoutSeat.hireDate, "2026-10-01", "so are the terms");
-  assert.equal(withoutSeat.grossSalary, "18000");
+  assert.equal(withoutSeat.netSalary, "18000");
   for (const key of ["areaId", "departmentId", "lineId", "managerHrId", "positionId", "regionName"] as const) {
     assert.equal(withoutSeat[key], "", `${key} must be blank when no seat is known — the form's own picker decides it`);
   }
@@ -118,19 +121,19 @@ export function runOfferHireBridgeTests() {
       "areaId",
       "departmentId",
       "fullName",
-      "grossSalary",
       "hireDate",
       "jobTitle",
       "lineId",
       "managerHrId",
+      "netSalary",
       "positionId",
       "regionName",
     ],
-    "the draft carries exactly these fields — no workEmail, no basic, no base, no net, no contract type",
+    "the draft carries exactly these fields — the NET and nothing else of the money; no workEmail, no basic, no base, no gross, no contract type",
   );
 
   assert.equal(
-    buildOfferHireDraft({ offer: { ...offer, totalMonthly: 0 }, vacancy: seat }).grossSalary,
+    buildOfferHireDraft({ offer: { ...offer, totalMonthly: 0 }, vacancy: seat }).netSalary,
     "",
     "a zero package is no package — a 0 in the salary box would look like a real answer",
   );
