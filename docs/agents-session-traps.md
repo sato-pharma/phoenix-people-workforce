@@ -2342,6 +2342,72 @@ git ls-remote origin 'refs/backups/<name>-<YYYYMMDD>'   # must print the sha
 `git-branch-d-is-not-a-safety-gate-after-a-squash-merge` ·
 `a-squash-merge-makes-a-stacked-branch-rebuild-not-merge`
 
+## `employees` carries dead label columns, and a blank from one reads as a fact — 2026-09-29
+
+`public.employees` holds a denormalized text copy beside three of its links. Nothing writes them.
+Measured across all 198 employees on production:
+
+| label | populated | the link beside it | populated |
+| --- | --- | --- | --- |
+| `line_name` | **1** | `line_id` | 181 |
+| `department_name` | **0** | `department_id` | 180 |
+| `area_name` | 145 | `area_id` | 174 |
+
+**A read that takes the label reports almost everybody as having nothing, and reports it as a
+BLANK.** That is the whole danger: a blank Line reads as a sentence about the person — *this one has
+no line* — rather than as a broken read, so nobody investigates it. This is the same defect the
+organogram's Team column was burned by on 2026-09-09 (`employees.team_name`, 0 of 107 populated,
+105 with a real `team_id`), on the same table, three weeks later.
+
+**`area_name` is the dangerous one, not the dead ones.** At 145 of 198 it LOOKS like it works, which
+is how it survived a sweep that caught the other two. Against the link: 29 rows have a link and no
+label (a blank on screen), **4 have both and disagree** (a stale name on screen), and 0 have a label
+without a link — so preferring the link can never lose information. The four disagreements are what
+the label actually is, a snapshot frozen at write time: two resigned reps still read
+`Fayoum-Beni Suef`, that territory's name from BEFORE the split, against `Fayoum` on the link.
+
+**Read the link, fall back to the label, never the other way round.** `employee-org-labels.ts` is the
+one resolver. The reader in `notifications/email.ts` had the pair inverted (`line_name || lines.name`),
+which is harmless only while the label stays empty and backwards the moment one row carries a stale
+one.
+
+### The worse defect the dead column was hiding
+
+`app/api/report-it/submit/route.ts` asked `employees` for `name`, `area` and `department` — **three
+columns that do not exist.** The table has `full_name`, `area_name`, `department_name`.
+
+🔴 **PostgREST ANSWERS A MISSING COLUMN WITH AN ERROR, AND FAILS THE WHOLE READ — it does not return
+null for that one field.** So `data` came back undefined, `emp` was null, and every field resolved to
+null: an adverse-event report would have been filed with no submitter name, no department, no line
+and no area on it, with a **201** and nothing in the logs. Report It is patient data. Nothing needed
+repairing only because `report_it_reports` held 0 rows. The lookup now logs its failure — swallowing
+it is what let a select naming three non-existent columns live.
+
+**A select is a string, and nothing else in the system checks that it names a column that exists.**
+The typecheck cannot see inside one. That is why the pinning test scans `.from("employees").select(…)`
+by text, and why a repo-wide grep for a column name must be anchored to the table: vacation requests,
+probation rows, seats, calendar events and the org-placement view all have their own REAL
+`line_name`, and a blanket sweep that confuses them with this one would delete live data.
+
+### Dropping such a column is TWO deploys, never one
+
+🔴 **While any read still NAMES the column in its select, the column cannot be dropped** — the DDL
+turns every one of those reads into a 42703 the moment it runs, and the failure is total rather than
+per-field. The order is: the code stops naming it → that ships and is **confirmed serving** → then
+the `ALTER TABLE … DROP COLUMN`. Removing the field from the TYPE as well as the select is what
+makes the compiler enforce it; leaving it optional lets a read quietly re-add it and still typecheck.
+
+Before the DDL: take a pre-image table, measure its grants rather than assuming them (a
+`create table … as select` copies rows but never RLS), and ask `pg_depend` for dependents **with a
+positive control** — `hr_id` returns 96, so an empty result for the dropped column means "nothing
+depends on it" rather than "my query is wrong". No `CASCADE`: cascade is what silently removes RLS
+policies a sweep missed.
+
+Pinned by `tests/employee-line-is-read-from-the-link.test.ts` (the resolver's order, the selects,
+and a text scan of every `.from("employees").select(…)`) and, for the earlier instance of the same
+defect, `tests/organogram-team-label.test.ts`. There is deliberately no memory slug for this: the
+rule lives here and in those two tests, and `MEMORY.md` is at its budget.
+
 ## `AGENTS.md` §2.1 Session-level traps — as it stood before the 2026-09-12 condensation
 
 On 2026-09-12 `AGENTS.md` was cut to roughly half its size at the owner's request ("Load less of AGENTS.md"): every hook was reduced to its rule plus the one detail needed to obey it. This is that section's hook text **verbatim** from `origin/main` 3eea44aef, kept so that no measurement, date, count or diagnosis a condensed hook dropped is lost. Search it for the hook's wording. The accounts earlier in this file remain the fuller record.
