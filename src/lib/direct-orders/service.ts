@@ -46,7 +46,11 @@ import { pingDirectOrderSheet } from "@/lib/direct-orders/sheet-webhook";
 import { summarizeDirectOrderBasket } from "@/lib/direct-orders/basket-label";
 import { canCancelHeldDirectOrder } from "@/lib/direct-orders/cancel-visibility";
 import { canViewDirectOrderEvidenceAiNote } from "@/lib/direct-orders/validation-visibility";
-import { getDirectOrderPharmacyValidationForRequest } from "@/lib/direct-orders/pharmacy-validation";
+import {
+  getDirectOrderPharmacyValidationForRequest,
+  loadDirectOrderVenueFieldEvidence,
+} from "@/lib/direct-orders/pharmacy-validation";
+import { directOrderFieldEvidenceGap } from "@/lib/direct-orders/field-evidence-gap";
 import { isCertainWholesalerVenue } from "@/lib/venues/wholesaler-venue-guard";
 import { resolveDirectOrderPharmacyValidationBadge } from "@/lib/direct-orders/pharmacy-validation-badge";
 import { isDirectOrderInvoiceContentType } from "@/lib/direct-orders/invoice-evidence";
@@ -5988,6 +5992,12 @@ export async function getDirectOrderApprovalDetail(
     rawEvidence && !canViewDirectOrderEvidenceAiNote(access.hrId, request)
       ? { ...rawEvidence, evidenceCheck: null }
       : rawEvidence;
+  // Whether anyone ever stood in front of this venue (owner, 2026-09-29). Asked of the VENUE, not of
+  // the single row above — that one is the most recent claim, and a venue captured in the field
+  // earlier would read as uncaptured. Never the render gate on `pharmacyEvidence`: the loudest case
+  // in production is a venue with no validation row at all.
+  const venueFieldEvidence = await loadDirectOrderVenueFieldEvidence(request.pharmacyId);
+  const pharmacyFieldEvidenceGap = directOrderFieldEvidenceGap(venueFieldEvidence);
   // The invoice the rep used (owner, 2026-09-14). "Expected" is a NEW pharmacy with a distributor
   // account — exactly what the SFE Manager confirms on this order — so a missing invoice is said out
   // loud there instead of reading as nothing to see.
@@ -6154,6 +6164,7 @@ export async function getDirectOrderApprovalDetail(
     // Resolved from the SAME evidence + pharmacy the panel below already renders, so the badge and
     // the evidence it jumps to can never disagree.
     pharmacyValidation: resolveDirectOrderPharmacyValidationBadge(pharmacy, pharmacyEvidence, nameOf),
+    pharmacyFieldEvidenceGap,
     orderInvoice,
     invoiceExpected,
     canAttachInvoice,
