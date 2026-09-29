@@ -1003,11 +1003,13 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
     bodyHtml:
       "<p><strong>Day 30 — early progress review</strong> for {{employeeName}} ({{employeeHrId}}).</p>" +
       "<p>DV progress: {{dvProgress}} · Provisional score: {{provisionalScore}} · Risk: {{riskStatus}}.</p>" +
-      "<p>{{summary}}</p><p>Confirm who has already completed a DV day and flag any early gaps.</p>",
+      "<p>{{summary}}</p><p>Confirm who has already completed a DV day and flag any early gaps.</p>" +
+      "<p>This is an automated Day 30 / 60 / 75 probation reminder.</p>",
     bodyText:
       "Day 30 — early progress review for {{employeeName}} ({{employeeHrId}}).\n" +
       "DV progress: {{dvProgress}} · Provisional score: {{provisionalScore}} · Risk: {{riskStatus}}.\n{{summary}}\n" +
-      "Confirm who has completed a DV day and flag early gaps.",
+      "Confirm who has completed a DV day and flag early gaps.\n" +
+      "This is an automated Day 30 / 60 / 75 probation reminder.",
     closingText: "Open the live report to review early progress.",
     description: "Day-30 milestone: early progress review (who has completed a DV day, early gaps and risks).",
     greeting: "Dear {{honorific}}{{recipientName}},",
@@ -1021,11 +1023,13 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
     bodyHtml:
       "<p><strong>Day 60 — escalation &amp; completion planning</strong> for {{employeeName}} ({{employeeHrId}}).</p>" +
       "<p>DV progress: {{dvProgress}} · Provisional score: {{provisionalScore}} · Risk: {{riskStatus}} · {{daysRemaining}} days remaining.</p>" +
-      "<p>{{summary}}</p><p>Schedule any remaining DV days and HR/SFE input before Day 75; resolve overdue feedback.</p>",
+      "<p>{{summary}}</p><p>Schedule any remaining DV days and HR/SFE input before Day 75; resolve overdue feedback.</p>" +
+      "<p>This is an automated Day 30 / 60 / 75 probation reminder.</p>",
     bodyText:
       "Day 60 — escalation & completion planning for {{employeeName}} ({{employeeHrId}}).\n" +
       "DV progress: {{dvProgress}} · Provisional score: {{provisionalScore}} · Risk: {{riskStatus}} · {{daysRemaining}} days remaining.\n{{summary}}\n" +
-      "Schedule remaining DV days + HR/SFE input before Day 75; resolve overdue feedback.",
+      "Schedule remaining DV days + HR/SFE input before Day 75; resolve overdue feedback.\n" +
+      "This is an automated Day 30 / 60 / 75 probation reminder.",
     closingText: "Open the live report to plan completion before Day 75.",
     description: "Day-60 milestone: escalation and completion planning (remaining requirements, overdue feedback, decision-readiness gaps).",
     greeting: "Dear {{honorific}}{{recipientName}},",
@@ -1039,11 +1043,13 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
     bodyHtml:
       "<p><strong>Day 75 — decision readiness</strong> for {{employeeName}} ({{employeeHrId}}).</p>" +
       "<p>DV progress: {{dvProgress}} · Score: {{provisionalScore}} · Risk: {{riskStatus}} · {{daysRemaining}} days remaining.</p>" +
-      "<p>{{summary}}</p><p>Review the consolidated evidence and any contradictions before the decision. No automatic decision is made.</p>",
+      "<p>{{summary}}</p><p>Review the consolidated evidence and any contradictions before the decision. No automatic decision is made.</p>" +
+      "<p>This is an automated Day 30 / 60 / 75 probation reminder.</p>",
     bodyText:
       "Day 75 — decision readiness for {{employeeName}} ({{employeeHrId}}).\n" +
       "DV progress: {{dvProgress}} · Score: {{provisionalScore}} · Risk: {{riskStatus}} · {{daysRemaining}} days remaining.\n{{summary}}\n" +
-      "Review the consolidated evidence + contradictions before the decision. No automatic decision is made.",
+      "Review the consolidated evidence + contradictions before the decision. No automatic decision is made.\n" +
+      "This is an automated Day 30 / 60 / 75 probation reminder.",
     closingText: "Open the live report to review decision readiness.",
     description: "Day-75 milestone: decision-readiness status (completeness, blockers, consolidated position). Never auto-decides.",
     greeting: "Dear {{honorific}}{{recipientName}},",
