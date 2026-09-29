@@ -230,3 +230,7 @@ status, give it its own line.
 - **A duplicate merge STRANDS the desk validation on the retired row.** — `a-duplicate-merge-strands-the-desk-validation-on-the-retired-row`
 - **The screen that SHOWS a badge is not the screen a rep can OPEN.** — `the-screen-that-shows-a-badge-is-not-the-screen-a-rep-can-open`
 
+## 6. Approval rules and git hygiene
+
+- **A feature arriving in instalments is still ONE feature — hold the parts and open one PR** — `hold-a-whole-feature-for-one-pr-even-when-he-asks-in-pieces` **(inline — load-bearing)**
+

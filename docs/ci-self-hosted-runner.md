@@ -117,6 +117,81 @@ or when one part is urgent and the rest is not. Never split merely because it re
 This composes with everything below: fewer runs, each cheaper (#4527), each billed at $0 (the
 runner).
 
+### 🔴 A feature arriving in instalments is still ONE feature — owner, 2026-09-29
+
+*"batch the next feature into one PR, not six"*. This is the second ruling on the same bill, and it
+exists because the first one did not bite: the rule above says **batch related work**, and a session
+can satisfy it honestly on every single PR while still shipping a feature in six pieces — because
+each piece really was one coherent change when it was asked for.
+
+**The arc that produced it, measured.** The one-press seat hire, all on 2026-09-29:
+
+| PR | Merged (Cairo) | Files | Lines |
+| --- | --- | --- | --- |
+| #4723 an open seat opens Add Employee already filled in | 12:12 | 10 | +454/-6 |
+| #4727 the same one-press hire on every open report row | 12:22 | 4 | +97/-1 |
+| #4731 the one-press hire on the portal page | 12:41 | 5 | +175/-10 |
+| #4736 a seat hire can pick the candidate from recruitment | 12:54 | 5 | +529/-3 |
+| **#4740 pins this very rule** | **13:31** | **3** | **+34/-1** |
+| #4743 the SFE can download a CV from the seat popup | 14:41 | 1 | +58/-1 |
+| #4746 a greyed "No CV on file" on a seat holding none | 15:18 | 4 | +334/-48 |
+| #4748 carry a candidate CV onto an already-hired employee | 15:53 | 6 | +783/-5 |
+
+🔴 **The rule was pinned at 13:31 Cairo and the splitting carried straight on through it** — three
+more that afternoon, then five more that evening on the same offer→seat→hire chain (#4751 18 files,
+#4761 11, #4772 1, #4783 4, #4787 5). **A rule in `AGENTS.md` did not change the behaviour**, which
+is why the hook now names the specific shapes to hold: the same mechanism on another surface, a
+follow-up named in the same breath, and a pin of a ruling just given.
+
+**Why it keeps happening — two mechanisms, only one of them obvious.** The owner asks for surfaces
+one at a time, because that is how the need occurs to him; each request genuinely reads as its own
+small change. The second is avoidable and is the real defect: **a new PR gets opened rather than
+widening one that already carries his `merge <n> when green`**, out of a misplaced reluctance to
+touch an approved PR. That reluctance is now explicitly overruled — widening a PR his approval sits
+on is allowed, provided it is said plainly and he is given the chance to re-confirm.
+
+**What one merge actually costs, measured on #4787 rather than assumed:**
+
+| Run | Billable |
+| --- | --- |
+| PR `ci.yml` (checks 5.40 → 6, validate 4.92 → 5, mobile 0.17 → 1) | 12 |
+| PR secret-scan | 1 |
+| `main` CI on the merge commit | 12 |
+| **One merge of a 5-file PR** | **25 billable minutes** |
+
+That confirms the ~28 figure above from live data, and it is per *merge* — the file count changes
+nothing, because every job is rounded up to a whole minute.
+
+🔴 **And the fixup half is worse than the merge half.** Every run on `codex/col-agreement`, the
+branch behind #4787:
+
+| Head | Workflow | Result | Billable |
+| --- | --- | --- | --- |
+| `6038b494f` | CI | **failure** | 9 |
+| `b56dc2ab7` | CI | cancelled by concurrency | 5 |
+| `c941994dc` | CI | **failure** | 12 |
+| `dbc065145` | CI | success | 12 |
+| (4 × secret-scan) | | success | 4 |
+| | | **branch total** | **42** |
+
+**54 billable minutes with `main`'s own run — for one 5-file PR whose clean cost is 25.** The
+concurrency cancel worked exactly as the rule above promises, saving ~7 minutes on one push. But
+**21 minutes went on two full red runs**, and both reds were defects a local run of the *one*
+failing test catches in seconds: a test reading a property the type does not have (invisible locally
+because the suite strips types rather than checking them), and a line shape the heredoc-backslash
+sweep rejects. **Running the specific failing test locally is not "a local full validation" and is
+not banned by §7** — it is the cheapest thing in this document.
+
+**What counts as one feature**, operationally: if the next instruction is plainly the same mechanism
+on another surface, a follow-up named in the same breath, or a pin of a ruling just given, it is the
+same feature — hold it, and say in one line that you are holding so he can override. Splitting stays
+right when the parts need **separate approval** (a migration, a locked file, a protected rule) or
+when one part is urgent and the rest is not.
+
+**Never convert these minutes into a monthly bill.** Doing that overstated September by roughly 2x;
+the invoice is the only authority and the owner read it as **$300.88**. Measure minutes, report
+minutes.
+
 ## 🔴 Where the money actually is — and why the run COUNT lies
 
 **Counting runs gives the wrong answer, and a session acted on it.** On 2026-09-27 the owner was told
