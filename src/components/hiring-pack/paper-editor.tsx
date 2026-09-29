@@ -52,6 +52,7 @@ import { Button } from "@/components/ui/button";
 import { FieldHistoryPanel } from "@/components/hiring-pack/field-history-panel";
 import { Input } from "@/components/ui/input";
 import type { DocumentFieldInventoryEntry } from "@/lib/hiring-pack/document-inventory";
+import { anchorRootFor } from "@/lib/hiring-pack/anchor-root";
 import {
   DOCUMENT_MARKS,
   DOCUMENT_MARK_DEFAULT_SIZE,
@@ -1495,7 +1496,10 @@ export function HiringPackPaperEditor({
             y: Math.max(0, yPt - (armedMark ? addedBox.h / 2 : 7)),
           });
         } else {
-          const copyRoot = target.closest(".copy") ?? doc.body;
+          // Rooted at this element's own COPY, not at the body — see anchor-root.ts. A body-rooted
+          // path starts with a step that names one copy, and the flow layer would then stamp that
+          // copy and leave the others blank.
+          const copyRoot = anchorRootFor(target, doc.body);
           if (target === copyRoot) {
             setFieldsError("Click on some text or a cell to anchor the new field there.");
             disarm();
