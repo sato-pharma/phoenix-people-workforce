@@ -142,11 +142,31 @@ function runAccessTests() {
     body.includes('access.role === "Super Admin"'),
     "Super Admin is the seat that may open it",
   );
+  assert.ok(
+    body.includes('access.role === "SFE Manager"'),
+    "the SFE Manager may open it (owner, 2026-09-29) — golden rule #1 names them as a reader of integrity signals",
+  );
+  // The exact set, in order. Anything else appearing here is a widening nobody asked for, and this
+  // gallery is the most sensitive screen in the app: live photos of customers, their GPS locations
+  // and the reps who took them, company-wide on one page. Each role is the owner's own decision —
+  // Super Admin 2026-09-24, SFE Manager 2026-09-29 — never a side effect of some other change.
   const roleChecks = body.match(/access\.role === "[^"]+"/g) ?? [];
   assert.deepEqual(
     roleChecks,
-    ['access.role === "Super Admin"'],
-    "access was NOT widened by this readout — adding a role here is the owner's call, never a side effect",
+    ['access.role === "Super Admin"', 'access.role === "SFE Manager"'],
+    "exactly these two seats — adding a third is the owner's call, never a side effect",
+  );
+
+  // A GRANT WITHOUT A LINK IS NOT A GRANT. The server gate and the sidebar are two different
+  // lists, and widening only the first leaves the seat able to open a URL it can never find —
+  // which reads as "the feature does not work for me", not as a permissions bug. Nav is UX and the
+  // gate above is the security boundary; both still have to name the seat for it to be usable.
+  const navigation = read("../src/config/system-navigation.ts");
+  assert.ok(
+    navigation.includes(
+      '{ href: "/admin/verified-captures", icon: MapPinned, label: "Verified Captures", roles: ["Super Admin", "SFE Manager"] },',
+    ),
+    "the sidebar must offer Verified Captures to both seats, or the SFE Manager cannot reach it",
   );
 }
 
