@@ -56,3 +56,46 @@ export function extensionForCvContentType(contentType: string): string {
 export function employeeCvHref(hrId: string | null | undefined): string {
   return `/api/employees/${encodeURIComponent(String(hrId ?? "").trim())}/cv`;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// What a viewer is told about a CV
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The four answers a `?meta=1` probe of the CV route can produce, for a surface that offers the
+ * download — the organogram seat popup today.
+ *
+ * FOUR, NOT A BOOLEAN, and that is the whole point of this type. A boolean collapses "there is no
+ * file on this person's record" into "you may not read CVs" into "the answer has not come back",
+ * and those are three different sentences to a person: one is about the record, one is about him,
+ * and one is about the network. Collapsed, the popup showed nothing in all three cases — which on
+ * production means 189 of 198 seats looked exactly like a seat where the feature does not exist.
+ */
+export type CvNoticeState = "probing" | "ready" | "empty" | "forbidden";
+
+/**
+ * The greyed notice on a seat whose record holds no CV. The owner's own wording, 2026-09-29, when
+ * he was shown that a silent seat reads as a missing feature: "show a greyed No CV on file on seats
+ * with no CV". Asserted verbatim by tests/organogram-seat-cv-notice.test.ts — a decision, not a
+ * label to reword.
+ */
+export const CV_EMPTY_NOTICE = "No CV on file";
+
+/**
+ * Turn one `?meta=1` response into what the viewer is shown.
+ *
+ * THE ONE RULE THAT MATTERS: only a 200 may produce "empty". `empty` puts a claim about the
+ * employee's record on screen ("there is no CV on file for this person"), and a 500, a dropped
+ * connection or an aborted fetch is not evidence for that claim — it is the absence of evidence.
+ * Those stay "probing", which shows nothing, exactly as the popup behaved before the notice
+ * existed. A 401/403 is the CV gate refusing this viewer, so it is "forbidden" and also silent:
+ * he is not missing a file, and a notice about a door that is shut to him either way is noise.
+ */
+export function resolveCvNoticeState(probe: {
+  ok: boolean;
+  status: number;
+  hasCv: boolean;
+}): CvNoticeState {
+  if (!probe.ok) return probe.status === 401 || probe.status === 403 ? "forbidden" : "probing";
+  return probe.hasCv ? "ready" : "empty";
+}
