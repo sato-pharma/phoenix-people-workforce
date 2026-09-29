@@ -526,7 +526,24 @@ export type MarketingValidationCustomerInput = {
   customerType: MarketingCustomerType;
   displayName: string;
   evidenceHasTimestamp?: boolean;
+  /**
+   * The live photo's OWN position, read fresh at the shutter — NOT a copy of `capturedLatitude`.
+   *
+   * Added 2026-09-29. Before it, `marketing_evidence_files.captured_latitude/longitude` were
+   * written from the *Capture Location* fix, so a photo's stored coordinates were always identical
+   * to the venue's by construction and the distance between them was structurally zero. The
+   * columns implied a comparison that was never performed: a production capture that day had
+   * 18m31s between the location fix and the shutter, and nothing could say whether the camera had
+   * moved in between.
+   *
+   * All three are null when the browser refused or timed out at the shutter. The server stores that
+   * null as-is and never substitutes the location fix — a null means NOT MEASURED, and no reader
+   * may treat it as evidence that the photo and the location agree.
+   */
+  evidencePhotoAccuracyMeters?: number | null;
   evidencePhotoCapturedAt?: string | null;
+  evidencePhotoLatitude?: number | null;
+  evidencePhotoLongitude?: number | null;
   /**
    * The captured JPEG itself, as `data:image/jpeg;base64,…`.
    *
@@ -611,9 +628,13 @@ export type MarketingValidationExistingPharmacyInput = {
   capturedLatitude?: number | null;
   capturedLongitude?: number | null;
   evidenceHasTimestamp?: boolean;
+  /** The shutter's own fix — see `MarketingValidationCustomerInput.evidencePhotoLatitude`. */
+  evidencePhotoAccuracyMeters?: number | null;
   evidencePhotoCapturedAt?: string | null;
   /** See `MarketingValidationCustomerInput.evidencePhotoDataUrl`. */
   evidencePhotoDataUrl?: string | null;
+  evidencePhotoLatitude?: number | null;
+  evidencePhotoLongitude?: number | null;
   evidencePhotoName?: string | null;
   existingPharmacyId: string;
   extractedAreaName?: string | null;
@@ -645,9 +666,13 @@ export type MarketingValidationPharmacyInput = {
   capturedLongitude?: number | null;
   displayName: string;
   evidenceHasTimestamp?: boolean;
+  /** The shutter's own fix — see `MarketingValidationCustomerInput.evidencePhotoLatitude`. */
+  evidencePhotoAccuracyMeters?: number | null;
   evidencePhotoCapturedAt?: string | null;
   /** See `MarketingValidationCustomerInput.evidencePhotoDataUrl`. */
   evidencePhotoDataUrl?: string | null;
+  evidencePhotoLatitude?: number | null;
+  evidencePhotoLongitude?: number | null;
   evidencePhotoName?: string | null;
   extractedAreaName?: string | null;
   extractedGovernorateName?: string | null;
