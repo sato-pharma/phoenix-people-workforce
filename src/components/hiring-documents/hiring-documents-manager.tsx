@@ -40,6 +40,7 @@ import {
   hiringDocumentFilterSearchParams,
   type HiringDocumentFilterState,
 } from "@/lib/hiring-documents/filters";
+import { hiringDocumentApplies, hiringDocumentsFor } from "@/lib/hiring-documents/readiness-signal";
 import type {
   HiringDocumentDefinition,
   HiringDocumentEmployeeRow,
@@ -690,6 +691,19 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
                             const status = entry?.status ?? "pending";
                             const busy = Boolean(busyKey?.startsWith(`${employee.hrId}:${document.id}`));
 
+                            // An exit paper against somebody who has not left is not a slot at all
+                            // — no badge, no buttons, nothing to tick. The column stays, because it
+                            // is the same column for the leavers in the same table.
+                            if (!hiringDocumentApplies(document, employee)) {
+                              return (
+                                <td className={tableCellClassName} key={`${employee.hrId}:${document.id}`}>
+                                  <p className="text-xs font-semibold text-phx-ink-faint" title="Only applies once this employee leaves">
+                                    Leavers only
+                                  </p>
+                                </td>
+                              );
+                            }
+
                             return (
                               <td className={tableCellClassName} key={`${employee.hrId}:${document.id}`}>
                                 <div className="space-y-2">
@@ -840,7 +854,11 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
               ) : (
                 filteredEmployees.map((employee, index) => {
                   const completion = employeeCompletion(employee, documents);
-                  const submittedCount = documents.filter(
+                  // The documents that apply to THIS person: an exit paper is not on an active
+                  // employee's card at all, so the count under it is out of what they can actually
+                  // be asked for.
+                  const applicableDocuments = hiringDocumentsFor(documents, employee);
+                  const submittedCount = applicableDocuments.filter(
                     (document) => employee.documents[document.id]?.status === "submitted",
                   ).length;
 
@@ -882,13 +900,13 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
 
                       <div className="mt-3">
                         <p className="mb-1.5 text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">
-                          Documents ({submittedCount}/{documents.length} submitted)
+                          Documents ({submittedCount}/{applicableDocuments.length} submitted)
                         </p>
                         <div className="divide-y divide-phx-line rounded-xl border border-phx-line">
-                          {documents.length === 0 ? (
+                          {applicableDocuments.length === 0 ? (
                             <div className="px-3 py-3 text-xs text-phx-ink-soft">No hiring documents configured.</div>
                           ) : (
-                            documents.map((document) => {
+                            applicableDocuments.map((document) => {
                               const entry = employee.documents[document.id];
                               const dueDate = entry?.dueDate ?? "";
                               const status = entry?.status ?? "pending";

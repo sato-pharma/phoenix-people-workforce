@@ -11,11 +11,12 @@ import {
 import {
   EMPTY_HIRING_DOCUMENT_FILTERS,
   filterHiringDocumentEmployees,
+  hiringDocumentCompletionPercent,
   hiringDocumentFilterSearchParams,
   readHiringDocumentFilters,
   type HiringDocumentFilterState,
 } from "../src/lib/hiring-documents/filters.ts";
-import { hiringDocumentSignal } from "../src/lib/hiring-documents/readiness-signal.ts";
+import { hiringDocumentApplies, hiringDocumentSignal } from "../src/lib/hiring-documents/readiness-signal.ts";
 import type {
   HiringDocumentDefinition,
   HiringDocumentEmployeeRow,
@@ -49,10 +50,12 @@ import type {
 const TODAY = new Date("2026-09-29T00:00:00");
 
 const DOCUMENTS: HiringDocumentDefinition[] = [
-  { createdAt: "2026-01-01T00:00:00Z", description: null, displayOrder: 1, id: "doc-id", name: "National ID" },
-  { createdAt: "2026-01-01T00:00:00Z", description: null, displayOrder: 2, id: "doc-contract", name: "Signed contract" },
-  { createdAt: "2026-01-01T00:00:00Z", description: null, displayOrder: 3, id: "doc-degree", name: "Degree certificate" },
-  { createdAt: "2026-01-01T00:00:00Z", description: null, displayOrder: 4, id: "doc-insurance", name: "Insurance form 1" },
+  { createdAt: "2026-01-01T00:00:00Z", description: null, displayOrder: 1, id: "doc-id", isExitDocument: false, name: "National ID" },
+  { createdAt: "2026-01-01T00:00:00Z", description: null, displayOrder: 2, id: "doc-contract", isExitDocument: false, name: "Signed contract" },
+  { createdAt: "2026-01-01T00:00:00Z", description: null, displayOrder: 3, id: "doc-degree", isExitDocument: false, name: "Degree certificate" },
+  { createdAt: "2026-01-01T00:00:00Z", description: null, displayOrder: 4, id: "doc-insurance", isExitDocument: false, name: "Insurance form 1" },
+  // Owner ruling, 2026-09-29: an exit paper only counts for somebody who has actually left.
+  { createdAt: "2026-01-01T00:00:00Z", description: null, displayOrder: 5, id: "doc-clearance", isExitDocument: true, name: "Signed company clearance" },
 ];
 
 function entry(overrides: Partial<HiringDocumentEntry> & { documentId: string }): HiringDocumentEntry {
@@ -106,7 +109,21 @@ const OVERDUE = employee({ fullName: "Karim Adel", hrId: "A-13", lineName: "CNS"
   entry({ documentId: "doc-insurance", dueDate: "2026-08-01", fileCount: 1, status: "submitted" }),
 ]);
 
-const EMPLOYEES = [EVIDENCED, TICKED_NO_FILE, OVERDUE];
+// Resigned, so the clearance DOES apply to her — and it is the only person in the fixture it
+// applies to. Everything else about her is complete, so if the clearance ever stopped counting for
+// a leaver she would silently read 100% with an unsigned clearance.
+const LEAVER = employee(
+  { employmentStatus: "resigned", fullName: "Rania Fouad", hrId: "A-14", lineName: "Pedia" },
+  [
+    entry({ documentId: "doc-id", fileCount: 1, status: "submitted" }),
+    entry({ documentId: "doc-contract", fileCount: 1, status: "submitted" }),
+    entry({ documentId: "doc-degree", fileCount: 1, status: "submitted" }),
+    entry({ documentId: "doc-insurance", fileCount: 1, status: "submitted" }),
+    entry({ documentId: "doc-clearance", status: "pending" }),
+  ],
+);
+
+const EMPLOYEES = [EVIDENCED, TICKED_NO_FILE, OVERDUE, LEAVER];
 
 async function readBack(buffer: ArrayBuffer) {
   const workbook = new ExcelJS.Workbook();
@@ -166,6 +183,28 @@ export async function runHiringDocumentsExportWorkbookTests() {
     hiringDocumentSignal({ dueDate: "2026-01-01", fileCount: 2, status: "submitted" }, TODAY),
     "complete",
     "a document that arrived after its deadline is finished, not late — chasing it wastes HR's morning",
+  );
+
+  // ── 1b. an exit document only counts for somebody who has actually left (owner, 2026-09-29)
+  const clearance = { isExitDocument: true };
+  const onboarding = { isExitDocument: false };
+  assert.equal(hiringDocumentApplies(clearance, { employmentStatus: "active" }), false);
+  assert.equal(hiringDocumentApplies(clearance, { employmentStatus: "on_leave" }), false);
+  assert.equal(hiringDocumentApplies(clearance, { employmentStatus: "resigned" }), true);
+  assert.equal(hiringDocumentApplies(clearance, { employmentStatus: "terminated" }), true);
+  assert.equal(hiringDocumentApplies(clearance, { employmentStatus: "not_renewed" }), true);
+  assert.equal(
+    hiringDocumentApplies(clearance, { employmentStatus: "system_placeholder" }),
+    false,
+    "a payroll placeholder is not a person who left — session-lifecycle.ts keeps the departed set "
+    + "separate precisely because a Form 6 filed for one is a form the insurance office rejects",
+  );
+  assert.equal(hiringDocumentApplies(onboarding, { employmentStatus: "active" }), true);
+  assert.equal(
+    hiringDocumentCompletionPercent(EVIDENCED, DOCUMENTS),
+    100,
+    "an active employee who has handed in everything asked of them reads 100% — the clearance "
+    + "leaves the DENOMINATOR, not just the numerator, or nobody who has not resigned can ever get there",
   );
 
   // ── 2. the filter state survives the trip to the server, and the predicate is the screen's
@@ -261,6 +300,26 @@ export async function runHiringDocumentsExportWorkbookTests() {
     "completion is stored as a number with a percent format, so Excel's own sort does not put 100% before 9%",
   );
 
+  // The exit paper: a dash for the three who are still here, a real state for the one who left.
+  const clearanceColumn = columnOf(matrix, matrixHeader, "Signed company clearance");
+  const leaverRow = findRow(matrix, matrixHeader, employeeColumn, "Rania Fouad");
+  assert.equal(
+    matrix.getCell(evidencedRow, clearanceColumn).value,
+    "—",
+    "a clearance against somebody still working here is not pending and not complete — it is not a slot",
+  );
+  assert.equal(
+    matrix.getCell(leaverRow, clearanceColumn).value,
+    "Pending",
+    "for the person who resigned it is real work, and it is the ONLY thing outstanding for her",
+  );
+  assert.equal(matrix.getCell(leaverRow, attentionColumn).value, 1);
+  assert.equal(
+    matrix.getCell(evidencedRow, columnOf(matrix, matrixHeader, "Complete %")).value,
+    1,
+    "and the man with every applicable document filed still reads 100% with the clearance in the checklist",
+  );
+
   // The header and the name column stay put while a wide checklist scrolls under them.
   const view = matrix.views[0] as { state?: string; xSplit?: number; ySplit?: number };
   assert.equal(view.state, "frozen");
@@ -287,8 +346,10 @@ export async function runHiringDocumentsExportWorkbookTests() {
 
   assert.equal(
     listed.length,
-    5,
-    "five documents have genuinely not arrived — Basma's unscanned National ID is not one of them",
+    6,
+    "six documents have genuinely not arrived — five onboarding papers plus the leaver's clearance. "
+    + "Basma's unscanned National ID is not one of them, and neither are the three clearances that "
+    + "belong to people who have not left",
   );
   assert.ok(
     !listed.some(([status]) => status === "Submitted · no file"),
@@ -334,8 +395,8 @@ export async function runHiringDocumentsExportWorkbookTests() {
   const idDocumentRow = findRow(byDocument, documentHeader, nameColumn, "National ID");
   assert.equal(
     byDocument.getCell(idDocumentRow, submittedColumn).value,
-    2,
-    "Ahmed's and Basma's National IDs have both arrived — the scan is a separate question",
+    3,
+    "Ahmed's, Basma's and the leaver's National IDs have all arrived — the scan is a separate question",
   );
   assert.equal(byDocument.getCell(idDocumentRow, unevidencedColumn).value, 1, "and one of the two has no scan");
   assert.equal(
@@ -344,7 +405,12 @@ export async function runHiringDocumentsExportWorkbookTests() {
     "an unscanned document is amber housekeeping, never the red of a document nobody has handed in",
   );
   const totalsRow = findRow(byDocument, documentHeader, nameColumn, "All documents");
-  assert.equal(byDocument.getCell(totalsRow, submittedColumn).value, 7, "seven of the twelve slots have arrived");
+  assert.equal(
+    byDocument.getCell(totalsRow, submittedColumn).value,
+    11,
+    "eleven of the seventeen APPLICABLE slots have arrived — 16 onboarding plus the one clearance "
+    + "that applies, never 4 employees x 5 documents",
+  );
 
   // ── 7. the cover names who took it, when, in Cairo, and with which filters
   const coverText = (() => {
@@ -361,7 +427,7 @@ export async function runHiringDocumentsExportWorkbookTests() {
   );
   assert.ok(coverText.includes("Submitted · no file"), "the legend explains every state on the sheets");
   assert.ok(
-    coverText.includes("Submitted with no file scanned | 1 of 7"),
+    coverText.includes("Submitted with no file scanned | 1 of 11"),
     "the cover's headline counts what ARRIVED, and states the evidence gap beside it rather than "
     + "quietly holding a stricter number than every green cell on the matrix",
   );

@@ -1,4 +1,5 @@
 import type { CvDatabaseRow } from "@/lib/cv/cv-database";
+import { hiringDocumentsFor } from "@/lib/hiring-documents/readiness-signal";
 import type { HiringDocumentDefinition, HiringDocumentEmployeeRow } from "@/lib/hiring-documents/types";
 
 export type OnboardingDocumentMetrics = {
@@ -56,11 +57,17 @@ export function summarizeHiringDocumentReadiness(
   let missingDocuments = 0;
   let pendingDocuments = 0;
   let dueDocuments = 0;
+  // Counted rather than derived from employees x documents: the two are no longer the same number.
+  // An exit document does not apply to an active employee (owner ruling, 2026-09-29), so it is not
+  // a slot for them at all — it has to leave the denominator as well as the numerator, or the
+  // readiness rate can never reach 1 for anybody who has not resigned.
+  let totalDocumentSlots = 0;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
   for (const employee of employees) {
-    for (const document of documents) {
+    for (const document of hiringDocumentsFor(documents, employee)) {
+      totalDocumentSlots += 1;
       const entry = employee.documents[document.id] ?? {
         documentId: document.id,
         dueDate: null,
@@ -75,7 +82,6 @@ export function summarizeHiringDocumentReadiness(
     }
   }
 
-  const totalDocumentSlots = employees.length * documents.length;
   return {
     completeDocuments: submittedDocuments,
     dueDocuments,
