@@ -54,6 +54,38 @@ export const HOUSE_XLSX_COLORS = {
 } as const;
 
 /**
+ * THE STATUS SIGNAL — green, amber and red, as ink AND as a soft ground.
+ *
+ * OWNER INSTRUCTION, 2026-09-29, in his own words: "use colors like green and red to identify what
+ * needs to be identified". It is a deliberate exemption from this format's usual restraint, and it
+ * is narrow on purpose — these three pairs are for a cell whose ONLY job is to say whether
+ * something is done, outstanding or late. Nothing else on a house sheet takes them: the headers,
+ * the zebra, the rules and the body type are unchanged, so a sheet still reads as a company
+ * document with a traffic light on one column rather than as a different format.
+ *
+ * WHY A FILL AND NOT ONLY TYPE. The marketing coverage workbook colours its Status column as type
+ * alone, on the reasoning that the word already says "Approved" so a block says it twice. That
+ * holds for one column read line by line. It does not hold for a readiness MATRIX, which is what
+ * hiring documents is: dozens of columns of the same five words, where the reader is not reading at
+ * all but looking for the shape of the red. The word stays in the cell, so the sheet is still
+ * correct with the colour stripped — printed in mono, or read by someone who cannot separate red
+ * from green — and the ground is what makes it scannable.
+ *
+ * The tints are the ink at about 12% on white, picked to sit at the same weight as the 6% brand
+ * zebra rather than to shout over it. `bad` reuses `flag`, so the standard keeps ONE red.
+ */
+export const HOUSE_XLSX_SIGNAL = {
+  /** Done — nothing to chase. */
+  good: { ink: "FF116B3A", tint: "FFE3F2E8" },
+  /** Outstanding but not yet late — the "look at this" middle. */
+  warn: { ink: "FF8A5A00", tint: "FFFCF1DC" },
+  /** Missing, or past its deadline. */
+  bad: { ink: "FFB3261E", tint: "FFFBE4E1" },
+} as const;
+
+export type HouseXlsxSignalTone = keyof typeof HOUSE_XLSX_SIGNAL;
+
+/**
  * The identity's own reference, printed on every document that wears it.
  *
  * This is the first place the standard's id exists as a VALUE rather than as a comment — the four

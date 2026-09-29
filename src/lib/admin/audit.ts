@@ -247,6 +247,11 @@ export type AuditEntityType =
   | "hiring_document_file"
   | "hiring_document_note"
   | "hiring_document_status"
+  // The readiness workbook leaving the building (2026-09-29). ITS OWN TYPE rather than folded into
+  // the four above, which each record one person's one document changing: this row records a FILE
+  // that names many employees, their hire dates and what paperwork each of them is missing. The
+  // filters are in the summary, because they are what decided who is in it.
+  | "hiring_documents_export"
   // An offer of employment leaving the building. Written with `writeRequiredAuditLog`, and only
   // once mail has actually gone: it is the one action in this app that commits the company to a
   // salary in writing, to somebody who does not work here yet and so cannot be looked up in any
