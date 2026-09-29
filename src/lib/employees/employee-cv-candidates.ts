@@ -93,6 +93,88 @@ export function newestCvPerCandidate(
 }
 
 /**
+ * How one typed query becomes a database filter — and why it is not the obvious one.
+ *
+ * 🔴 BOTH BRANCHES ARE FIXES FOR A DEFECT MEASURED AGAINST LIVE DATA, not theory. The first
+ * version wrapped the whole typed string in one ilike, and probing production found it useless for
+ * exactly the case the search exists for:
+ *
+ *   - THE NAME. Seeding the box with the employee's own name — "Samaa AbdelRahman AbdelRaouf
+ *     Shalabi" — returned NOTHING, because recruitment holds her as "Samaa Shalaby". An employee
+ *     record carries the full legal name and a CV carries whatever the person calls themselves, so
+ *     a whole-string match is the one thing guaranteed to fail. Each WORD is searched instead, and
+ *     the rows that match more of them rank first.
+ *   - THE PHONE. "01095888700" matched only the candidates whose number happens to be stored
+ *     unformatted; the same person stored as "+20 109 588 8700" did not match, because the digits
+ *     are split by spaces in the column. So the database filter now uses only the LAST FOUR digits,
+ *     which survive every format seen here, and the real comparison is done on digits-only values
+ *     afterwards — which also throws out the accidental substring hits that a 4-digit filter drags
+ *     in.
+ *
+ * Pure and exported so the test drives it directly: this is the half that decides what a person is
+ * shown, and it must not be reachable only through the network.
+ */
+export function planCandidateQuery(query: string | null | undefined): {
+  /** PostgREST `or` filters — `*` is its wildcard, not `%`. */
+  filters: string[];
+  /** Set when the query is a phone: the digits every result must end with. */
+  phoneTailDigits: string | null;
+  /** The name words to rank on, lower-cased. */
+  tokens: string[];
+} {
+  const raw = String(query ?? "").trim();
+  if (raw.length < MIN_CANDIDATE_QUERY_LENGTH) return { filters: [], phoneTailDigits: null, tokens: [] };
+
+  const digits = digitsOf(raw);
+  // "Mostly digits" rather than "only digits": a pasted number arrives as "+20 109 588 8700" and
+  // as "0109 588 8700 (work)". A name never reaches this ratio.
+  const looksLikePhone = digits.length >= 6 && digits.length >= raw.replace(/\s/g, "").length - 4;
+  if (looksLikePhone) {
+    // The last 9 digits are the Egyptian subscriber number without the country code — the widest
+    // comparison that cannot confuse two people. The FILTER is the last 4, because that is the
+    // longest run that stays contiguous through "+20 109 588 8700".
+    const tail = digits.slice(-9);
+    return {
+      filters: [`phone.ilike.*${digits.slice(-4)}*`],
+      phoneTailDigits: tail,
+      tokens: [],
+    };
+  }
+
+  // `,` `(` `)` and `*` are PostgREST's own syntax inside an `or` — a name carrying one would
+  // break the filter apart rather than search for it.
+  const tokens = raw
+    .replace(/[,()*.]/g, " ")
+    .split(/\s+/)
+    .map((word) => word.trim())
+    .filter((word) => word.length >= 3)
+    .slice(0, 6);
+  if (tokens.length === 0) return { filters: [], phoneTailDigits: null, tokens: [] };
+  return {
+    filters: tokens.map((token) => `full_name.ilike.*${token}*`),
+    phoneTailDigits: null,
+    tokens: tokens.map((token) => token.toLowerCase()),
+  };
+}
+
+/**
+ * How much of the typed name this candidate carries — the ranking, so the likeliest leads.
+ *
+ * THE FIRST WORD COUNTS DOUBLE, and that is not arbitrary. Measured against production: searching
+ * "Samaa AbdelRahman AbdelRaouf Shalabi" matches "Samaa Shalaby" on one word and four unrelated
+ * Abdelrahmans on one word each, so a flat count left the right person third behind strangers. A
+ * given name is what a candidate is filed under and what a person recognises; the middle names in
+ * an employee's full legal record are the part recruitment most often drops.
+ */
+export function nameTokenScore(fullName: string | null | undefined, tokens: readonly string[]): number {
+  const name = String(fullName ?? "").toLowerCase();
+  return tokens.reduce(
+    (score, token, index) => (name.includes(token) ? score + (index === 0 ? 2 : 1) : score),
+    0,
+  );
+}
+
+/**
  * Candidates matching `query` who have a CV on file, newest CV first.
  *
  * Returns an empty list — never an error — for a query that is too short or matches nobody. The
@@ -108,22 +190,16 @@ export async function findCandidateCvMatches(input: {
   const limit = Math.min(Math.max(Number(input.limit ?? DEFAULT_LIMIT) || DEFAULT_LIMIT, 1), 25);
   const supabase = getSupabaseAdmin();
 
-  const digits = digitsOf(raw);
-  // A name OR a phone, in one round trip. The phone half is only added when what was typed is
-  // actually digits — otherwise `%%`-wrapping a name into a phone column matches nothing and
-  // costs a scan. PostgREST's `or` takes `*` as its wildcard, not `%`.
-  const escaped = raw.replace(/[,()*]/g, " ").trim();
-  if (!escaped) return [];
-  const filters = [`full_name.ilike.*${escaped}*`];
-  if (digits.length >= 4) filters.push(`phone.ilike.*${digits}*`);
+  const plan = planCandidateQuery(raw);
+  if (plan.filters.length === 0) return [];
 
   const { data: candidateRows, error } = await supabase
     .from("ats_candidates")
     .select("id, full_name, phone")
-    .or(filters.join(","))
-    // Deliberately wider than `limit`: the CV filter below removes candidates, and taking exactly
-    // `limit` here would silently return fewer than asked for whenever one of them has no CV.
-    .limit(limit * 5);
+    .or(plan.filters.join(","))
+    // Deliberately wider than `limit`: the CV filter and the phone check below both remove rows,
+    // and taking exactly `limit` here would silently return fewer than asked for.
+    .limit(limit * 8);
   if (error || !Array.isArray(candidateRows) || candidateRows.length === 0) return [];
 
   const ids = candidateRows
@@ -150,20 +226,36 @@ export async function findCandidateCvMatches(input: {
     })),
   );
 
-  const matches: CandidateCvMatch[] = [];
+  const scored: { match: CandidateCvMatch; score: number }[] = [];
   for (const row of candidateRows) {
     const id = String((row as { id?: string | null }).id ?? "").trim();
     const cv = newest.get(id);
     if (!cv) continue;
-    matches.push({
-      candidateId: id,
-      candidateName: String((row as { full_name?: string | null }).full_name ?? "").trim() || "Unnamed candidate",
-      cvFileName: cv.fileName,
-      cvUploadedAt: cv.createdAt,
-      phoneTail: phoneTailOf((row as { phone?: string | null }).phone),
+    const phone = (row as { phone?: string | null }).phone ?? null;
+    // The real phone comparison, on digits only. The database filter above could only ask for the
+    // last four digits (the longest run that survives "+20 109 588 8700"), so without this a
+    // search for one number would also return everyone whose number merely ENDS in those four.
+    if (plan.phoneTailDigits && !digitsOf(phone).endsWith(plan.phoneTailDigits)) continue;
+    scored.push({
+      match: {
+        candidateId: id,
+        candidateName:
+          String((row as { full_name?: string | null }).full_name ?? "").trim() || "Unnamed candidate",
+        cvFileName: cv.fileName,
+        cvUploadedAt: cv.createdAt,
+        phoneTail: phoneTailOf(phone),
+      },
+      score: nameTokenScore((row as { full_name?: string | null }).full_name, plan.tokens),
     });
   }
 
-  matches.sort((a, b) => Date.parse(b.cvUploadedAt ?? "") - Date.parse(a.cvUploadedAt ?? "") || 0);
-  return matches.slice(0, limit);
+  // Most of the typed name first, then the newest CV. Ranking matters more than it looks: seeded
+  // with an employee's full legal name, the candidate recruitment holds under a shorter version of
+  // it must come above the strangers who happen to share one common first name.
+  scored.sort(
+    (a, b) =>
+      b.score - a.score
+      || (Date.parse(b.match.cvUploadedAt ?? "") || 0) - (Date.parse(a.match.cvUploadedAt ?? "") || 0),
+  );
+  return scored.slice(0, limit).map((entry) => entry.match);
 }
