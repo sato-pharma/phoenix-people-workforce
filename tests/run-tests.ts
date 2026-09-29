@@ -1964,6 +1964,7 @@ import { runEmployeeLineIsReadFromTheLinkTests } from "./employee-line-is-read-f
 import { runSeatHireCandidatePickerTests } from "./seat-hire-candidate-picker.test.ts";
 import { runOrganogramArabicSearchTests } from "./organogram-arabic-search.test.ts";
 import { runOrganogramTeamLabelTests } from "./organogram-team-label.test.ts";
+import { runWorkflowFilesParseTests } from "./workflow-files-parse.test.ts";
 import { runWeeklyUploadLineNotificationTests } from "./weekly-upload-line-notification.test.ts";
 import { runSalesNotificationExclusionsTests } from "./sales-notification-exclusions.test.ts";
 import { runVacationAdminOverrideTests } from "./vacation-admin-override.test.ts";
@@ -6942,6 +6943,11 @@ await runTest(
 await runTest(
   "the organogram team label comes from the LINK, never the denormalized twin (which is empty for every employee)",
   runOrganogramTeamLabelTests,
+);
+
+await runTest(
+  "every workflow file parses — a line at column 0 inside a run block ends the scalar, fails a run on every push, and withholds every production deploy",
+  runWorkflowFilesParseTests,
 );
 
 await runTest(

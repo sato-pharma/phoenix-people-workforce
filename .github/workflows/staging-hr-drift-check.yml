@@ -144,15 +144,24 @@ jobs:
             echo "::warning::Staging HR drift found but no Telegram alert was sent — TELEGRAM_BOT_TOKEN or TELEGRAM_ALERT_CHAT_ID is unset. The drift is in the job summary."
             exit 0
           fi
+          # 🔴 THE MESSAGE IS BUILT WITH printf, NOT WRITTEN AS A MULTI-LINE SHELL STRING.
+          # The first version of this step embedded the newlines literally inside the quoted
+          # `text=` argument, which put its continuation lines at COLUMN 0 while this `run: |`
+          # block's content is indented ten spaces. A YAML block scalar ends at the first line
+          # indented less than its parent, so the document became invalid at `${DRIFT_SUMMARY}`
+          # — and an unparseable workflow is not a quiet no-op: GitHub registers it under its
+          # PATH instead of its name and fails a run on EVERY push, whose red check suite makes
+          # Railway withhold that commit's production deploy (AGENTS.md 2.3). Production sat on
+          # one revision for over an hour on 2026-09-29 because of these seven lines.
+          # Keep every line of this block indented; newlines belong in printf's format string.
+          message=$(printf '%s\n%s\n\n%s\n\n%s\n\n%s\n' \
+            "Staging HR data has drifted from production." \
+            "${DRIFT_SUMMARY}" \
+            "Staging is behind, so anything rehearsed there is running against a different company. Nothing has been changed automatically." \
+            "Fix: node scripts/sync-staging-hr.mjs --apply" \
+            "${RUN_URL}")
           curl -sS --max-time 20 -X POST \
             "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             -d "chat_id=${TELEGRAM_ALERT_CHAT_ID}" \
             -d "disable_web_page_preview=true" \
-            --data-urlencode "text=Staging HR data has drifted from production.
-${DRIFT_SUMMARY}
-
-Staging is behind, so anything rehearsed there is running against a different company. Nothing has been changed automatically.
-
-Fix: node scripts/sync-staging-hr.mjs --apply
-
-${RUN_URL}" > /dev/null
+            --data-urlencode "text=${message}" > /dev/null
