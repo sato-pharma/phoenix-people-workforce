@@ -155,6 +155,72 @@ function testTheRoutesCarryBothAnswers() {
   assert.ok(render.includes("parsePrintAddress(input.address)"), "the address is applied to the data before any renderer runs");
 }
 
+/**
+ * THE TICK IS REMEMBERED FOR THE SAME PAPER, AND ONLY AS A STARTING POINT — the owner, 2026-09-29:
+ * "make the print dialog remember the last tick for the same paper."
+ *
+ * Two things have to hold at once, and they pull against each other, which is why this is pinned.
+ *
+ * ONE — it must actually survive to the next print of that paper. The trap is that `availableMarks`
+ * is FETCHED by the manager after the dialog is already mounted, so it is EMPTY on the render that
+ * seeds the dialog's state. Filtering the remembered ticks at mount - which reads as the obviously
+ * careful thing to write - drops every one of them, every time, and the feature looks like it was
+ * never built while the source looks correct. So the state is seeded unfiltered and narrowed on the
+ * way out.
+ *
+ * TWO — it must stay a starting point. A remembered tick that outlived the tab would be a standing
+ * instruction to stamp, which is precisely what he ruled against ("donot put the stamp permanent").
+ * Session state only: no storage, no cookie, nothing that reaches the next person to sit down.
+ */
+function testTheTickIsRememberedPerPaper() {
+  const manager = flat("src/components/hiring-pack/hiring-pack-manager.tsx");
+  const dialog = flat("src/components/hiring-pack/print-options-dialog.tsx");
+
+  // PER PAPER AND VERSION, through the one key function both sides use - the availability lookup and
+  // the remembered ticks keying a print differently is how a tick starts describing another paper.
+  assert.ok(
+    manager.includes("function printKeyOf(document: PrintableDocument, versionId?: string): string {"),
+    "one function names a paper for both the lookup and the remembered tick",
+  );
+  assert.ok(
+    manager.includes("setLastMarks((current) => ({ ...current, [printKeyOf(document, versionId)]: answer.marks }))"),
+    "the confirmed answer is remembered against the paper it was given for",
+  );
+  assert.ok(
+    manager.includes("initialMarks={lastMarks[printRequestKey] ?? []}"),
+    "and handed back to the dialog the next time that same paper prints",
+  );
+  assert.ok(
+    manager.includes("const printRequestKey = printRequest ? printKeyOf(printRequest.document, printRequest.versionId) : \"\";"),
+    "the availability lookup keys the same way",
+  );
+
+  // SEEDED UNFILTERED. `availableMarks` has not arrived on the seeding render.
+  assert.ok(
+    dialog.includes("const [marks, setMarks] = useState<DocumentMark[]>(() => [...initialMarks]);"),
+    "the remembered ticks are taken whole - filtering here would drop all of them, always",
+  );
+  // NARROWED ON THE WAY OUT, so a tick remembered for a position deleted since prints nothing.
+  assert.ok(
+    dialog.includes("const ticked = marks.filter((mark) => availableMarks.includes(mark));"),
+    "and narrowed to what this paper still has a position for",
+  );
+  assert.ok(
+    dialog.includes("onConfirm({ address, copies: count, marks: ticked })"),
+    "the narrowed set is what Print sends, never the raw remembered one",
+  );
+
+  // NOT PERSISTED. `lastAddress` above it is the precedent: remembered for the tab, never beyond it.
+  assert.ok(
+    manager.includes("const [lastMarks, setLastMarks] = useState<Record<string, DocumentMark[]>>({});"),
+    "remembered in session state",
+  );
+  assert.ok(
+    !/lastMarks[\s\S]{0,400}(localStorage|sessionStorage|document\.cookie)/.test(manager),
+    "and never written to storage - a tick that outlives the tab is a standing instruction to stamp",
+  );
+}
+
 export function runHiringPackPrintOptionsTests() {
   testTheCountIsMadeSafe();
   testTheClauseIsWrittenFromTheCount();
@@ -163,4 +229,5 @@ export function runHiringPackPrintOptionsTests() {
   testNoPrintButtonSkipsThePrompt();
   testThePromptDoesNotLetTheAddressBeSkipped();
   testTheRoutesCarryBothAnswers();
+  testTheTickIsRememberedPerPaper();
 }
