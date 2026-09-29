@@ -38,6 +38,7 @@ type FakePr = {
   paths: string[];
   author?: string;
   isDraft?: boolean;
+  carried?: boolean;
   mergeStateStatus?: string;
 };
 
@@ -139,6 +140,25 @@ export function runRollupPrsTests(): void {
       "#2 supersedes #1, so #1's overlap must NOT disqualify it. This regressed once: the report said "
         + `SEPARATE "shares a file with #1" on the line after calling #1 redundant to #2. Got: ${v.get(2)?.why}`,
     );
+  }
+
+  // ── 4b. A PR whose content is already on main is CARRIED, never rollable ────────────────────
+  // A squash merge does not make a branch's commits ancestors of main, so ancestry says "not merged"
+  // for a PR that has fully landed — which is exactly how a roll-up's members look the moment it
+  // merges. On 2026-09-30 this script proposed rolling #4817 up a SECOND time, minutes after roll-up
+  // #4821 had carried all seven of its files into main verbatim: a whole CI run to ship nothing.
+  {
+    const v = verdicts([pr(1, ["src/a.tsx", "src/b.tsx"], { carried: true }), pr(2, ["docs/x.md"])]);
+    assert.equal(
+      v.get(1)?.kind,
+      "carried",
+      `a PR whose every file is byte-identical on main must read CARRIED, got ${v.get(1)?.kind}`,
+    );
+    assert.match(v.get(1)?.why ?? "", /close it, do not merge it/);
+    const parsed = JSON.parse(runRollup([pr(1, ["src/a.tsx"], { carried: true }), pr(2, ["docs/x.md"])]).out) as {
+      group: number[];
+    };
+    assert.deepEqual(parsed.group, [], "a carried PR must not be grouped, and one live PR alone is no roll-up");
   }
 
   // ── 5. A draft is left alone ─────────────────────────────────────────────────────────────────

@@ -189,7 +189,8 @@ status, give it its own line.
 - **The quoted words are a message he SENDS to Claude — never a physical act (a click, a file pick, a reset, a QR scan)** — `never-put-his-physical-actions-in-the-next-step-box` **(inline — load-bearing)**
 - **Ask business-fact questions IN CHAT as multiple choice, never in prose** — `ask-business-questions-as-in-chat-multiple-choice` **(inline — load-bearing)**
 - **A typed payroll Addition has NO ceiling — never re-propose one.** — `typed-payroll-additions-have-no-ceiling`
-- **THE MOBILE APP IS A SHELL OVER THE WEB PORTAL — never rebuild a portal screen natively; native is login, CRM and Profile only** — `the-mobile-app-is-a-shell-over-the-web-portal` **(inline — load-bearing)**
+- 🛑 **THE MOBILE APP IS FROZEN — no work in it, no mention of it, no question to him about it, until HE lifts it in his own words** (owner golden rule, 2026-09-29). It outranks the two mobile rows below, which are ⏸️ DORMANT until then. — `the-mobile-app-is-frozen-until-he-lifts-it` **(inline — load-bearing)**
+- ⏸️ **THE MOBILE APP IS A SHELL OVER THE WEB PORTAL — never rebuild a portal screen natively; native is login, CRM and Profile only** (dormant under the freeze; the live half is `phoenix_app_shell=1` defaulting FALSE, which protects the WEB portal's chrome) — `the-mobile-app-is-a-shell-over-the-web-portal` **(inline — load-bearing)**
 - **A PUBLISHED AND ANNOUNCED MONTH IS NEVER CORRECTED, however wrong it is.** — `never-fix-a-published-and-announced-month` **(inline — load-bearing)**
 - **A price can differ by PERIOD — Saginko is 111.15 through 2026-09 and 170.52 from 2026-10, and the product master stays 111.15** — `saginko-repriced-retail-from-october-direct-from-today` **(inline — load-bearing)**
 - **THE FITS-THE-SCREEN GOLDEN RULE — never a horizontal scroll, always mobile AND…** — `never-horizontal-scroll-always-mobile-and-desktop-friendly` **(inline — load-bearing)**
@@ -217,7 +218,7 @@ status, give it its own line.
 - **NOT every distributor uploads every month — "N of 17 missing" is never a finding.** `not-every-distributor-uploads-every-month` **(inline — load-bearing)**
 - **THE CALL RATE'S LEAVER AND WINDOW RULINGS ARE DECIDED, not defects** (owner chose B2/C1/D2): a leaver or new hire is divided by the WHOLE month's working days, a resigned rep DROPS OUT the moment HR marks him, and every call rate scores through YESTERDAY — the rate only. — `reps-list-rulings-b2-c1-d2-leavers-keep-whole-month` **(inline — load-bearing)**
 - **THE 06:55 CRM DAILY DIGEST IS LIVE AGAIN — never delete its schedule** (refused 2026-09-27, restored 2026-09-28: "i want it in app or telegram only"). A declaration and its cron job move in one sitting, and a restored one also carries `watchingSince`. — `the-0655-crm-digest-is-refused-never-schedule-it` **(inline — load-bearing)**
-- **MANAGED GOOGLE PLAY REACHES NO REP TABLET — the upload is dropped** (owner 2026-09-28). The enterprise has zero enrolled devices; the tablets are on Headwind, which installs an APK it hosts. The fleet artifact is `eas.json`'s `mdm` profile, never the store `.aab`. — `managed-play-cannot-reach-the-rep-tablets` **(inline — load-bearing)**
+- ⏸️ **MANAGED GOOGLE PLAY REACHES NO REP TABLET — the upload is dropped** (owner 2026-09-28; dormant under `the-mobile-app-is-frozen-until-he-lifts-it`). The enterprise has zero enrolled devices; the tablets are on Headwind, which installs an APK it hosts. The fleet artifact is `eas.json`'s `mdm` profile, never the store `.aab`. — `managed-play-cannot-reach-the-rep-tablets` **(inline — load-bearing)**
 
 ## 4.1 Marketing customer, venue and licence validation
 

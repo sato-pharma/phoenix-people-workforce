@@ -120,6 +120,7 @@ if (fixturePath) {
     isDraft: p.isDraft ?? false,
     author: { login: p.author ?? 'Gawish-1997' },
     paths: p.paths,
+    carriedFixture: p.carried === true,
   }));
 } else {
   open = JSON.parse(
@@ -163,6 +164,30 @@ function subsumedBy(pr, others) {
   );
 }
 
+/**
+ * ALREADY CARRIED: every file this PR touches is byte-identical on `main`.
+ *
+ * A squash merge does NOT make the branch's commits ancestors of `main`, so ancestry answers "no" for
+ * a PR whose work has fully landed — which is how a roll-up's members look the moment it merges. On
+ * 2026-09-30 this script proposed rolling #4817 up a second time, minutes after roll-up #4821 had
+ * carried all seven of its files into `main` verbatim: a whole CI run to ship nothing.
+ *
+ * Blobs are the instrument, not ancestry. A PR with no files, or one whose paths no longer exist on
+ * `main`, is NOT carried — `git rev-parse` answering nothing must never read as "identical".
+ */
+function alreadyCarried(pr) {
+  if (!pr.paths.length) return false;
+  // In fixture mode the blob comparison has no repository to ask, so the fixture states the answer.
+  // What the test then exercises is the CLASSIFICATION — that `carried` outranks `rollable` and keeps
+  // a landed PR out of a roll-up — while the two `git rev-parse` calls below are exercised live.
+  if (fixturePath) return pr.carriedFixture === true;
+  return pr.paths.every((p) => {
+    const mine = git(['rev-parse', `${pr.headRefOid}:${p}`], { allowFail: true });
+    const main = git(['rev-parse', `origin/main:${p}`], { allowFail: true });
+    return Boolean(mine) && Boolean(main) && mine === main;
+  });
+}
+
 /** Any other open PR sharing at least one path. Sharing one file means they cannot be grouped. */
 function collidesWith(pr, others) {
   return others
@@ -174,9 +199,18 @@ function collidesWith(pr, others) {
 // disqualify the PR that supersedes it: in the first run of this script #4814 was reported SEPARATE for
 // "shares a file with #4805" when #4805 was, on the line above, already marked as redundant to #4814
 // itself. A collision only matters against a PR that is actually going to be merged.
+// The content check needs the PR heads and `origin/main` present locally. Best effort: a fetch that
+// fails leaves alreadyCarried() answering false, which is the SAFE direction — it proposes a roll-up
+// that is merely redundant, rather than hiding a PR that still needs to ship.
+if (!fixturePath) {
+  git(['fetch', '--quiet', 'origin', 'main'], { allowFail: true });
+  for (const pr of open) git(['fetch', '--quiet', 'origin', pr.headRefName], { allowFail: true });
+}
+
 for (const pr of open) {
   const sub = subsumedBy(pr, open);
   if (pr.isDraft) pr.verdict = { kind: 'skip', why: 'draft' };
+  else if (alreadyCarried(pr)) pr.verdict = { kind: 'carried', why: 'every file it touches is already byte-identical on main — close it, do not merge it' };
   else if (sub) pr.verdict = { kind: 'superseded', why: `every file it touches is in #${sub.number}, which changes more`, by: sub.number };
 }
 const contenders = open.filter((p) => !p.verdict);
@@ -204,7 +238,7 @@ if (asJson) {
   console.log(JSON.stringify({ maxFiles, open, group: group.map((p) => p.number), saving }, null, 2));
 } else {
   console.log(`[rollup] ${open.length} open PR(s); "small" is <= ${maxFiles} changed files\n`);
-  const label = { rollable: 'ROLL UP  ', 'own-merge': 'own merge', separate: 'SEPARATE ', superseded: 'SUPERSEDED', skip: 'skip     ' };
+  const label = { rollable: 'ROLL UP  ', carried: 'CARRIED  ', 'own-merge': 'own merge', separate: 'SEPARATE ', superseded: 'SUPERSEDED', skip: 'skip     ' };
   for (const pr of open.sort((a, b) => a.number - b.number)) {
     console.log(`  ${label[pr.verdict.kind]}  #${pr.number}  ${String(pr.changedFiles).padStart(2)} files  ${pr.mergeStateStatus.padEnd(8)}  ${pr.title.slice(0, 54)}`);
     console.log(`               ${pr.verdict.why}`);
