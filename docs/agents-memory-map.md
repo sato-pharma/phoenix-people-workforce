@@ -185,8 +185,10 @@ status, give it its own line.
 
 - **"continue verifying" means RESUME the paused Source of Sales audit — never restart…** — `continue-verifying-resumes-sos-audit` · `sos-deep-audit-paused-checkpoint`
 - **Open every reply with a single recommended next step — it goes FIRST, not last.** — `recommendation-goes-first-not-last` **(inline — load-bearing)**
+- **The quoted words are a message he SENDS to Claude — never a physical act (a click, a file pick, a reset, a QR scan)** — `never-put-his-physical-actions-in-the-next-step-box` **(inline — load-bearing)**
 - **Ask business-fact questions IN CHAT as multiple choice, never in prose** — `ask-business-questions-as-in-chat-multiple-choice` **(inline — load-bearing)**
 - **A typed payroll Addition has NO ceiling — never re-propose one.** — `typed-payroll-additions-have-no-ceiling`
+- **THE MOBILE APP IS A SHELL OVER THE WEB PORTAL — never rebuild a portal screen natively; native is login, CRM and Profile only** — `the-mobile-app-is-a-shell-over-the-web-portal` **(inline — load-bearing)**
 - **A PUBLISHED AND ANNOUNCED MONTH IS NEVER CORRECTED, however wrong it is.** — `never-fix-a-published-and-announced-month` **(inline — load-bearing)**
 - **A price can differ by PERIOD — Saginko is 111.15 through 2026-09 and 170.52 from 2026-10, and the product master stays 111.15** — `saginko-repriced-retail-from-october-direct-from-today` **(inline — load-bearing)**
 - **THE FITS-THE-SCREEN GOLDEN RULE — never a horizontal scroll, always mobile AND…** — `never-horizontal-scroll-always-mobile-and-desktop-friendly` **(inline — load-bearing)**
