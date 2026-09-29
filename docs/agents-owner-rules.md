@@ -1102,6 +1102,103 @@ came from two duplicates rather than from wording. **Do not run another editing 
 remaining bytes are the rules themselves, and the cost of blunting one of them is far higher than
 the context they occupy.
 
+### A wrong distributor code is a typo, not a rep gaming you — measured 2026-09-29
+
+He asked it in his own words, after two captures were held on a governorate mismatch:
+*"انا عايز اعرف دلوقتي الغلطات دي في الكود ولا الريب بيشتغلني"* — are these bugs in the code, or
+have the reps found the hole and started working me? The answer is the code, and it is measured
+rather than reasoned.
+
+**The distances refute gaming outright.** Every validated customer↔pharmacy link carrying GPS on
+both sides, 127 of them:
+
+| | metres |
+| --- | --- |
+| median | **23** |
+| p90 | 272 |
+| maximum | **1,069** |
+| over 2 km | **none** |
+| within 100 m | 102 of 127 |
+
+A rep attaching a big-selling pharmacy that is not really his doctor's would show up as distance.
+There is none. Nor is anyone farming one shop: the most any pharmacy is attached to is **3**
+customers, and those are hospital pharmacies (Tabarak, مستشفى فيكتوريا) that genuinely serve many
+doctors.
+
+**Both incidents were the right shop and the wrong number.**
+
+- **Samaa Shalaby, 2026-09-29** — typed Ibn Sina `443359` (احمد عبدالشافى, Haram/Faisal, Giza) and
+  meant `442359` (اسعد جديدة, ناحية نشوة, الزقازيق). **One digit.** Her clinic and her pharmacy
+  were **18 m** apart, both in Sharqia.
+- **Taha AboElftouh, 2026-09-23** — typed POS `1510270`, a real pharmacy in شربين، الدقهلية, while
+  standing at house 75 of his doctor's own street in 6th of October City, the doctor at 74.
+  **59 m.** The right code was `0001575484`.
+
+**The root cause is the capture flow, not the person.** The code is typed free-hand from memory,
+and it is verified only *after* the save and only at governorate level — so a slip has no chance of
+being caught at the one moment the rep could still fix it. Two things shipped that night:
+
+1. **The GPS-ranked code picker** (#4797) — candidate codes ranked by the rep's own position, area
+   tier first then governorate, **nothing filtered out**. The right code now ranks first instead of
+   being remembered. Ranking the governorate tier goes through the canonical `resolveGovernorate`,
+   because Google answers in English and the reference import is in Arabic — a first attempt scored
+   Samaa's own correct capture as "elsewhere".
+2. **The 4 km hard block** — his own figure. A tighter proposal was put to him and he refused it in
+   three words, *"no it block many"*, then chose 4 km from the options.
+
+🔴 **The block would have caught neither incident, and that is the point.** It exists to stop a
+venue being linked to a customer on the other side of the country; it is not, and must never be
+tightened into, a control on the wrong-code class — the picker is what addresses that. **Where a
+rep genuinely could hide is a code that resolves to nothing**, so no sale can ever be attributed to
+it; that is the set worth auditing, not the geography.
+
+**And the reporting rule that falls out of it:** before calling any code mismatch suspicious,
+measure the customer↔pharmacy distance. A shop metres from the doctor is a typo on a real visit,
+whatever the code says. His own standing rule on the integrity board applies here too — a false
+positive accuses a real person of fraud, which is worse than a missed catch.
+
+### The marketing code resolver runs once, at capture, and nothing re-runs it
+
+`phx_resolve_marketing_pharmacy_codes` resolves a distributor code against the sales master **at the
+moment the rep saves**, and there is no path that revisits it. The verdict is frozen there.
+
+**Measured 2026-09-29.** Ibn Sina `421993` («صيدليات لايف - د/ احمد علي حسين», Kafr El-Dawwar):
+
+```
+code row resolved   2026-08-24 12:34:50  ->  "unresolved"
+master learned it   2026-09-18 22:28:25      25 days LATER
+```
+
+The rep's code was correct the whole time — the master holds `IS 421993` = «احمد على حسين»,
+«ش صلاح الدين مركزكفرالدوار», the same street he captured on. It simply read untrackable for a
+month. Seven code rows were in that state, four of them inert import rows. **So any count of "codes
+whose sales cannot be traced" is inflated by rows that became traceable after their one resolution**
+— an earlier report of 16 was really 12, and reporting the raw number as a problem acts on an
+artefact.
+
+**Three things a repair must not do.**
+
+1. 🔴 **Never mass re-resolve.** A code the master knows may belong to a *different* shop: `1536256`
+   («صيدلية زمزم») resolves to «ايمن فايز / المهندسين», so a blanket sweep would attach that capture
+   to someone else's sales.
+2. 🔴 **Read `validation_notes` before touching a row — `unresolved` can be a signed human verdict.**
+   `0001570071` («خالد السيد موسى») carries Khaled Bedair's (SFE Manager, A-2) investigation of
+   2026-08-26, proven with Pharma Overseas invoices `9114638229` and `9118278169`: the pharmacy has
+   no 2026 trading, so the row is `manual_approved` / `unresolved` **deliberately**, and its area
+   `D12` is retained on purpose because it describes the venue's GPS. Re-resolving it overwrites a
+   person's considered decision with a value that note rejects. That instruction was given and
+   refused on those grounds, and the refusal was right.
+3. 🔴 **Re-resolving writes `mapped_*` only — moving the venue's own `area_id` is a separate act**,
+   and the master's area can contradict the capture's GPS (`IS 421993` maps to `AB1` Alex East while
+   the shop is in Kafr El-Dawwar, Beheira — he filed it `AB5` on the GPS). **When the venue moves,
+   the doctor moves with it**, or you have created the split you were closing.
+
+Re-resolve a single row through the system's own function, never a hand-written mapping:
+
+```sql
+select * from phx_resolve_marketing_pharmacy_codes(array['<code row id>']::uuid[]);
+```
+
 ## The offer letter design is frozen — owner decision, 2026-09-05
 
 Asked directly, having been shown both letters rendered from the live code, and answered:
