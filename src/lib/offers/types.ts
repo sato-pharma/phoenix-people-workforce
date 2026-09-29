@@ -198,4 +198,44 @@ export type OfferRecord = OfferFields & {
     theme: OfferTheme;
     variant?: OfferTemplateVariant;
   } | null;
+  /**
+   * The open seat in `position_vacancies` this offer was written against, or null.
+   *
+   * DELIBERATELY NOT in `OfferFields`. Those fields feed the letter's `{{tokens}}`, and a seat id
+   * prints nowhere — what the letter says about the job is `territory` and `reportsTo`, which the
+   * seat FILLS IN when one is chosen and which stay editable afterwards. Keeping it out of the
+   * fields is also what stops it reaching the template snapshot frozen at send time.
+   *
+   * This is the ONE pointer the offers module carries outward, and the direction is the reason: a
+   * vacancy is an org seat, shared HR data that `src/lib/employees/vacancy-closer.ts` has always
+   * owned without touching recruitment or offers. A CANDIDATE pointer is still forbidden here —
+   * the offers module stays independent of the ATS because an offer may go to somebody who never
+   * entered it, and `tests/candidate-offer-pointer.test.ts` pins that.
+   *
+   * Null is the answer for every offer written before 2026-09-29, and stays a valid answer
+   * afterwards: a letter may be issued before anybody has settled which seat it fills.
+   */
+  vacancyId: number | null;
+};
+
+/**
+ * One open seat, as the offers screen and the hire bridge need it.
+ *
+ * A narrowed copy of what `src/lib/employees/vacancy-closer.ts` reads rather than an import of its
+ * row type, so the offers module's shape does not move when that module's query does.
+ */
+export type OfferVacancyOption = {
+  areaId: number | null;
+  areaName: string | null;
+  departmentId: number | null;
+  jobTitle: string | null;
+  lineId: number | null;
+  lineName: string | null;
+  managerHrId: string | null;
+  managerName: string | null;
+  positionId: number | null;
+  positionTitle: string | null;
+  regionName: string | null;
+  vacancyCode: string;
+  vacancyId: number;
 };

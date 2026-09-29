@@ -5,6 +5,7 @@ import { resolveAccessContext } from "@/lib/auth/server";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { createOffer, listOfferJobTitles, listOfferTemplates, listOffers } from "@/lib/offers/service";
 import { offerJsonError } from "@/lib/offers/http";
+import { readOfferVacancyId } from "@/lib/offers/hire-draft";
 import { resolveOfferSender } from "@/lib/offers/identity";
 import type { OfferFields } from "@/lib/offers/types";
 
@@ -46,7 +47,10 @@ export async function GET(request: Request) {
   }
 }
 
-function readFields(body: Record<string, unknown>): OfferFields & { templateId?: string | null } {
+function readFields(body: Record<string, unknown>): OfferFields & {
+  templateId?: string | null;
+  vacancyId?: number | null;
+} {
   const text = (key: string) => String(body[key] ?? "").trim();
   return {
     candidateEmail: text("candidateEmail"),
@@ -62,6 +66,9 @@ function readFields(body: Record<string, unknown>): OfferFields & { templateId?:
     territory: text("territory"),
     title: text("title"),
     totalMonthly: Number(body.totalMonthly ?? 0),
+    // The open seat this letter is written against, when one was chosen. Optional in every sense:
+    // an offer may be issued before anybody has settled which chair it fills.
+    vacancyId: readOfferVacancyId(body.vacancyId),
     validUntil: text("validUntil"),
   };
 }

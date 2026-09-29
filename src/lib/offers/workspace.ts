@@ -6,7 +6,8 @@ import {
   offerErrorMessage,
 } from "@/lib/offers/service";
 import { resolveOfferSender } from "@/lib/offers/identity";
-import type { OfferJobTitle, OfferRecord, OfferTemplate } from "@/lib/offers/types";
+import { loadOfferVacancyOptions } from "@/lib/offers/vacancies";
+import type { OfferJobTitle, OfferRecord, OfferTemplate, OfferVacancyOption } from "@/lib/offers/types";
 
 export type OffersWorkspace = {
   error: string | null;
@@ -14,6 +15,8 @@ export type OffersWorkspace = {
   offers: OfferRecord[];
   sender: { from: string; isConfigured: boolean; replyTo: string };
   templates: OfferTemplate[];
+  /** The open seats an offer can be written against. An empty list is a state, not a failure. */
+  vacancies: OfferVacancyOption[];
 };
 
 /**
@@ -28,13 +31,18 @@ export async function loadOffersWorkspace(): Promise<OffersWorkspace> {
   const sender = resolveOfferSender();
   const senderInfo = { from: sender.from, isConfigured: sender.isConfigured, replyTo: sender.replyTo };
 
+  // OUTSIDE the try, and swallowing its own failures inside `loadOfferVacancyOptions`. The seats
+  // come from a different table in a different module; a vacancy read that fails is a picker with
+  // nothing in it, never an Offers screen that will not load.
+  const vacancies = await loadOfferVacancyOptions();
+
   try {
     const [offers, templates, jobTitles] = await Promise.all([
       listOffers(),
       listOfferTemplates(),
       listOfferJobTitles(),
     ]);
-    return { error: null, jobTitles, offers, sender: senderInfo, templates };
+    return { error: null, jobTitles, offers, sender: senderInfo, templates, vacancies };
   } catch (error) {
     // The migration being absent gets its own sentence — the raw PostgREST message names a table
     // and tells HR nothing they can act on.
@@ -46,6 +54,7 @@ export async function loadOffersWorkspace(): Promise<OffersWorkspace> {
       offers: [],
       sender: senderInfo,
       templates: [],
+      vacancies,
     };
   }
 }
