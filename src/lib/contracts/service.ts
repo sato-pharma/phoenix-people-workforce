@@ -9,7 +9,7 @@ import { assertContractWorkflowTransition } from "@/lib/employee-lifecycle/workf
 import { getEmployeeDirectoryRows, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { canonicalHrIdForDisplay } from "@/lib/hr-id";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
-import { daysUntilLifecycleDate, lifecycleRiskWindows } from "@/lib/lifecycle-risk/metrics";
+import { daysUntilLifecycleDate } from "@/lib/lifecycle-risk/metrics";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { resignEmployeeAndOpenVacancy } from "@/lib/resignations/service";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -687,12 +687,18 @@ export async function runContractRenewalWorkflow(
   return updated;
 }
 
-export async function getContractRenewalReminderCandidates(daysAhead = [
-  lifecycleRiskWindows.contractUpcomingDays,
-  lifecycleRiskWindows.contractRiskDays,
-  lifecycleRiskWindows.contractCriticalDays,
-  0,
-]) {
+// The reminder cadence the owner set on 2026-09-29: 2 months and 15 days, 2 months, 1 month, then
+// 15 days before the renewal date. It is DELIBERATELY its own constant rather than
+// `lifecycleRiskWindows`, which those numbers look close to: those windows colour the Contract
+// Renewal board and drive `summarizeContractRenewalRows`'s "due in 7 / 30 days" tiles, so reusing
+// them would have moved the board's bands as a side effect of changing when mail goes out. The
+// 7-day and same-day rungs are gone on purpose — a renewal decision needs notice, and a reminder
+// that arrives on the renewal date is a record, not a warning.
+export const contractRenewalReminderDaysAhead = [75, 60, 30, 15] as const;
+
+export async function getContractRenewalReminderCandidates(
+  daysAhead: readonly number[] = contractRenewalReminderDaysAhead,
+) {
   const dashboard = await getContractRenewalDashboardData();
   const today = parseDateOnly(todayDate());
   if (!today) return [];

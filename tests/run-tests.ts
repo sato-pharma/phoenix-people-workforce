@@ -1875,6 +1875,7 @@ import { runPayrollHoldReasonTests } from "./payroll-hold-reason.test.ts";
 
 import { runEmployeeImportJobTitleCasingTests } from "./employee-import-job-title-casing.test.ts";
 import { runContractAnniversaryCairoClockTests } from "./contract-anniversary-cairo-clock.test.ts";
+import { runContractRenewalReminderLadderTests } from "./contract-renewal-reminder-ladder.test.ts";
 import { runAdminProfileCreatedAtHydrationSafeTests } from "./admin-profile-created-at-hydration-safe.test.ts";
 
 import { runEmployeeSavePreservesSalaryTests } from "./employee-save-preserves-salary.test.ts";
@@ -3952,6 +3953,10 @@ await runTest(
 );
 await runTest("csrf route coverage", runCsrfRouteCoverageTests);
 await runTest("contract renewal hardening", runContractRenewalHardeningTests);
+await runTest(
+  "contract renewal reminder ladder (75/60/30/15 days, escalating on the last rung, reaching the HR Operations seat by role)",
+  runContractRenewalReminderLadderTests,
+);
 await runTest(
   "cron auth policy lives in exactly one module (no route restates the unset-secret rule)",
   runCronAuthSingleGuardTests,

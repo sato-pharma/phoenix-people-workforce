@@ -140,7 +140,13 @@ export function runCommunicationSourceOfTruthTests() {
   assert.match(composerRouteSource, /invalidCommunicationEmails/);
 
   const contractReminderRoute = readFileSync("app/api/notifications/contract-renewals/route.ts", "utf8");
-  assert.match(contractReminderRoute, /lifecycleRiskWindows/);
+  // This asserted `lifecycleRiskWindows` until 2026-09-29, when the owner set the reminder ladder
+  // to 75/60/30/15 days and it moved to its own constant. Those windows colour the Contract Renewal
+  // board and drive its "due in 7 / 30 days" tiles, so the cron must NOT read them any more:
+  // sharing them made the board's bands load-bearing for when mail goes out. The schedule itself is
+  // pinned by tests/contract-renewal-reminder-ladder.test.ts.
+  assert.match(contractReminderRoute, /contractRenewalReminderDaysAhead/);
+  assert.doesNotMatch(contractReminderRoute, /lifecycleRiskWindows/);
 
   const probationServiceSource = readFileSync("src/lib/probation/service.ts", "utf8");
   assert.match(probationServiceSource, /lifecycleRiskWindows\.probationRiskDays/);

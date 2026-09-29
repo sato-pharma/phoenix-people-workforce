@@ -207,6 +207,25 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   // matches job_title ilike '%HR Manager%' / '%Admin HR%' and production returns ZERO employees for
   // both, so its HR leg has only ever reached Super Admins.
   "src/lib/conversations/notify.ts",
+  // Names HR Operations in contractRenewalHrApproverRoles, added 2026-09-29 when the owner moved
+  // the contract renewal reminders to 75/60/30/15 days and asked that they reach Yasmeena El
+  // Safory. Reviewed verdict: it is a NOTIFICATION AUDIENCE and grants nothing — the same shape as
+  // conversations/notify.ts above. The string is an argument to `.in("role", ...)` against
+  // app_auth_users, read only to decide who the reminder is addressed to; no page opens, no query
+  // widens, and no contract is read on the seat's behalf by naming her here.
+  //
+  // It hands her nothing her job description withholds. people_records already composes
+  // `contracts: read/create/update/export` onto the seat, so the Contract Renewal page and the
+  // renewal workflow were hers before this line existed — what she did not have was the reminder
+  // telling her a renewal was coming. Her one named contracts boundary, `contracts:delete`, stays
+  // ABSENT and is enforced by the composed matrix, not by this set.
+  //
+  // Resolved by ROLE and never by hr id, per the owner's rule that an HR seat is composed from a
+  // function catalogue: the reminder then follows the seat when the person in it changes. HR
+  // Advisory is deliberately NOT here — her contracts grant is READ_ONLY in the catalogue ("she
+  // advises on renewals and cannot change one"), so a reminder whose whole subject is a pending
+  // recommendation is not hers to act on, and mailing her one would assert otherwise.
+  "app/api/notifications/contract-renewals/route.ts",
   "src/config/system-navigation.ts",
   "src/lib/admin/access-control.ts",
   // Names "HR Advisory" in a comment, added 2026-09-04. Reviewed verdict: it GRANTS NOTHING and

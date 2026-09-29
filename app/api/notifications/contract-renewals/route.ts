@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { getContractRenewalReminderCandidates } from "@/lib/contracts/service";
+import { contractRenewalReminderDaysAhead, getContractRenewalReminderCandidates } from "@/lib/contracts/service";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
-import { lifecycleRiskWindows } from "@/lib/lifecycle-risk/metrics";
 import { runScheduledNotificationProcessing } from "@/lib/notifications/scheduled-processing";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -14,11 +13,26 @@ export const dynamic = "force-dynamic";
 
 type EmployeeDirectoryRow = Awaited<ReturnType<typeof getEmployeeDirectoryRows>>[number];
 
+// The HR seats that OWN a contract renewal, resolved by role rather than by name so the reminder
+// follows the seat when the person in it changes. HR Operations is the seat that maintains
+// contracts (`contracts: read/create/update/export` in the HR function catalogue) and was added on
+// the owner's instruction, 2026-09-29, so the HR Generalist running renewals is told at the same
+// time as the manager chain. HR Advisory is deliberately NOT here: her contracts grant is READ_ONLY
+// — she advises on a renewal and cannot change one — so a "pending recommendation" reminder is not
+// hers to act on.
+const contractRenewalHrApproverRoles = ["Super Admin", "HR Operations"];
+
+// The last rung of `contractRenewalReminderDaysAhead` is the one that escalates. It moved with the
+// ladder: while the rungs were 60/30/7/0 this was 7, and leaving it there after the ladder became
+// 75/60/30/15 would have made EVERY reminder a "warning" and none of them critical — the final
+// notice would have arrived quieter than the one before it.
+const contractRenewalEscalationDays = Math.min(...contractRenewalReminderDaysAhead);
+
 async function resolveActiveHrApproverHrIds(): Promise<string[]> {
   const { data, error } = await getSupabaseAdmin()
     .from("app_auth_users")
     .select("hr_id")
-    .in("role", ["Super Admin"])
+    .in("role", contractRenewalHrApproverRoles)
     .eq("is_active", true);
   if (error) return [];
   return ((data ?? []) as Array<{ hr_id?: string | null }>)
@@ -69,12 +83,7 @@ export async function runContractRenewalNotifications(request: Request) {
   if (denied) return denied;
 
   const runDate = cairoDate();
-  const candidates = await getContractRenewalReminderCandidates([
-    lifecycleRiskWindows.contractUpcomingDays,
-    lifecycleRiskWindows.contractRiskDays,
-    lifecycleRiskWindows.contractCriticalDays,
-    0,
-  ]);
+  const candidates = await getContractRenewalReminderCandidates(contractRenewalReminderDaysAhead);
   const results = [];
   const [directory, hrApproverHrIds] = await Promise.all([
     getEmployeeDirectoryRows(),
@@ -132,7 +141,7 @@ export async function runContractRenewalNotifications(request: Request) {
             line: employee.lineName ?? row.line ?? "—",
           },
           title: "Contract Renewal Reminder - Pending Manager Recommendation",
-          tone: row.daysUntil <= 7 ? "danger" : "warning",
+          tone: row.daysUntil <= contractRenewalEscalationDays ? "danger" : "warning",
         },
         eventType: "renewal_reminder",
         message: `Contract renewal for ${employee.displayName} is ${dueText}. Pending manager recommendation is required.`,
@@ -155,7 +164,7 @@ export async function runContractRenewalNotifications(request: Request) {
           workflowApproverHrIds,
         },
         module: "contract_renewal",
-        priority: row.daysUntil <= 7 ? "critical" : "high",
+        priority: row.daysUntil <= contractRenewalEscalationDays ? "critical" : "high",
         subjectHrId: row.hr_id,
         title: "Contract Renewal Reminder - Pending Manager Recommendation",
       });
