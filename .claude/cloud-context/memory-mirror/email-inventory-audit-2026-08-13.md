@@ -35,6 +35,15 @@ alert email (#1946, 2026-08-09) · attendance digest (2026-07-22) · outstation 
 Audit never sends anything — see [[never-fire-bulk-emails-ever]] and
 [[verify-notification-deliveries-before-claiming-a-send]].
 
+🔴 **AMENDED 2026-09-29 — finding (1) below is NO LONGER the whole rule.** The owner instructed that
+the probation module send its **Day 30 / 60 / 75** emails to **Yasmeena Elsafory (HR-009) alone, CC
+Omar Gawish (B-10)**. Those three now ride their OWN notification type, `probation_milestone`, with
+its own admin toggle (enabled). **The `probation` policy below stays `enabled = false` — it governs
+the legacy per-manager reminders on the 5-minute cron, and flipping it would restart ~500 of those a
+month.** So "do not re-enable probation email" still stands **for that policy**, and does NOT mean the
+milestone emails are forbidden. See AGENTS.md §4 and
+`src/lib/probation/intelligence/milestone-emails.ts`.
+
 **Two findings from the deeper wiring pass on the remaining 93 rows.** (1) **RESOLVED 2026-08-13 —
 owner confirmed probation email STAYS OFF.** It's been silently off since 2026-07-19 (one admin
 toggle, `email_notification_policies` / `notification_type='probation'`, flipped by account
