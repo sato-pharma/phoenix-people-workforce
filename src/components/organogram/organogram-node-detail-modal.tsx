@@ -1,12 +1,15 @@
 "use client";
 
-import { Building2, Download, Loader2, Lock, UserPlus, UserRound, X } from "lucide-react";
+import { Building2, Download, FileText, Loader2, Lock, UserPlus, UserRound, X } from "lucide-react";
 import { usePathname } from "next/navigation";
 import * as React from "react";
 import { createPortal } from "react-dom";
 
 import { useDialogA11y } from "@/components/ui/use-dialog-a11y";
 import { formatDateOnly } from "@/lib/date-only";
+// employee-cv-limits, NOT employee-cv: the server module pulls in node:crypto and the
+// service-role client, and importing either into this client bundle is a webpack build error.
+import { employeeCvHref } from "@/lib/employees/employee-cv-limits";
 import { buildVacancyHireHref } from "@/lib/employees/vacancy-hire-link";
 import type {
   OrganogramDetailSection,
@@ -120,6 +123,12 @@ export function OrganogramNodeDetailModal({ row, onClose, canAddEmployee = false
   const [detail, setDetail] = React.useState<OrganogramEmployeeDetail | null>(null);
   const [loading, setLoading] = React.useState(!isVacancy);
   const [error, setError] = React.useState<string | null>(null);
+  // Whether a CV is on this person's master record AND this viewer may download it. The
+  // ?meta=1 probe answers both at once: it 401/403s for a viewer without the grant (the CV
+  // route gates on the named employeeCvReaderRoles set — Super Admin, SFE Manager, HR
+  // Advisory, HR Operations), and returns { cv: null } when there is simply nothing on file.
+  // Either way the button stays hidden, so it never offers a download that would fail.
+  const [cvAvailable, setCvAvailable] = React.useState(false);
 
   React.useEffect(() => {
     if (isVacancy) return;
@@ -151,6 +160,36 @@ export function OrganogramNodeDetailModal({ row, onClose, canAddEmployee = false
         setError("Unable to load this person's details.");
       } finally {
         if (active) setLoading(false);
+      }
+    })();
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [isVacancy, row.hrId]);
+
+  // Separate, lightweight probe for the CV. The reset lives inside the async body, not
+  // directly in the effect (react-hooks/set-state-in-effect forbids a synchronous setState
+  // there — the same reason the detail effect above resets inside its own async body). The
+  // reset also drops the previous person's answer when the popup is reused for another node
+  // without closing. It only ever flips cvAvailable to true, so a failure or a 401/403 leaves
+  // the button hidden.
+  React.useEffect(() => {
+    if (isVacancy) return;
+    const controller = new AbortController();
+    let active = true;
+    void (async () => {
+      setCvAvailable(false);
+      try {
+        const response = await fetch(`${employeeCvHref(row.hrId)}?meta=1`, {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        if (!active || !response.ok) return;
+        const payload = (await response.json().catch(() => ({}))) as { cv?: unknown };
+        if (active && payload?.cv) setCvAvailable(true);
+      } catch {
+        // Aborted or offline — leave the button hidden.
       }
     })();
     return () => {
@@ -210,6 +249,24 @@ export function OrganogramNodeDetailModal({ row, onClose, canAddEmployee = false
               >
                 <Download className="h-4 w-4" />
                 PDF
+              </a>
+            ) : null}
+            {/* The person's actual CV, from their master record. Shown only once the probe
+                confirms a file is on record AND this viewer may read it (the SFE Manager is
+                the whole reason this control exists — see the CV route). `download` keeps the
+                browser on this page; the route streams the file as an attachment. */}
+            {!isVacancy && cvAvailable ? (
+              <a
+                aria-label={`Download ${heading}'s CV`}
+                // No radius class: this modal portals to document.body, outside the shell sweeps
+                // that would square a rounded corner, so a `rounded-*` here renders genuinely
+                // rounded and breaks the square-edge golden rule (tests/square-edge-portal-ratchet).
+                className="flex items-center gap-1.5 px-2 py-1 text-phx-xs font-semibold text-white/80 transition hover:bg-white/10 hover:text-white"
+                download
+                href={employeeCvHref(row.hrId)}
+              >
+                <FileText className="h-4 w-4" />
+                CV
               </a>
             ) : null}
             <button
