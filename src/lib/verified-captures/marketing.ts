@@ -1,4 +1,5 @@
 import type { AccessContext } from "@/lib/auth/permissions";
+import { assessCaptureTrust } from "@/lib/evidence/capture-trust";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { loadMarketingEvidencePhotosByEntityIds } from "@/lib/marketing-requests/evidence-photo-storage";
 
@@ -179,6 +180,14 @@ export async function listVerifiedMarketingCaptures(
         id: row.id,
         displayName: row.display_name ?? "(pharmacy)",
         photoUrl: pharmacyPhotos.get(row.id)?.signedUrl ?? null,
+        photoTrust: assessCaptureTrust({
+          locationFix: {
+            capturedAt: row.captured_at,
+            latitude: toNumber(row.captured_latitude),
+            longitude: toNumber(row.captured_longitude),
+          },
+          photoFix: pharmacyPhotos.get(row.id) ?? null,
+        }),
         location: buildCaptureLocation({
           latitude: toNumber(row.captured_latitude),
           longitude: toNumber(row.captured_longitude),
@@ -204,6 +213,17 @@ export async function listVerifiedMarketingCaptures(
       governorate: customer.extracted_governorate_name ?? customer.region_name ?? null,
       capturedAt: customer.captured_at,
       photoUrl: customerPhotos.get(customer.id)?.signedUrl ?? null,
+      // The photo against its own venue fix. `unmeasured` is the common answer and the honest one:
+      // every capture taken before 2026-09-29 has no photo coordinates at all, and so does any
+      // capture whose shutter could not read a position. It must never be rendered as agreement.
+      photoTrust: assessCaptureTrust({
+        locationFix: {
+          capturedAt: customer.captured_at,
+          latitude: toNumber(customer.captured_latitude),
+          longitude: toNumber(customer.captured_longitude),
+        },
+        photoFix: customerPhotos.get(customer.id) ?? null,
+      }),
       location: buildCaptureLocation({
         latitude: toNumber(customer.captured_latitude),
         longitude: toNumber(customer.captured_longitude),
