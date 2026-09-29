@@ -67,7 +67,11 @@ export async function sendComposedMessage(
   const transport = transportFor(credential);
   try {
     const info = await transport.sendMail({ envelope, raw });
-    const rejected = (info.rejected ?? []).map((entry) => (typeof entry === "string" ? entry : entry.address));
+    // nodemailer types `rejected` as `string[]` — the addresses the server refused. The removed
+    // hand-written v9 shim declared it `Array<string | { address: string }>`, so this used to map
+    // an object branch that the SMTP transport never actually produces. Copied, not returned by
+    // reference, to keep handing the caller its own array exactly as the old `.map()` did.
+    const rejected = [...(info.rejected ?? [])];
     return { rejected };
   } finally {
     transport.close();
