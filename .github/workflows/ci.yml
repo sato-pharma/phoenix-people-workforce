@@ -693,7 +693,18 @@ jobs:
   # DELIBERATELY NOT in `full-e2e`'s `needs` list: that suite drives the web app through
   # Playwright and has no mobile surface, so a broken mobile lockfile should not be able to block
   # a manual E2E run.
+  # 🔴 NOT ON A PULL REQUEST SINCE 2026-09-29. The job detected whether `mobile/` changed and
+  # then exited — 11 seconds of work that billed a FULL minute on every one of ~280 runs a day,
+  # because GitHub rounds each job up. It could not simply be skipped at job level while it was a
+  # REQUIRED check: a required check that never reports leaves the PR on "Expected — waiting for
+  # status" for ever. So it was dropped from the required checks in the same change, and now runs
+  # on `main`, a dispatch and a schedule only.
+  #
+  # THE TRADE-OFF is the same one the build took that day: a mobile typecheck break surfaces on
+  # `main` rather than on the PR. Production is untouched either way — the Expo app ships through
+  # EAS, not through this repo's deploy — so the cost is a fix-forward, not an outage.
   mobile:
+    if: github.event_name != 'pull_request'
     runs-on: ${{ (vars.CI_SELF_HOSTED != 'off' && vars.CI_RUNNER_LABEL != '' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'ci-runner/')) && vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     timeout-minutes: 10
 
