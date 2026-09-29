@@ -2538,6 +2538,93 @@ vague timestamp would have invited a question. An exact one, correct to the seco
 derived, made the adjacent session look proven. That is why this is a trap rather than a slip: the
 reliable half of the evidence is what lent authority to the half that carried no information at all.
 
+## A source-and-path git command ate the fix it was being used to test — 2026-09-29
+
+The fix was four edits to `scripts/check-required-checks.mjs`, which had to stop printing `OK` from a
+stale checkout. Testing the two stale paths needed a tree genuinely behind `origin/main` that still
+held the new code, so: detach HEAD to an older commit, then bring the new script back with
+`git checkout <branch> -- scripts/check-required-checks.mjs`.
+
+**The edits were not committed.** That command restored the branch's *committed* version of the file —
+the one without the fix — over them. No warning, no refusal, and `git status` read clean afterwards,
+because the file really did match the ref now.
+
+**What made it cost the work twice rather than once is the direction the evidence appeared to point.**
+The test then ran the pre-fix script and printed exactly the pre-fix output: a bare `OK`, no position
+line. That is indistinguishable from *the fix does not work*, and the natural next move is to go back
+and debug a fix that was already correct. What gave it away was the *shape* of the output rather than
+its content — a broken fix would still have printed a `checkout …` line, and there was none — plus a
+system notice that the file had changed on disk.
+
+**The general form.** Any git command that names both a source and a path silently prefers the source:
+
+- `git checkout <ref> -- <path>`
+- `git restore --source=<ref> <path>`
+- `git stash pop` onto a dirty file
+
+None of them is a merge, none of them refuses, and none of them behaves like plain
+`git checkout <branch>`, which *does* refuse when it would lose work. Commit first, or copy the file
+outside the repo. Never rely on git objecting.
+
+The narrow version is already an owner standing rule under verification discipline: *"A regression test
+only counts if you break the fix and watch the NEW assertion fire. Restore the break from a copy —
+`git checkout -- <file>` wipes your own uncommitted fix with it."* That lives in `~/.claude/CLAUDE.md`,
+so every local session has it. **Cloud sessions do not** — they get the repo and the prompt and nothing
+else, which is why the general form belongs in the clusters file.
+
+Same family as the `git checkout --theirs` bullet beside it: a command whose job is to bring content
+*in* is also, silently, a command that throws content *away*.
+
+## Two deployment rows per commit, and a terminal state read as a history — 2026-09-29
+
+Four consecutive merges to `main` were measured, and Railway had posted **two** GitHub deployment rows
+for every one. On a commit since superseded, **both** rows end `inactive`.
+
+That is the shape that makes §2.3's withheld tell look broken, because the tell is *an `inactive` that
+was never `success`*. Reading only the final state of both rows on `e8194079c` and `b28639906` gives
+`inactive, inactive`, and a session that stops there concludes two deploys were refused. Asking the
+full history instead:
+
+```
+e8194079c  row 6744530536   success -> inactive                             ever success: YES
+           row 6744350656   in_progress -> success -> inactive -> inactive   YES
+b28639906  row 6743650894   in_progress -> success -> inactive -> inactive   YES
+           row 6743650893   in_progress -> success -> inactive -> inactive   YES
+```
+
+Both had passed through `success`. The tell was right, and silent, as designed.
+
+**The sharper finding is on the commit that was live at the time.** `f3c444d30` was serving production,
+and one of its two rows never reached `success` at all:
+
+```
+f3c444d30  row 6744372404   in_progress -> inactive                          ever success: NO
+           row 6744372341   in_progress -> success -> inactive -> inactive    YES
+```
+
+So a single row can satisfy the withheld signature while the commit it describes is the one answering
+requests. `deployments?sha=…` followed by `.[0]` is a coin flip that can accuse a healthy, live deploy.
+**The tell is a property of the commit across all of its rows, never of one row.**
+
+**The mistake worth recording is not the query — it is the inference.** The terminal states were read
+correctly. What was then asserted was "and never `success`", which had not been measured: one fact
+reported as two. That invented half was about to be offered as a reason to change §2.3 — auto-loaded
+guidance every session reads on every request — to say the tell could not be read off a row at all. A
+peer session's own query overturned it first. Had it landed it would have deleted the one signal that
+separates a refused deploy from a superseded one, on evidence that actually confirms the signal works.
+
+**The rules.**
+
+1. **Ask a predicate, never an index:** `any(.[].state; . == "success")`.
+   `GET /deployments/{id}/statuses` returns newest first, so an index reads backwards — and no single
+   state implies the states before it.
+2. **Enumerate every row for the sha.** Two is the number here, consistently, and they do not agree.
+3. **Two questions, two instruments.** *Did it ship* is ancestry against the live `/api/healthz`
+   revision. *Was it refused* is the ever-`success` predicate across the commit's rows. Neither answers
+   the other, and §2.3's tell needs no change.
+4. The rows **lag** the live domain, they do not stall. A row still reading `in_progress` while its own
+   sha is serving means you read it early: do not wait on it, and do not distrust it.
+
 ## `AGENTS.md` §2.1 Session-level traps — as it stood before the 2026-09-12 condensation
 
 On 2026-09-12 `AGENTS.md` was cut to roughly half its size at the owner's request ("Load less of AGENTS.md"): every hook was reduced to its rule plus the one detail needed to obey it. This is that section's hook text **verbatim** from `origin/main` 3eea44aef, kept so that no measurement, date, count or diagnosis a condensed hook dropped is lost. Search it for the hook's wording. The accounts earlier in this file remain the fuller record.
