@@ -35,14 +35,14 @@ const repoRoot = path.resolve(import.meta.dirname, "..");
  * entry keeps the suite green and its name can simply be dropped from here, while adding any NEW
  * bare override over a direct dependency goes red.
  *
- * `sharp`: bare `^0.35.3`, added by 65c6e30a2 for the libvips CVEs (CVE-2026-33327/33328/35590/
- * 35591), while package.json declares `^0.35.4`. It is REDUNDANT rather than merely mis-scoped —
- * `next@16.3.3` declares `sharp: ^0.35.3` itself as an optionalDependency, and the direct range is
- * already above the floor — so the fix is to DELETE it, not scope it. Deleting it re-resolves sharp
- * and its 25 platform `@img/sharp-*` optionalDependencies, which needs a real `pnpm install` rather
- * than a hand-applied lockfile delta. Drop this entry the moment that lands.
+ * EMPTY, and it should stay that way. `sharp` was the one entry and was removed the same day the
+ * guard landed: its bare `^0.35.3` (65c6e30a2, the libvips CVEs) protected nothing that
+ * package.json's own `^0.35.4` and `next@16.3.3`'s own `sharp: ^0.35.3` did not already protect, so
+ * it was deleted rather than scoped. An empty set is the strongest form of this guard — every bare
+ * override over a direct dependency now fails. Add a name here only with the reason and a way out,
+ * never to quiet a red run.
  */
-const KNOWN_BARE_OVERRIDES_OVER_A_DIRECT_DEPENDENCY = new Set(["sharp"]);
+const KNOWN_BARE_OVERRIDES_OVER_A_DIRECT_DEPENDENCY = new Set<string>([]);
 
 /** The `overrides:` block of pnpm-workspace.yaml, as [key, value] pairs, comments and blanks dropped. */
 function readOverrides(): Array<[string, string]> {
