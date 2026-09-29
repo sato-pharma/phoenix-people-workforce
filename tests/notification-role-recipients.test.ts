@@ -87,8 +87,9 @@ const EXPECTED: Record<string, { roles: string[]; enabled: boolean }> = {
   // agent id, with no error anywhere and no empty state. Owner instruction: tell the SFE Manager
   // by email and in-app when an employee is added, and link him to the screen that asks for the
   // two values. He named ONE recipient, and one is the point: an audience of two on a per-hire
-  // notice is how both learn to assume the other one did it.
-  crm_account_setup_alert: { roles: ["SFE Manager"], enabled: true },
+  // notice is how both learn to assume the other one did it. Extended 2026-09-29 at the owner's
+  // instruction to copy HR Operations, so the same notice reaches HR alongside the SFE Manager.
+  crm_account_setup_alert: { roles: ["SFE Manager", "HR Operations"], enabled: true },
   // Owner instruction 2026-09-10, after being shown that the mapping audit only ever saw the
   // application: 144 customer rows were re-pointed by direct SQL that evening with no audit row at
   // all, and 15 of them silently overwrote mapping decisions of his from August. Super Admin ALONE,

@@ -214,8 +214,8 @@ export const DEFAULT_NOTIFICATION_ROLE_POLICIES: Record<NotificationRoleKey, Not
     key: "crm_account_setup_alert",
     label: "New hire CRM account setup",
     description:
-      "Who is told when an employee is added to the employee master, so that person can be given an iReports360 (CRM) account. The notice carries the new hire's line, hiring date, region, area, manager, work email and mobile, and links to the New Hire CRM Setup tab where the CRM username and CRM code are entered. Defaults to the SFE Manager alone — the owner's instruction, 2026-09-07. Super Admin is deliberately not seeded alongside him: this is one person's standing job, and an audience of two on a per-hire notice is how both recipients learn to assume the other one did it.",
-    roles: ["SFE Manager"],
+      "Who is told when an employee is added to the employee master, so that person can be given an iReports360 (CRM) account. The notice carries the new hire's line, hiring date, region, area, manager, work email and mobile, and links to the New Hire CRM Setup tab where the CRM username and CRM code are entered. Defaults to the SFE Manager and HR Operations — the owner's instruction, 2026-09-07, extended 2026-09-29 to copy HR Operations so the same email reaches HR alongside the SFE Manager.",
+    roles: ["SFE Manager", "HR Operations"],
     enabled: true,
   },
   new_hire_mailbox_alert: {
