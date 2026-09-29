@@ -1,5 +1,6 @@
 import { normalizeLineName } from "@/lib/auth/permissions";
 import { loadOfferOutBySeat } from "@/lib/offers/seat-offers";
+import { resolveEmployeeDepartmentName } from "@/lib/employees/employee-org-labels";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import {
   buildHeadOfficeOrganogramRows,
@@ -61,7 +62,8 @@ type AuTreeRow = {
 type EmployeeWorkRow = {
   contract_renewal_date: string | null;
   contract_type: string | null;
-  department_name: string | null;
+  /** The department LINK. `employees.department_name` beside it was dropped on 2026-09-29. */
+  departments?: { name: string | null } | { name: string | null }[] | null;
   employment_status: string | null;
   full_name: string | null;
   hire_date: string | null;
@@ -132,11 +134,25 @@ export async function buildOrganogramSeatReport(): Promise<VacancyReportData> {
   // immediately to the hasWhatsApp boolean, so the chart learns whether a person is
   // reachable and never what their number is. The number is resolved per press by
   // /api/reports/organogram/whatsapp/[hrId] instead.
-  const { data: empData } = await supabase
+  //
+  // 🔴 THE DEPARTMENT COMES FROM ITS LINK, AND THIS READ IS WHY THAT MATTERS. Until 2026-09-29 the
+  // select named `department_name`, a denormalized label that was 0 of 198 populated and was then
+  // dropped — and PostgREST answers a missing column by failing the WHOLE read, not by nulling one
+  // field. So the moment that column went, this select returned nothing and every occupied seat on
+  // the organogram lost its occupant's name, hire date and work fields at once. The error was
+  // discarded here, which is why it was silent; it is logged now.
+  const { data: empData, error: empError } = await supabase
     .from("employees")
     .select(
-      "hr_id, full_name, name_ar, work_email, mobile_number, job_title, employment_status, contract_type, contract_renewal_date, hire_date, department_name, team_id, team_name, line_id, manager_hr_id, organogram_visible",
+      "hr_id, full_name, name_ar, work_email, mobile_number, job_title, employment_status, contract_type, contract_renewal_date, hire_date, departments(name), team_id, team_name, line_id, manager_hr_id, organogram_visible",
     );
+  if (empError) {
+    // Not thrown: the chart still draws from the seat model, as it did while this was broken. But a
+    // read that takes every name off the organogram must never again do it without saying so.
+    console.error(
+      `organogram: the employee master could not be read (${empError.message}); every seat loses its occupant's name and work fields`,
+    );
+  }
 
   // THE TEAM NAME COMES FROM THE LINK, NOT FROM THE TWIN BESIDE IT.
   //
@@ -194,7 +210,7 @@ export async function buildOrganogramSeatReport(): Promise<VacancyReportData> {
     return {
       contractRenewalDate: employee.contract_renewal_date,
       contractType: employee.contract_type,
-      employeeDepartmentName: employee.department_name,
+      employeeDepartmentName: resolveEmployeeDepartmentName(employee),
       employeeJobTitle: employee.job_title,
       employeeTeamName: teamNameFor(employee),
       employmentStatus: employee.employment_status,

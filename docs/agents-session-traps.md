@@ -2408,6 +2408,48 @@ and a text scan of every `.from("employees").select(…)`) and, for the earlier 
 defect, `tests/organogram-team-label.test.ts`. There is deliberately no memory slug for this: the
 rule lives here and in those two tests, and `MEMORY.md` is at its budget.
 
+### 🔴 That census was a GREP, the grep missed two, and the owner found the outage before any check
+
+Written hours later the same day, after `line_name` and `department_name` had already been dropped
+on the strength of it.
+
+**`src/lib/reports/organogram-au-source.ts` named `department_name` in a 16-column select and
+DISCARDED its error.** The moment the column went, that join returned nothing and the organogram
+lost every occupant at once: names rendered as **HR IDs**, the Head Office branch (built entirely
+from those rows) went empty, and a correctly seated District Manager — `PD-0014`,
+`SEAT-PED-DM-UE-1`, occupancy open since 2026-09-11, `is_vacant = false` — drew as a **vacancy**.
+Nothing went red. The owner reported it: *"osama is not added in the organo gram still vacanty and
+organogram is showingf hr ids not names"*.
+
+**Why a grep could not have found it, twice over:**
+
+- `admin/test-accounts.ts` passes its select as a **CONSTANT** (`.select(EMPLOYEE_COLUMNS)`), so a
+  scan that reads the call's argument sees an identifier with no column name in it and calls the
+  file clean. Resolve one level of `const` before believing a select is safe.
+- The compiler cannot help either: a select is a **string**, and a read that never touches the
+  field — this one only mapped rows by `hr_id` — gives the type system nothing to catch.
+
+**Restoring service does NOT have to wait for a deploy.** `alter table … add column if not exists
+<label> text` put the empty column back and the read answered 200 again within seconds; it held 0 of
+198 values, so nothing was lost or restored but the column itself. Re-adding an empty column is not
+a reversal of the decision — it buys the two deploys their correct order back.
+
+**The two guards that replaced the grep, and what each one caught:**
+
+1. A **tree-wide scan** in the pinning test: it walks `src/` and `app/`, anchors on
+   `.from("employees")`, resolves a constant select, and asserts it actually reached the tree —
+   because a filter that silently matches nothing reports a clean repo it never looked at. It found
+   three offenders on its first run.
+2. **Probing every distinct select against the live database** — all 99 of them, `&limit=1`, reading
+   the status. That found a **second, unrelated live 42703**: `support-requests/service.ts` asked for
+   `position_title`, which has never been a column on `employees`, and that read re-throws, so the
+   HR recipient lookup could never have resolved anybody. Latent only because
+   `employee_support_requests` holds 0 rows. Same defect as the Report It route above, and found
+   only by asking the artifact rather than reading the source.
+
+**So: before dropping a column, probe every select naming that table against the live database, and
+never let a census be a grep.**
+
 ## `AGENTS.md` §2.1 Session-level traps — as it stood before the 2026-09-12 condensation
 
 On 2026-09-12 `AGENTS.md` was cut to roughly half its size at the owner's request ("Load less of AGENTS.md"): every hook was reduced to its rule plus the one detail needed to obey it. This is that section's hook text **verbatim** from `origin/main` 3eea44aef, kept so that no measurement, date, count or diagnosis a condensed hook dropped is lost. Search it for the hook's wording. The accounts earlier in this file remain the fuller record.

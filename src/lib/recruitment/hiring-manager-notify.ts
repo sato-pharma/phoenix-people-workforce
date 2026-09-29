@@ -20,6 +20,11 @@
 
 import { ACTIVE_EMPLOYMENT_STATUSES_IN_LIST } from "@/lib/auth/session-lifecycle";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
+import {
+  EMPLOYEE_AREA_SELECT,
+  resolveEmployeeAreaName,
+  type EmployeeOrgFields,
+} from "@/lib/employees/employee-org-labels";
 import { hrIdLookupKeys } from "@/lib/hr-id";
 // The shared org casing rule — `Ceo` -> `CEO`, `Sfe Manager` -> `SFE Manager`, `R And D Manager` ->
 // `R&D Manager`. All three of those are still the literal contents of `employees.job_title` in
@@ -278,21 +283,25 @@ export async function listHiringManagerOptions(): Promise<HiringManagerOption[]>
 
   const { data, error } = await getSupabaseAdmin()
     .from("employees")
-    .select("hr_id,full_name,nickname,job_title,area_name,region_name")
+    // The area from the `area_id` LINK: `employees.area_name` was a label frozen at write time and
+    // was dropped on 2026-09-29. A select naming it fails the WHOLE read, which here would throw and
+    // lose the send.
+    .select(`hr_id,full_name,nickname,job_title,region_name,${EMPLOYEE_AREA_SELECT}`)
     .filter("employment_status", "in", ACTIVE_EMPLOYMENT_STATUSES_IN_LIST)
     .or(
       `job_title.ilike.*manager*,job_title.ilike.*director*,job_title.ilike.*head*,job_title.ilike.*chief*${seatHolderClause}`,
     );
   if (error) throw error;
 
-  const rows = (data ?? []) as Array<{
-    hr_id?: string | null;
-    full_name?: string | null;
-    nickname?: string | null;
-    job_title?: string | null;
-    area_name?: string | null;
-    region_name?: string | null;
-  }>;
+  const rows = (data ?? []) as Array<
+    EmployeeOrgFields & {
+      hr_id?: string | null;
+      full_name?: string | null;
+      nickname?: string | null;
+      job_title?: string | null;
+      region_name?: string | null;
+    }
+  >;
 
   return rows
     .filter((row) => Boolean(row.hr_id) && Boolean(row.full_name))
@@ -327,7 +336,7 @@ export async function listHiringManagerOptions(): Promise<HiringManagerOption[]>
         // District Manager the two agree; where they differ it is because the directory's
         // `area_name` is a copy of its `region_name` (verified on all 17 DMs, 2026-08-31) while the
         // organogram knows the DM seat is scoped by REGION and carries no area at all.
-        areaName: seatKnowsWhere ? seat?.areaName ?? null : String(row.area_name ?? "").trim() || null,
+        areaName: seatKnowsWhere ? seat?.areaName ?? null : resolveEmployeeAreaName(row),
         hrId,
         // Cased through the shared org helper, at DISPLAY time only. Production still stores the
         // raw importer output in `employees.job_title` — `Ceo`, `Sfe Manager`, `R And D Manager`
@@ -377,20 +386,21 @@ export async function notifiedManagerContext(hrId: string): Promise<NotifiedMana
   try {
     const { data } = await getSupabaseAdmin()
       .from("employees")
-      .select("full_name,nickname,job_title,area_name,region_name")
+      .select(`full_name,nickname,job_title,region_name,${EMPLOYEE_AREA_SELECT}`)
       .in("hr_id", hrIdLookupKeys(hrId))
       .limit(1)
       .maybeSingle();
-    const row = data as {
-      full_name?: string;
-      nickname?: string | null;
-      job_title?: string | null;
-      area_name?: string | null;
-      region_name?: string | null;
-    } | null;
+    const row = data as
+      | (EmployeeOrgFields & {
+          full_name?: string;
+          nickname?: string | null;
+          job_title?: string | null;
+          region_name?: string | null;
+        })
+      | null;
     if (!row?.full_name) return { areaName: null, jobTitle: null, name: hrId, regionName: null };
     return {
-      areaName: String(row.area_name ?? "").trim() || null,
+      areaName: resolveEmployeeAreaName(row),
       // Cased on the way IN as well as on the way out. `managerSeatLabel` cases at render, which is
       // what rescues the stamps already written; casing here means the ones written from now on are
       // right in the column itself, for any reader that is not a label — an export, a digest email.

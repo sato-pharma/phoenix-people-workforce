@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 import {
   EMPLOYEE_AREA_SELECT,
@@ -34,16 +35,21 @@ import {
  */
 
 const REPORT_IT = "app/api/report-it/submit/route.ts";
+/** The admin-bindable email tokens, three of which name a label that no longer exists. */
+const CUSTOM_VARIABLES = "src/lib/email-templates/custom-variables.ts";
+/** The DDL half of the third drop: it rebuilds the one view that named the label, then drops it. */
+const AREA_DROP_MIGRATION = "supabase/migrations/20260929173000_drop_employee_area_name_label.sql";
 const VACATION_OPTIONS = "src/lib/vacation/company-vacation-report-options.ts";
 const VACATION_REPORT = "src/lib/vacation/company-vacation-report.ts";
 const EMAIL = "src/lib/notifications/email.ts";
 /**
- * The reads that show a person's AREA. `area_name` is the half-alive label — 145 of 198 rows carry
- * one, so a read that takes it looks like it works, which is what kept these three out of the first
- * pass. Against the link: 29 have a link and no label (a blank area on screen), 4 disagree with it
- * (a STALE area on screen), and 0 have a label without a link — so preferring the link loses
- * nothing. Two of the four still read "Fayoum-Beni Suef", the territory's name from before the
- * split.
+ * The reads that show a person's AREA. `area_name` was the half-alive label — 145 of 198 rows
+ * carried one, so a read that took it looked like it worked, which is what kept these three out of
+ * the first pass. Against the link: 29 had a link and no label (a blank area on screen), 4
+ * disagreed with it (a STALE area on screen), and 0 had a label without a link — so the label could
+ * never answer where the link could not. Two of the four still read "Fayoum-Beni Suef", the
+ * territory's name from before the split. The column was dropped on 2026-09-29, so these reads now
+ * have nothing but the link.
  */
 const AREA_READS = [
   "src/lib/recruitment/manager-cv-engagement.ts",
@@ -68,24 +74,26 @@ export function runEmployeeLineIsReadFromTheLinkTests() {
   assert.equal(resolveEmployeeLineName({ lines: [] }), null, "no link is no line");
   assert.equal(resolveEmployeeLineName(null), null);
 
-  // 🔴 THE LABEL IS NO LONGER A FALLBACK, AND THE SELECT MUST NOT NAME IT. `line_name` and
-  // `department_name` are being DROPPED from the table, and while any read still ASKS for the
-  // column the drop cannot happen: PostgREST answers a missing column with an error, so the DDL
-  // would turn every employee read into a 42703 the moment it ran. This is what keeps the code
-  // half of that sequence honest — the name must be gone from the fragment, not merely unused.
+  // 🔴 THE LABELS ARE GONE FROM THE TABLE, AND NO SELECT MAY NAME ONE. `line_name`,
+  // `department_name` and now `area_name` have all been DROPPED from `employees`, and PostgREST
+  // answers a missing column with an error rather than a null — so a select that still asks for one
+  // is not a blank field, it is a 42703 that fails the WHOLE read. This is what keeps the code half
+  // of that sequence honest: the name must be gone from the fragment, not merely unused.
   assert.ok(
     !EMPLOYEE_LINE_SELECT.includes("line_name"),
-    "EMPLOYEE_LINE_SELECT must not name line_name: the column is being dropped, and a select that " +
-      "asks for it breaks every employee read the moment it goes",
+    "EMPLOYEE_LINE_SELECT must not name line_name: the column is gone, and a select that asks for " +
+      "it breaks every employee read that uses this fragment",
   );
+  for (const dropped of ["line_name", "department_name", "area_name"]) {
+    assert.ok(
+      !EMPLOYEE_ORG_SELECT.includes(dropped),
+      `EMPLOYEE_ORG_SELECT must not name ${dropped} — that column no longer exists on employees`,
+    );
+  }
   assert.ok(
-    !EMPLOYEE_ORG_SELECT.includes("line_name") && !EMPLOYEE_ORG_SELECT.includes("department_name"),
-    "EMPLOYEE_ORG_SELECT must not name either dropped label",
-  );
-  // area_name is the exception and stays: 145 of 198 rows carry it, and that column is NOT going.
-  assert.ok(
-    EMPLOYEE_ORG_SELECT.includes("area_name") && EMPLOYEE_AREA_SELECT.includes("area_name"),
-    "area_name must stay in the selects — that label is alive and its column is not being dropped",
+    !EMPLOYEE_AREA_SELECT.includes("area_name"),
+    "EMPLOYEE_AREA_SELECT must not name area_name: it was the last of the three labels and it was " +
+      "dropped on 2026-09-29, with 0 of 198 rows carrying one the link could not answer for",
   );
 
   // ── 2. THE READS THAT HAD THE DEFECT ASK FOR THE LINK ─────────────────────────────────────
@@ -115,12 +123,24 @@ export function runEmployeeLineIsReadFromTheLinkTests() {
   // The department resolves from its link alone, like the line — its label is going too.
   assert.equal(resolveEmployeeDepartmentName({ departments: { name: "Sales" } }), "Sales");
   assert.equal(resolveEmployeeDepartmentName({ departments: null }), null);
-  // The AREA still has both, and the link still wins: that column stays, so the fallback stays.
-  assert.equal(resolveEmployeeAreaName({ area_name: "STALE", areas: [{ name: "Cairo West" }] }), "Cairo West");
+  // The AREA resolves from its link alone now too. A row can no longer carry a label at all, so a
+  // resolver that still preferred one would only ever be reading something a caller invented.
+  assert.equal(resolveEmployeeAreaName({ areas: [{ name: "Cairo West" }] }), "Cairo West");
+  assert.equal(resolveEmployeeAreaName({ areas: { name: "Cairo West" } }), "Cairo West");
   assert.equal(
-    resolveEmployeeAreaName({ area_name: "Down town", areas: null }),
-    "Down town",
-    "area_name is the one label with real content (145 of 198) and must still answer without a link",
+    resolveEmployeeAreaName({ areas: null } as Parameters<typeof resolveEmployeeAreaName>[0]),
+    null,
+    "no link is no area: there is no label left to fall back to",
+  );
+  // And a stray label on the object must NOT resurrect the old behaviour. 4 of the 145 labels
+  // disagreed with the link when the column went — two of them a territory name from before the
+  // split — so a resolver that read one again would put a stale area back on screen.
+  assert.equal(
+    resolveEmployeeAreaName({ area_name: "Fayoum-Beni Suef" } as unknown as Parameters<
+      typeof resolveEmployeeAreaName
+    >[0]),
+    null,
+    "a label on the row must be ignored, not preferred — that is the stale value the drop removed",
   );
 
   // ── 3. THE REPORT-IT SELECT NAMES COLUMNS THAT EXIST ──────────────────────────────────────
@@ -167,30 +187,135 @@ export function runEmployeeLineIsReadFromTheLinkTests() {
     );
   }
 
-  // ── 3c. NO SELECT ON `employees` MAY NAME EITHER DROPPED COLUMN ───────────────────────────
-  // 🔴 THIS IS THE ASSERTION THE DDL DEPENDS ON. `line_name` and `department_name` are being
-  // dropped from the table; a select that still asks for one becomes a 42703 the moment it goes,
-  // and PostgREST fails the WHOLE read rather than returning a null for that field. The type
-  // system catches an object that READS the field — it caught two while this was being written,
-  // including a Line dropdown built from the dead label — but it cannot see a column name inside
-  // a select STRING, which is why this is a text scan and not a type.
+  // ── 3c. NO SELECT ON `employees` ANYWHERE MAY NAME A DROPPED COLUMN ───────────────────────
+  // 🔴 THIS IS THE ASSERTION THE DDL DEPENDS ON. `line_name`, `department_name` and `area_name` are
+  // gone from the table; a select that still asks for one is a 42703, and PostgREST fails the WHOLE
+  // read rather than returning a null for that field. The type system catches an object that READS
+  // the field — it caught two while this was being written, including a Line dropdown built from the
+  // dead label — but it cannot see a column name inside a select STRING, which is why this is a text
+  // scan and not a type.
   //
-  // Other tables have their own real `line_name` (vacation requests, probation rows, seats, the
-  // org-placement view), so the scan is anchored to a `.from("employees")` within a few lines.
+  // 🔴 AND IT SCANS THE WHOLE TREE, NOT A LIST. The first version of this test carried a curated
+  // list of files, and the list is exactly what failed: three more hand-written selects in
+  // notifications/email.ts named `line_name` and went red in CI after the PR was green locally. A
+  // new read added next month would not be on any list either.
+  //
+  // Other tables have their own real `line_name` and `area_name` — vacation requests, probation
+  // rows, seats, `source_of_sales_areas`, `au_v_line_area_map`, the org-placement view — so the scan
+  // is anchored to a `.from("employees")` within a few lines, never to the column name alone.
+  // 🔴 NOT ONLY THE DROPPED LABELS. Probing all 99 distinct employees selects in the tree against
+  // production on 2026-09-29 turned up a SECOND live 42703 that had nothing to do with this change:
+  // `support-requests/service.ts` asked for `position_title`, which has never been a column on this
+  // table. That read THROWS, so every support ticket's HR notification fell through to the
+  // Super-Admin fallback — HR Advisory and HR Operations were never notified at all. Same defect as
+  // the Report It submit route (`name`, `area`, `department`). These names are what the last three
+  // of those defects were made of; a name here is one this table does not have.
+  const DROPPED_LABELS = /\bline_name\b|\bdepartment_name\b|\barea_name\b|\bposition_title\b|\bteam_title\b/;
   const offenders: string[] = [];
-  for (const path of [...AREA_READS, REPORT_IT, VACATION_OPTIONS, VACATION_REPORT, EMAIL]) {
-    const source = read(path);
-    const pattern = /from\("employees"\)[\s\S]{0,400}?\.select\(([^)]*)\)/g;
-    for (const match of source.matchAll(pattern)) {
-      const selectList = match[1] ?? "";
-      if (/\bline_name\b|\bdepartment_name\b/.test(selectList)) offenders.push(`${path}: ${selectList.trim()}`);
+  let scanned = 0;
+  const roots = [new URL("../src/", import.meta.url), new URL("../app/", import.meta.url)];
+  const stack = [...roots];
+  while (stack.length) {
+    const dir = stack.pop()!;
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        stack.push(new URL(`${entry.name}/`, dir));
+        continue;
+      }
+      if (!/\.tsx?$/.test(entry.name)) continue;
+      const fileUrl = new URL(entry.name, dir);
+      const source = readFileSync(fileUrl, "utf8");
+      scanned += 1;
+      if (!source.includes('from("employees")')) continue;
+      const pattern = /from\("employees"\)[\s\S]{0,400}?\.select\(([^)]*)\)/g;
+      for (const match of source.matchAll(pattern)) {
+        const argument = (match[1] ?? "").trim();
+        // 🔴 A SELECT IS OFTEN A CONSTANT, NOT A LITERAL. `admin/test-accounts.ts` passed
+        // `EMPLOYEE_COLUMNS`, and a scan that only read the argument saw an identifier with no
+        // column names in it and called the file clean — while the constant it names held
+        // `area_name`. Resolve one level: an identifier is looked up as a const in the same file.
+        const resolved = /^[A-Za-z_$][\w$]*$/.test(argument)
+          ? (new RegExp(`const\\s+${argument}\\s*(?::[^=]+)?=\\s*([\\s\\S]{0,600}?);`).exec(source)?.[1] ?? argument)
+          : argument;
+        if (DROPPED_LABELS.test(resolved)) {
+          offenders.push(`${fileURLToPath(fileUrl).split(/[\\/]/).slice(-2).join("/")}: ${resolved.trim()}`);
+        }
+      }
     }
   }
+  // A filter that silently matches nothing is how a sweep reports a clean tree it never looked at.
+  assert.ok(
+    scanned > 1500,
+    `the scan must actually reach the source tree — it read ${scanned} files, which is too few to ` +
+      "be src/ plus app/, so an empty result would prove nothing",
+  );
   assert.deepEqual(
     offenders,
     [],
-    "a select on employees still names a column that is being dropped — the DDL would turn that " +
-      `read into a 42703: ${offenders.join(" | ")}`,
+    "a select on employees still names a dropped column — that read is a 42703 in production: " +
+      `${offenders.join(" | ")}`,
+  );
+
+  // ── 3d. A BINDABLE EMAIL TOKEN MUST NOT NAME A COLUMN THAT IS GONE ────────────────────────
+  // An admin can bind a custom {{token}} to an employees column (owner request, 2026-07-22), and
+  // the allowlist offers "Line", "Area" and "Department" — all three of which were dead labels and
+  // are now dropped columns. The catalogue keys stay (they are what a stored row holds), so each
+  // one must be mapped to its LINK in the resolver, or the whole read 42703s and every custom token
+  // in that send renders empty. Nothing is bound on production today (0 rows) — this is the guard
+  // that keeps the first binding from being the one that finds out.
+  const customVariables = read(CUSTOM_VARIABLES);
+  const catalogue = /EMPLOYEE_VARIABLE_SOURCES[\s\S]*?\n\];/.exec(customVariables)?.[0] ?? "";
+  assert.ok(catalogue.includes("full_name"), "the variable catalogue must be found to be checked");
+  const linkedBlock = /LINKED_SOURCES[\s\S]*?\n\};/.exec(customVariables)?.[0] ?? "";
+  for (const dropped of ["line_name", "department_name", "area_name"]) {
+    if (!catalogue.includes(`"${dropped}"`)) continue;
+    assert.ok(
+      new RegExp(`${dropped}:\\s*\\{`).test(linkedBlock),
+      `${dropped} is offered as an email variable source but is not mapped to its link — that ` +
+        "column no longer exists, so the resolve would fail the entire read",
+    );
+  }
+
+  // ── 3e. THE MIGRATION REBUILDS THE SEAT-DRIFT VIEW BEFORE IT DROPS THE COLUMN ─────────────
+  // `public.au_v_employee_seat_drift` selected `e.area_name`, so the column could not be dropped
+  // while the view still named it — and a `drop column ... cascade` would have deleted the view
+  // instead of saying so. The rebuild also drops `area_name_drifted`, which fired on 16 of the 94
+  // seated actives while `area_id_drifted` fired on 0: every one of the 16 a missing or stale label
+  // on a person whose seat and area link agree.
+  // The checks run on the SQL with `--` comments stripped: the comments in this migration discuss
+  // the column and the flag by name, and a scan that counted those would be asserting on prose.
+  const migration = read(AREA_DROP_MIGRATION);
+  const sql = migration
+    .split("\n")
+    .map((line) => line.replace(/--.*$/, ""))
+    .join("\n");
+  assert.ok(
+    sql.indexOf("drop view if exists public.au_v_employee_seat_drift") <
+      sql.indexOf("drop column if exists area_name"),
+    "the view must be rebuilt BEFORE the column is dropped, or the DDL fails on the dependency",
+  );
+  assert.ok(
+    !/\be\.area_name\b/.test(sql),
+    "the rebuilt view must not select employees.area_name — that is the dependency that blocks the drop",
+  );
+  assert.ok(
+    !/as\s+area_name_drifted/.test(sql),
+    "the label-derived flag must go with the label: it fired on 16 seated actives where the link " +
+      "check fired on 0",
+  );
+  assert.ok(
+    /as\s+area_id_drifted/.test(sql),
+    "the LINK comparison must survive the rebuild — that is the real area check",
+  );
+  assert.ok(
+    !/\bcascade\b/i.test(sql),
+    "no CASCADE: it would drop whatever depends on the column silently instead of refusing",
+  );
+  assert.ok(
+    /grant select on public\.au_v_employee_seat_drift to service_role/.test(sql) &&
+      /revoke all on public\.au_v_employee_seat_drift from public, anon, authenticated/.test(sql),
+    "a recreated view is born with default grants — the rebuild must restore the original ones, or " +
+      "a service-role-only view becomes readable by anon",
   );
 
   // ── 4. ONE RESOLVER, NOT FOUR ─────────────────────────────────────────────────────────────
