@@ -39,7 +39,6 @@ import { OrganogramAudienceDialog } from "@/components/organogram/organogram-aud
 import { OrganogramNodeDetailModal } from "@/components/organogram/organogram-node-detail-modal";
 import { OrganogramWhatsAppButton } from "@/components/organogram/whatsapp-button";
 import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
-import { SeniorRepBadge } from "@/components/ui/senior-rep-badge";
 import { formatDateOnly } from "@/lib/date-only";
 import {
   ORGANOGRAM_EXPORT_COLUMNS,
@@ -225,12 +224,9 @@ function PersonNode({
       <Avatar name={row.displayName} vacancy={isVacancy} />
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-2">
-          <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5">
-            <p className="whitespace-normal break-words text-phx-sm font-bold leading-tight text-slate-900">
-              {isVacancy ? "Open Vacancy" : formatEmployeeDisplayName(row.displayName)}
-            </p>
-            {isVacancy ? null : <SeniorRepBadge hrId={row.hrId} />}
-          </div>
+          <p className="whitespace-normal break-words text-phx-sm font-bold leading-tight text-slate-900">
+            {isVacancy ? "Open Vacancy" : formatEmployeeDisplayName(row.displayName)}
+          </p>
           {isVacancy ? (
             <span className="shrink-0 rounded-md bg-orange-100 px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-[0.12em] text-orange-700">
               Vacant

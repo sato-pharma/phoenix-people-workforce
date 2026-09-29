@@ -16,7 +16,6 @@ import {
 } from "lucide-react";
 
 import { PerformanceReconciliationNote } from "@/components/employee-portal/performance-reconciliation-note";
-import { SeniorRepBadge } from "@/components/ui/senior-rep-badge";
 import {
   ActionStrip,
   DashboardsGrid,
@@ -167,10 +166,7 @@ function DistrictsAttention({ rmRegional }: { rmRegional: PortalHomeSnapshot["rm
             return (
               <div key={d.hrId || d.name} className="flex items-center justify-between gap-3 bg-white px-4 py-3 sm:px-5">
                 <div className="min-w-0">
-                  <p className="flex flex-wrap items-center gap-1.5 text-sm font-semibold text-slate-800">
-                    <span dir="auto">{d.name}</span>
-                    <SeniorRepBadge hrId={d.hrId} />
-                  </p>
+                  <p className="text-sm font-semibold text-slate-800">{d.name}</p>
                   <p className="mt-0.5 text-phx-xs font-medium text-slate-500">
                     {egpCompact(d.totalSales)} of {egpCompact(d.totalTarget)}
                   </p>

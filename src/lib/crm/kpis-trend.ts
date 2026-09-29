@@ -427,8 +427,6 @@ export type KpiTrendColumn = KpiTrendColumnPlan & {
 export type KpiTrendRepLine = {
   key: string;
   repName: string;
-  /** Canonical lower-cased hr id when it resolved, for per-person markers (e.g. the Senior badge). */
-  hrId: string | null;
   lineName: string | null;
   areaName: string | null;
   jobTitle: string | null;
@@ -568,7 +566,6 @@ export async function getKpisTrend(input: {
     return {
       key,
       repName: totalRow.repName,
-      hrId: totalRow.agentHrId,
       lineName: totalRow.lineName,
       areaName: totalRow.areaName,
       jobTitle: totalRow.jobTitle,

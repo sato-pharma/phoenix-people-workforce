@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { AlertTriangle, ArrowRight, CheckCircle2, Target } from "lucide-react";
-import { SeniorRepBadge } from "@/components/ui/senior-rep-badge";
 
 import { cn } from "@/lib/utils";
 import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
@@ -166,10 +165,7 @@ function ScopeFocusPanel({
               >
                 <div className="flex min-w-0 items-center gap-2">
                   {entry.flagged && <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-rose-500" />}
-                  <p className="flex flex-wrap items-center gap-1.5 break-words text-xs font-semibold leading-snug text-slate-800">
-                    <span dir="auto">{entry.name}</span>
-                    <SeniorRepBadge hrId={entry.hrId} />
-                  </p>
+                  <p className="break-words text-xs font-semibold leading-snug text-slate-800">{entry.name}</p>
                 </div>
                 <span
                   className={cn(
@@ -223,10 +219,7 @@ function ProbationWatchlistBlock({
           {probation.map((entry) => (
             <div key={entry.hrId} className="flex items-center justify-between gap-3 px-5 py-3">
               <div className="min-w-0">
-                <p className="flex flex-wrap items-center gap-1.5 break-words text-sm font-semibold leading-snug text-slate-900">
-                  <span dir="auto">{entry.name}</span>
-                  <SeniorRepBadge hrId={entry.hrId} />
-                </p>
+                <p className="break-words text-sm font-semibold leading-snug text-slate-900">{entry.name}</p>
                 <p className="text-phx-xs text-slate-500">
                   Hired {formatDate(entry.hireDate)} · {entry.daysRemaining > 0 ? `${entry.daysRemaining}d left` : "ending"}
                 </p>

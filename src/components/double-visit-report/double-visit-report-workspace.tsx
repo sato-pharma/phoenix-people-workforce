@@ -11,7 +11,6 @@ import {
   PortalRecordFields,
   PortalResponsiveDataList,
 } from "@/components/employee-portal/portal-primitives";
-import { SeniorRepBadge } from "@/components/ui/senior-rep-badge";
 import { cn } from "@/lib/utils";
 import { utcDate } from "@/lib/format/cairo-datetime";
 import { ALL, filterLogRows, filterNeverVisitedRows, filterProbationRows } from "@/lib/double-visit-analytics/report-filters";
@@ -233,24 +232,11 @@ function LogVisitCard({ row }: { row: DoubleVisitReportRow }) {
         </span>
       }
       status={<VisitKindBadge kind={row.visitKind} />}
-      title={
-        <span className="flex flex-wrap items-center gap-1.5">
-          <span dir="auto">{row.doubleVisitorName ?? row.doubleVisitorHrId ?? "—"}</span>
-          <SeniorRepBadge hrId={row.doubleVisitorHrId} />
-        </span>
-      }
+      title={row.doubleVisitorName ?? row.doubleVisitorHrId ?? "—"}
     >
       <PortalRecordFields
         fields={[
-          {
-            label: "Visited MR",
-            value: (
-              <span className="flex flex-wrap items-center gap-1.5">
-                <span dir="auto">{row.visitedName ?? row.visitedHrId ?? "—"}</span>
-                <SeniorRepBadge hrId={row.visitedHrId} />
-              </span>
-            ),
-          },
+          { label: "Visited MR", value: row.visitedName ?? row.visitedHrId ?? "—" },
           { label: "Area", value: row.areaName ?? "—" },
           { label: "Region", value: row.regionName ?? "—" },
           { label: "Line", value: row.lineName ?? "—" },
@@ -654,19 +640,9 @@ export function DoubleVisitReportWorkspace({
                     {logPageRows.map((row, index) => (
                       <tr key={`${row.doubleVisitorHrId}-${row.visitedHrId}-${row.activityDate}-${index}`} className={index % 2 === 0 ? "bg-white" : "bg-orange-50/30"}>
                         <td className="px-3 py-2.5 whitespace-nowrap">{formatDate(row.activityDate)}</td>
-                        <td className="px-3 py-2.5">
-                          <span className="flex min-w-0 flex-wrap items-center gap-1.5">
-                            <span className="break-words" dir="auto">{row.doubleVisitorName ?? row.doubleVisitorHrId ?? "—"}</span>
-                            <SeniorRepBadge hrId={row.doubleVisitorHrId} />
-                          </span>
-                        </td>
+                        <td className="px-3 py-2.5">{row.doubleVisitorName ?? row.doubleVisitorHrId ?? "—"}</td>
                         <td className="px-3 py-2.5">{row.doubleVisitorRole ?? "—"}</td>
-                        <td className="px-3 py-2.5">
-                          <span className="flex min-w-0 flex-wrap items-center gap-1.5">
-                            <span className="break-words" dir="auto">{row.visitedName ?? row.visitedHrId ?? "—"}</span>
-                            <SeniorRepBadge hrId={row.visitedHrId} />
-                          </span>
-                        </td>
+                        <td className="px-3 py-2.5">{row.visitedName ?? row.visitedHrId ?? "—"}</td>
                         <td className="px-3 py-2.5">{row.areaName ?? "—"}</td>
                         <td className="px-3 py-2.5">{row.regionName ?? "—"}</td>
                         <td className="px-3 py-2.5">{row.lineName ?? "—"}</td>
