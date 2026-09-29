@@ -4631,6 +4631,7 @@ type PortalVacancyDbRow = {
   area_name?: string | null;
   areas?: { name: string | null } | null;
   created_at: string;
+  department_id?: number | null;
   id: number;
   job_title: string | null;
   line_id: number | null;
@@ -4646,15 +4647,22 @@ type PortalVacancyDbRow = {
 };
 
 export type EmployeePortalVacancyRow = {
+  // The four lookup IDS. Carried so an open seat here can open Add Employee pre-filled,
+  // exactly as the organogram popup and the admin vacancies report do — the form matches on
+  // ids, not names, so a row with names alone produces an empty prefill.
+  areaId: number | null;
   areaName: string | null;
   createdAt: string;
+  departmentId: number | null;
   id: number;
   isDistrictManagerVacancy: boolean;
   jobTitle: string | null;
+  lineId: number | null;
   lineName: string | null;
   managerHrId: string | null;
   managerName: string | null;
   note: string | null;
+  positionId: number | null;
   positionTitle: string | null;
   regionName: string | null;
   status: string;
@@ -4843,7 +4851,10 @@ export async function getEmployeePortalVacancies(
       let query = supabase
         .from("position_vacancies")
         .select(
-          "id,vacancy_code,job_title,status,created_at,note,manager_hr_id,manager_name,region_name,line_id,area_id,position_id,lines(name),areas(name),positions(title)",
+          // department_id joins the ids already selected here so an open seat can open Add Employee
+          // pre-filled from this page too (src/lib/employees/vacancy-hire-link.ts) — the form needs
+          // the IDS, and this row used to drop every one of them on the way out.
+          "id,vacancy_code,job_title,status,created_at,note,manager_hr_id,manager_name,region_name,line_id,area_id,department_id,position_id,lines(name),areas(name),positions(title)",
         )
         .eq("status", "open")
         .order("created_at", { ascending: false });
@@ -4891,18 +4902,22 @@ export async function getEmployeePortalVacancies(
     const uniqueRows = uniqueVacancyRows(scopedRows);
 
     const vacancies = uniqueRows.map((row) => ({
+      areaId: row.area_id,
       areaName: row.areas?.name ?? row.area_name ?? null,
       createdAt: row.created_at,
+      departmentId: row.department_id ?? null,
       id: row.id,
       isDistrictManagerVacancy: isDistrictManagerVacancyTitle(
         row.job_title,
         row.positions?.title,
       ),
       jobTitle: row.job_title,
+      lineId: row.line_id,
       lineName: row.lines?.name ?? null,
       managerHrId: row.manager_hr_id,
       managerName: row.manager_name,
       note: row.note,
+      positionId: row.position_id,
       positionTitle: row.positions?.title ?? null,
       regionName: row.region_name,
       status: row.status,
