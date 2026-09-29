@@ -22,7 +22,11 @@ import {
   type DirectOrderEvidenceCheck,
 } from "@/lib/direct-orders/evidence-check";
 import { assertDirectOrderWorkflowTransition } from "@/lib/direct-orders/workflow";
-import { directOrderRejectionWasOnlyRedundant } from "@/lib/direct-orders/field-evidence-gap";
+import {
+  directOrderFieldEvidenceGap,
+  directOrderRejectionWasOnlyRedundant,
+  type DirectOrderFieldEvidenceGap,
+} from "@/lib/direct-orders/field-evidence-gap";
 import { readAccuracyInput, readCoordinateInput } from "@/lib/geo/coordinate-input";
 import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 import { logError } from "@/lib/observability/log";
@@ -160,6 +164,15 @@ export type DirectOrderValidationRow = {
    */
   suspectedWholesaler: boolean;
   suspectedWholesalerNote: string | null;
+  /**
+   * Why this VENUE holds no live photo and no GPS fix, or null when one exists (owner, 2026-09-29:
+   * "put the not-field-validated line on the validation desk too").
+   *
+   * About the venue, never about the claim in front of the decider — a claim carrying a photo and a
+   * pin is itself a standing capture and silences this, `pending` included. Optional, because only
+   * the desk's list loader fills it; the per-request loader leaves it undefined.
+   */
+  fieldEvidenceGap?: DirectOrderFieldEvidenceGap | null;
   /**
    * `field` = a live photo and a pin; `invoice` = a distributor invoice alone (owner, 2026-09-14).
    * Every row filed before the invoice route existed is `field`.
@@ -1191,23 +1204,32 @@ export async function listDirectOrderPharmacyValidations(
     }
   }
 
+  // "Put the not-field-validated line on the validation desk too" (owner, 2026-09-29). One batch for
+  // the whole desk, reading each venue's WHOLE evidence — a field claim in front of the decider does
+  // NOT need the line, and a pending one already counts, so a row being decided on a live photo and
+  // a pin silences it by itself.
+  const venueEvidence = await loadDirectOrderVenueFieldEvidenceBatch(pharmacyIds);
+
   const out: DirectOrderValidationRow[] = [];
   for (const row of rows) {
     const pharmacy = pharmacyById.get(String(row.pharmacy_id));
     const hr = String(row.requested_by_hr_id ?? "");
-    out.push(
-      await mapValidationRow(
-        supabase,
-        row,
-        pharmacy,
-        nameByHr.get(hr.toUpperCase()) ?? hr,
-        pharmaciesWithCode.has(String(row.pharmacy_id)),
-        {
-          invoiceSlotsUsed: (slotsByRequester.get(canonicalHrIdKey(hr) ?? "") ?? []).length,
-          upgradesInvoiceValidation: confirmedByInvoice.has(String(row.pharmacy_id)),
-        },
-      ),
+    const mapped = await mapValidationRow(
+      supabase,
+      row,
+      pharmacy,
+      nameByHr.get(hr.toUpperCase()) ?? hr,
+      pharmaciesWithCode.has(String(row.pharmacy_id)),
+      {
+        invoiceSlotsUsed: (slotsByRequester.get(canonicalHrIdKey(hr) ?? "") ?? []).length,
+        upgradesInvoiceValidation: confirmedByInvoice.has(String(row.pharmacy_id)),
+      },
     );
+    const evidence = venueEvidence.get(String(row.pharmacy_id));
+    out.push({
+      ...mapped,
+      fieldEvidenceGap: evidence ? directOrderFieldEvidenceGap(evidence) : null,
+    });
   }
   return out;
 }
@@ -1287,16 +1309,82 @@ export async function getDirectOrderPharmacyValidationForRequest(
  * `.limit()` is the AGENTS.md rule that an unbounded PostgREST select stops at 1000 with no marker,
  * not a real expectation of reaching it.
  */
+/** The columns both loaders read, and the only shape the two predicates below understand. */
+const VENUE_EVIDENCE_COLUMNS =
+  "pharmacy_id, validation_route, status, storage_path, captured_latitude, captured_longitude, decision_notes";
+
+type VenueEvidenceRow = {
+  pharmacy_id?: string | null;
+  validation_route?: string | null;
+  status?: string | null;
+  storage_path?: string | null;
+  captured_latitude?: number | null;
+  captured_longitude?: number | null;
+  decision_notes?: string | null;
+};
+
+export type DirectOrderVenueFieldEvidence = {
+  hasFieldCapture: boolean;
+  validatedByInvoice: boolean;
+  entrySource: string | null;
+};
+
+const NO_VENUE_EVIDENCE: DirectOrderVenueFieldEvidence = {
+  hasFieldCapture: false,
+  validatedByInvoice: false,
+  entrySource: null,
+};
+
+/**
+ * Does this ONE claim carry a live photo and a GPS fix that still stands?
+ *
+ * The CAPTURE is the evidence, not the decision — a marketing transfer arrives with a PENDING field
+ * row already holding the rep's photo and pin. A rejected one is the desk saying the capture did not
+ * stand, so it proves nothing — EXCEPT when the desk's own note says the claim was redundant, which
+ * refuses the claim and not the photograph (owner, 2026-09-29).
+ *
+ * The photo and the two coordinates are required either way: a note readmits a decision, it never
+ * invents evidence that is not on the row.
+ *
+ * ONE function, called by the single-venue loader and the desk's batch loader alike. Two copies of
+ * this predicate could disagree about whether the same venue was captured, on two screens that are
+ * looking at the same claim.
+ */
+function claimIsAStandingFieldCapture(row: VenueEvidenceRow): boolean {
+  return (
+    normalizeDirectOrderValidationRoute(row.validation_route) === "field" &&
+    (String(row.status ?? "") !== "rejected" || directOrderRejectionWasOnlyRedundant(row.decision_notes)) &&
+    Boolean(String(row.storage_path ?? "").trim()) &&
+    row.captured_latitude != null &&
+    row.captured_longitude != null
+  );
+}
+
+/** Did the desk decide an INVOICE claim on this venue real? */
+function claimIsADecidedInvoiceValidation(row: VenueEvidenceRow): boolean {
+  return (
+    normalizeDirectOrderValidationRoute(row.validation_route) === "invoice" &&
+    (String(row.status ?? "") === "approved_new" || String(row.status ?? "") === "matched_existing")
+  );
+}
+
+function foldVenueEvidence(rows: VenueEvidenceRow[], entrySource: string | null): DirectOrderVenueFieldEvidence {
+  return {
+    entrySource,
+    hasFieldCapture: rows.some(claimIsAStandingFieldCapture),
+    validatedByInvoice: rows.some(claimIsADecidedInvoiceValidation),
+  };
+}
+
 export async function loadDirectOrderVenueFieldEvidence(
   pharmacyId: string,
-): Promise<{ hasFieldCapture: boolean; validatedByInvoice: boolean; entrySource: string | null }> {
-  const empty = { hasFieldCapture: false, validatedByInvoice: false, entrySource: null };
-  if (!pharmacyId) return empty;
+): Promise<DirectOrderVenueFieldEvidence> {
+  if (!pharmacyId) return NO_VENUE_EVIDENCE;
   const supabase = getSupabaseAdmin();
   const [{ data, error }, { data: venueRow }] = await Promise.all([
     supabase
       .from("direct_order_pharmacy_validations")
-      .select("validation_route, status, storage_path, captured_latitude, captured_longitude, decision_notes")
+      .select(VENUE_EVIDENCE_COLUMNS)
       .eq("pharmacy_id", pharmacyId)
       .limit(200),
     // The RAW entry source. `DirectOrderPharmacy.entrySource` cannot answer this: its mapper folds
@@ -1307,41 +1395,68 @@ export async function loadDirectOrderVenueFieldEvidence(
   ]);
   const entrySource = (venueRow as { entry_source?: string | null } | null)?.entry_source ?? null;
   // Never throws: this decorates an approval screen, and an approver must not lose the whole order
-  // because a decoration could not be read. Absent evidence is what `empty` already says.
-  if (error) return { ...empty, entrySource };
+  // because a decoration could not be read. Absent evidence is what the empty answer already says.
+  if (error) return { ...NO_VENUE_EVIDENCE, entrySource };
+  return foldVenueEvidence((data ?? []) as VenueEvidenceRow[], entrySource);
+}
 
-  const rows = (data ?? []) as Array<{
-    validation_route?: string | null;
-    status?: string | null;
-    storage_path?: string | null;
-    captured_latitude?: number | null;
-    captured_longitude?: number | null;
-    decision_notes?: string | null;
-  }>;
-  return {
-    entrySource,
-    // The CAPTURE is the evidence, not the decision — a marketing transfer arrives with a PENDING
-    // field row already holding the rep's photo and pin. A rejected one is the desk saying the
-    // capture did not stand, so it proves nothing — EXCEPT when the desk's own note says the claim
-    // was superseded, which refuses the claim and not the photograph (owner, 2026-09-29).
-    //
-    // The photo and the two coordinates are required either way: the note readmits a decision, it
-    // never invents evidence that is not on the row.
-    hasFieldCapture: rows.some(
-      (row) =>
-        normalizeDirectOrderValidationRoute(row.validation_route) === "field" &&
-        (String(row.status ?? "") !== "rejected" ||
-          directOrderRejectionWasOnlyRedundant(row.decision_notes)) &&
-        Boolean(String(row.storage_path ?? "").trim()) &&
-        row.captured_latitude != null &&
-        row.captured_longitude != null,
-    ),
-    validatedByInvoice: rows.some(
-      (row) =>
-        normalizeDirectOrderValidationRoute(row.validation_route) === "invoice" &&
-        (String(row.status ?? "") === "approved_new" || String(row.status ?? "") === "matched_existing"),
-    ),
-  };
+/**
+ * The same answer for MANY venues at once — the validation desk's form of it (owner, 2026-09-29:
+ * "put the not-field-validated line on the validation desk too").
+ *
+ * The desk lists every pending claim, so asking per row would be one round trip per claim; this is
+ * two, whatever the desk holds. It reads each venue's WHOLE evidence, not the pending claims the
+ * desk already has, for the same reason the single loader does: a venue captured in the field months
+ * ago and re-filed on an invoice today would otherwise read as uncaptured.
+ *
+ * CHUNKED AT 50. A PostgREST `.in()` fails three ways — zero rows and no error, `22P02` on one null
+ * id, and a silent failure once the header passes ~16KB — so the ids are filtered for nullish values
+ * and sent in small batches rather than one long list.
+ */
+export async function loadDirectOrderVenueFieldEvidenceBatch(
+  pharmacyIds: string[],
+): Promise<Map<string, DirectOrderVenueFieldEvidence>> {
+  const out = new Map<string, DirectOrderVenueFieldEvidence>();
+  const ids = Array.from(new Set(pharmacyIds.map((id) => String(id ?? "").trim()).filter(Boolean)));
+  if (ids.length === 0) return out;
+
+  const supabase = getSupabaseAdmin();
+  const claimsByVenue = new Map<string, VenueEvidenceRow[]>();
+  const entrySourceByVenue = new Map<string, string | null>();
+  let readFailed = false;
+
+  for (let index = 0; index < ids.length; index += 50) {
+    const slice = ids.slice(index, index + 50);
+    const [{ data: claims, error }, { data: venues }] = await Promise.all([
+      supabase.from("direct_order_pharmacy_validations").select(VENUE_EVIDENCE_COLUMNS).in("pharmacy_id", slice),
+      supabase.from("direct_order_pharmacies").select("id, entry_source").in("id", slice),
+    ]);
+    // Same posture as the single loader: a decoration that cannot be read must never cost the desk
+    // its rows. The venues in a failed slice simply answer "no evidence".
+    if (error) readFailed = true;
+    for (const row of ((claims ?? []) as VenueEvidenceRow[])) {
+      const key = String(row.pharmacy_id ?? "");
+      if (!key) continue;
+      const list = claimsByVenue.get(key) ?? [];
+      list.push(row);
+      claimsByVenue.set(key, list);
+    }
+    for (const venue of ((venues ?? []) as Array<{ id?: string | null; entry_source?: string | null }>)) {
+      const key = String(venue.id ?? "");
+      if (key) entrySourceByVenue.set(key, venue.entry_source ?? null);
+    }
+  }
+
+  for (const id of ids) {
+    const entrySource = entrySourceByVenue.get(id) ?? null;
+    out.set(
+      id,
+      readFailed && !claimsByVenue.has(id)
+        ? { ...NO_VENUE_EVIDENCE, entrySource }
+        : foldVenueEvidence(claimsByVenue.get(id) ?? [], entrySource),
+    );
+  }
+  return out;
 }
 
 /**
