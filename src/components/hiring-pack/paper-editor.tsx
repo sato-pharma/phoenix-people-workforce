@@ -2408,7 +2408,22 @@ export function HiringPackPaperEditor({
             {markFields.length > 0 ? (
               <div className="space-y-2 rounded-xl border border-phx-accent-line bg-white px-3 py-3">
                 <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-phx-ink-faint">
-                  Stamped and signed on this paper
+                  Stamp and signature positions
+                </p>
+                {/*
+                  SAYING WHAT A ROW IS, because the heading above it used to lie.
+
+                  It read "Stamped and signed on this paper", which was true while a placed mark
+                  printed on every copy - and is exactly the impression the owner rejected ("donot
+                  put the stamp permanent"). A row here is a POSITION and nothing more: it prints
+                  only when the desk ticks it in the print dialog, which opens unticked every time.
+
+                  Said once above the list rather than on each row, so the meaning is plain without
+                  repeating a sentence beside every mark.
+                */}
+                <p className="text-phx-2xs leading-relaxed text-phx-ink-soft">
+                  These are positions only — nothing prints here unless you tick it in the print
+                  dialog, and it opens unticked every time.
                 </p>
                 {markFields.map((row) => (
                   <div className="flex flex-wrap items-center gap-2" key={row.id}>
@@ -2423,16 +2438,18 @@ export function HiringPackPaperEditor({
                     <span className="text-phx-2xs text-phx-ink-soft">
                       {row.page !== null ? `page ${row.page}` : "anchored in the text"}
                     </span>
+                    <span className="text-phx-2xs text-phx-ink-faint">· offered at print</span>
                     {row.source.mark === "signature" && !signature.present ? (
-                      // Said plainly rather than left to be discovered on paper: the row is here,
-                      // the document prints unsigned, and nothing on the page itself would show it.
+                      // Said plainly rather than left to be discovered at the printer: the position
+                      // is saved and the print dialog will offer it, but ticking it would produce
+                      // nothing, and no page would show why.
                       <span className="text-phx-2xs font-semibold text-amber-700">
-                        no signature stored — prints blank
+                        no signature stored — ticking it prints nothing
                       </span>
                     ) : null}
                     {markWarnings.has(row.id) ? (
                       <span className="text-phx-2xs font-semibold text-red-700">
-                        past the edge of the paper — this part will not print
+                        past the edge of the paper — part of it would be cut off
                       </span>
                     ) : null}
                     <Button
@@ -2440,7 +2457,8 @@ export function HiringPackPaperEditor({
                       disabled={layoutBusy}
                       onClick={() => {
                         const sure = window.confirm(
-                          `Remove the ${DOCUMENT_MARK_LABELS[row.source.mark].toLowerCase()} from this paper?`,
+                          `Remove the ${DOCUMENT_MARK_LABELS[row.source.mark].toLowerCase()} position? ` +
+                            "The print dialog will stop offering it on this paper.",
                         );
                         if (sure) void deleteLayoutField(row.id);
                       }}
