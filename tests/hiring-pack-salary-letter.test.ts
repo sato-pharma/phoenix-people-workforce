@@ -52,7 +52,8 @@ function signatureCells(html: string): string[] {
 
 /**
  * THE LAYOUT THE OWNER CHOSE (2026-09-13, "this is better"): the Arabic certificate's — company
- * block, details grid, and a signature table with ONE seal, in the Company stamp box.
+ * block, details grid, and a signature table whose Company stamp box is EMPTY (owner, 2026-09-29 —
+ * no printed seal on any hiring paper; the job offer keeps its own).
  */
 function testTheLetterWearsTheArabicCertificatesLayout() {
   const pack = buildManualHiringPack(SAMPLE, COMPANY_DETAILS_DEFAULT);
@@ -61,11 +62,15 @@ function testTheLetterWearsTheArabicCertificatesLayout() {
 
   assert.ok(page.includes('class="doc-ident"'), "the employee's details sit in a ruled grid");
   assert.ok(page.includes("Issued by — the Company"), "the company block is on the page");
-  assert.equal((html.match(/class="phx-seal"/g) ?? []).length, 1, "exactly one seal on the letter");
+  assert.equal((html.match(/class="phx-seal"/g) ?? []).length, 0, "no printed seal on the letter");
+  assert.ok(page.includes("Company stamp"), "but the Company stamp box stays — it says where to press one");
   const cells = signatureCells(page);
   assert.equal(cells.length, 3, "name and title, signature, company stamp");
-  assert.ok(cells[2].includes('class="phx-seal"'), "the seal sits in the Company stamp box");
-  assert.ok(!cells[1].includes('class="phx-seal"'), "never over the line somebody signs");
+  assert.deepEqual(
+    cells.filter((cell) => cell.includes("phx-seal")),
+    [],
+    "every signature cell is blank, the Company stamp box included",
+  );
   assert.ok(
     !html.replace(PRINT_BANNER_CSS, "").includes("border-radius"),
     "every corner square, by absence",

@@ -3,9 +3,6 @@ import {
   houseLetterhead,
   HOUSE_COLORS,
   HOUSE_IDENTITY_CSS,
-  HOUSE_SEALED_ATTRS,
-  houseSealImg,
-  sealPartyIndex,
 } from "@/lib/hiring-pack/house-identity";
 import { flowFieldLayer, type DocumentFieldRow } from "@/lib/hiring-pack/field-layout";
 import {
@@ -180,16 +177,13 @@ function renderBlock(
 }
 
 function signatureBlock(template: ClearanceTemplate): string {
-  // One impression per paper. The clearance names its own seal column الاعتماد وخاتم الشركة, and
-  // the HR manager's column beside it is a signature — see sealPartyIndex.
-  const sealAt = sealPartyIndex(template.signatureColumns.map((column) => column.headingAr));
+  // NO PRINTED SEAL — owner, 2026-09-29. The الاعتماد وخاتم الشركة column keeps its heading: it is
+  // where a human presses the real stamp, and this paper's own clause refuses it until they do.
   const cells = template.signatureColumns
     .map(
-      (column, index) => `<div class="sig">
+      (column) => `<div class="sig">
         <p class="sig__head">${escapeHtml(column.headingAr)}</p>
-        <div class="sig__body"${index === sealAt ? HOUSE_SEALED_ATTRS : ""}>${
-          index === sealAt ? houseSealImg({ sizeMm: 32, dyMm: 0 }) : ""
-        }
+        <div class="sig__body">
           <p class="sig__line">الاسم: <span class="rule-line">........................</span></p>
           <p class="sig__line">التوقيع: <span class="rule-line">......................</span></p>
           <p class="sig__line">التاريخ: <span class="rule-line">......................</span></p>

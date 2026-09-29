@@ -3,9 +3,6 @@ import {
   houseLetterhead,
   HOUSE_COLORS,
   HOUSE_IDENTITY_CSS,
-  HOUSE_SEALED_ATTRS,
-  houseSealImg,
-  sealPartyIndex,
 } from "@/lib/hiring-pack/house-identity";
 import { flowFieldLayer, type DocumentFieldRow } from "@/lib/hiring-pack/field-layout";
 import {
@@ -285,27 +282,20 @@ function clauseGroups(template: CustodyTemplate): string {
 /**
  * The three-column signature block, used by both the receipt and the return protocol.
  *
- * 🔴 `sealed` IS FALSE ON THE RETURN PROTOCOL, and that is not a layout choice. The return block is
- * signed when the device actually comes back, which is usually months later and may never happen at
- * all. A seal printed there certifies a return that has not occurred — on a page the company itself
- * issued. The receipt half is the company acknowledging what it handed over today; the return half
- * is a future event, and the stamp for it belongs to whoever witnesses it.
- *
- * Measured while wiring this up: sealing both halves put two impressions on every custody receipt.
+ * NO PRINTED SEAL on either half — owner, 2026-09-29. It was already forbidden on the return
+ * protocol for a reason worth keeping on the record: that block is signed when the device actually
+ * comes back, which is usually months later and may never happen at all, so a seal printed there
+ * certifies a return that has not occurred. The owner extended the same objection to every hiring
+ * paper, the receipt half included.
  */
 function signatureBlock(
   columns: readonly { headingAr: string; attestationAr: string }[],
-  sealed = true,
 ): string {
-  // One impression per paper — see sealPartyIndex for why this is not "every company column".
-  const sealAt = sealed ? sealPartyIndex(columns.map((column) => column.headingAr)) : -1;
   const cells = columns
     .map(
-      (column, index) => `<div class="sig">
+      (column) => `<div class="sig">
         <p class="sig__head">${escapeHtml(column.headingAr)}</p>
-        <div class="sig__body"${index === sealAt ? HOUSE_SEALED_ATTRS : ""}>${
-          index === sealAt ? houseSealImg({ sizeMm: 32, dyMm: 0 }) : ""
-        }
+        <div class="sig__body">
           <p class="sig__line">الاسم: <span class="rule-line">..........................</span></p>
           <p class="sig__line">التوقيع: <span class="rule-line">........................</span></p>
           <p class="sig__line">التاريخ: <span class="rule-line">........................</span></p>
@@ -336,7 +326,7 @@ function returnProtocol(template: CustodyTemplate): string {
       <h2 class="sec sec--ret">${escapeHtml(template.returnHeadingAr)}</h2>
       <p class="ret__intro">${escapeHtml(template.returnIntroAr)}</p>
       <div class="grid2">${fields}</div>
-      ${signatureBlock(template.returnSignatureColumns, false)}
+      ${signatureBlock(template.returnSignatureColumns)}
     </section>`;
 }
 
