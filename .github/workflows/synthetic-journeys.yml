@@ -118,7 +118,35 @@ jobs:
       - name: Install Chromium
         run: pnpm exec playwright install --with-deps chromium
 
+      # 🔴 THIS STEP MUST NEVER FAIL THE JOB, AND THAT IS NOT LAZINESS ABOUT RED TICKS.
+      #
+      # A production deploy is GATED on that commit's check suites (Railway "Wait for CI"), and
+      # Railway withholds the deploy when ANY suite on the commit fails — a withheld deploy is
+      # marked SKIPPED and never resurrects. A `schedule` run always runs on the default branch, so
+      # this workflow attaches a suite to whatever `main` HEAD is when it fires; that cannot be
+      # avoided by moving the trigger, because a side branch would run STALE journeys.
+      #
+      # So if this step failed the job, the sequence would be:
+      #   production breaks -> these journeys legitimately go red -> that red suite lands on main
+      #   HEAD -> the deploy carrying the FIX is withheld -> production stays broken.
+      # The outage would suppress its own repair, once every hour, with nothing obviously wrong in
+      # ci.yml. This is a TRUE alarm made harmful by where it lands, which is why the remedy here
+      # differs from deploy-drift-check.yml's: that one was a FALSE alarm and was fixed by
+      # comparing against a settled ref (tests/deploy-drift-settled-ref.test.ts).
+      #
+      # Twice this month this class of bug withheld a production deploy: deploy-drift-check's own
+      # cron on 2026-09-27 (cd9e0be03), and staging-hr-drift-check.yml failing to parse on
+      # 2026-09-29, which froze production for nearly two hours (#4778). A monitor must not be able
+      # to gate the deploy it is monitoring.
+      #
+      # 🔴 THE SIGNAL IS NOT LOST, which is the only reason this is safe. Every run — pass or fail —
+      # is written to public.synthetic_journey_runs by the `always()` step below and read by the
+      # admin Synthetic Journeys page, and a failure still prints an ::error:: annotation into the
+      # run summary from the step after it. What changes is ONLY the job's conclusion, and the job's
+      # conclusion is the single thing Railway reads. Do not "tidy" this back into a hard failure.
       - name: Run synthetic journeys
+        id: journeys
+        continue-on-error: true
         env:
           SYNTHETIC_BASE_URL: ${{ inputs.base_url || 'https://phoenix-hr.satopharma.com' }}
           SYNTHETIC_ADMIN_HR_ID: ${{ secrets.SYNTHETIC_ADMIN_HR_ID }}
@@ -127,6 +155,16 @@ jobs:
           # regardless; SYNTHETIC_ALLOW_MUTATION is deliberately never set here.
           SYNTHETIC_ALLOW_PRODUCTION: "true"
         run: pnpm run synthetic:test
+
+      # The loud half of the step above. `::error::` renders red in the run summary and in the
+      # Actions list's annotations, so a human scanning the workflow still sees the failure — while
+      # the job's own conclusion stays green so it cannot withhold a deploy. Exits 0 deliberately.
+      - name: Report a failed journey without failing the job
+        if: ${{ always() && steps.journeys.outcome == 'failure' }}
+        run: |
+          echo "::error::PRODUCTION SMOKE TEST FAILED — the synthetic journeys did not pass against ${SYNTHETIC_BASE_URL:-https://phoenix-hr.satopharma.com}. This job is deliberately green so it cannot withhold a production deploy (see the comment above this step); the failure is real. Open the admin Synthetic Journeys page, and the Playwright report attached to this run."
+        env:
+          SYNTHETIC_BASE_URL: ${{ inputs.base_url || 'https://phoenix-hr.satopharma.com' }}
 
       # SAVE THE RESULT. Without this step the suite ran, passed, and told nobody: the admin
       # Synthetic Journeys page reads public.synthetic_journey_runs, and between 2026-07-03 and
