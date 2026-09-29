@@ -3,9 +3,6 @@ import {
   houseLetterhead,
   HOUSE_COLORS,
   HOUSE_IDENTITY_CSS,
-  HOUSE_SEALED_ATTRS,
-  houseSealImg,
-  isCompanySignatory,
 } from "@/lib/hiring-pack/house-identity";
 import { flowFieldLayer, type DocumentFieldRow } from "@/lib/hiring-pack/field-layout";
 import {
@@ -192,14 +189,12 @@ function signatureHtml(
     .map((row) => {
       const name = row.nameToken ? (values[row.nameToken] ?? "") : "";
       const nameCell = name.trim().length > 0 ? valueHtml(name) : "";
-      // The التوقيع cell is the third of الصفة / الاسم / التوقيع / التاريخ, and only the
-      // company's own row carries the seal — isCompanySignatory holds that rule for all seven
-      // signature blocks in this codebase.
-      const sealed = isCompanySignatory(row.roleAr);
+      // The التوقيع cell is the third of الصفة / الاسم / التوقيع / التاريخ, and it stays EMPTY on
+      // every row: no printed seal on a hiring paper (owner, 2026-09-29).
       return `<div class="wf-sigrow">
         <span class="wf-sigcell wf-sigcell--role">${escapeHtml(row.roleAr)}</span>
         <span class="wf-sigcell">${nameCell}</span>
-        <span class="wf-sigcell"${sealed ? HOUSE_SEALED_ATTRS : ""}>${sealed ? houseSealImg({ sizeMm: 30, dyMm: 0 }) : ""}</span>
+        <span class="wf-sigcell"></span>
         <span class="wf-sigcell"></span>
       </div>`;
     })

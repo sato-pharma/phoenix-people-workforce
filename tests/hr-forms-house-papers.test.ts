@@ -5,7 +5,6 @@ import {
   HOUSE_BAND_HEIGHT_MM,
   HOUSE_BAND_WAVELENGTH_MM,
   HOUSE_COLORS,
-  HOUSE_SEAL_SRC,
   HOUSE_IDENTITY_CSS,
   houseEngineTurnedBand,
 } from "../src/lib/hiring-pack/house-identity.ts";
@@ -1292,21 +1291,23 @@ function testEveryMastheadCarriesTheBand(): void {
 
 
 /**
- * EVERY HOUSE PAPER CARRIES EXACTLY ONE SEAL, ON THE COMPANY'S SIDE.
+ * NO HOUSE PAPER CARRIES A PRINTED SEAL — owner, 2026-09-29: "remove the sato pharma stamp/seal from
+ * all hiring documents, leave it only in job offers".
  *
- * Counted on the RENDERED document, because "the seal is wired in" is not the same claim as "the
- * seal appears once". Wiring it produced three distinct ways of being wrong, all of them silent:
+ * 🔴 COUNTED ON THE RENDERED DOCUMENT, because "the helper is gone" is not the same claim as "no
+ * paper prints one". Between 2026-09-11 and 2026-09-29 seven renderers drew this seal from four
+ * different signature-block shapes, and the reason it is worth a rendered count is that every way of
+ * getting it wrong was silent: a company column whose heading is not الشركة, a second company column
+ * on the same paper, a second signature block for a custody return, a fallback that landed the stamp
+ * on the line somebody signs. The inverse is just as silent — a renderer put back, or a new paper
+ * copying a neighbour, prints a stamp NOBODY PRESSED onto a document a court may read.
  *
- *   · ZERO — the absence warning heads its company column إدارة الموارد البشرية, not الشركة, so a
- *     naive string test skipped it entirely.
- *   · TWO — the employee clearance has THREE parties and two are company-side, and the custody
- *     receipts draw a second signature block for the return protocol.
- *   · THE WRONG SIDE — the offer letter's row builder draws both parties, so an unconditional seal
- *     stamped the candidate's own signature line.
+ * The خاتم / خاتم الشركة column HEADINGS stay. They tell a human where the real stamp goes, and the
+ * clearance certificate's own clause refuses the form until one is on it.
  *
- * One impression, company side. Nothing else is acceptable on a paper someone signs.
+ * The job offer is NOT in this list and keeps its seal — `src/lib/offers/render.ts`.
  */
-function testEveryPaperCarriesExactlyOneSeal(): void {
+function testNoHousePaperCarriesASeal(): void {
   const pack = packFixture();
   const rendered: ReadonlyArray<readonly [string, string]> = [
     ["employment contract", renderContractHtml(pack, 1)],
@@ -1315,33 +1316,24 @@ function testEveryPaperCarriesExactlyOneSeal(): void {
     ["worker data form", renderWorkerFormHtml(pack, 1)],
     ...HR_PAPERS.map((paper) => [paper.id, renderHrPaperHtml(pack, 1, paper)] as const),
   ];
-  // The one paper that wears NO seal by the owner's order (2026-09-20, "remove the stamp"): the
-  // Arabic HR letter. It says so itself (`unsealed`), and its own suite proves the flag is what
-  // keeps the seal off — so here it is held to zero, not skipped.
-  const unsealed = new Set(HR_PAPERS.filter((paper) => paper.unsealed === true).map((paper) => paper.id));
-  assert.deepEqual([...unsealed], ["salary-letter-ar-v1"], "only the Arabic HR letter is unsealed");
 
   for (const [name, html] of rendered) {
     const seals = (html.match(/class="phx-seal"/g) ?? []).length;
-    const expected = unsealed.has(name) ? 0 : 1;
     assert.equal(
       seals,
-      expected,
-      `${name} carries ${seals} seals, not ${expected}. Zero on a sealed paper means the company's `
-        + "signature party was not recognised (its heading is not always الشركة); more than one "
-        + "means a second company column or a second signature block was sealed too.",
+      0,
+      `${name} prints ${seals} company seal(s). No hiring paper carries one (owner, 2026-09-29) — `
+        + "a pre-stamped document is a document nobody stamped. The seal belongs to the job offer alone.",
     );
-    if (expected === 1) {
-      assert.ok(
-        html.includes(HOUSE_SEAL_SRC),
-        `${name} must reference the shared seal asset, not a second copy of the artwork.`,
-      );
-    }
+    assert.ok(
+      !html.includes("sato-hr-seal"),
+      `${name} still references the seal artwork, even if it draws no .phx-seal element.`,
+    );
   }
 
-  // THE PDF PATH MUST BE ABLE TO INLINE IT. `renderHiringPaperPdf` refuses to file a document whose
-  // artwork it cannot read, so a seal that is not allow-listed in paper-artwork.ts turns every one
-  // of these into a hard failure at print time rather than a missing stamp.
+  // THE PDF PATH MUST STILL BE ABLE TO INLINE EVERY REMAINING ASSET. `renderHiringPaperPdf` refuses
+  // to file a document whose artwork it cannot read, so an artwork that is not allow-listed in
+  // paper-artwork.ts is a hard failure at print time rather than a missing image.
   for (const [name, html] of rendered) {
     const { missing } = inlineLocalAssets(html);
     assert.deepEqual(
@@ -1356,10 +1348,10 @@ function testEveryPaperCarriesExactlyOneSeal(): void {
 /**
  * THE CUSTODY RETURN PROTOCOL IS NEVER PRE-SEALED.
  *
- * The return block is signed when the device actually comes back — months later, and sometimes
- * never. A seal printed there certifies a return that has not happened, on a page the company
- * issued itself. The receipt half is the company acknowledging what it handed over today; the
- * return half is a future event.
+ * Kept as its own check after the blanket ban above, because this half is the sharpest case and the
+ * one that would be argued back first: the return block is signed when the device actually comes
+ * back — months later, and sometimes never. A seal printed there certifies a return that has not
+ * happened, on a page the company issued itself.
  */
 function testTheCustodyReturnProtocolIsNotSealed(): void {
   const html = renderCustodyLaptopHtml(packFixture(), 1);
@@ -1372,27 +1364,37 @@ function testTheCustodyReturnProtocolIsNotSealed(): void {
 }
 
 /**
- * THE CERTIFICATE'S SEAL SITS IN ITS OWN خاتم الشركة BOX, NEVER OVER التوقيع.
+ * THE خاتم الشركة BOX SURVIVES THE SEAL, AND IT IS EMPTY.
  *
- * The owner, 2026-09-13: "fix the Arabic stamp". The certificate's signature row reads الاسم والصفة /
- * التوقيع / خاتم الشركة, and the seal used to land on the second cell — over the word التوقيع and the
- * line the HR manager signs — because every other paper's second cell is التوقيع والختم.
+ * Removing the printed stamp must not take the column with it. The certificate's signature row reads
+ * الاسم والصفة / التوقيع / خاتم الشركة and the NDA's reads التوقيع والختم: those headings are the
+ * instruction to whoever presses the real stamp, so deleting them would leave nowhere to press it
+ * and would quietly make the clearance's بختم الشركة clause unsatisfiable.
  */
-function testTheCertificateIsStampedInItsStampColumn(): void {
+function testTheStampColumnSurvivesWithAnEmptyCell(): void {
   const html = renderHrPaperHtml(packFixture(), 1, HR_PAPER_EXPERIENCE_CERTIFICATE_V1);
+  assert.ok(html.includes("خاتم الشركة"), "the certificate keeps its Company stamp column heading");
   const tbody = /<table class="doc-sig">[\s\S]*?<tbody>([\s\S]*?)<\/tbody>/.exec(html);
   assert.ok(tbody, "the certificate must still carry its signature table");
   const cells = [...tbody[1].matchAll(/<td class="doc-sig__cell"[\s\S]*?<\/td>/g)].map((m) => m[0]);
   assert.equal(cells.length, 3, "الاسم والصفة / التوقيع / خاتم الشركة");
-  assert.ok(!cells[1].includes('class="phx-seal"'), "the seal covers التوقيع — the line somebody signs");
-  assert.ok(cells[2].includes('class="phx-seal"'), "the seal belongs in the خاتم الشركة box");
+  assert.deepEqual(
+    cells.filter((cell) => cell.includes("phx-seal")),
+    [],
+    "no cell on the certificate is pre-stamped",
+  );
 
-  // The contract's التوقيع والختم column keeps its seal where it always was.
+  // The NDA's التوقيع والختم column is the other shape, and it is blank too.
   const nda = renderHrPaperHtml(packFixture(), 1, HR_PAPER_NDA_V1);
+  assert.ok(nda.includes("التوقيع والختم"), "the NDA keeps its signature-and-stamp column heading");
   const ndaBody = /<table class="doc-sig">[\s\S]*?<tbody>([\s\S]*?)<\/tbody>/.exec(nda);
   assert.ok(ndaBody, "the NDA must still carry its signature table");
   const ndaCells = [...ndaBody[1].matchAll(/<td class="doc-sig__cell"[\s\S]*?<\/td>/g)].map((m) => m[0]);
-  assert.ok(ndaCells[1].includes('class="phx-seal"'), "a التوقيع والختم paper is still sealed on that cell");
+  assert.deepEqual(
+    ndaCells.filter((cell) => cell.includes("phx-seal")),
+    [],
+    "no cell on the NDA is pre-stamped either",
+  );
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1513,8 +1515,8 @@ export function runHrFormsHousePapersTests(): void {
   testTheLettersPackPapersAreFilledFromTheRecord();
   testTheExitInterviewPrintsBothLanguagesAndNoAnswers();
   testTheLettersPackGovernmentFormsPrintAsIssued();
-  testEveryPaperCarriesExactlyOneSeal();
-  testTheCertificateIsStampedInItsStampColumn();
+  testNoHousePaperCarriesASeal();
+  testTheStampColumnSurvivesWithAnEmptyCell();
   testTheCustodyReturnProtocolIsNotSealed();
   testTheBandSurvivesAnInlineStyleAttribute();
   testTheBandTilesAtOneWavelength();

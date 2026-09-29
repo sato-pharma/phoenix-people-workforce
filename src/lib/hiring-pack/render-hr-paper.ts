@@ -6,9 +6,6 @@ import {
   HOUSE_COLORS,
   HOUSE_MARK_SRC,
   houseBandBackground,
-  HOUSE_SEALED_ATTRS,
-  houseSealImg,
-  sealPartyIndex,
 } from "@/lib/hiring-pack/house-identity";
 import {
   HR_PAPER_BLANK_RULE,
@@ -373,44 +370,23 @@ function openQuestionsBlock(template: HrPaperTemplate): string {
   return `<h2 class="doc-head">${escapeHtml(block.headingAr)}</h2><section class="doc-open">${items}</section>`;
 }
 
-/** Which signing field carries the seal: a dedicated خاتم column when there is one, else index 1. */
-export function sealFieldIndex(fieldsAr: readonly string[]): number {
-  const stampColumn = fieldsAr.findIndex((label) => /خاتم/.test(label));
-  return stampColumn >= 0 ? stampColumn : 1;
-}
-
-/** The signature block: one ruled row per party, one column per signing field. */
-function signatureTable(
-  columns: readonly HrPaperSignatureColumn[],
-  // A paper with NO company seal (`HrPaperTemplate.unsealed`). Dropping the خاتم label from its
-  // fields is not enough on its own: with no خاتم column the seal falls back to column one, which
-  // is the line somebody signs.
-  sealed = true,
-): string {
+/**
+ * The signature block: one ruled row per party, one column per signing field.
+ *
+ * EVERY CELL IS BLANK — owner, 2026-09-29, no printed seal on a hiring paper. A خاتم الشركة column
+ * keeps its heading; it names where the real stamp goes, and the renderer no longer fills it.
+ */
+function signatureTable(columns: readonly HrPaperSignatureColumn[]): string {
   const first = columns[0];
   if (!first) return "";
   const head = first.fieldsAr
     .map((label) => `<th class="doc-sig__head">${escapeHtml(label)}</th>`)
     .join("");
-  const sealAt = sealPartyIndex(columns.map((column) => column.headingAr));
   const body = columns
     .map(
-      (column, partyIndex) =>
+      (column) =>
         `<tr><th class="doc-sig__party">${escapeHtml(column.headingAr)}</th>` +
-        // The seal lands on the COMPANY's own التوقيع والختم cell — column index 1 of
-        // الاسم / التوقيع والختم / التاريخ. Which party that is comes from one shared predicate.
-        //
-        // A PAPER WITH ITS OWN خاتم الشركة COLUMN is stamped there instead. The certificate of
-        // experience reads الاسم والصفة / التوقيع / خاتم الشركة, and index 1 on it is the bare
-        // signature — the seal sat over the word التوقيع and the line somebody signs (owner,
-        // 2026-09-13: "fix the Arabic stamp").
-        column.fieldsAr
-          .map((_label, index) =>
-            sealed && partyIndex === sealAt && index === sealFieldIndex(column.fieldsAr)
-              ? `<td class="doc-sig__cell"${HOUSE_SEALED_ATTRS}>${houseSealImg({ sizeMm: 34 })}</td>`
-              : `<td class="doc-sig__cell"></td>`,
-          )
-          .join("") +
+        column.fieldsAr.map(() => `<td class="doc-sig__cell"></td>`).join("") +
         "</tr>",
     )
     .join("");
@@ -532,7 +508,7 @@ function renderCopy(
         ${closing ? `<section class="doc-closing">${closing}</section>` : ""}
         ${declaration}
         ${heading(template.signaturesHeadingAr)}
-        ${signatureTable(template.signatureColumns, template.unsealed !== true)}
+        ${signatureTable(template.signatureColumns)}
         ${signNote}
         ${receipt}
         ${serviceBlock(template)}
