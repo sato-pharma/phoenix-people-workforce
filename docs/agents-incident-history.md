@@ -17,11 +17,16 @@ relevant section here first.
 
 ## Branch protection and the required checks
 
-`main` is branch-protected: `enforce_admins: true`, force-pushes and deletions blocked, and **4
-required status checks** (`validate`, `checks`, `mobile`, `secret-scan`) that **DO gate every
-merge** — a PR cannot land until all four are green on its head commit.
+`main` is branch-protected: `enforce_admins: true`, force-pushes and deletions blocked, and **2
+required status checks** (`validate`, `checks`) that **DO gate every merge** — a PR cannot land
+until both are green on its head commit.
 
-🔴 **THE COUNT IS THE PART THAT ROTS. It has been 4, then 5, then 6, and is 4 again — and after
+🔴 **`mobile` AND `secret-scan` STILL RUN AND STILL REPORT — NEITHER BLOCKS A MERGE.** They
+were demoted on 2026-09-29, minutes before #4800 took `secret-scan` off the pull request entirely
+(gitleaks moved into the pre-push hook, where a key never reaches GitHub at all). So a red Expo
+typecheck no longer stops a PR: read both on the commit rather than assuming the gate caught them.
+
+🔴 **THE COUNT IS THE PART THAT ROTS. It has been 4, then 5, then 6, then 4, and is 2 — and after
 every single change the docs kept stating the old one.** On 2026-09-27 PR #4527 folded `lint`,
 `typecheck` and `test` into one `checks` job (GitHub rounds every job up to the minute, so three
 jobs paid that rounding three times; ~14% fewer billable minutes), branch protection was repointed at
