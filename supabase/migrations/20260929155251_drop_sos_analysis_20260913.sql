@@ -1,0 +1,54 @@
+-- Drop the Source of Sales audit's scratch schema. Owner-approved, 2026-09-29.
+--
+-- sos_analysis_20260913 held 48 working tables and 198 MB — 69% of all the rollback and analysis
+-- schemas on production, and 7.4% of the whole database. It was named "analysis", not "backup":
+-- these were the intermediate tables of the Source of Sales audit (address matching, town and
+-- brick resolution, hit sets per region, label and drift comparisons), not a pre-image anything
+-- could be rolled back to. The audit is finished; its findings live on as a fix backlog in the
+-- vault, not in these tables.
+--
+-- CHECKED BEFORE DROPPING, immediately before, not from an earlier reading:
+--   views/rules referencing it   0
+--   foreign keys into it from outside   0
+--   functions in public or au mentioning it   0
+-- and afterwards: 0 views anywhere referencing sos_analysis, database 2,672 MB -> 2,499 MB.
+--
+-- 🔴 PRODUCTION HAS NO POINT-IN-TIME RECOVERY. Seven daily backups are the entire recovery
+-- story, so this is recoverable only until 2026-10-06 and only by restoring a backup into a
+-- SEPARATE project to extract from (never in place). That is why the full manifest is recorded
+-- here rather than only in a session transcript — after the backup window this comment is the
+-- only remaining evidence of what was in it.
+--
+-- MANIFEST — 48 tables, exact row counts taken immediately before the drop:
+--   aud_cur 54,222 (25 MB)      aud_result 54,222 (19 MB)    cur 43,936 (13 MB)
+--   town_result2 43,936 (13 MB) addr_result 43,905 (13 MB)   town_result 43,936 (12 MB)
+--   addr_cur 43,905 (10 MB)     nmk 43,936 (7 MB)            aud_hits 46,944 (5 MB)
+--   aud_res 29,069 (4.6 MB)     aud_lbl 54,344 (4.5 MB)      terr_all 54,329 (4.5 MB)
+--   evid 43,936 (4.5 MB)        addr_hits 32,516 (3.9 MB)    res 23,870 (3.9 MB)
+--   res2 22,709 (3.6 MB)        hits2 34,251 (3.5 MB)        addr_res 20,396 (3.2 MB)
+--   aud_flags 6,456 (3.1 MB)    hits_all 37,902 (2.8 MB)     aud_flags2 6,604 (2.1 MB)
+--   brk 23,030 (1.9 MB)         brk2 22,323 (1.9 MB)         export_v2 4,763 (1.8 MB)
+--   changes_v2 3,772 (1.1 MB)   changes_v1 3,679 (1.0 MB)    hits_ab 7,463
+--   hits_ue 6,972               hits_d1 6,719                aud_drift 2,875
+--   hits_d2 5,602               proof 4,763                  hits_ca 4,871
+--   hits_gz 4,667               gaz2 1,195                   alias_one 1,698
+--   lbl 1,167                   gaz 1,244                    hits_ot 1,608
+--   is_fix 154                  is_resolve 154               aud_lbl_area 1,198
+--   ue_decisions 974            is_pairs 154                 spot50 50
+--   is_final 154                is_label 170                 truth 148
+--
+-- ALREADY DROPPED ON PRODUCTION by hand, because a schema this size is dropped once under
+-- supervision with the dependency checks read live, not on whatever schedule a deploy happens to
+-- run. IF EXISTS makes this a no-op there and correct everywhere else: the schema never existed
+-- on staging, and a database rebuilt from migrations never creates it.
+--
+-- NOT A PATTERN TO REPEAT WITHOUT THE SAME CHECKS. 99 non-standard schemas remain and they are
+-- NOT all droppable: three are live application schemas (analytics, private, internal), three
+-- are owner-protected C13 pre-images, and deductions_governance_backup_20260830 is the trap —
+-- the live table public.private_calendar_no_activity_clarifications holds a foreign key into it,
+-- so a name-based sweep would break production. The remaining 90 hold 48 MB between them, which
+-- is not worth trading 90 rollback points for.
+
+-- SAFE: scratch analysis tables from a completed audit; no view, function or foreign key
+-- referenced them, verified immediately before the drop. Manifest recorded above.
+drop schema if exists sos_analysis_20260913 cascade;
