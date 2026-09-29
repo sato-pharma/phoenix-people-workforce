@@ -1,7 +1,7 @@
 # Supabase Advisor Baseline — Accepted / By-Design Items
 
 **Project:** Phoenix HR production (`ozucdzovmcqvepbozvqf`)
-**Last reviewed:** 2026-09-29 *(previously 2026-07-19)*
+**Last reviewed:** 2026-09-30 *(previously 2026-09-29, and 2026-07-19 before that)*
 
 This is the single triage reference for `get_advisors` output. Items listed here are
 **reviewed and accepted as by-design** (or explicitly deferred). Related context:
@@ -99,41 +99,67 @@ actually matters, by `phx_ci_browser_reachability()`.
 > If a table here ever needs RLS-respecting *browser* reads, that is a real change - add a
 > scoped policy rather than treating the INFO as noise.
 
-### REGRESSION, OPEN - `function_search_path_mutable` (10 as of 2026-09-29)
+**Known, and deliberately not absorbed (2026-09-30):** production currently reads **177**, one
+above this baseline. The extra is `public.hiring_document_definitions_pre_20260930`, a pre-image
+table another session created while Phase 4 was in flight. It is not reachable by any browser
+role, and it is not this session's to move (`AGENTS.md` section 5: changes you did not create).
+**The baseline was NOT raised to 177 to make the check green** - that is precisely the drift this
+mechanism exists to stop. The daily check is knowingly red on this one finding until the table's
+owner retires it or moves it out of `public`.
+
+### FIXED - `function_search_path_mutable` (0, held at a hard floor)
 
 This section used to read: `public.phx_insert_attendance_raw_punch` was flagged, fixed by pinning
 `SET search_path = public, pg_temp`, *"Should not reappear; if it does, it's a regression."*
 
-**It reappeared.** Ten functions in `public` carry no pinned `search_path`, and not one of them is
-the function that was fixed:
+**It reappeared** - ten functions, none of them the one that was fixed - and went unnoticed for
+72 days because nothing compared this page to the database.
 
-`phx_fold_customer_name`, `phx_squash_customer_name`, `phx_customer_channel`,
-`phx_refuse_audit_trail_change`, `phx_custody_item_values_valid`,
-`ats_whatsapp_screening_questions_immutable_key`,
+**All ten are now pinned** to `public, pg_temp`
+(`20260929215727_phase4_schema_hygiene.sql`): `phx_fold_customer_name`,
+`phx_squash_customer_name`, `phx_customer_channel`, `phx_custody_item_values_valid`,
+`phx_refuse_audit_trail_change`, `ats_whatsapp_screening_questions_immutable_key`,
 `hiring_pack_document_field_history_is_append_only`, `market_awareness_touch_updated_at`,
 `market_awareness_clear_hold_on_exit`, `v2_freeze_request_code`.
 
-It sits in the baseline at 10 **to stop it growing while it is fixed - not as an acceptance.**
-Lower that number as they are pinned.
+**The baseline is now a hard floor of ZERO, severity `error`** - not "however many exist today".
+A single new unpinned function fails the daily check.
 
-**Severity, stated honestly:** all ten are `SECURITY INVOKER`, so a hijacked `search_path` runs
-with the caller's own rights rather than the owner's - which is why this is a warn and not the
-emergency the `SECURITY DEFINER` case below was. Measured 2026-09-29: **zero** `SECURITY DEFINER`
-functions in `public` have a mutable `search_path`. Five of the ten are trigger functions, which
-a caller cannot reach directly at all.
+Gating the **live count** at zero is deliberately stronger than a check over migration text: it
+also catches a function created through `execute_sql`, which is how most of this schema actually
+arrived, and is the exact blind spot that let `check:sql-backups` stay green while five pre-image
+tables sat in `public`.
 
-(`pg_trgm` contributes 31 more unpinned functions. Those are the extension's, are excluded from
-the count, and are not this project's to fix - see below.)
+*(Severity of what was fixed, recorded honestly: all ten were `SECURITY INVOKER`, so a hijacked
+`search_path` ran with the caller's own rights; **zero** `SECURITY DEFINER` functions in `public`
+were ever unpinned, and six of the ten returned `trigger`, which PostgREST does not expose as an
+RPC. It was a warn, not a breach - and worth closing precisely because the last one was declared
+closed and wasn't.)*
 
-### OPEN - `extension_in_public` (1 as of 2026-09-29)
+*(`pg_trgm` contributes 31 more unpinned functions. Those are the extension's, are excluded from
+the count, and are not this project's to fix - see below.)*
 
-`pg_trgm` is installed in `public`. Absent from this page before 2026-09-29 - it was never
-triaged either way.
+### OPEN - `extension_in_public` (1) - and why moving it was REFUSED on 2026-09-30
 
-The fix is `ALTER EXTENSION pg_trgm SET SCHEMA extensions`, and it is a deliberate separate
-change rather than a one-liner: **2 indexes depend on its operator classes.** Indexes bind to the
-opclass OID so they survive the move, but both must be confirmed `indisvalid` afterwards, and any
-function calling `similarity()` unqualified must be re-checked.
+`pg_trgm` is installed in `public`. Absent from this page before 2026-09-29; never triaged
+either way.
+
+The plan for Phase 4 said this was a safe one-liner - `ALTER EXTENSION pg_trgm SET SCHEMA
+extensions` - on the grounds that indexes bind to the opclass OID and survive. **The indexes do
+survive.** Both trigram indexes on `source_of_sales_customer_map` are present and `indisvalid`.
+
+Measuring the rest is what stopped it. **`public.phx_suggest_direct_order_pharmacies` - the
+direct-order pharmacy suggester - carries `search_path=""` and calls `public.similarity(...)`,
+schema-qualified.** Move the extension and that call resolves to nothing the next time the
+function runs: a live desk flow, failing at call time, in production.
+
+Doing it properly means moving the extension **and** rewriting every qualified reference in that
+function in one migration, then calling the function to prove it - `CREATE OR REPLACE` reporting
+success proves nothing about a body, as this repo learned twice on 2026-09-29. That is a change
+with its own blast radius and it is not a tidying.
+
+**So it stays open, with the coupling written down.** The next session to attempt it starts from
+the function, not from the extension.
 
 ### REMEDIATED (not accepted) — `anon_security_definer_function_executable` (2026-07-19)
 Found via `get_advisors` while auditing the Sales Analytics module: 7 orphaned
