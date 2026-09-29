@@ -3,6 +3,7 @@ import Link from "next/link";
 import { RepsListContacts } from "@/components/crm/reps-list-tables";
 import { RepsListFilters, RepsListMonthPicker } from "@/components/crm/reps-list-filters";
 import { cairoStamp, Section, Tile } from "@/components/crm/reps-list-chrome";
+import { SeniorRepBadge } from "@/components/ui/senior-rep-badge";
 import type { RepsListForRep } from "@/lib/crm/reps-list";
 import type { RepsListBoard, RepsListRep } from "@/lib/crm/reps-list-board";
 
@@ -55,7 +56,10 @@ function RepCard({ href, rep }: { href: string; rep: RepsListRep }) {
       className="block border border-slate-200 bg-white px-4 py-3 transition-colors hover:border-orange-400 hover:bg-orange-50"
       href={href}
     >
-      <p className="text-sm font-black text-slate-900">{rep.name}</p>
+      <p className="flex flex-wrap items-center gap-1.5 text-sm font-black text-slate-900">
+        <span dir="auto">{rep.name}</span>
+        <SeniorRepBadge hrId={rep.hrId} />
+      </p>
       {/* The area is the second thing the owner asked to see beside the rep. A seat spanning several
           areas prints all of them rather than the first, which would be a quiet untruth. */}
       <p className="mt-0.5 text-phx-2xs font-semibold text-slate-500">

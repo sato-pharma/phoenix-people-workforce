@@ -836,6 +836,7 @@ function RepCell({
     <td className={TD}>
       <KpiRepName
         areaName={row.areaName}
+        hrId={row.agentHrId}
         jobTitle={row.jobTitle}
         lineName={row.lineName}
         name={row.repName}
@@ -1779,6 +1780,7 @@ function RepCard({
     <div className="px-4 py-3">
       <KpiRepName
         areaName={row.areaName}
+        hrId={row.agentHrId}
         jobTitle={row.jobTitle}
         lineName={row.lineName}
         name={row.repName}
