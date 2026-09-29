@@ -115,10 +115,29 @@ revoke all on schema preimage_backup_20260928 from public, anon, authenticated;
 create schema if not exists preimage_backup_20260929;
 revoke all on schema preimage_backup_20260929 from public, anon, authenticated;
 
-alter table public.outstation_origin_preimage_20260928     set schema preimage_backup_20260928;
-alter table public.weaam_distance_preimage_20260928        set schema preimage_backup_20260928;
-alter table public.weaam_residence_coord_preimage_20260928 set schema preimage_backup_20260928;
-alter table public.do_order_repoint_backup_20260929        set schema preimage_backup_20260929;
+-- 🔴 GUARDED BY EXISTENCE, AND THIS WAS NOT OPTIONAL. The unguarded form applied cleanly to
+-- production and then FAILED `staging-migrate` on the very next push:
+--     [staging-migrate] FAILED: relation "public.outstation_origin_preimage_20260928" does not exist
+-- These four pre-images were created by hand on PRODUCTION during live fixes; staging never had
+-- them. A migration that only applies to one database is broken — it blocks every later staging
+-- migration behind it, and it would fail any fresh replay of this history. Staging rolled the
+-- whole transaction back, so nothing was left half-applied there.
+do $$
+begin
+  if to_regclass('public.outstation_origin_preimage_20260928') is not null then
+    alter table public.outstation_origin_preimage_20260928 set schema preimage_backup_20260928;
+  end if;
+  if to_regclass('public.weaam_distance_preimage_20260928') is not null then
+    alter table public.weaam_distance_preimage_20260928 set schema preimage_backup_20260928;
+  end if;
+  if to_regclass('public.weaam_residence_coord_preimage_20260928') is not null then
+    alter table public.weaam_residence_coord_preimage_20260928 set schema preimage_backup_20260928;
+  end if;
+  if to_regclass('public.do_order_repoint_backup_20260929') is not null then
+    alter table public.do_order_repoint_backup_20260929 set schema preimage_backup_20260929;
+  end if;
+end
+$$;
 
 comment on schema preimage_backup_20260928 is
   'Pre-images taken 2026-09-28, relocated out of public 2026-09-29. Retention: docs/security/backup-schema-retention.md.';
