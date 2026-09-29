@@ -2006,6 +2006,7 @@ import { runLocalTypecheckGuardTests } from "./local-typecheck-guard.test.ts";
 import { runLoginPageMobileFitTests } from "./login-page-mobile-fit.test.ts";
 import { runPnpmOverrideScopeTests } from "./pnpm-override-scope.test.ts";
 import { runDeployDriftSettledRefTests } from "./deploy-drift-settled-ref.test.ts";
+import { runSyntheticJourneysNeverWithholdsTests } from "./synthetic-journeys-never-withholds.test.ts";
 import { runVerifyShippedSelftestTests } from "./verify-shipped-selftest.test.ts";
 import { runAutorunGuardFalseArmingTests } from "./autorun-guard-false-arming.test.ts";
 import { runTrapInjectorClustersTests } from "./trap-injector-clusters.test.ts";
@@ -7230,6 +7231,11 @@ await runTest(
 await runTest(
   "the deploy drift check compares a SETTLED commit by ancestry, so it can never fail about a deploy that is still legitimately in flight and thereby withhold it (2026-09-27, cd9e0be03: a green ci.yml withheld because this workflow own scheduled run went red on the same sha)",
   runDeployDriftSettledRefTests,
+);
+
+await runTest(
+  "the production smoke test keeps a GREEN job conclusion and reports failure to the dashboard and as an ::error:: annotation, so a real outage can never withhold the deploy carrying its own fix (a schedule run always attaches its suite to main HEAD)",
+  runSyntheticJourneysNeverWithholdsTests,
 );
 
 await runTest(
