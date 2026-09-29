@@ -38,7 +38,7 @@ import {
   ShieldCheck,
   UserRound,
 } from "lucide-react";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import {
@@ -81,8 +81,13 @@ import { Input } from "@/components/ui/input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   archivedTemplateVersions,
+  currentTemplateVersion,
   findTemplateVersion,
 } from "@/lib/hiring-pack/template-registry";
+import {
+  marksPlacedOn,
+  type DocumentMark,
+} from "@/lib/hiring-pack/document-marks";
 import { isBuiltInDocument } from "@/lib/hiring-pack/types";
 import type {
   CustomHiringPackDocument,
@@ -1007,6 +1012,7 @@ export function HiringPackManager({
       versionId?: string,
       copiesOverride?: number,
       address?: PrintAddressChoice | null,
+      marks?: readonly DocumentMark[],
     ): boolean => {
       if (!pack) return false;
       // AN EXPLICIT COUNT WINS, and it has to, because this function ALWAYS sends `copies` in the
@@ -1022,7 +1028,12 @@ export function HiringPackManager({
       // The company address chosen at the desk travels the same way. Absent — the automatic print after
       // a signature, an old link — is the registered head office, as it always was.
       const addressPart = address ? `&address=${address}` : "";
-      const url = `/api/hiring-pack/${encodeURIComponent(pack.employee.hrId)}/print?document=${document}&copies=${count}${addressPart}${version}`;
+      // THE MARKS TICKED FOR THIS PRINT, and nothing when none were - which is the usual answer and
+      // the safe one. Absent means the server stamps nothing, so every link that predates this
+      // parameter, including the automatic print after a signature, prints the paper unstamped
+      // exactly as it always did.
+      const marksPart = marks && marks.length > 0 ? `&marks=${marks.join(",")}` : "";
+      const url = `/api/hiring-pack/${encodeURIComponent(pack.employee.hrId)}/print?document=${document}&copies=${count}${addressPart}${marksPart}${version}`;
       return window.open(url, "_blank", "noopener,noreferrer") !== null;
     },
     [copies, pack],
@@ -1042,6 +1053,58 @@ export function HiringPackManager({
   // Kept across prints in this session as the dialog's starting point — never as an answer: Print
   // stays disabled until the desk has picked an address at least once.
   const [lastAddress, setLastAddress] = useState<PrintAddressChoice | null>(null);
+
+  /**
+   * WHICH MARKS THE PAPER BEING PRINTED HAS A POSITION FOR — read when the dialog opens, and reset
+   * to none the moment it closes.
+   *
+   * Fetched rather than remembered, because the answer belongs to the paper and the layout can have
+   * changed since the last print. It starts EMPTY for every new request, so a paper whose layout
+   * cannot be read offers no tick-boxes at all rather than inheriting the last one's — the failure
+   * that matters here is offering a stamp that lands nowhere, not failing to offer one.
+   */
+  const [markLookup, setMarkLookup] = useState<{ key: string; marks: DocumentMark[] } | null>(null);
+
+  /**
+   * DERIVED, NOT RESET. The lookup carries the paper it belongs to, and anything that is not the
+   * paper on screen reads as "no marks offered" without a state write — which is what keeps the
+   * effect below free of a synchronous setState (`react-hooks/set-state-in-effect` is an error in
+   * this repo) and, more usefully, makes a stale answer structurally impossible rather than
+   * something a cleanup has to remember to clear.
+   */
+  const printRequestKey = printRequest
+    ? `${printRequest.document}@${printRequest.versionId ?? ""}`
+    : "";
+  const availableMarks =
+    printRequest && markLookup?.key === printRequestKey ? markLookup.marks : [];
+
+  useEffect(() => {
+    if (!printRequest) return;
+    const { document, versionId } = printRequest;
+    // A built-in prints the version the employee signed unless one was named; the layout is keyed to
+    // that same version, so the two have to be resolved the same way or the tick-box would describe
+    // a different paper from the one about to print.
+    const version =
+      versionId ?? (isBuiltInDocument(document) ? currentTemplateVersion(document).id : null);
+    if (!version) return;
+    let live = true;
+    void fetch(
+      `/api/hiring-pack/document-fields?document=${encodeURIComponent(document)}` +
+        `&templateVersionId=${encodeURIComponent(version)}`,
+      { cache: "no-store" },
+    )
+      .then((response) => (response.ok ? response.json() : null))
+      .then((body: { fields?: unknown } | null) => {
+        if (!live || !body || !Array.isArray(body.fields)) return;
+        setMarkLookup({ key: `${document}@${versionId ?? ""}`, marks: marksPlacedOn(body.fields) });
+      })
+      .catch(() => {
+        // Offer nothing rather than guess. See the note above.
+      });
+    return () => {
+      live = false;
+    };
+  }, [printRequest]);
   const requestPrint = useCallback(
     (document: PrintableDocument, versionId?: string, copiesOverride?: number) =>
       setPrintRequest({ copiesOverride, document, versionId }),
@@ -1195,7 +1258,7 @@ export function HiringPackManager({
       setPrintRequest(null);
       if (answer.address) setLastAddress(answer.address);
       setCopiesFor(document, String(answer.copies));
-      if (!openPrint(document, versionId, answer.copies, answer.address)) {
+      if (!openPrint(document, versionId, answer.copies, answer.address, answer.marks)) {
         setError("The print tab was blocked by your browser — allow pop-ups for this site and print again.");
       }
     },
@@ -2373,6 +2436,7 @@ export function HiringPackManager({
 
         {printRequest ? (
           <PrintOptionsDialog
+            availableMarks={availableMarks}
             askAddress={documentTakesAddressChoice(printRequest.document)}
             defaultCopies={
               printRequest.copiesOverride ??

@@ -2,6 +2,10 @@ import assert from "node:assert/strict";
 
 import {
   DOCUMENT_MARKS,
+  marksPlacedOn,
+  parseMarkSelection,
+  resizeMarkFromCorner,
+  MIN_MARK_PT,
   DOCUMENT_MARK_DEFAULT_SIZE,
   DOCUMENT_MARK_LABELS,
   isDocumentMark,
@@ -327,6 +331,130 @@ function testTheSignatureStoreChecksTheBytes() {
   assert.equal(isPng(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])), false);
 }
 
+/**
+ * A PLACED MARK IS NOT A PRINTED MARK — the selection decides, and the default is NONE.
+ *
+ * The owner, 2026-09-29, after seeing the first version of this feature: "donot put the stamp
+ * permanent, make able to add them freely as i want", and then, choosing between three designs, the
+ * print dialog. A layout row says WHERE the seal sits on this paper; whether this run carries it is
+ * ticked per print, in the box that already asks for the copy count and the address, and that box
+ * opens unticked every time.
+ *
+ * SO THE DEFAULT PATH IS THE UNSTAMPED PAPER. Every link that predates the parameter - the automatic
+ * print after a signature, a bookmark, the filing path - passes no selection and therefore prints
+ * exactly what it printed before marks existed. That is the property worth pinning: it is what keeps
+ * faith with the same day's earlier ruling that a document arriving pre-stamped is a document nobody
+ * stamped.
+ */
+function testOnlyTheMarksThisPrintAskedForAreDrawn(): void {
+  assert.deepEqual([...parseMarkSelection(null)], [], "no parameter means no marks");
+  assert.deepEqual([...parseMarkSelection("")], [], "an empty parameter means no marks");
+  assert.deepEqual([...parseMarkSelection("stamp")], ["stamp"]);
+  assert.deepEqual([...parseMarkSelection(" stamp , signature ")].sort(), ["signature", "stamp"]);
+  // An unknown name is dropped rather than refusing the print - see the function's own note.
+  assert.deepEqual([...parseMarkSelection("stamp,initials")], ["stamp"]);
+
+  const rows = [markRow(), markRow({ id: "m2", source: { kind: "mark", mark: "signature" } })];
+
+  // Nothing ticked: both rows still exist, and NEITHER draws.
+  const none = mergePagePlacements(
+    [],
+    withMarkArtwork(rows, { signature: SIGNATURE, stamp: SEAL }).map((row) =>
+      row.source.kind === "mark" ? { ...row, source: { ...row.source, src: null } } : row,
+    ),
+    1,
+    {},
+  );
+  assert.equal(none.placements.length, 2, "the rows are still placed - they are simply not drawn");
+  assert.deepEqual(
+    none.placements.map((placement) => renderPlacement(placement, {})),
+    ["", ""],
+    "an unticked mark must print NOTHING, the same answer as artwork that could not be read",
+  );
+
+  // Stamp ticked only: the seal draws, the signature does not.
+  const stampOnly = mergePagePlacements(
+    [],
+    withMarkArtwork(rows, { signature: null, stamp: SEAL }),
+    1,
+    {},
+  );
+  const drawn = stampOnly.placements.map((placement) => renderPlacement(placement, {}));
+  assert.ok(drawn[0]!.includes(SEAL), "the ticked stamp draws");
+  assert.equal(drawn[1], "", "the unticked signature stays off the paper");
+}
+
+/** What the print dialog is allowed to offer: the marks this paper has a position for. */
+function testTheDialogOffersOnlyWhatIsPlaced(): void {
+  assert.deepEqual(marksPlacedOn([]), [], "a paper with no marks offers no tick-boxes at all");
+  assert.deepEqual(marksPlacedOn([markRow()]), ["stamp"]);
+  assert.deepEqual(
+    marksPlacedOn([markRow(), markRow({ id: "m2", source: { kind: "mark", mark: "signature" } })]),
+    ["stamp", "signature"],
+  );
+  // A hidden row is not an offer - there would be nothing to draw.
+  assert.deepEqual(marksPlacedOn([markRow({ hidden: true })]), []);
+  // Text rows are not marks.
+  assert.deepEqual(marksPlacedOn([markRow({ source: { kind: "literal", text: "x" } })]), []);
+}
+
+/**
+ * DRAGGING A CORNER RESIZES THE MARK, AND THE OPPOSITE CORNER STAYS PUT.
+ *
+ * The owner, 2026-09-29: "when I come to the corner of the square ... I have the option to extend or
+ * make it smaller, as if I'm dragging its corners." The property that makes it feel like a corner
+ * drag rather than scaling about the middle is that the corner you are NOT holding does not move -
+ * which for the top-left and the two side corners means x or y has to change with the size, and
+ * that is the half that is easy to get silently wrong.
+ */
+function testDraggingACornerResizesAroundTheOppositeCorner(): void {
+  const origin = { x: 100, y: 200, w: 96, h: 96 };
+
+  // South-east: the anchor is the top-left, so only the size changes.
+  assert.deepEqual(resizeMarkFromCorner(origin, "se", 20, 10), { x: 100, y: 200, w: 116, h: 106 });
+
+  // North-west: the anchor is the BOTTOM-RIGHT, so pulling up-and-left grows it AND moves x and y.
+  assert.deepEqual(resizeMarkFromCorner(origin, "nw", -20, -10), { x: 80, y: 190, w: 116, h: 106 });
+  // The bottom-right corner is unmoved by that drag - the whole point of the gesture.
+  const nw = resizeMarkFromCorner(origin, "nw", -20, -10);
+  assert.equal(nw.x + nw.w, origin.x + origin.w, "the right edge must not move");
+  assert.equal(nw.y + nw.h, origin.y + origin.h, "nor the bottom edge");
+
+  // North-east: x is anchored, y moves.
+  const ne = resizeMarkFromCorner(origin, "ne", 10, -10);
+  assert.equal(ne.x, origin.x, "the left edge is the anchor");
+  assert.equal(ne.y + ne.h, origin.y + origin.h, "and the bottom edge does not move");
+
+  // South-west: y is anchored, x moves.
+  const sw = resizeMarkFromCorner(origin, "sw", -10, 10);
+  assert.equal(sw.y, origin.y, "the top edge is the anchor");
+  assert.equal(sw.x + sw.w, origin.x + origin.w, "and the right edge does not move");
+}
+
+/**
+ * A MARK CANNOT BE DRAGGED DOWN TO NOTHING.
+ *
+ * A zero box prints nothing and cannot be grabbed again - the same dead end as a mark whose artwork
+ * has gone, reached by the hand instead of by the bucket. The floor also has to hold the ANCHOR
+ * still: clamping the size while letting x keep travelling would slide the mark across the page as
+ * somebody kept pulling.
+ */
+function testAMarkCannotBeShrunkToNothing(): void {
+  const origin = { x: 100, y: 200, w: 96, h: 96 };
+  const tiny = resizeMarkFromCorner(origin, "se", -500, -500);
+  assert.equal(tiny.w, MIN_MARK_PT);
+  assert.equal(tiny.h, MIN_MARK_PT);
+  assert.ok(tiny.w > 0 && tiny.h > 0, "still on the page and still grabbable");
+
+  const clampedNw = resizeMarkFromCorner(origin, "nw", 500, 500);
+  assert.equal(clampedNw.w, MIN_MARK_PT);
+  assert.equal(
+    clampedNw.x + clampedNw.w,
+    origin.x + origin.w,
+    "the anchored edge stays anchored even once the size has bottomed out",
+  );
+}
+
 export function runHiringPackDocumentMarkTests() {
   testEveryMarkIsDescribed();
   testAPlacedStampDrawsItsArtwork();
@@ -339,5 +467,9 @@ export function runHiringPackDocumentMarkTests() {
   testNeitherFieldScreenTreatsAMarkAsAValue();
   testOnlyAPlacedSignatureCostsABucketRead();
   testArtworkIsResolvedPerRenderAndNotStored();
+  testOnlyTheMarksThisPrintAskedForAreDrawn();
+  testTheDialogOffersOnlyWhatIsPlaced();
+  testDraggingACornerResizesAroundTheOppositeCorner();
+  testAMarkCannotBeShrunkToNothing();
   testTheSignatureStoreChecksTheBytes();
 }
