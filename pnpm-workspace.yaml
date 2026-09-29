@@ -97,7 +97,17 @@ overrides:
   # Still DEV-ONLY — `pnpm why fast-uri --prod` returns nothing. Worth being precise about why CI
   # stayed green on four HIGH advisories: it is the `--prod` filter in
   # `pnpm audit --audit-level=high --prod` that hides these, not the severity filter.
-  fast-uri: ^3.1.6
+  #
+  # RE-BUMPED 2026-09-29 to ^3.1.7 for TWO more advisories, both HIGH, both patched at 3.1.7:
+  # GHSA-qw65-cvwx-89v3 / CVE-2026-84292 (authority injection via an unvalidated port in serialize,
+  # `>=3.0.0 <3.1.7`) and GHSA-58mr-gqgx-xq4g / CVE-2026-84394 (host confusion via an unclosed
+  # bracket in the URI authority, `=3.1.6`). Same allow-but-resolve-below shape as every bump above:
+  # the graph had resolved 3.1.6, which the second advisory names exactly. The floor moves to ^3.1.7
+  # so the resolution sits ABOVE both advisories. Written as a caret floor for consistency with the
+  # rest of this file and because ajv@8.20.0 — the only route into the graph — declares `^3.1.6`,
+  # i.e. the 3.x line; a caret keeps the resolution inside it. Still DEV-ONLY (via shadcn > ajv), so
+  # `pnpm audit --prod` never saw either advisory; fast-uri is transitive and no repo code imports it.
+  fast-uri: ^3.1.7
   # Added 2026-08-03 for GHSA-mwp4-54f8-5fhr: Address4 decodes leading-zero octets as decimal
   # while resolvers decode them as octal, so a host like 0177.0.0.1 can pass a check and then
   # resolve somewhere else — SSRF and trust-boundary bypass. Patched at 10.3.1. Reached via
