@@ -243,20 +243,28 @@ export function runNativeWebHandoffTests() {
     "the app opens the hand-off URL only when it is on the server this build talks to",
   );
 
-  // The screen itself: penned into this server's own portal space. It is signed in, so following a
-  // foreign link inside it is how a session leaks — a portal page can link anywhere.
-  const screen = readFileSync("mobile/src/app/(portal)/module.tsx", "utf8");
-  assert.match(screen, /react-native-webview/, "the module renders in an in-app WebView");
+  // The shared engine: penned into this server's own portal space. It is signed in, so following a
+  // foreign link inside it is how a session leaks — a portal page can link anywhere. The Home tab
+  // and a single opened module both render through this one component, so the pen is asserted here,
+  // where it lives, rather than in each screen.
+  const engine = readFileSync("mobile/src/components/portal-web-view.tsx", "utf8");
+  assert.match(engine, /react-native-webview/, "the portal renders in an in-app WebView");
   assert.match(
-    screen,
+    engine,
     /onShouldStartLoadWithRequest/,
-    "every navigation inside the module is vetted before it loads",
+    "every navigation inside the portal is vetted before it loads",
   );
   assert.match(
-    screen,
+    engine,
     /startsWith\(`\$\{apiBaseUrl\}\/`\)/,
     "and only this server's own pages are allowed",
   );
+  // Both surfaces go through that one component — the module screen and the Home tab — so neither can
+  // grow a second, unpenned WebView of its own.
+  const moduleScreen = readFileSync("mobile/src/app/(portal)/module.tsx", "utf8");
+  assert.match(moduleScreen, /PortalWebView/, "the opened module renders through the shared engine");
+  const homeScreen = readFileSync("mobile/src/app/(portal)/index.tsx", "utf8");
+  assert.match(homeScreen, /PortalWebView/, "the Home tab IS the portal, through the shared engine");
   // Out of the tab bar: without `href: null` expo-router gives this route a fifth, iconless tab.
   const layout = readFileSync("mobile/src/app/(portal)/_layout.tsx", "utf8");
   assert.match(
