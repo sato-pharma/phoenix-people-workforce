@@ -42,6 +42,7 @@ export function runHiringDocumentsAccessTests() {
       employees: 2,
       missingDocuments: 0,
       pendingDocuments: 0,
+      scannedDocuments: 0,
       submittedDocuments: 0,
       totalDocumentSlots: 0,
     },

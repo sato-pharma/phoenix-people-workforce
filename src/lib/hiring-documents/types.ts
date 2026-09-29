@@ -145,6 +145,8 @@ export type HiringDocumentsDashboardData = {
     employees: number;
     missingDocuments: number;
     pendingDocuments: number;
+    /** Submitted documents with a scan or upload actually filed. Never the same as the tick. */
+    scannedDocuments: number;
     submittedDocuments: number;
     totalDocumentSlots: number;
   };
