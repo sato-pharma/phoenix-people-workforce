@@ -102,4 +102,24 @@ export function runEmployeeRecordHealthTests() {
     ),
     ["Bank Name", "Bank Account"],
   );
+
+  // The government health insurance booklet: received, with no number for it.
+  assert.deepEqual(
+    getMissingEmployeeRecordFields(employee({ healthCardNumber: null, healthCardStatus: "yes" })),
+    ["Health Card Number"],
+  );
+
+  // AND NOTHING ELSE FIRES. The column shipped empty on every employee, so a rule on the STATUS
+  // would flag the whole company on the day it landed — `completeEmployee` above carries a null
+  // status and is asserted complete, which pins that. These three say the same for the number: it
+  // is only ever asked for once somebody has said the booklet arrived.
+  for (const healthCardStatus of [null, "no", "pending"]) {
+    assert.equal(
+      getMissingEmployeeRecordFields(employee({ healthCardNumber: null, healthCardStatus })).includes(
+        "Health Card Number",
+      ),
+      false,
+      `a health card status of ${String(healthCardStatus)} must not ask for a number`,
+    );
+  }
 }
