@@ -45,8 +45,7 @@ const repoRoot = path.resolve(import.meta.dirname, "..");
 const KNOWN_BARE_OVERRIDES_OVER_A_DIRECT_DEPENDENCY = new Set<string>([]);
 
 /** The `overrides:` block of pnpm-workspace.yaml, as [key, value] pairs, comments and blanks dropped. */
-function readOverrides(): Array<[string, string]> {
-  const raw = readFileSync(path.join(repoRoot, "pnpm-workspace.yaml"), "utf8");
+function readOverrides(raw = readFileSync(path.join(repoRoot, "pnpm-workspace.yaml"), "utf8")): Array<[string, string]> {
   const pairs: Array<[string, string]> = [];
   let inside = false;
   for (const line of raw.split(/\r?\n/)) {
@@ -83,9 +82,16 @@ export function runPnpmOverrideScopeTests() {
     `parsed only ${overrides.length} entries from pnpm-workspace.yaml's overrides block — the parser is broken, ` +
       "so this guard would pass vacuously. Fix the parser before trusting a green run.",
   );
-  assert.ok(
-    overrides.some(([key]) => key.includes(">")),
-    "parsed no scoped (`parent>child`) override at all, which this repo is known to use — the parser is broken.",
+  // The parser must still handle a scoped (`parent>child`) key even though the LIVE file no longer
+  // carries one: the two nodemailer floors (`imapflow>nodemailer`, `mailparser>nodemailer`) were
+  // removed 2026-09-29 once imapflow ^2.1.2 dropped the nodemailer dependency and mailparser ^3.9.26
+  // moved to nodemailer 10.x. Asserting scoped-key parsing against a FIXTURE keeps that coverage
+  // without depending on the repo happening to carry a scoped override — a real parser regression on
+  // `>` keys would otherwise go unnoticed the moment the overrides block has none.
+  assert.deepEqual(
+    readOverrides('overrides:\n  "imapflow>nodemailer": ^9.1.1\n'),
+    [["imapflow>nodemailer", "^9.1.1"]],
+    "the overrides parser dropped or mangled a scoped (`parent>child`) key — it is broken.",
   );
 
   const direct = readDirectDependencies();
