@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
   PortalDesktopTable,
+  PortalEmptyState,
   PortalRecordCard,
 } from "@/components/employee-portal/portal-primitives";
 import { Input } from "@/components/ui/input";
@@ -281,6 +282,12 @@ export function MarketingControlWorkspace() {
           icon={<SlidersHorizontal className="h-5 w-5" />}
           title="Request Types"
         />
+        {workspace.requestTypes.length === 0 ? (
+          <PortalEmptyState
+            message="No request type has been configured yet. Add one to start accepting marketing requests."
+            title="No request types"
+          />
+        ) : null}
         <div className="divide-y divide-slate-100 md:hidden">
           {workspace.requestTypes.map((type) => {
             const draft = requestTypeDrafts[type.id] ?? type;
@@ -487,6 +494,12 @@ export function MarketingControlWorkspace() {
           icon={<Workflow className="h-5 w-5" />}
           title="Approval Workflow"
         />
+        {workspace.workflowSteps.length === 0 ? (
+          <PortalEmptyState
+            message="No approval step has been configured yet, so a submitted request has nobody to go to."
+            title="No workflow steps"
+          />
+        ) : null}
         <div className="divide-y divide-slate-100 md:hidden">
           {workspace.workflowSteps.map((step) => {
             const draft = workflowDrafts[step.id] ?? step;

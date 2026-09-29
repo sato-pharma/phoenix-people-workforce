@@ -207,14 +207,16 @@ function HistoryMobileCard({ row }: { row: MarketingApproverHistoryRow }) {
       >
         <div className="min-w-0">
           <p className="text-phx-2xs font-bold uppercase tracking-[0.14em] text-slate-500">{row.requestCode}</p>
-          {/* Owner rules: never truncate with an ellipsis, never wrap to a second line. On a 375px
-              phone a long pharmacy name honours both by SCROLLING inside its own box — measured
-              459px of text in a 317px box, so without this it painted 113px off the screen edge. */}
-          <div className="overflow-x-auto">
-            <h3 className="mt-0.5 whitespace-nowrap text-phx-lg font-black tracking-tight text-slate-950">
-              {row.customerName}
-            </h3>
-          </div>
+          {/* IT WRAPS. The note here used to read "never truncate with an ellipsis, never wrap to a
+              second line" and only the first half is the owner's rule — AGENTS.md §4 says that where
+              the no-ellipsis rule meets the no-horizontal-scroll rule, WRAPPING WINS. The measurement
+              it quoted is real (459px of pharmacy name in a 317px box) and it is the argument FOR
+              wrapping: a name that needs 459px cannot be read in 317px whether it scrolls or not,
+              and a sideways scroll on a heading is a gesture nobody makes. The parent is min-w-0,
+              so the h3 now takes the second line it needs and the name still arrives whole. */}
+          <h3 className="mt-0.5 text-phx-lg font-black tracking-tight text-slate-950">
+            {row.customerName}
+          </h3>
           <p className="mt-0.5 text-phx-xs font-medium text-slate-500">
             {row.requestType} · From {row.requesterName} ({row.requesterRole})
           </p>
