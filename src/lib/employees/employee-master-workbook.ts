@@ -498,10 +498,11 @@ function styleMasterSheet(
   const sectionRow = sheet.getRow(SECTION_ROW);
   sectionRow.height = 18;
   const runs: Array<{ from: number; label: string; to: number }> = [];
+  const bandLabelOf = (column: MasterColumn) => column.bandLabel ?? column.section;
   sheetColumns.forEach((column, index) => {
     const previous = sheetColumns[index - 1];
-    if (!previous || previous.section !== column.section) {
-      runs.push({ from: index + 1, label: column.section, to: index + 1 });
+    if (!previous || bandLabelOf(previous) !== bandLabelOf(column)) {
+      runs.push({ from: index + 1, label: bandLabelOf(column), to: index + 1 });
     } else {
       runs[runs.length - 1].to = index + 1;
     }

@@ -60,6 +60,7 @@ async function loadHiringDocumentColumns(
         group: document.documentGroup,
         id: document.id,
         name: document.name,
+        sheetHeader: document.sheetHeader,
       })),
     };
   } catch (error) {
