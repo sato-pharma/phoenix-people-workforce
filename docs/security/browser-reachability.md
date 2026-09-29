@@ -73,6 +73,25 @@ tables.
 🔴 **The grant is the loaded gun and `security_invoker` is the safety catch.** Losing it on one view
 turns a payroll view into a public read, with no other change anywhere.
 
+## The grants are gone as of 2026-09-30
+
+They were worse than "SELECT". Read from `information_schema.role_table_grants`, **eight of the
+nine granted `anon` the full set** - `DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE,
+UPDATE` - including `v_employee_portal_payslips` and `v_payroll_eligible_employees`. Inert, for
+the one reason above, and one dropped `security_invoker` away from not being.
+
+All nine are revoked from `anon` in `20260929215727_phase4_schema_hygiene.sql`.
+`authenticated` keeps its grants; only `anon` was touched; the portal runs server-side on the
+service-role client and never used these. Re-probed with the live anon key afterwards: all nine
+still **401**, and the app still serving.
+
+The exact prior grants are recorded as replayable `GRANT` statements in that migration footer,
+because a revoke is only reversible if someone wrote down what was there - and "SELECT" would
+have been the wrong guess for eight of these nine.
+
+**The check stays.** The revoke removes today's loaded gun; `granted_view_bypasses_rls` is what
+stops the next one being loaded.
+
 ## Why the existing `security_invoker` checks could not catch it
 
 `security_invoker` *is* checked in this repo — `scripts/security-rls-static.ts` and

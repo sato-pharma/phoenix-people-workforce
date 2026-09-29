@@ -17,7 +17,7 @@
     "stated in that migration and in the doc."
   ],
   "project_ref": "ozucdzovmcqvepbozvqf",
-  "last_reviewed": "2026-09-29",
+  "last_reviewed": "2026-09-30",
   "categories": {
     "rls_enabled_no_policy": {
       "accepted": 176,
@@ -25,9 +25,9 @@
       "why": "Deny-all by design. The owner's standing decision is that RLS stays application-first: assertPermission on the server is the boundary and most paths use the service-role client. Reachability is proven separately by phx_ci_browser_reachability(). Previous baseline 23, from 2026-07-19."
     },
     "function_search_path_mutable": {
-      "accepted": 10,
-      "severity": "warn",
-      "why": "REGRESSION, recorded here to stop it growing while it is fixed — not accepted. The 2026-07-19 baseline called this REMEDIATED and said a reappearance is a regression; it reappeared for 10 different functions and nothing noticed. All 10 are SECURITY INVOKER, so a hijacked search_path runs with the caller's own rights, which is why this is a warn and not an error. Excludes pg_trgm's 31 unpinned functions, which are the extension's, not ours."
+      "accepted": 0,
+      "severity": "error",
+      "why": "FIXED 2026-09-30, and held at a hard floor of ZERO. All ten were pinned to `public, pg_temp` in 20260929215727_phase4_schema_hygiene.sql. Zero is the right number: a function with no pinned search_path resolves unqualified names through the CALLER's path. Gating the LIVE count at 0 is stronger than a check over migration text, because it also catches a function created through execute_sql — which is how most of this schema actually arrived, and the exact blind spot that let check:sql-backups stay green over the pre-image tables. Excludes pg_trgm's 31, which are the extension's."
     },
     "extension_in_public": {
       "accepted": 1,

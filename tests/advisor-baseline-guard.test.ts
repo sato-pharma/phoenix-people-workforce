@@ -29,10 +29,37 @@ const REAL_BASELINE = JSON.parse(
   readFileSync(new URL("../scripts/advisor-baseline.json", import.meta.url), "utf8"),
 ) as Baseline;
 
-/** The real production reading, 2026-09-29 — four of five validated against get_advisors. */
-const PRODUCTION_TODAY: AdvisorCount[] = [
+/**
+ * FROZEN: what production read on 2026-09-29, before Phase 4 touched anything. Four of the five
+ * were validated against a live `get_advisors` run that day. Kept as a historical fixture so the
+ * "July would have caught this" proof below keeps testing the drift that actually happened,
+ * rather than drifting along with the database.
+ */
+const PRODUCTION_2026_09_29: AdvisorCount[] = [
   { category: "rls_enabled_no_policy", current_count: 176 },
   { category: "function_search_path_mutable", current_count: 10 },
+  { category: "extension_in_public", current_count: 1 },
+  { category: "authenticated_security_definer_function_executable", current_count: 14 },
+  { category: "unused_index", current_count: 615 },
+  { category: "stats_age_hours", current_count: -1 },
+];
+
+/**
+ * The reading the SHIPPED baseline is set from, after Phase 4.
+ *
+ * `function_search_path_mutable` is 0 because all ten were pinned in
+ * 20260929215727_phase4_schema_hygiene.sql, and the baseline holds it at a hard floor of zero.
+ *
+ * 🔴 Production itself currently reads `rls_enabled_no_policy` 177, ONE ABOVE this. That is
+ * another session's pre-image table (`public.hiring_document_definitions_pre_20260930`), created
+ * while Phase 4 was in flight and deliberately NOT absorbed into the baseline — raising the
+ * number to go green is the exact drift this whole mechanism exists to stop, and the table is
+ * not this session's to move (AGENTS.md section 5). The gate is therefore knowingly red on that
+ * one finding until its owner retires it.
+ */
+const PRODUCTION_TODAY: AdvisorCount[] = [
+  { category: "rls_enabled_no_policy", current_count: 176 },
+  { category: "function_search_path_mutable", current_count: 0 },
   { category: "extension_in_public", current_count: 1 },
   { category: "authenticated_security_definer_function_executable", current_count: 14 },
   { category: "unused_index", current_count: 615 },
@@ -147,7 +174,7 @@ export function runAdvisorBaselineGuardTests() {
       unused_index: { accepted: 326, severity: "info", why: "the July record" },
     },
   };
-  const wouldHaveCaught = evaluateAdvisorCounts(julyBaseline, PRODUCTION_TODAY)
+  const wouldHaveCaught = evaluateAdvisorCounts(julyBaseline, PRODUCTION_2026_09_29)
     .filter((f) => f.code === "advisor_baseline_exceeded")
     .map((f) => f.message);
   assert.equal(
@@ -166,6 +193,24 @@ export function runAdvisorBaselineGuardTests() {
     !wouldHaveCaught.some((m) => m.includes("authenticated_security_definer")),
     "the SECURITY DEFINER helpers held at 14 since July — flagging them would be a false alarm",
   );
+
+  // ── the search_path floor ────────────────────────────────────────────────
+  // 🔴 Phase 4 pinned all ten, so this is held at ZERO — not at "however many there are now".
+  // Gating the LIVE count at 0 is stronger than a check over migration text, because it also
+  // catches a function created through execute_sql, which is how most of this schema arrived
+  // and the exact blind spot that let check:sql-backups stay green over the pre-image tables.
+  assert.equal(
+    REAL_BASELINE.categories.function_search_path_mutable.accepted,
+    0,
+    "the search_path baseline is a hard floor of zero — never 'however many exist today'",
+  );
+  const oneUnpinned = PRODUCTION_TODAY.map((r) =>
+    r.category === "function_search_path_mutable" ? { ...r, current_count: 1 } : r,
+  );
+  const unpinnedV = evaluateAdvisorCounts(REAL_BASELINE, oneUnpinned)
+    .find((f) => f.code === "advisor_baseline_exceeded");
+  assert.ok(unpinnedV, "a SINGLE new unpinned function must fail the check");
+  assert.match(unpinnedV!.message, /function_search_path_mutable/);
 
   // ── negative controls ────────────────────────────────────────────────────
   // Without these, a comparator that had stopped comparing would pass everything above.
