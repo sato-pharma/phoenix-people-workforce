@@ -29,6 +29,7 @@ import type { PhoenixRole } from "@/lib/auth/permissions";
 const ELIGIBLE_TITLES = new Set<string>([
   // Sales department (field sales force + line management)
   "medical representative",
+  "senior medical representative",
   "medical rep",
   "employee medical rep",
   "district sales manager",
@@ -118,6 +119,7 @@ export function isSfeManagerTitle(...titles: Array<string | null | undefined>): 
  */
 const OWN_CRM_VISIT_LOGGER_TITLES = new Set<string>([
   "medical representative",
+  "senior medical representative",
   "medical rep",
   "employee medical rep",
 ]);

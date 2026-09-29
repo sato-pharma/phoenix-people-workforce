@@ -2114,6 +2114,7 @@ import { runPayrollAwaitingPublishTests } from "./payroll-awaiting-publish.test.
 import { runSeniorDistrictManagerTitleTests } from "./senior-district-manager-title.test.ts";
 import { runHiringDocumentsExportWorkbookTests } from "./hiring-documents-export-workbook.test.ts";
 import { runSeniorRepsTests } from "./senior-reps.test.ts";
+import { runSeniorMedicalRepresentativeTitleTests } from "./senior-medical-representative-title.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -7762,6 +7763,11 @@ await runTest(
 await runTest(
   "the Senior badge roster: isSeniorRep matches B-7 regardless of casing or whitespace and no one else, and only the canonical lower key is stored",
   runSeniorRepsTests,
+);
+
+await runTest(
+  "the Senior Medical Representative title behaves exactly like Medical Representative everywhere (job function, pay, attendance, compliance, CRM mirror, HR pay view, catalogue, import) while granting nothing new",
+  runSeniorMedicalRepresentativeTitleTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

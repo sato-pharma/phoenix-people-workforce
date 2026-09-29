@@ -47,4 +47,8 @@ export const positionRules: Record<string, string> = {
   // the lists that read this title (allowances, attendance, compliance, seat rank) match exactly.
   senior_district_manager: "Senior District Manager",
   senior_district_sales_manager: "Senior District Manager",
+  // Same reason for the senior-grade medical-rep title (B-7, 2026-09-29): keep its own spelling so an
+  // employee import never demotes it back to plain "Medical Representative".
+  senior_medical_representative: "Senior Medical Representative",
+  senior_medical_rep: "Senior Medical Representative",
 };

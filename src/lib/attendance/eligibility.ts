@@ -15,6 +15,7 @@ import type { PhoenixRole } from "@/lib/auth/permissions";
 
 const ATTENDANCE_ELIGIBLE_TITLES = new Set<string>([
   "medical representative",
+  "senior medical representative",
   "medical rep",
   "employee medical rep",
   "district sales manager",

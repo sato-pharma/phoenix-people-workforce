@@ -55,6 +55,10 @@ export const DEFAULT_EXTRA_COST_OF_LIVING = 1500;
  */
 export const EXTRA_COST_OF_LIVING_BY_TITLE: Readonly<Record<string, number>> = {
   "medical representative": 2000,
+  // The SAME rep allowance under a seniority grade (B-7, 2026-09-29) — not a raise, the identical
+  // 2,000 she already gets. This map is an exact-key lookup: an absent title silently fills the 1,500
+  // office default into the form, so leaving it off would have cut her allowance over a label.
+  "senior medical representative": 2000,
   "district sales manager": 3000,
   // The same district allowance under a seniority grade (B-94, promoted 2026-09-29). It is listed
   // rather than derived because this map is an exact-key lookup: an absent title silently fills

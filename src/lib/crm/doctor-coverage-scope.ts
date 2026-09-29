@@ -116,6 +116,10 @@ export type DoctorCoverageScopeEmployee = {
 const SEAT_RANK = new Map<string, number>([
   ["medical rep", 1],
   ["medical representative", 1],
+  // A seniority grade on the rep title, ranked with the reps (B-7, 2026-09-29). The lookup is exact
+  // and an unranked title is EXCLUDED from a line scope by design, so leaving it off would delete a
+  // real rep's own coverage scope over an appreciation label.
+  ["senior medical representative", 1],
   ["district manager", 2],
   ["district sales manager", 2],
   // A SENIORITY grade on the same district seat, not a rung between DM and RSM — ranking it 2

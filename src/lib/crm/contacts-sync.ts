@@ -170,6 +170,10 @@ export const CONTACT_LIST_JOB_TITLES = [
   // PostgREST `.in()` — a title missing here is not a smaller sweep, it is a district manager whose
   // contact list silently stops being mirrored with nothing to see. Added for B-94's promotion.
   "Senior District Manager",
+  // The senior-grade medical-rep title (B-7, 2026-09-29). Same exact-`.in()` reason as above: a rep
+  // whose title gained "Senior" must keep having her contact list mirrored, or her Reps List and CRM
+  // board silently empty out — the sharpest behaviour change an appreciation label could cause.
+  "Senior Medical Representative",
 ] as const;
 
 /**
