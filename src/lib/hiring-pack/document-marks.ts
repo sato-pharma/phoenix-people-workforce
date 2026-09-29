@@ -159,3 +159,48 @@ export function withMarkArtwork(
       : row,
   );
 }
+
+/** A mark never shrinks below this, in points — about 4mm. See `resizeMarkFromCorner`. */
+export const MIN_MARK_PT = 12;
+
+export type MarkCorner = "nw" | "ne" | "sw" | "se";
+
+export type MarkBox = { x: number; y: number; w: number; h: number };
+
+/**
+ * The box a mark becomes when one of its CORNERS is dragged.
+ *
+ * The owner, 2026-09-29: "when I come to the corner of the square … I have the option to extend or
+ * make it smaller, as if I'm dragging its corners." A stamp is a picture, so its size is the whole
+ * of its formatting — there is no font size to nudge — and nobody sizes a seal by typing two
+ * numbers into a panel.
+ *
+ * THE OPPOSITE CORNER STAYS PUT. That is the whole feel of the gesture: pull the bottom-right and
+ * the top-left does not move, so the box grows away from the hand. Dragging the top-left therefore
+ * has to move x and y as well as change the size, which is the part that is easy to get wrong and
+ * the reason this is a function rather than four lines inside a pointer handler.
+ *
+ * A MINIMUM, NOT ZERO. A box dragged to nothing is a mark that prints nothing and can never be
+ * grabbed again — the same dead end as a mark whose artwork has gone missing, reached by the hand
+ * instead of by the bucket. The floor keeps it on the page and draggable.
+ *
+ * Pure, and in points throughout: the caller converts the pointer's pixels once, so zoom is the
+ * caller's problem and this stays the paper's own arithmetic.
+ */
+export function resizeMarkFromCorner(
+  origin: MarkBox,
+  corner: MarkCorner,
+  dxPt: number,
+  dyPt: number,
+): MarkBox {
+  const west = corner === "nw" || corner === "sw";
+  const north = corner === "nw" || corner === "ne";
+  const w = Math.max(MIN_MARK_PT, west ? origin.w - dxPt : origin.w + dxPt);
+  const h = Math.max(MIN_MARK_PT, north ? origin.h - dyPt : origin.h + dyPt);
+  return {
+    w,
+    h,
+    x: west ? origin.x + (origin.w - w) : origin.x,
+    y: north ? origin.y + (origin.h - h) : origin.y,
+  };
+}

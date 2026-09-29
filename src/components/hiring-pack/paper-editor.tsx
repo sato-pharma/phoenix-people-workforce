@@ -55,6 +55,8 @@ import type { DocumentFieldInventoryEntry } from "@/lib/hiring-pack/document-inv
 import {
   DOCUMENT_MARKS,
   DOCUMENT_MARK_DEFAULT_SIZE,
+  resizeMarkFromCorner,
+  type MarkCorner,
   DOCUMENT_MARK_LABELS,
   type DocumentMark,
 } from "@/lib/hiring-pack/document-marks";
@@ -224,6 +226,50 @@ function geometryFromElement(element: HTMLElement): {
     size,
   };
 }
+
+/**
+ * WHICH CORNER OF A MARK THE POINTER IS ON, or null for anywhere else in it.
+ *
+ * The owner, 2026-09-29: "when I come to the corner of the square ... I have the option to extend or
+ * make it smaller, as if I'm dragging its corners." A stamp is a picture, so its size is the whole
+ * of its formatting - there is no font size to nudge - and typing two numbers into a panel is not
+ * how anybody sizes a seal on a page.
+ *
+ * MEASURED IN SCREEN PIXELS, NOT POINTS, and that is deliberate: the grab zone has to stay the same
+ * size under the thumb whatever the page is zoomed to, and this panel zooms. A zone in points would
+ * be an easy target zoomed in and an impossible one zoomed out.
+ *
+ * ONLY MARKS RESIZE THIS WAY. A text field's box is measured against a printed rule on a government
+ * form, and a corner drag is exactly the gesture that would silently change one - so the same
+ * gesture on those elements keeps meaning "move", which is what it has always meant.
+ */
+const CORNER_GRAB_PX = 12;
+
+type ResizeCorner = MarkCorner;
+
+function cornerAt(element: HTMLElement, clientX: number, clientY: number): ResizeCorner | null {
+  if (!element.classList.contains("mark")) return null;
+  const rect = element.getBoundingClientRect();
+  // A box smaller than two grab zones would be all corner and impossible to move at all.
+  if (rect.width < CORNER_GRAB_PX * 2.5 || rect.height < CORNER_GRAB_PX * 2.5) return null;
+  const left = clientX - rect.left <= CORNER_GRAB_PX;
+  const right = rect.right - clientX <= CORNER_GRAB_PX;
+  const top = clientY - rect.top <= CORNER_GRAB_PX;
+  const bottom = rect.bottom - clientY <= CORNER_GRAB_PX;
+  if (top && left) return "nw";
+  if (top && right) return "ne";
+  if (bottom && left) return "sw";
+  if (bottom && right) return "se";
+  return null;
+}
+
+/** The diagonal cursor a corner shows, so the affordance is visible before anything is dragged. */
+const CORNER_CURSOR: Readonly<Record<ResizeCorner, string>> = {
+  nw: "nwse-resize",
+  ne: "nesw-resize",
+  sw: "nesw-resize",
+  se: "nwse-resize",
+};
 
 /** Which logical page (1-based, within ONE copy) an element sits on, whatever copy it is drawn in.
  *  Layout applies to every copy identically, so the copy an operator happened to click is never
@@ -1299,11 +1345,20 @@ export function HiringPackPaperEditor({
    * discipline the typed-value fields already use on blur.
    */
   const beginDrag = useCallback(
-    (doc: Document, element: HTMLElement, existing: DocumentFieldRow | null, event: PointerEvent) => {
+    (
+      doc: Document,
+      element: HTMLElement,
+      existing: DocumentFieldRow | null,
+      event: PointerEvent,
+      /** Set when the gesture started on a corner of a mark: it RESIZES instead of moving. */
+      corner: ResizeCorner | null = null,
+    ) => {
       const startClientX = event.clientX;
       const startClientY = event.clientY;
       const originLeft = Number.parseFloat(element.style.left) || 0;
       const originTop = Number.parseFloat(element.style.top) || 0;
+      const originWidth = Number.parseFloat(element.style.width) || 0;
+      const originHeight = Number.parseFloat(element.style.height) || 0;
       let moved = false;
 
       for (const other of doc.querySelectorAll("[data-hp-selected]")) other.removeAttribute("data-hp-selected");
@@ -1314,6 +1369,24 @@ export function HiringPackPaperEditor({
         const dxPt = (moveEvent.clientX - startClientX) * PT_PER_PX;
         const dyPt = (moveEvent.clientY - startClientY) * PT_PER_PX;
         if (Math.abs(dxPt) > 1 || Math.abs(dyPt) > 1) moved = true;
+
+        if (corner) {
+          // THE OPPOSITE CORNER STAYS PUT, which is what makes this feel like dragging a corner
+          // rather than scaling about the middle. Pulling the top-left therefore moves left/top as
+          // well as changing the size; pulling the bottom-right moves neither.
+          const box = resizeMarkFromCorner(
+            { x: originLeft, y: originTop, w: originWidth, h: originHeight },
+            corner,
+            dxPt,
+            dyPt,
+          );
+          element.style.width = `${box.w.toFixed(2)}pt`;
+          element.style.height = `${box.h.toFixed(2)}pt`;
+          element.style.left = `${box.x.toFixed(2)}pt`;
+          element.style.top = `${box.y.toFixed(2)}pt`;
+          return;
+        }
+
         element.style.left = `${Math.max(0, originLeft + dxPt).toFixed(2)}pt`;
         element.style.top = `${Math.max(0, originTop + dyPt).toFixed(2)}pt`;
       };
@@ -1468,7 +1541,9 @@ export function HiringPackPaperEditor({
         return;
       }
 
-      beginDrag(doc, element, existing, event);
+      // A GRAB ON A CORNER OF A MARK RESIZES IT; anywhere else in it still moves it. `cornerAt`
+      // answers null for every element that is not a mark, so a text field's behaviour is untouched.
+      beginDrag(doc, element, existing, event, cornerAt(element, event.clientX, event.clientY));
     },
     [beginDrag, copies, surface],
   );
@@ -1499,6 +1574,17 @@ export function HiringPackPaperEditor({
     if (!doc.body.dataset.hpLayoutWired) {
       doc.body.dataset.hpLayoutWired = "1";
       doc.addEventListener("pointerdown", onLayoutPointerDown, true);
+      // THE CURSOR IS THE AFFORDANCE. A corner that resizes and a middle that moves look identical
+      // on a flat image, so without this the only way to discover the gesture is to try it. Set on
+      // the element rather than the body so it cannot leak onto the rest of the page, and cleared
+      // the moment the pointer leaves the corner.
+      doc.addEventListener("pointermove", (moveEvent) => {
+        if (!layoutModeRef.current || addModeRef.current) return;
+        const over = (moveEvent.target as HTMLElement | null)?.closest<HTMLElement>(".mark");
+        if (!over) return;
+        const corner = cornerAt(over, moveEvent.clientX, moveEvent.clientY);
+        over.style.cursor = corner ? CORNER_CURSOR[corner] : "move";
+      });
       // Arrow-key nudging. On the FRAMED document because that is where focus sits after a box is
       // clicked — the parent gets its own listener below, for when focus has moved to the panel.
       //

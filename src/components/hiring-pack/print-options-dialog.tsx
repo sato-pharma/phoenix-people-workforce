@@ -44,7 +44,7 @@ export type PrintAnswer = {
  * starting point (`initialAddress`), which is a convenience and still one click to change.
  */
 export function PrintOptionsDialog({
-  availableMarks,
+  availableMarks = [],
   askAddress,
   defaultCopies,
   initialAddress,
@@ -69,8 +69,14 @@ export function PrintOptionsDialog({
    * Empty for the great majority of papers, and then the section below does not appear at all: a
    * tick-box that would place nothing is worse than no tick-box, because it reads as a stamp that
    * silently failed. Positions are set by dragging in the layout editor.
+   *
+   * OPTIONAL, AND THE DEFAULT IS NONE. Three screens open this dialog - the hiring pack, the manual
+   * paper workspace and the device register - and only the first knows anything about marks. A
+   * required prop would have forced the other two to pass an empty array to say nothing, which is a
+   * sentence they should not have to speak; absent already means "offer no stamp", which is both the
+   * safe answer and the true one for them.
    */
-  availableMarks: readonly DocumentMark[];
+  availableMarks?: readonly DocumentMark[];
   registeredAddress: string | null;
   title: string;
 }) {
