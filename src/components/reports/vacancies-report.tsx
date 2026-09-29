@@ -8,9 +8,11 @@ import {
   Layers3,
   RefreshCw,
   Search,
+  UserPlus,
   UsersRound,
   X,
 } from "lucide-react";
+import { usePathname } from "next/navigation";
 import * as React from "react";
 
 import {
@@ -33,6 +35,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { LoadingSpinner } from "@/components/ui/loading-state";
 import { formatDateOnly } from "@/lib/date-only";
+import { buildVacancyHireHref } from "@/lib/employees/vacancy-hire-link";
 import { publicVacancyLabel } from "@/lib/reports/organogram-safety";
 import type { VacancyReportData } from "@/lib/reports/vacancies";
 import { cn } from "@/lib/utils";
@@ -40,6 +43,13 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 
 
 type VacanciesReportProps = {
+  /**
+   * Whether this viewer may create an employee — the same `employees:update` POST
+   * /api/employees asserts. Decides whether an OPEN row offers the one-press hire.
+   * Resolved server-side on the page, never inferred in the browser: the vacancies
+   * report is readable by roles that may not hire.
+   */
+  canAddEmployee?: boolean;
   initialError?: string | null;
   initialReport?: VacancyReportData | null;
 };
@@ -195,9 +205,17 @@ function SelectFilter({
 }
 
 export function VacanciesReport({
+  canAddEmployee = false,
   initialError = null,
   initialReport = null,
 }: VacanciesReportProps) {
+  // The admin report renders in the admin shell and in the workspace shell; both live
+  // outside /employee-portals, but derive it rather than assume, exactly as the organogram
+  // popup does, so a portal mount would still link to the portal Employees route.
+  const hirePathname = usePathname();
+  const hireBasePath = hirePathname?.startsWith("/employee-portals")
+    ? "/employee-portals/employees"
+    : "/employees";
   const [report, setReport] = React.useState<VacancyReportData | null>(initialReport);
   const [error, setError] = React.useState<string | null>(initialError);
   const [isLoading, setIsLoading] = React.useState(false);
@@ -630,6 +648,15 @@ export function VacanciesReport({
                       { label: "Source", value: `Master data import · ${formatDate(row.createdAt)}` },
                     ]}
                   />
+                  {canAddEmployee && row.status === "open" ? (
+                    <a
+                      className="mt-3 flex w-full items-center justify-center gap-2 border border-phx-accent bg-phx-accent px-4 py-2.5 text-sm font-bold text-white transition hover:bg-phx-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-phx-accent"
+                      href={buildVacancyHireHref(hireBasePath, row)}
+                    >
+                      <UserPlus className="h-4 w-4" />
+                      Add employee to this seat
+                    </a>
+                  ) : null}
                 </PortalRecordCard>
               )}
               renderTable={() => (
@@ -684,12 +711,25 @@ export function VacanciesReport({
                           <p>Master data import</p>
                           <p className="mt-1 text-xs text-phx-ink-soft">{formatDate(row.createdAt)}</p>
                         </td>
+                        {/* The hire action rides in the STATUS cell rather than a tenth
+                            column: this table already scrolls sideways at desktop width, and
+                            the golden rule is to fit by merging, never by widening. */}
                         <td className="px-4 py-4">
                           <Badge
                             variant={row.status === "open" ? "warning" : "neutral"}
                           >
                             {row.status}
                           </Badge>
+                          {canAddEmployee && row.status === "open" ? (
+                            <a
+                              className="mt-2 inline-flex items-center gap-1.5 border border-phx-accent bg-phx-accent px-2.5 py-1 text-xs font-bold text-white transition hover:bg-phx-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-phx-accent"
+                              href={buildVacancyHireHref(hireBasePath, row)}
+                              title={`Add an employee to the open ${row.positionTitle ?? row.jobTitle ?? "seat"}`}
+                            >
+                              <UserPlus className="h-3.5 w-3.5" />
+                              Hire
+                            </a>
+                          ) : null}
                         </td>
                       </tr>
                     ))}

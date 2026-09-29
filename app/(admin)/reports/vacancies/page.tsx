@@ -47,8 +47,13 @@ export default async function VacanciesPage() {
     initialError = vacanciesPageError(error);
   }
 
+  // The same capability POST /api/employees asserts. Decides only whether an OPEN row
+  // offers the one-press hire — the vacancies report is readable by roles that may not hire.
+  const canAddEmployee = await canAccess(access, "employees", "update");
+
   return (
     <VacanciesReport
+      canAddEmployee={canAddEmployee}
       initialError={initialError}
       initialReport={initialReport}
     />
