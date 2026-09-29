@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 
 import { EarlyBirdOfTheFortnightCard } from "@/components/early-birds/early-bird-of-the-fortnight-card";
+import { SeniorRepBadge } from "@/components/ui/senior-rep-badge";
 import { IdentityCard } from "@/components/employee-portal/identity-card";
 import { PushOptInNudge } from "@/components/notifications/push-opt-in-nudge";
 import { DoubleVisitFocusSection } from "@/components/employee-portal/dashboards/double-visit-focus-section";
@@ -621,7 +622,10 @@ export function RankingPanel({
                   <div className="min-w-0">
                     {/* Wraps, never truncates — owner rule. Egyptian full names run four parts
                         and the old ellipsis cut most of them off on a phone. */}
-                    <p className="break-words text-sm font-semibold leading-snug text-slate-800">{row.name}</p>
+                    <p className="flex flex-wrap items-center gap-1.5 break-words text-sm font-semibold leading-snug text-slate-800">
+                      <span dir="auto">{row.name}</span>
+                      <SeniorRepBadge hrId={row.hrId} />
+                    </p>
                     {showManager && row.managerName ? (
                       <p className="break-words text-phx-2xs font-medium uppercase leading-snug tracking-wide text-slate-400">
                         {row.managerName}

@@ -1,6 +1,7 @@
 import { AlarmClock, AlertTriangle, CheckCircle2, Clock, Sunrise } from "lucide-react";
 
 import { SectionHead } from "@/components/employee-portal/portal-command-center";
+import { SeniorRepBadge } from "@/components/ui/senior-rep-badge";
 import { EARLY_BIRD_LIMIT, type NsmCrmComplianceData } from "@/lib/employee-portal/nsm-crm-compliance";
 
 // Shared "who has submitted their first CRM visit today" board. Extracted from the NSM command
@@ -65,8 +66,9 @@ function PersonChips({ people, tone }: { people: Array<{ hrId: string; name: str
   return (
     <div className="flex flex-wrap gap-1.5">
       {people.map((p) => (
-        <span key={p.hrId || p.name} className={`whitespace-nowrap border px-2 py-1 text-phx-xs font-semibold ${cls}`}>
-          {p.name}
+        <span key={p.hrId || p.name} className={`inline-flex items-center gap-1 whitespace-nowrap border px-2 py-1 text-phx-xs font-semibold ${cls}`}>
+          <span dir="auto">{p.name}</span>
+          <SeniorRepBadge hrId={p.hrId} />
         </span>
       ))}
     </div>
@@ -187,7 +189,8 @@ export function CrmFirstVisitBoard({
                       className="inline-flex items-center gap-1.5 whitespace-nowrap border border-emerald-200 bg-emerald-50 px-2 py-1 text-phx-xs font-semibold text-emerald-700"
                     >
                       <span className="font-black text-emerald-600">{i + 1}</span>
-                      {b.name}
+                      <span dir="auto">{b.name}</span>
+                      <SeniorRepBadge hrId={b.hrId} />
                       <span className="border border-emerald-200 bg-white px-1 py-0.5 text-phx-3xs font-bold uppercase tracking-wide text-emerald-700/80">
                         {b.visitType}
                       </span>

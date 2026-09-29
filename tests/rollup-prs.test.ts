@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -174,6 +174,28 @@ export function runRollupPrsTests(): void {
       "a small PR plus a disjoint wide one is one merge instead of two — the wide one costs nothing to carry",
     );
     assert.ok(withSmall.saving > 0, "that grouping must report a saving");
+  }
+
+  // ── 8b. AGENTS.md must carry the rule, because a PR comment is not enforcement ───────────────
+  // #4814 was merged out from under roll-up #4821 four minutes after the roll-up was built AND
+  // commented on it, paying ~28 billable minutes for nothing. The tool and C10's refusal text were
+  // not enough: only AGENTS.md is auto-loaded on every request by every session. If the rule is ever
+  // trimmed out of it, this goes red rather than the next session rediscovering it the same way.
+  {
+    const agents = readFileSync("AGENTS.md", "utf8").replace(/\s+/g, " ");
+    assert.match(
+      agents,
+      /scripts\/rollup-prs\.mjs/,
+      "AGENTS.md must name `node scripts/rollup-prs.mjs` as the step before asking the owner to merge. "
+        + "The owner's instruction is that triaging open PRs is never his job (2026-09-30: \"i till now "
+        + "donot know what to do with small open prs\"), and a rule that lives only in a script or in a "
+        + "hook's refusal text is one a session can merge straight past — which is exactly what happened.",
+    );
+    assert.match(
+      agents,
+      /NEVER HAND HIM MORE THAN ONE MERGE AT A TIME/,
+      "AGENTS.md must still carry the one-merge-at-a-time rule verbatim in §6.",
+    );
   }
 
   // ── 8. --apply is refused against a snapshot, and the script never merges ────────────────────
