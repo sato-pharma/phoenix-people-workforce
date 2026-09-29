@@ -463,6 +463,16 @@ can already see — before opening it, and push fixups in fewer, larger commits 
 superseded PR runs, so two pushes a minute apart bill twice and verify once). Splitting is still
 right when the parts need SEPARATE approval (a migration, a locked file, a protected rule) or when
 one part is urgent and the rest is not — never merely because the change feels tidier in pieces.
+🔴 **AND A FEATURE ARRIVING IN INSTALMENTS IS STILL ONE FEATURE — HOLD THE PARTS** (owner,
+2026-09-29: *"batch the next feature into one PR, not six"*). The one-press seat hire shipped as
+**six** PRs in a morning — three of them five files or fewer — because he asked for the surfaces one
+at a time and because twice a NEW PR was opened rather than widen one already carrying his `merge
+<n> when green`. He weighed the finer approval against the ~168 billable minutes himself and chose
+the minutes. So when the next instruction is plainly the same mechanism on another surface, a
+follow-up named in the same breath, or a pin of a ruling just given, **hold it and open ONE PR when
+the feature is whole**, saying in one line that you are holding so he can override. Widening a PR
+his approval already sits on is allowed — say so plainly and let him re-confirm; it is no longer a
+reason to open a second. `hold-a-whole-feature-for-one-pr-even-when-he-asks-in-pieces`
 🔴 **MEASURE IN MINUTES, NEVER IN RUNS, AND NEVER FROM A SAMPLE — both lie.** Re-measured
 2026-09-27 from EVERY run of the month rather than a sample: `pull_request` **60.5%** · `push` to
 `main` **39.5%** · `workflow_dispatch` **~0%**. Dispatch is a rounding error — about eight runs in the
