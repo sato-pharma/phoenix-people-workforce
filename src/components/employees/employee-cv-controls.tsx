@@ -1,11 +1,12 @@
 "use client";
 
-import { Download, FileText, Loader2, Trash2, UploadCloud } from "lucide-react";
+import { Download, FileText, Loader2, Search, Trash2, UploadCloud, UserSearch } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 // employee-cv-limits, NOT employee-cv: the server module imports node:crypto and the service-role
 // client, and pulling either into a browser bundle is a webpack build error. See that file's header.
 import {
+  CV_EMPTY_NOTICE,
   EMPLOYEE_CV_ACCEPT_ATTRIBUTE,
   EMPLOYEE_CV_TYPES_SENTENCE,
   MAX_EMPLOYEE_CV_BYTES,
@@ -173,6 +174,193 @@ type CvRecord = {
   uploadedAt: string | null;
 };
 
+/** One candidate the search offered — mirrors CandidateCvMatch on the server. */
+type CandidateMatch = {
+  candidateId: string;
+  candidateName: string;
+  cvFileName: string;
+  cvUploadedAt: string | null;
+  phoneTail: string | null;
+};
+
+/**
+ * Carry the CV across from the candidate record — for somebody hired before the two were linked.
+ *
+ * 🔴 IT SEARCHES AND OFFERS; IT NEVER MATCHES. There is no "find this person's CV" button, and
+ * that absence is the design. Measured on production 2026-09-29: of the 8 employees with no CV
+ * whose mobile matched a candidate who had one, THREE were different people — a CV forwarded over
+ * WhatsApp carries the forwarder's number, so one HR person's own mobile matched three strangers'
+ * CVs. Whoever attaches it reads the candidate's name, the tail of their phone and the CV's own
+ * filename, and decides. A stranger's CV filed under an employee's name is worse than none.
+ *
+ * Seeded with the employee's own name so the ordinary case is: open, look, attach.
+ */
+function CarryFromRecruitment({
+  employeeName,
+  endpoint,
+  onAttached,
+}: {
+  employeeName?: string | null;
+  endpoint: string;
+  onAttached: () => Promise<void> | void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState(String(employeeName ?? "").trim());
+  const [matches, setMatches] = useState<CandidateMatch[] | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [attaching, setAttaching] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+
+  const search = useCallback(async () => {
+    const q = query.trim();
+    if (q.length < 3) {
+      setNote("Type at least three letters of the candidate's name, or their phone number.");
+      setMatches(null);
+      return;
+    }
+    setNote(null);
+    setSearching(true);
+    try {
+      const response = await fetch(`${endpoint}?candidates=${encodeURIComponent(q)}`, {
+        cache: "no-store",
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        candidates?: CandidateMatch[];
+        message?: string;
+      };
+      if (!response.ok) throw new Error(payload.message || "The candidate search failed.");
+      setMatches(Array.isArray(payload.candidates) ? payload.candidates : []);
+    } catch (err) {
+      setNote(err instanceof Error ? err.message : "The candidate search failed.");
+      setMatches(null);
+    } finally {
+      setSearching(false);
+    }
+  }, [endpoint, query]);
+
+  async function attach(match: CandidateMatch) {
+    setNote(null);
+    setAttaching(match.candidateId);
+    try {
+      const response = await fetch(endpoint, {
+        body: JSON.stringify({ candidateId: match.candidateId }),
+        headers: { "content-type": "application/json" },
+        method: "PUT",
+      });
+      const payload = (await response.json().catch(() => ({}))) as { message?: string };
+      if (!response.ok) throw new Error(payload.message || "That CV could not be carried across.");
+      await onAttached();
+      setOpen(false);
+      setMatches(null);
+    } catch (err) {
+      setNote(err instanceof Error ? err.message : "That CV could not be carried across.");
+    } finally {
+      setAttaching(null);
+    }
+  }
+
+  if (!open) {
+    return (
+      <button
+        className="inline-flex h-9 items-center gap-2 border border-phx-line bg-white px-3 text-xs font-bold text-phx-ink-2 transition hover:bg-phx-paper"
+        onClick={() => setOpen(true)}
+        type="button"
+      >
+        <UserSearch aria-hidden="true" className="h-3.5 w-3.5" />
+        From recruitment
+      </button>
+    );
+  }
+
+  return (
+    <div className="mt-3 w-full border border-phx-line bg-phx-paper p-3">
+      <p className="break-words text-phx-xs leading-5 text-phx-ink-faint">
+        Search the candidate this person applied as, then check the name, the phone and the file
+        name before attaching — the CV becomes part of their permanent record.
+      </p>
+      {/* w-full + flex-wrap, never a fixed width: this panel opens inside a details drawer that is
+          a phone's width on mobile, and the FITS-THE-SCREEN rule is fit by wrapping. */}
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <input
+          className="h-9 min-w-0 flex-1 border border-phx-line bg-white px-2 text-xs text-phx-ink-2"
+          onChange={(event) => setQuery(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              void search();
+            }
+          }}
+          placeholder="Candidate name or phone"
+          value={query}
+        />
+        <button
+          className="inline-flex h-9 items-center gap-2 border border-phx-line bg-white px-3 text-xs font-bold text-phx-ink-2 transition hover:bg-white disabled:opacity-50"
+          disabled={searching}
+          onClick={() => void search()}
+          type="button"
+        >
+          {searching ? (
+            <Loader2 aria-hidden="true" className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Search aria-hidden="true" className="h-3.5 w-3.5" />
+          )}
+          Search
+        </button>
+        <button
+          className="inline-flex h-9 items-center px-2 text-xs font-bold text-phx-ink-faint transition hover:text-phx-ink-2"
+          onClick={() => {
+            setOpen(false);
+            setMatches(null);
+            setNote(null);
+          }}
+          type="button"
+        >
+          Cancel
+        </button>
+      </div>
+
+      {matches ? (
+        matches.length === 0 ? (
+          <p className="mt-2 break-words text-phx-xs text-phx-ink-faint">
+            No candidate with a CV on file matches that. Only candidates who actually have a CV are
+            offered — there is nothing to carry from the others.
+          </p>
+        ) : (
+          <ul className="mt-2 space-y-2">
+            {matches.map((match) => (
+              <li
+                className="flex flex-wrap items-center justify-between gap-2 border border-phx-line bg-white p-2"
+                key={match.candidateId}
+              >
+                <div className="min-w-0">
+                  <p className="break-words text-xs font-bold text-phx-ink-2">{match.candidateName}</p>
+                  <p className="break-words text-phx-2xs text-phx-ink-faint">
+                    {match.cvFileName}
+                    {match.phoneTail ? ` · phone ends ${match.phoneTail}` : ""}
+                  </p>
+                </div>
+                <button
+                  className="inline-flex h-8 shrink-0 items-center gap-2 border border-phx-line bg-white px-3 text-xs font-bold text-phx-ink-2 transition hover:bg-phx-paper disabled:opacity-50"
+                  disabled={attaching !== null}
+                  onClick={() => void attach(match)}
+                  type="button"
+                >
+                  {attaching === match.candidateId ? (
+                    <Loader2 aria-hidden="true" className="h-3.5 w-3.5 animate-spin" />
+                  ) : null}
+                  Attach this CV
+                </button>
+              </li>
+            ))}
+          </ul>
+        )
+      ) : null}
+
+      {note ? <p className="mt-2 break-words text-phx-xs font-semibold text-rose-700">{note}</p> : null}
+    </div>
+  );
+}
+
 /**
  * The master details panel: what is on file, and the three things that can be done to it.
  *
@@ -181,7 +369,14 @@ type CvRecord = {
  * second query for one person is cheaper than widening the directory's select list for every row
  * on every render.
  */
-export function EmployeeCvManager({ hrId }: { hrId: string }) {
+export function EmployeeCvManager({
+  employeeName,
+  hrId,
+}: {
+  /** Only ever used to seed the candidate search box, so the common case is open-look-attach. */
+  employeeName?: string | null;
+  hrId: string;
+}) {
   const endpoint = employeeCvHref(hrId);
   const inputRef = useRef<HTMLInputElement>(null);
   const [cv, setCv] = useState<CvRecord | null>(null);
@@ -318,6 +513,17 @@ export function EmployeeCvManager({ hrId }: { hrId: string }) {
             {busy ? <Loader2 aria-hidden="true" className="h-3.5 w-3.5 animate-spin" /> : <UploadCloud aria-hidden="true" className="h-3.5 w-3.5" />}
             {cv ? "Replace" : "Attach the CV"}
           </button>
+          {/* Offered only when there is nothing on file. Once a CV is attached, replacing it with
+              a candidate's copy is the rarer act and the Replace button above already does it
+              from a file — keeping both here would put two ways to overwrite a document side by
+              side, on a panel whose other buttons are Download and Remove. */}
+          {cv ? null : (
+            <CarryFromRecruitment
+              employeeName={employeeName}
+              endpoint={endpoint}
+              onAttached={load}
+            />
+          )}
           {cv ? (
             <button
               className="inline-flex h-9 items-center gap-2 border border-phx-line bg-white px-3 text-xs font-bold text-rose-700 transition hover:bg-rose-50 disabled:opacity-50"
@@ -337,7 +543,9 @@ export function EmployeeCvManager({ hrId }: { hrId: string }) {
           ? "Reading the record…"
           : cv
             ? `${cv.fileName}${formatSize(cv.sizeBytes) ? ` · ${formatSize(cv.sizeBytes)}` : ""} · ${sourceLabel(cv.source)}`
-            : "No CV on file."}
+            // One wording for "there is nothing on this record", shared with the organogram seat
+            // popup: two screens saying it two ways is how a sentence the owner chose drifts.
+            : `${CV_EMPTY_NOTICE}.`}
       </p>
 
       {error ? <p className="mt-2 break-words text-phx-xs font-semibold text-rose-700">{error}</p> : null}
