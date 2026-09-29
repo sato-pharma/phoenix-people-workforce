@@ -2958,7 +2958,19 @@ export function EmployeeManagement({
 
                   Shown only when the form was opened from a seat AND there is somebody to pick:
                   an empty list means either no candidate is at a hireable stage or this viewer
-                  has no recruitment access, and neither is worth an empty dropdown. */}
+                  has no recruitment access, and neither is worth an empty dropdown.
+
+                  🔒 SEAT-ONLY IS THE OWNER'S RULING (2026-09-29), asked and answered — do NOT
+                  widen it to every Add Employee form. The obvious-looking improvement is to drop
+                  `vacancySeatLabel` from this condition, and it is refused for a reason: the list
+                  is only useful because it can be RANKED, and the seat is what ranks it (the
+                  candidate whose requisition points at this seat is marked and sorted first). On
+                  a blank form there is nothing to rank against, so it degrades to an unordered
+                  list of everyone at offer stage — a worse way to find a person than typing their
+                  name — while adding a field to skip on every head-office hire, re-hire and
+                  correction, which is what the blank form is mostly used for. Anyone filling a
+                  vacancy reaches this form from the seat in one press anyway.
+                  Pinned by tests/seat-hire-candidate-picker.test.ts. */}
               {!editingHrId && vacancySeatLabel && seatHireCandidates.length > 0 ? (
                 <div className="space-y-3 border border-phx-accent-line bg-orange-50/60 p-4">
                   <div className="flex items-center gap-2">

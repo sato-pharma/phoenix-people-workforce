@@ -168,6 +168,17 @@ export async function runSeatHireCandidatePickerTests() {
     "the recruitment door must keep precedence — arriving from an application is explicit",
   );
 
+  // 🔒 SEAT-ONLY, the owner's ruling of 2026-09-29 — asked in writing and answered. The picker
+  // renders only on a form opened from a seat. Widening it to every Add Employee form is the
+  // obvious-looking improvement and is REFUSED: the list is useful because the seat RANKS it,
+  // and on a blank form it degrades to an unordered list of everyone at offer stage while
+  // adding a field to skip on every head-office hire, re-hire and correction. Dropping
+  // `vacancySeatLabel` from the render condition is exactly what this catches.
+  assert.ok(
+    source.includes("{!editingHrId && vacancySeatLabel && seatHireCandidates.length > 0 ? ("),
+    "the candidate picker must stay SEAT-ONLY (owner, 2026-09-29) — it renders only when the form was opened from a seat, never on a blank Add Employee form",
+  );
+
   // THE NARROW READ. The picker's endpoint asks the database for the three hireable stages
   // instead of every application ever filed. The danger in a narrowing like this is not
   // performance, it is that the rewrite quietly drops a visibility check and starts showing a
