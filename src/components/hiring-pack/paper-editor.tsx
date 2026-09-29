@@ -53,6 +53,7 @@ import { FieldHistoryPanel } from "@/components/hiring-pack/field-history-panel"
 import { Input } from "@/components/ui/input";
 import type { DocumentFieldInventoryEntry } from "@/lib/hiring-pack/document-inventory";
 import {
+  DOCUMENT_MARKS,
   DOCUMENT_MARK_DEFAULT_SIZE,
   DOCUMENT_MARK_LABELS,
   type DocumentMark,
@@ -780,7 +781,17 @@ export function HiringPackPaperEditor({
 
   const previewUrl = useMemo(() => {
     const version = versionId ? `&version=${encodeURIComponent(versionId)}` : "";
-    return `/api/hiring-pack/${encodeURIComponent(hrId)}/print?document=${documentKey}&copies=${copies}&preview=1${version}`;
+    // THE EDITOR ALWAYS ASKS FOR THE MARKS, and the print dialog always starts by asking for none.
+    //
+    // That is not the preview disagreeing with the paper. `marks=` is a parameter like `copies` and
+    // `address`: this screen is where a stamp is POSITIONED, so it has to show one, and the same URL
+    // with the same parameters renders identically wherever it is opened. What the paper prints is
+    // decided per print, in the dialog, which opens unticked - see `parseMarkSelection`.
+    //
+    // Without this the one screen for dragging a seal into place would render it as nothing at all,
+    // and the box would be invisible and unclickable.
+    const marks = `&marks=${DOCUMENT_MARKS.join(",")}`;
+    return `/api/hiring-pack/${encodeURIComponent(hrId)}/print?document=${documentKey}&copies=${copies}&preview=1${marks}${version}`;
   }, [copies, documentKey, hrId, versionId]);
 
   /**

@@ -116,6 +116,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ hrId
       custodyDeviceId: url.searchParams.get("deviceId"),
       document: requested,
       hrId,
+      // WHICH MARKS THIS PRINT CARRIES, and absent means NONE - see `parseMarkSelection`.
+      // The desk ticks them in the print dialog beside the copy count and the address; the
+      // layout editor asks for them explicitly too, so it can show what is being dragged.
+      // Passed through unvalidated on purpose: an unknown name is dropped rather than
+      // refusing to print a paper somebody needs today over a word they never typed.
+      marks: url.searchParams.get("marks"),
       // No `version` parameter is the normal case, and it does NOT mean "print the current text":
       // the renderer resolves the version this employee signed. The parameter is only for
       // deliberately asking for a superseded template from the Archive.
@@ -240,6 +246,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ hrId
           copies: "1",
           document: requested,
           hrId,
+          // THE SAME MARKS AS THE PAGE ABOVE. This renders its own single copy, so a
+          // selection left out here would download an unstamped PDF of a stamped page.
+          marks: url.searchParams.get("marks"),
           // The letter that says how many copies it was drawn up in must say the count being
           // printed, not the one copy drawn here.
           statedCopies: url.searchParams.get("copies"),

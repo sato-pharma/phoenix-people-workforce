@@ -106,6 +106,38 @@ export function layoutUsesMark(rows: readonly DocumentFieldRow[], mark: Document
   return rows.some((row) => !row.hidden && row.source.kind === "mark" && row.source.mark === mark);
 }
 
+/** Which marks a layout has a position for — what the print dialog is allowed to offer. */
+export function marksPlacedOn(rows: readonly DocumentFieldRow[]): DocumentMark[] {
+  return DOCUMENT_MARKS.filter((mark) => layoutUsesMark(rows, mark));
+}
+
+/**
+ * WHICH MARKS THIS PRINT ASKED FOR. Absent means NONE, and that default is the whole feature.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────────
+ * WHY A PLACED MARK IS NOT A PRINTED MARK. The owner, 2026-09-29, after seeing the first version:
+ * "donot put the stamp permanent, make able to add them freely as i want" — and then, choosing
+ * between three designs, the print dialog. A layout row says WHERE the seal goes on this paper; it
+ * does not say that this paper is stamped. The stamping is decided per print, in the same box that
+ * already asks how many copies and which address, and it starts unticked every time.
+ *
+ * That is also what keeps faith with the ruling earlier the same day. A document that arrives
+ * pre-stamped is a document nobody stamped; with this, a stamp appears only because somebody ticked
+ * it for this run of this paper, which is as close to pressing a real stamp as software gets.
+ *
+ * UNKNOWN NAMES ARE DROPPED, NOT REFUSED. This arrives as a query string, so it is whatever a URL
+ * contained. A name this build does not know cannot be drawn, and refusing the whole print because
+ * of one bad word would take out the paper somebody needs today for a parameter they never typed.
+ */
+export function parseMarkSelection(raw: string | null | undefined): Set<DocumentMark> {
+  if (!raw) return new Set();
+  const asked = raw
+    .split(",")
+    .map((part) => part.trim())
+    .filter(isDocumentMark);
+  return new Set(asked);
+}
+
 /**
  * The same rows, with each mark row carrying the artwork it prints.
  *

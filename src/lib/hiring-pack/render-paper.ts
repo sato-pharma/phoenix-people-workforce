@@ -27,7 +27,11 @@ import {
   type CustomTemplate,
 } from "@/lib/hiring-pack/custom-template-store";
 import { stampArtworkUri } from "@/lib/hiring-pack/document-mark-artwork";
-import { layoutUsesMark, withMarkArtwork } from "@/lib/hiring-pack/document-marks";
+import {
+  layoutUsesMark,
+  parseMarkSelection,
+  withMarkArtwork,
+} from "@/lib/hiring-pack/document-marks";
 import type { DocumentFieldRow } from "@/lib/hiring-pack/field-layout";
 import { loadDocumentFieldLayout } from "@/lib/hiring-pack/field-layout-store";
 import { loadHrSignatureUri } from "@/lib/hiring-pack/hr-signature";
@@ -371,6 +375,14 @@ export async function renderHiringPaper(input: {
   data?: HiringPackData;
   document: PrintableDocument;
   hrId: string;
+  /**
+   * WHICH MARKS THIS RUN IS STAMPED AND SIGNED WITH — a comma list, and ABSENT MEANS NONE.
+   *
+   * A layout row says where the seal goes on this paper; this says whether this print carries it.
+   * The default is deliberately the unstamped paper: see `parseMarkSelection` for the owner's ruling
+   * and why "placed" and "printed" had to stop being the same thing.
+   */
+  marks?: string | null;
   /** The count the paper states about itself, when it differs from `copies` — see `RENDERERS`. */
   statedCopies?: string | null;
   version?: string | null;
@@ -477,9 +489,20 @@ export async function renderHiringPaper(input: {
   // a missing image MUST stop the job — filing a copy as the document that was signed — is caught
   // downstream by `inlineLocalAssets`, which reports what it could not resolve rather than skipping.
   // ─────────────────────────────────────────────────────────────────────────────────────────────
+  //
+  // AND ONLY THE MARKS THIS RUN ASKED FOR. A mark nobody ticked resolves to NO artwork, which the
+  // renderer prints as nothing at all — the same path as a seal whose file could not be read, and
+  // deliberately so: there is exactly one way for a mark to be absent from a page, so there is only
+  // one behaviour to get right. `wantedMarks` is empty for every caller that does not pass the
+  // parameter, which means every existing link prints the paper exactly as it did before marks
+  // existed.
+  const wantedMarks = parseMarkSelection(input.marks);
   const fields = withMarkArtwork(stored, {
-    stamp: stampArtworkUri(),
-    signature: layoutUsesMark(stored, "signature") ? await loadHrSignatureUri() : null,
+    stamp: wantedMarks.has("stamp") ? stampArtworkUri() : null,
+    signature:
+      wantedMarks.has("signature") && layoutUsesMark(stored, "signature")
+        ? await loadHrSignatureUri()
+        : null,
   });
 
   const statedCopies = input.statedCopies ? resolveCopies(input.statedCopies, copies) : undefined;

@@ -13,9 +13,18 @@ import {
   PRINT_ADDRESS_LABELS,
   type PrintAddressChoice,
 } from "@/lib/hiring-pack/print-address";
+import {
+  DOCUMENT_MARK_LABELS,
+  type DocumentMark,
+} from "@/lib/hiring-pack/document-marks";
 
-/** What the desk answered: how many copies, and which company address goes on them (or no choice). */
-export type PrintAnswer = { address: PrintAddressChoice | null; copies: number };
+/** What the desk answered: how many copies, which address, and what this run is stamped with. */
+export type PrintAnswer = {
+  address: PrintAddressChoice | null;
+  copies: number;
+  /** The marks TICKED FOR THIS PRINT. Empty is the normal answer and the default - see below. */
+  marks: DocumentMark[];
+};
 
 /**
  * THE QUESTIONS ASKED BEFORE ANY HR FORM PRINTS — the owner, 2026-09-20: "before you print any copy
@@ -35,6 +44,7 @@ export type PrintAnswer = { address: PrintAddressChoice | null; copies: number }
  * starting point (`initialAddress`), which is a convenience and still one click to change.
  */
 export function PrintOptionsDialog({
+  availableMarks,
   askAddress,
   defaultCopies,
   initialAddress,
@@ -53,11 +63,30 @@ export function PrintOptionsDialog({
    * The registered head office as the company details hold it — the other address is fixed. Null from
    * a caller that cannot see the company record; the prompt then says where it is read from.
    */
+  /**
+   * The marks this paper has a POSITION for - what may be offered, never what is printed.
+   *
+   * Empty for the great majority of papers, and then the section below does not appear at all: a
+   * tick-box that would place nothing is worse than no tick-box, because it reads as a stamp that
+   * silently failed. Positions are set by dragging in the layout editor.
+   */
+  availableMarks: readonly DocumentMark[];
   registeredAddress: string | null;
   title: string;
 }) {
   const [copies, setCopies] = useState(String(defaultCopies));
   const [address, setAddress] = useState<PrintAddressChoice | null>(askAddress ? initialAddress : null);
+  /**
+   * WHAT THIS RUN IS STAMPED AND SIGNED WITH, and it starts EMPTY every time.
+   *
+   * The owner, 2026-09-29: "donot put the stamp permanent, make able to add them freely as i want."
+   * A mark placed in the layout editor says WHERE the seal sits on this paper; it does not say the
+   * paper is stamped. That is decided here, per print, and the box opens unticked - so the default
+   * outcome is always the unstamped document, and a stamped one is always something somebody chose.
+   *
+   * The dialog is mounted only while open, so this cannot carry over from the last paper.
+   */
+  const [marks, setMarks] = useState<DocumentMark[]>([]);
   const dialogRef = useDialogA11y<HTMLDivElement>({ open: true, onClose: onCancel });
 
   const count = parsePrintCopies(copies, 0);
@@ -155,6 +184,56 @@ export function PrintOptionsDialog({
               </div>
             </>
           ) : null}
+
+          {/*
+            STAMP AND SIGNATURE - asked here, for THIS print, and never remembered.
+
+            The owner, 2026-09-29: "make it optional to choose for any form i want." It sits beside
+            the copy count and the address because those are the other two things he already decides
+            per print, and it opens unticked for the same reason the address has no pre-selected
+            answer: the point of asking is that the desk decides, not that the system's habit does.
+
+            Shown only for the marks this paper has a position for, so the box can never offer a
+            stamp that would land nowhere.
+          */}
+          {availableMarks.length > 0 ? (
+            <>
+              <div className="text-sm font-semibold text-slate-800">
+                Stamp or sign this print?
+              </div>
+              <div className="flex flex-col gap-2">
+                {availableMarks.map((mark) => {
+                  const on = marks.includes(mark);
+                  return (
+                    <button
+                      aria-checked={on}
+                      className={
+                        on
+                          ? "flex items-center gap-2 border border-slate-800 bg-slate-50 px-3 py-2 text-left text-sm text-slate-900"
+                          : "flex items-center gap-2 border border-slate-300 bg-white px-3 py-2 text-left text-sm text-slate-700"
+                      }
+                      key={mark}
+                      onClick={() =>
+                        setMarks((current) =>
+                          current.includes(mark)
+                            ? current.filter((entry) => entry !== mark)
+                            : [...current, mark],
+                        )
+                      }
+                      role="checkbox"
+                      type="button"
+                    >
+                      <span aria-hidden>{on ? "☑ " : "☐ "}</span>
+                      <span className="font-medium">{DOCUMENT_MARK_LABELS[mark]}</span>
+                    </button>
+                  );
+                })}
+                <span className="text-phx-2xs text-slate-500">
+                  Left unticked, the paper prints blank here for a real stamp and a real signature.
+                </span>
+              </div>
+            </>
+          ) : null}
         </div>
         <div className="flex flex-wrap justify-end gap-2 border-t border-slate-200 px-5 py-3">
           <button
@@ -167,7 +246,7 @@ export function PrintOptionsDialog({
           <button
             className="bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
             disabled={!ready}
-            onClick={() => onConfirm({ address, copies: count })}
+            onClick={() => onConfirm({ address, copies: count, marks })}
             type="button"
           >
             Print {count >= 1 ? count : ""} {count === 1 ? "copy" : "copies"}

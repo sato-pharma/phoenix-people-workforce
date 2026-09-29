@@ -110,8 +110,13 @@ function testNoPrintButtonSkipsThePrompt() {
   assert.ok(manager.includes("if (how === \"print\") requestPrint(document, template.id, template.defaultCopies);"), "nor a company template row");
   assert.ok(manager.includes("<PrintOptionsDialog"), "the prompt is rendered");
   assert.ok(
-    manager.includes("openPrint(document, versionId, answer.copies, answer.address)"),
-    "and only its confirmation reaches openPrint, with both answers",
+    manager.includes("openPrint(document, versionId, answer.copies, answer.address, answer.marks)"),
+    // THREE answers since 2026-09-29, not two: the dialog also asks what this run is stamped and
+    // signed with. Pinned the same way and for the same reason as the other two - every one of them
+    // must come from the confirmation rather than from a default the caller supplied, or the
+    // question stops being a question. A stamp reaching the URL from anywhere but this line would
+    // be a paper stamped by the system rather than by the desk.
+    "and only its confirmation reaches openPrint, with all three answers",
   );
   assert.ok(manager.includes("setCopiesFor(document, String(answer.copies))"), "the row's Copies box follows the answer");
   assert.ok(manager.includes("&address=${address}"), "the address travels in the print URL");

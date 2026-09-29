@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 
 import {
   DOCUMENT_MARKS,
+  marksPlacedOn,
+  parseMarkSelection,
   DOCUMENT_MARK_DEFAULT_SIZE,
   DOCUMENT_MARK_LABELS,
   isDocumentMark,
@@ -327,6 +329,73 @@ function testTheSignatureStoreChecksTheBytes() {
   assert.equal(isPng(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])), false);
 }
 
+/**
+ * A PLACED MARK IS NOT A PRINTED MARK — the selection decides, and the default is NONE.
+ *
+ * The owner, 2026-09-29, after seeing the first version of this feature: "donot put the stamp
+ * permanent, make able to add them freely as i want", and then, choosing between three designs, the
+ * print dialog. A layout row says WHERE the seal sits on this paper; whether this run carries it is
+ * ticked per print, in the box that already asks for the copy count and the address, and that box
+ * opens unticked every time.
+ *
+ * SO THE DEFAULT PATH IS THE UNSTAMPED PAPER. Every link that predates the parameter - the automatic
+ * print after a signature, a bookmark, the filing path - passes no selection and therefore prints
+ * exactly what it printed before marks existed. That is the property worth pinning: it is what keeps
+ * faith with the same day's earlier ruling that a document arriving pre-stamped is a document nobody
+ * stamped.
+ */
+function testOnlyTheMarksThisPrintAskedForAreDrawn(): void {
+  assert.deepEqual([...parseMarkSelection(null)], [], "no parameter means no marks");
+  assert.deepEqual([...parseMarkSelection("")], [], "an empty parameter means no marks");
+  assert.deepEqual([...parseMarkSelection("stamp")], ["stamp"]);
+  assert.deepEqual([...parseMarkSelection(" stamp , signature ")].sort(), ["signature", "stamp"]);
+  // An unknown name is dropped rather than refusing the print - see the function's own note.
+  assert.deepEqual([...parseMarkSelection("stamp,initials")], ["stamp"]);
+
+  const rows = [markRow(), markRow({ id: "m2", source: { kind: "mark", mark: "signature" } })];
+
+  // Nothing ticked: both rows still exist, and NEITHER draws.
+  const none = mergePagePlacements(
+    [],
+    withMarkArtwork(rows, { signature: SIGNATURE, stamp: SEAL }).map((row) =>
+      row.source.kind === "mark" ? { ...row, source: { ...row.source, src: null } } : row,
+    ),
+    1,
+    {},
+  );
+  assert.equal(none.placements.length, 2, "the rows are still placed - they are simply not drawn");
+  assert.deepEqual(
+    none.placements.map((placement) => renderPlacement(placement, {})),
+    ["", ""],
+    "an unticked mark must print NOTHING, the same answer as artwork that could not be read",
+  );
+
+  // Stamp ticked only: the seal draws, the signature does not.
+  const stampOnly = mergePagePlacements(
+    [],
+    withMarkArtwork(rows, { signature: null, stamp: SEAL }),
+    1,
+    {},
+  );
+  const drawn = stampOnly.placements.map((placement) => renderPlacement(placement, {}));
+  assert.ok(drawn[0]!.includes(SEAL), "the ticked stamp draws");
+  assert.equal(drawn[1], "", "the unticked signature stays off the paper");
+}
+
+/** What the print dialog is allowed to offer: the marks this paper has a position for. */
+function testTheDialogOffersOnlyWhatIsPlaced(): void {
+  assert.deepEqual(marksPlacedOn([]), [], "a paper with no marks offers no tick-boxes at all");
+  assert.deepEqual(marksPlacedOn([markRow()]), ["stamp"]);
+  assert.deepEqual(
+    marksPlacedOn([markRow(), markRow({ id: "m2", source: { kind: "mark", mark: "signature" } })]),
+    ["stamp", "signature"],
+  );
+  // A hidden row is not an offer - there would be nothing to draw.
+  assert.deepEqual(marksPlacedOn([markRow({ hidden: true })]), []);
+  // Text rows are not marks.
+  assert.deepEqual(marksPlacedOn([markRow({ source: { kind: "literal", text: "x" } })]), []);
+}
+
 export function runHiringPackDocumentMarkTests() {
   testEveryMarkIsDescribed();
   testAPlacedStampDrawsItsArtwork();
@@ -339,5 +408,7 @@ export function runHiringPackDocumentMarkTests() {
   testNeitherFieldScreenTreatsAMarkAsAValue();
   testOnlyAPlacedSignatureCostsABucketRead();
   testArtworkIsResolvedPerRenderAndNotStored();
+  testOnlyTheMarksThisPrintAskedForAreDrawn();
+  testTheDialogOffersOnlyWhatIsPlaced();
   testTheSignatureStoreChecksTheBytes();
 }
