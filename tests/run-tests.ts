@@ -1076,6 +1076,7 @@ import { runPrintBannerScriptTests } from "./print-banner-script.test.ts";
 import { runHiringPackPaperFilingTests } from "./hiring-pack-paper-filing.test.ts";
 import { runHiringPackDocumentRegistryTests } from "./hiring-pack-document-registry.test.ts";
 import { runHiringPackFieldLayoutTests } from "./hiring-pack-field-layout.test.ts";
+import { runHiringPackAnchorRootTests } from "./hiring-pack-anchor-root.test.ts";
 import { runHiringPackDocumentMarkTests } from "./hiring-pack-document-marks.test.ts";
 import { runHiringPackFieldTemplateTests } from "./hiring-pack-field-template.test.ts";
 import { runHiringPackTests } from "./hiring-pack.test.ts";
@@ -4100,6 +4101,7 @@ await runTest("hiring pack HR letter, Arabic (states the BASE salary, no seal, t
 await runTest("hiring pack print prompt (every HR form asks how many copies and which company address before it prints; the choice reaches the paper; the Authority forms never take the address)", runHiringPackPrintOptionsTests);
 await runTest("hiring pack field layer (a dragged default keeps its kind, an added field prints on top, a literal cannot shadow a value)", runHiringPackFieldLayoutTests);
 await runTest("hiring pack stamp and signature (a mark an operator placed draws its artwork where it was dropped, artwork that could not be read prints NOTHING rather than a box that looks stamped, and a mark can never override a compiled field)", runHiringPackDocumentMarkTests);
+await runTest("hiring pack anchor root (a field dragged onto a document with no .copy wrapper is stored RELATIVE TO ITS OWN COPY, so the flow layer reaches every copy - a body-rooted path names one article and stamps the employee's copy while the service file's stays blank)", runHiringPackAnchorRootTests);
 await runTest("hiring pack company templates (a custom document cannot collide with a built-in, a page in pixels is refused, a new version writes beside the old artwork)", runHiringPackCustomTemplateTests);
 await runTest("hiring pack paper filing (a slot is matched on its pinned column not its name, a retired or missing slot refuses rather than guesses, a filed name survives a Windows download)", runHiringPackPaperFilingTests);
 await runTest("hiring pack paper artwork (a scan is embedded as bytes because setContent gives the page no origin, and an unreadable one is reported so filing refuses rather than storing a blank government form)", runHiringPackPaperArtworkTests);
