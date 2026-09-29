@@ -167,4 +167,64 @@ export async function runSeatHireCandidatePickerTests() {
     source.includes("const activeApplicationId = hireApplicationId ?? pickedApplicationId;"),
     "the recruitment door must keep precedence — arriving from an application is explicit",
   );
+
+  // THE NARROW READ. The picker's endpoint asks the database for the three hireable stages
+  // instead of every application ever filed. The danger in a narrowing like this is not
+  // performance, it is that the rewrite quietly drops a visibility check and starts showing a
+  // viewer applications the wide read would have hidden — so pin the two halves that scope it.
+  const applicationsService = fs.readFileSync(
+    path.join(process.cwd(), "src", "lib", "recruitment", "applications.ts"),
+    "utf8",
+  );
+  const narrowRead = applicationsService.slice(
+    applicationsService.indexOf("export async function listSeatHireApplications("),
+    applicationsService.indexOf("export async function listApplications("),
+  );
+  assert.ok(
+    narrowRead.length > 0,
+    "listSeatHireApplications must exist ahead of listApplications — the slice depends on it",
+  );
+  assert.ok(
+    narrowRead.includes("listRequisitions(access)"),
+    "the narrow read must resolve requisitions through the SAME scoped call as the wide one",
+  );
+  assert.ok(
+    narrowRead.includes("canSeeApplication(access, application, requisitionsById)"),
+    "the narrow read must apply the same per-application visibility check — never skip it",
+  );
+  assert.ok(
+    narrowRead.includes('.in("stage", [...SEAT_HIRE_STAGES])'),
+    "the stage filter must reuse SEAT_HIRE_STAGES, so the query and the picker cannot disagree",
+  );
+  assert.ok(
+    narrowRead.includes('.is("converted_employee_hr_id", null)'),
+    "an application already converted to an employee must be excluded by the QUERY too",
+  );
+  for (const stage of SEAT_HIRE_STAGES) {
+    assert.ok(
+      !narrowRead.includes(`"${stage}"`),
+      `the narrow read must not hard-code "${stage}" — one list, imported, or the two drift apart`,
+    );
+  }
+
+  const hireableRoute = fs.readFileSync(
+    path.join(
+      process.cwd(),
+      "app",
+      "api",
+      "recruitment",
+      "applications",
+      "hireable",
+      "route.ts",
+    ),
+    "utf8",
+  );
+  assert.ok(
+    hireableRoute.includes("listSeatHireApplications(access)"),
+    "the picker endpoint must use the narrow read",
+  );
+  assert.ok(
+    !/\blistApplications\(/.test(hireableRoute),
+    "the picker endpoint must NOT fall back to loading every application to fill one dropdown",
+  );
 }
