@@ -47,6 +47,8 @@ type SessionContextValue = {
   token: string | null;
   user: PhoenixUser | null;
   signIn: (loginId: string, password: string) => Promise<void>;
+  /** Adopt a session established on the real web /login inside the login WebView. See below. */
+  adoptWebSession: (payload: LoginResponse) => void;
   signOut: () => Promise<void>;
   /**
    * Called by a screen when an API call comes back 401/403. Clears the device and drops to the
@@ -144,6 +146,28 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setState({ session, status: "signed-in" });
   }, []);
 
+  /**
+   * Adopt a session the rep established on the REAL web /login page inside the login WebView. The
+   * page set the `phoenix_session` cookie in the WebView's jar; the bridge (`/api/auth/native-token`)
+   * handed the SAME token back as a bearer, and the login screen posts it here. From this line on it
+   * is indistinguishable from a native `signIn` — same stored shape, same keystore, same bearer the
+   * native CRM half uses. It grants nothing a `signIn` would not; the token and its expiry are the
+   * server's, unchanged.
+   */
+  const adoptWebSession = useCallback((payload: LoginResponse) => {
+    if (!payload.sessionToken || !payload.user?.loginId || !payload.expiresAt) {
+      throw new ApiError("The sign-in did not complete. Please try again.", 500);
+    }
+    const session: StoredSession = {
+      expiresAt: payload.expiresAt,
+      landingPath: payload.landingPath ?? "/employee-portals",
+      token: payload.sessionToken,
+      user: payload.user,
+    };
+    void SecureStore.setItemAsync(STORAGE_KEY, JSON.stringify(session)).catch(() => undefined);
+    setState({ session, status: "signed-in" });
+  }, []);
+
   const signOut = useCallback(async () => {
     const token = state.status === "signed-in" ? state.session.token : null;
 
@@ -175,6 +199,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<SessionContextValue>(
     () => ({
+      adoptWebSession,
       handleExpiredSession,
       signIn,
       signOut,
@@ -182,7 +207,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       token: state.status === "signed-in" ? state.session.token : null,
       user: state.status === "signed-in" ? state.session.user : null,
     }),
-    [handleExpiredSession, signIn, signOut, state],
+    [adoptWebSession, handleExpiredSession, signIn, signOut, state],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

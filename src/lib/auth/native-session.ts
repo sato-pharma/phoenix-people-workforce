@@ -40,6 +40,19 @@
 export const phoenixNativeClientHeaderName = "x-phoenix-client";
 
 /**
+ * A token the native shell adds to its WebView user-agent (`applicationNameForUserAgent`), so the
+ * server can tell a request came from inside Phoenix's own app rather than an ordinary browser.
+ *
+ * WHY A USER-AGENT MARKER AND NOT A HEADER. A `source={{ headers }}` on a WebView applies only to the
+ * top-level navigation; the fetches the loaded PAGE makes (the native-token bridge is one) do not
+ * carry it. The user-agent is a property of the WebView itself, so it rides every request — the page
+ * load and its own fetches alike. It is a narrowing signal, NOT authentication: script running inside
+ * the shell shares this user-agent, so this keeps OTHER browsers out, it does not vouch for the caller.
+ * See `app/api/auth/native-token/route.ts` for how it is used and what it is NOT relied on for.
+ */
+export const phoenixNativeClientUserAgentMarker = "PhoenixApp";
+
+/**
  * True when the caller declares itself a native app. Used by the login route to decide whether the
  * JSON response carries `sessionToken`; never used to grant permission.
  */

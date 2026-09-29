@@ -13,6 +13,7 @@ import { isForbiddenError } from "@/lib/auth/server";
 import { resolveEmployeePortalNavVisibility } from "@/lib/employee-portal/navigation";
 import { getEmployeePortalShellData } from "@/lib/employee-portal/service";
 import { resolveLockedModuleForPath } from "@/lib/navigation/module-catalog";
+import { phoenixNativeClientUserAgentMarker } from "@/lib/auth/native-session";
 import { NATIVE_WEB_APP_SHELL_COOKIE } from "@/lib/auth/native-web-handoff";
 import { PATH_HEADER } from "@/lib/navigation/shell-headers";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
@@ -114,14 +115,20 @@ export async function EmployeePortalServerShell({
   const lockedModuleKeys = Array.from(new Set(activeLocks.map((lock) => lock.moduleKey)));
   // Written by proxy.ts on every matched request. Absent only when the proxy did not run, and then
   // there is no address to match — the page renders and refuses itself.
-  const requestedPath = (await headers()).get(PATH_HEADER) ?? "";
+  const requestHeaders = await headers();
+  const requestedPath = requestHeaders.get(PATH_HEADER) ?? "";
 
-  // App mode: this browser context entered through the native hand-off (GET /api/auth/web-session),
-  // which is the ONLY path that sets this cookie. An ordinary browser never carries it, so the web
-  // portal is unchanged; the native WebView carries it and the chrome below is suppressed because the
-  // app's own tab bar and screen header do that job. A display hint, never a credential — see
-  // NATIVE_WEB_APP_SHELL_COOKIE.
-  const appShell = (await cookies()).get(NATIVE_WEB_APP_SHELL_COOKIE)?.value === "1";
+  // App mode drops the portal's own header + bottom nav, because the native app supplies them. Two
+  // signals, either one is enough, and BOTH are things only the native shell has:
+  //   - the user-agent marker the WebView sets (`applicationNameForUserAgent`), which rides every
+  //     request including a direct web /login, and
+  //   - the hand-off cookie (the bearer→cookie module-open path sets it).
+  // An ordinary browser carries neither, so the web portal renders exactly as before. This is a
+  // display hint, never a credential — see NATIVE_WEB_APP_SHELL_COOKIE and
+  // phoenixNativeClientUserAgentMarker.
+  const appShell =
+    (await cookies()).get(NATIVE_WEB_APP_SHELL_COOKIE)?.value === "1" ||
+    (requestHeaders.get("user-agent") ?? "").includes(phoenixNativeClientUserAgentMarker);
   const lockedModuleForPage = lockedModuleKeys.length
     ? resolveLockedModuleForPath(requestedPath, lockedModuleKeys)
     : null;
