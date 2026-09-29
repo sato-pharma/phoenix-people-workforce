@@ -1656,6 +1656,7 @@ import { runClosingEngineExportTests } from "./closing-engine-export.test.ts";
 import { runClosingExecutiveLookTests } from "./closing-executive-look.test.ts";
 import { runClosingLayoutInvariantTests } from "./closing-layout-invariants.test.ts";
 import { runClosingAchievementFollowsTheClosingTests } from "./closing-achievement-follows-the-closing.test.ts";
+import { runMrKeycardPublishedGateTests } from "./mr-keycard-published-gate.test.ts";
 import { runWeeklyPlansDistrictManagerBypassTests } from "./weekly-plans-district-manager-bypass.test.ts";
 import { runNotificationRecipientAddressResolutionTests } from "./notification-recipient-address-resolution.test.ts";
 import { runRecipientAssuranceGuardTests } from "./recipient-assurance-guard.test.ts";
@@ -5712,6 +5713,10 @@ await runTest(
 await runTest(
   "the premium closing's achievement IS the Monthly Closing's (all sales over target, owner 2026-09-05) on a MIXED area, on the masthead, on every region row, on Family Performance, and in the owner's own four .xlsm formulas",
   runClosingAchievementFollowsTheClosingTests,
+);
+await runTest(
+  "the MR overview achievement keycard gates on the PUBLISHED closing, not on 'uploaded' — an unfinished current month with only a DirectReq order never surfaces, and the card falls back to the latest published month (owner 2026-08-13, restated 2026-09-29)",
+  runMrKeycardPublishedGateTests,
 );
 await runTest(
   "District Manager weekly/monthly plans skip the CEO decide stage (server guard, no CEO notification, HR bucket, read-only CEO queue)",

@@ -47,6 +47,7 @@ export function runEmployeeAchievementGroupingTests() {
     [row({ period: "2026-07", repHrId: "b-158", actualValue: 1_000, targetValue: 500 })],
     ["B-158"],
     new Set(["2026-07"]),
+    new Set(),
   );
   assert.equal(
     cased.get("B-158")?.[0]?.actualValue,
@@ -66,6 +67,7 @@ export function runEmployeeAchievementGroupingTests() {
     [row({ period: "2026-03", actualValue: 49_962, targetValue: null })],
     ["B-158"],
     new Set(["2026-03"]),
+    new Set(),
   );
   const marchPoint = untargeted.get("B-158")?.[0];
   assert.equal(marchPoint?.actualValue, 49_962, "the actual is real even with no target beside it");
@@ -82,7 +84,7 @@ export function runEmployeeAchievementGroupingTests() {
   );
 
   // ── A requested employee with no rows is present-and-empty, not absent ─────
-  const missing = groupAchievementByEmployee([], ["B-999"], new Set());
+  const missing = groupAchievementByEmployee([], ["B-999"], new Set(), new Set());
   assert.ok(
     missing.has("B-999"),
     "an absent key would make 'no sales data' indistinguishable from 'we never asked'",
@@ -100,6 +102,7 @@ export function runEmployeeAchievementGroupingTests() {
     ],
     ["B-158"],
     new Set(["2026-07"]), // August's distributor upload has NOT landed
+    new Set(),
   );
   const points = withStrayAugust.get("B-158") ?? [];
   assert.deepEqual(
@@ -125,8 +128,8 @@ export function runEmployeeAchievementGroupingTests() {
   // ── Achievement is re-derived from sums, never averaged across months ──────
   // Averaging a 10% month with a 400% month yields 205%; the like-for-like figure is 45.5%.
   const lumpy = summarizeAchievement([
-    { period: "2026-07", actualValue: 100, actualUnits: 0, targetValue: 1_000, targetUnits: 0, coveredActualValue: 100, uncoveredActualValue: 0, achievementValue: 0.1, hasTarget: true, uploaded: true },
-    { period: "2026-08", actualValue: 400, actualUnits: 0, targetValue: 100, targetUnits: 0, coveredActualValue: 400, uncoveredActualValue: 0, achievementValue: 4, hasTarget: true, uploaded: true },
+    { period: "2026-07", actualValue: 100, actualUnits: 0, targetValue: 1_000, targetUnits: 0, coveredActualValue: 100, uncoveredActualValue: 0, achievementValue: 0.1, hasTarget: true, uploaded: true, published: true },
+    { period: "2026-08", actualValue: 400, actualUnits: 0, targetValue: 100, targetUnits: 0, coveredActualValue: 400, uncoveredActualValue: 0, achievementValue: 4, hasTarget: true, uploaded: true, published: true },
   ]);
   assert.equal(
     lumpy.achievementValue,
@@ -137,7 +140,7 @@ export function runEmployeeAchievementGroupingTests() {
 
   // A window with no target at all stays null all the way out to the percent.
   const targetless = summarizeAchievement([
-    { period: "2026-03", actualValue: 500, actualUnits: 0, targetValue: 0, targetUnits: 0, coveredActualValue: 0, uncoveredActualValue: 500, achievementValue: null, hasTarget: false, uploaded: true },
+    { period: "2026-03", actualValue: 500, actualUnits: 0, targetValue: 0, targetUnits: 0, coveredActualValue: 0, uncoveredActualValue: 500, achievementValue: null, hasTarget: false, uploaded: true, published: true },
   ]);
   assert.equal(targetless.achievementValue, null, "a zero target divides to null, never 0 and never Infinity");
   assert.equal(
@@ -155,6 +158,7 @@ export function runEmployeeAchievementGroupingTests() {
     ],
     ["B-119"],
     new Set(["2026-07"]),
+    new Set(),
     "dm",
   );
   assert.equal(
@@ -173,6 +177,7 @@ export function runEmployeeAchievementGroupingTests() {
     [row({ period: "2026-07", repHrId: null, actualValue: 5_000, targetValue: 1_000 })],
     ["B-158"],
     new Set(["2026-07"]),
+    new Set(),
   );
   assert.deepEqual(
     unattributed.get("B-158"),
