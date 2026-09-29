@@ -1954,6 +1954,7 @@ import { runOrganogramVacancyHireLinkTests } from "./organogram-vacancy-hire-lin
 import { runOrganogramSeatCvNoticeTests } from "./organogram-seat-cv-notice.test.ts";
 import { runEmployeeCvCarryFromRecruitmentTests } from "./employee-cv-carry-from-recruitment.test.ts";
 import { runEmployeeDirectoryCvFilterTests } from "./employee-directory-cv-filter.test.ts";
+import { runEmployeeCvBulkMatchTests } from "./employee-cv-bulk-match.test.ts";
 import { runSeatHireCandidatePickerTests } from "./seat-hire-candidate-picker.test.ts";
 import { runOrganogramArabicSearchTests } from "./organogram-arabic-search.test.ts";
 import { runOrganogramTeamLabelTests } from "./organogram-team-label.test.ts";
@@ -6882,6 +6883,11 @@ await runTest(
 await runTest(
   "employee directory CV filter (every row builder sets hasCv, the index is invalidated on write, and the filter is in all five lists)",
   runEmployeeDirectoryCvFilterTests,
+);
+
+await runTest(
+  "bulk CV filing (an HR id is decisive, one shared first name never pre-selects, and nothing pre-selected replaces a CV)",
+  runEmployeeCvBulkMatchTests,
 );
 
 await runTest(

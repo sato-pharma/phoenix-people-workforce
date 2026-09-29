@@ -31,6 +31,7 @@ import {
   AdminTableShell,
 } from "@/components/admin/admin-design-system";
 import { EmployeeImportReview } from "@/components/employees/employee-import-review";
+import { EmployeeCvBulkUpload } from "@/components/employees/employee-cv-bulk-upload";
 import { EmployeeCvManager, EmployeeCvPicker, type StagedCv } from "@/components/employees/employee-cv-controls";
 import { EmployeeHiringDocumentsCard } from "@/components/employees/employee-hiring-documents-card";
 import { EmployeePhotoManager } from "@/components/employees/employee-photo-manager";
@@ -2380,6 +2381,25 @@ export function EmployeeManagement({
                 />
               </div>
             </div>
+
+            {/* Filing a folder of CVs at once, directly under the CV on File filter that shows who
+                is still missing one — find the 96, then fill them. It is a full-width block rather
+                than a button in the header because the open panel is a table of file → person that
+                somebody reads before pressing anything. Gated on canEdit, the same grant
+                (employees:update) the per-employee CV route asserts. */}
+            {canEdit ? (
+              <div className="border-b border-phx-line px-4 py-3">
+                <EmployeeCvBulkUpload
+                  employees={employees.map((employee) => ({
+                    displayName: employee.displayName,
+                    fullName: employee.fullName,
+                    hasCv: employee.hasCv,
+                    hrId: employee.hrId,
+                  }))}
+                  onUploaded={loadEmployees}
+                />
+              </div>
+            ) : null}
 
             {/* Mobile Card View */}
             <div className="divide-y divide-slate-100 md:hidden">
