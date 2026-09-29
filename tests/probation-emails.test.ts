@@ -30,6 +30,11 @@ export function runProbationEmailsTests() {
   assert.match(engine, /Day 75 — decision readiness/i, "Day 75 = decision readiness");
   // Day 75 must NOT auto-decide.
   assert.match(engine, /No automatic decision is made/i, "Day 75 explicitly makes no automatic decision");
+  // The automated-reminder note (owner, 2026-09-29): every milestone template says, in one line, that
+  // it is an automated Day 30/60/75 probation reminder — in BOTH the HTML and the text body, so the
+  // recipient knows the mail is system-generated whichever the client renders.
+  const automatedNote = (engine.match(/This is an automated Day 30 \/ 60 \/ 75 probation reminder\./g) ?? []).length;
+  assert.equal(automatedNote, 6, "each of the 3 milestone templates carries the automated-reminder note in both bodyHtml and bodyText");
   // Tokens added.
   assert.match(engine, /dvProgress\?: string \| null/, "dvProgress token added to EmailTemplateContext");
   assert.match(engine, /milestoneDay\?: string \| null/, "milestoneDay token added");
