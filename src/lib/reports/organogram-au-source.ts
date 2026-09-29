@@ -1,4 +1,5 @@
 import { normalizeLineName } from "@/lib/auth/permissions";
+import { loadOfferOutBySeat } from "@/lib/offers/seat-offers";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import {
   buildHeadOfficeOrganogramRows,
@@ -111,6 +112,12 @@ export async function buildOrganogramSeatReport(): Promise<VacancyReportData> {
     );
   if (error) throw new Error(`organogram seat source failed: ${error.message}`);
   const tree = (treeData ?? []) as AuTreeRow[];
+
+  // Which empty chairs already have a letter out against them (owner, 2026-09-29). A third round
+  // trip, and the cheapest of the three: it reads only offers that name a seat. It swallows its own
+  // failures into an empty map, so a vacant seat simply loses its label rather than the chart
+  // failing to draw — this decorates the organogram, it never decides what is on it.
+  const offerOutBySeat = await loadOfferOutBySeat();
 
   // Resolve occupant display names, hire dates and the WORK-ONLY employee fields from
   // the employee master (best-effort). The seat model itself carries no tenure or
@@ -307,6 +314,10 @@ export async function buildOrganogramSeatReport(): Promise<VacancyReportData> {
       replacementForHrId: null,
       seatId: s.seat_id,
       sourceRowNumber: null,
+      // Only a VACANT seat can carry one. An occupied chair has nothing pending, and reading the
+      // map for it would be the first step towards labelling a filled seat with somebody else's
+      // letter.
+      pendingOffer: occupied ? null : (offerOutBySeat.get(s.seat_id) ?? null),
       status: occupied ? "active" : "open",
       teamId: null,
       teamName: null,
@@ -354,6 +365,9 @@ export async function buildOrganogramSeatReport(): Promise<VacancyReportData> {
     ceoNodeKey: ceoSeat ? (nodeKeyBySeat.get(ceoSeat.seat_id) ?? null) : null,
     occupiedHrIds,
     vacancies: vacancyData ?? [],
+    // Head Office vacancies are drawn from `position_vacancies` and have no AU seat, so they are
+    // found by the vacancy's own id. Same map, its second key.
+    offerOutByVacancyKey: offerOutBySeat,
     // The Head Office branch reads the same employee rows, so it resolves the team the same way.
     // Without this the two halves of one chart would disagree about where a team name comes from.
     teamNameFor,

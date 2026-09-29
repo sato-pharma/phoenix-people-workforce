@@ -16,11 +16,25 @@ import type { OfferRecord, OfferVacancyOption } from "@/lib/offers/types";
  * numbers and a contract type that an offer letter has never known, and a half-configured employee
  * is one payroll then runs on. The real form still collects the rest and still writes the record.
  *
- * It DERIVES no money. `src/lib/payroll/policy.ts` owns every salary derivation in this system and
- * is owner-locked; `src/lib/offers/pay.ts` owns the letter's own split and documents at length why
- * the two must not be bound together. So the agreed monthly package is carried across exactly as it
- * was typed, as `grossSalary`, and basic, base and net are left for the form. A third opinion on
- * the money is the one thing this file must never become.
+ * It DERIVES no money — it hands the agreed package to the box the Employee Master's OWN chain
+ * starts from, and lets that chain do the rest.
+ *
+ * 🔴 THE PACKAGE IS THE **NET**, NOT THE GROSS, and this carried it as gross until 2026-09-29.
+ * Measured that day against the five accepted offers whose employee record already exists, all
+ * five agree to the pound: Mariam Younan Gaber 17,500 -> net 17,500 (gross 19,102.50), Farah
+ * Mossad Elshikh 18,000 -> net 18,000 (gross 19,727.50), Marina Osama 17,000 -> 17,000, Merna
+ * Magdy 18,500 -> 18,500, Taha Sheeba 17,500 -> 17,500. The letter's "total monthly package" is
+ * what reaches the person's hand; gross is derived above it and is always larger. Writing it into
+ * `grossSalary` put a number roughly 1,600–1,900 EGP light into the gross box of a form that
+ * derives gross from net — visible, wrong, and exactly the kind of figure nobody re-reads.
+ *
+ * So `netSalary` is the one money field this returns. `withSalaryAutofill` on the form then fills
+ * base, basic, cost of living, fuel, the insurance wage, social insurance, taxes and gross from it
+ * through `deriveSalaryFromNet` — the system's single salary authority, the same one every manual
+ * hire goes through. `src/lib/payroll/policy.ts` is owner-locked and `src/lib/offers/pay.ts`
+ * documents why the letter's own split must not be bound to it; a third opinion on the money is
+ * the one thing this file must never become, and handing the net to the existing chain is how it
+ * stays out of that business entirely.
  *
  * It fills NO work email. The address on an offer is where the letter was sent — a personal one,
  * usually a Gmail. `employees.work_email` is a COMPANY address and is UNIQUE, and a new hire's
@@ -38,11 +52,11 @@ export type OfferHireDraft = {
   areaId: string;
   departmentId: string;
   fullName: string;
-  grossSalary: string;
   hireDate: string;
   jobTitle: string;
   lineId: string;
   managerHrId: string;
+  netSalary: string;
   positionId: string;
   regionName: string;
 };
@@ -110,7 +124,9 @@ export function buildOfferHireDraft(input: {
     // written in the words a candidate reads, the seat is what the organogram is keyed on.
     jobTitle: text(vacancy?.positionTitle) || text(vacancy?.jobTitle) || text(offer.title),
     hireDate: offerHireDate(offer.startDate),
-    grossSalary:
+    // The NET. See the header — the letter's total monthly package is take-home, and the form
+    // derives everything else from this one box.
+    netSalary:
       typeof offer.totalMonthly === "number" && Number.isFinite(offer.totalMonthly) && offer.totalMonthly > 0
         ? String(offer.totalMonthly)
         : "",

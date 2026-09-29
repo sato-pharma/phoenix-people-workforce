@@ -521,6 +521,7 @@ import { runRecruitmentScreeningClaimTests } from "./recruitment-screening-claim
 import { runRecruitmentTransitionsReachableTests } from "./recruitment-transitions-reachable.test.ts";
 import { runHiringPackActorStampTests } from "./hiring-pack-actor-stamp.test.ts";
 import { runRecruitmentOfferLetterBridgeTests } from "./recruitment-offer-letter-bridge.test.ts";
+import { runOfferOutOnSeatsTests } from "./offer-out-on-seats.test.ts";
 import { runOfferHireBridgeTests } from "./offer-hire-bridge.test.ts";
 import { runOfferResendTests } from "./offer-resend.test.ts";
 import { runRecruitmentHiringAnalyticsLayoutTests } from "./recruitment-hiring-analytics-layout.test.ts";
@@ -3220,6 +3221,7 @@ await runTest("hiring pack actor stamp (an unknown editor must not erase the las
 await runTest("offer bridge (an approved ATS offer pre-fills the letter, and nothing else does)", runRecruitmentOfferLetterBridgeTests);
 await runTest("resend offer (the same frozen letter, a fresh key, Send's gate, on both surfaces)", runOfferResendTests);
 await runTest("the offer row: Withdraw, and an accepted letter carrying the hire to its vacant seat", runOfferHireBridgeTests);
+await runTest("the offer out on a vacant seat, and the package landing in the NET box", runOfferOutOnSeatsTests);
 await runTest("hiring analytics layout (desktop table, phone cards, square edges, no sideways scroll)", runRecruitmentHiringAnalyticsLayoutTests);
 await runTest("source of hire (manual tag beats tracked code, channel level is 100%, unknown is one honest bucket)", runSourceOfHireTests);
 await runTest("every application stage has a way forward (a stage nobody can leave reads as low adoption)", runRecruitmentEveryStageHasAWayForwardTests);

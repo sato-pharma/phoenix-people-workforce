@@ -1,4 +1,5 @@
 ﻿import { getRequiredEnv } from "@/lib/env";
+import type { SeatOfferOut } from "@/lib/offers/seat-offer-label";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { getMergedAreaName } from "@/lib/sales/closing-area-merges";
@@ -135,6 +136,14 @@ export type OrganogramReportRow = OrganogramWorkFields & {
   managerHrId: string | null;
   managerReplacementForHrId?: string | null;
   managerName: string | null;
+  /**
+   * The offer already out against this seat, when there is one. Set on VACANCY rows only — an
+   * occupied chair has nothing pending — and null everywhere else, which is what every row was
+   * before this existed.
+   *
+   * A LABEL, never a state. The seat stays vacant and open; the hire is still what fills it.
+   */
+  pendingOffer?: SeatOfferOut | null;
   positionId: number | null;
   positionTitle: string | null;
   regionName: string | null;
