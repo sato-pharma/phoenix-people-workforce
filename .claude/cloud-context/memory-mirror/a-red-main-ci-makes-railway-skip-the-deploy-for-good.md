@@ -158,3 +158,75 @@ when a server "never starts".
 
 **The runner container's `/home/runner/_work` SURVIVES between jobs**, so a finished run's build can be
 inspected afterwards with `railway ssh` — that is how both facts above were measured rather than inferred.
+
+## 🔴 THE REPO-WIDE `CI_RUNNER` FLIP NO LONGER EXISTS — everything above about reverting it is HISTORY
+
+**Superseded 2026-09-28 by #4594 (`9bde1c3a4`): `vars.CI_RUNNER` is read by ZERO workflows.** All six
+`runs-on` lines — `ci.yml` validate/checks/mobile/full-e2e and **`security-scan.yml` secret-scan/sast-scan**
+— now compute the runner from five conditions, and the variable `CI_RUNNER` survives only as an inert
+repository variable that reads like a working lever and is not one.
+
+    runs-on: ${{ (vars.CI_SELF_HOSTED != 'off' && vars.CI_RUNNER_LABEL != ''
+                  && github.event_name == 'pull_request'
+                  && github.event.pull_request.head.repo.full_name == github.repository
+                  && startsWith(github.head_ref, 'ci-runner/'))
+                 && vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+
+**So the window hazard is gone by construction, not by discipline:** a push to `main`, a
+`workflow_dispatch`, a scheduled run and every ordinary PR resolve `ubuntu-latest` no matter what the
+variables say. Only a same-repo PR on a `ci-runner/…` branch is eligible. **Do not "revert the variable"
+to protect a merge any more — there is nothing to revert**, and the attempt-level resolution note above
+now matters only for `CI_SELF_HOSTED` and `CI_RUNNER_LABEL`.
+
+**Live state as of 2026-09-28 00:22Z:** `CI_RUNNER_LABEL = railway-eu`, armed at the owner's instruction,
+and `railway-eu` is carried only by the three Railway replicas. **Proven live rather than computed:**
+dispatch run `36362005374` on `main` with the label armed put validate, checks and mobile all on
+`GitHub Actions / ubuntu-latest` while the three self-hosted runners sat idle.
+
+🔴 **A RETIRED-VARIABLE SWEEP NEEDS A WORD BOUNDARY OR IT FINDS ITS OWN REPLACEMENT.**
+`git grep vars.CI_RUNNER` reports the six NEW lines, because it matches `vars.CI_RUNNER_LABEL` as a
+substring — I read that as "2 files still use the retired variable" and nearly relayed it. Use
+`git grep -oE 'vars\.CI_RUNNER([^_]|$)'`; the true count of retired reads is 0.
+
+### ✅ The self-hosted runner is PROVEN end to end — 2026-09-28 00:39 Cairo
+
+PR #4599 on branch `ci-runner/headwind-test-comment`, with `CI_RUNNER_LABEL=railway-eu`:
+
+    validate     SUCCESS  phoenix-ci-37e95625-…   step 19 "Run Playwright login smoke test": SUCCESS
+    checks       SUCCESS  phoenix-ci-1116628c-…
+    mobile       SUCCESS  phoenix-ci-37e95625-…
+    secret-scan  SUCCESS  phoenix-ci-8f9e5a88-…   <- security-scan.yml, the workflow nobody watched
+    full-e2e     skipped  (dispatch-only by design)
+
+All three replicas took work, so the pool is genuinely three deep. **The `PORT=8080` diagnosis is
+confirmed by the only test that counts** — step 19 had never passed on a runner before, and
+`playwright.config.ts`'s `env: { PORT: "3000" }` is what makes it pass.
+
+🔴 **A PROOF RUN MUST TOUCH CODE, NOT DOCS.** The docs-only fast path skips the build and Playwright
+entirely, which is how an earlier "validate passed on self-hosted" turned out to prove nothing (its head
+touched one `.md`). Put the change in a `.ts` file or the run is theatre.
+
+**And `secret-scan` is the check to watch on any runner change**: it lives in `security-scan.yml`, which
+has no `push` trigger, so it never appears on a `main` run — a runner problem there is invisible until a
+PR goes red.
+
+### Widening the switch to every PR is CAPACITY-BOUND, not one clause — measured 2026-09-28
+
+Dropping `startsWith(github.head_ref, 'ci-runner/')` is a one-line change and it is NOT the hard part.
+Measured from the last 100 `pull_request` CI runs over 3.3 h:
+
+    30.2 PR CI runs/hour · peak 6 CONCURRENT runs · 3 required jobs each + secret-scan
+    self-hosted job times: validate 160s (hosted 268s) · checks 220s (272s) · mobile 9s (14s)
+    one runner ~28 jobs/hour · demand ~121 jobs/hour  =>  ~5 runners steady, 18 jobs at burst peak
+
+**The Railway service runs THREE replicas**, so widening today would queue REQUIRED checks at peak and
+block merges — worse than the status quo. **The runner is genuinely faster per job** (validate −40%), so
+the case for widening is real; the gate is replica count, and that is Railway compute, i.e. the owner's
+cost decision. `RUNNER_LABELS` and replica count both live on the `ci-runner` service.
+
+🔴 **`security-scan.yml`'s `sast-scan` can NEVER be self-hosted — its two conditions are mutually
+exclusive.** `if: github.event_name != 'pull_request'` against a `runs-on` whose self-hosted branch
+requires `github.event_name == 'pull_request'`. So that expression always resolves `ubuntu-latest`, and
+semgrep has never run on a replica (8 recent security runs: all `skipped`, no runner assigned). **Six
+switched `runs-on` lines, but only five can ever fire** — and widening does not send semgrep to the
+runner; changing that `if` would.

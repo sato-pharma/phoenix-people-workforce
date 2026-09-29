@@ -76,9 +76,13 @@ backends** and kept as the rollback. `mdm.satopharma.com` went 426 ms → ~245 m
 
 ## 🔴 An orphaned Railway volume cannot be deleted NOW, and both tools say it is deleted anyway
 
-🔴 **AN ORPHANED VOLUME MAY CARRY A 48-HOUR DELETE SCHEDULE OR NONE AT ALL, AND YOU CANNOT TELL WHICH
-WITHOUT READING `railway volume list` — corrected 2026-09-28, after I told the owner twice that one
-would "go on its own" when it never will.** Measured the same night, same project, both detached:
+🔴 **THE PURGE DATE APPEARS ON A DELAY, SO A SINGLE READ OF `railway volume list` CANNOT TELL YOU
+WHETHER AN ORPHAN IS PERMANENT — READ IT TWICE, HOURS APART.** Settled 2026-09-28 after three readings
+disagreed and two sessions each "corrected" the other: `postgres-volume-we4X` showed a date immediately,
+`postgres-volume-0WKb` showed NONE for about two hours after its service was deleted, then showed
+`Deletes on: Sep 30 2026 2:38 AM`. **An absent date is not "never".** Neither report was wrong; both were
+single reads of a value that was still changing, and acting on the "no schedule" reading would have
+hand-deleted 931 MB that Railway was already purging. Measured the same night, same project, both detached:
 `postgres-volume-we4X` reads `Deletes on: Sep 30 2026 12:09 AM +03:00`; `postgres-volume-0WKb`, orphaned
 by DELETING ITS SERVICE, has **no `Deletes on:` line at all** and sits on 931 MB indefinitely. The
 difference appears to be how it was orphaned — a volume detached from a surviving service got the clock,
@@ -159,4 +163,80 @@ returned 0 the whole time. **A Postgres service on Railway is not backed up unle
 - Enabling more kinds costs more stored copies, so **which kinds are on is the owner's decision**, not a
   tidy-up.
 
+**Live on `headwind-db-eu` as of 2026-09-28, both at the owner's instruction:** `DAILY` cron
+`34 14 * * *` (17:34 Cairo, 6 days) and `WEEKLY` cron `47 3 * * 6` (Saturday 06:47 Cairo, 27 days) —
+a ~4-week window rather than 6 days, which is what a fault noticed in week two needs. `MONTHLY` is off.
+🔴 **The `kinds`-is-the-whole-set trap bites on the SECOND change, not the first:** adding the weekly
+meant sending `["DAILY","WEEKLY"]` built from the existing list, because `["WEEKLY"]` would have deleted
+the daily and the mutation would have reported success. Read the list back and confirm the older kind
+survived.
+
 Related: [[a-red-main-ci-makes-railway-skip-the-deploy-for-good]]
+
+### The CI runner's labels, and why a runner COUNT is never a fact
+
+**The Railway runner's labels are one variable — `RUNNER_LABELS` on the `ci-runner` service — and changing
+it redeploys, which makes every replica RE-REGISTER under a new name.** Set 2026-09-28 at the owner's
+instruction ("give the Railway replicas their own runner label"):
+`self-hosted,linux,x64,phoenix` → `self-hosted,linux,x64,phoenix,railway-eu`. **Add to the set, never
+replace it**, or anything already targeting the old labels stops matching.
+
+🔴 **A RUNNER COUNT IS A STATUS, NOT A FACT, and stale registrations defeat a label distinction.** The
+container registers NON-ephemerally, so every redeploy leaves the old registration behind — online → 3,
+then 6, then 3 again inside four minutes — and GitHub only prunes an offline self-hosted runner after **14
+days**. Those leftovers carry the OLD label set, so leaving them destroys the very distinction a new label
+was added for. **Deregister them after any label change or redeploy**
+(`gh api -X DELETE repos/<o>/<r>/actions/runners/<id>`, for `status != "online"` and `busy == false`), and
+never quote a total in a doc — read `actions/runners` and compare LABEL SETS, because when every runner
+carries identical labels no label can select a host at all.
+
+**`runs-on: self-hosted` matches EVERY self-hosted runner**, so a switch must select a distinct label.
+`railway-eu` is carried only by these three replicas. Setting `CI_RUNNER_LABEL` is what ARMS a
+per-branch switch, and that is the owner's call — labelling the runner does not route a single job.
+
+### 🔴 A `.slice(0, N)` IN YOUR OWN PROBE BECOMES A FALSE "COMPLETE LIST" ONE MESSAGE LATER
+
+**2026-09-28, the worst of the night's eight false reads, because the truncation was mine.** Probing
+Hetzner's CPX page I matched every `CPX\d+`, printed `.slice(0, 6)`, and then reported "the current
+lineup reads CPX12 · CPX22 · CPX32 · CPX42 · CPX52 · CPX62" and "no CPX31 appears any more". The match
+had returned **11**. Both generations are on that page — `CPX11 CPX12 CPX21 CPX22 CPX31 CPX32 CPX41
+CPX42 CPX51 CPX52 CPX62` — so `CPX31` is live, and the runner doc's "**NOT CPX31**" warning is
+load-bearing: it is one character from `CPX32` and picking it spends real money on the wrong box. A peer
+refused to delete the warning on my word and checked; had it trusted me the guard would have gone.
+
+**The rule: when a probe's output is capped, say the CAP and the TOTAL, or do not draw a set-membership
+conclusion from it at all.** "I printed the first 6 of 11" is a different sentence from "the lineup is
+these 6", and only the first one is true. This is the self-inflicted form of the night's pattern — a
+single read presented as a fact — and it is harder to catch because nothing external changed underneath
+it; the evidence was complete and the *report* of it was not.
+
+**Also settled, two independent probes:** Hetzner's public `/cloud/regular-performance/` page yields **no
+price at all** — `.ho-price-container` and `.main_price` (the selectors its own `cloudMatrixTableDO.js`
+names) match **0** elements, and `/€\s?\d+[.,]\d{2}/` matches nothing anywhere in the body. The
+authenticated console is the only place a Hetzner price exists; do not quote one from the public site.
+
+### 🔴 A DATED MEASUREMENT IS SAFE TO WRITE IN A DOC; A CURRENT VALUE IS NOT
+
+The sharper form of the capped-output rule above, settled 2026-09-28 in `docs/ci-self-hosted-runner.md`
+after that one file was wrong about a live value **twice in one night** — the CPX32 cost (#4607) and the
+switch state (#4618/#4619).
+
+**"On 2026-09-28, dispatch `36362005374` ran hosted with the label armed" is true for ever, because it
+carries its date. "The label is set today" cannot be.** Both look like facts on the page; only one can
+rot. A repository variable changes without a commit, so any value written into prose is a snapshot that
+begins rotting as it is written — and a TIMESTAMP does not save it, which is the part I got wrong. I
+"fixed" a false state line by writing the true value plus `2026-09-28T00:22:00Z`, which is auditable but
+still reads as current to anyone who does not do the subtraction: the same failure one layer along. The
+durable shape is **a table of what each STATE MEANS plus `gh variable list` as the only source**, with
+dated measurements as the evidence.
+
+**So: never write a live value into a doc — write what each value would mean, and cite dated
+measurements.** Applies to repo/environment variables, runner counts, volume states, deploy revisions
+and anything else read from an API rather than from the commit.
+
+🔴 **Two sessions were given the same merge instruction for one line, twice in one hour, and neither could
+see the other's window.** #4619 (mine) merged before #4618's author's "please hold" arrived, leaving their
+PR DIRTY. The only defence that worked was saying what had been done IMMEDIATELY and conceding the design
+point unasked — cost was one hand-resolved merge, not a silent overwrite. **Resolve a conflict on the
+branch whose WORKTREE holds it**, and by hand: `git checkout --ours` takes the whole file and would have
+dropped an unrelated comment in a second file.
