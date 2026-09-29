@@ -37,9 +37,7 @@ import { flowFieldLayer, type DocumentFieldRow } from "@/lib/hiring-pack/field-l
 import {
   HOUSE_COLORS,
   HOUSE_MARK_SRC,
-  HOUSE_SEALED_ATTRS,
   houseBandBackground,
-  houseSealImg,
 } from "@/lib/hiring-pack/house-identity";
 import {
   escapeHtml,
@@ -195,10 +193,10 @@ function detailsGrid(values: SalaryLetterEnValues): string {
 }
 
 /**
- * The signature table — one row for the company, and the seal in its own Company stamp box.
+ * The signature table — one row for the company, with an EMPTY Company stamp box.
  *
- * The same impression, from the same helper, as the Arabic certificate — so it is one seal on the
- * company's side and never over the line somebody signs.
+ * The heading stays: it tells whoever signs where to press the real stamp. Nothing is printed into
+ * it (owner, 2026-09-29 — no seal on any hiring paper; the job offer keeps its own).
  */
 function signatureTable(): string {
   const head = ["Name and title", "Signature", "Company stamp"]
@@ -208,7 +206,7 @@ function signatureTable(): string {
       <thead><tr><td class="doc-sig__corner"></td>${head}</tr></thead>
       <tbody><tr><th class="doc-sig__party">For the company — Human Resources</th>` +
     `<td class="doc-sig__cell"></td><td class="doc-sig__cell"></td>` +
-    `<td class="doc-sig__cell"${HOUSE_SEALED_ATTRS}>${houseSealImg({ sizeMm: 34 })}</td></tr></tbody>
+    `<td class="doc-sig__cell"></td></tr></tbody>
     </table>`;
 }
 

@@ -52,7 +52,9 @@ function renderHtml(pack: ReturnType<typeof buildManualHiringPack>, copies = 1):
 
 /**
  * THE ARABIC LETTER'S LAYOUT — the certificate's one-column shape (company block, identity grid,
- * a signature table), with NO COMPANY SEAL: the owner, 2026-09-20, "remove the stamp".
+ * a signature table), with NO COMPANY SEAL: the owner, 2026-09-20, "remove the stamp". It was the
+ * FIRST paper to lose the stamp; on 2026-09-29 he removed it from every hiring paper, so the
+ * per-template `unsealed` flag this letter once carried is gone with nothing left for it to switch.
  */
 function testTheLetterWearsTheCertificatesLayoutWithoutASeal() {
   const pack = buildManualHiringPack(SAMPLE, COMPANY_DETAILS_DEFAULT);
@@ -67,25 +69,30 @@ function testTheLetterWearsTheCertificatesLayoutWithoutASeal() {
   assert.ok(!page.includes("خاتم الشركة"), "the Company stamp label is gone with the stamp");
   assert.ok(!cells.some((cell) => cell.includes("phx-seal")), "and nothing is stamped over the signature line");
   assert.ok(!page.includes("border-radius"), "every corner square, by absence");
-  assert.equal(HR_PAPER_SALARY_LETTER_AR_V1.unsealed, true, "the paper says it carries no seal");
 }
 
 /**
- * THE SEAL FLAG IS WHAT KEEPS THE SEAL OFF — not the missing label. With no خاتم column the signature
- * table falls back to stamping column one, which is the line somebody signs; break the flag and this
- * fires on the seal count, not on wording.
+ * NO TEMPLATE CAN TURN A SEAL BACK ON.
+ *
+ * This letter used to be kept clean by an `unsealed` flag, and the flag was the guard — with it off,
+ * the signature table's fallback stamped column one, which is the line somebody signs. Since
+ * 2026-09-29 the renderer draws no seal at all, so the guard is now the ABSENCE of any switch: a
+ * template carrying a stray `unsealed: false` (or any other property) still renders blank cells.
  */
-function testTheSealFlagIsTheGuardNotTheLabel() {
+function testNoTemplatePropertyCanBringTheSealBack() {
   const pack = buildManualHiringPack(SAMPLE, COMPANY_DETAILS_DEFAULT);
-  const sealed = renderHrPaperHtml(pack, 1, { ...HR_PAPER_SALARY_LETTER_AR_V1, unsealed: false });
+  const forced = renderHrPaperHtml(pack, 1, {
+    ...HR_PAPER_SALARY_LETTER_AR_V1,
+    unsealed: false,
+  } as typeof HR_PAPER_SALARY_LETTER_AR_V1);
   assert.equal(
-    (sealed.match(/class="phx-seal"/g) ?? []).length,
-    1,
-    "with the flag off the fallback puts the seal on column one — the signature line",
+    (forced.match(/class="phx-seal"/g) ?? []).length,
+    0,
+    "a leftover unsealed:false must not resurrect the stamp — the renderer has no seal to draw",
   );
   assert.ok(
-    signatureCells(pageOf(sealed))[1].includes("phx-seal"),
-    "which is exactly what the flag exists to prevent",
+    !signatureCells(pageOf(forced)).some((cell) => cell.includes("phx-seal")),
+    "and no signature cell is stamped",
   );
 }
 
@@ -212,7 +219,7 @@ function testATypedInLetterAsksForTheBaseSalary() {
 
 export function runHiringPackSalaryLetterArTests() {
   testTheLetterWearsTheCertificatesLayoutWithoutASeal();
-  testTheSealFlagIsTheGuardNotTheLabel();
+  testNoTemplatePropertyCanBringTheSealBack();
   testTheLetterStatesTheBaseSalary();
   testNoBaseSalaryIsABlankNeverZero();
   testALeaverGetsThePastTense();

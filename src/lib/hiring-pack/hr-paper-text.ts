@@ -725,10 +725,11 @@ export const HR_PAPER_EXPERIENCE_CERTIFICATE_V1: HrPaperTemplate = {
  * it through the payroll policy's basic formula. A missing base salary prints as a dotted rule, never
  * as a zero.
  *
- * NO COMPANY SEAL (`unsealed`) and a copies sentence worked out from the number the desk chose at
- * print time — same day, same message: "remove the stamp", «تحرر من نسختين نسخة تسلم …», and "ask me
- * how many copies … and based on what I tell you, you write here". `{{COPIES_CLAUSE}}` is
- * `copiesClauseAr` (copies-clause.ts).
+ * NO COMPANY SEAL — the first paper to lose it (owner, 2026-09-20: "remove the stamp"), and since
+ * 2026-09-29 every other hiring paper has followed, so there is no longer a flag to set. A copies
+ * sentence worked out from the number the desk chose at print time came the same day — «تحرر من
+ * نسختين نسخة تسلم …», and "ask me how many copies … and based on what I tell you, you write here".
+ * `{{COPIES_CLAUSE}}` is `copiesClauseAr` (copies-clause.ts).
  */
 export const HR_PAPER_SALARY_LETTER_AR_V1: HrPaperTemplate = {
   id: "salary-letter-ar-v1",
@@ -783,7 +784,6 @@ export const HR_PAPER_SALARY_LETTER_AR_V1: HrPaperTemplate = {
   serviceNoteAr: null,
   serviceFields: [],
   footerAr: "شهادة راتب · صادرة عن إدارة الموارد البشرية",
-  unsealed: true,
 };
 
 /*

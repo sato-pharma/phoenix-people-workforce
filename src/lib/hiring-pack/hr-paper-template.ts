@@ -268,14 +268,13 @@ export type HrPaperTemplate = {
   serviceNoteAr: string | null;
   serviceFields: readonly HrPaperField[];
   footerAr: string;
-  /**
-   * TRUE ON A PAPER THAT CARRIES NO COMPANY SEAL. The signature table stamps the seal into its
-   * `التوقيع والختم` cell — or, failing a `خاتم` column, into column one — and a paper with neither
-   * must say so, because dropping the `خاتم الشركة` label alone would move the seal onto the line
-   * somebody signs. The Arabic HR letter is the one such paper (owner, 2026-09-20: "remove the
-   * stamp").
+  /*
+   * THERE IS NO `unsealed` FLAG ANY MORE, and that is the point: NO hiring paper carries a printed
+   * company seal (owner, 2026-09-29 — "remove the sato pharma stamp/seal from all hiring documents,
+   * leave it only in job offers"). It existed from 2026-09-20 for the one paper he exempted then,
+   * the Arabic salary letter; the exemption is now the rule, so a per-template switch would only
+   * invite one back. The job offer's seal lives in `src/lib/offers/` and is untouched.
    */
-  unsealed?: boolean;
 };
 
 /** The dotted rule an absent value prints as. The same one every other house paper uses. */
