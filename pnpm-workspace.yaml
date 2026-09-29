@@ -154,41 +154,14 @@ overrides:
   # no postcss release resolving >=3.3.18 on its own existed when this was added.
   # Remove once postcss ships one.
   nanoid: ^3.3.18
-  # Added 2026-09-09 for the Nodemailer addressparser advisory (high): quadratic O(n^2) time in
-  # `addressparser` lets a crafted address list stall the event loop — remote denial of service.
-  # Advisory covers `<9.1.0` and patches at 9.1.0; the graph had resolved TWO instances below it,
-  # 9.0.3 and 9.0.5.
-  #
-  # THIS IS PRODUCTION, by both routes. `imapflow` is the mail-ingestion client and `mailparser` is
-  # a direct `dependencies` entry — the same pair the deepmerge-ts and ip-address notes above are
-  # about — so `pnpm audit --prod` goes red and every open PR is blocked until the floor moves.
-  # It reads addresses off inbound mail, which is attacker-supplied by definition: anyone who can
-  # send to the monitored careers@ inbox chooses the header this parses.
-  #
-  # A floor inside the 9.x major, not a jump to 10.x. imapflow and mailparser both declare 9.x, and
-  # 9.1.1 is the newest release in that line, so this is a drop-in rather than a major bump forced
-  # through an override. Remove once both parents resolve >=9.1.0 unaided.
-  #
-  # Same registry-reads-live shape as the nanoid and deepmerge-ts notes: main was green at 22:30
-  # Cairo and the next run at 22:44 was not, with no diff between them. The failure looks like it
-  # belongs to whatever branch is in flight, and does not.
-  # WHERE IT BITES IF IT IS WRONG: mailbox monitoring and the CV intake reader, both of which speak
-  # IMAP through imapflow. A parse regression there is silent — mail simply stops being read.
-  #
-  # SCOPED 2026-09-29, from a bare `nodemailer: ^9.1.1` to the two parents that actually need the
-  # floor. A bare override applies to the WHOLE graph, INCLUDING this repo's own direct
-  # `dependencies` entry — so it silently capped our own nodemailer at 9.1.1 too. That is exactly
-  # why Dependabot #4698 could set package.json to `^10.0.2` and still leave the lockfile resolving
-  # 9.1.1: the override outranks the manifest, and CI/Docker install `--frozen-lockfile`, so the
-  # upgrade was a no-op wearing the shape of a bump. The advisory floor is unchanged for the two
-  # parents that still pin below it — imapflow@1.4.9 declares an EXACT `nodemailer: 9.0.3` and
-  # mailparser@3.9.16 an EXACT `9.0.5`, both under the `<9.1.0` advisory — while the direct
-  # dependency is now free to resolve 10.x. The graph therefore holds two nodemailer copies on
-  # purpose: 9.1.1 under the two mail READERS, 10.x for the SMTP SEND path. Collapse this back to a
-  # bare override only once both parents resolve >=9.1.0 unaided (mailparser already does from
-  # 3.9.26, which moved to nodemailer 10.x; imapflow dropped the dependency entirely in 2.x).
-  "imapflow>nodemailer": ^9.1.1
-  "mailparser>nodemailer": ^9.1.1
+  # The two scoped nodemailer 9.1.1 floors (`imapflow>nodemailer`, `mailparser>nodemailer`) were
+  # REMOVED 2026-09-29 because both mail-reader parents moved off nodemailer 9.x: imapflow ^2.1.2
+  # dropped the nodemailer dependency entirely, and mailparser ^3.9.26 resolves nodemailer 10.x. With
+  # no 9.x copy left in the graph there is nothing for the floors to hold above, and keeping them
+  # would only pin a version the parents no longer pull. This clears Dependabot #87 (process-global
+  # DNS cache reuses TLS servername → cross-tenant SMTP credential disclosure) and #97 (nested
+  # recipient arrays bypass the parser depth limit → stack-exhaustion DoS), both patched at 10.0.2.
+  # This repo's own direct `nodemailer: ^10.0.11` (the SMTP send path) is already safe and unchanged.
   # Bumped 2026-08-04 for GHSA-fxqj-rqcc-2cmp (incomplete fix of GHSA-6g55-p6wh-862q: an
   # attacker-controlled sourceMappingURL reads arbitrary .map files when `from` is unset).
   # Advisory covers `<=8.5.22`, patched at 8.5.23; the previous ^8.5.18 floor ALLOWED the fix but
