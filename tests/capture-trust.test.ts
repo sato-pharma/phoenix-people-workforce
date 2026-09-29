@@ -221,6 +221,36 @@ function runWritePathTests() {
     );
   }
 
+  // THE “0 CUSTOMERS” PANEL. The owner was sent a screenshot showing “Validated · 1” beside an
+  // empty “Not Usable Yet — 0 customers” panel, for a capture that was genuinely unusable. Two
+  // separate defects produced it, and both are pinned:
+  //   1. the tabs split on EVIDENCE alone, so a customer whose live photo and pin were perfect but
+  //      whose LINK was held on a governorate mismatch counted as Validated and was missing from
+  //      the queue that exists to list exactly him; and
+  //   2. the tab BUTTON was gated on pendingGroups.length > 0 while the panel BODY rendered on the
+  //      raw activeTab, so an emptied queue left the panel on screen with nothing in it.
+  const workspace = read("../src/components/employee-portal/marketing-validation-workspace.tsx");
+  assert.ok(
+    workspace.includes("&& group.rows.some((row) => linkStatusIsSelectable(row.validationStatus)),"),
+    "Validated must mean USABLE - evidence alone lets a held link show as ready",
+  );
+  assert.ok(
+    workspace.includes("|| !group.rows.some((row) => linkStatusIsSelectable(row.validationStatus)),"),
+    "Not Usable Yet must be the strict complement, or a held customer appears in neither tab",
+  );
+  assert.ok(
+    workspace.includes("const effectiveTab = activeTab === \"pending\" && pendingGroups.length === 0"),
+    "the rendered tab must fall back when the pending queue is empty",
+  );
+  assert.ok(
+    !workspace.includes('{activeTab === "validation" ? ('),
+    "the panel bodies must render on effectiveTab, never the raw activeTab",
+  );
+  assert.ok(
+    workspace.includes("hasGovernorateHold(pendingGroups.flatMap((group) => group.rows))"),
+    "the panel must name the REAL reason - telling a held capture to retake its photo is wrong advice",
+  );
+
   // PHOENIX CRM is the REFERENCE DESIGN and was already the strongest of the lot — it never had
   // this bug and is deliberately not changed by it. Three properties make it stronger than a
   // single shutter fix, and all three are pinned here because a refactor toward the simpler

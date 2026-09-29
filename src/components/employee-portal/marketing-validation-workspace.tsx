@@ -2244,23 +2244,44 @@ export function MarketingValidationWorkspace() {
   }, [workspace.rows]);
   const validatedGroups = useMemo(
     () =>
-      customerGroups.filter((group) =>
-        customerIsEvidenceValidated(group.rows.map(fieldEvidenceGapInput)),
+      customerGroups.filter(
+        (group) =>
+          customerIsEvidenceValidated(group.rows.map(fieldEvidenceGapInput))
+          // AND still reachable by the request form. Evidence alone was the test until 2026-09-29,
+          // and it is not the same question: a capture can carry a perfect live photo and pin and
+          // still be unusable because its LINK is held. That is exactly what the owner was sent a
+          // screenshot of - “Validated · 1” beside an empty “0 customers” panel, for a customer
+          // held on a governorate mismatch. linkStatusIsSelectable is the same predicate the
+          // request form’s picker uses, so this tab now means what its name says: ready to use.
+          && group.rows.some((row) => linkStatusIsSelectable(row.validationStatus)),
       ),
     [customerGroups],
   );
   /**
-   * Everything not validated by live evidence — the Validate queue. This is now a strict complement
+   * Everything NOT USABLE in a marketing request — the “Not Usable Yet” queue. This is now a strict complement
    * of `validatedGroups` over the same customer groups, so a customer can never sit in both tabs and
    * one whose capture is unfinished can never hide in Validated behind a stale stamp.
    */
   const pendingGroups = useMemo(
     () =>
       customerGroups.filter(
-        (group) => !customerIsEvidenceValidated(group.rows.map(fieldEvidenceGapInput)),
+        (group) =>
+          !customerIsEvidenceValidated(group.rows.map(fieldEvidenceGapInput))
+          || !group.rows.some((row) => linkStatusIsSelectable(row.validationStatus)),
       ),
     [customerGroups],
   );
+  /**
+   * The tab actually RENDERED, which is not always the tab last clicked.
+   *
+   * The tab BUTTON for “Not Usable Yet” only exists while something is in it, but the panel body
+   * rendered on the raw activeTab - so the moment a save emptied the queue the button vanished and
+   * the empty panel stayed on screen, headed “0 customers”. That is what the owner was looking at.
+   *
+   * Derived during render rather than corrected in an effect: a setState inside useEffect is a lint
+   * error in this repo, and it would also paint the empty panel once before fixing itself.
+   */
+  const effectiveTab = activeTab === "pending" && pendingGroups.length === 0 ? "validated" : activeTab;
   const selectedValidatedGroup = useMemo(
     () =>
       validatedGroups.find((group) => group.key === selectedValidatedCustomerKey)
@@ -2982,16 +3003,16 @@ export function MarketingValidationWorkspace() {
           pendingGroups.length > 0 ? "grid-cols-3" : "grid-cols-2"
         }`}
       >
-        <TabButton active={activeTab === "validation"} onClick={() => setActiveTab("validation")}>
+        <TabButton active={effectiveTab === "validation"} onClick={() => setActiveTab("validation")}>
           <span className="sm:hidden">Validate</span>
           <span className="hidden sm:inline">Validate Customer</span>
         </TabButton>
-        <TabButton active={activeTab === "validated"} onClick={() => setActiveTab("validated")}>
+        <TabButton active={effectiveTab === "validated"} onClick={() => setActiveTab("validated")}>
           <span className="sm:hidden">Validated · {validatedGroups.length}</span>
           <span className="hidden sm:inline">Validated ({validatedGroups.length})</span>
         </TabButton>
         {pendingGroups.length > 0 ? (
-          <TabButton active={activeTab === "pending"} onClick={() => setActiveTab("pending")}>
+          <TabButton active={effectiveTab === "pending"} onClick={() => setActiveTab("pending")}>
             <span className="sm:hidden">Not usable · {pendingGroups.length}</span>
             <span className="hidden sm:inline">Not Usable Yet ({pendingGroups.length})</span>
           </TabButton>
@@ -3006,7 +3027,7 @@ export function MarketingValidationWorkspace() {
       ) : null}
 
       {/* --------- Validation Form Tab --------- */}
-      {activeTab === "validation" ? (
+      {effectiveTab === "validation" ? (
         <Card className="overflow-hidden rounded-none border border-slate-200 bg-white p-0 shadow-sm">
           <form aria-busy={isSaving} onSubmit={submitValidation}>
             <div className="border-b border-slate-100 bg-gradient-to-r from-white via-orange-50/40 to-white px-4 py-4 sm:px-5">
@@ -3646,7 +3667,7 @@ export function MarketingValidationWorkspace() {
             </div>
           </form>
         </Card>
-      ) : activeTab === "pending" ? (
+      ) : effectiveTab === "pending" ? (
         /* --------- Not Usable Yet Tab --------- */
         <Card className="rounded-none border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between gap-3">
@@ -3662,8 +3683,13 @@ export function MarketingValidationWorkspace() {
           <div className="mt-3 flex items-start gap-2 rounded-none border border-amber-200 bg-amber-50 px-3.5 py-2.5">
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
             <p className="text-phx-sm font-semibold leading-relaxed text-amber-800">
-              Saved, but not yet usable in marketing requests. Tap Capture Evidence to add the missing photo and
-              location, or ask a Super Admin to release it.
+              {/* The old wording said “add the missing photo and location” unconditionally. For a
+                  governorate hold that is the WRONG advice and the wrong reason: the photo and the
+                  pin are already there, retaking them lands on the identical hold, and the question
+                  is about the CODE. Same split the save-path message already makes. */}
+              {hasGovernorateHold(pendingGroups.flatMap((group) => group.rows))
+                ? "Saved, but not yet usable in marketing requests. Check the distributor code is the right one for that shop, then ask a Super Admin or the CEO to release it."
+                : "Saved, but not yet usable in marketing requests. Tap Capture Evidence to add the missing photo and location, or ask a Super Admin to release it."}
             </p>
           </div>
 
