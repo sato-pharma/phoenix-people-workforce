@@ -34,6 +34,7 @@ import {
 import {
   HIRING_DOCUMENT_SIGNAL_LABEL,
   HIRING_DOCUMENT_SIGNAL_RANK,
+  hiringDocumentApplies,
   hiringDocumentDaysOverdue,
   hiringDocumentSignal,
   hiringDocumentSignalNeedsAttention,
@@ -286,6 +287,7 @@ function countSignals(input: HiringDocumentsWorkbookInput, today: Date): MatrixS
   for (const employee of input.employees) {
     let outstanding = 0;
     for (const document of input.documents) {
+      if (!hiringDocumentApplies(document, employee)) continue;
       const signal = hiringDocumentSignal(entryOf(employee, document.id), today);
       stats.slots += 1;
       if (signal === "complete") stats.complete += 1;
@@ -352,8 +354,14 @@ function buildMatrixSheet(workbook: ExcelJS.Workbook, input: HiringDocumentsWork
     const zebra = employeeIndex % 2 === 1;
     const completion = hiringDocumentCompletionPercent(employee, input.documents);
 
-    const signals = input.documents.map((document) => hiringDocumentSignal(entryOf(employee, document.id), today));
-    const outstanding = signals.filter(hiringDocumentSignalNeedsAttention).length;
+    // `null` where the document does not apply to this person at all — an exit paper against
+    // somebody who has not left. It is not complete and it is not outstanding: it is not a slot.
+    const signals = input.documents.map((document) =>
+      hiringDocumentApplies(document, employee)
+        ? hiringDocumentSignal(entryOf(employee, document.id), today)
+        : null,
+    );
+    const outstanding = signals.filter((signal) => signal !== null && hiringDocumentSignalNeedsAttention(signal)).length;
     const overdue = signals.filter((signal) => signal === "overdue").length;
     const unevidenced = signals.filter((signal) => signal === "unevidenced").length;
 
@@ -377,6 +385,12 @@ function buildMatrixSheet(workbook: ExcelJS.Workbook, input: HiringDocumentsWork
       const cell = excelRow.getCell(FIXED_MATRIX_COLUMNS.length + index + 1);
       const signal = signals[index];
       const entry = entryOf(employee, document.id);
+      if (signal === null) {
+        // Grey, wordless, and deliberately not a state: an exit paper for somebody still working
+        // here is not "pending" and not "complete". A dash says that without adding a sixth colour.
+        bodyCell(cell, "—", { center: true, zebra });
+        return;
+      }
       signalCell(cell, HIRING_DOCUMENT_SIGNAL_LABEL[signal], SIGNAL_TONE[signal], { center: true });
       const days = hiringDocumentDaysOverdue(entry, today);
       const note = [
@@ -428,6 +442,7 @@ function buildActionSheet(workbook: ExcelJS.Workbook, input: HiringDocumentsWork
   const rows: ActionRow[] = [];
   for (const employee of input.employees) {
     for (const document of input.documents) {
+      if (!hiringDocumentApplies(document, employee)) continue;
       const entry = entryOf(employee, document.id);
       const signal = hiringDocumentSignal(entry, today);
       if (!hiringDocumentSignalNeedsAttention(signal)) continue;
@@ -561,7 +576,11 @@ function buildDocumentSheet(workbook: ExcelJS.Workbook, input: HiringDocumentsWo
 
   input.documents.forEach((document, index) => {
     const counts = { complete: 0, missing: 0, overdue: 0, pending: 0, unevidenced: 0 };
-    for (const employee of input.employees) {
+    // An exit document is counted only against the people it applies to, so its "Submitted %" is
+    // out of the leavers rather than out of everybody — a clearance filed for the one person who
+    // resigned reads 100%, not 3%.
+    const population = input.employees.filter((employee) => hiringDocumentApplies(document, employee));
+    for (const employee of population) {
       counts[hiringDocumentSignal(entryOf(employee, document.id), today)] += 1;
     }
     totals.complete += counts.complete;
@@ -571,10 +590,14 @@ function buildDocumentSheet(workbook: ExcelJS.Workbook, input: HiringDocumentsWo
     totals.overdue += counts.overdue;
 
     const arrived = counts.complete + counts.unevidenced;
-    const percent = input.employees.length === 0 ? 0 : Math.round((arrived / input.employees.length) * 100);
+    const percent = population.length === 0 ? 0 : Math.round((arrived / population.length) * 100);
     const excelRow = sheet.getRow(row);
     const zebra = index % 2 === 1;
-    bodyCell(excelRow.getCell(1), document.name, { bold: true, zebra });
+    bodyCell(
+      excelRow.getCell(1),
+      document.isExitDocument ? `${document.name}  (leavers only)` : document.name,
+      { bold: true, zebra },
+    );
     signalCell(excelRow.getCell(2), arrived, arrived > 0 ? "good" : "warn", { center: true });
     signalCell(excelRow.getCell(3), counts.unevidenced, counts.unevidenced === 0 ? "good" : "warn", { center: true });
     signalCell(excelRow.getCell(4), counts.pending, counts.pending === 0 ? "good" : "warn", { center: true });
@@ -585,7 +608,13 @@ function buildDocumentSheet(workbook: ExcelJS.Workbook, input: HiringDocumentsWo
   });
 
   if (input.documents.length > 0) {
-    const slots = input.documents.length * input.employees.length;
+    // The applicable slots, not employees x documents — the two diverged the moment an exit paper
+    // stopped counting against an active employee, and dividing by the grid would hold the total
+    // permanently under 100%.
+    const slots = input.employees.reduce(
+      (count, employee) => count + input.documents.filter((document) => hiringDocumentApplies(document, employee)).length,
+      0,
+    );
     const arrived = totals.complete + totals.unevidenced;
     const percent = slots === 0 ? 0 : Math.round((arrived / slots) * 100);
     const totalRow = sheet.getRow(row);

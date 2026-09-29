@@ -11,6 +11,7 @@
 // export route is a Node route, and both import this.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { hiringDocumentsFor } from "@/lib/hiring-documents/readiness-signal";
 import type {
   HiringDocumentDefinition,
   HiringDocumentEmployeeRow,
@@ -52,19 +53,25 @@ function parseDateString(value: string) {
 /**
  * How much of one employee's checklist is submitted, 0-100.
  *
- * Counts SUBMITTED against the full definition list rather than against the rows that happen to
- * exist, because a document nobody has touched is the very thing this screen is for: a missing
- * status row reads as pending, never as "not applicable".
+ * Counts SUBMITTED against the documents that APPLY TO THIS PERSON rather than against the rows
+ * that happen to exist. Two different things hang on that wording:
+ *
+ * - A document nobody has touched still counts against them — a missing status row reads as
+ *   pending, never as "not applicable", which is the very thing this screen is for.
+ * - An EXIT document does not count against an active employee at all (owner ruling, 2026-09-29).
+ *   It leaves the denominator, not just the numerator, because while those five slots are counted
+ *   nobody who has not resigned can ever reach 100%.
  */
 export function hiringDocumentCompletionPercent(
   employee: HiringDocumentEmployeeRow,
   documents: HiringDocumentDefinition[],
 ): number {
-  if (documents.length === 0) return 0;
-  const submitted = documents.filter(
+  const applicable = hiringDocumentsFor(documents, employee);
+  if (applicable.length === 0) return 0;
+  const submitted = applicable.filter(
     (document) => employee.documents[document.id]?.status === "submitted",
   ).length;
-  return Math.round((submitted / documents.length) * 100);
+  return Math.round((submitted / applicable.length) * 100);
 }
 
 /** The screen's row filter, exactly — same order, same comparisons. */

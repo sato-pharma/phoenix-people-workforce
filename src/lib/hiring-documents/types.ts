@@ -89,6 +89,20 @@ export type HiringDocumentDefinition = {
   description: string | null;
   displayOrder: number;
   id: string;
+  /**
+   * True for a document that only applies once somebody LEAVES — the two clearances, the
+   * resignation request, the mutual termination agreement and social insurance Form 6.
+   *
+   * Owner ruling, 2026-09-29, and it is not cosmetic: before it a resignation request was counted
+   * as outstanding against every active employee, which on Pedia alone was 160 slots of paperwork
+   * nobody should ever chase — and while they are counted, no active employee can reach 100%
+   * however much they hand in. `hiringDocumentApplies` is the one place that decides.
+   *
+   * FORM 6 IS AN EXIT DOCUMENT AND FORM 1 IS NOT: نموذج ١ tells the insurance authority somebody
+   * has started, نموذج ٦ tells it somebody has stopped. "Social insurance form" is Form 1 and
+   * stays an onboarding document.
+   */
+  isExitDocument: boolean;
   name: string;
 };
 

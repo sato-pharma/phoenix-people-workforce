@@ -16,7 +16,48 @@
 // ExcelJS and of node:fs, so the screen can adopt the same vocabulary later without moving it.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import type { HiringDocumentEntry } from "@/lib/hiring-documents/types";
+import { hasDepartedEmployment } from "@/lib/auth/session-lifecycle";
+import type {
+  HiringDocumentDefinition,
+  HiringDocumentEmployeeRow,
+  HiringDocumentEntry,
+} from "@/lib/hiring-documents/types";
+
+/**
+ * Does this document apply to this person at all?
+ *
+ * ONE PREDICATE, asked by the screen, the readiness summary, the completion percentage and the
+ * workbook alike. Owner ruling, 2026-09-29: the five exit papers — the two clearances, the
+ * resignation request, the mutual termination agreement and Form 6 — only count for leavers.
+ *
+ * A DOCUMENT THAT DOES NOT APPLY IS NOT "COMPLETE" AND NOT "OUTSTANDING". It is not a slot at all:
+ * it leaves the denominator as well as the numerator, which is the only reading under which an
+ * active employee who has handed in everything asked of them reads 100%. Counting it as complete
+ * would be the tempting shortcut and it is wrong in the other direction — it would report a
+ * clearance as filed for somebody who has not left.
+ *
+ * A LEAVER IS `hasDepartedEmployment`, NOT `!isActive`, and the difference is a real one this repo
+ * has already written down: `session-lifecycle.ts` keeps the departed set separate because
+ * `inactive`, `historical_payroll_record` and `system_placeholder` are ledger artefacts and payroll
+ * placeholders rather than people with a last working day — and, in its own words, a Form 6 filed
+ * for a placeholder is a form the insurance office rejects. Asking the shared predicate is also
+ * what stops this list drifting from the rest of the system, which cost 46 people once already.
+ */
+export function hiringDocumentApplies(
+  document: Pick<HiringDocumentDefinition, "isExitDocument">,
+  employee: Pick<HiringDocumentEmployeeRow, "employmentStatus">,
+): boolean {
+  if (!document.isExitDocument) return true;
+  return hasDepartedEmployment(employee.employmentStatus);
+}
+
+/** The documents that apply to one person, in the checklist's own order. */
+export function hiringDocumentsFor(
+  documents: HiringDocumentDefinition[],
+  employee: Pick<HiringDocumentEmployeeRow, "employmentStatus">,
+): HiringDocumentDefinition[] {
+  return documents.filter((document) => hiringDocumentApplies(document, employee));
+}
 
 export type HiringDocumentSignal =
   /** Submitted, and there is at least one scan or upload behind it. */

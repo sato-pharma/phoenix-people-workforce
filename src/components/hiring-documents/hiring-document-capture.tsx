@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { FILE_SOURCE_BADGE } from "@/lib/hiring-documents/file-source-badge";
+import { hiringDocumentsFor } from "@/lib/hiring-documents/readiness-signal";
 import type {
   HiringDocumentDefinition,
   HiringDocumentEmployeeRow,
@@ -282,7 +283,10 @@ export function HiringDocumentCapture({
     if (!selectedEmployee) return { notSubmitted: [], tickedWithNothingOnFile: [] };
     const notSubmitted: HiringDocumentDefinition[] = [];
     const tickedWithNothingOnFile: HiringDocumentDefinition[] = [];
-    for (const document of documents) {
+    // The applicable documents only: listing a clearance as "not submitted" for somebody who has
+    // not left would put five permanent items on every active employee's outstanding list — the
+    // same defect the readiness figures had before the exit flag (owner ruling, 2026-09-29).
+    for (const document of hiringDocumentsFor(documents, selectedEmployee)) {
       const entry = selectedEmployee.documents[document.id];
       if (!entry || entry.status !== "submitted") {
         notSubmitted.push(document);
