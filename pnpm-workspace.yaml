@@ -115,7 +115,10 @@ overrides:
   # shadcn is genuinely a runtime dependency. DO NOT remove this one alongside the dev-only
   # floors above: `pnpm why ip-address --prod` still resolves, so dropping it would put a live
   # SSRF bypass back into the production graph.
-  ip-address: ^10.3.1
+  # Bumped 2026-09-29 for Dependabot #81 (NAT64 64:ff9b:1::/48 not classified) and #82 (fe80::/64
+  # vs fe80::/10 link-local), both SSRF/trust-boundary, both patched 10.5.1; still the
+  # imapflow > socks production path.
+  ip-address: ^10.5.1
   "@hono/node-server": ^2.0.5
   # Bumped 2026-09-10 for three advisories that all patch at 4.13.5: GHSA-gqvv-2mrq-wpjv
   # (`toSSG()` still writes files outside the output directory — the incomplete fix for
@@ -251,6 +254,13 @@ overrides:
   # graph but filters MEDIUM out, so main stays green. Dependabot alone flagged it — the same
   # blind spot already recorded in the qs and postcss notes above.
   "@xmldom/xmldom": ^0.8.15
+  # Bumped for two HIGH advisories, both patched at 7.29.1 (Dependabot #90 and #94): a TLS
+  # certificate-validation bypass via dropped connect options in BalancedPool (>=7.24.1 <7.29.1)
+  # and a DoS via an unrequested WebSocket subprotocol (>=7.0.0 <7.29.1). undici is transitive
+  # only — an optional/peer dependency of openai@7.17.0 and a couple of others, never a direct
+  # `dependencies` entry — so this is a bare entry, not a scoped one, and the peer ranges
+  # (`>=5 <9`, `>=7.24.1`) both accept 7.29.1.
+  "undici": 7.29.1
 
 
 # Unlike npm, pnpm blocks dependency lifecycle scripts unless approved here
