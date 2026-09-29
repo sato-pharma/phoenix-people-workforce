@@ -731,20 +731,11 @@ function mapSalaryTrendPointFromHistoryView(row: PortalPayrollSourceRow): Salary
   };
 }
 
-function hasMissingColumnError(error: unknown, columnName: string) {
-  if (!error) return false;
-  if (typeof error === "object" && error !== null && "code" in error) {
-    const code = String((error as { code?: unknown }).code ?? "");
-    if (code === "42703") return true;
-  }
-  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
-  return (
-    message.includes("column") &&
-    (message.includes(`\"${columnName}\"`) ||
-      message.includes(columnName) ||
-      message.includes(`column ${columnName}`))
-  );
-}
+// hasMissingColumnError() lived here. Its only callers were the phantom-column probes in
+// fetchPortalPayslips, and it was the thing that made them look safe: it treated ANY 42703 as
+// "that column is missing, carry on", so a query against a column that never existed reported
+// itself as a handled condition instead of a mistake. Removed with them. isMissingColumnError()
+// below is a different, narrower helper and is still in use.
 
 function buildSalaryTrendFromRecords(records: PortalPayrollRecord[]): SalaryTrendPoint[] {
   const rows = toSafeArray(records)
@@ -1094,58 +1085,48 @@ async function fetchPortalPayslips(hrId: string): Promise<PortalPayrollRecord[]>
       .order("month", { foreignTable: "salary_batches", ascending: false })
       .order("created_at", { ascending: false });
 
-  const runPayslipQuery = async (column: "hr_id" | "employee_hr_id" | "employee_code", value: string, exact = true) => {
-    const query = exact ? buildPayslipQuery().ilike(column, value) : buildPayslipQuery().ilike(column, `%${value}%`);
+  /**
+   * `salary_records` identifies the employee by `hr_id` AND NOTHING ELSE.
+   *
+   * This used to probe `employee_hr_id` and then `employee_code` as fallbacks, each guarded by a
+   * "did that column exist?" check on the error it came back with. Neither column has ever
+   * existed on this table — verified against the live `information_schema` of BOTH production and
+   * staging — so the guards were reading a 42703 they had just caused. The cost was 70 failed
+   * queries a day on production (35 for each phantom column, measured 2026-09-29): work Postgres
+   * did and threw away, and 70 red `column ... does not exist` lines a day in the error log,
+   * which is where a real fault has to be noticed.
+   *
+   * They were unreachable as fallbacks too: the exact-match branch could never reach
+   * `employee_code`, because the `employee_hr_id` probe immediately before it always failed with
+   * exactly the missing-column error that gated it. Both errors came from the canonical-id retry
+   * lower down, whose guards inspected an error variable that was still null.
+   *
+   * The `ilike` contains-retry on `hr_id` below is the part that does real work and stays: an HR
+   * id is stored with inconsistent casing and padding, so an exact match legitimately misses rows
+   * that the canonical form finds.
+   */
+  const runPayslipQuery = async (value: string, exact = true) => {
+    const query = exact
+      ? buildPayslipQuery().ilike("hr_id", value)
+      : buildPayslipQuery().ilike("hr_id", `%${value}%`);
     return query;
   };
 
   try {
-    const { data: hrIdData, error: hrIdError } = await runPayslipQuery("hr_id", normalizedHrId);
-    let dataByColumn: unknown[] | null = hrIdData;
-    let employeeHrIdData: unknown[] | null = null;
-    let employeeCodeData: unknown[] | null = null;
-    let employeeHrIdError: unknown = null;
-    let employeeCodeError: unknown = null;
+    const exactMatch = await runPayslipQuery(normalizedHrId);
+    // Surfaced rather than swallowed: a real read failure used to fall through the probes and
+    // return an empty payslip list with nothing logged, which is indistinguishable from "this
+    // employee has no payslips". The catch below logs it.
+    if (exactMatch.error) throw exactMatch.error;
+    const collected = [...toSafeArray(exactMatch.data)];
 
-    const hasHrIdRows = (hrIdData?.length ?? 0) > 0;
-    const canQueryEmployeeHrId = !hasHrIdRows && !hasMissingColumnError(hrIdError, "hr_id");
-    if (canQueryEmployeeHrId) {
-      const byEmployeeHrId = await runPayslipQuery("employee_hr_id", normalizedHrId);
-      employeeHrIdData = byEmployeeHrId.data;
-      employeeHrIdError = byEmployeeHrId.error;
+    if (collected.length === 0 && canonicalHrId && canonicalHrId !== normalizedHrId) {
+      const byCanonicalContains = await runPayslipQuery(canonicalHrId, false);
+      if (byCanonicalContains.error) throw byCanonicalContains.error;
+      collected.push(...toSafeArray(byCanonicalContains.data));
     }
 
-    const canQueryEmployeeCode = (
-      !hasHrIdRows &&
-      !hasMissingColumnError(employeeHrIdError, "employee_hr_id")
-      && !hasMissingColumnError(hrIdError, "employee_code")
-    );
-    if (canQueryEmployeeCode) {
-      const byEmployeeCode = await runPayslipQuery("employee_code", normalizedHrId);
-      employeeCodeData = byEmployeeCode.data;
-      employeeCodeError = byEmployeeCode.error;
-    }
-
-    if (!hasHrIdRows && !employeeHrIdData?.length && canonicalHrId && canonicalHrId !== normalizedHrId) {
-      if (!isMissingColumnError(hrIdError, "hr_id")) {
-        const byHrIdContains = await runPayslipQuery("hr_id", canonicalHrId, false);
-        dataByColumn = [...toSafeArray(dataByColumn), ...toSafeArray(byHrIdContains.data)];
-      }
-      if (!hasMissingColumnError(employeeHrIdError, "employee_hr_id")) {
-        const byEmployeeHrIdContains = await runPayslipQuery("employee_hr_id", canonicalHrId, false);
-        employeeHrIdData = [...toSafeArray(employeeHrIdData), ...toSafeArray(byEmployeeHrIdContains.data)];
-      }
-      if (!hasMissingColumnError(employeeCodeError, "employee_code")) {
-        const byEmployeeCodeContains = await runPayslipQuery("employee_code", canonicalHrId, false);
-        employeeCodeData = [...toSafeArray(employeeCodeData), ...toSafeArray(byEmployeeCodeContains.data)];
-      }
-    }
-
-    const data = [
-      ...toSafeArray(dataByColumn),
-      ...toSafeArray(employeeHrIdData),
-      ...toSafeArray(employeeCodeData),
-    ];
+    const data = collected;
     const dataById = new Map<string, Record<string, unknown>>();
     data.forEach((row) => {
       const r = row as Record<string, unknown>;

@@ -158,4 +158,61 @@ export function runEmployeePortalPayslipSalaryTests() {
       `${relativePath} must not render a salary amount on a landing/overview surface.`,
     );
   }
+
+  // THE PAYSLIP READ QUERIES ONE COLUMN, BECAUSE THE TABLE HAS ONE.
+  //
+  // fetchPortalPayslips used to fall back from hr_id to `employee_hr_id` and then
+  // `employee_code`, each guarded by a "did that column exist?" check on the error it had just
+  // caused. Neither column has ever existed on salary_records — verified against the live
+  // information_schema of BOTH production and staging — so the fallbacks could only ever fail:
+  // 70 failed queries a day on production (35 per phantom column, measured 2026-09-29) and 70
+  // red `column ... does not exist` lines a day in the log where a real fault has to be noticed.
+  //
+  // Pinned because the shape regenerates: "be liberal about the column name" is what produced
+  // it, and a failing probe is invisible from the UI — the page renders identically either way,
+  // so nothing but the database log ever complains.
+  const payslipFn = serviceSource.slice(
+    serviceSource.indexOf("async function fetchPortalPayslips"),
+    serviceSource.indexOf("function resolvePortalBatchLabel"),
+  );
+  assert.ok(
+    payslipFn.startsWith("async function fetchPortalPayslips"),
+    "fetchPortalPayslips must still exist — this pin cannot silently stop checking anything",
+  );
+  for (const phantom of ["employee_hr_id", "employee_code"]) {
+    assert.ok(
+      !new RegExp(`ilike\\(\\s*["']${phantom}["']`).test(payslipFn)
+        && !new RegExp(`runPayslipQuery\\(\\s*["']${phantom}["']`).test(payslipFn),
+      `fetchPortalPayslips must not query salary_records.${phantom} — the column does not exist `
+        + "on production or staging, so every such call is a guaranteed 42703.",
+    );
+  }
+  // Positive control: the real column IS still queried, so the assertions above cannot pass
+  // merely because the read was deleted or renamed.
+  assert.match(
+    payslipFn,
+    /ilike\("hr_id", value\)/,
+    "the payslip read must still match on hr_id exactly",
+  );
+  // The canonical contains-retry — the fallback that does real work — must survive, because HR
+  // ids are stored with inconsistent casing and padding.
+  assert.match(
+    payslipFn,
+    /ilike\("hr_id", `%\$\{value\}%`\)/,
+    "the canonical-id contains retry on hr_id must survive — it is the fallback that finds real rows",
+  );
+  // A failed read must be surfaced, not swallowed into an empty payslip list.
+  assert.match(
+    payslipFn,
+    /if \(exactMatch\.error\) throw exactMatch\.error;/,
+    "a read error must throw so the catch logs it — an empty list is indistinguishable from "
+      + "'this employee has no payslips'",
+  );
+  // The helper that made the probes look handled is gone with them.
+  assert.doesNotMatch(
+    serviceSource,
+    /function hasMissingColumnError\(/,
+    "hasMissingColumnError must be removed — it treated ANY 42703 as a handled condition, which "
+      + "is what let a query against a non-existent column read as safe",
+  );
 }
