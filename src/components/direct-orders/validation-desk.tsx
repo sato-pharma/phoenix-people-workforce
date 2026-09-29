@@ -8,6 +8,7 @@ import { EvidenceReading } from "@/components/direct-orders/evidence-reading";
 import type { DirectOrderValidationRow } from "@/lib/direct-orders/pharmacy-validation";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 import { PharmacyLicenseEvidence } from "@/components/venues/pharmacy-license-evidence";
+import { NotFieldValidatedLine } from "@/components/validation/not-field-validated-line";
 import { venueRequiresDistributorCode, venueTypeLabel } from "@/lib/venues/venue-type";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 import { DirectOrderInvoiceEvidence } from "@/components/direct-orders/direct-order-invoice-evidence";
@@ -153,6 +154,20 @@ export function ValidationDesk({ rows }: Props) {
                 )}
               </div>
             </header>
+
+            {/* What the claim in front of you does NOT say (owner, 2026-09-29): nobody has ever stood
+                in front of this VENUE. Full width under the header and before the evidence, because
+                on an invoice row the invoice is the very thing being mistaken for venue evidence.
+
+                It silences itself wherever it would be wrong: a field claim carrying a photo and a
+                pin IS a standing capture — pending included — so a row the admin is deciding on a
+                live photo never shows it. What remains is the invoice row on a venue nobody has
+                visited, which is exactly the decision this line is for. */}
+            {row.fieldEvidenceGap ? (
+              <div className="border-b border-phx-line px-4 pt-3 pb-1">
+                <NotFieldValidatedLine gap={row.fieldEvidenceGap} />
+              </div>
+            ) : null}
 
             {/* An invoice row gets half the card, not a 320px column: the invoice IS the evidence, and
                 the reviewer must read its lines (owner, 2026-09-14). */}
