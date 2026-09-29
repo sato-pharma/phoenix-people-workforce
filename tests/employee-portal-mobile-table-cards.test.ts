@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import path from "node:path";
 import { stripComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -159,6 +160,57 @@ export function runEmployeePortalMobileTableCardTests() {
   //
   // The rule survives where it can: `md:whitespace-nowrap` keeps the title on one line from
   // 768px up, and no desktop table is touched.
+  // ── THE WHOLE PORTAL, not four named files ───────────────────────────────
+  // Everything above pins the four files that were CONVERTED. That list is a record of what was
+  // fixed, and it can only ever guard what someone remembered to add to it — a raw <table> in any
+  // other portal file was never checked at all. Swept 2026-09-29 across all 237 portal .tsx files
+  // with the same detector the loop above uses: **zero ungated tables**. So the rule is stated as
+  // an absolute, not a ratchet — there is no backlog to work off, only a clean state to hold.
+  //
+  // A NOTE ON THE DETECTOR, because a cruder one gives a frightening and wrong answer. Counting
+  // `<table` against `data-portal-desktop-table` per file reports 20 breaches in 12 files; every
+  // one of those is a real table sitting correctly inside a `hidden … md:block` wrapper, which is
+  // one of the three accepted spellings. Read the 240-character window, as below, or the count is
+  // fiction.
+  {
+    // Relative to the repo root, like the other ratchets (fits-the-screen-ratchet.test.ts) —
+    // the harness runs from there. An import.meta.url URL cannot be used: this repo's path
+    // contains a space, and `new URL(...).pathname` hands back `Phoenix%20Workforce`.
+    const portalRoots = ["app/employee-portals", "src/components/employee-portal"];
+    const offenders: string[] = [];
+
+    for (const rootPath of portalRoots) {
+      const stack = [rootPath];
+      while (stack.length > 0) {
+        const current = stack.pop() as string;
+        for (const entry of readdirSync(current)) {
+          const full = path.join(current, entry);
+          if (statSync(full).isDirectory()) {
+            stack.push(full);
+            continue;
+          }
+          if (!entry.endsWith(".tsx")) continue;
+          const source = stripComments(readFileSync(full, "utf8"));
+          for (const offset of tableOffsets(source)) {
+            const window = source.slice(Math.max(0, offset - 240), offset + 200);
+            if (DESKTOP_GATES.some((gate) => gate.test(window))) continue;
+            const line = source.slice(0, offset).split("\n").length;
+            offenders.push(`${path.relative(rootPath, full).split(path.sep).join("/")}:${line}`);
+          }
+        }
+      }
+    }
+
+    assert.deepEqual(
+      offenders,
+      [],
+      `these portal <table>s are still visible at ${MOBILE_MAX_WIDTH_PX}px: ${offenders.join(", ")}. ` +
+        "A portal table must be desktop-only — carry `data-portal-desktop-table`, or sit inside a " +
+        "`hidden … md:block` wrapper, or be `hidden … md:table` itself — with a `md:hidden` card " +
+        "block beside it. The owner's rule is cards on a phone, never a sideways scroll.",
+    );
+  }
+
   {
     const primitives = stripComments(read("../src/components/employee-portal/portal-primitives.tsx"));
     const title = /<h3 className="([^"]*)">\{title\}<\/h3>/.exec(primitives);
