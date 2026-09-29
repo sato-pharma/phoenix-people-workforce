@@ -9,6 +9,7 @@ import { ScopeBadge } from "@/components/employee-portal/scope-badge";
 import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getEmployeePortalVacancies } from "@/lib/employee-portal/service";
+import { buildVacancyHireHref } from "@/lib/employees/vacancy-hire-link";
 
 export const dynamic = "force-dynamic";
 
@@ -141,6 +142,11 @@ export default async function EmployeePortalVacanciesPage({
       />
     );
   }
+
+  // The same capability POST /api/employees asserts. This page is read by managers who
+  // cannot hire as well as by those who can, so the one-press hire is offered only to the
+  // second group — resolved here on the server, never inferred in the browser.
+  const canAddEmployee = await canAccess(access, "employees", "update");
 
   const isNsm = data.roleView === "nsm";
   const params = await searchParams;
@@ -361,12 +367,15 @@ export default async function EmployeePortalVacanciesPage({
               <table className="w-full table-fixed text-sm">
                 <colgroup>
                   {/* Vacancy and Position each carry a code or title plus a note and a chip, so
-                      they take the two widest shares; Opened is one formatted date. */}
-                  <col className="w-[22%]" />
+                      they take the two widest shares; Opened is one formatted date. Status is
+                      the third-widest because it carries the hire action as well as the chip
+                      (owner, 2026-09-29: the full wording everywhere, not a short "Hire"), and
+                      the six still sum to 100% — the action must never buy a scroller. */}
+                  <col className="w-[18%]" />
+                  <col className="w-[20%]" />
+                  <col className="w-[14%]" />
+                  <col className="w-[14%]" />
                   <col className="w-[24%]" />
-                  <col className="w-[16%]" />
-                  <col className="w-[16%]" />
-                  <col className="w-[12%]" />
                   <col className="w-[10%]" />
                 </colgroup>
                 <thead className="bg-slate-50/80 text-left text-phx-xs uppercase tracking-wider text-slate-400">
@@ -451,12 +460,24 @@ export default async function EmployeePortalVacanciesPage({
                             vacancy.managerHrId ??
                             "Unassigned"}
                         </td>
+                        {/* The hire action rides in the STATUS cell. This table is
+                            table-fixed with a colgroup summing to 100% and deliberately no
+                            horizontal scroller, so a seventh column would be the very defect
+                            the comment above the table warns about. */}
                         <td className="border-r border-slate-100 px-3 py-3 sm:px-4">
                           <span
                             className={`inline-block rounded border ${style.border} ${style.bg} px-2 py-0.5 text-phx-xs font-semibold ${style.text}`}
                           >
                             {titleCaseWords(vacancy.status)}
                           </span>
+                          {canAddEmployee && vacancy.status === "open" ? (
+                            <a
+                              className="mt-1.5 flex w-full items-center justify-center border border-phx-accent bg-phx-accent px-2 py-1 text-center text-phx-2xs font-bold leading-tight text-white transition hover:bg-phx-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-phx-accent"
+                              href={buildVacancyHireHref("/employee-portals/employees", vacancy)}
+                            >
+                              Add employee to this seat
+                            </a>
+                          ) : null}
                         </td>
                         <td className="px-3 py-3 text-slate-500 sm:px-4">
                           {formatDate(vacancy.createdAt)}
@@ -532,6 +553,15 @@ export default async function EmployeePortalVacanciesPage({
                       <p className="mt-1.5 text-phx-xs text-slate-400">
                         {vacancy.note}
                       </p>
+                    ) : null}
+
+                    {canAddEmployee && vacancy.status === "open" ? (
+                      <a
+                        className="mt-2.5 flex w-full items-center justify-center gap-2 border border-phx-accent bg-phx-accent px-4 py-2 text-sm font-bold text-white transition hover:bg-phx-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-phx-accent"
+                        href={buildVacancyHireHref("/employee-portals/employees", vacancy)}
+                      >
+                        Add employee to this seat
+                      </a>
                     ) : null}
                   </div>
                 );

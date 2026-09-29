@@ -9,6 +9,7 @@ import {
   readVacancyHireSeat,
   vacancyHireSeatKey,
 } from "../src/lib/employees/vacancy-hire-link.ts";
+import { employeePortalDevPreviewData } from "../src/lib/employee-portal/dev-preview-data.ts";
 
 /**
  * Pressing a VACANT box on the organogram opened a popup that described the seat and offered
@@ -216,4 +217,106 @@ export async function runOrganogramVacancyHireLinkTests() {
     9,
     "the hire action must NOT add a tenth column — the rule is fit by merging, never widening",
   );
+
+  // The employee-portal vacancies page is a THIRD surface with its own service, and its row
+  // used to carry names only. The ids are what the Add Employee form matches on, so a row
+  // without them produces a link that fills nothing — silently, which is the whole risk.
+  const portalService = fs.readFileSync(
+    path.join(process.cwd(), "src", "lib", "employee-portal", "service.ts"),
+    "utf8",
+  );
+  for (const field of ["areaId", "departmentId", "lineId", "positionId"]) {
+    assert.ok(
+      new RegExp(`export type EmployeePortalVacancyRow = \\{[^}]*\\b${field}\\b`, "s").test(
+        portalService,
+      ),
+      `EmployeePortalVacancyRow must carry ${field} — without the ids the portal prefill is empty`,
+    );
+  }
+  assert.ok(
+    /\.select\(\s*(?:\/\/[^\n]*\n\s*)*"[^"]*\bdepartment_id\b[^"]*"/.test(portalService),
+    "department_id must be SELECTED, or the mapped field is null however the row is typed",
+  );
+
+  const portalPage = fs.readFileSync(
+    path.join(process.cwd(), "app", "employee-portals", "vacancies", "page.tsx"),
+    "utf8",
+  );
+  assert.ok(
+    portalPage.includes('canAccess(access, "employees", "update")'),
+    "the portal page must resolve the capability server-side — it is read by managers who cannot hire",
+  );
+  assert.ok(
+    portalPage.includes('canAddEmployee && vacancy.status === "open"'),
+    "the portal hire action must be gated on both the capability and an OPEN vacancy",
+  );
+  assert.ok(
+    portalPage.includes('buildVacancyHireHref("/employee-portals/employees"'),
+    "a portal row must link to the PORTAL Employees route, never the admin one",
+  );
+  // That table is table-fixed with a colgroup summing to 100% and no horizontal scroller.
+  const portalColumnWidths = Array.from(
+    portalPage.matchAll(/<col className="w-\[(\d+)%\]" \/>/g),
+    (match) => Number(match[1]),
+  );
+  assert.equal(
+    portalColumnWidths.length,
+    6,
+    "the portal table must stay at six columns — a seventh breaks the colgroup and the screen",
+  );
+  assert.equal(
+    portalColumnWidths.reduce((total, width) => total + width, 0),
+    100,
+    "the colgroup must still sum to 100% — anything else is a horizontal scroller waiting to happen",
+  );
+
+  // One wording on every surface (owner, 2026-09-29). The desktop tables used to say a short
+  // "Hire" because the cell was narrow; they now carry the full label, which is only safe
+  // because each button is width-bounded and wraps. Assert BOTH halves, since restoring the
+  // short label or dropping the bound would each undo half of his instruction.
+  const HIRE_LABEL = "Add employee to this seat";
+  for (const [name, source] of [
+    ["the organogram popup", modalSource],
+    ["the admin vacancies report", reportSource],
+    ["the portal vacancies page", portalPage],
+  ] as const) {
+    assert.ok(
+      source.includes(HIRE_LABEL),
+      `${name} must carry the full wording "${HIRE_LABEL}"`,
+    );
+    assert.ok(
+      !/>\s*Hire\s*</.test(source),
+      `${name} must not fall back to a short "Hire" label — one wording everywhere`,
+    );
+  }
+  assert.ok(
+    /className="[^"]*\bflex w-36\b[^"]*"/.test(reportSource),
+    "the admin table's button must stay width-bounded, or the full label widens that column",
+  );
+  assert.ok(
+    /className="[^"]*\bflex w-full\b[^"]*"[\s\S]{0,200}buildVacancyHireHref\("\/employee-portals\/employees"/.test(
+      portalPage,
+    ),
+    "the portal table's button must fill its fixed column rather than size to its own label",
+  );
+
+  // The dev-preview fixtures are the OTHER constructor of this row, and adding the ids to the
+  // type without adding them here is exactly what turned `checks` red on the first attempt at
+  // this change. Read the emitted objects rather than the source, so a fixture that compiles
+  // but carries nothing still fails.
+  const previewVacancies =
+    employeePortalDevPreviewData.overview.vacancyDetails?.vacancies ?? [];
+  assert.ok(
+    previewVacancies.length > 0,
+    "the dev preview must still carry vacancy rows, or this guard is checking nothing",
+  );
+  for (const vacancy of previewVacancies) {
+    for (const field of ["areaId", "departmentId", "lineId", "positionId"] as const) {
+      assert.equal(
+        typeof vacancy[field],
+        "number",
+        `dev preview vacancy ${vacancy.vacancyCode} must carry a real ${field}`,
+      );
+    }
+  }
 }

@@ -713,7 +713,12 @@ export function VacanciesReport({
                         </td>
                         {/* The hire action rides in the STATUS cell rather than a tenth
                             column: this table already scrolls sideways at desktop width, and
-                            the golden rule is to fit by merging, never by widening. */}
+                            the golden rule is to fit by merging, never by widening.
+                            The button is w-36 with WRAPPING text rather than an inline-flex that
+                            sizes to its own label (owner, 2026-09-29: the full wording, not a
+                            short "Hire"). This table is auto-layout inside a scroller, so an
+                            unbounded button would widen the Status column by the whole string;
+                            bounded and wrapped, the wording costs no horizontal room at all. */}
                         <td className="px-4 py-4">
                           <Badge
                             variant={row.status === "open" ? "warning" : "neutral"}
@@ -722,12 +727,12 @@ export function VacanciesReport({
                           </Badge>
                           {canAddEmployee && row.status === "open" ? (
                             <a
-                              className="mt-2 inline-flex items-center gap-1.5 border border-phx-accent bg-phx-accent px-2.5 py-1 text-xs font-bold text-white transition hover:bg-phx-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-phx-accent"
+                              className="mt-2 flex w-36 items-center justify-center gap-1.5 border border-phx-accent bg-phx-accent px-2.5 py-1 text-center text-xs font-bold leading-tight text-white transition hover:bg-phx-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-phx-accent"
                               href={buildVacancyHireHref(hireBasePath, row)}
                               title={`Add an employee to the open ${row.positionTitle ?? row.jobTitle ?? "seat"}`}
                             >
-                              <UserPlus className="h-3.5 w-3.5" />
-                              Hire
+                              <UserPlus className="h-3.5 w-3.5 shrink-0" />
+                              Add employee to this seat
                             </a>
                           ) : null}
                         </td>
