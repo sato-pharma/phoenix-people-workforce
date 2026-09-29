@@ -2575,15 +2575,39 @@ else, which is why the general form belongs in the clusters file.
 Same family as the `git checkout --theirs` bullet beside it: a command whose job is to bring content
 *in* is also, silently, a command that throws content *away*.
 
-## Two deployment rows per commit, and a terminal state read as a history — 2026-09-29
+## The second deployment row is STAGING, and two inferences were drawn before that was measured — 2026-09-29
 
-Four consecutive merges to `main` were measured, and Railway had posted **two** GitHub deployment rows
-for every one. On a commit since superseded, **both** rows end `inactive`.
+`GET /deployments?sha=<sha>` returns **one row per environment**, so every commit here has two:
 
-That is the shape that makes §2.3's withheld tell look broken, because the tell is *an `inactive` that
-was never `success`*. Reading only the final state of both rows on `e8194079c` and `b28639906` gives
-`inactive, inactive`, and a session that stops there concludes two deploys were refused. Asking the
-full history instead:
+```
+8a53c2755   row 6744668252   Phoenix-HR-Workforce / production
+            row 6744668096   Phoenix-HR-Workforce / staging
+f3c444d30   row 6744372404   Phoenix-HR-Workforce / staging
+            row 6744372341   Phoenix-HR-Workforce / production
+b28639906   row 6743650894   Phoenix-HR-Workforce / production
+            row 6743650893   Phoenix-HR-Workforce / staging
+```
+
+Both carry `task=deploy` and the description "Deployed to Railway", and the order is not stable — on
+`f3c444d30` staging comes first, on the other two production does. So an unfiltered `.[0]` is a coin
+flip between two different answers, and it misleads **in both directions**:
+
+- `f3c444d30` was **serving production**, and one of its rows read `in_progress -> inactive`, never
+  reaching `success` — §2.3's withheld signature exactly. That was the **staging** row. Production had
+  gone `in_progress -> success`.
+- `8a53c2755` was the reverse. **Staging** reached `success` inside two minutes while **production** was
+  still `in_progress` eleven minutes later. A session reading the succeeded row would have called it
+  shipped.
+
+`verify-shipped.mjs` has always been right about this — it filters
+`deployments.filter((d) => String(d.environment || '').includes('production'))` before it reports
+anything — so the trap only bites a hand-rolled query. Which is exactly what happened.
+
+### The two inferences, because the inferences are what will repeat
+
+**First: the terminal state was read as a history.** The final states of both rows on `e8194079c` and
+`b28639906` really are `inactive, inactive`. From that, "and never `success`" was asserted — and never
+measured. Asking the full history:
 
 ```
 e8194079c  row 6744530536   success -> inactive                             ever success: YES
@@ -2592,37 +2616,37 @@ b28639906  row 6743650894   in_progress -> success -> inactive -> inactive   YES
            row 6743650893   in_progress -> success -> inactive -> inactive   YES
 ```
 
-Both had passed through `success`. The tell was right, and silent, as designed.
+Every one had passed through `success`, so §2.3's tell was correctly silent on two ordinary superseded
+deploys. That invented half was about to be offered as a reason to change §2.3 — auto-loaded guidance
+every session reads on every request — to say the tell could not be read off a row at all. A peer
+session's own query overturned it before it went anywhere. Had it landed, it would have deleted the one
+signal that separates a refused deploy from a superseded one, on evidence that confirms the signal
+works.
 
-**The sharper finding is on the commit that was live at the time.** `f3c444d30` was serving production,
-and one of its two rows never reached `success` at all:
+**Second, and one layer down: "two rows" was read as "two production rows".** After the first
+correction, the surviving claim was that the tell must therefore be evaluated across *all* of a
+commit's rows. That is also wrong, and wrong in a new way — it would have told the next session to
+treat a staging row as evidence about production. The count was a fact; its meaning was an assumption,
+and one `.environment` field would have settled it at any point.
 
-```
-f3c444d30  row 6744372404   in_progress -> inactive                          ever success: NO
-           row 6744372341   in_progress -> success -> inactive -> inactive    YES
-```
+The shape both share: **a measurement was taken, and then a second claim was reported beside it with
+the same confidence, having never been measured.** The first one cost a near-miss on auto-loaded
+guidance; the second was caught only because the same commit's deploy was still in flight and its rows
+had to be read again.
 
-So a single row can satisfy the withheld signature while the commit it describes is the one answering
-requests. `deployments?sha=…` followed by `.[0]` is a coin flip that can accuse a healthy, live deploy.
-**The tell is a property of the commit across all of its rows, never of one row.**
+### The rules
 
-**The mistake worth recording is not the query — it is the inference.** The terminal states were read
-correctly. What was then asserted was "and never `success`", which had not been measured: one fact
-reported as two. That invented half was about to be offered as a reason to change §2.3 — auto-loaded
-guidance every session reads on every request — to say the tell could not be read off a row at all. A
-peer session's own query overturned it first. Had it landed it would have deleted the one signal that
-separates a refused deploy from a superseded one, on evidence that actually confirms the signal works.
-
-**The rules.**
-
-1. **Ask a predicate, never an index:** `any(.[].state; . == "success")`.
-   `GET /deployments/{id}/statuses` returns newest first, so an index reads backwards — and no single
+1. **Filter by environment first.** `.environment` must contain `production` before any deploy
+   conclusion. Never trust row order — it is not stable across commits.
+2. **Ask a predicate, never an index:** `any(.[].state; . == "success")`.
+   `GET /deployments/{id}/statuses` returns newest first, so an index reads backwards, and no single
    state implies the states before it.
-2. **Enumerate every row for the sha.** Two is the number here, consistently, and they do not agree.
-3. **Two questions, two instruments.** *Did it ship* is ancestry against the live `/api/healthz`
-   revision. *Was it refused* is the ever-`success` predicate across the commit's rows. Neither answers
+3. **Staging succeeding says nothing about production.** Measured here at two minutes versus still
+   building at eleven.
+4. **Two questions, two instruments.** *Did it ship* is ancestry against the live `/api/healthz`
+   revision. *Was it refused* is the ever-`success` predicate on the production row. Neither answers
    the other, and §2.3's tell needs no change.
-4. The rows **lag** the live domain, they do not stall. A row still reading `in_progress` while its own
+5. The rows **lag** the live domain, they do not stall. A row still reading `in_progress` while its own
    sha is serving means you read it early: do not wait on it, and do not distrust it.
 
 ## `AGENTS.md` §2.1 Session-level traps — as it stood before the 2026-09-12 condensation
