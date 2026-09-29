@@ -1,22 +1,10 @@
 import { Card } from "@/components/ui/card";
-
-function Pulse({ className }: { className?: string }) {
-  return (
-    <div
-      className={`animate-pulse rounded bg-slate-200/60 ${className ?? ""}`}
-    />
-  );
-}
+import { HeroSkeleton, Pulse } from "@/components/employee-portal/skeleton-templates";
 
 export default function ContactHRSupportLoading() {
   return (
     <div className="mx-auto w-full space-y-5">
-      {/* Hero skeleton */}
-      <section className="relative box-border w-full overflow-hidden rounded border border-slate-800 bg-[linear-gradient(135deg,#070707_0%,#111827_52%,#2C1605_100%)] p-5 sm:p-6 lg:p-8">
-        <Pulse className="h-6 w-40 !bg-slate-700/50" />
-        <Pulse className="mt-5 h-8 w-60 !bg-slate-700/50 sm:w-80" />
-        <Pulse className="mt-3 h-4 w-72 !bg-slate-700/40 sm:w-96" />
-      </section>
+      <HeroSkeleton />
 
       <div className="space-y-5">
         {/* Insights strip — 3 columns */}
