@@ -211,7 +211,17 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
         run: |
           set -u
-          answer() { echo "docs_only=$1" >> "$GITHUB_OUTPUT"; echo "docs_only=$1 ($2)"; exit 0; }
+          # `heavy` gates the Build and the Playwright login smoke below. It is true for every
+          # event EXCEPT a pull_request, so `main`, a dispatch and a schedule still build and
+          # smoke-test exactly as before; only the PR skips them. Emitted here, once, rather
+          # than repeated as a compound `if:` on nine steps that could then drift apart.
+          answer() {
+            echo "docs_only=$1" >> "$GITHUB_OUTPUT"
+            if [ "$1" = "false" ] && [ "$EVENT_NAME" != "pull_request" ]; then heavy=true; else heavy=false; fi
+            echo "heavy=$heavy" >> "$GITHUB_OUTPUT"
+            echo "docs_only=$1 heavy=$heavy ($2)"
+            exit 0
+          }
 
           [ "$EVENT_NAME" = "pull_request" ] || answer false "not a pull_request — always run everything"
           git rev-parse --verify HEAD^2 >/dev/null 2>&1 || answer false "HEAD is not a merge commit; cannot identify the PR's files"
@@ -372,8 +382,31 @@ jobs:
       # spread is a larger/dedicated runner (a billing decision), not a code change. Do not re-run
       # the trend — it costs ~40 API calls to re-derive this same answer.
 
+      # 🔴 THE BUILD AND THE LOGIN SMOKE RUN ON `main`, A DISPATCH AND A SCHEDULE — NOT ON A
+      # PULL REQUEST. Owner's decision, 2026-09-29, to cut cost WITHOUT slowing the work down.
+      #
+      # MEASURED that day, on run 36610968349: `validate` 295s of which the Build alone was
+      # 200s (68%), its only consumer a 37s Playwright login smoke. Billing rounds every JOB up
+      # to a whole minute, so validate cost 5 billable minutes per run against `checks`'s 6.
+      # There were 185 pull_request runs that day. Dropping the build from the PR takes validate
+      # to ~90s (2 minutes), saving ~3 minutes x 185 = ~555 billable minutes/day, about a fifth
+      # of the whole bill — and every PR finishes ~3.5 minutes EARLIER, which is the half that
+      # made it acceptable. The alternative levers all cost speed: a merge cooldown (he cut it),
+      # merging validate into checks (they run in parallel, so it doubles the wait).
+      #
+      # 🔴 THE TRADE-OFF, STATED PLAINLY BECAUSE IT IS NOT FREE: a build break or a broken
+      # login now surfaces on `main` rather than on the PR. PRODUCTION IS STILL PROTECTED — a red
+      # `main` fails the check suite, and Railway's Wait for CI then withholds the deploy, so
+      # nothing ships unverified. What is delayed is the DISCOVERY, and the cost of that is a
+      # fix-forward on main instead of a red PR. If that ever proves too expensive, the middle
+      # setting is to keep the build on PRs that touch `app/`, `src/` or `next.config.ts` and
+      # skip it elsewhere — not a return to building on every PR.
+      #
+      # Do NOT re-add a `.next` cache to soften this: tried 2026-08-29, measured from both
+      # directions, 37KB cache and 148s warm against 143s cold. The note on the deleted cache
+      # step above records the evidence.
       - name: Build
-        if: steps.detect.outputs.docs_only != 'true'
+        if: steps.detect.outputs.heavy == 'true'
         env:
           # 🔴 ONLY on a self-hosted runner, and only because a container lies about its CPUs.
           # `next build` sizes its page-data worker pool from the CPUs it can SEE — the HOST's count
@@ -396,7 +429,7 @@ jobs:
       # That was only observable in a Railway boot log, i.e. after it reached production. This asks
       # the built artifact the production question directly, so the answer arrives on the PR.
       - name: Verify @napi-rs/canvas is reachable inside .next/standalone
-        if: steps.detect.outputs.docs_only != 'true'
+        if: steps.detect.outputs.heavy == 'true'
         run: node scripts/verify-standalone-canvas.mjs
 
       # 🔴 The two copies `output: "standalone"` REQUIRES, mirroring the Dockerfile exactly —
@@ -408,7 +441,7 @@ jobs:
       # production actually ships, instead of `next start`, a mode Next warns about and production has
       # never used.
       - name: Assemble the standalone runtime (mirrors the Dockerfile)
-        if: steps.detect.outputs.docs_only != 'true'
+        if: steps.detect.outputs.heavy == 'true'
         run: |
           set -euo pipefail
           test -f .next/standalone/server.js || { echo "::error::.next/standalone/server.js is missing — the build did not emit the standalone output"; exit 1; }
@@ -419,7 +452,7 @@ jobs:
           ls -1 .next/standalone | sed 's/^/  /'
 
       - name: Cache Playwright browsers
-        if: steps.detect.outputs.docs_only != 'true'
+        if: steps.detect.outputs.heavy == 'true'
         id: playwright-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -428,11 +461,11 @@ jobs:
           restore-keys: playwright-
 
       - name: Install Playwright browsers
-        if: steps.detect.outputs.docs_only != 'true'
+        if: steps.detect.outputs.heavy == 'true'
         run: pnpm exec playwright install chromium
 
       - name: Install Playwright system dependencies
-        if: steps.detect.outputs.docs_only != 'true' && (steps.playwright-cache.outputs.cache-hit != 'true')
+        if: steps.detect.outputs.heavy == 'true' && (steps.playwright-cache.outputs.cache-hit != 'true')
         run: pnpm exec playwright install-deps chromium
 
       # Runs against the .next produced by the Build step above. playwright.config.ts's
@@ -440,7 +473,7 @@ jobs:
       # production bundle — exactly what the old preview-smoke job did after downloading
       # it, minus the transfer.
       - name: Run Playwright login smoke test
-        if: steps.detect.outputs.docs_only != 'true'
+        if: steps.detect.outputs.heavy == 'true'
         run: pnpm run test:e2e:smoke
         env:
           NODE_ENV: test
@@ -478,7 +511,7 @@ jobs:
       # runs `pnpm run synthetic:test` to generate the report BEFORE this step. Kept
       # continue-on-error + guarded so a missing report or missing creds can never fail CI.
       - name: Ingest synthetic-journey report (best-effort, never fails CI)
-        if: steps.detect.outputs.docs_only != 'true'
+        if: steps.detect.outputs.heavy == 'true'
         continue-on-error: true
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
@@ -499,7 +532,7 @@ jobs:
           pnpm run synthetic:save-report
 
       - name: Upload Playwright report on failure
-        if: steps.detect.outputs.docs_only != 'true' && (failure())
+        if: steps.detect.outputs.heavy == 'true' && (failure())
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: playwright-report

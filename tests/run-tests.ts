@@ -1344,6 +1344,7 @@ import { runMarketingRoiCohortsTests } from "./marketing-roi-cohorts.test.ts";
 import { runGithubWorkflowValidityTests } from "./github-workflow-validity.test.ts";
 import { runCiGateParityTests, runCiDocsOnlyClassifierTests } from "./ci-gate-parity.test.ts";
 import { runCiRunnerSwitchTests } from "./ci-runner-switch.test.ts";
+import { runCiPrSkipsBuildAndSmokeTests } from "./ci-pr-skips-build-and-smoke.test.ts";
 import { runStagingBranchSyncGuardTests } from "./staging-branch-sync-guard.test.ts";
 import { runPasswordSetupEmailResolutionTests } from "./password-setup-email-resolution.test.ts";
 import { runSchemaShapeCheckTests } from "./schema-shape-check.test.ts";
@@ -7248,7 +7249,12 @@ await runTest(
 );
 
 await runTest(
-  "bash-guard C9 refuses merging a PR too small to be worth its own two CI runs (measured 2026-09-29: 110 merges in a day, 41% of the week touching <=3 files) and refuses SIZE ONLY — two merges back to back are both allowed, because the owner cut the cooldown the same evening — while a 4-file PR, a large PR, both stand-down spellings, a merge with no PR number, an unreachable gh, gh pr view/list/checks, a git merge, a commit message and a heredoc that only quote the command all stay allowed",
+  "ci.yml builds and runs the Playwright login smoke on main, a dispatch and a schedule but NOT on a pull request — all nine heavy steps gated on the detect step's heavy output, which excludes pull_request and is still emitted, and push:main still triggers the workflow at all (measured 2026-09-29: the Build was 200s of validate's 295s, ~555 billable minutes a day across 185 PR runs, and every PR finishes ~3.5 min earlier)",
+  runCiPrSkipsBuildAndSmokeTests,
+);
+
+await runTest(
+  "bash-guard C10 refuses merging a PR too small to be worth its own two CI runs (measured 2026-09-29: 110 merges in a day, 41% of the week touching <=3 files) and refuses SIZE ONLY — two merges back to back are both allowed, because the owner cut the cooldown the same evening — while a 4-file PR, a large PR, both stand-down spellings, a merge with no PR number, an unreachable gh, gh pr view/list/checks, a git merge, a commit message and a heredoc that only quote the command all stay allowed",
   runMergeCooldownGuardTests,
 );
 
