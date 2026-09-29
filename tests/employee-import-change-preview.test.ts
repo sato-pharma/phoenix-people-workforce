@@ -204,4 +204,50 @@ export async function runEmployeeImportChangePreviewTests() {
   });
   assert.equal(unknown.people.length, 0);
   assert.equal(unknown.unchangedPeopleCount, 0, "an unmatched row is not an unchanged person either");
+
+  // ── 7. the insurance job title, whose "before" comes from the route ──────────
+  //
+  // It is the one field in this diff that is NOT on the employee record — it lives in
+  // `employee_hiring_profile` — so the dry-run route sends it and the builder takes it as a map.
+  const LABEL = "Social Insurance Job Title";
+  const retitled = buildImportChangePreview({
+    employees: directory,
+    records: [record({ socialInsuranceJobTitle: "مندوب دعاية طبية" })],
+    socialInsuranceJobTitles: { "a-12": "مندوب مبيعات" },
+  });
+  const titleChange = retitled.people[0]?.changes.find((change) => change.label === LABEL);
+  assert.ok(titleChange, "a different Arabic title is a change");
+  assert.equal(titleChange.before, "مندوب مبيعات");
+  assert.equal(titleChange.after, "مندوب دعاية طبية");
+  assert.equal(titleChange.group, "Payroll");
+
+  // The same title is NOT a change — and this is the common case, because HR downloads the sheet
+  // with the titles already in it and uploads it back with two salaries edited.
+  const sameTitle = buildImportChangePreview({
+    employees: directory,
+    records: [record({ socialInsuranceJobTitle: "مندوب مبيعات" })],
+    socialInsuranceJobTitles: { "a-12": "مندوب مبيعات" },
+  });
+  assert.equal(sameTitle.people.length, 0, "an unchanged title must not be reported as a change");
+
+  // An hr id MISSING from a map that WAS supplied means no profile row — genuinely blank.
+  const firstTitle = buildImportChangePreview({
+    employees: directory,
+    records: [record({ socialInsuranceJobTitle: "مندوب مبيعات" })],
+    socialInsuranceJobTitles: {},
+  });
+  assert.equal(firstTitle.people[0]?.changes.find((change) => change.label === LABEL)?.before, "—");
+
+  // 🔴 AND AN ABSENT MAP IS NOT THE SAME THING. With no map the "before" is UNKNOWN, and rendering
+  // unknown as blank would report every filled title cell as a change from nothing — on every
+  // upload of a sheet that simply carries the titles it was exported with. The row is dropped.
+  const noMap = buildImportChangePreview({
+    employees: directory,
+    records: [record({ socialInsuranceJobTitle: "مندوب مبيعات" })],
+  });
+  assert.equal(
+    noMap.people.length,
+    0,
+    "with no titles loaded the insurance title row must be dropped, not invented from a blank",
+  );
 }

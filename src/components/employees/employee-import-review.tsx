@@ -9,7 +9,7 @@ import {
   type ImportPersonChanges,
 } from "@/lib/employees/employee-import-change-preview";
 import { buildFixListEntries } from "@/lib/employees/employee-import-findings";
-import type { EmployeeImportValidationResult } from "@/lib/imports/employee-import-types";
+import type { EmployeeImportDryRunResponse } from "@/lib/imports/employee-import-types";
 import { cn } from "@/lib/utils";
 
 /**
@@ -55,7 +55,7 @@ export type EmployeeImportReviewProps = {
   onCancel: () => void;
   onConfirm: () => void;
   onDownloadFixList: () => void;
-  preview: EmployeeImportValidationResult;
+  preview: EmployeeImportDryRunResponse;
 };
 
 function Tile({
@@ -212,8 +212,13 @@ export function EmployeeImportReview({
   const [showAllFindings, setShowAllFindings] = React.useState(false);
 
   const changePreview = React.useMemo(
-    () => buildImportChangePreview({ employees, records: preview.rowsToUpdate ?? [] }),
-    [employees, preview.rowsToUpdate],
+    () =>
+      buildImportChangePreview({
+        employees,
+        records: preview.rowsToUpdate ?? [],
+        socialInsuranceJobTitles: preview.socialInsuranceJobTitles,
+      }),
+    [employees, preview.rowsToUpdate, preview.socialInsuranceJobTitles],
   );
 
   const findings = React.useMemo(() => buildFixListEntries(preview), [preview]);
