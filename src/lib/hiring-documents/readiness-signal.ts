@@ -98,13 +98,21 @@ export function hiringDocumentSignalNeedsAttention(signal: HiringDocumentSignal)
   return signal === "pending" || signal === "missing" || signal === "overdue";
 }
 
-/** How urgent, for sorting the action list. Lower sorts first. */
+/**
+ * How urgent, for sorting the action list. Lower sorts first.
+ *
+ * 🔴 `unevidenced` RANKS BELOW `pending`, which is not the obvious order. Everything above it is
+ * paper nobody has handed in; `unevidenced` is paper that arrived and was merely never scanned —
+ * real work, but filing rather than chasing. Ranking it higher would push 377 scanning rows above
+ * the 278 that are genuinely outstanding (production, 2026-09-29), and the sheet would stop being
+ * workable top to bottom, which is the only instruction it carries.
+ */
 export const HIRING_DOCUMENT_SIGNAL_RANK: Record<HiringDocumentSignal, number> = {
   complete: 5,
   missing: 2,
   overdue: 1,
-  pending: 4,
-  unevidenced: 3,
+  pending: 3,
+  unevidenced: 4,
 };
 
 /** Midnight today, so a deadline of today counts as due rather than as still to come. */

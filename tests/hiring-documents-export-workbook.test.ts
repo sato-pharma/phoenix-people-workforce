@@ -346,15 +346,16 @@ export async function runHiringDocumentsExportWorkbookTests() {
 
   assert.equal(
     listed.length,
-    6,
-    "six documents have genuinely not arrived — five onboarding papers plus the leaver's clearance. "
-    + "Basma's unscanned National ID is not one of them, and neither are the three clearances that "
-    + "belong to people who have not left",
+    7,
+    "seven rows: six documents that have not arrived — five onboarding papers plus the leaver's "
+    + "clearance — and Basma's ticked-but-unscanned National ID, which is scanning work rather than "
+    + "chasing work. The three clearances belonging to people who have not left are still absent",
   );
-  assert.ok(
-    !listed.some(([status]) => status === "Submitted · no file"),
-    "a submitted document with no scan is housekeeping, not a chase — on production that alone was "
-    + "378 rows, which is how a chase list stops being read",
+  assert.equal(
+    listed.at(-1)?.[0],
+    "Submitted · no file",
+    "the scanning work sits BELOW everything that has not arrived — it is on the sheet, never above "
+    + "the paper nobody has handed in",
   );
   assert.deepEqual(
     listed.slice(0, 2).map(([status]) => status),
@@ -374,6 +375,19 @@ export async function runHiringDocumentsExportWorkbookTests() {
     !listed.some(([, name]) => name === "Ahmed Samir"),
     "an employee with every document filed and evidenced must not appear at all",
   );
+  // The Scanned column — the point of putting both kinds of work on one sheet.
+  const scannedColumn = columnOf(actions, actionHeader, "Scanned");
+  const filesColumn = columnOf(actions, actionHeader, "Files");
+  const unscannedRow = findRow(actions, actionHeader, statusColumn, "Submitted · no file");
+  assert.equal(actions.getCell(unscannedRow, scannedColumn).value, "No");
+  assert.equal(
+    fillOf(actions.getCell(unscannedRow, scannedColumn)),
+    HOUSE_XLSX_SIGNAL.warn.tint,
+    "No is amber, never red: on a row that has not arrived, no scan is the expected reading and "
+    + "the Status cell beside it already carries the severity",
+  );
+  assert.equal(actions.getCell(unscannedRow, filesColumn).value, 0, "and the count sits beside the word");
+
   const firstActionRow = actionHeader + 1;
   assert.equal(
     fillOf(actions.getCell(firstActionRow, statusColumn)),

@@ -445,7 +445,12 @@ function buildActionSheet(workbook: ExcelJS.Workbook, input: HiringDocumentsWork
       if (!hiringDocumentApplies(document, employee)) continue;
       const entry = entryOf(employee, document.id);
       const signal = hiringDocumentSignal(entry, today);
-      if (!hiringDocumentSignalNeedsAttention(signal)) continue;
+      // TWO KINDS OF WORK, ONE SHEET. `needsAttention` is a document that has not ARRIVED;
+      // `unevidenced` is one that arrived and was never scanned. They were split when the scanning
+      // backlog would have swamped the chase list, and the Scanned column is what makes them
+      // readable together — the rank below keeps paper nobody has handed in above paper that is
+      // merely unfiled, so the sheet is still worked top to bottom.
+      if (!hiringDocumentSignalNeedsAttention(signal) && signal !== "unevidenced") continue;
       rows.push({ document: document.name, employee, entry, signal });
     }
   }
@@ -470,7 +475,10 @@ function buildActionSheet(workbook: ExcelJS.Workbook, input: HiringDocumentsWork
     { label: "Document", width: 30 },
     { label: "Deadline", width: 13 },
     { label: "Days late", width: 10 },
-    { label: "Files on record", width: 13 },
+    // Scanned answers the question in a word; Files carries the number behind it. Both, because a
+    // reader scanning the column wants Yes/No and a reader auditing one row wants the count.
+    { label: "Scanned", width: 11 },
+    { label: "Files", width: 8 },
     { label: "Line", width: 16 },
     { label: "Manager", width: 24 },
     { label: "Job title", width: 24 },
@@ -484,16 +492,16 @@ function buildActionSheet(workbook: ExcelJS.Workbook, input: HiringDocumentsWork
 
   let row = writeHouseMasthead(workbook, sheet, {
     columns: columns.length,
-    provenance: [`${rows.length} outstanding documents`],
-    subtitle: "Every outstanding document, most urgent first. Work it top to bottom.",
+    provenance: [`${rows.length} documents to work`],
+    subtitle: "Every document still to chase or still to scan, most urgent first. Work it top to bottom.",
     title: "Hiring Documents — Needs Attention",
   });
-  row = sheetTitle(sheet, row, columns.length, "Outstanding documents");
+  row = sheetTitle(sheet, row, columns.length, "Documents to chase, and documents to scan");
 
   const headerRowNumber = row;
   const headerRow = sheet.getRow(headerRowNumber);
   columns.forEach((column, index) => {
-    headerCell(headerRow.getCell(index + 1), column.label, { center: index === 5 || index === 6 });
+    headerCell(headerRow.getCell(index + 1), column.label, { center: index === 5 || index === 6 || index === 7 });
     sheet.getColumn(index + 1).width = column.width;
   });
   headerRow.height = 24;
@@ -502,7 +510,7 @@ function buildActionSheet(workbook: ExcelJS.Workbook, input: HiringDocumentsWork
   if (rows.length === 0) {
     // A sheet with a header and nothing under it reads as a failed export. Say the good news.
     sheet.mergeCells(row, 1, row, columns.length);
-    signalCell(sheet.getCell(row, 1), "Nothing outstanding — every document in this view has arrived.", "good");
+    signalCell(sheet.getCell(row, 1), "Nothing to do — every document in this view has arrived and been scanned.", "good");
     sheet.getRow(row).height = 22;
     return sheet;
   }
@@ -521,15 +529,18 @@ function buildActionSheet(workbook: ExcelJS.Workbook, input: HiringDocumentsWork
     } else {
       bodyCell(excelRow.getCell(6), null, { center: true, zebra });
     }
-    // Plain, deliberately: every row on this sheet is a document that has NOT arrived, so a zero
-    // here is the expected reading and colouring it would put amber down the whole column.
-    bodyCell(excelRow.getCell(7), action.entry.fileCount, { center: true, zebra });
-    bodyCell(excelRow.getCell(8), action.employee.lineName ?? "", { zebra });
-    bodyCell(excelRow.getCell(9), action.employee.managerName ?? "", { zebra });
-    bodyCell(excelRow.getCell(10), action.employee.jobTitle ?? "", { zebra });
-    bodyCell(excelRow.getCell(11), formatDate(action.employee.hireDate), { center: true, zebra });
-    bodyCell(excelRow.getCell(12), action.entry.notes ?? "", { zebra });
-    bodyCell(excelRow.getCell(13), houseCairoDateTime(action.entry.updatedAt), { zebra });
+    // Scanned, in a word. Amber for No rather than red: on a row that has not arrived, no scan is
+    // the expected reading and not a second fault — the Status cell beside it already carries the
+    // severity. Green only where a file really is on record.
+    const scanned = action.entry.fileCount > 0;
+    signalCell(excelRow.getCell(7), scanned ? "Yes" : "No", scanned ? "good" : "warn", { center: true });
+    bodyCell(excelRow.getCell(8), action.entry.fileCount, { center: true, zebra });
+    bodyCell(excelRow.getCell(9), action.employee.lineName ?? "", { zebra });
+    bodyCell(excelRow.getCell(10), action.employee.managerName ?? "", { zebra });
+    bodyCell(excelRow.getCell(11), action.employee.jobTitle ?? "", { zebra });
+    bodyCell(excelRow.getCell(12), formatDate(action.employee.hireDate), { center: true, zebra });
+    bodyCell(excelRow.getCell(13), action.entry.notes ?? "", { zebra });
+    bodyCell(excelRow.getCell(14), houseCairoDateTime(action.entry.updatedAt), { zebra });
     row += 1;
   });
 
