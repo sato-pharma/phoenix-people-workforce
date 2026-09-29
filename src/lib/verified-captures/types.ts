@@ -1,3 +1,5 @@
+import type { CaptureTrustAssessment } from "@/lib/evidence/capture-trust";
+
 // Verified Captures — the row shapes shared by the server loaders and the client workspace.
 //
 // Deliberately free of any server import so the `"use client"` gallery can import these types
@@ -52,6 +54,19 @@ export type VerifiedCaptureDistributorCode = {
 
 /** One pharmacy linked to a verified marketing customer, with its own capture. */
 export type VerifiedMarketingCapturePharmacy = {
+  /**
+   * The live photo measured against this record’s OWN location fix.
+   *
+   * Two independent GPS readings, not one copied twice - see `src/lib/evidence/capture-trust.ts`.
+   * `verdict: "unmeasured"` is the COMMON answer and the honest one: every capture taken before
+   * 2026-09-29 carries no photo coordinates at all, and neither does one whose shutter could not
+   * read a position. It must never be rendered as agreement.
+   *
+   * This is an integrity signal under AGENTS.md §4 golden rule #1 - it is for the Super Admin to
+   * read, it is never shown to the person who took the photo, and a verdict is where to look,
+   * never an accusation and never an action.
+   */
+  photoTrust: CaptureTrustAssessment;
   id: string;
   displayName: string;
   /** Short-lived signed URL for the pharmacy's live storefront photo; null when none is on file. */
@@ -67,6 +82,19 @@ export type VerifiedMarketingCapturePharmacy = {
  * `validation_status` stamp, which can go stale.
  */
 export type VerifiedMarketingCaptureRow = {
+  /**
+   * The live photo measured against this record’s OWN location fix.
+   *
+   * Two independent GPS readings, not one copied twice - see `src/lib/evidence/capture-trust.ts`.
+   * `verdict: "unmeasured"` is the COMMON answer and the honest one: every capture taken before
+   * 2026-09-29 carries no photo coordinates at all, and neither does one whose shutter could not
+   * read a position. It must never be rendered as agreement.
+   *
+   * This is an integrity signal under AGENTS.md §4 golden rule #1 - it is for the Super Admin to
+   * read, it is never shown to the person who took the photo, and a verdict is where to look,
+   * never an accusation and never an action.
+   */
+  photoTrust: CaptureTrustAssessment;
   id: string;
   customerCode: string | null;
   displayName: string;
@@ -100,6 +128,12 @@ export type VerifiedDirectOrderRoute = "field" | "invoice";
  * choice, 2026-09-24 — because they were never captured in the field at all.
  */
 export type VerifiedDirectOrderCaptureRow = {
+  /**
+   * The storefront photo measured against this validation’s own pin. Same rule as the marketing
+   * side: two independent readings, and “unmeasured” is the honest answer for every row written
+   * before 2026-09-29, never agreement. Super Admin surface only (AGENTS.md §4, rule #1).
+   */
+  photoTrust: CaptureTrustAssessment;
   id: string;
   pharmacyId: string;
   pharmacyName: string;

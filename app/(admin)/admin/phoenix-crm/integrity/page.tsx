@@ -260,6 +260,17 @@ export default async function PhoenixCrmIntegrityPage() {
                         "—"
                       )}
                       {entry.accuracyMeters !== null ? <div className="text-xs text-slate-500">within {Math.round(entry.accuracyMeters)} m</div> : null}
+                      {/* How far the visit was saved from the place it names. Read from the visit
+                          row, so this board and the place-vs-actual report can never print two
+                          different numbers for one visit. Null is UNKNOWN and is simply absent -
+                          it must not render as 0 m, which is a rep standing exactly on the pin. */}
+                      {entry.placeDistanceMeters !== null ? (
+                        <div className="text-xs text-slate-500">
+                          {entry.placeDistanceMeters < 1000
+                            ? `${Math.round(entry.placeDistanceMeters)} m from the place`
+                            : `${(entry.placeDistanceMeters / 1000).toFixed(1)} km from the place`}
+                        </div>
+                      ) : null}
                     </td>
                   </tr>
                 ))}
