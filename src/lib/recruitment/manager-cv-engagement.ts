@@ -40,6 +40,7 @@
 // role reaches this at all.
 
 import type { AccessContext, PhoenixRole } from "@/lib/auth/permissions";
+import { EMPLOYEE_AREA_SELECT, resolveEmployeeAreaName } from "@/lib/employees/employee-org-labels";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { canSeeAllRecruitment, resolveHiringManagerScopeHrIds } from "@/lib/recruitment/access";
 import { markCandidateSeen } from "@/lib/recruitment/candidate-views";
@@ -462,7 +463,7 @@ export async function loadManagerCvEngagement(access: AccessContext): Promise<Ma
   for (const batch of chunkIds(managerKeys.map((k) => k.toLowerCase()))) {
     const { data, error } = await supabase
       .from("employees")
-      .select("hr_id,full_name,job_title,area_name,region_name,line_id,employment_status,last_working_date")
+      .select(`hr_id,full_name,job_title,region_name,line_id,employment_status,last_working_date,${EMPLOYEE_AREA_SELECT}`)
       .in("hr_id", batch);
     if (error) {
       if (isMissingRelation(error)) break;
@@ -481,7 +482,7 @@ export async function loadManagerCvEngagement(access: AccessContext): Promise<Ma
   for (const batch of chunkIds(stillMissing)) {
     const { data, error } = await supabase
       .from("employees")
-      .select("hr_id,full_name,job_title,area_name,region_name,line_id,employment_status,last_working_date")
+      .select(`hr_id,full_name,job_title,region_name,line_id,employment_status,last_working_date,${EMPLOYEE_AREA_SELECT}`)
       .in("hr_id", batch);
     if (error) {
       if (isMissingRelation(error)) break;
@@ -504,7 +505,11 @@ export async function loadManagerCvEngagement(access: AccessContext): Promise<Ma
       managerHrId: dir ? String(dir.hr_id) : key,
       name: (dir && textOrNull(dir.full_name)) || fb.name,
       jobTitle: (dir && textOrNull(dir.job_title)) || fb.jobTitle,
-      area: (dir && (textOrNull(dir.area_name) ?? textOrNull(dir.region_name))) || fb.area,
+      // The area from the `area_id` LINK, with `region_name` still behind it for a seat that has
+      // no area at all. `employees.area_name` is a snapshot frozen at write time — see
+      // employee-org-labels.ts — so taking it first showed a manager the territory name from
+      // before a split.
+      area: (dir && (resolveEmployeeAreaName(dir) ?? textOrNull(dir.region_name))) || fb.area,
       line: (Number.isFinite(lineId) ? lineNameById.get(lineId) ?? null : null) || fb.line,
       inactive,
       employmentStatusLabel: inactive ? titleCase(status) : null,

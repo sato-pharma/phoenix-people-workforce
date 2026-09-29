@@ -34,6 +34,24 @@
  */
 export const EMPLOYEE_LINE_SELECT = "line_name,lines(name)";
 
+/**
+ * The area alone.
+ *
+ * 🔴 `area_name` IS THE HALF-ALIVE ONE, AND THAT MAKES IT THE MORE DECEPTIVE OF THE THREE. It is
+ * populated on 145 of 198 rows, so a read that takes it looks like it works. Measured on production
+ * 2026-09-29 against the `area_id` link:
+ *
+ *   29 people have a link and NO label   -> those reads show a blank area today
+ *    4 people have both and they DISAGREE -> those reads show a STALE area today
+ *    0 people have a label and no link    -> so preferring the link loses nothing, ever
+ *
+ * The four disagreements are what the label actually is: a snapshot frozen at write time. Two
+ * resigned reps still read "Fayoum-Beni Suef", the name of that territory BEFORE the split; the
+ * link says "Fayoum". The other two are "ALEX-BHR" against the canonical "Alex-BHR". A label that
+ * predates a territory move is exactly the thing a person would act on without noticing.
+ */
+export const EMPLOYEE_AREA_SELECT = "area_name,areas(name)";
+
 /** The same for all three, for a read that shows a person's placement. */
 export const EMPLOYEE_ORG_SELECT =
   "line_name,lines(name),department_name,departments(name),area_name,areas(name)";
