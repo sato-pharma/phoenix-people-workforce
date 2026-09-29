@@ -483,7 +483,9 @@ the minutes. So when the next instruction is plainly the same mechanism on anoth
 follow-up named in the same breath, or a pin of a ruling just given, **hold it and open ONE PR when
 the feature is whole**, saying in one line that you are holding so he can override. Widening a PR
 his approval already sits on is allowed — say so plainly and let him re-confirm; it is no longer a
-reason to open a second. `hold-a-whole-feature-for-one-pr-even-when-he-asks-in-pieces`
+reason to open a second. Account: `docs/ci-self-hosted-runner.md`, "A feature arriving in
+instalments is still ONE feature" — the measured arc, and why 54 billable minutes went on one
+5-file PR. `hold-a-whole-feature-for-one-pr-even-when-he-asks-in-pieces`
 🔴 **MEASURE IN MINUTES, NEVER IN RUNS, AND NEVER FROM A SAMPLE — both lie.** Re-measured
 2026-09-27 from EVERY run of the month rather than a sample: `pull_request` **60.5%** · `push` to
 `main` **39.5%** · `workflow_dispatch` **~0%**. Dispatch is a rounding error — about eight runs in the
