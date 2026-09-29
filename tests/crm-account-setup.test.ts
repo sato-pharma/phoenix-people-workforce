@@ -143,8 +143,8 @@ export function runCrmAccountSetupTests() {
   );
   assert.deepEqual(
     DEFAULT_NOTIFICATION_ROLE_POLICIES[CRM_ACCOUNT_SETUP_AUDIENCE].roles,
-    ["SFE Manager"],
-    "the owner named the SFE Manager, and one recipient is the point",
+    ["SFE Manager", "HR Operations"],
+    "the owner named the SFE Manager, then added HR Operations (2026-09-29) so the same notice copies HR",
   );
   assert.equal(
     DEFAULT_NOTIFICATION_ROLE_POLICIES[CRM_ACCOUNT_SETUP_AUDIENCE].enabled,
