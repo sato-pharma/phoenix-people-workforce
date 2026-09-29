@@ -3218,6 +3218,50 @@ A session reviewing email safety will find an outside address allowed on a messa
 with no reason asked, and read it as a leak to close. **It is his decision; closing it is the defect.**
 Pinned by `tests/offer-copy-recipients.test.ts`.
 
+## The mobile app is a shell over the web portal — owner direction, 2026-09-29
+
+### What he said, and what he was looking at
+
+*"Make the app a shell over the web portal."* He had just looked at the native app wearing the
+portal's colours over hand-drawn screens — one 310-line `mobile/src/components/ui.tsx` against the web
+portal's 24 shared primitives and roughly 46,000 lines — and called it **"a poor awful app while the
+web app is SaaS."** The resolution he chose is a shell, not a rebuild.
+
+### The rule
+
+**NEVER rebuild a portal screen natively.** A native copy of a portal module is a second
+implementation of a payroll, leave or sales number, and two implementations of one figure is exactly
+the drift `open-module.ts` and the domain-first rule exist to prevent. A module with no native screen
+is opened as the production page itself.
+
+**What is native, and stays native:** login, Phoenix CRM — camera, GPS, dictation, and the **offline
+outbox**, because a web page cannot queue a visit with no signal — and Profile. Everything else is the
+portal in a WebView.
+
+### How it works (PR #4701)
+
+- The **Home tab** and a single opened **module** both render through one component,
+  `mobile/src/components/portal-web-view.tsx` (extracted from the old `module.tsx`). It mints the
+  one-trip hand-off, pens navigation to this server's `/employee-portals` space, and rests on
+  `credentials: "omit"` in `mobile/src/lib/api.ts` — the cookie-jar safety, pinned by
+  `tests/native-web-handoff.test.ts`.
+- **App mode, and why there is no double navigation:** the GET half of `/api/auth/web-session` sets a
+  non-secret cookie `NATIVE_WEB_APP_SHELL_COOKIE` (`phoenix_app_shell=1`,
+  `src/lib/auth/native-web-handoff.ts`). The portal server shell reads it and `EmployeePortalChrome`
+  drops its own fixed header and bottom nav, and their spacers.
+
+### The trap
+
+🔴 **An ordinary browser never carries that cookie, and the gate defaults FALSE — the web portal is
+byte-identical without it.** So the gate reads like dead weight to a session tidying up, and
+"simplifying" it away strips the web portal's chrome for every browser user at once.
+
+### What it knowingly traded
+
+The old native Home showed a read-only cache of the rep's own numbers **offline**; a web page needs
+signal, so that offline READ is gone. It is reversible in one file (`index.tsx`) if he asks. The
+offline **WORK** — the CRM outbox — is untouched.
+
 ## `AGENTS.md` §4 Standing owner rules — as it stood before the 2026-09-12 condensation
 
 On 2026-09-12 `AGENTS.md` was cut to roughly half its size at the owner's request ("Load less of AGENTS.md"): every hook was reduced to its rule plus the one detail needed to obey it. This is that section's hook text **verbatim** from `origin/main` 3eea44aef, kept so that no measurement, date, count or diagnosis a condensed hook dropped is lost. Search it for the hook's wording. The accounts earlier in this file remain the fuller record.
