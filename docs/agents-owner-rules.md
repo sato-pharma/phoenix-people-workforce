@@ -3322,6 +3322,67 @@ resigned, one terminated) yet still hold active cases.
 `tests/probation-milestone-emails.test.ts`.
 
 
+## The seal a human presses, and the seal the desk ticks — owner instructions, 2026-09-29
+
+Two instructions landed on the same day and read, at a glance, as though they contradict each other.
+They do not, and a session that reads the first without the second will delete work the owner
+approved a few hours later.
+
+### What he said, in order
+
+**The morning ruling.** *"remove the sato pharma stamp/seal from all hiring documents, leave it only
+in job offers."* That is the rule in `AGENTS.md` §4: nothing in `src/lib/hiring-pack/` draws a seal,
+`house-identity.ts` exports none, and the contract, clearance, custody receipt, renewal, worker form,
+salary letters and all 19 HR papers render blank signature cells. The خاتم / خاتم الشركة / Company
+stamp column HEADINGS stay, because they name where a human presses the real stamp.
+
+**The evening request.** *"IN hr FORMS I WANT TO HAVE THE OPTION TO ADD THE SATO STAMP STEAL AND MY
+SIGNATYURE AND BE ABLE TO MOVE AND DRAG THEM FREELY IN ANY FORM."* Then, when the first build made a
+placed mark permanent: *"donot put the stamnp opermenent make able to add them freelty as i wantv"*,
+and *"make it optionaol to choose for any form i want."* Shipped as #4771, with #4780 correcting the
+marks-list wording and #4784 making the dialog open on what was ticked last for that same paper.
+
+### Why they are the same rule
+
+The morning ruling is about **who stamps the paper**, not about whether a seal may ever appear on
+one. His own sentence for it: a pre-stamped document is a document NOBODY STAMPED. A renderer that
+draws a seal by itself produces a stamped-looking paper that no person ever authorised, which is why
+per-template flags, copying the offer's seal across, and every other automatic route stay refused.
+
+A print-time mark is the opposite shape. It takes **two human acts** and renders without either:
+
+1. He drags a **position** onto the paper in the layout editor — where the seal sits, not that the
+   paper is sealed. Placing a `signature` mark is Super Admin only, gated server-side in
+   `app/api/hiring-pack/document-fields/route.ts`, not merely hidden in the UI.
+2. He **ticks that mark in the print dialog** for that run, beside the copy count and the address he
+   already answers there. Unticked — which is how a paper with no history opens — it prints the blank
+   cell exactly as the morning ruling requires.
+
+So the default render is unchanged and `tests/hr-forms-house-papers.test.ts` still passes on it. The
+seal is the desk's press, the same as the rubber one, with the placement recorded against a person.
+
+### What it does not license
+
+- **No automatic mark, ever.** Nothing may tick a box on the paper's behalf, infer one from the
+  document type, or place a position from a default. `#4784` remembers the last tick **in session
+  state only**, never storage, for exactly this reason: a tick that outlived the tab would be a
+  standing instruction to stamp.
+- **The signature is Super Admin's alone**, to store and to place, and the image lives in a private
+  Supabase Storage bucket. A signature served as a static asset is a forgery kit.
+- **The NDA stays hand-stamped** (his ruling the same evening, after it was measured). Its signing
+  cells are 12mm against a 34mm seal, and rendered through Chromium at every height from 16mm to
+  36mm the paper spills onto a second page — on a document that prints two copies for every new
+  hire. There is no height that fits. Never place a mark on it and never offer to.
+- **The stamp column headings still stay**, and the clearance clause still refuses the form until a
+  real stamp is on it.
+
+### The trap
+
+`tests/hiring-pack-document-marks.test.ts` goes red if the mark vocabulary is removed, so the
+feature cannot be quietly deleted in a tidy-up. But nothing stops a session from reading the §4 hook
+alone, concluding that hiring papers must carry no seal mechanism at all, and proposing to rip it
+out as a rule violation — which is why the hook now names this account.
+
 ## `AGENTS.md` §4 Standing owner rules — as it stood before the 2026-09-12 condensation
 
 On 2026-09-12 `AGENTS.md` was cut to roughly half its size at the owner's request ("Load less of AGENTS.md"): every hook was reduced to its rule plus the one detail needed to obey it. This is that section's hook text **verbatim** from `origin/main` 3eea44aef, kept so that no measurement, date, count or diagnosis a condensed hook dropped is lost. Search it for the hook's wording. The accounts earlier in this file remain the fuller record.
