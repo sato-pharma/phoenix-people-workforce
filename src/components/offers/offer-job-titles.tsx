@@ -18,6 +18,7 @@ import {
   offerLabelClassName,
   offerMoney,
 } from "@/components/offers/offer-ui";
+import { offerCostOfLivingDrift } from "@/lib/offers/cost-of-living-agreement";
 import type { OfferJobTitle, OfferTemplate } from "@/lib/offers/types";
 
 type Draft = {
@@ -64,6 +65,16 @@ export function OfferJobTitleCatalogue({
 }) {
   const [draft, setDraft] = useState<Draft>(BLANK);
   const [edits, setEdits] = useState<Record<string, RowEdit>>({});
+
+  /**
+   * Whether the figure being typed for a NEW title disagrees with what payroll pays on it.
+   * Computed on every keystroke rather than on save, so the sentence appears while the number is
+   * still being decided instead of after it has been stored.
+   */
+  const newTitleCostOfLivingDrift = offerCostOfLivingDrift({
+    costOfLiving: draft.costOfLiving,
+    jobTitle: draft.title,
+  });
   const [busy, setBusy] = useState<string | null>(null);
 
   const defaultTemplateName = templates.find((template) => template.isDefault)?.name ?? "the default";
@@ -378,6 +389,17 @@ export function OfferJobTitleCatalogue({
               value={draft.costOfLiving}
             />
             <p className={offerHintClassName}>Carved out of the total package before basic and transport are split.</p>
+            {/* The same money payroll holds as `extra_cost_of_living` + `fuel_allowance`, and
+                nothing used to hold the two together. The offer side is data typed here; payroll's
+                is code. Change one alone and the letter and the employee record describe different
+                money on a document somebody signs — with no error anywhere, because each side stays
+                internally consistent. It FLAGS and never refuses: a figure the owner means to change
+                is legitimate, and only the silent drift is not. */}
+            {newTitleCostOfLivingDrift ? (
+              <p className="mt-1 whitespace-normal break-words rounded-md bg-amber-50 px-2 py-1 text-xs font-bold text-amber-900">
+                {newTitleCostOfLivingDrift}
+              </p>
+            ) : null}
           </div>
           <div>
             <label className={offerLabelClassName} htmlFor="new-reports">Reports to</label>
