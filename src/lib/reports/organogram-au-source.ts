@@ -75,10 +75,11 @@ type EmployeeWorkRow = {
   mobile_number: string | null;
   name_ar: string | null;
   organogram_visible: boolean | null;
-  /** The LIVE team link. `team_name` beside it is a denormalized twin nobody writes — measured
-   *  2026-09-09: 0 of 107 active employees carry it while 105 carry this. */
+  /** The team LINK, and now the only source. `employees.team_name` beside it was a denormalized
+   *  twin nobody wrote — 0 of 198 rows carried one against 152 real `team_id`s — and it was
+   *  dropped on 2026-09-29. The field is gone from this type too, so a read cannot quietly
+   *  re-add it to its select and still typecheck. */
   team_id: number | null;
-  team_name: string | null;
   work_email: string | null;
 };
 
@@ -144,7 +145,7 @@ export async function buildOrganogramSeatReport(): Promise<VacancyReportData> {
   const { data: empData, error: empError } = await supabase
     .from("employees")
     .select(
-      "hr_id, full_name, name_ar, work_email, mobile_number, job_title, employment_status, contract_type, contract_renewal_date, hire_date, departments(name), team_id, team_name, line_id, manager_hr_id, organogram_visible",
+      "hr_id, full_name, name_ar, work_email, mobile_number, job_title, employment_status, contract_type, contract_renewal_date, hire_date, departments(name), team_id, line_id, manager_hr_id, organogram_visible",
     );
   if (empError) {
     // Not thrown: the chart still draws from the seat model, as it did while this was broken. But a
@@ -154,32 +155,30 @@ export async function buildOrganogramSeatReport(): Promise<VacancyReportData> {
     );
   }
 
-  // THE TEAM NAME COMES FROM THE LINK, NOT FROM THE TWIN BESIDE IT.
+  // THE TEAM NAME COMES FROM THE LINK, AND THERE IS NO LONGER A TWIN BESIDE IT.
   //
-  // `employees.team_name` is a denormalized copy that nothing in this codebase writes: measured on
-  // production 2026-09-09, 0 of 107 active employees had it while 105 carried a real `team_id`. So
-  // every organogram surface that showed a team showed an empty one, for everybody, and a team
+  // `employees.team_name` was a denormalized copy that nothing in this codebase wrote: 0 of 198
+  // rows carried one against 152 real `team_id`s (2026-09-09: 0 of 107 active, 105 linked), so
+  // every organogram surface that showed a team showed an empty one, for everybody, while the team
   // assigned correctly in the data model was unreadable in the one module you would look for it.
+  // The column was dropped on 2026-09-29 with the other three labels.
   //
   // A second round trip, accepted for the same reason as the vacancy read below: `teams` is ~120
-  // rows, there is nothing to fold it into, and the alternative is a column that is blank by
-  // construction. It FAILS SOFT — a failed read leaves the map empty and the twin takes over, which
-  // is exactly today's behaviour, rather than taking the whole chart down for a label.
+  // rows and there is nothing to fold it into. It FAILS SOFT — a failed read leaves the map empty
+  // and a seat shows no team, rather than taking the whole chart down for a label.
   const teamNameById = new Map<number, string>();
   const { data: teamData, error: teamError } = await supabase.from("teams").select("id, name");
   if (teamError) {
     console.warn(
-      `organogram: team names could not be read (${teamError.message}); rows fall back to employees.team_name`,
+      `organogram: team names could not be read (${teamError.message}); seats show no team this render`,
     );
   }
   for (const team of (teamData ?? []) as Array<{ id: number | null; name: string | null }>) {
     if (typeof team.id === "number" && team.name?.trim()) teamNameById.set(team.id, team.name.trim());
   }
-  /** The link first, the dead twin only as a fallback for a row that somehow carries one. */
-  const teamNameFor = (employee: { team_id?: number | null; team_name?: string | null }): string | null =>
-    (typeof employee.team_id === "number" ? teamNameById.get(employee.team_id) : null)
-      ?? employee.team_name
-      ?? null;
+  /** The link, and only the link — the twin it used to fall back to no longer exists. */
+  const teamNameFor = (employee: { team_id?: number | null }): string | null =>
+    (typeof employee.team_id === "number" ? teamNameById.get(employee.team_id) : null) ?? null;
   const nameByHr = new Map<string, string>();
   const hireDateByHr = new Map<string, string>();
   const workByHr = new Map<string, EmployeeWorkRow>();

@@ -117,10 +117,10 @@ export type HeadOfficeEmployeeRow = {
   mobile_number?: string | null;
   name_ar?: string | null;
   organogram_visible?: boolean | null;
-  /** The live team link. `team_name` beside it is a denormalized twin nothing writes, so a caller
-   *  that can resolve the link passes `teamNameFor` below and this branch stops showing blanks. */
+  /** The team link, and the only source: `employees.team_name` beside it was a twin nothing wrote
+   *  (0 of 198) and was dropped on 2026-09-29. A caller that can resolve the link passes
+   *  `teamNameFor` below; one that cannot gets no team rather than a blank pretending to be one. */
   team_id?: number | null;
-  team_name?: string | null;
   work_email?: string | null;
 };
 
@@ -171,11 +171,13 @@ export type BuildHeadOfficeRowsOptions = {
    */
   vacancies?: HeadOfficeVacancyRow[];
   /**
-   * Resolves an employee's team NAME from their `team_id`, because `employees.team_name` is a
-   * denormalized twin nothing writes — 0 of 107 active employees carried it on 2026-09-09.
+   * Resolves an employee's team NAME from their `team_id`, because `employees.team_name` was a
+   * denormalized twin nothing wrote — 0 of 107 active employees carried it on 2026-09-09, 0 of 198
+   * when it was dropped on 2026-09-29.
    *
-   * Optional, and the default reads the twin, so every existing caller and test behaves exactly as
-   * before rather than silently changing what this branch emits.
+   * Optional. The default now returns null rather than reading the twin: the twin is gone, and a
+   * default that still named it would be a column reference waiting to be re-added. A caller that
+   * can resolve the link (the seat source) passes this in.
    */
   teamNameFor?: (employee: HeadOfficeEmployeeRow) => string | null;
 };
@@ -233,8 +235,9 @@ export function buildHeadOfficeOrganogramRows(
     occupiedHrIds,
     vacancies = [],
     offerOutByVacancyKey,
-    // Default to the twin so an existing caller emits exactly what it emitted before.
-    teamNameFor = (employee) => employee.team_name ?? null,
+    // No team unless a caller can resolve the link. The twin this used to default to is gone, and
+    // it was blank on every row anyway — so this default emits exactly what it emitted before.
+    teamNameFor = () => null,
   } = options;
   const ceoKey = ceoNodeKey ? canonicalHrIdKey(ceoNodeKey) : null;
 

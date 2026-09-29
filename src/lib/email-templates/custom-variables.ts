@@ -56,13 +56,14 @@ export const EMPLOYEE_VARIABLE_SOURCES: readonly EmployeeVariableSource[] = [
 ];
 
 /**
- * 🔴 THREE OF THOSE NAMES ARE NO LONGER COLUMNS, AND A TOKEN BOUND TO ONE MUST STILL RESOLVE.
+ * 🔴 FOUR OF THOSE NAMES ARE NO LONGER COLUMNS, AND A TOKEN BOUND TO ONE MUST STILL RESOLVE.
  *
- * `employees.line_name`, `department_name` and `area_name` were denormalized labels beside the real
- * links, and all three were dropped on 2026-09-29 (1, 0 and 145 of 198 rows populated, against 181,
- * 180 and 174 links). The binding NAMES stay — they are what the admin picks in the UI and what an
- * existing row would store — but they resolve through the link now, which is also the only reason
- * they mean anything: a `line_name` token would have rendered blank for 197 of 198 people.
+ * `employees.line_name`, `department_name`, `area_name` and `team_name` were denormalized labels
+ * beside the real links, and all four were dropped on 2026-09-29 (1, 0, 145 and 0 of 198 rows
+ * populated, against 181, 180, 174 and 152 links). The binding NAMES stay — they are what the admin
+ * picks in the UI and what an existing row would store — but they resolve through the link now,
+ * which is also the only reason they mean anything: a `team_name` token rendered blank for every
+ * single person, and a `line_name` token for 197 of 198.
  *
  * Without this, the resolve would ask PostgREST for a column that does not exist, and PostgREST
  * fails the WHOLE read: every custom token in that send renders empty, not just the bound one.
@@ -71,7 +72,15 @@ const LINKED_SOURCES: Record<string, { fragment: string; read: (row: EmployeeOrg
   area_name: { fragment: EMPLOYEE_AREA_SELECT, read: resolveEmployeeAreaName },
   department_name: { fragment: "departments(name)", read: resolveEmployeeDepartmentName },
   line_name: { fragment: EMPLOYEE_LINE_SELECT, read: resolveEmployeeLineName },
+  team_name: { fragment: "teams(name)", read: (row) => linkedTeamName(row) },
 };
+
+/** The team's own link. It has no shared resolver yet because nothing else reads a team by name. */
+function linkedTeamName(row: EmployeeOrgFields & { teams?: unknown }): string | null {
+  const relation = Array.isArray(row?.teams) ? row.teams[0] : row?.teams;
+  const name = (relation as { name?: string | null } | null | undefined)?.name;
+  return String(name ?? "").trim() || null;
+}
 
 const allowedSourceColumns = new Set(EMPLOYEE_VARIABLE_SOURCES.map((source) => source.column));
 
