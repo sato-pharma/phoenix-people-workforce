@@ -1,5 +1,5 @@
-import { FormSkeleton } from "@/components/employee-portal/skeleton-templates";
+import { PortalRouteSkeleton } from "@/components/employee-portal/skeleton-templates";
 
 export default function ExcusesLoading() {
-  return <FormSkeleton fieldCount={4} />;
+  return <PortalRouteSkeleton shape="form" />;
 }

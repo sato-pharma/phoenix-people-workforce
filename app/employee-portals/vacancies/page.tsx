@@ -352,8 +352,23 @@ export default async function EmployeePortalVacanciesPage({
             </div>
 
             {/* Desktop Table */}
-            <div className="hidden overflow-x-auto md:block">
-              <table className="min-w-full text-sm">
+            {/* NO `overflow-x-auto`, and NO `min-w-full`. That pair is the textbook shape of the
+                defect AGENTS.md §4 names: a minimum width inside a scroller does not FIT the
+                screen, it buys permission to leave it. Six columns sit comfortably inside the
+                768px this `md:` gate already guarantees, so the fix is `table-fixed` with a
+                colgroup summing to 100% — the cells wrap instead of pushing the page sideways. */}
+            <div className="hidden md:block">
+              <table className="w-full table-fixed text-sm">
+                <colgroup>
+                  {/* Vacancy and Position each carry a code or title plus a note and a chip, so
+                      they take the two widest shares; Opened is one formatted date. */}
+                  <col className="w-[22%]" />
+                  <col className="w-[24%]" />
+                  <col className="w-[16%]" />
+                  <col className="w-[16%]" />
+                  <col className="w-[12%]" />
+                  <col className="w-[10%]" />
+                </colgroup>
                 <thead className="bg-slate-50/80 text-left text-phx-xs uppercase tracking-wider text-slate-400">
                   <tr>
                     <th className="border-r border-slate-100 px-3 py-3 font-semibold sm:px-4">
@@ -385,7 +400,9 @@ export default async function EmployeePortalVacanciesPage({
                         key={vacancy.id}
                         className="border-t border-gray-100 align-top transition-colors hover:bg-slate-50/50"
                       >
-                        <td className="border-r border-slate-100 px-3 py-3 sm:px-4">
+                        {/* `break-words` because a vacancy code is one unbroken token — the one
+                            kind of content a fixed column cannot wrap on its own. */}
+                        <td className="border-r border-slate-100 px-3 py-3 break-words sm:px-4">
                           <p className="font-semibold text-slate-900">
                             {formattedCode.label}
                           </p>
@@ -429,7 +446,7 @@ export default async function EmployeePortalVacanciesPage({
                             </p>
                           ) : null}
                         </td>
-                        <td className="border-r border-slate-100 px-3 py-3 text-slate-600 sm:px-4">
+                        <td className="border-r border-slate-100 px-3 py-3 break-words text-slate-600 sm:px-4">
                           {vacancy.managerName ??
                             vacancy.managerHrId ??
                             "Unassigned"}

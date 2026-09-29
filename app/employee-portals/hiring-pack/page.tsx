@@ -18,6 +18,7 @@ import {
   listHiringPackLines,
 } from "@/lib/hiring-pack/service";
 import type { HiringPackCandidate, HiringPackData } from "@/lib/hiring-pack/types";
+import { logPortalFailure } from "@/lib/observability/portal-logging";
 
 export const dynamic = "force-dynamic";
 
@@ -106,7 +107,15 @@ async function HiringPackContent({
 
   try {
     lines = await listHiringPackLines();
-  } catch {
+  } catch (error) {
+    // Its sibling catch above sets `initialError`, which the manager sees. This one only empties
+    // the LINE picker, so a banner would overstate it — but it was silent, and an empty line list
+    // looks to the person filling a contract like the company has no lines on file. Logged, the
+    // way its sibling at :103 is, so the failure is findable instead of invisible.
+    logPortalFailure(
+      { route: "/employee-portals/hiring-pack", module: "hiring-pack-lines", hrId },
+      error,
+    );
     lines = [];
   }
 

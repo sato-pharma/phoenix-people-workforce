@@ -7,14 +7,16 @@ import { stripComments } from "./support/comment-strip.ts";
 /**
  * The portal's route-loading layer.
  *
- * WHY IT EXISTS. Measured 2026-09-29: **98 of the portal's 126 routes have no `loading.tsx` at
- * all**, so they show nothing whatever between the tap and the server render — on pages that
- * routinely take seconds. Of the 28 that do have one, 24 render `DashboardSkeleton` whatever the
- * page behind it is, and `payslips` — a real page — fronts itself with `RedirectSkeleton`.
+ * WHY IT EXISTS. Measured at the start of the sweep, 2026-09-29: **98 of the portal's 126 routes
+ * had no `loading.tsx` at all**, so they showed nothing whatever between the tap and the server
+ * render — on pages that routinely take seconds. Of the 28 that did have one, 24 rendered
+ * `DashboardSkeleton` whatever the page behind it was, and two REAL pages — `payslips` and
+ * `profile`, the latter 345 lines of the employee's own record — fronted themselves with
+ * `RedirectSkeleton`, a spinner whose whole meaning is "you are being sent somewhere else".
  *
  * A skeleton of the WRONG shape is worse than none: the page appears to settle, then relays out
- * under the reader. So this pins two things — that all five shapes exist and are reachable through
- * one door, and that the door has no default.
+ * under the reader. So this pins three things — that all six shapes exist and are reachable through
+ * one door, that the door has no default, and that every route has a loading state.
  */
 
 const TEMPLATES = "src/components/employee-portal/skeleton-templates.tsx";
@@ -129,31 +131,70 @@ export function runPortalRouteSkeletonTests() {
       `colour when the real header arrives: ${staleHeroes.join(", ")}. Use <HeroSkeleton />.`,
   );
 
-  // ── THE RATCHET: how many routes still show nothing while they load ────────
-  // 98 of 126 on 2026-09-29, before the sweep started; 90 after PR 0, 71 after iReports 360,
-  // 60 after Marketing & ROI, 57 after Performance, 49 after Approvals Hub merged with it. It MAY NEVER RISE — a new portal route
-  // without a loading.tsx is caught on the day it is written, which is the only way the count
-  // stays down once the sweep finishes.
+  // ── ONE DOOR: no loading.tsx reaches past PortalRouteSkeleton to a template ─
+  // This is how the generic-dashboard drift happened and how it would come back. Fifteen loading
+  // files imported `DashboardSkeleton` (or `FormSkeleton`, or `RedirectSkeleton`) directly, and
+  // NOTHING looked at them — the count above only sees routes with NO loading.tsx, so a file with
+  // the wrong shape was invisible to it for as long as it existed. Twelve of the fifteen were a
+  // dashboard placeholder in front of a list, a single record or a database.
   //
-  // It is a ratchet and not a demand for zero because the remaining routes need a shape CHOSEN
-  // per page, in the section PR that owns them. A blanket `shape="dashboard"` everywhere would
-  // drive this to 0 and reinstate the exact defect the shapes exist to fix.
-  //
-  // 🔴 MEASURE this number on your rebased tree; never derive it by subtracting what you fixed.
-  // PR 3 of the sweep set the sibling fits-the-screen baseline by arithmetic, landed on a figure
-  // one too high, and its break-the-fix run then PASSED when it should have failed — a baseline
-  // one above the truth silently accepts exactly one regression.
-  const BASELINE_ROUTES_WITHOUT_LOADING = 49;
+  // Going through PortalRouteSkeleton is what makes the shape a named, reviewable decision instead
+  // of whichever template was nearest to hand. A page-shaped skeleton built from `Pulse` and
+  // `HeroSkeleton` is still welcome — better than a generic one — which is why those two are not on
+  // this list.
+  const RAW_TEMPLATES = [
+    "CalendarSkeleton",
+    "DashboardSkeleton",
+    "DetailSkeleton",
+    "FormSkeleton",
+    "RedirectSkeleton",
+    "TableSkeleton",
+  ];
+  const rawImporters: string[] = [];
+  const doorStack = ["app/employee-portals"];
+  while (doorStack.length > 0) {
+    const current = doorStack.pop() as string;
+    for (const entry of readdirSync(current)) {
+      const full = path.join(current, entry);
+      if (statSync(full).isDirectory()) {
+        doorStack.push(full);
+        continue;
+      }
+      if (entry !== "loading.tsx") continue;
+      const body = stripComments(readFileSync(full, "utf8"));
+      const used = RAW_TEMPLATES.filter((name) => new RegExp(`\\b${name}\\b`).test(body));
+      if (used.length > 0) {
+        rawImporters.push(`${full.split(path.sep).join("/")} (${used.join(", ")})`);
+      }
+    }
+  }
+  assert.deepEqual(
+    rawImporters,
+    [],
+    `these loading.tsx files render a raw skeleton template instead of going through ` +
+      `PortalRouteSkeleton: ${rawImporters.join(", ")}. Use ` +
+      `<PortalRouteSkeleton shape="…" /> so the shape is a decision someone made about that page, ` +
+      `not whichever template was nearest. A hand-built skeleton from Pulse/HeroSkeleton is fine.`,
+  );
 
-  // How far the count may fall before the test starts asking for a re-baseline.
+  // ── EVERY portal route has a loading state. An ABSOLUTE since 2026-09-29 ───
+  // This began as a ratchet, because 98 of 126 routes showed nothing whatever between the tap and
+  // the server render. The sweep walked it down — 90 after PR 0, 71 after iReports 360, 60 after
+  // Marketing & ROI, 57 after Performance, 49 after Approvals Hub, 40 after Sales Data, and **0**
+  // in the tail PR, which covered the 31 routes no sidebar section reached (visual-aids,
+  // vacation-control, resignations, the recruitment sub-tree, offers, employees, contracts and the
+  // rest) plus the six redirect stubs.
   //
-  // It was 12, which meant every section PR of a thirteen-PR sweep had to edit this constant —
-  // and since they are open at the same time, each one then conflicted with the last on this
-  // exact line. The upper bound is what catches a regression and it is unaffected; this lower
-  // guard only stops the number going stale, and it does that just as well checked every few
-  // sections as every one. 25 is roughly two sections' worth at the sweep's current rate.
-  const SLACK_BEFORE_RE_BASELINING = 25;
-
+  // It is an absolute rather than a ratchet now because there is no number left to argue about: a
+  // route with no loading.tsx is a route that flashes blank, and one added tomorrow fails here on
+  // the day it is written. That was always the ratchet's purpose; reaching zero is what lets the
+  // guard stop carrying a figure every PR had to re-measure, re-baseline and then conflict on.
+  //
+  // What this does NOT demand is a particular SHAPE. That choice belongs to whoever writes the
+  // route, and a blanket `shape="dashboard"` is the very defect the shapes exist to prevent — 24 of
+  // the original 28 loading files were exactly that, and two real pages (payslips, profile) fronted
+  // themselves with a redirect spinner. The no-default rule above enforces that a shape is chosen;
+  // this assertion enforces only that a loading state exists at all.
   const bare: string[] = [];
   let routes = 0;
   const routeStack = ["app/employee-portals"];
@@ -171,17 +212,14 @@ export function runPortalRouteSkeletonTests() {
   }
 
   assert.ok(routes >= 100, `the portal should still have its full route set; found ${routes}`);
-  assert.ok(
-    bare.length <= BASELINE_ROUTES_WITHOUT_LOADING,
-    `${bare.length} portal routes have no loading.tsx, up from ${BASELINE_ROUTES_WITHOUT_LOADING}. ` +
-      "A route with none shows NOTHING between the tap and the server render. Add " +
-      '`<PortalRouteSkeleton shape="…" />`, choosing the shape from what the page is.',
-  );
-  assert.ok(
-    bare.length >= BASELINE_ROUTES_WITHOUT_LOADING - SLACK_BEFORE_RE_BASELINING,
-    `only ${bare.length} routes now lack a loading.tsx, well under the recorded ${BASELINE_ROUTES_WITHOUT_LOADING}. ` +
-      "That is good news — MEASURE the count on your rebased tree and set " +
-      "BASELINE_ROUTES_WITHOUT_LOADING to it (never derive it by subtraction), or a stale-high " +
-      "baseline quietly re-opens the door to the count it was lowered from.",
+  assert.deepEqual(
+    bare,
+    [],
+    `these portal routes have no loading.tsx, so they show NOTHING between the tap and the server ` +
+      `render: ${bare.join(", ")}. Add a three-line loading.tsx returning ` +
+      `<PortalRouteSkeleton shape="…" />, choosing the shape from what the page actually renders — ` +
+      `"table" for a list or a PortalResponsiveDataList, "dashboard" for cards and charts, ` +
+      `"detail" for one record, "form" for an input-led page, "calendar" for a month grid, and ` +
+      `"redirect" ONLY when the page's whole body is a redirect().`,
   );
 }
