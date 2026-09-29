@@ -210,7 +210,10 @@ export function runEmployeeLineIsReadFromTheLinkTests() {
   // Super-Admin fallback — HR Advisory and HR Operations were never notified at all. Same defect as
   // the Report It submit route (`name`, `area`, `department`). These names are what the last three
   // of those defects were made of; a name here is one this table does not have.
-  const DROPPED_LABELS = /\bline_name\b|\bdepartment_name\b|\barea_name\b|\bposition_title\b|\bteam_title\b/;
+  // `team_name` joined them on 2026-09-29: 0 of 198 rows carried one against 152 real `team_id`s,
+  // the deadest of the four, and the organogram's own select still named it until this change.
+  const DROPPED_LABELS =
+    /\bline_name\b|\bdepartment_name\b|\barea_name\b|\bteam_name\b|\bposition_title\b|\bteam_title\b/;
   const offenders: string[] = [];
   let scanned = 0;
   const roots = [new URL("../src/", import.meta.url), new URL("../app/", import.meta.url)];
@@ -258,16 +261,16 @@ export function runEmployeeLineIsReadFromTheLinkTests() {
 
   // ── 3d. A BINDABLE EMAIL TOKEN MUST NOT NAME A COLUMN THAT IS GONE ────────────────────────
   // An admin can bind a custom {{token}} to an employees column (owner request, 2026-07-22), and
-  // the allowlist offers "Line", "Area" and "Department" — all three of which were dead labels and
-  // are now dropped columns. The catalogue keys stay (they are what a stored row holds), so each
-  // one must be mapped to its LINK in the resolver, or the whole read 42703s and every custom token
-  // in that send renders empty. Nothing is bound on production today (0 rows) — this is the guard
-  // that keeps the first binding from being the one that finds out.
+  // the allowlist offers "Line", "Area", "Department" and "Team" — all four of which were dead
+  // labels and are now dropped columns. The catalogue keys stay (they are what a stored row holds),
+  // so each one must be mapped to its LINK in the resolver, or the whole read 42703s and every
+  // custom token in that send renders empty. Nothing is bound on production today (0 rows) — this
+  // is the guard that keeps the first binding from being the one that finds out.
   const customVariables = read(CUSTOM_VARIABLES);
   const catalogue = /EMPLOYEE_VARIABLE_SOURCES[\s\S]*?\n\];/.exec(customVariables)?.[0] ?? "";
   assert.ok(catalogue.includes("full_name"), "the variable catalogue must be found to be checked");
   const linkedBlock = /LINKED_SOURCES[\s\S]*?\n\};/.exec(customVariables)?.[0] ?? "";
-  for (const dropped of ["line_name", "department_name", "area_name"]) {
+  for (const dropped of ["line_name", "department_name", "area_name", "team_name"]) {
     if (!catalogue.includes(`"${dropped}"`)) continue;
     assert.ok(
       new RegExp(`${dropped}:\\s*\\{`).test(linkedBlock),

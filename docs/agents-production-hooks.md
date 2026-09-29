@@ -831,3 +831,39 @@ removes it", and put it to the owner as a decision. Acting on that would have ha
 Railway was already going to purge — and the recovery story it was weighed against is three dumps in
 `F:\PHX backup\headwind-db\` totalling 720 KB, which is the whole of it. **Read the list twice,
 hours apart, before concluding an orphan is permanent.**
+
+## New hook — an unparseable workflow file withholds EVERY production deploy (2026-09-29)
+
+**The hook.** 🔴 **A workflow file that does not parse is not a quiet no-op: GitHub fails a run on
+EVERY push, and that red suite withholds that commit's production deploy.** The tell is a failed run
+whose **name is the file path** and which has **zero jobs** — GitHub prints the path because it never
+learned the workflow's name. Read `actions/runs?head_sha=<full sha>` and compare the run NAMES, not
+just their conclusions.
+
+**What it cost.** `staging-hr-drift-check.yml` was merged at 18:37 Cairo (#4769) with its Telegram
+message written as a literal multi-line shell argument, so seven lines sat at column 0 while the
+`run: |` block's content was indented ten spaces. A YAML block scalar ends at the first line indented
+less than its parent, so the document was invalid from `${DRIFT_SUMMARY}` onward.
+
+Production then climbed through the deploys queued before that commit and **stopped dead at
+`58b134936`**, the last one before it. Six commits — `945dac575`, `b6302bdb3`, `861750043`,
+`f7c55f85c`, `305112798`, `46512864a` — were all marked `SKIPPED`, including the repair for an
+organogram outage the owner was waiting on. **`ci.yml` was green on every one of them.**
+
+**Three things that made it hard to see, and the measurement that settled each:**
+
+- The workflow declares only `schedule` and `workflow_dispatch`, and its own comment says "Never on
+  push or pull_request" — yet every run was on `push`. A workflow cannot trigger on an event it does
+  not declare, so that contradiction IS the diagnosis: GitHub could not read the triggers.
+- It had **10 runs, all failure, all with 0 jobs**, the oldest 6 minutes before the file merged. A
+  workflow that has never once succeeded is a new one that never worked, not a flaky one.
+- On the same commits in the same minutes, `ci.yml`, `staging-migrate.yml` and
+  `staging-branch-sync.yml` carried real names and **succeeded** — which rules out billing, an outage,
+  or "production is behind" as the cause. A parallel session was holding merges on exactly that
+  theory; a quiet window cannot converge, because each new commit gets a fresh red suite of its own.
+
+**Recovery.** Repair the file (or disable the workflow) and merge it. The next green commit ships and
+carries the whole stranded backlog in one deploy — never re-merge, never `railway redeploy`. Pinned
+by `tests/workflow-files-parse.test.ts`, which scans every workflow for a line at column 0 that is
+not a top-level key and runs in the required `checks` job. Build multi-line text with `printf`;
+newlines belong in a format string, never in the YAML.
