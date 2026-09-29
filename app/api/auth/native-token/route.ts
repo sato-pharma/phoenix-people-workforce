@@ -3,7 +3,8 @@ import { cookies } from "next/headers";
 
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { phoenixNativeClientUserAgentMarker } from "@/lib/auth/native-session";
-import { resolveAccessContext } from "@/lib/auth/server";
+import { assertPermission } from "@/lib/auth/permissions";
+import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { phoenixSessionCookieName, verifySessionToken } from "@/lib/auth/session";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
@@ -61,6 +62,17 @@ export async function POST(request: Request) {
   const access = await resolveAccessContext(request);
   if (access.source !== "session" || !access.loginId) {
     return NextResponse.json({ error: "no_session" }, { status: 401 });
+  }
+  // The same minimal gate the portal shell asserts before it renders anything — a caller who cannot
+  // open the portal is not handed a bearer into it. Every portal role holds it; a role that does not
+  // is refused here rather than at the first native request.
+  try {
+    await assertPermission(access, "employee_profile", "read");
+  } catch (error) {
+    if (isForbiddenError(error)) {
+      return NextResponse.json({ error: "forbidden" }, { status: 403 });
+    }
+    throw error;
   }
 
   // The bearer IS the cookie's value — read it and re-verify rather than re-issuing, so this can

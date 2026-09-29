@@ -25,11 +25,17 @@ export async function runNativeTokenBridgeTests() {
     "the bridge must require the native shell's user-agent marker",
   );
 
-  // 3. A live cookie session only — never a guest or a dev-header context.
+  // 3. A live cookie session only — never a guest or a dev-header context — AND the same permission
+  //    gate the portal shell asserts, so a role that cannot open the portal is not handed a bearer.
   assert.match(
     route,
     /access\.source !== "session"/,
     "the bridge must require a real cookie session (source === 'session')",
+  );
+  assert.match(
+    route,
+    /assertPermission\(access, "employee_profile", "read"\)/,
+    "the bridge must assert the portal read permission, not merely check the session source",
   );
 
   // 4. It MINTS NOTHING: it returns the cookie's own token, re-verified — never createSessionToken.
