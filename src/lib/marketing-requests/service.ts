@@ -37,6 +37,10 @@ import {
   marketingInvoiceDueLabel,
   resolveMarketingInvoiceObligation,
 } from "@/lib/marketing-requests/invoice-obligation";
+import {
+  checkCustomerPharmacyDistance,
+  venueTooFarMessage,
+} from "@/lib/venues/customer-pharmacy-distance";
 import { marketingRequestNotificationUrl } from "@/lib/marketing-requests/notification-link";
 // Moved out of this file (it was 6,000 lines) so the Case File can share the exact same reads
 // instead of copying them. Behaviour is unchanged for every caller below.
@@ -2342,6 +2346,36 @@ function normalizeValidationCustomer(
       );
     }
     seenExistingPharmacyIds.add(pharmacy.existingPharmacyId);
+  }
+
+  // THE 4 KM RULE (owner ruling, 2026-09-29). A pharmacy that far from the doctor cannot be where
+  // his prescriptions are dispensed, so the request's ROI — which is read from that pharmacy's
+  // sales — would be measuring an unrelated shop.
+  //
+  // Here, in the normalizer, rather than beside the link insert: this runs BEFORE a single row is
+  // written, so a refused submission leaves nothing half-created. The insert path's own failure
+  // mode is to throw and unwind every customer and pharmacy it has already written, which is a
+  // violent way to say "wrong shop".
+  //
+  // Skipped for an existing pharmacy picked off the My Pharmacies tab: its capture lives in the
+  // database and every other field on that input object is meaningless by contract (see
+  // `NormalizedMarketingValidationPharmacy.existingPharmacyId`), so comparing against the client's
+  // blank coordinates would refuse a reuse that is very probably correct.
+  for (const pharmacy of pharmacies) {
+    if (pharmacy.existingPharmacyId) continue;
+    const distance = checkCustomerPharmacyDistance(
+      { latitude: customer.capturedLatitude, longitude: customer.capturedLongitude },
+      { latitude: pharmacy.capturedLatitude, longitude: pharmacy.capturedLongitude },
+    );
+    if (!distance.refused) continue;
+    throw validationError(
+      venueTooFarMessage({
+        customerName: customer.displayName || "this customer",
+        distanceMeters: distance.distanceMeters ?? 0,
+        pharmacyName: pharmacy.displayName || "That pharmacy",
+      }),
+      "pharmacy_too_far_from_customer",
+    );
   }
 
   return {
