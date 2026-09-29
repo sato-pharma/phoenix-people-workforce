@@ -336,6 +336,15 @@ export async function requestDirectOrderPharmacyValidation(
     capturedAccuracyMeters?: unknown;
     capturedAt?: string | null;
     capturedAddress?: string | null;
+    /**
+     * The live photo’s OWN fix, read at the shutter — NOT a copy of the `captured*` pin above.
+     * Unparsed for the same reason as the pin. All four may be absent: the shutter never blocks
+     * on a second reading, and absent means NOT MEASURED, never “same place as the pin”.
+     */
+    photoLatitude?: unknown;
+    photoLongitude?: unknown;
+    photoAccuracyMeters?: unknown;
+    photoCapturedAt?: string | null;
   },
 ): Promise<{ validationId: string }> {
   await assertPermission(access, "direct_orders", "create");
@@ -376,6 +385,13 @@ export async function requestDirectOrderPharmacyValidation(
   // The fix's accuracy decides nothing and refuses nothing; it is only stored. A blank one is null,
   // where the route's `Number(...)` stored it as 0 m, a perfect fix the device never reported.
   const capturedAccuracyMeters = readAccuracyInput(input.capturedAccuracyMeters);
+  // The photo’s own reading, through the same readers and stored beside the pin rather than over
+  // it. Deliberately NOT defaulted to the pin when absent: that substitution is the defect this
+  // replaces, and downstream it would be indistinguishable from a real second measurement. It
+  // refuses nothing either — a photo is never rejected for having no fix of its own.
+  const photoLatitude = readCoordinateInput(input.photoLatitude);
+  const photoLongitude = readCoordinateInput(input.photoLongitude);
+  const photoAccuracyMeters = readAccuracyInput(input.photoAccuracyMeters);
 
   // The evidence must come from the person whose order is stuck. `direct_orders:create` alone is
   // not enough: it admits every rep in the company, so without this any of them could file a
@@ -561,6 +577,10 @@ export async function requestDirectOrderPharmacyValidation(
       captured_accuracy_meters: capturedAccuracyMeters,
       captured_at: input.capturedAt ?? null,
       captured_address: input.capturedAddress?.trim() || null,
+      photo_latitude: photoLatitude,
+      photo_longitude: photoLongitude,
+      photo_accuracy_meters: photoAccuracyMeters,
+      photo_captured_at: input.photoCapturedAt ?? null,
       requester_area_code: areaCode,
       gps_inside_requester_area: proximity.inside,
       storage_bucket: DIRECT_ORDER_EVIDENCE_BUCKET,

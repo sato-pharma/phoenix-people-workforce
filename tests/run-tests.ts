@@ -1133,6 +1133,7 @@ import { runSosBackupCoversEveryTableTests } from "./sos-backup-covers-every-tab
 import { runSosBackfillEmptyBrickSentinelTests } from "./sos-backfill-empty-brick-sentinel.test.ts";
 import { runSosSeatAttributionPeriodTests } from "./sos-seat-attribution-period.test.ts";
 import { runMonthlyClosingLockTests } from "./monthly-closing-lock.test.ts";
+import { runCaptureTrustTests } from "./capture-trust.test.ts";
 import { runClosingPeriodGateTests } from "./closing-period-gate.test.ts";
 import { runProductPeriodPriceTests } from "./product-period-price.test.ts";
 import { runVerifiedCapturesTests } from "./verified-captures.test.ts";
@@ -4298,6 +4299,7 @@ await runTest("SoS backfill matches the empty-string brick sentinel, not just NU
 await runTest("SoS seat attribution (today's wiring, departed reps keep their credit)", runSosSeatAttributionPeriodTests);
 await runTest('Monthly closing lock (database triggers, not a disabled button)', runMonthlyClosingLockTests);
 await runTest('CLOSING GOLDEN RULE (a month is never published during that month, Cairo boundary)', runClosingPeriodGateTests);
+await runTest('capture trust (the photo carries its OWN gps fix, never a copy of the location fix)', runCaptureTrustTests);
 await runTest('PERIOD-SCOPED FACTORY PRICE (Saginko 170.52 from 2026-10; July/August must not move)', runProductPeriodPriceTests);
 await runTest('Verified Captures (Super Admin only gate, rep/DM/search filter)', runVerifiedCapturesTests);
 await runTest('SPOTLIGHT (achievement summed never averaged, targeted months only, completed-window gate)', runSpotlightRankingTests);

@@ -49,6 +49,7 @@ import type {
   MarketingValidationStatus,
   MarketingValidationWorkspace as MarketingValidationWorkspacePayload,
 } from "@/lib/marketing-requests/types";
+import { NO_SHUTTER_FIX, readShutterFix, type ShutterFix } from "@/lib/evidence/read-shutter-fix";
 import { LINK_STATUS_PRECEDENCE, linkStatusIsSelectable } from "@/lib/marketing-requests/code-link-reach";
 import {
   describeRestoredDraft,
@@ -277,8 +278,24 @@ type CaptureState = {
    * then, so no photo is ever stamped with a half-resolved place.
    */
   locationLines: string[];
+  /**
+   * The photo's OWN GPS fix, read fresh at the shutter — never a copy of the location fix above.
+   *
+   * Until 2026-09-29 the evidence row was written with the coordinates from *Capture Location*,
+   * so `marketing_evidence_files.captured_latitude/longitude` and the venue row's own capture were
+   * always byte-identical and the distance between them was structurally zero. A real case that
+   * day had 18m31s between the location fix and the shutter, and nothing in Phoenix could say
+   * whether the camera had stayed put — the comparison the columns imply was never being made.
+   *
+   * Null when the browser refuses or times out at the shutter. That is deliberate: a photo is
+   * never blocked on a second fix, and the server falls back to the location fix rather than
+   * refusing the save. Null therefore means "not measured", never "same place".
+   */
+  photoAccuracy: number | null;
   photoCapturedAt: string | null;
   photoDataUrl: string | null;
+  photoLatitude: number | null;
+  photoLongitude: number | null;
   photoName: string;
 };
 
@@ -442,8 +459,11 @@ function emptyCapture(): CaptureState {
     latitude: null,
     longitude: null,
     locationLines: [],
+    photoAccuracy: null,
     photoCapturedAt: null,
     photoDataUrl: null,
+    photoLatitude: null,
+    photoLongitude: null,
     photoName: "",
   };
 }
@@ -1686,7 +1706,7 @@ function LiveCameraModal({
   targetLabel,
 }: {
   capture: CaptureState;
-  onCapture: (dataUrl: string, capturedAt: string) => void;
+  onCapture: (dataUrl: string, capturedAt: string, photoFix: ShutterFix) => void;
   onClose: () => void;
   targetLabel: string;
 }) {
@@ -1696,7 +1716,9 @@ function LiveCameraModal({
   const [cameraReady, setCameraReady] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
   const [message, setMessage] = useState("Camera permission is required.");
-  const [pendingPhoto, setPendingPhoto] = useState<{ capturedAt: string; dataUrl: string } | null>(null);
+  const [pendingPhoto, setPendingPhoto] = useState<
+    { capturedAt: string; dataUrl: string; fix: ShutterFix } | null
+  >(null);
   // `locationLines`, not `address`: the address used to be filled in with the raw coordinates the
   // instant the pin arrived, so this gate opened before the place was known and a rep could stamp
   // a photo whose caption was a number pair. It now waits for the resolved block.
@@ -1818,13 +1840,24 @@ function LiveCameraModal({
     setPendingPhoto({
       capturedAt: photoCapturedAtIso,
       dataUrl: canvas.toDataURL("image/jpeg", 0.86),
+      fix: NO_SHUTTER_FIX,
     });
     setMessage("Review the stamped photo before confirming.");
+
+    // The photo's OWN position, read now rather than copied from *Capture Location*. Fired here and
+    // awaited nowhere: the image is already on screen, so a slow or refused fix costs the rep
+    // nothing and simply leaves the reading null. Guarded on `capturedAt` so a fix that lands after
+    // the rep has retaken the shot cannot attach itself to the new photo.
+    void readShutterFix().then((fix) => {
+      setPendingPhoto((current) =>
+        current && current.capturedAt === photoCapturedAtIso ? { ...current, fix } : current,
+      );
+    });
   }
 
   function confirmPhoto() {
     if (!pendingPhoto) return;
-    onCapture(pendingPhoto.dataUrl, pendingPhoto.capturedAt);
+    onCapture(pendingPhoto.dataUrl, pendingPhoto.capturedAt, pendingPhoto.fix);
   }
 
   // Portalled to <body> at z-[300]: left inside the page it anchored to the page-transition wrapper
@@ -2522,11 +2555,17 @@ export function MarketingValidationWorkspace() {
     resolveStampLines(target, place.lat, place.lng, null);
   }
 
-  function applyLivePhoto(dataUrl: string, photoCapturedAt: string) {
+  function applyLivePhoto(dataUrl: string, photoCapturedAt: string, photoFix: ShutterFix) {
     if (cameraTarget) {
       patchLocation(cameraTarget, {
+        // The shutter's own reading, kept apart from the location fix on purpose — see
+        // `CaptureState.photoLatitude`. Never defaulted to the location fix here: a fallback at this
+        // layer would be indistinguishable downstream from a genuine second measurement.
+        photoAccuracy: photoFix.accuracy,
         photoCapturedAt,
         photoDataUrl: dataUrl,
+        photoLatitude: photoFix.latitude,
+        photoLongitude: photoFix.longitude,
         photoName: `${cameraTarget.pharmacyKey ? "pharmacy" : "customer"}-live-${photoCapturedAt}.jpg`,
       });
     }
@@ -2541,7 +2580,12 @@ export function MarketingValidationWorkspace() {
       capturedLatitude: capture.latitude,
       capturedLongitude: capture.longitude,
       evidenceHasTimestamp: Boolean(capture.photoName && capture.photoCapturedAt),
+      // The shutter's own fix. Null when it could not be read — the server keeps that null rather
+      // than substituting the location fix, so "not measured" never masquerades as "same place".
+      evidencePhotoAccuracyMeters: capture.photoAccuracy,
       evidencePhotoCapturedAt: capture.photoCapturedAt,
+      evidencePhotoLatitude: capture.photoLatitude,
+      evidencePhotoLongitude: capture.photoLongitude,
       // The IMAGE, not just its name. This line is the fix: the stamped JPEG used to live only in
       // `photoDataUrl` for the on-screen preview and was dropped the moment the form was submitted,
       // so the server stored a filename and called it proof. The server now writes these bytes to

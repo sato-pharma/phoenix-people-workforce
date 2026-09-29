@@ -58,6 +58,13 @@ export async function POST(request: Request) {
       capturedAccuracyMeters: body.capturedAccuracyMeters,
       capturedAt: body.capturedAt ? String(body.capturedAt) : null,
       capturedAddress: body.capturedAddress ? String(body.capturedAddress) : null,
+      // The PHOTO’S own fix, passed through exactly as posted for the same reason as the pin
+      // above — never `Number(...)` here. The service reads each one with the shared readers, so
+      // a blank stays null rather than becoming a perfect 0 m fix at 0°N 0°E.
+      photoLatitude: body.photoLatitude,
+      photoLongitude: body.photoLongitude,
+      photoAccuracyMeters: body.photoAccuracyMeters,
+      photoCapturedAt: body.photoCapturedAt ? String(body.photoCapturedAt) : null,
     });
     return NextResponse.json({ ...result, success: true });
   } catch (error) {

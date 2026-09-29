@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { NO_SHUTTER_FIX, readShutterFix, type ShutterFix } from "@/lib/evidence/read-shutter-fix";
 import { useRouter } from "next/navigation";
 import {
   buildEvidenceStampLines,
@@ -120,6 +121,19 @@ export function PharmacyValidationCapture({
   const [cameraReady, setCameraReady] = useState(false);
   const [capture, setCapture] = useState<Capture>(EMPTY);
   const [photo, setPhoto] = useState<string | null>(null);
+  /**
+   * The PHOTO’S OWN position and time, read fresh at the shutter — never a copy of the
+   * *Capture Location* fix above. Before 2026-09-29 this screen sent one fix and used it for
+   * both the venue and its photo, so the two could never be compared and a stale location could
+   * ride a photo taken somewhere else entirely. See `src/lib/evidence/capture-trust.ts`.
+   *
+   * Nulls are normal: the shutter never waits on a second fix, and a null means NOT MEASURED —
+   * never that the photo and the location agree.
+   */
+  const [photoFix, setPhotoFix] = useState<{ capturedAt: string | null } & ShutterFix>({
+    ...NO_SHUTTER_FIX,
+    capturedAt: null,
+  });
   const [name, setName] = useState(pharmacyName);
   const [address, setAddress] = useState("");
   const [doctor, setDoctor] = useState("");
@@ -306,6 +320,15 @@ export function PharmacyValidationCapture({
 
     setPhoto(canvas.toDataURL("image/jpeg", 0.86));
     setMessage("Photo captured.");
+
+    // The photo’s own reading, taken now rather than reused from *Capture Location*. Fired and
+    // not awaited: the image is already captured, so a slow or refused fix costs the rep nothing
+    // and simply leaves the reading null. Guarded on `takenAt` so a fix that lands after a retake
+    // cannot attach itself to the newer photo.
+    setPhotoFix({ ...NO_SHUTTER_FIX, capturedAt: takenAt });
+    void readShutterFix().then((fix) => {
+      setPhotoFix((current) => (current.capturedAt === takenAt ? { ...fix, capturedAt: takenAt } : current));
+    });
     streamRef.current?.getTracks().forEach((t) => t.stop());
     setCameraReady(false);
   }
@@ -390,6 +413,12 @@ export function PharmacyValidationCapture({
           capturedAccuracyMeters: capture.accuracy,
           capturedAt: capture.capturedAt,
           capturedAddress: capture.address,
+          // The shutter’s own fix, kept apart from the location fix on purpose. The server
+          // stores these as given and never falls back to `captured*` — see capture-trust.ts.
+          photoAccuracyMeters: photoFix.accuracy,
+          photoCapturedAt: photoFix.capturedAt,
+          photoLatitude: photoFix.latitude,
+          photoLongitude: photoFix.longitude,
         }),
       });
       const data = (await res.json().catch(() => ({}))) as { success?: boolean; message?: string };
