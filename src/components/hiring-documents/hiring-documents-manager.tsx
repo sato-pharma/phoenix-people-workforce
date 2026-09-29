@@ -9,6 +9,7 @@ import {
   FilePlus2,
   Paperclip,
   RefreshCw,
+  ScanLine,
   Search,
   SlidersHorizontal,
   Table2,
@@ -186,6 +187,13 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
   const filteredEmployees = React.useMemo(
     () => filterHiringDocumentEmployees(employees, documents, filters),
     [documents, employees, filters],
+  );
+
+  // Ticked but never scanned. Clamped at zero because the two counts come from the same pass and
+  // cannot legitimately invert — a negative would be a bug printed to HR as though it were a fact.
+  const scanGap = Math.max(
+    0,
+    (data?.summary.submittedDocuments ?? 0) - (data?.summary.scannedDocuments ?? 0),
   );
 
   React.useEffect(() => {
@@ -468,10 +476,28 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
           </AdminCallout>
         ) : null}
 
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        {/* Six tiles, so the track goes 2 -> 3 -> 6 rather than the old 2 -> 5: five columns of six
+            cards strands one on a row of its own, and three at `lg` keeps two even rows on the
+            widths between. */}
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
           <AdminStatCard description="Employees in the hiring document workflow." icon={<FileCheck2 className="h-5 w-5" />} label="Employees" value={data?.summary.employees ?? 0} tone="blue" />
           <AdminStatCard description="Active checklist documents controlled by HR." icon={<FilePlus2 className="h-5 w-5" />} label="Documents" value={documents.length} />
           <AdminStatCard description="Documents marked as delivered." icon={<Check className="h-5 w-5" />} label="Submitted" value={data?.summary.submittedDocuments ?? 0} tone="emerald" />
+          {/* Scanning progress, as a FRACTION on purpose. A bare count of scans reads as progress on
+              its own; what matters is how far it trails the ticks, and on production that gap was 3
+              files against 380 ticks. The description carries the gap in words, because the gap IS
+              the work — and it says so plainly rather than leaving a reader to subtract. */}
+          <AdminStatCard
+            description={
+              scanGap > 0
+                ? `${scanGap} submitted ${scanGap === 1 ? "document has" : "documents have"} no file on record yet.`
+                : "Every submitted document has a scan on file."
+            }
+            icon={<ScanLine className="h-5 w-5" />}
+            label="Scanned"
+            tone="violet"
+            value={`${data?.summary.scannedDocuments ?? 0} / ${data?.summary.submittedDocuments ?? 0}`}
+          />
           <AdminStatCard description="Documents marked missing by HR." icon={<X className="h-5 w-5" />} label="Missing" value={data?.summary.missingDocuments ?? 0} tone="rose" />
           <AdminStatCard description="Missing documents with due date today or earlier." icon={<AlertTriangle className="h-5 w-5" />} label="Due" value={data?.summary.dueDocuments ?? 0} tone="orange" />
         </div>

@@ -44,6 +44,34 @@ export function runRecruitmentOnboardingMetricsTests() {
   assert.equal(documentMetrics.missingDocuments, 1);
   assert.equal(documentMetrics.dueDocuments, 1);
   assert.equal(documentMetrics.readinessRate, 0.5);
+  // The scanning tile's number. The submitted document in this fixture has fileCount 0, so the tile
+  // must read 0 / 1 — a tick with nothing filed is NOT a scan, and counting it as one would tell HR
+  // the paper exists when nobody has produced it. On production that gap was 3 files against 380.
+  assert.equal(documentMetrics.scannedDocuments, 0);
+  assert.equal(documentMetrics.submittedDocuments - documentMetrics.scannedDocuments, 1);
+
+  // The same tick with a file behind it: the count follows the FILE, never the status.
+  const scanned = summarizeHiringDocumentReadiness(
+    [
+      {
+        documents: {
+          id: { documentId: "id", dueDate: null, fileCount: 2, notes: null, status: "submitted", updatedAt: null },
+        },
+        employmentStatus: "active",
+        fullName: "Employee Two",
+        hireDate: "2026-01-01",
+        hrId: "MR-101",
+        jobTitle: "Medical Rep",
+        lineName: "CNS",
+        managerHrId: "DSM-1",
+        managerName: "Manager",
+        notes: null,
+      },
+    ],
+    [documents[0]],
+  );
+  assert.equal(scanned.scannedDocuments, 1);
+  assert.equal(scanned.submittedDocuments, 1);
 
   const candidates = summarizeCandidatePipeline([
     { companies: "", companyList: [], cvName: "a.pdf", dateOfSendingCv: "", duration: "", durationMonths: null, from: "", medicalSalesExp: "Yes", name: "A", rowNumber: 1, status: "experienced", to: "" },

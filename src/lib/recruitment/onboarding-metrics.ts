@@ -9,6 +9,14 @@ export type OnboardingDocumentMetrics = {
   missingDocuments: number;
   pendingDocuments: number;
   readinessRate: number;
+  /**
+   * Submitted documents with at least one scan or upload actually filed against them.
+   *
+   * SEPARATE FROM `submittedDocuments`, because the two answer different questions and the gap
+   * between them is the whole point: on production 2026-09-29 the database held 3 files against 380
+   * ticks. A tick is somebody's word that the paper exists; a scan is the paper.
+   */
+  scannedDocuments: number;
   submittedDocuments: number;
   totalDocumentSlots: number;
 };
@@ -32,6 +40,7 @@ const emptyHiringDocumentMetrics: OnboardingDocumentMetrics = {
   missingDocuments: 0,
   pendingDocuments: 0,
   readinessRate: 1,
+  scannedDocuments: 0,
   submittedDocuments: 0,
   totalDocumentSlots: 0,
 };
@@ -57,6 +66,7 @@ export function summarizeHiringDocumentReadiness(
   let missingDocuments = 0;
   let pendingDocuments = 0;
   let dueDocuments = 0;
+  let scannedDocuments = 0;
   // Counted rather than derived from employees x documents: the two are no longer the same number.
   // An exit document does not apply to an active employee (owner ruling, 2026-09-29), so it is not
   // a slot for them at all — it has to leave the denominator as well as the numerator, or the
@@ -71,10 +81,14 @@ export function summarizeHiringDocumentReadiness(
       const entry = employee.documents[document.id] ?? {
         documentId: document.id,
         dueDate: null,
+        // 0 rather than absent: a pair with no status row has no files either, and leaving it
+        // undefined would make the scanned count silently depend on `?? 0` at every read site.
+        fileCount: 0,
         notes: null,
         status: "pending",
         updatedAt: null,
       };
+      if (entry.status === "submitted" && (entry.fileCount ?? 0) > 0) scannedDocuments += 1;
       if (entry.status === "submitted") submittedDocuments += 1;
       if (entry.status === "missing") missingDocuments += 1;
       if (entry.status === "pending") pendingDocuments += 1;
@@ -89,6 +103,7 @@ export function summarizeHiringDocumentReadiness(
     missingDocuments,
     pendingDocuments,
     readinessRate: totalDocumentSlots > 0 ? submittedDocuments / totalDocumentSlots : 1,
+    scannedDocuments,
     submittedDocuments,
     totalDocumentSlots,
   };
