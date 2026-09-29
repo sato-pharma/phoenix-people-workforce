@@ -37,9 +37,26 @@
 -- ---------------------------------------------------------------------------
 
 -- Rollback material for the column, kept beside the earlier two.
-create table if not exists public.employees_area_label_preimage_20260929 as
-select hr_id, full_name, area_id, area_name
-from public.employees;
+--
+-- 🔴 GUARDED, BECAUSE A PRE-IMAGE READS THE COLUMN THE MIGRATION IS ABOUT TO DROP. The `drop column`
+-- below carries IF EXISTS, but `select ... area_name` does not and cannot: a missing column is a
+-- parse-time 42703, so this file would fail outright on any database that does not have it — a
+-- freshly built environment, or a replay after the drop has already run. Verified 2026-09-29 by
+-- replaying the statement against production after the column was gone: `column "area_name" does
+-- not exist`. Staging had already diverged the same way.
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'employees' and column_name = 'area_name'
+  ) then
+    execute $sql$
+      create table if not exists public.employees_area_label_preimage_20260929 as
+      select hr_id, full_name, area_id, area_name
+      from public.employees
+    $sql$;
+  end if;
+end $$;
 
 -- ---------------------------------------------------------------------------
 -- 1. The drift view, without the label and the flag derived from it.
