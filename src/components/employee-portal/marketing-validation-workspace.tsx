@@ -49,6 +49,7 @@ import type {
   MarketingValidationStatus,
   MarketingValidationWorkspace as MarketingValidationWorkspacePayload,
 } from "@/lib/marketing-requests/types";
+import { NO_SHUTTER_FIX, readShutterFix, type ShutterFix } from "@/lib/evidence/read-shutter-fix";
 import { LINK_STATUS_PRECEDENCE, linkStatusIsSelectable } from "@/lib/marketing-requests/code-link-reach";
 import {
   describeRestoredDraft,
@@ -277,8 +278,24 @@ type CaptureState = {
    * then, so no photo is ever stamped with a half-resolved place.
    */
   locationLines: string[];
+  /**
+   * The photo's OWN GPS fix, read fresh at the shutter — never a copy of the location fix above.
+   *
+   * Until 2026-09-29 the evidence row was written with the coordinates from *Capture Location*,
+   * so `marketing_evidence_files.captured_latitude/longitude` and the venue row's own capture were
+   * always byte-identical and the distance between them was structurally zero. A real case that
+   * day had 18m31s between the location fix and the shutter, and nothing in Phoenix could say
+   * whether the camera had stayed put — the comparison the columns imply was never being made.
+   *
+   * Null when the browser refuses or times out at the shutter. That is deliberate: a photo is
+   * never blocked on a second fix, and the server falls back to the location fix rather than
+   * refusing the save. Null therefore means "not measured", never "same place".
+   */
+  photoAccuracy: number | null;
   photoCapturedAt: string | null;
   photoDataUrl: string | null;
+  photoLatitude: number | null;
+  photoLongitude: number | null;
   photoName: string;
 };
 
@@ -442,8 +459,11 @@ function emptyCapture(): CaptureState {
     latitude: null,
     longitude: null,
     locationLines: [],
+    photoAccuracy: null,
     photoCapturedAt: null,
     photoDataUrl: null,
+    photoLatitude: null,
+    photoLongitude: null,
     photoName: "",
   };
 }
@@ -1686,7 +1706,7 @@ function LiveCameraModal({
   targetLabel,
 }: {
   capture: CaptureState;
-  onCapture: (dataUrl: string, capturedAt: string) => void;
+  onCapture: (dataUrl: string, capturedAt: string, photoFix: ShutterFix) => void;
   onClose: () => void;
   targetLabel: string;
 }) {
@@ -1696,7 +1716,9 @@ function LiveCameraModal({
   const [cameraReady, setCameraReady] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
   const [message, setMessage] = useState("Camera permission is required.");
-  const [pendingPhoto, setPendingPhoto] = useState<{ capturedAt: string; dataUrl: string } | null>(null);
+  const [pendingPhoto, setPendingPhoto] = useState<
+    { capturedAt: string; dataUrl: string; fix: ShutterFix } | null
+  >(null);
   // `locationLines`, not `address`: the address used to be filled in with the raw coordinates the
   // instant the pin arrived, so this gate opened before the place was known and a rep could stamp
   // a photo whose caption was a number pair. It now waits for the resolved block.
@@ -1818,13 +1840,24 @@ function LiveCameraModal({
     setPendingPhoto({
       capturedAt: photoCapturedAtIso,
       dataUrl: canvas.toDataURL("image/jpeg", 0.86),
+      fix: NO_SHUTTER_FIX,
     });
     setMessage("Review the stamped photo before confirming.");
+
+    // The photo's OWN position, read now rather than copied from *Capture Location*. Fired here and
+    // awaited nowhere: the image is already on screen, so a slow or refused fix costs the rep
+    // nothing and simply leaves the reading null. Guarded on `capturedAt` so a fix that lands after
+    // the rep has retaken the shot cannot attach itself to the new photo.
+    void readShutterFix().then((fix) => {
+      setPendingPhoto((current) =>
+        current && current.capturedAt === photoCapturedAtIso ? { ...current, fix } : current,
+      );
+    });
   }
 
   function confirmPhoto() {
     if (!pendingPhoto) return;
-    onCapture(pendingPhoto.dataUrl, pendingPhoto.capturedAt);
+    onCapture(pendingPhoto.dataUrl, pendingPhoto.capturedAt, pendingPhoto.fix);
   }
 
   // Portalled to <body> at z-[300]: left inside the page it anchored to the page-transition wrapper
@@ -2211,23 +2244,44 @@ export function MarketingValidationWorkspace() {
   }, [workspace.rows]);
   const validatedGroups = useMemo(
     () =>
-      customerGroups.filter((group) =>
-        customerIsEvidenceValidated(group.rows.map(fieldEvidenceGapInput)),
+      customerGroups.filter(
+        (group) =>
+          customerIsEvidenceValidated(group.rows.map(fieldEvidenceGapInput))
+          // AND still reachable by the request form. Evidence alone was the test until 2026-09-29,
+          // and it is not the same question: a capture can carry a perfect live photo and pin and
+          // still be unusable because its LINK is held. That is exactly what the owner was sent a
+          // screenshot of - “Validated · 1” beside an empty “0 customers” panel, for a customer
+          // held on a governorate mismatch. linkStatusIsSelectable is the same predicate the
+          // request form’s picker uses, so this tab now means what its name says: ready to use.
+          && group.rows.some((row) => linkStatusIsSelectable(row.validationStatus)),
       ),
     [customerGroups],
   );
   /**
-   * Everything not validated by live evidence — the Validate queue. This is now a strict complement
+   * Everything NOT USABLE in a marketing request — the “Not Usable Yet” queue. This is now a strict complement
    * of `validatedGroups` over the same customer groups, so a customer can never sit in both tabs and
    * one whose capture is unfinished can never hide in Validated behind a stale stamp.
    */
   const pendingGroups = useMemo(
     () =>
       customerGroups.filter(
-        (group) => !customerIsEvidenceValidated(group.rows.map(fieldEvidenceGapInput)),
+        (group) =>
+          !customerIsEvidenceValidated(group.rows.map(fieldEvidenceGapInput))
+          || !group.rows.some((row) => linkStatusIsSelectable(row.validationStatus)),
       ),
     [customerGroups],
   );
+  /**
+   * The tab actually RENDERED, which is not always the tab last clicked.
+   *
+   * The tab BUTTON for “Not Usable Yet” only exists while something is in it, but the panel body
+   * rendered on the raw activeTab - so the moment a save emptied the queue the button vanished and
+   * the empty panel stayed on screen, headed “0 customers”. That is what the owner was looking at.
+   *
+   * Derived during render rather than corrected in an effect: a setState inside useEffect is a lint
+   * error in this repo, and it would also paint the empty panel once before fixing itself.
+   */
+  const effectiveTab = activeTab === "pending" && pendingGroups.length === 0 ? "validated" : activeTab;
   const selectedValidatedGroup = useMemo(
     () =>
       validatedGroups.find((group) => group.key === selectedValidatedCustomerKey)
@@ -2522,11 +2576,17 @@ export function MarketingValidationWorkspace() {
     resolveStampLines(target, place.lat, place.lng, null);
   }
 
-  function applyLivePhoto(dataUrl: string, photoCapturedAt: string) {
+  function applyLivePhoto(dataUrl: string, photoCapturedAt: string, photoFix: ShutterFix) {
     if (cameraTarget) {
       patchLocation(cameraTarget, {
+        // The shutter's own reading, kept apart from the location fix on purpose — see
+        // `CaptureState.photoLatitude`. Never defaulted to the location fix here: a fallback at this
+        // layer would be indistinguishable downstream from a genuine second measurement.
+        photoAccuracy: photoFix.accuracy,
         photoCapturedAt,
         photoDataUrl: dataUrl,
+        photoLatitude: photoFix.latitude,
+        photoLongitude: photoFix.longitude,
         photoName: `${cameraTarget.pharmacyKey ? "pharmacy" : "customer"}-live-${photoCapturedAt}.jpg`,
       });
     }
@@ -2541,7 +2601,12 @@ export function MarketingValidationWorkspace() {
       capturedLatitude: capture.latitude,
       capturedLongitude: capture.longitude,
       evidenceHasTimestamp: Boolean(capture.photoName && capture.photoCapturedAt),
+      // The shutter's own fix. Null when it could not be read — the server keeps that null rather
+      // than substituting the location fix, so "not measured" never masquerades as "same place".
+      evidencePhotoAccuracyMeters: capture.photoAccuracy,
       evidencePhotoCapturedAt: capture.photoCapturedAt,
+      evidencePhotoLatitude: capture.photoLatitude,
+      evidencePhotoLongitude: capture.photoLongitude,
       // The IMAGE, not just its name. This line is the fix: the stamped JPEG used to live only in
       // `photoDataUrl` for the on-screen preview and was dropped the moment the form was submitted,
       // so the server stored a filename and called it proof. The server now writes these bytes to
@@ -2938,16 +3003,16 @@ export function MarketingValidationWorkspace() {
           pendingGroups.length > 0 ? "grid-cols-3" : "grid-cols-2"
         }`}
       >
-        <TabButton active={activeTab === "validation"} onClick={() => setActiveTab("validation")}>
+        <TabButton active={effectiveTab === "validation"} onClick={() => setActiveTab("validation")}>
           <span className="sm:hidden">Validate</span>
           <span className="hidden sm:inline">Validate Customer</span>
         </TabButton>
-        <TabButton active={activeTab === "validated"} onClick={() => setActiveTab("validated")}>
+        <TabButton active={effectiveTab === "validated"} onClick={() => setActiveTab("validated")}>
           <span className="sm:hidden">Validated · {validatedGroups.length}</span>
           <span className="hidden sm:inline">Validated ({validatedGroups.length})</span>
         </TabButton>
         {pendingGroups.length > 0 ? (
-          <TabButton active={activeTab === "pending"} onClick={() => setActiveTab("pending")}>
+          <TabButton active={effectiveTab === "pending"} onClick={() => setActiveTab("pending")}>
             <span className="sm:hidden">Not usable · {pendingGroups.length}</span>
             <span className="hidden sm:inline">Not Usable Yet ({pendingGroups.length})</span>
           </TabButton>
@@ -2962,7 +3027,7 @@ export function MarketingValidationWorkspace() {
       ) : null}
 
       {/* --------- Validation Form Tab --------- */}
-      {activeTab === "validation" ? (
+      {effectiveTab === "validation" ? (
         <Card className="overflow-hidden rounded-none border border-slate-200 bg-white p-0 shadow-sm">
           <form aria-busy={isSaving} onSubmit={submitValidation}>
             <div className="border-b border-slate-100 bg-gradient-to-r from-white via-orange-50/40 to-white px-4 py-4 sm:px-5">
@@ -3602,7 +3667,7 @@ export function MarketingValidationWorkspace() {
             </div>
           </form>
         </Card>
-      ) : activeTab === "pending" ? (
+      ) : effectiveTab === "pending" ? (
         /* --------- Not Usable Yet Tab --------- */
         <Card className="rounded-none border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between gap-3">
@@ -3618,8 +3683,13 @@ export function MarketingValidationWorkspace() {
           <div className="mt-3 flex items-start gap-2 rounded-none border border-amber-200 bg-amber-50 px-3.5 py-2.5">
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
             <p className="text-phx-sm font-semibold leading-relaxed text-amber-800">
-              Saved, but not yet usable in marketing requests. Tap Capture Evidence to add the missing photo and
-              location, or ask a Super Admin to release it.
+              {/* The old wording said “add the missing photo and location” unconditionally. For a
+                  governorate hold that is the WRONG advice and the wrong reason: the photo and the
+                  pin are already there, retaking them lands on the identical hold, and the question
+                  is about the CODE. Same split the save-path message already makes. */}
+              {hasGovernorateHold(pendingGroups.flatMap((group) => group.rows))
+                ? "Saved, but not yet usable in marketing requests. Check the distributor code is the right one for that shop, then ask a Super Admin or the CEO to release it."
+                : "Saved, but not yet usable in marketing requests. Tap Capture Evidence to add the missing photo and location, or ask a Super Admin to release it."}
             </p>
           </div>
 

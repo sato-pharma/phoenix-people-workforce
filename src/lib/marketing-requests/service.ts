@@ -919,9 +919,13 @@ type NormalizedMarketingValidationPharmacy = {
   existingPharmacyId: string | null;
   displayName: string;
   evidenceHasTimestamp: boolean;
+  /** The shutter's own fix — see `MarketingValidationCustomerInput.evidencePhotoLatitude`. */
+  evidencePhotoAccuracyMeters: number | null;
   evidencePhotoCapturedAt: string | null;
   /** Validated JPEG data URL, carried to the post-insert storage write. Never persisted as text. */
   evidencePhotoDataUrl: string | null;
+  evidencePhotoLatitude: number | null;
+  evidencePhotoLongitude: number | null;
   evidencePhotoName: string | null;
   evidenceStatus: MarketingEvidenceStatus;
   /**
@@ -971,9 +975,13 @@ type NormalizedMarketingValidationCustomer = {
   customerType: MarketingCustomerType;
   displayName: string;
   evidenceHasTimestamp: boolean;
+  /** The shutter's own fix — see `MarketingValidationCustomerInput.evidencePhotoLatitude`. */
+  evidencePhotoAccuracyMeters: number | null;
   evidencePhotoCapturedAt: string | null;
   /** Validated JPEG data URL, carried to the post-insert storage write. Never persisted as text. */
   evidencePhotoDataUrl: string | null;
+  evidencePhotoLatitude: number | null;
+  evidencePhotoLongitude: number | null;
   evidencePhotoName: string | null;
   evidenceStatus: MarketingEvidenceStatus;
   /** Set when this capture completes a customer already on record. See the input type's note. */
@@ -2109,11 +2117,24 @@ function normalizeReusedValidationPharmacy(
     capturedLatitude: nullableCoordinate(inputEntry.capturedLatitude, `${label} latitude`, -90, 90),
     capturedLongitude: nullableCoordinate(inputEntry.capturedLongitude, `${label} longitude`, -180, 180),
     evidenceHasTimestamp: inputEntry.evidenceHasTimestamp === true,
+    evidencePhotoAccuracyMeters: nonNegativeNumber(inputEntry.evidencePhotoAccuracyMeters) || null,
     evidencePhotoCapturedAt: nullableIsoTimestamp(
       inputEntry.evidencePhotoCapturedAt,
       `${label} photo capture time`,
     ),
     evidencePhotoDataUrl: normalizeEvidencePhotoDataUrl(inputEntry.evidencePhotoDataUrl, label, photoName),
+    evidencePhotoLatitude: nullableCoordinate(
+      inputEntry.evidencePhotoLatitude,
+      `${label} photo latitude`,
+      -90,
+      90,
+    ),
+    evidencePhotoLongitude: nullableCoordinate(
+      inputEntry.evidencePhotoLongitude,
+      `${label} photo longitude`,
+      -180,
+      180,
+    ),
     evidencePhotoName: photoName,
     extractedAreaName: cleanText(inputEntry.extractedAreaName),
     licenseFileDataUrl: normalizePharmacyLicenseDataUrl(inputEntry.licenseFileDataUrl, label),
@@ -2187,11 +2208,24 @@ function normalizeValidationPharmacy(
     capturedLongitude: nullableCoordinate(inputPharmacy.capturedLongitude, `${label} longitude`, -180, 180),
     displayName,
     evidenceHasTimestamp: inputPharmacy.evidenceHasTimestamp === true,
+    evidencePhotoAccuracyMeters: nonNegativeNumber(inputPharmacy.evidencePhotoAccuracyMeters) || null,
     evidencePhotoCapturedAt: nullableIsoTimestamp(inputPharmacy.evidencePhotoCapturedAt, `${label} photo capture time`),
     evidencePhotoDataUrl: normalizeEvidencePhotoDataUrl(
       inputPharmacy.evidencePhotoDataUrl,
       label,
       pharmacyPhotoName,
+    ),
+    evidencePhotoLatitude: nullableCoordinate(
+      inputPharmacy.evidencePhotoLatitude,
+      `${label} photo latitude`,
+      -90,
+      90,
+    ),
+    evidencePhotoLongitude: nullableCoordinate(
+      inputPharmacy.evidencePhotoLongitude,
+      `${label} photo longitude`,
+      -180,
+      180,
     ),
     evidencePhotoName: pharmacyPhotoName,
     extractedAreaName: cleanText(inputPharmacy.extractedAreaName),
@@ -2254,11 +2288,24 @@ function normalizeValidationCustomer(
     customerType: normalizeCustomerType(inputCustomer?.customerType),
     displayName,
     evidenceHasTimestamp: inputCustomer?.evidenceHasTimestamp === true,
+    evidencePhotoAccuracyMeters: nonNegativeNumber(inputCustomer?.evidencePhotoAccuracyMeters) || null,
     evidencePhotoCapturedAt: nullableIsoTimestamp(inputCustomer?.evidencePhotoCapturedAt, `${customerLabel} photo capture time`),
     evidencePhotoDataUrl: normalizeEvidencePhotoDataUrl(
       inputCustomer?.evidencePhotoDataUrl,
       customerLabel,
       customerPhotoName,
+    ),
+    evidencePhotoLatitude: nullableCoordinate(
+      inputCustomer?.evidencePhotoLatitude,
+      `${customerLabel} photo latitude`,
+      -90,
+      90,
+    ),
+    evidencePhotoLongitude: nullableCoordinate(
+      inputCustomer?.evidencePhotoLongitude,
+      `${customerLabel} photo longitude`,
+      -180,
+      180,
     ),
     evidencePhotoName: customerPhotoName,
     existingCustomerId: cleanText(inputCustomer?.existingCustomerId),
@@ -6512,11 +6559,16 @@ export async function createMarketingValidationRecord(
       evidencePhotoPaths.push(await storeMarketingEvidencePhoto({
         imageDataUrl: normalizedCustomer.evidencePhotoDataUrl,
         record: {
-          capturedAccuracyMeters: normalizedCustomer.capturedAccuracyMeters,
+          // THE PHOTO’S OWN FIX, never the location fix. Until 2026-09-29 these three lines read
+          // `captured*` off the same normalized record the VENUE row is written from, so the evidence
+          // row was a byte-identical copy and the distance between them was structurally zero — see
+          // `src/lib/evidence/capture-trust.ts`. A null stays null: “not measured” must never be
+          // substituted with the location fix, which would read downstream as “same place”.
+          capturedAccuracyMeters: normalizedCustomer.evidencePhotoAccuracyMeters,
           capturedAddress: normalizedCustomer.capturedAddress,
           capturedAt: normalizedCustomer.evidencePhotoCapturedAt ?? normalizedCustomer.capturedAt,
-          capturedLatitude: normalizedCustomer.capturedLatitude,
-          capturedLongitude: normalizedCustomer.capturedLongitude,
+          capturedLatitude: normalizedCustomer.evidencePhotoLatitude,
+          capturedLongitude: normalizedCustomer.evidencePhotoLongitude,
           entityId: customer.id,
           entityType: "customer",
           hasTimestamp: normalizedCustomer.evidenceHasTimestamp,
@@ -6621,11 +6673,16 @@ export async function createMarketingValidationRecord(
             evidencePhotoPaths.push(await storeMarketingEvidencePhoto({
               imageDataUrl: normalizedPharmacy.evidencePhotoDataUrl,
               record: {
-                capturedAccuracyMeters: normalizedPharmacy.capturedAccuracyMeters,
+                // THE PHOTO’S OWN FIX, never the location fix. Until 2026-09-29 these three lines read
+                // `captured*` off the same normalized record the VENUE row is written from, so the evidence
+                // row was a byte-identical copy and the distance between them was structurally zero — see
+                // `src/lib/evidence/capture-trust.ts`. A null stays null: “not measured” must never be
+                // substituted with the location fix, which would read downstream as “same place”.
+                capturedAccuracyMeters: normalizedPharmacy.evidencePhotoAccuracyMeters,
                 capturedAddress: normalizedPharmacy.capturedAddress,
                 capturedAt: normalizedPharmacy.evidencePhotoCapturedAt ?? normalizedPharmacy.capturedAt,
-                capturedLatitude: normalizedPharmacy.capturedLatitude,
-                capturedLongitude: normalizedPharmacy.capturedLongitude,
+                capturedLatitude: normalizedPharmacy.evidencePhotoLatitude,
+                capturedLongitude: normalizedPharmacy.evidencePhotoLongitude,
                 entityId: completedRow.id,
                 entityType: "pharmacy",
                 hasTimestamp: normalizedPharmacy.evidenceHasTimestamp,
@@ -6833,11 +6890,16 @@ export async function createMarketingValidationRecord(
         evidencePhotoPaths.push(await storeMarketingEvidencePhoto({
           imageDataUrl: normalizedPharmacy.evidencePhotoDataUrl,
           record: {
-            capturedAccuracyMeters: normalizedPharmacy.capturedAccuracyMeters,
+            // THE PHOTO’S OWN FIX, never the location fix. Until 2026-09-29 these three lines read
+            // `captured*` off the same normalized record the VENUE row is written from, so the evidence
+            // row was a byte-identical copy and the distance between them was structurally zero — see
+            // `src/lib/evidence/capture-trust.ts`. A null stays null: “not measured” must never be
+            // substituted with the location fix, which would read downstream as “same place”.
+            capturedAccuracyMeters: normalizedPharmacy.evidencePhotoAccuracyMeters,
             capturedAddress: normalizedPharmacy.capturedAddress,
             capturedAt: normalizedPharmacy.evidencePhotoCapturedAt ?? normalizedPharmacy.capturedAt,
-            capturedLatitude: normalizedPharmacy.capturedLatitude,
-            capturedLongitude: normalizedPharmacy.capturedLongitude,
+            capturedLatitude: normalizedPharmacy.evidencePhotoLatitude,
+            capturedLongitude: normalizedPharmacy.evidencePhotoLongitude,
             entityId: pharmacy.id,
             entityType: "pharmacy",
             hasTimestamp: normalizedPharmacy.evidenceHasTimestamp,
