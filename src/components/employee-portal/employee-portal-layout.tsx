@@ -1242,11 +1242,14 @@ export function EmployeePortalChrome({
   return (
     <RouteTransitionProvider>
       <ModuleLockProvider lockedModuleKeys={lockedModuleKeys}>
+      {/* The className stays a static string — `tests/employee-portal-bottom-nav-badges.test.ts`
+          finds the square-edge shell root by the literal `className="employee-portal-shell`, and the
+          square-edge rule travels with this class. In app mode the fixed header is gone, so its
+          `pt-[56px]` spacer would leave an empty band; the inline style zeroes it without disturbing
+          the class list (web is always appShell=false, so this never touches the browser). */}
       <div
-        className={`employee-portal-shell relative min-h-screen overflow-x-clip bg-[linear-gradient(160deg,#f4f8fc_0%,#f8fafc_28%,#fdf8f5_58%,#f6faf8_82%,#f8fafc_100%)] ${
-          // No fixed header in app mode, so no spacer to clear it.
-          appShell ? "" : "pt-[56px] lg:pt-[64px]"
-        }`}
+        className="employee-portal-shell relative min-h-screen overflow-x-clip bg-[linear-gradient(160deg,#f4f8fc_0%,#f8fafc_28%,#fdf8f5_58%,#f6faf8_82%,#f8fafc_100%)] pt-[56px] lg:pt-[64px]"
+        style={appShell ? { paddingTop: 0 } : undefined}
       >
         <EmployeePortalRouteProgress />
         <div className="pointer-events-none absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-sky-500 via-orange-500 to-emerald-500" />
