@@ -13,6 +13,7 @@ import {
 } from "@/config/system-settings";
 import { EMAIL_TEMPLATE_KEYS, normalizeEmailTemplateKey, sendTemplatedEmail, type EmailTemplateContext } from "@/lib/email-templates/service";
 import { renderPhoenixMetadataTable, renderPhoenixMetadataTableText } from "@/emails/phoenix-email-layout";
+import { resolveEmployeeLineName } from "@/lib/employees/employee-org-labels";
 import { RetryableEmailError, sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
 import { createUnsubscribeToken } from "@/lib/email/unsubscribe-token";
 import { summarizeNotificationOutboxRows } from "@/lib/communication/metrics";
@@ -658,9 +659,14 @@ function normalizeCompare(value: string | null | undefined) {
   return String(value ?? "").trim().toLowerCase();
 }
 
+/**
+ * The contact's line — now the shared resolver, and the ORDER changed with it. This read used to
+ * prefer `contact.line_name` over the embedded `lines.name`. That is harmless only for as long as
+ * the label stays empty (1 of 198 rows carry it) and backwards the moment one row carries a stale
+ * one. The link is the truth; the label is the fallback. See employee-line.ts.
+ */
 function employeeLine(contact: EmailContactRow | null | undefined) {
-  const relation = Array.isArray(contact?.lines) ? contact?.lines[0] : contact?.lines;
-  return contact?.line_name || relation?.name || null;
+  return resolveEmployeeLineName(contact);
 }
 
 async function loadEmployeesByTitlesAndLines(titles: string[], lines: string[]) {
