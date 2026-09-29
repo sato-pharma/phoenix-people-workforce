@@ -38,9 +38,9 @@ import type {
 //    whole database holds 3 files against 380 submitted ticks, because scanning is newer than the
 //    checklist. Treating the missing scan as outstanding put 378 amber cells on the CNS sheet and
 //    479 rows on a chase list whose real content was 101 — which identifies nothing. So the matrix
-//    colours the question HR manages (has the paper arrived) and the evidence gap rides in its own
-//    "No file" column, per employee and per document. It is pinned in BOTH directions here: green
-//    in the cell, never on the chase list, and never zero in the column.
+//    colours the question HR manages (has the paper arrived) and the evidence gap rides in a
+//    "Scanned" column, read as scanned / arrived per employee. It is pinned in BOTH directions
+//    here: green in the cell, never on the chase list, and the fraction shows the gap it leaves.
 //
 // 3. THE EXPORT MUST MATCH THE SCREEN. Screen and server both filter through
 //    `filterHiringDocumentEmployees`, and the state makes the trip as query parameters, so the
@@ -310,11 +310,15 @@ export async function runHiringDocumentsExportWorkbookTests() {
     "the paper HAS arrived, so it is green — colouring the missing scan buried the real work under "
     + "378 amber cells on production",
   );
-  const noFileColumn = columnOf(matrix, matrixHeader, "No file");
-  assert.equal(matrix.getCell(tickedRow, noFileColumn).value, 1, "the evidence gap is counted, never lost");
-  assert.equal(fillOf(matrix.getCell(tickedRow, noFileColumn)), HOUSE_XLSX_SIGNAL.warn.tint);
-  assert.equal(matrix.getCell(evidencedRow, noFileColumn).value, 0);
-  assert.equal(fillOf(matrix.getCell(evidencedRow, noFileColumn)), HOUSE_XLSX_SIGNAL.good.tint);
+  const matrixScannedColumn = columnOf(matrix, matrixHeader, "Scanned");
+  assert.equal(
+    matrix.getCell(tickedRow, matrixScannedColumn).value,
+    "1 / 2",
+    "one of the two arrived papers is scanned — the gap rides in the fraction, amber and never lost",
+  );
+  assert.equal(fillOf(matrix.getCell(tickedRow, matrixScannedColumn)), HOUSE_XLSX_SIGNAL.warn.tint);
+  assert.equal(matrix.getCell(evidencedRow, matrixScannedColumn).value, "4 / 4");
+  assert.equal(fillOf(matrix.getCell(evidencedRow, matrixScannedColumn)), HOUSE_XLSX_SIGNAL.good.tint);
   assert.equal(matrix.getCell(overdueRow, idColumn).value, "Overdue");
   assert.equal(fillOf(matrix.getCell(overdueRow, idColumn)), HOUSE_XLSX_SIGNAL.bad.tint, "a late document is red");
   assert.equal(
