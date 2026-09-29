@@ -130,14 +130,14 @@ export function runPortalRouteSkeletonTests() {
   );
 
   // ── THE RATCHET: how many routes still show nothing while they load ────────
-  // 98 of 126 on 2026-09-29, before the sweep started. This is the number each section PR exists
+  // 98 of 126 on 2026-09-29, before the sweep started; 90 after PR 0, 71 after iReports 360. This is the number each section PR exists
   // to lower, and it MAY NEVER RISE — a new portal route without a loading.tsx is caught on the
   // day it is written, which is the only way the count stays down once the sweep finishes.
   //
   // It is a ratchet and not a demand for zero because the remaining routes need a shape CHOSEN
   // per page, in the section PR that owns them. A blanket `shape="dashboard"` everywhere would
   // drive this to 0 and reinstate the exact defect the shapes exist to fix.
-  const BASELINE_ROUTES_WITHOUT_LOADING = 90;
+  const BASELINE_ROUTES_WITHOUT_LOADING = 71;
 
   const bare: string[] = [];
   let routes = 0;

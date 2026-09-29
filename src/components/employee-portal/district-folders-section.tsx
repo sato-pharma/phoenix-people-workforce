@@ -160,10 +160,15 @@ export function DistrictFoldersSection({
               </p>
             ) : null}
 
-            {/* Horizontal scroll rather than wrapping — the owner's rule is that text is never cut
-                with an ellipsis and never wraps, and an area name plus its count does not fit a chip
-                on a phone. The row scrolls; every name stays whole. */}
-            <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
+            {/* IT WRAPS; it does not scroll. The note here used to say the owner's rule is that
+                text is "never cut with an ellipsis and never wraps" — only the first half of that
+                is his rule. AGENTS.md §4 says in as many words that where the no-ellipsis rule
+                collides with the no-horizontal-scroll rule, WRAPPING WINS. The chips flow onto a
+                second line and every area name still stays whole.
+
+                `shrink-0` stays on each chip: a `shrink-0` CHILD of a wrapping row wraps rather
+                than being squeezed. The inert case is `shrink-0` on the wrapping element ITSELF. */}
+            <div className="flex flex-wrap gap-2 pb-1">
               {board.folders.map((folder) => {
                 const isOpen = openFolder?.areaName === folder.areaName;
                 // The catch-all is drawn dashed, and that is not decoration. Its CVs reached this
@@ -173,7 +178,7 @@ export function DistrictFoldersSection({
                 const isCatchAll = folder.kind === "region";
                 return (
                   <button
-                    className={`shrink-0 whitespace-nowrap rounded-lg border px-3 py-2 text-left transition ${
+                    className={`max-w-full rounded-lg border px-3 py-2 text-left transition ${
                       isCatchAll ? "border-dashed" : ""
                     } ${
                       isOpen
@@ -184,11 +189,11 @@ export function DistrictFoldersSection({
                     onClick={() => toggle(board.seatId, folder.areaName)}
                     type="button"
                   >
-                    <span className="block whitespace-nowrap text-sm font-semibold" dir="auto">
+                    <span className="block text-sm font-semibold" dir="auto">
                       {folder.areaName}
                     </span>
                     <span
-                      className={`block whitespace-nowrap text-phx-xs ${isOpen ? "text-slate-300" : "text-slate-500"}`}
+                      className={`block text-phx-xs ${isOpen ? "text-slate-300" : "text-slate-500"}`}
                     >
                       {folder.candidates.length === 0
                         ? "No CVs"
