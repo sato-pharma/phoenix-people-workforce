@@ -7,6 +7,7 @@ import {
   directOrderFieldEvidenceGap,
   type DirectOrderFieldEvidenceGap,
 } from "@/lib/direct-orders/field-evidence-gap";
+import { canViewDirectOrderFieldEvidenceGap } from "@/lib/direct-orders/validation-visibility";
 import { stripComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -31,6 +32,7 @@ function read(rel: string) {
   return readFileSync(new URL(rel, import.meta.url), "utf8");
 }
 
+const VISIBILITY = "../src/lib/direct-orders/validation-visibility.ts";
 const GAP = "../src/lib/direct-orders/field-evidence-gap.ts";
 const VALIDATION = "../src/lib/direct-orders/pharmacy-validation.ts";
 const SERVICE = "../src/lib/direct-orders/service.ts";
@@ -157,8 +159,8 @@ function serviceWiring() {
   const source = stripComments(read(SERVICE));
   assert.match(source, /loadDirectOrderVenueFieldEvidence,/);
   assert.match(source, /import \{ directOrderFieldEvidenceGap \} from "@\/lib\/direct-orders\/field-evidence-gap"/);
-  assert.match(source, /const venueFieldEvidence = await loadDirectOrderVenueFieldEvidence\(request\.pharmacyId\)/);
-  assert.match(source, /const pharmacyFieldEvidenceGap = directOrderFieldEvidenceGap\(venueFieldEvidence\)/);
+  assert.match(source, /loadDirectOrderVenueFieldEvidence\(request\.pharmacyId\)/);
+  assert.match(source, /directOrderFieldEvidenceGap\(await loadDirectOrderVenueFieldEvidence\(/);
   assert.match(source, /\n {4}pharmacyFieldEvidenceGap,\n/);
   // NEVER derived from `pharmacyEvidence` — that is the most recent claim only, so a venue captured
   // in the field earlier and re-filed on an invoice would read as uncaptured.
@@ -206,6 +208,76 @@ function theLineOnTheScreen() {
   assert.match(line, /DIRECT_ORDER_FIELD_EVIDENCE_GAP_SENTENCES\[gap\]/);
 }
 
+/**
+ * APPROVER-ONLY, NEVER THE PORTAL (owner, 2026-09-29): "make the not-field-validated line
+ * approver-only, not the portal." Withheld on two counts, either one enough — the portal shell,
+ * and the order's own requester.
+ */
+function approverOnlyNeverThePortal() {
+  const approver = { viewerHrId: "B-10", requesterHrId: "B-154", navigationMode: "admin" };
+  assert.equal(canViewDirectOrderFieldEvidenceGap(approver), true, "an approver in the admin shell sees it");
+  assert.equal(
+    canViewDirectOrderFieldEvidenceGap({ ...approver, navigationMode: "hr" }),
+    true,
+    "the HR shell is not the portal",
+  );
+
+  // The PORTAL, whoever is in it — every rep and every portal-mode manager is redirected there.
+  for (const viewer of ["B-10", "B-154", "A-2"]) {
+    assert.equal(
+      canViewDirectOrderFieldEvidenceGap({ viewerHrId: viewer, requesterHrId: "B-154", navigationMode: "employee-portal" }),
+      false,
+      `the portal never shows it (${viewer})`,
+    );
+  }
+
+  // The order's OWN REQUESTER, even in the admin shell: he is not an approver of his own order.
+  assert.equal(
+    canViewDirectOrderFieldEvidenceGap({ viewerHrId: "B-154", requesterHrId: "B-154", navigationMode: "admin" }),
+    false,
+    "the requester never sees it on his own order",
+  );
+  // CASE is the spelling that varies in production — HR ids are stored mixed-case and a plain `.eq`
+  // has under-returned by 28% before, so both sides go through `canonicalHrIdKey`. It lowercases and
+  // resolves aliases but does NOT strip the dash, exactly like `canViewDirectOrderEvidenceAiNote`
+  // beside it; a dash-less "B154" is deliberately not the same key, and widening that here alone
+  // would make the two predicates disagree about who the requester is.
+  for (const spelling of ["b-154", "B-154"]) {
+    assert.equal(
+      canViewDirectOrderFieldEvidenceGap({ viewerHrId: spelling, requesterHrId: "B-154", navigationMode: "admin" }),
+      false,
+      `the requester is the requester however his id is spelled (${spelling})`,
+    );
+  }
+  // An unresolvable viewer is withheld, never shown — the safe direction.
+  for (const missing of ["", null, undefined]) {
+    assert.equal(
+      canViewDirectOrderFieldEvidenceGap({ viewerHrId: missing, requesterHrId: "B-154", navigationMode: "admin" }),
+      false,
+      `an unidentified viewer is withheld (${String(missing)})`,
+    );
+  }
+
+  // WITHHELD, not hidden: the service decides BEFORE the read, so the fact never enters the
+  // portal's payload and the rep's page pays nothing for it.
+  const service = stripComments(read(SERVICE));
+  assert.match(service, /const showFieldEvidenceGap = canViewDirectOrderFieldEvidenceGap\(\{/);
+  assert.match(service, /navigationMode: resolveNavigationMode\(access\)/);
+  assert.match(
+    service,
+    /const pharmacyFieldEvidenceGap = showFieldEvidenceGap\s*\?\s*directOrderFieldEvidenceGap\(await loadDirectOrderVenueFieldEvidence\(request\.pharmacyId\)\)\s*:\s*null/,
+  );
+  // The screen is NOT the gate. A component-level check would ship the fact to the browser and
+  // hide it, which is not what "not the portal" means.
+  const detail = stripComments(read(DETAIL));
+  assert.ok(
+    !detail.includes("canViewDirectOrderFieldEvidenceGap"),
+    "the gate is the service, never the component",
+  );
+  // And the predicate says it in its own words, so a later reader cannot mistake it for UX.
+  assert.match(stripComments(read(VISIBILITY)), /export function canViewDirectOrderFieldEvidenceGap\(/);
+}
+
 export async function runDirectOrderFieldEvidenceGapTests() {
   aFieldCaptureSilencesIt();
   theThreeKinds();
@@ -213,4 +285,5 @@ export async function runDirectOrderFieldEvidenceGapTests() {
   loaderRules();
   serviceWiring();
   theLineOnTheScreen();
+  approverOnlyNeverThePortal();
 }
