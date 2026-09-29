@@ -183,7 +183,7 @@ import { stripComments } from "./support/comment-strip.ts";
  * pin them. Note what that gap means in general: a file can shed twenty min-width floors and move
  * this number by one.
  */
-const BASELINE = 221;
+const BASELINE = 217;
 
 /**
  * app/ and src/components/ are where UI class strings live. src/lib/ is excluded on

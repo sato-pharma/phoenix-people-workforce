@@ -195,24 +195,37 @@ export async function runMarketingApprovalHistoryTabTests() {
   );
 
   /* ---------------------------------------------------------------------- */
-  /* 9. A long customer name SCROLLS — it never wraps, truncates, or escapes */
+  /* 9. A long customer name WRAPS — it never truncates, scrolls, or escapes */
   /* ---------------------------------------------------------------------- */
 
-  // Owner report, 2026-08-19: "the layout is broken on mobile". The customer-name heading is
-  // `whitespace-nowrap` because two owner rules forbid the alternatives — no ellipsis, and no
-  // wrapping onto a second line. With nothing to clip it, a real pharmacy name measured 459px of
-  // text inside a 357px card on a 375px phone: the card's content escaped its own box and the
-  // whole PAGE scrolled sideways. Wrapping the heading in an overflow-x container honours both
-  // rules and contains the overflow (measured after the fix: card scrollWidth == clientWidth,
-  // document scrollWidth == 375).
+  // Owner report, 2026-08-19: "the layout is broken on mobile". A real pharmacy name measured
+  // 459px of text inside a 357px card on a 375px phone, so the card's content escaped its own box
+  // and the whole PAGE scrolled sideways. That part is unchanged and still true.
   //
-  // Pinned on BOTH tabs: they sit on one page, and one tab scrolling while the other bursts its
-  // card is the inconsistency a reader notices first.
+  // WHAT CHANGED, 2026-09-29: the first fix kept the heading `whitespace-nowrap` and put it in an
+  // `overflow-x-auto` box, on the stated grounds that "two owner rules forbid the alternatives —
+  // no ellipsis, and no wrapping onto a second line". Only the FIRST of those is a rule.
+  // AGENTS.md §4 says the opposite of the second in as many words: "Never truncate text with an
+  // ellipsis. Where it collides with the no-horizontal-scroll rule, WRAPPING WINS."
+  //
+  // And the measurement argues FOR wrapping rather than against it: a name needing 459px cannot
+  // be READ in a 317px box whether it scrolls or not, and a sideways swipe on a heading is a
+  // gesture nobody makes — so the old fix contained the overflow at the price of hiding half the
+  // name behind an interaction no one performs. Measured after wrapping, with a 58-character real
+  // name at 375px: two lines, 325px of 325px, nothing clipped, page overflow 0.
+  //
+  // Pinned on BOTH tabs: they sit on one page, and one tab wrapping while the other scrolls is
+  // the inconsistency a reader notices first.
   for (const [label, text] of [["history", historyComponent], ["inbox", inbox]] as const) {
+    assert.doesNotMatch(
+      text,
+      /<div className="overflow-x-auto">\s*<h3/,
+      `${label}: the customer name must not go back inside an overflow-x box — it wraps now (AGENTS.md §4: wrapping wins)`,
+    );
     assert.match(
       text,
-      /<div className="overflow-x-auto">\s*<h3 className="[^"]*whitespace-nowrap/,
-      `${label}: the nowrap customer name must sit inside an overflow-x container, or a long name escapes the card on mobile`,
+      /<h3 className="mt-0\.5 text-phx-lg font-black tracking-tight text-slate-950">\s*\{row\.customerName\}/,
+      `${label}: the customer-name heading must carry no whitespace-nowrap, so a long name takes the second line it needs`,
     );
   }
   // And the banned escapes stay banned on the heading itself.
