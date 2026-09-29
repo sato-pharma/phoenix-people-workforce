@@ -9,6 +9,7 @@ import { googleGeocodeAddress } from "@/lib/google-maps/server";
 import { invalidateExecutiveDashboardCache } from "@/lib/dashboard/invalidation";
 import { sharedIdentityGroups } from "@/lib/auth/identity-aliases";
 import { canonicalHrIdForDisplay, canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
+import { getEmployeeCvHrIdSet } from "@/lib/employees/employee-cv";
 import { getEmployeePhotoMap } from "@/lib/employees/employee-photo";
 import {
   residenceCoordinateColumns,
@@ -80,6 +81,11 @@ export type EmployeeDirectoryRow = {
   fuelAllowance: number | null;
   grossSalary: number | null;
   hasBankAccount: string | null;
+  // Whether a CV is on this person's master record — from the cached index in
+  // src/lib/employees/employee-cv.ts, never a column on this query. A boolean and not the file
+  // name: the directory lists people, and the name of the document is for the panel of the one
+  // person somebody opens. It is what the CV filter reads.
+  hasCv: boolean;
   // Whether this employee has an uploaded profile photo (from the cached photo
   // map, see src/lib/employees/employee-photo.ts) — lets avatar UI skip the
   // /api/employees/[hrId]/photo request entirely when there's nothing to fetch.
@@ -1079,10 +1085,11 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
   }
 
   const employeeHrIds = uniqueTextValues(employeeRows, "hr_id");
-  const [residenceByHrId, pendingReplacementByHrId, photoMap] = await Promise.all([
+  const [residenceByHrId, pendingReplacementByHrId, photoMap, cvHrIds] = await Promise.all([
     loadResidenceByHrId(employeeHrIds),
     loadPendingManagerReplacementByHrId(employeeHrIds),
     getEmployeePhotoMap(),
+    getEmployeeCvHrIdSet(),
   ]);
 
   // Check if we got joined data
@@ -1179,6 +1186,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         fuelAllowance: row.fuel_allowance ?? compensation?.fuel_allowance ?? standardAllowances.fuelAllowance,
         grossSalary: row.gross_salary ?? compensation?.gross_salary ?? null,
         hasBankAccount: row.has_bank_account ?? (row.bank_account ? "yes" : "no"),
+        hasCv: cvHrIds.has(canonicalHrIdKey(row.hr_id) ?? ""),
         hasPhoto: photoMap.has(canonicalHrIdKey(row.hr_id) ?? ""),
         healthCardStatus: row.health_card_status ?? null,
         healthCardNumber: row.health_card_number ?? null,
@@ -1343,6 +1351,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         fuelAllowance: row.fuel_allowance ?? comp?.fuel_allowance ?? standardAllowances.fuelAllowance,
         grossSalary: row.gross_salary ?? comp?.gross_salary ?? null,
         hasBankAccount: row.has_bank_account ?? (row.bank_account ? "yes" : "no"),
+        hasCv: cvHrIds.has(canonicalHrIdKey(row.hr_id) ?? ""),
         hasPhoto: photoMap.has(canonicalHrIdKey(row.hr_id) ?? ""),
         healthCardStatus: row.health_card_status ?? null,
         healthCardNumber: row.health_card_number ?? null,
@@ -1466,6 +1475,7 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
       fuelAllowance: row.fuel_allowance ?? compensation?.fuel_allowance ?? standardAllowances.fuelAllowance,
       grossSalary: row.gross_salary ?? compensation?.gross_salary ?? null,
       hasBankAccount: row.has_bank_account ?? (row.bank_account ? "yes" : "no"),
+      hasCv: cvHrIds.has(canonicalHrIdKey(row.hr_id) ?? ""),
       hasPhoto: photoMap.has(canonicalHrIdKey(row.hr_id) ?? ""),
       healthCardStatus: row.health_card_status ?? null,
       healthCardNumber: row.health_card_number ?? null,
@@ -1600,6 +1610,7 @@ async function fetchEmployeeDirectoryRows(includeInactive: boolean): Promise<Emp
     uniqueTextValues(employeeRows, "hr_id"),
   );
   const photoMap = await getEmployeePhotoMap();
+  const cvHrIds = await getEmployeeCvHrIdSet();
 
   return employeeRows.map((row) => {
     const residence = residenceByHrId.get(row.hr_id.trim().toUpperCase());
@@ -1632,6 +1643,7 @@ async function fetchEmployeeDirectoryRows(includeInactive: boolean): Promise<Emp
       fuelAllowance: row.fuel_allowance ?? null,
       grossSalary: row.gross_salary ?? null,
       hasBankAccount: row.has_bank_account ?? (row.bank_account ? "yes" : "no"),
+      hasCv: cvHrIds.has(canonicalHrIdKey(row.hr_id) ?? ""),
       hasPhoto: photoMap.has(canonicalHrIdKey(row.hr_id) ?? ""),
       healthCardStatus: row.health_card_status ?? null,
       healthCardNumber: row.health_card_number ?? null,

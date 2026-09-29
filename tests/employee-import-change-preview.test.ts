@@ -41,6 +41,7 @@ function employee(overrides: Partial<EmployeeDirectoryRow> = {}): EmployeeDirect
     gender: "Male",
     grossSalary: 11500,
     hasBankAccount: "yes",
+    hasCv: false,
     hasPhoto: false,
     healthCardStatus: null,
     healthCardNumber: null,
