@@ -1,15 +1,57 @@
 # Supabase Advisor Baseline — Accepted / By-Design Items
 
 **Project:** Phoenix HR production (`ozucdzovmcqvepbozvqf`)
-**Last reviewed:** 2026-07-19
+**Last reviewed:** 2026-09-29 *(previously 2026-07-19)*
 
 This is the single triage reference for `get_advisors` output. Items listed here are
-**reviewed and accepted as by-design** (or explicitly deferred). A health check should
-compare new advisor output against this list and only escalate items **not** captured
-here. Related context: [`role-alignment-production-readiness.md`](./role-alignment-production-readiness.md),
+**reviewed and accepted as by-design** (or explicitly deferred). Related context:
+[`browser-reachability.md`](./browser-reachability.md),
+[`role-alignment-production-readiness.md`](./role-alignment-production-readiness.md),
 [`production-blocker-remediation-plan.md`](./production-blocker-remediation-plan.md).
 
 > Anything **not** on this list is a genuine new finding and must be triaged, not assumed benign.
+
+## The page used to say a health check *should* compare against it. Nothing did.
+
+It was last reviewed **2026-07-19**. Re-measured against production on **2026-09-29**:
+
+| Category | This page said | Production actually read |
+| --- | --- | --- |
+| `rls_enabled_no_policy` | INFO x23 | **176** |
+| `unused_index` | INFO x326 | **615** |
+| `function_search_path_mutable` | REMEDIATED | **10 functions** |
+| `extension_in_public` | *absent from this page* | 1 (`pg_trgm`) |
+| `authenticated_security_definer_function_executable` | WARN x14 | 14 - unchanged, correctly accepted |
+
+The third row is the one that matters. This page states below, in its own words, that if
+`function_search_path_mutable` reappears **"it's a regression"**. It had reappeared - for ten
+functions, none of them the one named - and nobody found out, because the comparison was a
+recommendation rather than a job anything ran. **153 tables joined an "accepted" list with
+nobody accepting them.**
+
+**That is now mechanical.** `scripts/check-advisor-baseline.ts` reads
+`public.phx_ci_advisor_counts()` and fails when a category exceeds the number recorded in
+`scripts/advisor-baseline.json`. It runs in the existing daily `migration-drift-check.yml` job,
+so it costs no new Actions minutes, and that workflow already posts to the owner's Telegram on
+failure.
+
+Three things to know before trusting it:
+
+- **The counts are recomputed in SQL, not read from the advisor** - `get_advisors` is an MCP tool
+  and CI has no MCP. The four security categories were validated against a live advisor run on
+  2026-09-29 until they matched **exactly**. Two needed a real exclusion to get there: 31 of the
+  41 unpinned functions belong to `pg_trgm` and are the extension's, not ours; and the 24-table
+  gap on `rls_enabled_no_policy` is exactly `auth` (16) + `storage` (7) + `realtime` (1), which
+  are Supabase's to manage. `unused_index` is the one category on **our own** definition - the
+  advisor's own output for it runs to ~615 findings, too large to pull routinely - and that
+  definition is written out in the migration and repeated below.
+- **Production only, deliberately.** These numbers record decisions about *this* database.
+  Staging reads `unused_index` **624** and `rls_enabled_no_policy` **161**; gating it there would
+  fail nightly on differences nobody acts on, and a check that cries wolf is the one people learn
+  to skip. The script refuses to compare when the target ref is not the one the baseline names.
+- **Raising a number is a decision, not a fix.** Editing `advisor-baseline.json` to go green
+  reproduces exactly the drift above. Change the database, or write down here why the new number
+  is right, with the date.
 
 ---
 
@@ -33,30 +75,65 @@ Not applicable. Phoenix uses **application-managed auth** (HR_ID + `bcryptjs` + 
 app-signed session cookie verified against `app_auth_users`), **not** Supabase Auth, so
 the HaveIBeenPwned check on Supabase Auth passwords governs no real login path.
 
-### ACCEPTED — `rls_enabled_no_policy` (INFO ×23) — service-role-only tables
-RLS is enabled with no policy, so the browser (`anon`/`authenticated`) is denied all
-access **by design**; these tables are written/read only by the service role on the
-server. Deny-by-default is the intended posture.
+### ACCEPTED - `rls_enabled_no_policy` (176 as of 2026-09-29)
 
-Tables (all `public.`): `email_suppressions`, `marketing_customer_contacts`,
-`marketing_customer_pharmacies`, `marketing_customers`, `marketing_evidence_files`,
-`marketing_pharmacies`, `marketing_pharmacy_distributor_codes`,
-`marketing_request_approval_steps`, `marketing_request_finance_requirements`,
-`marketing_request_pharmacies`, `marketing_request_products`, `marketing_requests`,
-`monthly_closing_publications`, `report_it_audit_logs`, `report_it_reports`,
-`source_of_sales_customer_map`, `v2_vacation_approval_steps`, `weekly_distributor_mapping`,
-`weekly_missing_mappings`, `weekly_sales_batches`, `weekly_sales_pos_region_mappings`,
-`weekly_sales_product_scope`, `weekly_sales_rows`, `background_jobs` (added 2026-07-20,
-same pattern: service-role-only async job queue, accessed via `getSupabaseAdmin()` and
-the `claim_next_background_job()` RPC, never a browser client).
+RLS is enabled with no policy, so a browser role (`anon` / `authenticated`) is denied all access.
+Deny-by-default is the intended posture: these tables are read and written only by the service
+role on the server.
 
-> If any table here ever needs RLS-respecting *browser* reads, that is a real change —
-> add a scoped policy rather than treating the INFO as noise.
+**This is the owner's standing decision, not an oversight.** Visibility in this app is
+application-scoped - `assertPermission(ctx, resource, action)` on the server is the boundary, and
+most code paths use the service-role client. Writing policies for 176 tables on a live payroll
+system is not the fix; proving the tables are unreachable is, and that is done separately and
+empirically in [`browser-reachability.md`](./browser-reachability.md) (429 tables, `anon` can
+SELECT **0** of them, verified over HTTP with the live anon key).
 
-### REMEDIATED (not accepted) — `function_search_path_mutable`
-`public.phx_insert_attendance_raw_punch` was flagged for a mutable `search_path`.
-Fixed by pinning `SET search_path = public, pg_temp` (migration
-`pin_attendance_punch_search_path`). Should not reappear; if it does, it's a regression.
+**The table-by-table list that used to live here has been removed on purpose.** It named 24
+tables when the count was 23; by 2026-09-29 the count was 176 and the list was worse than
+nothing - it looked like an inventory while covering an eighth of the cases, and at least two
+names in it (`weekly_distributor_mapping`, `weekly_missing_mappings`) no longer exist. An
+allowlist that cannot keep up is one that quietly stops being a guard. The **count** is what is
+gated; membership is answered live by `phx_ci_advisor_counts()` and, for the question that
+actually matters, by `phx_ci_browser_reachability()`.
+
+> If a table here ever needs RLS-respecting *browser* reads, that is a real change - add a
+> scoped policy rather than treating the INFO as noise.
+
+### REGRESSION, OPEN - `function_search_path_mutable` (10 as of 2026-09-29)
+
+This section used to read: `public.phx_insert_attendance_raw_punch` was flagged, fixed by pinning
+`SET search_path = public, pg_temp`, *"Should not reappear; if it does, it's a regression."*
+
+**It reappeared.** Ten functions in `public` carry no pinned `search_path`, and not one of them is
+the function that was fixed:
+
+`phx_fold_customer_name`, `phx_squash_customer_name`, `phx_customer_channel`,
+`phx_refuse_audit_trail_change`, `phx_custody_item_values_valid`,
+`ats_whatsapp_screening_questions_immutable_key`,
+`hiring_pack_document_field_history_is_append_only`, `market_awareness_touch_updated_at`,
+`market_awareness_clear_hold_on_exit`, `v2_freeze_request_code`.
+
+It sits in the baseline at 10 **to stop it growing while it is fixed - not as an acceptance.**
+Lower that number as they are pinned.
+
+**Severity, stated honestly:** all ten are `SECURITY INVOKER`, so a hijacked `search_path` runs
+with the caller's own rights rather than the owner's - which is why this is a warn and not the
+emergency the `SECURITY DEFINER` case below was. Measured 2026-09-29: **zero** `SECURITY DEFINER`
+functions in `public` have a mutable `search_path`. Five of the ten are trigger functions, which
+a caller cannot reach directly at all.
+
+(`pg_trgm` contributes 31 more unpinned functions. Those are the extension's, are excluded from
+the count, and are not this project's to fix - see below.)
+
+### OPEN - `extension_in_public` (1 as of 2026-09-29)
+
+`pg_trgm` is installed in `public`. Absent from this page before 2026-09-29 - it was never
+triaged either way.
+
+The fix is `ALTER EXTENSION pg_trgm SET SCHEMA extensions`, and it is a deliberate separate
+change rather than a one-liner: **2 indexes depend on its operator classes.** Indexes bind to the
+opclass OID so they survive the move, but both must be confirmed `indisvalid` afterwards, and any
+function calling `similarity()` unqualified must be re-checked.
 
 ### REMEDIATED (not accepted) — `anon_security_definer_function_executable` (2026-07-19)
 Found via `get_advisors` while auditing the Sales Analytics module: 7 orphaned
@@ -144,15 +221,28 @@ one's grants outside a migration.
   overlapping `authenticated` SELECT policies into one; writes unchanged). Perf-only, not
   a security gap.
 
-### DEFERRED — `unused_index` (INFO ×326)
-Reviewed and **deferred** to a dedicated project — not bulk-dropped. `pg_stat_user_indexes`
-counters reset on restart and don't observe low-frequency paths (e.g. the daily
-birthday / contract-renewal crons scan `idx_employees_birth_date` /
-`idx_employees_contract_renewal_date`), so "unused" is not proof of safe-to-drop. When
-tackled: confirm true non-use over a longer window, drop in small reversible batches,
-keep `CREATE INDEX` rollback SQL.
+### DEFERRED - `unused_index` (615 as of 2026-09-29, recorded here as 326 until then)
 
----
+Reviewed and **deferred** - not bulk-dropped. The reasoning has not changed, only the number.
+
+**Our definition, not the advisor's:** an index never scanned since the last stats reset
+(`idx_scan = 0`), that is not unique, not a primary key, and does not back a constraint.
+
+**It is not a drop list.** `pg_stat_user_indexes` counters do not observe a low-frequency path -
+the daily birthday and contract-renewal crons scan `idx_employees_birth_date` and
+`idx_employees_contract_renewal_date`, which both read as unused - so "unused" is not proof of
+safe-to-drop.
+
+**And the obvious sanity check does not say what it appears to say.**
+`pg_stat_database.stats_reset` on this project is **NULL**. Since PostgreSQL 15 the statistics
+file survives a clean shutdown, so NULL means *no reset has ever been recorded* - **not** "reset
+just now", and not "the counters are fresh". There is therefore no known window over which these
+615 have gone unused, which is exactly why the number is recorded for **growth** rather than
+acted on. `phx_ci_advisor_counts()` reports `stats_age_hours` alongside it (`-1` for unknown) so
+the figure is never read without that caveat.
+
+When tackled: confirm true non-use over a measured window, drop in small reversible batches, keep
+`CREATE INDEX` rollback SQL.
 
 ## Operational note — migration-history version drift (not an advisor, tracked here)
 

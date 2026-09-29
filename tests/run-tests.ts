@@ -1680,6 +1680,7 @@ import { runCrmDepartedAgentScanTests } from "./crm-departed-agent-scan.test.ts"
 import { runApiErrorInfrastructureRedactionTests } from "./api-error-infrastructure-redaction.test.ts";
 import { runSchemaShapeDefaultAclTests } from "./schema-shape-default-acl.test.ts";
 import { runSchemaShapePrivateUsageTests } from "./schema-shape-private-usage.test.ts";
+import { runAdvisorBaselineGuardTests } from "./advisor-baseline-guard.test.ts";
 import { runSchemaShapeBrowserReachabilityTests } from "./schema-shape-browser-reachability.test.ts";
 import { runSchemaShapeSnapshotInPublicTests } from "./schema-shape-snapshot-in-public.test.ts";
 import { runTerritorySyncTests } from "./territory-sync.test.ts";
@@ -5822,6 +5823,10 @@ await runTest(
 await runTest(
   "schema-shape browser reachability (a `true` policy and a view that lost security_invoker both read past RLS while it stays enabled)",
   runSchemaShapeBrowserReachabilityTests,
+);
+await runTest(
+  "advisor baseline guard (growth in an accepted advisor category is an error, a fall is not, an untriaged or VANISHED category is an error, and July's stale numbers fail on exactly the three that really drifted)",
+  runAdvisorBaselineGuardTests,
 );
 await runTest(
   "territory sync (rollup==source reconciles within epsilon; row-count off-by-one fails; period window clamps)",

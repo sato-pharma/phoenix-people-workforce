@@ -402,8 +402,12 @@ export function evaluateSchemaShape(shape: SchemaShape): Violation[] {
       severity: "error",
       code: "no_rls_policies",
       message:
-        `The schema has ${shape.tables_total} tables and ZERO RLS policies. Row-level security ` +
-        "is the entire access-control model here; zero policies means it is not being enforced.",
+        `The schema has ${shape.tables_total} tables and ZERO RLS policies. That is not a policy ` +
+        "gap, it is the signature of a restore where only the pre-data section ran — this " +
+        "database carries 433 of them. (RLS is NOT the whole access-control model here: " +
+        "`assertPermission` on the server is, and most code paths use the service-role client. " +
+        "RLS is the backstop for the public anon key. Both are true, and an alarm that " +
+        "overstates the first teaches the reader to discount it.)",
     });
   }
   if (shape.tables_total > 0 && shape.foreign_keys_total === 0) {
