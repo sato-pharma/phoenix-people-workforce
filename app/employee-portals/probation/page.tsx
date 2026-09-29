@@ -141,6 +141,11 @@ export default async function EmployeePortalProbationPage() {
   // Loaded independently of `hasTracker` (2026-08-20): the tracker window hides anyone past day 90,
   // but their case stays open and their evaluators still owe feedback, so gating the inbox on it
   // could hide live, overdue work.
+  // A failed read is NOT an empty queue. Both lists below are best-effort and catch to [], and the
+  // "nothing to show" screen at the foot of this function reads their LENGTH — so with both
+  // queries down, an evaluator holding overdue SLA tasks was told he had none. AGENTS.md §1: a
+  // confident zero is worse than an error.
+  let loadFailed = false;
   let feedbackTasks: FeedbackTaskView[] = [];
   if (canSubmitManagerFeedback) {
     try {
@@ -169,6 +174,7 @@ export default async function EmployeePortalProbationPage() {
       }));
     } catch {
       feedbackTasks = [];
+      loadFailed = true;
     }
   }
 
@@ -192,7 +198,18 @@ export default async function EmployeePortalProbationPage() {
         }));
     } catch {
       scorableProbationers = [];
+      loadFailed = true;
     }
+  }
+
+  // A failed read comes FIRST, before the emptiness test below can mistake it for calm.
+  if (loadFailed && feedbackTasks.length === 0 && scorableProbationers.length === 0) {
+    return (
+      <EmployeePortalEmptyState
+        message="Your probation queue could not be loaded just now. Nothing has been lost or completed — reload the page to try again."
+        title="Could not load your probation queue"
+      />
+    );
   }
 
   // Nothing to show — no scoped probationers, nothing to score, and not an analytics viewer.

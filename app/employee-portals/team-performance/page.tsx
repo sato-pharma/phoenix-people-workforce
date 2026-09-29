@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Users, TrendingUp, Target, Award, BarChart3 } from "lucide-react";
+import { Users, TrendingUp, Target, Award } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { getDsmTeamPerformance } from "@/lib/employee-portal/service";
 import { toPeriodLabel } from "@/lib/employee-portal/period";
@@ -202,15 +202,18 @@ export default async function EmployeePortalTeamPerformancePage({
       </Card>
 
       {members.length === 0 ? (
-        <Card className="rounded-3xl border border-slate-100 bg-white p-12 text-center shadow-sm">
-          <BarChart3 className="mx-auto h-10 w-10 text-slate-300 mb-3" />
-          <p className="text-base font-semibold text-slate-700">No sales data</p>
-          <p className="mt-1 text-sm text-slate-400">
-            {validPeriod
+        // The shared empty state, not a hand-rolled card. This page already renders
+        // EmployeePortalEmptyState twice above, for its two access refusals; a third shape doing
+        // the same job was drift, and it carried a `rounded-3xl` that only the shell's
+        // square-corner sweep was saving.
+        <EmployeePortalEmptyState
+          message={
+            validPeriod
               ? `No records found for ${toPeriodLabel(validPeriod)}.`
-              : "Sales data has not been uploaded yet."}
-          </p>
-        </Card>
+              : "Sales data has not been uploaded yet."
+          }
+          title="No sales data"
+        />
       ) : (
         <>
           {/* ── Charts ──────────────────────────────────────────────────── */}
