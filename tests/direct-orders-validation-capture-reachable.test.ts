@@ -83,16 +83,33 @@ export function runDirectOrderValidationCaptureReachableTests() {
     "HR id comparison must be canonical, not literal — otherwise casing alone hides the button",
   );
 
-  // Only while it is actually stuck.
-  assert.equal(
-    canCaptureDirectOrderValidation("B-12", detail({ status: "pending_approval" })),
-    false,
-    "an order already in the approval chain has nothing to validate",
-  );
+  // 🔴 REVERSED 2026-09-29 on the owner's ruling: "let the rep capture a venue whenever it is still
+  // pending_review". This block used to assert the OPPOSITE — that a `pending_approval` order could
+  // not be captured against — so the test was pinning the defect in place.
+  //
+  // What it cost: a System Admin releasing a hold moves the order out of `held` AND writes
+  // `admin_released` on the VENUE, which makes `decideDirectOrderHold` rule 3 refuse to hold any
+  // future order on it. The release therefore closed the venue's only capture door permanently and
+  // silently. On DOP-000135 the owner released at 16:47 and asked for a live capture at 16:52, and
+  // the rep had no way to give him one.
+  //
+  // The order's status now decides NOTHING here. The venue's does.
+  for (const status of ["held", "pending_approval", "returned", "approved", "cancelled", "expired"]) {
+    assert.equal(
+      canCaptureDirectOrderValidation("B-12", detail({ status })),
+      true,
+      `a venue still pending_review must be capturable whatever the order is doing (${status})`,
+    );
+  }
   assert.equal(
     canCaptureDirectOrderValidation("B-12", detail({ verificationStatus: "verified" })),
     false,
     "a confirmed pharmacy needs no further evidence",
+  );
+  assert.equal(
+    canCaptureDirectOrderValidation("B-12", detail({ verificationStatus: "rejected" })),
+    false,
+    "a venue examined and found not to be real is not waiting for evidence either",
   );
 
   // Fail closed on missing data rather than rendering a capture with nothing to attach to.
@@ -119,5 +136,37 @@ export function runDirectOrderValidationCaptureReachableTests() {
     serviceSource,
     /canonicalHrIdKey\(String\(\(linked as/,
     "the ownership comparison must be canonical, not a literal string compare — HR id casing differs across the app",
+  );
+
+  // ── The gate that REPLACED the order-status one (owner, 2026-09-29) ──────────────────────
+  // The server now asks the question his ruling names — is this VENUE still waiting for somebody to
+  // stand in front of it — and reads it from the table rather than trusting the screen.
+  assert.match(
+    serviceSource,
+    /\.from\("direct_order_pharmacies"\)\s*\.select\("verification_status"\)/,
+    "SERVER-SIDE VENUE GATE GONE: the capture must read the venue's own status, not infer it from a hidden button",
+  );
+  assert.match(serviceSource, /if \(venueStatus !== "pending_review"\)/);
+  assert.match(serviceSource, /This venue is already validated/);
+
+  // The FIELD route must no longer be refused for the order's status. Only the invoice lane keeps
+  // that rule, because its five-slot bargain is filed against the held order the decision revives.
+  assert.match(
+    serviceSource,
+    /if \(isInvoiceRoute && linkedRequestStatus !== "held"\)/,
+    "the held-order refusal must be scoped to the INVOICE route — a bare status check re-closes the door his ruling opened",
+  );
+  assert.ok(
+    !/\n  {4}if \(linkedRequestStatus !== "held"\) \{/.test(serviceSource),
+    "the unconditional held-order refusal must be gone",
+  );
+
+  // The registry is asserted only where it still describes reality: it models ORDER transitions and
+  // declares this one `held -> held`. Widening its `from` while leaving `to: held` would make the
+  // audit surface claim a returned order becomes held — a fabricated transition, worse than none.
+  assert.match(
+    serviceSource,
+    /if \(linkedRequestStatus === "held"\) \{\s*await assertDirectOrderWorkflowTransition\(/,
+    "the workflow-registry assertion must be scoped to the held case, not fed a status the registry does not model",
   );
 }

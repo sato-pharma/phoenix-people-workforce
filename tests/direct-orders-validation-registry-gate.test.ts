@@ -58,9 +58,19 @@ export function runDirectOrderValidationRegistryGateTests() {
   );
 
   // ── The request side passes the ROW's status, not a literal (audit F6) ───────────────────
+  //
+  // RE-POINTED 2026-09-29. The assertion used to read `status: linkedRequestStatus ?? "held"`, where
+  // the `?? "held"` was the fallback for a capture with no linked order. After the owner's ruling
+  // ("let the rep capture a venue whenever it is still pending_review") the registry is asserted
+  // ONLY when the order really is held — it models order transitions and declares this one
+  // `held -> held`, so feeding it `returned` would either be refused or, if `from` were widened,
+  // would make the audit surface claim a transition that does not happen.
+  //
+  // F6's point is unchanged and is what this still pins: the value handed to the gate is the ROW's
+  // status, never a literal. There is simply no longer a branch where a literal would be needed.
   assert.match(
     requestBlock,
-    /status: linkedRequestStatus \?\? "held",/,
+    /if \(linkedRequestStatus === "held"\) \{\s*await assertDirectOrderWorkflowTransition\(\{[\s\S]{0,200}?status: linkedRequestStatus,/,
     "the request gate must be given the linked order's REAL status — a constant validates what the code assumed rather than what the database holds",
   );
   assert.match(
@@ -69,11 +79,29 @@ export function runDirectOrderValidationRegistryGateTests() {
     "the status must ride along on the ownership query that was already being made: every round trip here crosses the Atlantic, and a second one would double the latency of filing evidence",
   );
 
-  // ── The server refuses evidence for an order that is no longer held ──────────────────────
+  // ── The server gates on the VENUE, and on the ORDER only for the invoice lane ────────────
+  //
+  // RE-POINTED 2026-09-29 on the owner's ruling, "let the rep capture a venue whenever it is still
+  // pending_review". This used to assert a bare `linkedRequestStatus !== "held"` refusal covering
+  // every route, and that refusal was the defect: releasing a hold moved the order out of `held`
+  // and wrote `admin_released` on the VENUE, so no future order on it could be held either and the
+  // capture door was shut for good. See `canCaptureDirectOrderValidation` for the case.
+  //
+  // What the assertion protects is unchanged — the server, not the hidden button, is the boundary,
+  // and it must refuse in WORDS rather than leave the registry to answer with a sentence nobody can
+  // act on. Only the question moved: from "is the order still waiting?" to "does this venue still
+  // need somebody to stand in front of it?".
   assert.match(
     requestBlock,
-    /if \(linkedRequestStatus !== "held"\) \{[\s\S]{0,400}?badRequest\(/,
-    "THE SERVER ACCEPTS EVIDENCE FOR A REVIVED OR EXPIRED ORDER: the client hides the capture unless the order is held, but a hidden button is UX, not access control — and it must say so in words rather than leave the registry to refuse it with a sentence nobody can act on",
+    /\.from\("direct_order_pharmacies"\)\s*\.select\("verification_status"\)[\s\S]{0,600}?if \(venueStatus !== "pending_review"\) \{[\s\S]{0,400}?badRequest\(/,
+    "THE SERVER ACCEPTS EVIDENCE FOR A VENUE THAT IS NOT WAITING FOR IT: the capture must read the venue's own status server-side and refuse in words — a hidden button is UX, not access control",
+  );
+  // The invoice lane keeps the held-order rule: its five-slot bargain is filed against the held
+  // order the decision revives, and widening that was not asked for.
+  assert.match(
+    requestBlock,
+    /if \(isInvoiceRoute && linkedRequestStatus !== "held"\) \{[\s\S]{0,400}?badRequest\(/,
+    "the held-order refusal must survive for the INVOICE route — dropping it there would widen a bargain the owner never changed",
   );
 
   // ── The decide side must NOT couple to the order's status ────────────────────────────────
