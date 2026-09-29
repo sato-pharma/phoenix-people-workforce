@@ -56,30 +56,37 @@ function read(relative: string): string {
 }
 
 export function runEmployeeLineIsReadFromTheLinkTests() {
-  // ── 1. THE LINK WINS, THE LABEL IS ONLY A FALLBACK ────────────────────────────────────────
+  // ── 1. THE LINE COMES FROM THE LINK, AND ONLY FROM THE LINK ───────────────────────────────
   assert.equal(
-    resolveEmployeeLineName({ line_name: null, lines: { name: "Pedia" } }),
+    resolveEmployeeLineName({ lines: { name: "Pedia" } }),
     "Pedia",
     "a linked row must resolve its line — this is the 181-of-198 case",
-  );
-  assert.equal(
-    resolveEmployeeLineName({ line_name: "Anti Infective", lines: null }),
-    "Anti Infective",
-    "the label still answers when there is no link — the 1-of-198 case must not regress",
-  );
-  // THE HEADLINE. The previous reader in email.ts had this pair the other way round, so a stale
-  // label would have beaten the truth. Nothing on production carries both today; the order is
-  // asserted so it cannot quietly go back.
-  assert.equal(
-    resolveEmployeeLineName({ line_name: "STALE", lines: { name: "CNS" } }),
-    "CNS",
-    "when a row carries both, the LINK wins — the label is a denormalized copy nothing writes",
   );
   // PostgREST returns an embed as an object or a one-element array depending on the shape of the
   // query; both must resolve, or the fix works on one screen and not the next.
   assert.equal(resolveEmployeeLineName({ lines: [{ name: "Pedia" }] }), "Pedia");
-  assert.equal(resolveEmployeeLineName({ line_name: "  ", lines: [] }), null, "blank is not a line");
+  assert.equal(resolveEmployeeLineName({ lines: [] }), null, "no link is no line");
   assert.equal(resolveEmployeeLineName(null), null);
+
+  // 🔴 THE LABEL IS NO LONGER A FALLBACK, AND THE SELECT MUST NOT NAME IT. `line_name` and
+  // `department_name` are being DROPPED from the table, and while any read still ASKS for the
+  // column the drop cannot happen: PostgREST answers a missing column with an error, so the DDL
+  // would turn every employee read into a 42703 the moment it ran. This is what keeps the code
+  // half of that sequence honest — the name must be gone from the fragment, not merely unused.
+  assert.ok(
+    !EMPLOYEE_LINE_SELECT.includes("line_name"),
+    "EMPLOYEE_LINE_SELECT must not name line_name: the column is being dropped, and a select that " +
+      "asks for it breaks every employee read the moment it goes",
+  );
+  assert.ok(
+    !EMPLOYEE_ORG_SELECT.includes("line_name") && !EMPLOYEE_ORG_SELECT.includes("department_name"),
+    "EMPLOYEE_ORG_SELECT must not name either dropped label",
+  );
+  // area_name is the exception and stays: 145 of 198 rows carry it, and that column is NOT going.
+  assert.ok(
+    EMPLOYEE_ORG_SELECT.includes("area_name") && EMPLOYEE_AREA_SELECT.includes("area_name"),
+    "area_name must stay in the selects — that label is alive and its column is not being dropped",
+  );
 
   // ── 2. THE READS THAT HAD THE DEFECT ASK FOR THE LINK ─────────────────────────────────────
   for (const path of [REPORT_IT, VACATION_OPTIONS, VACATION_REPORT]) {
@@ -105,11 +112,10 @@ export function runEmployeeLineIsReadFromTheLinkTests() {
     );
   }
 
-  // The other two labels resolve the same way round.
-  assert.equal(
-    resolveEmployeeDepartmentName({ department_name: "STALE", departments: { name: "Sales" } }),
-    "Sales",
-  );
+  // The department resolves from its link alone, like the line — its label is going too.
+  assert.equal(resolveEmployeeDepartmentName({ departments: { name: "Sales" } }), "Sales");
+  assert.equal(resolveEmployeeDepartmentName({ departments: null }), null);
+  // The AREA still has both, and the link still wins: that column stays, so the fallback stays.
   assert.equal(resolveEmployeeAreaName({ area_name: "STALE", areas: [{ name: "Cairo West" }] }), "Cairo West");
   assert.equal(
     resolveEmployeeAreaName({ area_name: "Down town", areas: null }),
@@ -160,6 +166,32 @@ export function runEmployeeLineIsReadFromTheLinkTests() {
         "stale one, and neither shows up as an error",
     );
   }
+
+  // ── 3c. NO SELECT ON `employees` MAY NAME EITHER DROPPED COLUMN ───────────────────────────
+  // 🔴 THIS IS THE ASSERTION THE DDL DEPENDS ON. `line_name` and `department_name` are being
+  // dropped from the table; a select that still asks for one becomes a 42703 the moment it goes,
+  // and PostgREST fails the WHOLE read rather than returning a null for that field. The type
+  // system catches an object that READS the field — it caught two while this was being written,
+  // including a Line dropdown built from the dead label — but it cannot see a column name inside
+  // a select STRING, which is why this is a text scan and not a type.
+  //
+  // Other tables have their own real `line_name` (vacation requests, probation rows, seats, the
+  // org-placement view), so the scan is anchored to a `.from("employees")` within a few lines.
+  const offenders: string[] = [];
+  for (const path of [...AREA_READS, REPORT_IT, VACATION_OPTIONS, VACATION_REPORT, EMAIL]) {
+    const source = read(path);
+    const pattern = /from\("employees"\)[\s\S]{0,400}?\.select\(([^)]*)\)/g;
+    for (const match of source.matchAll(pattern)) {
+      const selectList = match[1] ?? "";
+      if (/\bline_name\b|\bdepartment_name\b/.test(selectList)) offenders.push(`${path}: ${selectList.trim()}`);
+    }
+  }
+  assert.deepEqual(
+    offenders,
+    [],
+    "a select on employees still names a column that is being dropped — the DDL would turn that " +
+      `read into a 42703: ${offenders.join(" | ")}`,
+  );
 
   // ── 4. ONE RESOLVER, NOT FOUR ─────────────────────────────────────────────────────────────
   const email = read(EMAIL);

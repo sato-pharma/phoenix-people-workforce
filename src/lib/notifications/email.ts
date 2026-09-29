@@ -13,7 +13,7 @@ import {
 } from "@/config/system-settings";
 import { EMAIL_TEMPLATE_KEYS, normalizeEmailTemplateKey, sendTemplatedEmail, type EmailTemplateContext } from "@/lib/email-templates/service";
 import { renderPhoenixMetadataTable, renderPhoenixMetadataTableText } from "@/emails/phoenix-email-layout";
-import { resolveEmployeeLineName } from "@/lib/employees/employee-org-labels";
+import { EMPLOYEE_LINE_SELECT, resolveEmployeeLineName } from "@/lib/employees/employee-org-labels";
 import { RetryableEmailError, sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
 import { createUnsubscribeToken } from "@/lib/email/unsubscribe-token";
 import { summarizeNotificationOutboxRows } from "@/lib/communication/metrics";
@@ -232,7 +232,8 @@ type EmailContactRow = {
   full_name?: string | null;
   hr_id?: string;
   job_title?: string | null;
-  line_name?: string | null;
+  // No line_name: the column is being dropped, so nothing may declare it and quietly re-add it to
+  // a select. The line comes from the embed below.
   lines?: { name: string | null } | Array<{ name: string | null }> | null;
   manager_hr_id?: string | null;
   work_email?: string | null;
@@ -646,7 +647,7 @@ async function loadEmployeeContact(hrId: string | null | undefined) {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("employees")
-    .select("hr_id,full_name,work_email,manager_hr_id,job_title,line_name,lines(name)")
+    .select(`hr_id,full_name,work_email,manager_hr_id,job_title,${EMPLOYEE_LINE_SELECT}`)
     .eq("hr_id", cleanHrId)
     .or(`employment_status.is.null,employment_status.in.${ACTIVE_EMPLOYMENT_STATUSES_IN_LIST}`)
     .maybeSingle();
@@ -675,7 +676,7 @@ async function loadEmployeesByTitlesAndLines(titles: string[], lines: string[]) 
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("employees")
-    .select("hr_id,full_name,work_email,manager_hr_id,job_title,line_name,lines(name)")
+    .select(`hr_id,full_name,work_email,manager_hr_id,job_title,${EMPLOYEE_LINE_SELECT}`)
     .not("work_email", "is", null)
     .or(`employment_status.is.null,employment_status.in.${ACTIVE_EMPLOYMENT_STATUSES_IN_LIST}`);
 
@@ -969,7 +970,7 @@ export async function getEmailRoutingOptions() {
     const supabase = getSupabaseAdmin();
     const { data, error } = await supabase
       .from("employees")
-      .select("job_title,line_name,lines(name)")
+      .select(`job_title,${EMPLOYEE_LINE_SELECT}`)
       .not("work_email", "is", null);
 
     if (error) throw error;
