@@ -301,26 +301,41 @@ function aRedundantRejectionStillCounts() {
     "Duplicate of DOP-000022.",
     "duplicate claim, the venue is already on file",
     "Rejected as a DUPLICATE.",
+    // His third ruling, the loose one — he was warned it is loose and chose it anyway.
+    "Already verified.",
+    "already  verified on 2026-08-09",
+    "ALREADY VERIFIED by the desk.",
   ]) {
     assert.equal(directOrderRejectionWasOnlyRedundant(yes), true, `must qualify: ${yes}`);
   }
+
+  // 🔴 The price of the third marker, pinned so nobody later reads it as a bug and narrows it back:
+  // "already verified" is a fact about the VENUE, not about the claim's redundancy, so it can sit
+  // beside a verdict that IS about the evidence — and this now silences the line on it. His call,
+  // made with this exact case put to him first.
+  assert.equal(
+    directOrderRejectionWasOnlyRedundant("Already verified, but this photo is of the wrong shop."),
+    true,
+    "his ruling admits this, and the comment above says why that is deliberate",
+  );
 
   // A rejection on the EVIDENCE stays a rejection. These are the notes a desk actually writes, and
   // readmitting one would hide the line on a venue nobody ever visited.
   for (const no of [
     "Photo is of the wrong shop.",
     "The pin is 40km from the area.",
-    "Already verified, not needed.",
     "No longer required.",
+    "Not relevant to this order.",
     "",
     null,
     undefined,
   ]) {
     assert.equal(directOrderRejectionWasOnlyRedundant(no), false, `must NOT qualify: ${String(no)}`);
   }
-  // Two stems and no more. "already verified" and "not needed" stay OUT until he says otherwise —
-  // each widening of a text match that decides whether a venue looks captured is his call. Missing a
-  // case SHOWS the line on a photographed venue; matching one wrongly HIDES it on an unvisited one.
+  // Three markers and no more. "not needed", "no longer required" and "not relevant" stay OUT until
+  // he says otherwise — each widening of a text match that decides whether a venue looks captured is
+  // his call. Missing a case SHOWS the line on a photographed venue; matching one wrongly HIDES it
+  // on an unvisited one.
 
   // The negation guard, now over both stems — a bare substring test reads each as its opposite.
   for (const negated of [
@@ -331,9 +346,18 @@ function aRedundantRejectionStillCounts() {
     "Not a duplicate — the shop does not exist.",
     "This is not duplicate work; the photo is unusable.",
     "It was never a duplicate, the pin is wrong.",
+    "Not already verified — this is the first claim on it.",
+    "The venue is not already verified.",
   ]) {
     assert.equal(directOrderRejectionWasOnlyRedundant(negated), false, `negation must win: ${negated}`);
   }
+  // Mixed signals fall to the safe side: one negated marker refuses the whole note, even when
+  // another marker in it reads plainly.
+  assert.equal(
+    directOrderRejectionWasOnlyRedundant("Not a duplicate, though the earlier claim was superseded."),
+    false,
+    "a negated marker refuses the note even beside a plain one",
+  );
 }
 
 export async function runDirectOrderFieldEvidenceGapTests() {

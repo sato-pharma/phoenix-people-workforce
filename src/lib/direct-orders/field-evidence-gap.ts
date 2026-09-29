@@ -88,32 +88,44 @@ export const DIRECT_ORDER_FIELD_EVIDENCE_GAP_SENTENCES: Record<DirectOrderFieldE
 };
 
 /**
- * Was this claim refused as REDUNDANT — superseded or a duplicate — rather than on its evidence?
- * (owner, 2026-09-29: "count a superseded rejection as field evidence", then "widen the superseded
- * rule to duplicate rejections".)
+ * Was this claim refused as REDUNDANT rather than on its evidence?
+ *
+ * Owner, 2026-09-29, in three instructions that widened it twice: *"count a superseded rejection as
+ * field evidence"*, then *"widen the superseded rule to duplicate rejections"*, then *"widen it to
+ * already-verified rejections too"*.
  *
  * The default is unchanged and stays the safe direction: a rejection is not evidence. This readmits
- * one narrow case — the desk said the claim was redundant, not that the capture was bad — and the
- * caller still requires a real photo and a real GPS fix on the row, so an empty rejection with a
- * clever note readmits nothing.
+ * the redundancy family — the desk said the CLAIM was not needed, having said nothing against the
+ * photograph — and the caller still requires a real photo and a real GPS fix on the row, so an empty
+ * rejection with a clever note readmits nothing.
  *
- * TWO STEMS, `supersede` AND `duplicate` — the second added on his instruction the same day, after
- * the first shipped without it. They are one idea in two vocabularies: the desk refused the CLAIM as
- * redundant, having said nothing against the photograph.
+ * THREE MARKERS: `supersede`, `duplicate`, `already verified`. One idea in three vocabularies.
  *
- * AND NOTHING FURTHER WITHOUT HIS WORD. Not "already verified", not "not needed", not "no longer
- * required" — each is arguable, and every widening of a text match that decides whether a venue
- * looks captured is his call, not a tidy-up. The asymmetry is why: missing a case SHOWS the line on
- * a venue that was photographed, which the approver sees through in a second; matching one wrongly
- * HIDES the line on a venue nobody ever visited, which cannot be spotted at all. It fails toward
- * showing, and a widening only ever moves in the direction he asks for.
+ * 🔴 THE THIRD IS THE LOOSE ONE, AND HE WAS TOLD SO BEFORE IT WAS BUILT. "Superseded" and
+ * "duplicate" name the CLAIM's redundancy and nothing else. "Already verified" names a fact about
+ * the VENUE that can sit beside any verdict at all — *"Already verified, but this photo is of the
+ * wrong shop"* is a sentence a desk could write, and this now reads it as evidence and silences the
+ * line. That is his decision, made with the case in front of him; it is recorded here so a later
+ * reader does not mistake it for an oversight and quietly narrow it back.
  *
- * The negation guard exists because "this claim is NOT superseded — the photo is of the wrong shop"
- * and "not a duplicate, the shop does not exist" are perfectly natural rejection notes, and a bare
- * substring test would read each as the opposite of what it says.
+ * NOTHING FURTHER WITHOUT HIS WORD. "not needed", "no longer required", "not relevant" stay out.
+ * Each widening of a text match that decides whether a venue looks captured is his call, not a
+ * tidy-up, because the two errors are not symmetrical: missing a case SHOWS the line on a venue that
+ * was photographed, which an approver sees through in a second; matching one wrongly HIDES the line
+ * on a venue nobody ever visited, which cannot be spotted at all.
+ *
+ * The negation guard covers all three, because "this claim is NOT superseded — the photo is of the
+ * wrong shop", "not a duplicate, the shop does not exist" and "not already verified" are all natural
+ * rejection notes that a bare substring test reads as their own opposites. A note carrying BOTH a
+ * negated marker and a plain one is refused outright: mixed signals fall to the safe side.
  */
+const REDUNDANT_REJECTION_MARKERS = /supersed|duplicat|already\s+verified/;
+
+const NEGATED_REDUNDANT_MARKER =
+  /\b(not|never|isn't|isnt|is not|wasn't|wasnt|was not)\s+(an?\s+)?(supersed|duplicat|already\s+verified)/;
+
 export function directOrderRejectionWasOnlyRedundant(decisionNotes: string | null | undefined): boolean {
   const notes = String(decisionNotes ?? "").toLowerCase();
-  if (!notes.includes("supersede") && !notes.includes("duplicate")) return false;
-  return !/\b(not|never|isn't|isnt|is not|wasn't|wasnt|was not)\s+(an?\s+)?(supersed|duplicat)/.test(notes);
+  if (!REDUNDANT_REJECTION_MARKERS.test(notes)) return false;
+  return !NEGATED_REDUNDANT_MARKER.test(notes);
 }
