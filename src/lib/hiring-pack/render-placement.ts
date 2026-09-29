@@ -203,14 +203,13 @@ export function placedFormCss(widthPt: number, heightPt: number, arabicFontStack
      tells the fit script how far past its rule a value has run. */
   .ff { display: inline-block; white-space: nowrap; }
   .tick { text-align: center; font-size: 13pt; font-weight: 700; }
-  /* A stamp or a signature somebody placed. object-fit is contain, never fill: the box is dragged
-     and resized by hand, and a round seal squashed into an oblong is a seal nobody would accept on
-     paper — so the artwork keeps its own proportions inside whatever box it was given.
-
-     IT STAYS CLICKABLE, unlike the artwork behind it. The editor selects a page-surface field with
-     closest("[data-hp-key]") and this element is the one carrying that attribute, so
-     pointer-events: none here would make the one thing on the page that must be draggable the one
-     thing that cannot be picked up. Only the browser's own image drag is turned off. */
+  /* A stamp or a signature somebody placed. Kept SHORT on purpose: this stylesheet is emitted into
+     every rendered document, so a comment here is shipped bytes and not source — and one that named
+     the editor's field attribute put that token into the markup of a paper with no fields on it at
+     all, which is what tests/hiring-pack-custom-template-render.test.ts exists to catch. The full
+     reasoning lives beside the image placement type above.
+     object-fit: contain, so a hand-resized box cannot squash a round seal into an oblong.
+     No pointer-events: none — the element must stay pickable or a placed mark cannot be dragged. */
   .mark {
     display: block;
     object-fit: contain;
