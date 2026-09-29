@@ -324,12 +324,24 @@ function HrDecisionControls({
   return (
     // A disabled fieldset disables every control inside it natively — the switch, the amount and the
     // reason — without widening the shared Switch primitive.
-    <fieldset className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0 disabled:opacity-60" disabled={locked}>
+    //
+    // `gap-1.5`, not `gap-2`. That is WHITESPACE BETWEEN the two control rows — it is not one of the
+    // controls, so shrinking it does not touch the rule stated below. Measured live on 2026-09-29 as
+    // Super Admin against 489 real trips: with the cell padding at `py-2` it takes the review row
+    // from 78px to 70px.
+    <fieldset className="m-0 flex min-w-0 flex-col gap-1.5 border-0 p-0 disabled:opacity-60" disabled={locked}>
       {/*
         The Approve switch and the amount share ONE wrapping line. They were two stacked rows, and
         this cell is what set the review row's height: measured at 1440px on 2026-09-26 it needed
         104px — switch 24 + amount 32 + reason 32 + two 8px gaps — against 76px for the widest other
         cell, so every row was 100px tall because of this column alone.
+
+        🔴 MEASURED AGAIN on 2026-09-29, live as Super Admin against 489 real trips at 1440px, and it
+        is STILL this column that sets the height — which is worth knowing because the obvious place
+        to look is the person column, and looking there is wasted effort. Hiding the person cell's
+        (duplicated) HR id line moved the row 78px -> 78px, exactly nothing; hiding this cell's reason
+        input moved it 78px -> 58px. So any future attempt to shorten this row has to come from here,
+        and the rule below is what says how far that may go.
 
         🔴 NOTHING about the decision itself changes. Same Switch, same number input, same handlers,
         same values, same `was …` badge, same disabled fieldset, same required-reason rule and its
@@ -1563,7 +1575,16 @@ export function ExpenseReport({
                         return (
                         <Fragment key={`${record.tripId}-${record.row}`}>
                         <tr className="group">
-                          <td className="sticky left-0 z-10 min-w-[210px] border-b border-r border-slate-100 bg-white px-3 py-3 align-top shadow-[8px_0_12px_-12px_rgba(15,23,42,0.35)] group-hover:bg-phx-accent-soft">
+                          {/*
+                            `py-2` on every cell of a review row, not `py-3`. Measured live on
+                            2026-09-29 as Super Admin against 489 real trips at 1440px: 78px -> 70px
+                            a row, with the fieldset's gap below. Nothing is hidden and no control
+                            changes size — this is the row's own vertical padding, and it is the only
+                            lever left that does not touch the approval controls (see the rule in
+                            HrDecisionControls). The header `<th>`s keep `py-3`; a column heading is
+                            read once, a row is read 489 times.
+                          */}
+                          <td className="sticky left-0 z-10 min-w-[210px] border-b border-r border-slate-100 bg-white px-3 py-2 align-top shadow-[8px_0_12px_-12px_rgba(15,23,42,0.35)] group-hover:bg-phx-accent-soft">
                             <p className="whitespace-nowrap font-semibold text-text">{record.specialist || "Unassigned"}</p>
                             <p className="mt-0.5 whitespace-nowrap font-mono text-phx-xs text-text-secondary">
                               {record.hrId ? record.hrId : "HR ID not mapped"}
@@ -1610,7 +1631,7 @@ export function ExpenseReport({
 
                             if (column.key === "validation") {
                               return (
-                                <td className={cn("whitespace-nowrap border-b border-slate-100 px-3 py-3 align-top group-hover:bg-phx-accent-soft", column.className)} key={column.key}>
+                                <td className={cn("whitespace-nowrap border-b border-slate-100 px-3 py-2 align-top group-hover:bg-phx-accent-soft", column.className)} key={column.key}>
                                   <Badge variant={issues.length > 0 ? "warning" : "success"}>
                                     {issues.length > 0 ? issues.join(", ") : "Ready"}
                                   </Badge>
@@ -1620,7 +1641,7 @@ export function ExpenseReport({
 
                             if (column.key === "hrId") {
                               return (
-                                <td className={cn("whitespace-nowrap border-b border-slate-100 px-3 py-3 align-top font-mono text-xs text-text-secondary group-hover:bg-phx-accent-soft", column.className)} key={column.key}>
+                                <td className={cn("whitespace-nowrap border-b border-slate-100 px-3 py-2 align-top font-mono text-xs text-text-secondary group-hover:bg-phx-accent-soft", column.className)} key={column.key}>
                                   {record.hrId ? record.hrId : (
                                     <Badge variant="warning">Not mapped</Badge>
                                   )}
@@ -1631,7 +1652,7 @@ export function ExpenseReport({
                             return (
                               <td
                                 className={cn(
-                                  "whitespace-nowrap border-b border-slate-100 px-3 py-3 align-top text-text-secondary group-hover:bg-phx-accent-soft",
+                                  "whitespace-nowrap border-b border-slate-100 px-3 py-2 align-top text-text-secondary group-hover:bg-phx-accent-soft",
                                   column.className,
                                   (isMoney || isNumeric) && "text-right font-mono text-xs",
                                   column.key === "total" && "font-semibold text-text",
@@ -1645,7 +1666,7 @@ export function ExpenseReport({
                           })}
                           <td
                             className={cn(
-                              "sticky right-0 z-10 min-w-[320px] border-b border-l border-slate-100 bg-white px-3 py-3 align-top shadow-[-8px_0_12px_-12px_rgba(15,23,42,0.35)] group-hover:bg-phx-accent-soft",
+                              "sticky right-0 z-10 min-w-[320px] border-b border-l border-slate-100 bg-white px-3 py-2 align-top shadow-[-8px_0_12px_-12px_rgba(15,23,42,0.35)] group-hover:bg-phx-accent-soft",
                               reasonMissing && "bg-rose-50/80 group-hover:bg-rose-50",
                             )}
                           >
