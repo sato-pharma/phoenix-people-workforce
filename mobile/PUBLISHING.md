@@ -305,6 +305,51 @@ this repo can do.
 
 ## Automating the upload (draft only — the release click stays the owner's)
 
+🔴 **SETTLED 2026-09-29, MEASURED IN THE OWNER'S OWN CHROME: THIS AUTOMATION CANNOT BE WIRED, AND
+NOTHING BELOW WILL EVER FIRE. Do not spend another session hunting for a service-account key.**
+`https://play.google.com/console`, signed in as the account the owner uses
+(`phoenixx.oag@gmail.com`), does not open a console at all — it redirects to
+`/console/u/0/signup`, *"Creating a Play Console developer account"*, offering the **organization /
+yourself** account-type choice and stating *"The Google account you're currently signed in as … will
+own this developer account."* **There is no developer account, therefore no `Setup → API access`
+page, therefore no service account to grant release permission to, therefore no `eas submit`.** The
+managed-Play developer account that owns the private app was auto-created *on behalf of the
+organization* through the iframe (see the top of this page) and is **not** reachable as an ordinary
+Play Console — which is the same reason this page already says *"Do not build against the Custom App
+Publishing API."*
+
+🔴 **AND THE UPLOAD NEEDS NO GOOGLE ACCOUNT AT ALL — which is why none of this matters.** The
+Private apps page is reached through **Phoenix's own** managed-Play iframe at `/devices/managed-play`,
+whose web token is minted **server-side** from `ANDROID_MANAGEMENT_KEY`. The only thing the owner
+needs in order to upload is being **Super Admin in Phoenix**. Not the Gmail, not a `satopharma.com`
+address, not any Google sign-in. A session that starts asking *"which Google account do I use"* has
+already taken a wrong turn.
+
+🔴 **NEVER "fix" this by creating a Play Console developer account.** That is US$25 plus identity
+verification, it is the very route the correction at the top of this page exists to retire, and the
+auto-created developer account is non-transferable — creating a second one with the wrong account is
+a one-way door. It is also not Claude's to create: account creation is refused on the owner's behalf.
+
+🔴 **The Firebase key is NOT a Play key — it was tried, and it fails in a way that reads like a fixable
+permission problem.** `firebase-adminsdk-fbsvc@phoenix-workforce-push.iam.gserviceaccount.com`
+(project `phoenix-workforce-push`, the FCM/push credential) **authenticates fine** for the
+`androidpublisher` scope, then answers **403** on `edits.insert`: *"Google Play Android Developer API
+has not been used in project 1051410808973 before or it is disabled."* Enabling that API would not
+help — the account still owns no app on Play. Do not reuse the push key here, and do not read that
+403 as "just switch the API on".
+
+**What stays in the repo anyway, and why it is harmless.** `mobile/eas.json` keeps the
+`submit.production.android` profile below, and `mobile/google-play-service-account.json` stays
+gitignored. With no key file present `eas submit` is simply never invoked — the Oct 1 delivery task
+checks for the key, finds none, and hands over the `.aab` link for the iframe upload instead. The
+profile is documentation of a decided-against path, not a live one; **leave it or remove it, but do
+not "finish" it.**
+
+---
+
+Everything below records the design that was built for that path on 2026-09-29, before the console
+was actually opened. **It is retained for the reasoning, not as instructions to follow.**
+
 Step 3 above — dragging the `.aab` onto the Private apps page — is the owner's click. It can be
 automated **up to, but not including, the release**, so nobody hand-drags a file again while the
 decision to distribute stays a human one. Owner decision, 2026-09-29: *"wire it as a draft upload
