@@ -16,6 +16,13 @@
  * typed — which is the only version worth showing, since the other one would have the preview
  * disagree with the database the moment the import ran.
  *
+ * SOCIAL INSURANCE JOB TITLE IS DELIBERATELY NOT PREVIEWED. Every other column on this sheet is a
+ * field of the employee record, and this one is not: it is `employee_hiring_profile.job_title_ar`,
+ * which the directory row this diff compares against does not carry. Loading it for the preview
+ * would mean paying for a second table on the hot directory path to diff one column. Its blast
+ * radius is bounded by the rule below — a blank cell writes nothing — so the only way it changes
+ * anything is somebody typing a different Arabic title, which is exactly the case where they know.
+ *
  * A BLANK IS NOT A CHANGE. The confirm route omits null fields from its update payload rather than
  * writing them, so clearing a cell leaves the stored value alone. Treating a blank as "change this
  * to nothing" would invent hundreds of changes on any partially filled sheet and bury the real ones.
@@ -124,6 +131,9 @@ const FIELDS: FieldSpec[] = [
   { compare: "text", from: (r) => r.medicalInsuranceNumber, group: "Payroll", label: "Medical Insurance Number", to: (e) => e.medicalInsuranceNumber },
   { compare: "text", from: (r) => r.socialInsuranceStatus, group: "Payroll", label: "In Social Insurance", to: (e) => e.socialInsuranceStatus },
   { compare: "text", from: (r) => r.socialInsuranceNumber, group: "Payroll", label: "Social Insurance Number", to: (e) => e.socialInsuranceNumber },
+  { compare: "text", from: (r) => r.healthCardStatus, group: "Payroll", label: "Health Card Received", to: (e) => e.healthCardStatus },
+  { compare: "text", from: (r) => r.healthCardNumber, group: "Payroll", label: "Health Card Number", to: (e) => e.healthCardNumber },
+  { compare: "text", from: (r) => r.healthCardReceivedDate, group: "Payroll", label: "Health Card Receipt Date", to: (e) => e.healthCardReceivedDate },
 
   { compare: "boolean", from: (r) => r.payrollEligible, group: "System", label: "Payroll Eligible", to: (e) => e.payrollEligible },
   { compare: "boolean", from: (r) => r.organogramVisible, group: "System", label: "Organogram Visible", to: (e) => e.organogramVisible },

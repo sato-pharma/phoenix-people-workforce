@@ -168,6 +168,53 @@ export const employeeColumnDefinitions: EmployeeImportColumnDefinition[] = [
     aliases: ["Medical Insurance Number", "Medical Insurance ID", "medical_insurance_number"],
   },
   {
+    // The one field on this sheet that does NOT live on `employees` — see the note in
+    // `employee-import-types.ts`. `dbPath` names where it really lands, so the import review and
+    // the findings report can say so honestly.
+    field: "socialInsuranceJobTitle",
+    dbPath: "employee_hiring_profile.job_title_ar",
+    required: false,
+    aliases: [
+      "Social Insurance Job Title",
+      "Insurance Job Title",
+      "Job Title (Arabic)",
+      "job_title_ar",
+      "المسمى الوظيفى فى التأمينات الاجتماعية",
+      "المسمى الوظيفي في التأمينات الاجتماعية",
+    ],
+  },
+  {
+    // The GOVERNMENT health insurance booklet — دفتر التأمين الصحى الحكومى. Deliberately NOT the
+    // private medical insurance above; the owner drew that line himself on 2026-09-29.
+    field: "healthCardStatus",
+    dbPath: "employees.health_card_status",
+    required: false,
+    aliases: [
+      "Health Card Received",
+      "Health Card Status",
+      "health_card_status",
+      "استلام بطاقة صحية",
+      "بطاقة صحية",
+    ],
+  },
+  {
+    field: "healthCardNumber",
+    dbPath: "employees.health_card_number",
+    required: false,
+    aliases: ["Health Card Number", "health_card_number", "رقم البطاقة الصحية"],
+  },
+  {
+    field: "healthCardReceivedDate",
+    dbPath: "employees.health_card_received_date",
+    required: false,
+    aliases: [
+      "Health Card Receipt Date",
+      "Health Card Received Date",
+      "health_card_received_date",
+      "تاريخ استلام البطاقة الصحية",
+    ],
+  },
+  {
     field: "basicSalary",
     dbPath: "employees.basic_salary",
     required: false,
