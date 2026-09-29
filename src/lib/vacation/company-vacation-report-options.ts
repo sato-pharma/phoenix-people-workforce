@@ -114,7 +114,11 @@ async function loadFilterOptionsRaw(): Promise<CompanyVacationReportFilterOption
     // Both sides again: an HR row shows v2_vacation_requests.line_name in preference to the
     // roster's, so a line that exists only there still has to be selectable.
     lineNames: sortedUnique([
-      ...employeeRows.map((employee) => employee.line_name),
+      // The roster's half of this list read the dead label until the type stopped carrying it, so
+      // the Line dropdown was built from a column with ONE value in it — the same defect as the
+      // row's own line, in the list of CHOICES rather than in a row, and only the typecheck found
+      // it. A line missing from a filter looks like a line nobody is on.
+      ...employeeRows.map((employee) => resolveEmployeeLineName(employee)),
       ...requestRows.map((request) => request.line_name),
     ]),
   };
