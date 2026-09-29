@@ -31,6 +31,7 @@ const completeEmployee: EmployeeDirectoryRow = {
   gender: "male",
   grossSalary: 1200,
   hasBankAccount: "yes",
+  hasCv: false,
   hasPhoto: false,
   healthCardStatus: null,
   healthCardNumber: null,

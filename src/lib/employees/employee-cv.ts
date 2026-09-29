@@ -170,6 +170,78 @@ export async function getEmployeeCv(hrId: string | null | undefined): Promise<Em
   return recordFromRow(await loadCvRow(String(hrId)));
 }
 
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// Who has one at all — the directory's index
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+const CV_INDEX_TTL_MS = 60_000;
+
+let cvIndexCache: { expiresAt: number; value: Set<string> } | null = null;
+// Same in-flight dedupe as getEmployeePhotoMap: two directory loads arriving together share one
+// query rather than each issuing their own.
+let inFlightCvIndex: Promise<Set<string>> | null = null;
+
+/**
+ * Drop the cached index. Called from writeCvColumns — the ONE place any CV column is written — so
+ * attaching, replacing, carrying across or removing a CV all show in the directory on the next
+ * load rather than up to a minute later. A stale tick on the screen whose whole job is to say who
+ * is MISSING a CV would send somebody chasing a document that is already on file.
+ */
+export function invalidateEmployeeCvIndex(): void {
+  cvIndexCache = null;
+}
+
+async function fetchEmployeeCvIndex(): Promise<Set<string>> {
+  const ids = new Set<string>();
+  try {
+    const { data, error } = await getSupabaseAdmin()
+      .from("employees")
+      .select("hr_id")
+      .not("cv_path", "is", null);
+    if (error) throw error;
+    for (const row of (data ?? []) as Array<{ hr_id: string | null }>) {
+      const key = canonicalHrIdKey(row.hr_id);
+      if (key) ids.add(key);
+    }
+  } catch {
+    // Pre-migration or a transient failure. An empty set reads as "nobody has a CV", which is the
+    // safe direction: the filter offers people who turn out to have one, rather than hiding people
+    // who do not — the opposite would quietly shorten the list of who still needs chasing.
+    return new Set();
+  }
+  return ids;
+}
+
+/**
+ * The canonical HR ids of everyone with a CV on file — one cached query for the whole company,
+ * not another column on every directory row.
+ *
+ * Deliberately the same shape as getEmployeePhotoMap rather than widening the directory's own
+ * SELECT: that query already reads ~90 columns per person, and `cv_path` is a storage path nothing
+ * on that screen may show. This answers the only question a list asks — is there one — and the CV
+ * panel still reads the file's own name for the one person somebody opens.
+ *
+ * HR IDS ARE MIXED CASE IN THIS DATABASE, so both sides go through canonicalHrIdKey. A raw
+ * comparison silently under-matches, and here that reads as "this person has no CV".
+ */
+export async function getEmployeeCvHrIdSet(): Promise<Set<string>> {
+  const now = Date.now();
+  if (cvIndexCache && cvIndexCache.expiresAt > now) return cvIndexCache.value;
+
+  if (!inFlightCvIndex) {
+    inFlightCvIndex = fetchEmployeeCvIndex()
+      .then((ids) => {
+        cvIndexCache = { expiresAt: Date.now() + CV_INDEX_TTL_MS, value: ids };
+        return ids;
+      })
+      .finally(() => {
+        inFlightCvIndex = null;
+      });
+  }
+
+  return inFlightCvIndex;
+}
+
 /**
  * The CV filename for each of several employees, keyed by canonical HR id — one query for the
  * whole set rather than one per person.
@@ -343,6 +415,10 @@ async function writeCvColumns(
     })
     .ilike("hr_id", key);
   if (error) throw error;
+  // Every CV change in the system passes through here — attach, replace, carry across, remove —
+  // so this is the one place that can keep the directory's index honest. Invalidating after the
+  // write rather than before it means a concurrent read cannot refill the cache from the old row.
+  invalidateEmployeeCvIndex();
 }
 
 /**
