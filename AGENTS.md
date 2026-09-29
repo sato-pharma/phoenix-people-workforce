@@ -401,6 +401,16 @@ If a task requires no protected action, complete it without asking.
 
 **Both are pre-approved while §6.1 AUTORUN is armed.**
 
+🔴 **A CLASSIFIER DENIAL ON A MERGE IS USUALLY STALE AUTHORIZATION, NOT A STANDING BLOCK — AND THE
+FIX IS A FRESH WORD FROM HIM, NEVER A SETTINGS CHANGE.** Auto mode judges from what it can
+currently SEE, so his approval going out of view across a context compaction reads exactly like a
+permission he never gave: same `[Production Deploy]` refusal, same wording. Measured 2026-09-29 —
+six merges went through on his approval, then #4776 was refused hours later on the *same* standing
+approval; he retyped `merge 4776` and it passed on the next attempt, head sha unchanged. **Never
+route around it, never ask a peer session to merge for you** (that launders a permission decision
+made in your window), and never propose editing `permissions` to clear it. Put it back to him and
+quote the merge. A denial is about what the classifier can see, not about what is permitted.
+
 ### 6.1 AUTORUN — the owner's standing instruction to finish without stopping
 
 Account — what he was shown, what he answered, why the trigger is a typed word:

@@ -705,6 +705,7 @@ import { runClosingSummaryFitsTests } from "./closing-summary-fits.test.ts";
 import { runMasterWorkbookKeysetTests } from "./master-workbook-keyset.test.ts";
 import { runSalesVsTargetCacheTests } from "./sales-vs-target-cache.test.ts";
 import { runStagingHrSyncTests } from "./staging-hr-sync.test.ts";
+import { runBackupSchemaRetentionTests } from "./backup-schema-retention.test.ts";
 import { runBusinessReviewAchievementArithmeticTests } from "./business-review-achievement-arithmetic.test.ts";
 import { runTargetsRollupAchievementTests } from "./targets-rollup-achievement.test.ts";
 import { runClosingAndTargetsAgreeTests } from "./closing-and-targets-agree.test.ts";
@@ -3380,6 +3381,10 @@ await runTest(
 await runTest(
   "staging HR sync (production is only ever READ and staging only ever WRITTEN — production as the target is refused; FK dependency order holds; never deletes; triggers off but foreign keys on; dry run is the default)",
   runStagingHrSyncTests,
+);
+await runTest(
+  "backup schema retention (a live foreign key, view or function beats age; the owner's pre-images never expire; an undated schema is never auto-proposed; the script cannot send a DROP)",
+  runBackupSchemaRetentionTests,
 );
 await runTest("monthly sales run", runMonthlySalesRunTests);
 await runTest("sos resolveBrick precedence (area must not beat customer brick)", runSosResolveBrickPrecedenceTests);

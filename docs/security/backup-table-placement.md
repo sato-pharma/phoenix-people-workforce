@@ -79,6 +79,18 @@ to keep it forever. Export first if the data has any audit value, then:
 drop schema <domain>_backup_YYYYMMDD cascade;
 ```
 
+**When that happens is [`backup-schema-retention.md`](backup-schema-retention.md): 90 days from
+the date in the name, proposed by `scripts/audit-backup-schemas.mjs`, dropped by a human.** This
+section said "the real end state" and nothing more, so nothing ever reached it — on 2026-09-29
+production held 99 non-standard schemas and had dropped exactly one, ever. The date in a name is
+only an expiry note if something reads it.
+
+Two things that page will not let you do, both learned the hard way: it never drops anything
+itself, because there is no point-in-time recovery behind a mistake; and it tests for a live
+foreign key, view or function reference **before** age —
+`deductions_governance_backup_20260830` looks exactly like 98 inert siblings and has a live
+`public` table pointing into it.
+
 ## What the check does and does not catch
 
 `scripts/check-sql-backup-placement.ts` scans `supabase/**/*.sql` for `CREATE TABLE`

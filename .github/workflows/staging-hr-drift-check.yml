@@ -1,6 +1,18 @@
-name: Staging HR Drift Check
+name: Daily Database Checks
 
-# WHY THIS EXISTS (added 2026-09-29). Staging is a real clone of production and silently falls
+# This workflow runs the daily READ-ONLY database checks. Two today, sharing one job because the
+# expensive part of either is `pnpm install`, which one job pays for once:
+#
+#   1. Staging HR drift  — is staging still a faithful clone of production? (the original purpose,
+#      and the reason the file is named staging-hr-drift-check.yml; the path is kept so the cron
+#      and the run history stay continuous)
+#   2. Backup schema retention — which ad-hoc backup schemas on PRODUCTION have outlived their
+#      purpose? See docs/security/backup-schema-retention.md.
+#
+# 🔴 NEITHER STEP MAY FAIL ON A FINDING, and the reason is the same for both — see the block on
+# the drift check below. Only a BROKEN check fails.
+#
+# WHY THE DRIFT CHECK EXISTS (added 2026-09-29). Staging is a real clone of production and silently falls
 # behind. When it was measured it was missing 19 employees, 13 resignations, 36 occupancy rows,
 # 4 line-area rows, 2 areas, 5 teams and a position. Nothing anywhere said so: a dated territory
 # migration failed its own precondition on staging while succeeding on production, and that
@@ -128,6 +140,40 @@ jobs:
             # A real error (bad credentials, unreachable database) IS worth failing on: it means
             # the alarm itself is broken, which is the one state this workflow must not hide.
             echo "::error::the drift check could not run (exit $code)"
+            exit "$code"
+          fi
+
+      # Shares this workflow rather than getting its own, for one reason: the expensive part of a
+      # scheduled job here is `pnpm install --frozen-lockfile`, which this job already paid for.
+      # A separate workflow would double that for a read-only query that takes seconds, and
+      # Actions spend in this repo is the highest it has ever been (AGENTS.md §6).
+      #
+      # Like the drift check above it NEVER fails on a finding. Exit 2 means "schemas have
+      # expired", which is the ordinary condition it exists to report — and a red suite on a
+      # scheduled run withholds the production deploy of whatever commit is main HEAD when it
+      # fires (AGENTS.md §2.3). Only a broken audit fails.
+      - name: Backup schema retention (production, read only)
+        id: retention
+        if: ${{ env.HAS_PRODUCTION_DB_URL == 'true' && env.HAS_STAGING_DB_URL == 'true' }}
+        env:
+          PHOENIX_PRODUCTION_DATABASE_URL: ${{ secrets.PHOENIX_PRODUCTION_DATABASE_URL }}
+        run: |
+          set -o pipefail
+          set +e
+          node scripts/audit-backup-schemas.mjs | tee retention.txt
+          code=$?
+          set -e
+          {
+            echo "### Backup schema retention"
+            echo ""
+            echo '```'
+            cat retention.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$code" = "2" ]; then
+            echo "::warning::Backup schemas have passed their retention window. The audit lists them and prints the drop statements; dropping is a human's job — production has no point-in-time recovery."
+          elif [ "$code" != "0" ]; then
+            echo "::error::the backup schema audit could not run (exit $code)"
             exit "$code"
           fi
 
