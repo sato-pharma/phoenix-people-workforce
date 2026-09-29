@@ -405,7 +405,29 @@ export function dropRowsWithNoSalesLine<Row extends { lineCode: string | null }>
   return rows.filter((row) => String(row.lineCode ?? "").trim().length > 0);
 }
 
-/** The uncached RPC read + pure map. Body is byte-identical to the pre-cache loader. */
+/**
+ * The uncached RPC read + pure map. Body is byte-identical to the pre-cache loader.
+ *
+ * THE WIDE CALL IS THE TIMEOUT — never call this with a range wider than ONE month.
+ *
+ * PostgREST runs as `authenticator`, whose `statement_timeout` is **8 s** (read live from
+ * pg_roles, production 2026-09-29). A floor-anchored range is already past half of that and
+ * grows by a month every month, so the wide form does not fail occasionally — it fails on
+ * schedule. Measured on production the same day, over 24h of edge logs for this one RPC:
+ *
+ *     722 calls  under 1.5 s   — the per-month reads, healthy
+ *     323 calls  1.5 s - 8 s   — wide reads that happened to fit
+ *     310 calls  >= 8 s        — wide reads killed by the timeout, returned to the user as 500
+ *
+ * That is 310 failed Sales vs Target renders a day, every one of them a wide call. The RPC costs
+ * about the same in total either way (nine single months = 4,533 ms, the one wide call = 4,716 ms),
+ * so splitting buys no database time — what it buys is that no single request can reach the
+ * ceiling, and on a warm epoch eight of the nine months never leave the cache at all.
+ *
+ * The caller that used to pass a wide range was loadAchievementRange's null-token fallback, which
+ * chose the most expensive call available at the one moment the system was already struggling.
+ * It now fans out per month like the cached path. Pinned by tests/sales-vs-target-cache.test.ts.
+ */
 async function loadAchievementRangeUncached(from: string, to: string): Promise<AchievementRow[]> {
   const supabase = getSupabaseAdmin();
   const rows = await rpcAll<Record<string, unknown>>(
@@ -476,19 +498,20 @@ async function loadAchievementMonth(period: string, token: string): Promise<Achi
  */
 export async function loadAchievementRange(from: string, to: string): Promise<AchievementRow[]> {
   if (!isValidHistoryPeriod(from) || !isValidHistoryPeriod(to) || to < from) return [];
+  const periods = achievementPeriodsInRange(from, to);
+  if (periods.length === 0) return [];
   // Self-invalidating cross-request cache. The token changes the cache key whenever actuals,
   // targets, or seat occupancy move — none of which share an invalidation chokepoint — so a
   // cache hit can never serve a stale rep/DM attribution. No token ⇒ read live (never stale).
   const token = await loadAchievementCacheStamp();
-  if (!token) return loadAchievementRangeUncached(from, to);
-  const periods = achievementPeriodsInRange(from, to);
-  if (periods.length === 0) return [];
   // Bounded, and serial in development — a cold epoch is the only time any of these is a round
   // trip at all. asyncPool preserves input order, which is what makes the flat() below ordered.
   const months = await asyncPool(
     ACHIEVEMENT_MONTH_FETCH_CONCURRENCY,
     periods,
-    (period) => loadAchievementMonth(period, token),
+    // A null token means read live — but STILL one month per RPC. Never one wide call: see the
+    // THE WIDE CALL IS THE TIMEOUT block above loadAchievementRangeUncached.
+    (period) => (token ? loadAchievementMonth(period, token) : loadAchievementRangeUncached(period, period)),
   );
   return months.flat();
 }
