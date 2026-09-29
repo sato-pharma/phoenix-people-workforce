@@ -83,6 +83,29 @@ export const CAPTURE_DRIFT_DISAGREE_METRES = 2000;
  */
 export const CAPTURE_GAP_FLAG_SECONDS = 600;
 
+/**
+ * When the shutter began taking its own reading: the moment #4781 merged to main.
+ *
+ * Used ONLY to explain an unmeasured capture in words - never to infer a position for one. A
+ * capture older than this has no photo coordinates because the feature did not exist yet, which
+ * is a fact about Phoenix; a newer one has none because that particular shutter could not read a
+ * position, which is a fact about that handset. Both are “not measured” and neither is a finding,
+ * but telling a reader which is which stops a 2026-07 row looking like a camera that just failed.
+ *
+ * DELIBERATELY APPROXIMATE. A merge is not a deploy: the build serving this change landed some
+ * minutes later, so a capture taken in the hours either side of this instant may be classified
+ * one way when it belongs the other. That is why the wording on both sides is neutral and why
+ * neither side is ever rendered as suspicion - the boundary is an explanation, not a verdict.
+ */
+export const PHOTO_FIX_LIVE_FROM = "2026-09-29T16:34:09Z";
+
+/** Why a capture has no photo coordinates. Null whenever it HAS them. */
+export type CaptureUnmeasuredReason =
+  /** Taken before the shutter took its own reading - the feature did not exist yet. */
+  | "predates_shutter_fix"
+  /** Taken after, but the camera reported no position: refused, timed out, or no signal. */
+  | "no_position_recorded";
+
 export type CaptureTrustVerdict =
   /** No photo fix was recorded. Says nothing either way — never read as agreement. */
   | "unmeasured"
@@ -105,6 +128,11 @@ export type CaptureTrustAssessment = {
    * compared — never that it was compared and agreed.
    */
   measured: boolean;
+  /**
+   * Set only when `measured` is false, to say WHY in words. Never a judgement - see
+   * {@link PHOTO_FIX_LIVE_FROM}.
+   */
+  unmeasuredReason: CaptureUnmeasuredReason | null;
   verdict: CaptureTrustVerdict;
 };
 
@@ -186,7 +214,23 @@ export function assessCaptureTrust(input: {
   const gapIsLong = gapSeconds !== null && Math.abs(gapSeconds) > CAPTURE_GAP_FLAG_SECONDS;
 
   if (distanceMeters === null) {
-    return { distanceMeters: null, gapIsLong, gapSeconds, measured: false, verdict: "unmeasured" };
+    // Dated from whichever timestamp we actually have. A capture with no timestamp at all gets
+    // `predates_shutter_fix`: every row in that state today is an old one, and the alternative
+    // wording would imply a camera failure we cannot evidence.
+    const takenAt = input.locationFix?.capturedAt ?? input.photoFix?.capturedAt ?? null;
+    const takenAtMs = takenAt ? Date.parse(takenAt) : NaN;
+    const unmeasuredReason: CaptureUnmeasuredReason =
+      Number.isFinite(takenAtMs) && takenAtMs >= Date.parse(PHOTO_FIX_LIVE_FROM)
+        ? "no_position_recorded"
+        : "predates_shutter_fix";
+    return {
+      distanceMeters: null,
+      gapIsLong,
+      gapSeconds,
+      measured: false,
+      unmeasuredReason,
+      verdict: "unmeasured",
+    };
   }
 
   const verdict: CaptureTrustVerdict =
@@ -196,7 +240,7 @@ export function assessCaptureTrust(input: {
         ? "drifted"
         : "agrees";
 
-  return { distanceMeters, gapIsLong, gapSeconds, measured: true, verdict };
+  return { distanceMeters, gapIsLong, gapSeconds, measured: true, unmeasuredReason: null, verdict };
 }
 
 /**
