@@ -510,6 +510,19 @@ his approval already sits on is allowed — say so plainly and let him re-confir
 reason to open a second. Account: `docs/ci-self-hosted-runner.md`, "A feature arriving in
 instalments is still ONE feature" — the measured arc, and why 54 billable minutes went on one
 5-file PR. `hold-a-whole-feature-for-one-pr-even-when-he-asks-in-pieces`
+🔴 **NEVER HAND HIM MORE THAN ONE MERGE AT A TIME — TRIAGING OPEN PRs IS NEVER HIS JOB, AND
+CONSOLIDATING THEM IS YOURS.** He said it plainly on 2026-09-30, after a night of them piling up:
+*"i till now donot know what to do with small open prs"*. The answer is that he does nothing — he
+never decides which to merge, which to close, or what counts as small. **Before asking him to merge
+anything, run `node scripts/rollup-prs.mjs`**: it groups every open PR whose file set is DISJOINT
+from the others into one branch, reports which are SUPERSEDED (a dependabot bump another PR already
+subsumes) and which must stay SEPARATE (a migration, a protected file, a frozen path), and `--apply`
+builds the branch and opens ONE PR. It never merges and never closes anything — the roll-up exists so
+his one approval replaces several. 🔴 **AND IF A ROLL-UP IS ALREADY OPEN, DO NOT MERGE ITS MEMBERS
+SEPARATELY.** #4814 was merged out from under #4821 four minutes after the roll-up was built and
+commented on it, paying ~28 billable minutes for nothing: **a comment on a PR is not enforcement**,
+which is why this rule is here rather than only in C10's refusal text. Check `gh pr list` for an open
+`codex/rollup-*` before merging anything small. Pinned by `tests/rollup-prs.test.ts`.
 🔴 **MEASURE IN MINUTES, NEVER IN RUNS, AND NEVER FROM A SAMPLE — both lie.** Re-measured
 2026-09-27 from EVERY run of the month rather than a sample: `pull_request` **60.5%** · `push` to
 `main` **39.5%** · `workflow_dispatch` **~0%**. Dispatch is a rounding error — about eight runs in the
