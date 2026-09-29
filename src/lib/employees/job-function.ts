@@ -32,6 +32,13 @@ const JOB_FUNCTION_BY_TITLE: Record<string, PhoenixRole> = {
   // the baseline "Employee", which is silent and wrong in about fifty call sites.
   "senior district manager": "District Manager",
   "senior district sales manager": "District Manager",
+  // A SENIOR Medical Representative is a medical rep with a seniority grade — an appreciation label,
+  // not a different job (B-10's recognition of B-7, 2026-09-29). She works the same list on the same
+  // seat with the same app role, so every rule that keys off the job FUNCTION (attendance/compliance
+  // eligibility, portal routing, coaching mode, Employee 360, own-CRM-visit logging) must land where
+  // it did before. Without this the title falls through to normalizeRole and classifies as the
+  // baseline "Employee" — silent and wrong, exactly as the senior-DM entry above documents.
+  "senior medical representative": "Medical Rep",
   "regional sales manager": "Regional Manager",
   "regional manager": "Regional Manager",
   "national sales manager": "National Sales Manager",

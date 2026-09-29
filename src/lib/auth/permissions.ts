@@ -45,6 +45,11 @@ export const phoenixCompanyJobTitles = [
   // from his explicitly-assigned "District Manager" app role, exactly as it did before.
   "Senior District Manager",
   "Medical Representative",
+  // A seniority grade on the medical-rep title, an appreciation label the owner gave B-7 on
+  // 2026-09-29. Like "Senior District Manager" above it is a JOB TITLE and nothing else: it carries
+  // no access of its own (her "Medical Rep" app role is unchanged) and every job-function rule keeps
+  // treating her exactly as a medical rep.
+  "Senior Medical Representative",
   "National Sales Manager",
   "Product Manager",
   "Group Product Manager",
@@ -2272,6 +2277,10 @@ export const HR_ADVISORY_COMPENSATION_JOB_TITLES = [
   // Sales Manager".
   "Senior District Manager",
   "Medical Representative",
+  // The senior-grade medical-rep title (B-7, 2026-09-29). Exact-after-lowercasing like the rest of
+  // this list — leaving it off would silently drop her from the HR Business Partner's pay view, a
+  // boundary the owner drew by hand, purely because of an appreciation label.
+  "Senior Medical Representative",
 ] as const;
 
 function compensationMatchKey(value: string | null | undefined): string {
