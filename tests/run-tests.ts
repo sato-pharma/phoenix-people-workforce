@@ -2018,6 +2018,7 @@ import { runSpotlightSheetDesignTests } from "./spotlight-sheet-design.test.ts";
 import { runOutstationPaidStampAndImportedHistoryTests } from "./outstation-paid-stamp-and-imported-history.test.ts";
 import { runOutstationExpenseDownloadReuploadKeepsHrDecisionTests } from "./outstation-expense-download-reupload-keeps-hr-decision.test.ts";
 import { runBusinessCardsTests } from "./business-cards.test.ts";
+import { runVacationBackfillHireGuardTests } from "./vacation-backfill-hire-guard.test.ts";
 import { runDevServerExitReasonTests } from "./dev-server-exit-reason.test.ts";
 import { runDevServerHeapCapTests } from "./dev-server-heap-cap.test.ts";
 import { runRawNextDevGuardTests } from "./raw-next-dev-guard.test.ts";
@@ -7260,6 +7261,11 @@ await runTest(
 await runTest(
   "business cards: the owner's design is byte-locked, every card is trim + 3 mm bleed with its OutputIntent, the text is embedded Montserrat (no pixels added), and separate PDFs stream as a valid ZIP",
   runBusinessCardsTests,
+);
+
+await runTest(
+  "a leave import refuses any day dated before the employee's hire date, a future hire outright, and a missing hire date — the CRM seat-rename trap that gave PD-0009 an approved row 167 days before he joined — while leave ON the hire date and every ordinary row still pass",
+  runVacationBackfillHireGuardTests,
 );
 
 await runTest(
