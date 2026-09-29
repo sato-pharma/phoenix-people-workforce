@@ -1474,7 +1474,7 @@ export const adminNavigationSectionSeeds = [
   {
     id: "verified-captures",
     items: [
-      { href: "/admin/verified-captures", icon: MapPinned, label: "Verified Captures", roles: ["Super Admin"] },
+      { href: "/admin/verified-captures", icon: MapPinned, label: "Verified Captures", roles: ["Super Admin", "SFE Manager"] },
     ],
     label: "Verified Captures",
   },

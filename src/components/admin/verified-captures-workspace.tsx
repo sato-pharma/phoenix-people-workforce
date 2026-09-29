@@ -17,6 +17,7 @@ import {
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 
 import { ZoomHint, ZoomablePhoto } from "@/components/ui/zoomable-photo";
+import type { CaptureTrustAssessment, CaptureTrustVerdict } from "@/lib/evidence/capture-trust";
 import { cairoDateTime } from "@/lib/format/cairo-datetime";
 import { cn } from "@/lib/utils";
 import {
@@ -135,6 +136,60 @@ function LocationDetail({ label, value }: { label: string; value: string | null 
  * unedited; the clean address is shown only when it differs from the raw; then brick / area / region /
  * governorate as their own fields; then the pin as a maps link.
  */
+/**
+ * THE PHOTO MEASURED AGAINST ITS OWN RECORD’S LOCATION FIX.
+ *
+ * Two independent GPS readings - one taken when the pin was captured, one at the shutter. Before
+ * 2026-09-29 there was only ever ONE reading, copied onto both, so the distance was structurally
+ * zero and this panel could not have existed. See src/lib/evidence/capture-trust.ts.
+ *
+ * “Not measured” is the common answer and the honest one, and it is rendered in the SAME neutral
+ * ink as a match on purpose: every capture before that date has no photo coordinates, and reading
+ * an absent measurement as suspicion would accuse people the system simply never measured.
+ *
+ * Integrity signal - Super Admin surface only (AGENTS.md §4, golden rule #1). It is never shown to
+ * the person who took the photo, and it is where to look, never a verdict and never an action.
+ */
+function PhotoTrustBlock({ trust }: { trust: CaptureTrustAssessment }) {
+  const wording: Record<CaptureTrustVerdict, { ink: string; text: string }> = {
+    agrees: { ink: "text-slate-700", text: "Photo taken at the captured location" },
+    disagrees: { ink: "text-rose-700", text: "Photo not taken at the captured location" },
+    drifted: { ink: "text-amber-700", text: "Photo taken away from the captured location" },
+    unmeasured: { ink: "text-slate-500", text: "Captured before the camera took its own reading (29 Sep 2026)" },
+  };
+  const { ink } = wording[trust.verdict];
+  // An unmeasured capture says WHY, because “not measured” alone makes a 2026-07 row look like a
+  // camera that just failed. Both wordings are neutral and neither is a finding: one is a fact
+  // about Phoenix (the feature did not exist yet), the other a fact about that handset.
+  const text =
+    trust.verdict !== "unmeasured"
+      ? wording[trust.verdict].text
+      : trust.unmeasuredReason === "no_position_recorded"
+        ? "No position was recorded with this photo"
+        : wording.unmeasured.text;
+  const metres = trust.distanceMeters === null
+    ? null
+    : trust.distanceMeters < 1000
+      ? Math.round(trust.distanceMeters) + " m apart"
+      : (trust.distanceMeters / 1000).toFixed(1) + " km apart";
+  const gap = trust.gapSeconds === null
+    ? null
+    : Math.abs(trust.gapSeconds) < 90
+      ? Math.round(Math.abs(trust.gapSeconds)) + "s between the location and the photo"
+      : Math.round(Math.abs(trust.gapSeconds) / 60) + " min between the location and the photo";
+  return (
+    <div className="space-y-0.5 rounded-none border-l-2 border-slate-200 pl-2">
+      <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">Photo vs location</p>
+      {/* Wrapped, never truncated: an owner rule, and these lines are the whole point of the panel. */}
+      <p className={`break-words text-xs font-bold ${ink}`}>{text}</p>
+      {metres ? <p className="break-words text-xs text-slate-600">{metres}</p> : null}
+      {gap ? (
+        <p className={`break-words text-xs ${trust.gapIsLong ? "font-bold text-amber-700" : "text-slate-600"}`}>{gap}</p>
+      ) : null}
+    </div>
+  );
+}
+
 function LocationBlock({ heading = "Location", location }: { heading?: string; location: VerifiedCaptureLocation }) {
   const hasPin = location.latitude !== null && location.longitude !== null;
   const cleanDiffers = Boolean(location.address && location.address !== location.rawLocation);
@@ -536,7 +591,10 @@ function MarketingCaptureBody({ row }: { row: VerifiedMarketingCaptureRow }) {
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <PhotoTile alt={`${row.displayName} — customer`} caption={row.displayName} label="Customer photo" src={row.photoUrl} />
-        <LocationBlock heading="Customer location" location={row.location} />
+        <div className="space-y-2">
+          <LocationBlock heading="Customer location" location={row.location} />
+          <PhotoTrustBlock trust={row.photoTrust} />
+        </div>
       </div>
 
       <div className="space-y-2">
@@ -555,6 +613,7 @@ function MarketingCaptureBody({ row }: { row: VerifiedMarketingCaptureRow }) {
                 src={pharmacy.photoUrl}
               />
               <LocationBlock heading="Pharmacy location" location={pharmacy.location} />
+              <PhotoTrustBlock trust={pharmacy.photoTrust} />
               <DistributorCodes codes={pharmacy.distributorCodes} />
             </div>
           ))}
@@ -709,6 +768,9 @@ function DirectOrderCaptureBody({ row }: { row: VerifiedDirectOrderCaptureRow })
           <PhotoTile alt={`${row.pharmacyName} — storefront`} caption={row.pharmacyName} label="Storefront photo" src={row.photoUrl} />
         )}
         <LocationBlock location={row.location} />
+        {/* Outside the photo/invoice ternary on purpose: the comparison describes the CAPTURE, so
+            an invoice-route validation still shows where its pin and its photo stood. */}
+        <PhotoTrustBlock trust={row.photoTrust} />
       </div>
 
       <DistributorCodes codes={row.distributorCodes} phoenixCode={row.pharmacyCode} />

@@ -526,7 +526,46 @@ function runEntryRuleTests() {
     // Absent from this payload, so it parses to "not asked" — never to false. An older build that
     // never sends the field must not read as a device proven clean.
     deviceMocked: null,
+    // The shutter fix, added 2026-09-29. Absent here for the same reason and with the same
+    // meaning: NOT MEASURED. An older build, the web, or a handset whose shutter read nothing all
+    // send no shutter keys, and none of them is refused for it. Never defaulted to lat/lon.
+    photoAccuracyMeters: null,
+    photoCapturedAt: null,
+    photoLat: null,
+    photoLon: null,
   });
+  // And the positive case, pinned where the parse is canonically tested.
+  assert.deepEqual(
+    valueOf(
+      parseCapturedFix({
+        lat: "30.05",
+        lon: "31.23",
+        accuracyMeters: 12.345,
+        deviceCapturedAt: "2026-10-03T15:00:00Z",
+        shutterLat: "30.0501",
+        shutterLon: "31.2299",
+        shutterAccuracyMeters: 18.77,
+        shutterCapturedAt: "2026-10-03T15:00:21Z",
+      }),
+    ),
+    {
+      lat: 30.05,
+      lon: 31.23,
+      accuracyMeters: 12.3,
+      deviceCapturedAt: "2026-10-03T15:00:00Z",
+      deviceMocked: null,
+      photoAccuracyMeters: 18.8,
+      photoCapturedAt: "2026-10-03T15:00:21Z",
+      photoLat: 30.0501,
+      photoLon: 31.2299,
+    },
+    "the shutter fix parses on its own keys, rounded like the pin and never taken from it",
+  );
+  // HALF A PAIR IS NO PAIR: a latitude with no longitude contributes no coordinate at all, rather
+  // than a lopsided fix that would later measure a distance from nowhere.
+  const halfPair = valueOf(parseCapturedFix({ lat: 30.05, lon: 31.23, shutterLat: 30.0501 }));
+  assert.equal(halfPair.photoLat, null, "a shutter latitude with no longitude is not a fix");
+  assert.equal(halfPair.photoLon, null, "and neither half is stored");
   for (const accuracyMeters of [-5, "abc", null, undefined]) {
     assert.equal(valueOf(parseCapturedFix({ lat: 30.05, lon: 31.23, accuracyMeters })).accuracyMeters, null, `accuracy ${String(accuracyMeters)} is unknown`);
   }
@@ -554,6 +593,16 @@ function runEntryRuleTests() {
       // so it reads "could not ask" rather than "clean". It is part of the captured fix, not of the
       // draft's editable fields — the rep still names only the place.
       deviceMocked: null,
+      // Parsed by the SHARED captured-fix reader, so a place carries these too. Nothing stores
+      // them yet: the 2026-09-29 migration added photo_* to phoenix_crm_visits only, and a place
+      // is captured once rather than visited, so there is no pin-versus-shutter question to ask
+      // of it. They are here because the parser is one function, not because a place uses them -
+      // and this deepEqual is what would catch it if a future change started storing them by
+      // accident.
+      photoAccuracyMeters: null,
+      photoCapturedAt: null,
+      photoLat: null,
+      photoLon: null,
       label: "Clinic 2",
       photoPath: "seat/photo.jpg",
       timings: [{ weekday: 6, startMinute: 1080, endMinute: null, season: "normal" }],
