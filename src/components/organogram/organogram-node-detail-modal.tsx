@@ -1,11 +1,13 @@
 "use client";
 
-import { Building2, Download, Loader2, Lock, UserRound, X } from "lucide-react";
+import { Building2, Download, Loader2, Lock, UserPlus, UserRound, X } from "lucide-react";
+import { usePathname } from "next/navigation";
 import * as React from "react";
 import { createPortal } from "react-dom";
 
 import { useDialogA11y } from "@/components/ui/use-dialog-a11y";
 import { formatDateOnly } from "@/lib/date-only";
+import { buildVacancyHireHref } from "@/lib/employees/vacancy-hire-link";
 import type {
   OrganogramDetailSection,
   OrganogramEmployeeDetail,
@@ -16,6 +18,13 @@ import { cn, formatEmployeeDisplayName } from "@/lib/utils";
 type Props = {
   row: OrganogramRow;
   onClose: () => void;
+  /**
+   * Whether this viewer may create an employee — the same `employees:update` that POST
+   * /api/employees asserts and that the Add Employee form's Save needs. Resolved
+   * server-side on the page and threaded down: offering the button to a viewer the API
+   * would refuse is a dead end, and the organogram is readable by roles that cannot hire.
+   */
+  canAddEmployee?: boolean;
 };
 
 function initials(name: string | null | undefined) {
@@ -95,9 +104,18 @@ function RowSummary({ row }: { row: OrganogramRow }) {
   return <SectionGrid section={{ title: "Summary", items }} />;
 }
 
-export function OrganogramNodeDetailModal({ row, onClose }: Props) {
+export function OrganogramNodeDetailModal({ row, onClose, canAddEmployee = false }: Props) {
   const dialogRef = useDialogA11y({ open: true, onClose });
+  const pathname = usePathname();
   const isVacancy = row.type === "vacancy";
+
+  // Derived from where we already are rather than passed down as another prop — the chart
+  // renders in both shells and each has its own Employees route (the same trick the
+  // recruitment hub uses for its own way out to Add Employee).
+  const hireHref = buildVacancyHireHref(
+    pathname?.startsWith("/employee-portals") ? "/employee-portals/employees" : "/employees",
+    row,
+  );
 
   const [detail, setDetail] = React.useState<OrganogramEmployeeDetail | null>(null);
   const [loading, setLoading] = React.useState(!isVacancy);
@@ -208,7 +226,23 @@ export function OrganogramNodeDetailModal({ row, onClose }: Props) {
         {/* Body */}
         <div className="flex-1 space-y-5 overflow-auto px-5 py-4">
           {isVacancy ? (
-            <VacancyBody row={row} />
+            <>
+              <VacancyBody row={row} />
+              {/* The one thing anybody wants to do with an open seat. It carries the line,
+                  area, department, position and manager this popup is already showing into
+                  the Add Employee form, so nobody retypes what the box just told them.
+                  It is a PRE-FILL: the employee is still created by that form, and the seat
+                  itself is still matched server-side by the vacancy-autofill chain. */}
+              {canAddEmployee ? (
+                <a
+                  className="flex w-full items-center justify-center gap-2 border border-orange-500 bg-orange-500 px-4 py-2.5 text-phx-sm font-bold text-white transition hover:bg-orange-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-600"
+                  href={hireHref}
+                >
+                  <UserPlus className="h-4 w-4" />
+                  Add employee to this seat
+                </a>
+              ) : null}
+            </>
           ) : detail ? (
             <>
               {detail.sections.map((section) => (

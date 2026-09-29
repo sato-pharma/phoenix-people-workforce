@@ -18,6 +18,9 @@ import type { VacancyReportData } from "@/lib/reports/vacancies";
 /* ------------------------------------------------------------------ */
 
 type EmployeeOrganogramDashboardProps = {
+  // Server-decided: does this viewer hold `employees:update`? Only then does a vacancy
+  // popup offer "Add employee to this seat". Never inferred client-side.
+  canAddEmployee?: boolean;
   fixedLine?: string | null;
   initialError?: string | null;
   initialReport?: VacancyReportData | null;
@@ -51,6 +54,7 @@ const PORTAL_KPI_LABELS: OrgChartKpiLabels = {
 /* ------------------------------------------------------------------ */
 
 export function EmployeeOrganogramDashboard({
+  canAddEmployee = false,
   fixedLine = null,
   initialError = null,
   initialReport = null,
@@ -249,6 +253,7 @@ export function EmployeeOrganogramDashboard({
             {/* Bold chart */}
             <div className="px-3 py-4 sm:px-5">
               <OrgChartTree
+                canAddEmployee={canAddEmployee}
                 kpiLabels={PORTAL_KPI_LABELS}
                 lineName={effectiveLineFilter || lineName}
                 rows={filteredRows}

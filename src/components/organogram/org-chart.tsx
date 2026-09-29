@@ -95,6 +95,12 @@ type OrgChartTreeProps = {
   lineName: string | null;
   theme?: OrgChartTheme;
   kpiLabels?: OrgChartKpiLabels;
+  /**
+   * Whether this viewer may create an employee (`employees:update`). Only used to decide
+   * whether a vacancy popup offers "Add employee to this seat"; resolved server-side on the
+   * page, never inferred here.
+   */
+  canAddEmployee?: boolean;
 };
 
 /* ------------------------------------------------------------------ */
@@ -875,6 +881,7 @@ export function OrgChartTree({
   lineName,
   theme = "admin",
   kpiLabels = DEFAULT_ORG_KPI_LABELS,
+  canAddEmployee = false,
 }: OrgChartTreeProps) {
   // Change #2 — the pressed node's row; non-null opens the employee-master popup.
   const [selectedRow, setSelectedRow] = React.useState<OrganogramRow | null>(null);
@@ -1420,7 +1427,7 @@ export function OrgChartTree({
           modal fetches the role-gated detail itself; a vacancy renders from the row
           alone. Rendered here (portaled to <body>) so it overlays the whole chart. */}
       {selectedRow ? (
-        <OrganogramNodeDetailModal onClose={() => setSelectedRow(null)} row={selectedRow} />
+        <OrganogramNodeDetailModal canAddEmployee={canAddEmployee} onClose={() => setSelectedRow(null)} row={selectedRow} />
       ) : null}
     </div>
   );

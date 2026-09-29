@@ -36,6 +36,7 @@ import { cn } from "@/lib/utils";
 
 
 type OrganogramReportProps = {
+  canAddEmployee?: boolean;
   fixedLine?: string | null;
   initialError?: string | null;
   initialReport?: VacancyReportData | null;
@@ -88,9 +89,11 @@ function LineButtons({
 }
 
 function OrganogramView({
+  canAddEmployee = false,
   rows,
   selectedLine,
 }: {
+  canAddEmployee?: boolean;
   rows: OrganogramRow[];
   selectedLine: string | null;
 }) {
@@ -119,7 +122,7 @@ function OrganogramView({
             choose another line to reveal the structure.
           </div>
         ) : (
-          <OrgChartTree lineName={selectedLine} rows={rows} theme="admin" />
+          <OrgChartTree canAddEmployee={canAddEmployee} lineName={selectedLine} rows={rows} theme="admin" />
         )}
       </div>
     </AdminTableShell>
@@ -127,6 +130,7 @@ function OrganogramView({
 }
 
 export function OrganogramReport({
+  canAddEmployee = false,
   fixedLine = null,
   initialError = null,
   initialReport = null,
@@ -345,6 +349,7 @@ export function OrganogramReport({
           </AdminTableShell>
 
           <OrganogramView
+            canAddEmployee={canAddEmployee}
             rows={canShowChart ? filteredRows : []}
             selectedLine={effectiveLineFilter || (normalizedOrganogramSearch ? "Search results" : null)}
           />
