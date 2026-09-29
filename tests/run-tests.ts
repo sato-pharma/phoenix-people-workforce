@@ -1949,6 +1949,7 @@ import { runTargetsUnsavedEditGuardTests } from "./targets-unsaved-edit-guard.te
 import { runDirectOrderVenueGapsTests } from "./direct-order-venue-gaps.test.ts";
 import { runVacancyOptionLabelTests } from "./vacancy-option-label.test.ts";
 import { runOrganogramVacancyHireLinkTests } from "./organogram-vacancy-hire-link.test.ts";
+import { runSeatHireCandidatePickerTests } from "./seat-hire-candidate-picker.test.ts";
 import { runOrganogramArabicSearchTests } from "./organogram-arabic-search.test.ts";
 import { runOrganogramTeamLabelTests } from "./organogram-team-label.test.ts";
 import { runWeeklyUploadLineNotificationTests } from "./weekly-upload-line-notification.test.ts";
@@ -6859,6 +6860,11 @@ await runTest(
 await runTest(
   "organogram open seat -> Add Employee pre-filled (line, area, position and manager travel; gated on employees:update)",
   runOrganogramVacancyHireLinkTests,
+);
+
+await runTest(
+  "a seat hire can pick the recruitment candidate (hub stages only, seat match ranks first, and the pick never moves the seat)",
+  runSeatHireCandidatePickerTests,
 );
 
 await runTest(
