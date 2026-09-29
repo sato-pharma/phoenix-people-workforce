@@ -54,6 +54,7 @@ type HiringDocumentDefinitionDbRow = {
   id: string;
   is_exit_document: boolean | null;
   document_group: string | null;
+  sheet_header: string | null;
   name: string;
 };
 
@@ -140,6 +141,7 @@ function toDefinition(row: HiringDocumentDefinitionDbRow): HiringDocumentDefinit
       row.document_group === "onboarding" || row.document_group === "offboarding"
         ? row.document_group
         : "required",
+    sheetHeader: row.sheet_header ?? null,
     name: row.name,
   };
 }
@@ -220,7 +222,7 @@ async function loadEmployeeDisplayNames(hrIds: string[]) {
 async function loadDocumentDefinitions() {
   const { data, error } = await getSupabaseAdmin()
     .from("hiring_document_definitions")
-    .select("id,name,description,display_order,created_at,is_exit_document,document_group")
+    .select("id,name,description,display_order,created_at,is_exit_document,document_group,sheet_header")
     .eq("is_active", true)
     .order("display_order", { ascending: true })
     .order("name", { ascending: true });

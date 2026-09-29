@@ -118,6 +118,12 @@ export type HiringDocumentDefinition = {
    * Defaults to "required" for a row written before the column existed.
    */
   documentGroup: HiringDocumentGroup;
+  /**
+   * What the Employee Master sheet prints as this document's column header, when it differs from
+   * the computed `<name> (document)`. Null for almost every document; see `documentColumnHeader`,
+   * which refuses an override that drops the "(document)" suffix.
+   */
+  sheetHeader: string | null;
   name: string;
 };
 

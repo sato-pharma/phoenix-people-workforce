@@ -170,6 +170,20 @@ type EmployeeFormState = {
   healthCardNumber: string;
   healthCardReceivedDate: string;
   healthCardStatus: string;
+  birthPlace: string;
+  qualification: string;
+  universityName: string;
+  collegeMajor: string;
+  seniorYear: string;
+  contractDuration: string;
+  contractRenewalDate: string;
+  probationEndDate: string;
+  medicalInsuranceCardReceivedDate: string;
+  socialInsuranceStartDate: string;
+  kaabElamaalNumber: string;
+  kaabElamaalIssuer: string;
+  kaabElamaalIssueDate: string;
+  kaabElamaalRefund: string;
   hireDate: string;
   hrId: string;
   jobTitle: string;
@@ -235,6 +249,20 @@ const emptyForm: EmployeeFormState = {
   healthCardNumber: "",
   healthCardReceivedDate: "",
   healthCardStatus: "",
+  birthPlace: "",
+  qualification: "",
+  universityName: "",
+  collegeMajor: "",
+  seniorYear: "",
+  contractDuration: "",
+  contractRenewalDate: "",
+  probationEndDate: "",
+  medicalInsuranceCardReceivedDate: "",
+  socialInsuranceStartDate: "",
+  kaabElamaalNumber: "",
+  kaabElamaalIssuer: "",
+  kaabElamaalIssueDate: "",
+  kaabElamaalRefund: "",
   hireDate: "",
   hrId: "",
   jobTitle: "",
@@ -643,6 +671,20 @@ function employeeToForm(employee: EmployeeDirectoryRow): EmployeeFormState {
     healthCardNumber: employee.healthCardNumber ?? "",
     healthCardReceivedDate: employee.healthCardReceivedDate ?? "",
     healthCardStatus: employee.healthCardStatus ?? "",
+    birthPlace: employee.birthPlace ?? "",
+    qualification: employee.qualification ?? "",
+    universityName: employee.universityName ?? "",
+    collegeMajor: employee.collegeMajor ?? "",
+    seniorYear: employee.seniorYear ?? "",
+    contractDuration: employee.contractDuration ?? "",
+    contractRenewalDate: employee.contractRenewalDate ?? "",
+    probationEndDate: employee.probationEndDate ?? "",
+    medicalInsuranceCardReceivedDate: employee.medicalInsuranceCardReceivedDate ?? "",
+    socialInsuranceStartDate: employee.socialInsuranceStartDate ?? "",
+    kaabElamaalNumber: employee.kaabElamaalNumber ?? "",
+    kaabElamaalIssuer: employee.kaabElamaalIssuer ?? "",
+    kaabElamaalIssueDate: employee.kaabElamaalIssueDate ?? "",
+    kaabElamaalRefund: employee.kaabElamaalRefund ?? "",
     hireDate: employee.hireDate ?? "",
     hrId: employee.hrId,
     jobTitle: employee.jobTitle ?? employee.positionTitle ?? "",
@@ -710,6 +752,20 @@ function formToPayload(form: EmployeeFormState, originalHrId: string | null): Em
     healthCardNumber: optionalText(form.healthCardNumber),
     healthCardReceivedDate: optionalText(form.healthCardReceivedDate),
     healthCardStatus: optionalText(form.healthCardStatus),
+    birthPlace: optionalText(form.birthPlace),
+    qualification: optionalText(form.qualification),
+    universityName: optionalText(form.universityName),
+    collegeMajor: optionalText(form.collegeMajor),
+    seniorYear: optionalText(form.seniorYear),
+    contractDuration: optionalText(form.contractDuration),
+    contractRenewalDate: optionalText(form.contractRenewalDate),
+    probationEndDate: optionalText(form.probationEndDate),
+    medicalInsuranceCardReceivedDate: optionalText(form.medicalInsuranceCardReceivedDate),
+    socialInsuranceStartDate: optionalText(form.socialInsuranceStartDate),
+    kaabElamaalNumber: optionalText(form.kaabElamaalNumber),
+    kaabElamaalIssuer: optionalText(form.kaabElamaalIssuer),
+    kaabElamaalIssueDate: optionalText(form.kaabElamaalIssueDate),
+    kaabElamaalRefund: optionalText(form.kaabElamaalRefund),
     hireDate: optionalText(form.hireDate),
     hrId: optionalText(form.hrId),
     jobTitle: optionalText(form.jobTitle),
@@ -2929,6 +2985,13 @@ export function EmployeeManagement({
                     ["National ID", masterDetailsEmployee.nationalId],
                     ["Gender", masterDetailsEmployee.gender],
                     ["Birth Date", dateText(masterDetailsEmployee.birthDate)],
+                    ["Birth Place", masterDetailsEmployee.birthPlace],
+                    ["Qualification", masterDetailsEmployee.qualification],
+                    // employees.education, which has always held the COLLEGE.
+                    ["College Name", masterDetailsEmployee.education],
+                    ["University Name", masterDetailsEmployee.universityName],
+                    ["College Major", masterDetailsEmployee.collegeMajor],
+                    ["Graduation Year", masterDetailsEmployee.seniorYear],
                   ],
                 },
                 {
@@ -2945,8 +3008,11 @@ export function EmployeeManagement({
                     ["Direct Manager", masterDetailsEmployee.managerName],
                     ["Manager HR_ID", masterDetailsEmployee.managerHrId],
                     ["Hiring Date", dateText(masterDetailsEmployee.hireDate)],
+                    ["Probation End Date", dateText(masterDetailsEmployee.probationEndDate)],
                     ["Employment Status", optionName(masterDetailsEmployee.employmentStatus ?? "active")],
                     ["Contract Type", optionName(masterDetailsEmployee.contractType ?? "")],
+                    ["Contract Duration", masterDetailsEmployee.contractDuration],
+                    ["Contract Renewal Date", dateText(masterDetailsEmployee.contractRenewalDate)],
                   ],
                 },
                 {
@@ -2989,9 +3055,15 @@ export function EmployeeManagement({
                     ["Bank Account", masterDetailsEmployee.bankAccount],
                     ["Medical Insurance Number", masterDetailsEmployee.medicalInsuranceNumber],
                     ["Social Insurance Number", masterDetailsEmployee.socialInsuranceNumber],
+                    ["Medical Insurance Card Receipt Date", dateText(masterDetailsEmployee.medicalInsuranceCardReceivedDate)],
+                    ["Social Insurance Start Date", dateText(masterDetailsEmployee.socialInsuranceStartDate)],
                     ["Health Card Received", optionName(masterDetailsEmployee.healthCardStatus ?? "")],
                     ["Health Card Number", masterDetailsEmployee.healthCardNumber],
                     ["Health Card Receipt Date", masterDetailsEmployee.healthCardReceivedDate],
+                    ["Kaab Elamaal Number", masterDetailsEmployee.kaabElamaalNumber],
+                    ["Kaab Elamaal Issuer", masterDetailsEmployee.kaabElamaalIssuer],
+                    ["Kaab Elamaal Issue Date", dateText(masterDetailsEmployee.kaabElamaalIssueDate)],
+                    ["Kaab Elamaal Refunded", optionName(masterDetailsEmployee.kaabElamaalRefund ?? "")],
                   ],
                 },
                 {
@@ -3224,10 +3296,47 @@ export function EmployeeManagement({
                     value={form.birthDate}
                   />
                   <TextField
-                    label="Education / Degree"
+                    label="Birth Place"
+                    onChange={(value) => updateForm("birthPlace", value)}
+                    placeholder="As written on the national ID"
+                    value={form.birthPlace}
+                  />
+                  {/*
+                    FIVE EDUCATION FIELDS WHERE THERE WAS ONE, and the old one is unchanged
+                    underneath. `education` has always held the COLLEGE — its live values are
+                    Science, Pharmacy, Vet, Commerce, Dentist — and it is what the eligible-degree
+                    rule scores, so it keeps its column and simply reads "College Name" now, which
+                    is what HR calls it. The qualification itself is the separate field above it.
+                  */}
+                  <TextField
+                    label="Qualification"
+                    onChange={(value) => updateForm("qualification", value)}
+                    placeholder="e.g. Bachelor - license"
+                    value={form.qualification}
+                  />
+                  <TextField
+                    label="College Name"
                     onChange={(value) => updateForm("education", value)}
-                    placeholder="e.g. B.Sc. Pharmacy"
+                    placeholder="e.g. Pharmacy, Science, Vet"
                     value={form.education}
+                  />
+                  <TextField
+                    label="University Name"
+                    onChange={(value) => updateForm("universityName", value)}
+                    placeholder="e.g. Cairo University"
+                    value={form.universityName}
+                  />
+                  <TextField
+                    label="College Major"
+                    onChange={(value) => updateForm("collegeMajor", value)}
+                    placeholder="Specialisation"
+                    value={form.collegeMajor}
+                  />
+                  <TextField
+                    label="Graduation Year"
+                    onChange={(value) => updateForm("seniorYear", value)}
+                    placeholder="e.g. 2019"
+                    value={form.seniorYear}
                   />
                 </div>
               </div>
@@ -3380,6 +3489,18 @@ export function EmployeeManagement({
                     type="date"
                     value={form.hireDate}
                   />
+                  {/*
+                    THE PROBATION WORKFLOW DOES NOT READ THIS. Probation cases carry their own
+                    `probation_end_date` and the Day 30/60/75 milestones count from the hiring date,
+                    so leaving this blank changes nothing anywhere — it is HR's record of what the
+                    contract says, which is why it can be typed freely here.
+                  */}
+                  <TextField
+                    label="Probation End Date"
+                    onChange={(value) => updateForm("probationEndDate", value)}
+                    type="date"
+                    value={form.probationEndDate}
+                  />
                   <SelectField
                     label="Employment Status"
                     onChange={(value) => updateForm("employmentStatus", value)}
@@ -3392,6 +3513,18 @@ export function EmployeeManagement({
                     options={contractTypeOptions}
                     placeholder="Select contract type"
                     value={form.contractType}
+                  />
+                  <TextField
+                    label="Contract Duration"
+                    onChange={(value) => updateForm("contractDuration", value)}
+                    placeholder="e.g. 1 Year"
+                    value={form.contractDuration}
+                  />
+                  <TextField
+                    label="Contract Renewal Date"
+                    onChange={(value) => updateForm("contractRenewalDate", value)}
+                    type="date"
+                    value={form.contractRenewalDate}
                   />
                   <SelectField
                     label="Salary Payout Mode"
@@ -3593,10 +3726,27 @@ export function EmployeeManagement({
                     value={form.medicalInsuranceNumber}
                   />
                   <TextField
+                    label="Medical Insurance Card Receipt Date"
+                    onChange={(value) => updateForm("medicalInsuranceCardReceivedDate", value)}
+                    type="date"
+                    value={form.medicalInsuranceCardReceivedDate}
+                  />
+                  <TextField
                     label="Social Insurance Number"
                     onChange={(value) => updateForm("socialInsuranceNumber", value)}
                     placeholder="Reference number"
                     value={form.socialInsuranceNumber}
+                  />
+                  {/*
+                    A RECORD, NOT A RULE. Payroll reads `social_insurance_wage` and nothing else —
+                    neither this date nor the status beside it changes a single figure, and neither
+                    reduces anybody's take-home pay.
+                  */}
+                  <TextField
+                    label="Social Insurance Start Date"
+                    onChange={(value) => updateForm("socialInsuranceStartDate", value)}
+                    type="date"
+                    value={form.socialInsuranceStartDate}
                   />
                   {/*
                     The GOVERNMENT health insurance booklet — دفتر التأمين الصحى الحكومى. It sits
@@ -3621,6 +3771,35 @@ export function EmployeeManagement({
                     onChange={(value) => updateForm("healthCardReceivedDate", value)}
                     type="date"
                     value={form.healthCardReceivedDate}
+                  />
+                  {/*
+                    كعب العمل — the labour registration stub. The refund flag is a receipt fact HR
+                    records after the fee comes back; it moves no money and no payroll run reads it.
+                  */}
+                  <TextField
+                    label="Kaab Elamaal Number"
+                    onChange={(value) => updateForm("kaabElamaalNumber", value)}
+                    placeholder="Stub number"
+                    value={form.kaabElamaalNumber}
+                  />
+                  <TextField
+                    label="Kaab Elamaal Issuer"
+                    onChange={(value) => updateForm("kaabElamaalIssuer", value)}
+                    placeholder="Issuing labour office"
+                    value={form.kaabElamaalIssuer}
+                  />
+                  <TextField
+                    label="Kaab Elamaal Issue Date"
+                    onChange={(value) => updateForm("kaabElamaalIssueDate", value)}
+                    type="date"
+                    value={form.kaabElamaalIssueDate}
+                  />
+                  <SelectField
+                    label="Kaab Elamaal Refunded"
+                    onChange={(value) => updateForm("kaabElamaalRefund", value)}
+                    options={yesNoOptions}
+                    placeholder="Select"
+                    value={form.kaabElamaalRefund}
                   />
                 </div>
                 <div className="rounded-2xl border border-[#D7EAF8] bg-[#F8FCFF] p-4">

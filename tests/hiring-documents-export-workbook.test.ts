@@ -51,12 +51,12 @@ import type {
 const TODAY = new Date("2026-09-29T00:00:00");
 
 const DOCUMENTS: HiringDocumentDefinition[] = [
-  { createdAt: "2026-01-01T00:00:00Z", description: null, displayOrder: 1, id: "doc-id", documentGroup: "required", isExitDocument: false, name: "National ID" },
-  { createdAt: "2026-01-01T00:00:00Z", description: null, displayOrder: 2, id: "doc-contract", documentGroup: "required", isExitDocument: false, name: "Signed contract" },
-  { createdAt: "2026-01-01T00:00:00Z", description: null, displayOrder: 3, id: "doc-degree", documentGroup: "required", isExitDocument: false, name: "Degree certificate" },
-  { createdAt: "2026-01-01T00:00:00Z", description: null, displayOrder: 4, id: "doc-insurance", documentGroup: "required", isExitDocument: false, name: "Insurance form 1" },
+  { createdAt: "2026-01-01T00:00:00Z", description: null, displayOrder: 1, id: "doc-id", documentGroup: "required", sheetHeader: null, isExitDocument: false, name: "National ID" },
+  { createdAt: "2026-01-01T00:00:00Z", description: null, displayOrder: 2, id: "doc-contract", documentGroup: "required", sheetHeader: null, isExitDocument: false, name: "Signed contract" },
+  { createdAt: "2026-01-01T00:00:00Z", description: null, displayOrder: 3, id: "doc-degree", documentGroup: "required", sheetHeader: null, isExitDocument: false, name: "Degree certificate" },
+  { createdAt: "2026-01-01T00:00:00Z", description: null, displayOrder: 4, id: "doc-insurance", documentGroup: "required", sheetHeader: null, isExitDocument: false, name: "Insurance form 1" },
   // Owner ruling, 2026-09-29: an exit paper only counts for somebody who has actually left.
-  { createdAt: "2026-01-01T00:00:00Z", description: null, displayOrder: 5, id: "doc-clearance", documentGroup: "offboarding", isExitDocument: true, name: "Signed company clearance" },
+  { createdAt: "2026-01-01T00:00:00Z", description: null, displayOrder: 5, id: "doc-clearance", documentGroup: "offboarding", sheetHeader: null, isExitDocument: true, name: "Signed company clearance" },
 ];
 
 function entry(overrides: Partial<HiringDocumentEntry> & { documentId: string }): HiringDocumentEntry {

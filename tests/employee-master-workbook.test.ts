@@ -7,7 +7,9 @@ import {
   employeeMasterWorkbookContract,
 } from "../src/lib/employees/employee-master-workbook.ts";
 import {
+  documentColumnHeader,
   FORMULA_KEYS,
+  HIRING_DOCUMENTS_SUMMARY_KEY,
   HIRING_DOCUMENT_GROUP_ORDER,
   HIRING_DOCUMENT_GROUP_SECTIONS,
   isReadOnlyMasterColumn,
@@ -135,7 +137,14 @@ const EMPLOYEE_COUNT = 12;
 const DOCUMENTS = [
   { group: 'offboarding' as const, id: 'doc-hostile', name: 'Position' },
   { group: 'required' as const, id: 'doc-nid', name: 'National ID copy' },
-  { group: 'onboarding' as const, id: 'doc-medical', name: 'Medical check' },
+  // Carries a sheet_header override, the way "Medical check S 111" does on production: HR typed the
+  // form number AFTER the "(document)" suffix on her own sheet and the owner asked for it verbatim.
+  {
+    group: 'onboarding' as const,
+    id: 'doc-medical',
+    name: 'Medical check',
+    sheetHeader: 'Medical check (document) S 111',
+  },
 ];
 
 export async function buildFixtureWorkbook() {
@@ -383,7 +392,7 @@ export async function runEmployeeMasterWorkbookTests() {
   // (i) A DOCUMENT NAME MUST NOT BE READ BACK AS A FIELD. "Position" is a live import alias; the
   // "(document)" suffix is what keeps every one of these headers outside the alias table.
   for (const document of DOCUMENTS) {
-    const header = `${document.name} (document)`;
+    const header = documentColumnHeader(document);
     assert.ok(
       sheetColumns.some((column) => column.header === header),
       `the document column for "${document.name}" must carry the (document) suffix`,
@@ -397,8 +406,11 @@ export async function runEmployeeMasterWorkbookTests() {
 
   // (ii) The values reach the sheet, including the one combination worth looking at: a ticked box
   // with nothing attached.
-  const documentColumnIndex = (name: string) =>
-    sheetColumns.findIndex((column) => column.header === `${name} (document)`) + 1;
+  const documentColumnIndex = (name: string) => {
+    const document = DOCUMENTS.find((candidate) => candidate.name === name);
+    assert.ok(document, `no fixture document named "${name}"`);
+    return sheetColumns.findIndex((column) => column.header === documentColumnHeader(document)) + 1;
+  };
   const firstDataRow = sheet.getRow(employeeMasterWorkbookContract.firstDataRow);
   assert.equal(String(firstDataRow.getCell(documentColumnIndex('National ID copy')).value ?? ''), 'Submitted · 2 files');
   assert.equal(String(firstDataRow.getCell(documentColumnIndex('Medical check')).value ?? ''), 'Submitted · no file');
@@ -479,6 +491,64 @@ export async function runEmployeeMasterWorkbookTests() {
         'builder must not upper-case them',
     );
   }
+
+  // ── 6d-bis. a sheet_header override is honoured, and CANNOT drop the suffix ──
+  //
+  // HR's sheet prints "Medical check (document) S 111" — the form number after the suffix, not
+  // before it — and the owner asked for that cell verbatim (2026-09-30). The override exists so the
+  // Hiring Documents screen can keep reading "Medical check S 111" while the sheet prints her
+  // wording.
+  //
+  // THE SECOND HALF IS THE ONE THAT MATTERS. A column header is what the upload matches fields on,
+  // so an override that dropped "(document)" would put a document name back into the alias table —
+  // and "Position" is a live alias. The helper ignores such an override rather than honouring it,
+  // which is why this asserts the FALLBACK and not an error.
+  assert.equal(
+    documentColumnHeader({ id: 'x', name: 'Medical check', sheetHeader: 'Medical check (document) S 111' }),
+    'Medical check (document) S 111',
+    'an override carrying the suffix is printed verbatim',
+  );
+  assert.equal(
+    documentColumnHeader({ id: 'x', name: 'Position', sheetHeader: 'Position' }),
+    'Position (document)',
+    'an override that drops "(document)" must be IGNORED — honouring it would let a document ' +
+      'named "Position" be read back on upload and overwrite every seat with the word "Submitted"',
+  );
+  assert.equal(
+    resolves(documentColumnHeader({ id: 'x', name: 'Position', sheetHeader: 'Position' })),
+    null,
+    'the fallback header must still sit outside the import alias table',
+  );
+  assert.ok(
+    sheetColumns.some((column) => column.header === 'Medical check (document) S 111'),
+    "the fixture's override must reach the sheet",
+  );
+
+  // ── 6e. the reference band is SPLIT, the way HR's own sheet has it ──────────
+  //
+  // HR bands "REFERENCE (READ-ONLY)" over Last Updated alone and leaves the cell above "Hiring
+  // Documents Complete" filled but blank — the two are not merged. The owner asked for her sheet
+  // verbatim and named this merge himself (2026-09-30), so it is pinned rather than left to
+  // whichever way the run-grouping happens to fall.
+  //
+  // Measured against her file before and after: with the band keyed on the SECTION the two merged
+  // and her layout had 14 row-4 merge runs to our 15; keyed on the LABEL they match exactly.
+  const summary = sheetColumns.find((column) => column.key === HIRING_DOCUMENTS_SUMMARY_KEY);
+  assert.ok(summary, 'the hiring-documents summary column must exist');
+  assert.equal(
+    summary.bandLabel,
+    '',
+    'the summary column must carry an EMPTY band label — that empty label is the only thing that ' +
+      'splits the reference run, and without it the band merges across both reference columns',
+  );
+  const summaryIndexInSheet = sheetColumns.indexOf(summary);
+  const beforeSummary = sheetColumns[summaryIndexInSheet - 1];
+  assert.equal(beforeSummary?.section, summary.section, 'the two reference columns share a section');
+  assert.equal(
+    String(sectionRowCells.getCell(summaryIndexInSheet + 1).value ?? ''),
+    '',
+    'the band cell above the summary column reads blank, exactly as HR has it',
+  );
 
   // ── 7. the EMITTED ARTIFACT parses, and Excel will not repair it ─────────────
   const problems = await checkWorkbook(Buffer.from(buffer), { quiet: true });

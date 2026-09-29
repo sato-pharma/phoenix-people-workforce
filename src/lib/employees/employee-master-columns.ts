@@ -96,6 +96,16 @@ export type MasterColumn = {
   readOnly?: boolean;
   /** A hiring-document checklist column — its value comes from the checklist, not from `MasterRow`. */
   documentColumn?: boolean;
+  /**
+   * What the section band prints above this column, when it is not the section name.
+   *
+   * ONE COLUMN USES IT. HR's sheet bands "REFERENCE (READ-ONLY)" over the Last Updated column
+   * alone and leaves the band cell above "Hiring Documents Complete" filled but blank — the two are
+   * not merged. The band is drawn from RUNS of equal labels, so an empty label is what splits that
+   * run and reproduces her layout exactly; the section itself is unchanged, so the column is still
+   * read-only reference for every other purpose.
+   */
+  bandLabel?: string;
   /** What the field is, in the owner's terms. Printed on the Field Guide sheet. */
   guide: string;
   /** Accepted values, when the set is closed. Printed on the Field Guide sheet. */
@@ -371,7 +381,38 @@ export const HIRING_DOCUMENT_GROUP_ORDER: HiringDocumentGroup[] = [
 ];
 
 /** One hiring-document definition, as the master sheet needs it. */
-export type HiringDocumentColumnSpec = { id: string; name: string; group?: HiringDocumentGroup };
+export type HiringDocumentColumnSpec = {
+  id: string;
+  name: string;
+  group?: HiringDocumentGroup;
+  /**
+   * What the sheet prints as this document's header, when it differs from `<name> (document)`.
+   *
+   * HR's own sheet has exactly one: "Medical check (document) S 111", with the form number typed
+   * after the suffix rather than before it. The owner asked for her sheet verbatim (2026-09-30),
+   * and the two alternatives were worse — special-casing one header in the builder, or folding
+   * "(document)" into the document's NAME, which would put it on the Hiring Documents screen.
+   *
+   * IT CANNOT DROP THE SUFFIX. See `documentColumnHeader`.
+   */
+  sheetHeader?: string | null;
+};
+
+/**
+ * The header a document column prints.
+ *
+ * "(document)" IS LOAD-BEARING, not decoration, and that is why an override is CHECKED rather than
+ * trusted. A document's name is typed by HR on the Hiring Documents screen, and a column header is
+ * what the upload matches fields on — so a document one day named "Position" or "Status" would,
+ * unsuffixed, be read back as that employee field and overwrite it with the word "Submitted". An
+ * override that does not carry the suffix is therefore ignored, not honoured: the sheet falls back
+ * to the computed header, which is the safe one. Pinned by `tests/employee-master-workbook.test.ts`.
+ */
+export function documentColumnHeader(document: HiringDocumentColumnSpec): string {
+  const override = document.sheetHeader?.trim();
+  if (override && override.includes("(document)")) return override;
+  return `${document.name} (document)`;
+}
 
 /** The summary column that opens the hiring-documents block: "12 of 17". */
 export const HIRING_DOCUMENTS_SUMMARY_KEY: HiringDocumentColumnKey = "doc:__summary__";
@@ -411,6 +452,7 @@ export function buildHiringDocumentColumns(documents: HiringDocumentColumnSpec[]
     kind: "text",
     imported: false,
     readOnly: true,
+    bandLabel: "",
     guide:
       "How many of this person's hiring documents are marked submitted, out of the documents the checklist tracks. Read-only — file a document on the Hiring Documents screen and this follows.",
   };
@@ -421,13 +463,9 @@ export function buildHiringDocumentColumns(documents: HiringDocumentColumnSpec[]
 
   return [
     summary,
-    // "(document)" IS LOAD-BEARING, not decoration. A document's name is typed by HR on the Hiring
-    // Documents screen, and a column header is what the upload matches fields on — so a document
-    // one day named "Position" or "Status" would, unsuffixed, be read back as that employee field
-    // and overwrite it with the word "Submitted". The suffix puts every one of these headers
-    // outside the alias table for good, the same way the "(reference)" columns sit outside it.
+    // Headers come from `documentColumnHeader`, which is where the "(document)" rule lives.
     ...grouped.map<MasterColumn>((document) => ({
-      header: `${document.name} (document)`,
+      header: documentColumnHeader(document),
       key: hiringDocumentColumnKey(document.id),
       section: HIRING_DOCUMENT_GROUP_SECTIONS[document.group ?? "required"],
       width: 24,
