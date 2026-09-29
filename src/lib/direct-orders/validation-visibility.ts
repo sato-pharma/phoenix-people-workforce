@@ -15,13 +15,28 @@ import { canonicalHrIdKey } from "@/lib/hr-id";
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Only the REQUESTER, only on their own HELD order, and only while the pharmacy is still
- * unconfirmed.
+ * Only the REQUESTER, and only while the VENUE is still unconfirmed.
  *
  * Not the approver reading the same page: the evidence has to come from the person who stood in
  * front of the pharmacy, and the GPS check is run against THEIR area. An approver's capture would
  * be a photo of a place they were never at, which is worse than no evidence because it looks like
  * proof.
+ *
+ * 🔴 THE ORDER'S STATUS NO LONGER GATES THIS (owner, 2026-09-29: "let the rep capture a venue
+ * whenever it is still pending_review"). It used to require the order to be `held`, and that turned
+ * a System Admin's hold release into a permanent, silent lock on the venue's only capture door.
+ *
+ * Measured the same day on حضانة د. عبدالكريم السبكى (`DOP-000135`, 86,625 EGP). At 16:47 the owner
+ * released the hold; at 16:52 he returned the order asking for a live capture, which is exactly
+ * right — an invoice never validates a venue. But the release had already closed the door: the
+ * order left `held`, and the release is written on the VENUE (`hold_release_ground =
+ * 'admin_released'`), so `decideDirectOrderHold` rule 3 returns `hold: false` for every FUTURE order
+ * on it too. Resubmitting could not reopen it. The rep had no way to file the photograph she had
+ * just been asked for, and nothing on any screen said so.
+ *
+ * The two questions were conflated. "Is this order waiting?" is about the order; "does this venue
+ * still need somebody to stand in front of it?" is about the venue, and only the second one decides
+ * whether a capture is worth taking.
  */
 export function canCaptureDirectOrderValidation(
   viewerHrId: string | null | undefined,
@@ -31,7 +46,6 @@ export function canCaptureDirectOrderValidation(
   const viewer = canonicalHrIdKey(viewerHrId ?? "");
   if (!viewer) return false;
   if (viewer !== canonicalHrIdKey(detail.request.requesterHrId ?? "")) return false;
-  if (detail.request.status !== "held") return false;
   return detail.pharmacy.verificationStatus === "pending_review";
 }
 
