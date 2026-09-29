@@ -6,11 +6,18 @@ import {
   buildRowCheckFormula,
   employeeMasterWorkbookContract,
 } from "../src/lib/employees/employee-master-workbook.ts";
-import { masterColumnsFor } from "../src/lib/employees/employee-master-columns.ts";
+import {
+  FORMULA_KEYS,
+  HIRING_DOCUMENT_GROUP_ORDER,
+  HIRING_DOCUMENT_GROUP_SECTIONS,
+  isReadOnlyMasterColumn,
+  masterColumnsFor,
+} from "../src/lib/employees/employee-master-columns.ts";
 import { createEmployeeColumnLookup } from "../src/lib/imports/employee-column-map.ts";
 import { normalizeHeaderName } from "../src/lib/imports/employee-normalizers.ts";
 import {
   EMPLOYEE_UPLOAD_HEADER_SCAN_ROWS,
+  EMPLOYEE_UPLOAD_NAME_HEADERS,
   parseEmployeeUploadRows,
 } from "../src/lib/imports/employee-upload-parse.ts";
 import { firstExcelWorksheet, loadExcelWorkbook } from "../src/lib/uploads/exceljs-rows.ts";
@@ -63,6 +70,19 @@ function fixtureEmployee(index: number) {
     healthCardStatus: null,
     healthCardNumber: null,
     healthCardReceivedDate: null,
+    birthPlace: "Giza",
+    qualification: "Bachelor - license",
+    universityName: "Cairo University",
+    collegeMajor: "Pharmacology",
+    seniorYear: "2019",
+    contractDuration: "1 Year",
+    probationEndDate: "2022-09-01T00:00:00Z",
+    medicalInsuranceCardReceivedDate: "2022-07-01T00:00:00Z",
+    socialInsuranceStartDate: "2022-06-01T00:00:00Z",
+    kaabElamaalNumber: "KE-1",
+    kaabElamaalIssuer: "Giza Labour Office",
+    kaabElamaalIssueDate: "2022-05-20T00:00:00Z",
+    kaabElamaalRefund: "no",
     hireDate: "2022-06-01T00:00:00Z",
     hrId: `A-${index}`,
     jobTitle: "Medical Rep",
@@ -110,10 +130,12 @@ const EMPLOYEE_COUNT = 12;
 // Two real document names and one deliberately hostile one. "Position" is an alias in
 // employee-column-map.ts, so an unsuffixed document column with that name would be read back on
 // upload and overwrite everybody's seat with the word "Submitted".
+// Deliberately listed OUT of band order — offboarding first — so the grouping in
+// buildHiringDocumentColumns is doing real work rather than agreeing with the input.
 const DOCUMENTS = [
-  { id: 'doc-nid', name: 'National ID copy' },
-  { id: 'doc-medical', name: 'Medical check' },
-  { id: 'doc-hostile', name: 'Position' },
+  { group: 'offboarding' as const, id: 'doc-hostile', name: 'Position' },
+  { group: 'required' as const, id: 'doc-nid', name: 'National ID copy' },
+  { group: 'onboarding' as const, id: 'doc-medical', name: 'Medical check' },
 ];
 
 export async function buildFixtureWorkbook() {
@@ -169,6 +191,28 @@ export async function runEmployeeMasterWorkbookTests() {
     "the importer reads worksheets[0] by POSITION — putting the cover sheet first would hand it a page of prose",
   );
 
+  // ── 1b. THE HEADER ROW IS FOUND BY NAME, AND THE NAME IS RENAMEABLE ──────────
+  //
+  // This is the regression that took HR's own rebuilt sheet out of service. The parser finds the
+  // header row by looking for a cell carrying an id header AND a cell carrying a name header. That
+  // name header was the single literal "full name"; HR renamed the column "Full English Name", and
+  // the pair test stopped matching in a file that was otherwise perfect. No row in the first ten
+  // qualified, the parser fell back to row 1 — the masthead — and every column mapped to nothing,
+  // so a file full of correct data read as empty with no error naming the cause.
+  //
+  // So: the template's OWN name header has to be one the parser accepts. Rename the column without
+  // adding the new spelling to EMPLOYEE_UPLOAD_NAME_HEADERS and this assertion is what fails,
+  // rather than the next export HR fills in.
+  const nameColumnHeader = employeeMasterWorkbookContract.columns.find(
+    (column) => column.key === "fullName",
+  )?.header;
+  assert.ok(nameColumnHeader, "the contract must still carry a full-name column");
+  assert.ok(
+    (EMPLOYEE_UPLOAD_NAME_HEADERS as readonly string[]).includes(nameColumnHeader.toLowerCase()),
+    `the template's name header "${nameColumnHeader}" is not one the upload parser accepts — ` +
+      "the header row would not be found and the whole file would read as empty",
+  );
+
   // ── 2 & 3. THE REAL PARSER READS IT ─────────────────────────────────────────
   //
   // This runs `parseEmployeeUploadRows` — the exact function both the dry-run and the confirm
@@ -184,7 +228,9 @@ export async function runEmployeeMasterWorkbookTests() {
   assert.equal(
     parsed.headerRowNumber,
     employeeMasterWorkbookContract.headerRow,
-    "the importer scans only the first rows for a row carrying both Employee ID and Full Name",
+    "the importer scans only the first rows for a row carrying BOTH an id header and one of " +
+      `EMPLOYEE_UPLOAD_NAME_HEADERS (${EMPLOYEE_UPLOAD_NAME_HEADERS.join(", ")}) — falling back to row 1 ` +
+      "means it read the masthead as the header and every column mapped to nothing",
   );
   assert.ok(
     parsed.headerRowNumber <= EMPLOYEE_UPLOAD_HEADER_SCAN_ROWS,
@@ -199,11 +245,39 @@ export async function runEmployeeMasterWorkbookTests() {
       "a formula cell with no cached result used to read as [object Object], which made every blank row look like data",
   );
   assert.equal((rows[0] as Record<string, unknown>)["Employee ID"], "A-1");
-  assert.equal((rows[0] as Record<string, unknown>)["Full Name"], "Person 1");
+  assert.equal((rows[0] as Record<string, unknown>)["Full English Name"], "Person 1");
+
 
   // ── 4. an imported column's header is an API ─────────────────────────────────
   const lookup = createEmployeeColumnLookup();
   const resolves = (header: string) => lookup.get(normalizeHeaderName(header)) ?? null;
+
+  // A LOCKED COLUMN MUST ALSO BE AN UNIMPORTED ONE, and vice versa. Until HR's layout landed this
+  // was read off the section name, which held only while every locked column sat in a section
+  // called "(read-only)". Social Insurance Wage now sits inside the payroll block and the document
+  // columns sit in three bands of their own, so the flag is the only thing carrying that fact.
+  // `locked` is the builder's own test, verbatim (styleMasterSheet): a formula column is locked by
+  // FORMULA_KEYS, everything else by its own read-only flag.
+  const locked = (column: (typeof employeeMasterWorkbookContract.columns)[number]) =>
+    FORMULA_KEYS.has(column.key) || isReadOnlyMasterColumn(column);
+  for (const column of employeeMasterWorkbookContract.columns) {
+    assert.equal(
+      locked(column),
+      !column.imported,
+      `"${column.header}" is ${column.imported ? "imported but locked" : "unlocked but not imported"} — ` +
+        "a locked cell the upload reads, or an editable cell it ignores, both teach people to distrust the sheet",
+    );
+  }
+
+  // The statutory filing figure keeps HR's header and HR's position, and stays locked anyway.
+  const wage = employeeMasterWorkbookContract.columns.find(
+    (column) => column.key === "socialInsuranceWage",
+  );
+  assert.ok(wage, "the Social Insurance Wage column must still exist");
+  assert.equal(wage.header, "Social Insurance Wage");
+  assert.equal(wage.section, "PAYROLL REFERENCE INFORMATION");
+  assert.equal(wage.imported, false, "the wage that decides the statutory filing is never set by an upload");
+  assert.equal(isReadOnlyMasterColumn(wage), true);
 
   for (const column of employeeMasterWorkbookContract.columns) {
     if (column.imported) {
@@ -294,6 +368,18 @@ export async function runEmployeeMasterWorkbookTests() {
     );
   }
 
+  // (0) THE THREE BANDS COME OUT IN ORDER, whatever order the checklist hands them over in. The
+  // section band is drawn from RUNS of equal section names, so a single document out of group order
+  // would split its own band into two and the sheet would show "Onboarding Documents" twice.
+  const documentSections = sheetColumns
+    .filter((column) => column.documentColumn === true)
+    .map((column) => column.section);
+  assert.deepEqual(
+    documentSections,
+    HIRING_DOCUMENT_GROUP_ORDER.map((group) => HIRING_DOCUMENT_GROUP_SECTIONS[group]),
+    "the document columns must be grouped required → onboarding → offboarding, one run per band",
+  );
+
   // (i) A DOCUMENT NAME MUST NOT BE READ BACK AS A FIELD. "Position" is a live import alias; the
   // "(document)" suffix is what keeps every one of these headers outside the alias table.
   for (const document of DOCUMENTS) {
@@ -317,7 +403,10 @@ export async function runEmployeeMasterWorkbookTests() {
   assert.equal(String(firstDataRow.getCell(documentColumnIndex('National ID copy')).value ?? ''), 'Submitted · 2 files');
   assert.equal(String(firstDataRow.getCell(documentColumnIndex('Medical check')).value ?? ''), 'Submitted · no file');
   assert.equal(String(firstDataRow.getCell(documentColumnIndex('Position')).value ?? ''), 'Missing');
-  const summaryIndex = sheetColumns.findIndex((column) => column.header === 'Hiring Documents Complete (reference)') + 1;
+  const summaryColumn = sheetColumns.find((column) => column.header === 'Hiring Documents Complete (reference)');
+  assert.ok(summaryColumn, 'the hiring-documents summary column must exist');
+  assert.equal(summaryColumn.section, 'REFERENCE (READ-ONLY)', 'the summary sits with the other reference columns');
+  const summaryIndex = sheetColumns.indexOf(summaryColumn) + 1;
   assert.equal(String(firstDataRow.getCell(summaryIndex).value ?? ''), '2 of 3');
 
   // (iii) An employee the checklist does not cover reads BLANK, never "Missing" — the export can be
@@ -336,6 +425,60 @@ export async function runEmployeeMasterWorkbookTests() {
   const titleIndex = sheetColumns.findIndex((column) => column.header === 'Social Insurance Job Title') + 1;
   assert.equal(String(firstDataRow.getCell(titleIndex).value ?? ''), 'مندوب دعاية طبية');
   assert.equal(String(secondDataRow.getCell(titleIndex).value ?? ''), '');
+
+  // ── 6c. the HR record fields reach the sheet ────────────────────────────────
+  //
+  // Twelve columns HR was keeping in a private spreadsheet until 2026-09-29. They are plain
+  // records — nothing derives a payroll figure from any of them — but a column that exports blank
+  // is a column HR fills in twice, so each one is checked against the fixture value.
+  const cellByHeader = (row: typeof firstDataRow, header: string) => {
+    const index = sheetColumns.findIndex((column) => column.header === header);
+    assert.ok(index >= 0, `the sheet must carry a "${header}" column`);
+    return String(row.getCell(index + 1).value ?? '');
+  };
+  for (const [header, expected] of [
+    ['Birth Place', 'Giza'],
+    ['Qualification (Bachelor - license)', 'Bachelor - license'],
+    // "College Name" IS employees.education — Pharmacy in the fixture, which is what that column
+    // has always held and what the eligible-degree rule reads.
+    ['College Name', 'Pharmacy'],
+    ['University Name', 'Cairo University'],
+    ['College major', 'Pharmacology'],
+    ['senior year', '2019'],
+    ['contract duration', '1 Year'],
+    ['End date of probation period', '2022-09-01'],
+    ['Contract Renewal Date', '2027-01-01'],
+    ['Medical Insurance Card Receipt Date', '2022-07-01'],
+    ['Social insurance start date', '2022-06-01'],
+    ['Kaab Elamaal Number', 'KE-1'],
+    ['Kaab Elamaal Issuer', 'Giza Labour Office'],
+    ['Kaab Elamaal Issue Date', '2022-05-20'],
+    ['Kaab Elamaal refund (Yes-No)', 'no'],
+  ] as const) {
+    assert.equal(cellByHeader(firstDataRow, header), expected, `"${header}" must carry its value`);
+  }
+
+  // ── 6d. the section bands are HR's own words, not upper-cased ────────────────
+  const sectionRowCells = sheet.getRow(employeeMasterWorkbookContract.sectionRow);
+  const bandAt = (index: number) => String(sectionRowCells.getCell(index + 1).value ?? '');
+  for (const [label, headerUnderIt] of [
+    ['Personal Information', 'Employee ID'],
+    ['Educational Qualifications', 'Qualification (Bachelor - license)'],
+    ['Contract Data', 'Hiring Date'],
+    ['Private Medical Insurance', 'Medical Insurance Card Number'],
+    ['Government Medical Insurance', 'Health Insurance Card Number'],
+    ['Government Social Insurance', 'In Social Insurance'],
+    ['Registration certificate information', 'Kaab Elamaal Number'],
+  ] as const) {
+    const index = sheetColumns.findIndex((column) => column.header === headerUnderIt);
+    assert.ok(index >= 0, `the sheet must carry "${headerUnderIt}"`);
+    assert.equal(
+      bandAt(index),
+      label,
+      `the band opening at "${headerUnderIt}" must read "${label}" — HR wrote these labels and the ` +
+        'builder must not upper-case them',
+    );
+  }
 
   // ── 7. the EMITTED ARTIFACT parses, and Excel will not repair it ─────────────
   const problems = await checkWorkbook(Buffer.from(buffer), { quiet: true });

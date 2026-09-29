@@ -97,6 +97,24 @@ export type EmployeeDirectoryRow = {
   healthCardStatus: string | null;
   healthCardNumber: string | null;
   healthCardReceivedDate: string | null;
+  // The HR record fields the Employee Master carries since 2026-09-29. Records, not rules: nothing
+  // derives a payroll figure, an eligibility or a statutory filing from any of them.
+  birthPlace: string | null;
+  // THE QUALIFICATION, not the college — `education` above is the college (Science, Pharmacy, Vet).
+  qualification: string | null;
+  universityName: string | null;
+  collegeMajor: string | null;
+  seniorYear: string | null;
+  contractDuration: string | null;
+  probationEndDate: string | null;
+  // The day the COMPANY's private medical insurance card was received. The government booklet's
+  // own date is healthCardReceivedDate above.
+  medicalInsuranceCardReceivedDate: string | null;
+  socialInsuranceStartDate: string | null;
+  kaabElamaalNumber: string | null;
+  kaabElamaalIssuer: string | null;
+  kaabElamaalIssueDate: string | null;
+  kaabElamaalRefund: string | null;
   hireDate: string | null;
   hrId: string;
   jobTitle: string | null;
@@ -205,6 +223,20 @@ export type EmployeeMutationInput = {
   healthCardNumber?: string | null;
   healthCardReceivedDate?: string | null;
   healthCardStatus?: string | null;
+  birthPlace?: string | null;
+  qualification?: string | null;
+  universityName?: string | null;
+  collegeMajor?: string | null;
+  seniorYear?: string | null;
+  contractDuration?: string | null;
+  contractRenewalDate?: string | null;
+  probationEndDate?: string | null;
+  medicalInsuranceCardReceivedDate?: string | null;
+  socialInsuranceStartDate?: string | null;
+  kaabElamaalNumber?: string | null;
+  kaabElamaalIssuer?: string | null;
+  kaabElamaalIssueDate?: string | null;
+  kaabElamaalRefund?: string | null;
   hireDate?: string | null;
   hrId?: string | null;
   jobTitle?: string | null;
@@ -257,6 +289,19 @@ type EmployeeDbRow = {
   health_card_number?: string | null;
   health_card_received_date?: string | null;
   health_card_status?: string | null;
+  birth_place?: string | null;
+  qualification?: string | null;
+  university_name?: string | null;
+  college_major?: string | null;
+  senior_year?: string | null;
+  contract_duration?: string | null;
+  probation_end_date?: string | null;
+  medical_insurance_card_received_date?: string | null;
+  social_insurance_start_date?: string | null;
+  kaab_elamaal_number?: string | null;
+  kaab_elamaal_issuer?: string | null;
+  kaab_elamaal_issue_date?: string | null;
+  kaab_elamaal_refund?: string | null;
   extra_cost_of_living?: number | null;
   fuel_allowance?: number | null;
   gross_salary?: number | null;
@@ -1018,7 +1063,7 @@ export async function getEmployeeDirectory(): Promise<EmployeeDirectoryData> {
 
 async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
   const baseEmployeeSelect =
-    "hr_id,full_name,nickname,name_ar,national_id,gender,has_bank_account,bank_name,bank_account,health_card_status,health_card_number,health_card_received_date,social_insurance_status,social_insurance_number,medical_insurance_status,medical_insurance_number,basic_salary,base_salary,gross_salary,net_salary,fuel_allowance,extra_cost_of_living,medical_insurance,social_insurance,social_insurance_wage,taxes,payment_mode,residence_address,residence_city,residence_area,contract_type,contract_renewal_date,crm_id,crm_username,work_email,mobile_number,job_title,hire_date,resignation_date,last_working_date,employment_status,education,manager_hr_id,department_id,line_id,area_id,team_id,position_id,payroll_eligible,organogram_visible,created_at,updated_at";
+    "hr_id,full_name,nickname,name_ar,national_id,gender,has_bank_account,bank_name,bank_account,health_card_status,health_card_number,health_card_received_date,social_insurance_status,social_insurance_number,medical_insurance_status,medical_insurance_number,basic_salary,base_salary,gross_salary,net_salary,fuel_allowance,extra_cost_of_living,medical_insurance,social_insurance,social_insurance_wage,taxes,payment_mode,residence_address,residence_city,residence_area,contract_type,contract_renewal_date,contract_duration,probation_end_date,birth_place,qualification,university_name,college_major,senior_year,medical_insurance_card_received_date,social_insurance_start_date,kaab_elamaal_number,kaab_elamaal_issuer,kaab_elamaal_issue_date,kaab_elamaal_refund,crm_id,crm_username,work_email,mobile_number,job_title,hire_date,resignation_date,last_working_date,employment_status,education,manager_hr_id,department_id,line_id,area_id,team_id,position_id,payroll_eligible,organogram_visible,created_at,updated_at";
 
   // Try to join compensation and other lookups in a single query to reduce N+1 and massive IN filters.
   // Built as a flat array + join (not a multi-line template literal) so the encoded `select` param
@@ -1191,6 +1236,19 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         healthCardStatus: row.health_card_status ?? null,
         healthCardNumber: row.health_card_number ?? null,
         healthCardReceivedDate: row.health_card_received_date ?? null,
+        birthPlace: row.birth_place ?? null,
+        qualification: row.qualification ?? null,
+        universityName: row.university_name ?? null,
+        collegeMajor: row.college_major ?? null,
+        seniorYear: row.senior_year ?? null,
+        contractDuration: row.contract_duration ?? null,
+        probationEndDate: row.probation_end_date ?? null,
+        medicalInsuranceCardReceivedDate: row.medical_insurance_card_received_date ?? null,
+        socialInsuranceStartDate: row.social_insurance_start_date ?? null,
+        kaabElamaalNumber: row.kaab_elamaal_number ?? null,
+        kaabElamaalIssuer: row.kaab_elamaal_issuer ?? null,
+        kaabElamaalIssueDate: row.kaab_elamaal_issue_date ?? null,
+        kaabElamaalRefund: row.kaab_elamaal_refund ?? null,
         hireDate: row.hire_date,
         hrId: row.hr_id,
         jobTitle: row.job_title,
@@ -1356,6 +1414,19 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         healthCardStatus: row.health_card_status ?? null,
         healthCardNumber: row.health_card_number ?? null,
         healthCardReceivedDate: row.health_card_received_date ?? null,
+        birthPlace: row.birth_place ?? null,
+        qualification: row.qualification ?? null,
+        universityName: row.university_name ?? null,
+        collegeMajor: row.college_major ?? null,
+        seniorYear: row.senior_year ?? null,
+        contractDuration: row.contract_duration ?? null,
+        probationEndDate: row.probation_end_date ?? null,
+        medicalInsuranceCardReceivedDate: row.medical_insurance_card_received_date ?? null,
+        socialInsuranceStartDate: row.social_insurance_start_date ?? null,
+        kaabElamaalNumber: row.kaab_elamaal_number ?? null,
+        kaabElamaalIssuer: row.kaab_elamaal_issuer ?? null,
+        kaabElamaalIssueDate: row.kaab_elamaal_issue_date ?? null,
+        kaabElamaalRefund: row.kaab_elamaal_refund ?? null,
         hireDate: row.hire_date,
         hrId: row.hr_id,
         jobTitle: row.job_title,
@@ -1480,6 +1551,19 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
       healthCardStatus: row.health_card_status ?? null,
       healthCardNumber: row.health_card_number ?? null,
       healthCardReceivedDate: row.health_card_received_date ?? null,
+      birthPlace: row.birth_place ?? null,
+      qualification: row.qualification ?? null,
+      universityName: row.university_name ?? null,
+      collegeMajor: row.college_major ?? null,
+      seniorYear: row.senior_year ?? null,
+      contractDuration: row.contract_duration ?? null,
+      probationEndDate: row.probation_end_date ?? null,
+      medicalInsuranceCardReceivedDate: row.medical_insurance_card_received_date ?? null,
+      socialInsuranceStartDate: row.social_insurance_start_date ?? null,
+      kaabElamaalNumber: row.kaab_elamaal_number ?? null,
+      kaabElamaalIssuer: row.kaab_elamaal_issuer ?? null,
+      kaabElamaalIssueDate: row.kaab_elamaal_issue_date ?? null,
+      kaabElamaalRefund: row.kaab_elamaal_refund ?? null,
       hireDate: row.hire_date,
       hrId: row.hr_id,
       jobTitle: row.job_title,
@@ -1573,7 +1657,7 @@ async function fetchAllEmployeeRows(params: URLSearchParams): Promise<EmployeeDb
 
 async function fetchEmployeeDirectoryRows(includeInactive: boolean): Promise<EmployeeDirectoryRow[]> {
   const baseEmployeeSelect =
-    "hr_id,full_name,nickname,name_ar,national_id,gender,has_bank_account,bank_name,bank_account,health_card_status,health_card_number,health_card_received_date,social_insurance_status,social_insurance_number,medical_insurance_status,medical_insurance_number,basic_salary,base_salary,gross_salary,net_salary,fuel_allowance,extra_cost_of_living,medical_insurance,social_insurance,social_insurance_wage,taxes,payment_mode,residence_address,residence_city,residence_area,contract_type,contract_renewal_date,crm_id,crm_username,work_email,mobile_number,job_title,hire_date,resignation_date,last_working_date,employment_status,education,manager_hr_id,department_id,line_id,area_id,team_id,position_id,payroll_eligible,organogram_visible,created_at,updated_at";
+    "hr_id,full_name,nickname,name_ar,national_id,gender,has_bank_account,bank_name,bank_account,health_card_status,health_card_number,health_card_received_date,social_insurance_status,social_insurance_number,medical_insurance_status,medical_insurance_number,basic_salary,base_salary,gross_salary,net_salary,fuel_allowance,extra_cost_of_living,medical_insurance,social_insurance,social_insurance_wage,taxes,payment_mode,residence_address,residence_city,residence_area,contract_type,contract_renewal_date,contract_duration,probation_end_date,birth_place,qualification,university_name,college_major,senior_year,medical_insurance_card_received_date,social_insurance_start_date,kaab_elamaal_number,kaab_elamaal_issuer,kaab_elamaal_issue_date,kaab_elamaal_refund,crm_id,crm_username,work_email,mobile_number,job_title,hire_date,resignation_date,last_working_date,employment_status,education,manager_hr_id,department_id,line_id,area_id,team_id,position_id,payroll_eligible,organogram_visible,created_at,updated_at";
   const employeeParams = new URLSearchParams({
     select: `${baseEmployeeSelect},region_name,birth_date`,
     order: "full_name.asc,hr_id.asc",
@@ -1648,6 +1732,19 @@ async function fetchEmployeeDirectoryRows(includeInactive: boolean): Promise<Emp
       healthCardStatus: row.health_card_status ?? null,
       healthCardNumber: row.health_card_number ?? null,
       healthCardReceivedDate: row.health_card_received_date ?? null,
+      birthPlace: row.birth_place ?? null,
+      qualification: row.qualification ?? null,
+      universityName: row.university_name ?? null,
+      collegeMajor: row.college_major ?? null,
+      seniorYear: row.senior_year ?? null,
+      contractDuration: row.contract_duration ?? null,
+      probationEndDate: row.probation_end_date ?? null,
+      medicalInsuranceCardReceivedDate: row.medical_insurance_card_received_date ?? null,
+      socialInsuranceStartDate: row.social_insurance_start_date ?? null,
+      kaabElamaalNumber: row.kaab_elamaal_number ?? null,
+      kaabElamaalIssuer: row.kaab_elamaal_issuer ?? null,
+      kaabElamaalIssueDate: row.kaab_elamaal_issue_date ?? null,
+      kaabElamaalRefund: row.kaab_elamaal_refund ?? null,
       hireDate: row.hire_date,
       hrId: row.hr_id,
       jobTitle: row.job_title,

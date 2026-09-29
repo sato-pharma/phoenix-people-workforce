@@ -98,24 +98,34 @@ const SOCIAL_INSURANCE_JOB_TITLE_LABEL = "Social Insurance Job Title";
  * the workbook are walking the same list.
  */
 const FIELDS: FieldSpec[] = [
-  { compare: "text", from: (r) => r.fullName, group: "Identity", label: "Full Name", to: (e) => e.fullName },
+  { compare: "text", from: (r) => r.fullName, group: "Identity", label: "Full English Name", to: (e) => e.fullName },
   { compare: "text", from: (r) => r.nickname, group: "Identity", label: "Nickname", to: (e) => e.nickname },
-  { compare: "text", from: (r) => r.nameAr, group: "Identity", label: "Arabic Name", to: (e) => e.nameAr },
+  { compare: "text", from: (r) => r.nameAr, group: "Identity", label: "Full Arabic Name", to: (e) => e.nameAr },
   { compare: "text", from: (r) => r.nationalId, group: "Identity", label: "National ID", to: (e) => e.nationalId },
   { compare: "text", from: (r) => r.gender, group: "Identity", label: "Gender", to: (e) => e.gender },
   { compare: "date", from: (r) => r.birthDate, group: "Identity", label: "Birth Date", to: (e) => e.birthDate },
-  { compare: "text", from: (r) => r.education, group: "Identity", label: "Education", to: (e) => e.education },
+  { compare: "text", from: (r) => r.birthPlace, group: "Identity", label: "Birth Place", to: (e) => e.birthPlace },
+  { compare: "text", from: (r) => r.qualification, group: "Identity", label: "Qualification (Bachelor - license)", to: (e) => e.qualification },
+  // "College Name" is employees.education — the college, which is what that column has always held.
+  { compare: "text", from: (r) => r.education, group: "Identity", label: "College Name", to: (e) => e.education },
+  { compare: "text", from: (r) => r.universityName, group: "Identity", label: "University Name", to: (e) => e.universityName },
+  { compare: "text", from: (r) => r.collegeMajor, group: "Identity", label: "College major", to: (e) => e.collegeMajor },
+  { compare: "text", from: (r) => r.seniorYear, group: "Identity", label: "senior year", to: (e) => e.seniorYear },
 
   { compare: "text", from: (r) => r.departmentName, group: "Organization", label: "Department", to: (e) => e.departmentName },
   { compare: "text", from: (r) => r.lineName, group: "Organization", label: "Line", to: (e) => e.lineName },
   { compare: "text", from: (r) => r.areaName, group: "Organization", label: "Area", to: (e) => e.areaName },
+  { compare: "text", from: (r) => r.regionName, group: "Organization", label: "Region", to: (e) => e.regionName },
   { compare: "text", from: (r) => r.teamName, group: "Organization", label: "Team", to: (e) => e.teamName },
   { compare: "text", from: (r) => r.jobTitle, group: "Organization", label: "Title", to: (e) => e.jobTitle },
   { compare: "text", from: (r) => r.positionTitle, group: "Organization", label: "Position", to: (e) => e.positionTitle },
   { compare: "text", from: (r) => r.managerHrId, group: "Organization", label: "Manager HR_ID", to: (e) => e.managerHrId },
   { compare: "date", from: (r) => r.hireDate, group: "Organization", label: "Hiring Date", to: (e) => e.hireDate },
+  { compare: "date", from: (r) => r.probationEndDate, group: "Organization", label: "End date of probation period", to: (e) => e.probationEndDate },
   { compare: "text", from: (r) => r.employmentStatus, group: "Organization", label: "Employment Status", to: (e) => e.employmentStatus },
   { compare: "text", from: (r) => r.contractType, group: "Organization", label: "Contract Type", to: (e) => e.contractType },
+  { compare: "text", from: (r) => r.contractDuration, group: "Organization", label: "contract duration", to: (e) => e.contractDuration },
+  { compare: "date", from: (r) => r.contractRenewalDate, group: "Organization", label: "Contract Renewal Date", to: (e) => e.contractRenewalDate },
 
   { compare: "text", from: (r) => r.workEmail, group: "Contact & Residence", label: "Email", to: (e) => e.workEmail },
   { compare: "text", from: (r) => r.mobileNumber, group: "Contact & Residence", label: "Phone", to: (e) => e.mobileNumber },
@@ -139,18 +149,28 @@ const FIELDS: FieldSpec[] = [
   { compare: "text", from: (r) => r.hasBankAccount, group: "Payroll", label: "Has Bank Account", to: (e) => e.hasBankAccount },
   { compare: "text", from: (r) => r.bankName, group: "Payroll", label: "Bank Name", to: (e) => e.bankName },
   { compare: "text", from: (r) => r.bankAccount, group: "Payroll", label: "Bank Account", to: (e) => e.bankAccount },
-  { compare: "text", from: (r) => r.medicalInsuranceStatus, group: "Payroll", label: "In Medical Insurance", to: (e) => e.medicalInsuranceStatus },
-  { compare: "text", from: (r) => r.medicalInsuranceNumber, group: "Payroll", label: "Medical Insurance Number", to: (e) => e.medicalInsuranceNumber },
+  { compare: "boolean", from: (r) => r.payrollEligible, group: "Payroll", label: "Payroll Eligible", to: (e) => e.payrollEligible },
+
+  { compare: "text", from: (r) => r.medicalInsuranceNumber, group: "Payroll", label: "Medical Insurance Card Number", to: (e) => e.medicalInsuranceNumber },
+  { compare: "date", from: (r) => r.medicalInsuranceCardReceivedDate, group: "Payroll", label: "Medical Insurance Card Receipt Date", to: (e) => e.medicalInsuranceCardReceivedDate },
+  { compare: "text", from: (r) => r.medicalInsuranceStatus, group: "Payroll", label: "Medical Insurance Card Received (Yes-No)", to: (e) => e.medicalInsuranceStatus },
+
+  // The GOVERNMENT booklet, never the private card above it — the owner drew that line himself.
+  { compare: "text", from: (r) => r.healthCardNumber, group: "Payroll", label: "Health Insurance Card Number", to: (e) => e.healthCardNumber },
+  { compare: "date", from: (r) => r.healthCardReceivedDate, group: "Payroll", label: "Health Insurance Card Receipt Date", to: (e) => e.healthCardReceivedDate },
+  { compare: "text", from: (r) => r.healthCardStatus, group: "Payroll", label: "Health Insurance Card Received (Yes-No)", to: (e) => e.healthCardStatus },
+
   { compare: "text", from: (r) => r.socialInsuranceStatus, group: "Payroll", label: "In Social Insurance", to: (e) => e.socialInsuranceStatus },
   { compare: "text", from: (r) => r.socialInsuranceNumber, group: "Payroll", label: "Social Insurance Number", to: (e) => e.socialInsuranceNumber },
   { compare: "text", from: (r) => r.socialInsuranceJobTitle, group: "Payroll", label: SOCIAL_INSURANCE_JOB_TITLE_LABEL, to: (_employee, context) => context.socialInsuranceJobTitle },
-  { compare: "text", from: (r) => r.healthCardStatus, group: "Payroll", label: "Health Card Received", to: (e) => e.healthCardStatus },
-  { compare: "text", from: (r) => r.healthCardNumber, group: "Payroll", label: "Health Card Number", to: (e) => e.healthCardNumber },
-  { compare: "text", from: (r) => r.healthCardReceivedDate, group: "Payroll", label: "Health Card Receipt Date", to: (e) => e.healthCardReceivedDate },
+  { compare: "date", from: (r) => r.socialInsuranceStartDate, group: "Payroll", label: "Social insurance start date", to: (e) => e.socialInsuranceStartDate },
 
-  { compare: "boolean", from: (r) => r.payrollEligible, group: "System", label: "Payroll Eligible", to: (e) => e.payrollEligible },
+  { compare: "text", from: (r) => r.kaabElamaalNumber, group: "Payroll", label: "Kaab Elamaal Number", to: (e) => e.kaabElamaalNumber },
+  { compare: "text", from: (r) => r.kaabElamaalIssuer, group: "Payroll", label: "Kaab Elamaal Issuer", to: (e) => e.kaabElamaalIssuer },
+  { compare: "date", from: (r) => r.kaabElamaalIssueDate, group: "Payroll", label: "Kaab Elamaal Issue Date", to: (e) => e.kaabElamaalIssueDate },
+  { compare: "text", from: (r) => r.kaabElamaalRefund, group: "Payroll", label: "Kaab Elamaal refund (Yes-No)", to: (e) => e.kaabElamaalRefund },
+
   { compare: "boolean", from: (r) => r.organogramVisible, group: "System", label: "Organogram Visible", to: (e) => e.organogramVisible },
-  { compare: "text", from: (r) => r.regionName, group: "System", label: "Region", to: (e) => e.regionName },
 ];
 
 /** Absent means "the cell was left blank", which the upload skips rather than writes. */

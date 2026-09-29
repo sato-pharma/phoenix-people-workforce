@@ -27,7 +27,7 @@ export const employeeColumnDefinitions: EmployeeImportColumnDefinition[] = [
     field: "fullName",
     dbPath: "employees.full_name",
     required: false,
-    aliases: ["Full Name", "Name", "Employee Name", "full_name"],
+    aliases: ["Full English Name", "Full Name", "Name", "Employee Name", "full_name"],
   },
   {
     field: "nickname",
@@ -39,7 +39,7 @@ export const employeeColumnDefinitions: EmployeeImportColumnDefinition[] = [
     field: "nameAr",
     dbPath: "employees.name_ar",
     required: false,
-    aliases: ["Arabic Name", "Name AR", "Name Arabic", "name_ar"],
+    aliases: ["Full Arabic Name", "Arabic Name", "Name AR", "Name Arabic", "name_ar"],
   },
   {
     field: "nationalId",
@@ -87,7 +87,9 @@ export const employeeColumnDefinitions: EmployeeImportColumnDefinition[] = [
     field: "education",
     dbPath: "employees.education",
     required: false,
-    aliases: ["Education", "Degree", "Qualification"],
+    // "College Name" is what HR calls it and what it has always held — Science, Pharmacy, Vet. The
+    // qualification itself is the separate `qualification` field.
+    aliases: ["College Name", "Education", "Degree", "Qualification"],
   },
   {
     field: "employmentStatus",
@@ -159,13 +161,13 @@ export const employeeColumnDefinitions: EmployeeImportColumnDefinition[] = [
     field: "medicalInsuranceStatus",
     dbPath: "employees.medical_insurance_status",
     required: false,
-    aliases: ["In Medical Insurance", "Medical Insurance Status", "medical_insurance_status"],
+    aliases: ["Medical Insurance Card Received (Yes-No)", "In Medical Insurance", "Medical Insurance Status", "medical_insurance_status"],
   },
   {
     field: "medicalInsuranceNumber",
     dbPath: "employees.medical_insurance_number",
     required: false,
-    aliases: ["Medical Insurance Number", "Medical Insurance ID", "medical_insurance_number"],
+    aliases: ["Medical Insurance Card Number", "Medical Insurance Number", "Medical Insurance ID", "medical_insurance_number"],
   },
   {
     // The one field on this sheet that does NOT live on `employees` — see the note in
@@ -190,6 +192,7 @@ export const employeeColumnDefinitions: EmployeeImportColumnDefinition[] = [
     dbPath: "employees.health_card_status",
     required: false,
     aliases: [
+      "Health Insurance Card Received (Yes-No)",
       "Health Card Received",
       "Health Card Status",
       "health_card_status",
@@ -201,13 +204,14 @@ export const employeeColumnDefinitions: EmployeeImportColumnDefinition[] = [
     field: "healthCardNumber",
     dbPath: "employees.health_card_number",
     required: false,
-    aliases: ["Health Card Number", "health_card_number", "رقم البطاقة الصحية"],
+    aliases: ["Health Insurance Card Number", "Health Card Number", "health_card_number", "رقم البطاقة الصحية"],
   },
   {
     field: "healthCardReceivedDate",
     dbPath: "employees.health_card_received_date",
     required: false,
     aliases: [
+      "Health Insurance Card Receipt Date",
       "Health Card Receipt Date",
       "Health Card Received Date",
       "health_card_received_date",
@@ -334,6 +338,90 @@ export const employeeColumnDefinitions: EmployeeImportColumnDefinition[] = [
     dbPath: "employees.residence_area",
     required: false,
     aliases: ["Residence Area", "Home Area", "District", "residence_area"],
+  },
+  {
+    field: "birthPlace",
+    dbPath: "employees.birth_place",
+    required: false,
+    aliases: ["Birth Place", "Place Of Birth", "birth_place", "محل الميلاد"],
+  },
+  {
+    field: "qualification",
+    dbPath: "employees.qualification",
+    required: false,
+    aliases: ["Qualification (Bachelor - license)", "Qualification Level", "qualification", "المؤهل"],
+  },
+  {
+    field: "universityName",
+    dbPath: "employees.university_name",
+    required: false,
+    aliases: ["University Name", "University", "university_name", "الجامعة"],
+  },
+  {
+    field: "collegeMajor",
+    dbPath: "employees.college_major",
+    required: false,
+    aliases: ["College major", "College Major", "Major", "college_major", "التخصص"],
+  },
+  {
+    field: "seniorYear",
+    dbPath: "employees.senior_year",
+    required: false,
+    aliases: ["senior year", "Senior Year", "Graduation Year", "senior_year", "سنة التخرج"],
+  },
+  {
+    field: "contractDuration",
+    dbPath: "employees.contract_duration",
+    required: false,
+    aliases: ["contract duration", "Contract Duration", "contract_duration", "مدة العقد"],
+  },
+  {
+    field: "contractRenewalDate",
+    dbPath: "employees.contract_renewal_date",
+    required: false,
+    aliases: ["Contract Renewal Date", "Renewal Date", "contract_renewal_date"],
+  },
+  {
+    field: "probationEndDate",
+    dbPath: "employees.probation_end_date",
+    required: false,
+    aliases: ["End date of probation period", "Probation End Date", "probation_end_date"],
+  },
+  {
+    field: "medicalInsuranceCardReceivedDate",
+    dbPath: "employees.medical_insurance_card_received_date",
+    required: false,
+    aliases: ["Medical Insurance Card Receipt Date", "Medical Insurance Card Received Date", "medical_insurance_card_received_date"],
+  },
+  {
+    field: "socialInsuranceStartDate",
+    dbPath: "employees.social_insurance_start_date",
+    required: false,
+    aliases: ["Social insurance start date", "Social Insurance Start Date", "social_insurance_start_date", "تاريخ بدء التأمين"],
+  },
+  {
+    field: "kaabElamaalNumber",
+    dbPath: "employees.kaab_elamaal_number",
+    required: false,
+    aliases: ["Kaab Elamaal Number", "kaab_elamaal_number", "رقم كعب العمل"],
+  },
+  {
+    field: "kaabElamaalIssuer",
+    dbPath: "employees.kaab_elamaal_issuer",
+    required: false,
+    aliases: ["Kaab Elamaal Issuer", "kaab_elamaal_issuer"],
+  },
+  {
+    field: "kaabElamaalIssueDate",
+    dbPath: "employees.kaab_elamaal_issue_date",
+    required: false,
+    aliases: ["Kaab Elamaal Issue Date", "kaab_elamaal_issue_date"],
+  },
+  {
+    field: "kaabElamaalRefund",
+    dbPath: "employees.kaab_elamaal_refund",
+    required: false,
+    aliases: ["Kaab Elamaal refund (Yes-No)", "Kaab Elamaal Refund", "kaab_elamaal_refund"],
   },
 ];
 

@@ -9,8 +9,8 @@ import {
 
 export function runRecruitmentOnboardingMetricsTests() {
   const documents = [
-    { createdAt: "2026-01-01", description: null, displayOrder: 10, id: "id", isExitDocument: false, name: "National ID" },
-    { createdAt: "2026-01-01", description: null, displayOrder: 20, id: "contract", isExitDocument: false, name: "Contract" },
+    { createdAt: "2026-01-01", description: null, displayOrder: 10, id: "id", documentGroup: "required" as const, isExitDocument: false, name: "National ID" },
+    { createdAt: "2026-01-01", description: null, displayOrder: 20, id: "contract", documentGroup: "required" as const, isExitDocument: false, name: "Contract" },
   ];
   const documentMetrics = summarizeHiringDocumentReadiness(
     [
