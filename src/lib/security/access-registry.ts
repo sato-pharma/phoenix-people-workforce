@@ -131,6 +131,7 @@ export const accessRegistry = [
   // A live cookie session is required — so it is a sessionApi, CSRF-enforced (not exempt), gated on
   // the same minimal read the portal shell asserts. It mints nothing; see the route header.
   sessionApi({
+    csrfRequired: true,
     methods: ["POST"],
     pattern: "/api/auth/native-token",
     permission: { resource: "employee_profile", action: "read" },
