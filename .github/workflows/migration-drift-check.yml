@@ -128,6 +128,36 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: "https://ozucdzovmcqvepbozvqf.supabase.co"
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.PRODUCTION_SUPABASE_SERVICE_ROLE_KEY }}
 
+      # ADVISOR BASELINE (added 2026-09-29). A different question again: the two above prove
+      # the STRUCTURE is sound, this proves nobody quietly added to the list of things we had
+      # already agreed to tolerate.
+      #
+      # docs/security/supabase-advisor-baseline.md is the document that decides which advisor
+      # findings are accepted. It was last reviewed 2026-07-19 and by 2026-09-29 said INFO x23
+      # where production read 176, and INFO x326 where it read 615. Worse, it said
+      # `function_search_path_mutable` was REMEDIATED and that a reappearance "is a regression"
+      # — it had reappeared for ten functions, and nobody knew, because nothing had ever
+      # compared live advisor output to that document. 153 tables joined an "accepted" list
+      # with nobody accepting them.
+      #
+      # 🔴 PRODUCTION ONLY, deliberately — unlike every other leg in this workflow.
+      # The baseline is a triage record of what was decided about the PRODUCTION database.
+      # Staging is a clone with its own usage, so its counts differ for reasons nobody acts
+      # on: measured 2026-09-29, staging reads unused_index 624 against production's 615 and
+      # rls_enabled_no_policy 161 against 176. Running production's baseline there would have
+      # failed this workflow nightly on a difference that means nothing — and a check that
+      # cries wolf is the one people learn to skip past. The script refuses to compare when
+      # the target ref is not the one the baseline names, so pointing it at staging by
+      # accident says so rather than inventing a verdict.
+      #
+      # `always()` for the same reason as every leg above.
+      - name: Check advisor baseline (production)
+        if: ${{ always() && env.HAS_PRODUCTION_SUPABASE_KEY == 'true' }}
+        run: pnpm run check:advisor-baseline
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: "https://ozucdzovmcqvepbozvqf.supabase.co"
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.PRODUCTION_SUPABASE_SERVICE_ROLE_KEY }}
+
       # Without this the production legs would just show as "skipped" — indistinguishable from
       # "ran and passed" at a glance, which is the same class of silent-green this whole
       # workflow exists to prevent.

@@ -1,0 +1,48 @@
+{
+  "_comment": [
+    "Accepted counts per Supabase advisor category on Phoenix HR production.",
+    "scripts/check-advisor-baseline.ts fails when a live count EXCEEDS `accepted`, so growth",
+    "forces a decision instead of accruing silently. The prose, the per-category reasoning and",
+    "the history live in docs/security/supabase-advisor-baseline.md — this file is only the",
+    "numbers, so that raising one is a one-line diff a reviewer can see.",
+    "",
+    "RAISING A NUMBER IS A DECISION, NOT A FIX. The 2026-07-19 baseline recorded 23 and drifted",
+    "to 176 with nobody accepting the 153 that joined it; editing this file to make the check",
+    "green reproduces exactly that. Change the database, or write down why the new number is",
+    "right, in the doc, with the date.",
+    "",
+    "Counts are reproduced from pg_catalog by public.phx_ci_advisor_counts(), because",
+    "get_advisors is an MCP tool and CI has no MCP. The four security categories were validated",
+    "to match a live advisor run EXACTLY on 2026-09-29. `unused_index` uses our own definition,",
+    "stated in that migration and in the doc."
+  ],
+  "project_ref": "ozucdzovmcqvepbozvqf",
+  "last_reviewed": "2026-09-29",
+  "categories": {
+    "rls_enabled_no_policy": {
+      "accepted": 176,
+      "severity": "info",
+      "why": "Deny-all by design. The owner's standing decision is that RLS stays application-first: assertPermission on the server is the boundary and most paths use the service-role client. Reachability is proven separately by phx_ci_browser_reachability(). Previous baseline 23, from 2026-07-19."
+    },
+    "function_search_path_mutable": {
+      "accepted": 10,
+      "severity": "warn",
+      "why": "REGRESSION, recorded here to stop it growing while it is fixed — not accepted. The 2026-07-19 baseline called this REMEDIATED and said a reappearance is a regression; it reappeared for 10 different functions and nothing noticed. All 10 are SECURITY INVOKER, so a hijacked search_path runs with the caller's own rights, which is why this is a warn and not an error. Excludes pg_trgm's 31 unpinned functions, which are the extension's, not ours."
+    },
+    "extension_in_public": {
+      "accepted": 1,
+      "severity": "warn",
+      "why": "pg_trgm. Moving it to `extensions` is the known fix; 2 indexes depend on its opclasses and must be confirmed indisvalid afterwards, so it is a deliberate separate change. Absent from the 2026-07-19 baseline entirely."
+    },
+    "authenticated_security_definer_function_executable": {
+      "accepted": 14,
+      "severity": "warn",
+      "why": "ACCEPTED, unchanged since 2026-07-19 and re-verified 2026-09-29 at exactly 14. The current_access_* / current_phoenix_role helpers are the primitives RLS policies call to resolve the caller's own identity; authenticated MUST be able to execute them or RLS breaks. They return the caller's own role, never another person's data."
+    },
+    "unused_index": {
+      "accepted": 615,
+      "severity": "info",
+      "why": "NOT a drop list, and deliberately not acted on. pg_stat counters never observe a low-frequency path (the daily birthday and contract-renewal crons scan indexes that read as unused), so 'unused' is not proof of safe-to-drop. Recorded so GROWTH is visible. Previous baseline 326, from 2026-07-19. Our definition, not the advisor's: idx_scan = 0, not unique, not a primary key, not backing a constraint."
+    }
+  }
+}
