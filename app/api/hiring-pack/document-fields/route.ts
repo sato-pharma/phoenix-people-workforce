@@ -212,6 +212,11 @@ export async function POST(request: Request) {
     //
     // A DELETE IS NOT GATED EITHER. Removing a mark returns the paper to unsigned, which is the safe
     // direction, and a mark nobody can take off again would be the worse arrangement.
+    //
+    // 🔒 CONFIRMED BY THE OWNER, 2026-09-29, put to him as a choice and answered "keep the signature
+    // super admin only". The alternative he was offered — letting anyone with
+    // `employee_documents:update` place it, so HR Operations could sign a contract they are
+    // preparing — is the one thing not to "fix" back here. See `document-marks.ts`.
     // ─────────────────────────────────────────────────────────────────────────────────────────
     if (
       parsed.write.source.kind === "mark" &&

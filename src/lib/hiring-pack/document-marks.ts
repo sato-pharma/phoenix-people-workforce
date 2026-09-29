@@ -20,6 +20,26 @@
 // appears because somebody put it there, and only the first is a stamp nobody applied.
 //
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
+// 🔒 A MARK BELONGS TO THE FORM, NOT TO ONE EMPLOYEE — owner's ruling, 2026-09-29, asked in writing
+// and answered "keep the stamp per form, not per employee".
+//
+// A row is stored against the document and its template VERSION with `employee_hr_id` null, exactly
+// like every other field-layer row. So a stamp dropped on the contract prints on every contract
+// drawn from that version, not only on the one that was on screen when it was placed. He was shown
+// that consequence in those words before he ruled, because it sits close to the pre-stamped failure
+// he had corrected hours earlier — and it is still not that failure: the paper carries a seal
+// because he put one there, and one click takes it off again.
+//
+// The table already has the `employee_hr_id` column, so a per-employee mark is buildable. Do NOT
+// build it, and do not re-raise it: the decision is his and it is recorded here. It would also
+// change what "add it to any form" means, which is the thing he actually asked for.
+//
+// 🔒 AND THE SIGNATURE STAYS THE SUPER ADMIN'S TO PLACE — same day, same question, answered "keep
+// the signature super admin only". The gate is in `app/api/hiring-pack/document-fields/route.ts`,
+// beside the one on the signature image itself. Do not widen it to `employee_documents:update` to
+// let HR Operations sign a contract they are preparing; that was the alternative he was offered.
+//
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
 // WHY THE ARTWORK IS A DATA URI AND NEVER A PATH, for BOTH marks.
 //
 // The signature has no choice: a signature image reachable at a URL is a forgery kit, which is why
