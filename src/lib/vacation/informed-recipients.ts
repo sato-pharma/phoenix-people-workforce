@@ -11,10 +11,11 @@
  * So this resolves ONE extra notification recipient, and nothing reads it but the notification
  * dispatch.
  *
- * IN-APP AND TELEGRAM, NEVER EMAIL. The standing rule is that email recipients are asked about
- * before they are wired (AGENTS.md §4), and the house pattern for "keep this person in the loop" is
- * the notification bell plus Telegram — the same two channels the visibility approvers on a
- * sequential request already get. Nothing here may add an email channel without his word.
+ * ALL THREE CHANNELS — IN-APP, EMAIL AND TELEGRAM (owner, 2026-09-30: "yasmine informed in app email
+ * telegram"). It shipped the day before as in-app + Telegram only, because AGENTS.md §4 requires an
+ * email recipient to be asked about before it is wired rather than assumed; he was asked in the
+ * report on that PR and this is his answer, so the email is now his instruction and not an
+ * inference. Removing a channel from that set needs his word exactly as adding one did.
  *
  * ANNUAL ONLY, because that is the type he named. Sick, Emergency, Other and Compensatory keep
  * exactly the recipients they had. Widening this list is a product decision, not a tidy-up.
