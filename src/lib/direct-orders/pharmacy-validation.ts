@@ -22,7 +22,7 @@ import {
   type DirectOrderEvidenceCheck,
 } from "@/lib/direct-orders/evidence-check";
 import { assertDirectOrderWorkflowTransition } from "@/lib/direct-orders/workflow";
-import { directOrderRejectionWasOnlySuperseded } from "@/lib/direct-orders/field-evidence-gap";
+import { directOrderRejectionWasOnlyRedundant } from "@/lib/direct-orders/field-evidence-gap";
 import { readAccuracyInput, readCoordinateInput } from "@/lib/geo/coordinate-input";
 import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 import { logError } from "@/lib/observability/log";
@@ -1331,7 +1331,7 @@ export async function loadDirectOrderVenueFieldEvidence(
       (row) =>
         normalizeDirectOrderValidationRoute(row.validation_route) === "field" &&
         (String(row.status ?? "") !== "rejected" ||
-          directOrderRejectionWasOnlySuperseded(row.decision_notes)) &&
+          directOrderRejectionWasOnlyRedundant(row.decision_notes)) &&
         Boolean(String(row.storage_path ?? "").trim()) &&
         row.captured_latitude != null &&
         row.captured_longitude != null,

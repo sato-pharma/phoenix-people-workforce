@@ -88,25 +88,32 @@ export const DIRECT_ORDER_FIELD_EVIDENCE_GAP_SENTENCES: Record<DirectOrderFieldE
 };
 
 /**
- * Was this claim refused for being SUPERSEDED rather than for its evidence? (owner, 2026-09-29)
+ * Was this claim refused as REDUNDANT — superseded or a duplicate — rather than on its evidence?
+ * (owner, 2026-09-29: "count a superseded rejection as field evidence", then "widen the superseded
+ * rule to duplicate rejections".)
  *
  * The default is unchanged and stays the safe direction: a rejection is not evidence. This readmits
  * one narrow case — the desk said the claim was redundant, not that the capture was bad — and the
  * caller still requires a real photo and a real GPS fix on the row, so an empty rejection with a
  * clever note readmits nothing.
  *
- * DELIBERATELY ONLY THE `supersede` STEM. Not "duplicate", not "already verified", not "not needed":
- * each of those is arguable and every one of them widens a text match that decides whether a venue
- * looks captured. Missing a case here shows the line on a venue that was photographed, which the
- * approver can see through in a second; wrongly matching one HIDES the line on a venue nobody ever
- * visited, which is the failure that cannot be spotted. So it fails toward showing.
+ * TWO STEMS, `supersede` AND `duplicate` — the second added on his instruction the same day, after
+ * the first shipped without it. They are one idea in two vocabularies: the desk refused the CLAIM as
+ * redundant, having said nothing against the photograph.
+ *
+ * AND NOTHING FURTHER WITHOUT HIS WORD. Not "already verified", not "not needed", not "no longer
+ * required" — each is arguable, and every widening of a text match that decides whether a venue
+ * looks captured is his call, not a tidy-up. The asymmetry is why: missing a case SHOWS the line on
+ * a venue that was photographed, which the approver sees through in a second; matching one wrongly
+ * HIDES the line on a venue nobody ever visited, which cannot be spotted at all. It fails toward
+ * showing, and a widening only ever moves in the direction he asks for.
  *
  * The negation guard exists because "this claim is NOT superseded — the photo is of the wrong shop"
- * is a perfectly natural rejection note, and a bare substring test would read it as the opposite of
- * what it says.
+ * and "not a duplicate, the shop does not exist" are perfectly natural rejection notes, and a bare
+ * substring test would read each as the opposite of what it says.
  */
-export function directOrderRejectionWasOnlySuperseded(decisionNotes: string | null | undefined): boolean {
+export function directOrderRejectionWasOnlyRedundant(decisionNotes: string | null | undefined): boolean {
   const notes = String(decisionNotes ?? "").toLowerCase();
-  if (!notes.includes("supersede")) return false;
-  return !/\b(not|never|isn't|isnt|is not|wasn't|wasnt|was not)\s+supersed/.test(notes);
+  if (!notes.includes("supersede") && !notes.includes("duplicate")) return false;
+  return !/\b(not|never|isn't|isnt|is not|wasn't|wasnt|was not)\s+(an?\s+)?(supersed|duplicat)/.test(notes);
 }
