@@ -1955,6 +1955,7 @@ import { runOrganogramSeatCvNoticeTests } from "./organogram-seat-cv-notice.test
 import { runEmployeeCvCarryFromRecruitmentTests } from "./employee-cv-carry-from-recruitment.test.ts";
 import { runEmployeeDirectoryCvFilterTests } from "./employee-directory-cv-filter.test.ts";
 import { runEmployeeCvBulkMatchTests } from "./employee-cv-bulk-match.test.ts";
+import { runEmployeeLineIsReadFromTheLinkTests } from "./employee-line-is-read-from-the-link.test.ts";
 import { runSeatHireCandidatePickerTests } from "./seat-hire-candidate-picker.test.ts";
 import { runOrganogramArabicSearchTests } from "./organogram-arabic-search.test.ts";
 import { runOrganogramTeamLabelTests } from "./organogram-team-label.test.ts";
@@ -6888,6 +6889,11 @@ await runTest(
 await runTest(
   "bulk CV filing (an HR id is decisive, one shared first name never pre-selects, and nothing pre-selected replaces a CV)",
   runEmployeeCvBulkMatchTests,
+);
+
+await runTest(
+  "an employee's line comes from the link (the label is dead, and the report-it lookup named three columns that do not exist)",
+  runEmployeeLineIsReadFromTheLinkTests,
 );
 
 await runTest(

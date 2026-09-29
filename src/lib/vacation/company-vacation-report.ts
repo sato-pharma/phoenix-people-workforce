@@ -41,6 +41,11 @@ import { unstable_cache } from "next/cache";
 
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
+import {
+  EMPLOYEE_LINE_SELECT,
+  resolveEmployeeLineName,
+  type EmployeeLineFields,
+} from "@/lib/employees/employee-org-labels";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { queryVisits } from "@/lib/crm/reads";
 import { loadActiveDeviceMappedHrIds } from "@/lib/attendance/device-user-mapping";
@@ -126,11 +131,10 @@ type VisitRow = {
   visit_type: number;
 };
 
-type EmployeeRow = {
+type EmployeeRow = EmployeeLineFields & {
   full_name: string | null;
   hr_id: string;
   job_title: string | null;
-  line_name: string | null;
   nickname: string | null;
 };
 
@@ -327,7 +331,11 @@ async function loadAnnualVacationVisitsSplit(startDate: string, endDate: string)
 }
 
 async function loadEmployeesRaw(): Promise<EmployeeRow[]> {
-  const { data, error } = await getSupabaseAdmin().from("employees").select("hr_id,full_name,job_title,line_name,nickname");
+  // The line comes from the `line_id` LINK — `employees.line_name` is a denormalized copy nothing
+  // writes (1 of 198 rows carry it). See employee-line.ts.
+  const { data, error } = await getSupabaseAdmin()
+    .from("employees")
+    .select(`hr_id,full_name,job_title,nickname,${EMPLOYEE_LINE_SELECT}`);
   if (error) throw new Error(`Failed to load employees: ${error.message}`);
   return (data ?? []) as EmployeeRow[];
 }
@@ -482,7 +490,10 @@ export function buildHrRows(rawRows: HrVacationRequestRow[], employeeByKey: Map<
       hasBalance: balanceBeforeDays != null ? balanceBeforeDays > 0 : null,
       hrId: row.employee_hr_id ?? "",
       jobTitle: employee?.job_title ?? null,
-      lineName: row.line_name ?? employee?.line_name ?? null,
+      // The REQUEST's own line first — that one is real data written when the request was made,
+      // and it is the line the person was on at the time. The roster is the fallback, resolved
+      // from the link rather than from the dead label it used to read.
+      lineName: row.line_name ?? resolveEmployeeLineName(employee),
       requestId: row.id,
       source,
       startDate: row.start_date,
@@ -589,7 +600,7 @@ async function buildCrmSignalRows(input: {
         hasBalance: null,
         hrId: employee?.hr_id ?? key,
         jobTitle: employee?.job_title ?? null,
-        lineName: employee?.line_name ?? null,
+        lineName: resolveEmployeeLineName(employee),
         requestId: null,
         source: classified.source,
         startDate: dateIso,
