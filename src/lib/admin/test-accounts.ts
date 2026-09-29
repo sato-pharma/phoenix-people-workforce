@@ -24,6 +24,11 @@ import { createTemporaryAuthPassword, sendPasswordSetupLink } from "@/lib/auth/p
 import { isEmploymentAccessRevoked } from "@/lib/auth/session-lifecycle";
 import { canBeMirrored, normalizeTestAccountLoginId, TEST_ACCOUNT_LOGIN_PREFIX } from "@/lib/auth/test-persona";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
+import {
+  EMPLOYEE_AREA_SELECT,
+  resolveEmployeeAreaName,
+  type EmployeeOrgFields,
+} from "@/lib/employees/employee-org-labels";
 import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -74,12 +79,11 @@ type AuthRow = {
   product_scope_override: string[] | null;
 };
 
-type EmployeeRow = {
+type EmployeeRow = EmployeeOrgFields & {
   hr_id: string;
   full_name: string | null;
   nickname: string | null;
   job_title: string | null;
-  area_name: string | null;
   region_name: string | null;
   employment_status: string | null;
   last_working_date: string | null;
@@ -102,7 +106,12 @@ function copiedFromMirror(account: AuthRow) {
     sales_scope_override: account.sales_scope_override,
   };
 }
-const EMPLOYEE_COLUMNS = "hr_id, full_name, nickname, job_title, area_name, region_name, employment_status, last_working_date";
+// The area comes from the `area_id` LINK. This select asked for `employees.area_name` until
+// 2026-09-29, when that column was dropped — a select naming it is a 42703 that fails the whole
+// read, so this screen would have gone blank rather than showing a missing area. `region_name` is a
+// different column on `employees` and stays.
+const EMPLOYEE_COLUMNS =
+  `hr_id, full_name, nickname, job_title, region_name, employment_status, last_working_date, ${EMPLOYEE_AREA_SELECT}`;
 
 /** The Super Admin, holding user administration — the same pair the Users screen asks for. */
 export async function assertTestAccountAdmin(access: AccessContext): Promise<void> {
@@ -120,7 +129,7 @@ function personOf(employee: EmployeeRow, account: Pick<AuthRow, "role" | "line">
     name: resolveEmployeeDisplayName(employee.full_name?.trim() || employee.hr_id, employee.nickname, employee.hr_id),
     jobTitle: employee.job_title,
     role: account.role,
-    area: employee.area_name,
+    area: resolveEmployeeAreaName(employee),
     region: employee.region_name,
     line: account.line,
   };

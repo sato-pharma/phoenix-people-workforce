@@ -81,6 +81,7 @@
  * marketing branch appears or disappears as one piece.
  */
 
+import { resolveEmployeeDepartmentName } from "@/lib/employees/employee-org-labels";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { offerSeatKeyForVacancy, type SeatOfferOut } from "@/lib/offers/seat-offer-label";
 import { hasWhatsAppNumber } from "@/lib/reports/organogram-whatsapp";
@@ -103,7 +104,8 @@ export const HEAD_OFFICE_LINE_NAME = "Head Office";
 export type HeadOfficeEmployeeRow = {
   contract_renewal_date?: string | null;
   contract_type?: string | null;
-  department_name?: string | null;
+  /** The department LINK. `employees.department_name` beside it was 0 of 198 and was dropped. */
+  departments?: { name: string | null } | { name: string | null }[] | null;
   employment_status?: string | null;
   full_name?: string | null;
   hire_date?: string | null;
@@ -356,7 +358,7 @@ export function buildHeadOfficeOrganogramRows(
     rows.push({
       contractRenewalDate: employee.contract_renewal_date ?? null,
       contractType: employee.contract_type ?? null,
-      employeeDepartmentName: employee.department_name ?? null,
+      employeeDepartmentName: resolveEmployeeDepartmentName(employee),
       employeeJobTitle: title,
       employeeTeamName: teamNameFor(employee),
       employmentStatus: employee.employment_status ?? null,

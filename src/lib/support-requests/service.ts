@@ -63,15 +63,26 @@ async function resolveHrSupportRecipients(): Promise<HrRecipient[]> {
     .eq("is_active", true);
   if (authError) throw authError;
 
+  // 🔴 THIS SELECT NAMED `position_title`, WHICH IS NOT A COLUMN ON `employees`, SO THE READ THREW
+  // EVERY TIME IT RAN. PostgREST answers a missing column with a 42703 that fails the WHOLE read,
+  // and this one re-throws: HR Advisory and HR Operations could never have been resolved, and every
+  // alert would have fallen through to the Super-Admin fallback on an auth email rather than the
+  // work email this function exists to find.
+  //
+  // NOTHING WAS LOST, AND THAT IS THE POINT — `employee_support_requests` holds 0 rows on
+  // production (checked 2026-09-29), so the path had simply never run in anger. A defect that costs
+  // nothing until the first real user is exactly the kind a green build never finds; this one was
+  // found by probing every employees select in the tree against production, not by reading code.
+  // Nothing here ever read the field: the recipient is built from `work_email` alone.
   const { data: employees, error: employeesError } = await supabase
     .from("employees")
-    .select("hr_id,job_title,position_title,work_email");
+    .select("hr_id,job_title,work_email");
   if (employeesError) throw employeesError;
 
   const employeeByHrId = new Map(
-    ((employees ?? []) as Array<{ hr_id?: string | null; job_title?: string | null; position_title?: string | null; work_email?: string | null }>)
+    ((employees ?? []) as Array<{ hr_id?: string | null; job_title?: string | null; work_email?: string | null }>)
       .map((row) => [normalizeHrId(row.hr_id), row] as const)
-      .filter((entry): entry is [string, { hr_id?: string | null; job_title?: string | null; position_title?: string | null; work_email?: string | null }] => Boolean(entry[0])),
+      .filter((entry): entry is [string, { hr_id?: string | null; job_title?: string | null; work_email?: string | null }] => Boolean(entry[0])),
   );
 
   const recipients: HrRecipient[] = ((authRows ?? []) as Array<{ auth_email?: string | null; login_id?: string | null; hr_id?: string | null; role?: string | null }>)

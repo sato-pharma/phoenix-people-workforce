@@ -12,6 +12,14 @@
 // save AND again on every resolve (defense in depth: a row written by any other means still
 // cannot leak, because resolution re-checks the allowlist rather than trusting the row).
 
+import {
+  EMPLOYEE_AREA_SELECT,
+  EMPLOYEE_LINE_SELECT,
+  resolveEmployeeAreaName,
+  resolveEmployeeDepartmentName,
+  resolveEmployeeLineName,
+  type EmployeeOrgFields,
+} from "@/lib/employees/employee-org-labels";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { logError } from "@/lib/observability/log";
 
@@ -46,6 +54,24 @@ export const EMPLOYEE_VARIABLE_SOURCES: readonly EmployeeVariableSource[] = [
   { column: "contract_renewal_date", label: "Contract renewal date", sample: "2027-06-01" },
   { column: "probation_end_date", label: "Probation end date", sample: "2026-09-01" },
 ];
+
+/**
+ * 🔴 THREE OF THOSE NAMES ARE NO LONGER COLUMNS, AND A TOKEN BOUND TO ONE MUST STILL RESOLVE.
+ *
+ * `employees.line_name`, `department_name` and `area_name` were denormalized labels beside the real
+ * links, and all three were dropped on 2026-09-29 (1, 0 and 145 of 198 rows populated, against 181,
+ * 180 and 174 links). The binding NAMES stay — they are what the admin picks in the UI and what an
+ * existing row would store — but they resolve through the link now, which is also the only reason
+ * they mean anything: a `line_name` token would have rendered blank for 197 of 198 people.
+ *
+ * Without this, the resolve would ask PostgREST for a column that does not exist, and PostgREST
+ * fails the WHOLE read: every custom token in that send renders empty, not just the bound one.
+ */
+const LINKED_SOURCES: Record<string, { fragment: string; read: (row: EmployeeOrgFields) => string | null }> = {
+  area_name: { fragment: EMPLOYEE_AREA_SELECT, read: resolveEmployeeAreaName },
+  department_name: { fragment: "departments(name)", read: resolveEmployeeDepartmentName },
+  line_name: { fragment: EMPLOYEE_LINE_SELECT, read: resolveEmployeeLineName },
+};
 
 const allowedSourceColumns = new Set(EMPLOYEE_VARIABLE_SOURCES.map((source) => source.column));
 
@@ -211,7 +237,11 @@ export async function resolveEmailCustomVariables(employeeHrId: string | null | 
   if (!hrId || usable.length === 0) return {};
 
   try {
-    const columns = Array.from(new Set(usable.map((variable) => variable.sourceColumn)));
+    // A bound name that is one of the three dropped labels is asked for as its LINK instead. Asking
+    // for the label itself would be a 42703, and PostgREST fails the whole read on one bad name.
+    const columns = Array.from(
+      new Set(usable.map((variable) => LINKED_SOURCES[variable.sourceColumn]?.fragment ?? variable.sourceColumn)),
+    );
     const { data, error } = await getSupabaseAdmin()
       .from("employees")
       .select(columns.join(","))
@@ -222,7 +252,8 @@ export async function resolveEmailCustomVariables(employeeHrId: string | null | 
 
     return Object.fromEntries(
       usable.map((variable) => {
-        const raw = employee[variable.sourceColumn];
+        const linked = LINKED_SOURCES[variable.sourceColumn];
+        const raw = linked ? linked.read(employee as EmployeeOrgFields) : employee[variable.sourceColumn];
         const value = raw === null || raw === undefined ? "" : String(raw);
         return [variable.token, value];
       }),
