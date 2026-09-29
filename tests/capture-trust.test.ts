@@ -54,6 +54,49 @@ function runArithmeticTests() {
     "half a coordinate pair is no coordinate pair",
   );
 
+  // ── WHY it is unmeasured, which is an explanation and never a finding ──────────
+  // Both answers mean the same thing for judgement: nothing is known. They differ only in what a
+  // reader should conclude about the HANDSET - and for an old capture, the answer is nothing at
+  // all, because the feature did not exist when it was taken.
+  // The capture that started all this was taken at 14:10Z, BEFORE #4781 merged at 16:34Z - so it
+  // correctly reads as predating the fix, not as a camera that failed. Worth pinning: it is the
+  // row most likely to be looked at, and mislabelling it would be the first thing anyone noticed.
+  assert.equal(
+    assessCaptureTrust({ locationFix: LOCATION_FIX, photoFix: null }).unmeasuredReason,
+    "predates_shutter_fix",
+    "Sama Shalaby’s 14:10Z capture predates the 16:34Z merge - it is not a shutter failure",
+  );
+  assert.equal(
+    assessCaptureTrust({
+      locationFix: { capturedAt: "2026-09-30T08:00:00Z", latitude: 30.05, longitude: 31.24 },
+      photoFix: null,
+    }).unmeasuredReason,
+    "no_position_recorded",
+    "a capture AFTER the change with no photo fix means that shutter read nothing",
+  );
+  assert.equal(
+    assessCaptureTrust({
+      locationFix: { capturedAt: "2026-07-02T09:00:00Z", latitude: 30.05, longitude: 31.24 },
+      photoFix: null,
+    }).unmeasuredReason,
+    "predates_shutter_fix",
+    "a July capture has no coordinates because the camera did not take them yet",
+  );
+  assert.equal(
+    assessCaptureTrust({ locationFix: { latitude: 30.05, longitude: 31.24 }, photoFix: null }).unmeasuredReason,
+    "predates_shutter_fix",
+    "an undated capture is treated as old - the other wording would imply a failure we cannot evidence",
+  );
+  // A MEASURED pair carries no reason at all, so no caller can render one beside a real distance.
+  assert.equal(
+    assessCaptureTrust({
+      locationFix: LOCATION_FIX,
+      photoFix: { latitude: 30.4954306, longitude: 31.4770646 },
+    }).unmeasuredReason,
+    null,
+    "a measured pair has no unmeasured reason",
+  );
+
   // ── Distance ─────────────────────────────────────────────────────────────────
   // The clinic and the pharmacy from that same submission stood ~18 m apart.
   const clinic = { latitude: 30.4952868, longitude: 31.4771601 };

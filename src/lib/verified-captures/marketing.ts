@@ -1,4 +1,5 @@
 import type { AccessContext } from "@/lib/auth/permissions";
+import { assessCaptureTrust } from "@/lib/evidence/capture-trust";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { loadMarketingEvidencePhotosByEntityIds } from "@/lib/marketing-requests/evidence-photo-storage";
 
@@ -48,6 +49,8 @@ type PharmacyRow = {
   captured_latitude: number | string | null;
   captured_longitude: number | string | null;
   captured_address: string | null;
+  /** When the PIN was taken. Needed to date the shutter gap on a shop, as on its customer. */
+  captured_at: string | null;
   extracted_area_name: string | null;
   extracted_governorate_name: string | null;
 };
@@ -106,7 +109,7 @@ export async function listVerifiedMarketingCaptures(
     const { data, error } = await supabase
       .from("marketing_pharmacies")
       .select(
-        "id, display_name, evidence_status, captured_latitude, captured_longitude, captured_address, extracted_area_name, extracted_governorate_name",
+        "id, display_name, evidence_status, captured_latitude, captured_longitude, captured_address, captured_at, extracted_area_name, extracted_governorate_name",
       )
       .in("id", allPharmacyIds.slice(index, index + 200));
     if (error) throw error;
@@ -179,6 +182,14 @@ export async function listVerifiedMarketingCaptures(
         id: row.id,
         displayName: row.display_name ?? "(pharmacy)",
         photoUrl: pharmacyPhotos.get(row.id)?.signedUrl ?? null,
+        photoTrust: assessCaptureTrust({
+          locationFix: {
+            capturedAt: row.captured_at,
+            latitude: toNumber(row.captured_latitude),
+            longitude: toNumber(row.captured_longitude),
+          },
+          photoFix: pharmacyPhotos.get(row.id) ?? null,
+        }),
         location: buildCaptureLocation({
           latitude: toNumber(row.captured_latitude),
           longitude: toNumber(row.captured_longitude),
@@ -204,6 +215,17 @@ export async function listVerifiedMarketingCaptures(
       governorate: customer.extracted_governorate_name ?? customer.region_name ?? null,
       capturedAt: customer.captured_at,
       photoUrl: customerPhotos.get(customer.id)?.signedUrl ?? null,
+      // The photo against its own venue fix. `unmeasured` is the common answer and the honest one:
+      // every capture taken before 2026-09-29 has no photo coordinates at all, and so does any
+      // capture whose shutter could not read a position. It must never be rendered as agreement.
+      photoTrust: assessCaptureTrust({
+        locationFix: {
+          capturedAt: customer.captured_at,
+          latitude: toNumber(customer.captured_latitude),
+          longitude: toNumber(customer.captured_longitude),
+        },
+        photoFix: customerPhotos.get(customer.id) ?? null,
+      }),
       location: buildCaptureLocation({
         latitude: toNumber(customer.captured_latitude),
         longitude: toNumber(customer.captured_longitude),

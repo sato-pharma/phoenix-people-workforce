@@ -1,4 +1,5 @@
 import type { AccessContext } from "@/lib/auth/permissions";
+import { assessCaptureTrust, type CaptureFix } from "@/lib/evidence/capture-trust";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
   listDirectOrderPharmacyValidations,
@@ -83,12 +84,20 @@ export async function listVerifiedDirectOrderCaptures(
       location: buildCaptureLocation({
         latitude: row.capturedLatitude,
         longitude: row.capturedLongitude,
-        capturedAddress: capturedByValidation.get(row.id) ?? null,
+        capturedAddress: capturedByValidation.get(row.id)?.capturedAddress ?? null,
         rawFallback: geography?.pharmacyAddress ?? row.claimedAddress ?? null,
         brick: geography?.brick ?? null,
         area: geography?.area ?? null,
       }),
       distributorCodes: distributorCodes.get(row.pharmacyId) ?? [],
+      photoTrust: assessCaptureTrust({
+        locationFix: {
+          capturedAt: capturedByValidation.get(row.id)?.locationCapturedAt ?? null,
+          latitude: row.capturedLatitude,
+          longitude: row.capturedLongitude,
+        },
+        photoFix: capturedByValidation.get(row.id)?.photoFix ?? null,
+      }),
     } satisfies VerifiedDirectOrderCaptureRow;
   });
 }
@@ -99,19 +108,54 @@ const CHUNK = 200;
 async function loadCapturedAddresses(
   validationIds: readonly string[],
   supabase: ReturnType<typeof getSupabaseAdmin>,
-): Promise<Map<string, string>> {
-  const byId = new Map<string, string>();
+): Promise<Map<string, ValidationCaptureDetail>> {
+  const byId = new Map<string, ValidationCaptureDetail>();
   for (let index = 0; index < validationIds.length; index += CHUNK) {
     const { data, error } = await supabase
       .from("direct_order_pharmacy_validations")
-      .select("id, captured_address")
+      // photo_* are the PHOTO’s own fix, added 2026-09-29 and distinct from captured_* beside
+      // them, which is the pin. NULL on every row written before that date - not measured, never
+      // “same place”. See src/lib/evidence/capture-trust.ts.
+      .select("id, captured_address, captured_at, photo_captured_at, photo_latitude, photo_longitude, photo_accuracy_meters")
       .in("id", validationIds.slice(index, index + CHUNK));
     if (error) throw error;
-    for (const row of (data ?? []) as Array<{ id: string; captured_address: string | null }>) {
-      if (row.captured_address) byId.set(String(row.id), row.captured_address);
+    type Row = {
+      captured_address: string | null;
+      captured_at: string | null;
+      id: string;
+      photo_accuracy_meters: number | string | null;
+      photo_captured_at: string | null;
+      photo_latitude: number | string | null;
+      photo_longitude: number | string | null;
+    };
+    for (const row of (data ?? []) as Row[]) {
+      byId.set(String(row.id), {
+        capturedAddress: row.captured_address,
+        locationCapturedAt: row.captured_at,
+        photoFix: {
+          accuracyMeters: coordinate(row.photo_accuracy_meters),
+          capturedAt: row.photo_captured_at,
+          latitude: coordinate(row.photo_latitude),
+          longitude: coordinate(row.photo_longitude),
+        },
+      });
     }
   }
   return byId;
+}
+
+/** What one validation row contributes: its pin’s address and time, and the PHOTO’s own fix. */
+type ValidationCaptureDetail = {
+  capturedAddress: string | null;
+  locationCapturedAt: string | null;
+  photoFix: CaptureFix;
+};
+
+/** `double precision` arrives as a number or a string depending on the driver path. */
+function coordinate(value: number | string | null | undefined): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 type PharmacyGeography = { pharmacyAddress: string | null; brick: string | null; area: string | null };

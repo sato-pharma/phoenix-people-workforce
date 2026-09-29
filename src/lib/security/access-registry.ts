@@ -990,7 +990,7 @@ export const accessRegistry = [
   sessionApi({ methods: allMethods, pattern: "/api/marketing-requests/**", permission: { resource: "expenses", action: "read" }, guard: "domain-helper" }),
   // Verified Captures gallery — the Super-Admin oversight of field-captured customers (direct orders
   // and validated marketing requests), read-only. The role gate lives in the domain helper
-  // (assertVerifiedCapturesAccess — Super Admin / system scope only), so permission is null and the
+  // (assertVerifiedCapturesAccess — Super Admin, SFE Manager or system scope), so permission is null and the
   // guard is the domain helper, exactly as customer-pharmacy-mapping below.
   sessionApi({ audit: { classification: "access-read", required: false }, methods: ["GET"], pattern: "/api/verified-captures/marketing", permission: null, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "access-read", required: false }, methods: ["GET"], pattern: "/api/verified-captures/direct-orders", permission: null, guard: "domain-helper" }),

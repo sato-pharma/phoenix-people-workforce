@@ -19,7 +19,8 @@ import {
 import { canOpenVerifiedCaptures } from "../src/lib/verified-captures/access.ts";
 import type { PhoenixRole } from "../src/lib/auth/permissions.ts";
 
-// The Verified Captures gallery is Super Admin only (owner, 2026-09-24), and the rep/DM/search
+// The Verified Captures gallery is the Super Admin AND the SFE Manager (owner, 2026-09-24, then
+// widened 2026-09-29 when the photo-vs-location readout landed on it), and the rep/DM/search
 // filter is the interaction the owner asked for by name ("filter by rep or by district manager").
 // These are the two pieces worth pinning: the gate must not widen, and the filter must select the
 // right rows. Both are pure, so they test without a database or a DOM.
@@ -68,7 +69,18 @@ export function runVerifiedCapturesTests() {
     true,
     "the system scope (Super Admin's own) opens it",
   );
-  const deniedRoles: PhoenixRole[] = ["SFE Manager", "CEO", "District Manager", "Medical Rep", "Employee"];
+  // WIDENED 2026-09-29, in the owner’s own words (“add the SFE Manager to verified captures”).
+  // Golden rule #1 names the Super Admin and the SFE Manager as the two who may read an integrity
+  // signal, and the photo-vs-location readout now lives on this page - so the gallery had been
+  // sitting one notch tighter than its own content.
+  assert.equal(
+    canOpenVerifiedCaptures({ role: "SFE Manager", scope: "self" }),
+    true,
+    "the SFE Manager opens the gallery",
+  );
+  // The CEO stays OUT deliberately: he is not a reader of integrity signals under golden rule #1,
+  // and nobody has asked for him. Each seat here is the owner’s own decision, one at a time.
+  const deniedRoles: PhoenixRole[] = ["CEO", "District Manager", "Medical Rep", "Employee"];
   for (const role of deniedRoles) {
     assert.equal(
       canOpenVerifiedCaptures({ role, scope: "self" }),
