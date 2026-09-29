@@ -704,6 +704,7 @@ import { runSosEvenSplitEzTests } from "./sos-even-split-ez.test.ts";
 import { runClosingMatrixFoldTests } from "./closing-matrix-fold.test.ts";
 import { runClosingSummaryFitsTests } from "./closing-summary-fits.test.ts";
 import { runMasterWorkbookKeysetTests } from "./master-workbook-keyset.test.ts";
+import { runFactoryPriceResolvedOnceTests } from "./factory-price-resolved-once.test.ts";
 import { runSalesVsTargetCacheTests } from "./sales-vs-target-cache.test.ts";
 import { runStagingHrSyncTests } from "./staging-hr-sync.test.ts";
 import { runBackupSchemaRetentionTests } from "./backup-schema-retention.test.ts";
@@ -3399,6 +3400,10 @@ await runTest(
 await runTest(
   "backup schema retention (a live foreign key, view or function beats age; the owner's pre-images never expire; an undated schema is never auto-proposed; the script cannot send a DROP)",
   runBackupSchemaRetentionTests,
+);
+await runTest(
+  "factory price resolved once per product (the per-row call is the 2026-09-28 sales regression; the dated override, its period bound and the master-price fallback all survive)",
+  runFactoryPriceResolvedOnceTests,
 );
 await runTest("monthly sales run", runMonthlySalesRunTests);
 await runTest("sos resolveBrick precedence (area must not beat customer brick)", runSosResolveBrickPrecedenceTests);
