@@ -605,6 +605,12 @@ export const accessRegistry = [
   // screen. Not an export in the registry's sense (no list, no bulk, nothing filtered), which is
   // also why the export-audit guard's `template|export|download` match deliberately misses it.
   sessionApi({ methods: readOnly, pattern: "/api/offers/:id/pdf", permission: { resource: "offers", action: "read" } }),
+  // What Add Employee can already know from an ACCEPTED offer — the candidate's name, the job
+  // title, the agreed package, the first working day and the open seat the letter was written
+  // against. `read`, and read is the whole of it: it writes nothing, creates nobody, and hands back
+  // only what the Offers screen the caller is standing on already shows them. The employee record
+  // is still written by /api/employees under its own `employees:update` gate.
+  sessionApi({ methods: readOnly, pattern: "/api/offers/:id/hire-draft", permission: { resource: "offers", action: "read" } }),
   // POST, but a pure function: it renders unsaved blocks to HTML and writes nothing. `read` is the
   // honest permission — a preview shows exactly what a GET of the saved letter would.
   sessionApi({ methods: ["POST"], pattern: "/api/offers/preview", permission: { resource: "offers", action: "read" }, csrfRequired: true }),

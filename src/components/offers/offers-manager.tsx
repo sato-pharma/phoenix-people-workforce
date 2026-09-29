@@ -24,7 +24,7 @@ import { OfferComposer } from "@/components/offers/offer-composer";
 import { OfferJobTitleCatalogue } from "@/components/offers/offer-job-titles";
 import { OfferTemplateDesigner } from "@/components/offers/offer-template-designer";
 import { cn } from "@/lib/utils";
-import type { OfferJobTitle, OfferRecord, OfferTemplate } from "@/lib/offers/types";
+import type { OfferJobTitle, OfferRecord, OfferTemplate, OfferVacancyOption } from "@/lib/offers/types";
 import type { OfferSenderInfo } from "@/components/offers/offer-ui";
 
 type Tab = "compose" | "design" | "titles";
@@ -43,6 +43,7 @@ export function OffersManager({
   offers: initialOffers,
   sender,
   templates: initialTemplates,
+  vacancies,
 }: {
   /**
    * `offers:delete` — a narrower grant than `canManage` (`offers:create`). HR Advisory,
@@ -56,6 +57,12 @@ export function OffersManager({
   offers: OfferRecord[];
   sender: OfferSenderInfo;
   templates: OfferTemplate[];
+  /**
+   * The open seats an offer can be written against. Loaded once with the workspace and passed
+   * straight through — this shell owns no state of its own about them, because nothing on this
+   * screen creates or closes a seat. A hire does that, on the employees screen.
+   */
+  vacancies: OfferVacancyOption[];
 }) {
   const [tab, setTab] = useState<Tab>("compose");
   const [offers, setOffers] = useState(initialOffers);
@@ -160,6 +167,7 @@ export function OffersManager({
             onReport={report}
             sender={sender}
             templates={templates}
+            vacancies={vacancies}
           />
         ) : null}
         {tab === "design" ? (

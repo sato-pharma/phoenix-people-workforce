@@ -12,7 +12,20 @@
 // second, client-side implementation of the layout would drift, and the day it did the preview
 // would start lying about a document somebody signs.
 
-import { Eye, FileDown, Loader2, Mail, Plus, RefreshCw, Save, Send, TriangleAlert } from "lucide-react";
+import {
+  Eye,
+  FileDown,
+  Loader2,
+  Mail,
+  Plus,
+  RefreshCw,
+  Save,
+  Send,
+  TriangleAlert,
+  Undo2,
+  UserPlus,
+} from "lucide-react";
+import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AdminTableShell } from "@/components/admin/admin-design-system";
@@ -43,7 +56,15 @@ import {
   offerTemplateIdForTitle,
 } from "@/lib/offers/template-choice";
 import { cn } from "@/lib/utils";
-import type { OfferFields, OfferJobTitle, OfferRecord, OfferStatus, OfferTemplate } from "@/lib/offers/types";
+import { formatOfferVacancyLabel } from "@/lib/offers/vacancy-label";
+import type {
+  OfferFields,
+  OfferJobTitle,
+  OfferRecord,
+  OfferStatus,
+  OfferTemplate,
+  OfferVacancyOption,
+} from "@/lib/offers/types";
 
 /**
  * The three date fields hold ISO `yyyy-mm-dd` here, not the English form the letter carries.
@@ -65,6 +86,15 @@ type Draft = Omit<OfferFields, "costOfLiving" | "totalMonthly"> & {
   costOfLiving: string;
   templateId: string;
   totalMonthly: string;
+  /**
+   * The open seat this letter is written against, as a `<select>` value — `""` for none.
+   *
+   * A string, where the id is a number, for the same reason the dates are ISO here: a select's
+   * value is text, and the one conversion back happens where the draft leaves this component. `""`
+   * is a real answer and stays one — an offer may be written before anybody has settled which
+   * chair it fills, and the Add Employee form's own picker is where that is then decided.
+   */
+  vacancyId: string;
 };
 
 /** How long an offer stays open by default. A week is what the letters have used. */
@@ -91,6 +121,7 @@ function blankDraft(templates: OfferTemplate[]): Draft {
     territory: "",
     title: "",
     totalMonthly: "",
+    vacancyId: "",
     validUntil: addDays(today, DEFAULT_OFFER_VALIDITY_DAYS),
   };
 }
@@ -122,6 +153,7 @@ function draftFromOffer(offer: OfferRecord, templates: OfferTemplate[]): Draft {
     territory: offer.territory,
     title: offer.title,
     totalMonthly: offer.totalMonthly > 0 ? String(offer.totalMonthly) : "",
+    vacancyId: offer.vacancyId === null ? "" : String(offer.vacancyId),
     validUntil: parseLetterDate(offer.validUntil) ?? "",
   };
 }
@@ -167,6 +199,28 @@ function OfferCopiedTo({ offer }: { offer: OfferRecord }) {
   );
 }
 
+/**
+ * The open seat an offer was written against, under its job title.
+ *
+ * ONE rendering for the desktop row and the phone card, like `OfferCopiedTo` above, so the two can
+ * never disagree about which chair a letter is for.
+ *
+ * Three states, and the third is the one worth having on screen: a seat that was chosen and is no
+ * longer open was filled by somebody else while this letter was out. That is not an error and
+ * nothing here can fix it — it is simply the fact that Add Employee will ask for the seat again,
+ * said before somebody clicks and wonders why the form came up empty.
+ */
+function OfferSeat({ offer, vacancies }: { offer: OfferRecord; vacancies: OfferVacancyOption[] }) {
+  if (offer.vacancyId === null) return null;
+  const vacancy = vacancies.find((option) => option.vacancyId === offer.vacancyId);
+  return (
+    <span className="mt-0.5 block text-xs text-slate-500 [overflow-wrap:anywhere]">
+      <span className="font-bold text-phx-ink-soft">Seat</span>{" "}
+      {vacancy ? formatOfferVacancyLabel(vacancy) : "no longer open — choose it again on Add Employee"}
+    </span>
+  );
+}
+
 export function OfferComposer({
   canManage,
   jobTitles,
@@ -175,6 +229,7 @@ export function OfferComposer({
   onReport,
   sender,
   templates,
+  vacancies,
 }: {
   canManage: boolean;
   jobTitles: OfferJobTitle[];
@@ -183,7 +238,18 @@ export function OfferComposer({
   onReport: (message: string | null, kind: "error" | "success") => void;
   sender: OfferSenderInfo;
   templates: OfferTemplate[];
+  /** The open seats a letter can be written against. Empty is a state, not a failure. */
+  vacancies: OfferVacancyOption[];
 }) {
+  /**
+   * The way out to Add Employee, derived from where this screen already is rather than passed down
+   * as another prop — the same derivation `recruitment-workspace.tsx` makes for its own hire link,
+   * and for the same reason: this module is rendered by an admin page and by a portal twin, and the
+   * two shells serve the employees screen at different paths.
+   */
+  const pathname = usePathname();
+  const addEmployeeHref = pathname?.startsWith("/employee-portals") ? "/employee-portals/employees" : "/employees";
+
   const [draft, setDraft] = useState<Draft>(() => blankDraft(templates));
   const [savedId, setSavedId] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -261,6 +327,40 @@ export function OfferComposer({
     () => planOfferCopies({ bcc: draft.bcc, candidateEmail: draft.candidateEmail, cc: draft.cc }),
     [draft.bcc, draft.candidateEmail, draft.cc],
   );
+
+  /**
+   * The seats worth offering, narrowed by the job title that has already been chosen.
+   *
+   * Without this the list is every open seat — 44 on production, 42 of them Medical Representative
+   * — and picking the right one means reading past forty rows for the wrong job. The match is on
+   * the seat's position title OR its own `job_title`, because the two disagree on real rows.
+   *
+   * TWO things are deliberately never filtered out:
+   *
+   *   * the seat already CHOSEN on this offer, even when it no longer matches the title. Correcting
+   *     a typo in the title must not silently empty a `<select>` whose value is still stored — the
+   *     row would vanish, the box would read blank, and the next save would clear a real decision.
+   *   * every seat, when the title matches none of them. A title that is new, or spelled
+   *     differently from the organogram's, must not leave somebody with an empty picker and no way
+   *     to reach the seat they can see is open.
+   */
+  const seatOptions = useMemo(() => {
+    const wanted = draft.title.trim().toLowerCase();
+    if (!wanted) return vacancies;
+
+    const matching = vacancies.filter((vacancy) => {
+      const position = (vacancy.positionTitle ?? "").trim().toLowerCase();
+      const jobTitle = (vacancy.jobTitle ?? "").trim().toLowerCase();
+      return position === wanted || jobTitle === wanted;
+    });
+    // Nothing matched: show everything rather than nothing, so an unfamiliar title is never a dead
+    // end. Narrowing to a list of one — the chosen seat — would be worse than not narrowing at all.
+    if (matching.length === 0) return vacancies;
+
+    const chosen = vacancies.find((vacancy) => String(vacancy.vacancyId) === draft.vacancyId);
+    if (chosen && !matching.includes(chosen)) return [chosen, ...matching];
+    return matching;
+  }, [draft.title, draft.vacancyId, vacancies]);
 
   const template = templates.find((t) => t.id === draft.templateId) ?? templates[0] ?? null;
 
@@ -363,6 +463,33 @@ export function OfferComposer({
     }));
   }
 
+  /**
+   * Choosing the open seat this letter is written against.
+   *
+   * It fills TERRITORY from the seat's own area, in the same spirit as `chooseTitle` above: a
+   * starting point, never a lock, and the box stays editable afterwards. That is worth having on
+   * its own — measured across all 28 offers on production, `territory` was typed by hand as "Qena"
+   * where the organogram holds "Qena 1" and "Qena 2", so the letter and the seat disagreed about
+   * the job on the day it was signed.
+   *
+   * It does NOT touch "Reports to", and that is deliberate rather than an omission. The letter's
+   * reporting line is a ROLE — every production offer reads "District Sales Manager" — while the
+   * seat carries a PERSON's name. Substituting one for the other would rewrite what the letter
+   * promises about the job, and the person in that chair can change before the first working day.
+   *
+   * Clearing the seat leaves territory exactly as it stands. Un-choosing a seat is not a statement
+   * that the territory was wrong, and blanking a field somebody typed is never a safe read of a
+   * click meant to undo something else.
+   */
+  function chooseVacancy(value: string) {
+    const vacancy = vacancies.find((option) => String(option.vacancyId) === value);
+    setDraft((current) => ({
+      ...current,
+      territory: vacancy?.areaName?.trim() || current.territory,
+      vacancyId: value,
+    }));
+  }
+
   async function call(url: string, method: string, body?: unknown) {
     const response = await fetch(url, {
       body: body === undefined ? undefined : JSON.stringify(body),
@@ -399,6 +526,58 @@ export function OfferComposer({
       onReport(`${offer.candidateName} ${status} offer ${offer.reference}.`, "success");
     } catch (error) {
       onReport(error instanceof Error ? error.message : "Could not record that answer.", "error");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  /**
+   * Take a sent offer back (owner, 2026-09-29).
+   *
+   * ── Why this had to exist ──
+   * "withdrawn" has been a valid status since the module shipped, the PATCH route has always
+   * accepted it, and NOTHING has ever sent it — the same hole Accepted and Declined sat in until
+   * the day before. So withdrawing an offer meant writing the row on production by hand, which is
+   * exactly how Abdallah Saad's SP-HR-MR-2026-025 was withdrawn on 2026-09-29, and how the five
+   * withdrawn offers before it got there. A status only a database write can reach is not a state
+   * the business owns.
+   *
+   * ── It is the COMPANY's act, not the candidate's ──
+   * Which is why it is separate from `recordAnswer` rather than a third value passed to it.
+   * Accepted and Declined record what somebody else said; this records what Phoenix decided. The
+   * wording, the confirm and the button's own colour all follow from that difference.
+   *
+   * ── Confirmed first ──
+   * A withdrawn offer cannot be resent (`offerResendRefusal`), cannot be answered — the Accepted
+   * and Declined buttons are gone from the row the moment it lands — and cannot be returned to
+   * draft, which the route refuses outright. The only way forward from here is a new letter under
+   * a new reference. That is a one-way door and it asks before going through it.
+   *
+   * Only a SENT offer, like the two beside it. A draft was never sent, so there is nothing to take
+   * back; an accepted or declined one has been answered, and reaching back past a recorded fact is
+   * the mis-click this module has refused since Accepted shipped.
+   */
+  async function withdrawOffer(offer: OfferRecord) {
+    if (
+      !window.confirm(
+        `Withdraw offer ${offer.reference} to ${offer.candidateName}?\n\n` +
+          "The offer is taken back. It can no longer be accepted, declined or resent, and it cannot " +
+          "be returned to a draft — reaching this candidate again means a new letter under a new reference.",
+      )
+    ) {
+      return;
+    }
+    setBusy(offer.id);
+    try {
+      const payload = (await call(`/api/offers/${offer.id}`, "PATCH", { status: "withdrawn" })) as {
+        offer?: OfferRecord;
+      };
+      if (payload.offer) {
+        onOffers([payload.offer, ...offers.filter((existing) => existing.id !== payload.offer!.id)]);
+      }
+      onReport(`Offer ${offer.reference} to ${offer.candidateName} was withdrawn.`, "success");
+    } catch (error) {
+      onReport(error instanceof Error ? error.message : "Could not withdraw this offer.", "error");
     } finally {
       setBusy(null);
     }
@@ -460,7 +639,13 @@ export function OfferComposer({
 
     setBusy("save");
     try {
-      const body = { ...fields, templateId: draft.templateId || null };
+      // `vacancyId` rides beside `fields` rather than inside it, exactly like `templateId`: those
+      // fields feed the letter's tokens, and neither a design nor a seat id prints on a letter.
+      const body = {
+        ...fields,
+        templateId: draft.templateId || null,
+        vacancyId: draft.vacancyId ? Number(draft.vacancyId) : null,
+      };
       const payload = savedId
         ? await call(`/api/offers/${savedId}`, "PATCH", body)
         : await call("/api/offers", "POST", body);
@@ -765,6 +950,36 @@ export function OfferComposer({
             </p>
           </div>
 
+          {/* The open seat this letter is written against. Optional, and last in this group on
+              purpose: it FILLS the territory above it, so it reads top-down as "the job, then which
+              chair", and choosing it after the title is what lets the list be filtered by the
+              title. A native <select> rather than a combobox — 44 rows is a list, not a search —
+              and the option text wraps in the browser's own panel, so no label is ever cut off. */}
+          <div>
+            <label className={offerLabelClassName} htmlFor="offer-vacancy">Vacant seat</label>
+            <select
+              className={offerInputClassName}
+              disabled={!canManage}
+              id="offer-vacancy"
+              onChange={(event) => chooseVacancy(event.target.value)}
+              value={draft.vacancyId}
+            >
+              <option value="">Not decided yet</option>
+              {seatOptions.map((vacancy) => (
+                <option key={vacancy.vacancyId} value={String(vacancy.vacancyId)}>
+                  {formatOfferVacancyLabel(vacancy)}
+                </option>
+              ))}
+            </select>
+            <p className={offerHintClassName}>
+              {vacancies.length === 0
+                ? "No open seats are on file. The letter can still be written; the seat is then chosen on Add Employee."
+                : draft.vacancyId
+                  ? "Carried into Add Employee when this offer is accepted. The seat is closed by the hire, not by this offer."
+                  : "Optional. Choosing it now means the accepted offer opens Add Employee with the seat already filled in."}
+            </p>
+          </div>
+
           {text("territory", "Territory", "Delta 3")}
           {text("reportsTo", "Reports to", "National Sales Manager")}
           {text("contractTerm", "Contract term", "One year, renewable")}
@@ -929,9 +1144,12 @@ export function OfferComposer({
         */}
         <div className="hidden md:block">
           <table className="w-full table-fixed text-sm">
-            {/* The actions column carries four controls on a sent offer since Resend joined
-                Accepted, Declined and PDF (2026-09-28), so it takes 6 points from Title and
-                Package, which wrap. The controls still wrap too — never a sideways scroll. */}
+            {/* The actions column carries FIVE controls on a sent offer since Withdraw joined
+                Accepted, Declined, Resend and PDF (2026-09-29), so it takes 6 points from Title and
+                Package, which wrap. The controls wrap too, onto as many lines as they need — that
+                is the fits-the-screen rule's answer, and the reason adding a fifth costs no width:
+                `flex-wrap` with no `min-width` anywhere under it can never produce a sideways
+                scroll, however many controls a row grows. */}
             <colgroup>
               <col className="w-[25%]" />
               <col className="w-[15%]" />
@@ -961,7 +1179,10 @@ export function OfferComposer({
                     <span className="block break-all text-xs text-slate-500">{offer.candidateEmail}</span>
                     <OfferCopiedTo offer={offer} />
                   </td>
-                  <td className="break-words px-5 py-3 text-slate-600">{offer.title}</td>
+                  <td className="break-words px-5 py-3 text-slate-600">
+                    {offer.title}
+                    <OfferSeat offer={offer} vacancies={vacancies} />
+                  </td>
                   <td className="break-words px-5 py-3 text-right tabular-nums text-slate-900">
                     EGP {offerMoney(offer.totalMonthly)}
                   </td>
@@ -1003,6 +1224,15 @@ export function OfferComposer({
                           >
                             <Send className="h-3.5 w-3.5" /> Resend offer
                           </Button>
+                          <Button
+                            disabled={busy !== null}
+                            onClick={() => void withdrawOffer(offer)}
+                            size="sm"
+                            type="button"
+                            variant="outline"
+                          >
+                            <Undo2 className="h-3.5 w-3.5" /> Withdraw
+                          </Button>
                         </>
                       ) : null}
                       {canManage && offer.status === "draft" ? (
@@ -1014,6 +1244,13 @@ export function OfferComposer({
                           variant="outline"
                         >
                           <Eye className="h-3.5 w-3.5" /> Open draft
+                        </Button>
+                      ) : null}
+                      {canManage && offer.status === "accepted" ? (
+                        <Button asChild size="sm" type="button">
+                          <a href={`${addEmployeeHref}?fromOffer=${encodeURIComponent(offer.id)}`}>
+                            <UserPlus className="h-3.5 w-3.5" /> Add employee
+                          </a>
                         </Button>
                       ) : null}
                       <Button asChild size="sm" type="button" variant="secondary">
@@ -1056,6 +1293,7 @@ export function OfferComposer({
                   <p className="mt-0.5 break-all text-xs text-slate-500">{offer.candidateEmail}</p>
                   <OfferCopiedTo offer={offer} />
                   <p className="mt-0.5 text-xs text-slate-500">{offer.title}</p>
+                  <OfferSeat offer={offer} vacancies={vacancies} />
                 </div>
                 {/* `shrink-0`: the status never gives up width to the column beside it. Measured on
                     production 2026-09-28 at 375px: once a card carried a long copy line, flex shrank
@@ -1109,6 +1347,15 @@ export function OfferComposer({
                     >
                       <Send className="h-3.5 w-3.5" /> Resend offer
                     </Button>
+                    <Button
+                      disabled={busy !== null}
+                      onClick={() => void withdrawOffer(offer)}
+                      size="sm"
+                      type="button"
+                      variant="outline"
+                    >
+                      <Undo2 className="h-3.5 w-3.5" /> Withdraw
+                    </Button>
                   </>
                 ) : null}
                 {canManage && offer.status === "draft" ? (
@@ -1120,6 +1367,13 @@ export function OfferComposer({
                     variant="outline"
                   >
                     <Eye className="h-3.5 w-3.5" /> Open draft
+                  </Button>
+                ) : null}
+                {canManage && offer.status === "accepted" ? (
+                  <Button asChild size="sm" type="button">
+                    <a href={`${addEmployeeHref}?fromOffer=${encodeURIComponent(offer.id)}`}>
+                      <UserPlus className="h-3.5 w-3.5" /> Add employee
+                    </a>
                   </Button>
                 ) : null}
                 <Button asChild size="sm" type="button" variant="secondary">

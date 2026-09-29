@@ -64,6 +64,7 @@ async function OffersContent({ canDelete, canManage }: { canDelete: boolean; can
       offers={workspace.offers}
       sender={workspace.sender}
       templates={workspace.templates}
+      vacancies={workspace.vacancies}
     />
   );
 }

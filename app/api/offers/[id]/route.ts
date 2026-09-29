@@ -5,6 +5,7 @@ import { resolveAccessContext } from "@/lib/auth/server";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { getOffer, setOfferStatus, updateOffer } from "@/lib/offers/service";
 import { offerJsonError } from "@/lib/offers/http";
+import { readOfferVacancyId } from "@/lib/offers/hire-draft";
 import type { OfferFields, OfferStatus } from "@/lib/offers/types";
 
 export const runtime = "nodejs";
@@ -59,7 +60,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
 
     // Only keys the caller actually sent are forwarded. Building a full object here would write a
     // blank over every field the edit form did not include.
-    const patch: Partial<OfferFields> & { templateId?: string | null } = {};
+    const patch: Partial<OfferFields> & { templateId?: string | null; vacancyId?: number | null } = {};
     const textKeys: (keyof OfferFields)[] = [
       "candidateEmail", "candidateName", "contractTerm", "dateOfIssue", "reference",
       "reportsTo", "salutationName", "startDate", "territory", "title", "validUntil",
@@ -72,6 +73,9 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     if (body.templateId !== undefined) {
       patch.templateId = typeof body.templateId === "string" && body.templateId ? body.templateId : null;
     }
+    // Sent only when the seat field was part of the edit. An explicit null is how a seat is
+    // un-chosen, which is why the presence of the key and its value have to be read separately.
+    if (body.vacancyId !== undefined) patch.vacancyId = readOfferVacancyId(body.vacancyId);
 
     const current = await getOffer(id);
     const total = patch.totalMonthly ?? current.totalMonthly;

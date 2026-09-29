@@ -561,6 +561,9 @@ type OfferRow = {
   title: string;
   total_monthly: number | string | null;
   valid_until: string | null;
+  // Optional for the same reason as the copy lists above: a database without 20260929161030
+  // applied returns no such key, and that must read as "no seat chosen" rather than throw.
+  vacancy_id?: number | string | null;
 };
 
 function toOffer(row: OfferRow): OfferRecord {
@@ -599,8 +602,18 @@ function toOffer(row: OfferRow): OfferRecord {
     territory: row.territory ?? "",
     title: row.title,
     totalMonthly: Number(row.total_monthly) || 0,
+    // `Number(null)` is 0 and `Number("")` is 0, and 0 is not a vacancy id — it would be read as a
+    // seat that does not exist rather than as no seat at all. Only a finite positive number counts.
+    vacancyId: offerVacancyId(row.vacancy_id),
     validUntil: row.valid_until ?? "",
   };
+}
+
+/** A stored vacancy pointer, or null. Bigint arrives as a string often enough to matter here. */
+function offerVacancyId(value: number | string | null | undefined): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
 export async function listOffers(limit = 200): Promise<OfferRecord[]> {
@@ -667,7 +680,7 @@ export async function allocateOfferReference(title: string, year: number): Promi
 const UNIQUE_VIOLATION = "23505";
 
 export async function createOffer(
-  fields: OfferFields & { templateId?: string | null },
+  fields: OfferFields & { templateId?: string | null; vacancyId?: number | null },
   createdBy: string | null,
 ): Promise<OfferRecord> {
   const db = getSupabaseAdmin();
@@ -702,6 +715,7 @@ export async function createOffer(
         created_by: createdBy,
         status: "draft",
         template_id: templateId,
+        vacancy_id: offerVacancyId(fields.vacancyId),
       })
       .select("*")
       .single();
@@ -723,7 +737,7 @@ export async function createOffer(
 
 export async function updateOffer(
   id: string,
-  fields: Partial<OfferFields> & { templateId?: string | null },
+  fields: Partial<OfferFields> & { templateId?: string | null; vacancyId?: number | null },
 ): Promise<OfferRecord> {
   const current = await getOffer(id);
   // A sent offer is a document the candidate already holds. Editing it would make Phoenix's copy
@@ -734,6 +748,10 @@ export async function updateOffer(
 
   const patch = toRow(fields);
   if (fields.templateId !== undefined) patch.template_id = fields.templateId;
+  // Same optional-field discipline as everywhere else in this file: an absent key is OMITTED, not
+  // written as null. An explicit null IS meaningful here — it is how a seat is un-chosen — so the
+  // `undefined` check is what tells the two apart.
+  if (fields.vacancyId !== undefined) patch.vacancy_id = offerVacancyId(fields.vacancyId);
   if (Object.keys(patch).length === 0) return current;
 
   const db = getSupabaseAdmin();
