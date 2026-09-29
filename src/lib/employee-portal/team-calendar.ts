@@ -56,6 +56,13 @@ export type NsmTeamCalendarResult = {
   month: number;
   monthLabel: string | null;
   status: NsmTeamCalendarStatus;
+  /**
+   * Today in CAIRO, `YYYY-MM-DD` — already computed here by `cairoTodayParts()`, and now handed on
+   * to the view so the phone's week stepper opens on the week a manager is actually in. It has to
+   * come from the server: the browser would answer in the VIEWER's zone, which AGENTS.md §4 forbids
+   * reporting a time in, and would disagree with the server render.
+   */
+  todayIso: string;
   year: number;
 };
 
@@ -333,6 +340,7 @@ export async function getNsmTeamCalendar(
       month,
       monthLabel: preview.metadata.monthLabel,
       status: "ok",
+      todayIso: today.iso,
       year,
     };
   } catch (error) {
@@ -345,6 +353,7 @@ export async function getNsmTeamCalendar(
         month,
         monthLabel: null,
         status: "not_ready",
+        todayIso: today.iso,
         year,
       };
     }

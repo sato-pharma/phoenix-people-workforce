@@ -188,8 +188,17 @@ import { stripComments } from "./support/comment-strip.ts";
  * the fix. Six columns inside the 768px its own `md:` gate already guarantees, so it is now
  * `table-fixed` with a colgroup summing to 100% and two `break-words` cells for the one unbroken
  * token on the row (the vacancy code). MEASURED on the rebased tree, not derived by subtraction.
+ *
+ * 215 -> 214 on 2026-09-29, the Team Calendar, at the owner's instruction — and the interesting one,
+ * because what this ratchet could SEE was the least of it. The scroller it counted sat over a
+ * `repeat(N, minmax(2.5rem, 1fr))` grid template: a **1,240px hard floor** for a 31-day month that
+ * no `min-w-` search finds, because it is not a class. Below `lg` the month is now one WEEK at a
+ * time with a single stepper for the page; from `lg` up the 31 columns divide the available width.
+ * MEASURED in the browser against the real stylesheet, which then found a SECOND floor the ratchet
+ * cannot see either — the header's three-letter weekday, clean only from 800px — so that
+ * abbreviation shortens between `lg` and `xl`. One counted site; two invisible floors retired.
  */
-const BASELINE = 215;
+const BASELINE = 214;
 
 /**
  * app/ and src/components/ are where UI class strings live. src/lib/ is excluded on
