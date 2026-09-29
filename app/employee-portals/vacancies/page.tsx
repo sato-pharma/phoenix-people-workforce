@@ -367,12 +367,15 @@ export default async function EmployeePortalVacanciesPage({
               <table className="w-full table-fixed text-sm">
                 <colgroup>
                   {/* Vacancy and Position each carry a code or title plus a note and a chip, so
-                      they take the two widest shares; Opened is one formatted date. */}
-                  <col className="w-[22%]" />
+                      they take the two widest shares; Opened is one formatted date. Status is
+                      the third-widest because it carries the hire action as well as the chip
+                      (owner, 2026-09-29: the full wording everywhere, not a short "Hire"), and
+                      the six still sum to 100% — the action must never buy a scroller. */}
+                  <col className="w-[18%]" />
+                  <col className="w-[20%]" />
+                  <col className="w-[14%]" />
+                  <col className="w-[14%]" />
                   <col className="w-[24%]" />
-                  <col className="w-[16%]" />
-                  <col className="w-[16%]" />
-                  <col className="w-[12%]" />
                   <col className="w-[10%]" />
                 </colgroup>
                 <thead className="bg-slate-50/80 text-left text-phx-xs uppercase tracking-wider text-slate-400">
@@ -469,10 +472,10 @@ export default async function EmployeePortalVacanciesPage({
                           </span>
                           {canAddEmployee && vacancy.status === "open" ? (
                             <a
-                              className="mt-1.5 inline-flex items-center gap-1 border border-phx-accent bg-phx-accent px-2 py-0.5 text-phx-2xs font-bold text-white transition hover:bg-phx-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-phx-accent"
+                              className="mt-1.5 flex w-full items-center justify-center border border-phx-accent bg-phx-accent px-2 py-1 text-center text-phx-2xs font-bold leading-tight text-white transition hover:bg-phx-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-phx-accent"
                               href={buildVacancyHireHref("/employee-portals/employees", vacancy)}
                             >
-                              Hire
+                              Add employee to this seat
                             </a>
                           ) : null}
                         </td>

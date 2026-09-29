@@ -255,10 +255,49 @@ export async function runOrganogramVacancyHireLinkTests() {
     "a portal row must link to the PORTAL Employees route, never the admin one",
   );
   // That table is table-fixed with a colgroup summing to 100% and no horizontal scroller.
+  const portalColumnWidths = Array.from(
+    portalPage.matchAll(/<col className="w-\[(\d+)%\]" \/>/g),
+    (match) => Number(match[1]),
+  );
   assert.equal(
-    (portalPage.match(/<col className="w-\[/g) ?? []).length,
+    portalColumnWidths.length,
     6,
     "the portal table must stay at six columns — a seventh breaks the colgroup and the screen",
+  );
+  assert.equal(
+    portalColumnWidths.reduce((total, width) => total + width, 0),
+    100,
+    "the colgroup must still sum to 100% — anything else is a horizontal scroller waiting to happen",
+  );
+
+  // One wording on every surface (owner, 2026-09-29). The desktop tables used to say a short
+  // "Hire" because the cell was narrow; they now carry the full label, which is only safe
+  // because each button is width-bounded and wraps. Assert BOTH halves, since restoring the
+  // short label or dropping the bound would each undo half of his instruction.
+  const HIRE_LABEL = "Add employee to this seat";
+  for (const [name, source] of [
+    ["the organogram popup", modalSource],
+    ["the admin vacancies report", reportSource],
+    ["the portal vacancies page", portalPage],
+  ] as const) {
+    assert.ok(
+      source.includes(HIRE_LABEL),
+      `${name} must carry the full wording "${HIRE_LABEL}"`,
+    );
+    assert.ok(
+      !/>\s*Hire\s*</.test(source),
+      `${name} must not fall back to a short "Hire" label — one wording everywhere`,
+    );
+  }
+  assert.ok(
+    /className="[^"]*\bflex w-36\b[^"]*"/.test(reportSource),
+    "the admin table's button must stay width-bounded, or the full label widens that column",
+  );
+  assert.ok(
+    /className="[^"]*\bflex w-full\b[^"]*"[\s\S]{0,200}buildVacancyHireHref\("\/employee-portals\/employees"/.test(
+      portalPage,
+    ),
+    "the portal table's button must fill its fixed column rather than size to its own label",
   );
 
   // The dev-preview fixtures are the OTHER constructor of this row, and adding the ids to the
