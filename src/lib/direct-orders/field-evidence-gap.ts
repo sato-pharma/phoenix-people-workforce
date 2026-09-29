@@ -26,6 +26,15 @@
  * not decided it yet, and calling that venue uncaptured would be false. A rejected claim is the desk
  * saying the capture did not stand, so it is not evidence of anything.
  *
+ * ONE EXCEPTION, owner's ruling 2026-09-29: *"count a superseded rejection as field evidence."* A
+ * claim refused because it was SUPERSEDED was not refused on its evidence — the photo and the pin
+ * are real and were taken in front of the venue; what was redundant was the claim. Both rows this
+ * covers on production are the same pair, both decided by him: حضانة زمزم `DOP-000022` and
+ * `DOP-000023`, one photo and one pin at 30.98112, 31.15723, refused 19 Aug with *"Pharmacy already
+ * verified/trusted 2026-08-09 … this claim is superseded, no order depends on it."* `DOP-000022`
+ * has since taken 9 orders, so without this the line would have called a photographed venue
+ * uncaptured on 514,562 EGP of business.
+ *
  * Pure, so the three cases are testable without a database.
  */
 
@@ -77,3 +86,46 @@ export const DIRECT_ORDER_FIELD_EVIDENCE_GAP_SENTENCES: Record<DirectOrderFieldE
   invoice:
     "This venue stands on a distributor invoice. An invoice is a document, so it carries no location and no capture time — no live photo and no GPS fix was ever taken in front of the venue itself. Flagged for your attention, not blocked.",
 };
+
+/**
+ * Was this claim refused as REDUNDANT rather than on its evidence?
+ *
+ * Owner, 2026-09-29, in three instructions that widened it twice: *"count a superseded rejection as
+ * field evidence"*, then *"widen the superseded rule to duplicate rejections"*, then *"widen it to
+ * already-verified rejections too"*.
+ *
+ * The default is unchanged and stays the safe direction: a rejection is not evidence. This readmits
+ * the redundancy family — the desk said the CLAIM was not needed, having said nothing against the
+ * photograph — and the caller still requires a real photo and a real GPS fix on the row, so an empty
+ * rejection with a clever note readmits nothing.
+ *
+ * THREE MARKERS: `supersede`, `duplicate`, `already verified`. One idea in three vocabularies.
+ *
+ * 🔴 THE THIRD IS THE LOOSE ONE, AND HE WAS TOLD SO BEFORE IT WAS BUILT. "Superseded" and
+ * "duplicate" name the CLAIM's redundancy and nothing else. "Already verified" names a fact about
+ * the VENUE that can sit beside any verdict at all — *"Already verified, but this photo is of the
+ * wrong shop"* is a sentence a desk could write, and this now reads it as evidence and silences the
+ * line. That is his decision, made with the case in front of him; it is recorded here so a later
+ * reader does not mistake it for an oversight and quietly narrow it back.
+ *
+ * NOTHING FURTHER WITHOUT HIS WORD. "not needed", "no longer required", "not relevant" stay out.
+ * Each widening of a text match that decides whether a venue looks captured is his call, not a
+ * tidy-up, because the two errors are not symmetrical: missing a case SHOWS the line on a venue that
+ * was photographed, which an approver sees through in a second; matching one wrongly HIDES the line
+ * on a venue nobody ever visited, which cannot be spotted at all.
+ *
+ * The negation guard covers all three, because "this claim is NOT superseded — the photo is of the
+ * wrong shop", "not a duplicate, the shop does not exist" and "not already verified" are all natural
+ * rejection notes that a bare substring test reads as their own opposites. A note carrying BOTH a
+ * negated marker and a plain one is refused outright: mixed signals fall to the safe side.
+ */
+const REDUNDANT_REJECTION_MARKERS = /supersed|duplicat|already\s+verified/;
+
+const NEGATED_REDUNDANT_MARKER =
+  /\b(not|never|isn't|isnt|is not|wasn't|wasnt|was not)\s+(an?\s+)?(supersed|duplicat|already\s+verified)/;
+
+export function directOrderRejectionWasOnlyRedundant(decisionNotes: string | null | undefined): boolean {
+  const notes = String(decisionNotes ?? "").toLowerCase();
+  if (!REDUNDANT_REJECTION_MARKERS.test(notes)) return false;
+  return !NEGATED_REDUNDANT_MARKER.test(notes);
+}
