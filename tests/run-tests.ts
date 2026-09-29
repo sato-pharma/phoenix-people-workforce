@@ -540,6 +540,7 @@ import { runCompanyVacationReportTests } from "./company-vacation-report.test.ts
 import { runSfeVacationSourceReportTests } from "./sfe-vacation-source-report.test.ts";
 import { runCompanyActivityReportTests } from "./company-activity-report.test.ts";
 import { runNsmTeamCalendarTests } from "./nsm-team-calendar.test.ts";
+import { runTeamCalendarWeeksTests } from "./team-calendar-weeks.test.ts";
 import { runCompanyHolidaysTests } from "./company-holidays.test.ts";
 import { runLeaveSourceOfTruthTests } from "./leave-source-of-truth.test.ts";
 import { runLifecycleRiskSourceTests } from "./lifecycle-risk-source.test.ts";
@@ -2918,6 +2919,7 @@ await runTest("company vacation report (CRM signal classification)", runCompanyV
 await runTest("sfe manager vacation source report (read-only + Phoenix vs CRM)", runSfeVacationSourceReportTests);
 await runTest("company activity report (reconciliation, summary, filters, range, role gate)", runCompanyActivityReportTests);
 await runTest("nsm team calendar (manager grouping)", runNsmTeamCalendarTests);
+await runTest("team calendar weeks (Saturday-cut weeks cover every day exactly once, a partial opening week keeps its real weekday columns, and the view buys no sideways scroll)", runTeamCalendarWeeksTests);
 await runTest("company holidays", runCompanyHolidaysTests);
 await runTest("deductions module foundation (unified module — candidate key, calculations, conflicts, validation)", runDeductionsModuleFoundationTests);
 await runTest("deductions module publish eligibility (mandatory-vs-approval-gated selection rule)", runDeductionsModulePublishTests);

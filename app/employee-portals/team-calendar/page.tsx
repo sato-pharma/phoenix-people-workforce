@@ -70,6 +70,7 @@ export default async function TeamCalendarPage({
           lineName={data.lineName}
           month={data.month}
           monthLabel={data.monthLabel}
+          todayIso={data.todayIso}
           year={data.year}
         />
       )}

@@ -11,6 +11,12 @@ import type {
   FieldWorkforceEmployeeSummary,
 } from "@/lib/field-workforce-compliance/types";
 import { isPortalRideAlongCoachingDay, portalOwnVisitCount } from "@/lib/employee-portal/team-calendar-cell";
+import {
+  buildTeamCalendarWeeks,
+  clampWeekIndex,
+  type TeamCalendarWeek,
+  weekIndexForDate,
+} from "@/lib/employee-portal/team-calendar-weeks";
 import { cn } from "@/lib/utils";
 
 const ALL_FILTER = "All";
@@ -34,6 +40,14 @@ type TeamCalendarViewProps = {
   lineName: string | null;
   month: number;
   monthLabel: string | null;
+  /**
+   * Today in CAIRO, from the server. The week stepper opens on the week holding it, which is the
+   * week a manager wants nine times out of ten. It comes from the server deliberately: deriving it
+   * from `new Date()` in the browser would read the VIEWER's zone (AGENTS.md §4 reports every time
+   * in Africa/Cairo) and would differ between the server render and the client, which is a
+   * hydration mismatch on top of a wrong answer.
+   */
+  todayIso: string | null;
   year: number;
 };
 
@@ -160,11 +174,35 @@ function TeamCalendarDayCell({ cell }: { cell: FieldWorkforceDayCell }) {
 
 /** One employee's month grid — used INSIDE a ManagerBlock, so it carries no border of its
  * own (the block's single outer border is the only border for the whole DSM + team unit). */
-function RepMonthRow({ employee, isFirst }: { employee: FieldWorkforceEmployeeSummary; isFirst: boolean }) {
-  // A day column never shrinks below 2.5rem — on a phone-width screen 30+ columns would
-  // otherwise be forced into a few unreadable pixels each; instead the row scrolls
-  // horizontally (day numbers scroll in lockstep since they share this same container).
-  const monthColumns = { gridTemplateColumns: `repeat(${employee.timeline.length}, minmax(2.5rem, 1fr))` };
+function RepMonthRow({
+  employee,
+  isFirst,
+  week,
+}: {
+  employee: FieldWorkforceEmployeeSummary;
+  isFirst: boolean;
+  week: TeamCalendarWeek | null;
+}) {
+  // 🔴 THE COLUMNS DIVIDE THE WIDTH; THEY NEVER SET A FLOOR.
+  //
+  // This was `minmax(2.5rem, 1fr)` — a 1,240px hard minimum for a 31-day month, sitting inside an
+  // `overflow-x-auto`. No `min-w-` search ever finds that, because it is written as a grid template,
+  // and it overflowed a DESKTOP content box too, not only a phone: on a 375px screen a manager saw
+  // about three days and had to drag sideways through the other twenty-eight, once per person, for
+  // every person on his team. AGENTS.md §4: a scroller over a minimum width IS the bug, not the fix.
+  //
+  // `minmax(0, 1fr)` lets the 31 columns share whatever width there is — about 34px each in the
+  // portal's desktop content box, enough for a day number and its weekday. Below `lg` that
+  // arithmetic can never work at any font size, so small screens get ONE WEEK at a time instead
+  // (the owner's ruling, 2026-09-29), which is what `week` carries.
+  const monthColumns = { gridTemplateColumns: `repeat(${employee.timeline.length}, minmax(0, 1fr))` };
+  const weekColumns = { gridTemplateColumns: "repeat(7, minmax(0, 1fr))" };
+  // Sliced by DATE, never by index: two people in one month can legitimately carry timelines of
+  // different lengths (a mid-month joiner, a pre-hire run-in), so an index range taken from one
+  // person's array would quietly show the wrong days for the next.
+  const weekCells = week
+    ? employee.timeline.filter((cell) => cell.dateIso >= week.startDateIso && cell.dateIso <= week.endDateIso)
+    : [];
   const hierarchy = [employee.teamName, employee.areaName, employee.managerName]
     .filter(Boolean)
     .join(" / ");
@@ -192,7 +230,42 @@ function RepMonthRow({ employee, isFirst }: { employee: FieldWorkforceEmployeeSu
           <span className="text-slate-500">{employee.compliancePercent}% compliance</span>
         </div>
       </div>
-      <div className="phoenix-horizontal-scroll mt-3 overflow-x-auto">
+
+      {/* ── One week, below lg (the owner's ruling for the phone) ────────────── */}
+      {/* The days keep their real weekday columns: `gridColumnStart` pushes an opening partial week
+          to the right, or the 1st of the month would sit under "Sat" whatever day it actually was —
+          and a manager checking who worked Sunday would be reading the wrong column. */}
+      <div className="mt-3 lg:hidden">
+        <div className="grid gap-1" style={weekColumns}>
+          {weekCells.map((cell, index) => (
+            <div
+              className={cn(
+                "rounded-md py-1 text-center text-phx-3xs font-black uppercase tracking-tight text-slate-500",
+                cell.isFriday ? "bg-slate-100" : "",
+                cell.isPublicHoliday ? "bg-amber-50 text-amber-700" : "",
+              )}
+              key={`${cell.dateIso}-week-header`}
+              style={index === 0 && week ? { gridColumnStart: week.startColumn } : undefined}
+            >
+              <span className="block text-phx-xs leading-tight text-slate-900">{cell.dayNumber}</span>
+              <span>{weekday(cell.dateIso)}</span>
+            </div>
+          ))}
+        </div>
+        <div className="mt-1 grid gap-1" style={weekColumns}>
+          {weekCells.map((cell, index) => (
+            <div
+              key={`${cell.dateIso}-week-cell`}
+              style={index === 0 && week ? { gridColumnStart: week.startColumn } : undefined}
+            >
+              <TeamCalendarDayCell cell={cell} />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ── The whole month, lg and up — no scroller, columns divide the width ── */}
+      <div className="mt-3 hidden lg:block">
         <div className="grid gap-1" style={monthColumns}>
           {employee.timeline.map((cell) => (
             <div
@@ -204,7 +277,17 @@ function RepMonthRow({ employee, isFirst }: { employee: FieldWorkforceEmployeeSu
               key={`${cell.dateIso}-header`}
             >
               <span className="block text-phx-xs leading-tight text-slate-900">{cell.dayNumber}</span>
-              <span>{weekday(cell.dateIso)}</span>
+              {/* 🔴 MEASURED, not guessed. With `minmax(0, 1fr)` the day CELLS fit at any width —
+                  measured clean down to 560px — but the header row does not, because a three-letter
+                  weekday cannot shrink: it overflowed by 8px at 560, 3px at 700, 1px at 760 and only
+                  reached zero at **800px**. A 31-column month therefore had a real 800px floor
+                  hiding in the header text alone, which a content box at the `lg` breakpoint is not
+                  guaranteed to clear. Two letters measure clean from **600px**, so the abbreviation
+                  shortens between `lg` and `xl` and returns in full above it. Fitting by shortening
+                  a label is the rule's own remedy — never a sideways scroll, and never smaller type
+                  (AGENTS.md §4). */}
+              <span className="xl:hidden">{weekday(cell.dateIso).slice(0, 2)}</span>
+              <span className="hidden xl:inline">{weekday(cell.dateIso)}</span>
             </div>
           ))}
         </div>
@@ -231,7 +314,7 @@ function managerBlockLabel(group: TeamCalendarGroup): string {
   return group.managerName ?? "Other";
 }
 
-function ManagerBlock({ group }: { group: TeamCalendarGroup }) {
+function ManagerBlock({ group, week }: { group: TeamCalendarGroup; week: TeamCalendarWeek | null }) {
   return (
     <div className="overflow-hidden rounded-xl border-2 border-black">
       <div className="flex flex-wrap items-center justify-between gap-2 bg-black px-4 py-2.5">
@@ -241,8 +324,56 @@ function ManagerBlock({ group }: { group: TeamCalendarGroup }) {
         <span className="whitespace-nowrap text-phx-xs font-bold text-slate-300">{group.members.length} shown</span>
       </div>
       {group.members.map((employee, index) => (
-        <RepMonthRow employee={employee} isFirst={index === 0} key={employee.hrId} />
+        <RepMonthRow employee={employee} isFirst={index === 0} key={employee.hrId} week={week} />
       ))}
+    </div>
+  );
+}
+
+/**
+ * The week stepper, below `lg` only.
+ *
+ * ONE stepper for the whole page, not one per person. Per-row arrows would let two reps in the same
+ * team sit on different weeks, which makes the board impossible to read down a column — the entire
+ * value of this view is comparing the same day across a team.
+ */
+function WeekStepper({
+  onChange,
+  weekIndex,
+  weeks,
+}: {
+  onChange: (next: number) => void;
+  weekIndex: number;
+  weeks: TeamCalendarWeek[];
+}) {
+  if (weeks.length === 0) return null;
+  const current = weeks[weekIndex];
+  return (
+    <div className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 lg:hidden">
+      <button
+        aria-label="Previous week"
+        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:border-orange-300 hover:text-orange-700 disabled:opacity-40"
+        disabled={weekIndex === 0}
+        onClick={() => onChange(weekIndex - 1)}
+        type="button"
+      >
+        <ChevronLeft className="h-4 w-4" />
+      </button>
+      <div className="min-w-0 text-center">
+        <p className="text-sm font-black text-slate-950">{current?.label}</p>
+        <p className="mt-0.5 text-phx-xs font-bold text-slate-500">
+          Week {weekIndex + 1} of {weeks.length} · the whole month shows on a bigger screen
+        </p>
+      </div>
+      <button
+        aria-label="Next week"
+        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:border-orange-300 hover:text-orange-700 disabled:opacity-40"
+        disabled={weekIndex >= weeks.length - 1}
+        onClick={() => onChange(weekIndex + 1)}
+        type="button"
+      >
+        <ChevronRight className="h-4 w-4" />
+      </button>
     </div>
   );
 }
@@ -258,11 +389,31 @@ function monthHref(month: number, year: number) {
   return `/employee-portals/team-calendar?month=${month}&year=${year}`;
 }
 
-export function TeamCalendarView({ employeeCount, groups, lineName, month, monthLabel, year }: TeamCalendarViewProps) {
+export function TeamCalendarView({
+  employeeCount,
+  groups,
+  lineName,
+  month,
+  monthLabel,
+  todayIso,
+  year,
+}: TeamCalendarViewProps) {
   const [query, setQuery] = useState("");
   const [teamFilter, setTeamFilter] = useState(ALL_FILTER);
   const [regionFilter, setRegionFilter] = useState(ALL_FILTER);
   const [areaFilter, setAreaFilter] = useState(ALL_FILTER);
+
+  const weeks = useMemo(() => buildTeamCalendarWeeks(year, month), [month, year]);
+  // Opens on the week holding today when today falls inside the month being viewed, and on the
+  // first week otherwise — a manager looking back at August wants its start, not its last week.
+  const [weekIndex, setWeekIndex] = useState(() =>
+    todayIso ? weekIndexForDate(weeks, todayIso) : 0,
+  );
+  // A month change is a full navigation (the arrows are <Link>s), so the state starts fresh each
+  // time. This clamp is the belt: it also covers a 4-week month reached from a 5-week one if that
+  // ever stops being a navigation.
+  const safeWeekIndex = clampWeekIndex(weeks, weekIndex);
+  const currentWeek = weeks[safeWeekIndex] ?? null;
 
   const allMembers = useMemo(() => groups.flatMap((group) => group.members), [groups]);
   const teamOptions = useMemo(() => uniqueSortedValues(allMembers.map((employee) => employee.teamName)), [allMembers]);
@@ -369,6 +520,8 @@ export function TeamCalendarView({ employeeCount, groups, lineName, month, month
       <TimelineLegend />
       <p className="text-xs font-bold text-slate-500">Showing {shownCount} of {employeeCount} people</p>
 
+      <WeekStepper onChange={setWeekIndex} weekIndex={safeWeekIndex} weeks={weeks} />
+
       {visibleGroups.length === 0 ? (
         <Card className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-500">
           No one matches the current filter for {heading}.
@@ -377,7 +530,7 @@ export function TeamCalendarView({ employeeCount, groups, lineName, month, month
         <div>
           {visibleGroups.map((group, groupIndex) => (
             <div key={group.managerHrId ?? `unassigned-${groupIndex}`}>
-              <ManagerBlock group={group} />
+              <ManagerBlock group={group} week={currentWeek} />
               {/* Straight line between one DSM's block and the next — not after the last one. */}
               {groupIndex < visibleGroups.length - 1 ? <div className="my-5 h-px bg-slate-400" /> : null}
             </div>
