@@ -1058,6 +1058,28 @@ html:has(.admin-shell) {
   border-radius: 0 !important;
 }
 
+/* RULE 1c — toasts. Sonner's <Toaster> is mounted in the ROOT layout, outside both shells, and
+   injects its own stylesheet: an 8px toast, 4px action button and a 50% round close button. Neither
+   shell's RULE 1 can reach it, so every toast in the app — the new-mail pop-up in the portal header
+   among them — was the one rounded shape on screen. Square everywhere, like everything else. */
+[data-sonner-toaster] [data-sonner-toast],
+[data-sonner-toaster] [data-sonner-toast] * {
+  border-radius: 0 !important;
+}
+
+/* The phone bottom bar (EmployeePortalBottomNav: a 60px tab + its 1px top border, plus the
+   home-indicator inset it pads for) covers the lowest strip of the screen below `lg`, above every
+   header panel. The header's dropdown panels subtract this so their last row — the messages Send
+   button, the last notification — is never parked underneath it. Zero where the bar is hidden. */
+.employee-portal-shell {
+  --phx-portal-bottom-nav-reserve: calc(61px + env(safe-area-inset-bottom, 0px));
+}
+@media (min-width: 1024px) {
+  .employee-portal-shell {
+    --phx-portal-bottom-nav-reserve: 0px;
+  }
+}
+
 /* RULE 2 — TABLES. Flat black header bar (same as the shell chrome) + a thin
    light-orange hairline on every cell (rows AND columns) for a tidy, uniform grid. */
 .employee-portal-shell table {

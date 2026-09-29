@@ -1,5 +1,4 @@
 import {
-  Activity,
   BookUser,
   BriefcaseBusiness,
   Building2,
@@ -26,7 +25,6 @@ import {
   MapPinned,
   Package,
   PackageSearch,
-  Presentation,
   ReceiptText,
   Send,
   Settings2,
@@ -100,7 +98,6 @@ export type PortalNavEntry = {
 export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   // My Workspace
   { label: "Incentive", fullLabel: "Incentive", href: "/employee-portals/incentive", icon: Gift, flags: ["showIncentiveTab"], permission: { resource: "employee_profile", action: "read" } },
-  { label: "Coaching", fullLabel: "Coaching Reports", href: "/employee-portals/coaching", icon: ClipboardCheck, flags: ["showMyCoachingTab", "showTeamCoachingTab"], permission: { resource: "coaching", action: "read" } },
   { label: "Plans", fullLabel: "Weekly / Monthly Plan", href: "/employee-portals/plans", icon: CalendarDays, flags: ["showPlansTab"] },
   { label: "Planning", fullLabel: "Planning Calendar", href: "/employee-portals/plans/calendar", icon: CalendarClock, flags: ["showPlanningCalendarTab"], permission: { resource: "weekly_plans", action: "read" } },
   { label: "Vac Appr", fullLabel: "Leave Approvals", href: "/employee-portals/approvals/vacation", icon: CalendarDays, flags: ["showVacationApprovalsTab"], navBadge: "vacation-approvals-pending" },
@@ -148,9 +145,6 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   // machine-readable gate (resolveEarlyBirdsScope decides what it shows from the reporting chain),
   // and employee-portal-nav-permission-matches-page.test.ts requires the field to be absent then.
   { label: "Early Birds", fullLabel: "Early Birds", href: "/employee-portals/early-birds", icon: Sunrise, flags: ["showEarlyBirdsTab"] },
-  // Visual Aids — the flyers a rep shows a doctor on the tablet. The permission mirrors the page's own
-  // inline gate (app/employee-portals/visual-aids/page.tsx); the line narrowing is server-side.
-  { label: "Visual Aids", fullLabel: "Visual Aids", href: "/employee-portals/visual-aids", icon: Presentation, flags: ["showVisualAidsTab"], permission: { resource: "visual_aids", action: "read" } },
   // Reps Plans had an entry here until 2026-09-21, when the owner merged it into Reps List — its board
   // is the Call rate tab there, and /employee-portals/reps-plans forwards to it.
   { label: "Territory", fullLabel: "Territory Management", href: "/employee-portals/territory-management", icon: Waypoints, flags: ["showTerritoryManagementTab"], permission: { resource: "territory", action: "read" } },
@@ -175,8 +169,6 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   // CRM Master board, and a manager who holds both would see two tabs reading "CRM".
   { label: "Phoenix CRM", fullLabel: "Phoenix CRM", href: "/employee-portals/field-crm", icon: ClipboardList, flags: ["showPhoenixCrmTab"] },
   { label: "Calendar", fullLabel: "Team Calendar", href: "/employee-portals/team-calendar", icon: CalendarRange, flags: ["showTeamCalendarTab"] },
-  { label: "Scores", fullLabel: "Coaching Analytics", href: "/employee-portals/coaching-analytics", icon: ChartColumnBig, flags: ["showCoachingAnalyticsTab"], permission: { resource: "coaching", action: "read" } },
-  { label: "Double Visit", fullLabel: "Double-Visit Analytics", href: "/employee-portals/double-visit-analytics", icon: Activity, flags: ["showDoubleVisitAnalyticsTab"], permission: { resource: "double_visit_analytics", action: "read" } },
   { label: "DV Planner", fullLabel: "DV Planner", href: "/employee-portals/dv-planner", icon: CalendarCheck2, flags: ["showDoubleVisitReportTab"], permission: { resource: "double_visit_analytics", action: "read" } },
   { label: "DV Report", fullLabel: "Double Visit Report", href: "/employee-portals/double-visit-report", icon: FileSpreadsheet, flags: ["showDoubleVisitReportTab"], permission: { resource: "double_visit_analytics", action: "read" } },
   { label: "Field Day", fullLabel: "Field Activity", href: "/employee-portals/field-activity", icon: MapPinned, flags: ["showFieldActivityTab"], permission: { resource: "double_visit_analytics", action: "read" } },
@@ -250,8 +242,44 @@ export const DEFAULT_BOTTOM_NAV_HREFS = [
   "/employee-portals/expense-dashboard",
   "/employee-portals/expenses",
   "/employee-portals/incentive",
-  "/employee-portals/coaching",
 ];
+
+/**
+ * The Medical Rep's own default bar: **Phoenix CRM · Incentive · Monthly Closing** (owner,
+ * 2026-09-29, in those words).
+ *
+ * The shared list above is one global priority order, so a rep fell through it to Source of Sales,
+ * outstation expenses and Incentive — three slots, and no door to Phoenix CRM, the module that IS
+ * his working day. Reordering the shared list to fix that would have moved every other role's tabs
+ * too, so the rep gets his own list and nobody else's bar changes.
+ *
+ * Still filtered by visibility like any other: a rep whose line is not yet open in
+ * `phoenix_crm_line_rollout` simply drops the CRM tab.
+ */
+export const MEDICAL_REP_BOTTOM_NAV_HREFS = [
+  "/employee-portals/field-crm",
+  "/employee-portals/incentive",
+  "/employee-portals/monthly-closing",
+];
+
+/**
+ * The default middle tabs for THIS viewer, before any pinning — the rep's own list, else the
+ * shared one.
+ *
+ * `showMedicalRepExpensesTab` is the Medical Rep flag (`isMedicalRep`, navigation.ts) and is the
+ * only rep-exclusive flag in the visibility bag.
+ *
+ * Report It is kept only for the roles that had it BEFORE it was opened to everyone on 2026-09-29.
+ * It is now visible to every portal role, and it sits fourth in the shared list, so without this
+ * it would have displaced a District Manager's Team Performance tab and an NSM's Marketing
+ * Requests tab — a change to their phones that nobody asked for. The pharmacovigilance roles keep
+ * it exactly where it was; everyone else can still pin it.
+ */
+export function defaultBottomNavHrefs(visibility: EmployeePortalNavVisibility): string[] {
+  if (visibility.showMedicalRepExpensesTab) return MEDICAL_REP_BOTTOM_NAV_HREFS;
+  if (visibility.showReportItDashboardTab) return DEFAULT_BOTTOM_NAV_HREFS;
+  return DEFAULT_BOTTOM_NAV_HREFS.filter((href) => href !== "/employee-portals/report-it");
+}
 
 
 export function isEntryVisible(entry: PortalNavEntry, visibility: EmployeePortalNavVisibility): boolean {
@@ -274,6 +302,16 @@ export function visiblePortalNavEntries(
     result.push(entry);
   }
   return result;
+}
+
+/**
+ * The middle tabs the phone bar shows for someone who has pinned nothing: the role's defaults,
+ * visible ones only, capped — what EmployeePortalBottomNav computes inline. A first pin starts from
+ * these (togglePinnedHref), so pinning one page never silently strips the bar down to that page.
+ */
+export function shownDefaultBottomNavHrefs(visibility: EmployeePortalNavVisibility): string[] {
+  const visible = new Set(visiblePortalNavEntries(visibility).map((entry) => entry.href));
+  return defaultBottomNavHrefs(visibility).filter((href) => visible.has(href)).slice(0, MAX_BOTTOM_NAV_CUSTOM);
 }
 
 export function entryByHref(href: string): PortalNavEntry | undefined {

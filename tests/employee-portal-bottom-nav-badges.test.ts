@@ -106,9 +106,12 @@ export function runEmployeePortalBottomNavBadgesTests() {
       /import \{ ApprovalNavBadge \} from "@\/components\/layout\/nav-badge";/,
       "5: the bar must reuse the shared badge switch — no second mechanism, no second poll",
     );
+    // Loosened 2026-09-29 when the bar opted into `showCount`. The pin's purpose is that the badge
+    // comes from `item.navBadge` — every tab offering its own, so a future badge needs no edit here
+    // — not that no other prop may ever be passed. It still fails if anyone hardcodes a badge list.
     assert.match(
       bottomNav,
-      /<ApprovalNavBadge compact navBadge=\{item\.navBadge\} \/>/,
+      /<ApprovalNavBadge[^>]*\bnavBadge=\{item\.navBadge\}/,
       "5: every tab must offer its own badge, so a future badge needs no edit here",
     );
   }
@@ -136,6 +139,33 @@ export function runEmployeePortalBottomNavBadgesTests() {
       /absolute -right-0\.5 -top-0\.5/,
       "6: the compact badge must stay absolutely positioned — a badge in flow would widen every tab's layout floor",
     );
+    // The bar shows the NUMBER (owner, 2026-09-29), which reverses his 2026-09-07 "dot, never a
+    // count" ruling for this surface only. It is legitimate because it keeps the property that
+    // ruling was protecting: the badge is out of flow, so it spends no label width. The in-flow
+    // pill above stays banned.
+    assert.match(
+      bottomNav,
+      /<ApprovalNavBadge[^>]*\bshowCount\b/,
+      "6: the bar opts into the numeric badge (owner, 2026-09-29)",
+    );
+    assert.match(
+      navBadge,
+      /showCount = false/,
+      "6: the number is OPT-IN — the admin icon rail keeps the dot it has always had",
+    );
+    assert.match(
+      navBadge,
+      /const anchor = "absolute -right-0\.5 -top-0\.5";/,
+      "6: dot and number share ONE anchor literal, so the out-of-flow pin above covers both",
+    );
+    assert.match(navBadge, /tabular-nums/, "6: the pumping badge must not jitter as its digits change");
+    for (const railFile of ["src/components/layout/sidebar.tsx", "src/components/layout/horizontal-nav-rows.tsx"]) {
+      assert.doesNotMatch(
+        readFileSync(railFile, "utf8"),
+        /showCount/,
+        `6: ${railFile} must not pass showCount — the admin rails keep the dot`,
+      );
+    }
   }
 
   // ── 7. The bar sits inside the portal shell, which is what squares the dot ──

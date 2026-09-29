@@ -400,7 +400,13 @@ export function runEmployeePortalNavigationTests() {
   const a3Account = resolveEmployeePortalNavVisibility("Medical Rep", undefined, undefined, undefined, "A-3");
   assert.equal(a3Account.showMyPerformanceTab, false, "A-3 should not see My Performance in employee portal");
   assert.equal(a3Account.showIncentiveTab, false, "A-3 should not see Incentive in employee portal");
-  assert.equal(a3Account.showPlansTab, true, "A-3 should always see the Weekly / Monthly Plan tab");
+  // The 2026-06-10 `isA3Account ||` override that put the plan BUILDER in front of her was removed
+  // on 2026-09-29 at the owner's instruction, with the other rows the Head-Office "Manager" rung
+  // could not use: her real app role is Manager, which is absent from
+  // WEEKLY_MONTHLY_PLAN_ELIGIBLE_JOB_TITLES and holds no `weekly_plans:create`, so submitting was
+  // Forbidden for the whole life of that override. She keeps the READ-ONLY Planning Calendar below,
+  // which is the half that ever worked.
+  assert.equal(a3Account.showPlansTab, false, "A-3 must not be offered the plan builder — submitting one was always Forbidden for her");
   assert.equal(a3Account.showPlanningCalendarTab, true, "A-3 should always see the Planning Calendar tab (split from showPlansTab, 2026-07-25)");
   assert.equal(a3Account.showReportItTab, true, "A-3 should see Report It");
   assert.equal(a3Account.showReportItDashboardTab, false, "A-3 Reports Dashboard is merged into the single Report It tab (no separate dashboard tab needed)");
@@ -541,11 +547,16 @@ export function runEmployeePortalNavigationTests() {
   assert.equal(medicalRep.showMonthlyClosingTab, true, "Medical Rep should see Monthly Closing (owner, 2026-09-16) -- scoped server-side to their own area");
   assert.equal(plainEmployee.showMonthlyClosingTab, false, "A plain Employee has no closing to see");
   assert.equal(trainingManager.showMonthlyClosingTab, false, "Training Manager is not a closing role");
-  // The legacy "Manager" alias for District Manager must resolve to the same access.
+  // The legacy "Manager" alias USED to resolve to the same access as District Manager here. Both
+  // halves — this flag and PORTAL_CLOSING_ROLES in monthly-closing-portal.ts — dropped it on
+  // 2026-09-29 at the owner's instruction: the rung is not a district seat (the two live accounts
+  // are Head Office, QPPV and R&D Manager), and Head Office is stripped from every closing viewer,
+  // so the page could only ever answer "we couldn't resolve a product line". They move together, or
+  // one of them is a grant nobody can reach — see tests/marketing-manager-monthly-closing.test.ts.
   assert.equal(
     resolveEmployeePortalNavVisibility("Manager").showMonthlyClosingTab,
-    true,
-    "The legacy 'Manager' alias (District Manager) should see Monthly Closing",
+    false,
+    "The Head-Office 'Manager' rung must not be offered Monthly Closing — the page has no line to show it",
   );
   // The sidebar item and its published-gated href must be wired behind the flag.
   assert.match(

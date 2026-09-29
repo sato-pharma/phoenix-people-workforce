@@ -98,27 +98,40 @@ export function runVisualAidsTests() {
   expectInputError(() => parseVisualAidDraft({ lineName: "CNS", pageCount: 0, title: "x" }), "a zero page count is refused");
   expectInputError(() => parseVisualAidDraft({ lineName: "CNS", pageCount: 501, title: "x" }), "over 500 pages is refused");
 
-  // ── 7. Who uploads and who reads — matrix, rules and portal link agree ────────────────────────
+  // ── 7. Who uploads and who reads — matrix and rules agree ────────────────────────────────────
+  // The SIDEBAR LINK is gone (owner, 2026-09-29): Visual Aids is one of the five rows he moved to
+  // "Remove from sidebar" on his own placement sheet. The page, its routes and every permission
+  // below are untouched — reps still open it from their command-centre card and the admin twin —
+  // so what this section proves is the access model, and separately that the row stays off.
+  // `VISUAL_AIDS_PORTAL_ROLES` is now the set the FLAG serves, not the set shown a sidebar row.
   assert.deepEqual(rolesHolding("create"), [...VISUAL_AIDS_MANAGER_ROLES].sort(), "create is held by exactly the three uploaders");
   assert.deepEqual(rolesHolding("update"), [...VISUAL_AIDS_MANAGER_ROLES].sort(), "update (retire, replace) is held by exactly the three uploaders");
   assert.deepEqual(rolesHolding("delete"), [], "nobody may delete a visual aid");
   const readers = rolesHolding("read");
   for (const role of VISUAL_AIDS_PORTAL_ROLES) {
-    assert.ok(readers.includes(role), `${role} is offered the portal link, so must hold visual_aids:read`);
+    assert.ok(readers.includes(role), `${role} holds the portal flag, so must hold visual_aids:read`);
   }
   assert.deepEqual(
     readers.filter((role) => !VISUAL_AIDS_PORTAL_ROLES.includes(role)),
     ["Super Admin"],
-    "every reader except the admin-shell Super Admin gets the portal link",
+    "every reader except the admin-shell Super Admin holds the portal flag",
   );
   for (const role of ["Medical Rep", "District Manager", "Regional Manager", "National Sales Manager"] as PhoenixRole[]) {
     assert.ok(readers.includes(role), `${role} reads visual aids`);
     assert.ok(!rolesHolding("create").includes(role), `${role} never uploads`);
   }
-  assert.equal(resolveEmployeePortalNavVisibility("Medical Rep", "Medical Rep").showVisualAidsTab, true, "a rep sees the portal link");
+  // The flag still resolves per role — it is what the page and its command-centre card read.
+  assert.equal(resolveEmployeePortalNavVisibility("Medical Rep", "Medical Rep").showVisualAidsTab, true, "a rep holds the flag");
   assert.equal(resolveEmployeePortalNavVisibility("Employee", "Employee").showVisualAidsTab, false, "a plain employee does not");
+  // And the sidebar row STAYS OFF. Restoring it would be undoing his sheet, so this asserts the
+  // absence rather than leaving it to nobody noticing.
   const layout = readFileSync("src/components/employee-portal/employee-portal-layout.tsx", "utf8");
-  assert.match(layout, /showVisualAidsTab \? \[\{ href: "\/employee-portals\/visual-aids"/, "the portal sidebar draws the link from the flag");
+  assert.doesNotMatch(
+    layout,
+    /href: "\/employee-portals\/visual-aids"/,
+    "Visual Aids has NO sidebar row — the owner moved it to 'Remove from sidebar' on 2026-09-29. " +
+      "The page, its permissions and its routes are unchanged; do not restore the row.",
+  );
 
   // ── 8. Routes: registered, gated, CSRF on writes, audited ─────────────────────────────────────
   const expected: Array<[string, "GET" | "POST", string, boolean]> = [

@@ -107,12 +107,15 @@ export function runMonthlyClosingRegionScopeTests() {
   );
 
   // ── Portal role gate (PORTAL_CLOSING_ROLES) — who may open the portal Monthly Closing page ──
-  // Only reads access.role, so a minimal context is enough. "Manager" is the legacy District Manager
-  // alias and must be allowed; CEO / Super Admin use the admin surface, not this portal page.
+  // Only reads access.role, so a minimal context is enough. CEO / Super Admin use the admin surface,
+  // not this portal page. "Manager" — the legacy District Manager alias — was allowed here until
+  // 2026-09-29, when the owner had its sidebar row hidden and the gate narrowed with it: the rung
+  // holds no district seat (its two live accounts are Head Office), and Head Office is stripped from
+  // every closing viewer, so the page only ever answered "we couldn't resolve a product line". It is
+  // asserted DENIED below.
   const gate = (role: PhoenixRole) => canAccessPortalClosing({ role } as unknown as AccessContext);
   for (const allowed of [
     "District Manager",
-    "Manager",
     "Regional Manager",
     "National Sales Manager",
     "Product Manager",
@@ -140,6 +143,9 @@ export function runMonthlyClosingRegionScopeTests() {
     "CEO",
     "Super Admin",
     "SFE Manager",
+    // The Head-Office "Manager" rung, denied 2026-09-29 — see the note on the allowed list above.
+    // Its sidebar row went in the same change; restore both halves together or neither.
+    "Manager",
   ] as PhoenixRole[]) {
     assert.equal(gate(denied), false, `${denied} may NOT open the portal Monthly Closing`);
   }

@@ -5,7 +5,7 @@ import { CheckCircle2, Loader2, Mail, RefreshCw, Search, Send, XCircle } from "l
 
 import { PersonalMailboxPanel, type PersonalMailboxOpenRequest } from "@/components/layout/personal-mailbox-panel";
 import { systemUiText } from "@/config/system-settings";
-import { placeAnchoredPanel, type PanelPlacement } from "@/lib/navigation/panel-position";
+import { HEADER_PANEL_MAX_HEIGHT, placeAnchoredPanel, type PanelPlacement } from "@/lib/navigation/panel-position";
 import { unreadBadgeLabel } from "@/lib/personal-mailbox/rules";
 import { cn } from "@/lib/utils";
 import { useDismissOnOutsideInteraction } from "@/hooks/use-dismiss-on-outside-interaction";
@@ -59,6 +59,11 @@ const emptyForm = {
   subject: "",
 };
 
+/**
+ * Cairo wall-clock, whatever zone the reader's device is set to. `createdAt` is an instant this app
+ * stamped, so Africa/Cairo is its true local time; without `timeZone` it printed in the device's own
+ * zone, and a laptop left on another zone read every message hours off.
+ */
 function formatMessageTime(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "Now";
@@ -67,6 +72,7 @@ function formatMessageTime(value: string) {
     hour: "2-digit",
     minute: "2-digit",
     month: "short",
+    timeZone: "Africa/Cairo",
   }).format(date);
 }
 
@@ -91,7 +97,17 @@ const MESSAGES_PANEL_WIDTH = 760;
 /** Breathing room kept at each edge — the `2rem` this panel always intended, split evenly. */
 const MESSAGES_PANEL_GUTTER = 16;
 
-export function InternalMessagesMenu({ isAdminMode }: { isAdminMode: boolean }) {
+export function InternalMessagesMenu({
+  isAdminMode,
+  embedded = false,
+  onUnreadChange,
+}: {
+  isAdminMode: boolean;
+  /** Portal only: render just the panel body (no trigger, no floating, always open) for the unified inbox. */
+  embedded?: boolean;
+  /** Embedded: report unread (Phoenix + email) up, so the inbox trigger can show a combined badge. */
+  onUnreadChange?: (count: number) => void;
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
@@ -146,11 +162,35 @@ export function InternalMessagesMenu({ isAdminMode }: { isAdminMode: boolean }) 
   );
   const { unread: emailUnread } = usePersonalMailboxAlerts({ canOpenEmail, onOpenEmail: openEmail });
   const badgeLabel = unreadBadgeLabel(unreadCount + (emailUnread ?? 0));
+  const totalUnread = unreadCount + (emailUnread ?? 0);
+  useEffect(() => {
+    onUnreadChange?.(totalUnread);
+  }, [totalUnread, onUnreadChange]);
 
   const inboxMessages = useMemo(() => messages.filter((message) => message.direction === "inbox"), [messages]);
   const sentMessages = useMemo(() => messages.filter((message) => message.direction === "sent"), [messages]);
 
-  const loadMessages = useCallback(async () => {
+  // Every inbox message is shown whole in the open panel — there is no separate "open a message"
+  // step — so the panel being open on this tab IS the reading. Nothing ever called the read route
+  // before, so an unread count, once it appeared, never went down again.
+  const markInboxRead = useCallback(async (list: InternalMessageView[]) => {
+    const unread = list.filter((message) => message.direction === "inbox" && !message.readAt);
+    if (unread.length === 0) return;
+    const results = await Promise.allSettled(
+      unread.map(async (message) => {
+        const response = await fetch(`/api/messages/${encodeURIComponent(message.id)}/read`, { method: "PATCH" });
+        if (!response.ok) throw new Error("Message read failed.");
+        return message.id;
+      }),
+    );
+    const readIds = new Set(results.flatMap((result) => (result.status === "fulfilled" ? [result.value] : [])));
+    if (readIds.size === 0) return;
+    const readAt = new Date().toISOString();
+    setMessages((current) => current.map((message) => (readIds.has(message.id) ? { ...message, readAt: message.readAt ?? readAt } : message)));
+    setUnreadCount((count) => Math.max(0, count - readIds.size));
+  }, []);
+
+  const loadMessages = useCallback(async (options?: { markRead?: boolean }) => {
     setLoading(true);
     setError(null);
 
@@ -160,18 +200,27 @@ export function InternalMessagesMenu({ isAdminMode }: { isAdminMode: boolean }) 
       if (!response.ok) throw new Error(payload.message ?? "Messages failed to load.");
       setMessages(payload.messages ?? []);
       setUnreadCount(payload.unreadCount ?? 0);
+      if (options?.markRead) void markInboxRead(payload.messages ?? []);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Messages failed to load.");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [markInboxRead]);
+
+  // Once when the header mounts, so the envelope's badge counts unread Phoenix messages BEFORE the
+  // panel is first opened. It loaded only on open, so the badge — the only unread signal on a phone —
+  // stayed blank for someone with messages waiting until they happened to open it anyway.
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => void loadMessages(), 0);
+    return () => window.clearTimeout(timeoutId);
+  }, [loadMessages]);
 
   useEffect(() => {
     if (!open) return;
-    const timeoutId = window.setTimeout(() => void loadMessages(), 0);
+    const timeoutId = window.setTimeout(() => void loadMessages({ markRead: tab === "internal" }), 0);
     return () => window.clearTimeout(timeoutId);
-  }, [loadMessages, open]);
+  }, [loadMessages, open, tab]);
 
   useDismissOnOutsideInteraction(containerRef, open, setOpen);
   useRepositionOnViewportChange(open, repositionPanel);
@@ -238,46 +287,8 @@ export function InternalMessagesMenu({ isAdminMode }: { isAdminMode: boolean }) 
     }
   }
 
-  return (
-    <div className="relative" ref={containerRef}>
-      {/* Drawn at every width: on a phone it is the only place the unread counts show. Summed from
-          the classes at 375px, both bars keep room for it — the admin bar's icons and account button
-          come to about 262 of its 351px, and the portal's leave its title about 180px. */}
-      <button
-        aria-expanded={open}
-        aria-label={badgeLabel ? `Messages, ${badgeLabel} unread` : "Messages"}
-        className={`relative inline-flex h-9 w-9 items-center justify-center rounded ${
-          isAdminMode ? "text-[#D4DDE8] hover:bg-[#1a1a1a] hover:text-[#F8B56B]" : "text-phx-ink-soft hover:bg-phx-paper hover:text-phx-ink"
-        }`}
-        onClick={() => {
-          repositionPanel();
-          // Opened by hand, the mailbox shows its list — not the email an earlier pop-up opened.
-          setOpenRequest(null);
-          setOpen((current) => !current);
-        }}
-        ref={buttonRef}
-        type="button"
-      >
-        <Mail className="h-[18px] w-[18px]" />
-        {badgeLabel ? (
-          <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded bg-phx-accent px-1 text-phx-3xs font-black text-white">
-            {badgeLabel}
-          </span>
-        ) : null}
-      </button>
-
-      {open ? (
-        <div
-          className={cn(
-            "absolute left-0 top-full z-30 mt-1.5 overflow-hidden rounded border shadow-lg",
-            // On a phone the two columns stack, so the panel is taller than the screen, and it hangs
-            // from a header that does not scroll away: past the screen's bottom it could never be
-            // reached. There it stops at the screen and scrolls itself instead.
-            "max-sm:max-h-[calc(100dvh-5rem)] max-sm:overflow-y-auto",
-            isAdminMode ? "border-[#333333] bg-[#050505]" : "border-phx-line bg-white",
-          )}
-          style={{ marginLeft: placement.offsetLeft, width: placement.width }}
-        >
+  const panelInner = (
+    <>
           <div className={cn("flex border-b", isAdminMode ? "border-[#333333]" : "border-phx-line")} role="tablist">
             {([
               ["internal", "Phoenix messages"],
@@ -480,6 +491,56 @@ export function InternalMessagesMenu({ isAdminMode }: { isAdminMode: boolean }) 
               </div>
             </section>
           </div>
+    </>
+  );
+
+  // Embedded (portal unified inbox): just the panel body, always shown, no trigger or floating.
+  if (embedded) {
+    return <div className={cn("flex min-h-0 flex-col", isAdminMode ? "bg-[#050505] text-white" : "bg-white text-phx-ink")}>{panelInner}</div>;
+  }
+
+  return (
+    <div className="relative" ref={containerRef}>
+      {/* Drawn at every width: on a phone it is the only place the unread counts show. Summed from
+          the classes at 375px, both bars keep room for it — the admin bar's icons and account button
+          come to about 262 of its 351px, and the portal's leave its title about 180px. */}
+      <button
+        aria-expanded={open}
+        aria-label={badgeLabel ? `Messages, ${badgeLabel} unread` : "Messages"}
+        className={`relative inline-flex h-9 w-9 items-center justify-center rounded ${
+          isAdminMode ? "text-[#D4DDE8] hover:bg-[#1a1a1a] hover:text-[#F8B56B]" : "text-phx-ink-soft hover:bg-phx-paper hover:text-phx-ink"
+        }`}
+        onClick={() => {
+          repositionPanel();
+          // Opened by hand, the mailbox shows its list — not the email an earlier pop-up opened.
+          setOpenRequest(null);
+          setOpen((current) => !current);
+        }}
+        ref={buttonRef}
+        type="button"
+      >
+        <Mail className="h-[18px] w-[18px]" />
+        {badgeLabel ? (
+          <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded bg-phx-accent px-1 text-phx-3xs font-black text-white">
+            {badgeLabel}
+          </span>
+        ) : null}
+      </button>
+
+      {open ? (
+        <div
+          className={cn(
+            // The two columns stack below `xl`, so the panel is taller than the screen on a phone, a
+            // tablet AND a 1024-1279px laptop, and it hangs from a header that does not scroll away:
+            // past the screen's bottom it could never be reached. It stops at the screen — and above
+            // the portal's phone bottom bar — and scrolls itself, at every width. It used to do so
+            // only below `sm`, which left the Send button about 250px under a 1024x768 screen.
+            "absolute left-0 top-full z-30 mt-1.5 overflow-x-hidden overflow-y-auto rounded border shadow-lg",
+            isAdminMode ? "border-[#333333] bg-[#050505]" : "border-phx-line bg-white",
+          )}
+          style={{ marginLeft: placement.offsetLeft, maxHeight: HEADER_PANEL_MAX_HEIGHT, width: placement.width }}
+        >
+          {panelInner}
         </div>
       ) : null}
     </div>

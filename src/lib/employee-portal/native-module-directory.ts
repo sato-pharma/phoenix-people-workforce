@@ -42,13 +42,16 @@ export const NATIVE_MODULE_SECTION_ORDER = [
   "Training Manager",
   "My Workspace",
   "Approvals Hub",
-  "Sales",
-  "My Team",
-  "Field Activity",
+  "Sales Data",
+  "Performance",
+  "Forecast & Target",
+  "Recruitment",
+  "iReports 360",
   "Marketing & ROI",
-  "Pay & Expenses",
-  "Pharmacovigilance",
-  "Leave & HR",
+  "Payroll",
+  "Outstation Expenses",
+  "Leaves Management",
+  "Other",
 ] as const;
 
 export type NativeModuleSection = (typeof NATIVE_MODULE_SECTION_ORDER)[number];
@@ -56,9 +59,8 @@ export type NativeModuleSection = (typeof NATIVE_MODULE_SECTION_ORDER)[number];
 /**
  * href → the sidebar section it sits in, and the Ionicons glyph the app draws.
  *
- * A module the sidebar lists in TWO sections (My Coaching Reports, Report It) is filed here under the
- * FIRST one, because this list shows each module once — the same de-duplication
- * `visiblePortalNavEntries` already does by href.
+ * A module the sidebar lists under two labels (My Coaching Reports) is filed here once, under its
+ * FIRST section — the same de-duplication `visiblePortalNavEntries` already does by href.
  */
 const MODULE_PLACEMENT: Readonly<Record<string, { icon: string; section: NativeModuleSection }>> = {
   // ── Training Manager ──────────────────────────────────────────────────────────────────────────
@@ -68,8 +70,10 @@ const MODULE_PLACEMENT: Readonly<Record<string, { icon: string; section: NativeM
   "/employee-portals/training-manager/field-coaching": { icon: "walk-outline", section: "Training Manager" },
   // ── My Workspace ──────────────────────────────────────────────────────────────────────────────
   "/employee-portals/interview-calendar": { icon: "videocam-outline", section: "My Workspace" },
+  "/employee-portals/organogram": { icon: "business-outline", section: "My Workspace" },
   "/employee-portals/employee-360": { icon: "id-card-outline", section: "My Workspace" },
-  "/employee-portals/coaching": { icon: "clipboard-outline", section: "My Workspace" },
+  "/employee-portals/field-crm": { icon: "briefcase-outline", section: "My Workspace" },
+  "/employee-portals/business-review": { icon: "analytics-outline", section: "My Workspace" },
   "/employee-portals/plans": { icon: "calendar-outline", section: "My Workspace" },
   "/employee-portals/plans/calendar": { icon: "calendar-number-outline", section: "My Workspace" },
   // ── Approvals Hub ─────────────────────────────────────────────────────────────────────────────
@@ -79,42 +83,40 @@ const MODULE_PLACEMENT: Readonly<Record<string, { icon: string; section: NativeM
   "/employee-portals/marketing-requests/inbox": { icon: "mail-outline", section: "Approvals Hub" },
   "/employee-portals/market-awareness/inbox": { icon: "mail-unread-outline", section: "Approvals Hub" },
   "/employee-portals/approvals-hub": { icon: "file-tray-full-outline", section: "Approvals Hub" },
-  // ── Sales ─────────────────────────────────────────────────────────────────────────────────────
-  "/employee-portals/sales-vs-target": { icon: "speedometer-outline", section: "Sales" },
-  "/employee-portals/make-it-happen": { icon: "sparkles-outline", section: "Sales" },
-  "/employee-portals/source-of-sales": { icon: "bar-chart-outline", section: "Sales" },
-  "/employee-portals/weekly-sales": { icon: "stats-chart-outline", section: "Sales" },
-  "/employee-portals/weekly-stock": { icon: "cube-outline", section: "Sales" },
-  "/employee-portals/monthly-closing": { icon: "checkmark-done-outline", section: "Sales" },
-  "/employee-portals/business-review": { icon: "analytics-outline", section: "Sales" },
-  "/employee-portals/territory-drilldown": { icon: "git-branch-outline", section: "Sales" },
-  "/employee-portals/territory-management": { icon: "map-outline", section: "Sales" },
-  "/employee-portals/targets": { icon: "locate-outline", section: "Sales" },
-  "/employee-portals/direct-orders": { icon: "cart-outline", section: "Sales" },
-  "/employee-portals/direct-orders-in-my-area": { icon: "search-outline", section: "Sales" },
-  // ── My Team ───────────────────────────────────────────────────────────────────────────────────
-  "/employee-portals/team-performance": { icon: "trophy-outline", section: "My Team" },
-  "/employee-portals/med-reps-performance": { icon: "ribbon-outline", section: "My Team" },
-  "/employee-portals/dsms-performance": { icon: "medal-outline", section: "My Team" },
-  "/employee-portals/vacancies": { icon: "person-add-outline", section: "My Team" },
-  "/employee-portals/recruitment-candidates": { icon: "person-circle-outline", section: "My Team" },
-  "/employee-portals/probation": { icon: "checkbox-outline", section: "My Team" },
-  "/employee-portals/organogram": { icon: "business-outline", section: "My Team" },
-  "/employee-portals/team-expenses": { icon: "wallet-outline", section: "My Team" },
-  // ── Field Activity ────────────────────────────────────────────────────────────────────────────
-  "/employee-portals/visits": { icon: "navigate-outline", section: "Field Activity" },
-  "/employee-portals/field-crm": { icon: "briefcase-outline", section: "Field Activity" },
-  "/employee-portals/early-birds": { icon: "partly-sunny-outline", section: "Field Activity" },
-  "/employee-portals/visual-aids": { icon: "images-outline", section: "Field Activity" },
-  "/employee-portals/crm": { icon: "server-outline", section: "Field Activity" },
-  "/employee-portals/reps-list": { icon: "people-outline", section: "Field Activity" },
-  "/employee-portals/kpis": { icon: "pulse-outline", section: "Field Activity" },
-  "/employee-portals/double-visit-analytics": { icon: "git-compare-outline", section: "Field Activity" },
-  "/employee-portals/dv-planner": { icon: "duplicate-outline", section: "Field Activity" },
-  "/employee-portals/double-visit-report": { icon: "document-attach-outline", section: "Field Activity" },
-  "/employee-portals/field-activity": { icon: "map-outline", section: "Field Activity" },
-  "/employee-portals/coaching-analytics": { icon: "podium-outline", section: "Field Activity" },
-  "/employee-portals/team-calendar": { icon: "people-circle-outline", section: "Field Activity" },
+  // ── Sales Data ────────────────────────────────────────────────────────────────────────────────
+  "/employee-portals/source-of-sales": { icon: "bar-chart-outline", section: "Sales Data" },
+  "/employee-portals/weekly-sales": { icon: "stats-chart-outline", section: "Sales Data" },
+  "/employee-portals/weekly-stock": { icon: "cube-outline", section: "Sales Data" },
+  "/employee-portals/territory-drilldown": { icon: "git-branch-outline", section: "Sales Data" },
+  "/employee-portals/direct-orders": { icon: "cart-outline", section: "Sales Data" },
+  "/employee-portals/direct-orders-in-my-area": { icon: "search-outline", section: "Sales Data" },
+  // ── Performance ───────────────────────────────────────────────────────────────────────────────
+  "/employee-portals/sales-vs-target": { icon: "speedometer-outline", section: "Performance" },
+  "/employee-portals/monthly-closing": { icon: "checkmark-done-outline", section: "Performance" },
+  "/employee-portals/team-performance": { icon: "trophy-outline", section: "Performance" },
+  "/employee-portals/med-reps-performance": { icon: "ribbon-outline", section: "Performance" },
+  "/employee-portals/dsms-performance": { icon: "medal-outline", section: "Performance" },
+  "/employee-portals/incentive": { icon: "gift-outline", section: "Performance" },
+  "/employee-portals/probation": { icon: "checkbox-outline", section: "Performance" },
+  // ── Forecast & Target ─────────────────────────────────────────────────────────────────────────
+  "/employee-portals/make-it-happen": { icon: "sparkles-outline", section: "Forecast & Target" },
+  "/employee-portals/targets": { icon: "locate-outline", section: "Forecast & Target" },
+  // ── Recruitment ───────────────────────────────────────────────────────────────────────────────
+  "/employee-portals/vacancies": { icon: "person-add-outline", section: "Recruitment" },
+  "/employee-portals/recruitment-candidates": { icon: "person-circle-outline", section: "Recruitment" },
+  "/employee-portals/territory-management": { icon: "map-outline", section: "Recruitment" },
+  // ── iReports 360 ──────────────────────────────────────────────────────────────────────────────
+  "/employee-portals/visits": { icon: "navigate-outline", section: "iReports 360" },
+  "/employee-portals/early-birds": { icon: "partly-sunny-outline", section: "iReports 360" },
+  "/employee-portals/crm": { icon: "server-outline", section: "iReports 360" },
+  "/employee-portals/reps-list": { icon: "people-outline", section: "iReports 360" },
+  "/employee-portals/kpis": { icon: "pulse-outline", section: "iReports 360" },
+  "/employee-portals/dv-planner": { icon: "duplicate-outline", section: "iReports 360" },
+  "/employee-portals/double-visit-report": { icon: "document-attach-outline", section: "iReports 360" },
+  // Field Activity arrived on main (#4700) after the owner filled in his placement sheet, so the
+  // sheet has no answer for it and it keeps the seat main gave it — under the DV rows, here.
+  "/employee-portals/field-activity": { icon: "map-outline", section: "iReports 360" },
+  "/employee-portals/team-calendar": { icon: "people-circle-outline", section: "iReports 360" },
   // ── Marketing & ROI ───────────────────────────────────────────────────────────────────────────
   "/employee-portals/market-awareness": { icon: "megaphone-outline", section: "Marketing & ROI" },
   "/employee-portals/marketing-requests/validation": { icon: "shield-checkmark-outline", section: "Marketing & ROI" },
@@ -124,22 +126,23 @@ const MODULE_PLACEMENT: Readonly<Record<string, { icon: string; section: NativeM
   "/employee-portals/marketing-requests/customer-database": { icon: "library-outline", section: "Marketing & ROI" },
   "/employee-portals/roi": { icon: "trending-up-outline", section: "Marketing & ROI" },
   "/employee-portals/roi-tracker": { icon: "flag-outline", section: "Marketing & ROI" },
-  // ── Pay & Expenses ────────────────────────────────────────────────────────────────────────────
-  "/employee-portals/incentive": { icon: "gift-outline", section: "Pay & Expenses" },
-  "/employee-portals/payslips": { icon: "document-text-outline", section: "Pay & Expenses" },
-  "/employee-portals/deductions": { icon: "receipt-outline", section: "Pay & Expenses" },
-  "/employee-portals/expenses": { icon: "car-outline", section: "Pay & Expenses" },
-  "/employee-portals/expense-dashboard": { icon: "cash-outline", section: "Pay & Expenses" },
-  "/employee-portals/expense-submissions": { icon: "albums-outline", section: "Pay & Expenses" },
-  "/employee-portals/submit-expense": { icon: "add-circle-outline", section: "Pay & Expenses" },
-  // ── Pharmacovigilance ─────────────────────────────────────────────────────────────────────────
-  "/employee-portals/report-it": { icon: "medkit-outline", section: "Pharmacovigilance" },
-  // ── Leave & HR ────────────────────────────────────────────────────────────────────────────────
-  "/employee-portals/vacation-request": { icon: "airplane-outline", section: "Leave & HR" },
-  "/employee-portals/vacation-report": { icon: "reader-outline", section: "Leave & HR" },
-  "/employee-portals/excuses": { icon: "alarm-outline", section: "Leave & HR" },
-  "/employee-portals/fingerprint-analytics": { icon: "finger-print-outline", section: "Leave & HR" },
-  "/employee-portals/contact-hr-support": { icon: "headset-outline", section: "Leave & HR" },
+  // ── Payroll ───────────────────────────────────────────────────────────────────────────────────
+  "/employee-portals/payslips": { icon: "document-text-outline", section: "Payroll" },
+  "/employee-portals/deductions": { icon: "receipt-outline", section: "Payroll" },
+  // ── Outstation Expenses ───────────────────────────────────────────────────────────────────────
+  "/employee-portals/expenses": { icon: "car-outline", section: "Outstation Expenses" },
+  "/employee-portals/expense-dashboard": { icon: "cash-outline", section: "Outstation Expenses" },
+  "/employee-portals/expense-submissions": { icon: "albums-outline", section: "Outstation Expenses" },
+  "/employee-portals/submit-expense": { icon: "add-circle-outline", section: "Outstation Expenses" },
+  "/employee-portals/team-expenses": { icon: "wallet-outline", section: "Outstation Expenses" },
+  // ── Leaves Management ─────────────────────────────────────────────────────────────────────────
+  "/employee-portals/vacation-request": { icon: "airplane-outline", section: "Leaves Management" },
+  "/employee-portals/vacation-report": { icon: "reader-outline", section: "Leaves Management" },
+  "/employee-portals/excuses": { icon: "alarm-outline", section: "Leaves Management" },
+  "/employee-portals/fingerprint-analytics": { icon: "finger-print-outline", section: "Leaves Management" },
+  // ── Other ─────────────────────────────────────────────────────────────────────────────────────
+  "/employee-portals/report-it": { icon: "medkit-outline", section: "Other" },
+  "/employee-portals/contact-hr-support": { icon: "headset-outline", section: "Other" },
 };
 
 /** What the app renders for one module. */

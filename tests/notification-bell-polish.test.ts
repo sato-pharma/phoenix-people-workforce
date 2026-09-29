@@ -89,7 +89,8 @@ export function runNotificationBellPolishTests() {
     "the panel must be placed through the shared clamp, not with a fixed right-0 className",
   );
   assert.ok(
-    /style=\{\{ marginLeft: placement\.offsetLeft, width: placement\.width \}\}/.test(bell),
+    // The vertical cap (HEADER_PANEL_MAX_HEIGHT, 2026-09-28) rides in the same style object.
+    /style=\{\{ marginLeft: placement\.offsetLeft, (?:maxHeight: HEADER_PANEL_MAX_HEIGHT, )?width: placement\.width \}\}/.test(bell),
     "the measured placement must reach the panel element, or it is computed and discarded",
   );
   assert.ok(
