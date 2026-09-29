@@ -33,6 +33,10 @@ yarn-error.*
 # local env files
 .env*.local
 
+# Google Play service-account key used by `eas submit` (draft upload). It is a publishing
+# credential — provisioned in the Play Console, placed here by hand, and NEVER committed.
+google-play-service-account.json
+
 # typescript
 *.tsbuildinfo
 

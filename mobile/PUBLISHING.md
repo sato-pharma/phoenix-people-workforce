@@ -300,3 +300,64 @@ this repo can do.
   stopped, and the push test pressed in a browser signed in as that person should no longer reach
   the phone. After they sign in on the phone again, Profile should read "On" and the push test
   should arrive.
+
+---
+
+## Automating the upload (draft only — the release click stays the owner's)
+
+Step 3 above — dragging the `.aab` onto the Private apps page — is the owner's click. It can be
+automated **up to, but not including, the release**, so nobody hand-drags a file again while the
+decision to distribute stays a human one. Owner decision, 2026-09-29: *"wire it as a draft upload
+and I'll press release."*
+
+**What is wired (this PR).** `mobile/eas.json` now carries a `submit.production.android` profile:
+
+```json
+"submit": {
+  "production": {
+    "android": {
+      "serviceAccountKeyPath": "./google-play-service-account.json",
+      "track": "production",
+      "releaseStatus": "draft"
+    }
+  }
+}
+```
+
+`releaseStatus: "draft"` is the whole point: `eas submit` uploads the bundle to the production
+track as a **draft**, so it appears in the Play Console staged and un-released. It goes to nobody
+until the owner opens the release and presses **Release**. It is NOT `completed` — a `completed`
+submit publishes to the org with no human step, which the safety classifier blocks and the owner
+declined.
+
+**The one thing only the owner can provision — a Play service-account key.** `eas submit` talks to
+Google's Play Developer API (`androidpublisher` edits) as a service account, not as a person. That
+key does not exist yet and cannot be created from a session (it lives in the owner's Google
+console):
+
+1. In the Play Console → **Setup → API access** (or the linked Google Cloud project), create a
+   **service account** and grant it permission to **manage releases** for this app.
+2. Download its **JSON key**.
+3. Place it at `mobile/google-play-service-account.json` (gitignored — it is a publishing
+   credential and is never committed). For an EAS-hosted submit instead of a local one, store it as
+   an EAS secret rather than a file.
+
+Until that key is in place, `eas submit` cannot run; the build step still produces the `.aab` and
+hands over its link, exactly as before.
+
+**How it runs.** After the store build finishes:
+
+```
+eas submit --platform android --profile production --id <buildId>
+```
+
+(or `--path <the .aab>`). It uploads the draft; the owner then presses Release in the Play Console.
+🔴 **The FIRST such submit must be watched once** before it is trusted unattended — a private
+managed-Play app's exact track/edit behaviour has not been exercised through the Developer API here,
+only through the iframe. The Oct 1 delivery task will attempt this draft submit **only if the key
+file is present**, and otherwise falls back to handing over the `.aab` link.
+
+**versionCode still climbs by hand-safe rule.** `appVersionSource` stays `local`, so `app.json`'s
+`versionCode` is the source of truth and Play refuses a re-used code — see the versionCode note
+under step 3 above. A draft that Play refused for a duplicate code surfaces ~20 minutes after the
+build, not before it.
