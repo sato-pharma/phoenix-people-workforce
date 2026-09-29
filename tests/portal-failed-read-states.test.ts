@@ -25,6 +25,7 @@ import { stripComments } from "./support/comment-strip.ts";
  */
 
 const DASHBOARD = "src/components/employee-portal/employee-portal-dashboard.tsx";
+const PROBATION = "app/employee-portals/probation/page.tsx";
 
 export function runPortalFailedReadStatesTests() {
   const source = stripComments(readFileSync(DASHBOARD, "utf8"));
@@ -90,5 +91,33 @@ export function runPortalFailedReadStatesTests() {
     source,
     /trimmed\.slice\(0, 79\)/,
     "shortInsight must not cut an insight at 79 characters and append '...'",
+  );
+
+  // ── The probation queue (Performance section) ─────────────────────────────
+  // Both of its lists are best-effort and catch to [], and the "nothing to show" screen reads
+  // their LENGTH — so with both queries down an evaluator holding overdue SLA tasks was told he
+  // had none, which is the same defect as the dashboard's above and lands on someone's record.
+  const probation = stripComments(readFileSync(PROBATION, "utf8"));
+  assert.equal(
+    (probation.match(/loadFailed = true;/g) ?? []).length,
+    2,
+    "BOTH probation reads must record the failure — the inbox and the scorable list. Either one " +
+      "missing leaves the false 'no probation records' screen for half the ways this can fail.",
+  );
+  assert.match(
+    probation,
+    /if \(loadFailed && feedbackTasks\.length === 0 && scorableProbationers\.length === 0\) \{/,
+    "the failed-read branch must be tested BEFORE the emptiness branch, or a failure still renders " +
+      "as 'No active probation records found for your current scope'",
+  );
+  assert.match(
+    probation,
+    /title="Could not load your probation queue"/,
+    "it names what happened rather than describing the evaluator's caseload",
+  );
+  assert.match(
+    probation,
+    /Nothing has been lost or completed/,
+    "and it says the queue still exists — a blank list on an SLA screen reads as 'you are clear'",
   );
 }

@@ -523,9 +523,24 @@ export function TeamLeaderboardTable({ members }: { members: DsmTeamMemberData[]
         })}
       </div>
 
-      {/* Desktop table view */}
-      <div className="hidden overflow-x-auto md:block">
-        <table className="w-full min-w-0 text-sm">
+      {/* Desktop table view.
+          `table-fixed` with a colgroup, and NO `overflow-x-auto` — the prescribed fix rather than
+          the permission to overflow. AGENTS.md §4: fit by merging or sizing columns, never by
+          granting a sideways scroll. The scroll here was dead permission anyway: this block is
+          `hidden md:block`, so it only ever renders at 768px and up, and three of its six columns
+          are themselves hidden below `sm`. Percentages, so the table divides whatever width it is
+          given instead of carrying a floor it can exceed. Name takes the slack because it is the
+          only column with words in it. */}
+      <div className="hidden md:block">
+        <table className="w-full table-fixed text-sm">
+          <colgroup>
+            <col className="w-[8%]" />
+            <col className="w-[36%]" />
+            <col className="w-[16%]" />
+            <col className="w-[14%]" />
+            <col className="w-[14%]" />
+            <col className="w-[12%]" />
+          </colgroup>
           <thead>
             <tr className="border-b border-slate-100">
               <th className="text-left py-2 px-3 text-xs font-medium text-slate-500 w-10 border-r border-slate-100">#</th>
