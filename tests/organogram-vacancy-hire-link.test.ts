@@ -9,6 +9,7 @@ import {
   readVacancyHireSeat,
   vacancyHireSeatKey,
 } from "../src/lib/employees/vacancy-hire-link.ts";
+import { employeePortalDevPreviewData } from "../src/lib/employee-portal/dev-preview-data.ts";
 
 /**
  * Pressing a VACANT box on the organogram opened a popup that described the seat and offered
@@ -259,4 +260,24 @@ export async function runOrganogramVacancyHireLinkTests() {
     6,
     "the portal table must stay at six columns — a seventh breaks the colgroup and the screen",
   );
+
+  // The dev-preview fixtures are the OTHER constructor of this row, and adding the ids to the
+  // type without adding them here is exactly what turned `checks` red on the first attempt at
+  // this change. Read the emitted objects rather than the source, so a fixture that compiles
+  // but carries nothing still fails.
+  const previewVacancies =
+    employeePortalDevPreviewData.overview.vacancyDetails?.vacancies ?? [];
+  assert.ok(
+    previewVacancies.length > 0,
+    "the dev preview must still carry vacancy rows, or this guard is checking nothing",
+  );
+  for (const vacancy of previewVacancies) {
+    for (const field of ["areaId", "departmentId", "lineId", "positionId"] as const) {
+      assert.equal(
+        typeof vacancy[field],
+        "number",
+        `dev preview vacancy ${vacancy.vacancyCode} must carry a real ${field}`,
+      );
+    }
+  }
 }
