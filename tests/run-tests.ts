@@ -1680,6 +1680,7 @@ import { runCrmDepartedAgentScanTests } from "./crm-departed-agent-scan.test.ts"
 import { runApiErrorInfrastructureRedactionTests } from "./api-error-infrastructure-redaction.test.ts";
 import { runSchemaShapeDefaultAclTests } from "./schema-shape-default-acl.test.ts";
 import { runSchemaShapePrivateUsageTests } from "./schema-shape-private-usage.test.ts";
+import { runSchemaShapeBrowserReachabilityTests } from "./schema-shape-browser-reachability.test.ts";
 import { runSchemaShapeSnapshotInPublicTests } from "./schema-shape-snapshot-in-public.test.ts";
 import { runTerritorySyncTests } from "./territory-sync.test.ts";
 import { runTerritoryRestampAreaChangeTests } from "./territory-restamp-area-change.test.ts";
@@ -5816,6 +5817,10 @@ await runTest(
 await runTest(
   "schema-shape snapshot in public (the five real pre-images are caught, live *_snapshots tables are not, and the SQL matches the TypeScript)",
   runSchemaShapeSnapshotInPublicTests,
+);
+await runTest(
+  "schema-shape browser reachability (a `true` policy and a view that lost security_invoker both read past RLS while it stays enabled)",
+  runSchemaShapeBrowserReachabilityTests,
 );
 await runTest(
   "territory sync (rollup==source reconciles within epsilon; row-count off-by-one fails; period window clamps)",

@@ -54,6 +54,36 @@ const NO_PRIMARY_KEY_ALLOWED = new Set<string>([]);
 // grant, not to add a name here.
 const EXPOSED_WITHOUT_RLS_ALLOWED = new Set<string>([]);
 
+// Relations a browser role may read through a policy that filters NOTHING — a permissive
+// `true` SELECT policy. Keyed "<relation>:<role>", and every entry carries its reason.
+//
+// This is a different question from the set above. There, RLS is off and the table is bare.
+// Here RLS is ON and a policy EXISTS, so every count in this script reads green while the role
+// named can select every row. An entry is justified only when the contents are genuinely public
+// to that audience — a static lookup, never a person, an amount or a date.
+const TRUE_POLICY_ALLOWED = new Map<string, string>([
+  [
+    "deductions_categories:authenticated",
+    // 7 static rows: category, label, detection_engine, requires_approval,
+    // salary_records_column, sort_order. It is the vocabulary the deductions UI renders —
+    // no employee, no amount, no month. An employee already sees these labels on their own
+    // payslip. Checked against production 2026-09-29.
+    "static 7-row lookup of deduction category names; no person, no amount",
+  ],
+]);
+
+// Views/matviews a browser role may hold SELECT on WITHOUT `security_invoker`.
+//
+// 🔴 Deliberately EMPTY, and much harder to justify than the set above. A non-invoker view runs
+// as its owner (`postgres` here), so it does not merely expose its own rows — it reads past the
+// RLS of every table beneath it, for a role that has no grant on any of them. Nine of the
+// eleven browser-granted views in `public` sit over payroll and org data, and are harmless
+// today for exactly one reason: they are all `security_invoker = true`.
+//
+// The fix for a new name here is to add `security_invoker = true` to the view, or to revoke the
+// grant. It is not to add the name.
+const GRANTED_VIEW_NOT_INVOKER_ALLOWED = new Set<string>([]);
+
 export type SchemaShape = {
   tables_total: number;
   tables_rls_enabled: number;
@@ -138,6 +168,8 @@ export type SchemaShape = {
   snapshot_tables_in_public?: SnapshotTableInPublic[];
   /** Optional for the same reason: only present once 20260929200500 is applied to this target. */
   recovery_health?: RecoveryHealth[];
+  /** Optional for the same reason: only present once 20260929203200 is applied to this target. */
+  browser_reachable?: BrowserReachable[];
 };
 
 /** Whether each browser-facing/server role holds USAGE on a given schema. */
@@ -185,6 +217,43 @@ export type DefaultAclLeak = {
   obj_type: string;
   grantee: string;
   privs: string;
+};
+
+/**
+ * One relation in `public` that a browser role is granted SELECT on
+ * (20260929203517_ci_browser_reachability.sql).
+ *
+ * 🔴 THE GAP THIS CLOSES: `exposed_without_rls` above fires only when RLS is DISABLED. Two ways
+ * past RLS leave it ENABLED, a policy in place, and every existing count green.
+ *
+ *  1. A PERMISSIVE `true` read policy for a browser role — the policy filters nothing, so the
+ *     table is wide open to that role while reading as fully protected.
+ *  2. A granted VIEW that is not `security_invoker` — it runs as its OWNER and reads straight
+ *     past the RLS of every table underneath it. A MATERIALIZED view cannot be
+ *     `security_invoker` at all and has no RLS of its own, so a granted one is always a bypass.
+ *
+ * `security_invoker` IS checked elsewhere in this repo — but only as TEXT INSIDE MIGRATION FILES
+ * (security-rls-static.ts, lib/migration-inventory.ts). Nothing had ever asked the live
+ * database, so a view created by hand through execute_sql — which is how most of this schema has
+ * actually arrived — or one later altered with `reset (security_invoker)`, passed all of them.
+ *
+ * Measured on production 2026-09-29: 80 granted relations, 0 non-invoker views, 1 `true` policy.
+ * The nine views granted to `anon` include `v_employee_portal_payslips`; probing each with the
+ * live anon key returned 401/42501, because `security_invoker` sends the read back through
+ * anon's own (absent) grants on the underlying tables. **The grant is the loaded gun and
+ * `security_invoker` is the safety catch** — which is exactly why losing it must be an error.
+ */
+export type BrowserReachable = {
+  relname: string;
+  relkind: string;
+  anon_select: boolean;
+  auth_select: boolean;
+  rls_enabled: boolean;
+  policy_count: number;
+  /** null for a table, which has no such option; `false` on a view is a real finding. */
+  security_invoker: boolean | null;
+  /** Comma-separated roles holding a permissive `true` read policy, or null for none. */
+  open_policy: string | null;
 };
 
 export type Violation = { severity: "error" | "warning"; code: string; message: string };
@@ -502,6 +571,65 @@ export function evaluateSchemaShape(shape: SchemaShape): Violation[] {
     }
   }
 
+  // 🔴 BROWSER REACHABILITY — the two ways past RLS that leave it switched ON.
+  //
+  // `exposed_without_rls` at the top of this function fires only when RLS is DISABLED, and on
+  // production that set is empty. These two are not covered by it, or by anything else here:
+  // in both, RLS reads as enabled and the role can still select every row.
+  //
+  // `undefined` means 20260929203200 is not on this target yet — stay silent, as above.
+  if (shape.browser_reachable !== undefined) {
+    // 1. A permissive `true` read policy filters nothing. Flagged per (relation, role) so that
+    //    allowing it for `authenticated` never silently also allows it for `anon`.
+    const openToRole: string[] = [];
+    for (const r of shape.browser_reachable) {
+      if (!r.open_policy) continue;
+      for (const role of r.open_policy.split(",")) {
+        const key = `${r.relname}:${role}`;
+        // A PUBLIC policy reaches anon too, so it is never covered by an `authenticated` entry.
+        if (!TRUE_POLICY_ALLOWED.has(key)) openToRole.push(key);
+      }
+    }
+    if (openToRole.length > 0) {
+      const anonReachable = openToRole.filter((k) => k.endsWith(":anon") || k.endsWith(":PUBLIC"));
+      v.push({
+        severity: "error",
+        code: "browser_readable_via_true_policy",
+        message:
+          `${openToRole.length} relation/role pair(s) have a permissive read policy of \`true\`, ` +
+          `so the policy filters nothing and the role reads every row: ${openToRole.join(", ")}. ` +
+          (anonReachable.length > 0
+            ? `${anonReachable.length} of them reach ANON, which is the public key — treat as a live breach. `
+            : "") +
+          "RLS being enabled does not make this safe; it is why no other check here sees it. " +
+          "Fix by narrowing the policy or revoking the grant, not by adding to TRUE_POLICY_ALLOWED.",
+      });
+    }
+
+    // 2. A granted view that is not security_invoker runs as its OWNER, reading past the RLS of
+    //    every table beneath it. A matview cannot be security_invoker at all.
+    const bypassing = shape.browser_reachable.filter(
+      (r) =>
+        (r.relkind === "view" || r.relkind === "matview") &&
+        r.security_invoker !== true &&
+        !GRANTED_VIEW_NOT_INVOKER_ALLOWED.has(r.relname),
+    );
+    if (bypassing.length > 0) {
+      v.push({
+        severity: "error",
+        code: "granted_view_bypasses_rls",
+        message:
+          `${bypassing.length} view(s)/matview(s) are granted to a browser role WITHOUT ` +
+          `security_invoker, so they run as their owner and read past the RLS of every table ` +
+          `underneath: ${bypassing
+            .map((r) => `${r.relname} (${r.relkind}${r.anon_select ? ", ANON" : ""})`)
+            .join(", ")}. ` +
+          "Add `security_invoker = true` to the view, or revoke the grant. A matview cannot " +
+          "carry that option at all, so a granted one must have its grant revoked.",
+      });
+    }
+  }
+
   return v;
 }
 
@@ -554,6 +682,18 @@ async function loadShape(): Promise<SchemaShape> {
     );
   } else {
     shape.recovery_health = (recovery.data ?? []) as RecoveryHealth[];
+  }
+
+  // Same pattern again (20260929203517_ci_browser_reachability.sql). Asks the LIVE catalogue
+  // what a browser role can actually reach — the one question `security_invoker` greps over
+  // migration text cannot answer, because most of this schema arrived through execute_sql.
+  const reachable = await supabase.rpc("phx_ci_browser_reachability");
+  if (reachable.error) {
+    console.log(
+      `[schema-shape] browser-reachability gate not available on this target (${reachable.error.message}) — skipping.`,
+    );
+  } else {
+    shape.browser_reachable = (reachable.data ?? []) as BrowserReachable[];
   }
 
   return shape;
