@@ -9,7 +9,12 @@ import { useDialogA11y } from "@/components/ui/use-dialog-a11y";
 import { formatDateOnly } from "@/lib/date-only";
 // employee-cv-limits, NOT employee-cv: the server module pulls in node:crypto and the
 // service-role client, and importing either into this client bundle is a webpack build error.
-import { employeeCvHref } from "@/lib/employees/employee-cv-limits";
+import {
+  CV_EMPTY_NOTICE,
+  type CvNoticeState,
+  employeeCvHref,
+  resolveCvNoticeState,
+} from "@/lib/employees/employee-cv-limits";
 import { buildVacancyHireHref } from "@/lib/employees/vacancy-hire-link";
 import type {
   OrganogramDetailSection,
@@ -123,12 +128,24 @@ export function OrganogramNodeDetailModal({ row, onClose, canAddEmployee = false
   const [detail, setDetail] = React.useState<OrganogramEmployeeDetail | null>(null);
   const [loading, setLoading] = React.useState(!isVacancy);
   const [error, setError] = React.useState<string | null>(null);
-  // Whether a CV is on this person's master record AND this viewer may download it. The
-  // ?meta=1 probe answers both at once: it 401/403s for a viewer without the grant (the CV
-  // route gates on the named employeeCvReaderRoles set — Super Admin, SFE Manager, HR
-  // Advisory, HR Operations), and returns { cv: null } when there is simply nothing on file.
-  // Either way the button stays hidden, so it never offers a download that would fail.
-  const [cvAvailable, setCvAvailable] = React.useState(false);
+  // What this viewer is told about the person's CV. The ?meta=1 probe answers two questions at
+  // once — may this viewer read a CV at all (the CV route gates on the named
+  // employeeCvReaderRoles set: Super Admin, SFE Manager, HR Advisory, HR Operations, and
+  // 401/403s everyone else), and is there a file on this person's master record — so the three
+  // answers are three different things to show, NOT one boolean:
+  //
+  //   "probing"  the answer has not come back yet, or the probe failed/aborted — show nothing.
+  //              Never "No CV on file": that is a claim about the record, and a network failure
+  //              is not evidence for it.
+  //   "ready"    a file is on record and this viewer may have it — show the CV download.
+  //   "empty"    this viewer may read CVs and there is NOTHING on record — show the greyed
+  //              "No CV on file" notice. Owner's decision, 2026-09-29: a seat that simply
+  //              rendered no control read as "the feature isn't there", and only 9 of 198 people
+  //              on production carry a CV, so the silent state was the one almost everybody saw.
+  //   "forbidden" this viewer may not read anybody's CV — show nothing at all. He is not missing
+  //              a file, so telling him a record is empty would be noise about a door that is
+  //              shut to him either way.
+  const [cvState, setCvState] = React.useState<CvNoticeState>("probing");
 
   React.useEffect(() => {
     if (isVacancy) return;
@@ -172,24 +189,34 @@ export function OrganogramNodeDetailModal({ row, onClose, canAddEmployee = false
   // directly in the effect (react-hooks/set-state-in-effect forbids a synchronous setState
   // there — the same reason the detail effect above resets inside its own async body). The
   // reset also drops the previous person's answer when the popup is reused for another node
-  // without closing. It only ever flips cvAvailable to true, so a failure or a 401/403 leaves
-  // the button hidden.
+  // without closing.
   React.useEffect(() => {
     if (isVacancy) return;
     const controller = new AbortController();
     let active = true;
     void (async () => {
-      setCvAvailable(false);
+      setCvState("probing");
       try {
         const response = await fetch(`${employeeCvHref(row.hrId)}?meta=1`, {
           cache: "no-store",
           signal: controller.signal,
         });
-        if (!active || !response.ok) return;
-        const payload = (await response.json().catch(() => ({}))) as { cv?: unknown };
-        if (active && payload?.cv) setCvAvailable(true);
+        const payload = response.ok
+          ? ((await response.json().catch(() => ({}))) as { cv?: unknown })
+          : {};
+        if (!active) return;
+        // The whole decision lives in resolveCvNoticeState, beside the wording it selects and
+        // under test — not inline here, where the rule "only a 200 may claim the record is
+        // empty" would be one edit away from becoming `!cv` again.
+        setCvState(
+          resolveCvNoticeState({
+            hasCv: Boolean(payload?.cv),
+            ok: response.ok,
+            status: response.status,
+          }),
+        );
       } catch {
-        // Aborted or offline — leave the button hidden.
+        // Aborted or offline — stay in "probing", which shows nothing.
       }
     })();
     return () => {
@@ -236,42 +263,63 @@ export function OrganogramNodeDetailModal({ row, onClose, canAddEmployee = false
               ) : null}
             </div>
           </div>
-          <div className="flex shrink-0 items-center gap-1">
-            {/* Employees only — a vacancy carries no record to file. The link goes to the PDF route,
-                which re-derives this viewer's exact sections server-side, so the download can never
-                reveal a field the popup itself withheld. `download` keeps the browser on this page. */}
-            {!isVacancy ? (
-              <a
-                aria-label={`Download ${heading}'s record as PDF`}
-                className="flex items-center gap-1.5 rounded-md px-2 py-1 text-phx-xs font-semibold text-white/80 transition hover:bg-white/10 hover:text-white"
-                download
-                href={`/api/reports/organogram/employee/${encodeURIComponent(row.hrId)}/pdf`}
-              >
-                <Download className="h-4 w-4" />
-                PDF
-              </a>
-            ) : null}
-            {/* The person's actual CV, from their master record. Shown only once the probe
-                confirms a file is on record AND this viewer may read it (the SFE Manager is
-                the whole reason this control exists — see the CV route). `download` keeps the
-                browser on this page; the route streams the file as an attachment. */}
-            {!isVacancy && cvAvailable ? (
-              <a
-                aria-label={`Download ${heading}'s CV`}
-                // No radius class: this modal portals to document.body, outside the shell sweeps
-                // that would square a rounded corner, so a `rounded-*` here renders genuinely
-                // rounded and breaks the square-edge golden rule (tests/square-edge-portal-ratchet).
-                className="flex items-center gap-1.5 px-2 py-1 text-phx-xs font-semibold text-white/80 transition hover:bg-white/10 hover:text-white"
-                download
-                href={employeeCvHref(row.hrId)}
-              >
-                <FileText className="h-4 w-4" />
-                CV
-              </a>
-            ) : null}
+          {/* NO shrink-0 on this cluster, and min-w-0 on it: "No CV on file" is far wider than the
+              icon-plus-word controls beside it, and a shrink-0 parent makes an inner flex-wrap
+              INERT (it never shrinks below max-content, so nothing ever needs to wrap) — which at
+              375px squeezed the person's own name into the gap that was left. Shrinkable + wrap
+              lets the controls drop to a second row instead, which is what the fits-the-screen
+              golden rule asks for: fit by wrapping, never a horizontal scroll. The close button
+              keeps its own shrink-0 so it stays put on the first row. */}
+          <div className="flex min-w-0 items-start gap-1">
+            <div className="flex min-w-0 flex-wrap items-center justify-end gap-1">
+              {/* Employees only — a vacancy carries no record to file. The link goes to the PDF
+                  route, which re-derives this viewer's exact sections server-side, so the download
+                  can never reveal a field the popup itself withheld. `download` keeps the browser
+                  on this page. */}
+              {!isVacancy ? (
+                <a
+                  aria-label={`Download ${heading}'s record as PDF`}
+                  className="flex items-center gap-1.5 rounded-md px-2 py-1 text-phx-xs font-semibold text-white/80 transition hover:bg-white/10 hover:text-white"
+                  download
+                  href={`/api/reports/organogram/employee/${encodeURIComponent(row.hrId)}/pdf`}
+                >
+                  <Download className="h-4 w-4" />
+                  PDF
+                </a>
+              ) : null}
+              {/* The person's actual CV, from their master record. Shown only once the probe
+                  confirms a file is on record AND this viewer may read it (the SFE Manager is
+                  the whole reason this control exists — see the CV route). `download` keeps the
+                  browser on this page; the route streams the file as an attachment. */}
+              {!isVacancy && cvState === "ready" ? (
+                <a
+                  aria-label={`Download ${heading}'s CV`}
+                  // No radius class: this modal portals to document.body, outside the shell sweeps
+                  // that would square a rounded corner, so a `rounded-*` here renders genuinely
+                  // rounded and breaks the square-edge golden rule
+                  // (tests/square-edge-portal-ratchet).
+                  className="flex items-center gap-1.5 px-2 py-1 text-phx-xs font-semibold text-white/80 transition hover:bg-white/10 hover:text-white"
+                  download
+                  href={employeeCvHref(row.hrId)}
+                >
+                  <FileText className="h-4 w-4" />
+                  CV
+                </a>
+              ) : null}
+              {/* The same slot, greyed, when this viewer MAY read a CV and the record holds none —
+                  so an SFE opening a seat learns the file is missing instead of finding a header
+                  that looks exactly like one with the feature switched off. Not a button: there is
+                  nothing to press. No radius class, for the portal reason above. */}
+              {!isVacancy && cvState === "empty" ? (
+                <span className="flex items-center gap-1.5 px-2 py-1 text-phx-xs font-semibold text-white/50">
+                  <FileText className="h-4 w-4" />
+                  {CV_EMPTY_NOTICE}
+                </span>
+              ) : null}
+            </div>
             <button
               aria-label="Close"
-              className="rounded-md p-1 text-white/70 transition hover:bg-white/10 hover:text-white"
+              className="shrink-0 rounded-md p-1 text-white/70 transition hover:bg-white/10 hover:text-white"
               onClick={onClose}
               type="button"
             >
