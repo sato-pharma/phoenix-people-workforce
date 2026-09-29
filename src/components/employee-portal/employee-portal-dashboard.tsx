@@ -382,10 +382,20 @@ function computeGapToTarget(sales: number, target: number) {
   return Math.max(0, target - sales);
 }
 
+/**
+ * An insight, whole.
+ *
+ * It used to cut at 79 characters and append "...". The owner's standing rule is that text is
+ * NEVER truncated with an ellipsis, and where that collides with fitting the screen, wrapping
+ * wins. Both call sites render this inside a `<p>` in a card that already wraps, so a long
+ * insight simply takes a second line — nothing overflows and nothing scrolls sideways.
+ *
+ * Nothing was gained by the cut either: these strings end in their measurement, so
+ * "Cardiomax is your top product in Alexandria this month, up 34% on…" was the sentence with the
+ * number removed.
+ */
 function shortInsight(text: string) {
-  const trimmed = text.trim();
-  if (trimmed.length <= 82) return trimmed;
-  return `${trimmed.slice(0, 79).trimEnd()}...`;
+  return text.trim();
 }
 
 function insightTone(text: string): "neutral" | "positive" | "warning" {
@@ -2826,6 +2836,11 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
   const [alertNotDelivered, setAlertNotDelivered] = useState(false);
   const [recentRequests, setRecentRequests] = useState<SupportRequestRow[]>([]);
   const [isLoadingRequests, setIsLoadingRequests] = useState(true);
+  // A FAILED READ IS NOT AN EMPTY HISTORY. Without this, a rep with twelve open tickets and a
+  // down API was shown "No recent requests — your support history will appear here after your
+  // first request": a confident, specific and false statement about his own record. AGENTS.md §1
+  // — a confident zero is worse than an error.
+  const [requestsError, setRequestsError] = useState(false);
   const successTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const draftRestoredRef = useRef(false);
@@ -2845,13 +2860,22 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
           headers: { "Content-Type": "application/json" },
         });
         if (!response.ok) {
-          if (!cancelled) setRecentRequests([]);
+          if (!cancelled) {
+            setRecentRequests([]);
+            setRequestsError(true);
+          }
           return;
         }
         const payload = (await response.json()) as { items?: SupportRequestRow[] };
-        if (!cancelled) setRecentRequests(payload.items ?? []);
+        if (!cancelled) {
+          setRecentRequests(payload.items ?? []);
+          setRequestsError(false);
+        }
       } catch {
-        if (!cancelled) setRecentRequests([]);
+        if (!cancelled) {
+          setRecentRequests([]);
+          setRequestsError(true);
+        }
       } finally {
         if (!cancelled) setIsLoadingRequests(false);
       }
@@ -3058,21 +3082,21 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
           icon={Clock}
           label="Open"
           note="Waiting for HR or in progress"
-          value={isLoadingRequests ? "—" : openCount}
+          value={isLoadingRequests || requestsError ? "—" : openCount}
         />
         <PortalMetricCard
           accent="emerald"
           icon={CheckCircle2}
           label="Resolved"
           note="Answered and closed"
-          value={isLoadingRequests ? "—" : resolvedCount}
+          value={isLoadingRequests || requestsError ? "—" : resolvedCount}
         />
         <PortalMetricCard
           accent="orange"
           icon={Send}
           label="Sent"
           note="Your requests on record"
-          value={isLoadingRequests ? "—" : recentRequests.length}
+          value={isLoadingRequests || requestsError ? "—" : recentRequests.length}
         />
         <PortalMetricCard
           accent="slate"
@@ -3339,6 +3363,12 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
             <PortalSkeleton className="h-12 w-full" />
             <PortalSkeleton className="h-12 w-full" />
           </div>
+        ) : requestsError ? (
+          // Says what happened, and does NOT claim the history is empty — see requestsError above.
+          <PortalEmptyState
+            message="Your requests could not be loaded just now. They have not been lost — reload the page to try again."
+            title="Could not load your requests"
+          />
         ) : recentRequests.length === 0 ? (
           <PortalEmptyState
             message="Your support history will appear here after your first request."
@@ -3780,6 +3810,12 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
           <span className="h-2 w-2 rounded-full bg-orange-500/80" />
           <p className="text-lg font-semibold text-slate-900">Employee Performance (AM & PM)</p>
         </div>
+        {employeePerformance.length === 0 ? (
+          <PortalEmptyState
+            message="Nobody on your team has a recorded visit in this period yet."
+            title="No performance rows yet"
+          />
+        ) : null}
         {/* Mobile card view for <480px */}
         <div className="space-y-2 md:hidden">
           {employeePerformance.map((emp, index) => (
@@ -3882,6 +3918,12 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
             <span className="h-2 w-2 rounded-full bg-orange-500/80" />
             <p className="text-lg font-semibold text-slate-900">Territory Analysis</p>
           </div>
+          {territoryAnalysis.length === 0 ? (
+            <PortalEmptyState
+              message="No territory has a recorded trip in this period yet."
+              title="No territory rows yet"
+            />
+          ) : null}
           {/* Mobile card view for <480px */}
           <div className="space-y-2 md:hidden">
             {territoryAnalysis.map((territory) => (
@@ -3940,6 +3982,12 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
             {recentTrips.length} trip{recentTrips.length === 1 ? "" : "s"}
           </span>
         </div>
+        {recentTrips.length === 0 ? (
+          <PortalEmptyState
+            message="No outstation trip has been recorded in this period yet."
+            title="No trips yet"
+          />
+        ) : null}
         {/* Mobile card view for <480px */}
         <div className="space-y-2 md:hidden">
           {recentTrips.map((trip) => (

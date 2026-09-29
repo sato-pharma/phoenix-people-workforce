@@ -1235,6 +1235,7 @@ import { runDirectOrdersApprovalWindowMobileTests } from "./direct-orders-approv
 import { runEmployeePortalMobileInputZoomTests } from "./employee-portal-mobile-input-zoom.test.ts";
 import { runEmployeePortalMobileTableCardTests } from "./employee-portal-mobile-table-cards.test.ts";
 import { runPortalRouteSkeletonTests } from "./portal-route-skeleton.test.ts";
+import { runPortalFailedReadStatesTests } from "./portal-failed-read-states.test.ts";
 import { runTargetVisualsSharedTests } from "./target-visuals-shared.test.ts";
 import { runSalesTargetTablesFitTheScreenTests } from "./sales-target-tables-fit-the-screen.test.ts";
 import { runPortalIdentityBandAndSalesWindowTests } from "./portal-identity-band-and-sales-window.test.ts";
@@ -4375,6 +4376,7 @@ await runTest("direct orders cancel held (requester-or-Super-Admin, held-only, r
 await runTest("direct orders approval window on mobile (every table desktop-only, every table has cards, no min-width reachable at 375px, totals and the not-final flag survive)", runDirectOrdersApprovalWindowMobileTests);
 await runTest("employee portal mobile input zoom (16px floor on every portal input/select/textarea under 768px, max() not a flat size, the shell class still exists, pinch-zoom never disabled)", runEmployeePortalMobileInputZoomTests);
 await runTest("employee portal mobile table cards (every converted table is desktop-gated with cards beside it, one shared SourceBreakdown, no <table> nested inside PortalDesktopTable, and NO ungated table anywhere in the portal)", runEmployeePortalMobileTableCardTests);
+await runTest("portal failed-read states (a failed read never renders as an empty list or a confident 0; the error branch comes first; no insight is cut with an ellipsis)", runPortalFailedReadStatesTests);
 await runTest("portal route skeleton (five shapes behind one door with no default, the rows block drops columns below sm, and no loading.tsx hand-rolls its own)", runPortalRouteSkeletonTests);
 await runTest("target visuals shared (both target modules import one visual language; neither forks a primitive; null achievement stays neutral, null percent stays an em dash, ring arc stays clamped)", runTargetVisualsSharedTests);
 await runTest("sales target tables fit the screen (Portal Targets and Sales vs Target desktop tables: every column holds its unwrappable content at the narrowest 1024px portal table, merged column counts, colgroup and colSpan agree, no sideways scroll, floor or ellipsis)", runSalesTargetTablesFitTheScreenTests);

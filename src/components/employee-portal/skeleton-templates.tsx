@@ -257,10 +257,51 @@ export function DetailSkeleton() {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Template 6 — a month grid                                          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Three of My Workspace's nine pages are calendars — Interview Calendar, Private Calendar,
+ * Planning Calendar — and none of the five shapes above resembles one. A table skeleton under a
+ * month grid is precisely the "appears to settle, then relays out" failure this file exists to
+ * prevent, so a sixth shape is cheaper than the wrong one three times.
+ *
+ * `grid-cols-7` with square cells: seven equal fractions of whatever width there is, never a
+ * fixed column, so the placeholder cannot widen a phone.
+ */
+export function CalendarSkeleton() {
+  return (
+    <div className="mx-auto w-full space-y-5">
+      <HeroSkeleton />
+
+      <Card className={`rounded border border-slate-100 bg-white p-4 sm:p-5 ${cardShadow}`}>
+        {/* The month name and the two arrows every calendar opens with. */}
+        <div className="flex items-center justify-between">
+          <Pulse className="h-5 w-32" />
+          <div className="flex gap-2">
+            <Pulse className="h-8 w-8" />
+            <Pulse className="h-8 w-8" />
+          </div>
+        </div>
+
+        <div className="mt-4 grid grid-cols-7 gap-1">
+          {Array.from({ length: 7 }).map((_, i) => (
+            <Pulse className="h-3 w-full" key={`head-${i}`} />
+          ))}
+          {Array.from({ length: 35 }).map((_, i) => (
+            <Pulse className="aspect-square w-full !bg-slate-200/40" key={`cell-${i}`} />
+          ))}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  The one door a route's loading.tsx uses                            */
 /* ------------------------------------------------------------------ */
 
-export type PortalRouteShape = "dashboard" | "detail" | "form" | "redirect" | "table";
+export type PortalRouteShape = "calendar" | "dashboard" | "detail" | "form" | "redirect" | "table";
 
 /**
  * The skeleton for a portal route, chosen by what the page IS.
@@ -273,6 +314,7 @@ export type PortalRouteShape = "dashboard" | "detail" | "form" | "redirect" | "t
  * as a dashboard regardless of the page behind them. Naming the shape is the whole decision.
  */
 export function PortalRouteSkeleton({ shape }: { shape: PortalRouteShape }) {
+  if (shape === "calendar") return <CalendarSkeleton />;
   if (shape === "dashboard") return <DashboardSkeleton />;
   if (shape === "detail") return <DetailSkeleton />;
   if (shape === "form") return <FormSkeleton />;
