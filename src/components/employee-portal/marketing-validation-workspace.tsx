@@ -40,6 +40,10 @@ import {
   MARKETING_CUSTOMER_SPECIALITIES,
   MARKETING_GOVERNORATE_HOLD_PREFIX,
 } from "@/lib/marketing-requests/types";
+import {
+  type RankedPharmacyCode,
+  proximityLabel,
+} from "@/lib/venues/pharmacy-code-suggestions";
 import type {
   MarketingCustomerType,
   MarketingDistributor,
@@ -2019,6 +2023,8 @@ export function MarketingValidationWorkspace() {
   // by this employee so it lands in THEIR marketing request dropdown.
   const [onBehalfHrId, setOnBehalfHrId] = useState("");
   const [codeChecks, setCodeChecks] = useState<Record<string, CodeCheckStatus>>({});
+  /** Ranked code candidates per vendor line. Ranked by the capture's place, never filtered by it. */
+  const [codeSuggestions, setCodeSuggestions] = useState<Record<string, RankedPharmacyCode[]>>({});
   const codeCheckTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const [hasMounted, setHasMounted] = useState(false);
   // Hydration flag - mount-only setState is the canonical React pattern.
@@ -2439,7 +2445,14 @@ export function MarketingValidationWorkspace() {
   // Advisory, non-blocking check: does this (vendor, pharmacy code) already exist in the
   // Phoenix reference database (fed from the sales module)? Debounced so typing is smooth.
   // This never gates submission --- it only tells the rep whether sales can be tracked.
-  const checkVendorCode = useCallback((lineKey: string, distributorId: string, code: string) => {
+  const checkVendorCode = useCallback((
+    lineKey: string,
+    distributorId: string,
+    code: string,
+    // Where the rep just stood. Sent so the server can RANK the candidates; it never narrows them
+    // (owner ruling, 2026-09-29 — "nothing filtered out"), so omitting it costs order, not members.
+    place?: { area?: string | null; governorate?: string | null },
+  ) => {
     const timers = codeCheckTimers.current;
     if (timers[lineKey]) {
       clearTimeout(timers[lineKey]);
@@ -2454,6 +2467,12 @@ export function MarketingValidationWorkspace() {
         delete next[lineKey];
         return next;
       });
+      setCodeSuggestions((current) => {
+        if (!(lineKey in current)) return current;
+        const next = { ...current };
+        delete next[lineKey];
+        return next;
+      });
       return;
     }
 
@@ -2462,6 +2481,8 @@ export function MarketingValidationWorkspace() {
       void (async () => {
         try {
           const params = new URLSearchParams({ code: trimmedCode, distributorId });
+          if (place?.area) params.set("area", place.area);
+          if (place?.governorate) params.set("governorate", place.governorate);
           const response = await fetch(`/api/marketing-requests/pharmacy-code-lookup?${params.toString()}`, {
             cache: "no-store",
           });
@@ -2469,8 +2490,12 @@ export function MarketingValidationWorkspace() {
             setCodeChecks((current) => ({ ...current, [lineKey]: "unknown" }));
             return;
           }
-          const payload = (await response.json()) as { tracked?: boolean };
+          const payload = (await response.json()) as {
+            suggestions?: RankedPharmacyCode[];
+            tracked?: boolean;
+          };
           setCodeChecks((current) => ({ ...current, [lineKey]: payload.tracked ? "tracked" : "untracked" }));
+          setCodeSuggestions((current) => ({ ...current, [lineKey]: payload.suggestions ?? [] }));
         } catch {
           setCodeChecks((current) => ({ ...current, [lineKey]: "unknown" }));
         }
@@ -3545,7 +3570,10 @@ export function MarketingValidationWorkspace() {
                                         onChange={(event) => {
                                           const nextCode = event.target.value;
                                           updateVendorCode(customer.key, pharmacy.key, line.key, { distributorCode: nextCode });
-                                          checkVendorCode(line.key, line.distributorId, nextCode);
+                                          checkVendorCode(line.key, line.distributorId, nextCode, {
+                                            area: pharmacy.area,
+                                            governorate: pharmacy.governorate,
+                                          });
                                         }}
                                         placeholder="Code"
                                         value={line.distributorCode}
@@ -3566,6 +3594,59 @@ export function MarketingValidationWorkspace() {
                                         <Trash2 className="h-3 w-3" />
                                       </button>
                                     </div>
+                                    {/* THE CODE SUGGESTIONS — ranked by where he just stood, and
+                                        NEVER narrowed by it (owner ruling, 2026-09-29). Every
+                                        candidate the code he typed matches is here; the place only
+                                        decides which comes first, because half the reference import
+                                        carries no area and a filter would hide those shops for good.
+
+                                        Tapping one fills the code. He can still type anything — this
+                                        is a shortcut, not a gate, and nothing here tells him he is
+                                        being checked: each row describes the CODE's registered
+                                        place, never his. */}
+                                    {(codeSuggestions[line.key] ?? []).length > 0 ? (
+                                      <div className="mt-1.5 max-h-48 overflow-y-auto rounded-none border border-slate-200 bg-white">
+                                        {(codeSuggestions[line.key] ?? []).map((suggestion) => (
+                                          <button
+                                            className="flex w-full items-start justify-between gap-2 border-b border-slate-100 px-2.5 py-2 text-left last:border-b-0 hover:bg-orange-50"
+                                            key={suggestion.code}
+                                            onClick={() => {
+                                              updateVendorCode(customer.key, pharmacy.key, line.key, {
+                                                distributorCode: suggestion.code,
+                                              });
+                                              checkVendorCode(line.key, line.distributorId, suggestion.code, {
+                                                area: pharmacy.area,
+                                                governorate: pharmacy.governorate,
+                                              });
+                                            }}
+                                            type="button"
+                                          >
+                                            <span className="min-w-0">
+                                              <span className="block text-phx-sm font-bold text-slate-900">
+                                                {suggestion.code}
+                                                {suggestion.name ? ` · ${suggestion.name}` : ""}
+                                              </span>
+                                              {suggestion.address ? (
+                                                <span className="block text-phx-xs font-medium text-slate-500" dir="auto">
+                                                  {suggestion.address}
+                                                </span>
+                                              ) : null}
+                                            </span>
+                                            <span
+                                              className={`shrink-0 text-phx-2xs font-black uppercase tracking-[0.1em] ${
+                                                suggestion.proximity === "same_area"
+                                                  ? "text-emerald-700"
+                                                  : suggestion.proximity === "same_governorate"
+                                                    ? "text-slate-600"
+                                                    : "text-slate-400"
+                                              }`}
+                                            >
+                                              {proximityLabel(suggestion.proximity)}
+                                            </span>
+                                          </button>
+                                        ))}
+                                      </div>
+                                    ) : null}
                                     {codeCheck ? (
                                       <p
                                         className={`mt-1.5 flex items-center gap-1.5 text-phx-xs font-bold ${
