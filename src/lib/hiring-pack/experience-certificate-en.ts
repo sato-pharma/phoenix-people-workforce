@@ -326,8 +326,27 @@ body {
 .rule-line { color: var(--phx-doc-muted); letter-spacing: .04em; }
 
 .cert__sign { margin-top: 14mm; border-top: .5pt solid var(--phx-doc-hair); padding-top: 4mm; }
+/* THE SIGNING SPACE ITSELF — 38mm of it, and the number is the seal's.
+ *
+ * WHY THIS MARGIN IS WHERE THE ROOM LIVES. Each space below is a WESTERN signature line: the rule
+ * is drawn across the TOP of its span with the caption beneath, so what is signed and stamped goes
+ * ABOVE the rule, and the only thing holding that space open is this margin. At 10mm there was
+ * barely room to sign and none at all to stamp — the company seal is 34mm across, so it had nowhere
+ * to go but below its own caption and across the footer.
+ *
+ * The Arabic certificate reached the same place from the other side and is the precedent for the
+ * number: its stamp cell was raised from 12mm to 36mm because "the 34mm seal spilled over its own
+ * heading and below the table". 38mm here is that 34mm with a little air.
+ *
+ * ALL THREE COLUMNS GAIN IT, not only the stamp. They are one grid row, a signature needs room as
+ * much as a seal does, and giving the third column alone a taller space would leave the three rules
+ * at different heights — the one thing a row of signing lines must not do.
+ *
+ * MEASURED, NOT ESTIMATED. This paper sets a min-height of a full page and its own note says it is meant to
+ * fill its page, so 28mm of new space is exactly the change that silently produces a second sheet.
+ * Rendered through Chromium before and after the change: ONE page per copy both times. */
 .cert__signfor {
-  margin: 0 0 10mm;
+  margin: 0 0 38mm;
   color: var(--phx-doc-deep); font-size: 10pt; font-weight: 700;
 }
 /* Three signing spaces on one row. A grid rather than a table: a table draws cell borders that

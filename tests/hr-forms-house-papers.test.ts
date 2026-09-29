@@ -1511,7 +1511,36 @@ function testTheLettersPackGovernmentFormsPrintAsIssued(): void {
   }
 }
 
+/**
+ * THE ENGLISH CERTIFICATE KEEPS ROOM TO SIGN AND STAMP IN.
+ *
+ * Its three signing spaces are WESTERN signature lines - the rule is drawn across the TOP of each
+ * span with the caption beneath - so what is signed and stamped goes ABOVE the rule, and the only
+ * thing holding that space open is the bottom margin of .cert__signfor. At its original 10mm the
+ * company seal, which is 34mm across, had nowhere to go but below its own caption and over the
+ * footer.
+ *
+ * PINNED AS A MINIMUM, not as an exact value, because the number that matters is "at least the
+ * seal" - a later tightening for any other reason is free to take it to 40mm and not to 20mm.
+ * Asserted against the EMITTED stylesheet rather than the source: this repo has shipped three
+ * defects from reading a generated string instead of the bytes it produces.
+ */
+function testTheEnglishCertificateLeavesRoomForTheSeal(): void {
+  const html = renderExperienceCertificateEnHtml(packFixture(), 1);
+  const rule = html.match(/\.cert__signfor\s*\{[^}]*\}/);
+  assert.ok(rule, "the certificate must still carry a .cert__signfor rule");
+
+  const margin = rule[0].match(/margin:\s*0\s+0\s+(\d+(?:\.\d+)?)mm/);
+  assert.ok(margin, "the signing space must be set as a bottom margin in mm - got: " + rule[0]);
+  assert.ok(
+    Number(margin[1]) >= 34,
+    "the signing space is " + margin[1] + "mm - the company seal is 34mm across, so anything less " +
+      "puts the stamp over its own caption and the footer",
+  );
+}
+
 export function runHrFormsHousePapersTests(): void {
+  testTheEnglishCertificateLeavesRoomForTheSeal();
   testTheLettersPackPapersAreFilledFromTheRecord();
   testTheExitInterviewPrintsBothLanguagesAndNoAnswers();
   testTheLettersPackGovernmentFormsPrintAsIssued();
