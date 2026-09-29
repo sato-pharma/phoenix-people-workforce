@@ -130,14 +130,29 @@ export function runPortalRouteSkeletonTests() {
   );
 
   // ── THE RATCHET: how many routes still show nothing while they load ────────
-  // 98 of 126 on 2026-09-29, before the sweep started; 90 after PR 0, 71 after iReports 360, 60 after Marketing & ROI, 57 after Performance. MEASURE it on the rebased tree, never derive it. This is the number each section PR exists
-  // to lower, and it MAY NEVER RISE — a new portal route without a loading.tsx is caught on the
-  // day it is written, which is the only way the count stays down once the sweep finishes.
+  // 98 of 126 on 2026-09-29, before the sweep started; 90 after PR 0, 71 after iReports 360,
+  // 60 after Marketing & ROI, 57 after Performance, 49 after Approvals Hub merged with it. It MAY NEVER RISE — a new portal route
+  // without a loading.tsx is caught on the day it is written, which is the only way the count
+  // stays down once the sweep finishes.
   //
   // It is a ratchet and not a demand for zero because the remaining routes need a shape CHOSEN
   // per page, in the section PR that owns them. A blanket `shape="dashboard"` everywhere would
   // drive this to 0 and reinstate the exact defect the shapes exist to fix.
-  const BASELINE_ROUTES_WITHOUT_LOADING = 57;
+  //
+  // 🔴 MEASURE this number on your rebased tree; never derive it by subtracting what you fixed.
+  // PR 3 of the sweep set the sibling fits-the-screen baseline by arithmetic, landed on a figure
+  // one too high, and its break-the-fix run then PASSED when it should have failed — a baseline
+  // one above the truth silently accepts exactly one regression.
+  const BASELINE_ROUTES_WITHOUT_LOADING = 49;
+
+  // How far the count may fall before the test starts asking for a re-baseline.
+  //
+  // It was 12, which meant every section PR of a thirteen-PR sweep had to edit this constant —
+  // and since they are open at the same time, each one then conflicted with the last on this
+  // exact line. The upper bound is what catches a regression and it is unaffected; this lower
+  // guard only stops the number going stale, and it does that just as well checked every few
+  // sections as every one. 25 is roughly two sections' worth at the sweep's current rate.
+  const SLACK_BEFORE_RE_BASELINING = 25;
 
   const bare: string[] = [];
   let routes = 0;
@@ -163,9 +178,10 @@ export function runPortalRouteSkeletonTests() {
       '`<PortalRouteSkeleton shape="…" />`, choosing the shape from what the page is.',
   );
   assert.ok(
-    bare.length >= BASELINE_ROUTES_WITHOUT_LOADING - 12,
+    bare.length >= BASELINE_ROUTES_WITHOUT_LOADING - SLACK_BEFORE_RE_BASELINING,
     `only ${bare.length} routes now lack a loading.tsx, well under the recorded ${BASELINE_ROUTES_WITHOUT_LOADING}. ` +
-      "That is good news — lower BASELINE_ROUTES_WITHOUT_LOADING to this number, or a stale-high " +
+      "That is good news — MEASURE the count on your rebased tree and set " +
+      "BASELINE_ROUTES_WITHOUT_LOADING to it (never derive it by subtraction), or a stale-high " +
       "baseline quietly re-opens the door to the count it was lowered from.",
   );
 }
