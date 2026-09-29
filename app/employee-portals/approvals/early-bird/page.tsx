@@ -60,13 +60,13 @@ export default async function EarlyBirdApprovalsPage() {
               src={resolveEmployeePhotoSrc(candidate.employeeHrId, photoMap)}
             />
             <div className="min-w-0">
-              <p className="whitespace-nowrap text-lg font-black text-slate-900" dir="auto">
+              <p className="text-lg font-black text-slate-900" dir="auto">
                 {candidate.employeeName}
               </p>
-              <p className="whitespace-nowrap text-phx-xs font-semibold uppercase tracking-wider text-slate-400" dir="auto">
+              <p className="text-phx-xs font-semibold uppercase tracking-wider text-slate-400" dir="auto">
                 {candidate.areaName ?? "—"} · joined {formatHireDate(candidate.hireDate)}
               </p>
-              <p className="mt-1 whitespace-nowrap text-xs font-semibold text-emerald-700">
+              <p className="mt-1 text-xs font-semibold text-emerald-700">
                 {earlyBirdsReasonSummary(candidate)}
               </p>
             </div>
@@ -103,10 +103,10 @@ export default async function EarlyBirdApprovalsPage() {
                 {candidate.runnersUp.map((runner) => (
                   <div key={runner.rank} className="flex items-center gap-3 py-1.5">
                     <span className="w-5 text-phx-xs font-black text-slate-300">{runner.rank}</span>
-                    <span className="whitespace-nowrap text-xs font-bold text-slate-900" dir="auto">
+                    <span className="min-w-0 text-xs font-bold text-slate-900" dir="auto">
                       {runner.name}
                     </span>
-                    <span className="ml-auto whitespace-nowrap text-xs tabular-nums text-slate-500">
+                    <span className="ml-auto shrink-0 whitespace-nowrap text-xs tabular-nums text-slate-500">
                       {formatStartClock(runner.medianStartMinutes)} · {formatPoints(runner.totalScore)} pts
                     </span>
                   </div>
