@@ -53,9 +53,11 @@ gh api repos/Gawish-1997/phoenix-people-workforce/branches/main/protection/requi
 ```
 
 As of **2026-09-29** that returns **two**: **`validate`, `checks`** (`enforce_admins: true`).
-`checks` is one job carrying lint, `next typegen`, typecheck and the unit suite as STEPS — #4527
-merged the three former jobs to stop paying per-job minute rounding four times, so **`lint`,
-`typecheck` and `test` no longer exist as check names.** Anything in `gh pr checks` that protection
+`checks` carries lint, `next typegen` and typecheck; **the unit suite runs in `validate`** (moved there
+2026-09-30 so it runs beside the typecheck rather than behind it — ~97s off every PR). #4527 had merged
+the three former jobs to stop paying per-job minute rounding four times, so **`lint`, `typecheck` and
+`test` still do not exist as check names** — and the suite deliberately did not become a `test` job
+again, because a job named like a retired gate reads as gating when it does not (#3950). Anything in `gh pr checks` that protection
 does not name — `sast-scan` or `full-e2e` reading `skipping` — is not a gate and not a failure.
 
 🔴 **`mobile` and `secret-scan` are in that category NOW.** They were required until 2026-09-29 and

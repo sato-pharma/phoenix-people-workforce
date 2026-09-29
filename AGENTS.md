@@ -543,10 +543,16 @@ volume is what it is" and "Where the money actually is".
 `check:harden` and the `ask-before-validation` hook are retired at the owner's instruction. Do not
 reintroduce them or invent a replacement — no "quick subset" of lint + typecheck before pushing, no
 `pnpm run ci` as a pre-push ritual. **Push the branch and let the PR's checks answer.** The two
-**required** checks — `validate`, and `checks` (lint, `next typegen`, typecheck and the unit suite,
-all STEPS of one job since 2026-09-27, #4527) — run on the PR head commit and block the merge if
-either is red. **The unit suite is a STEP inside `checks`** — a doc naming `test`, `lint` or
-`typecheck` as a job or a check name, or placing a pinned test in `validate`, is stale.
+**required** checks — `validate` (the `check:*` contracts, **the unit suite**, and on non-PR events
+the build and login smoke) and `checks` (lint, `next typegen`, typecheck) — run on the PR head commit
+and block the merge if either is red. 🔴 **THE UNIT SUITE MOVED BACK INTO `validate` ON 2026-09-30, FOR
+WALL CLOCK, AND IT IS STILL INSIDE A REQUIRED CHECK.** `checks` ran typecheck (111s) then the suite
+(97s) in SERIES on one runner — 80% of a PR's ~260s wait — while `validate` sat on ~37s of work since
+the build was gated off pull requests. Beside the typecheck instead of behind it, a PR is ~163s.
+🔴 **It is NOT a job called `test`, and must not become one:** that is a retired check name, and a job
+protection does not require reads on a PR exactly like one that gates (#3950). `lint`, `typecheck` and
+`test` still do not exist as check names. A doc naming any of them as a job or a check name is stale —
+but **a pinned test now belongs in `validate`, not `checks`**.
 🔴 **`mobile` and `secret-scan` STILL RUN BUT NO LONGER GATE** (protection read live 2026-09-29).
 `mobile` is the Expo app's `npm ci` + typecheck when `mobile/` changed; `secret-scan` lives in
 `security-scan.yml`. Both report on the PR and **neither blocks the merge**, so a red one is now a

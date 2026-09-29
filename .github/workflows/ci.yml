@@ -298,6 +298,40 @@ jobs:
         if: steps.detect.outputs.docs_only != 'true'
         run: pnpm run check:no-stale-domains
 
+      # 🔴 THE UNIT SUITE LIVES HERE AGAIN, MOVED BACK OUT OF `checks` ON 2026-09-30 FOR WALL CLOCK.
+      # It is the same step, unchanged, and it is still inside a REQUIRED check — which is the whole
+      # reason it came here rather than into a new job of its own.
+      #
+      # WHY: measured on run 36644462797, `checks` spent 111s on Typecheck then 97s on Test, in
+      # SERIES on one runner — 80% of a PR's ~260s wait. `validate` does only ~37s of real work on a
+      # pull request since the Build and the Playwright smoke were gated to non-PR events, so it sat
+      # idle for three minutes while checks ground through both. Putting the suite here runs it beside
+      # the typecheck instead of behind it: max(~134s, ~163s) ~= 163s, about 97s off every PR.
+      #
+      # 🔴 WHY NOT A NEW `test` JOB, which is the obvious shape: two reasons, both hard.
+      #   1. `test` is a RETIRED check name (#4527). tests/required-check-names.test.ts refuses any
+      #      workflow declaring a job with a retired name that protection does not require — a job
+      #      named like a former gate reads on a PR exactly like one that gates, which is the
+      #      2026-09-17 incident (#3950).
+      #   2. Adding it to protection in the same window would have blocked all SIX open PRs, whose
+      #      branches predate the job and so can never report it: "Expected — waiting for status",
+      #      for ever, until each one is rebased at ~16 Actions minutes apiece.
+      # Moving it into a job every open PR already has costs nothing and gates exactly as before.
+      #
+      # 🔴 AND NOT BECAUSE OF QUEUEING: every one of the last twelve runs queued for 0s. No number of
+      # runners, no larger runner and no public-repository free tier touches this — the time was
+      # always real work on a runner that was available immediately.
+      # TESTS — folded in from the former standalone `test` job (2026-09-27). It was split out of
+      # `validate` on 2026-09-17 to get it off the build's critical path, which it achieved; the
+      # split is preserved here (the tests still never sit behind the build). What is dropped is
+      # only its THIRD copy of the shared preamble.
+      #
+      # No typegen and no build in front of it: tests/run-tests.ts is run straight by node
+      # with --experimental-strip-types, exactly as it was when this step lived in `validate`.
+      - name: Test
+        if: steps.detect.outputs.docs_only != 'true'
+        run: pnpm run test
+
       - name: Dependency audit (fail on high+ vulnerabilities)
         if: steps.detect.outputs.docs_only != 'true'
         # GHSA-mh99-v99m-4gvg is ignored via pnpm-workspace.yaml's auditConfig — see the
@@ -692,16 +726,6 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=6144
 
-      # TESTS — folded in from the former standalone `test` job (2026-09-27). It was split out of
-      # `validate` on 2026-09-17 to get it off the build's critical path, which it achieved; the
-      # split is preserved here (the tests still never sit behind the build). What is dropped is
-      # only its THIRD copy of the shared preamble.
-      #
-      # No typegen and no build in front of it: tests/run-tests.ts is run straight by node
-      # with --experimental-strip-types, exactly as it was when this step lived in `validate`.
-      - name: Test
-        if: steps.detect.outputs.docs_only != 'true'
-        run: pnpm run test
 
   # THE ONE JOB THAT LOOKS AT mobile/ (added 2026-09-18). Nothing else in this file does, and that
   # is structural rather than an oversight: the root project is pnpm, `mobile/` is npm with its own
