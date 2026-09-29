@@ -2015,6 +2015,7 @@ import { runDevServerExitReasonTests } from "./dev-server-exit-reason.test.ts";
 import { runDevServerHeapCapTests } from "./dev-server-heap-cap.test.ts";
 import { runRawNextDevGuardTests } from "./raw-next-dev-guard.test.ts";
 import { runLocalTypecheckGuardTests } from "./local-typecheck-guard.test.ts";
+import { runMergeCooldownGuardTests, runSmokeDispatchGuardTests } from "./merge-cooldown-guard.test.ts";
 import { runLoginPageMobileFitTests } from "./login-page-mobile-fit.test.ts";
 import { runPnpmOverrideScopeTests } from "./pnpm-override-scope.test.ts";
 import { runDeployDriftSettledRefTests } from "./deploy-drift-settled-ref.test.ts";
@@ -7244,6 +7245,16 @@ await runTest(
 await runTest(
   "bash-guard C7 refuses a raw `next dev` in every form a session starts one (node, npx, pnpm exec, a quoted path with spaces, cmd /c, Start-Process, WMI) and names the launcher with the same port, while the launcher, next build, and commands, commit messages, heredocs and here-strings that only mention it stay allowed",
   runRawNextDevGuardTests,
+);
+
+await runTest(
+  "bash-guard C9 refuses merging a PR too small to be worth its own two CI runs (measured 2026-09-29: 110 merges in a day, 41% of the week touching <=3 files) and refuses SIZE ONLY — two merges back to back are both allowed, because the owner cut the cooldown the same evening — while a 4-file PR, a large PR, both stand-down spellings, a merge with no PR number, an unreachable gh, gh pr view/list/checks, a git merge, a commit message and a heredoc that only quote the command all stay allowed",
+  runMergeCooldownGuardTests,
+);
+
+await runTest(
+  "bash-guard C11 caps MANUAL dispatches of the production smoke suite at a couple a day, counted machine-wide (measured 2026-09-29: 21 runs, 19 of them by hand against 2 scheduled, ~57 billable minutes against a 6/day cadence that was itself a cost decision) while the stand-down still works at a cap of zero, other workflows are untouched, and an unwritable state dir fails open",
+  runSmokeDispatchGuardTests,
 );
 
 await runTest(

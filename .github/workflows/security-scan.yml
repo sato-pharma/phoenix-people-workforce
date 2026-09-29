@@ -34,10 +34,19 @@ name: Security Scan (OSS)
 # after the commit is removed.
 
 on:
-  pull_request:
-  # Not on every push: every change reaches main through a PR, which is already scanned above,
-  # and per-push scanning was a significant repeat Actions cost. Main is covered by the daily
-  # scheduled run below, so a direct hotfix push is caught within 24h.
+  # 🔴 NOT ON pull_request SINCE 2026-09-29, AND NOT BECAUSE SECRET SCANNING WAS DROPPED.
+  # It moved EARLIER, onto the machine: bash-guard.mjs clause C12 runs the same gitleaks 8.30.1 over
+  # the commits a `git push` would send, and refuses the push. A key therefore never reaches GitHub
+  # at all — where, once pushed, it is in the remote history whatever a PR check says afterwards,
+  # and the remedy is rotation rather than a revert.
+  #
+  # WHY IT MOVED: the job took ~23s and billed a FULL minute on each of ~186 PR runs a day, because
+  # GitHub rounds every job up. The scan was never the cost; the rounding was. `secret-scan` was
+  # dropped from the required checks in the same change — a required check that no longer runs on
+  # PRs leaves every one of them stuck on "Expected — waiting for status" and nothing can merge.
+  #
+  # The daily run below is unchanged and is the backstop for anything that arrives another way (a
+  # push from a machine without the hook, a web edit, a merge of someone else's branch).
   schedule:
     - cron: "17 5 * * *" # daily 05:17 UTC, offset from the 07:00 migration-drift cron
   workflow_dispatch:

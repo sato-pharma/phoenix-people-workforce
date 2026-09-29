@@ -9,6 +9,20 @@
 //   C8  a LOCAL typecheck — it needs 4.0-4.5 GB, dies at node's own ~4.1 GB default, and the memory
 //       watchdog reaps it. A reaped run prints nothing, so the session re-runs it in another
 //       spelling. PHX_TYPECHECK_OK=1 (or $env:PHX_TYPECHECK_OK=1) stands it down for one command.
+//   C10 a MERGE of a PR too SMALL to be worth its own two CI runs — a merge costs the same two
+//       runs whatever its size, and 110 of them landed in one day on 2026-09-29 while 41% of
+//       the week's merges touched 3 files or fewer. It refuses SIZE only: nothing here delays
+//       a merge or counts how many have run (the owner cut a cooldown the same evening —
+//       merges go when they are ready). PHX_MERGE_OK=1 stands it down for one command.
+//   C12 a `git push` whose working tree holds a SECRET — gitleaks, same binary and flags as CI,
+//       run BEFORE the push so a key never reaches the remote history at all. Replaces the
+//       per-PR secret-scan (owner, 2026-09-29), which billed a full minute on ~186 runs a day
+//       for a 23s job. Not installed = warn and ALLOW; the daily scan over main is the backstop.
+//       PHX_SECRETS_OK=1 stands it down for a finding you have read and judged a fixture.
+//   C11 a MANUAL dispatch of `synthetic-journeys` past a daily cap — the production smoke suite
+//       bills 3 minutes a run and its 6/day cadence is a cost decision already taken; on
+//       2026-09-29 it was dispatched BY HAND 19 times against 2 scheduled. Machine-wide and
+//       per day, because C9 counts per session and exempts main. PHX_SMOKE_OK=1 stands it down.
 //
 // And triggers one NON-blocking side effect:
 //   C5  worktree removal — hands the command to worktree-exit-guard.mjs --pre-removal so the
@@ -823,6 +837,300 @@ try {
   //
   // The regex is only a cheap pre-filter so the common command pays nothing; the guard itself
   // decides whether a real registered worktree is actually targeted.
+  // C12 — the secret scan moved OFF the pull request and onto this machine, at the owner's
+  // instruction (2026-09-29). `secret-scan` took ~23s and billed a full minute on every one of ~186
+  // PR runs a day, purely because GitHub rounds each job up; the scan itself was never the cost.
+  //
+  // Running it here is strictly EARLIER protection, not less: gitleaks fires before the push leaves
+  // the machine, so a leaked key never reaches GitHub at all — where, once pushed, it is in the
+  // remote history whatever the PR check then says. The daily scheduled scan over `main` stays as
+  // the backstop for anything that arrives another way.
+  //
+  // 🔴 IT SCANS THE COMMITS THIS BRANCH ADDS, NOT THE WORKING TREE, AND THE DIFFERENCE IS THE WHOLE
+  // CLAUSE. CI runs `gitleaks detect --source . --no-git`, which is correct THERE because a runner
+  // has no env files. Locally it is useless: `new-session.mjs` copies `.env.local` and friends into
+  // every worktree by design, and that same command reports 54 findings here — 16 in `.env.local`,
+  // 16 in each dated copy, all of them real keys that are gitignored and can never be pushed. A
+  // guard that fires on every push of every branch is one nobody keeps. `gitleaks git --log-opts
+  // origin/main..HEAD` scans exactly what the push contributes: measured 0.85s over 3 commits here,
+  // against 4.8s and 99 MB for the tree scan. `--redact` keeps the value out of this hook's own
+  // output, which would otherwise become the leak.
+  //
+  // 🔴 IF GITLEAKS IS NOT INSTALLED THIS WARNS AND ALLOWS, it does not block. A guard that refuses
+  // every push on a machine missing a tool is a guard that gets switched off within the hour — and
+  // the daily scan still covers main. `scoop install gitleaks` is the fix, and the warning says so.
+  //
+  // `PHX_SECRETS_OK=1 <cmd>` pushes anyway — for a finding you have read and judged to be a fixture
+  // or a test vector, which is the only honest reason to override a secret scanner.
+  const SECRETS_STAND_DOWN =
+    /(?:^|[\s;&|(])\s*(?:\$env:)?PHX_SECRETS_OK\s*=\s*['"]?1['"]?(?![\w.])/i;
+  const GIT_PUSH =
+    /(?:^|[\n|&;(])\s*(?:[A-Za-z_]\w*=\S+\s+)*git(?:\.exe)?\s+(?:-[^\s]+\s+|--[^\s]+\s+)*push(?:\s|$)/i;
+
+  const pushText = withoutHeredocBodies(cmd);
+  if (
+    GIT_PUSH.test(pushText) &&
+    !/--dry-run|--help|(?:^|\s)-h(?:\s|$)/.test(pushText) &&
+    !SECRETS_STAND_DOWN.test(cmd) &&
+    process.env.PHX_SECRETS_OK !== '1'
+  ) {
+    let scanRoot = '';
+    for (const candidate of [input?.cwd, process.env.CLAUDE_PROJECT_DIR, process.cwd()]) {
+      if (!candidate) continue;
+      try {
+        if (statSync(String(candidate)).isDirectory()) {
+          scanRoot = String(candidate);
+          break;
+        }
+      } catch {
+        /* not a directory we can see */
+      }
+    }
+
+    if (scanRoot && existsSync(join(scanRoot, '.gitleaks.toml'))) {
+      // `.gitleaks.toml` at the root is what identifies THIS repo; the hook is global and must
+      // not scan someone else's checkout.
+      let output = '';
+      let found = false;
+      let missing = false;
+      try {
+        execFileSync('gitleaks', ['git', '.', '--log-opts=origin/main..HEAD', '--redact', '--no-banner'], {
+          cwd: scanRoot,
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'pipe'],
+          timeout: 120000,
+          shell: process.platform === 'win32',
+        });
+      } catch (err) {
+        const e = /** @type {{status?: number, code?: string, stderr?: string, stdout?: string}} */ (err);
+        // gitleaks exits 1 when it finds something and 126/127/ENOENT when it is not installed.
+        if (e && (e.code === 'ENOENT' || e.status === 127 || e.status === 126)) {
+          missing = true;
+        } else if (e && e.status === 1) {
+          found = true;
+          output = String(e.stderr || e.stdout || '').trim();
+        }
+        // any other exit (a timeout, a config error) falls through as neither: allow.
+      }
+
+      if (missing) {
+        process.stdout.write(
+          'gitleaks is not installed, so this push was NOT scanned for secrets. The per-PR ' +
+            'secret-scan was moved onto this machine on 2026-09-29; install it with ' +
+            '`scoop install gitleaks` to get that protection back. The daily scheduled scan over ' +
+            'main still runs.\n',
+        );
+      } else if (found) {
+        // Strip ANSI colour: this text is JSON on stdout for the agent, not a terminal.
+        const lines = output
+          .replace(/\u001b\[[0-9;]*m/g, '')
+          .split(/\r?\n/)
+          .filter((l) => l.trim())
+          .slice(-25)
+          .join('\n');
+        deny(
+          'C12 — gitleaks found a secret in the commits this push would send, so it is refused.\n\n' +
+            lines +
+            '\n\nThis runs BEFORE the push, which is the whole point: once a key reaches GitHub it ' +
+            'is in the remote history whatever any check says afterwards, and the fix is then ' +
+            'rotation, not a revert.\n\n' +
+            'Scanned: the commits this branch adds (origin/main..HEAD), which is exactly what the ' +
+            'push contributes. The tree itself is NOT scanned locally \u2014 every worktree carries real ' +
+            '.env files by design, and they are gitignored, so they can never be pushed.\n\n' +
+            'If you have read the finding and it is a fixture or a test vector, push again as:\n  ' +
+            (String(input?.tool_name ?? '').toLowerCase().includes('powershell')
+              ? '$env:PHX_SECRETS_OK=1; <the same command>'
+              : 'PHX_SECRETS_OK=1 <the same command>'),
+        );
+      }
+    }
+  }
+
+  // C11 — `synthetic-journeys` is the production smoke suite, and its cadence is a COST decision
+  // that was already taken: it ran hourly until 2026-08-29 (17 runs/day) and was deliberately cut to
+  // every three hours (6 runs/day) to save Actions minutes, at the stated price of worst-case
+  // detection latency going from ~1h to ~3h. The workflow file carries that reasoning in full.
+  //
+  // Measured 2026-09-29: it ran 21 times that day — 2 from its schedule and 19 fired BY HAND from
+  // sessions. Each run is ~120s, so it bills 3 minutes: the manual ones alone were ~57 billable
+  // minutes, roughly three times the whole schedule, quietly undoing the August decision.
+  //
+  // The existing C9 cannot see this: it counts dispatches PER SESSION and exempts `main` entirely,
+  // and these are main dispatches spread across fifteen sessions. So this cap is MACHINE-WIDE and
+  // per DAY, like the merge rule above — the same reason, that the volume comes from many windows
+  // each behaving reasonably on its own.
+  //
+  // It caps the MANUAL ones only. The schedule is untouched, and so is any dispatch of any other
+  // workflow. `PHX_SMOKE_OK=1 <cmd>` allows one through when production is actually suspect — which
+  // is the case the suite exists for, and the case a hard block would break.
+  //
+  // FAILS OPEN: an unreadable or unwritable state file allows the dispatch.
+  const SMOKE_STAND_DOWN =
+    /(?:^|[\s;&|(])\s*(?:\$env:)?PHX_SMOKE_OK\s*=\s*['"]?1['"]?(?![\w.])/i;
+  const SMOKE_DISPATCH =
+    /(?:^|[\n|&;(])\s*(?:[A-Za-z_]\w*=\S+\s+)*gh(?:\.exe)?\s+workflow\s+run\s+\S*synthetic-journeys(?:\.yml)?/i;
+
+  const smokeText = withoutHeredocBodies(cmd);
+  if (
+    SMOKE_DISPATCH.test(smokeText) &&
+    !SMOKE_STAND_DOWN.test(cmd) &&
+    process.env.PHX_SMOKE_OK !== '1'
+  ) {
+    const maxPerDay = Number(process.env.PHX_SMOKE_MAX_PER_DAY ?? 2);
+    const smokeHome = process.env.USERPROFILE || process.env.HOME || '';
+    const smokeDir = process.env.PHX_SMOKE_STATE_DIR
+      ? process.env.PHX_SMOKE_STATE_DIR
+      : smokeHome
+        ? join(smokeHome, '.claude', 'relay', 'state')
+        : '';
+
+    if (smokeDir && Number.isFinite(maxPerDay) && maxPerDay >= 0) {
+      const smokeFile = join(smokeDir, 'smoke-dispatch.json');
+      const today = new Date().toISOString().slice(0, 10);
+      let count = 0;
+      try {
+        const raw = JSON.parse(readFileSync(smokeFile, 'utf8'));
+        if (raw && raw.day === today && Number.isFinite(Number(raw.count))) count = Number(raw.count);
+      } catch {
+        /* no state yet, or unreadable — today has no dispatches on record */
+      }
+
+      if (count >= maxPerDay) {
+        deny(
+          'C11 — `synthetic-journeys` has already been dispatched by hand ' +
+            count +
+            ' time' +
+            (count === 1 ? '' : 's') +
+            ' today, across all sessions on this machine. The cap is ' +
+            maxPerDay +
+            '.\n\n' +
+            'Its cadence is a cost decision already taken: hourly until 2026-08-29 (17 runs/day), cut ' +
+            'to every 3 hours (6/day) to save Actions minutes, accepting ~3h worst-case detection ' +
+            'latency. Each run bills 3 minutes.\n\n' +
+            'Measured 2026-09-29: 21 runs that day — 2 scheduled and 19 by hand, ~57 billable minutes ' +
+            'of unplanned spend, about three times the entire schedule.\n\n' +
+            'The scheduled runs are untouched and still cover production every 3 hours. If production ' +
+            'is actually suspect right now — which is the case this suite exists for — run it again as:' +
+            '\n  ' +
+            (String(input?.tool_name ?? '').toLowerCase().includes('powershell')
+              ? '$env:PHX_SMOKE_OK=1; <the same command>'
+              : 'PHX_SMOKE_OK=1 <the same command>'),
+        );
+      }
+
+      try {
+        if (!existsSync(smokeDir)) mkdirSync(smokeDir, { recursive: true });
+        writeFileSync(smokeFile, JSON.stringify({ day: today, count: count + 1 }), 'utf8');
+      } catch {
+        /* cannot record — allow anyway */
+      }
+    }
+  }
+
+  // C10 — a merge costs TWO full CI runs whatever its size: one on the PR, one on `main`. GitHub
+  // rounds every JOB up to a whole minute, so a nine-second job bills a minute and a three-file
+  // change costs almost exactly what a three-hundred-file change costs.
+  //
+  // Measured 2026-09-29 on this repository: 110 merges in a single day, 280 ci.yml runs (185
+  // pull_request + 95 push), 634 runs across all workflows — and over the preceding week 41% of
+  // merges touched 3 files or fewer. The owner's Actions spend that day was $65 by his own reading
+  // of the invoice, on a month whose previous record was $300.88. No runner change reaches this:
+  // where the jobs execute does not alter how many of them there are, which is why the self-hosted
+  // pool was stood down the same evening having carried no CI at all.
+  //
+  // 🔴 THE RULE IS ABOUT SIZE, NOT TIMING, AND THAT IS THE OWNER'S OWN NARROWING (2026-09-29). A
+  // cooldown between merges was built first and he cut it the same evening: merges must go through
+  // when they are ready. So nothing here delays a merge, queues one, or counts how many have run —
+  // a finished PR of any size merges the moment it is green. The only thing refused is shipping a
+  // change too small to have been worth its own two CI runs.
+  //
+  // `PHX_MERGE_OK=1 <cmd>` (`$env:PHX_MERGE_OK=1; <cmd>` in PowerShell) allows one merge through —
+  // for the urgent one-file fix, the locked file, the migration that needs its own approval, and
+  // for a PR that is ALREADY open and green: its run is paid, closing refunds nothing, and a
+  // rebuild later costs a second PR run on top of the same `main` run. The clause is about what
+  // is OPENED, not about throwing away work that is already built.
+  // That is why this denies rather than blocks outright: a guard with no way past it gets deleted
+  // instead of used.
+  //
+  // FAILS OPEN in every direction: an unreachable `gh`, a PR number it cannot parse, a merge of the
+  // CURRENT branch with no number at all — every one of them allows the merge. A guard that blocks
+  // a real merge on its own blind spot costs more than the runs it saves.
+  const MERGE_STAND_DOWN =
+    /(?:^|[\s;&|(])\s*(?:\$env:)?PHX_MERGE_OK\s*=\s*['"]?1['"]?(?![\w.])/i;
+  const GH_PR_MERGE =
+    /(?:^|[\n|&;(])\s*(?:[A-Za-z_]\w*=\S+\s+)*gh(?:\.exe)?\s+pr\s+merge(?:\s|$)/i;
+  const MERGE_HELP = /(?:^|\s)(?:--help|-h)(?:\s|$)/;
+
+  const mergeText = withoutHeredocBodies(cmd);
+  if (
+    GH_PR_MERGE.test(mergeText) &&
+    !MERGE_HELP.test(mergeText) &&
+    !MERGE_STAND_DOWN.test(cmd) &&
+    process.env.PHX_MERGE_OK !== '1'
+  ) {
+    const minFiles = Number(process.env.PHX_MERGE_MIN_FILES ?? 4);
+
+    if (Number.isFinite(minFiles) && minFiles > 0) {
+      // Take the first bare integer after `merge` — `gh pr merge 4790 --squash` and
+      // `gh pr merge --squash 4790` both land on 4790, and a merge of the CURRENT branch (no
+      // number at all) is allowed rather than guessed at.
+      const after = mergeText.slice(mergeText.search(/gh(?:\.exe)?\s+pr\s+merge/i));
+      const prNumber = (after.match(/(?:^|\s)(\d{1,7})(?=\s|$)/) || [])[1];
+      if (prNumber) {
+        let changedFiles = null;
+        try {
+          const out = execFileSync(
+            'gh',
+            ['pr', 'view', prNumber, '--json', 'changedFiles', '--jq', '.changedFiles'],
+            {
+              cwd: input?.cwd && existsSync(String(input.cwd)) ? String(input.cwd) : process.cwd(),
+              encoding: 'utf8',
+              stdio: ['ignore', 'pipe', 'ignore'],
+              timeout: 20000,
+              // On Windows a PATH lookup without a shell resolves .exe but NOT .cmd, and gh ships
+              // both. Every argument here is fixed text or the digits the regex above extracted,
+              // so there is nothing for a shell to re-interpret.
+              shell: process.platform === 'win32',
+            },
+          );
+          const n = Number(String(out).trim());
+          if (Number.isFinite(n) && n > 0) changedFiles = n;
+        } catch {
+          // gh missing, offline, or the PR not readable — allow. Never block on our own blind spot.
+        }
+        if (changedFiles !== null && changedFiles < minFiles) {
+          deny(
+            'C10 — PR #' +
+              prNumber +
+              ' changes ' +
+              changedFiles +
+              ' file' +
+              (changedFiles === 1 ? '' : 's') +
+              ', and a merge costs two full CI runs whatever its size (one on the PR, one on ' +
+              '`main`, every job rounded up to a whole minute).\n\n' +
+              'Measured 2026-09-29: 110 merges in one day, 634 workflow runs, and 41% of the ' +
+              'week’s merges touching 3 files or fewer. That volume, not the pipeline, is the ' +
+              'Actions bill — the pipeline is already cancelling superseded runs and skipping ' +
+              'docs-only work.\n\n' +
+              'Fold this into the branch carrying the rest of the task and merge once: the fix, ' +
+              'its test, its doc, the follow-up already in view. Nothing here delays a merge — ' +
+              'a finished PR of any real size goes the moment it is green.\n\n' +
+              '🔴 BUT IF THIS PR IS ALREADY OPEN AND GREEN, MERGE IT WITH THE STAND-DOWN ' +
+              'RATHER THAN CLOSING IT. Its PR run is already paid and closing refunds nothing: ' +
+              'merging costs one more run on `main`, while closing and rebuilding the work later ' +
+              'costs a fresh PR run AND that same `main` run. This clause is about what you OPEN, ' +
+              'not about abandoning work already built and verified.\n\n' +
+              'If this one genuinely has to ship alone (an urgent fix, a locked file, a migration ' +
+              'needing its own approval), run it again as:\n  ' +
+              (String(input?.tool_name ?? '').toLowerCase().includes('powershell')
+                ? '$env:PHX_MERGE_OK=1; <the same command>'
+                : 'PHX_MERGE_OK=1 <the same command>'),
+          );
+        }
+      }
+    }
+  }
+
   // `rd`/`ri`/`del`/`erase` are PowerShell's Remove-Item aliases (and cmd's own verbs).
   const removalShaped =
     /worktree\s+remove|\brmdir\b|\bremove-item\b|(?:^|[\s|&;(])(?:rd|ri|del|erase)\s|(?:^|[\s|&;(])rm\s+-[a-zA-Z]*r/i;
