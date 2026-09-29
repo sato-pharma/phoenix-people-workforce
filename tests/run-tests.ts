@@ -1987,6 +1987,7 @@ import { runDevServerExitReasonTests } from "./dev-server-exit-reason.test.ts";
 import { runDevServerHeapCapTests } from "./dev-server-heap-cap.test.ts";
 import { runRawNextDevGuardTests } from "./raw-next-dev-guard.test.ts";
 import { runLocalTypecheckGuardTests } from "./local-typecheck-guard.test.ts";
+import { runPnpmOverrideScopeTests } from "./pnpm-override-scope.test.ts";
 import { runDeployDriftSettledRefTests } from "./deploy-drift-settled-ref.test.ts";
 import { runVerifyShippedSelftestTests } from "./verify-shipped-selftest.test.ts";
 import { runAutorunGuardFalseArmingTests } from "./autorun-guard-false-arming.test.ts";
@@ -7144,6 +7145,11 @@ await runTest(
 await runTest(
   "bash-guard C8 refuses a local typecheck in every spelling the watchdog log records it being killed in (node with a raised heap, typescript/bin/tsc, lib/tsc.js, a backslash path, a quoted path with spaces, pnpm/npm/yarn run typecheck, npx, pnpm exec, .bin/tsc, bare tsc) and hands back a stand-down in the dialect that asked, while pnpm run ci, a real emit, and commands, commit messages, heredocs and here-strings that only mention it stay allowed",
   runLocalTypecheckGuardTests,
+);
+
+await runTest(
+  "a pnpm override naming a package we also depend on directly must be SCOPED to its parent, never bare — a bare entry outranks package.json and lets the manifest be bumped while the lockfile keeps resolving the old version, green all the way, because CI and the Dockerfile both install --frozen-lockfile (exactly how Dependabot #4698's nodemailer bump did nothing until #4717 scoped it); the allowlist is a ratchet holding only the one outstanding case",
+  runPnpmOverrideScopeTests,
 );
 
 await runTest(
