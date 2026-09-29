@@ -698,6 +698,36 @@ written — three replicas online — so nothing here says it was retired.** And
 never a statement of what the switch reads today: ask `gh variable list` for that, for the reason
 [#4618](https://github.com/Gawish-1997/phoenix-people-workforce/pull/4618) exists.
 
+### 2026-09-29 — the Railway host was stood down (stopped, NOT deleted)
+
+Later the same day the pool itself went down. Verified state at the time of writing:
+
+| | |
+| --- | --- |
+| Railway project | `phoenix-ci-runner` `d657a3c0-684c-4e83-88bc-ded47b32a00d` — `deletedAt: null` |
+| Service | `ci-runner` `f6a18a22-1434-4423-95d5-875b88928f9b` |
+| Deployment | `b6f0858b` — `deploymentStopped: true`, `canRedeploy: true` |
+| Replicas | all three `EXITED` — `1116628c`, `8f9e5a88`, `37e95625` |
+| GitHub registrations | ids 32, 33, 34 deleted; `actions/runners` reads `total_count: 0` |
+
+🔴 **"Retired" here means STOPPED, not deleted — the project, the service and the deployment all
+still exist and the deployment is redeployable.** Bringing the pool back is a redeploy plus
+`CI_SELF_HOSTED` un-set, not a rebuild from the provisioning runbook above. Do not read this entry as
+permission to delete any of them: that is the owner's dashboard click, and so is recreating them.
+
+🔴 **The registration ids in that table are spent.** A replica registers non-ephemerally at
+startup, so a redeploy mints NEW ids and the old ones never come back — never write an id from this
+file into a command. Read `gh api repos/<repo>/actions/runners` at the moment you need one.
+
+**Reading that project without relinking the CLI**, which matters because the primary checkout is
+linked to `phoenix-headwind` and relinking breaks every other session's `railway run`:
+
+```bash
+railway status --project d657a3c0-684c-4e83-88bc-ded47b32a00d --environment production --json
+```
+
+`--project` requires `--environment` for both output modes. It is a read; it changes no link.
+
 ## What to expect after the switch
 
 - **Cost**: metered Actions spend for this repo goes to ~$0. The VPS is the whole bill.
