@@ -867,3 +867,74 @@ carries the whole stranded backlog in one deploy — never re-merge, never `rail
 by `tests/workflow-files-parse.test.ts`, which scans every workflow for a line at column 0 that is
 not a top-level key and runs in the required `checks` job. Build multi-line text with `printf`;
 newlines belong in a format string, never in the YAML.
+
+## New hook — the deploy queue can promote an OLDER build, and a dropped column makes that fatal (2026-09-29)
+
+**The hook:** the queue lands builds out of order, so production can serve an older commit than it
+did a minute ago with nobody clicking anything. Harmless on its own. Not harmless once a migration
+has dropped a column.
+
+### What was measured
+
+A backlog of eleven merges drained over about forty minutes. `/api/healthz` `revision`, read
+directly:
+
+| Cairo | Live revision | Position on `main` |
+| --- | --- | --- |
+| 19:58 | `5f1f40305` | 8th |
+| 20:00–20:02 | `85f5a7db7` | **4th** |
+| 20:04 | `3c576e7d8` | 9th |
+
+Production moved **backwards four commits** and then forwards again. Each reading was settled, not
+a flicker: three reads eight seconds apart at 20:02 all returned `85f5a7db7`, and fourteen rapid
+reads at 20:04 all returned `3c576e7d8`. **So it is not a replica split** — that was the first
+hypothesis and it was wrong; it is a slower build finishing after a faster one and being promoted.
+
+Railway's own deployment list agreed and was confusing on its own: `5f1f40305` read `success`
+while `/api/healthz` reported a different commit, and two rows sat at `in_progress` long after
+their commits were in the serving code.
+
+### Why it stopped being a curiosity
+
+`ec33c37f6` (#4775) dropped `public.employees.team_name`, the fourth and last denormalized label
+on that table. Every build before it still sends the column in a PostgREST select list —
+exactly one, `src/lib/reports/organogram-au-source.ts`:
+
+```
+"hr_id, full_name, name_ar, work_email, mobile_number, job_title, employment_status,
+ contract_type, contract_renewal_date, hire_date, departments(name), team_id, team_name,
+ line_id, manager_hr_id, organogram_visible"
+```
+
+PostgREST fails the **whole** request on an unknown column, so a promotion of any build at or
+before `5268f1238` does not degrade the Team column — it blanks **every occupant name in the
+organogram**, and nothing turns red.
+
+**The only reason it did not happen is that no build that old was in the queue.** All three active
+deployments contained `ec33c37f6`. That is luck, not a safeguard: the backwards step landed on the
+4th commit, and the danger line was the 3rd.
+
+### What to do
+
+- **After a column drop, check what a regression would land on, not only what is in flight.** The
+  question is not "are the queued builds safe" but "what is the oldest build Railway could
+  promote or that someone could redeploy".
+- **Never redeploy a build older than the drop.** The dashboard lists every past success one click
+  away. This is why a redeploy is the owner's click and is never offered as a next step.
+- **Recovery is not "wait for the next merge".** That is minutes of a blank org chart. Re-add the
+  column, let the right build arrive, then re-apply the drop:
+  `alter table public.employees add column if not exists team_name text;`
+
+### Two reading errors this cost, both worth keeping
+
+**Elapsed time is not evidence of refusal.** A deploy that had sat unserved for half an hour was
+read as withheld and a redeploy of it was proposed to the owner — after `verify-shipped.mjs` had
+already classified it *"NOT refused — every check suite on it concluded success"*, the benign
+superseded kind that §2.3 says is carried forward by the next merge. It was carried forward, on
+its own, minutes later. The measurement was in hand and the narrative won.
+
+**"Production went backwards" is not a single fact.** It was then asserted that the regression had
+taken `ec33c37f6` out of service with it. It had not: `85f5a7db7` is one commit *above*
+`ec33c37f6`, so the drop's precondition held throughout. The positions had just been printed.
+Check each commit's ancestry against what is actually serving — `git merge-base --is-ancestor
+<sha> <live revision>` — never against the shape of the story.
