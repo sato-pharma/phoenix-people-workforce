@@ -93,6 +93,18 @@ const missingFieldRules: MissingFieldRule[] = [
       employee.socialInsuranceStatus === "yes" && isBlank(employee.socialInsuranceNumber),
   },
   {
+    // The government health insurance booklet, and ONLY the contradiction.
+    //
+    // NO RULE FOR THE STATUS ITSELF, deliberately — unlike the two insurance pairs above, which
+    // each have one. This column landed on 2026-09-29 and nobody has filled it in yet, so a
+    // "must be yes / no / pending" rule would flag EVERY employee on the day it shipped and bury
+    // the real gaps this report exists to surface. The one thing worth saying today is the
+    // combination that cannot both be true: the booklet was received, and there is no number for
+    // it. Add the status rule once the column is populated, not before.
+    label: "Health Card Number",
+    isMissing: (employee) => employee.healthCardStatus === "yes" && isBlank(employee.healthCardNumber),
+  },
+  {
     label: "Salary Payout Mode",
     isMissing: (employee) => !["one_part", "two_parts"].includes(String(employee.salaryPaymentMode ?? "")),
   },
