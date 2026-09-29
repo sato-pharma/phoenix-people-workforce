@@ -216,4 +216,47 @@ export async function runOrganogramVacancyHireLinkTests() {
     9,
     "the hire action must NOT add a tenth column — the rule is fit by merging, never widening",
   );
+
+  // The employee-portal vacancies page is a THIRD surface with its own service, and its row
+  // used to carry names only. The ids are what the Add Employee form matches on, so a row
+  // without them produces a link that fills nothing — silently, which is the whole risk.
+  const portalService = fs.readFileSync(
+    path.join(process.cwd(), "src", "lib", "employee-portal", "service.ts"),
+    "utf8",
+  );
+  for (const field of ["areaId", "departmentId", "lineId", "positionId"]) {
+    assert.ok(
+      new RegExp(`export type EmployeePortalVacancyRow = \\{[^}]*\\b${field}\\b`, "s").test(
+        portalService,
+      ),
+      `EmployeePortalVacancyRow must carry ${field} — without the ids the portal prefill is empty`,
+    );
+  }
+  assert.ok(
+    /\.select\(\s*(?:\/\/[^\n]*\n\s*)*"[^"]*\bdepartment_id\b[^"]*"/.test(portalService),
+    "department_id must be SELECTED, or the mapped field is null however the row is typed",
+  );
+
+  const portalPage = fs.readFileSync(
+    path.join(process.cwd(), "app", "employee-portals", "vacancies", "page.tsx"),
+    "utf8",
+  );
+  assert.ok(
+    portalPage.includes('canAccess(access, "employees", "update")'),
+    "the portal page must resolve the capability server-side — it is read by managers who cannot hire",
+  );
+  assert.ok(
+    portalPage.includes('canAddEmployee && vacancy.status === "open"'),
+    "the portal hire action must be gated on both the capability and an OPEN vacancy",
+  );
+  assert.ok(
+    portalPage.includes('buildVacancyHireHref("/employee-portals/employees"'),
+    "a portal row must link to the PORTAL Employees route, never the admin one",
+  );
+  // That table is table-fixed with a colgroup summing to 100% and no horizontal scroller.
+  assert.equal(
+    (portalPage.match(/<col className="w-\[/g) ?? []).length,
+    6,
+    "the portal table must stay at six columns — a seventh breaks the colgroup and the screen",
+  );
 }
