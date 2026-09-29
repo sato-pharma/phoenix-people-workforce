@@ -704,6 +704,7 @@ import { runSosEvenSplitEzTests } from "./sos-even-split-ez.test.ts";
 import { runClosingMatrixFoldTests } from "./closing-matrix-fold.test.ts";
 import { runClosingSummaryFitsTests } from "./closing-summary-fits.test.ts";
 import { runMasterWorkbookKeysetTests } from "./master-workbook-keyset.test.ts";
+import { runRecoverySnapshotTests } from "./recovery-snapshots.test.ts";
 import { runFactoryPriceResolvedOnceTests } from "./factory-price-resolved-once.test.ts";
 import { runSalesVsTargetCacheTests } from "./sales-vs-target-cache.test.ts";
 import { runStagingHrSyncTests } from "./staging-hr-sync.test.ts";
@@ -3405,6 +3406,10 @@ await runTest(
 await runTest(
   "factory price resolved once per product (the per-row call is the 2026-09-28 sales regression; the dated override, its period bound and the master-price fallback all survive)",
   runFactoryPriceResolvedOnceTests,
+);
+await runTest(
+  "recovery undo log (payroll pre-images unreachable by any browser role; a table's newest snapshot is never purged; restore is dry-run by default and takes its own pre-image)",
+  runRecoverySnapshotTests,
 );
 await runTest("monthly sales run", runMonthlySalesRunTests);
 await runTest("sos resolveBrick precedence (area must not beat customer brick)", runSosResolveBrickPrecedenceTests);

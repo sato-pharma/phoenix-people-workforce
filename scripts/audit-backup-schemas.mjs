@@ -57,6 +57,11 @@ export const EXEMPT_SCHEMAS = {
   internal: { kind: "migration", why: "phoenix_date_offset_repair_audit, in the schema baseline" },
   _au_rollback: { kind: "migration", why: "named by 20260719220000_advisor_center_primary_keys" },
 
+  // Permanent infrastructure, not a snapshot: the hourly undo log for the money tables, created
+  // by 20260929200500_recovery_snapshot_store. It carries no date in its name precisely so the
+  // rule above cannot age it out, but without this entry it would be reported UNDATED forever.
+  recovery: { kind: "migration", why: "the hourly recovery undo log; permanent, never expires" },
+
   // The owner's own decisions. Each has a condition, not a date — none expires on its own.
   hr_backup_20260829: { kind: "owner", why: "C13 pre-image; retire only once September payroll proves the 08-29 fixes" },
   crm_backup_20260828: { kind: "owner", why: "C13 pre-image; retire only once September payroll proves the 08-29 fixes" },

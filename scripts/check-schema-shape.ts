@@ -136,6 +136,8 @@ export type SchemaShape = {
    * must stay silent rather than invent a violation.
    */
   snapshot_tables_in_public?: SnapshotTableInPublic[];
+  /** Optional for the same reason: only present once 20260929200500 is applied to this target. */
+  recovery_health?: RecoveryHealth[];
 };
 
 /** Whether each browser-facing/server role holds USAGE on a given schema. */
@@ -156,6 +158,25 @@ export type SnapshotTableInPublic = {
   anon_select: boolean;
   authenticated_select: boolean;
   rls_enabled: boolean;
+};
+
+/**
+ * One protected table's standing in the hourly recovery undo log
+ * (20260929200500_recovery_snapshot_store.sql).
+ *
+ * 🔴 THIS IS THE DEAD-MAN'S SWITCH, and it is the whole reason that RPC exists. Production has no
+ * point-in-time recovery; the owner declined the ~$100/month add-on on 2026-09-29 and this undo
+ * log stands in its place. A snapshotter that has quietly stopped is WORSE than none, because it
+ * still looks like protection — pg_cron failures raise no alarm of their own, and the store keeps
+ * its old rows, so nothing else in the system would ever say so.
+ */
+export type RecoveryHealth = {
+  source_schema: string;
+  source_table: string;
+  enabled: boolean;
+  snapshots_held: number;
+  newest_snapshot_at: string | null;
+  ever_captured: boolean;
 };
 
 /** One (granting role, object type, grantee) triple from pg_default_acl in schema public. */
@@ -427,6 +448,60 @@ export function evaluateSchemaShape(shape: SchemaShape): Violation[] {
     });
   }
 
+  // 🔴 THE RECOVERY UNDO LOG'S DEAD-MAN'S SWITCH.
+  //
+  // Production has no point-in-time recovery. The hourly snapshot store
+  // (docs/security/recovery-snapshots.md) is what stands in its place, and a store that has
+  // silently stopped is worse than none because it still looks like protection. pg_cron raises
+  // no alarm of its own and the old rows stay put, so without this nothing would ever say so.
+  //
+  // `undefined` means the migration is not on this target yet — stay silent, same as the gates
+  // above. An empty array means it IS deployed and the registry is empty, which is a real fault.
+  if (shape.recovery_health !== undefined) {
+    const enabled = shape.recovery_health.filter((r) => r.enabled);
+    const never = enabled.filter((r) => !r.ever_captured);
+    // A snapshot is written only when the contents CHANGE, so an old newest_snapshot_at is
+    // normal and healthy — au.line_area_map changes about monthly. Staleness therefore cannot be
+    // judged per table; it is judged on the newest capture across ALL of them, because it would
+    // be extraordinary for every money table to go a full day without a single edit.
+    const newest = enabled
+      .map((r) => r.newest_snapshot_at)
+      .filter((t): t is string => typeof t === "string")
+      .sort()
+      .at(-1);
+    const hoursSince = newest ? (Date.now() - Date.parse(newest)) / 3_600_000 : Infinity;
+
+    if (enabled.length === 0) {
+      v.push({
+        severity: "error",
+        code: "recovery_registry_empty",
+        message:
+          "The recovery undo log is deployed but protects nothing: recovery.protected_tables has " +
+          "no enabled rows. Production has no PITR, so this is the payroll safety net being off.",
+      });
+    } else if (never.length > 0) {
+      v.push({
+        severity: "error",
+        code: "recovery_table_never_captured",
+        message:
+          `${never.length} protected table(s) have never been captured by the recovery undo log: ` +
+          `${never.map((r) => `${r.source_schema}.${r.source_table}`).join(", ")}. ` +
+          "They are registered and enabled, so something is failing silently inside " +
+          "recovery.take_snapshots() — read recovery.snapshot_runs.error.",
+      });
+    } else if (hoursSince > 36) {
+      v.push({
+        severity: "error",
+        code: "recovery_snapshot_stale",
+        message:
+          `The newest recovery snapshot across all ${enabled.length} protected tables is ` +
+          `${Math.round(hoursSince)} hours old. Snapshots are written only on change, so gaps are ` +
+          "normal per table — but every money table going this long without one edit is not. " +
+          "Check `select * from cron.job` and `recovery.snapshot_runs` for a stopped scheduler.",
+      });
+    }
+  }
+
   return v;
 }
 
@@ -467,6 +542,18 @@ async function loadShape(): Promise<SchemaShape> {
     );
   } else {
     shape.snapshot_tables_in_public = (snapshots.data ?? []) as SnapshotTableInPublic[];
+  }
+
+  // Same pattern again (20260929200500_recovery_snapshot_store.sql). This one is the dead-man's
+  // switch for the hourly recovery undo log: with no PITR behind it, a snapshotter that stopped
+  // is the failure nobody would otherwise see.
+  const recovery = await supabase.rpc("phx_ci_recovery_health");
+  if (recovery.error) {
+    console.log(
+      `[schema-shape] recovery-undo-log gate not available on this target (${recovery.error.message}) — skipping.`,
+    );
+  } else {
+    shape.recovery_health = (recovery.data ?? []) as RecoveryHealth[];
   }
 
   return shape;
