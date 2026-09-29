@@ -2476,6 +2476,68 @@ a reversal of the decision — it buys the two deploys their correct order back.
 **So: before dropping a column, probe every select naming that table against the live database, and
 never let a census be a grep.**
 
+## A DDL cannot be attributed to a session, and adjacency in time named the wrong one twice — 2026-09-29
+
+The owner asked a plain question: *find who dropped the two label pre-image tables.* The tables were
+`public.employees_team_label_preimage_20260929` and `public.employees_area_label_preimage_20260929`,
+taken hours earlier as rollback material for the dead-label drops above, and both were simply gone.
+
+**What the database could answer, and it is more than it looks.** `pg_stat_statements` had not yet
+evicted the statements, and `stats_since` on an entry whose `calls = 1` is that statement's execution
+time — the entry cannot have existed before its only call. That pinned three drops to **20:14:13
+Cairo** in one transaction, and recovered something better than a timestamp: the statement's own
+twelve-line comment, headed *"Retiring tonight's three pre-images"*, listing for each table its row
+count, its populated-label count, how many labels were identical to the link that replaced them, and
+ending `-- No CASCADE: nothing may depend on a backup table, and if anything does I want the
+refusal.` **That comment is what proved the drop safe after the tables it described no longer
+existed** — 0 of 145 area labels had no link, 141 were byte-identical to the link today, the 4 that
+disagreed were already recorded verbatim in the header of
+`20260929173000_drop_employee_area_name_label.sql`, and the 199 team rows held no label values at
+all because `team_name` was NULL throughout. Nothing unrecoverable went. A ledger row could not have
+said any of that.
+
+**What it could NOT answer, which is who.** `pg_stat_statements` aggregates by normalised query text
+and carries `userid` and `dbid` — no pid, no connection, no application name. Production does run
+`log_statement = ddl`, so the Postgres log holds every `create`/`drop`/`alter`; but **every session's
+Supabase MCP connection reports `application_name = mgmt-api`**, so even that log names a pid and no
+session. `pgaudit` is not installed, and the `query_logs` tool rejects every log-source name here —
+`postgres_logs`, `edge_logs` and `auth_logs` all answer *does not exist* — so the log is
+dashboard-only. There was no source that could name a session.
+
+**The trap, and it fired twice.** Lacking identity, the obvious move is adjacency: the statements
+30–70 seconds before the drop were a marketing customer-pharmacy GPS audit, so that session did it.
+Wrong. Two peer sessions were named in turn and each ruled itself out from its own transcript — the
+first with tool-call timestamps bracketing 17:14:13 UTC with no SQL in the window, the second by
+counting its production writes (135 `marketing_*` UPDATEs, no `create table`, no `drop table`) and
+noting that the two table names had never appeared in its transcript before being asked about them.
+The GPS audit *was* the second session's. The drop was not. **One shared table, no session identity:
+two sessions working the same database land their statements side by side, and side by side carries
+no information at all.** The accusation cost two peer sessions a turn each, and the owner a corrected
+answer after he had already been given a name.
+
+**The rules.**
+
+1. **Never attribute a statement to a session from timing.** The database cannot support it, in any
+   view, and the inference reads as evidence because the timestamp is real.
+2. **Ask the peers** — `ListAgents`, then `SendMessage`. A session can grep its own transcript, which
+   is the only record that ties a statement to an author, and it answers in one turn.
+3. **Write your reason INTO the SQL.** Not in the PR, not in a doc, not in a memory: in the statement.
+   A comment inside a `drop table` survives the object it destroyed, reaches whoever reads
+   `pg_stat_statements` next, and is the one artefact that turned "two tables vanished" into "three
+   redundant snapshots were retired deliberately, with the loss measured first".
+4. `stats_since` **is** usable for a `calls = 1` entry, and only then. For anything called twice it is
+   the first sighting, not an execution, and `minmax_stats_since` is not an execution time either.
+   **There is no `last_exec` column on this server** — a peer session offered it while correcting
+   this reading, and the catalog on PostgreSQL 17.6 has no such thing: `calls`, `dbid`, `queryid`,
+   `userid`, `stats_since`, `minmax_stats_since`, and that is the whole of the identity-and-time
+   surface.
+
+**The shape worth carrying, in one line: `pg_stat_statements` tells you WHEN with real precision and
+can never tell you WHO — and the precision is exactly what makes the wrong answer persuasive.** A
+vague timestamp would have invited a question. An exact one, correct to the second and genuinely
+derived, made the adjacent session look proven. That is why this is a trap rather than a slip: the
+reliable half of the evidence is what lent authority to the half that carried no information at all.
+
 ## `AGENTS.md` §2.1 Session-level traps — as it stood before the 2026-09-12 condensation
 
 On 2026-09-12 `AGENTS.md` was cut to roughly half its size at the owner's request ("Load less of AGENTS.md"): every hook was reduced to its rule plus the one detail needed to obey it. This is that section's hook text **verbatim** from `origin/main` 3eea44aef, kept so that no measurement, date, count or diagnosis a condensed hook dropped is lost. Search it for the hook's wording. The accounts earlier in this file remain the fuller record.
