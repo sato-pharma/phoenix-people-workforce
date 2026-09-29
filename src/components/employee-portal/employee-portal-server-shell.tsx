@@ -1,4 +1,4 @@
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
 
@@ -13,6 +13,7 @@ import { isForbiddenError } from "@/lib/auth/server";
 import { resolveEmployeePortalNavVisibility } from "@/lib/employee-portal/navigation";
 import { getEmployeePortalShellData } from "@/lib/employee-portal/service";
 import { resolveLockedModuleForPath } from "@/lib/navigation/module-catalog";
+import { NATIVE_WEB_APP_SHELL_COOKIE } from "@/lib/auth/native-web-handoff";
 import { PATH_HEADER } from "@/lib/navigation/shell-headers";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
 import { phoenixCrmEntryAvailable } from "@/lib/phoenix-crm/server/page";
@@ -114,6 +115,13 @@ export async function EmployeePortalServerShell({
   // Written by proxy.ts on every matched request. Absent only when the proxy did not run, and then
   // there is no address to match — the page renders and refuses itself.
   const requestedPath = (await headers()).get(PATH_HEADER) ?? "";
+
+  // App mode: this browser context entered through the native hand-off (GET /api/auth/web-session),
+  // which is the ONLY path that sets this cookie. An ordinary browser never carries it, so the web
+  // portal is unchanged; the native WebView carries it and the chrome below is suppressed because the
+  // app's own tab bar and screen header do that job. A display hint, never a credential — see
+  // NATIVE_WEB_APP_SHELL_COOKIE.
+  const appShell = (await cookies()).get(NATIVE_WEB_APP_SHELL_COOKIE)?.value === "1";
   const lockedModuleForPage = lockedModuleKeys.length
     ? resolveLockedModuleForPath(requestedPath, lockedModuleKeys)
     : null;
@@ -132,6 +140,7 @@ export async function EmployeePortalServerShell({
         <DocumentTitleSync mode="employee-portal" role={access.role} />
       </Suspense>
       <EmployeePortalChrome
+        appShell={appShell}
         data={data}
         disableSessionGuard={disableSessionGuard}
         lockedModuleKeys={lockedModuleKeys}
