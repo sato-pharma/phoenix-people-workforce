@@ -29,10 +29,14 @@
 /**
  * The select fragment for the line alone, for a read that needs nothing else.
  *
- * The dead label is carried as well as the embed on purpose: it costs nothing, and it keeps the one
- * row that has a label working if its `line_id` is ever missing.
+ * 🔴 IT NO LONGER NAMES `line_name`, AND THAT IS THE POINT OF THIS CHANGE. While any read still
+ * asks for the column, the column cannot be dropped — PostgREST answers a missing column with an
+ * error, so the DDL would turn every employee read in the app into a 42703 the moment it ran. This
+ * is the half that has to be LIVE before the drop, not after it.
+ *
+ * The one row that carried a label loses nothing: it has a `line_id` too.
  */
-export const EMPLOYEE_LINE_SELECT = "line_name,lines(name)";
+export const EMPLOYEE_LINE_SELECT = "lines(name)";
 
 /**
  * The area alone.
@@ -52,23 +56,33 @@ export const EMPLOYEE_LINE_SELECT = "line_name,lines(name)";
  */
 export const EMPLOYEE_AREA_SELECT = "area_name,areas(name)";
 
-/** The same for all three, for a read that shows a person's placement. */
-export const EMPLOYEE_ORG_SELECT =
-  "line_name,lines(name),department_name,departments(name),area_name,areas(name)";
+/**
+ * The same for all three, for a read that shows a person's placement.
+ *
+ * `area_name` is still named here and `line_name`/`department_name` are not, and that asymmetry is
+ * deliberate: area_name is ALIVE (145 of 198) and is being kept, while the other two are 1 and 0 and
+ * are being dropped from the table. Naming a column that is about to cease existing is what would
+ * break the app at the moment of the DDL.
+ */
+export const EMPLOYEE_ORG_SELECT = "lines(name),departments(name),area_name,areas(name)";
 
 type Embedded = { name?: string | null } | { name?: string | null }[] | null;
 
-/** The shape `EMPLOYEE_LINE_SELECT` produces. PostgREST returns an embed as an object or an array. */
+/**
+ * The shape `EMPLOYEE_LINE_SELECT` produces. PostgREST returns an embed as an object or an array.
+ *
+ * `line_name` is gone from the type as well as from the select, on purpose: leaving it optional
+ * would let a read quietly re-add it to its own select and still typecheck, which is how a dropped
+ * column comes back as a runtime error nobody predicted.
+ */
 export type EmployeeLineFields = {
-  line_name?: string | null;
   lines?: Embedded;
 };
 
-/** The shape `EMPLOYEE_ORG_SELECT` produces. */
+/** The shape `EMPLOYEE_ORG_SELECT` produces. `area_name` stays — that label is alive. */
 export type EmployeeOrgFields = EmployeeLineFields & {
   area_name?: string | null;
   areas?: Embedded;
-  department_name?: string | null;
   departments?: Embedded;
 };
 
@@ -86,11 +100,12 @@ function preferLink(embedded: Embedded, label: string | null | undefined): strin
 }
 
 export function resolveEmployeeLineName(row: EmployeeLineFields | null | undefined): string | null {
-  return preferLink(row?.lines ?? null, row?.line_name);
+  // No label argument any more: the column is going, and the link is the only source.
+  return preferLink(row?.lines ?? null, null);
 }
 
 export function resolveEmployeeDepartmentName(row: EmployeeOrgFields | null | undefined): string | null {
-  return preferLink(row?.departments ?? null, row?.department_name);
+  return preferLink(row?.departments ?? null, null);
 }
 
 export function resolveEmployeeAreaName(row: EmployeeOrgFields | null | undefined): string | null {
