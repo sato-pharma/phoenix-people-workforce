@@ -386,6 +386,16 @@ const PACKAGE_TABS = [
  * see `resolveCopies` there — because a value the server would reject must not be shown here as
  * though it had been accepted.
  */
+/**
+ * A PAPER, FOR THE PURPOSES OF REMEMBERING SOMETHING ABOUT IT — the document and the template
+ * version together, because two versions of the same paper can carry different mark positions and a
+ * tick remembered against one of them would be describing the other. One function, used by both the
+ * availability lookup and the remembered ticks, so the two can never key the same print differently.
+ */
+function printKeyOf(document: PrintableDocument, versionId?: string): string {
+  return `${document}@${versionId ?? ""}`;
+}
+
 function resolveCopyCount(raw: string | undefined, document: PrintableDocument): number {
   const requested = Number.parseInt(raw ?? "", 10);
   if (!Number.isFinite(requested) || requested < 1) return documentDefaultCopies(document);
@@ -1055,6 +1065,20 @@ export function HiringPackManager({
   const [lastAddress, setLastAddress] = useState<PrintAddressChoice | null>(null);
 
   /**
+   * WHAT WAS TICKED LAST TIME EACH PAPER WAS PRINTED, keyed by paper and version.
+   *
+   * The owner, 2026-09-29: "make the print dialog remember the last tick for the same paper."
+   * PER PAPER and not one global answer, because the papers genuinely differ - a certificate of
+   * experience going to a third party wants the seal, an internal data sheet does not - and a single
+   * remembered tick would carry the wrong one across.
+   *
+   * IN SESSION STATE, NOT STORAGE, exactly like `lastAddress` above. A tick that survived a reload
+   * would be a standing instruction to stamp, which is the thing he ruled against; one that lives as
+   * long as the tab is a convenience that cannot outlast the person using it.
+   */
+  const [lastMarks, setLastMarks] = useState<Record<string, DocumentMark[]>>({});
+
+  /**
    * WHICH MARKS THE PAPER BEING PRINTED HAS A POSITION FOR — read when the dialog opens, and reset
    * to none the moment it closes.
    *
@@ -1072,9 +1096,7 @@ export function HiringPackManager({
    * this repo) and, more usefully, makes a stale answer structurally impossible rather than
    * something a cleanup has to remember to clear.
    */
-  const printRequestKey = printRequest
-    ? `${printRequest.document}@${printRequest.versionId ?? ""}`
-    : "";
+  const printRequestKey = printRequest ? printKeyOf(printRequest.document, printRequest.versionId) : "";
   const availableMarks =
     printRequest && markLookup?.key === printRequestKey ? markLookup.marks : [];
 
@@ -1257,6 +1279,10 @@ export function HiringPackManager({
       const { document, versionId } = printRequest;
       setPrintRequest(null);
       if (answer.address) setLastAddress(answer.address);
+      // Remembered against the paper the dialog was opened for, so the next print of THIS paper
+      // starts where this one ended. Recorded even when empty: unticking is an answer too, and a
+      // deliberate "no stamp this time" must not be overwritten by the previous yes.
+      setLastMarks((current) => ({ ...current, [printKeyOf(document, versionId)]: answer.marks }));
       setCopiesFor(document, String(answer.copies));
       if (!openPrint(document, versionId, answer.copies, answer.address, answer.marks)) {
         setError("The print tab was blocked by your browser — allow pop-ups for this site and print again.");
@@ -2437,6 +2463,7 @@ export function HiringPackManager({
         {printRequest ? (
           <PrintOptionsDialog
             availableMarks={availableMarks}
+            initialMarks={lastMarks[printRequestKey] ?? []}
             askAddress={documentTakesAddressChoice(printRequest.document)}
             defaultCopies={
               printRequest.copiesOverride ??

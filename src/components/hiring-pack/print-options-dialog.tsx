@@ -45,6 +45,7 @@ export type PrintAnswer = {
  */
 export function PrintOptionsDialog({
   availableMarks = [],
+  initialMarks = [],
   askAddress,
   defaultCopies,
   initialAddress,
@@ -77,23 +78,41 @@ export function PrintOptionsDialog({
    * safe answer and the true one for them.
    */
   availableMarks?: readonly DocumentMark[];
+  /**
+   * What was ticked last time THIS paper was printed in this session - the starting point, never
+   * an answer. Empty for a paper not yet printed. See the state below.
+   */
+  initialMarks?: readonly DocumentMark[];
   registeredAddress: string | null;
   title: string;
 }) {
   const [copies, setCopies] = useState(String(defaultCopies));
   const [address, setAddress] = useState<PrintAddressChoice | null>(askAddress ? initialAddress : null);
   /**
-   * WHAT THIS RUN IS STAMPED AND SIGNED WITH, and it starts EMPTY every time.
+   * WHAT THIS RUN IS STAMPED AND SIGNED WITH.
    *
-   * The owner, 2026-09-29: "donot put the stamp permanent, make able to add them freely as i want."
-   * A mark placed in the layout editor says WHERE the seal sits on this paper; it does not say the
-   * paper is stamped. That is decided here, per print, and the box opens unticked - so the default
-   * outcome is always the unstamped document, and a stamped one is always something somebody chose.
+   * THE FIRST TIME A PAPER IS PRINTED IN A SESSION THIS IS EMPTY. The owner, 2026-09-29: "donot put
+   * the stamp permanent, make able to add them freely as i want." A mark placed in the layout editor
+   * says WHERE the seal sits; it does not say the paper is stamped. That is decided here, per print.
    *
-   * The dialog is mounted only while open, so this cannot carry over from the last paper.
+   * AFTER THAT IT OPENS ON WHAT HE TICKED LAST FOR THIS SAME PAPER - his own refinement the same
+   * evening, "make the print dialog remember the last tick for the same paper". That is NOT a
+   * retreat from the rule above, and the difference is the one `initialAddress` already draws two
+   * props up: a remembered value is a STARTING POINT, never an answer. He still sees the ticks, he
+   * still presses Print, and nothing prints that he did not look at. What it removes is re-ticking
+   * the same two boxes for the twentieth certificate of the morning.
+   *
+   * HELD UNFILTERED AND FILTERED ON THE WAY OUT, not at mount. `availableMarks` is FETCHED by the
+   * manager after this dialog is already on screen, so it is empty on the render that seeds this
+   * state - filtering here would silently drop every remembered tick, every time, and the feature
+   * would look like it had never been built. `ticked` below is the answer, and it is what the Print
+   * button sends: a remembered tick for a position deleted since is never offered and never printed.
    */
-  const [marks, setMarks] = useState<DocumentMark[]>([]);
+  const [marks, setMarks] = useState<DocumentMark[]>(() => [...initialMarks]);
   const dialogRef = useDialogA11y<HTMLDivElement>({ open: true, onClose: onCancel });
+
+  /** What is actually ticked: the desk's choices, narrowed to the marks this paper still has. */
+  const ticked = marks.filter((mark) => availableMarks.includes(mark));
 
   const count = parsePrintCopies(copies, 0);
   const ready = count >= 1 && (!askAddress || address !== null);
@@ -192,12 +211,13 @@ export function PrintOptionsDialog({
           ) : null}
 
           {/*
-            STAMP AND SIGNATURE - asked here, for THIS print, and never remembered.
+            STAMP AND SIGNATURE - asked here, for THIS print, and never decided by the layout.
 
             The owner, 2026-09-29: "make it optional to choose for any form i want." It sits beside
             the copy count and the address because those are the other two things he already decides
-            per print, and it opens unticked for the same reason the address has no pre-selected
-            answer: the point of asking is that the desk decides, not that the system's habit does.
+            per print. It opens on what he ticked last for THIS paper in this session - his later
+            instruction the same evening - which is a starting point exactly as `initialAddress` is,
+            not a standing answer: the boxes are on screen and Print is still his press.
 
             Shown only for the marks this paper has a position for, so the box can never offer a
             stamp that would land nowhere.
@@ -252,7 +272,7 @@ export function PrintOptionsDialog({
           <button
             className="bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
             disabled={!ready}
-            onClick={() => onConfirm({ address, copies: count, marks })}
+            onClick={() => onConfirm({ address, copies: count, marks: ticked })}
             type="button"
           >
             Print {count >= 1 ? count : ""} {count === 1 ? "copy" : "copies"}
