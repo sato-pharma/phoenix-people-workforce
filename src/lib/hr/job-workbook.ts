@@ -1271,6 +1271,12 @@ export const COMPANY_ROLE_WORKBOOKS: readonly CompanyRoleWorkbook[] = [
     hasWrittenJd: false,
   },
   {
+    jobTitle: "Senior Medical Representative",
+    role: "Medical Rep",
+    purpose: "The Medical Representative role at a seniority grade: same list, same portal, same work.",
+    hasWrittenJd: false,
+  },
+  {
     jobTitle: "District Sales Manager",
     role: "District Manager",
     purpose: "Runs a district team: plan approval, coaching, double visits and territory performance.",

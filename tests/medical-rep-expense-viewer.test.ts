@@ -96,7 +96,10 @@ export function runMedicalRepExpenseViewerTests() {
   // 1. The viewer that looped: a Medical Rep login whose HR job title says otherwise. The dashboard
   //    still sends the login to the workspace once, and the workspace renders its own unavailable
   //    state, which names the refusal, instead of sending it back.
-  for (const jobTitle of ["Office Coordinator", "Senior Medical Representative", ""]) {
+  // ("Senior Medical Representative" moved to the genuine-rep loop below on 2026-09-29: it is now a
+  //  real rep title (B-7's appreciation grade), so it resolves to the Medical Rep job function and is
+  //  ADMITTED, not refused — it is no longer an example of a login whose title disagrees with it.)
+  for (const jobTitle of ["Office Coordinator", ""]) {
     const mismatched: Viewer = { role: "Medical Rep", jobTitle };
 
     const fromDashboard = open(mismatched, DASHBOARD);
@@ -122,7 +125,7 @@ export function runMedicalRepExpenseViewerTests() {
   }
 
   // 2. A genuine Medical Rep is unchanged: the dashboard sends him to the workspace and it renders.
-  for (const jobTitle of ["Medical Representative", "Medical Rep", null]) {
+  for (const jobTitle of ["Medical Representative", "Senior Medical Representative", "Medical Rep", null]) {
     const rep: Viewer = { role: "Medical Rep", jobTitle };
     assert.deepEqual(
       open(rep, DASHBOARD),

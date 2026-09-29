@@ -29,6 +29,7 @@ import type { PhoenixRole } from "@/lib/auth/permissions";
 const ELIGIBLE_TITLES = new Set<string>([
   // Sales department (field sales force + line management)
   "medical representative",
+  "senior medical representative",
   "medical rep",
   "employee medical rep",
   "district sales manager",
@@ -115,6 +116,11 @@ export function isSfeManagerTitle(...titles: Array<string | null | undefined>): 
  * fingerprint devices at all — it was never written about office-based managers, for whom
  * the punch proves attendance and the missing CRM row proves only that nobody tagged them.
  * Do not cite that comment to put managers back in scope.
+ *
+ * MEMBERSHIP IS PINNED to exactly these three plain rep spellings by
+ * tests/deductions-dsm-no-record.test.ts ("reps-only stays reps-only"), so the seniority grade
+ * "Senior Medical Representative" is NOT listed here — it is caught by the resolveJobFunctionRole
+ * fallback in `logsOwnCrmVisitsTitle` below, which resolves it to the "Medical Rep" job function.
  */
 const OWN_CRM_VISIT_LOGGER_TITLES = new Set<string>([
   "medical representative",
