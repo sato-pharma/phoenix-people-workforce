@@ -3357,3 +3357,39 @@ Full account: **[docs/agents-owner-rules.md](agents-owner-rules.md) §4.1**.
 - 🔴 **The badge read a FROZEN note, never the live evidence.** EITHER half reaching `complete` clears it.
 - 🔴 **A duplicate merge STRANDS the desk validation on the retired row.** Repair it with hand SQL, not code.
 - 🔴 **The screen that SHOWS a badge is not the screen a rep can OPEN.** Check the gate before wiring any `actionUrl`.
+
+### 🔴 The `Next step:` box holds words CLAUDE can act on — never his own physical act, never a message to a person
+
+Relocated from `AGENTS.md` §4 on 2026-09-29, when the hook crossed the 1,200-byte line the
+auto-loaded-footprint check draws. The cue stays there; this is the account.
+
+**The rule.** The quoted words at the end of a `Next step:` line are a **message he sends to
+Claude**. The prompt-suggestion box offers them as ghost text, so whatever is quoted is what lands
+in Claude's next turn. "Could he send this as-is?" is therefore not the test — *"can Claude act on
+it once sent?"* is.
+
+**Failure one: a physical act.** Measured **2026-09-28, four times in one evening**:
+`press edit beside app file` (opens a Windows file picker), `open the managed play page`,
+`upload the versionCode 4 aab`, and `factory reset PHX-TAB-0002 and scan the config 3 QR` — the last
+for a tablet physically in his hands. Each came back verbatim as his next message, and each turn was
+spent explaining that Claude has no hands.
+
+**Failure two: a message to a person, which is the easier one to walk into.** Measured **2026-09-29,
+three times in one session — in a session that had this rule loaded**:
+`tell HR to start scanning the hiring documents`, then `tell HR to work the pedia checklist first`
+**twice**. It passes every check the first failure fails: it is a real next action, it genuinely
+needs him, and it is unambiguously his call. What it is not is executable — nothing outbound reaches
+staff from a business system on Claude's own say-so (§4, and the standing ban on bulk or test sends),
+so the ghost text hands Claude an order it must refuse, and the reply is one more copy of a draft he
+already has.
+
+**Why the second one repeats.** The first failure announces itself — "press", "scan", "upload" are
+visibly physical. The second reads exactly like the decisions the box is *for*. The only thing
+separating `tell HR to work the pedia checklist first` from `merge 4729 when green` is who performs
+it, and that distinction is invisible in the words.
+
+**How to apply.** Drafting the message is Claude's work and belongs in the prose, in full, ready to
+paste. Sending it is his and belongs nowhere in the box. When the bottleneck is his hands or his
+phone, say so plainly in the prose with the exact path, and quote something Claude can act on: the
+instruction that FOLLOWS the physical act, a merge, a build Claude fires, or the next change in the
+thread. Memory: `never-put-his-physical-actions-in-the-next-step-box`.
