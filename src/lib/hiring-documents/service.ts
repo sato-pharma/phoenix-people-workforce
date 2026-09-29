@@ -591,6 +591,39 @@ export function filterHiringDocumentsForAccess(
   };
 }
 
+export type HiringDocumentEmployeeSelection = {
+  documents: HiringDocumentDefinition[];
+  employee: HiringDocumentEmployeeRow | null;
+};
+
+/**
+ * One person's row off the board, for the employee details panel.
+ *
+ * IT FILTERS FIRST, ALWAYS — AND THAT IS WHY IT TAKES THE ACCESS CONTEXT RATHER THAN AN ALREADY-
+ * FILTERED BOARD. A caller handed a filtered dashboard could just as easily be handed the raw one:
+ * by a refactor, by a second call site, by anybody reading `dashboard` and passing what they had.
+ * The bug would be invisible — a real person's real documents, returned to somebody who may not see
+ * them, with nothing in the response looking wrong. Scoping inside the function means there is no
+ * way to call it that skips the boundary.
+ *
+ * `employee: null` covers all three of "no such HR_ID", "not in your scope" and "not on the
+ * checklist", deliberately. Telling them apart would answer, for an id the caller may not see,
+ * whether that person exists.
+ */
+export function selectHiringDocumentEmployee(
+  dashboard: HiringDocumentsDashboardData,
+  access: AccessContext,
+  hrId: string | null | undefined,
+): HiringDocumentEmployeeSelection {
+  const scoped = filterHiringDocumentsForAccess(dashboard, access);
+  const key = normalizeHrId(hrId);
+  const employee = key
+    ? scoped.employees.find((candidate) => normalizeHrId(candidate.hrId) === key) ?? null
+    : null;
+
+  return { documents: scoped.documents, employee };
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // The files behind the ticks
 // ─────────────────────────────────────────────────────────────────────────────
