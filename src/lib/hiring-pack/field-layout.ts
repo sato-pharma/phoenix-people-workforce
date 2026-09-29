@@ -45,6 +45,7 @@
 //   path was recorded against is the markup it will be resolved against, permanently.
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
+import type { DocumentMark } from "@/lib/hiring-pack/document-marks";
 import { resolveFieldTemplate } from "@/lib/hiring-pack/field-template";
 import type { Placement } from "@/lib/hiring-pack/render-placement";
 import { escapeHtml } from "@/lib/hiring-pack/render-shared";
@@ -121,10 +122,46 @@ export function documentSurface(document: HiringPackDocument): DocumentSurface {
  * one thing that must NEVER masquerade as data: a literal that looks like a value is how a stale
  * number gets printed on four hundred documents. The editor labels it as fixed text, and
  * `fieldPrintedValue` below is the only place either kind is resolved, so there is one answer.
+ *
+ * `mark` prints a PICTURE — the company stamp or the stored signature — and no text at all. It is
+ * the one source with nothing behind it in the values map, and the one a compiled table can never
+ * produce: a mark is on a paper because a person put it there, which is exactly the distinction the
+ * owner's 2026-09-29 ruling turns on (the account is in `document-marks.ts`). `src` is the resolved
+ * artwork, filled in at render time from disk or a private bucket and NEVER stored — so replacing
+ * the signature changes every paper that carries one, rather than freezing an old signature into a
+ * layout that nobody would think to re-check.
  */
 export type DocumentFieldSource =
   | { kind: "value"; key: string }
-  | { kind: "literal"; text: string };
+  | { kind: "literal"; text: string }
+  | { kind: "mark"; mark: DocumentMark; src?: string | null };
+
+/**
+ * A row that prints TEXT — every kind except a mark.
+ *
+ * WHY THIS TYPE EXISTS RATHER THAN A RUNTIME FILTER ALONE. The field table is a screen about what
+ * words a field prints: it reads `source.key` and `source.text`, offers a rule to type, counts how
+ * many employees that rule fills for, and warns about boxes that overlap. None of those questions
+ * has an answer for a picture. Narrowing the type at that boundary makes the compiler say so, so a
+ * future edit cannot quietly reach for `source.key` on a stamp and get `undefined` at run time —
+ * which on that screen would read as a field whose key is blank rather than as a category error.
+ *
+ * Marks are listed separately in the layout panel, where they CAN be removed — deliberately, since
+ * a mark whose artwork is missing prints nothing and so cannot be clicked on the page.
+ */
+export type TextDocumentFieldRow = Omit<DocumentFieldRow, "source"> & {
+  source: Exclude<DocumentFieldSource, { kind: "mark" }>;
+};
+
+export function isTextFieldRow(row: DocumentFieldRow): row is TextDocumentFieldRow {
+  return row.source.kind !== "mark";
+}
+
+export function isMarkFieldRow(
+  row: DocumentFieldRow,
+): row is Omit<DocumentFieldRow, "source"> & { source: Extract<DocumentFieldSource, { kind: "mark" }> } {
+  return row.source.kind === "mark";
+}
 
 /** Where a flow-surface field hangs: a CSS path within its template version, plus an offset. */
 export type FlowAnchor = {
@@ -182,6 +219,22 @@ export function literalValueKey(rowId: string): string {
 }
 
 /**
+ * The `data-hp-key` a placed mark carries.
+ *
+ * NOT a values-map key, unlike every other key in this file — nothing is ever looked up under it,
+ * because a mark's artwork travels on the row itself. It exists so a stamp on the page is
+ * ADDRESSABLE by the editor the same way every other placement is (`data-hp-key` is what the
+ * page-surface drag handler matches on) and so the field table has something to name it by.
+ *
+ * Keyed by the MARK and not by the row, deliberately: two stamps on one page are the same stamp,
+ * and the key is what says which picture it is. `data-hp-field` already carries the row id, which is
+ * what distinguishes one placed copy from another.
+ */
+export function markValueKey(mark: DocumentMark): string {
+  return `hpMark:${mark}`;
+}
+
+/**
  * What a row actually prints, and under which values-map key it is looked up.
  *
  * A literal's text is run through `resolveFieldTemplate` on the way out, so "يعمل لدى
@@ -201,11 +254,29 @@ export function fieldPrintedValue(
   if (row.source.kind === "literal") {
     return { key: literalValueKey(row.id), literal: resolveFieldTemplate(row.source.text, values) };
   }
+  // A MARK HAS NO LITERAL, which is what keeps it out of `literals` in both mergers below. It is a
+  // picture, and there is no text anywhere that a values map could carry for it.
+  if (row.source.kind === "mark") return { key: markValueKey(row.source.mark), literal: null };
   return { key: row.source.key, literal: null };
 }
 
 /** The placement a row describes, in the shape the existing renderer already consumes. */
 function rowPlacement(row: DocumentFieldRow): Placement {
+  if (row.source.kind === "mark") {
+    return {
+      kind: "image",
+      key: markValueKey(row.source.mark),
+      fieldId: row.id,
+      // Artwork that could not be read is an EMPTY src, which `renderPlacement` prints as nothing.
+      // The alternative — leaving the box and drawing a broken image — is a paper that looks stamped
+      // from across a desk and is not, which is the one outcome the stamp exists to prevent.
+      src: row.source.src ?? "",
+      x: row.x,
+      y: row.y,
+      w: row.w,
+      h: row.h,
+    };
+  }
   return {
     kind: "text",
     key: fieldPrintedValue(row).key,
@@ -257,6 +328,15 @@ function movedPlacement(placement: Placement, row: DocumentFieldRow): Placement 
       pitch: placement.pitch * scale,
       size: row.size,
     };
+  }
+  // AN IMAGE MOVES AS AN IMAGE — no alignment, no font size, because it has neither. No compiled
+  // table places a picture, so nothing can reach this branch today: a mark is always an ADDITION
+  // and an addition never comes through here (`parseDocumentFieldWrite` and the table's own
+  // `_mark_is_an_addition` constraint both refuse the other case). It is written out rather than
+  // left to the fall-through below, which would spread `align` and `size` onto a shape that has no
+  // room for them — the same "a move keeps the placement's own kind" rule this function exists for.
+  if (placement.kind === "image") {
+    return { ...placement, key, fieldId: row.id, x: row.x, y: row.y, w: row.w, h: row.h };
   }
   return {
     ...placement,
@@ -351,11 +431,28 @@ export function renderFlowField(
   row: DocumentFieldRow,
   values: Partial<Record<string, string>>,
 ): string {
+  const anchor = row.anchor;
+  if (!anchor) return "";
+
+  // A MARK IS A PICTURE AND IS ANSWERED FIRST, before any text is resolved — see `renderPlacement`,
+  // which does the same thing for a page surface and for the same reason. `hp-added` is what the
+  // editor's flow-surface drag handler matches on and what re-enables pointer events for it, so the
+  // class list is not decoration: without it a placed stamp could never be picked up again.
+  if (row.source.kind === "mark") {
+    const src = row.source.src ?? "";
+    if (!src) return "";
+    return (
+      `<img class="f mark hp-added" data-hp-key="${escapeHtml(markValueKey(row.source.mark))}"` +
+      ` data-hp-field="${escapeHtml(row.id)}" data-hp-anchor="${escapeHtml(anchor.selector)}"` +
+      ` src="${escapeHtml(src)}" alt="" aria-hidden="true"` +
+      ` style="left:${anchor.dx}pt;top:${anchor.dy}pt;width:${row.w}pt;height:${row.h}pt;` +
+      `object-fit:contain">`
+    );
+  }
+
   const printed = fieldPrintedValue(row, values);
   const text = printed.literal ?? values[printed.key] ?? "";
   if (!text) return "";
-  const anchor = row.anchor;
-  if (!anchor) return "";
   return (
     `<span class="f txt hp-added" data-hp-key="${escapeHtml(printed.key)}"` +
     ` data-hp-field="${escapeHtml(row.id)}" data-hp-anchor="${escapeHtml(anchor.selector)}"` +
@@ -459,6 +556,11 @@ export function flowFieldLayer(
     pointer-events: none;
   }
   .hp-added > .ff { display: inline-block; }
+  /* A placed stamp or signature. Its box is dragged and resized by hand, so the artwork keeps its
+     own proportions inside it rather than being squashed to fit — a distorted seal is one nobody
+     would accept on paper. Only the browser's own image drag is turned off; the element itself must
+     stay pickable in the editor, which is what the editor stylesheet re-enables. */
+  img.hp-added { object-fit: contain; user-select: none; -webkit-user-drag: none; }
 </style>
 <script>
 (function () {

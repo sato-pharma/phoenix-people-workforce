@@ -44,7 +44,7 @@
 // for both; only what a fresh ADD records as the anchor differs between them.
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
-import { AlertTriangle, Check, Eye, EyeOff, History, Loader2, Lock, MapPin, Move, PencilLine, Plus, Printer, RotateCw, Trash2, X } from "lucide-react";
+import { AlertTriangle, Check, Eye, EyeOff, History, Loader2, Lock, MapPin, Move, PenTool, PencilLine, Plus, Printer, RotateCw, Stamp, Trash2, Upload, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { FieldTable } from "@/components/hiring-pack/field-table";
@@ -52,8 +52,14 @@ import { Button } from "@/components/ui/button";
 import { FieldHistoryPanel } from "@/components/hiring-pack/field-history-panel";
 import { Input } from "@/components/ui/input";
 import type { DocumentFieldInventoryEntry } from "@/lib/hiring-pack/document-inventory";
+import {
+  DOCUMENT_MARK_DEFAULT_SIZE,
+  DOCUMENT_MARK_LABELS,
+  type DocumentMark,
+} from "@/lib/hiring-pack/document-marks";
 import { documentSurfaceOf } from "@/lib/hiring-pack/document-registry";
 import { stampPaperReferenceInDocument } from "@/lib/hiring-pack/paper-reference";
+import { isMarkFieldRow, isTextFieldRow } from "@/lib/hiring-pack/field-layout";
 import type {
   DocumentFieldRow,
   DocumentFieldSource,
@@ -79,7 +85,7 @@ import {
   PAGE_HEIGHT_PX,
   PAGE_WIDTH_PX,
 } from "@/lib/hiring-pack/paper-zoom";
-import { pageSizeFor, type PageSize } from "@/lib/hiring-pack/field-warnings";
+import { fieldWarnings, pageSizeFor, type PageSize } from "@/lib/hiring-pack/field-warnings";
 import { currentTemplateVersion } from "@/lib/hiring-pack/template-registry";
 import { isBuiltInDocument } from "@/lib/hiring-pack/types";
 import type {
@@ -233,6 +239,7 @@ function resolvePageFor(doc: Document, element: Element, copiesCount: number): n
 function fieldLabel(row: DocumentFieldRow): string {
   if (row.defaultKey) return row.hidden ? `${row.defaultKey} — hidden` : `${row.defaultKey} — moved`;
   if (row.source.kind === "literal") return row.source.text ? `“${row.source.text}”` : "(blank fixed text)";
+  if (row.source.kind === "mark") return DOCUMENT_MARK_LABELS[row.source.mark];
   return row.source.key || "(no key set)";
 }
 
@@ -517,6 +524,17 @@ export function HiringPackPaperEditor({
   const [layoutMode, setLayoutMode] = useState(false);
   const [addMode, setAddMode] = useState(false);
   const [fields, setFields] = useState<DocumentFieldRow[]>([]);
+
+  /**
+   * The layout, split into the two things it now holds: boxes of text, and pictures.
+   *
+   * The split is made ONCE, here, rather than at each of the four places that want one half — the
+   * field table, the marks list, and both of their counts. A field is in exactly one of these lists
+   * and the compiler enforces which, so a mark cannot drift into the table that asks it for a value
+   * key it does not have.
+   */
+  const textFields = useMemo(() => fields.filter(isTextFieldRow), [fields]);
+  const markFields = useMemo(() => fields.filter(isMarkFieldRow), [fields]);
   const [fieldsLoading, setFieldsLoading] = useState(false);
   const [fieldsError, setFieldsError] = useState<string | null>(null);
   /** Null in the ordinary case — an offer exists only on a version nothing has been done to yet. */
@@ -581,6 +599,27 @@ export function HiringPackPaperEditor({
   );
 
   /**
+   * A placed mark dragged past the edge of the paper, by row id.
+   *
+   * THE SAME SILENT FAILURE THE FIELD TABLE ALREADY WARNS ABOUT, and a mark is more exposed to it,
+   * not less: `.sheet` is `overflow: hidden`, a stamp is far bigger than a text rule, and the fine-
+   * tune panel takes a typed width as given. It would look placed while being dragged, save, and
+   * print nothing — on a form somebody signs. Marks do not go through the field table, so without
+   * this they would be the one kind of field with no warning at all.
+   *
+   * `fieldWarnings` is the same helper the table uses, which is why its labeller takes the wide row.
+   */
+  const markWarnings = useMemo(
+    () =>
+      new Set(
+        fieldWarnings(page, markFields, (row) =>
+          row.source.kind === "mark" ? DOCUMENT_MARK_LABELS[row.source.mark] : "a field you added",
+        ).map((warning) => warning.rowId),
+      ),
+    [markFields, page],
+  );
+
+  /**
    * The key a new field will carry when the operator next clicks the page, or null for fixed text.
    *
    * A ref as well as state because `onLayoutPointerDown` is attached to the framed document once and
@@ -592,6 +631,150 @@ export function HiringPackPaperEditor({
    */
   const pendingAddKeyRef = useRef<string | null>(null);
   const [pendingAddKey, setPendingAddKey] = useState<string | null>(null);
+
+  /**
+   * The MARK a new field will be, when the next click on the page is to drop a stamp or a signature.
+   *
+   * A second ref rather than one armed source, because the two things being armed are different
+   * questions. `pendingAddKeyRef` says which VALUE a text box will print, and null there means "let
+   * them type into it" — which is exactly the state the plain Add field button arms. Folding the two
+   * into one nullable source would make "nothing armed" and "armed with fixed text" the same value.
+   */
+  const pendingAddMarkRef = useRef<DocumentMark | null>(null);
+  const [pendingAddMark, setPendingAddMark] = useState<DocumentMark | null>(null);
+
+  /**
+   * What the server says about the stored signature: whether this viewer may touch it at all,
+   * whether one exists, and the image itself so the panel can show what is stored.
+   *
+   * THE SERVER DECIDES, NOT A PROP. `/api/hiring-pack/signature` answers 403 to anyone who is not a
+   * Super Admin, so `canManage` is read back from the real gate rather than re-derived from a role
+   * this component was handed — the two cannot drift, and a screen that offered the button to
+   * somebody the route would refuse is exactly the kind of drift that produces a dead control.
+   *
+   * `loaded` is separate from `present` because "not fetched yet" and "no signature stored" are
+   * different answers and only one of them means "upload one".
+   */
+  const [signature, setSignature] = useState<{
+    loaded: boolean;
+    canManage: boolean;
+    present: boolean;
+    dataUri: string | null;
+  }>({ canManage: false, dataUri: null, loaded: false, present: false });
+  const [signatureBusy, setSignatureBusy] = useState(false);
+  const [signatureError, setSignatureError] = useState<string | null>(null);
+  const signatureInputRef = useRef<HTMLInputElement | null>(null);
+
+  /**
+   * Read the stored signature's state, and SET NOTHING.
+   *
+   * Split from its callers the way `fetchDocumentFields` is split from the effect that loads it, and
+   * for the same reason: `react-hooks/set-state-in-effect` is an ERROR in this repo, so an effect
+   * may only write state from inside a callback. A fetcher that returns its answer can be awaited by
+   * a click handler and `.then`-ed by an effect, and neither has to duplicate the parsing.
+   *
+   * A 403 IS NOT AN ERROR HERE — it is the answer "this is not yours to manage", and it leaves the
+   * panel showing the stamp button alone with nothing red on screen. Anything else IS reported: a
+   * Super Admin whose signature could not be read needs to know that before he places one and finds
+   * the paper prints unsigned.
+   */
+  const fetchSignature = useCallback(async (): Promise<{
+    state: { loaded: boolean; canManage: boolean; present: boolean; dataUri: string | null };
+    error: string | null;
+  }> => {
+    try {
+      const response = await fetch("/api/hiring-pack/signature", { cache: "no-store" });
+      if (response.status === 403) {
+        return { error: null, state: { canManage: false, dataUri: null, loaded: true, present: false } };
+      }
+      const body = (await response.json()) as { dataUri?: string | null; message?: string; present?: boolean };
+      if (!response.ok) {
+        return {
+          error: body?.message ?? "The stored signature could not be read.",
+          state: { canManage: true, dataUri: null, loaded: true, present: false },
+        };
+      }
+      return {
+        error: null,
+        state: {
+          canManage: true,
+          dataUri: body?.dataUri ?? null,
+          loaded: true,
+          present: body?.present === true,
+        },
+      };
+    } catch {
+      // A NETWORK FAILURE SAYS NOTHING ABOUT THE BUCKET. `canManage` stays false so no button is
+      // offered that the server might refuse, and no error is shown for a viewer who was never
+      // going to see this panel at all — "none stored" would be a claim this answer cannot support.
+      return { error: null, state: { canManage: false, dataUri: null, loaded: true, present: false } };
+    }
+  }, []);
+
+  /** The same read, applied — for the two writers, which are click handlers and may set directly. */
+  const reloadSignature = useCallback(async () => {
+    const next = await fetchSignature();
+    setSignature(next.state);
+    if (next.error) setSignatureError(next.error);
+  }, [fetchSignature]);
+
+  /**
+   * Store a new signature image.
+   *
+   * SENT AS RAW BYTES, not a form upload: the route weighs the body and checks the PNG magic itself,
+   * so a multipart wrapper would only add a layer for both sides to agree about. The file input is
+   * cleared afterwards so choosing the SAME file twice still fires a change event — without that, a
+   * failed upload could not be retried with the same file, which is the file somebody would retry.
+   */
+  const uploadSignature = useCallback(
+    async (file: File) => {
+      setSignatureBusy(true);
+      setSignatureError(null);
+      try {
+        const response = await fetch("/api/hiring-pack/signature", {
+          body: await file.arrayBuffer(),
+          headers: { "Content-Type": "image/png" },
+          method: "PUT",
+        });
+        const body = (await response.json().catch(() => null)) as { message?: string } | null;
+        if (!response.ok) {
+          setSignatureError(body?.message ?? "The signature could not be saved.");
+          return;
+        }
+        await reloadSignature();
+        // The paper is re-fetched so a signature already placed on it shows the NEW image at once.
+        // Without this the panel would say the signature had been replaced while the page under it
+        // still printed the old one, which is precisely the disagreement this screen exists to end.
+        setReloadToken((token) => token + 1);
+      } catch (error) {
+        setSignatureError(error instanceof Error ? error.message : "The signature could not be saved.");
+      } finally {
+        setSignatureBusy(false);
+        if (signatureInputRef.current) signatureInputRef.current.value = "";
+      }
+    },
+    [reloadSignature],
+  );
+
+  /** Remove the stored signature. Every paper carrying one then prints unsigned, which is the point. */
+  const removeSignature = useCallback(async () => {
+    setSignatureBusy(true);
+    setSignatureError(null);
+    try {
+      const response = await fetch("/api/hiring-pack/signature", { method: "DELETE" });
+      const body = (await response.json().catch(() => null)) as { message?: string } | null;
+      if (!response.ok) {
+        setSignatureError(body?.message ?? "The signature could not be removed.");
+        return;
+      }
+      await reloadSignature();
+      setReloadToken((token) => token + 1);
+    } catch (error) {
+      setSignatureError(error instanceof Error ? error.message : "The signature could not be removed.");
+    } finally {
+      setSignatureBusy(false);
+    }
+  }, [reloadSignature]);
 
 
 
@@ -977,7 +1160,33 @@ export function HiringPackPaperEditor({
     return () => {
       live = false;
     };
-  }, [inventoryUrl, layoutMode, layoutTab, reloadToken]);  /**
+  }, [inventoryUrl, layoutMode, layoutTab, reloadToken]);
+
+  /**
+   * Find out about the stored signature the first time layout mode is opened, and never before.
+   *
+   * NOT ON MOUNT. Most of this screen's life is spent filling values, where the signature is neither
+   * offered nor relevant, and fetching it there would put a request behind every paper anybody looks
+   * at to answer a question nobody asked. Once loaded it stays loaded for the life of the panel —
+   * `loaded` guards the re-entry, and the two writers refresh it themselves.
+   */
+  useEffect(() => {
+    if (!layoutMode || signature.loaded) return;
+    let live = true;
+    // SET INSIDE THE CALLBACK, never in the effect body — `react-hooks/set-state-in-effect` is an
+    // error here and `fetchSignature` exists precisely so this can be written that way. `live`
+    // guards the panel being closed while the request is out.
+    void fetchSignature().then((next) => {
+      if (!live) return;
+      setSignature(next.state);
+      if (next.error) setSignatureError(next.error);
+    });
+    return () => {
+      live = false;
+    };
+  }, [fetchSignature, layoutMode, signature.loaded]);
+
+  /**
    * Put a rule ON THE PAPER before it is anybody's rule — the field table's dry run.
    *
    * ─────────────────────────────────────────────────────────────────────────────────────────────
@@ -1143,11 +1352,24 @@ export function HiringPackPaperEditor({
         // to type into. Read from the ref rather than the state for the reason at its declaration —
         // this listener was attached once, long before the button was pressed.
         const armed = pendingAddKeyRef.current;
-        const addedSource: DocumentFieldSource = armed
-          ? { kind: "value", key: armed }
-          : { kind: "literal", text: "" };
+        // A MARK OUTRANKS AN ARMED KEY, and only one of the two can ever be set — `armAddBox` and
+        // `armAddMark` each clear the other. Read in this order so that if they ever both were set,
+        // the picture wins over a text box rather than silently printing a value where a stamp was
+        // asked for.
+        const armedMark = pendingAddMarkRef.current;
+        const addedSource: DocumentFieldSource = armedMark
+          ? { kind: "mark", mark: armedMark }
+          : armed
+            ? { kind: "value", key: armed }
+            : { kind: "literal", text: "" };
+        // A mark lands at a size that looks like the thing it is — a round seal square, a signature
+        // wider than it is tall — rather than at the 140 x 14pt of a text rule, which would drop a
+        // seal onto the page as an unreadable sliver. Both are dragged and resized freely after.
+        const addedBox = armedMark ? DOCUMENT_MARK_DEFAULT_SIZE[armedMark] : { w: 140, h: 14 };
         pendingAddKeyRef.current = null;
         setPendingAddKey(null);
+        pendingAddMarkRef.current = null;
+        setPendingAddMark(null);
 
         // CLEARING THE STATE IS NOT ENOUGH — the crosshair lives on a CLASS on the framed body.
         // `applyLayoutClasses` is called from the toggles and from `enhance`, and from nowhere
@@ -1174,14 +1396,19 @@ export function HiringPackPaperEditor({
             align: "right",
             anchor: null,
             defaultKey: null,
-            h: 14,
+            h: addedBox.h,
             hidden: false,
             page: resolvePageFor(doc, sheetEl, copies),
             size: 9,
             source: addedSource,
-            w: 140,
-            x: Math.max(0, xPt - 60),
-            y: Math.max(0, yPt - 7),
+            w: addedBox.w,
+            // A MARK IS DROPPED CENTRED ON THE CLICK: somebody placing a seal is pointing at where
+            // the seal goes, not at its top-left corner, and a 96pt square hung off its corner lands
+            // visibly away from the spot they picked. A text box keeps the offsets it has always
+            // had — they are not quite its centre, and re-deriving them here would move every new
+            // field a few points for no reason anyone asked for.
+            x: Math.max(0, xPt - (armedMark ? addedBox.w / 2 : 60)),
+            y: Math.max(0, yPt - (armedMark ? addedBox.h / 2 : 7)),
           });
         } else {
           const copyRoot = target.closest(".copy") ?? doc.body;
@@ -1205,12 +1432,12 @@ export function HiringPackPaperEditor({
               selector,
             },
             defaultKey: null,
-            h: 14,
+            h: addedBox.h,
             hidden: false,
             page: null,
             size: 9,
             source: addedSource,
-            w: 140,
+            w: addedBox.w,
             x: 0,
             y: 0,
           });
@@ -1286,6 +1513,19 @@ export function HiringPackPaperEditor({
     for (const element of nodes) {
       const key = element.getAttribute("data-hp-key");
       const binding = paperFieldBinding(key);
+
+      // A PLACED STAMP OR SIGNATURE IS NOT A VALUE, and without this it would fall into the branch
+      // below and be labelled "worked out from another value" — a sentence that is simply untrue of
+      // a picture, on the one element an operator is most likely to click to find out what it is.
+      // Locked because there is nothing to type: it is moved, resized or deleted in layout mode, and
+      // that is what the tooltip says.
+      if (element.classList.contains("mark")) {
+        element.setAttribute("data-hp-locked", "true");
+        element.title =
+          "A stamp or signature placed on this paper. Switch to layout mode to move, resize or remove it.";
+        continue;
+      }
+
       if (!binding || !key) {
         element.setAttribute("data-hp-locked", "true");
         // The company's own values are no longer in this bucket — since 2026-09-06 they are bound to
@@ -1569,6 +1809,8 @@ export function HiringPackPaperEditor({
       setLayoutSelection(null);
       pendingAddKeyRef.current = null;
       setPendingAddKey(null);
+      pendingAddMarkRef.current = null;
+      setPendingAddMark(null);
       setLayoutTab("page");
     }
     const doc = frameRef.current?.contentDocument;
@@ -1583,9 +1825,13 @@ export function HiringPackPaperEditor({
     setAddMode(next);
     setLayoutSelection(null);
     // Turning add mode off by hand abandons whatever the table armed. Leaving the key behind would
-    // put it on the NEXT field added, minutes later and for a different reason.
+    // put it on the NEXT field added, minutes later and for a different reason. The armed mark goes
+    // for the same reason, and it matters more: a forgotten key prints the wrong value, a forgotten
+    // mark drops a signature onto a page somebody meant to put a caption on.
     pendingAddKeyRef.current = null;
     setPendingAddKey(null);
+    pendingAddMarkRef.current = null;
+    setPendingAddMark(null);
     const doc = frameRef.current?.contentDocument;
     if (doc) applyLayoutClasses(doc, layoutModeRef.current, next);
   }, []);
@@ -1681,6 +1927,33 @@ export function HiringPackPaperEditor({
   const armAddBox = useCallback((key: string | null) => {
     pendingAddKeyRef.current = key;
     setPendingAddKey(key);
+    // Arming a text box disarms a mark. The two are mutually exclusive and clearing here is what
+    // makes that true from BOTH directions, so a stamp armed and then thought better of cannot ride
+    // along on the next box.
+    pendingAddMarkRef.current = null;
+    setPendingAddMark(null);
+    addModeRef.current = true;
+    setAddMode(true);
+    setLayoutTab("page");
+    setLayoutSelection(null);
+    setFieldsError(null);
+    const doc = frameRef.current?.contentDocument;
+    if (doc) applyLayoutClasses(doc, layoutModeRef.current, true);
+  }, []);
+
+  /**
+   * Arm the page to receive the company stamp or the stored signature at the next click.
+   *
+   * The same gesture as `armAddBox` — arm, then click the paper where it goes — because it is the
+   * same act and has been used against real paper. What differs is only what lands: a picture
+   * instead of a box of text. See `document-marks.ts` for why a mark is placed by hand and never
+   * drawn by a renderer.
+   */
+  const armAddMark = useCallback((mark: DocumentMark) => {
+    pendingAddMarkRef.current = mark;
+    setPendingAddMark(mark);
+    pendingAddKeyRef.current = null;
+    setPendingAddKey(null);
     addModeRef.current = true;
     setAddMode(true);
     setLayoutTab("page");
@@ -1880,13 +2153,17 @@ export function HiringPackPaperEditor({
               ))}
             </div>
 
-            {pendingAddKey ? (
+            {pendingAddKey || pendingAddMark ? (
               <div className="flex items-start gap-2 rounded-xl border border-phx-accent-line bg-white px-3 py-2 text-phx-xs text-phx-ink">
                 <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-phx-accent" />
                 <span>
                   Now click the spot on the page where{" "}
-                  <strong>{paperFieldBinding(pendingAddKey)?.labelEn ?? pendingAddKey}</strong>{" "}
-                  should print.
+                  <strong>
+                    {pendingAddMark
+                      ? DOCUMENT_MARK_LABELS[pendingAddMark].toLowerCase()
+                      : (paperFieldBinding(pendingAddKey ?? "")?.labelEn ?? pendingAddKey)}
+                  </strong>{" "}
+                  should {pendingAddMark ? "go" : "print"}.
                 </span>
               </div>
             ) : null}
@@ -1926,7 +2203,9 @@ export function HiringPackPaperEditor({
                   y: row.y,
                 })}
                 page={page}
-                rows={fields}
+                // Marks are not text and have no row in this table — they are listed under the page
+                // instead, where they can also be removed. See the `rows` prop's own note.
+                rows={textFields}
                 surface={surface}
               />
             ) : (
@@ -1948,6 +2227,42 @@ export function HiringPackPaperEditor({
                   <Plus className="h-4 w-4" />
                   {addMode ? "Click the page…" : "Add field"}
                 </Button>
+                {/*
+                  THE STAMP AND THE SIGNATURE, as two more things to drop on the page.
+
+                  Beside "Add field" rather than in a menu of their own because the gesture is
+                  identical — arm, then click where it goes — and because that is how the owner
+                  asked for it: the option to add them, and drag them freely, on any form.
+
+                  THE SIGNATURE BUTTON APPEARS ONLY FOR SOMEBODY WHO MAY ACTUALLY USE IT, and both
+                  halves of that are the server's answer rather than this component's: `canManage`
+                  comes back from the route's own Super Admin gate, and `present` says an image is
+                  stored. Offering it otherwise would produce a button that places a mark which
+                  prints nothing — a paper that looks signed on the field list and is blank on the
+                  page, which is the one outcome worth writing code to prevent.
+                */}
+                <Button
+                  className="gap-2"
+                  onClick={() => armAddMark("stamp")}
+                  size="sm"
+                  type="button"
+                  variant={pendingAddMark === "stamp" ? "default" : "outline"}
+                >
+                  <Stamp className="h-4 w-4" />
+                  {pendingAddMark === "stamp" ? "Click the page…" : "Add stamp"}
+                </Button>
+                {signature.canManage && signature.present ? (
+                  <Button
+                    className="gap-2"
+                    onClick={() => armAddMark("signature")}
+                    size="sm"
+                    type="button"
+                    variant={pendingAddMark === "signature" ? "default" : "outline"}
+                  >
+                    <PenTool className="h-4 w-4" />
+                    {pendingAddMark === "signature" ? "Click the page…" : "Add signature"}
+                  </Button>
+                ) : null}
                 <Button
                   className="gap-2"
                   disabled={layoutBusy}
@@ -1966,6 +2281,155 @@ export function HiringPackPaperEditor({
               <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-phx-xs text-red-800">
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                 <span>{fieldsError}</span>
+              </div>
+            ) : null}
+
+            {/*
+              THE STORED SIGNATURE ITSELF — shown only to somebody the route would let manage it.
+
+              It sits here, inside layout mode, rather than on a settings screen of its own: this is
+              the one place the signature is used, and a stored image nobody can see is a stored
+              image nobody can check. What is on screen is the real stored bytes, read back through
+              the same gate that guards printing it.
+
+              WRAPS AND STACKS. The thumbnail, the sentence and the two buttons are one flex row that
+              becomes a column below `sm`, because the panel is narrow on a phone and the house rule
+              is that nothing scrolls sideways — see AGENTS.md's fits-the-screen rule.
+            */}
+            {/*
+              WHAT IS STAMPED OR SIGNED ON THIS PAPER — a list, because the page alone is not enough.
+
+              A mark whose artwork cannot be read prints NOTHING (`document-marks.ts`), which is the
+              right thing on paper and leaves it unclickable on screen: a signature placed and then
+              removed from the store would otherwise be an invisible row nobody could take off the
+              document, still there the day a signature is uploaded again. So every mark is listed
+              here whether or not it draws, with the one action a list has to offer.
+
+              It is NOT in the field table beside it: that table is about which words a field prints
+              and asks every row for a value key. See the `rows` prop's own note.
+            */}
+            {markFields.length > 0 ? (
+              <div className="space-y-2 rounded-xl border border-phx-accent-line bg-white px-3 py-3">
+                <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-phx-ink-faint">
+                  Stamped and signed on this paper
+                </p>
+                {markFields.map((row) => (
+                  <div className="flex flex-wrap items-center gap-2" key={row.id}>
+                    {row.source.mark === "stamp" ? (
+                      <Stamp className="h-4 w-4 shrink-0 text-phx-ink-soft" />
+                    ) : (
+                      <PenTool className="h-4 w-4 shrink-0 text-phx-ink-soft" />
+                    )}
+                    <span className="text-phx-xs font-semibold text-phx-ink">
+                      {DOCUMENT_MARK_LABELS[row.source.mark]}
+                    </span>
+                    <span className="text-phx-2xs text-phx-ink-soft">
+                      {row.page !== null ? `page ${row.page}` : "anchored in the text"}
+                    </span>
+                    {row.source.mark === "signature" && !signature.present ? (
+                      // Said plainly rather than left to be discovered on paper: the row is here,
+                      // the document prints unsigned, and nothing on the page itself would show it.
+                      <span className="text-phx-2xs font-semibold text-amber-700">
+                        no signature stored — prints blank
+                      </span>
+                    ) : null}
+                    {markWarnings.has(row.id) ? (
+                      <span className="text-phx-2xs font-semibold text-red-700">
+                        past the edge of the paper — this part will not print
+                      </span>
+                    ) : null}
+                    <Button
+                      className="ml-auto gap-1.5 text-red-600 hover:text-red-700"
+                      disabled={layoutBusy}
+                      onClick={() => {
+                        const sure = window.confirm(
+                          `Remove the ${DOCUMENT_MARK_LABELS[row.source.mark].toLowerCase()} from this paper?`,
+                        );
+                        if (sure) void deleteLayoutField(row.id);
+                      }}
+                      size="sm"
+                      type="button"
+                      variant="ghost"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Remove
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
+            {signature.canManage ? (
+              <div className="flex flex-col gap-3 rounded-xl border border-phx-accent-line bg-white px-3 py-3 sm:flex-row sm:items-center">
+                <div className="flex h-14 w-32 shrink-0 items-center justify-center border border-phx-line bg-slate-50">
+                  {signature.dataUri ? (
+                    // eslint-disable-next-line @next/next/no-img-element -- a data URI held in state, never a served asset
+                    <img
+                      alt="The stored signature"
+                      className="max-h-12 max-w-[7rem] object-contain"
+                      src={signature.dataUri}
+                    />
+                  ) : (
+                    <span className="text-phx-2xs font-semibold uppercase tracking-[0.14em] text-phx-ink-faint">
+                      None stored
+                    </span>
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-phx-xs font-semibold text-phx-ink">Signature</p>
+                  <p className="text-phx-2xs leading-relaxed text-phx-ink-soft">
+                    {signature.present
+                      ? "Stored privately and printed only where you place it. Replacing it changes every paper that already carries it."
+                      : "Upload a PNG with a transparent background — it is kept privately and never served as a file."}
+                  </p>
+                  {signatureError ? (
+                    <p className="mt-1 text-phx-2xs font-semibold text-red-700">{signatureError}</p>
+                  ) : null}
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <input
+                    accept="image/png"
+                    className="hidden"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (file) void uploadSignature(file);
+                    }}
+                    ref={signatureInputRef}
+                    type="file"
+                  />
+                  <Button
+                    className="gap-2"
+                    disabled={signatureBusy}
+                    onClick={() => signatureInputRef.current?.click()}
+                    size="sm"
+                    type="button"
+                    variant="outline"
+                  >
+                    {signatureBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                    {signature.present ? "Replace" : "Upload"}
+                  </Button>
+                  {signature.present ? (
+                    <Button
+                      className="gap-2 text-red-600 hover:text-red-700"
+                      disabled={signatureBusy}
+                      onClick={() => {
+                        // Asked for by name, because this is not only a stored file: every paper
+                        // that already carries the signature prints unsigned from here on, and
+                        // nothing on those papers says so.
+                        const sure = window.confirm(
+                          "Remove the stored signature? Every paper it has been placed on will print unsigned.",
+                        );
+                        if (sure) void removeSignature();
+                      }}
+                      size="sm"
+                      type="button"
+                      variant="ghost"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Remove
+                    </Button>
+                  ) : null}
+                </div>
               </div>
             ) : null}
 
@@ -2316,7 +2780,13 @@ function LayoutFieldEditor({
     <div className="space-y-3 rounded-xl border border-phx-accent-line bg-white px-3 py-3">
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-phx-2xs font-black uppercase tracking-[0.14em] text-phx-ink-faint">
-          {draft.id ? (draft.defaultKey ? "Moved field" : "Added field") : "New field"}
+          {draft.source.kind === "mark"
+            ? DOCUMENT_MARK_LABELS[draft.source.mark]
+            : draft.id
+              ? draft.defaultKey
+                ? "Moved field"
+                : "Added field"
+              : "New field"}
         </span>
         {draft.defaultKey ? (
           <span className="rounded-full bg-slate-100 px-2 py-0.5 text-phx-2xs font-semibold text-phx-ink-soft">
@@ -2325,28 +2795,45 @@ function LayoutFieldEditor({
         ) : null}
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        <Button
-          onClick={() =>
-            setSource({ kind: "literal", text: draft.source.kind === "literal" ? draft.source.text : "" })
-          }
-          size="sm"
-          type="button"
-          variant={draft.source.kind === "literal" ? "default" : "outline"}
-        >
-          Fixed text
-        </Button>
-        <Button
-          onClick={() => setSource({ kind: "value", key: draft.source.kind === "value" ? draft.source.key : "" })}
-          size="sm"
-          type="button"
-          variant={draft.source.kind === "value" ? "default" : "outline"}
-        >
-          From the record
-        </Button>
-      </div>
+      {/*
+        A MARK'S SOURCE CANNOT BE SWITCHED, and the two text sources cannot be switched INTO one.
 
-      {draft.source.kind === "literal" ? (
+        A stamp is not a kind of text field that happens to be a picture: turning one into a value
+        box would leave a 96pt square where a one-line rule belongs, and turning a caption into a
+        stamp would put a seal at the size of a line of type. Both would also be a source change
+        somebody made by mis-clicking a toggle, on a document that gets signed. So a mark says what
+        it is and offers position and size; anything else is delete and place again, which is one
+        click more and unambiguous.
+      */}
+      {draft.source.kind === "mark" ? (
+        <p className="text-phx-xs text-phx-ink-soft">
+          <strong>{DOCUMENT_MARK_LABELS[draft.source.mark]}</strong> — drag it on the page, or set its
+          position and size here. To turn it into something else, delete it and add that instead.
+        </p>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          <Button
+            onClick={() =>
+              setSource({ kind: "literal", text: draft.source.kind === "literal" ? draft.source.text : "" })
+            }
+            size="sm"
+            type="button"
+            variant={draft.source.kind === "literal" ? "default" : "outline"}
+          >
+            Fixed text
+          </Button>
+          <Button
+            onClick={() => setSource({ kind: "value", key: draft.source.kind === "value" ? draft.source.key : "" })}
+            size="sm"
+            type="button"
+            variant={draft.source.kind === "value" ? "default" : "outline"}
+          >
+            From the record
+          </Button>
+        </div>
+      )}
+
+      {draft.source.kind === "mark" ? null : draft.source.kind === "literal" ? (
         <Input
           className="h-9 rounded-lg border-phx-line bg-white text-sm"
           onChange={(event) => setSource({ kind: "literal", text: event.target.value })}
@@ -2387,27 +2874,39 @@ function LayoutFieldEditor({
         />
         <NumberField label="Width (pt)" onChange={(value) => setDraft((prev) => ({ ...prev, w: value }))} value={draft.w} />
         <NumberField label="Height (pt)" onChange={(value) => setDraft((prev) => ({ ...prev, h: value }))} value={draft.h} />
-        <NumberField
-          label="Text size (pt)"
-          onChange={(value) => setDraft((prev) => ({ ...prev, size: value }))}
-          value={draft.size}
-        />
-        <div>
-          <label className="mb-1.5 block text-phx-2xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">
-            Align
-          </label>
-          <select
-            className="h-9 w-full rounded-lg border border-phx-line bg-white px-2 text-sm"
-            onChange={(event) =>
-              setDraft((prev) => ({ ...prev, align: event.target.value as "right" | "center" | "left" }))
-            }
-            value={draft.align}
-          >
-            <option value="right">Right</option>
-            <option value="center">Center</option>
-            <option value="left">Left</option>
-          </select>
-        </div>
+        {/*
+          TEXT SIZE AND ALIGNMENT ARE NOT SHOWN FOR A MARK, because neither does anything to it: a
+          picture has no font and no alignment inside its own box, and the renderer reads neither
+          for an image placement. Leaving them on screen would offer two controls that look like
+          they resize a stamp and change nothing when they are used — and the width and height
+          beside them are what actually do. The stored values stay whatever they were; they are
+          simply never consulted.
+        */}
+        {draft.source.kind === "mark" ? null : (
+          <>
+            <NumberField
+              label="Text size (pt)"
+              onChange={(value) => setDraft((prev) => ({ ...prev, size: value }))}
+              value={draft.size}
+            />
+            <div>
+              <label className="mb-1.5 block text-phx-2xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">
+                Align
+              </label>
+              <select
+                className="h-9 w-full rounded-lg border border-phx-line bg-white px-2 text-sm"
+                onChange={(event) =>
+                  setDraft((prev) => ({ ...prev, align: event.target.value as "right" | "center" | "left" }))
+                }
+                value={draft.align}
+              >
+                <option value="right">Right</option>
+                <option value="center">Center</option>
+                <option value="left">Left</option>
+              </select>
+            </div>
+          </>
+        )}
       </div>
 
       {draft.anchor ? (

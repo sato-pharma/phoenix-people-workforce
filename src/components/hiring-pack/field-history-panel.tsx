@@ -23,6 +23,7 @@ import { History, Trash2, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { useDialogA11y } from "@/components/ui/use-dialog-a11y";
+import { DOCUMENT_MARK_LABELS } from "@/lib/hiring-pack/document-marks";
 import type { DocumentFieldRow } from "@/lib/hiring-pack/field-layout";
 import type { FieldHistoryEntry } from "@/lib/hiring-pack/field-layout-store";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
@@ -60,7 +61,11 @@ function humaniseKey(key: string): string {
 
 /** What a placement printed, in the same words the field table uses for a live row. */
 function describeSource(source: DocumentFieldRow["source"]): string {
-  return source.kind === "literal" ? source.text : `Reads ${humaniseKey(source.key)} off the record`;
+  if (source.kind === "literal") return source.text;
+  // A mark names the picture rather than a value. History does open on one — a stamp is dragged and
+  // resized like anything else — and each past state should say what was being moved.
+  if (source.kind === "mark") return DOCUMENT_MARK_LABELS[source.mark];
+  return `Reads ${humaniseKey(source.key)} off the record`;
 }
 
 /** Where a placement sat, rounded — the numbers are points and a hundredth of one says nothing. */
@@ -80,7 +85,9 @@ export function FieldHistoryPanel({ entries, error, onClose, row }: FieldHistory
       ? humaniseKey(row.defaultKey)
       : row.source.kind === "value"
         ? humaniseKey(row.source.key)
-        : "Your own text";
+        : row.source.kind === "mark"
+          ? DOCUMENT_MARK_LABELS[row.source.mark]
+          : "Your own text";
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4">

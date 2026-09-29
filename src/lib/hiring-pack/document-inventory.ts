@@ -130,7 +130,7 @@ export function documentValues(
  */
 const KEY_ATTRIBUTE = /data-hp-key="([^"]*)"/g;
 
-function keysInMarkup(html: string): string[] {
+export function keysInMarkup(html: string): string[] {
   const keys: string[] = [];
   for (const match of html.matchAll(KEY_ATTRIBUTE)) {
     const key = (match[1] ?? "").replace(/&amp;/g, "&").replace(/&quot;/g, "\"");
@@ -140,7 +140,12 @@ function keysInMarkup(html: string): string[] {
     // holds those rows in the field layer and lists them from there, with their own text and their
     // own delete button. Listing them here as well would show each added field twice, once under a
     // key nobody typed.
-    if (!key || key.startsWith("hpLiteral:")) continue;
+    // A PLACED STAMP OR SIGNATURE carries `hpMark:<mark>`, and is dropped here for a stronger
+    // reason than the literals above: it is not a value at all. There is no record behind it to
+    // fill, no label in any template, and nothing the fill screen could ask anybody to type — so
+    // listed here it would show as a field that is permanently empty, on every paper anyone
+    // stamped. The editor lists marks separately, offering the one action they really have.
+    if (!key || key.startsWith("hpLiteral:") || key.startsWith("hpMark:")) continue;
     if (!keys.includes(key)) keys.push(key);
   }
   return keys;

@@ -89,11 +89,18 @@ function readAsset(publicPath: string): string | null {
     // layout still references the raster.
     case "/brand/sato-pharma-logo-on-light.svg":
       return svg(read(join(process.cwd(), "public", "brand", "sato-pharma-logo-on-light.svg")));
-    // THE COMPANY SEAL. NO HIRING RENDERER DRAWS IT ANY MORE (owner, 2026-09-29 — the stamp stays
-    // only on the job offer), so nothing in `src/lib/hiring-pack/` emits this path. The reader stays
-    // because a CUSTOM template is owner-authored HTML that may still name it, and an artwork this
-    // module cannot read makes `renderHiringPaperPdf` refuse to file rather than print a blank.
-    // Do NOT read it as licence to put the seal back on a house paper.
+    // THE COMPANY SEAL. NO HIRING RENDERER DRAWS IT OF ITS OWN ACCORD (owner, 2026-09-29 — a
+    // document that arrives pre-stamped is a document nobody stamped), so no house paper emits this
+    // path. The reader stays for two callers: a CUSTOM template is owner-authored HTML that may
+    // still name it, and an artwork this module cannot read makes `renderHiringPaperPdf` refuse to
+    // file rather than print a blank.
+    //
+    // A STAMP AN OPERATOR PLACES BY HAND DOES NOT COME THROUGH HERE AT ALL. Later the same day the
+    // owner asked for the other half — the option to add the seal and his signature to any form and
+    // drag them where he wants — and that travels as a `mark` row in the field layer, carrying its
+    // artwork as a data URI from `document-mark-artwork.ts` so the origin-less filing path cannot
+    // silently drop it. So this case is still not licence to put the seal back on a house paper by
+    // default: what changed is that a PERSON can stamp one paper, not that a renderer stamps them all.
     case "/brand/sato-hr-seal.svg":
       return svg(read(join(process.cwd(), "public", "brand", "sato-hr-seal.svg")));
     case "/brand/sato-pharma-logo.svg":
