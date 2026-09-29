@@ -3501,9 +3501,17 @@ dispatch function and nothing else:
 
 - **One notice, on submit.** `dispatchVacationInformed` runs at the end of `dispatchVacationSubmitted`,
   after the chain's own notifications, never instead of them.
-- **In-app and Telegram, never email.** §4's standing rule is that email recipients are asked about
-  before they are wired; the house pattern for keeping somebody in the loop is the bell plus Telegram,
-  which is what the visibility approvers on a sequential request already get.
+- **In-app, email and Telegram — all three** (owner, 2026-09-30: *"yasmine informed in app email
+  telegram"*). It shipped on 2026-09-29 as in-app + Telegram, because §4 makes an email recipient a
+  question rather than an inference, and the report on that PR said in as many words that the email
+  was a judgement call waiting on him. He answered the next day, so the email is now his instruction;
+  removing a channel from the set needs his word exactly as adding one did. **Pass no `email` block:**
+  `recipientHrId` alone makes the notification layer resolve her own work address
+  (`yasmeena.elsafory@satopharma.com`) and set `recipientMode: "candidate"`, and record
+  `recipientAddressUnresolved` when it cannot. An empty `recipients` is the trap — the `general`
+  policy's own recipient mode is the shared `hr_notifications` inbox, so a mailbox stands in for the
+  person and the send is still logged a success. Module `vacation` maps to the `general` email type,
+  which every other vacation email already uses, so no new toggle is introduced.
 - **`normal` priority and no Telegram button.** A high priority says somebody must act, and a Review
   button offers a decision that is not hers.
 - **Annual only.** It is the type he named. Sick, Emergency, Other and Compensatory keep exactly the

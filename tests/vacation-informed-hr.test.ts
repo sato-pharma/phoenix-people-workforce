@@ -107,14 +107,25 @@ export function runVacationInformedHrTests() {
     informedBlock.length > 200,
     "the informed dispatch body was not located — this test's other assertions would pass vacuously",
   );
+  // All THREE channels, owner 2026-09-30 ("yasmine informed in app email telegram"). He was asked
+  // before the email was wired, which is what §4 requires; the answer is what this pins.
   assert.match(
     informedBlock,
-    /channels: \["in_app", "telegram"\]/,
-    "in-app and Telegram only: an email recipient is never wired without the owner's word (AGENTS.md §4)",
+    /channels: \["in_app", "email", "telegram"\]/,
+    "in-app, email and Telegram — the owner's own answer on 2026-09-30, asked before any email was wired",
+  );
+  // The address is resolved from HER employee record, never written here and never left for the
+  // stored policy to fill: the "general" policy's own recipient mode is the shared hr_notifications
+  // inbox, so an empty `recipients` is how a shared mailbox silently stands in for a person and the
+  // send is still logged as a success.
+  assert.ok(
+    !/\bemail:\s*\{/.test(informedBlock),
+    "no email block: passing recipientHrId alone makes the layer resolve HER work address and " +
+      "record recipientAddressUnresolved when it cannot, instead of falling back to a shared inbox",
   );
   assert.ok(
-    !/\bemail\b/.test(informedBlock),
-    "the informed copy must not email — see the header of informed-recipients.ts",
+    !/hr_notifications|satopharma\.com/.test(informedBlock),
+    "no hard-coded address and no shared inbox — the recipient is a person, resolved by HR ID",
   );
   assert.ok(
     !informedBlock.includes("buttons"),

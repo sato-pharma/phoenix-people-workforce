@@ -2126,8 +2126,16 @@ async function notifyVacationSubmittedByGovernance(input: {
  * the company wait on a third signature. This is one notification, addressed to her, that says so
  * in its own copy: no action is needed.
  *
- * IN-APP AND TELEGRAM, NEVER EMAIL — see the header of `informed-recipients.ts`. It also carries no
- * Telegram approve/reject button, for the same reason: there is nothing for her to decide.
+ * ALL THREE CHANNELS — in-app, email and Telegram (owner, 2026-09-30, asked and answered: "yasmine
+ * informed in app email telegram"). It shipped on 2026-09-29 as in-app + Telegram only, because §4
+ * requires an email recipient to be asked about before it is wired; he was asked, and this is the
+ * answer. It still carries no Telegram approve/reject button: there is nothing for her to decide.
+ *
+ * NO `email` BLOCK IS PASSED, deliberately. With only `recipientHrId` set, the notification layer
+ * resolves HER OWN work address from her employee record and sets `recipientMode: "candidate"` — and
+ * when an address cannot be resolved it records `recipientAddressUnresolved` and skips. Writing an
+ * address here, or leaving `recipients` empty for the stored policy to fill, is how the shared
+ * `hr_notifications` inbox ends up standing in for a person and the send is logged as a success.
  *
  * THE LINK IS HER OWN ADDRESS. `/hr/leave-management/vacation-report` is the Vacation Report row the
  * HR Operations sidebar actually offers her; `/admin/approvals/vacation/<id>` is the approver's page
@@ -2154,7 +2162,7 @@ async function dispatchVacationInformed(input: {
   await createSystemNotification({
     actionUrl: href,
     category: "vacation_request",
-    channels: ["in_app", "telegram"],
+    channels: ["in_app", "email", "telegram"],
     eventType: "request_submitted_informed",
     message: `${input.request.employeeName} submitted ${vacationTypeLabel(input.request.vacationType)} from ${input.request.startDate} to ${input.request.endDate} (${input.request.durationDays} day(s)). No decision is needed from you — you are informed so leave administration has it on the day it is raised.`,
     metadata: {
