@@ -1,0 +1,116 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Hiring documents: what one employee × document cell is actually saying.
+//
+// The stored status has three values — submitted, pending, missing — and that is not enough to
+// colour a cell honestly, for two reasons the screen already knows about and the export has to
+// carry too:
+//
+//   1. A cell can read "submitted" with ZERO files on file. `types.ts` says why that combination is
+//      the one worth looking at: somebody ticked it from memory. Painting it the same green as a
+//      scanned, filed document tells the reader it is finished when nothing has been produced.
+//   2. A deadline that has passed is a different kind of red from a deadline that has not been set.
+//      The dashboard's own `dueDocuments` counter already separates them; a workbook that flattens
+//      them back together loses the only thing that says which row to work on first.
+//
+// So the export classifies into five signals and colours those. Pure, free of React, free of
+// ExcelJS and of node:fs, so the screen can adopt the same vocabulary later without moving it.
+// ─────────────────────────────────────────────────────────────────────────────
+
+import type { HiringDocumentEntry } from "@/lib/hiring-documents/types";
+
+export type HiringDocumentSignal =
+  /** Submitted, and there is at least one scan or upload behind it. */
+  | "complete"
+  /** Ticked submitted with nothing filed — the tick is somebody's memory, not evidence. */
+  | "unevidenced"
+  /** Not submitted, and the deadline is today or earlier. */
+  | "overdue"
+  /** Marked missing by HR, deadline not yet passed (or never set). */
+  | "missing"
+  /** Nobody has said anything about it yet. */
+  | "pending";
+
+export const HIRING_DOCUMENT_SIGNAL_LABEL: Record<HiringDocumentSignal, string> = {
+  complete: "Complete",
+  missing: "Missing",
+  overdue: "Overdue",
+  pending: "Pending",
+  unevidenced: "Submitted · no file",
+};
+
+/**
+ * Which signals are the work.
+ *
+ * 🔴 `unevidenced` IS DELIBERATELY NOT WORK, and this was decided against real production data on
+ * 2026-09-29. The whole database holds **3 files against 380 submitted ticks** — scanning is newer
+ * than the checklist — so treating a tick with no scan as outstanding put 378 amber cells on the
+ * sheet and 479 rows on a chase list whose real content was 101. That is the opposite of what the
+ * colour is for: the owner asked to SEE what needs identifying, and a wall of amber identifies
+ * nothing.
+ *
+ * So the matrix colours the question HR actually manages — has this paper arrived — and the
+ * evidence gap is carried as a COUNTED column beside it, per employee and per document, where it
+ * stays visible and can be acted on without drowning the outstanding work. It is not hidden and it
+ * is not lost; it is simply not red.
+ */
+export function hiringDocumentSignalNeedsAttention(signal: HiringDocumentSignal): boolean {
+  return signal === "pending" || signal === "missing" || signal === "overdue";
+}
+
+/** How urgent, for sorting the action list. Lower sorts first. */
+export const HIRING_DOCUMENT_SIGNAL_RANK: Record<HiringDocumentSignal, number> = {
+  complete: 5,
+  missing: 2,
+  overdue: 1,
+  pending: 4,
+  unevidenced: 3,
+};
+
+/** Midnight today, so a deadline of today counts as due rather than as still to come. */
+export function startOfToday(now: Date = new Date()): Date {
+  const today = new Date(now);
+  today.setHours(0, 0, 0, 0);
+  return today;
+}
+
+function dueDateOf(entry: Pick<HiringDocumentEntry, "dueDate">): Date | null {
+  if (!entry.dueDate) return null;
+  const due = new Date(`${entry.dueDate}T00:00:00`);
+  return Number.isNaN(due.getTime()) ? null : due;
+}
+
+/**
+ * The signal for one cell.
+ *
+ * SUBMITTED IS TESTED FIRST, and deliberately before the deadline: a document that arrived after
+ * its due date is finished, not late, and marking it red would send HR chasing paper that is
+ * already in the file. The deadline only decides anything for a document that has not arrived.
+ */
+export function hiringDocumentSignal(
+  entry: Pick<HiringDocumentEntry, "dueDate" | "fileCount" | "status">,
+  today: Date = startOfToday(),
+): HiringDocumentSignal {
+  if (entry.status === "submitted") {
+    return entry.fileCount > 0 ? "complete" : "unevidenced";
+  }
+  const due = dueDateOf(entry);
+  if (due && due <= today) return "overdue";
+  return entry.status === "missing" ? "missing" : "pending";
+}
+
+/**
+ * Whole days a deadline has been past, or null when nothing is late.
+ *
+ * Null rather than 0 for a document due today: 0 would print in the column as though the deadline
+ * had been counted and found to be nothing, which is a different fact from "not late".
+ */
+export function hiringDocumentDaysOverdue(
+  entry: Pick<HiringDocumentEntry, "dueDate" | "fileCount" | "status">,
+  today: Date = startOfToday(),
+): number | null {
+  if (entry.status === "submitted") return null;
+  const due = dueDateOf(entry);
+  if (!due || due > today) return null;
+  const days = Math.round((today.getTime() - due.getTime()) / 86_400_000);
+  return days > 0 ? days : null;
+}

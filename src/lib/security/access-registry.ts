@@ -553,6 +553,12 @@ export const accessRegistry = [
   // Split for the same reason the hiring pack below is: the blanket said `read` for a PATCH that
   // changes a checklist, and a registry that understates what a route can do is worse than no
   // registry entry, because it reads as though somebody checked.
+  // The readiness workbook. Listed ABOVE the blanket so the more specific pattern is the one that
+  // answers: reading it is still `employee_documents:read`, but a GET that hands over a file naming
+  // many employees, their hire dates and the paperwork each of them is missing is an EXPORT, and
+  // the registry says so — the route writes its audit row with the filters that decided who is in
+  // it. Rate-limited in the handler, and gated again on an HR authority role, as the page is.
+  sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/hiring-documents/export", permission: { resource: "employee_documents", action: "read" } }),
   sessionApi({ methods: readOnly, pattern: "/api/hiring-documents/**", permission: { resource: "employee_documents", action: "read" } }),
   sessionApi({ methods: ["PATCH", "POST", "DELETE"], pattern: "/api/hiring-documents/**", permission: { resource: "employee_documents", action: "update" }, csrfRequired: true }),
   // The scans and photographs behind the ticks. Reading one streams a birth certificate or a

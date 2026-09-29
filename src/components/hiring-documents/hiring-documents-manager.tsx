@@ -11,6 +11,7 @@ import {
   RefreshCw,
   Search,
   SlidersHorizontal,
+  Table2,
   Trash2,
   X,
 } from "lucide-react";
@@ -29,8 +30,16 @@ import { Card } from "@/components/ui/card";
 import { HiringDocumentCapture } from "@/components/hiring-documents/hiring-document-capture";
 import { Input } from "@/components/ui/input";
 import { PortalDesktopTable } from "@/components/employee-portal/portal-primitives";
+import { downloadXlsxFrom } from "@/lib/export/download-xlsx-client";
 import { employmentStatusLabel } from "@/lib/employees/employment-status-label";
 import { hiringDeadlineChanged, normalizeHiringDeadline } from "@/lib/hiring-documents/deadline";
+import {
+  HIRING_DOCUMENT_FILTER_ALL,
+  filterHiringDocumentEmployees,
+  hiringDocumentCompletionPercent,
+  hiringDocumentFilterSearchParams,
+  type HiringDocumentFilterState,
+} from "@/lib/hiring-documents/filters";
 import type {
   HiringDocumentDefinition,
   HiringDocumentEmployeeRow,
@@ -48,7 +57,10 @@ type Props = {
 
 type ActiveTab = "documents" | "capture" | "control";
 
-const allValue = "__all__";
+// The sentinel, and the row filter under it, live in `@/lib/hiring-documents/filters` — the XLSX
+// export is built on the SERVER from the same filter state, and an export that does not match the
+// screen is the defect that module exists to prevent.
+const allValue = HIRING_DOCUMENT_FILTER_ALL;
 // Both desktop tables on this screen freeze their header, so there is one header class. The tint
 // is opaque on purpose — rows scroll underneath it, not past it — and the divider under it is
 // painted rather than bordered, see frozenHeaderStyle.
@@ -73,11 +85,6 @@ function formatDate(value: string | null | undefined) {
     month: "short",
     year: "numeric",
   }).format(date);
-}
-
-function parseDateString(value: string) {
-  const parsed = new Date(`${value}T00:00:00`);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
 function uniqueOptions(values: Array<string | null | undefined>) {
@@ -109,11 +116,9 @@ function getCompletionPercent(data: HiringDocumentsDashboardData | null) {
   return Math.round((data.summary.submittedDocuments / data.summary.totalDocumentSlots) * 100);
 }
 
-function employeeCompletion(employee: HiringDocumentEmployeeRow, documents: HiringDocumentDefinition[]) {
-  if (documents.length === 0) return 0;
-  const submitted = documents.filter((document) => employee.documents[document.id]?.status === "submitted").length;
-  return Math.round((submitted / documents.length) * 100);
-}
+// One arithmetic, shared with the export — the completion the workbook prints is the completion the
+// screen shows, and the completion filter narrows both by the same number.
+const employeeCompletion = hiringDocumentCompletionPercent;
 
 export function HiringDocumentsManager({ canManage, initialData, initialError }: Props) {
   const [activeTab, setActiveTab] = React.useState<ActiveTab>("documents");
@@ -135,6 +140,7 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
   // cell, so HR never has to re-find in two dropdowns the row she is already looking at.
   const [captureTarget, setCaptureTarget] = React.useState<{ documentId: string; employeeHrId: string } | null>(null);
   const [isRefreshing, setIsRefreshing] = React.useState(false);
+  const [isExporting, setIsExporting] = React.useState(false);
   const [newDocumentName, setNewDocumentName] = React.useState("");
   const [newDocumentDescription, setNewDocumentDescription] = React.useState("");
   const [draftNotes, setDraftNotes] = React.useState<Record<string, string>>({});
@@ -158,47 +164,28 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
     [employees],
   );
 
-  const filteredEmployees = React.useMemo(() => {
-    const search = query.trim().toLowerCase();
-    const minCompletion = Number.parseInt(completionMin, 10);
-    const maxCompletion = Number.parseInt(completionMax, 10);
-    const fromDate = hireDateFrom ? new Date(`${hireDateFrom}T00:00:00`) : null;
-    const toDate = hireDateTo ? new Date(`${hireDateTo}T23:59:59`) : null;
+  // ONE object, because it is also what the export sends to the server. Keeping the nine pieces of
+  // state and re-assembling them at the download would be two definitions of "what is on screen",
+  // and the day they disagreed the file would carry rows the reader never saw.
+  const filters = React.useMemo<HiringDocumentFilterState>(
+    () => ({
+      completionMax,
+      completionMin,
+      hireDateFrom,
+      hireDateTo,
+      jobTitle: jobTitleFilter,
+      line: lineFilter,
+      manager: managerFilter,
+      query,
+      status: statusFilter,
+    }),
+    [completionMax, completionMin, hireDateFrom, hireDateTo, jobTitleFilter, lineFilter, managerFilter, query, statusFilter],
+  );
 
-    return employees.filter((employee) => {
-      const hireDate = parseDateString(employee.hireDate ?? "");
-      const completion = employeeCompletion(employee, documents);
-
-      if (fromDate && hireDate && hireDate < fromDate) {
-        return false;
-      }
-      if (toDate && hireDate && hireDate > toDate) {
-        return false;
-      }
-      if (Number.isInteger(minCompletion) && completion < minCompletion) {
-        return false;
-      }
-      if (Number.isInteger(maxCompletion) && completion > maxCompletion) {
-        return false;
-      }
-
-      const searchable = [
-        employee.fullName,
-        employee.hrId,
-        employee.jobTitle,
-        employee.lineName,
-        employee.managerName,
-      ].filter(Boolean).join(" ").toLowerCase();
-
-      return (
-        (!search || searchable.includes(search)) &&
-        (lineFilter === allValue || employee.lineName === lineFilter) &&
-        (statusFilter === allValue || employee.employmentStatus === statusFilter) &&
-        (managerFilter === allValue || employee.managerName === managerFilter) &&
-        (jobTitleFilter === allValue || employee.jobTitle === jobTitleFilter)
-      );
-    });
-  }, [completionMax, completionMin, documents, employees, hireDateFrom, hireDateTo, jobTitleFilter, lineFilter, managerFilter, query, statusFilter]);
+  const filteredEmployees = React.useMemo(
+    () => filterHiringDocumentEmployees(employees, documents, filters),
+    [documents, employees, filters],
+  );
 
   React.useEffect(() => {
     const tableElement = tableContainerRef.current;
@@ -253,6 +240,33 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
       setError("Unable to load hiring documents.");
     } finally {
       setIsRefreshing(false);
+    }
+  }
+
+  /**
+   * Download the readiness workbook for EXACTLY what is on screen.
+   *
+   * The filters travel in the URL and the server applies the same predicate this component filters
+   * with, so the file can never quietly widen to the whole company. The workbook itself is built
+   * server-side: it wears the house identity, embeds the mark, and colours every cell green, amber
+   * or red — none of which belongs in the browser bundle.
+   */
+  async function exportWorkbook() {
+    setIsExporting(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const params = hiringDocumentFilterSearchParams(filters);
+      const query = params.toString();
+      await downloadXlsxFrom(
+        `/api/hiring-documents/export${query ? `?${query}` : ""}`,
+        "hiring-documents.xlsx",
+      );
+      setNotice(`Exported ${filteredEmployees.length} employees across ${documents.length} documents.`);
+    } catch (downloadError) {
+      setError(downloadError instanceof Error ? downloadError.message : "Unable to export hiring documents.");
+    } finally {
+      setIsExporting(false);
     }
   }
 
@@ -402,15 +416,26 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
       <div className="relative space-y-6">
         <AdminPageHero
           actions={
-            <Button
-              className="h-11 gap-2 rounded-2xl"
-              disabled={isRefreshing}
-              onClick={() => void refreshDashboard()}
-              variant="secondary"
-            >
-              {isRefreshing ? <RefreshCw className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-              Refresh
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                className="h-11 gap-2 rounded-2xl"
+                disabled={isExporting || !data}
+                onClick={() => void exportWorkbook()}
+                variant="secondary"
+              >
+                {isExporting ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Table2 className="h-4 w-4" />}
+                {isExporting ? "Building the workbook" : "Export XLSX"}
+              </Button>
+              <Button
+                className="h-11 gap-2 rounded-2xl"
+                disabled={isRefreshing}
+                onClick={() => void refreshDashboard()}
+                variant="secondary"
+              >
+                {isRefreshing ? <RefreshCw className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                Refresh
+              </Button>
+            </div>
           }
           badges={
             <div className="flex flex-wrap gap-2">
