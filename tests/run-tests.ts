@@ -142,6 +142,7 @@ import { runOutstationDecisionTests } from "./outstation-decision.test.ts";
 import { runOutstationTerritoryFlagIsInvertedTests } from "./outstation-territory-flag-is-inverted.test.ts";
 import { runOutstationWorkloadFreshnessTests } from "./outstation-workload-freshness.test.ts";
 import { runOutstationTripWorkloadPharmaciesTests } from "./outstation-trip-workload-pharmacies.test.ts";
+import { runExpenseReviewRowHeightTests } from "./expense-review-row-height.test.ts";
 import { runOutstationExpenseImportTripIdTests } from "./outstation-expense-import-tripid.test.ts";
 import { runOutstationExpenseTemplatePharmaciesTests } from "./outstation-expense-template-pharmacies.test.ts";
 import { runMarketingBulkImportAtomicityTests } from "./marketing-bulk-import-atomicity.test.ts";
@@ -6505,6 +6506,10 @@ await runTest("a stored outstation workload verdict that the CRM has since contr
 await runTest(
   "the outstation trip workload is AM · PM · Pharmacies: a pharmacy visit is never counted inside AM or PM (the trip counter buckets with addVisitToSplit, the rollup and the stored evidence carry the third figure apart), a pharmacy-only trip is a worked trip and never 'no activity', a pre-split row's NULL figure is never read as 0, and decision.ts stays pharmacy-blind",
   runOutstationTripWorkloadPharmaciesTests,
+);
+await runTest(
+  "the expenses review row height comes from the HR DECISION column, not the person column (all five body cells py-2, the headers keep py-3, the fieldset gap is 1.5, and every approval control keeps its full size and unconditional reason field)",
+  runExpenseReviewRowHeightTests,
 );
 await runTest(
   "neither outstation submit path lets an employee set his own claim's travel cost, AM/PM "

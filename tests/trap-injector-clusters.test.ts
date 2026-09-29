@@ -50,14 +50,29 @@ function headingsOf(doc: string): string[] {
     .filter((name): name is string => Boolean(name));
 }
 
-type Run = { home: string; projectDir?: string; cwd?: string; sessionId: string; command: string };
+type Run = {
+  home: string;
+  projectDir?: string;
+  cwd?: string;
+  sessionId: string;
+  command?: string;
+  /** Defaults to Bash. The browser-pane tools became real callers on 2026-09-29. */
+  toolName?: string;
+  /** A pane call's own input — a url, or nothing at all for `computer` / `javascript_tool`. */
+  toolInput?: Record<string, unknown>;
+};
 
-function runInjector({ home, projectDir, cwd, sessionId, command }: Run): string {
+function runInjector({ home, projectDir, cwd, sessionId, command, toolName, toolInput }: Run): string {
   const env: NodeJS.ProcessEnv = { ...process.env, USERPROFILE: home, HOME: home };
   delete env.CLAUDE_PROJECT_DIR;
   if (projectDir) env.CLAUDE_PROJECT_DIR = projectDir;
   const out = execFileSync(process.execPath, [HOOK], {
-    input: JSON.stringify({ tool_name: "Bash", tool_input: { command }, session_id: sessionId, cwd }),
+    input: JSON.stringify({
+      tool_name: toolName ?? "Bash",
+      tool_input: toolInput ?? { command },
+      session_id: sessionId,
+      cwd,
+    }),
     encoding: "utf8",
     env,
     timeout: 30000,
@@ -99,6 +114,67 @@ function testEveryClusterIsDelivered(root: string) {
         + "so it is never shown to any session",
     );
   }
+}
+
+/**
+ * 🔴 A BROWSER-PANE CALL MUST DELIVER THE BROWSER CLUSTER.
+ *
+ * Until 2026-09-29 the hook exited immediately for any tool outside
+ * `Bash|PowerShell|Grep|Glob|Edit|Write`, so the cluster whose entire subject is driving a browser
+ * was reachable only from a SHELL command that happened to mention one of its words. A session
+ * actually driving the pane — the one session that needs it — got nothing.
+ *
+ * What that cost, measured: the pane cannot set request headers, so `x-phoenix-role` is unreachable
+ * from it and a role-gated page appears impossible to open. The clusters doc says exactly how to get
+ * in (`GET /api/dev-auth?role=…`, which mints the cookie the browser CAN carry) — and a session hit
+ * the wall, wrote "NOT yet measured live" into a commit, and parked the measurement for three days
+ * with the answer already written down. A trap nobody is handed is a trap nobody has.
+ *
+ * Two shapes have to work, because a pane call frequently carries no command and no url at all:
+ * a `navigate` with a url, and a `javascript_tool` with neither.
+ */
+function testABrowserPaneCallIsShownTheBrowserTraps(root: string) {
+  const home = join(root, "home-pane");
+  mkdirSync(home);
+  const worktree = makeWorktree(join(root, "pane"));
+
+  const withUrl = runInjector({
+    home,
+    projectDir: worktree,
+    sessionId: "pane-navigate",
+    toolName: "mcp__Claude_Browser__navigate",
+    toolInput: { url: "http://localhost:3001/admin/outstation/expenses" },
+  });
+  assert.ok(
+    delivered(withUrl, "Browser and dev-auth"),
+    "a pane `navigate` must be shown the browser traps — it is the call that walks into the "
+      + "headers-cannot-be-set wall",
+  );
+
+  const withNothing = runInjector({
+    home: join(root, "home-pane-2"),
+    projectDir: worktree,
+    sessionId: "pane-js",
+    toolName: "mcp__Claude_Browser__javascript_tool",
+    toolInput: { action: "javascript_exec", text: "document.title" },
+  });
+  assert.ok(
+    delivered(withNothing, "Browser and dev-auth"),
+    "and so must a pane call carrying NEITHER a command nor a url — matching on arguments alone let "
+      + "`javascript_tool`, `computer` and `resize_window` through with nothing delivered",
+  );
+
+  const chrome = runInjector({
+    home: join(root, "home-pane-3"),
+    projectDir: worktree,
+    sessionId: "pane-chrome",
+    toolName: "mcp__claude-in-chrome__computer",
+    toolInput: { action: "screenshot" },
+  });
+  assert.ok(
+    delivered(chrome, "Browser and dev-auth"),
+    "the Chrome extension is the same class of work and must be shown the same traps",
+  );
 }
 
 function testOncePerSession(root: string) {
@@ -184,6 +260,7 @@ export function runTrapInjectorClustersTests() {
   const root = mkdtempSync(join(tmpdir(), "phx-trap-injector-"));
   try {
     testEveryClusterIsDelivered(root);
+    testABrowserPaneCallIsShownTheBrowserTraps(root);
     testOncePerSession(root);
     testItFindsTheProjectFromTheWorkingDirectory(root);
     testItStandsDownForARegisteredMachineCopy(root);

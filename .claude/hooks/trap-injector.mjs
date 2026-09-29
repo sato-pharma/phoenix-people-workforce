@@ -55,7 +55,14 @@ const RULES = [
   // `dev-server.mjs` since 2026-09-21: bash-guard C7 refuses a raw `next dev`, so the launcher is
   // how a session now starts the dev server — without it this cluster would never be delivered.
   [/next\s+dev|pnpm\s+run\s+dev|dev-server\.mjs|unstable_cache|turbopack/i, 'Next.js runtime'],
-  [/dev-auth|x-phoenix-role|localhost:300|browser|playwright/i, 'Browser and dev-auth'],
+  // 🔴 `Claude_Browser` and `claude-in-chrome` are here because the TOOL NAME is now part of what
+  // this matches (see the haystack below). Until 2026-09-29 the cluster about driving a browser was
+  // reachable only from a SHELL command that happened to mention one of these words — so a session
+  // driving the pane got nothing, which is the one session that needed it. The cost was measured:
+  // the pane cannot set request headers, so a role-gated page could not be reached; line 205 of the
+  // clusters doc says exactly how (`GET /api/dev-auth?role=…`), and a session concluded the
+  // measurement was impossible and parked it for three days with the answer already written down.
+  [/dev-auth|x-phoenix-role|localhost:300|browser|playwright|Claude_Browser|claude-in-chrome/i, 'Browser and dev-auth'],
   [/healthz|railway|cron-job|app_error_events|\bcurl\b.*https?:/i, 'Probing, attributing and reporting production'],
   // `claude-code-sessions`, `cleanupPeriodDays` and a walk of `~/.claude/projects`
   // are the cues of a session hunting for lost history — the trap it needs is that
@@ -170,9 +177,17 @@ try {
   if (machineCopyIsWired()) process.exit(0);
   const input = JSON.parse(fs.readFileSync(0, 'utf8').replace(/^﻿/, ''));
   const tool = input?.tool_name || '';
-  if (!/^(Bash|PowerShell|Grep|Glob|Edit|Write)$/.test(tool)) process.exit(0);
+  // The browser-pane and Chrome-extension tools are in this list for the reason spelled out beside
+  // the 'Browser and dev-auth' rule: without them, the cluster about driving a browser was gated
+  // behind NOT driving a browser.
+  if (!/^(Bash|PowerShell|Grep|Glob|Edit|Write|mcp__Claude_Browser__\w+|mcp__claude-in-chrome__\w+)$/.test(tool)) {
+    process.exit(0);
+  }
 
-  const cmd = commandOf(input);
+  // The TOOL NAME is part of the haystack, not just its arguments. A pane call often carries neither
+  // a command nor a url — `javascript_tool`, `computer`, `resize_window` — so matching on arguments
+  // alone let the first browser call of a session through with nothing delivered.
+  const cmd = [tool, commandOf(input)].filter(Boolean).join(' ');
   if (!cmd) process.exit(0);
 
   const wanted = [];
