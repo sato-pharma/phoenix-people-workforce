@@ -2408,6 +2408,32 @@ and a text scan of every `.from("employees").select(…)`) and, for the earlier 
 defect, `tests/organogram-team-label.test.ts`. There is deliberately no memory slug for this: the
 rule lives here and in those two tests, and `MEMORY.md` is at its budget.
 
+🔴 **The rule has a SECOND HALF, and it only starts applying once the column is gone:
+from that moment every OLDER build is BROKEN rather than merely stale.** A build that still names
+the column answers 42703 for the whole read, so promoting one is an outage, not a rollback. Three
+things can do it: a revert onto an older tree, an out-of-order promotion from a queue that has
+piled up, and the Railway dashboard's Redeploy button — which sits one click from every earlier
+successful deployment and stays there indefinitely.
+
+Measured 2026-09-29, dropping `employees.team_name`, the fourth and last of these labels. The drop
+was gated correctly on the code being CONFIRMED SERVING, and when it ran all three in-flight
+deployments post-dated the safe commit — but the deployment from forty minutes earlier was still
+listed `SUCCESS`, and that one names the column in the organogram's 16-column employees select.
+Redeploying it would have taken every occupant's name off the live seat chart with nothing turning
+red: the outage this section exists to prevent, arriving from the opposite direction.
+
+🔴 **And the recovery is NOT the one written for a withheld deploy.** *Do nothing, the next
+merge carries production forward* is right when a deploy was refused. It is wrong here, because the
+site is broken NOW. Restore the read first and let the deploy sort itself out afterwards:
+
+```sql
+alter table public.employees add column if not exists team_name text;
+```
+
+An EMPTY column restores the read completely, because the label was dead data to begin with — 0 of
+199 rows populated when it was dropped, against 152 live `team_id` links. Once a build at or after
+the safe commit is serving again, drop it a second time.
+
 ### 🔴 That census was a GREP, the grep missed two, and the owner found the outage before any check
 
 Written hours later the same day, after `line_name` and `department_name` had already been dropped
