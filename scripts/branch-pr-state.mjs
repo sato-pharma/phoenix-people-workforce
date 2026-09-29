@@ -49,9 +49,24 @@
 // as `git rev-list <mergeCommit>..HEAD`: the merge commit lives on main and a squash-merged branch
 // tip is not its descendant, so that range returns the branch's OWN commits — every retirable
 // worktree would read as carrying extra work. `headRefOid` is the head SHA GitHub actually merged.
-// If the local tip still equals it, the branch has not moved since; if it does not, the branch
-// holds work that PR never saw, and the answer is to hold it back rather than to guess which
-// direction it moved in.
+// If the local tip still equals it, the branch has not moved since.
+//
+// 🔴 BUT A SHA MISMATCH IS NOT A CONTENT ANSWER, AND ON ITS OWN IT HELD BRANCHES BACK FOR EVER.
+// A session that amends or rebases after its PR merges moves the tip without adding anything, and
+// this file then reported "the branch carries work that PR never saw" about work that had shipped.
+// Measured 2026-09-30: `codex/bump-fast-uri-3-1-7` was held back on a mismatch while `git cherry`
+// marked its one commit `-`, i.e. that exact patch was already upstream. So on a mismatch we now ASK
+// a content question through the injected `probe`, which repo-doctor.mjs answers with
+// `git cherry origin/main <tip>` — patch-id equivalence, the same instrument AGENTS.md already names
+// for "is this work stranded" (`git patch-id --stable`), and the only one that survives a squash
+// merge leaving the branch tip outside main's history.
+//
+//   probe says NO unmerged patches   -> retirable, and the reason says the tip moved but carries nothing
+//   probe names unmerged patches     -> held, and the reason NAMES them instead of a bare sha mismatch
+//   probe is absent or answers null  -> held, unknown, exactly as before
+//
+// The probe is injected rather than called here so this function stays pure and unit-testable; a
+// missing probe reproduces the old behaviour, which is the conservative one.
 //
 // EVERY UNKNOWN IS HELD BACK, never retired. A failed gh call, unparseable output, a missing
 // `headRefOid`, an unreadable HEAD — each returns a verdict that keeps the `git branch -D` line off
@@ -147,12 +162,16 @@ export function listBranchPrs(branch, { run = runGh } = {}) {
  * @param {Array<{ number: number, state: string, headRefOid: string | null }> | null} prs From
  *   {@link listBranchPrs}. null = could not be determined.
  * @param {string | null} tip The worktree's current HEAD SHA. null = could not be read.
+ * @param {((tip: string) => { unmerged: Array<{ sha: string, subject: string }> } | null) | null} [probe]
+ *   Answers the CONTENT question when the tip has moved off the merged head: which commits on it
+ *   are NOT upstream by patch-id. repo-doctor.mjs answers it with `git cherry`. Omitted or null
+ *   reproduces the old sha-only behaviour, which holds the worktree back — the conservative side.
  * @returns {{ verdict: "retirable" | "held" | "none" | "unknown", pr: number | null, reason: string }}
  *   `retirable` is the ONLY verdict a caller may print a `git branch -D` for. `none` means the
  *   branch has never had a PR — ordinary in-flight work, and nobody's business to report. `held`
  *   and `unknown` both mean do not retire; they differ only in whether we know why.
  */
-export function classifyBranchPr(prs, tip) {
+export function classifyBranchPr(prs, tip, probe = null) {
   if (prs === null || prs === undefined) {
     return { verdict: "unknown", pr: null, reason: "gh could not be asked for this branch's PRs" };
   }
@@ -194,12 +213,40 @@ export function classifyBranchPr(prs, tip) {
     };
   }
   if (newest.headRefOid !== tip) {
+    // The tip moved. That alone says nothing about CONTENT — see the header. Ask the probe.
+    const probed = typeof probe === "function" ? probe(tip) : null;
+    if (probed && Array.isArray(probed.unmerged)) {
+      if (probed.unmerged.length === 0) {
+        return {
+          verdict: "retirable",
+          pr: newest.number,
+          reason:
+            `HEAD ${tip.slice(0, 9)} is not the commit PR #${newest.number} merged ` +
+            `(${newest.headRefOid.slice(0, 9)}) — amended or rebased after the merge — but every ` +
+            "patch on it is already upstream by patch-id, so nothing is stranded",
+        };
+      }
+      const named = probed.unmerged
+        .slice(0, 3)
+        .map((c) => `${String(c.sha || "").slice(0, 9)} ${String(c.subject || "").slice(0, 60)}`)
+        .join("; ");
+      const more = probed.unmerged.length > 3 ? ` (+${probed.unmerged.length - 3} more)` : "";
+      return {
+        verdict: "held",
+        pr: newest.number,
+        reason:
+          `PR #${newest.number} merged, but ${probed.unmerged.length} commit(s) on this branch are ` +
+          `NOT upstream by patch-id: ${named}${more}. Read them before retiring — an amend after the ` +
+          "merge is harmless, a later fixup is not.",
+      };
+    }
     return {
       verdict: "held",
       pr: newest.number,
       reason:
         `HEAD ${tip.slice(0, 9)} is not the commit PR #${newest.number} merged ` +
-        `(${newest.headRefOid.slice(0, 9)}) — the branch carries work that PR never saw`,
+        `(${newest.headRefOid.slice(0, 9)}), and its content could not be compared — held rather ` +
+        "than guessed",
     };
   }
   return { verdict: "retirable", pr: newest.number, reason: "" };

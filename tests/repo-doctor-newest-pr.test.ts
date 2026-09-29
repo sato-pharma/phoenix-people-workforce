@@ -111,10 +111,60 @@ export function runRepoDoctorNewestPrTests() {
   );
   assert.equal(classifyBranchPr(mergedRows, "0ff0455e838d9f34").pr, 2966);
 
-  // ── Merged, but the branch moved since: commits that PR never saw ─────────────────────────
+  // == Merged, the branch moved, and NO probe: held, exactly as before ========================
+  // A missing probe must reproduce the old conservative answer. This is the fallback every caller
+  // gets if the content check is ever removed.
   const moved = classifyBranchPr(mergedRows, "1111111111111111");
-  assert.equal(moved.verdict, "held", "HEAD past the merged head means work the PR never carried");
-  assert.match(moved.reason, /carries work that PR never saw/);
+  assert.equal(moved.verdict, "held", "a moved HEAD with no way to compare content must be held");
+  assert.match(moved.reason, /could not be compared/);
+
+  // == A SHA MISMATCH IS NOT A CONTENT ANSWER =================================================
+  // A session that amends or rebases after its PR merges moves the tip without adding anything, and
+  // the bare sha check then held that worktree back for ever with "carries work that PR never saw"
+  // about work that had shipped. Measured 2026-09-30 on two branches with the SAME symptom and
+  // opposite facts: `git cherry` marked codex/bump-fast-uri-3-1-7's commit `-` (already upstream)
+  // and codex/mail-stack-nodemailer-10's `+` (not). Only the content check separates them.
+  {
+    const clean = classifyBranchPr(mergedRows, "1111111111111111", () => ({ unmerged: [] }));
+    assert.equal(
+      clean.verdict,
+      "retirable",
+      "a moved tip whose every patch is already upstream is retirable — holding it is the defect this fixes",
+    );
+    assert.match(clean.reason, /amended or rebased after the merge/);
+    assert.match(clean.reason, /nothing is stranded/);
+
+    const dirty = classifyBranchPr(mergedRows, "1111111111111111", () => ({
+      unmerged: [{ sha: "4cf9e97d20838d1e", subject: "fix(deps): a later fixup" }],
+    }));
+    assert.equal(dirty.verdict, "held", "a patch that is NOT upstream must still hold the worktree");
+    assert.match(dirty.reason, /NOT upstream by patch-id/);
+    assert.match(dirty.reason, /4cf9e97d2/, "the reason must NAME the commit, not just assert a mismatch");
+
+    // Fail CLOSED: a probe that cannot answer is not a probe that found nothing. Collapsing null
+    // into "nothing unmerged" would retire a branch on a failed git call — the `?? null` discipline
+    // repo-doctor keeps everywhere else.
+    // Cast: these are DELIBERATELY the wrong shapes, which is the point — a probe can only fail
+    // at runtime, and the classifier must hold rather than trust it. The cast keeps tsc from
+    // rejecting the very inputs under test.
+    const brokenProbes = [() => null, () => undefined, () => ({}), () => ({ unmerged: "nope" })] as unknown as Array<
+      Parameters<typeof classifyBranchPr>[2]
+    >;
+    for (const broken of brokenProbes) {
+      assert.equal(
+        classifyBranchPr(mergedRows, "1111111111111111", broken).verdict,
+        "held",
+        "a probe that cannot answer must hold, never retire",
+      );
+    }
+    // And a probe is never consulted when the tip already matches — nothing to compare.
+    assert.equal(
+      classifyBranchPr(mergedRows, "0ff0455e838d9f34", (() => {
+        throw new Error("probe must not be called when the tip matches the merged head");
+      }) as Parameters<typeof classifyBranchPr>[2]).verdict,
+      "retirable",
+    );
+  }
 
   // ── Newest PR closed without merging, over an older merged one ────────────────────────────
   const abandoned = classifyBranchPr(
