@@ -16,12 +16,12 @@
  * typed — which is the only version worth showing, since the other one would have the preview
  * disagree with the database the moment the import ran.
  *
- * SOCIAL INSURANCE JOB TITLE IS DELIBERATELY NOT PREVIEWED. Every other column on this sheet is a
- * field of the employee record, and this one is not: it is `employee_hiring_profile.job_title_ar`,
- * which the directory row this diff compares against does not carry. Loading it for the preview
- * would mean paying for a second table on the hot directory path to diff one column. Its blast
- * radius is bounded by the rule below — a blank cell writes nothing — so the only way it changes
- * anything is somebody typing a different Arabic title, which is exactly the case where they know.
+ * SOCIAL INSURANCE JOB TITLE COMES FROM THE ROUTE, NOT THE DIRECTORY. Every other column on this
+ * sheet is a field of the employee record; this one is `employee_hiring_profile.job_title_ar`,
+ * which the directory row does not carry. It is NOT added to the directory to fix that — that path
+ * is loaded by every command-centre widget on the platform, and it would pay for a second table on
+ * every one of them to diff a column only the import screen reads. The dry-run route fetches it for
+ * the rows in the file and passes it in, so the cost lands on the one screen that needs it.
  *
  * A BLANK IS NOT A CHANGE. The confirm route omits null fields from its update payload rather than
  * writing them, so clearing a cell leaves the stored value alone. Treating a blank as "change this
@@ -71,13 +71,25 @@ const EM_DASH = "—";
 
 type Comparison = "text" | "date" | "money" | "boolean";
 
+/**
+ * The "before" values that do NOT come off the employee record.
+ *
+ * One so far: the insurance job title, which lives in `employee_hiring_profile`. The rest of this
+ * diff reads the directory row the page already holds, and this is the seam for anything that
+ * cannot.
+ */
+type PersonContext = { socialInsuranceJobTitle: string | null };
+
 type FieldSpec = {
   label: string;
   group: ImportChangeGroup;
   compare: Comparison;
   from: (record: EmployeeImportRecord) => unknown;
-  to: (employee: EmployeeDirectoryRow) => unknown;
+  to: (employee: EmployeeDirectoryRow, context: PersonContext) => unknown;
 };
+
+/** The one field whose "before" is not on the employee record — dropped when it was not loaded. */
+const SOCIAL_INSURANCE_JOB_TITLE_LABEL = "Social Insurance Job Title";
 
 /**
  * The fields an upload can change, with the header each is called on the sheet.
@@ -131,6 +143,7 @@ const FIELDS: FieldSpec[] = [
   { compare: "text", from: (r) => r.medicalInsuranceNumber, group: "Payroll", label: "Medical Insurance Number", to: (e) => e.medicalInsuranceNumber },
   { compare: "text", from: (r) => r.socialInsuranceStatus, group: "Payroll", label: "In Social Insurance", to: (e) => e.socialInsuranceStatus },
   { compare: "text", from: (r) => r.socialInsuranceNumber, group: "Payroll", label: "Social Insurance Number", to: (e) => e.socialInsuranceNumber },
+  { compare: "text", from: (r) => r.socialInsuranceJobTitle, group: "Payroll", label: SOCIAL_INSURANCE_JOB_TITLE_LABEL, to: (_employee, context) => context.socialInsuranceJobTitle },
   { compare: "text", from: (r) => r.healthCardStatus, group: "Payroll", label: "Health Card Received", to: (e) => e.healthCardStatus },
   { compare: "text", from: (r) => r.healthCardNumber, group: "Payroll", label: "Health Card Number", to: (e) => e.healthCardNumber },
   { compare: "text", from: (r) => r.healthCardReceivedDate, group: "Payroll", label: "Health Card Receipt Date", to: (e) => e.healthCardReceivedDate },
@@ -202,11 +215,12 @@ function diffField(
   spec: FieldSpec,
   record: EmployeeImportRecord,
   employee: EmployeeDirectoryRow,
+  context: PersonContext,
 ): ImportFieldChange | null {
   const uploaded = spec.from(record);
   if (isAbsent(uploaded)) return null;
 
-  const current = spec.to(employee);
+  const current = spec.to(employee, context);
 
   if (spec.compare === "money") {
     const next = asNumber(uploaded);
@@ -238,6 +252,16 @@ export type BuildImportChangePreviewInput = {
   records: EmployeeImportRecord[];
   /** The directory the page already holds. No extra fetch. */
   employees: EmployeeDirectoryRow[];
+  /**
+   * HR id -> the insurance job title on file, from the dry-run route.
+   *
+   * ITS ABSENCE IS MEANINGFUL, not a default. Leave it out and the insurance title row is dropped
+   * from the diff entirely, because the "before" side is then unknown — and an unknown rendered as
+   * blank would report every filled cell in that column as a change from nothing, on every upload
+   * of a sheet that simply carries the titles it was exported with. An hr id MISSING from a map
+   * that WAS supplied is different: it means no profile row, which really is blank.
+   */
+  socialInsuranceJobTitles?: Record<string, string | null>;
 };
 
 /**
@@ -253,6 +277,19 @@ export function buildImportChangePreview(input: BuildImportChangePreviewInput): 
     if (employee.hrId) byHrId.set(employee.hrId.trim().toLowerCase(), employee);
   }
 
+  // The insurance titles are matched on the same lower-cased key as the employees, because the
+  // route that loads them reads `employee_hiring_profile`, whose HR ids are canonicalised for
+  // display while the directory's are not.
+  const titles = input.socialInsuranceJobTitles;
+  const titleByHrId = new Map<string, string | null>();
+  for (const [hrId, title] of Object.entries(titles ?? {})) {
+    titleByHrId.set(hrId.trim().toLowerCase(), title);
+  }
+
+  const specs = titles
+    ? FIELDS
+    : FIELDS.filter((spec) => spec.label !== SOCIAL_INSURANCE_JOB_TITLE_LABEL);
+
   const people: ImportPersonChanges[] = [];
   let fieldChangeCount = 0;
   let moneyChangeCount = 0;
@@ -264,9 +301,11 @@ export function buildImportChangePreview(input: BuildImportChangePreviewInput): 
     // No match means the row creates someone rather than changing them; that is not a diff.
     if (!employee) continue;
 
+    const context: PersonContext = { socialInsuranceJobTitle: titleByHrId.get(key) ?? null };
+
     const changes: ImportFieldChange[] = [];
-    for (const spec of FIELDS) {
-      const change = diffField(spec, record, employee);
+    for (const spec of specs) {
+      const change = diffField(spec, record, employee, context);
       if (change) changes.push(change);
     }
 

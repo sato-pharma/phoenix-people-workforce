@@ -214,6 +214,25 @@ export type EmployeeImportValidationResult = {
   validationWarnings: EmployeeImportIssue[];
 };
 
+/**
+ * The dry run as the browser receives it: the plan, plus the one "before" value the page cannot
+ * work out for itself.
+ *
+ * WHY IT IS NOT PART OF THE PLAN. `createEmployeeImportPlan` is pure — it reads the uploaded rows
+ * and the existing state it is handed, and nothing else. The insurance job title lives in
+ * `employee_hiring_profile`, which the employee directory the page already holds does not carry,
+ * so the ROUTE fetches it and hangs it off the answer. Keeping it in its own type is what stops a
+ * transport concern leaking into the planner's contract.
+ *
+ * OPTIONAL, and its absence is meaningful: the change preview shows the insurance title row only
+ * when this is present. Without it the "before" side is unknown, and rendering unknown as blank
+ * would report every filled cell as a change from nothing.
+ */
+export type EmployeeImportDryRunResponse = EmployeeImportValidationResult & {
+  /** HR id (lower-cased) -> the title on file, or null when the employee has no profile row. */
+  socialInsuranceJobTitles?: Record<string, string | null>;
+};
+
 export type VacantPositionImportRecord = EmployeeImportRecord & {
   rowType: "vacant_position";
 };
