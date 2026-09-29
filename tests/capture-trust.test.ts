@@ -221,6 +221,29 @@ function runWritePathTests() {
     );
   }
 
+  // PHOENIX CRM is the REFERENCE DESIGN and was already the strongest of the lot — it never had
+  // this bug and is deliberately not changed by it. Three properties make it stronger than a
+  // single shutter fix, and all three are pinned here because a refactor toward the simpler
+  // “one getCurrentPosition” shape would look like a tidy-up and would be a regression:
+  //   1. a CONTINUOUS watch while the camera is open, not one snapshot;
+  //   2. best-accuracy wins, but a fix older than FIX_STALE_MS is replaced even by a WORSE one,
+  //      so a stale reading can never be the one stamped; and
+  //   3. the stamp burns the shutter time AND the fix’s own time, so the gap is legible on the
+  //      image itself without reading any row.
+  const crmCamera = read("../src/components/phoenix-crm/live-photo-capture.tsx");
+  assert.ok(
+    crmCamera.includes("watchPosition"),
+    "the CRM visit camera tracks position continuously — never downgrade it to a single fix",
+  );
+  assert.ok(
+    crmCamera.includes("const FIX_STALE_MS = 15_000;"),
+    "the CRM camera must keep its 15s staleness escape, or a stale best-accuracy fix wins for ever",
+  );
+  assert.ok(
+    crmCamera.includes("locationCapturedAt: usedFix.at"),
+    "the CRM stamp must carry the FIX’s own time beside the shutter time",
+  );
+
   // The outstation cameras already read a fresh position in the same flow as the shutter, with
   // `maximumAge: 0`, so they never had the copy bug. Pinned so a refactor cannot quietly hoist
   // that read out to a separate "capture location" step and reintroduce it.
