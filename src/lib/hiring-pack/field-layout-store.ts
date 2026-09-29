@@ -20,6 +20,7 @@
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
 import type { DocumentFieldRow, FlowAnchor } from "@/lib/hiring-pack/field-layout";
+import { DOCUMENT_MARKS, isDocumentMark } from "@/lib/hiring-pack/document-marks";
 import { fieldsThatFitNewArtwork } from "@/lib/hiring-pack/custom-templates";
 import { validateFieldTemplate } from "@/lib/hiring-pack/field-template";
 import { canonicalHrIdForDisplay } from "@/lib/hr-id";
@@ -100,9 +101,16 @@ function anchorOf(record: FieldRecord): FlowAnchor | null {
 /**
  * One stored record as the renderer's own shape.
  *
- * A row whose `source_kind` is neither known value is dropped rather than defaulted. The CHECK
+ * A row whose `source_kind` is not one this build knows is dropped rather than defaulted. The CHECK
  * constraint makes it unreachable through this application, but a hand-written row is not, and a
  * field that silently becomes a literal would print its own column name onto a government form.
+ *
+ * A MARK IS READ BACK FROM `value_key`, which holds the mark's NAME and not a values-map key. That
+ * column is reused rather than a new one added for two reasons: the mark vocabulary is closed and
+ * two words long, so a column of its own would be empty on every other row in the table; and the
+ * name is validated here as well as by the CHECK, so an unknown one drops the row exactly as an
+ * unreadable source does. A mark whose artwork cannot be read still prints nothing — that decision
+ * belongs to render time, not to this read.
  */
 export function documentFieldFromRecord(record: FieldRecord): DocumentFieldRow | null {
   const source =
@@ -110,7 +118,9 @@ export function documentFieldFromRecord(record: FieldRecord): DocumentFieldRow |
       ? ({ kind: "value", key: record.value_key } as const)
       : record.source_kind === "literal" && record.literal_text !== null
         ? ({ kind: "literal", text: record.literal_text } as const)
-        : null;
+        : record.source_kind === "mark" && isDocumentMark(record.value_key)
+          ? ({ kind: "mark", mark: record.value_key } as const)
+          : null;
   if (!source) return null;
 
   const align =
@@ -237,7 +247,15 @@ export async function saveDocumentField(
     align: write.align,
     font_size: write.size,
     source_kind: write.source.kind,
-    value_key: write.source.kind === "value" ? write.source.key : null,
+    // `value_key` carries the MARK NAME on a mark row — see `documentFieldFromRecord`. `src` is
+    // never written: the artwork is resolved at render time so replacing the signature reaches every
+    // paper that carries one, instead of leaving old placements printing the old signature.
+    value_key:
+      write.source.kind === "value"
+        ? write.source.key
+        : write.source.kind === "mark"
+          ? write.source.mark
+          : null,
     literal_text: write.source.kind === "literal" ? write.source.text : null,
     updated_at: new Date().toISOString(),
     updated_by_hr_id: actor,
@@ -413,7 +431,7 @@ export function parseDocumentFieldWrite(
 
   const rawSource = input.source;
   if (typeof rawSource !== "object" || rawSource === null) {
-    return { ok: false, message: "source is required: a value key or a fixed literal." };
+    return { ok: false, message: "source is required: a value key, a fixed literal, or a mark." };
   }
   const kind = (rawSource as { kind?: unknown }).kind;
   let source: DocumentFieldRow["source"];
@@ -444,8 +462,23 @@ export function parseDocumentFieldWrite(
       return { ok: false, message: templateError };
     }
     source = { kind: "literal", text };
+  } else if (kind === "mark") {
+    const mark = (rawSource as { mark?: unknown }).mark;
+    if (!isDocumentMark(mark)) {
+      return { ok: false, message: `a mark field must be one of ${DOCUMENT_MARKS.join(", ")}.` };
+    }
+    // A MARK IS ALWAYS AN ADDITION, NEVER AN OVERRIDE, and this is where that is made true rather
+    // than assumed. An override keeps the COMPILED placement's kind — `movedPlacement` in
+    // field-layout.ts rewrites geometry inside the shape the default already has — so a mark
+    // pointed at a compiled key would be drawn as that key's text placement, print nothing, and
+    // leave an operator looking at a page with no stamp on it and no error anywhere. There is also
+    // nothing sensible to override: no compiled table anywhere places a picture.
+    if (defaultKey !== null) {
+      return { ok: false, message: "a stamp or signature is added to a page, never used to replace a field that is already on it." };
+    }
+    source = { kind: "mark", mark };
   } else {
-    return { ok: false, message: 'source.kind must be "value" or "literal".' };
+    return { ok: false, message: 'source.kind must be "value", "literal" or "mark".' };
   }
 
   const id = typeof input.id === "string" && input.id.trim() !== "" ? input.id : undefined;

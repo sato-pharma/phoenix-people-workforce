@@ -26,8 +26,11 @@ import {
   loadCustomTemplateVersion,
   type CustomTemplate,
 } from "@/lib/hiring-pack/custom-template-store";
+import { stampArtworkUri } from "@/lib/hiring-pack/document-mark-artwork";
+import { layoutUsesMark, withMarkArtwork } from "@/lib/hiring-pack/document-marks";
 import type { DocumentFieldRow } from "@/lib/hiring-pack/field-layout";
 import { loadDocumentFieldLayout } from "@/lib/hiring-pack/field-layout-store";
+import { loadHrSignatureUri } from "@/lib/hiring-pack/hr-signature";
 import type { PrintableDocument } from "@/lib/hiring-pack/document-registry";
 import {
   renderClearanceCompanyHtml,
@@ -452,7 +455,33 @@ export async function renderHiringPaper(input: {
   const versionId = template
     ? template.id
     : (requestedVersion ?? currentTemplateVersion(requested as HiringPackDocument).id);
-  const fields = await loadDocumentFieldLayout(requested, versionId);
+  const stored = await loadDocumentFieldLayout(requested, versionId);
+
+  // ─────────────────────────────────────────────────────────────────────────────────────────────
+  // THE ARTWORK FOR ANY STAMP OR SIGNATURE SOMEBODY PLACED, resolved HERE and nowhere else.
+  //
+  // It has to be here because this is the last place that is async: every renderer below is a pure
+  // string function, and the signature lives in a private bucket. Resolving it onto the rows means
+  // none of the twenty-odd renderers has to know a mark exists at all — they receive rows, exactly
+  // as they already do.
+  //
+  // THE BUCKET IS READ ONLY WHEN A SIGNATURE IS ACTUALLY PLACED. Every paper this system prints
+  // comes through this line and almost none of them carry one, so an unconditional download would
+  // put a storage round trip in front of every document to be told, nearly always, that it was not
+  // needed. The seal is a file on disk cached in-process after its first read, so it does not need
+  // the same care.
+  //
+  // ARTWORK THAT CANNOT BE READ IS NOT AN ERROR HERE. A missing signature prints nothing and the
+  // paper is signed by hand, which is what happened before this feature existed; refusing to render
+  // a whole document because one image was unreadable would be the worse failure. The one case where
+  // a missing image MUST stop the job — filing a copy as the document that was signed — is caught
+  // downstream by `inlineLocalAssets`, which reports what it could not resolve rather than skipping.
+  // ─────────────────────────────────────────────────────────────────────────────────────────────
+  const fields = withMarkArtwork(stored, {
+    stamp: stampArtworkUri(),
+    signature: layoutUsesMark(stored, "signature") ? await loadHrSignatureUri() : null,
+  });
+
   const statedCopies = input.statedCopies ? resolveCopies(input.statedCopies, copies) : undefined;
   const html = template
     ? renderCustomTemplateHtml(template, data, copies, fields)
