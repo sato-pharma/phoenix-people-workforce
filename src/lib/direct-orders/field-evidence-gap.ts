@@ -26,6 +26,15 @@
  * not decided it yet, and calling that venue uncaptured would be false. A rejected claim is the desk
  * saying the capture did not stand, so it is not evidence of anything.
  *
+ * ONE EXCEPTION, owner's ruling 2026-09-29: *"count a superseded rejection as field evidence."* A
+ * claim refused because it was SUPERSEDED was not refused on its evidence — the photo and the pin
+ * are real and were taken in front of the venue; what was redundant was the claim. Both rows this
+ * covers on production are the same pair, both decided by him: حضانة زمزم `DOP-000022` and
+ * `DOP-000023`, one photo and one pin at 30.98112, 31.15723, refused 19 Aug with *"Pharmacy already
+ * verified/trusted 2026-08-09 … this claim is superseded, no order depends on it."* `DOP-000022`
+ * has since taken 9 orders, so without this the line would have called a photographed venue
+ * uncaptured on 514,562 EGP of business.
+ *
  * Pure, so the three cases are testable without a database.
  */
 
@@ -77,3 +86,27 @@ export const DIRECT_ORDER_FIELD_EVIDENCE_GAP_SENTENCES: Record<DirectOrderFieldE
   invoice:
     "This venue stands on a distributor invoice. An invoice is a document, so it carries no location and no capture time — no live photo and no GPS fix was ever taken in front of the venue itself. Flagged for your attention, not blocked.",
 };
+
+/**
+ * Was this claim refused for being SUPERSEDED rather than for its evidence? (owner, 2026-09-29)
+ *
+ * The default is unchanged and stays the safe direction: a rejection is not evidence. This readmits
+ * one narrow case — the desk said the claim was redundant, not that the capture was bad — and the
+ * caller still requires a real photo and a real GPS fix on the row, so an empty rejection with a
+ * clever note readmits nothing.
+ *
+ * DELIBERATELY ONLY THE `supersede` STEM. Not "duplicate", not "already verified", not "not needed":
+ * each of those is arguable and every one of them widens a text match that decides whether a venue
+ * looks captured. Missing a case here shows the line on a venue that was photographed, which the
+ * approver can see through in a second; wrongly matching one HIDES the line on a venue nobody ever
+ * visited, which is the failure that cannot be spotted. So it fails toward showing.
+ *
+ * The negation guard exists because "this claim is NOT superseded — the photo is of the wrong shop"
+ * is a perfectly natural rejection note, and a bare substring test would read it as the opposite of
+ * what it says.
+ */
+export function directOrderRejectionWasOnlySuperseded(decisionNotes: string | null | undefined): boolean {
+  const notes = String(decisionNotes ?? "").toLowerCase();
+  if (!notes.includes("supersede")) return false;
+  return !/\b(not|never|isn't|isnt|is not|wasn't|wasnt|was not)\s+supersed/.test(notes);
+}

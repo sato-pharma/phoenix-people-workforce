@@ -22,6 +22,7 @@ import {
   type DirectOrderEvidenceCheck,
 } from "@/lib/direct-orders/evidence-check";
 import { assertDirectOrderWorkflowTransition } from "@/lib/direct-orders/workflow";
+import { directOrderRejectionWasOnlySuperseded } from "@/lib/direct-orders/field-evidence-gap";
 import { readAccuracyInput, readCoordinateInput } from "@/lib/geo/coordinate-input";
 import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 import { logError } from "@/lib/observability/log";
@@ -1295,7 +1296,7 @@ export async function loadDirectOrderVenueFieldEvidence(
   const [{ data, error }, { data: venueRow }] = await Promise.all([
     supabase
       .from("direct_order_pharmacy_validations")
-      .select("validation_route, status, storage_path, captured_latitude, captured_longitude")
+      .select("validation_route, status, storage_path, captured_latitude, captured_longitude, decision_notes")
       .eq("pharmacy_id", pharmacyId)
       .limit(200),
     // The RAW entry source. `DirectOrderPharmacy.entrySource` cannot answer this: its mapper folds
@@ -1315,16 +1316,22 @@ export async function loadDirectOrderVenueFieldEvidence(
     storage_path?: string | null;
     captured_latitude?: number | null;
     captured_longitude?: number | null;
+    decision_notes?: string | null;
   }>;
   return {
     entrySource,
     // The CAPTURE is the evidence, not the decision — a marketing transfer arrives with a PENDING
     // field row already holding the rep's photo and pin. A rejected one is the desk saying the
-    // capture did not stand, so it proves nothing.
+    // capture did not stand, so it proves nothing — EXCEPT when the desk's own note says the claim
+    // was superseded, which refuses the claim and not the photograph (owner, 2026-09-29).
+    //
+    // The photo and the two coordinates are required either way: the note readmits a decision, it
+    // never invents evidence that is not on the row.
     hasFieldCapture: rows.some(
       (row) =>
         normalizeDirectOrderValidationRoute(row.validation_route) === "field" &&
-        String(row.status ?? "") !== "rejected" &&
+        (String(row.status ?? "") !== "rejected" ||
+          directOrderRejectionWasOnlySuperseded(row.decision_notes)) &&
         Boolean(String(row.storage_path ?? "").trim()) &&
         row.captured_latitude != null &&
         row.captured_longitude != null,

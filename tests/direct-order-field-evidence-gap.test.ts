@@ -5,6 +5,7 @@ import {
   DIRECT_ORDER_FIELD_EVIDENCE_GAP_LABELS,
   DIRECT_ORDER_FIELD_EVIDENCE_GAP_SENTENCES,
   directOrderFieldEvidenceGap,
+  directOrderRejectionWasOnlySuperseded,
   type DirectOrderFieldEvidenceGap,
 } from "@/lib/direct-orders/field-evidence-gap";
 import { canViewDirectOrderFieldEvidenceGap } from "@/lib/direct-orders/validation-visibility";
@@ -142,6 +143,10 @@ function loaderRules() {
     !/=== "approved_new" \|\| String\(row\.status \?\? ""\) === "matched_existing"[\s\S]{0,200}hasFieldCapture/.test(body),
     "a field capture must not be gated on a decision",
   );
+  // The owner's superseded exception, read off the SAME row's notes — and the photo and both
+  // coordinates are still required, so the note readmits a decision and never invents evidence.
+  assert.match(body, /directOrderRejectionWasOnlySuperseded\(row\.decision_notes\)/);
+  assert.match(body, /\.select\("validation_route, status, storage_path, captured_latitude, captured_longitude, decision_notes"\)/);
   // The invoice half IS gated on a decision: an undecided invoice claim has validated nothing.
   assert.match(body, /=== "invoice" &&\s*\(String\(row\.status \?\? ""\) === "approved_new"/);
 
@@ -278,6 +283,47 @@ function approverOnlyNeverThePortal() {
   assert.match(stripComments(read(VISIBILITY)), /export function canViewDirectOrderFieldEvidenceGap\(/);
 }
 
+/**
+ * "Count a superseded rejection as field evidence" (owner, 2026-09-29). The narrow readmission, and
+ * the much larger set it must NOT readmit.
+ */
+function aSupersededRejectionStillCounts() {
+  // The exact note on both production rows, his own words, decided by him on 19 Aug.
+  const real =
+    "Pharmacy already verified/trusted 2026-08-09 (Lacto Advanced orders executed); this claim is superseded, no order depends on it.";
+  assert.equal(directOrderRejectionWasOnlySuperseded(real), true, "the production note must qualify");
+  for (const yes of ["Superseded by DOP-000022.", "THIS CLAIM IS SUPERSEDED", "supersedes nothing? superseded."]) {
+    assert.equal(directOrderRejectionWasOnlySuperseded(yes), true, `must qualify: ${yes}`);
+  }
+
+  // A rejection on the EVIDENCE stays a rejection. These are the notes a desk actually writes, and
+  // readmitting one would hide the line on a venue nobody ever visited.
+  for (const no of [
+    "Photo is of the wrong shop.",
+    "The pin is 40km from the area.",
+    "Duplicate of DOP-000022.",
+    "Already verified, not needed.",
+    "",
+    null,
+    undefined,
+  ]) {
+    assert.equal(directOrderRejectionWasOnlySuperseded(no), false, `must NOT qualify: ${String(no)}`);
+  }
+  // "Duplicate" is deliberately outside the rule: it is the same idea in different words, but every
+  // widening of a text match that decides whether a venue looks captured has to be asked for. Missing
+  // one shows the line on a photographed venue; matching one wrongly HIDES it on an unvisited one.
+
+  // The negation guard — a bare substring test reads this as the opposite of what it says.
+  for (const negated of [
+    "This claim is not superseded — the photo is of the wrong shop.",
+    "It was not superseded, the capture failed.",
+    "The claim is never superseded by a later one here.",
+    "This isn't superseded.",
+  ]) {
+    assert.equal(directOrderRejectionWasOnlySuperseded(negated), false, `negation must win: ${negated}`);
+  }
+}
+
 export async function runDirectOrderFieldEvidenceGapTests() {
   aFieldCaptureSilencesIt();
   theThreeKinds();
@@ -286,4 +332,5 @@ export async function runDirectOrderFieldEvidenceGapTests() {
   serviceWiring();
   theLineOnTheScreen();
   approverOnlyNeverThePortal();
+  aSupersededRejectionStillCounts();
 }
