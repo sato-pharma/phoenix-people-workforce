@@ -17,6 +17,16 @@ import { readFileSync } from "node:fs";
  * employee-directory.ts (two services, two shapes of joined data). A row built without `hasCv`
  * reads as "no CV on file" for everybody it describes, so the filter's whole answer would be
  * "nobody has one" on whichever screen went through the builder that was missed.
+ *
+ * 🔴 A CONSTRUCTOR IN ANOTHER FILE IS CAUGHT BY THE TYPE, NOT BY THIS TEST, AND THAT IS WORTH
+ * SAYING BECAUSE IT ALREADY HAPPENED. `hasCv` is a required field, so a literal missing it is a
+ * typecheck error naming the exact file and line — which is how the fallback row in
+ * employee-portal/service.ts was found, on CI, after a repo-wide grep for the constructors had
+ * missed it (it is typed by its return annotation, not by an inline `: EmployeeDirectoryRow`).
+ * So do NOT try to make this file a repo-wide census of constructors: the compiler already is
+ * one, it is exact, and a grep-based imitation would be both weaker and noisier. What is asserted
+ * here is only what the type CANNOT see — the wiring, and that each in-file builder reads the
+ * index rather than hard-coding a value.
  */
 
 const DIRECTORY_PATH = "src/lib/employees/employee-directory.ts";
@@ -61,6 +71,14 @@ export function runEmployeeDirectoryCvFilterTests() {
   assert.ok(
     (directory.match(/getEmployeeCvHrIdSet\(\)/g)?.length ?? 0) >= 2,
     "both directory services must load the CV index, not just the one",
+  );
+
+  // And no builder may hard-code the answer. `hasCv: false` inside the directory service would
+  // typecheck, pass every other assertion here, and report the whole company as having no CV.
+  assert.ok(
+    !/hasCv:\s*(true|false)/.test(directory),
+    "a directory row's hasCv must come from the index, never a literal — a hard-coded false " +
+      "typechecks and reports the whole company as missing a CV",
   );
 
   // ── 2. THE INDEX IS INVALIDATED WHERE CVs ARE WRITTEN ─────────────────────────────────────
