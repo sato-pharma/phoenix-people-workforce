@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 
-import { filterHiringDocumentsForAccess } from "../src/lib/hiring-documents/service.ts";
+import {
+  filterHiringDocumentsForAccess,
+  selectHiringDocumentEmployee,
+} from "../src/lib/hiring-documents/service.ts";
 import type { HiringDocumentsDashboardData } from "../src/lib/hiring-documents/types.ts";
 import type { AccessContext } from "../src/lib/auth/permissions.ts";
 
@@ -65,5 +68,58 @@ export function runHiringDocumentsAccessTests() {
     filterHiringDocumentsForAccess(dashboard, superAdminContext),
     dashboard,
     "Super Admin (system scope) keeps the existing unrestricted bypass",
+  );
+
+  // ── the single-employee form, behind the SAME boundary ──────────────────────
+  //
+  // The employee details panel asks for one person's row rather than pulling the whole board
+  // (`/api/hiring-documents?hrId=`). That is a lookup by id, which is exactly the shape that turns
+  // a scope boundary into a leak when the scoping is left to the caller — so
+  // `selectHiringDocumentEmployee` takes the ACCESS CONTEXT and filters itself, and these cases pin
+  // that it really does.
+
+  assert.equal(
+    selectHiringDocumentEmployee(dashboard, superAdminContext, "MR-2").employee?.hrId,
+    "MR-2",
+    "a Super Admin gets the row they asked for",
+  );
+
+  // 🔴 THE ONE THAT MATTERS. MR-1 may see only their own row, and MR-2 is a real employee with a
+  // real HR_ID. Asking for them by id must answer null, not their documents.
+  assert.equal(
+    selectHiringDocumentEmployee(dashboard, repContext, "MR-2").employee,
+    null,
+    "an employee outside the caller's scope must read as absent — naming an id is not authorisation",
+  );
+  assert.equal(
+    selectHiringDocumentEmployee(dashboard, repContext, "MR-1").employee?.hrId,
+    "MR-1",
+    "the caller's own row is still returned",
+  );
+
+  // An unknown id and a blank one answer the same way as an out-of-scope one: telling them apart
+  // would say whether somebody the caller may not see exists at all.
+  for (const hrId of [null, "", "ZZ-99"]) {
+    assert.equal(
+      selectHiringDocumentEmployee(dashboard, repContext, hrId).employee,
+      null,
+      `an unresolvable hr id (${JSON.stringify(hrId)}) reads as absent`,
+    );
+  }
+
+  // Case is not identity: the panel passes the HR_ID as the directory spells it, and the checklist
+  // canonicalises its own.
+  assert.equal(
+    selectHiringDocumentEmployee(dashboard, superAdminContext, "mr-1").employee?.hrId,
+    "MR-1",
+    "a differently-cased HR_ID is the same person",
+  );
+
+  // The definitions always come back, even when the person does not — the panel needs them to tell
+  // "nothing to show" from "nothing to ask".
+  assert.deepEqual(
+    selectHiringDocumentEmployee(dashboard, repContext, "MR-2").documents,
+    dashboard.documents,
+    "the document definitions are returned whether or not the person is visible",
   );
 }

@@ -32,6 +32,7 @@ import {
 } from "@/components/admin/admin-design-system";
 import { EmployeeImportReview } from "@/components/employees/employee-import-review";
 import { EmployeeCvManager, EmployeeCvPicker, type StagedCv } from "@/components/employees/employee-cv-controls";
+import { EmployeeHiringDocumentsCard } from "@/components/employees/employee-hiring-documents-card";
 import { EmployeePhotoManager } from "@/components/employees/employee-photo-manager";
 import { employeeProfileImageForHrId } from "@/lib/employees/profile-images";
 import type { EmployeeImportValidationResult } from "@/lib/imports/employee-import-types";
@@ -2629,6 +2630,10 @@ export function EmployeeManagement({
                   route rather than a URL. It renders nothing at all for a reader without the
                   grant — see EmployeeCvManager. */}
               <EmployeeCvManager hrId={masterDetailsEmployee.hrId} key={`cv-${masterDetailsEmployee.hrId}`} />
+              {/* The checklist beside the record it belongs to — the same join the Employee Master
+                  workbook makes, on the screen somebody is actually looking at. Read-only, and it
+                  renders nothing at all without the employee_documents grant. */}
+              <EmployeeHiringDocumentsCard hrId={masterDetailsEmployee.hrId} key={`docs-${masterDetailsEmployee.hrId}`} />
               {[
                 {
                   title: "Identity",
