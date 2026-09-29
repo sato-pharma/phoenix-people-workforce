@@ -521,6 +521,7 @@ import { runRecruitmentScreeningClaimTests } from "./recruitment-screening-claim
 import { runRecruitmentTransitionsReachableTests } from "./recruitment-transitions-reachable.test.ts";
 import { runHiringPackActorStampTests } from "./hiring-pack-actor-stamp.test.ts";
 import { runRecruitmentOfferLetterBridgeTests } from "./recruitment-offer-letter-bridge.test.ts";
+import { runOfferPayrollCostOfLivingAgreementTests } from "./offer-payroll-cost-of-living-agreement.test.ts";
 import { runOfferPrefillNoticeNetTests } from "./offer-prefill-notice-net.test.ts";
 import { runOfferOutOnSeatsTests } from "./offer-out-on-seats.test.ts";
 import { runOfferHireBridgeTests } from "./offer-hire-bridge.test.ts";
@@ -3229,6 +3230,7 @@ await runTest("resend offer (the same frozen letter, a fresh key, Send's gate, o
 await runTest("the offer row: Withdraw, and an accepted letter carrying the hire to its vacant seat", runOfferHireBridgeTests);
 await runTest("the offer out on a vacant seat, and the package landing in the NET box", runOfferOutOnSeatsTests);
 await runTest("the offer prefill notice names the net salary it filled in", runOfferPrefillNoticeNetTests);
+await runTest("the offer and payroll cost-of-living figures mean the same money", runOfferPayrollCostOfLivingAgreementTests);
 await runTest("hiring analytics layout (desktop table, phone cards, square edges, no sideways scroll)", runRecruitmentHiringAnalyticsLayoutTests);
 await runTest("source of hire (manual tag beats tracked code, channel level is 100%, unknown is one honest bucket)", runSourceOfHireTests);
 await runTest("every application stage has a way forward (a stage nobody can leave reads as low adoption)", runRecruitmentEveryStageHasAWayForwardTests);
