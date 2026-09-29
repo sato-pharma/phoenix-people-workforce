@@ -32,6 +32,20 @@ export type EmployeeImportField =
   | "healthCardStatus"
   | "healthCardNumber"
   | "healthCardReceivedDate"
+  | "birthPlace"
+  | "qualification"
+  | "universityName"
+  | "collegeMajor"
+  | "seniorYear"
+  | "contractDuration"
+  | "contractRenewalDate"
+  | "probationEndDate"
+  | "medicalInsuranceCardReceivedDate"
+  | "socialInsuranceStartDate"
+  | "kaabElamaalNumber"
+  | "kaabElamaalIssuer"
+  | "kaabElamaalIssueDate"
+  | "kaabElamaalRefund"
   | "basicSalary"
   | "baseSalary"
   | "netSalary"
@@ -117,6 +131,28 @@ export type EmployeeImportRecord = {
   healthCardStatus: string | null;
   healthCardNumber: string | null;
   healthCardReceivedDate: string | null;
+  /**
+   * The HR record fields the Employee Master carries since 2026-09-29.
+   *
+   * All plain columns on `employees`, all nullable, none of them a rule: no payroll figure, no
+   * eligibility and no statutory filing is derived from any of them. `qualification` is the
+   * qualification (بكالوريوس / ليسانس); the COLLEGE stays `education`, which is what it has always
+   * held and what the eligible-degree rule reads.
+   */
+  birthPlace: string | null;
+  qualification: string | null;
+  universityName: string | null;
+  collegeMajor: string | null;
+  seniorYear: string | null;
+  contractDuration: string | null;
+  contractRenewalDate: string | null;
+  probationEndDate: string | null;
+  medicalInsuranceCardReceivedDate: string | null;
+  socialInsuranceStartDate: string | null;
+  kaabElamaalNumber: string | null;
+  kaabElamaalIssuer: string | null;
+  kaabElamaalIssueDate: string | null;
+  kaabElamaalRefund: string | null;
   compensation: {
     basicSalary: number | null;
     baseSalary: number | null;

@@ -1630,13 +1630,31 @@ export async function markHiringPackSigned(input: MarkHiringPackSignedInput): Pr
     );
   if (error) throw new Error(error.message);
 
-  const { data: definition } = binding.checklistName
-    ? await supabase
-        .from("hiring_document_definitions")
-        .select("id, name")
-        .ilike("name", binding.checklistName)
-        .maybeSingle<{ id: string; name: string }>()
-    : { data: null };
+  // WHICH CHECKLIST SLOT THIS SIGNATURE TICKS, resolved by the paper it is pinned to and only then
+  // by its name.
+  //
+  // It used to be the name alone, matched with `ilike`, which made every checklist name a load-
+  // bearing string nobody could see from the Hiring Documents screen: HR renaming "Social insurance
+  // form" to "Social insurance form 1" — a change the screen invites, and one HR asked for on
+  // 2026-09-29 — would have stopped Form 1 ticking its own row, silently, with the signature still
+  // recorded and the checklist still reading Pending. `hiring_pack_document` is the column that
+  // exists for exactly this, carries the same key as `binding`, and no screen can edit it.
+  const byPaper = await supabase
+    .from("hiring_document_definitions")
+    .select("id, name")
+    .eq("hiring_pack_document", input.document)
+    .maybeSingle<{ id: string; name: string }>();
+
+  const byName =
+    !byPaper.data && binding.checklistName
+      ? await supabase
+          .from("hiring_document_definitions")
+          .select("id, name")
+          .ilike("name", binding.checklistName)
+          .maybeSingle<{ id: string; name: string }>()
+      : null;
+
+  const definition = byPaper.data ?? byName?.data ?? null;
 
   if (definition?.id) {
     await supabase.from("hiring_document_statuses").upsert(

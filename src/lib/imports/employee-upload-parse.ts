@@ -29,8 +29,25 @@ import {
  */
 export const EMPLOYEE_UPLOAD_ID_HEADERS = ["employee id", "hr_id", "hr id", "employee code"] as const;
 
-/** The header row must also carry this, so a stray "HR ID" note above the table cannot claim it. */
-export const EMPLOYEE_UPLOAD_NAME_HEADER = "full name";
+/**
+ * The header row must also carry ONE of these, so a stray "HR ID" note above the table cannot
+ * claim it.
+ *
+ * WHY THERE ARE TWO. This was a single string, "full name", and the template's own header said
+ * exactly that — so the pair test worked and nobody had to think about it. Then HR rebuilt the
+ * sheet in September 2026 and renamed the column "Full English Name", which is a better name and
+ * broke the file completely: the id header still matched, the name header did not, no row in the
+ * first ten satisfied BOTH, and the parser fell back to row 1 — the masthead. Every column then
+ * mapped to nothing and a file full of correct data read as empty, with no error naming the cause.
+ *
+ * So the accepted set is a LIST, and renaming this column in `employee-master-columns.ts` means
+ * adding the new spelling here in the same change. `tests/employee-master-workbook.test.ts` pins
+ * the template's own header against this list for exactly that reason.
+ */
+export const EMPLOYEE_UPLOAD_NAME_HEADERS = ["full english name", "full name"] as const;
+
+/** @deprecated Kept for callers that only ever needed the template's own spelling. */
+export const EMPLOYEE_UPLOAD_NAME_HEADER = EMPLOYEE_UPLOAD_NAME_HEADERS[0];
 
 /**
  * How far down the sheet the header may sit.
@@ -83,7 +100,7 @@ export async function parseEmployeeUploadRows<TRow>(
 
       if (
         values.some((value) => (EMPLOYEE_UPLOAD_ID_HEADERS as readonly string[]).includes(value)) &&
-        values.some((value) => value === EMPLOYEE_UPLOAD_NAME_HEADER)
+        values.some((value) => (EMPLOYEE_UPLOAD_NAME_HEADERS as readonly string[]).includes(value))
       ) {
         headerRowNumber = rowNumber;
         break;

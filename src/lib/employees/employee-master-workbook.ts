@@ -179,7 +179,12 @@ export function employeeToMasterRow(
     nationalId: employee.nationalId,
     gender: employee.gender,
     birthDate: dateOnly(employee.birthDate),
+    birthPlace: employee.birthPlace,
     education: employee.education,
+    qualification: employee.qualification,
+    universityName: employee.universityName,
+    collegeMajor: employee.collegeMajor,
+    seniorYear: employee.seniorYear,
     department: employee.departmentName,
     line: employee.lineName,
     area: employee.areaName,
@@ -189,8 +194,10 @@ export function employeeToMasterRow(
     directManagerId: employee.managerHrId,
     directManagerName: null,
     hireDate: dateOnly(employee.hireDate),
+    probationEndDate: dateOnly(employee.probationEndDate),
     employmentStatus: employee.employmentStatus ?? "active",
     contractType: employee.contractType,
+    contractDuration: employee.contractDuration,
     workEmail: employee.workEmail,
     mobileNumber: employee.mobileNumber,
     residenceAddress: employee.residenceAddress,
@@ -213,9 +220,15 @@ export function employeeToMasterRow(
     bankAccount: employee.bankAccount,
     medicalInsuranceStatus: employee.medicalInsuranceStatus,
     medicalInsuranceNumber: employee.medicalInsuranceNumber,
+    medicalInsuranceCardReceivedDate: dateOnly(employee.medicalInsuranceCardReceivedDate),
     socialInsuranceStatus: employee.socialInsuranceStatus,
     socialInsuranceNumber: employee.socialInsuranceNumber,
     socialInsuranceJobTitle,
+    socialInsuranceStartDate: dateOnly(employee.socialInsuranceStartDate),
+    kaabElamaalNumber: employee.kaabElamaalNumber,
+    kaabElamaalIssuer: employee.kaabElamaalIssuer,
+    kaabElamaalIssueDate: dateOnly(employee.kaabElamaalIssueDate),
+    kaabElamaalRefund: employee.kaabElamaalRefund,
     healthCardStatus: employee.healthCardStatus,
     healthCardNumber: employee.healthCardNumber,
     healthCardReceivedDate: dateOnly(employee.healthCardReceivedDate),
@@ -462,13 +475,13 @@ function styleMasterSheet(
     excelColumn.width = column.width;
     // Reference columns collapse into an outline group — present for an audit, out of the way
     // the rest of the time.
-    excelColumn.outlineLevel = column.section === "Reference (read-only)" ? 1 : 0;
+    excelColumn.outlineLevel = isReadOnlyMasterColumn(column) ? 1 : 0;
   });
 
   // --- section band: type and a rule, never a filled block ---
   // ── the section band ────────────────────────────────────────────────────────
   //
-  // Eight sections across fifty columns, and until 2026-09-05 each was a 7.5pt label sitting in the
+  // Seventeen sections across ninety-odd columns, and until 2026-09-05 each was a 7.5pt label in the
   // FIRST cell of its run with the rest of the run left blank and unmerged — so "PAYROLL REFERENCE
   // INFORMATION" floated above one column of the nine it covers and told the reader nothing about
   // where the section ended. The owner said the sheet needed more, and this was the largest part of
@@ -477,13 +490,18 @@ function styleMasterSheet(
   // Each run is now MERGED across its own columns and given the deep ground, which makes the header
   // two-tier — section over column — and lets a reader see at a glance that columns 24 to 32 are one
   // idea. The merge is what does the work; the ground is what makes the merge visible.
+  //
+  // THE LABEL IS NOT UPPER-CASED. It used to be, which was fine while the section names were the
+  // code's own. They are HR's now — "Personal Information", "Registration certificate information" —
+  // and the owner asked for her sheet verbatim (2026-09-29), so the band prints what the contract
+  // says. The ones that read as shouting up there do so because she wrote them that way.
   const sectionRow = sheet.getRow(SECTION_ROW);
   sectionRow.height = 18;
   const runs: Array<{ from: number; label: string; to: number }> = [];
   sheetColumns.forEach((column, index) => {
     const previous = sheetColumns[index - 1];
     if (!previous || previous.section !== column.section) {
-      runs.push({ from: index + 1, label: column.section.toUpperCase(), to: index + 1 });
+      runs.push({ from: index + 1, label: column.section, to: index + 1 });
     } else {
       runs[runs.length - 1].to = index + 1;
     }
@@ -1170,7 +1188,7 @@ export async function buildEmployeeMasterWorkbook(
         cell.value = formatHiringDocumentSummary(documentCells, documentDefinitions) || null;
         return;
       }
-      if (column.section === "Hiring Documents (read-only)") {
+      if (column.documentColumn === true) {
         const documentId = hiringDocumentIdFromKey(column.key);
         cell.value = formatHiringDocumentCell(documentCells?.get(documentId)) || null;
         return;

@@ -84,6 +84,8 @@ export type AttachHiringDocumentFilesInput = {
   uploadedByHrId: string | null;
 };
 
+export type HiringDocumentGroup = "required" | "onboarding" | "offboarding";
+
 export type HiringDocumentDefinition = {
   createdAt: string;
   description: string | null;
@@ -103,6 +105,19 @@ export type HiringDocumentDefinition = {
    * stays an onboarding document.
    */
   isExitDocument: boolean;
+  /**
+   * Which block of the personnel file this paper belongs to.
+   *
+   * HR reads the checklist as three lists, not one: what the candidate BRINGS ("required"), what is
+   * signed ON JOINING ("onboarding") and what is signed ON LEAVING ("offboarding"). They are
+   * collected by different people at different times, and the Employee Master bands them
+   * separately. Distinct from `isExitDocument`, which decides whether a paper is CHASED against an
+   * active employee at all — every offboarding document is an exit document, but the grouping is
+   * about where a paper is filed, not about who is chased for it.
+   *
+   * Defaults to "required" for a row written before the column existed.
+   */
+  documentGroup: HiringDocumentGroup;
   name: string;
 };
 

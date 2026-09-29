@@ -53,6 +53,7 @@ type HiringDocumentDefinitionDbRow = {
   display_order: number;
   id: string;
   is_exit_document: boolean | null;
+  document_group: string | null;
   name: string;
 };
 
@@ -132,6 +133,13 @@ function toDefinition(row: HiringDocumentDefinitionDbRow): HiringDocumentDefinit
     // Defaults to false for a row written before the column existed: an unflagged document is an
     // onboarding document, which is what every one of them was until 2026-09-29.
     isExitDocument: row.is_exit_document === true,
+    // "required" for a row written before the column existed, and for anything unrecognised: the
+    // first band is where the list already starts, so an unknown value shows up rather than
+    // disappearing off the sheet.
+    documentGroup:
+      row.document_group === "onboarding" || row.document_group === "offboarding"
+        ? row.document_group
+        : "required",
     name: row.name,
   };
 }
@@ -212,7 +220,7 @@ async function loadEmployeeDisplayNames(hrIds: string[]) {
 async function loadDocumentDefinitions() {
   const { data, error } = await getSupabaseAdmin()
     .from("hiring_document_definitions")
-    .select("id,name,description,display_order,created_at,is_exit_document")
+    .select("id,name,description,display_order,created_at,is_exit_document,document_group")
     .eq("is_active", true)
     .order("display_order", { ascending: true })
     .order("name", { ascending: true });

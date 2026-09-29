@@ -181,7 +181,7 @@ export async function runEmployeeImportChangePreviewTests() {
     employees: directory,
     records: [record({ nameAr: "عمر جاويش" })],
   });
-  const arabic = filled.people[0]?.changes.find((change) => change.label === "Arabic Name");
+  const arabic = filled.people[0]?.changes.find((change) => change.label === "Full Arabic Name");
   assert.ok(arabic, "setting a previously empty field is a change");
   assert.equal(arabic.before, "—", "an empty current value renders as an em dash, not as nothing");
   assert.equal(arabic.after, "عمر جاويش");

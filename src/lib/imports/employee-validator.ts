@@ -76,6 +76,20 @@ const fieldPriority: EmployeeImportField[] = [
   "healthCardStatus",
   "healthCardNumber",
   "healthCardReceivedDate",
+  "birthPlace",
+  "qualification",
+  "universityName",
+  "collegeMajor",
+  "seniorYear",
+  "contractDuration",
+  "contractRenewalDate",
+  "probationEndDate",
+  "medicalInsuranceCardReceivedDate",
+  "socialInsuranceStartDate",
+  "kaabElamaalNumber",
+  "kaabElamaalIssuer",
+  "kaabElamaalIssueDate",
+  "kaabElamaalRefund",
   "basicSalary",
   "baseSalary",
   "netSalary",
@@ -221,6 +235,22 @@ function buildRecord(
     healthCardStatus: normalizeTextValue(valueFor(row, mapping, "healthCardStatus"))?.toLowerCase() ?? null,
     healthCardNumber: normalizeTextValue(valueFor(row, mapping, "healthCardNumber")),
     healthCardReceivedDate: normalizeDateValue(valueFor(row, mapping, "healthCardReceivedDate")),
+    birthPlace: normalizeTextValue(valueFor(row, mapping, "birthPlace")),
+    qualification: normalizeTextValue(valueFor(row, mapping, "qualification")),
+    universityName: normalizeTextValue(valueFor(row, mapping, "universityName")),
+    collegeMajor: normalizeTextValue(valueFor(row, mapping, "collegeMajor")),
+    seniorYear: normalizeTextValue(valueFor(row, mapping, "seniorYear")),
+    contractDuration: normalizeTextValue(valueFor(row, mapping, "contractDuration")),
+    contractRenewalDate: normalizeDateValue(valueFor(row, mapping, "contractRenewalDate")),
+    probationEndDate: normalizeDateValue(valueFor(row, mapping, "probationEndDate")),
+    medicalInsuranceCardReceivedDate: normalizeDateValue(
+      valueFor(row, mapping, "medicalInsuranceCardReceivedDate"),
+    ),
+    socialInsuranceStartDate: normalizeDateValue(valueFor(row, mapping, "socialInsuranceStartDate")),
+    kaabElamaalNumber: normalizeTextValue(valueFor(row, mapping, "kaabElamaalNumber")),
+    kaabElamaalIssuer: normalizeTextValue(valueFor(row, mapping, "kaabElamaalIssuer")),
+    kaabElamaalIssueDate: normalizeDateValue(valueFor(row, mapping, "kaabElamaalIssueDate")),
+    kaabElamaalRefund: normalizeTextValue(valueFor(row, mapping, "kaabElamaalRefund"))?.toLowerCase() ?? null,
     compensation: {
       basicSalary: normalizeNumberValue(valueFor(row, mapping, "basicSalary")),
       baseSalary: normalizeNumberValue(valueFor(row, mapping, "baseSalary")),
@@ -843,16 +873,30 @@ export function validateEmployeeImportRows(
       validationErrors.push(teamError);
     }
 
-    for (const [field, value] of [
-      ["hireDate", record.hireDate],
-      ["birthDate", record.birthDate],
+    // EVERY date column, not just the two the sheet started with. A date the parser cannot read
+    // comes back null from normalizeDateValue, and a null is SKIPPED on upload — so without this
+    // the row would upload clean and the date would simply never be written, which is the silent
+    // failure this whole sheet exists to prevent.
+    for (const [field, label, value] of [
+      ["hireDate", "Hire date", record.hireDate],
+      ["birthDate", "Birth date", record.birthDate],
+      ["probationEndDate", "End date of probation period", record.probationEndDate],
+      ["contractRenewalDate", "Contract Renewal Date", record.contractRenewalDate],
+      ["healthCardReceivedDate", "Health Insurance Card Receipt Date", record.healthCardReceivedDate],
+      [
+        "medicalInsuranceCardReceivedDate",
+        "Medical Insurance Card Receipt Date",
+        record.medicalInsuranceCardReceivedDate,
+      ],
+      ["socialInsuranceStartDate", "Social insurance start date", record.socialInsuranceStartDate],
+      ["kaabElamaalIssueDate", "Kaab Elamaal Issue Date", record.kaabElamaalIssueDate],
     ] as const) {
       if (value && (!datePattern.test(value) || Number.isNaN(new Date(`${value}T00:00:00`).getTime()))) {
         validationErrors.push({
           rowNumber: record.rowNumber,
           field,
           code: "invalid_date",
-          message: `${field === "hireDate" ? "Hire date" : "Birth date"} must be a valid YYYY-MM-DD date.`,
+          message: `${label} must be a valid YYYY-MM-DD date.`,
         });
       }
     }
@@ -914,6 +958,15 @@ export function validateEmployeeImportRows(
         field: "paymentMode",
         code: "invalid_payment_mode",
         message: "Payment Mode must be two_parts, one_part, or blank.",
+      });
+    }
+
+    if (record.kaabElamaalRefund && !yesNoValues.has(record.kaabElamaalRefund)) {
+      validationErrors.push({
+        rowNumber: record.rowNumber,
+        field: "kaabElamaalRefund",
+        code: "invalid_kaab_elamaal_refund",
+        message: "Kaab Elamaal refund must be yes, no, or blank.",
       });
     }
 

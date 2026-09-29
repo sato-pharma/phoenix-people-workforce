@@ -551,6 +551,27 @@ function employeeValues(
     ...(record.healthCardStatus ? { health_card_status: record.healthCardStatus } : {}),
     ...(record.healthCardNumber ? { health_card_number: truncate(record.healthCardNumber, 120) } : {}),
     ...(record.healthCardReceivedDate ? { health_card_received_date: record.healthCardReceivedDate } : {}),
+    // The HR record fields added 2026-09-29. Same shape as everything above: a blank cell is
+    // omitted from the payload rather than written, so clearing one in the sheet leaves the stored
+    // value alone — which is what the sheet's own row check warns about for the salary block.
+    ...(record.birthPlace ? { birth_place: truncate(record.birthPlace, 160) } : {}),
+    ...(record.qualification ? { qualification: truncate(record.qualification, 160) } : {}),
+    ...(record.universityName ? { university_name: truncate(record.universityName, 160) } : {}),
+    ...(record.collegeMajor ? { college_major: truncate(record.collegeMajor, 160) } : {}),
+    ...(record.seniorYear ? { senior_year: truncate(record.seniorYear, 40) } : {}),
+    ...(record.contractDuration ? { contract_duration: truncate(record.contractDuration, 80) } : {}),
+    ...(record.contractRenewalDate ? { contract_renewal_date: record.contractRenewalDate } : {}),
+    ...(record.probationEndDate ? { probation_end_date: record.probationEndDate } : {}),
+    ...(record.medicalInsuranceCardReceivedDate
+      ? { medical_insurance_card_received_date: record.medicalInsuranceCardReceivedDate }
+      : {}),
+    ...(record.socialInsuranceStartDate
+      ? { social_insurance_start_date: record.socialInsuranceStartDate }
+      : {}),
+    ...(record.kaabElamaalNumber ? { kaab_elamaal_number: truncate(record.kaabElamaalNumber, 120) } : {}),
+    ...(record.kaabElamaalIssuer ? { kaab_elamaal_issuer: truncate(record.kaabElamaalIssuer, 160) } : {}),
+    ...(record.kaabElamaalIssueDate ? { kaab_elamaal_issue_date: record.kaabElamaalIssueDate } : {}),
+    ...(record.kaabElamaalRefund ? { kaab_elamaal_refund: record.kaabElamaalRefund } : {}),
   };
 }
 
@@ -626,6 +647,20 @@ function isMissingOptionalEmployeeColumn(error: unknown) {
     message.includes("health_card_status") ||
     message.includes("health_card_number") ||
     message.includes("health_card_received_date") ||
+    message.includes("birth_place") ||
+    message.includes("qualification") ||
+    message.includes("university_name") ||
+    message.includes("college_major") ||
+    message.includes("senior_year") ||
+    message.includes("contract_duration") ||
+    message.includes("contract_renewal_date") ||
+    message.includes("probation_end_date") ||
+    message.includes("medical_insurance_card_received_date") ||
+    message.includes("social_insurance_start_date") ||
+    message.includes("kaab_elamaal_number") ||
+    message.includes("kaab_elamaal_issuer") ||
+    message.includes("kaab_elamaal_issue_date") ||
+    message.includes("kaab_elamaal_refund") ||
     message.includes("taxes") ||
     message.includes("team_id") ||
     message.includes("schema cache")
@@ -663,6 +698,20 @@ function withoutOptionalEmployeeColumns(values: ReturnType<typeof employeeValues
     health_card_status,
     health_card_number,
     health_card_received_date,
+    birth_place,
+    qualification,
+    university_name,
+    college_major,
+    senior_year,
+    contract_duration,
+    contract_renewal_date,
+    probation_end_date,
+    medical_insurance_card_received_date,
+    social_insurance_start_date,
+    kaab_elamaal_number,
+    kaab_elamaal_issuer,
+    kaab_elamaal_issue_date,
+    kaab_elamaal_refund,
     taxes,
     team_id,
     ...rest
@@ -697,6 +746,20 @@ function withoutOptionalEmployeeColumns(values: ReturnType<typeof employeeValues
   void health_card_status;
   void health_card_number;
   void health_card_received_date;
+  void birth_place;
+  void qualification;
+  void university_name;
+  void college_major;
+  void senior_year;
+  void contract_duration;
+  void contract_renewal_date;
+  void probation_end_date;
+  void medical_insurance_card_received_date;
+  void social_insurance_start_date;
+  void kaab_elamaal_number;
+  void kaab_elamaal_issuer;
+  void kaab_elamaal_issue_date;
+  void kaab_elamaal_refund;
   void taxes;
   void team_id;
 

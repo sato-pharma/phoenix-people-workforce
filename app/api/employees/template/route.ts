@@ -54,7 +54,13 @@ async function loadHiringDocumentColumns(
 
     return {
       byHrId,
-      definitions: dashboard.documents.map((document) => ({ id: document.id, name: document.name })),
+      // The group travels with the definition: the sheet draws one section band per group, and a
+      // definition arriving without one would split its band in two.
+      definitions: dashboard.documents.map((document) => ({
+        group: document.documentGroup,
+        id: document.id,
+        name: document.name,
+      })),
     };
   } catch (error) {
     console.log("Employee Master export could not read the hiring-document checklist", {
