@@ -81,6 +81,19 @@ export type IntegrityCase = {
   lon: number | null;
   accuracyMeters: number | null;
   deviceMocked: boolean | null;
+  /**
+   * How far this VISIT was saved from the place it names, in metres - read from the visit row,
+   * never recomputed here. `phoenix_crm_visits.distance_meters` is written at capture and is the
+   * same figure the place-vs-actual report prints, so the board and that report can never
+   * disagree about one visit.
+   *
+   * Null for a PLACE case (a place has no place to be far from), and for a visit whose row is
+   * gone or never carried a distance. Null is UNKNOWN, never zero - a rep standing exactly on the
+   * pin reads 0, and the two must not look alike.
+   */
+  placeDistanceMeters: number | null;
+  /** The visit’s own stored verdict on that distance, e.g. far from the place. Null when unknown. */
+  placeLocationFlag: string | null;
   signals: Record<string, unknown>;
   isTest: boolean;
 };
@@ -207,6 +220,31 @@ export async function loadIntegrityBoard(viewer: PhoenixCrmViewer, options: { in
       ? Promise.resolve({ data: [] as Row[] })
       : supabase.from("phoenix_crm_customers").select("id, name").in("id", customerIds),
   ]);
+  // The distance a visit was saved from its place already exists on the visit row, written at
+  // capture. Read it rather than recompute it: recomputing would let this board and the
+  // place-vs-actual report print two different numbers for one visit, and the report is the one
+  // the DM and SFE already read.
+  const visitIds = [...new Set(rows.filter((row) => row.subject_kind !== "place").map((row) => String(row.subject_id)).filter(Boolean))];
+  const visitDistances = new Map<string, { distanceMeters: number | null; locationFlag: string | null }>();
+  // Chunked at 50: a PostgREST `.in()` carrying several hundred ids comes back `{ data: [] }` past
+  // some URL length, and an empty set here would read as “every case is at its place”.
+  for (let index = 0; index < visitIds.length; index += 50) {
+    const { data: visitRows, error: visitError } = await supabase
+      .from("phoenix_crm_visits")
+      .select("id, distance_meters, location_flag")
+      .in("id", visitIds.slice(index, index + 50));
+    // Non-fatal: the board is about the flags, and a missing distance must never blank it.
+    if (visitError) break;
+    for (const visit of (visitRows ?? []) as Array<{ id: string; distance_meters: number | string | null; location_flag: string | null }>) {
+      const raw = visit.distance_meters;
+      const parsed = raw === null || raw === undefined || raw === "" ? null : Number(raw);
+      visitDistances.set(String(visit.id), {
+        distanceMeters: parsed !== null && Number.isFinite(parsed) ? parsed : null,
+        locationFlag: visit.location_flag ? String(visit.location_flag) : null,
+      });
+    }
+  }
+
   const customerNames = new Map<string, string>();
   for (const row of ((customers as { data?: Row[] }).data ?? []) as Row[]) customerNames.set(String(row.id), String(row.name ?? ""));
 
@@ -228,6 +266,12 @@ export async function loadIntegrityBoard(viewer: PhoenixCrmViewer, options: { in
       source: row.source === "photo" || row.source === "behaviour" ? row.source : "gps",
       flags,
       reasons: flags.map((flag) => FLAG_LABELS[flag] ?? flag),
+      placeDistanceMeters: row.subject_kind === "place"
+        ? null
+        : visitDistances.get(String(row.subject_id))?.distanceMeters ?? null,
+      placeLocationFlag: row.subject_kind === "place"
+        ? null
+        : visitDistances.get(String(row.subject_id))?.locationFlag ?? null,
       lat: row.lat === null || row.lat === undefined ? null : Number(row.lat),
       lon: row.lon === null || row.lon === undefined ? null : Number(row.lon),
       accuracyMeters: row.accuracy_meters === null || row.accuracy_meters === undefined ? null : Number(row.accuracy_meters),
