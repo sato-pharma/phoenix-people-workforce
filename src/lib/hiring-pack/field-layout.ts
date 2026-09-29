@@ -576,19 +576,34 @@ export function flowFieldLayer(
     for (var s = 0; s < scopes.length; s += 1) {
       for (var f = 0; f < protos.length; f += 1) {
         var selector = protos[f].getAttribute("data-hp-anchor");
-        var host = null;
+        var hosts = null;
         try {
-          host = scopes[s].querySelector(selector);
+          // EVERY MATCH IN THE SCOPE, not the first one.
+          //
+          // The singular lookup this replaces placed a field on ONE copy of any document that does
+          // not wrap its copies in ".copy". The English certificate of experience is exactly that:
+          // experienceCertificateCopies is 2, it renders two <article class="cert"> and carries no
+          // ".copy" anywhere, so the scope falls back to the body and the first-match lookup found
+          // only the first article's anchor. That produced a stamped copy for the employee and a
+          // blank one for the service file — the difference this layer's own header says nobody
+          // notices until both are signed.
+          //
+          // Harmless for the documents that DO use ".copy": the editor stores a cssPathWithin path
+          // that resolves to exactly one element inside one copy, so every-match and first-match
+          // are the same answer there. Only the case the old code got wrong changes.
+          hosts = scopes[s].querySelectorAll(selector);
         } catch (err) {
           // A selector this browser cannot parse throws. Caught per field so one unusable row
           // cannot take the whole layer down with it — the others still print.
-          host = null;
+          hosts = null;
         }
         // No anchor, no field. Printing it at the document's origin would put a value somewhere
         // nobody placed it, on paper somebody then signs.
-        if (!host) continue;
-        host.classList.add("hp-flow-host");
-        host.appendChild(protos[f].cloneNode(true));
+        if (!hosts || !hosts.length) continue;
+        for (var h = 0; h < hosts.length; h += 1) {
+          hosts[h].classList.add("hp-flow-host");
+          hosts[h].appendChild(protos[f].cloneNode(true));
+        }
       }
     }
   };

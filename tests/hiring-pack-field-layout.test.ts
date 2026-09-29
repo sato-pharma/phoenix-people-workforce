@@ -6,6 +6,7 @@ import {
   documentSurface,
   fieldLiterals,
   fieldPrintedValue,
+  flowFieldLayer,
   literalValueKey,
   mergePagePlacements,
   renderFlowField,
@@ -1033,6 +1034,59 @@ function testTheTableAdmitsEveryBuiltInDocument() {
   }
 }
 
+/**
+ * THE FIELD LAYER PLACES INTO EVERY COPY, INCLUDING A DOCUMENT THAT HAS NO `.copy` WRAPPER.
+ *
+ * WHY THIS IS TESTED BY RUNNING THE SCRIPT AND NOT BY READING IT. The placement is a string of
+ * browser JavaScript emitted inside `flowFieldLayer`, so nothing in this suite type-checks it and a
+ * grep of the source proves only that a word is present. This repo has shipped three defects from
+ * checking a generated string by reading it, which is why the rule is to verify the emitted
+ * artifact — here that means compiling the emitted script and running it against a DOM stub.
+ *
+ * WHAT IT CAUGHT. The English certificate of experience prints TWO copies
+ * (`experienceCertificateCopies`) as two `<article class="cert">` elements and carries no `.copy`
+ * class at all, so the scope falls back to the document body. With a singular `querySelector` the
+ * layer found the first article's anchor and stopped: the employee's copy was stamped and the
+ * service file's copy was blank, with nothing on either page to say so.
+ */
+function testAFlowFieldReachesEveryCopyWithNoCopyWrapper(): void {
+  const layer = flowFieldLayer(
+    [row({ anchor: { dx: 4, dy: 2, selector: ".cert__signrow span" }, document: "experienceCertificateEn", page: null })],
+    {},
+  );
+  const script = layer.slice(layer.indexOf("<script>") + 8, layer.indexOf("</script>"));
+
+  // Two articles, each holding one element the selector matches - the English certificate's shape.
+  const appended: string[] = [];
+  const makeHost = (id: string) => ({
+    classList: { add: () => {} },
+    appendChild: () => appended.push(id),
+  });
+  const hosts = [makeHost("copy-1"), makeHost("copy-2")];
+
+  const proto = {
+    getAttribute: () => ".cert__signrow span",
+    cloneNode: () => ({}),
+  };
+  const documentStub = {
+    readyState: "complete",
+    addEventListener: () => {},
+    getElementById: () => ({ content: { querySelectorAll: () => [proto] } }),
+    // No `.copy` anywhere, which is the whole point - the scope falls back to the body.
+    querySelectorAll: (selector: string) => (selector === ".copy" ? [] : []),
+    body: { querySelectorAll: () => hosts },
+  };
+
+  // The artifact under test IS a script, so running it is the only honest check of it.
+  new Function("document", script)(documentStub);
+
+  assert.deepEqual(
+    appended,
+    ["copy-1", "copy-2"],
+    "both printed copies must carry the field - one stamped copy and one blank is the failure this exists to stop",
+  );
+}
+
 export async function runHiringPackFieldLayoutTests() {
   testTheTableAdmitsEveryBuiltInDocument();
   testEveryDocumentDeclaresItsSurface();
@@ -1045,6 +1099,7 @@ export async function runHiringPackFieldLayoutTests() {
   testAnOrphanedOverrideIsIgnored();
   testRowsStayOnTheirOwnPage();
   testAFlowFieldHangsOffItsAnchor();
+  testAFlowFieldReachesEveryCopyWithNoCopyWrapper();
   testFieldTextIsEscaped();
   testHiddenRowsContributeNoLiterals();
   testAMissingFieldTableIsRecognised();
