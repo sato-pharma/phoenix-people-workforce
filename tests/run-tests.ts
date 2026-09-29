@@ -2113,6 +2113,7 @@ import { runUnpublishedClosingsTests } from "./unpublished-closings.test.ts";
 import { runPayrollAwaitingPublishTests } from "./payroll-awaiting-publish.test.ts";
 import { runSeniorDistrictManagerTitleTests } from "./senior-district-manager-title.test.ts";
 import { runHiringDocumentsExportWorkbookTests } from "./hiring-documents-export-workbook.test.ts";
+import { runSeniorRepsTests } from "./senior-reps.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -7756,6 +7757,11 @@ await runTest(
 await runTest(
   "the hiring documents XLSX says what needs identifying, in colour, and never widens past the screen: every cell is classified into five signals rather than the three stored statuses - so a tick with NO file filed against it is amber \"Ticked · no file\" and never the same green as an evidenced document, and a paper submitted AFTER its deadline reads Complete rather than joining somebody's chase list - the green, amber and red are read back off the emitted file's own fills, the Needs Attention sheet lists only outstanding work with the latest first, completion is a number under a percent format so Excel sorts it, and the filter state round-trips through the URL into the same predicate the screen filters with",
   runHiringDocumentsExportWorkbookTests,
+);
+
+await runTest(
+  "the Senior badge roster: isSeniorRep matches B-7 regardless of casing or whitespace and no one else, and only the canonical lower key is stored",
+  runSeniorRepsTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
