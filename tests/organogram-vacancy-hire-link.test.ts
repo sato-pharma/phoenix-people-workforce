@@ -161,6 +161,10 @@ export async function runOrganogramVacancyHireLinkTests() {
   for (const page of [
     path.join("app", "(admin)", "organogram", "page.tsx"),
     path.join("app", "employee-portals", "organogram", "page.tsx"),
+    // The vacancies report is the OTHER place an open seat is listed, and it carries the
+    // same one-press hire — both of its mounts must resolve the capability server-side too.
+    path.join("app", "(admin)", "reports", "vacancies", "page.tsx"),
+    path.join("src", "components", "workspace", "admin-shell-employee-pages.tsx"),
   ]) {
     const source = fs.readFileSync(path.join(process.cwd(), page), "utf8");
     assert.ok(
@@ -168,4 +172,48 @@ export async function runOrganogramVacancyHireLinkTests() {
       `${page} must resolve canAddEmployee server-side from the real capability, never client-side`,
     );
   }
+
+  // A VacancyReportRow carries the same ids an organogram row does, which is what lets one
+  // link builder serve both surfaces. If that ever drifts, the report's rows would start
+  // producing an empty prefill silently — so assert the real shape round-trips.
+  const reportRow = {
+    areaId: 1102,
+    areaName: "Alexandria 2",
+    departmentId: 2,
+    jobTitle: "Medical Rep",
+    lineId: 5,
+    lineName: "Pedia",
+    managerHrId: "PD-0012",
+    positionId: 11,
+    positionTitle: "Medical Representative",
+    regionName: "Alex-BHR",
+  };
+  const reportSeat = readVacancyHireSeat((key) =>
+    new URL(
+      buildVacancyHireHref("/employees", reportRow),
+      "https://phoenix-hr.satopharma.com",
+    ).searchParams.get(key),
+  );
+  assert.equal(reportSeat?.areaId, "1102", "a vacancies-report row must fill the area too");
+  assert.equal(
+    reportSeat?.managerHrId,
+    "PD-0012",
+    "and its manager — the field the report already prints beside the row",
+  );
+
+  // The report's own gate, and the rule that it must not widen the table: the action rides
+  // inside the status cell, because that table already scrolls sideways at desktop width.
+  const reportSource = fs.readFileSync(
+    path.join(process.cwd(), "src", "components", "reports", "vacancies-report.tsx"),
+    "utf8",
+  );
+  assert.ok(
+    reportSource.includes('canAddEmployee && row.status === "open"'),
+    "the report's hire action must be gated on both the capability and an OPEN row",
+  );
+  assert.equal(
+    (reportSource.match(/<th className="px-4 py-3">/g) ?? []).length,
+    9,
+    "the hire action must NOT add a tenth column — the rule is fit by merging, never widening",
+  );
 }

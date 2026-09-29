@@ -46,6 +46,7 @@ import { getEmployeeAttendanceData } from "@/lib/attendance/employee-attendance"
 import { writeAuditLog } from "@/lib/admin/audit";
 import {
   buildPermissionLookup,
+  canAccess,
   permissionMatrix,
   usesHrNamespace,
   type AccessContext,
@@ -713,13 +714,15 @@ export async function WorkspaceVacanciesPage() {
   } catch (error) {
     initialError = reportPageError(error);
   }
+  // The same capability POST /api/employees asserts — see the vacancies report itself.
+  const canAddEmployee = await canAccess(access, "employees", "update");
   return (
     <WorkspaceFrame
       description="View vacancies visible to your existing employee scope."
       icon={<Network className="h-3.5 w-3.5" />}
       title="Vacancies"
     >
-      <VacanciesReport initialError={initialError} initialReport={initialReport} />
+      <VacanciesReport canAddEmployee={canAddEmployee} initialError={initialError} initialReport={initialReport} />
     </WorkspaceFrame>
   );
 }
