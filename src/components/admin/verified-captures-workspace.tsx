@@ -1,7 +1,6 @@
 "use client";
 
 import {
-import type { CaptureTrustAssessment, CaptureTrustVerdict } from "@/lib/evidence/capture-trust";
   ArrowUpDown,
   Building2,
   Check,
@@ -18,6 +17,7 @@ import type { CaptureTrustAssessment, CaptureTrustVerdict } from "@/lib/evidence
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 
 import { ZoomHint, ZoomablePhoto } from "@/components/ui/zoomable-photo";
+import type { CaptureTrustAssessment, CaptureTrustVerdict } from "@/lib/evidence/capture-trust";
 import { cairoDateTime } from "@/lib/format/cairo-datetime";
 import { cn } from "@/lib/utils";
 import {
@@ -757,9 +757,11 @@ function DirectOrderCaptureBody({ row }: { row: VerifiedDirectOrderCaptureRow })
           </div>
         ) : (
           <PhotoTile alt={`${row.pharmacyName} — storefront`} caption={row.pharmacyName} label="Storefront photo" src={row.photoUrl} />
-          <PhotoTrustBlock trust={row.photoTrust} />
         )}
         <LocationBlock location={row.location} />
+        {/* Outside the photo/invoice ternary on purpose: the comparison describes the CAPTURE, so
+            an invoice-route validation still shows where its pin and its photo stood. */}
+        <PhotoTrustBlock trust={row.photoTrust} />
       </div>
 
       <DistributorCodes codes={row.distributorCodes} phoenixCode={row.pharmacyCode} />
