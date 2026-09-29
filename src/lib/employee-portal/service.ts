@@ -1617,6 +1617,9 @@ function fallbackEmployee(access: AccessContext): EmployeeDirectoryRow {
     fuelAllowance: null,
     grossSalary: null,
     hasBankAccount: null,
+    // A fallback row stands in for an employee the directory could not resolve, so it claims
+    // nothing about what is on file — the same posture as hasPhoto beside it.
+    hasCv: false,
     hasPhoto: false,
     healthCardStatus: null,
     healthCardNumber: null,

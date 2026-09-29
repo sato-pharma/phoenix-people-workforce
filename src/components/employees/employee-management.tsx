@@ -859,6 +859,13 @@ export function EmployeeManagement({
   const [isSaving, setIsSaving] = React.useState(false);
   const [directoryTab, setDirectoryTab] = React.useState<EmployeeDirectoryTab>("all");
   const [areaFilter, setAreaFilter] = React.useState("");
+  /**
+   * Who has a CV on their master record. "No" is the one this exists for — the list of who still
+   * needs chasing, which on production 2026-09-29 was 96 active people out of 198. It reads the
+   * row's own `hasCv`, which the directory service fills from one cached index rather than a
+   * column on every row (employee-cv.ts, getEmployeeCvHrIdSet).
+   */
+  const [cvFilter, setCvFilter] = React.useState("");
   const [departmentFilter, setDepartmentFilter] = React.useState("");
   const [hasBankAccountFilter, setHasBankAccountFilter] = React.useState("");
   const [medicalInsuranceStatusFilter, setMedicalInsuranceStatusFilter] = React.useState("");
@@ -1123,6 +1130,9 @@ export function EmployeeManagement({
         (!positionFilter || String(employee.positionId ?? "") === positionFilter) &&
         (!regionFilter || employee.regionName === regionFilter) &&
         (!hasBankAccountFilter || employee.hasBankAccount === hasBankAccountFilter) &&
+        // `hasCv` is a real boolean, not the "yes"/"no" string the bank-account column stores, so
+        // it is compared against the chosen value rather than matched to it.
+        (!cvFilter || employee.hasCv === (cvFilter === "yes")) &&
         (!medicalInsuranceStatusFilter ||
           employee.medicalInsuranceStatus === medicalInsuranceStatusFilter) &&
         (!socialInsuranceStatusFilter ||
@@ -1133,6 +1143,7 @@ export function EmployeeManagement({
     });
   }, [
     areaFilter,
+    cvFilter,
     departmentFilter,
     hasBankAccountFilter,
     lineFilter,
@@ -1146,6 +1157,7 @@ export function EmployeeManagement({
   ]);
   const hasActiveFilters = Boolean(
     areaFilter ||
+      cvFilter ||
       departmentFilter ||
       hasBankAccountFilter ||
       lineFilter ||
@@ -1158,6 +1170,7 @@ export function EmployeeManagement({
   );
   const activeFilterCount = [
     areaFilter,
+    cvFilter,
     departmentFilter,
     hasBankAccountFilter,
     lineFilter,
@@ -1348,6 +1361,7 @@ export function EmployeeManagement({
 
   function clearFilters() {
     setAreaFilter("");
+    setCvFilter("");
     setDepartmentFilter("");
     setHasBankAccountFilter("");
     setLineFilter("");
@@ -2320,6 +2334,17 @@ export function EmployeeManagement({
                   placeholder="All Regions"
                   tone="violet"
                   value={regionFilter}
+                />
+                {/* "CV on File" rather than "Has CV": the panel on the record and the organogram
+                    seat popup both say "No CV on file", and one wording across the three places a
+                    person meets this fact is worth more than a shorter label. */}
+                <SelectField
+                  label="CV on File"
+                  onChange={setCvFilter}
+                  options={yesNoOptions}
+                  placeholder="All"
+                  tone="orange"
+                  value={cvFilter}
                 />
                 <SelectField
                   label="Has Bank Account"
