@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { bearerTokenFromRequest } from "@/lib/auth/native-session";
 import {
   issueNativeWebHandoffTicket,
+  NATIVE_WEB_APP_SHELL_COOKIE,
   nativeWebHandoffCookie,
   redeemNativeWebHandoffTicket,
   safeNativeWebHandoffNext,
@@ -103,6 +104,19 @@ export async function GET(request: Request) {
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
     value: token,
+  });
+  // This browser context is the native app's WebView — mark it so the portal renders in app mode
+  // (its own header and bottom nav suppressed, since the native shell provides them). Same lifetime
+  // as the session cookie, NOT HttpOnly because it carries no secret and no page reads it — the
+  // server does, to decide chrome only. See NATIVE_WEB_APP_SHELL_COOKIE.
+  response.cookies.set({
+    httpOnly: false,
+    maxAge: maxAgeSeconds,
+    name: NATIVE_WEB_APP_SHELL_COOKIE,
+    path: "/",
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    value: "1",
   });
   // Never cached, anywhere: the response body is a redirect carrying a Set-Cookie for one person.
   response.headers.set("cache-control", "no-store, private");

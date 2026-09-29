@@ -1211,6 +1211,7 @@ export function EmployeePortalSidebar({
 
 export function EmployeePortalChrome({
   activePathOverride,
+  appShell = false,
   children,
   data,
   disableSessionGuard = false,
@@ -1218,6 +1219,13 @@ export function EmployeePortalChrome({
   visibility,
 }: {
   activePathOverride?: string;
+  /**
+   * The portal is being rendered inside the native app's WebView. Its own fixed header and bottom
+   * nav are then suppressed — and their spacers with them — because the native shell supplies that
+   * navigation; showing both stacks two nav bars. Set only from a cookie the native hand-off writes
+   * (NATIVE_WEB_APP_SHELL_COOKIE); false for every ordinary browser, so the web portal is unchanged.
+   */
+  appShell?: boolean;
   children: ReactNode;
   data: EmployeePortalShellData;
   disableSessionGuard?: boolean;
@@ -1234,7 +1242,15 @@ export function EmployeePortalChrome({
   return (
     <RouteTransitionProvider>
       <ModuleLockProvider lockedModuleKeys={lockedModuleKeys}>
-      <div className="employee-portal-shell relative min-h-screen overflow-x-clip bg-[linear-gradient(160deg,#f4f8fc_0%,#f8fafc_28%,#fdf8f5_58%,#f6faf8_82%,#f8fafc_100%)] pt-[56px] lg:pt-[64px]">
+      {/* The className stays a static string — `tests/employee-portal-bottom-nav-badges.test.ts`
+          finds the square-edge shell root by the literal `className="employee-portal-shell`, and the
+          square-edge rule travels with this class. In app mode the fixed header is gone, so its
+          `pt-[56px]` spacer would leave an empty band; the inline style zeroes it without disturbing
+          the class list (web is always appShell=false, so this never touches the browser). */}
+      <div
+        className="employee-portal-shell relative min-h-screen overflow-x-clip bg-[linear-gradient(160deg,#f4f8fc_0%,#f8fafc_28%,#fdf8f5_58%,#f6faf8_82%,#f8fafc_100%)] pt-[56px] lg:pt-[64px]"
+        style={appShell ? { paddingTop: 0 } : undefined}
+      >
         <EmployeePortalRouteProgress />
         <div className="pointer-events-none absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-sky-500 via-orange-500 to-emerald-500" />
         <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(15,23,42,0.035)_1px,transparent_1px),linear-gradient(90deg,rgba(15,23,42,0.035)_1px,transparent_1px)] bg-[size:56px_56px] [mask-image:linear-gradient(180deg,rgba(0,0,0,0.52),transparent_58%)]" />
@@ -1256,21 +1272,33 @@ export function EmployeePortalChrome({
             named the portal. Do not "restore parity" by adding them back here. HorizontalNavProvider
             went with them, and with it the cross-Atlantic loadEffectiveLayout read that ran on every
             portal page render. */}
-        <EmployeePortalTopNav
-          activePathOverride={activePathOverride}
-          data={data}
-          disableSessionGuard={disableSessionGuard}
-          visibility={visibility}
-        />
+        {/* The fixed top bar. Gone in app mode — the native screen supplies the header. */}
+        {appShell ? null : (
+          <EmployeePortalTopNav
+            activePathOverride={activePathOverride}
+            data={data}
+            disableSessionGuard={disableSessionGuard}
+            visibility={visibility}
+          />
+        )}
         <div className="relative mx-auto flex w-full max-w-[1580px] items-start gap-4 px-3 py-4 sm:px-4 sm:py-5 lg:gap-4 lg:py-7 lg:pl-8 lg:pr-4">
           <EmployeePortalSidebar activePathOverride={activePathOverride} visibility={visibility} />
           <div className="flex min-w-0 flex-1 flex-col">
-            <main className="phx-zoom-surface employee-portal-mobile-safe min-w-0 flex-1 space-y-5 pb-24 lg:space-y-7 lg:pb-0">
+            <main
+              className={`phx-zoom-surface employee-portal-mobile-safe min-w-0 flex-1 space-y-5 lg:space-y-7 lg:pb-0 ${
+                // The bottom nav is gone in app mode, so drop the space kept clear for it — the
+                // native tab bar sits below the WebView, outside the scrolling content.
+                appShell ? "pb-0" : "pb-24"
+              }`}
+            >
               <PageTransition>{children}</PageTransition>
             </main>
           </div>
         </div>
-        <EmployeePortalBottomNav activePathOverride={activePathOverride} visibility={visibility} />
+        {/* The fixed bottom nav. Gone in app mode — the native tab bar navigates instead. */}
+        {appShell ? null : (
+          <EmployeePortalBottomNav activePathOverride={activePathOverride} visibility={visibility} />
+        )}
       </div>
       </ModuleLockProvider>
     </RouteTransitionProvider>

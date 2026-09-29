@@ -15,9 +15,14 @@ import { usePalette } from "@/theme/use-palette";
  *
  * WHAT EACH ONE IS FOR, because the division is the whole design:
  *
- *   Home    — the command centre, native, and the one screen that still works with no signal.
+ *   Home    — the portal itself, rendered in-app (owner, 2026-09-29: "make the app a shell over the
+ *             web portal"). It IS the production landing page — same identity card, same modules —
+ *             so the app cannot drift from the SaaS. It was a hand-drawn native command centre until
+ *             then; index.tsx records what that traded (an offline READ of the rep's numbers; the
+ *             offline WORK stays, in CRM).
  *   CRM     — Phoenix CRM, native, because it is camera, GPS, dictation and an offline outbox. A rep
- *             lives in it all day; the web gave it its own portal row for the same reason.
+ *             lives in it all day; the web gave it its own portal row for the same reason. This is
+ *             the one part that must stay native — a web page cannot queue a visit with no signal.
  *   Modules — EVERY other portal module this employee has, the same list the web sidebar draws, each
  *             opening the production page itself so that the app and the browser cannot become two
  *             products (owner, 2026-09-28: "same module same design same everything").

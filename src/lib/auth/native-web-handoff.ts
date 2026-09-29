@@ -59,6 +59,19 @@ const KEY_PURPOSE = "phoenix.native-web-handoff.v1";
 /** Only the employee portal is reachable this way. Admin-shell routes are not offered by the app. */
 export const NATIVE_WEB_HANDOFF_HOME = "/employee-portals";
 
+/**
+ * Marks a browser context as the native app's WebView, so the portal renders in "app mode" — its own
+ * fixed header and bottom nav suppressed, because the native shell provides that navigation itself.
+ *
+ * 🔴 THIS IS A DISPLAY HINT, NOT A CREDENTIAL, AND IT GRANTS NOTHING. Set only by the GET half of the
+ * hand-off, which is the one path the app enters the portal through, so an ordinary browser never
+ * carries it and the web portal is byte-identical without it. It is deliberately NOT HttpOnly — no
+ * secret rides in it, the value is the literal `1` — and it is read server-side by the portal shell
+ * to decide chrome only. A forged cookie changes only whether one browser sees the portal's own top
+ * bar; it moves no data and reaches no route the session could not already reach.
+ */
+export const NATIVE_WEB_APP_SHELL_COOKIE = "phoenix_app_shell";
+
 export type NativeWebHandoffClaims = {
   /** Seconds since the epoch at which the APP's own token expires — the cookie inherits it exactly. */
   sessionExpiresAt: number;
