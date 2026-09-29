@@ -68,6 +68,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { HrCommandCharts } from "@/components/hr/hr-command-charts";
 import { HrMyRecord } from "@/components/hr/hr-my-record";
+import { HrOnVacationToday } from "@/components/hr/hr-on-vacation-today";
 import { HrTodayPanel } from "@/components/hr/hr-today-panel";
 import { PushOptInNudge } from "@/components/notifications/push-opt-in-nudge";
 import { PhoenixIdentityStrip } from "@/components/phoenix-signature-card/PhoenixIdentityStrip";
@@ -448,6 +449,12 @@ export function HrCommandCenter({
           "5 of 18 waiting" whose denominator counted TILES rather than work — see the header of
           hr-today-panel.tsx and of src/lib/hr/today-tasks.ts. ── */}
       <HrTodayPanel icons={GROUP_ICONS} tasks={data.tasks} />
+
+      {/* ── Who is on a vacation today, by name (owner, 2026-09-29). Directly under "Your day"
+          because it is the same kind of fact — today's reality rather than a monthly figure — and
+          above the toolbar because the toolbar filters the COMPANY FIGURES below it, not this.
+          Renders nothing at all when the source did not answer; see hr-on-vacation-today.tsx. ── */}
+      <HrOnVacationToday rows={data.onVacationToday} />
 
       {/* ── Toolbar. Filter, attention-only, and a jump chip per group. Not sticky on purpose:
           AppShell already freezes the page chrome, and a second sticky at the same offset is the

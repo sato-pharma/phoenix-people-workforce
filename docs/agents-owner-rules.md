@@ -3481,6 +3481,64 @@ resigned, one terminated) yet still hold active cases.
 `tests/probation-milestone-emails.test.ts`.
 
 
+## Yasmeena is informed of every AV, and her landing page names who is off — owner, 2026-09-29
+
+### What he said
+
+*"in any av request on phx make yasmeena informed and make on her landing page appear on a vacation
+today."* Two instructions in one sentence, about the same seat: Yasmeena Elsafory, `HR-009`, HR
+Operations — the seat that administers attendance and leave.
+
+### Informed, and why that is not an approval step
+
+The obvious-looking implementation is to add `HR-009` to the vacation approval chain. It is wrong,
+and expensively so: every name in `approval-flow.ts` receives an approval step row, an SLA clock, an
+escalation schedule and Approve/Reject buttons, so putting her there would have made **every annual
+vacation in the company wait on a third signature**. "Informed" is the opposite of that.
+
+So the informed party lives in its own module, `src/lib/vacation/informed-recipients.ts`, read by one
+dispatch function and nothing else:
+
+- **One notice, on submit.** `dispatchVacationInformed` runs at the end of `dispatchVacationSubmitted`,
+  after the chain's own notifications, never instead of them.
+- **In-app and Telegram, never email.** §4's standing rule is that email recipients are asked about
+  before they are wired; the house pattern for keeping somebody in the loop is the bell plus Telegram,
+  which is what the visibility approvers on a sequential request already get.
+- **`normal` priority and no Telegram button.** A high priority says somebody must act, and a Review
+  button offers a decision that is not hers.
+- **Annual only.** It is the type he named. Sick, Emergency, Other and Compensatory keep exactly the
+  recipients they had, and widening the list is a product decision rather than a tidy-up.
+- **Never twice.** When she is already a recipient — she raised the request, or she sits in its chain
+  — the resolver returns null. Matching is on `normalizeHrIdForAccess`, so `HR-009` and `HR009`
+  collapse; `canonicalHrIdKey` alone only lowercases and both spellings occur in this data.
+- **The link is her own address**, `/hr/leave-management/vacation-report`, the row her sidebar offers.
+  `/admin/approvals/vacation/<id>` is the approver's decision surface.
+- **Admin-RECORDED vacations are untouched.** `createVacationRequestAsAdmin` deliberately sends no
+  notification at all — it is HR writing down a vacation that has already been decided, usually her
+  own keystrokes — and it stays that way. Those absences still reach her through the panel below.
+
+### The panel, and the one way it could lie
+
+"On a vacation today" sits directly under "Your day" on `/hr/admin/hr-command-center`, above the
+toolbar (which filters the company figures below it, not this). It is **approved** leave covering the
+Cairo day, **every** vacation type, as **named people** with the reason, the day part and when they
+are back — not a tile. He had already ruled on this page that it carried "too many key codes"; the
+question a leave administrator has in the morning is *who*, and a figure cannot answer it.
+
+The source is declared on the `time_attendance` FUNCTION, not on the seat, so a seat that holds no
+attendance grant is never shown the company's absences — the page's own architecture, and what makes
+`sourcesFor` the single answer to who loads it.
+
+🔴 **A failed read renders NOTHING.** `onVacationToday` is `null` when the source did not load and an
+array when it answered, and the panel draws nothing for null. Collapsing that to `[]` would put
+"Nobody is on a vacation today." at the top of her morning on a day the query was broken — the
+misleading zero AGENTS.md §7 forbids, in the one place it would be believed.
+
+`tests/vacation-informed-hr.test.ts` pins both halves in the required `checks` job: the informed
+recipient's identity, type scope, channels, priority and dedupe; that `approval-flow.ts` never names
+her; the source's function placement; and the null-versus-empty rule at both ends.
+
+
 ## The seal a human presses, and the seal the desk ticks — owner instructions, 2026-09-29
 
 Two instructions landed on the same day and read, at a glance, as though they contradict each other.
