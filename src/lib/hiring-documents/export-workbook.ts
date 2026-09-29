@@ -211,7 +211,7 @@ function writeLegend(sheet: ExcelJS.Worksheet, startRow: number) {
     [
       "unevidenced",
       "Submitted, but nothing is scanned into the file yet. The paper has arrived, so it is green — "
-      + "the missing scan is counted in the \"No file\" column instead of being chased as a missing document.",
+      + "the missing scan is counted in the \"Scanned\" column instead of being chased as a missing document.",
     ],
     ["pending", "Nobody has said anything about it yet."],
     ["missing", "Marked missing by HR. The deadline has not passed, or none was set."],
@@ -317,7 +317,10 @@ const FIXED_MATRIX_COLUMNS = [
   { label: "Complete %", width: 12 },
   { label: "Needs attention", width: 14 },
   { label: "Overdue", width: 10 },
-  { label: "No file", width: 9 },
+  // Scanned REPLACES the old "No file" count, rather than sitting beside it. The fraction states
+  // both halves — the gap is submitted minus scanned — so keeping the count as well would be two
+  // columns of one fact, and it is the same shape the page's own tile shows: scanned / submitted.
+  { label: "Scanned", width: 11 },
 ] as const;
 
 function buildMatrixSheet(workbook: ExcelJS.Workbook, input: HiringDocumentsWorkbookInput, today: Date) {
@@ -377,9 +380,18 @@ function buildMatrixSheet(workbook: ExcelJS.Workbook, input: HiringDocumentsWork
     signalCell(excelRow.getCell(8), completion / 100, completionTone(completion), { center: true, numFmt: "0%" });
     signalCell(excelRow.getCell(9), outstanding, countTone(outstanding), { center: true });
     signalCell(excelRow.getCell(10), overdue, countTone(overdue), { center: true });
-    // The evidence gap: arrived, ticked, but nothing scanned into the file. Amber rather than red —
-    // it is a housekeeping job, not a document nobody has handed in.
-    signalCell(excelRow.getCell(11), unevidenced, unevidenced === 0 ? "good" : "warn", { center: true });
+    // Scanned, as a fraction of what has ARRIVED — the same shape the page's tile shows, one row
+    // down. Amber rather than red while any are unscanned: it is a filing job, not a document
+    // nobody has handed in. A person with nothing submitted yet reads "0 / 0" and stays neutral
+    // green, because there is nothing for them to scan and an amber there would be a false alarm.
+    const arrived = signals.filter((signal) => signal === "complete" || signal === "unevidenced").length;
+    const scanned = arrived - unevidenced;
+    signalCell(
+      excelRow.getCell(11),
+      `${scanned} / ${arrived}`,
+      unevidenced === 0 ? "good" : "warn",
+      { center: true },
+    );
 
     input.documents.forEach((document, index) => {
       const cell = excelRow.getCell(FIXED_MATRIX_COLUMNS.length + index + 1);
