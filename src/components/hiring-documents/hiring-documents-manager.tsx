@@ -36,6 +36,7 @@ import { employmentStatusLabel } from "@/lib/employees/employment-status-label";
 import { hiringDeadlineChanged, normalizeHiringDeadline } from "@/lib/hiring-documents/deadline";
 import {
   HIRING_DOCUMENT_FILTER_ALL,
+  HIRING_DOCUMENT_SCANNING_UNSCANNED,
   filterHiringDocumentEmployees,
   hiringDocumentCompletionPercent,
   hiringDocumentFilterSearchParams,
@@ -133,6 +134,7 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
   const [advancedOpen, setAdvancedOpen] = React.useState(false);
   const [managerFilter, setManagerFilter] = React.useState(allValue);
   const [jobTitleFilter, setJobTitleFilter] = React.useState(allValue);
+  const [scanningFilter, setScanningFilter] = React.useState(allValue);
   const [hireDateFrom, setHireDateFrom] = React.useState("");
   const [hireDateTo, setHireDateTo] = React.useState("");
   const [completionMin, setCompletionMin] = React.useState("");
@@ -179,9 +181,10 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
       line: lineFilter,
       manager: managerFilter,
       query,
+      scanning: scanningFilter,
       status: statusFilter,
     }),
-    [completionMax, completionMin, hireDateFrom, hireDateTo, jobTitleFilter, lineFilter, managerFilter, query, statusFilter],
+    [completionMax, completionMin, hireDateFrom, hireDateTo, jobTitleFilter, lineFilter, managerFilter, query, scanningFilter, statusFilter],
   );
 
   const filteredEmployees = React.useMemo(
@@ -568,6 +571,7 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
                       setStatusFilter(allValue);
                       setManagerFilter(allValue);
                       setJobTitleFilter(allValue);
+                      setScanningFilter(allValue);
                       setHireDateFrom("");
                       setHireDateTo("");
                       setCompletionMin("");
@@ -620,6 +624,16 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
                       <option value={allValue}>All job titles</option>
                       {jobTitleOptions.map((title) => <option key={title} value={title}>{title}</option>)}
                     </SearchableSelect>
+                  </label>
+                  <label className="block">
+                    <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Scanning</span>
+                    {/* Its own filter, not a completion range: an employee can read 100% complete and
+                        still have every one of those documents unscanned, which is the state production
+                        is in. No completion range can find that work. */}
+                    <select className={selectClassName} onChange={(event) => setScanningFilter(event.target.value)} value={scanningFilter}>
+                      <option value={allValue}>All employees</option>
+                      <option value={HIRING_DOCUMENT_SCANNING_UNSCANNED}>Only with documents to scan</option>
+                    </select>
                   </label>
                   <label className="grid grid-cols-2 gap-2">
                     <div className="space-y-1.5">
