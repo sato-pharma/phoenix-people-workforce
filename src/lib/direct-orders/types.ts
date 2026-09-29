@@ -2,6 +2,7 @@ import type { PhoenixRole } from "@/lib/auth/permissions";
 import type { VenueType } from "@/lib/venues/venue-type";
 import type { DirectOrderBasketLine } from "@/lib/direct-orders/basket-label";
 import type { DirectOrderValidationRow } from "@/lib/direct-orders/pharmacy-validation";
+import type { DirectOrderFieldEvidenceGap } from "@/lib/direct-orders/field-evidence-gap";
 import type { ValidationBadge } from "@/lib/validation/validation-badge";
 import type { DirectOrderGeographyCheck } from "@/lib/direct-orders/geography-check";
 import type { DirectOrderInvoiceContentType, DirectOrderInvoiceSlotCount } from "@/lib/direct-orders/invoice-evidence";
@@ -851,6 +852,13 @@ export type DirectOrderApprovalDetail = {
    * a nullish check is the render gate. See resolveDirectOrderPharmacyValidationBadge.
    */
   pharmacyValidation: ValidationBadge | null;
+  /**
+   * Why this venue holds NO live photo and no GPS fix, or null when one exists (owner, 2026-09-29).
+   * Independent of the stamp above: a venue can be validated — by invoice, or off the distributor
+   * catalogue — and still have had nobody stand in front of it. Optional so hand-built details stay
+   * valid. See directOrderFieldEvidenceGap.
+   */
+  pharmacyFieldEvidenceGap?: DirectOrderFieldEvidenceGap | null;
   /**
    * The distributor invoice saved with THIS order (owner, 2026-09-14: the SFE Manager must clearly see
    * the invoice that was used). Null when the order carries none. Optional so hand-built details stay

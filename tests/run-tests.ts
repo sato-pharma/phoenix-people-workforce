@@ -1267,6 +1267,7 @@ import { runDirectOrderCancelHeldTests } from "./direct-orders-cancel-held.test.
 import { runDirectOrderInvoicePrefillTests } from "./direct-orders-invoice-prefill.test.ts";
 import { runDirectOrderInvoiceValidationTests } from "./direct-orders-invoice-validation.test.ts";
 import { runDirectOrderOrderInvoiceTests } from "./direct-orders-order-invoice.test.ts";
+import { runDirectOrderFieldEvidenceGapTests } from "./direct-order-field-evidence-gap.test.ts";
 import { runDirectOrderValidationRegistryGateTests } from "./direct-orders-validation-registry-gate.test.ts";
 import { runDirectOrderPharmacyRejectedTests } from "./direct-orders-pharmacy-rejected.test.ts";
 import { runDirectOrdersHeldLaneTests } from "./direct-orders-held-lane.test.ts";
@@ -4428,6 +4429,7 @@ await runTest("direct orders share-link controls (export-gated not read-gated, p
 await runTest("direct orders invoice prefill (an unconfirmed code prefills nothing, unmatched lines are named not dropped, the reader is never announced, mounted on BOTH forms)", runDirectOrderInvoicePrefillTests);
 await runTest("direct orders invoice validation (an invoice alone validates, 5 open pharmacies per rep, a 6th refused, a rejection or a field confirmation frees the slot, the SFE Manager decides invoice claims only and sees the invoice)", runDirectOrderInvoiceValidationTests);
 await runTest("direct orders order invoice (the invoice read on the form is kept with the order and shown full width to the SFE Manager, their approval of a new pharmacy counts as 1 of 5, a 6th is flagged not counted, the requester attaches it again only while held or with the SFE Manager)", runDirectOrderOrderInvoiceTests);
+await runTest("direct order field evidence gap (an order says when nobody ever stood in front of its venue — catalogue, hand-entered or invoice-validated — decided from the venue's whole evidence, silenced by any non-rejected field capture, neutral and never a refusal)", runDirectOrderFieldEvidenceGapTests);
 await runTest("direct orders validation registry gate (both declared actions are actually invoked, request passes the row's real status, decide is NOT coupled to it)", runDirectOrderValidationRegistryGateTests);
 await runTest("direct orders pharmacy rejected state (a rejected pharmacy never reads as verified, rejecting deactivates and closes its orders, confirming cannot undo it)", runDirectOrderPharmacyRejectedTests);
 await runTest("direct orders held lane (unknown pharmacy submits HELD outside the chain; validation, the 14-day clock and a requester withdrawal are the doors out; one To/Cc email per event)", runDirectOrdersHeldLaneTests);
