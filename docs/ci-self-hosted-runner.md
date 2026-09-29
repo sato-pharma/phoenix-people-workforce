@@ -80,7 +80,9 @@ invoice, $60 is an **80% cut**. #4527's per-run saving is 16.5%; driving re-push
 PR to a perfect 1.0 adds ~20% more; together they land near $190, not $60. **No combination of
 pipeline tuning and push discipline gets there** — only taking the per-minute price to $0 and paying
 a fixed machine cost instead, which two 4-vCPU boxes do at roughly half the target. Say that plainly
-rather than offering another trim.
+rather than offering another trim. 🔴 **But this is arithmetic, not a recommendation: the owner
+refused that purchase on 2026-09-28 (*"I WILL NOT BUY THIS"*).** It stands as the reason $60 is out of
+reach on metered minutes, and never as a case for buying the boxes.
 
 **This is a separate lever from [#4527](https://github.com/Gawish-1997/phoenix-people-workforce/pull/4527)**,
 which merges `lint`+`typecheck`+`test` into one job and cuts ~14% off every run. They compose:
@@ -645,9 +647,11 @@ which is the opposite of the point.
 runs in the required `checks` job — so removing it turns a PR red with the ruling in the failure
 message. Do not "fix" that test to widen the predicate; the test is the ruling.
 
-**When it changes:** once the Hetzner boxes are registered and carrying their own label, the pool is
-deep enough for the queue to stop being the bottleneck. Re-propose it then, with his word, as its own
-change — never bundled into something else.
+**What would change it:** the pool itself getting deeper — more replicas on the Railway service, or
+some other host registered with its own label — so that four required jobs no longer queue behind
+three. 🔴 **Not hardware arriving: none is.** Re-measure the queue against the pool that exists on the
+day, and if it has grown, re-propose widening with his word, as its own change — never bundled into
+something else, and never by re-pitching the boxes.
 
 ## Turning it off
 
