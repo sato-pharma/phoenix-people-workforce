@@ -49,6 +49,8 @@ type PharmacyRow = {
   captured_latitude: number | string | null;
   captured_longitude: number | string | null;
   captured_address: string | null;
+  /** When the PIN was taken. Needed to date the shutter gap on a shop, as on its customer. */
+  captured_at: string | null;
   extracted_area_name: string | null;
   extracted_governorate_name: string | null;
 };
@@ -107,7 +109,7 @@ export async function listVerifiedMarketingCaptures(
     const { data, error } = await supabase
       .from("marketing_pharmacies")
       .select(
-        "id, display_name, evidence_status, captured_latitude, captured_longitude, captured_address, extracted_area_name, extracted_governorate_name",
+        "id, display_name, evidence_status, captured_latitude, captured_longitude, captured_address, captured_at, extracted_area_name, extracted_governorate_name",
       )
       .in("id", allPharmacyIds.slice(index, index + 200));
     if (error) throw error;
