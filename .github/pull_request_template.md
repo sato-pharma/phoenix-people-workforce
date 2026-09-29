@@ -41,7 +41,8 @@
 - [ ] Unit tests added/updated
 - [ ] E2E tests added/updated
 - [ ] Manual testing completed
-- [ ] CI is green on this PR (`validate`, `checks`, `mobile`, `secret-scan`)
+- [ ] The required checks are green on this PR (`validate`, `checks` — read them live, the list has rotted five times)
+- [ ] `mobile` and `secret-scan` read — they still run but no longer block a merge
 
 ## Deployment Notes
 

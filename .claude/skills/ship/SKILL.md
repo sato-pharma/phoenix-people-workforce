@@ -45,25 +45,33 @@ gh pr checks <n>
 ```
 
 🔴 **ASK BRANCH PROTECTION WHAT THE GATE IS — never a number from this file or any other.** The
-list has changed four times (4 → 5 → 6 → 4) and every change left the docs stating the old one:
+list has changed five times (4 → 5 → 6 → 4 → 2) and every change left the docs stating the old one:
 
 ```bash
 gh api repos/Gawish-1997/phoenix-people-workforce/branches/main/protection/required_status_checks \
   --jq '.contexts'
 ```
 
-As of 2026-09-27 that returns **four**: **`validate`, `checks`, `mobile`, `secret-scan`**
-(`enforce_admins: true`). `checks` is one job carrying lint, `next typegen`, typecheck and the unit
-suite as STEPS — #4527 merged the three former jobs to stop paying per-job minute rounding four
-times, so **`lint`, `typecheck` and `test` no longer exist as check names.** Anything in
-`gh pr checks` that protection does not name — `sast-scan` or `full-e2e` reading `skipping` — is not
-a gate and not a failure.
+As of **2026-09-29** that returns **two**: **`validate`, `checks`** (`enforce_admins: true`).
+`checks` is one job carrying lint, `next typegen`, typecheck and the unit suite as STEPS — #4527
+merged the three former jobs to stop paying per-job minute rounding four times, so **`lint`,
+`typecheck` and `test` no longer exist as check names.** Anything in `gh pr checks` that protection
+does not name — `sast-scan` or `full-e2e` reading `skipping` — is not a gate and not a failure.
+
+🔴 **`mobile` and `secret-scan` are in that category NOW.** They were required until 2026-09-29 and
+are not any more; both still run and still report. So they are yours to READ and judge — a red Expo
+typecheck or a secret-scan finding will not stop the merge, and **"all required checks are green" no
+longer says anything about either one.** Look at them before merging anyway.
 
 Why this is written as a live read and not a list: on 2026-09-17 `test` left `validate` for its own
 job and nobody added the name, so for a day a red unit suite showed four green required checks and
 merged (#3950, fixed 09-18). On 2026-09-27 the names changed again and this skill still said six —
 a session following it counted to six, waited for three checks that no longer exist, and the only
-thing that saved the merge was reading the API by hand.
+thing that saved the merge was reading the API by hand. On 2026-09-29 `mobile` and `secret-scan`
+were demoted on purpose, minutes before #4800 took them off the pull request — **a required check
+whose job stops reporting blocks every PR for ever**, so the demotion and the un-wiring are always
+one change. The docs lagged by under an hour that time, and `node scripts/check-required-checks.mjs`
+is the only thing that compares them to the gate — it runs when someone runs it.
 
 - Every context protection names `pass` → merge.
 - Any `pending` → it is not green. Wait in the background and report when it lands; never merge on
