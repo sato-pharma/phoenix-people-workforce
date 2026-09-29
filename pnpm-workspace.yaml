@@ -5,6 +5,22 @@
 # Version pins previously enforced via npm's top-level package.json "overrides"
 # (transitive security/compat pins). Keep this list in sync with any advisory-driven
 # bumps; pnpm applies them to the whole graph exactly like npm overrides did.
+#
+# 🔴 IF THE PACKAGE IS ALSO ONE OF OUR OWN `dependencies`, SCOPE THE ENTRY TO THE PARENT THAT NEEDS
+# IT (`"parent>child": ^x.y.z`) — NEVER WRITE IT BARE. "the whole graph" above includes this repo's
+# OWN direct dependency, and the override OUTRANKS package.json. So a bare entry lets the manifest
+# be bumped while the lockfile keeps resolving the old version, and NOTHING turns red: CI and the
+# production Dockerfile both install `--frozen-lockfile`, i.e. from the lockfile, so the checks only
+# ever prove the OLD version installs cleanly.
+#
+# That is not hypothetical. A bare `nodemailer: ^9.1.1` here (added 2026-09-09 for the addressparser
+# advisory) silently swallowed Dependabot #4698's bump to ^10.0.2 — package.json said 10, the graph
+# ran 9.1.1, CI was green, and any manifest-only PR would have repeated it. #4717 fixed it by
+# scoping to the two parents that genuinely pin below the floor. The bump does not fail, it WAITS:
+# the real version change then lands inside whatever unrelated PR next regenerates the lockfile.
+#
+# Pinned by tests/pnpm-override-scope.test.ts (required `checks` job), which allows only the one
+# documented exception still outstanding. Do not "fix" a red run there by adding to its allowlist.
 overrides:
   "@babel/core": ^7.29.6
   "@opentelemetry/core": ^2.8.0
