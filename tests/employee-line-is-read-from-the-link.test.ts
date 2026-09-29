@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import {
+  EMPLOYEE_AREA_SELECT,
   EMPLOYEE_LINE_SELECT,
   EMPLOYEE_ORG_SELECT,
   resolveEmployeeAreaName,
@@ -36,6 +37,19 @@ const REPORT_IT = "app/api/report-it/submit/route.ts";
 const VACATION_OPTIONS = "src/lib/vacation/company-vacation-report-options.ts";
 const VACATION_REPORT = "src/lib/vacation/company-vacation-report.ts";
 const EMAIL = "src/lib/notifications/email.ts";
+/**
+ * The reads that show a person's AREA. `area_name` is the half-alive label — 145 of 198 rows carry
+ * one, so a read that takes it looks like it works, which is what kept these three out of the first
+ * pass. Against the link: 29 have a link and no label (a blank area on screen), 4 disagree with it
+ * (a STALE area on screen), and 0 have a label without a link — so preferring the link loses
+ * nothing. Two of the four still read "Fayoum-Beni Suef", the territory's name from before the
+ * split.
+ */
+const AREA_READS = [
+  "src/lib/recruitment/manager-cv-engagement.ts",
+  "src/lib/marketing-requests/request-report-service.ts",
+  "src/lib/direct-orders/rep-counters.ts",
+];
 
 function read(relative: string): string {
   return readFileSync(new URL(`../${relative}`, import.meta.url), "utf8");
@@ -122,6 +136,30 @@ export function runEmployeeLineIsReadFromTheLinkTests() {
     "a failed submitter lookup must be logged — the report is still filed, but the failure cannot " +
       "be silent again",
   );
+
+  // ── 3b. THE AREA READS TAKE THE LINK TOO ──────────────────────────────────────────────────
+  assert.ok(
+    EMPLOYEE_AREA_SELECT.includes("areas(name)"),
+    "the area fragment must embed the linked area",
+  );
+  for (const path of AREA_READS) {
+    const source = read(path);
+    assert.ok(
+      source.includes("EMPLOYEE_AREA_SELECT"),
+      `${path} must select the area through the shared fragment`,
+    );
+    assert.ok(
+      source.includes("resolveEmployeeAreaName"),
+      `${path} must resolve the area through the shared helper`,
+    );
+    // The tell that one was missed: reading the label straight off the row. `region_name` beside it
+    // is a different column on `employees` and stays.
+    assert.ok(
+      !/\bdir\.area_name\b|employee\?\.area_name|text\(requester, "area_name"\)/.test(source),
+      `${path} must not read employees.area_name directly — 29 people have no label and 4 have a ` +
+        "stale one, and neither shows up as an error",
+    );
+  }
 
   // ── 4. ONE RESOLVER, NOT FOUR ─────────────────────────────────────────────────────────────
   const email = read(EMAIL);

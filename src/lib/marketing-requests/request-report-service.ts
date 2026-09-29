@@ -1,5 +1,6 @@
 import type { AccessContext } from "@/lib/auth/permissions";
 import { assertPermission } from "@/lib/auth/permissions";
+import { EMPLOYEE_AREA_SELECT, resolveEmployeeAreaName } from "@/lib/employees/employee-org-labels";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import { effectiveMarketingInvoiceStatus } from "@/lib/marketing-requests/invoice-obligation";
@@ -132,7 +133,9 @@ export async function loadMarketingRequestFullReport(access: AccessContext): Pro
     supabase.from("marketing_request_approval_steps").select("*").in("request_id", requestIds),
     supabase.from("marketing_request_finance_requirements").select("*").in("request_id", requestIds),
     supabase.from("marketing_roi_request_facts").select("*").in("request_id", requestIds),
-    supabase.from("employees").select("hr_id, full_name, region_name, area_name, line_id"),
+    // The area from the `area_id` LINK — `employees.area_name` is a snapshot frozen at write time
+    // (29 rows have a link and no label, 4 disagree with it). See employee-org-labels.ts.
+    supabase.from("employees").select(`hr_id, full_name, region_name, line_id, ${EMPLOYEE_AREA_SELECT}`),
     lineIds.length > 0 ? supabase.from("lines").select("id, name").in("id", lineIds) : Promise.resolve({ data: [], error: null }),
     areaIds.length > 0 ? supabase.from("areas").select("id, name").in("id", areaIds) : Promise.resolve({ data: [], error: null }),
   ]);
@@ -365,7 +368,7 @@ export async function loadMarketingRequestFullReport(access: AccessContext): Pro
       requestTypeDescription: text(type, "description"),
       requestTypeName: text(type, "name"),
       requestTypeRequiresDescription: bool(type, "requires_description"),
-      requesterAreaName: text(requester, "area_name"),
+      requesterAreaName: resolveEmployeeAreaName(requester),
       requesterHrId: text(row, "requester_hr_id"),
       requesterName: nameOf(directory, row.requester_hr_id),
       requesterRegionName: text(requester, "region_name"),
