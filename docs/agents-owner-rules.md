@@ -3262,6 +3262,66 @@ The old native Home showed a read-only cache of the rep's own numbers **offline*
 signal, so that offline READ is gone. It is reversible in one file (`index.tsx`) if he asks. The
 offline **WORK** — the CRM outbox — is untouched.
 
+## The probation Day 30 / 60 / 75 emails — owner rulings, 2026-09-29
+
+**The rule.** They go to **Yasmeena Elsafory (`HR-009`, HR Generalist)** alone, with **Omar Gawish
+(`B-10`) on BCC** — his words: *"make probation module send the probation emails to yasmeena el
+safory only cc omar.anwar after 30 and 60 and 75 days"*, then *"to her only bccc omar.anwar"*. BCC,
+not CC, so hers is the only address the delivered mail shows.
+
+**What was there before.** Nothing. The sweep was unwired on 2026-08-02 (#1624) and its module
+deleted (#1626); the version that existed fanned out to ~8 stakeholders per milestone (CEO + HR + DM
++ NSM + SFE + the evaluator), which is what he cut. And Yasmeena had received **none** of the 334
+historical milestone deliveries — every one went to the CEO, the owner and the manager chain, and
+`HR-009` is absent from that table entirely.
+
+**Why a separate notification type.** The `probation` policy is `enabled = false` (his toggle,
+2026-07-19, reaffirmed 2026-08-13). It still governs the legacy per-manager probation reminders,
+which are wired to the 5-minute notification cron, so flipping it on to deliver three milestone
+emails would have restarted roughly 500 manager reminders a month. The milestones therefore carry
+`probation_milestone`, their own admin toggle. **An older memory reading "probation email stays OFF,
+do not re-enable" is about that policy, not these three.**
+
+**The catch-up: asked for, held, released — all on 2026-09-29.** *"backfill any missings to her
+now"*, then *"backfill to her only the current probations"*, then *"skip sending"* while he corrected
+her own address (`yasmeen.elsafory@` → `yasmeena.elsafory@satopharma.com`, 12:18 Cairo), then
+*"release the held probation milestones"*. A start-date constant held it in between and was REMOVED
+on release rather than moved back — a dormant second cutoff beside the 2026-07-17 fresh start would
+read as a live gate to whoever found it next. Released: **8 milestones, 6 people** — Mohamed Khaled,
+Omayma Wael, Hanan Safwat and Adel Srour (Day 30); Mahmoud Abdelreheem and Gannatallah Amer (Day 30
+and Day 60).
+
+**Due = crossed AND still on probation**, not a grace window. The retired fan-out fired only within
+7 days of crossing, because a catch-up there meant ~8 emails per milestone; with one recipient that
+trade runs backwards and the window silently drops a milestone HR never saw. Nothing fires past day
+90: a "Day 30 — early progress" notice for someone 150 days in is wrong information, not a late
+email.
+
+**Three defects this work uncovered, none of them in the new code.**
+
+1. `filterResolvedProbationCases` documented case-insensitive HR id comparison — and compared that
+   way — but FETCHED with an exact `.in()`. `probation_cases` holds the older cohort as `ai-0004`
+   where `employees` holds `AI-0004`, so the employee row came back empty, the filter had nothing to
+   filter on, and a **terminated** employee read as a live case. He would have been the first person
+   this sweep emailed, three times over. The CEO probation dashboard carried the same hole.
+2. The admin Email Notification Center is a client component that hand-copies the
+   `EmailNotificationType` union; adding a type to the source and not the copy fails only Typecheck,
+   a full CI cycle later. The two are now pinned together in the unit suite.
+3. Every `app/api` route must appear in `src/lib/security/access-registry.ts`; the new cron trigger
+   did not, and only the unit suite says so.
+
+**The address is resolved live** from `employees.work_email` at send time, so a mailbox correction
+needs no deploy. **Nobody else can reach the envelope:** both manager-CC enrichment paths fire only
+when the SUBJECT is the primary To, and the To here is always Yasmeena.
+
+**Left open, twice reported and not acted on:** 10 probation cases sit at day 102–152 still marked
+`active` with no decision recorded, and 4 people in the 30–90 day band have already left (three
+resigned, one terminated) yet still hold active cases.
+
+`src/lib/probation/intelligence/milestone-emails.ts`, pinned by
+`tests/probation-milestone-emails.test.ts`.
+
+
 ## `AGENTS.md` §4 Standing owner rules — as it stood before the 2026-09-12 condensation
 
 On 2026-09-12 `AGENTS.md` was cut to roughly half its size at the owner's request ("Load less of AGENTS.md"): every hook was reduced to its rule plus the one detail needed to obey it. This is that section's hook text **verbatim** from `origin/main` 3eea44aef, kept so that no measurement, date, count or diagnosis a condensed hook dropped is lost. Search it for the hook's wording. The accounts earlier in this file remain the fuller record.

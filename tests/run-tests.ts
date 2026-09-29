@@ -186,6 +186,7 @@ import { runProbationScoringTests } from "./probation-scoring.test.ts";
 import { runProbationReportTests } from "./probation-report.test.ts";
 import { runProbationDashboardTests } from "./probation-dashboard.test.ts";
 import { runProbationEmailsTests } from "./probation-emails.test.ts";
+import { runProbationMilestoneEmailsTests } from "./probation-milestone-emails.test.ts";
 import { runProbationCairoTodayConsistencyTests } from "./probation-cairo-today-consistency.test.ts";
 import { runProbationNotificationControlsTests } from "./probation-notification-controls.test.ts";
 import { runEmailRenderHarnessTests, runTokenRegistryConsistencyTests } from "./email-render-harness.test.ts";
@@ -2466,6 +2467,7 @@ await runTest("probation scoring + contradictions (P6 DM-avg, weights, provision
 await runTest("probation consolidated report (P7 milestones + progress + composition)", runProbationReportTests);
 await runTest("probation CEO dashboard (P8 risk classification + exception flags + rollup)", runProbationDashboardTests);
 await runTest("probation emails (P9 template registration + confirmed recipients + dedup)", runProbationEmailsTests);
+await runTest("probation milestone emails (owner 2026-09-29: Day 30/60/75 to Yasmeena Elsafory alone, CC Omar Gawish, on its own notification type)", runProbationMilestoneEmailsTests);
 await runTest("probation Cairo-today consistency (dashboard/report/emails share one Cairo-aware clock, not silent UTC default)", runProbationCairoTodayConsistencyTests);
 await runTest("probation notification controls (MOD-3 daily cap + MOD-4 pre-send audit)", runProbationNotificationControlsTests);
 await runTest("email render harness (functional contextVariables → interpolate + all-module token coverage)", runEmailRenderHarnessTests);

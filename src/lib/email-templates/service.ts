@@ -499,9 +499,14 @@ const defaultRules: Record<EmailTemplateKey, EmailTemplateRecipientRules> = {
   // (src/lib/probation/intelligence/probation-emails.ts).
   probation_dv_snapshot: emptyRules(["ceo", "direct_manager", "national_sales_manager"], ["hr"]),
   probation_weekly_digest: emptyRules(["direct_manager", "national_sales_manager"], ["ceo", "hr"]),
-  probation_day30: emptyRules(["ceo", "direct_manager", "national_sales_manager"], ["hr"]),
-  probation_day60: emptyRules(["ceo", "direct_manager", "national_sales_manager"], ["hr"]),
-  probation_day75: emptyRules(["ceo", "direct_manager", "national_sales_manager"], ["hr"]),
+  // The three milestone templates carry NO role routing on purpose. Their recipients are fixed in
+  // code (owner, 2026-09-29: To Yasmeena Elsafory, BCC Omar Gawish) by
+  // src/lib/probation/intelligence/milestone-emails.ts, which is the single source of that routing.
+  // Leaving the old CEO/DM/NSM/HR defaults here made the Email Control Center claim managers still
+  // receive them. Do not put roles back.
+  probation_day30: emptyRules(),
+  probation_day60: emptyRules(),
+  probation_day75: emptyRules(),
   resignation_workflow: emptyRules(["manager_chain"], ["hr"]),
   user_created: emptyRules(["employee"], ["direct_manager"]),
 };
