@@ -59,9 +59,13 @@ export function EmployeeHiringDocumentsCard({ hrId }: Props) {
   // A promise chain rather than `void load()`: calling an async loader straight from an effect body
   // trips react-hooks/set-state-in-effect, which is an ERROR in this repo. Same shape as
   // EmployeeCvManager.
+  //
+  // AND NOTHING RESETS `loading` HERE. It starts true and is only ever turned off, in the
+  // `.finally()` — a `setLoading(true)` at the top of an effect body is that same lint error, and
+  // it would buy nothing: the details panel mounts this with `key={docs-<hrId>}`, so picking a
+  // different employee remounts the component and every piece of state starts fresh anyway.
   useEffect(() => {
     let active = true;
-    setLoading(true);
 
     fetch(`/api/hiring-documents?hrId=${encodeURIComponent(hrId)}`, { cache: "no-store" })
       .then(async (response) => {
