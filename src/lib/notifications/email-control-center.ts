@@ -99,6 +99,7 @@ const ROLE_RECIPIENTS_MODULE: Record<NotificationRoleKey, string> = {
 
 const EMAIL_NOTIFICATIONS_MODULE: Record<EmailNotificationType, string> = {
   probation: "Probation",
+  probation_milestone: "Probation",
   contract_renewal: "Contracts",
   birthday: "Birthdays",
   offer: "Recruitment",

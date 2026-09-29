@@ -21,6 +21,7 @@ import { runExcuseSlaDaily } from "@/lib/excuses/service";
 import { runOutstationDeparturePhotoReminders, runOutstationSlaDaily } from "@/lib/outstation/service";
 import { runCrmAccountSetupReminder } from "@/lib/crm/account-setup-reminder";
 import { runDeadTelegramLinkAlert } from "@/lib/notifications/dead-telegram-link-alert";
+import { processProbationMilestoneEmails } from "@/lib/probation/intelligence/milestone-emails";
 import { runResignationSlaDaily } from "@/lib/resignations/service";
 import { runWeeklyPlansDriftCheck } from "@/lib/weekly-planning/drift-check";
 import { runExcuseDriftCheck } from "@/lib/excuses/drift-check";
@@ -124,6 +125,8 @@ async function runDailyNotifications(request: Request) {
     crmAccountSetupReminder,
     // Position 29, added 2026-09-28. Appended for the same reason as 26, 27 and 28.
     deadTelegramLinkAlert,
+    // Position 30, added 2026-09-29. Appended for the same reason as 26-29.
+    probationMilestoneEmails,
   ] = await Promise.all([
     runBirthdayNotifications(request).catch(
       onJobFailure("daily-birthday", (message) =>
@@ -325,6 +328,16 @@ async function runDailyNotifications(request: Request) {
         skippedReason: message,
       })),
     ),
+    // Probation Day 30 / 60 / 75 milestone emails (owner, 2026-09-29): To Yasmeena Elsafory, with
+    // Omar Gawish on BCC. On the DAILY cron rather than the 5-minute one the retired fan-out used — a
+    // milestone is a calendar event, and one idempotent pass a day is all it needs.
+    processProbationMilestoneEmails().catch(
+      onJobFailure("daily-probation-milestone-emails", (message) => ({
+        scanned: 0,
+        sent: 0,
+        error: message,
+      })),
+    ),
   ]);
   const [birthdays, contractRenewals, holidayConfirmation] = await Promise.all([
     birthdayResponse instanceof Response ? birthdayResponse.json() : birthdayResponse,
@@ -336,14 +349,15 @@ async function runDailyNotifications(request: Request) {
   // the dead-man's-switch ping (which only proves the route executed) — is the signal to alert on:
   // `event="cron_run_summary" job="notifications/daily" failedCount>0`.
   // Hand-maintained: bump this whenever a sub-job is added above, or the run summary silently
-  // under-reports (29 since the dead-Telegram-link alert was added 2026-09-28; 28 since the CRM
+  // under-reports (30 since the probation Day 30/60/75 milestone emails were added 2026-09-29;
+  // 29 since the dead-Telegram-link alert was added 2026-09-28; 28 since the CRM
   // account-setup reminder the same day; 27 since the
   // Needs You weekly email, the same day as the
   // daily digest below it; 26 since that daily digest; 25 since the
   // inactive-colleague digest moved here from the 5-minute cron on 2026-09-26; 24 since the
   // milestones due-notice pump was added 2026-09-23; 23 before that, since the FWC deductions
   // auto-sync was retired in the C6 cutover on 2026-08-30).
-  const totalJobs = 29;
+  const totalJobs = 30;
   if (failures.length > 0) {
     logError(
       `Daily notification run completed with ${failures.length} of ${totalJobs} sub-job(s) FAILED: ${failures.map((f) => f.job).join(", ")}`,
@@ -397,6 +411,7 @@ async function runDailyNotifications(request: Request) {
     notificationRetention,
     outstationGeocodeWarmup,
     outstationSla,
+    probationMilestoneEmails,
     outstationDeparturePhotoReminders,
     rateLimitPrune,
     errorEventsPrune,

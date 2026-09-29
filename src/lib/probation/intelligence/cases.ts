@@ -138,11 +138,24 @@ export async function filterResolvedProbationCases<T extends { employee_hr_id: s
   );
   if (hrIds.length === 0) return rows;
 
+  // The COMPARISONS below lower-case both sides, but `.in()` does not — and HR_IDs are mixed case
+  // in this database on both sides of this join. `probation_cases` holds the older cohort as
+  // `ai-0004` while `employees` holds `AI-0004`, so the exact-match fetch returned no row for them
+  // and this function, which then has nothing to filter ON, quietly passed a TERMINATED employee
+  // through as a live case. Measured on production 2026-09-29: 1 of the 10 cases in the 30-90 day
+  // band missed its employee row this way, and it was the terminated one.
+  //
+  // Widening the fetch to the case variants is what makes the documented case-insensitive
+  // comparison actually true. The lower-cased sets below still do the matching.
+  const hrIdVariants = Array.from(
+    new Set(hrIds.flatMap((id) => [id, id.toLowerCase(), id.toUpperCase()])),
+  );
+
   try {
     const supabase = getSupabaseAdmin();
     const [empRes, probRes] = await Promise.all([
-      supabase.from("employees").select("hr_id, employment_status").in("hr_id", hrIds),
-      supabase.from("employee_probation").select("employee_hr_id, status").in("employee_hr_id", hrIds),
+      supabase.from("employees").select("hr_id, employment_status").in("hr_id", hrIdVariants),
+      supabase.from("employee_probation").select("employee_hr_id, status").in("employee_hr_id", hrIdVariants),
     ]);
     // Fail open: never hide data (or crash) on a monitoring-query error.
     if (empRes.error || probRes.error) return rows;

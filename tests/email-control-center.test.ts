@@ -12,8 +12,25 @@ export function runEmailControlCenterTests() {
   const marketingServiceSource = readFileSync("src/lib/marketing-requests/service.ts", "utf8");
 
   assert.equal(notificationRoleKeys.length, 24, "expected 24 role-recipients keys (12 original + marketing_sla_reminder + resignation_workflow_alert + employee_import_alert + payroll_workflow_alert + marketing_invoice_overdue_alert + distributor_upload_overdue_alert + retention_risk_alert + crm_account_setup_alert + sos_mapping_guard_alert + new_hire_mailbox_alert + service_milestone_notice + activity_inactivity_digest)");
-  assert.equal(emailNotificationTypes.length, 8, "expected 8 email-notification policy types");
+  assert.equal(emailNotificationTypes.length, 9, "expected 9 email-notification policy types (8 original + probation_milestone, added 2026-09-29 so the Day 30/60/75 emails have their own toggle)");
   assert.ok(emailTemplateKeys.length > 0, "expected at least one email template key");
+
+  // The admin Email Notification Center is a CLIENT component and src/lib/notifications/email.ts is
+  // server-side, so it hand-copies this union. Adding `probation_milestone` to the source and not to
+  // the copy on 2026-09-29 turned the required `checks` job red on Typecheck — the only thing that
+  // sees the drift, and only after a full CI cycle. Pin the two together so it fails here instead,
+  // in seconds, with an instruction.
+  const centerSource = readFileSync("src/components/admin/email-notification-center.tsx", "utf8");
+  const centerUnion = (centerSource.match(/type EmailNotificationType =([\s\S]*?);/)?.[1] ?? "")
+    .split("|")
+    .map((part) => part.trim().replace(/^"|"$/g, ""))
+    .filter(Boolean)
+    .sort();
+  assert.deepEqual(
+    centerUnion,
+    [...emailNotificationTypes].sort(),
+    "src/components/admin/email-notification-center.tsx re-declares EmailNotificationType — add the new type to that copy too, or the admin page fails to typecheck",
+  );
 
   // Every role-recipients key and email-notification type must have an explicit module-mapping
   // entry in the aggregator, so it lands in a real dashboard group instead of "undefined". Both

@@ -25,6 +25,12 @@ import { emailKeepsLineBreaks } from "@/lib/notifications/attendance-digest-chan
 
 export const emailNotificationTypes = [
   "probation",
+  // The Day 30/60/75 milestone emails ONLY (owner, 2026-09-29: To Yasmeena Elsafory, CC Omar
+  // Gawish, BCC). Deliberately its OWN type rather than riding "probation": that policy is off by the
+  // owner's 2026-07-19 decision and still governs the legacy per-manager probation reminders, so
+  // turning the milestones on must not turn those back on with them. See
+  // src/lib/probation/intelligence/milestone-emails.ts.
+  "probation_milestone",
   "contract_renewal",
   "birthday",
   "offer",
@@ -273,6 +279,28 @@ export const defaultEmailNotificationPolicies: EmailNotificationPolicy[] = [
       title: "{title}",
     },
     type: "probation",
+  },
+  {
+    description: "Probation Day 30 / 60 / 75 milestone emails — To Yasmeena Elsafory, BCC Omar Gawish.",
+    enabled: true,
+    // The recipients are fixed in code (owner, 2026-09-29), so the shared HR inbox is NOT added and
+    // the mode is "candidate" — the mode that honours the caller's own explicit To address instead
+    // of resolving a manager chain. Nothing here widens the recipient list.
+    includeHrInbox: false,
+    label: "Probation milestones",
+    recipientModes: ["candidate"],
+    recipientMode: "candidate",
+    targetLines: [],
+    targetTitles: [],
+    template: {
+      bodyText: "{summary}",
+      closingText: "Open the live report to review this milestone.",
+      greeting: systemNotificationEmailText.teamGreeting,
+      previewText: "Probation milestone update from Phoenix Workforce.",
+      subject: "{subject}",
+      title: "{title}",
+    },
+    type: "probation_milestone",
   },
   {
     description: "Contract renewal workflow alerts routed to the manager chain.",
@@ -1007,6 +1035,22 @@ export function buildEmailNotificationPreview(type: EmailNotificationType, polic
       subject: "Phoenix Probation Review Updated - Mariam Nabil",
       summary: "Probation review for Mariam Nabil is now manager feedback.",
       title: "Probation Review Updated",
+      tone: "warning",
+    },
+    probation_milestone: {
+      ctaHref: "/probation",
+      ctaLabel: "Open live report",
+      employeeHrId: "B-001",
+      metrics: [
+        { label: "Employee", value: "Mariam Nabil (B-001)" },
+        { label: "Milestone", value: "Day 60" },
+        { label: "Days remaining", value: "30" },
+      ],
+      notificationType: "probation_milestone",
+      recipientMode: "candidate",
+      subject: "Probation Day 60 - Mariam Nabil (plan to Day 75)",
+      summary: "Mariam Nabil reached Day 60 - completion planning.",
+      title: "Probation Day 60 - Mariam Nabil",
       tone: "warning",
     },
     resignation: {

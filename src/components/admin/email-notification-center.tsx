@@ -15,8 +15,14 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
+// Hand-kept copy of `emailNotificationTypes` in src/lib/notifications/email.ts — this is a client
+// component and that module is server-side. The copy is NOT free: adding `probation_milestone`
+// there on 2026-09-29 and not here turned the required `checks` job red on Typecheck alone.
+// tests/email-control-center.test.ts now pins the two lists to the same members, so the next
+// addition fails in the unit suite with a message that says what to do.
 type EmailNotificationType =
   | "probation"
+  | "probation_milestone"
   | "contract_renewal"
   | "birthday"
   | "offer"
