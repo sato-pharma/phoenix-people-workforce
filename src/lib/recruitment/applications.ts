@@ -30,6 +30,7 @@ import {
   type CandidateDbRow,
 } from "@/lib/recruitment/db";
 import { assertCanDeleteRecruitment, canSeeApplication } from "@/lib/recruitment/access";
+import { SEAT_HIRE_STAGES } from "@/lib/recruitment/seat-hire-candidates";
 import {
   assertOfferAcceptedForHire,
   compareHireTermsToOffer,
@@ -168,6 +169,62 @@ async function loadApplicationRow(id: string): Promise<Application> {
   if (error) throw error;
   if (!data) throw new Error("Application not found.");
   return mapApplication(data as ApplicationDbRow);
+}
+
+/**
+ * The applications an OPEN SEAT could be filled from — the narrow read behind the Add Employee
+ * candidate picker.
+ *
+ * It exists because `listApplications` below loads EVERY application, every one of their
+ * candidates and every requisition, and the picker then throws away all but a handful at the
+ * three hireable stages. Correct, but a whole pipeline's worth of database work to fill one
+ * dropdown on a form that is opened many times a day.
+ *
+ * VISIBILITY IS IDENTICAL, and that is the part to be careful about: the same scoped
+ * `listRequisitions`, the same `canSeeApplication` against the same map. The stage filter and
+ * the converted-null filter are the ONLY differences, and both narrow — this can never show a
+ * viewer an application `listApplications` would have hidden. The candidate read is narrowed to
+ * the columns the picker prints rather than `*`, and still batched (see db-batch.ts for why an
+ * unbatched .in() eventually fails).
+ */
+export async function listSeatHireApplications(
+  access: AccessContext,
+): Promise<ApplicationWithContext[]> {
+  const supabase = recruitmentDb();
+  const [{ data, error }, requisitions] = await Promise.all([
+    supabase
+      .from("ats_applications")
+      .select("*")
+      .in("stage", [...SEAT_HIRE_STAGES])
+      // Already an employee: the recruitment hub stops offering one at this point and so must
+      // the picker, or the same person is hired twice into two seats.
+      .is("converted_employee_hr_id", null)
+      .order("created_at", { ascending: false }),
+    listRequisitions(access),
+  ]);
+  if (error) throw error;
+
+  const requisitionsById = new Map(requisitions.map((requisition) => [requisition.id, requisition]));
+  const visible = ((data ?? []) as ApplicationDbRow[])
+    .map(mapApplication)
+    .filter((application) => canSeeApplication(access, application, requisitionsById));
+
+  const candidateIds = Array.from(new Set(visible.map((application) => application.candidateId)));
+  const candidatesById = new Map<string, Candidate>();
+  const candidateRows = await fetchRowsInBatches<CandidateDbRow>(candidateIds, (batch) =>
+    supabase.from("ats_candidates").select("*").in("id", batch),
+  );
+  for (const row of candidateRows) {
+    const candidate = mapCandidate(row);
+    candidatesById.set(candidate.id, candidate);
+  }
+
+  return visible.map((application) => ({
+    ...application,
+    candidate: candidatesById.get(application.candidateId) ?? null,
+    managerNotified: null,
+    requisition: requisitionsById.get(application.requisitionId) ?? null,
+  }));
 }
 
 export async function listApplications(access: AccessContext): Promise<ApplicationWithContext[]> {
