@@ -44,28 +44,50 @@ export type HolidayOverrideInput = {
 };
 
 /**
- * Overrides whose official date OR observed range overlaps the requested
- * range — a shift can move a holiday's real off-day(s) in or out of a window
- * relative to its official date, so both ends must be checked.
+ * THE WHOLE TABLE, CACHED — this read used to be the single most-called query in the system.
+ *
+ * getConfirmedNationalHolidays() is the one chokepoint every calendar, plan, attendance, vacation
+ * and compliance surface goes through, and it is called ONE MONTH AT A TIME, so a nine-month
+ * range is nine calls and a per-employee sweep multiplies that again. Its raw Google/company half
+ * has been cached in national-holidays.ts since it was written (holidayCache, 10 min) — but this
+ * half, the database half, was not, so every one of those calls still crossed to Supabase even on
+ * a cache hit. Measured on production 2026-09-29: **199,148 requests in 24 hours**, 16% of all
+ * Supabase traffic on the instance and the single busiest path, to read a table holding **2 rows**
+ * that had not changed in six weeks.
+ *
+ * So the whole table is loaded once and range-filtered in memory. It is a tiny admin-confirmation
+ * table — one row per postponed national holiday per year — and one entry serves every caller and
+ * every month, where a per-range query shared nothing.
+ *
+ * The TTL matches holidayCache's deliberately: both halves of getConfirmedNationalHolidays now go
+ * stale on the same clock, so a confirmation cannot appear in one half and not the other. Writes
+ * here drop the entry immediately (see bulkUpsertHolidayOverrides), so the TTL only bounds how
+ * long ANOTHER instance can serve a stale copy — the same window the Google half already had.
  */
-export async function listHolidayOverridesOverlappingRange(dateFromIso: string, dateToIso: string): Promise<HolidayOverride[]> {
-  if (!isIsoDate(dateFromIso) || !isIsoDate(dateToIso)) return [];
+const HOLIDAY_OVERRIDE_CACHE_TTL_MS = 10 * 60 * 1000;
+let holidayOverrideCache: { expiresAt: number; rows: readonly HolidayOverride[] } | null = null;
+
+/** Drop the cached table. Called on every write; exported so tests can start from a clean slate. */
+export function invalidateHolidayOverrideCache(): void {
+  holidayOverrideCache = null;
+}
+
+async function loadAllHolidayOverrides(): Promise<readonly HolidayOverride[]> {
+  if (holidayOverrideCache && holidayOverrideCache.expiresAt > Date.now()) return holidayOverrideCache.rows;
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("attendance_holiday_overrides")
-    .select("id,official_date,observed_date,observed_end_date,holiday_name,notes")
-    .or(
-      `and(official_date.gte.${dateFromIso},official_date.lte.${dateToIso}),and(observed_date.lte.${dateToIso},observed_end_date.gte.${dateFromIso})`,
-    );
+    .select("id,official_date,observed_date,observed_end_date,holiday_name,notes");
+  // Never cache a failure: a transient read error must not pin an empty calendar for 10 minutes.
   if (error) throw error;
-  return ((data ?? []) as Array<{
+  const rows = ((data ?? []) as Array<{
     id: number;
     official_date: string;
     observed_date: string;
     observed_end_date: string | null;
     holiday_name: string;
     notes: string | null;
-  }>).map((row) => ({
+  }>).map((row) => Object.freeze({
     holidayName: row.holiday_name,
     id: row.id,
     notes: row.notes,
@@ -73,6 +95,43 @@ export async function listHolidayOverridesOverlappingRange(dateFromIso: string, 
     observedEndDate: row.observed_end_date ?? row.observed_date,
     officialDate: row.official_date,
   }));
+  // Frozen because the array is shared by every caller for the life of the entry — a consumer
+  // that mutated a row in place would otherwise poison the cache for everyone.
+  holidayOverrideCache = { expiresAt: Date.now() + HOLIDAY_OVERRIDE_CACHE_TTL_MS, rows: Object.freeze(rows) };
+  return holidayOverrideCache.rows;
+}
+
+/**
+ * Does this override touch [dateFromIso, dateToIso]?
+ *
+ * Byte-for-byte the predicate the SQL used to apply, kept pure so the parity is testable with no
+ * database:
+ *   or( and(official_date >= from, official_date <= to),
+ *       and(observed_date <= to, observed_end_date >= from) )
+ *
+ * ISO yyyy-mm-dd strings compare correctly with `<`/`>`, which is why this needs no date parsing.
+ * `observed_end_date` is NOT NULL in the schema, so the `?? observedDate` fallback applied when
+ * the row is mapped is defensive only and cannot make the two forms disagree.
+ */
+export function holidayOverrideOverlapsRange(
+  override: Pick<HolidayOverride, "officialDate" | "observedDate" | "observedEndDate">,
+  dateFromIso: string,
+  dateToIso: string,
+): boolean {
+  const officialInRange = override.officialDate >= dateFromIso && override.officialDate <= dateToIso;
+  const observedOverlaps = override.observedDate <= dateToIso && override.observedEndDate >= dateFromIso;
+  return officialInRange || observedOverlaps;
+}
+
+/**
+ * Overrides whose official date OR observed range overlaps the requested
+ * range — a shift can move a holiday's real off-day(s) in or out of a window
+ * relative to its official date, so both ends must be checked.
+ */
+export async function listHolidayOverridesOverlappingRange(dateFromIso: string, dateToIso: string): Promise<HolidayOverride[]> {
+  if (!isIsoDate(dateFromIso) || !isIsoDate(dateToIso)) return [];
+  const all = await loadAllHolidayOverrides();
+  return all.filter((override) => holidayOverrideOverlapsRange(override, dateFromIso, dateToIso));
 }
 
 export async function listHolidayOverridesForYear(year: number): Promise<HolidayOverride[]> {
@@ -143,6 +202,10 @@ export async function bulkUpsertHolidayOverrides(entries: HolidayOverrideInput[]
       { onConflict: "official_date" },
     );
   if (error) throw error;
+
+  // Before the audit log, not after: a confirmation the admin just saved must never be read back
+  // from a stale cache on this instance, and writeAuditLog is another round trip that could throw.
+  invalidateHolidayOverrideCache();
 
   await writeAuditLog({
     actorLoginId: actorHrId ?? "system",
