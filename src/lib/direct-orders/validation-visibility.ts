@@ -53,3 +53,36 @@ export function canViewDirectOrderEvidenceAiNote(
   if (!viewer) return false;
   return viewer !== canonicalHrIdKey(request.requesterHrId ?? "");
 }
+
+/**
+ * May this viewer see the "not GPS field-validated" line about the order's venue?
+ *
+ * APPROVER-ONLY, NEVER THE PORTAL — owner's ruling, 2026-09-29, the same day he asked for the line
+ * at all: *"make the not-field-validated line approver-only, not the portal."* So it is withheld on
+ * two counts, and either one is enough:
+ *
+ *   • the EMPLOYEE PORTAL shell, whoever is in it. The portal is the field's own world — every rep
+ *     and every portal-mode manager is redirected into it, and the admin twin bounces them back —
+ *     so nav mode is exactly the line between the two audiences, not a proxy for one.
+ *   • the order's OWN REQUESTER, even in the admin shell. He is not an approver of his own order,
+ *     and a sentence saying nobody ever captured the venue he raised it on reads as a verdict on
+ *     him. Same reasoning as the AI sign-check note above (owner rule, 2026-08-08), reached again.
+ *
+ * The line judges the EVIDENCE, not the work, and it is for the person deciding. It changes no
+ * number, no status and no wording anywhere the requester can see — the venue's own validation
+ * state, its photo and its pin all stay on his tracking view exactly as before.
+ *
+ * Gated in the SERVICE as well as the screen: withheld means the fact never enters the portal's
+ * payload at all, rather than being rendered and hidden.
+ */
+export function canViewDirectOrderFieldEvidenceGap(input: {
+  viewerHrId: string | null | undefined;
+  requesterHrId: string | null | undefined;
+  /** `resolveNavigationMode(access)` — "employee-portal" is the rep's shell. */
+  navigationMode: string;
+}): boolean {
+  if (input.navigationMode === "employee-portal") return false;
+  const viewer = canonicalHrIdKey(input.viewerHrId ?? "");
+  if (!viewer) return false;
+  return viewer !== canonicalHrIdKey(input.requesterHrId ?? "");
+}

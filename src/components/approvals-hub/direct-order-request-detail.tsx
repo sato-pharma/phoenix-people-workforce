@@ -35,6 +35,7 @@ import { PharmacyLicenseEvidence } from "@/components/venues/pharmacy-license-ev
 import { DirectOrderInvoiceEvidence } from "@/components/direct-orders/direct-order-invoice-evidence";
 import { AttachDirectOrderInvoice } from "@/components/direct-orders/attach-direct-order-invoice";
 import { ValidatedEvidenceLink } from "@/components/validation/validated-evidence-link";
+import { NotFieldValidatedLine } from "@/components/validation/not-field-validated-line";
 import { directOrderInvoiceSlotLabel } from "@/lib/direct-orders/invoice-evidence";
 import { pharmacyLicenseVerdictLabel } from "@/lib/venues/pharmacy-license";
 
@@ -162,6 +163,7 @@ export function DirectOrderRequestDetail({
     missingManagementLine,
     pharmacyEvidence,
     pharmacyValidation = null,
+    pharmacyFieldEvidenceGap = null,
     possibleDistributorMatches,
     autoLinkRefusal,
     productPharmacyPrice,
@@ -314,6 +316,13 @@ export function DirectOrderRequestDetail({
           venueNoun="pharmacy"
         />
       ) : null}
+
+      {/* And directly under it, what that stamp does NOT say (owner, 2026-09-29): nobody has stood
+          in front of this venue with a phone. Not exclusive with the stamp above — a venue can be
+          validated by invoice, or off the distributor catalogue, and still hold no live photo and no
+          GPS fix. Placed ABOVE the invoice panel on purpose: the invoice is the thing being
+          mistaken for venue evidence, so the sentence has to arrive first. */}
+      {pharmacyFieldEvidenceGap ? <NotFieldValidatedLine gap={pharmacyFieldEvidenceGap} /> : null}
 
       {/* Straight under the header, full width: for a new pharmacy this invoice IS what the SFE
           Manager decides on, so it is the first thing on the order, not a thumbnail further down. */}

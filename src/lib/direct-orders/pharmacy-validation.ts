@@ -1274,6 +1274,70 @@ export async function getDirectOrderPharmacyValidationForRequest(
 }
 
 /**
+ * Has anyone ever stood in front of this venue with a phone — and if not, why not.
+ *
+ * Asked of the WHOLE venue, deliberately, not of the one row the approval screen already loads.
+ * `getDirectOrderPharmacyValidationForRequest` returns the MOST RECENT claim, so a venue captured in
+ * the field in July and re-filed on an invoice in September would come back as invoice-only, and the
+ * screen would tell an approver nobody had captured a venue somebody had. A false "no field
+ * evidence" is the one answer this line must never give.
+ *
+ * Small by construction — the busiest venue in production holds a handful of claims — and the
+ * `.limit()` is the AGENTS.md rule that an unbounded PostgREST select stops at 1000 with no marker,
+ * not a real expectation of reaching it.
+ */
+export async function loadDirectOrderVenueFieldEvidence(
+  pharmacyId: string,
+): Promise<{ hasFieldCapture: boolean; validatedByInvoice: boolean; entrySource: string | null }> {
+  const empty = { hasFieldCapture: false, validatedByInvoice: false, entrySource: null };
+  if (!pharmacyId) return empty;
+  const supabase = getSupabaseAdmin();
+  const [{ data, error }, { data: venueRow }] = await Promise.all([
+    supabase
+      .from("direct_order_pharmacy_validations")
+      .select("validation_route, status, storage_path, captured_latitude, captured_longitude")
+      .eq("pharmacy_id", pharmacyId)
+      .limit(200),
+    // The RAW entry source. `DirectOrderPharmacy.entrySource` cannot answer this: its mapper folds
+    // `marketing_transfer` into `catalogue`, which would tell an approver a hand-captured transfer
+    // came off a distributor list. Read here rather than widening that mapper's two-value type,
+    // which several other screens already read.
+    supabase.from("direct_order_pharmacies").select("entry_source").eq("id", pharmacyId).maybeSingle(),
+  ]);
+  const entrySource = (venueRow as { entry_source?: string | null } | null)?.entry_source ?? null;
+  // Never throws: this decorates an approval screen, and an approver must not lose the whole order
+  // because a decoration could not be read. Absent evidence is what `empty` already says.
+  if (error) return { ...empty, entrySource };
+
+  const rows = (data ?? []) as Array<{
+    validation_route?: string | null;
+    status?: string | null;
+    storage_path?: string | null;
+    captured_latitude?: number | null;
+    captured_longitude?: number | null;
+  }>;
+  return {
+    entrySource,
+    // The CAPTURE is the evidence, not the decision — a marketing transfer arrives with a PENDING
+    // field row already holding the rep's photo and pin. A rejected one is the desk saying the
+    // capture did not stand, so it proves nothing.
+    hasFieldCapture: rows.some(
+      (row) =>
+        normalizeDirectOrderValidationRoute(row.validation_route) === "field" &&
+        String(row.status ?? "") !== "rejected" &&
+        Boolean(String(row.storage_path ?? "").trim()) &&
+        row.captured_latitude != null &&
+        row.captured_longitude != null,
+    ),
+    validatedByInvoice: rows.some(
+      (row) =>
+        normalizeDirectOrderValidationRoute(row.validation_route) === "invoice" &&
+        (String(row.status ?? "") === "approved_new" || String(row.status ?? "") === "matched_existing"),
+    ),
+  };
+}
+
+/**
  * How many of this venue's distributor codes the MASTER DATABASE actually agrees with.
  *
  * Deliberately not `count(*)` on the link table. A link row is something Phoenix wrote about itself;
