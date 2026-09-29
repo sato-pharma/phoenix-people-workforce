@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
+import { readFile } from "node:fs/promises";
 
 import {
   ACHIEVEMENT_CACHE_MAX_BYTES,
@@ -273,4 +274,53 @@ export async function runSalesVsTargetCacheTests() {
     null,
     "a payload over the ceiling must return null and never reach the data cache",
   );
+
+  // 17. NO WIDE CALL SURVIVES ANYWHERE IN loadAchievementRange — the 8 s timeout regression.
+  //
+  //     PostgREST runs as `authenticator`, statement_timeout 8 s. A floor-anchored range takes
+  //     ~4.7 s warm and grows by a month every month, so a wide call does not fail occasionally,
+  //     it fails on schedule: 310 of 1,355 calls to phx_sales_vs_target_range returned 500 in 24h
+  //     of production edge logs (2026-09-29), every one of them a wide read, and every one a
+  //     failed Sales vs Target render for whoever asked for it.
+  //
+  //     The cached path was already per-month. The null-token fallback was not — it answered a
+  //     failed freshness read by making the single most expensive call available, at exactly the
+  //     moment the system was already struggling. Both paths now fan out a month at a time.
+  //
+  //     Asserted against the SOURCE because the branch IS the defect: a behavioural test that
+  //     stubbed the RPC would still pass if someone reinstated `(from, to)` behind a condition.
+  //     Verified RED by restoring the old `if (!token) return loadAchievementRangeUncached(from,
+  //     to);` line — this assertion fires on it.
+  const vsTargetSource = await readFile(
+    new URL("../src/lib/sales/vs-target.ts", import.meta.url),
+    "utf8",
+  );
+  const rangeAt = vsTargetSource.indexOf("export async function loadAchievementRange(");
+  assert.notEqual(
+    rangeAt,
+    -1,
+    "loadAchievementRange must still exist — this pin cannot silently stop checking anything",
+  );
+  const rangeBody = vsTargetSource.slice(rangeAt);
+  assert.ok(
+    !/loadAchievementRangeUncached\(\s*from\s*,\s*to\s*\)/.test(rangeBody),
+    "loadAchievementRange must NEVER call loadAchievementRangeUncached(from, to) — a whole-range "
+      + "RPC crosses the 8 s authenticator statement_timeout and 500s. Fan out per month instead.",
+  );
+  // The positive control: without this, the assertion above would also pass on an empty slice, a
+  // rename, or the call having been deleted outright.
+  assert.ok(
+    /loadAchievementRangeUncached\(\s*period\s*,\s*period\s*\)/.test(rangeBody),
+    "the null-token fallback must read ONE month per call: loadAchievementRangeUncached(period, period)",
+  );
+
+  // 18. Every window the range expands to is exactly ONE month — for the nine-month
+  //     floor-anchored read four surfaces use, and past the 24-month clamp.
+  const ninePeriods = achievementPeriodsInRange("2026-01", "2026-09");
+  assert.equal(ninePeriods.length, 9, "2026-01..2026-09 must expand to nine single-month windows");
+  const clamped = achievementPeriodsInRange("2026-01", "2099-12");
+  assert.equal(clamped.length, 24, "the fan-out must stay clamped at ACHIEVEMENT_MAX_MONTHS");
+  for (const period of [...ninePeriods, ...clamped]) {
+    assert.match(period, /^\d{4}-\d{2}$/, "every fetch window must be a single YYYY-MM month");
+  }
 }
