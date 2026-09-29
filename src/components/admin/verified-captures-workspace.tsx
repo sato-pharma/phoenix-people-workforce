@@ -155,9 +155,18 @@ function PhotoTrustBlock({ trust }: { trust: CaptureTrustAssessment }) {
     agrees: { ink: "text-slate-700", text: "Photo taken at the captured location" },
     disagrees: { ink: "text-rose-700", text: "Photo not taken at the captured location" },
     drifted: { ink: "text-amber-700", text: "Photo taken away from the captured location" },
-    unmeasured: { ink: "text-slate-500", text: "Photo carries no location of its own - not measured" },
+    unmeasured: { ink: "text-slate-500", text: "Captured before the camera took its own reading (29 Sep 2026)" },
   };
-  const { ink, text } = wording[trust.verdict];
+  const { ink } = wording[trust.verdict];
+  // An unmeasured capture says WHY, because “not measured” alone makes a 2026-07 row look like a
+  // camera that just failed. Both wordings are neutral and neither is a finding: one is a fact
+  // about Phoenix (the feature did not exist yet), the other a fact about that handset.
+  const text =
+    trust.verdict !== "unmeasured"
+      ? wording[trust.verdict].text
+      : trust.unmeasuredReason === "no_position_recorded"
+        ? "No position was recorded with this photo"
+        : wording.unmeasured.text;
   const metres = trust.distanceMeters === null
     ? null
     : trust.distanceMeters < 1000

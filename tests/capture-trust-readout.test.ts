@@ -95,9 +95,21 @@ function runRenderTests() {
     /disagrees: \{ ink: "text-rose-700"/.test(workspace),
     "only a positive contradiction is rendered as one",
   );
+  // An unmeasured capture must say WHY, in one of two neutral ways. "Not measured" on its own
+  // makes a 2026-07 row — taken before the feature existed — look like a camera that just failed.
   assert.ok(
-    workspace.includes("not measured"),
-    "the unmeasured case must say so in words, not leave the reader to infer it",
+    workspace.includes("Captured before the camera took its own reading (29 Sep 2026)"),
+    "a capture predating the shutter fix must say so, not read as a camera failure",
+  );
+  assert.ok(
+    workspace.includes("No position was recorded with this photo"),
+    "a capture after the change whose shutter read nothing must be distinguishable from an old one",
+  );
+  // Both take the SAME neutral ink. Only one of the two is about a handset at all, and neither is
+  // a finding — colouring either would invent suspicion out of an absent measurement.
+  assert.ok(
+    !/no_position_recorded[\s\S]{0,200}text-(rose|amber)/.test(workspace),
+    "a missing shutter reading is not a finding and must not be coloured as one",
   );
 
   // Owner rules that apply to any new UI here.
