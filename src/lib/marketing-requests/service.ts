@@ -41,6 +41,11 @@ import {
   checkCustomerPharmacyDistance,
   venueTooFarMessage,
 } from "@/lib/venues/customer-pharmacy-distance";
+import {
+  type PharmacyCodeCandidate,
+  type RankedPharmacyCode,
+  rankPharmacyCodeSuggestions,
+} from "@/lib/venues/pharmacy-code-suggestions";
 import { marketingRequestNotificationUrl } from "@/lib/marketing-requests/notification-link";
 // Moved out of this file (it was 6,000 lines) so the Case File can share the exact same reads
 // instead of copying them. Behaviour is unchanged for every caller below.
@@ -5631,6 +5636,96 @@ export async function getMarketingPharmacyCodeReferenceStatus(
     matchCount: reference.matchCount,
     status: reference.status,
     tracked: reference.matchCount > 0,
+  };
+}
+
+/**
+ * The codes to offer the rep while he is typing, ranked by where he is standing.
+ *
+ * 🔒 RANKED, NEVER FILTERED — owner ruling, 2026-09-29: "build the code picker ranked by gps,
+ * nothing filtered out". The place is used to ORDER the candidates and never to remove one, because
+ * 25,811 of the 50,936 reference rows carry no area at all: a place filter would make half the
+ * database unreachable and a shop with a blank reference row could never be captured. The only
+ * narrowing here is the code the rep has actually typed and the distributor he picked — both of
+ * which are his own input, not a judgement about him.
+ *
+ * Advisory. This never gates a submission and never writes; a failure degrades to an empty list and
+ * the rep types the code exactly as he does today.
+ */
+export async function searchMarketingPharmacyCodeSuggestions(
+  input: {
+    areaName?: string | null;
+    distributorId: number | string;
+    governorateName?: string | null;
+    pharmacyCode: string;
+  },
+  access: AccessContext,
+): Promise<{ suggestions: RankedPharmacyCode[] }> {
+  assertMarketingAccess(access);
+
+  const distributorId = numberId(input.distributorId, "Distributor");
+  const typed = normalizeLookupKey(input.pharmacyCode);
+  // Below three characters every code in the distributor matches, which is a list, not a
+  // suggestion. Silence is the honest answer until he has typed enough to mean something.
+  if (typed.length < 3) return { suggestions: [] };
+
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("marketing_pharmacy_code_references")
+    .select("raw_pharmacy_code, normalized_pharmacy_code, raw_pharmacy_address, raw_area, raw_region")
+    .eq("distributor_id", distributorId)
+    .ilike("normalized_pharmacy_code", `%${typed}%`)
+    .limit(60);
+  if (error) throw error;
+
+  type ReferenceRow = {
+    normalized_pharmacy_code?: string | null;
+    raw_area?: string | null;
+    raw_pharmacy_address?: string | null;
+    raw_pharmacy_code?: string | null;
+    raw_region?: string | null;
+  };
+  const rows = (data ?? []) as ReferenceRow[];
+
+  // Names live in the sales master, not in the reference import — the rep recognises "اسعد جديدة"
+  // far faster than he checks six digits, and that recognition is the whole value of the list.
+  const codes = rows.map((row) => cleanText(row.raw_pharmacy_code)).filter(Boolean) as string[];
+  const nameByCode = new Map<string, string>();
+  if (codes.length > 0) {
+    const named = await supabase
+      .from("source_of_sales_customer_map")
+      .select("customer_code, customer_name")
+      .in("customer_code", codes);
+    for (const row of (named.data ?? []) as Array<{ customer_code?: string | null; customer_name?: string | null }>) {
+      const code = cleanText(row.customer_code);
+      const name = cleanText(row.customer_name);
+      if (code && name && !nameByCode.has(code)) nameByCode.set(code, name);
+    }
+  }
+
+  // The rep's own typing orders the list underneath the ranking: a code that STARTS with what he
+  // typed is likelier to be his than one that merely contains it. `rankPharmacyCodeSuggestions` is
+  // a stable sort, so this ordering survives beneath the proximity tiers.
+  const candidates: PharmacyCodeCandidate[] = rows
+    .map((row) => ({
+      address: cleanText(row.raw_pharmacy_address),
+      areaName: cleanText(row.raw_area),
+      code: cleanText(row.raw_pharmacy_code) ?? "",
+      governorateName: cleanText(row.raw_region),
+      name: nameByCode.get(cleanText(row.raw_pharmacy_code) ?? "") ?? null,
+    }))
+    .filter((row) => row.code.length > 0)
+    .sort((a, b) => {
+      const aStarts = normalizeLookupKey(a.code).startsWith(typed) ? 0 : 1;
+      const bStarts = normalizeLookupKey(b.code).startsWith(typed) ? 0 : 1;
+      return aStarts - bStarts || a.code.localeCompare(b.code);
+    });
+
+  return {
+    suggestions: rankPharmacyCodeSuggestions(candidates, {
+      areaName: input.areaName,
+      governorateName: input.governorateName,
+    }),
   };
 }
 

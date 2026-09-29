@@ -1139,6 +1139,7 @@ import { runSosSeatAttributionPeriodTests } from "./sos-seat-attribution-period.
 import { runMonthlyClosingLockTests } from "./monthly-closing-lock.test.ts";
 import { runCaptureTrustTests } from "./capture-trust.test.ts";
 import { runVenueDistanceRuleTests } from "./venue-distance-rule.test.ts";
+import { runPharmacyCodeSuggestionTests } from "./pharmacy-code-suggestions.test.ts";
 import { runClosingPeriodGateTests } from "./closing-period-gate.test.ts";
 import { runProductPeriodPriceTests } from "./product-period-price.test.ts";
 import { runVerifiedCapturesTests } from "./verified-captures.test.ts";
@@ -4317,6 +4318,7 @@ await runTest('Monthly closing lock (database triggers, not a disabled button)',
 await runTest('CLOSING GOLDEN RULE (a month is never published during that month, Cairo boundary)', runClosingPeriodGateTests);
 await runTest('capture trust (the photo carries its OWN gps fix, never a copy of the location fix)', runCaptureTrustTests);
 await runTest('THE 4 KM RULE (a pharmacy too far from the customer cannot be linked to him)', runVenueDistanceRuleTests);
+await runTest('pharmacy code suggestions (ranked by where the rep stood, NOTHING filtered out)', runPharmacyCodeSuggestionTests);
 await runTest('PERIOD-SCOPED FACTORY PRICE (Saginko 170.52 from 2026-10; July/August must not move)', runProductPeriodPriceTests);
 await runTest('Verified Captures (Super Admin only gate, rep/DM/search filter)', runVerifiedCapturesTests);
 await runTest('SPOTLIGHT (achievement summed never averaged, targeted months only, completed-window gate)', runSpotlightRankingTests);

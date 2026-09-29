@@ -123,14 +123,17 @@ function runCallSiteTests() {
   // to `DISABLED_checkCustomerPharmacyDistance(` — a one-line way to switch the rule off —
   // still contains that substring, so the test stayed green while the 4 km rule refused nothing.
   // Caught by breaking the fix on purpose, which is the only reason it is written this way.
-  const callPattern = /(?<![A-Za-z0-9_$])checkCustomerPharmacyDistance\s*\(/;
+  // NO LOOKBEHIND AND NO `s` FLAG. Both are ES2018 and this repo's tsconfig targets older, so they
+  // fail `tsc` — while `pnpm test` STRIPS types rather than checking them and reports green. That
+  // is exactly how this file first reached CI red: the local suite cannot see this class at all.
+  // A leading capture group does the same job on every target.
+  const callPattern = /(^|[^A-Za-z0-9_$])checkCustomerPharmacyDistance\s*\(/m;
   assert.ok(
     callPattern.test(source),
     "service.ts must CALL checkCustomerPharmacyDistance — without it the 4 km rule refuses nothing",
   );
   assert.ok(
-    /(?<![A-Za-z0-9_$])checkCustomerPharmacyDistance\s*,/.test(source)
-      || /import\s*\{[^}]*checkCustomerPharmacyDistance/s.test(source),
+    /import\s*\{[\s\S]*?checkCustomerPharmacyDistance/.test(source),
     "it must be imported by that exact name, so a rename cannot quietly detach the rule",
   );
   assert.ok(
