@@ -196,6 +196,38 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "invalid_field_layout", message: parsed.message }, { status: 400 });
     }
 
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+    // PLACING THE SIGNATURE IS NARROWER THAN EVERY OTHER WRITE ON THIS ROUTE, and it is the only
+    // thing here that is.
+    //
+    // `employee_documents:update` is held by everyone who prepares these papers, and that is right
+    // for moving a box or retyping a caption. It is not right for putting the HR Section Head's
+    // signature onto a document: a stored signature is the MEANS of signing, and whoever may apply
+    // it is deciding that a paper is signed. So the grant that governs the image governs placing it
+    // too — the same Super Admin gate as `/api/hiring-pack/signature`, for the same reason.
+    //
+    // THE STAMP IS NOT GATED THIS WAY, deliberately. The company seal is the company's own mark on
+    // its own paper, it is already drawn on every job offer, and it says nothing about who approved
+    // anything — the signature beside it is what does that.
+    //
+    // A DELETE IS NOT GATED EITHER. Removing a mark returns the paper to unsigned, which is the safe
+    // direction, and a mark nobody can take off again would be the worse arrangement.
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+    if (
+      parsed.write.source.kind === "mark" &&
+      parsed.write.source.mark === "signature" &&
+      access.role !== "Super Admin"
+    ) {
+      return NextResponse.json(
+        {
+          error: "forbidden",
+          message:
+            "Only a Super Admin can place the stored signature on a paper. The company stamp is available to you.",
+        },
+        { status: 403 },
+      );
+    }
+
     const field = await saveDocumentField(parsed.write, access.hrId ?? null);
     return NextResponse.json({ field });
   } catch (error) {

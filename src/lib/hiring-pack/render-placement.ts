@@ -41,7 +41,30 @@ export type Placement =
       size?: number;
     }
   /** A checkmark inside a single box. */
-  | { kind: "tick"; key: string; fieldId?: string; x: number; y: number; w: number; h: number };
+  | { kind: "tick"; key: string; fieldId?: string; x: number; y: number; w: number; h: number }
+  /**
+   * A picture — the company stamp or a signature — dropped on the page by hand.
+   *
+   * IT CARRIES ITS OWN `src` AND CONSULTS THE VALUES MAP FOR NOTHING, unlike every other kind here.
+   * The other three print what the employee's record says; a mark prints artwork that is the same
+   * for every employee and comes from disk or a private bucket (`document-marks.ts`), resolved onto
+   * the row just before rendering. Routing it through the values map would have put a base64 image
+   * under a data key, where the field table lists values somebody can retype.
+   *
+   * NO COMPILED TABLE EVER PRODUCES ONE. A mark exists only because a person placed it — see the
+   * ruling recorded in `document-marks.ts` and `house-identity.ts`.
+   */
+  | {
+      kind: "image";
+      key: string;
+      fieldId?: string;
+      /** The artwork, already a data URI. Empty means it could not be read, and nothing prints. */
+      src: string;
+      x: number;
+      y: number;
+      w: number;
+      h: number;
+    };
 
 /** A page of official artwork and the values that go on it. */
 export type FormPage = {
@@ -69,6 +92,21 @@ export type FormPage = {
  * default has no row and so no `fieldId`; `data-hp-key` keeps addressing those exactly as before.
  */
 export function renderPlacement(placement: Placement, values: Record<string, string>): string {
+  // A MARK IS ANSWERED FIRST AND FROM ITSELF, before the values lookup below — it is the one
+  // placement whose content is artwork rather than a record value, so `values[key]` is empty for it
+  // and the guard on the next line would drop every stamp ever placed. Artwork that could not be
+  // read prints NOTHING, which is the same rule as a missing value and is deliberate: an unsigned
+  // paper gets signed by a human, where a grey placeholder box reads as a signature at a glance.
+  if (placement.kind === "image") {
+    if (!placement.src) return "";
+    const key = ` data-hp-key="${escapeHtml(placement.key)}"`;
+    const field = placement.fieldId ? ` data-hp-field="${escapeHtml(placement.fieldId)}"` : "";
+    return (
+      `<img class="f mark"${key}${field} src="${escapeHtml(placement.src)}" alt="" aria-hidden="true"` +
+      ` style="left:${placement.x}pt;top:${placement.y}pt;width:${placement.w}pt;height:${placement.h}pt">`
+    );
+  }
+
   const raw = values[placement.key] ?? "";
   if (!raw) return "";
   const key = ` data-hp-key="${escapeHtml(placement.key)}"`;
@@ -165,6 +203,20 @@ export function placedFormCss(widthPt: number, heightPt: number, arabicFontStack
      tells the fit script how far past its rule a value has run. */
   .ff { display: inline-block; white-space: nowrap; }
   .tick { text-align: center; font-size: 13pt; font-weight: 700; }
+  /* A stamp or a signature somebody placed. object-fit is contain, never fill: the box is dragged
+     and resized by hand, and a round seal squashed into an oblong is a seal nobody would accept on
+     paper — so the artwork keeps its own proportions inside whatever box it was given.
+
+     IT STAYS CLICKABLE, unlike the artwork behind it. The editor selects a page-surface field with
+     closest("[data-hp-key]") and this element is the one carrying that attribute, so
+     pointer-events: none here would make the one thing on the page that must be draggable the one
+     thing that cannot be picked up. Only the browser's own image drag is turned off. */
+  .mark {
+    display: block;
+    object-fit: contain;
+    user-select: none;
+    -webkit-user-drag: none;
+  }
   /* One digit per printed cell, so no letter-spacing — it would push a centred digit off its box. */
   .wage { direction: ltr; text-align: center; font-size: 10pt; font-weight: 700; }
   .grid { direction: ltr; font-weight: 700; }

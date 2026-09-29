@@ -44,7 +44,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import type { DocumentFieldInventoryEntry } from "@/lib/hiring-pack/document-inventory";
 import { literalValueKey } from "@/lib/hiring-pack/field-layout";
-import type { DocumentFieldRow, DocumentSurface } from "@/lib/hiring-pack/field-layout";
+import type { DocumentSurface, TextDocumentFieldRow } from "@/lib/hiring-pack/field-layout";
 import {
   fieldTemplateKeys,
   resolveFieldTemplate,
@@ -88,13 +88,13 @@ export type FieldTableProps = {
    */
   onDryRun: (dry: { key: string; text: string | null } | null) => void;
   /** Remove a field-layer row: an added field goes, an override returns to its compiled default. */
-  onDeleteRow: (row: DocumentFieldRow) => void;
+  onDeleteRow: (row: TextDocumentFieldRow) => void;
   /** Open what this field used to say. Only ever offered on a row that has been rewritten. */
-  onOpenHistory: (row: DocumentFieldRow) => void;
+  onOpenHistory: (row: TextDocumentFieldRow) => void;
   /** Write a rule for a field the template already places. `null` restores the record value. */
   onSaveRule: (entry: DocumentFieldInventoryEntry, text: string | null) => void;
   /** Retype the text of a field the operator added. */
-  onSaveRowText: (row: DocumentFieldRow, text: string) => void;
+  onSaveRowText: (row: TextDocumentFieldRow, text: string) => void;
   /**
    * Put a hidden field back on the paper.
    *
@@ -105,7 +105,7 @@ export type FieldTableProps = {
    * other change on it. The table lists the template's INVENTORY rather than what rendered, so a
    * hidden field is still here to be shown again.
    */
-  onToggleHidden: (row: DocumentFieldRow) => void;
+  onToggleHidden: (row: TextDocumentFieldRow) => void;
   /**
    * The printed size of one side of this paper, in points, or null when it has no fixed page.
    *
@@ -116,7 +116,16 @@ export type FieldTableProps = {
    * the off-page warning off on precisely the papers whose boxes were all placed by hand.
    */
   page: PageSize | null;
-  rows: readonly DocumentFieldRow[];
+  /**
+   * TEXT ROWS ONLY — a placed stamp or signature never reaches this table.
+   *
+   * Every column here asks a question about words: which value the field prints, the rule typed
+   * over it, how many employees that rule fills for, which boxes overlap. A picture answers none of
+   * them, and the type says so rather than leaving a later edit to reach for `source.key` on a seal
+   * and render a blank where a category error belongs. Marks are listed, and removed, in the layout
+   * panel instead — see `isTextFieldRow` in field-layout.ts.
+   */
+  rows: readonly TextDocumentFieldRow[];
   surface: DocumentSurface;
 };
 
@@ -129,7 +138,7 @@ function humaniseKey(key: string): string {
 }
 
 /** The operator's own rule for a field, or null when it still prints straight from the record. */
-function currentRule(override: DocumentFieldRow | null): string | null {
+function currentRule(override: TextDocumentFieldRow | null): string | null {
   if (!override) return null;
   return override.source.kind === "literal" ? override.source.text : null;
 }
@@ -155,7 +164,7 @@ function keySetFor(rule: string | null, defaultKey: string | null): string[] {
  * the span is marked with that instead, because two fixed strings on one page sharing a key would
  * make the second print the first's text. So the target follows the row, not the table.
  */
-function dryRunTargetKey(row: DocumentFieldRow | null, fallbackKey: string): string {
+function dryRunTargetKey(row: TextDocumentFieldRow | null, fallbackKey: string): string {
   if (!row) return fallbackKey;
   return row.source.kind === "literal" ? literalValueKey(row.id) : row.source.key;
 }
@@ -334,7 +343,7 @@ export function FieldTable({
 
   /** Overrides, by the compiled key they replace. Page surfaces only — see the header. */
   const overrides = useMemo(() => {
-    const map = new Map<string, DocumentFieldRow>();
+    const map = new Map<string, TextDocumentFieldRow>();
     for (const row of rows) {
       if (row.defaultKey !== null) map.set(row.defaultKey, row);
     }
@@ -361,7 +370,7 @@ export function FieldTable({
    * key otherwise, and a description of the box for a field somebody added and never named.
    */
   const warnings = useMemo(() => {
-    const labelOf = (row: DocumentFieldRow) => {
+    const labelOf = (row: TextDocumentFieldRow) => {
       if (row.defaultKey !== null) {
         const entry = entries.find((candidate) => candidate.key === row.defaultKey);
         return entry?.labelEn ?? humaniseKey(row.defaultKey);

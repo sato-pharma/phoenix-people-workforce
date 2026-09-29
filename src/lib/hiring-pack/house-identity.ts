@@ -95,8 +95,20 @@ export const HOUSE_MARK_WIDTH_MM = 34;
  * `public/brand/sato-hr-seal.svg` therefore stays in the repository; only this module's readers
  * are gone.
  *
- * Pinned by `tests/hr-forms-house-papers.test.ts` (every paper renders ZERO seals) and
- * `tests/hiring-pack-salary-letter.test.ts`.
+ * A STAMP AN OPERATOR PLACES BY HAND IS NOT WHAT THIS RULING FORBIDS, and the two arrived on the
+ * same day. Hours after the instruction above, the owner asked for "the option to add the Sato stamp
+ * seal and my signature and be able to move and drag them freely in any form" — which is the exact
+ * opposite of the failure recorded here. What made a pre-printed seal wrong is that it appeared
+ * because the RENDERER always drew one, on every copy, whether or not anybody had decided to stamp
+ * that paper. A mark placed through the field layer appears because a person put it on that document,
+ * and is listed, moved and removed like any other field. That is not a loophole in the ruling, it is
+ * the ruling — `document-marks.ts` holds the account.
+ *
+ * So the ban here is unchanged and is about THIS MODULE and its renderers: nothing below draws a
+ * seal, and the pin that proves it is exactly the right one to keep.
+ *
+ * Pinned by `tests/hr-forms-house-papers.test.ts` (every paper renders ZERO seals of its own accord)
+ * and `tests/hiring-pack-salary-letter.test.ts`.
  * ───────────────────────────────────────────────────────────────────────────────────────────── */
 
 /**

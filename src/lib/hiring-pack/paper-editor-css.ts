@@ -87,6 +87,17 @@ export const EDITOR_CSS = `
      pick up rather than type into, and "add a field" turns the whole page into a drop target. */
   body.hp-layout-edit [data-hp-live] { cursor: move; }
   body.hp-layout-edit [data-hp-locked] { cursor: default; }
+  /* A PLACED STAMP OR SIGNATURE IS LOCKED FOR TYPING AND FREE TO MOVE — the one combination the two
+     rules above cannot produce between them. It carries data-hp-locked because there is no text in
+     it to edit, so the line above would hand it the default cursor and it would read as something
+     that cannot be picked up, when moving it is the entire point. The ring is what says it is yours
+     to drag: every other field gets one from data-hp-live, and a mark is the only field on the page
+     that would otherwise have no boundary drawn round it at all. */
+  body.hp-layout-edit .mark {
+    cursor: move;
+    outline: 1px dashed rgba(37, 99, 235, 0.55);
+    outline-offset: 2px;
+  }
   body.hp-layout-edit.hp-adding-field,
   body.hp-layout-edit.hp-adding-field * { cursor: crosshair !important; }
   [data-hp-dragging] {
