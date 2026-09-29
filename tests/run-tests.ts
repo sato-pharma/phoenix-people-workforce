@@ -2000,6 +2000,7 @@ import { runNativeLoginCsrfCookieTests } from "./native-login-csrf-cookie.test.t
 import { runMobileEvidenceStampParityTests } from "./mobile-evidence-stamp-parity.test.ts";
 import { runMobilePushLinkTests } from "./mobile-push-link.test.ts";
 import { runMobileModuleDirectoryTests } from "./mobile-module-directory.test.ts";
+import { runNativeTokenBridgeTests } from "./native-token-bridge.test.ts";
 import { runNativeWebHandoffTests } from "./native-web-handoff.test.ts";
 import { runMobileVersionNamesTests } from "./mobile-version-names.test.ts";
 import { runMobileCrmVoiceCommentTests } from "./mobile-crm-voice-comment.test.ts";
@@ -7556,6 +7557,11 @@ await runTest(
 await runTest(
   "opening a production portal module from the app grants nothing new: the sealed ticket round-trips to the SAME sid and ver, the browser cookie inherits the app session's own expiry and can never outlive it, no name / HR id / role is readable in the ticket, a tampered or expired ticket and an expired session all redeem to nothing, next can never leave /employee-portals (an open redirect there would hand a session to another host), and the halves stay split - the POST the app calls sets NO cookie, because React Native replays one and the CSRF guard then refuses every mutation as csrf_blocked, which is also why the phone uses a Custom Tab and never a WebView",
   runNativeWebHandoffTests,
+);
+
+await runTest(
+  "the cookie->bearer login bridge grants nothing new: same-origin CSRF guarded, requires the native shell user-agent marker AND a live cookie session, and returns the cookie's OWN token re-verified rather than minting a new one; the mobile login is the real web /login in a WebView carrying that marker",
+  runNativeTokenBridgeTests,
 );
 
 await runTest(

@@ -126,6 +126,16 @@ export const accessRegistry = [
   // nothing new: the cookie it sets is for the same session id and version the app already holds and
   // expires at the same second, and `next` can only ever be a path under /employee-portals.
   tokenApi({ authMode: "public-token", methods: ["GET"], pattern: "/api/auth/web-session", reason: "Credential redemption endpoint; the sealed 60-second ticket IS the credential and no Phoenix session exists in the opening tab yet. It mints a cookie for the session the app already holds — same sid, same version, same expiry — and redirects only within /employee-portals." }),
+  // The REVERSE of web-session's GET: the native shell logged in on the real /login page inside its
+  // WebView (cookie), and this hands the SAME token back as a bearer for the native half (CRM, push).
+  // A live cookie session is required — so it is a sessionApi, CSRF-enforced (not exempt), gated on
+  // the same minimal read the portal shell asserts. It mints nothing; see the route header.
+  sessionApi({
+    csrfRequired: true,
+    methods: ["POST"],
+    pattern: "/api/auth/native-token",
+    permission: { resource: "employee_profile", action: "read" },
+  }),
   tokenApi({ authMode: "public-token", methods: ["POST"], pattern: "/api/auth/password-setup/:token", reason: "Password setup/reset is protected by a one-time token." }),
   // Live Direct Orders report links (owner request, 2026-08-05). Unauthenticated ON PURPOSE: the
   // recipient has no Phoenix account, and a Google Sheet's IMPORTDATA formula cannot log in.
