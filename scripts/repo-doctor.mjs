@@ -798,7 +798,29 @@ for (const r of live) {
   //
   // Anything short of "newest PR merged AND HEAD is still the commit it merged" is held back and
   // NAMED below. A worktree that silently stops appearing reads as one that no longer exists.
-  const verdict = classifyBranchPr(listBranchPrs(branch), tip);
+  // 🔴 A SHA MISMATCH IS NOT A CONTENT ANSWER. A session that amends or rebases after its PR merges
+  // moves the tip without adding anything, and this gate used to hold such a worktree back for ever
+  // with "the branch carries work that PR never saw" — about work that had shipped. So when the tip
+  // has moved, ask `git cherry`: it compares by PATCH-ID, which is the only instrument that survives
+  // a squash merge leaving the branch tip outside main's history. A `-` line means that exact patch is
+  // already upstream; a `+` line means it is not. Measured 2026-09-30: `codex/bump-fast-uri-3-1-7` was
+  // held on a mismatch while cherry marked its commit `-`, and `codex/mail-stack-nodemailer-10` was
+  // held on the same mismatch while cherry marked its commit `+` — the same symptom, two opposite
+  // facts, and only the content check tells them apart.
+  //
+  // Returns null on ANY failure, which the classifier holds back. Never collapse a failed compare
+  // into "nothing unmerged": that is the `?? null` discipline this file keeps everywhere else.
+  const cherryProbe = (atTip) => {
+    const out = git(["-C", r.dir, "cherry", "-v", "origin/main", atTip]);
+    if (out === null) return null;
+    const unmerged = [];
+    for (const line of out.split(String.fromCharCode(10))) {
+      const m = /^\+\s+([0-9a-f]{7,40})\s*(.*)$/.exec(line.trim());
+      if (m) unmerged.push({ sha: m[1], subject: m[2] });
+    }
+    return { unmerged };
+  };
+  const verdict = classifyBranchPr(listBranchPrs(branch), tip, cherryProbe);
   if (verdict.verdict === "retirable") {
     merged.push({ ...r, branch, pr: verdict.pr, dirty, unpushed, tip });
   } else if (verdict.verdict !== "none") {
