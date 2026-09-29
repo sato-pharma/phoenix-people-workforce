@@ -1969,6 +1969,8 @@ import { runSeatHireCandidatePickerTests } from "./seat-hire-candidate-picker.te
 import { runOrganogramArabicSearchTests } from "./organogram-arabic-search.test.ts";
 import { runOrganogramTeamLabelTests } from "./organogram-team-label.test.ts";
 import { runWorkflowFilesParseTests } from "./workflow-files-parse.test.ts";
+import { runAttributionRefreshSerializedTests } from "./attribution-refresh-serialized.test.ts";
+import { runMigrationPreimageGuardedTests } from "./migration-preimage-guarded.test.ts";
 import { runWeeklyUploadLineNotificationTests } from "./weekly-upload-line-notification.test.ts";
 import { runSalesNotificationExclusionsTests } from "./sales-notification-exclusions.test.ts";
 import { runVacationAdminOverrideTests } from "./vacation-admin-override.test.ts";
@@ -6960,6 +6962,16 @@ await runTest(
 await runTest(
   "every workflow file parses — a line at column 0 inside a run block ends the scalar, fails a run on every push, and withholds every production deploy",
   runWorkflowFilesParseTests,
+);
+
+await runTest(
+  "a migration never reads a column it drops without guarding it — the pre-image select is parsed even when the column is gone, so the file fails on every fresh environment",
+  runMigrationPreimageGuardedTests,
+);
+
+await runTest(
+  "the attribution refresh serializes per period and is never 'fixed' with a unique index (two concurrent runs doubled 2026-09; the direct and indirect rows legitimately share a key)",
+  runAttributionRefreshSerializedTests,
 );
 
 await runTest(

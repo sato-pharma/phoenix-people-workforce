@@ -27,8 +27,24 @@
 -- `department_name` in the same 16-column list and took every occupant's name off the chart.
 -- ---------------------------------------------------------------------------
 
-create table if not exists public.employees_team_label_preimage_20260929 as
-select hr_id, full_name, team_id, team_name
-from public.employees;
+-- 🔴 GUARDED, BECAUSE A PRE-IMAGE READS THE COLUMN THE MIGRATION IS ABOUT TO DROP. The `drop column`
+-- below carries IF EXISTS, but `select ... team_name` does not and cannot: a missing column is a
+-- parse-time 42703, so this file fails outright on any database that lacks it. That is not
+-- hypothetical — applying this file to STAGING on 2026-09-29 errored with `column "team_name" does
+-- not exist`, because staging's employees has line_name and team_id but none of the other three, and
+-- replaying it against production after the drop errors identically.
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'employees' and column_name = 'team_name'
+  ) then
+    execute $sql$
+      create table if not exists public.employees_team_label_preimage_20260929 as
+      select hr_id, full_name, team_id, team_name
+      from public.employees
+    $sql$;
+  end if;
+end $$;
 
 alter table public.employees drop column if exists team_name;
