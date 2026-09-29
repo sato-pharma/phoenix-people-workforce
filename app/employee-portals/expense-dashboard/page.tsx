@@ -47,6 +47,7 @@ export default async function EmployeePortalExpenseDashboardPage() {
   await assertPermission(access, "expenses", "read");
 
   let data = null;
+  let loadFailed = false;
   try {
     data = await getMedicalRepPortalData(access, {
       includePortalOverview: false,
@@ -54,7 +55,22 @@ export default async function EmployeePortalExpenseDashboardPage() {
       includeWorkforceSummary: false,
     });
   } catch {
+    // A THROWN READ IS NOT AN UNLINKED PROFILE, and the two were indistinguishable here: this
+    // catch set `data = null`, and the branch below tested `!data || data.empty.profile`, so an
+    // employee whose data source was simply down was told to contact HR about a linkage problem
+    // that does not exist. He then does — and HR finds nothing wrong. AGENTS.md §1: a confident
+    // zero is worse than an error, and a confident WRONG REASON is worse than either.
+    loadFailed = true;
     data = null;
+  }
+
+  if (loadFailed) {
+    return (
+      <EmployeePortalEmptyState
+        message="Your expenses could not be loaded just now. Nothing has been lost — reload the page to try again."
+        title="Could not load your expenses"
+      />
+    );
   }
 
   if (!data || data.empty.profile) {
