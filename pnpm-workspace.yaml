@@ -145,7 +145,21 @@ overrides:
   # belongs to whatever branch is in flight, and does not.
   # WHERE IT BITES IF IT IS WRONG: mailbox monitoring and the CV intake reader, both of which speak
   # IMAP through imapflow. A parse regression there is silent — mail simply stops being read.
-  nodemailer: ^9.1.1
+  #
+  # SCOPED 2026-09-29, from a bare `nodemailer: ^9.1.1` to the two parents that actually need the
+  # floor. A bare override applies to the WHOLE graph, INCLUDING this repo's own direct
+  # `dependencies` entry — so it silently capped our own nodemailer at 9.1.1 too. That is exactly
+  # why Dependabot #4698 could set package.json to `^10.0.2` and still leave the lockfile resolving
+  # 9.1.1: the override outranks the manifest, and CI/Docker install `--frozen-lockfile`, so the
+  # upgrade was a no-op wearing the shape of a bump. The advisory floor is unchanged for the two
+  # parents that still pin below it — imapflow@1.4.9 declares an EXACT `nodemailer: 9.0.3` and
+  # mailparser@3.9.16 an EXACT `9.0.5`, both under the `<9.1.0` advisory — while the direct
+  # dependency is now free to resolve 10.x. The graph therefore holds two nodemailer copies on
+  # purpose: 9.1.1 under the two mail READERS, 10.x for the SMTP SEND path. Collapse this back to a
+  # bare override only once both parents resolve >=9.1.0 unaided (mailparser already does from
+  # 3.9.26, which moved to nodemailer 10.x; imapflow dropped the dependency entirely in 2.x).
+  "imapflow>nodemailer": ^9.1.1
+  "mailparser>nodemailer": ^9.1.1
   # Bumped 2026-08-04 for GHSA-fxqj-rqcc-2cmp (incomplete fix of GHSA-6g55-p6wh-862q: an
   # attacker-controlled sourceMappingURL reads arbitrary .map files when `from` is unset).
   # Advisory covers `<=8.5.22`, patched at 8.5.23; the previous ^8.5.18 floor ALLOWED the fix but
