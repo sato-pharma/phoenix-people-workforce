@@ -51,6 +51,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { SeniorRepBadge } from "@/components/ui/senior-rep-badge";
 import { PremiumTooltip } from "@/components/ui/premium-tooltip";
 import { CountUpNumber } from "@/components/ui/count-up";
 import { cardHoverClass } from "@/components/ui/motion";
@@ -667,6 +668,7 @@ export function PersonalOverviewHero({ data }: { data: MedicalRepPortalData }) {
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
               <h3 className="text-[42px] font-semibold leading-[1.04] tracking-[-0.02em] text-slate-950">{employee.fullName}</h3>
+              <SeniorRepBadge hrId={employee.hrId} size="md" />
               <span className="h-2.5 w-2.5 rounded-full bg-orange-500" />
               <p className="text-[26px] font-medium text-slate-500">{employee.roleLabel}</p>
             </div>
