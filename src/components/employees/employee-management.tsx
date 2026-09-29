@@ -1503,15 +1503,31 @@ export function EmployeeManagement({
         // opening a second opinion on payroll's arithmetic. An empty override set, because a form
         // that has just been filled from a letter has nothing the owner has typed into yet, and
         // every box stays editable afterwards.
-        setForm(withSalaryAutofill({ ...emptyForm, ...payload.draft }, new Set()));
+        // Held, rather than passed straight to setForm, so the notice below can report what this
+        // form ACTUALLY holds instead of what the response carried. The two should never differ —
+        // but on 2026-09-29 the owner reported the salary boxes blank on a prefill whose notice had
+        // appeared, and the notice appearing proves this very line ran. Everything from the
+        // database to here was verified correct that evening and the figure still was not on his
+        // screen, so the one thing missing was a statement of what landed in the state. A notice
+        // that names the net and a box that is empty is a rendering fault and nothing else; a
+        // notice that says no salary is a data fault. Before this, the two were indistinguishable.
+        const filled = withSalaryAutofill({ ...emptyForm, ...payload.draft }, new Set());
+        setForm(filled);
         setIsFormOpen(true);
-        setNotice(
-          payload.seatTaken
-            ? `Filled in from offer ${payload.reference ?? ""} for ${payload.candidateName ?? "this candidate"}. The seat that offer named has since been filled by somebody else — choose the seat again below.`.trim()
-            : payload.seat
-              ? `Filled in from offer ${payload.reference ?? ""} for ${payload.candidateName ?? "this candidate"}. Seat: ${payload.seat.label}.`.trim()
-              : `Filled in from offer ${payload.reference ?? ""} for ${payload.candidateName ?? "this candidate"}. No seat was chosen on the offer — choose one below.`.trim(),
-        );
+
+        const opening = `Filled in from offer ${payload.reference ?? ""} for ${payload.candidateName ?? "this candidate"}.`.trim();
+        const seatSentence = payload.seatTaken
+          ? "The seat that offer named has since been filled by somebody else — choose the seat again below."
+          : payload.seat
+            ? `Seat: ${payload.seat.label}.`
+            : "No seat was chosen on the offer — choose one below.";
+        // Read off `filled`, never off the draft: this sentence exists to describe the form.
+        const netFilled = Number(filled.netSalary);
+        const salarySentence =
+          Number.isFinite(netFilled) && netFilled > 0
+            ? `Net salary ${netFilled.toLocaleString("en-US")} — base, basic, allowances, insurance and gross are derived from it.`
+            : "The offer carried no salary, so every salary box is blank — type the net salary yourself.";
+        setNotice([opening, seatSentence, salarySentence].filter(Boolean).join(" "));
         void generateEmployeeId(payload.draft.lineId ?? "", true);
       } catch {
         if (!cancelled) {

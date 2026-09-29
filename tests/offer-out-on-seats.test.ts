@@ -92,11 +92,15 @@ export function runOfferOutOnSeatsTests() {
 
   // ── 3 · The prefill runs that chain, rather than leaving the boxes empty ────────────────────
   const employees = readFileSync("src/components/employees/employee-management.tsx", "utf8");
+  // The call is now split across two statements so the notice can report what landed in the form
+  // (see tests/offer-prefill-notice-net.test.ts); what this pins is unchanged — the prefill goes
+  // through the form's own salary chain, and the RESULT of that is what setForm receives.
   assert.match(
     employees,
-    /setForm\(withSalaryAutofill\(\{ \.\.\.emptyForm, \.\.\.payload\.draft \}, new Set\(\)\)\)/,
+    /const filled = withSalaryAutofill\(\{ \.\.\.emptyForm, \.\.\.payload\.draft \}, new Set\(\)\);/,
     "arriving from an offer fills every derived salary box, exactly as typing the net by hand would",
   );
+  assert.match(employees, /setForm\(filled\);/, "and that filled form is the one the boxes render from");
 
   // ── 4 · The seat's own line ─────────────────────────────────────────────────────────────────
   assert.equal(
