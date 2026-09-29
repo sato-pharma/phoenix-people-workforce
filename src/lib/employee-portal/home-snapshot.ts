@@ -52,7 +52,7 @@ import { currentCairoDateOnlyIso, currentCairoDateParts } from "@/lib/i18n/forma
 import {
   SALES_HISTORY_FLOOR,
   loadEmployeeMonthlyAchievement,
-  uploadedPointsOnly,
+  publishedPointsOnly,
   type MonthlyAchievementPoint,
 } from "@/lib/sales/employee-achievement";
 
@@ -61,11 +61,16 @@ import {
  * /sales-vs-target, so the number a rep sees on their home page equals the number their DM,
  * the closing view and the incentive tab see for the same month (Rule #1).
  *
- * Both figures use UPLOADED months only. On 2026-08-10 August held a single 1,309.50 EGP
- * direct order against a 17,508,935 EGP target; keyed on "does this month have any actual",
- * the hero would have greeted that rep with 0.0%. An un-uploaded current month returns null,
- * which the widget already renders as "Data not yet available" — the same thing the legacy
- * query produced when sales_records had no rows yet.
+ * Both figures use PUBLISHED closing months only — the same gate every other sales surface uses
+ * (publishedPointsOnly → isRowPublished). [Owner ruling, 2026-08-13, restated 2026-09-29]: the
+ * keycard shows a month ONLY once its Monthly Closing is published for that rep's line, never a
+ * live-but-unclosed number. So the current Cairo month never appears while it is still running:
+ * on 2026-09-28 September held a single approved Direct Order (`DirectReq`, 115,632 EGP) against a
+ * live target, and the card must still show AUGUST — the latest published month — until the owner
+ * publishes September, at which point it switches on its own. An unpublished current month returns
+ * null, and the fallback below draws the newest published month with its own label. This replaced
+ * the earlier `uploaded` gate, which let that unfinished September through because a distributor
+ * import batch (the `DirectReq` pseudo-distributor) existed for the month.
  */
 async function loadMrCanonicalSales(hrId: string): Promise<{
   current: { achievementPercent: number; salesValue: number; targetValue: number } | null;
@@ -74,7 +79,7 @@ async function loadMrCanonicalSales(hrId: string): Promise<{
   const { year, month } = currentCairoDateParts();
   const currentPeriod = `${year}-${String(month).padStart(2, "0")}`;
   const window = await loadEmployeeMonthlyAchievement([hrId], SALES_HISTORY_FLOOR, currentPeriod);
-  const points = uploadedPointsOnly(window.byHrId.get(hrId) ?? []);
+  const points = publishedPointsOnly(window.byHrId.get(hrId) ?? []);
   if (points.length === 0) return { current: null, trend: null };
 
   const percentOf = (point: MonthlyAchievementPoint) =>

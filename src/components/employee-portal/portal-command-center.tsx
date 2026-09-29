@@ -1106,9 +1106,11 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
   const monthShort = (m: number) =>
     new Date(Date.UTC(2000, m - 1, 1)).toLocaleString("en-US", { month: "short", timeZone: "UTC" }).toUpperCase();
 
-  // mrSalesAchievement is the CURRENT Cairo month, which is empty until that month's sales are
-  // uploaded. Rather than print an empty tile beside a chart full of closed months, fall back to
-  // the newest closed month and say which month is on screen.
+  // mrSalesAchievement is the CURRENT Cairo month, and it is null until that month's Monthly
+  // Closing is PUBLISHED — which never happens while the month is still running (owner rule). So
+  // during the live month it is always null here, and the card falls back to the newest published
+  // ("closed") month and labels which month is on screen. It switches to the current month only
+  // once the owner publishes that month's closing.
   const cairoNow = currentCairoDateParts();
   const latestClosed = closed.length > 0 ? closed[closed.length - 1] : null;
   const priorClosed = closed.length > 1 ? closed[closed.length - 2] : null;
@@ -1143,7 +1145,7 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
       <div className="@container">
         <div className="grid grid-cols-2 gap-2 @3xl:grid-cols-4">
           <RepTile
-            hint={achValue ? `${egp(achValue.salesValue)} of ${egp(achValue.targetValue)}` : "No month uploaded"}
+            hint={achValue ? `${egp(achValue.salesValue)} of ${egp(achValue.targetValue)}` : "Awaiting closing"}
             label="Achievement"
             meta={achMonth}
             rail={achPct !== null ? repTone(achPct).rail : undefined}
@@ -1162,7 +1164,7 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
                 pct={achPct}
               />
             ) : (
-              <p className="text-phx-md font-semibold text-slate-400">No sales uploaded</p>
+              <p className="text-phx-md font-semibold text-slate-400">No closing published yet</p>
             )}
           </RepTile>
 

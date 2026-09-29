@@ -30,14 +30,23 @@
 //      signal: on 2026-08-10 one direct order (1,309.50 EGP) made August look loaded
 //      against a 17,508,935 EGP target. Every point carries `uploaded`, and any caller
 //      summing more than one month must filter on it — see uploadedPointsOnly.
+//
+//   4. A LANDING KEYCARD SHOWS A MONTH ONLY ONCE ITS CLOSING IS PUBLISHED. Stricter still than
+//      #3: an upload landing is not the same as the owner reconciling the line and clicking
+//      Publish. Every point also carries `published` (per its line), and a card picks its month
+//      with publishedPointsOnly — never uploadedPointsOnly, which let the unpublished current
+//      month through on the strength of a single approved Direct Order.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { applyAchievementAreaMerges } from "@/lib/sales/closing-area-merges";
 import type { AchievementRow } from "@/lib/sales/monthly-targets";
 import {
   SALES_HISTORY_FLOOR,
+  SALES_VS_TARGET_FLOOR,
+  isRowPublished,
   isValidHistoryPeriod,
   loadAchievementRange,
+  loadPublishedPeriodKeys,
   loadUploadedPeriodsInRange,
   totalRows,
 } from "@/lib/sales/vs-target";
@@ -65,6 +74,16 @@ export type MonthlyAchievementPoint = {
   hasTarget: boolean;
   /** Whether this month's distributor upload actually landed. */
   uploaded: boolean;
+  /**
+   * Whether this month's Monthly Closing has been PUBLISHED for this row's line. STRICTER than
+   * `uploaded`: distributor files landing is necessary but not sufficient — the owner reconciles a
+   * line and clicks Publish only once its numbers are final. A landing surface that shows a month's
+   * achievement must gate on THIS, never `uploaded` — otherwise a single approved Direct Order (the
+   * `DirectReq` pseudo-distributor) pulls an unfinished current month onto the card. [Owner ruling,
+   * 2026-08-13, restated 2026-09-29]: a blank keycard is the correct state until a period is
+   * published, never a live-but-unclosed number.
+   */
+  published: boolean;
 };
 
 export type EmployeeAchievementWindow = {
@@ -90,6 +109,7 @@ export function groupAchievementByEmployee(
   rows: readonly AchievementRow[],
   hrIds: readonly string[],
   uploadedPeriods: ReadonlySet<string>,
+  publishedKeys: ReadonlySet<string>,
   grain: AchievementGrain = "rep",
 ): Map<string, MonthlyAchievementPoint[]> {
   // Normalized id -> the caller's original string, so the returned keys are theirs.
@@ -139,6 +159,10 @@ export function groupAchievementByEmployee(
         achievementValue: totals.achievementValue,
         hasTarget: totals.coveredKeys > 0,
         uploaded: uploadedPeriods.has(period),
+        // Per-ROW, keyed on the row's own line, exactly as every other sales surface gates it
+        // (isRowPublished). A rep's month is single-line, so `some` is `every` here; `some` keeps
+        // it correct if a caller ever groups a multi-line occupant.
+        published: periodRows.some((row) => isRowPublished(row, publishedKeys)),
       });
     }
     points.sort((a, b) => a.period.localeCompare(b.period));
@@ -150,9 +174,10 @@ export function groupAchievementByEmployee(
 /**
  * Canonical monthly sales for a set of employees over [from, to].
  *
- * Two round trips total, regardless of how many employees or months are asked for: one
- * range call for the rows and one for the upload ledger. Never loop a per-period RPC in a
- * caller — the database is in eu-central-1 and every trip is charged in latency.
+ * Three round trips total, regardless of how many employees or months are asked for: one
+ * range call for the rows, one for the upload ledger, one for the closing-publication ledger.
+ * Never loop a per-period RPC in a caller — the database is in eu-central-1 and every trip is
+ * charged in latency.
  */
 export async function loadEmployeeMonthlyAchievement(
   hrIds: readonly string[],
@@ -170,9 +195,15 @@ export async function loadEmployeeMonthlyAchievement(
   if (!isValidHistoryPeriod(from) || !isValidHistoryPeriod(to) || to < from) return empty;
   if (hrIds.length === 0) return empty;
 
-  const [rows, uploadedPeriods] = await Promise.all([
+  // The publication ledger only ever starts at the vs-target floor (2026-07 — the first
+  // published month). `loadPublishedPeriodKeys` returns an empty set for any `from` below that
+  // floor, so clamp the publication query up to it while the rows/upload queries keep the wider
+  // history floor. Nothing before 2026-07 can be published, so the clamp loses no keys.
+  const publishedFrom = from < SALES_VS_TARGET_FLOOR ? SALES_VS_TARGET_FLOOR : from;
+  const [rows, uploadedPeriods, publishedKeys] = await Promise.all([
     loadAchievementRange(from, to),
     loadUploadedPeriodsInRange(from, to),
+    loadPublishedPeriodKeys(publishedFrom, to),
   ]);
 
   // Merge Fayoum/Beni Suef BEFORE grouping — the merge rewrites areaCode, and grouping
@@ -182,7 +213,7 @@ export async function loadEmployeeMonthlyAchievement(
     from,
     to,
     uploadedPeriods,
-    byHrId: groupAchievementByEmployee(merged, hrIds, uploadedPeriods, grain),
+    byHrId: groupAchievementByEmployee(merged, hrIds, uploadedPeriods, publishedKeys, grain),
   };
 }
 
@@ -191,6 +222,18 @@ export function uploadedPointsOnly(
   points: readonly MonthlyAchievementPoint[],
 ): MonthlyAchievementPoint[] {
   return points.filter((point) => point.uploaded);
+}
+
+/**
+ * The months whose Monthly Closing has been PUBLISHED (per the row's line). This is the gate a
+ * landing surface must use — a keycard shows a month ONLY once its closing is published, never a
+ * live-but-unclosed number, and an approved Direct Order (`DirectReq`) is never enough to surface
+ * an unfinished current month. [Owner ruling, 2026-08-13, restated 2026-09-29.]
+ */
+export function publishedPointsOnly(
+  points: readonly MonthlyAchievementPoint[],
+): MonthlyAchievementPoint[] {
+  return points.filter((point) => point.published);
 }
 
 export type AchievementSummary = {
