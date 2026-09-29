@@ -5,11 +5,13 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import {
   canDownloadEmployeeCv,
   clearEmployeeCv,
+  copyCandidateCvToEmployee,
   getEmployeeCv,
   readCvPayload,
   setEmployeeCv,
   streamEmployeeCv,
 } from "@/lib/employees/employee-cv";
+import { findCandidateCvMatches } from "@/lib/employees/employee-cv-candidates";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
@@ -74,6 +76,26 @@ async function loadTargetForScopeCheck(hrId: string) {
 /** Downloads the CV. Also answers "is there one" — a HEAD-shaped 404 when there is not. */
 export async function GET(request: Request, { params }: { params: Promise<{ hrId: string }> }) {
   try {
+    // `?candidates=<who>` — the recruitment candidates who have a CV and could be this employee.
+    //
+    // GATED ON assertCanManage, NOT on the download gate below, and the difference is the whole
+    // reason it is handled before anything else in this handler. Reading a CV is the four-role
+    // employeeCvReaderRoles set (it exists so the SFE Manager can open one); searching the
+    // CANDIDATE database is not that privilege, and it must not ride in on it. Only somebody who
+    // could actually attach the result — employees:update, so Super Admin and HR Operations —
+    // may ask. HR Operations holds no candidates:read of its own, which is exactly why this lives
+    // here rather than reusing /api/recruitment/candidates: that route would 403 the one person
+    // whose job this is.
+    const candidateQuery = new URL(request.url).searchParams.get("candidates");
+    if (candidateQuery !== null) {
+      const { hrId } = await params;
+      await assertCanManage(request, hrId);
+      return NextResponse.json({
+        candidates: await findCandidateCvMatches({ query: candidateQuery }),
+        success: true,
+      });
+    }
+
     const access = await resolveAccessContext(request);
     // resolveAccessContext never throws for a missing session — it returns a guest context whose
     // role is "Employee" (AGENTS.md §2.1). canDownloadEmployeeCv refuses that outright, and this
@@ -144,6 +166,61 @@ export async function POST(request: Request, { params }: { params: Promise<{ hrI
   } catch (error) {
     const { message, status } = errorStatus(error);
     return NextResponse.json({ error: "employee_cv_upload_failed", message }, { status });
+  }
+}
+
+/**
+ * Carry a named candidate's CV onto this employee — the already-hired half of the same move the
+ * create path makes by itself.
+ *
+ * A DELIBERATE CHOICE OF ONE CANDIDATE, never a match this route worked out. The body carries the
+ * candidate id a person picked out of the search above, having compared the name, the phone tail
+ * and the CV's own filename. Nothing here infers who the employee is: on this production data a
+ * phone match was wrong 3 times in 8 (see employee-cv-candidates.ts), and a stranger's CV filed
+ * under an employee's name is worse than no CV at all.
+ *
+ * A COPY, not a link, because copyCandidateCvToEmployee copies — the employee outlives the
+ * application, and `ats_files` cascades when a candidate row is merged away.
+ *
+ * PUT rather than a second POST because this REPLACES the whole CV from a named source, and the
+ * two bodies could not be told apart otherwise (multipart for an upload, JSON here).
+ */
+export async function PUT(request: Request, { params }: { params: Promise<{ hrId: string }> }) {
+  try {
+    const csrf = assertSameOriginMutation(request);
+    if (csrf) return csrf;
+    const { hrId } = await params;
+    const access = await assertCanManage(request, hrId);
+    const body = (await request.json().catch(() => ({}))) as { candidateId?: unknown };
+    const candidateId = String(body.candidateId ?? "").trim();
+    if (!candidateId) {
+      return NextResponse.json(
+        { error: "employee_cv_carry_no_candidate", message: "Choose the candidate whose CV this is." },
+        { status: 400 },
+      );
+    }
+    const record = await copyCandidateCvToEmployee({
+      actorHrId: access.hrId ?? null,
+      candidateId,
+      hrId,
+    });
+    if (!record) {
+      // 422, not 500: the request was understood and the candidate is real, there is simply no CV
+      // behind them to carry. Says so plainly, because the person just chose them from a list that
+      // only offers candidates with a CV — so if this fires, the file went missing between the two
+      // calls and "nothing happened" would be the wrong thing to show.
+      return NextResponse.json(
+        {
+          error: "employee_cv_carry_empty",
+          message: "That candidate has no CV file on record any more.",
+        },
+        { status: 422 },
+      );
+    }
+    return NextResponse.json({ cv: record, success: true });
+  } catch (error) {
+    const { message, status } = errorStatus(error);
+    return NextResponse.json({ error: "employee_cv_carry_failed", message }, { status });
   }
 }
 

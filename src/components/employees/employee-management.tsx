@@ -2759,7 +2759,11 @@ export function EmployeeManagement({
                   hanging off one master record, both stored privately and both read through a
                   route rather than a URL. It renders nothing at all for a reader without the
                   grant — see EmployeeCvManager. */}
-              <EmployeeCvManager hrId={masterDetailsEmployee.hrId} key={`cv-${masterDetailsEmployee.hrId}`} />
+              <EmployeeCvManager
+                employeeName={masterDetailsEmployee.fullName}
+                hrId={masterDetailsEmployee.hrId}
+                key={`cv-${masterDetailsEmployee.hrId}`}
+              />
               {/* The checklist beside the record it belongs to — the same join the Employee Master
                   workbook makes, on the screen somebody is actually looking at. Read-only, and it
                   renders nothing at all without the employee_documents grant. */}
@@ -3604,7 +3608,7 @@ export function EmployeeManagement({
                   <h3 className="text-xs font-bold uppercase tracking-widest text-phx-ink-2">CV</h3>
                 </div>
                 {editingHrId ? (
-                  <EmployeeCvManager hrId={editingHrId} />
+                  <EmployeeCvManager employeeName={form.fullName} hrId={editingHrId} />
                 ) : (
                   <EmployeeCvPicker onChange={setStagedCv} staged={stagedCv} />
                 )}
