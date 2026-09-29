@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { applyHolidayOverrides } from "../src/lib/vacation/holiday-override-store.ts";
+import { applyHolidayOverrides, holidayOverrideOverlapsRange } from "../src/lib/vacation/holiday-override-store.ts";
 
 /**
  * Contract guards for admin-confirmed holiday overrides
@@ -97,4 +97,84 @@ export function runAttendanceHolidayOverridesTests() {
   const route = readFileSync("app/api/attendance/holiday-calendar/route.ts", "utf8");
   assert.match(route, /assertSameOriginMutation\(request\)/, "the bulk-save route must enforce same-origin CSRF protection");
   assert.match(route, /assertAttendanceSetupPermission\(access, "update"\)/, "the bulk-save route must require update permission, not just read");
+
+  // 8. THE RANGE PREDICATE MOVED INTO MEMORY AND MUST STILL MEAN WHAT THE SQL MEANT.
+  //
+  //    This read was the busiest query in the system: 199,148 requests in 24h of production edge
+  //    logs (2026-09-29), 16% of all Supabase traffic, against a 2-row table unchanged in six
+  //    weeks — because getConfirmedNationalHolidays is called ONE MONTH AT A TIME by every
+  //    calendar, plan, attendance, vacation and compliance surface, and only its Google half was
+  //    cached. The table is now read once and filtered in memory, so the filter must reproduce
+  //    the old SQL exactly:
+  //      or( and(official_date >= from, official_date <= to),
+  //          and(observed_date <= to, observed_end_date >= from) )
+  const ov = (officialDate: string, observedDate: string, observedEndDate = observedDate) =>
+    ({ observedDate, observedEndDate, officialDate });
+  const JUL = ["2026-07-01", "2026-07-31"] as const;
+
+  assert.equal(
+    holidayOverrideOverlapsRange(ov("2026-07-10", "2026-08-02"), ...JUL),
+    true,
+    "an override whose OFFICIAL date is in the window must match — July loses a day off it used to have",
+  );
+  assert.equal(
+    holidayOverrideOverlapsRange(ov("2026-06-30", "2026-07-02"), ...JUL),
+    true,
+    "an override whose OBSERVED date lands in the window must match — July gains a day off",
+  );
+  assert.equal(
+    holidayOverrideOverlapsRange(ov("2026-06-25", "2026-06-28", "2026-07-01"), ...JUL),
+    true,
+    "a multi-day observed span overlapping the window by ONE day must match",
+  );
+  assert.equal(
+    holidayOverrideOverlapsRange(ov("2026-05-01", "2026-05-03"), ...JUL),
+    false,
+    "an override with neither its official date nor its observed span in the window must NOT match",
+  );
+  assert.equal(
+    holidayOverrideOverlapsRange(ov("2026-07-31", "2026-07-31"), ...JUL),
+    true,
+    "the range ends are INCLUSIVE, exactly as .gte/.lte were",
+  );
+  assert.equal(
+    holidayOverrideOverlapsRange(ov("2026-08-01", "2026-08-01"), ...JUL),
+    false,
+    "the day after the window must not match",
+  );
+
+  // 9. THE READ IS CACHED AND THE WRITE DROPS IT.
+  //    Asserted against the source because the defect is structural: a per-range query shares
+  //    nothing between callers however fast each individual one is. Verified RED by restoring
+  //    the old `.or(...)` range query — 9a fires on it.
+  assert.doesNotMatch(
+    store,
+    /\.or\(\s*`?and\(official_date/,
+    "listHolidayOverridesOverlappingRange must NOT issue a per-range .or() query — it was the "
+      + "busiest statement in the instance. Read the table once and filter in memory.",
+  );
+  assert.match(
+    store,
+    /holidayOverrideCache = \{ expiresAt:/,
+    "the whole-table read must populate a TTL cache",
+  );
+  assert.match(
+    store,
+    /if \(error\) throw error;\s*\n\s*const rows =/,
+    "a failed read must throw BEFORE the cache is written — never pin an empty calendar for the TTL",
+  );
+  const upsertBody = store.slice(store.indexOf("export async function bulkUpsertHolidayOverrides"));
+  assert.match(
+    upsertBody,
+    /invalidateHolidayOverrideCache\(\)/,
+    "bulkUpsertHolidayOverrides must invalidate the cache after writing, or an admin reads back "
+      + "their own confirmation stale",
+  );
+  // Positive control: the table IS still read in this module, so 9a cannot pass merely because
+  // the query was deleted outright or renamed.
+  assert.match(
+    store,
+    /\.from\("attendance_holiday_overrides"\)\s*\n\s*\.select\(/,
+    "the module must still read the table — once, unfiltered",
+  );
 }
