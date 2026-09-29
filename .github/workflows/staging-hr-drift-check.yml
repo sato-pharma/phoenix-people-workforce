@@ -1,0 +1,158 @@
+name: Staging HR Drift Check
+
+# WHY THIS EXISTS (added 2026-09-29). Staging is a real clone of production and silently falls
+# behind. When it was measured it was missing 19 employees, 13 resignations, 36 occupancy rows,
+# 4 line-area rows, 2 areas, 5 teams and a position. Nothing anywhere said so: a dated territory
+# migration failed its own precondition on staging while succeeding on production, and that
+# refusal was the first and only signal. Every staging rehearsal of payroll, org or
+# sales-geography behaviour before that point was running against a different company.
+#
+# This is the alarm, not the fix. It runs `sync-staging-hr.mjs` in its DRY-RUN mode, which reads
+# both databases and writes nothing. The fix is the same script with --apply, run by a human who
+# has decided staging should be refreshed (owner's choice, 2026-09-29: a daily drift check with
+# no writes, because an automatic overwrite would silently destroy state somebody set up for
+# testing).
+#
+# 🔴 WHY THIS JOB NEVER FAILS ON DRIFT, UNLIKE ITS SIBLINGS.
+# deploy-drift-check and migration-drift-check exit 1 when they find drift, which is right for
+# them: they detect RARE faults, so a red run is news. This one detects an EXPECTED, RECURRING
+# condition — staging falls behind whenever anyone is hired, resigns or changes seat, which is
+# most days. And a scheduled workflow's check suite attaches to whatever commit is main HEAD when
+# it fires, while Railway withholds a production deploy when ANY suite on that commit fails
+# (AGENTS.md section 2.3). A job that is legitimately red most days would therefore withhold
+# production deploys most days.
+#
+# That is not hypothetical. On 2026-09-28 commit cd9e0be03 was fully green on ci.yml and its
+# production deploy was still marked SKIPPED, because the only red suite on it was
+# deploy-drift-check's own false alarm. This workflow would reproduce that every time staging
+# drifted, which is the normal state it exists to report.
+#
+# So: drift is reported by TELEGRAM ALERT and in the job summary, and the run stays green. The
+# alerting step mirrors migration-drift-check.yml's, including its continue-on-error, so a
+# Telegram outage cannot turn this into the red suite described above.
+#
+# COST. One run a day. It needs `postgres` from the lockfile, so unlike the curl-only drift
+# checks it does install dependencies — a couple of minutes a day. Actions spend in this repo is
+# already the highest it has been, so if that matters more than the signal, reduce the cron
+# rather than deleting the workflow: a weekly check still catches drift long before a migration
+# trips over it.
+
+on:
+  schedule:
+    - cron: "0 5 * * *" # 07:00 Cairo, before the working day and offset from the 07:00 UTC migration drift check
+  workflow_dispatch:
+
+# Never on push or pull_request. This measures drift that accumulates AFTER a merge, so a
+# per-commit run would say nothing a scheduled one does not — and would multiply the deploy-gate
+# exposure described above.
+
+permissions:
+  contents: read
+
+concurrency:
+  group: staging-hr-drift-check
+  cancel-in-progress: false
+
+jobs:
+  drift:
+    name: staging HR drift
+    runs-on: ubuntu-latest
+    # PHOENIX_STAGING_DATABASE_URL already exists as a secret. PHOENIX_PRODUCTION_DATABASE_URL
+    # does not yet — the job degrades to a loud warning rather than a failure until it is added,
+    # the same way migration-drift-check.yml handles its missing production key.
+    env:
+      HAS_PRODUCTION_DB_URL: ${{ secrets.PHOENIX_PRODUCTION_DATABASE_URL != '' }}
+      HAS_STAGING_DB_URL: ${{ secrets.PHOENIX_STAGING_DATABASE_URL != '' }}
+    outputs:
+      drifted: ${{ steps.check.outputs.drifted }}
+    steps:
+      - name: Report a missing secret and stop
+        if: ${{ env.HAS_PRODUCTION_DB_URL != 'true' || env.HAS_STAGING_DB_URL != 'true' }}
+        run: |
+          echo "::warning::staging HR drift was NOT checked — PHOENIX_PRODUCTION_DATABASE_URL and/or PHOENIX_STAGING_DATABASE_URL is unset. Add them (production ref ozucdzovmcqvepbozvqf, staging ref cifwmndunmlxjhyjugxa) to enable this check."
+          {
+            echo "### Staging HR drift — NOT CHECKED"
+            echo ""
+            echo "A required database URL secret is missing, so nothing was compared."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Check out
+        if: ${{ env.HAS_PRODUCTION_DB_URL == 'true' && env.HAS_STAGING_DB_URL == 'true' }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      # corepack before setup-node, for the same reason ci.yml does it in that order: with
+      # `cache: pnpm`, setup-node runs `pnpm store path` itself and the shim only exists once
+      # corepack is enabled. corepack reads the pinned pnpm from package.json.
+      - name: Enable Corepack (pnpm)
+        if: ${{ env.HAS_PRODUCTION_DB_URL == 'true' && env.HAS_STAGING_DB_URL == 'true' }}
+        run: corepack enable
+
+      - name: Set up Node.js
+        if: ${{ env.HAS_PRODUCTION_DB_URL == 'true' && env.HAS_STAGING_DB_URL == 'true' }}
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: "24"
+          cache: pnpm
+
+      - name: Install dependencies
+        if: ${{ env.HAS_PRODUCTION_DB_URL == 'true' && env.HAS_STAGING_DB_URL == 'true' }}
+        run: pnpm install --frozen-lockfile
+
+      - name: Compare staging against production (read only)
+        id: check
+        if: ${{ env.HAS_PRODUCTION_DB_URL == 'true' && env.HAS_STAGING_DB_URL == 'true' }}
+        env:
+          PHOENIX_PRODUCTION_DATABASE_URL: ${{ secrets.PHOENIX_PRODUCTION_DATABASE_URL }}
+          PHOENIX_STAGING_DATABASE_URL: ${{ secrets.PHOENIX_STAGING_DATABASE_URL }}
+        run: |
+          set -o pipefail
+          # The script writes nothing without --apply. Exit 2 means "drift found", which is NOT a
+          # failure here — see the block comment at the top of this file.
+          set +e
+          node scripts/sync-staging-hr.mjs | tee drift.txt
+          code=$?
+          set -e
+          {
+            echo "### Staging HR drift"
+            echo ""
+            echo '```'
+            cat drift.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$code" = "2" ]; then
+            echo "drifted=true" >> "$GITHUB_OUTPUT"
+            echo "summary=$(grep '^TOTAL:' drift.txt || echo 'staging has drifted')" >> "$GITHUB_OUTPUT"
+          elif [ "$code" = "0" ]; then
+            echo "drifted=false" >> "$GITHUB_OUTPUT"
+          else
+            # A real error (bad credentials, unreachable database) IS worth failing on: it means
+            # the alarm itself is broken, which is the one state this workflow must not hide.
+            echo "::error::the drift check could not run (exit $code)"
+            exit "$code"
+          fi
+
+      - name: Alert on drift
+        if: ${{ always() && steps.check.outputs.drifted == 'true' }}
+        continue-on-error: true
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_ALERT_CHAT_ID: ${{ secrets.TELEGRAM_ALERT_CHAT_ID }}
+          DRIFT_SUMMARY: ${{ steps.check.outputs.summary }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_ALERT_CHAT_ID" ]; then
+            echo "::warning::Staging HR drift found but no Telegram alert was sent — TELEGRAM_BOT_TOKEN or TELEGRAM_ALERT_CHAT_ID is unset. The drift is in the job summary."
+            exit 0
+          fi
+          curl -sS --max-time 20 -X POST \
+            "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d "chat_id=${TELEGRAM_ALERT_CHAT_ID}" \
+            -d "disable_web_page_preview=true" \
+            --data-urlencode "text=Staging HR data has drifted from production.
+${DRIFT_SUMMARY}
+
+Staging is behind, so anything rehearsed there is running against a different company. Nothing has been changed automatically.
+
+Fix: node scripts/sync-staging-hr.mjs --apply
+
+${RUN_URL}" > /dev/null
