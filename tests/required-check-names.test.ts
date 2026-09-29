@@ -12,8 +12,8 @@ import { RETIRED_CHECK_NAMES, declaredRequiredChecks } from "../scripts/required
  * The required-check list must not drift between branch protection, the workflows that produce the
  * checks, and the files a session reads in order to merge.
  *
- * WHY THIS EXISTS. The list has changed four times — 4 → 5 → 6 → 4 — and after every single change
- * the repository went on stating the old one:
+ * WHY THIS EXISTS. The list has changed five times — 4 → 5 → 6 → 4 → 2 — and after every single
+ * change the repository went on stating the old one:
  *
  *   2026-09-17 (#3950)  the unit suite left `validate` for its own `test` job, and nobody added the
  *                       new name to protection. For a day a RED unit suite showed four green
@@ -26,6 +26,14 @@ import { RETIRED_CHECK_NAMES, declaredRequiredChecks } from "../scripts/required
  *                       and `.claude/skills/verify-context`, the two files a session follows in
  *                       order to merge. A session followed `ship`, counted to six, and waited on
  *                       three checks that can never report again.
+ *   2026-09-29          `mobile` and `secret-scan` were demoted DELIBERATELY, minutes before #4800
+ *                       took them off the pull request. Those two steps are always one change: a
+ *                       required check whose job stops reporting leaves every PR on "Expected —
+ *                       waiting for status" and nothing can merge, while un-wiring the job first
+ *                       leaves a gate that no longer gates. Not rot, then — but it is the shape
+ *                       this test CANNOT see, and the reason clause 3 does not police it: the job
+ *                       ids did not change, so no offline signal existed at all. Only the live half
+ *                       caught the doc lag (`scripts/check-required-checks.mjs`), by being run.
  *
  * So there are two failure directions, and they are opposites:
  *   - a check that protection names but nothing produces blocks every PR forever;
@@ -131,12 +139,18 @@ export function runRequiredCheckNamesTests() {
   );
 
   // ── 1. The declaration must be internally consistent ────────────────────────────────────────
-  assert.ok(names.length >= 3, `expected AGENTS.md §2 to name at least three required checks, parsed ${names.length}`);
+  // The floor is a PARSER sanity check — it exists so a regex that silently matches nothing cannot
+  // pass forever — and it is NOT a policy minimum. It read `>= 3` until 2026-09-29, when `mobile`
+  // and `secret-scan` left protection and the real list became two, so the floor itself became a
+  // second stale claim about the gate: exactly what this file exists to stop, one level down. Two
+  // is the lowest the gate has ever actually been. If it ever goes to one, lower this and say so
+  // here — never pad §2 with a name protection does not require in order to satisfy a test.
+  assert.ok(names.length >= 2, `expected AGENTS.md §2 to name at least two required checks, parsed ${names.length}`);
   assert.equal(
     names.length,
     count,
     `AGENTS.md §2 says **${count} required checks** but names ${names.length} (${names.join(", ")}). ` +
-      "The count is the half of this sentence that has rotted every single time — it has been 4, 5, 6 and 4 again.",
+      "The count is the half of this sentence that has rotted every single time — it has been 4, 5, 6, 4 and now 2.",
   );
 
   // ── 2. Every declared name must be produced by a real job ───────────────────────────────────

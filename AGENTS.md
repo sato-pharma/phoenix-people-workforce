@@ -70,7 +70,7 @@ non-engineer: what happened, what it costs, what to do next.
 Why each exists: `docs/agents-incident-history.md` — read it before changing branch protection, CI
 cost, the deploy path or the region.
 
-- **Never use `gh pr merge --auto`.** `main` is branch-protected with **4 required checks** — `validate`, `checks`, `mobile`, `secret-scan`; `allow_auto_merge: false`. Merge only with a plain `gh pr merge` after separate owner approval. 🔴 **THAT LIST HAS ROTTED FOUR TIMES — 4 → 5 → 6 → 4, the last on 2026-09-27 when #4527 folded `lint`+`typecheck`+`test` into one `checks` job — so `lint`, `typecheck` and `test` no longer EXIST as check names.** Never quote this line, or any doc, as the source: read `branches/main/protection/required_status_checks` live and count passes against what it returns. A gate counting to a number a doc gave you waits forever for checks that are gone. Account: `docs/agents-incident-history.md`.
+- **Never use `gh pr merge --auto`.** `main` is branch-protected with **2 required checks** — `validate`, `checks`; `allow_auto_merge: false`. Merge only with a plain `gh pr merge` after separate owner approval. 🔴 **THAT LIST HAS NOW ROTTED FIVE TIMES — 4 → 5 → 6 → 4 → 2, the last read 2026-09-29 when `mobile` and `secret-scan` were no longer in protection.** 🔴 **Both still RUN and still report — neither BLOCKS a merge any more**, so a red Expo typecheck and a secret-scan finding no longer stop a PR: read them on the commit, never assume they gated it. `lint`, `typecheck` and `test` have not existed as check names since #4527 folded them into `checks`. Never quote this line, or any doc, as the source: read `branches/main/protection/required_status_checks` live and count passes against what it returns. A gate counting to a number a doc gave you waits forever for checks that are gone. `node scripts/check-required-checks.mjs` compares this line against the live gate and is the ONE thing that catches the next rotation. Account: `docs/agents-incident-history.md`.
 - **Never commit directly onto local `main` in the primary checkout.** The push is then rejected (`enforce_admins: true`), and the commit strands on the one checkout every parallel session shares — where another session’s `git reset` destroys it. Branch first. If you already committed: `git branch <name> <sha>` then `git reset --keep origin/main` (**not** `--hard`, which would also wipe other sessions’ uncommitted work), then open a PR. Cost a real recovery on 2026-09-12 (#3728).
 - **Do NOT run `gh pr update-branch` reflexively** — "require branches up to date" is OFF (`strict: false`) and each run costs ~16 Actions minutes. Run it **only when the change depends on something newly on `main`**.
 - **`gh pr update-branch` acts on the SERVER** — `git fetch` and `git merge --ff-only origin/<branch>` before your next push; CI re-runs on the new head.
@@ -505,17 +505,27 @@ volume is what it is" and "Where the money actually is".
 
 `check:harden` and the `ask-before-validation` hook are retired at the owner's instruction. Do not
 reintroduce them or invent a replacement — no "quick subset" of lint + typecheck before pushing, no
-`pnpm run ci` as a pre-push ritual. **Push the branch and let the PR's checks answer.** The four
-**required** checks — `validate`, `checks` (lint, `next typegen`, typecheck and the unit suite, all
-STEPS of one job since 2026-09-27, #4527), `mobile` (the Expo app's `npm ci` + typecheck, when
-`mobile/` changed) and `secret-scan` — run on the PR head commit and block the merge if any is red.
-**The unit suite is a STEP inside `checks`** — a doc naming `test`, `lint` or `typecheck` as a job or
-a check name, or placing a pinned test in `validate`, is stale.
+`pnpm run ci` as a pre-push ritual. **Push the branch and let the PR's checks answer.** The two
+**required** checks — `validate`, and `checks` (lint, `next typegen`, typecheck and the unit suite,
+all STEPS of one job since 2026-09-27, #4527) — run on the PR head commit and block the merge if
+either is red. **The unit suite is a STEP inside `checks`** — a doc naming `test`, `lint` or
+`typecheck` as a job or a check name, or placing a pinned test in `validate`, is stale.
+🔴 **`mobile` and `secret-scan` STILL RUN BUT NO LONGER GATE** (protection read live 2026-09-29).
+`mobile` is the Expo app's `npm ci` + typecheck when `mobile/` changed; `secret-scan` lives in
+`security-scan.yml`. Both report on the PR and **neither blocks the merge**, so a red one is now a
+thing to READ and judge, not something that will stop a bad merge on your behalf — and "all required
+checks green" no longer says anything about either.
 🔴 **NEVER TAKE "PINNED BY A REQUIRED CHECK" ON TRUST, AND NEVER COUNT TO A NUMBER A DOC GAVE YOU —
 read the protection API.** Both halves cost real incidents: the 2026-09-17 split left `test` OUT of
 protection until 09-18, so every locked-rule test went red without blocking a merge; and the
 2026-09-27 rename left 19 places in this repo telling sessions to wait for six checks that can never
-all report again. `pnpm run ci` is opt-in: run it **only when the owner names it**.
+all report again. 🔴 **The 2026-09-29 drop was DELIBERATE, not rot** — `mobile` and `secret-scan`
+left protection minutes before #4800 took them off the pull request, and the two HAD to move
+together: **a required check whose job no longer reports leaves every PR on "Expected — waiting for
+status" and nothing can ever merge.** So demoting a check and un-wiring its job are ONE change in
+one window, never two — either half alone is a permanent block or the 2026-09-17 shape. Only this
+doc lagged, and `node scripts/check-required-checks.mjs` is what catches that lag. `pnpm run ci` is
+opt-in: run it **only when the owner names it**.
 
 🔴 **A LOCAL TYPECHECK IS NOW DENIED MECHANICALLY — `bash-guard.mjs` C8, live 2026-09-25 — in every
 spelling**, including `pnpm/npm/yarn run typecheck`, `npx`/`pnpm exec tsc --noEmit`,

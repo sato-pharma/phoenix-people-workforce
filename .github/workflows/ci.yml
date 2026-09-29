@@ -568,10 +568,14 @@ jobs:
   # this job — merging it would buy one rounding at disproportionate risk.
   #
   # 🔴 THE REQUIRED CHECK NAMES CHANGED, AND THE SWAP IS DONE. Branch protection was repointed
-  # on 2026-09-27 at the owner's instruction, in the same window #4527 merged: the required
-  # contexts are now `validate`, `checks`, `mobile`, `secret-scan`, and `lint`, `typecheck` and
-  # `test` no longer exist as check names — they are the steps below. Verified live against
-  # branches/main/protection/required_status_checks.
+  # on 2026-09-27 at the owner's instruction, in the same window #4527 merged: `lint`, `typecheck`
+  # and `test` no longer exist as check names — they are the steps below.
+  #
+  # 🔴 AND AGAIN ON 2026-09-29: the required contexts are now just `validate` and `checks`.
+  # `mobile` and `secret-scan` were dropped from protection — both still run and still report,
+  # neither blocks a merge. Verified live against branches/main/protection/required_status_checks;
+  # `node scripts/check-required-checks.mjs` re-checks it and is the only thing that will catch the
+  # sixth rotation. Do not restate the list anywhere without running that script first.
   #
   # WHAT IT COST, so the next rename is done differently: nineteen places in the repo went on
   # saying "6 required checks" and naming the three dead ones, including .claude/skills/ship and

@@ -36,11 +36,14 @@ All commands run from the repo root.
 | Whole gate, by hand — **only when the owner names it** | `pnpm run ci` |
 
 **CI is the gate. Do not run a local full validation** — no "quick subset" of lint + typecheck
-before pushing, no `pnpm run ci` as a pre-push ritual. Push the branch and let the PR's four
-required checks answer — `validate`, `checks`, `mobile`, `secret-scan`; `lint`, `typecheck` and
-`test` are STEPS of `checks` since 2026-09-27 (#4527), not check names, so never wait for them by
-name. Migrations and production deploys are the two things CI never sees. Full
-rule, the retired `check:harden`, and the per-change matrix: [AGENTS.md §7](AGENTS.md).
+before pushing, no `pnpm run ci` as a pre-push ritual. Push the branch and let the PR's two
+required checks answer — `validate` and `checks`; `lint`, `typecheck` and `test` are STEPS of
+`checks` since 2026-09-27 (#4527), not check names, so never wait for them by name. **`mobile` and
+`secret-scan` still run but no longer gate** (protection read live 2026-09-29) — read them, do not
+count on them. Never trust that list: it has rotted five times, so read
+`branches/main/protection/required_status_checks` live. Migrations and production deploys are the
+two things CI never sees. Full rule, the retired `check:harden`, and the per-change matrix:
+[AGENTS.md §7](AGENTS.md).
 
 🔴 **A local typecheck is no longer a "fast editing gate" — it does not fit on the owner's machine,
 and `check:edit` is retired as an editing habit.** Measured 2026-09-25: a cold `tsc` needs 4.0–4.5 GB
