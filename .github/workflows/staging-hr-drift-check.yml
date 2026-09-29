@@ -69,28 +69,77 @@ jobs:
   drift:
     name: staging HR drift
     runs-on: ubuntu-latest
-    # PHOENIX_STAGING_DATABASE_URL already exists as a secret. PHOENIX_PRODUCTION_DATABASE_URL
-    # does not yet — the job degrades to a loud warning rather than a failure until it is added,
-    # the same way migration-drift-check.yml handles its missing production key.
+    # 🔴 THE DATABASE-URL PATH IS THE FULL CHECK, AND IT HAS NEVER ONCE RUN.
+    # PHOENIX_PRODUCTION_DATABASE_URL does not exist. Measured 2026-09-29 across all 65 repository
+    # secrets, the repository variables, both Phoenix environments, the second repo, and the
+    # organisation (there is none — the repo is user-owned), and confirmed three times by the
+    # workflow itself: every dispatch evaluated the secret as empty and stopped at the warning,
+    # measuring nothing.
+    #
+    # So the alarm now has a FALLBACK that uses the secrets that DO exist. Both projects'
+    # service-role keys are already here, and row counts over PostgREST answer the one question this
+    # workflow is for — has staging fallen behind? The real drift on 2026-09-29 was one employee, one
+    # occupancy row and one line-area row, and the employees count alone would have caught it.
+    #
+    # The fallback is weaker and says so: PostgREST exposes `public`, so the `au` tables are reached
+    # through their public views and au.occupancy_history has none. A working weak alarm beats a
+    # perfect one that has never run. When the database URL is added, the full reconciler takes over
+    # and the fallback is skipped — no further change needed.
     env:
       HAS_PRODUCTION_DB_URL: ${{ secrets.PHOENIX_PRODUCTION_DATABASE_URL != '' }}
       HAS_STAGING_DB_URL: ${{ secrets.PHOENIX_STAGING_DATABASE_URL != '' }}
+      HAS_REST_KEYS: ${{ (secrets.PRODUCTION_SUPABASE_SERVICE_ROLE_KEY != '' || secrets.SUPABASE_SERVICE_ROLE_KEY != '') && secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY != '' }}
     outputs:
-      drifted: ${{ steps.check.outputs.drifted }}
+      drifted: ${{ steps.check.outputs.drifted || steps.rest.outputs.drifted }}
     steps:
-      - name: Report a missing secret and stop
-        if: ${{ env.HAS_PRODUCTION_DB_URL != 'true' || env.HAS_STAGING_DB_URL != 'true' }}
+      - name: Report that nothing can be compared
+        if: ${{ (env.HAS_PRODUCTION_DB_URL != 'true' || env.HAS_STAGING_DB_URL != 'true') && env.HAS_REST_KEYS != 'true' }}
         run: |
-          echo "::warning::staging HR drift was NOT checked — PHOENIX_PRODUCTION_DATABASE_URL and/or PHOENIX_STAGING_DATABASE_URL is unset. Add them (production ref ozucdzovmcqvepbozvqf, staging ref cifwmndunmlxjhyjugxa) to enable this check."
+          echo "::warning::staging HR drift was NOT checked — neither the database URLs nor the service-role keys are available. Add PHOENIX_PRODUCTION_DATABASE_URL (production ref ozucdzovmcqvepbozvqf) for the full check."
           {
             echo "### Staging HR drift — NOT CHECKED"
             echo ""
-            echo "A required database URL secret is missing, so nothing was compared."
+            echo "Neither the database URLs nor the service-role keys were available, so nothing was compared."
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Check out
-        if: ${{ env.HAS_PRODUCTION_DB_URL == 'true' && env.HAS_STAGING_DB_URL == 'true' }}
+        if: ${{ (env.HAS_PRODUCTION_DB_URL == 'true' && env.HAS_STAGING_DB_URL == 'true') || env.HAS_REST_KEYS == 'true' }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      # The fallback needs no dependencies — fetch and the Node runtime — so it runs before
+      # setup-node and costs seconds rather than a pnpm install.
+      - name: Compare row counts over PostgREST (read only, both sides)
+        id: rest
+        if: ${{ (env.HAS_PRODUCTION_DB_URL != 'true' || env.HAS_STAGING_DB_URL != 'true') && env.HAS_REST_KEYS == 'true' }}
+        env:
+          PRODUCTION_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.PRODUCTION_SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          STAGING_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -o pipefail
+          set +e
+          node scripts/check-staging-drift-rest.mjs | tee rest-drift.txt
+          code=$?
+          set -e
+          {
+            echo "### Staging drift — row counts (PostgREST fallback)"
+            echo ""
+            echo "The full reconciler needs PHOENIX_PRODUCTION_DATABASE_URL, which is not set, so this"
+            echo "compares row counts with the service-role keys instead. It cannot see au.occupancy_history."
+            echo ""
+            echo '```'
+            cat rest-drift.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$code" = "2" ]; then
+            echo "drifted=true" >> "$GITHUB_OUTPUT"
+            echo "summary=$(grep '^STAGING HAS DRIFTED' rest-drift.txt || echo 'staging has drifted')" >> "$GITHUB_OUTPUT"
+          elif [ "$code" = "0" ]; then
+            echo "drifted=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::the PostgREST drift probe could not run (exit $code)"
+            exit "$code"
+          fi
 
       # corepack before setup-node, for the same reason ci.yml does it in that order: with
       # `cache: pnpm`, setup-node runs `pnpm store path` itself and the shim only exists once
@@ -177,13 +226,15 @@ jobs:
             exit "$code"
           fi
 
+      # EITHER path may have found the drift. Watching only `check` would have left the fallback
+      # silent — a check that detects and never tells anybody is the same as no check.
       - name: Alert on drift
-        if: ${{ always() && steps.check.outputs.drifted == 'true' }}
+        if: ${{ always() && (steps.check.outputs.drifted == 'true' || steps.rest.outputs.drifted == 'true') }}
         continue-on-error: true
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_ALERT_CHAT_ID: ${{ secrets.TELEGRAM_ALERT_CHAT_ID }}
-          DRIFT_SUMMARY: ${{ steps.check.outputs.summary }}
+          DRIFT_SUMMARY: ${{ steps.check.outputs.summary || steps.rest.outputs.summary }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_ALERT_CHAT_ID" ]; then
