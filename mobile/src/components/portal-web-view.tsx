@@ -149,6 +149,9 @@ export function PortalWebView({
       ) : (
         <WebView<object>
           // The tab is signed in by the hand-off, so nothing here carries a token of its own.
+          // The shell marker in the user-agent is how the portal knows to render in app mode (drop
+          // its own header + bottom nav); it must match phoenixNativeClientUserAgentMarker server-side.
+          applicationNameForUserAgent="PhoenixApp"
           allowsBackForwardNavigationGestures
           forceDarkOn={dark}
           onShouldStartLoadWithRequest={onNavigation}

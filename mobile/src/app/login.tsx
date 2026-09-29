@@ -1,127 +1,116 @@
-import { useState } from "react";
-import {
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  Text,
-  View,
-} from "react-native";
+import { router } from "expo-router";
+import { useRef, useState } from "react";
+import { View, useColorScheme } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { WebView, type WebViewNavigation } from "react-native-webview";
 
-import { ErrorNotice, Field, PrimaryButton } from "@/components/ui";
-import { ApiError, NetworkError } from "@/lib/api";
-import { apiBaseUrl, isProductionTarget } from "@/lib/config";
+import { ErrorNotice, LoadingScreen } from "@/components/ui";
+import { apiBaseUrl } from "@/lib/config";
 import { useSession } from "@/lib/session";
-import { space, type } from "@/theme/tokens";
+import { space } from "@/theme/tokens";
 import { usePalette } from "@/theme/use-palette";
+
+/**
+ * Sign in on the REAL web /login page, inside the app.
+ *
+ * Owner, 2026-09-29: the login must be exactly the web app. So this is the production `/login` page
+ * itself — same design, same biometrics, same everything — rendered in a WebView, not a native copy.
+ * The web login sets the `phoenix_session` COOKIE in the WebView's jar; the native half of the app
+ * (Phoenix CRM, its offline outbox, push) needs the SAME token as a BEARER. `injectedJavaScript`
+ * bridges that gap: once login has redirected into `/employee-portals`, it asks
+ * `/api/auth/native-token` for the bearer (the cookie rides that same-origin fetch automatically)
+ * and posts it back here; `adoptWebSession` stores it exactly as a native sign-in would, and
+ * RouteGuard then moves the app into the portal.
+ *
+ * 🔴 `applicationNameForUserAgent` CARRIES THE SHELL MARKER, and the whole flow rests on it. The
+ * native-token bridge refuses any caller whose user-agent lacks it, and the portal reads it to drop
+ * its own header/bottom-nav (app mode). A header on the initial load would not do — it would not
+ * reach the page's own fetch to the bridge — but the user-agent is the WebView's own, on every
+ * request.
+ *
+ * NAVIGATION IS PENNED to this server's login and portal space. A login page can carry links out
+ * (a "forgot password" help page, say); following one inside a view about to hold a session is how
+ * a credential leaks, so anything off this origin's `/login`, `/api/auth/*` or `/employee-portals`
+ * is refused.
+ */
+const NATIVE_SHELL_USER_AGENT_MARKER = "PhoenixApp"; // must match phoenixNativeClientUserAgentMarker on the server
+
+const BRIDGE = `
+(function () {
+  try {
+    if (!location.pathname.indexOf) return true;
+    if (location.pathname.indexOf('/employee-portals') !== 0) return true;
+    if (window.__phoenixBridgeDone) return true;
+    window.__phoenixBridgeDone = true;
+    fetch('/api/auth/native-token', { method: 'POST', credentials: 'include', headers: { 'x-requested-with': 'PhoenixApp' } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (data) { if (data) window.ReactNativeWebView.postMessage(JSON.stringify(data)); })
+      .catch(function () {});
+  } catch (e) {}
+  return true;
+})();
+`;
 
 export default function LoginScreen() {
   const palette = usePalette();
+  const dark = useColorScheme() === "dark";
   const insets = useSafeAreaInsets();
-  const { signIn } = useSession();
+  const { adoptWebSession } = useSession();
 
-  const [loginId, setLoginId] = useState("");
-  const [password, setPassword] = useState("");
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const adopted = useRef(false);
 
-  const canSubmit = loginId.trim().length > 0 && password.length > 0 && !busy;
+  const uri = `${apiBaseUrl}/login?next=${encodeURIComponent("/employee-portals")}`;
 
-  async function handleSubmit() {
-    if (!canSubmit) return;
+  /** Only this server's own login and portal space, and only http(s). Everything else is refused. */
+  const allowed = (url: string): boolean => {
+    if (!url.startsWith(`${apiBaseUrl}/`)) return false;
+    const path = url.slice(apiBaseUrl.length);
+    return (
+      path === "/" ||
+      path.startsWith("/login") ||
+      path.startsWith("/api/auth/") ||
+      path.startsWith("/employee-portals")
+    );
+  };
 
-    setBusy(true);
-    setError(null);
-
-    try {
-      await signIn(loginId.trim(), password);
-      // No navigation here on purpose — RouteGuard sees the session change and moves the app. One
-      // place decides where a signed-in person lands, rather than every entry point having a view.
-    } catch (caught) {
-      // The server's own message is shown verbatim: it distinguishes a wrong password from a locked
-      // account, a rate limit and a deactivated employee, and each of those needs a different action
-      // from the person holding the phone. Replacing it with "Login failed" would throw that away.
-      const message =
-        caught instanceof ApiError || caught instanceof NetworkError
-          ? caught.message
-          : "Could not sign you in. Please try again.";
-      setError(message);
-    } finally {
-      setBusy(false);
-    }
-  }
+  const onNavigation = (event: WebViewNavigation): boolean => allowed(event.url);
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      style={{ backgroundColor: palette.paper, flex: 1 }}
-    >
-      <ScrollView
-        contentContainerStyle={{
-          flexGrow: 1,
-          gap: space.xl,
-          justifyContent: "center",
-          paddingBottom: insets.bottom + space.xl,
-          paddingHorizontal: space.lg,
-          paddingTop: insets.top + space.xl,
-        }}
-        keyboardShouldPersistTaps="handled"
-      >
-        <View style={{ gap: space.sm }}>
-          <Text style={[type.display, { color: palette.ink }]}>Phoenix</Text>
-          <Text style={[type.body, { color: palette.inkSoft }]}>
-            Sign in with the HR ID and password you use for the employee portal.
-          </Text>
+    <View style={{ backgroundColor: palette.paper, flex: 1, paddingTop: insets.top }}>
+      {error ? (
+        <View style={{ padding: space.lg }}>
+          <ErrorNotice message={error} />
         </View>
-
-        {!isProductionTarget ? (
-          // A build pointed somewhere other than production says so, always. Not a debug nicety:
-          // staging holds real names and real payroll, so knowing which system is answering is the
-          // difference between a test and a change to somebody's pay.
-          <View
-            style={{
-              backgroundColor: palette.accentSoft,
-              borderColor: palette.accentLine,
-              borderWidth: 1,
-              padding: space.md,
-            }}
-          >
-            <Text style={[type.meta, { color: palette.ink2 }]}>
-              This build is connected to {apiBaseUrl}, not the live system.
-            </Text>
-          </View>
-        ) : null}
-
-        <View style={{ gap: space.lg }}>
-          <Field
-            autoCapitalize="characters"
-            autoComplete="username"
-            autoCorrect={false}
-            editable={!busy}
-            label="HR ID"
-            onChangeText={setLoginId}
-            placeholder="B-10"
-            returnKeyType="next"
-            value={loginId}
-          />
-          <Field
-            autoCapitalize="none"
-            autoComplete="current-password"
-            autoCorrect={false}
-            editable={!busy}
-            label="Password"
-            onChangeText={setPassword}
-            onSubmitEditing={handleSubmit}
-            returnKeyType="go"
-            secureTextEntry
-            value={password}
-          />
-
-          {error ? <ErrorNotice message={error} /> : null}
-
-          <PrimaryButton busy={busy} disabled={!canSubmit} label="Sign in" onPress={handleSubmit} />
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+      ) : (
+        <WebView<object>
+          applicationNameForUserAgent={NATIVE_SHELL_USER_AGENT_MARKER}
+          forceDarkOn={dark}
+          injectedJavaScript={BRIDGE}
+          onMessage={(event) => {
+            if (adopted.current) return;
+            try {
+              const payload = JSON.parse(event.nativeEvent.data);
+              if (payload?.sessionToken) {
+                adopted.current = true;
+                adoptWebSession(payload);
+                // RouteGuard moves the app when the session flips; this is belt-and-braces for a
+                // build where the guard is not mounted above this screen.
+                router.replace("/");
+              }
+            } catch {
+              setError("The sign-in did not complete. Please try again.");
+            }
+          }}
+          onShouldStartLoadWithRequest={onNavigation}
+          originWhitelist={[`${apiBaseUrl}/*`]}
+          renderLoading={() => <LoadingScreen label="Loading sign in…" />}
+          setSupportMultipleWindows={false}
+          source={{ uri }}
+          startInLoadingState
+          style={{ backgroundColor: palette.paper, flex: 1 }}
+        />
+      )}
+    </View>
   );
 }
