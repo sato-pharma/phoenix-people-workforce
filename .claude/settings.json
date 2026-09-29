@@ -38,6 +38,15 @@
             "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/primary-write-guard.mjs\""
           }
         ]
+      },
+      {
+        "matcher": "Write|Edit|NotebookEdit|Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/mobile-freeze-guard.mjs\""
+          }
+        ]
       }
     ],
     "UserPromptSubmit": [
