@@ -48,6 +48,7 @@ status, give it its own line.
 - **grep -r hangs on this checkout — use git grep or rg.** — `shell-grep-unusable-use-git-grep-or-rg`
 - **pnpm run <script> PURGES node_modules** — `pnpm-run-tries-to-purge-node-modules-when-the-lockfile-moved`
 - **MSYS mangles paths silently, four ways:** — `git-ref-colon-path-is-mangled-by-msys-returns-empty`
+- **Grepping a wrapped report returns a middle line that reads as a verdict — read the section, and measure the thing itself** — `grepping-a-wrapped-report-turns-an-explanation-into-a-verdict` **(inline — load-bearing)**
 - **`TZ=Africa/Cairo date` silently returns UTC in MSYS — 3h early, no error** — `tz-africa-cairo-silently-returns-utc-in-msys` **(inline — load-bearing)**
 - **`main` is usually NOT in the primary — a worktree holds it, so ahead/behind read from HEAD there is real but mislabelled** — `main-is-not-the-primary-checkout` **(inline — load-bearing)**
 - **A scheduled task run by hand records no `lastRunAt` and creates no session — both absences are normal, not proof it failed** — `a-manual-scheduled-task-run-leaves-no-trace` **(inline — load-bearing)**
