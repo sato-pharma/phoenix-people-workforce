@@ -19,8 +19,8 @@
 # scoping to the two parents that genuinely pin below the floor. The bump does not fail, it WAITS:
 # the real version change then lands inside whatever unrelated PR next regenerates the lockfile.
 #
-# Pinned by tests/pnpm-override-scope.test.ts (required `checks` job), which allows only the one
-# documented exception still outstanding. Do not "fix" a red run there by adding to its allowlist.
+# Pinned by tests/pnpm-override-scope.test.ts (required `checks` job). Its allowlist is now EMPTY,
+# so EVERY bare override over a direct dependency fails. Do not "fix" a red run by adding to it.
 overrides:
   "@babel/core": ^7.29.6
   "@opentelemetry/core": ^2.8.0
@@ -207,7 +207,17 @@ overrides:
   # CI could not have caught this: `pnpm audit --audit-level=high --prod` filters out BOTH medium
   # severity and the dev graph, so main stayed green the whole time. Dependabot alone saw it.
   qs: ^6.16.0
-  sharp: ^0.35.3
+  # sharp REMOVED 2026-09-29 — it was bare, and therefore capping our own direct dependency. It was
+  # added by 65c6e30a2 as a `>=0.35.3` floor for the libvips CVEs (CVE-2026-33327/33328/35590/35591),
+  # and it is now REDUNDANT on both sides of the graph: package.json declares `^0.35.4`, already above
+  # the floor, and next@16.3.3 declares `sharp: ^0.35.3` itself as an optionalDependency. Nothing is
+  # un-pinned by deleting it. It was NOT merely mis-scoped, so scoping it to `next>sharp` would have
+  # preserved an entry that protects nothing.
+  #
+  # Measured, not assumed: the lockfile's importer specifier read `^0.35.3` while package.json said
+  # `^0.35.4` — the override was already overriding the manifest, exactly as the bare nodemailer entry
+  # did. Regenerating resolution with it gone changes THREE lines and keeps sharp at 0.35.4; none of
+  # its 25 platform `@img/sharp-*` packages move.
   tar: ^7.5.21
   tmp: ^0.2.6
   uuid: 11.1.1
