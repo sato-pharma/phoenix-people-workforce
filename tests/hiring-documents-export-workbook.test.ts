@@ -10,6 +10,7 @@ import {
 } from "../src/lib/hiring-documents/export-workbook.ts";
 import {
   EMPTY_HIRING_DOCUMENT_FILTERS,
+  HIRING_DOCUMENT_SCANNING_UNSCANNED,
   filterHiringDocumentEmployees,
   hiringDocumentCompletionPercent,
   hiringDocumentFilterSearchParams,
@@ -228,6 +229,39 @@ export async function runHiringDocumentsExportWorkbookTests() {
     ),
     ["A-11", "A-13"],
     "the line filter must narrow the export exactly as it narrows the screen",
+  );
+
+  // ── 2b. the scan-only filter (owner, 2026-09-29)
+  const scanOnly = filterHiringDocumentEmployees(EMPLOYEES, DOCUMENTS, {
+    ...EMPTY_HIRING_DOCUMENT_FILTERS,
+    scanning: HIRING_DOCUMENT_SCANNING_UNSCANNED,
+  });
+  assert.deepEqual(
+    scanOnly.map((row) => row.hrId),
+    ["A-12"],
+    "only Basma has a document ticked with no file behind it",
+  );
+  assert.ok(
+    !scanOnly.some((row) => row.hrId === "A-13"),
+    "Karim has three documents outstanding and nothing unscanned — chasing work is not scanning work",
+  );
+  // 🔴 THE CASE THAT PROVES IT IS NOT A COMPLETION FILTER IN DISGUISE. An employee can read 100%
+  // complete with every one of those documents unscanned — which is exactly where production is,
+  // 3 files behind 380 ticks — so no completion range can ever find this work.
+  const allTickedNoneScanned = employee({ fullName: "Sara Adel", hrId: "A-15" }, [
+    entry({ documentId: "doc-id", fileCount: 0, status: "submitted" }),
+    entry({ documentId: "doc-contract", fileCount: 0, status: "submitted" }),
+    entry({ documentId: "doc-degree", fileCount: 0, status: "submitted" }),
+    entry({ documentId: "doc-insurance", fileCount: 0, status: "submitted" }),
+  ]);
+  assert.equal(hiringDocumentCompletionPercent(allTickedNoneScanned, DOCUMENTS), 100);
+  assert.deepEqual(
+    filterHiringDocumentEmployees([allTickedNoneScanned], DOCUMENTS, {
+      ...EMPTY_HIRING_DOCUMENT_FILTERS,
+      scanning: HIRING_DOCUMENT_SCANNING_UNSCANNED,
+    }).map((row) => row.hrId),
+    ["A-15"],
+    "100% complete and four documents to scan — the filter finds her, a completion range never could",
   );
 
   // ── 3. the workbook itself

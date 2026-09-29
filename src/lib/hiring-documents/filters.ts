@@ -11,7 +11,7 @@
 // export route is a Node route, and both import this.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { hiringDocumentsFor } from "@/lib/hiring-documents/readiness-signal";
+import { hiringDocumentSignal, hiringDocumentsFor } from "@/lib/hiring-documents/readiness-signal";
 import type {
   HiringDocumentDefinition,
   HiringDocumentEmployeeRow,
@@ -30,8 +30,20 @@ export type HiringDocumentFilterState = {
   line: string;
   manager: string;
   query: string;
+  /**
+   * The scan-only view: `HIRING_DOCUMENT_FILTER_ALL` is everybody, `"unscanned"` keeps only the
+   * people with at least one document ticked submitted and no file on record.
+   *
+   * ITS OWN FILTER RATHER THAN A COMPLETION RANGE, because the two measure different things: an
+   * employee can read 100% complete and still have every one of those documents unscanned. That is
+   * precisely the state production is in — 3 files behind 380 ticks — so no completion range can
+   * ever find this work.
+   */
+  scanning: string;
   status: string;
 };
+
+export const HIRING_DOCUMENT_SCANNING_UNSCANNED = "unscanned";
 
 export const EMPTY_HIRING_DOCUMENT_FILTERS: HiringDocumentFilterState = {
   completionMax: "",
@@ -42,8 +54,27 @@ export const EMPTY_HIRING_DOCUMENT_FILTERS: HiringDocumentFilterState = {
   line: HIRING_DOCUMENT_FILTER_ALL,
   manager: HIRING_DOCUMENT_FILTER_ALL,
   query: "",
+  scanning: HIRING_DOCUMENT_FILTER_ALL,
   status: HIRING_DOCUMENT_FILTER_ALL,
 };
+
+/**
+ * Has this employee anything to scan — a document ticked submitted with no file behind it?
+ *
+ * Asks `hiringDocumentSignal`, so it agrees with the cell the reader is looking at and with the
+ * workbook's own "Submitted · no file" rows rather than re-deriving the state from two columns.
+ * Exit documents are excluded by `hiringDocumentsFor`, as everywhere else.
+ */
+export function hasUnscannedDocuments(
+  employee: HiringDocumentEmployeeRow,
+  documents: HiringDocumentDefinition[],
+): boolean {
+  return hiringDocumentsFor(documents, employee).some((document) => {
+    const entry = employee.documents[document.id];
+    if (!entry) return false;
+    return hiringDocumentSignal(entry) === "unevidenced";
+  });
+}
 
 function parseDateString(value: string) {
   const parsed = new Date(`${value}T00:00:00`);
@@ -111,7 +142,8 @@ export function filterHiringDocumentEmployees(
       (filters.line === HIRING_DOCUMENT_FILTER_ALL || employee.lineName === filters.line) &&
       (filters.status === HIRING_DOCUMENT_FILTER_ALL || employee.employmentStatus === filters.status) &&
       (filters.manager === HIRING_DOCUMENT_FILTER_ALL || employee.managerName === filters.manager) &&
-      (filters.jobTitle === HIRING_DOCUMENT_FILTER_ALL || employee.jobTitle === filters.jobTitle)
+      (filters.jobTitle === HIRING_DOCUMENT_FILTER_ALL || employee.jobTitle === filters.jobTitle) &&
+      (filters.scanning !== HIRING_DOCUMENT_SCANNING_UNSCANNED || hasUnscannedDocuments(employee, documents))
     );
   });
 }
@@ -129,6 +161,7 @@ export function describeHiringDocumentFilters(filters: HiringDocumentFilterState
   if (filters.status !== HIRING_DOCUMENT_FILTER_ALL) parts.push(`Employment status: ${filters.status}`);
   if (filters.manager !== HIRING_DOCUMENT_FILTER_ALL) parts.push(`Manager: ${filters.manager}`);
   if (filters.jobTitle !== HIRING_DOCUMENT_FILTER_ALL) parts.push(`Job title: ${filters.jobTitle}`);
+  if (filters.scanning === HIRING_DOCUMENT_SCANNING_UNSCANNED) parts.push("Scanning: only employees with a document ticked but never scanned");
   if (filters.hireDateFrom || filters.hireDateTo) {
     parts.push(`Hire date: ${filters.hireDateFrom || "any"} to ${filters.hireDateTo || "any"}`);
   }
@@ -148,6 +181,7 @@ const PARAM_KEYS: Array<[keyof HiringDocumentFilterState, string]> = [
   ["line", "line"],
   ["manager", "manager"],
   ["query", "q"],
+  ["scanning", "scanning"],
   ["status", "status"],
 ];
 
