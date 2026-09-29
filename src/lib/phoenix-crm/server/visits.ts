@@ -823,6 +823,13 @@ export async function saveVisit(viewer: PhoenixCrmViewer, raw: unknown): Promise
       lat: visit.lat,
       lon: visit.lon,
       accuracy_meters: visit.accuracyMeters,
+      // The PHOTO’s own fix, stored beside the pin and never over it. NULL is NOT MEASURED - a
+      // refused or slow shutter reading never costs the rep his visit, and nothing may read the
+      // null as “same place as the pin”.
+      photo_lat: visit.photoLat,
+      photo_lon: visit.photoLon,
+      photo_accuracy_meters: visit.photoAccuracyMeters,
+      photo_captured_at: visit.photoCapturedAt,
       place_id: check.placeId,
       distance_meters: distance,
       location_flag: flag,

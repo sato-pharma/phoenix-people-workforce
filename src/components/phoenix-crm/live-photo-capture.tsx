@@ -19,6 +19,7 @@
  */
 
 import type { ReactNode } from "react";
+import { readShutterFix, type ShutterFix } from "@/lib/evidence/read-shutter-fix";
 import { useEffect, useRef, useState } from "react";
 import { Camera, LoaderCircle, LocateFixed, RotateCcw, UploadCloud, X } from "lucide-react";
 
@@ -55,6 +56,21 @@ export type CapturedPhoto = {
   /** The part of town the address names (e.g. "Faisal"), offered as the place's zone. */
   zone: string | null;
   locationLabel: string;
+  /**
+   * The PHOTO’s own position, read fresh at the shutter - NOT a copy of the fix above.
+   *
+   * The fix above comes from the running watch and may be up to 15 seconds old by design. This
+   * one is taken as the shutter fires, so the two together answer whether the camera was still
+   * where the pin said. Added 2026-09-29 at the owner’s instruction.
+   *
+   * All four null when the browser refused or timed out. The capture NEVER waits on them: a rep
+   * in a clinic doorway with no signal saves his visit exactly as before, and null means NOT
+   * MEASURED - never that the photo and the pin agree.
+   */
+  shutterLat: number | null;
+  shutterLon: number | null;
+  shutterAccuracyMeters: number | null;
+  shutterCapturedAt: string | null;
 };
 
 /**
@@ -76,6 +92,15 @@ type Shot = {
   locationLabel: string;
   slot: PhotoSlot | null;
   deviceClock: string | null;
+  /**
+   * The shutter’s own reading, taken in takePhoto and read again in upload.
+   *
+   * It rides on the Shot rather than in component state because a retake replaces the whole Shot:
+   * state would let a fix from the discarded photo attach itself to the new one.
+   */
+  shutterFix: ShutterFix;
+  /** When the shutter fired. Null when no position came back, so the pair is never half-real. */
+  shutterCapturedAt: string | null;
 };
 
 type Stage = "idle" | "starting" | "live" | "stamping" | "uploading" | "failed";
@@ -303,6 +328,10 @@ export function LivePhotoCapture({
         address: working.address,
         zone: working.zone,
         locationLabel: working.locationLabel,
+        shutterAccuracyMeters: working.shutterFix.accuracy,
+        shutterCapturedAt: working.shutterCapturedAt,
+        shutterLat: working.shutterFix.latitude,
+        shutterLon: working.shutterFix.longitude,
       });
     } catch (uploadError) {
       setStage("failed");
@@ -334,8 +363,16 @@ export function LivePhotoCapture({
     }
     context.drawImage(video, 0, 0, canvas.width, canvas.height);
     stopCamera();
-    stopLocation();
+    // NOT stopLocation() yet: the watch is what the shutter fix reads from, and killing it first
+    // would guarantee a null on every capture.
     setStage("stamping");
+
+    // The photo’s OWN reading, taken now rather than reused from the watch. Awaited, unlike the
+    // marketing camera, because this path already blocks on reverse-geocoding a line below - so it
+    // adds no wait the rep can perceive. Capped at 8s by the shared reader and never throwing: a
+    // refusal or a timeout leaves it null and the visit saves exactly as before.
+    const shutterFix = await readShutterFix();
+    stopLocation();
 
     const payload = await fetchEvidenceLocation(LOCATION_ENDPOINT, usedFix.lat, usedFix.lon, usedFix.accuracyMeters);
     const stamp = readEvidenceLocationStamp(payload, usedFix.lat, usedFix.lon, usedFix.accuracyMeters);
@@ -363,6 +400,8 @@ export function LivePhotoCapture({
       locationLabel: stamp.label,
       slot: null,
       deviceClock: null,
+      shutterFix,
+      shutterCapturedAt: shutterFix.latitude === null ? null : new Date().toISOString(),
     };
     setShot(next);
     await upload(next);

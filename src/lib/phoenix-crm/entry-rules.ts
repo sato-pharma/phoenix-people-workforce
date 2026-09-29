@@ -104,6 +104,17 @@ export type CapturedFix = {
    * are computed on the server — see src/lib/phoenix-crm/location-integrity.ts.
    */
   deviceMocked: boolean | null;
+  /**
+   * The PHOTO’s own fix, read at the shutter - never a copy of lat/lon above.
+   *
+   * Omitted by an older build, by the web, and by any handset whose shutter could not read a
+   * position. That is NOT MEASURED and is never refused: a visit saves exactly as before without
+   * it, and nothing downstream may read the absence as agreement with the pin.
+   */
+  photoLat: number | null;
+  photoLon: number | null;
+  photoAccuracyMeters: number | null;
+  photoCapturedAt: string | null;
 };
 
 export function parseCapturedFix(raw: Record<string, unknown>): EntryRuleResult<CapturedFix> {
@@ -125,6 +136,19 @@ export function parseCapturedFix(raw: Record<string, unknown>): EntryRuleResult<
       accuracyMeters: accuracy !== null && accuracy >= 0 ? Math.round(accuracy * 10) / 10 : null,
       deviceCapturedAt,
       deviceMocked,
+      // Read through the SAME guards as the pin, and independently of it: a body carrying only
+      // half a shutter pair contributes no coordinate at all rather than a lopsided one. Never
+      // defaulted to the pin - that substitution is the defect #4781 removed elsewhere.
+      photoAccuracyMeters: (() => {
+        const photoAccuracy = readAccuracyInput(raw.shutterAccuracyMeters);
+        return photoAccuracy !== null && photoAccuracy >= 0 ? Math.round(photoAccuracy * 10) / 10 : null;
+      })(),
+      photoCapturedAt:
+        typeof raw.shutterCapturedAt === "string" && !Number.isNaN(Date.parse(raw.shutterCapturedAt))
+          ? raw.shutterCapturedAt
+          : null,
+      photoLat: isUsableFix(raw.shutterLat, raw.shutterLon) ? Number(raw.shutterLat) : null,
+      photoLon: isUsableFix(raw.shutterLat, raw.shutterLon) ? Number(raw.shutterLon) : null,
     },
   };
 }
