@@ -67,6 +67,7 @@ import { getResignationsDashboardData } from "@/lib/resignations/service";
 import { getRetentionDashboardData } from "@/lib/retention/service";
 import { listAllSupportRequests } from "@/lib/support-requests/service";
 import { availableBalanceAfterPending } from "@/lib/vacation/calculations";
+import { listOnVacationToday, type OnVacationTodayRow } from "@/lib/vacation/on-vacation-today";
 import { getVacationRequestPageData } from "@/lib/vacation/service";
 import { resolvePersonalWorkspaceTabs } from "@/lib/workspace/personal-workspace-nav";
 import {
@@ -211,6 +212,18 @@ export type HrPersonalRecord = {
 export type HrCommandCenterData = {
   groups: HrCommandGroup[];
   /**
+   * Who is on an approved vacation TODAY, as named people (owner, 2026-09-29: "make on her landing
+   * page appear on a vacation today").
+   *
+   * `null`, NEVER an empty array, when the seat did not load the source — either because its bundle
+   * does not justify it (HR Advisory holds no `time_attendance`) or because the read failed, in
+   * which case `unavailableSources` names it. An empty ARRAY means the source answered and nobody is
+   * off, which the panel says in words. The two must stay distinguishable: `[]` standing in for a
+   * failed read is the misleading zero this page's rules forbid — it would read as "everybody is at
+   * work today" on a morning when the query was broken.
+   */
+  onVacationToday: OnVacationTodayRow[] | null;
+  /**
    * The window the Hired tile was counted over — the running Cairo month unless the viewer picked
    * a range. Carried on the data rather than re-derived in the component, so the picker's boxes,
    * the tile's caption and the figure itself can never name three different periods.
@@ -243,7 +256,8 @@ type SourceKey =
   | "recruitment"
   | "resignations"
   | "retention"
-  | "supportRequests";
+  | "supportRequests"
+  | "vacationsToday";
 
 /**
  * Which raw fetches each function needs. The union across a seat's bundle is all this module is
@@ -277,7 +291,19 @@ const SOURCES_BY_FUNCTION: Record<HrFunctionKey, readonly SourceKey[]> = {
   // bundle without it and the comparison would silently stop happening — no error, just the
   // "Open Vacancies 3" answer coming back.
   recruiting: ["directory", "recruitment", "offers"],
-  time_attendance: ["attendanceExceptions"],
+  // `vacationsToday` belongs HERE and nowhere else. The "on a vacation today" panel names the
+  // people an absence has taken out of today's work, and attendance and leave administration is
+  // this function's own JD line — it is the same grant (`leave`) the Vacation Report the panel
+  // links to opens on. Declaring it on the function rather than on the seat is what stops a seat
+  // without that grant being shown the company's absences: HR Advisory holds no `time_attendance`,
+  // so `sourcesFor` never asks for it on her behalf and the panel never renders for her.
+  //
+  // Her seat name is deliberately NOT written as a string literal above. Rule 10 of
+  // `tests/hr-function-governance.test.ts` pins every file that contains one, because such a string
+  // is usually a gate the permission matrix cannot see — and this file's gate is the function bundle
+  // itself, so listing it there would dilute a tripwire whose whole value is that each entry is a
+  // real by-name grant.
+  time_attendance: ["attendanceExceptions", "vacationsToday"],
   workforce_insight: ["directory"],
 };
 
@@ -311,6 +337,7 @@ export type HrCommandSources = Partial<{
   resignations: Awaited<ReturnType<typeof getResignationsDashboardData>>;
   retention: Awaited<ReturnType<typeof getRetentionDashboardData>>;
   supportRequests: Awaited<ReturnType<typeof listAllSupportRequests>>;
+  vacationsToday: Awaited<ReturnType<typeof listOnVacationToday>>;
 }>;
 
 /**
@@ -1139,6 +1166,7 @@ const SOURCE_LABELS: Record<SourceKey, string> = {
   resignations: "Resignations",
   retention: "Retention register",
   supportRequests: "HR support requests",
+  vacationsToday: "On a vacation today",
 };
 
 /**
@@ -1305,11 +1333,19 @@ export async function getHrCommandCenterData(
           loaded.deductions = value;
         })
       : null,
+    needed.has("vacationsToday")
+      ? safe("vacationsToday", () => listOnVacationToday(), failures).then((value) => {
+          loaded.vacationsToday = value;
+        })
+      : null,
   ]);
 
   return {
     groups: buildHrCommandGroups(seat, loaded),
     hiredWindow,
+    // `?? null` and not `?? []` — see the note on the field. A failed read must not render as
+    // "nobody is off today".
+    onVacationToday: loaded.vacationsToday ?? null,
     personal: await personalPromise,
     seat,
     tasks: buildHrTodayTasks(loaded, seat),

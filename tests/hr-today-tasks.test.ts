@@ -290,6 +290,11 @@ export async function runHrTodayTasksTests() {
       resignations: { records: [] },
       retention: { conversations: [] },
       supportRequests: [],
+      // Today's absences. It contributes no TASK by design — nobody has to do anything about a
+      // colleague being on leave — but it is a source HR Operations really loads, and a missing
+      // fixture here would drive her seat short and make the count assertion below measure the
+      // fixture instead of the product.
+      vacationsToday: [],
     };
 
     const seats = Object.keys(HR_ROLE_BUNDLES) as HrBundleName[];
