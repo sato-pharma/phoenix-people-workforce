@@ -401,17 +401,18 @@ export async function requestDirectOrderPharmacyValidation(
     }
     linkedRequestStatus = String((linked as { status?: string }).status ?? "") || null;
 
-    // Said in words BEFORE the registry gate below, which would otherwise refuse this with the
-    // registry's own generic sentence — the same kind of text that reached a user this morning as
-    // "module is missing or inactive" and told them nothing they could act on.
+    // 🔴 THE ORDER'S STATUS NO LONGER REFUSES A FIELD CAPTURE (owner, 2026-09-29: "let the rep
+    // capture a venue whenever it is still pending_review"). It used to demand `held` here as well
+    // as on the screen, and that made a System Admin's hold release a permanent, silent lock on the
+    // venue's only capture door — see `canCaptureDirectOrderValidation` for the case that found it.
     //
-    // The client already hides the capture unless the order is held (canCaptureDirectOrderValidation),
-    // but a hidden button is UX, not access control: until now the SERVER accepted evidence against
-    // an order that had already been revived or had expired while the rep stood at the pharmacy.
-    if (linkedRequestStatus !== "held") {
+    // THE INVOICE ROUTE KEEPS THE OLD RULE. His ruling is about the rep standing in front of a
+    // venue; the invoice lane is a different bargain — five pharmacies per rep, filed against the
+    // held order the decision revives — and widening that was not asked for. Kept narrow on purpose.
+    if (isInvoiceRoute && linkedRequestStatus !== "held") {
       badRequest(
         `This order is no longer waiting on a pharmacy — it is ${linkedRequestStatus ?? "in an unknown state"}. ` +
-          "Reload it to see where it stands; evidence is only needed while an order is held.",
+          "An invoice validation belongs to a held order; to validate this venue now, capture it with a live photo and location.",
       );
     }
   }
@@ -420,6 +421,27 @@ export async function requestDirectOrderPharmacyValidation(
   // and it is the order the decision revives. With no order there is nothing for the invoice to move.
   if (isInvoiceRoute && !linkedRequestId) {
     badRequest("Attach the invoice from the held order it belongs to — open that order and validate its pharmacy there.");
+  }
+
+  // THE GATE THAT REPLACES IT, and the one his ruling names: does this venue still need somebody to
+  // stand in front of it? A venue already `verified` needs no further evidence, and a `rejected` one
+  // was examined and found not to be real — re-filing against either is not a capture worth taking.
+  //
+  // Read on THIS side of the wire, not inferred from the screen: `canCaptureDirectOrderValidation`
+  // hides the button on the same condition, and a hidden button is UX, never access control.
+  const { data: venueRow } = await getSupabaseAdmin()
+    .from("direct_order_pharmacies")
+    .select("verification_status")
+    .eq("id", pharmacyId)
+    .maybeSingle();
+  if (!venueRow) throw notFoundError("That venue was not found.");
+  const venueStatus = String((venueRow as { verification_status?: string | null }).verification_status ?? "");
+  if (venueStatus !== "pending_review") {
+    badRequest(
+      venueStatus === "verified"
+        ? "This venue is already validated — no further evidence is needed for it."
+        : `This venue is ${venueStatus || "in an unknown state"}, so it is not waiting for evidence.`,
+    );
   }
 
   // The registry gate (audit F2). Until now this action was DECLARED in the registry and invoked by
@@ -435,14 +457,32 @@ export async function requestDirectOrderPharmacyValidation(
   // The row's REAL status, never a literal (audit F6): a held order that was revived or expired
   // while the rep stood in front of the pharmacy must be refused here, not accepted against a
   // constant that says "held" because the code assumed so.
-  await assertDirectOrderWorkflowTransition({
-    access,
-    actionKey: "request_pharmacy_validation",
-    expectedNextStatus: "held",
-    // No linked order means there is no status to read. The registry's `from: [held]` describes an
-    // order, so this branch can only be checked on role — which is the half F2 was actually about.
-    status: linkedRequestStatus ?? "held",
-  });
+  //
+  // 🔴 ASSERTED ONLY WHEN THE ORDER IS ACTUALLY HELD, since 2026-09-29. The registry models ORDER
+  // transitions — every one of its sixteen actions is `from: [statuses] -> to: one status` — and
+  // this action is declared `held -> held`, meaning "the order stays held while evidence is
+  // gathered". After the owner's ruling a capture can also happen while the order is `returned` or
+  // `pending_approval`, and it changes the order's status in NEITHER case.
+  //
+  // So there is no honest way to keep asserting it there. Widening `from` while leaving `to: held`
+  // would make the registry claim a returned order becomes held, which it does not — a fabricated
+  // transition is worse than an absent one, because the audit surface would then be lying rather
+  // than silent. Asserting it only where it is true keeps the F2 coverage exactly where the registry
+  // still describes reality.
+  //
+  // WHAT THAT GIVES UP, AND WHY IT IS NOTHING: the registry's other half is its `allowedRoles` — the
+  // five requester roles plus Super Admin. It can never refuse anyone the checks above admit,
+  // because only the order's OWN REQUESTER reaches this line (the ownership check), and the
+  // requester of a direct order is by definition one of those roles. That is the same reasoning the
+  // comment above already makes about `direct_orders:create` being wider than the truth.
+  if (linkedRequestStatus === "held") {
+    await assertDirectOrderWorkflowTransition({
+      access,
+      actionKey: "request_pharmacy_validation",
+      expectedNextStatus: "held",
+      status: linkedRequestStatus,
+    });
+  }
 
   // The invoice route carries no storefront photo, so there is nothing to parse; every other claim
   // still must be a live JPEG.
