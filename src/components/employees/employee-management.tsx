@@ -34,7 +34,7 @@ import { EmployeeImportReview } from "@/components/employees/employee-import-rev
 import { EmployeeCvManager, EmployeeCvPicker, type StagedCv } from "@/components/employees/employee-cv-controls";
 import { EmployeePhotoManager } from "@/components/employees/employee-photo-manager";
 import { employeeProfileImageForHrId } from "@/lib/employees/profile-images";
-import type { EmployeeImportValidationResult } from "@/lib/imports/employee-import-types";
+import type { EmployeeImportDryRunResponse } from "@/lib/imports/employee-import-types";
 import { suggestOrgTitleCasing } from "@/lib/imports/org-title-case";
 import {
   PortalDesktopTable,
@@ -129,9 +129,11 @@ type DeclineOfferFormState = {
  *
  * This was a hand-written subset — `rowsToUpdate?: unknown[]`, findings as `{ message?, rowNumber? }`
  * — which is why the preview could only ever print counts and message strings. The route returns
- * `EmployeeImportValidationResult`; naming it lets the review below diff the actual records.
+ * `EmployeeImportValidationResult`; naming it lets the review below diff the actual records. It is
+ * the DRY-RUN shape rather than the plan's, because the route also sends the insurance job titles
+ * the page cannot work out for itself — the directory it holds does not carry them.
  */
-type EmployeeImportPreview = EmployeeImportValidationResult;
+type EmployeeImportPreview = EmployeeImportDryRunResponse;
 
 type EmployeeSalaryDetailFormRow = {
   category: EmployeeSalaryDetailCategory;

@@ -4,13 +4,51 @@ import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { loadEmployeeImportExistingState } from "@/lib/imports/employee-import-existing-state";
 import { createEmployeeImportPlan } from "@/lib/imports/employee-import-plan";
-import type { RawEmployeeImportRow } from "@/lib/imports/employee-import-types";
+import type {
+  EmployeeImportDryRunResponse,
+  EmployeeImportRecord,
+  RawEmployeeImportRow,
+} from "@/lib/imports/employee-import-types";
+import { loadSocialInsuranceJobTitles } from "@/lib/hiring-pack/social-insurance-job-title";
 import { parseEmployeeUploadRows } from "@/lib/imports/employee-upload-parse";
 import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/**
+ * The insurance job title each matched row would overwrite, so the change preview can show it.
+ *
+ * SCOPED TO THE ROWS IN THE FILE, and only those that carry a title — a sheet that leaves the
+ * column blank changes nothing there and pays for no lookup at all. Keyed lower-case, matching how
+ * the preview resolves its employees.
+ *
+ * RETURNS UNDEFINED ON FAILURE, never an empty object. The two read differently downstream: absent
+ * means "not loaded, leave the row out of the diff", while empty means "loaded, nobody has one" —
+ * and reporting an unknown as blank would show every filled cell as a change from nothing.
+ */
+async function loadInsuranceTitlesForPreview(records: EmployeeImportRecord[]) {
+  const hrIds = Array.from(
+    new Set(
+      records
+        .filter((record) => record.hrId && record.socialInsuranceJobTitle)
+        .map((record) => record.hrId as string),
+    ),
+  );
+  if (hrIds.length === 0) return undefined;
+
+  try {
+    const titles = await loadSocialInsuranceJobTitles(hrIds);
+    const out: Record<string, string | null> = {};
+    for (const hrId of hrIds) out[hrId.trim().toLowerCase()] = titles.get(hrId) ?? null;
+    return out;
+  } catch {
+    // The preview is an aid, not the gate — a satellite table being unavailable must not turn a
+    // readable dry run into a failed upload.
+    return undefined;
+  }
+}
 
 export async function POST(request: Request) {
   try {
@@ -47,10 +85,17 @@ export async function POST(request: Request) {
 
     const existingState = await loadEmployeeImportExistingState();
 
-    return NextResponse.json(createEmployeeImportPlan(parsed.rows, {
+    const plan = createEmployeeImportPlan(parsed.rows, {
       existingState,
       firstDataRowNumber: parsed.firstDataRowNumber,
-    }));
+    });
+
+    const response: EmployeeImportDryRunResponse = {
+      ...plan,
+      socialInsuranceJobTitles: await loadInsuranceTitlesForPreview(plan.rowsToUpdate ?? []),
+    };
+
+    return NextResponse.json(response);
   } catch (error) {
     if (isForbiddenError(error)) {
       return NextResponse.json({ error: "forbidden", message: "You do not have access to import employees." }, { status: 403 });
