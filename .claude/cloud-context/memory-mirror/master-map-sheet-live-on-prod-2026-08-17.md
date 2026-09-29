@@ -1,6 +1,6 @@
 ---
 name: master-map-sheet-live-on-prod-2026-08-17
-description: "Master Map live Google Sheet: it PULLS via its own Apps Script and Phoenix never pushes, no Google credential exists anywhere; a healthy feed proves nothing about the sheet — the Find a pharmacy finder died on a fixed 55,000-row Lists grid; Delta (3) is absent from All customers BY DESIGN"
+description: "Master Map live Google Sheet: the finder has died THREE times in silence — a fixed Lists grid, a typed customer CODE reaching SEARCH as a NUMBER, and its count line rendering 2,000px off the right of the screen; a stray basic filter survives every repaint and HIDES rows; it PULLS via its own Apps Script and Phoenix never pushes, no Google credential exists anywhere; a healthy feed proves nothing about the sheet — the Find a pharmacy finder died on a fixed 55,000-row Lists grid; Delta (3) is absent from COLUMN A only, and now has its own tab"
 metadata: 
   node_type: memory
   type: project
@@ -126,3 +126,108 @@ because the Option A move deliberately left the sales geography alone (`code_reg
 Its 5,681 shops are already in the finder under Delta (1)/(2)/Others, and the region dropdown listing
 **7** regions rather than 8 is that same fact. **Adding it to the flat tab would double-count 5,681
 shops** — see [[attribution-is-period-aware-asof-not-todays-geography]].
+
+**Update 2026-09-28 — THE FINDER DIED A SECOND TIME, AND ONE WRAPPER IS WHY BOTH LOOKED LIKE THE
+OWNER'S OWN FILTERS.** A customer code is all digits, so typing one into the search box stores a
+**NUMBER** in `Find a pharmacy!$E$4`, and Google Sheets will not coerce a number into `SEARCH`'s
+first parameter: SEARCH errors on every row, `ISNUMBER` turns each error into FALSE, the clause is
+0 everywhere, and FILTER matches nothing. Measured live: Region `Delta (3)` + `1547442` read
+*"Nothing matches those filters"* while `All customers` held exactly one match (`0001547442`,
+دعاء احمد بكرى ابو حماد, Sharkia 1, AI region Delta (3)); gviz reported E4 as `type:"number"`,
+`1547442.0`. **Nothing else on the workbook hands a typed value to SEARCH**, which is why every
+dropdown, every grid size, the spill area and the feed all read healthy — so the ONLY dead box was
+the one whose main job is finding a shop by its code. Fixed in PR #4648: `TRIM(TO_TEXT(...))` for
+the key, a TEXT number format on the cell, `LAYOUT_VERSION` v8 → v9 to carry it into the sheet.
+
+🔴 **`IFERROR(FILTER(...))` ON `Lists!F2` IS THE COMMON CAUSE OF BOTH DEATHS — never put it
+back.** A single-argument IFERROR flattens *no shop matched* and *this formula could not run* into
+one blank cell, and the status line then blames the filters for a broken sheet. The FILTER is now
+BARE and the status reads the ANCHOR cell: `ISNA(Lists!F2)` is no matches, `ISERROR` is a broken
+finder, and only then does COUNTA run — which is what stops the 2026-09-09 *"Showing 1 of 1 matching
+shops"* reading, where COUNTA counted the single `#REF!` as a match.
+
+🔴 **CORRECTION to the Delta (3) note above, measured the same day: Delta (3) IS on the sheet now.**
+The plan serves **15 tabs** including a `Delta (3)` region tab (6,787 rows), the region dropdown
+offers **10** regions, and `All customers` carries `Delta (3)` in its `Anti Infective region`
+column on 6,687 rows. What stays true is that it is absent from **column A**, which is geography —
+and that is exactly why `LAYOUT_VERSION` v8 moved the Region box off column A onto the three
+`<line> region` columns. **The master is now 78,924 crosswalk rows → 73,937 shops** (50,622 →
+63,510 → 73,937), and the `Lists` grid is 100,000 × 22 — derived, and correct.
+
+🔴 **Update 2026-09-28, later the same night — THE SECOND FAULT WAS NOT IN THE DATA AT ALL: THE
+COUNT LINE RENDERS 2,000 PIXELS OFF THE RIGHT OF THE SCREEN.** The title, the count and the hint on
+`Find a pharmacy` are each ONE CELL merged across all seventeen columns of the flat tab. Those
+columns total about 4,000 px — Address alone is 600, the three manager columns 230 each — so a
+**CENTRED** banner renders at roughly x=2,000, a screen and a half right of column A. On any normal
+window all three are off the right-hand edge and the rows show as **empty coloured bands**. The
+owner searched code `1582952`, the finder found it, put the row on screen, and reported the tab
+empty — because the line saying *"Showing 1 of 1 matching shops"* was where nobody would ever look.
+Scrolling right found all three sitting there perfectly. **That cost an evening of chasing a finder
+that was already fixed.** All three read LEFT from v10 (#4660). 🔴 **`STYLE.region` and
+`STYLE.area` stay CENTRED and must not be "tidied" — the grouped tabs are seven columns, ~1,900 px,
+and their centre is on screen. The WIDTH of this one tab is what makes centre wrong, not the style.**
+
+🔴 **AND THE SYNC NEVER CLEARED A FILTER — a basic filter was found parked on `Find a pharmacy`.**
+The repaint's `updateCells` clears values, formatting and data validation and touches NO filter, so
+one created by hand survives every repaint for ever. **A filter with criteria set HIDES matching
+rows**, which is indistinguishable from a search that matched nothing while every formula behind it
+is correct — a better disguise for "broken" than any of the real faults. `ensureTab` now removes it
+(#4660), in Apps Script because `getFilter()` is null-safe where a `clearBasicFilter` request
+against a tab without one can fail the batch and strand the repaint. The tell in the UI is funnel
+icons on the status row and **Data → Remove filter** being offered.
+
+🔴 **THE "FILTER CHOKES ON 1.26 MILLION CELLS" THEORY IS DISPROVED — do not rebuild the finder
+around QUERY on it.** Measured live: with the search box cleared and one region picked the existing
+FILTER returns **13,511** rows; with a code typed it returns exactly **1**; with every box empty,
+**73,937**. Array size was never the problem. A QUERY rewrite built on that theory is parked on
+`codex/master-map-enhancements`, commit `f3a3f2bf6`, marked do-not-merge — **KEPT by owner decision 2026-09-28**, double-archived
+(the branch plus `refs/backups/master-map-enhancements` on origin). **If it is ever picked up it goes
+through a normal PR like anything else — never merged direct, and never on the array-size premise,
+which is disproved.** What is worth salvaging: the hidden Lists tab shedding its 2.2-million-cell
+spill, the search covering the distributor and the three district managers, and every tab claiming
+the grid it needs.
+
+🔴 **`syncMasterMap` CANNOT SEE A LAYOUT CHANGE, and that wasted two round trips.** `planWork`
+short-circuits: `if (!dueForFullCheck) { probe; if (stamp === storedStamp) return []; }`. The probe
+stamp describes the DATA — customer, brick, area and region counts — so a Phoenix-side change to a
+tab's LAYOUT never moves it and the plan is never fetched. **Deleting `MM_STAMP` alone is not
+enough either: `runSync` only re-plans when `MM_QUEUE` is EMPTY**, so a stale queue makes the
+deletion a no-op. What works is `forceFullResync` then `syncMasterMap` — measured, it repainted
+all fifteen tabs (265,000 rows) in **one run of four minutes**, so it is NOT the heavy option it
+looks like. The hourly full check does the same by itself within the hour. 🔴 **And confirm
+production is SERVING the new layout before telling him to repaint** — read the tab text back from
+`?tab=Find a pharmacy&part=values`; a repaint two minutes early simply paints the old version again,
+and it clears his filter boxes every time.
+
+🔴 **Update 2026-09-29 — `1kK8DaDP…` IS THE SCRIPT ID, NOT THE SHEET FILE ID; THE WORKBOOK IS
+`1za3G8C6HCi74qmq4PwP_T7d-rM16UU1XivqEV7A48Hg`.** `.clasp.json` correctly holds the bound-script id
+`1kK8DaDPXJvwG6vM1x_gv9X7zxqbvvAbEco9bnsGc4xLD2dHK_SzYN3SS`, and `script.google.com/.../projects/
+1kK8DaDP…/executions` is the executions page — but `docs.google.com/spreadsheets/d/1kK8DaDP…/edit`
+returns **"Page not found"** even signed in, because that id is the SCRIPT, not a Drive file. Open
+the workbook at `1za3G8C6…`. The Apps Script project owner / signed-in account for gviz reads is
+**`achieverrr303@gmail.com`**. The in-app browser pane is ANONYMOUS to Google (every private-sheet
+URL 404s there with an Arabic "الملف … غير موجود" page); read the sheet through the **Claude-in-Chrome**
+connected browser, where his Google session lives, not the in-app pane.
+
+🔴 **THE FOURTH SILENT-BLANK DISGUISE — a self-healed transient reads as "blank" long after it healed,
+and manual `forceFullResync`+`syncMasterMap` from the EDITOR FAILS on the 6-minute wall.** When the
+owner says "the sheet is blank," read the live workbook through Claude-in-Chrome FIRST — on 2026-09-29
+it was fully painted (v12, region tabs retired, 73,937 shops) while he reported blank. The cause was
+the night before: he ran `forceFullResync` then `syncMasterMap` by hand three times (executions log:
+Editor runs of 117 s, 190 s, 237 s all **Failed**). A manual Editor run tries to paint every tab in
+ONE invocation and hits Apps Script's 6-min limit → **Failed** mid-repaint; the queue persists (the
+`finally`), so the 5-minute TIME-DRIVEN ticks resume and finish across ticks — but between a cleared
+tab and its repaint the finder (which reads `All customers`) is briefly empty, and that window is what
+he saw. **Do NOT re-trigger `forceFullResync` to "fix blank" — it re-opens the same window. Let the
+timer heal it; the hourly full-check confirms all hashes match in ~3 s when done.**
+
+🔴 **THE FRESHNESS LINE SHOWED A RAW DATE SERIAL — `stampRefreshedAt` wrote a Cairo STRING into
+`Lists!E1` and Sheets parsed it back to a date serial, so the finder's `&` join rendered
+"Sheet refreshed 46294.0111111111 Cairo".** Fixed (PR #4694): `E1.setNumberFormat("@")` before the
+write keeps the string a string; the frozen finder formula is untouched and the TZ stays honest
+(formatDate already renders Africa/Cairo). Pinned in `tests/master-map-finder-grid.test.ts`
+(`setNumberFormat("@")`). GAS change → reaches the workbook only via `clasp push`; E1 self-corrects on
+the next data-change tick after deploy. **Note: the deployed script has NO `retireTabs` function** —
+the ten region tabs are gone because Phoenix stopped serving them (`tabTitles()` → 5 tabs) and they
+were removed by hand, NOT auto-deleted; `orderTabs` only reorders. If Phoenix ever drops a region
+again, the script will leave the stale tab, not delete it.

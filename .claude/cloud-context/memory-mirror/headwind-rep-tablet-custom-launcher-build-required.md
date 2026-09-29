@@ -133,3 +133,26 @@ out of START_OBJECT … Device["info"]`) — stringify `info` before the PUT; I 
 patch)` in `src/lib/devices/headwind/devices.ts` stringifies `info` and both `PUT /rest/private/devices`
 callers (`remote-screen-id.ts`, `configurations.ts` `moveHeadwindDeviceToConfiguration`) go through it;
 pinned by a new object-`info` fixture in `tests/headwind-bridge.test.ts`. Do not re-fix.
+
+🔴 **MEASURED 2026-09-28 — THE TWO LAUNCHERS HAVE DIFFERENT SIGNING CERTIFICATES, SO NO IN-PLACE SWAP
+IS POSSIBLE AND THE RE-ENROL IS THE ONLY PATH.** Read out of the APKs themselves (scan the whole file
+for X.509 DER, not just `META-INF` — the stock APK has **no v1 block at all**, it is v2/v3-signed, so a
+`META-INF` read alone answers "cannot tell" and looks like a broken probe):
+
+- stock `hmdm-6.37-os.apk` — `C=RU, O=Headwind Solutions LLC, CN=Vsevolod Mayorov`, cert from 2017-02-22,
+  sha256 `09:57:61:E0:…:97:57`
+- fork `hmdm-phoenix-6.39.apk` — `CN=Phoenix Workforce Rep Tablets, O=Sato Pharma, C=EG`, cert from
+  2026-09-26, sha256 `7B:48:E7:51:…:1C:49`
+
+Android refuses an update signed by a different key (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`). 🔴 **The
+obvious-looking move is to bump version row 10045's `version`/`versionCode` to 6.39 so Headwind pushes
+the update — DO NOT.** That makes the enrolled 6.37 launcher attempt the install on every check-in and
+fail every time, forever, with nothing on screen to say why; leaving them at 6.37/0 is deliberate.
+Uninstalling `com.hmdm.launcher` first is not an escape either — `removeHeadwindApp` refuses it by name
+because it cuts the tablet off the company server for good.
+
+🔴 **OWNER DECISION, 2026-09-29: the pilot PHX-TAB-0002 STAYS on the stock launcher 6.37 for now — do NOT push the re-enrol.** After being shown that the only thing the 6.39 fork buys is the clean status bar, and that PHX-TAB-0002 is a company-held pilot ("Pilot tablet - clean enrollment"), not in a rep's hands, he chose to leave it as it is. Everything else on it already works: Phoenix Workforce 0.4.0 installed and confirmed by the tablet's own app list (check-in 2026-09-29 00:10), config 3 rules applied and confirmed, normal Lenovo home (`defaultLauncher=false`), RustDesk live, ~20-min check-in cadence. The custom-launcher work is not cancelled — it is deferred until a tablet actually goes to a rep, because that is when Android's forced "your IT admin may see your data" / "location can be accessed" notices on the stock status bar start to matter against Golden Rule #1. Do not re-raise the reset for the pilot; the RustDesk-id-goes-stale concern only applies IF a reset happens, so it too is moot while this stands.
+
+🔴 **DELIVERING NEW APP CODE TO A TABLET NEEDS A versionCode BUMP — Headwind AND Android both refuse a same-code replacement.** A tablet already on `com.satopharma.phoenixworkforce` code 4 will NOT take a fresh code-4 mdm APK however new its JS: Headwind compares versionCode to decide whether to push and sees the device up to date, and Android will not replace an equal-versionCode install. So a JS-only change (e.g. the web-shell #4701 + web-login #4702, both on main by 2026-09-29) reaches the fleet only after `mobile/app.json` `versionCode` is bumped (4 → 5) and a fresh `mdm` APK is built from that. The install then lands on the tablet's next ~20-min check-in.
+
+🔴 **THE EAS FREE PLAN HAS A HARD MONTHLY ANDROID-BUILD CAP, AND WHEN IT IS SPENT A `mdm`/`preview`/`production` build FAILS at the "Build on EAS" step** with "This account has used its Android builds from the Free plan this month, which will reset in …". No APK is produced. It reset on 2026-10-01 (~02:05 Cairo, measured 2026-09-29). Options when capped: wait for the monthly reset, or upgrade the plan at expo.dev/accounts/phoenix-sato-crm/settings/billing (owner's billing click — a money move, never Claude's and never a chat "OK"). On 2026-09-29 the tablet delivery of the web-shell was blocked exactly here (code-5 branch `codex/mobile-tablet-code5`, PR #4703) and armed as scheduled task `ship-web-shell-to-tablets` (fireAt Oct 1 04:00 Cairo) to re-dispatch → host on Headwind config 3 → verify PHX-TAB-0002 takes v0.4.1/code 5. See [[the-mobile-app-is-a-shell-over-the-web-portal]].

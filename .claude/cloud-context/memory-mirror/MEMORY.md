@@ -46,7 +46,7 @@
 - 🔴 [a "never paid" rep is usually a NEW HIRE](reps-who-never-appear-in-any-salary-record.md) - split by hire date.
 - 🔴 [a leaver's EARLIER months can never be re-run](a-leavers-earlier-months-can-never-be-recovered-by-rerunning-them.md) - roster is scoped to that month; **canonical starts 08-01; Apr/May/Jun in the LEGACY singular table**; check every month.
 - 🔴 [NEVER OpenAI auto-recharge](openai-auto-recharge-is-never-turned-on.md) - owner; never suggest it. Out of credit → Telegram, manual top-up.
-- 🔴 Email: [NEVER bulk/test sends](never-fire-bulk-emails-ever.md)·[both cuts LIVE](email-inventory-audit-2026-08-13.md) - probation email OFF is an OWNER RULE·[every automated email ALSO pings his Telegram](every-automated-email-also-mirrors-to-the-admin-telegram.md) - a test send reaches him.
+- 🔴 Email: [NEVER bulk/test sends](never-fire-bulk-emails-ever.md)·[both cuts LIVE](email-inventory-audit-2026-08-13.md) - probation email OFF **except Day 30/60/75 → Yasmeena, cc B-10**·[every automated email ALSO pings his Telegram](every-automated-email-also-mirrors-to-the-admin-telegram.md) - a test send reaches him.
 - 🔴 Office: [OWNER'S RULE #2015](owner-office-allocation-rule-value-share.md)·[city split ON since 08](city-split-hides-same-city-customer-moves.md)
 - 🔴 [CNS July only was re-stamped](pedia-and-anti-infective-july-are-correct-do-not-restamp.md)
 - 🔴 [AI UE = nearly ALL unmapped value](weekly-anti-infective-ue-is-95pct-of-all-unmapped-value.md) - a null area is mostly HARMLESS. **OWNER GAVE THE SPLIT RULE - do NOT send a classification sheet.**
@@ -59,6 +59,7 @@
 - 🔴 [brick mapping: FREE beats paid AI; geocoding HURTS](address-matching-beats-paid-ai-and-geocoding-hurts.md) - never buy a map API. **The BRICK TABLE outranks your map of Egypt - Sharkia+Qena were REVERSED.** NAME place answers; ADDRESS vetoes. **SOFICO `GIZ…` codes map to NOTHING** - check the code SPACE first.
 
 ## Owner's rules (don't "fix" back)
+- 🔴 [the Next step box is NOT a notepad](the-next-step-box-must-not-manufacture-the-next-task.md) - he SENDS what is in it. Never a task Claude invented; a shipped feature is DONE.
 - 🔴 [hand HIM PowerShell, never bash](commands-handed-to-the-owner-must-be-powershell.md) - his Terminal rejects `&&` before anything runs.
 - 🔒 [integrity board KEEPS "Location integrity"](the-integrity-board-keeps-the-name-location-integrity.md) - owner; do not re-raise.
 - 🔴 [fix means fix - no unrequested work](fix-means-fix-no-unrequested-work.md)
