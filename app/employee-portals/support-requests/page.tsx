@@ -7,6 +7,7 @@ import {
 } from "@/components/employee-portal/enterprise-shell";
 import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { logPortalFailure } from "@/lib/observability/portal-logging";
 import { listAllSupportRequests } from "@/lib/support-requests/service";
 
 export const dynamic = "force-dynamic";
@@ -31,10 +32,35 @@ export default async function EmployeePortalSupportRequestsPage() {
   const canManage = await canAccess(access, "support_requests", "update");
 
   let initialItems = [] as Awaited<ReturnType<typeof listAllSupportRequests>>;
+  let loadFailed = false;
   try {
     initialItems = await listAllSupportRequests(access, { status: "all", limit: 100 });
-  } catch {
+  } catch (error) {
+    // A FAILED READ IS NOT AN EMPTY QUEUE. This catch handed the workspace `[]`, and an empty
+    // ticket board reads to HR Advisory as "no employee is waiting on us" — on the one screen whose
+    // whole job is that nobody is left waiting. AGENTS.md §1: a confident zero is worse than an
+    // error. The pattern here is attendance/page.tsx's: record it, say so, and never dress the
+    // failure up as a fact about the queue.
+    logPortalFailure(
+      {
+        route: "/employee-portals/support-requests",
+        module: "support-requests-queue",
+        role: access.role,
+        hrId: access.hrId,
+      },
+      error,
+    );
+    loadFailed = true;
     initialItems = [];
+  }
+
+  if (loadFailed) {
+    return (
+      <EmployeePortalEmptyState
+        message="The support queue could not be loaded just now. No ticket has been lost or closed — reload the page to try again."
+        title="Could not load the support queue"
+      />
+    );
   }
 
   return (

@@ -182,8 +182,14 @@ import { stripComments } from "./support/comment-strip.ts";
  * counted by nothing here, which is why `tests/business-review-fits-the-screen.test.ts` exists to
  * pin them. Note what that gap means in general: a file can shed twenty min-width floors and move
  * this number by one.
+ *
+ * 216 -> 215 on 2026-09-29, by the portal sweep's tail PR: the Vacancies desktop table, which was
+ * `overflow-x-auto` over a `min-w-full` — the exact pair AGENTS.md §4 names as the bug rather than
+ * the fix. Six columns inside the 768px its own `md:` gate already guarantees, so it is now
+ * `table-fixed` with a colgroup summing to 100% and two `break-words` cells for the one unbroken
+ * token on the row (the vacancy code). MEASURED on the rebased tree, not derived by subtraction.
  */
-const BASELINE = 216;
+const BASELINE = 215;
 
 /**
  * app/ and src/components/ are where UI class strings live. src/lib/ is excluded on

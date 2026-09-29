@@ -9,6 +9,7 @@ import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { addDaysToDateOnly } from "@/lib/date-only";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
+import { logPortalFailure } from "@/lib/observability/portal-logging";
 
 export const dynamic = "force-dynamic";
 
@@ -46,7 +47,21 @@ export default async function FingerprintAnalyticsPage() {
   let directReports: Awaited<ReturnType<typeof loadAttendanceDirectReports>> = [];
   try {
     directReports = await loadAttendanceDirectReports(hrId);
-  } catch {
+  } catch (error) {
+    // Not a banner, and deliberately: the attendance read above already surfaces its own failure
+    // through `initialError`, and this one only costs the manager the OTHER names in his picker —
+    // his own report still loads. What it must not be is SILENT, which is what it was: a manager
+    // with six reports saw a picker holding one entry and no reason why. Logged the way every other
+    // best-effort read in this directory is, so the failure exists somewhere a person can read it.
+    logPortalFailure(
+      {
+        route: "/employee-portals/fingerprint-analytics",
+        module: "attendance-direct-reports",
+        role: access.role,
+        hrId,
+      },
+      error,
+    );
     directReports = [];
   }
   const targets: FingerprintTarget[] = [

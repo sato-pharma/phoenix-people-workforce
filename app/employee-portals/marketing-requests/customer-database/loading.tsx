@@ -1,5 +1,5 @@
-import { FormSkeleton } from "@/components/employee-portal/skeleton-templates";
+import { PortalRouteSkeleton } from "@/components/employee-portal/skeleton-templates";
 
 export default function CustomerDatabaseLoading() {
-  return <FormSkeleton fieldCount={5} />;
+  return <PortalRouteSkeleton shape="table" />;
 }

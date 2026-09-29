@@ -27,6 +27,7 @@ import { stripComments } from "./support/comment-strip.ts";
 const DASHBOARD = "src/components/employee-portal/employee-portal-dashboard.tsx";
 const PROBATION = "app/employee-portals/probation/page.tsx";
 const EXPENSE_DASHBOARD = "app/employee-portals/expense-dashboard/page.tsx";
+const SUPPORT_REQUESTS = "app/employee-portals/support-requests/page.tsx";
 
 export function runPortalFailedReadStatesTests() {
   const source = stripComments(readFileSync(DASHBOARD, "utf8"));
@@ -156,6 +157,57 @@ export function runPortalFailedReadStatesTests() {
     assert.ok(
       failedAt > -1 && profileAt > -1 && failedAt < profileAt,
       "the failed-read branch must come BEFORE the unlinked-profile branch, or the false HR message returns",
+    );
+  }
+
+  // ── The HR support queue (off-sidebar, cleared by the tail PR) ─────────────
+  // `catch { initialItems = [] }` handed the workspace an empty ticket board, and an empty board
+  // reads to HR Advisory as "no employee is waiting on us" — on the one screen whose entire job is
+  // that nobody is left waiting. Same defect as the two above, except it lands on the people who
+  // opened the tickets rather than on the reader.
+  const support = stripComments(readFileSync(SUPPORT_REQUESTS, "utf8"));
+  assert.match(
+    support,
+    /\} catch \(error\) \{[\s\S]*?loadFailed = true;/,
+    "the catch must SET loadFailed — declaring the flag is not recording the failure, and that exact " +
+      "hole passed every other assertion in this file when the expense-dashboard one was written",
+  );
+  assert.match(
+    support,
+    /if \(loadFailed\) \{[\s\S]*?title="Could not load the support queue"/,
+    "it must name what happened rather than hand the board an empty list",
+  );
+  assert.match(
+    support,
+    /No ticket has been lost or closed/,
+    "and it must say the tickets still exist — an empty queue reads as 'they were all dealt with'",
+  );
+  {
+    // ORDERING, again. The workspace must render AFTER the failed-read return, or the empty board
+    // is still what HR sees and nothing about this change is visible.
+    const failedAt = support.indexOf("if (loadFailed)");
+    const workspaceAt = support.indexOf("<SupportRequestsWorkspace");
+    assert.ok(
+      failedAt > -1 && workspaceAt > -1 && failedAt < workspaceAt,
+      "the failed-read branch must come BEFORE the workspace renders, or the empty board returns",
+    );
+  }
+
+  // ── And the two best-effort pickers are no longer SILENT ───────────────────
+  // Neither of these gets a banner, deliberately: each page's PRIMARY read already surfaces its own
+  // failure, and these two catches only empty a picker. What they may not be is invisible — a
+  // manager with six direct reports saw a one-entry picker and no reason given, and someone filling
+  // a contract saw a company with no lines on file. Both now log through the same helper every
+  // other best-effort read in app/employee-portals/ uses.
+  for (const [file, moduleName] of [
+    ["app/employee-portals/fingerprint-analytics/page.tsx", "attendance-direct-reports"],
+    ["app/employee-portals/hiring-pack/page.tsx", "hiring-pack-lines"],
+  ] as const) {
+    const body = stripComments(readFileSync(file, "utf8"));
+    assert.match(
+      body,
+      new RegExp(`module: "${moduleName}"`),
+      `${file} must log its best-effort failure under module "${moduleName}" instead of swallowing it`,
     );
   }
 }
