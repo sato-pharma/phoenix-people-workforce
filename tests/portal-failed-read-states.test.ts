@@ -26,6 +26,7 @@ import { stripComments } from "./support/comment-strip.ts";
 
 const DASHBOARD = "src/components/employee-portal/employee-portal-dashboard.tsx";
 const PROBATION = "app/employee-portals/probation/page.tsx";
+const EXPENSE_DASHBOARD = "app/employee-portals/expense-dashboard/page.tsx";
 
 export function runPortalFailedReadStatesTests() {
   const source = stripComments(readFileSync(DASHBOARD, "utf8"));
@@ -120,4 +121,41 @@ export function runPortalFailedReadStatesTests() {
     /Nothing has been lost or completed/,
     "and it says the queue still exists — a blank list on an SLA screen reads as 'you are clear'",
   );
+
+  // ── The expense dashboard (Outstation Expenses) — the worst of the nine ────
+  // One catch set `data = null`, and the branch below tested `!data || data.empty.profile`, so a
+  // thrown read and an unlinked profile were the same thing to this page. An employee whose data
+  // source was down was told to CONTACT HR about a linkage problem that does not exist — he then
+  // does, and HR finds nothing wrong. A confident zero is bad; a confident WRONG REASON sends a
+  // real person to a real colleague on a false errand.
+  const expenses = stripComments(readFileSync(EXPENSE_DASHBOARD, "utf8"));
+  assert.match(
+    expenses,
+    /let loadFailed = false;/,
+    "the expense dashboard must record a thrown read separately from an unlinked profile",
+  );
+  // Declaring the flag is not recording the failure. Caught by breaking it: with `loadFailed = true`
+  // deleted from the catch, every other assertion here still passed — the branch was present, the
+  // ordering was right, and the flag was simply never set, so the false HR message came back in
+  // full. A test that only checks a variable EXISTS is satisfied by a variable nobody writes.
+  assert.match(
+    expenses,
+    /\} catch \{[\s\S]*?loadFailed = true;/,
+    "the catch must SET loadFailed — declaring it is not recording the failure",
+  );
+  assert.match(
+    expenses,
+    /if \(loadFailed\) \{[\s\S]*?title="Could not load your expenses"/,
+    "it must render its OWN message, not fall through to one about a profile link",
+  );
+  // ORDERING IS THE WHOLE FIX. Checked after the profile branch, a failed read still returns
+  // "contact HR" — the assertion above would pass and the defect would be untouched.
+  {
+    const failedAt = expenses.indexOf("if (loadFailed)");
+    const profileAt = expenses.indexOf("Your employee profile is not linked yet");
+    assert.ok(
+      failedAt > -1 && profileAt > -1 && failedAt < profileAt,
+      "the failed-read branch must come BEFORE the unlinked-profile branch, or the false HR message returns",
+    );
+  }
 }
