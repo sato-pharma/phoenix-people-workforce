@@ -84,6 +84,13 @@ export type EmployeeDirectoryRow = {
   // map, see src/lib/employees/employee-photo.ts) — lets avatar UI skip the
   // /api/employees/[hrId]/photo request entirely when there's nothing to fetch.
   hasPhoto: boolean;
+  // The GOVERNMENT health insurance booklet — دفتر التأمين الصحى الحكومى, which HR calls
+  // "استلام بطاقة صحية". Deliberately NOT the company's private medical insurance: that is the
+  // medicalInsuranceStatus / medicalInsuranceNumber pair below, and conflating the two would have
+  // somebody read a private policy number as a state booklet number.
+  healthCardStatus: string | null;
+  healthCardNumber: string | null;
+  healthCardReceivedDate: string | null;
   hireDate: string | null;
   hrId: string;
   jobTitle: string | null;
@@ -189,6 +196,9 @@ export type EmployeeMutationInput = {
   nickname?: string | null;
   grossSalary?: number | null;
   hasBankAccount?: string | null;
+  healthCardNumber?: string | null;
+  healthCardReceivedDate?: string | null;
+  healthCardStatus?: string | null;
   hireDate?: string | null;
   hrId?: string | null;
   jobTitle?: string | null;
@@ -238,6 +248,9 @@ type EmployeeDbRow = {
   nickname?: string | null;
   gender?: string | null;
   has_bank_account?: string | null;
+  health_card_number?: string | null;
+  health_card_received_date?: string | null;
+  health_card_status?: string | null;
   extra_cost_of_living?: number | null;
   fuel_allowance?: number | null;
   gross_salary?: number | null;
@@ -999,7 +1012,7 @@ export async function getEmployeeDirectory(): Promise<EmployeeDirectoryData> {
 
 async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
   const baseEmployeeSelect =
-    "hr_id,full_name,nickname,name_ar,national_id,gender,has_bank_account,bank_name,bank_account,social_insurance_status,social_insurance_number,medical_insurance_status,medical_insurance_number,basic_salary,base_salary,gross_salary,net_salary,fuel_allowance,extra_cost_of_living,medical_insurance,social_insurance,social_insurance_wage,taxes,payment_mode,residence_address,residence_city,residence_area,contract_type,contract_renewal_date,crm_id,crm_username,work_email,mobile_number,job_title,hire_date,resignation_date,last_working_date,employment_status,education,manager_hr_id,department_id,line_id,area_id,team_id,position_id,payroll_eligible,organogram_visible,created_at,updated_at";
+    "hr_id,full_name,nickname,name_ar,national_id,gender,has_bank_account,bank_name,bank_account,health_card_status,health_card_number,health_card_received_date,social_insurance_status,social_insurance_number,medical_insurance_status,medical_insurance_number,basic_salary,base_salary,gross_salary,net_salary,fuel_allowance,extra_cost_of_living,medical_insurance,social_insurance,social_insurance_wage,taxes,payment_mode,residence_address,residence_city,residence_area,contract_type,contract_renewal_date,crm_id,crm_username,work_email,mobile_number,job_title,hire_date,resignation_date,last_working_date,employment_status,education,manager_hr_id,department_id,line_id,area_id,team_id,position_id,payroll_eligible,organogram_visible,created_at,updated_at";
 
   // Try to join compensation and other lookups in a single query to reduce N+1 and massive IN filters.
   // Built as a flat array + join (not a multi-line template literal) so the encoded `select` param
@@ -1167,6 +1180,9 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         grossSalary: row.gross_salary ?? compensation?.gross_salary ?? null,
         hasBankAccount: row.has_bank_account ?? (row.bank_account ? "yes" : "no"),
         hasPhoto: photoMap.has(canonicalHrIdKey(row.hr_id) ?? ""),
+        healthCardStatus: row.health_card_status ?? null,
+        healthCardNumber: row.health_card_number ?? null,
+        healthCardReceivedDate: row.health_card_received_date ?? null,
         hireDate: row.hire_date,
         hrId: row.hr_id,
         jobTitle: row.job_title,
@@ -1328,6 +1344,9 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         grossSalary: row.gross_salary ?? comp?.gross_salary ?? null,
         hasBankAccount: row.has_bank_account ?? (row.bank_account ? "yes" : "no"),
         hasPhoto: photoMap.has(canonicalHrIdKey(row.hr_id) ?? ""),
+        healthCardStatus: row.health_card_status ?? null,
+        healthCardNumber: row.health_card_number ?? null,
+        healthCardReceivedDate: row.health_card_received_date ?? null,
         hireDate: row.hire_date,
         hrId: row.hr_id,
         jobTitle: row.job_title,
@@ -1448,6 +1467,9 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
       grossSalary: row.gross_salary ?? compensation?.gross_salary ?? null,
       hasBankAccount: row.has_bank_account ?? (row.bank_account ? "yes" : "no"),
       hasPhoto: photoMap.has(canonicalHrIdKey(row.hr_id) ?? ""),
+      healthCardStatus: row.health_card_status ?? null,
+      healthCardNumber: row.health_card_number ?? null,
+      healthCardReceivedDate: row.health_card_received_date ?? null,
       hireDate: row.hire_date,
       hrId: row.hr_id,
       jobTitle: row.job_title,
@@ -1541,7 +1563,7 @@ async function fetchAllEmployeeRows(params: URLSearchParams): Promise<EmployeeDb
 
 async function fetchEmployeeDirectoryRows(includeInactive: boolean): Promise<EmployeeDirectoryRow[]> {
   const baseEmployeeSelect =
-    "hr_id,full_name,nickname,name_ar,national_id,gender,has_bank_account,bank_name,bank_account,social_insurance_status,social_insurance_number,medical_insurance_status,medical_insurance_number,basic_salary,base_salary,gross_salary,net_salary,fuel_allowance,extra_cost_of_living,medical_insurance,social_insurance,social_insurance_wage,taxes,payment_mode,residence_address,residence_city,residence_area,contract_type,contract_renewal_date,crm_id,crm_username,work_email,mobile_number,job_title,hire_date,resignation_date,last_working_date,employment_status,education,manager_hr_id,department_id,line_id,area_id,team_id,position_id,payroll_eligible,organogram_visible,created_at,updated_at";
+    "hr_id,full_name,nickname,name_ar,national_id,gender,has_bank_account,bank_name,bank_account,health_card_status,health_card_number,health_card_received_date,social_insurance_status,social_insurance_number,medical_insurance_status,medical_insurance_number,basic_salary,base_salary,gross_salary,net_salary,fuel_allowance,extra_cost_of_living,medical_insurance,social_insurance,social_insurance_wage,taxes,payment_mode,residence_address,residence_city,residence_area,contract_type,contract_renewal_date,crm_id,crm_username,work_email,mobile_number,job_title,hire_date,resignation_date,last_working_date,employment_status,education,manager_hr_id,department_id,line_id,area_id,team_id,position_id,payroll_eligible,organogram_visible,created_at,updated_at";
   const employeeParams = new URLSearchParams({
     select: `${baseEmployeeSelect},region_name,birth_date`,
     order: "full_name.asc,hr_id.asc",
@@ -1611,6 +1633,9 @@ async function fetchEmployeeDirectoryRows(includeInactive: boolean): Promise<Emp
       grossSalary: row.gross_salary ?? null,
       hasBankAccount: row.has_bank_account ?? (row.bank_account ? "yes" : "no"),
       hasPhoto: photoMap.has(canonicalHrIdKey(row.hr_id) ?? ""),
+      healthCardStatus: row.health_card_status ?? null,
+      healthCardNumber: row.health_card_number ?? null,
+      healthCardReceivedDate: row.health_card_received_date ?? null,
       hireDate: row.hire_date,
       hrId: row.hr_id,
       jobTitle: row.job_title,
@@ -1967,6 +1992,9 @@ async function employeePayload(
     nickname: compact(input.nickname),
     gender: compact(input.gender)?.toLowerCase(),
     has_bank_account: normalizeYesNo(input.hasBankAccount),
+    health_card_status: normalizeEnrollmentStatus(input.healthCardStatus),
+    health_card_number: compact(input.healthCardNumber),
+    health_card_received_date: compact(input.healthCardReceivedDate),
     hire_date: compact(input.hireDate),
     hr_id: hrId,
     job_title: compact(input.jobTitle),

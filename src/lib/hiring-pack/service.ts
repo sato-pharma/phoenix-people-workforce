@@ -1352,6 +1352,12 @@ export async function saveHiringPackEmployeeFacts(
     gender: current.gender,
     grossSalary: compensation.grossSalary,
     hasBankAccount: current.hasBankAccount,
+    // CARRIED THROUGH, NOT DERIVED. This object is a WHOLE employee record — `upsertEmployee` writes
+    // every column it names — so a field left out here is written as NULL. The government health
+    // card is nothing to do with the hiring pack, and saving one would otherwise silently erase it.
+    healthCardNumber: current.healthCardNumber,
+    healthCardReceivedDate: current.healthCardReceivedDate,
+    healthCardStatus: current.healthCardStatus,
     hireDate: cleanText(input.hireDate),
     hrId: current.hrId,
     jobTitle: cleanText(input.jobTitle),

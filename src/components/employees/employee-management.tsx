@@ -161,6 +161,9 @@ type EmployeeFormState = {
   gender: string;
   grossSalary: string;
   hasBankAccount: string;
+  healthCardNumber: string;
+  healthCardReceivedDate: string;
+  healthCardStatus: string;
   hireDate: string;
   hrId: string;
   jobTitle: string;
@@ -223,6 +226,9 @@ const emptyForm: EmployeeFormState = {
   gender: "",
   grossSalary: "",
   hasBankAccount: "",
+  healthCardNumber: "",
+  healthCardReceivedDate: "",
+  healthCardStatus: "",
   hireDate: "",
   hrId: "",
   jobTitle: "",
@@ -628,6 +634,9 @@ function employeeToForm(employee: EmployeeDirectoryRow): EmployeeFormState {
     gender: employee.gender ?? "",
     grossSalary: numberToText(employee.grossSalary),
     hasBankAccount: employee.hasBankAccount ?? (employee.bankAccount ? "yes" : ""),
+    healthCardNumber: employee.healthCardNumber ?? "",
+    healthCardReceivedDate: employee.healthCardReceivedDate ?? "",
+    healthCardStatus: employee.healthCardStatus ?? "",
     hireDate: employee.hireDate ?? "",
     hrId: employee.hrId,
     jobTitle: employee.jobTitle ?? employee.positionTitle ?? "",
@@ -692,6 +701,9 @@ function formToPayload(form: EmployeeFormState, originalHrId: string | null): Em
     gender: optionalText(form.gender),
     grossSalary: optionalNumber(form.grossSalary),
     hasBankAccount: optionalText(form.hasBankAccount),
+    healthCardNumber: optionalText(form.healthCardNumber),
+    healthCardReceivedDate: optionalText(form.healthCardReceivedDate),
+    healthCardStatus: optionalText(form.healthCardStatus),
     hireDate: optionalText(form.hireDate),
     hrId: optionalText(form.hrId),
     jobTitle: optionalText(form.jobTitle),
@@ -2628,6 +2640,9 @@ export function EmployeeManagement({
                     ["Bank Account", masterDetailsEmployee.bankAccount],
                     ["Medical Insurance Number", masterDetailsEmployee.medicalInsuranceNumber],
                     ["Social Insurance Number", masterDetailsEmployee.socialInsuranceNumber],
+                    ["Health Card Received", optionName(masterDetailsEmployee.healthCardStatus ?? "")],
+                    ["Health Card Number", masterDetailsEmployee.healthCardNumber],
+                    ["Health Card Receipt Date", masterDetailsEmployee.healthCardReceivedDate],
                   ],
                 },
                 {
@@ -3161,6 +3176,30 @@ export function EmployeeManagement({
                     onChange={(value) => updateForm("socialInsuranceNumber", value)}
                     placeholder="Reference number"
                     value={form.socialInsuranceNumber}
+                  />
+                  {/*
+                    The GOVERNMENT health insurance booklet — دفتر التأمين الصحى الحكومى. It sits
+                    below the private medical insurance fields rather than beside them because it is
+                    a different thing entirely, and the owner said so himself on 2026-09-29.
+                  */}
+                  <SelectField
+                    label="Health Card Received"
+                    onChange={(value) => updateForm("healthCardStatus", value)}
+                    options={enrollmentStatusOptions}
+                    placeholder="Select status"
+                    value={form.healthCardStatus}
+                  />
+                  <TextField
+                    label="Health Card Number"
+                    onChange={(value) => updateForm("healthCardNumber", value)}
+                    placeholder="Booklet number"
+                    value={form.healthCardNumber}
+                  />
+                  <TextField
+                    label="Health Card Receipt Date"
+                    onChange={(value) => updateForm("healthCardReceivedDate", value)}
+                    type="date"
+                    value={form.healthCardReceivedDate}
                   />
                 </div>
                 <div className="rounded-2xl border border-[#D7EAF8] bg-[#F8FCFF] p-4">

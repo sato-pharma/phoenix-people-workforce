@@ -42,15 +42,28 @@ export type SectionName =
   | "CRM"
   | "Payroll Reference Information"
   | "Lifecycle/System"
-  | "Reference (read-only)";
+  | "Reference (read-only)"
+  | "Hiring Documents (read-only)";
 
 /** Drives number format, alignment and what the Field Guide says about the column. */
 export type FieldKind = "text" | "money" | "date" | "choice" | "formula";
 
+/**
+ * A hiring-document column's key.
+ *
+ * The hiring-document columns are DATA, not contract: they come from `hiring_document_definitions`,
+ * which HR adds to from the Hiring Documents screen, so they cannot be named in `MasterRow` the way
+ * every other column is. They carry the document's id instead, and the builder resolves their value
+ * from a per-employee map rather than from the row object.
+ */
+export type HiringDocumentColumnKey = `doc:${string}`;
+
+export type MasterColumnKey = keyof MasterRow | HiringDocumentColumnKey;
+
 export type MasterColumn = {
   /** The header text. For an imported column this MUST stay an alias — see constraint 4. */
   header: string;
-  key: keyof MasterRow;
+  key: MasterColumnKey;
   section: SectionName;
   width: number;
   kind: FieldKind;
@@ -107,6 +120,10 @@ export type MasterRow = {
   medicalInsuranceNumber: string | null;
   socialInsuranceStatus: string | null;
   socialInsuranceNumber: string | null;
+  socialInsuranceJobTitle: string | null;
+  healthCardStatus: string | null;
+  healthCardNumber: string | null;
+  healthCardReceivedDate: string | null;
   payrollEligible: string;
   organogramVisible: string;
   region: string | null;
@@ -188,6 +205,10 @@ export const columns: MasterColumn[] = [
   { header: "Medical Insurance Number", key: "medicalInsuranceNumber", section: "Payroll Reference Information", width: 22, kind: "text", imported: true, guide: "Medical insurance membership number." },
   { header: "In Social Insurance", key: "socialInsuranceStatus", section: "Payroll Reference Information", width: 18, kind: "choice", imported: true, guide: "Display only. Payroll does not read this — the Social Insurance Wage column is what decides the statutory filing.", allowed: `${YES_NO_PENDING}, or blank` },
   { header: "Social Insurance Number", key: "socialInsuranceNumber", section: "Payroll Reference Information", width: 22, kind: "text", imported: true, guide: "Social insurance number." },
+  { header: "Social Insurance Job Title", key: "socialInsuranceJobTitle", section: "Payroll Reference Information", width: 26, kind: "text", imported: true, guide: "المسمى الوظيفى فى التأمينات الاجتماعية — the Arabic job title this person is filed under with the Social Insurance Authority. It is the SAME value Phoenix already prints on the contract, Form 1, custody and clearance, so editing it here changes those papers too.", allowed: "Arabic, as it is written on the insurance paperwork." },
+  { header: "Health Card Received", key: "healthCardStatus", section: "Payroll Reference Information", width: 18, kind: "choice", imported: true, guide: "استلام بطاقة صحية — whether the employee has received the GOVERNMENT health insurance booklet (دفتر التأمين الصحى الحكومى). This is the state booklet, NOT the company's private medical insurance, which is the \"In Medical Insurance\" column above.", allowed: `${YES_NO_PENDING}, or blank` },
+  { header: "Health Card Number", key: "healthCardNumber", section: "Payroll Reference Information", width: 20, kind: "text", imported: true, guide: "رقم البطاقة الصحية — the government health insurance booklet's number. Free text: the booklet is not numbered the same way in every governorate." },
+  { header: "Health Card Receipt Date", key: "healthCardReceivedDate", section: "Payroll Reference Information", width: 20, kind: "date", imported: true, guide: "تاريخ الاستلام — the day the employee received the booklet.", allowed: "YYYY-MM-DD" },
 
   { header: "Payroll Eligible", key: "payrollEligible", section: "Lifecycle/System", width: 14, kind: "choice", imported: true, guide: "Whether this person is included in a payroll run. \"No\" is normal for executives.", allowed: "Yes,No" },
   { header: "Organogram Visible", key: "organogramVisible", section: "Lifecycle/System", width: 16, kind: "choice", imported: true, guide: "Whether the person appears on the organogram.", allowed: "Yes,No" },
@@ -199,12 +220,88 @@ export const columns: MasterColumn[] = [
 ];
 
 /** Columns holding a live formula — locked, so an overwrite cannot silently desync them. */
-export const FORMULA_KEYS = new Set<keyof MasterRow>(["rowCheck", "directManagerName"]);
+export const FORMULA_KEYS = new Set<MasterColumnKey>(["rowCheck", "directManagerName"]);
 
 /** Reference columns the upload ignores — locked too, so nobody edits them expecting a save. */
-export const READ_ONLY_KEYS = new Set<keyof MasterRow>(
+export const READ_ONLY_KEYS = new Set<MasterColumnKey>(
   columns.filter((column) => column.section === "Reference (read-only)").map((column) => column.key),
 );
+
+/**
+ * Whether the upload ignores this column, so the sheet should lock it.
+ *
+ * A PREDICATE RATHER THAN THE KEY SET, because the hiring-document columns have no fixed keys — a
+ * set built once at module load could never contain them, and they are precisely the columns it
+ * would be most misleading to leave editable: ticking "Submitted" in the sheet must not look like
+ * it files a document.
+ */
+export function isReadOnlyMasterColumn(column: MasterColumn) {
+  return column.section === "Reference (read-only)" || column.section === "Hiring Documents (read-only)";
+}
+
+/** One hiring-document definition, as the master sheet needs it. */
+export type HiringDocumentColumnSpec = { id: string; name: string };
+
+/** The summary column that opens the hiring-documents block: "12 of 17". */
+export const HIRING_DOCUMENTS_SUMMARY_KEY: HiringDocumentColumnKey = "doc:__summary__";
+
+export const hiringDocumentColumnKey = (documentId: string): HiringDocumentColumnKey =>
+  `doc:${documentId}`;
+
+/** The document id a hiring-document column carries. */
+export const hiringDocumentIdFromKey = (key: MasterColumnKey): string => key.slice("doc:".length);
+
+/**
+ * The hiring-document columns, appended after the static contract above.
+ *
+ * WHY THEY ARE BUILT RATHER THAN DECLARED. The owner asked for the Employee Master and the Hiring
+ * Documents checklist to meet, so that one row holds everything known about a person (2026-09-29).
+ * The checklist's columns are rows of `hiring_document_definitions` — HR adds one whenever a new
+ * paper starts being collected — so the only honest way to put them on this sheet is to read them
+ * at build time. They are READ-ONLY here: the sheet reports what the checklist says, and the
+ * checklist stays the one place a document is filed.
+ *
+ * An empty list returns an empty array, so a workbook built before the tables existed, or by a
+ * caller that chose not to pay for the lookup, is exactly the sheet it was before.
+ */
+export function buildHiringDocumentColumns(documents: HiringDocumentColumnSpec[]): MasterColumn[] {
+  if (documents.length === 0) return [];
+
+  const summary: MasterColumn = {
+    header: "Hiring Documents Complete (reference)",
+    key: HIRING_DOCUMENTS_SUMMARY_KEY,
+    section: "Hiring Documents (read-only)",
+    width: 22,
+    kind: "text",
+    imported: false,
+    guide:
+      "How many of this person's hiring documents are marked submitted, out of the documents the checklist tracks. Read-only — file a document on the Hiring Documents screen and this follows.",
+  };
+
+  return [
+    summary,
+    // "(document)" IS LOAD-BEARING, not decoration. A document's name is typed by HR on the Hiring
+    // Documents screen, and a column header is what the upload matches fields on — so a document
+    // one day named "Position" or "Status" would, unsuffixed, be read back as that employee field
+    // and overwrite it with the word "Submitted". The suffix puts every one of these headers
+    // outside the alias table for good, the same way the "(reference)" columns sit outside it.
+    ...documents.map<MasterColumn>((document) => ({
+      header: `${document.name} (document)`,
+      key: hiringDocumentColumnKey(document.id),
+      section: "Hiring Documents (read-only)",
+      width: 24,
+      kind: "text",
+      imported: false,
+      guide: `Checklist state for "${document.name}", with how many files are on file for it. Read-only — set it on the Hiring Documents screen.`,
+      allowed: "Submitted, Pending, Missing — and \"Submitted · no file\" when the box is ticked but nothing is attached.",
+    })),
+  ];
+}
+
+/** The full sheet order: the fixed contract, then whatever hiring documents exist today. */
+export function masterColumnsFor(documents: HiringDocumentColumnSpec[] = []): MasterColumn[] {
+  return [...columns, ...buildHiringDocumentColumns(documents)];
+}
 
 /** Exported for the tests — the sheet contract a future edit must not break by accident. */
 export const employeeMasterWorkbookContract = {

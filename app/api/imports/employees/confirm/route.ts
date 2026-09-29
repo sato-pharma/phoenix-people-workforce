@@ -9,6 +9,7 @@ import { invalidateEmployeeDirectoryCache } from "@/lib/employees/employee-direc
 import { loadEmployeeImportExistingState } from "@/lib/imports/employee-import-existing-state";
 import { createEmployeeImportPlan } from "@/lib/imports/employee-import-plan";
 import { hrIdsForManagerLinks, managerLinksToWrite } from "@/lib/imports/employee-manager-links";
+import { saveSocialInsuranceJobTitles } from "@/lib/hiring-pack/social-insurance-job-title";
 import { splitInsertOnly } from "@/lib/imports/org-entity-write-guard";
 import { upsertByColumnSet } from "@/lib/imports/upsert-by-column-set";
 import type {
@@ -547,6 +548,9 @@ function employeeValues(
     ...(record.socialInsuranceNumber
       ? { social_insurance_number: truncate(record.socialInsuranceNumber, 120) }
       : {}),
+    ...(record.healthCardStatus ? { health_card_status: record.healthCardStatus } : {}),
+    ...(record.healthCardNumber ? { health_card_number: truncate(record.healthCardNumber, 120) } : {}),
+    ...(record.healthCardReceivedDate ? { health_card_received_date: record.healthCardReceivedDate } : {}),
   };
 }
 
@@ -619,6 +623,9 @@ function isMissingOptionalEmployeeColumn(error: unknown) {
     message.includes("residence_city") ||
     message.includes("social_insurance") ||
     message.includes("social_insurance_number") ||
+    message.includes("health_card_status") ||
+    message.includes("health_card_number") ||
+    message.includes("health_card_received_date") ||
     message.includes("taxes") ||
     message.includes("team_id") ||
     message.includes("schema cache")
@@ -653,6 +660,9 @@ function withoutOptionalEmployeeColumns(values: ReturnType<typeof employeeValues
     residence_city,
     social_insurance,
     social_insurance_number,
+    health_card_status,
+    health_card_number,
+    health_card_received_date,
     taxes,
     team_id,
     ...rest
@@ -684,10 +694,49 @@ function withoutOptionalEmployeeColumns(values: ReturnType<typeof employeeValues
   void residence_city;
   void social_insurance;
   void social_insurance_number;
+  void health_card_status;
+  void health_card_number;
+  void health_card_received_date;
   void taxes;
   void team_id;
 
   return rest;
+}
+
+/**
+ * The insurance job titles the sheet carried, written to the hiring profile.
+ *
+ * SEPARATE FROM THE EMPLOYEE UPSERT because the value is not on `employees`: it is
+ * `employee_hiring_profile.job_title_ar`, the same Arabic title the contract and Form 1 print
+ * (the owner confirmed they are one value on 2026-09-29).
+ *
+ * A BLANK CELL WRITES NOTHING, exactly like every other column on this sheet. That matters more
+ * here than elsewhere: an HR user who downloads the master, edits two salaries and uploads it
+ * again must not blank the Arabic title on everybody's contract because their copy of the sheet
+ * predates the column.
+ *
+ * It must not fail the import either. The employees are already written by the time this runs, and
+ * a satellite table being unavailable is not a reason to report a successful upload as failed — so
+ * the failure is logged and counted as zero.
+ */
+async function writeSocialInsuranceJobTitles(
+  records: EmployeeImportRecord[],
+  actorHrId: string | null,
+) {
+  const entries = records
+    .filter((record) => record.hrId && record.socialInsuranceJobTitle)
+    .map((record) => ({ hrId: record.hrId as string, jobTitleAr: record.socialInsuranceJobTitle }));
+  if (entries.length === 0) return { updated: 0 };
+
+  try {
+    return { updated: await saveSocialInsuranceJobTitles(entries, actorHrId) };
+  } catch (error) {
+    logError("Employee import could not write the social insurance job titles", {
+      labels: { event: "employee_import_insurance_job_title_failed" },
+      error,
+    });
+    return { updated: 0 };
+  }
 }
 
 async function upsertEmployees(
@@ -1121,6 +1170,10 @@ export async function POST(request: Request) {
       supabase,
       [...dryRunResult.rowsToInsert, ...dryRunResult.rowsToUpdate],
     );
+    const insuranceJobTitleResult = await writeSocialInsuranceJobTitles(
+      [...dryRunResult.rowsToInsert, ...dryRunResult.rowsToUpdate],
+      access.hrId ?? null,
+    );
     const residenceResult = await upsertEmployeeResidenceLocations(
       supabase,
       [...dryRunResult.rowsToInsert, ...dryRunResult.rowsToUpdate],
@@ -1165,6 +1218,7 @@ export async function POST(request: Request) {
       closedVacancies: closedVacancyResult.closed,
       importedEmployees: employeeResult.imported,
       importedCompensationRows: compensationResult.upserted,
+      updatedInsuranceJobTitles: insuranceJobTitleResult.updated,
       importedResidenceRows: residenceResult.upserted,
       // Teams the sheet named that already exist and were left exactly as they are — including any
       // that are deactivated. Reported rather than silent, because "the import quietly left this

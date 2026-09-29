@@ -6,6 +6,7 @@ import {
   buildRowCheckFormula,
   employeeMasterWorkbookContract,
 } from "../src/lib/employees/employee-master-workbook.ts";
+import { masterColumnsFor } from "../src/lib/employees/employee-master-columns.ts";
 import { createEmployeeColumnLookup } from "../src/lib/imports/employee-column-map.ts";
 import { normalizeHeaderName } from "../src/lib/imports/employee-normalizers.ts";
 import {
@@ -59,6 +60,9 @@ function fixtureEmployee(index: number) {
     grossSalary: 11500,
     hasBankAccount: "yes",
     hasPhoto: false,
+    healthCardStatus: null,
+    healthCardNumber: null,
+    healthCardReceivedDate: null,
     hireDate: "2022-06-01T00:00:00Z",
     hrId: `A-${index}`,
     jobTitle: "Medical Rep",
@@ -103,6 +107,15 @@ function fixtureEmployee(index: number) {
 
 const EMPLOYEE_COUNT = 12;
 
+// Two real document names and one deliberately hostile one. "Position" is an alias in
+// employee-column-map.ts, so an unsuffixed document column with that name would be read back on
+// upload and overwrite everybody's seat with the word "Submitted".
+const DOCUMENTS = [
+  { id: 'doc-nid', name: 'National ID copy' },
+  { id: 'doc-medical', name: 'Medical check' },
+  { id: 'doc-hostile', name: 'Position' },
+];
+
 export async function buildFixtureWorkbook() {
   const employees = Array.from({ length: EMPLOYEE_COUNT }, (_, index) => fixtureEmployee(index + 1));
   const workbook = await buildEmployeeMasterWorkbook({
@@ -124,6 +137,20 @@ export async function buildFixtureWorkbook() {
         { areaId: 2, label: "Team B" },
       ],
     },
+    hiringDocuments: {
+      definitions: DOCUMENTS,
+      byHrId: new Map([
+        [
+          'A-1',
+          new Map([
+            ['doc-nid', { fileCount: 2, status: 'submitted' as const }],
+            ['doc-medical', { fileCount: 0, status: 'submitted' as const }],
+            ['doc-hostile', { fileCount: 0, status: 'missing' as const }],
+          ]),
+        ],
+      ]),
+    },
+    socialInsuranceJobTitles: new Map([['A-1', 'مندوب دعاية طبية']]),
   });
   const buffer = (await workbook.xlsx.writeBuffer()) as ArrayBuffer;
   return { buffer, employees };
@@ -244,6 +271,71 @@ export async function runEmployeeMasterWorkbookTests() {
     "the money columns must stay contiguous — the cleared-cell advisory COUNTAs them as one range, " +
       "and a text column moved into the middle would make it count cells that are not money",
   );
+
+  // ── 6b. the hiring-document columns ─────────────────────────────────────────
+  //
+  // The owner asked for the master and the hiring-documents checklist to meet, so one row holds
+  // everything known about a person (2026-09-29). These columns are DATA, not contract: HR adds a
+  // document and a column appears. Three things about them can break silently.
+  const sheetColumns = masterColumnsFor(DOCUMENTS);
+  const headerRowCells = sheet.getRow(employeeMasterWorkbookContract.headerRow);
+  const headerAt = (index: number) => String(headerRowCells.getCell(index + 1).value ?? '');
+
+  assert.equal(
+    sheetColumns.length,
+    employeeMasterWorkbookContract.columns.length + DOCUMENTS.length + 1,
+    'every tracked document gets a column, plus the one summary column',
+  );
+  for (const [index, column] of sheetColumns.entries()) {
+    assert.equal(
+      headerAt(index),
+      column.header,
+      `the sheet's header row must match the computed column list at position ${index + 1}`,
+    );
+  }
+
+  // (i) A DOCUMENT NAME MUST NOT BE READ BACK AS A FIELD. "Position" is a live import alias; the
+  // "(document)" suffix is what keeps every one of these headers outside the alias table.
+  for (const document of DOCUMENTS) {
+    const header = `${document.name} (document)`;
+    assert.ok(
+      sheetColumns.some((column) => column.header === header),
+      `the document column for "${document.name}" must carry the (document) suffix`,
+    );
+    assert.equal(
+      resolves(header),
+      null,
+      `"${header}" matches an import alias — an upload would write "Submitted" into that field`,
+    );
+  }
+
+  // (ii) The values reach the sheet, including the one combination worth looking at: a ticked box
+  // with nothing attached.
+  const documentColumnIndex = (name: string) =>
+    sheetColumns.findIndex((column) => column.header === `${name} (document)`) + 1;
+  const firstDataRow = sheet.getRow(employeeMasterWorkbookContract.firstDataRow);
+  assert.equal(String(firstDataRow.getCell(documentColumnIndex('National ID copy')).value ?? ''), 'Submitted · 2 files');
+  assert.equal(String(firstDataRow.getCell(documentColumnIndex('Medical check')).value ?? ''), 'Submitted · no file');
+  assert.equal(String(firstDataRow.getCell(documentColumnIndex('Position')).value ?? ''), 'Missing');
+  const summaryIndex = sheetColumns.findIndex((column) => column.header === 'Hiring Documents Complete (reference)') + 1;
+  assert.equal(String(firstDataRow.getCell(summaryIndex).value ?? ''), '2 of 3');
+
+  // (iii) An employee the checklist does not cover reads BLANK, never "Missing" — the export can be
+  // wider than the checklist, and "Missing" would accuse a leaver of never filing a paper nobody
+  // asked them for. Row 2 of the fixture has no checklist entry at all.
+  const secondDataRow = sheet.getRow(employeeMasterWorkbookContract.firstDataRow + 1);
+  for (const document of DOCUMENTS) {
+    assert.equal(
+      String(secondDataRow.getCell(documentColumnIndex(document.name)).value ?? ''),
+      '',
+      'an employee outside the checklist must read blank, not "Missing"',
+    );
+  }
+
+  // (iv) The insurance job title is the hiring profile's Arabic title, merged in by HR_ID.
+  const titleIndex = sheetColumns.findIndex((column) => column.header === 'Social Insurance Job Title') + 1;
+  assert.equal(String(firstDataRow.getCell(titleIndex).value ?? ''), 'مندوب دعاية طبية');
+  assert.equal(String(secondDataRow.getCell(titleIndex).value ?? ''), '');
 
   // ── 7. the EMITTED ARTIFACT parses, and Excel will not repair it ─────────────
   const problems = await checkWorkbook(Buffer.from(buffer), { quiet: true });

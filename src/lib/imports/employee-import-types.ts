@@ -28,6 +28,10 @@ export type EmployeeImportField =
   | "socialInsuranceNumber"
   | "medicalInsuranceStatus"
   | "medicalInsuranceNumber"
+  | "socialInsuranceJobTitle"
+  | "healthCardStatus"
+  | "healthCardNumber"
+  | "healthCardReceivedDate"
   | "basicSalary"
   | "baseSalary"
   | "netSalary"
@@ -101,6 +105,18 @@ export type EmployeeImportRecord = {
   socialInsuranceNumber: string | null;
   medicalInsuranceStatus: string | null;
   medicalInsuranceNumber: string | null;
+  /**
+   * The Arabic job title filed with the Social Insurance Authority.
+   *
+   * NOT A COLUMN ON `employees`. It is `employee_hiring_profile.job_title_ar`, the value the
+   * contract and Form 1 already print, so the confirm step writes it through the hiring profile
+   * rather than with the rest of the row.
+   */
+  socialInsuranceJobTitle: string | null;
+  /** The GOVERNMENT health insurance booklet — دفتر التأمين الصحى الحكومى, not the private policy. */
+  healthCardStatus: string | null;
+  healthCardNumber: string | null;
+  healthCardReceivedDate: string | null;
   compensation: {
     basicSalary: number | null;
     baseSalary: number | null;

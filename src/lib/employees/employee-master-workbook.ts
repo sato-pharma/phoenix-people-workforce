@@ -74,10 +74,15 @@ import {
   FORMULA_KEYS,
   GENDER_VALUES,
   HEADER_ROW,
+  type HiringDocumentColumnSpec,
+  HIRING_DOCUMENTS_SUMMARY_KEY,
+  hiringDocumentIdFromKey,
+  isReadOnlyMasterColumn,
   CONTRACT_VALUES,
+  type MasterColumn,
+  masterColumnsFor,
   type MasterRow,
   PAYMENT_MODE_VALUES,
-  READ_ONLY_KEYS,
   SECTION_ROW,
   SPARE_ROWS,
   STATUS_VALUES,
@@ -117,7 +122,52 @@ function yesNo(value: boolean) {
   return value ? "Yes" : "No";
 }
 
-export function employeeToMasterRow(employee: EmployeeDirectoryRow): MasterRow {
+/**
+ * One employee's hiring-document checklist cell, as the master sheet reports it.
+ *
+ * `fileCount` travels with the status on purpose: "Submitted" with nothing attached is the single
+ * combination worth looking at, because it means somebody ticked the box from memory.
+ */
+export type MasterHiringDocumentCell = { fileCount: number; status: "missing" | "pending" | "submitted" };
+
+export type EmployeeMasterHiringDocuments = {
+  definitions: HiringDocumentColumnSpec[];
+  /** HR id -> document id -> cell. Absent keys read blank, never as "Missing". */
+  byHrId: Map<string, Map<string, MasterHiringDocumentCell>>;
+};
+
+/**
+ * What a hiring-document cell says.
+ *
+ * A BLANK, NOT A WORD, for an employee the checklist does not cover. The checklist tracks the
+ * people Phoenix currently employs, and the master export can be wider than that — writing
+ * "Missing" against a leaver would state, in the same words the checklist uses for a real gap, that
+ * somebody never filed a paper nobody was asking them for.
+ */
+export function formatHiringDocumentCell(cell: MasterHiringDocumentCell | undefined): string {
+  if (!cell) return "";
+  if (cell.status === "submitted") {
+    if (cell.fileCount === 0) return "Submitted · no file";
+    return `Submitted · ${cell.fileCount} file${cell.fileCount === 1 ? "" : "s"}`;
+  }
+  const label = cell.status === "missing" ? "Missing" : "Pending";
+  return cell.fileCount > 0 ? `${label} · ${cell.fileCount} file${cell.fileCount === 1 ? "" : "s"}` : label;
+}
+
+/** "12 of 17", or blank for an employee the checklist does not cover. */
+export function formatHiringDocumentSummary(
+  cells: Map<string, MasterHiringDocumentCell> | undefined,
+  definitions: HiringDocumentColumnSpec[],
+): string {
+  if (!cells || definitions.length === 0) return "";
+  const submitted = definitions.filter((document) => cells.get(document.id)?.status === "submitted").length;
+  return `${submitted} of ${definitions.length}`;
+}
+
+export function employeeToMasterRow(
+  employee: EmployeeDirectoryRow,
+  socialInsuranceJobTitle: string | null = null,
+): MasterRow {
   const salary = resolveEmployeeMasterExportSalary(employee);
 
   return {
@@ -165,6 +215,10 @@ export function employeeToMasterRow(employee: EmployeeDirectoryRow): MasterRow {
     medicalInsuranceNumber: employee.medicalInsuranceNumber,
     socialInsuranceStatus: employee.socialInsuranceStatus,
     socialInsuranceNumber: employee.socialInsuranceNumber,
+    socialInsuranceJobTitle,
+    healthCardStatus: employee.healthCardStatus,
+    healthCardNumber: employee.healthCardNumber,
+    healthCardReceivedDate: dateOnly(employee.healthCardReceivedDate),
     payrollEligible: yesNo(employee.payrollEligible),
     organogramVisible: yesNo(employee.organogramVisible),
     region: employee.regionName,
@@ -376,11 +430,12 @@ function styleMasterSheet(
   lookups: MasterLookups,
   rows: MasterRow[],
   scopeNote: string,
+  sheetColumns: MasterColumn[],
 ) {
   const recordCount = rows.length;
   const lastDataRow = FIRST_DATA_ROW + recordCount - 1;
   const lastFormulaRow = lastDataRow + SPARE_ROWS;
-  const lastColumn = columns.length;
+  const lastColumn = sheetColumns.length;
 
   writeHouseMasthead(workbook, sheet, {
     title: "Employee Master",
@@ -402,7 +457,7 @@ function styleMasterSheet(
   };
   sheet.properties.defaultRowHeight = 18;
 
-  columns.forEach((column, index) => {
+  sheetColumns.forEach((column, index) => {
     const excelColumn = sheet.getColumn(index + 1);
     excelColumn.width = column.width;
     // Reference columns collapse into an outline group — present for an audit, out of the way
@@ -425,8 +480,8 @@ function styleMasterSheet(
   const sectionRow = sheet.getRow(SECTION_ROW);
   sectionRow.height = 18;
   const runs: Array<{ from: number; label: string; to: number }> = [];
-  columns.forEach((column, index) => {
-    const previous = columns[index - 1];
+  sheetColumns.forEach((column, index) => {
+    const previous = sheetColumns[index - 1];
     if (!previous || previous.section !== column.section) {
       runs.push({ from: index + 1, label: column.section.toUpperCase(), to: index + 1 });
     } else {
@@ -459,13 +514,13 @@ function styleMasterSheet(
   // Grouped, NOT hidden: the +/- control appears and the columns stay visible until someone chooses
   // otherwise. Hiding a column on an upload template by default would be a way to lose a value
   // silently, which is the opposite of what this sheet is for.
-  columns.forEach((column, index) => {
+  sheetColumns.forEach((column, index) => {
     if (!column.imported) sheet.getColumn(index + 1).outlineLevel = 1;
   });
 
   const headerRow = sheet.getRow(HEADER_ROW);
   headerRow.height = 30;
-  columns.forEach((column, index) => {
+  sheetColumns.forEach((column, index) => {
     const cell = headerRow.getCell(index + 1);
     cell.value = column.header;
     houseHeaderStyle(cell);
@@ -482,12 +537,12 @@ function styleMasterSheet(
     const row = sheet.getRow(rowNumber);
     row.height = 17;
     const zebra = (rowNumber - FIRST_DATA_ROW) % 2 === 1;
-    columns.forEach((_column, index) => {
+    sheetColumns.forEach((_column, index) => {
       houseBodyStyle(row.getCell(index + 1), { zebra });
     });
   }
 
-  columns.forEach((column, index) => {
+  sheetColumns.forEach((column, index) => {
     const excelColumn = sheet.getColumn(index + 1);
     if (column.kind === "money") excelColumn.numFmt = "#,##0.00";
     if (column.kind === "date") excelColumn.numFmt = "yyyy-mm-dd";
@@ -513,6 +568,7 @@ function styleMasterSheet(
     listCell(rowNumber, "hasBankAccount").dataValidation = inlineList(YES_NO);
     listCell(rowNumber, "medicalInsuranceStatus").dataValidation = inlineList(YES_NO_PENDING);
     listCell(rowNumber, "socialInsuranceStatus").dataValidation = inlineList(YES_NO_PENDING);
+    listCell(rowNumber, "healthCardStatus").dataValidation = inlineList(YES_NO_PENDING);
     listCell(rowNumber, "payrollEligible").dataValidation = inlineList("Yes,No");
     listCell(rowNumber, "organogramVisible").dataValidation = inlineList("Yes,No");
 
@@ -663,9 +719,9 @@ function styleMasterSheet(
 
   // --- protection: formulas and reference columns locked, everything else open ---
   for (let rowNumber = 1; rowNumber <= lastFormulaRow; rowNumber += 1) {
-    columns.forEach((column, index) => {
+    sheetColumns.forEach((column, index) => {
       sheet.getCell(rowNumber, index + 1).protection = {
-        locked: FORMULA_KEYS.has(column.key) || READ_ONLY_KEYS.has(column.key),
+        locked: FORMULA_KEYS.has(column.key) || isReadOnlyMasterColumn(column),
       };
     });
   }
@@ -695,7 +751,7 @@ function countMoneyFilled(row: MasterRow | undefined): number {
   return columns
     .slice(money.first - 1, money.last)
     .filter((column) => {
-      const value = row[column.key];
+      const value = row[column.key as keyof MasterRow];
       return value !== null && value !== undefined && value !== "";
     }).length;
 }
@@ -832,7 +888,7 @@ function addStartHereSheet(workbook: ExcelJS.Workbook, recordCount: number, last
 }
 
 /** "Field Guide" — one row per column, so nobody has to guess what a header means. */
-function addFieldGuideSheet(workbook: ExcelJS.Workbook) {
+function addFieldGuideSheet(workbook: ExcelJS.Workbook, sheetColumns: MasterColumn[]) {
   const sheet = workbook.addWorksheet("Field Guide", { properties: { tabColor: { argb: HOUSE_XLSX_COLORS.light } } });
   sheet.views = [{ showGridLines: false, state: "frozen", ySplit: HEADER_ROW }];
   const widths = [26, 22, 12, 34, 74];
@@ -843,7 +899,7 @@ function addFieldGuideSheet(workbook: ExcelJS.Workbook) {
   writeHouseMasthead(workbook, sheet, {
     title: "Field Guide",
     subtitle: "Every column on the Employee Master sheet, and what the upload does with it.",
-    provenance: [`${columns.length} columns`, systemLegalEntity.legalNameEn],
+    provenance: [`${sheetColumns.length} columns`, systemLegalEntity.legalNameEn],
     columns: widths.length,
   });
 
@@ -857,7 +913,7 @@ function addFieldGuideSheet(workbook: ExcelJS.Workbook) {
     houseHeaderStyle(cell);
   });
 
-  columns.forEach((column, index) => {
+  sheetColumns.forEach((column, index) => {
     const rowNumber = FIRST_DATA_ROW + index;
     const row = sheet.getRow(rowNumber);
     const zebra = index % 2 === 1;
@@ -883,7 +939,7 @@ function addFieldGuideSheet(workbook: ExcelJS.Workbook) {
 
   sheet.autoFilter = {
     from: { column: 1, row: HEADER_ROW },
-    to: { column: widths.length, row: FIRST_DATA_ROW + columns.length - 1 },
+    to: { column: widths.length, row: FIRST_DATA_ROW + sheetColumns.length - 1 },
   };
 }
 
@@ -1056,6 +1112,20 @@ export type BuildEmployeeMasterWorkbookInput = {
   lookups: MasterLookups;
   /** Free-text note about whose scope produced this file — printed in the masthead. */
   scopeNote?: string;
+  /**
+   * The hiring-document checklist, so one row holds everything known about a person.
+   *
+   * OPTIONAL, AND ITS ABSENCE IS NOT AN ERROR. The checklist lives in three tables the export does
+   * not otherwise touch; the route loads it defensively and passes nothing when it cannot. The
+   * workbook is then exactly the sheet it was before, rather than a failed download.
+   */
+  hiringDocuments?: EmployeeMasterHiringDocuments;
+  /**
+   * HR id -> the Arabic job title filed with the Social Insurance Authority
+   * (`employee_hiring_profile.job_title_ar`). Lives beside the employee record rather than in it,
+   * so it is loaded by the caller and merged here.
+   */
+  socialInsuranceJobTitles?: Map<string, string | null>;
 };
 
 /** Builds the whole workbook. Sheet ORDER is load-bearing — see constraint 1 at the top. */
@@ -1080,23 +1150,40 @@ export async function buildEmployeeMasterWorkbook(
   const sheet = workbook.addWorksheet("Employee Master", {
     properties: { defaultRowHeight: 18, tabColor: { argb: HOUSE_XLSX_COLORS.deep } },
   });
-  sheet.columns = columns.map((column) => ({ key: column.key, width: column.width }));
+  const documentDefinitions = input.hiringDocuments?.definitions ?? [];
+  const sheetColumns = masterColumnsFor(documentDefinitions);
+  sheet.columns = sheetColumns.map((column) => ({ key: column.key, width: column.width }));
 
-  const rows = employees.map(employeeToMasterRow);
+  const rows = employees.map((employee) =>
+    employeeToMasterRow(employee, input.socialInsuranceJobTitles?.get(employee.hrId) ?? null),
+  );
   // Rows 1-5 are the masthead, the section band and the headers; data starts at FIRST_DATA_ROW.
   for (let index = 0; index < rows.length; index += 1) {
     const row = sheet.getRow(FIRST_DATA_ROW + index);
-    columns.forEach((column, columnIndexZeroBased) => {
+    const documentCells = input.hiringDocuments?.byHrId.get(employees[index].hrId);
+    sheetColumns.forEach((column, columnIndexZeroBased) => {
       if (FORMULA_KEYS.has(column.key)) return;
-      row.getCell(columnIndexZeroBased + 1).value = rows[index][column.key] as ExcelJS.CellValue;
+      const cell = row.getCell(columnIndexZeroBased + 1);
+      if (column.key === HIRING_DOCUMENTS_SUMMARY_KEY) {
+        // `|| null` rather than the empty string: an empty inline string is a VALUE in the file,
+        // and constraint 3 only holds while an unfilled cell is genuinely nothing.
+        cell.value = formatHiringDocumentSummary(documentCells, documentDefinitions) || null;
+        return;
+      }
+      if (column.section === "Hiring Documents (read-only)") {
+        const documentId = hiringDocumentIdFromKey(column.key);
+        cell.value = formatHiringDocumentCell(documentCells?.get(documentId)) || null;
+        return;
+      }
+      cell.value = rows[index][column.key as keyof MasterRow] as ExcelJS.CellValue;
     });
   }
 
   addLookupSheet(workbook, lookups);
-  const { lastFormulaRow } = styleMasterSheet(workbook, sheet, lookups, rows, scopeNote);
+  const { lastFormulaRow } = styleMasterSheet(workbook, sheet, lookups, rows, scopeNote, sheetColumns);
 
   addStartHereSheet(workbook, rows.length, lastFormulaRow);
-  addFieldGuideSheet(workbook);
+  addFieldGuideSheet(workbook, sheetColumns);
   addUploadRulesSheet(workbook);
   addReferenceDataSheet(workbook, lookups);
 
