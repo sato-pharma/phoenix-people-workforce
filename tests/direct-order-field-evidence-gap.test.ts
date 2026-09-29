@@ -40,6 +40,7 @@ const SERVICE = "../src/lib/direct-orders/service.ts";
 const LINE = "../src/components/validation/not-field-validated-line.tsx";
 const DETAIL = "../src/components/approvals-hub/direct-order-request-detail.tsx";
 const TYPES = "../src/lib/direct-orders/types.ts";
+const DESK = "../src/components/direct-orders/validation-desk.tsx";
 
 /**
  * The one rule that matters: a venue somebody DID capture never carries the line. A false "nobody
@@ -124,11 +125,14 @@ function everyKindHasWords() {
   assert.match(DIRECT_ORDER_FIELD_EVIDENCE_GAP_SENTENCES.invoice, /no location and no capture time/);
 }
 
-/** What the loader counts as a field capture, pinned on the source it is decided in. */
+/**
+ * What counts as a field capture, pinned on the ONE predicate that decides it — extracted so the
+ * order screen's loader and the desk's batch loader cannot drift apart.
+ */
 function loaderRules() {
   const source = stripComments(read(VALIDATION));
-  assert.match(source, /export async function loadDirectOrderVenueFieldEvidence\(/);
-  const start = source.indexOf("export async function loadDirectOrderVenueFieldEvidence(");
+  assert.match(source, /function claimIsAStandingFieldCapture\(/);
+  const start = source.indexOf("function claimIsAStandingFieldCapture(");
   const body = source.slice(start, source.indexOf("\n}", start) + 2);
 
   // The CAPTURE, not the decision: a photo AND both coordinates, on the field route, not rejected.
@@ -140,23 +144,32 @@ function loaderRules() {
   // A PENDING field claim still counts — a marketing transfer arrives as one, carrying the rep's
   // photo and pin, and calling that venue uncaptured would be false.
   assert.ok(
-    !/=== "approved_new" \|\| String\(row\.status \?\? ""\) === "matched_existing"[\s\S]{0,200}hasFieldCapture/.test(body),
+    !/approved_new|matched_existing/.test(body),
     "a field capture must not be gated on a decision",
   );
-  // The owner's superseded exception, read off the SAME row's notes — and the photo and both
+  // The owner's redundancy exception, read off the SAME row's notes — and the photo and both
   // coordinates are still required, so the note readmits a decision and never invents evidence.
   assert.match(body, /directOrderRejectionWasOnlyRedundant\(row\.decision_notes\)/);
-  assert.match(body, /\.select\("validation_route, status, storage_path, captured_latitude, captured_longitude, decision_notes"\)/);
-  // The invoice half IS gated on a decision: an undecided invoice claim has validated nothing.
-  assert.match(body, /=== "invoice" &&\s*\(String\(row\.status \?\? ""\) === "approved_new"/);
 
-  // Asked of the WHOLE venue, and bounded — an unbounded PostgREST select stops at 1000 silently.
-  assert.match(body, /\.eq\("pharmacy_id", pharmacyId\)/);
-  assert.match(body, /\.limit\(200\)/);
-  // The RAW entry source, read from the table rather than taken off the mapped pharmacy.
-  assert.match(body, /\.from\("direct_order_pharmacies"\)\s*\.select\("entry_source"\)/);
-  // It decorates a screen, so a read failure must never cost the approver the whole order.
-  assert.match(body, /if \(error\) return \{ \.\.\.empty, entrySource \}/);
+  // The invoice half IS gated on a decision: an undecided invoice claim has validated nothing.
+  const invoiceStart = source.indexOf("function claimIsADecidedInvoiceValidation(");
+  assert.ok(invoiceStart >= 0, "the invoice predicate must exist");
+  const invoiceBody = source.slice(invoiceStart, source.indexOf("\n}", invoiceStart) + 2);
+  assert.match(invoiceBody, /=== "approved_new" \|\| String\(row\.status \?\? ""\) === "matched_existing"/);
+
+  // Both loaders read the same columns, from one constant, so a column added for one is present for
+  // the other — a missing `decision_notes` on either side would silently drop the exception.
+  assert.match(source, /const VENUE_EVIDENCE_COLUMNS =\s*\n?\s*"pharmacy_id, validation_route, status, storage_path, captured_latitude, captured_longitude, decision_notes"/);
+  assert.match(source, /\.select\(VENUE_EVIDENCE_COLUMNS\)/);
+
+  // The single-venue loader: asked of the WHOLE venue, bounded, raw entry source, never throws.
+  const singleStart = source.indexOf("export async function loadDirectOrderVenueFieldEvidence(");
+  assert.ok(singleStart >= 0, "the single-venue loader must exist");
+  const singleBody = source.slice(singleStart, source.indexOf("\n}", singleStart) + 2);
+  assert.match(singleBody, /\.eq\("pharmacy_id", pharmacyId\)/);
+  assert.match(singleBody, /\.limit\(200\)/);
+  assert.match(singleBody, /\.from\("direct_order_pharmacies"\)\s*\.select\("entry_source"\)/);
+  assert.match(singleBody, /if \(error\) return \{ \.\.\.NO_VENUE_EVIDENCE, entrySource \}/);
 }
 
 /** The service asks the VENUE, not the single most-recent claim, and hands the answer to the screen. */
@@ -360,6 +373,46 @@ function aRedundantRejectionStillCounts() {
   );
 }
 
+/**
+ * The validation desk carries the same line (owner, 2026-09-29: "put the not-field-validated line on
+ * the validation desk too") — batched, and silent where the claim in front of the decider IS the
+ * capture.
+ */
+function theLineOnTheValidationDesk() {
+  const validation = stripComments(read(VALIDATION));
+
+  // ONE predicate, shared. Two copies could disagree about whether the same venue was captured, on
+  // two screens looking at the same claim.
+  assert.match(validation, /function claimIsAStandingFieldCapture\(row: VenueEvidenceRow\): boolean/);
+  assert.match(validation, /hasFieldCapture: rows\.some\(claimIsAStandingFieldCapture\)/);
+  assert.match(validation, /validatedByInvoice: rows\.some\(claimIsADecidedInvoiceValidation\)/);
+  assert.equal(
+    (validation.match(/normalizeDirectOrderValidationRoute\(row\.validation_route\) === "field"/g) ?? []).length,
+    1,
+    "the field-capture rule must exist exactly once",
+  );
+
+  // The desk reads every venue in ONE batch, not one round trip per claim.
+  assert.match(validation, /export async function loadDirectOrderVenueFieldEvidenceBatch\(/);
+  assert.match(validation, /const venueEvidence = await loadDirectOrderVenueFieldEvidenceBatch\(pharmacyIds\)/);
+  assert.match(validation, /fieldEvidenceGap: evidence \? directOrderFieldEvidenceGap\(evidence\) : null/);
+  // Chunked at 50 — a PostgREST `.in()` returns zero rows and no error once the header grows, and an
+  // empty answer here reads as "no venue was ever captured", which would show the line on every row.
+  assert.match(validation, /index \+= 50/);
+  assert.match(validation, /\.filter\(Boolean\)/);
+  // A read failure must never cost the desk its rows.
+  assert.match(validation, /readFailed/);
+
+  const desk = stripComments(read(DESK));
+  assert.match(desk, /import \{ NotFieldValidatedLine \} from "@\/components\/validation\/not-field-validated-line"/);
+  assert.match(desk, /\{row\.fieldEvidenceGap \? \(/);
+  assert.match(desk, /<NotFieldValidatedLine gap=\{row\.fieldEvidenceGap\} \/>/);
+  // ABOVE the evidence: on an invoice row the invoice is the thing being mistaken for venue evidence.
+  const lineAt = desk.indexOf("<NotFieldValidatedLine");
+  const evidenceAt = desk.indexOf("<DirectOrderInvoiceEvidence");
+  assert.ok(lineAt >= 0 && evidenceAt >= 0 && lineAt < evidenceAt, "the line must sit above the evidence");
+}
+
 export async function runDirectOrderFieldEvidenceGapTests() {
   aFieldCaptureSilencesIt();
   theThreeKinds();
@@ -369,4 +422,5 @@ export async function runDirectOrderFieldEvidenceGapTests() {
   theLineOnTheScreen();
   approverOnlyNeverThePortal();
   aRedundantRejectionStillCounts();
+  theLineOnTheValidationDesk();
 }
