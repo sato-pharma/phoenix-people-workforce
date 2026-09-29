@@ -44,7 +44,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import type { DocumentFieldInventoryEntry } from "@/lib/hiring-pack/document-inventory";
 import { literalValueKey } from "@/lib/hiring-pack/field-layout";
-import type { DocumentSurface, TextDocumentFieldRow } from "@/lib/hiring-pack/field-layout";
+import { DOCUMENT_MARK_LABELS } from "@/lib/hiring-pack/document-marks";
+import type {
+  DocumentFieldRow,
+  DocumentSurface,
+  TextDocumentFieldRow,
+} from "@/lib/hiring-pack/field-layout";
 import {
   fieldTemplateKeys,
   resolveFieldTemplate,
@@ -370,11 +375,16 @@ export function FieldTable({
    * key otherwise, and a description of the box for a field somebody added and never named.
    */
   const warnings = useMemo(() => {
-    const labelOf = (row: TextDocumentFieldRow) => {
+    // TAKES THE WIDE ROW, not this table's narrowed one, because `fieldWarningsByRow` is shared
+    // with the marks list in the layout panel — a stamp dragged off the edge of a page is clipped
+    // in exactly the same silence as a box of text, so it gets the same warning from the same
+    // helper. The rows THIS call passes are still text only; the labeller is what is shared.
+    const labelOf = (row: DocumentFieldRow) => {
       if (row.defaultKey !== null) {
         const entry = entries.find((candidate) => candidate.key === row.defaultKey);
         return entry?.labelEn ?? humaniseKey(row.defaultKey);
       }
+      if (row.source.kind === "mark") return DOCUMENT_MARK_LABELS[row.source.mark];
       if (row.source.kind === "value") return humaniseKey(row.source.key);
       // NOT SHORTENED. Truncating here would be the quiet kind: the warning names the box you have
       // to go and find, and half its text names it half as well. The message wraps instead.

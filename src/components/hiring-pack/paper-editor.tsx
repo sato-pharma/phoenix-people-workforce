@@ -85,7 +85,7 @@ import {
   PAGE_HEIGHT_PX,
   PAGE_WIDTH_PX,
 } from "@/lib/hiring-pack/paper-zoom";
-import { pageSizeFor, type PageSize } from "@/lib/hiring-pack/field-warnings";
+import { fieldWarnings, pageSizeFor, type PageSize } from "@/lib/hiring-pack/field-warnings";
 import { currentTemplateVersion } from "@/lib/hiring-pack/template-registry";
 import { isBuiltInDocument } from "@/lib/hiring-pack/types";
 import type {
@@ -596,6 +596,27 @@ export function HiringPackPaperEditor({
   const page = useMemo<PageSize | null>(
     () => (isBuiltInDocument(documentKey) ? pageSizeFor(documentKey) : customPage),
     [customPage, documentKey],
+  );
+
+  /**
+   * A placed mark dragged past the edge of the paper, by row id.
+   *
+   * THE SAME SILENT FAILURE THE FIELD TABLE ALREADY WARNS ABOUT, and a mark is more exposed to it,
+   * not less: `.sheet` is `overflow: hidden`, a stamp is far bigger than a text rule, and the fine-
+   * tune panel takes a typed width as given. It would look placed while being dragged, save, and
+   * print nothing — on a form somebody signs. Marks do not go through the field table, so without
+   * this they would be the one kind of field with no warning at all.
+   *
+   * `fieldWarnings` is the same helper the table uses, which is why its labeller takes the wide row.
+   */
+  const markWarnings = useMemo(
+    () =>
+      new Set(
+        fieldWarnings(page, markFields, (row) =>
+          row.source.kind === "mark" ? DOCUMENT_MARK_LABELS[row.source.mark] : "a field you added",
+        ).map((warning) => warning.rowId),
+      ),
+    [markFields, page],
   );
 
   /**
@@ -2310,6 +2331,11 @@ export function HiringPackPaperEditor({
                       // the document prints unsigned, and nothing on the page itself would show it.
                       <span className="text-phx-2xs font-semibold text-amber-700">
                         no signature stored — prints blank
+                      </span>
+                    ) : null}
+                    {markWarnings.has(row.id) ? (
+                      <span className="text-phx-2xs font-semibold text-red-700">
+                        past the edge of the paper — this part will not print
                       </span>
                     ) : null}
                     <Button

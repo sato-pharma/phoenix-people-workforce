@@ -329,6 +329,15 @@ function movedPlacement(placement: Placement, row: DocumentFieldRow): Placement 
       size: row.size,
     };
   }
+  // AN IMAGE MOVES AS AN IMAGE — no alignment, no font size, because it has neither. No compiled
+  // table places a picture, so nothing can reach this branch today: a mark is always an ADDITION
+  // and an addition never comes through here (`parseDocumentFieldWrite` and the table's own
+  // `_mark_is_an_addition` constraint both refuse the other case). It is written out rather than
+  // left to the fall-through below, which would spread `align` and `size` onto a shape that has no
+  // room for them — the same "a move keeps the placement's own kind" rule this function exists for.
+  if (placement.kind === "image") {
+    return { ...placement, key, fieldId: row.id, x: row.x, y: row.y, w: row.w, h: row.h };
+  }
   return {
     ...placement,
     key,
