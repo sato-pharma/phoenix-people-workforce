@@ -167,6 +167,32 @@ export function runEmployeeLineIsReadFromTheLinkTests() {
     );
   }
 
+  // ── 3c. NO SELECT ON `employees` MAY NAME EITHER DROPPED COLUMN ───────────────────────────
+  // 🔴 THIS IS THE ASSERTION THE DDL DEPENDS ON. `line_name` and `department_name` are being
+  // dropped from the table; a select that still asks for one becomes a 42703 the moment it goes,
+  // and PostgREST fails the WHOLE read rather than returning a null for that field. The type
+  // system catches an object that READS the field — it caught two while this was being written,
+  // including a Line dropdown built from the dead label — but it cannot see a column name inside
+  // a select STRING, which is why this is a text scan and not a type.
+  //
+  // Other tables have their own real `line_name` (vacation requests, probation rows, seats, the
+  // org-placement view), so the scan is anchored to a `.from("employees")` within a few lines.
+  const offenders: string[] = [];
+  for (const path of [...AREA_READS, REPORT_IT, VACATION_OPTIONS, VACATION_REPORT, EMAIL]) {
+    const source = read(path);
+    const pattern = /from\("employees"\)[\s\S]{0,400}?\.select\(([^)]*)\)/g;
+    for (const match of source.matchAll(pattern)) {
+      const selectList = match[1] ?? "";
+      if (/\bline_name\b|\bdepartment_name\b/.test(selectList)) offenders.push(`${path}: ${selectList.trim()}`);
+    }
+  }
+  assert.deepEqual(
+    offenders,
+    [],
+    "a select on employees still names a column that is being dropped — the DDL would turn that " +
+      `read into a 42703: ${offenders.join(" | ")}`,
+  );
+
   // ── 4. ONE RESOLVER, NOT FOUR ─────────────────────────────────────────────────────────────
   const email = read(EMAIL);
   assert.ok(
