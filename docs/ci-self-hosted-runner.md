@@ -670,6 +670,34 @@ GitHub-hosted. Nothing else changes, no workflow edit, no PR. Do this
 first and diagnose afterwards whenever the runner misbehaves — a queued job reports no status, and
 a required check with no status blocks every PR.
 
+### 🔴 The switch goes off BEFORE the host stops — never after
+
+**Stopping the runner host first is the one order that breaks things, and it breaks them silently.**
+`CI_SELF_HOSTED=off` sends every job back to `ubuntu-latest`. Leaving the switch armed while
+`CI_RUNNER_LABEL` still names a pool with **no online runner** does NOT fall back: the job **queues
+for ever**, reports no status, and a required check with no status blocks the PR with nothing red
+anywhere to read. The label being *unset* falls back; the label being *set to a dead pool* does not.
+Those two are a word apart in the section above and opposite in effect.
+
+**The order, whenever the host is being stood down or moved:**
+
+1. `CI_SELF_HOSTED=off`, and read it back from `gh variable list` — not from the command's exit code.
+2. Confirm no `ci-runner/` PR is open or in flight. `vars.*` resolve when a run **attempt** is
+   created, so a run already created keeps the armed value and still wants the pool.
+3. Only then stop the replicas.
+4. The registrations then sit in the repo's runner list as stale `offline` entries. Delete them by
+   **id** — the Railway replicas register non-ephemerally, which is why this list has read ten and
+   three inside one hour.
+
+**Recorded 2026-09-29**, because that is the order the owner's stand-down followed: the switch was set
+to `off` at 16:53 Cairo, on an idle pool — it had carried no CI at all since the two proof PRs
+([#4599](https://github.com/Gawish-1997/phoenix-people-workforce/pull/4599) and
+[#4601](https://github.com/Gawish-1997/phoenix-people-workforce/pull/4601)) on 28 September, while
+still billing for idle memory. 🔴 **The Railway host itself was still running when this was
+written — three replicas online — so nothing here says it was retired.** And this is a dated event,
+never a statement of what the switch reads today: ask `gh variable list` for that, for the reason
+[#4618](https://github.com/Gawish-1997/phoenix-people-workforce/pull/4618) exists.
+
 ## What to expect after the switch
 
 - **Cost**: metered Actions spend for this repo goes to ~$0. The VPS is the whole bill.
