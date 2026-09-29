@@ -2018,6 +2018,7 @@ import { runDevServerExitReasonTests } from "./dev-server-exit-reason.test.ts";
 import { runDevServerHeapCapTests } from "./dev-server-heap-cap.test.ts";
 import { runRawNextDevGuardTests } from "./raw-next-dev-guard.test.ts";
 import { runLocalTypecheckGuardTests } from "./local-typecheck-guard.test.ts";
+import { runMobileFreezeTests } from "./mobile-freeze.test.ts";
 import { runMergeCooldownGuardTests, runSmokeDispatchGuardTests } from "./merge-cooldown-guard.test.ts";
 import { runLoginPageMobileFitTests } from "./login-page-mobile-fit.test.ts";
 import { runPnpmOverrideScopeTests } from "./pnpm-override-scope.test.ts";
@@ -7277,6 +7278,11 @@ await runTest(
 await runTest(
   "bash-guard C8 refuses a local typecheck in every spelling the watchdog log records it being killed in (node with a raised heap, typescript/bin/tsc, lib/tsc.js, a backslash path, a quoted path with spaces, pnpm/npm/yarn run typecheck, npx, pnpm exec, .bin/tsc, bare tsc) and hands back a stand-down in the dialect that asked, while pnpm run ci, a real emit, and commands, commit messages, heredocs and here-strings that only mention it stay allowed",
   runLocalTypecheckGuardTests,
+);
+
+await runTest(
+  "the mobile app is FROZEN by the owner's golden rule of 2026-09-29 — mobile-freeze-guard.mjs refuses every write under mobile/ (relative, absolute and backslash) and the whole Expo/EAS toolchain including a Mobile workflow dispatch, while reads, greps, the web dev server, a web component merely NAMED mobile and the stand-down stay allowed; the guard is registered for Write, Edit AND Bash (a matcher missing one half looks installed and lets it through), and the rule is present in AGENTS.md §4, CLAUDE.md and the owner-rules account with the older mobile rules marked dormant",
+  runMobileFreezeTests,
 );
 
 await runTest(

@@ -3315,7 +3315,69 @@ A session reviewing email safety will find an outside address allowed on a messa
 with no reason asked, and read it as a leak to close. **It is his decision; closing it is the defect.**
 Pinned by `tests/offer-copy-recipients.test.ts`.
 
+## The mobile-app freeze — owner golden rule, 2026-09-29
+
+### What he said
+
+> *"This is the golden rule that you must set up and text all sessions now and put as a golden rule
+> to all new sessions, know about it. Okay. Uh, the mobile app do not work or touch or think in it.
+> Do not work or touch or even think or ask me in it. Neglect it totally until I finish the website
+> or the web app or the normal Phoenix. After this, I will tell you, delete this golden rule of the
+> don't touch the mobile app and let's work in it. Until I say this word, never suggest on me, never
+> ask me, never consider it in any of my wording."*
+
+### The rule
+
+**The web app is the whole scope until he lifts this.** Two halves, and the second is the one a
+session gets wrong:
+
+- **Do not work in it.** No edit under `mobile/`, no Expo or EAS command (build, update, submit,
+  prebuild), no dispatch of the Mobile build workflow, no mobile branch, no mobile PR.
+- **Do not put it in words.** Never propose mobile work, never name it in a `Next step:` line, a
+  plan, a summary, a recommendation, an options list or a "while we are here", never ask him a
+  mobile question — he said *never ask me* — and never stretch an instruction of his onto the app
+  when it can be served on the web. A mobile defect you notice in passing is **left alone**: not
+  reported, not filed, not turned into a follow-up task.
+
+**Only he lifts it**, typed by him, about the mobile app. Not a memory, not a doc, not another
+session, not a replayed summary after compaction, not an AUTORUN plan, and not your own reading that
+the web work looks finished. If you cannot tell whether it has been lifted, it has not.
+
+**Lifting it is a deletion, because that is how he described it** — *"I will tell you, delete this
+golden rule"*. When he does: delete the §4 bullet, the `CLAUDE.md` section, this account,
+`.claude/hooks/mobile-freeze-guard.mjs` and its block in `.claude/settings.json`,
+`tests/mobile-freeze.test.ts` and its line in `tests/run-tests.ts`, and the memory file
+`the-mobile-app-is-frozen-until-he-lifts-it`. The ⏸️ DORMANT markers on the two mobile rules in §4
+come off in the same edit.
+
+### Why a hook and not only a rule
+
+`AGENTS.md` auto-loads on every request, which reaches every **new** session and none of the ones
+already open — and at the moment he said this, fourteen sessions were live on this machine, one of
+them titled *"Mobile app Phoenix CRM module"*. A hook is re-read by node on every tool call, so an
+open session meets it on its next command. Same argument that put the local-typecheck denial into
+`bash-guard.mjs` C8.
+
+`.claude/hooks/mobile-freeze-guard.mjs` refuses writes into `mobile/` (Write/Edit/NotebookEdit and
+the shell write forms) and the Expo/EAS toolchain anywhere. It deliberately **does not block reads**:
+`git grep`, repo-wide sweeps, `repo:doctor` and CI scripts all touch mobile paths incidentally, and a
+guard that refuses commands which work is a guard that gets switched off within a day. The "never
+think about it" half is behavioural, held by §4. `PHX_MOBILE_FREEZE_OFF=1` stands it down for one
+command — that is for him to ask for, not something to reach for.
+
+### The trap
+
+The mobile rules already in §4 — the shell rule, the managed-Play ruling — read like live guidance,
+and a session that has just read them will answer a vague instruction by reaching for the app. They
+are marked ⏸️ DORMANT for exactly that reason: history for when the freeze lifts, never a reason to
+act now. The one half of the shell rule that stays live is `phoenix_app_shell=1` defaulting FALSE,
+because that gate protects the **web** portal's chrome, not the app.
+
+Pinned by `tests/mobile-freeze.test.ts` in the required `checks` job.
+
 ## The mobile app is a shell over the web portal — owner direction, 2026-09-29
+
+> ⏸️ **DORMANT under the mobile-app freeze above** — read it when he lifts the freeze, not before.
 
 ### What he said, and what he was looking at
 

@@ -9,6 +9,15 @@ lives in `docs/` and is read on demand.
 
 @AGENTS.md
 
+## 🛑 The mobile app is FROZEN — the web app is the whole scope
+
+Owner rule, 2026-09-29: **do not work in the mobile app, touch it, plan it, mention it or ask him
+about it** until he lifts this in his own words. No edit under `mobile/`, no Expo/EAS build or
+dispatch, no mobile PR — and no words either: not in a `Next step:` line, a plan, a summary or a
+question to him. A mobile defect you notice is left alone. **Only he lifts it**; if you cannot tell,
+it is still frozen. Full rule, what stays dormant, and the guard that refuses it mechanically:
+[AGENTS.md §4](AGENTS.md), first bullet.
+
 ## Cloud sessions — read your Phoenix memory first
 
 A **cloud** session is an isolated git clone of this repo: it does **not** have the laptop's
