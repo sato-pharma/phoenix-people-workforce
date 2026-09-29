@@ -1827,6 +1827,9 @@ import { runMyVisitsTablesFitTests } from "./my-visits-tables-fit.test.ts";
 import { runPortalChromeNeverClipsTextTests } from "./portal-chrome-never-clips-text.test.ts";
 import { runShellChromeOverflowsTests } from "./shell-chrome-overflows.test.ts";
 import { runPortalRailScrollsNeverSquashesTests } from "./portal-rail-scrolls-never-squashes.test.ts";
+import { runPortalNavChromeBehaviourTests } from "./portal-nav-chrome-behaviour.test.ts";
+import { runPortalGodmodeChromeTests } from "./portal-godmode-chrome.test.ts";
+import { runPortalBottomNavGodmodeTests } from "./portal-bottom-nav-godmode.test.ts";
 import { runAdminFilenameCellsNeverEllipsiseTests } from "./admin-filename-cells-never-ellipsise.test.ts";
 import { runSectionCardHeaderFitsAPhoneTests } from "./section-card-header-fits-a-phone.test.ts";
 import { runPortalToolsGridFitsAPhoneTests } from "./portal-tools-grid-fits-a-phone.test.ts";
@@ -6401,6 +6404,18 @@ await runTest(
 await runTest(
   "portal icon rail scrolls on a short window, never squashes (every section link keeps its 40px height with shrink-0, the 28px active marker fits its link, the nav scrolls with its bar hidden)",
   runPortalRailScrollsNeverSquashesTests,
+);
+await runTest(
+  "portal nav chrome behaves (one lit bottom-bar tab, the user menu closes on outside click and Escape, the closed drawer is inert, the header search is a keyboard combobox whose results wrap)",
+  runPortalNavChromeBehaviourTests,
+);
+await runTest(
+  "portal godmode chrome (command bar, recent pages, pins shared with the phone bar, sidebar filter, waiting-on-you total that never double-counts the hub, rail pop-outs and counts, trail, offline warning, shortcuts, focus mode, photo, greeting; the sidebar stays white)",
+  runPortalGodmodeChromeTests,
+);
+await runTest(
+  "portal bottom nav godmode (one shared quick-action list whose hrefs stay out of the layout, and the Home tab speaking for every queue with no tab of its own)",
+  runPortalBottomNavGodmodeTests,
 );
 await runTest(
   "admin filename cells never ellipsise (payroll batch File column, distributor import File column)",

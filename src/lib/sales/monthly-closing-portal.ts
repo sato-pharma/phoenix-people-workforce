@@ -74,10 +74,17 @@ export const PORTAL_CLOSING_ROLES: ReadonlySet<PhoenixRole> = new Set([
   "Medical Rep",
 
   "District Manager",
-  // "Manager" is the legacy alias for District Manager (see scopeForRole in permissions.ts and
-  // PORTAL_CORE_ANALYTICS_ROLES in analytics/portal-access.ts). A DM whose session role resolves to
-  // the alias must reach the same scoped closing, so it is listed alongside "District Manager".
-  "Manager",
+  // "Manager" WAS listed here as the legacy alias for District Manager (see scopeForRole in
+  // permissions.ts and PORTAL_CORE_ANALYTICS_ROLES in analytics/portal-access.ts), on the reasoning
+  // that a DM whose session role resolves to the alias must reach the same scoped closing.
+  //
+  // REMOVED 2026-09-29, with its sidebar row, at the owner's instruction. No live account on that
+  // rung is a district seat — the two are Head Office (QPPV, R&D Manager) — and Head Office is
+  // stripped from `allowedLines` for every viewer, so the page could only ever answer "we couldn't
+  // resolve a product line". The gate and the nav flag move together on purpose: that pair is what
+  // tests/marketing-manager-monthly-closing.test.ts exists to keep honest, because a gate admitting
+  // a role whose row is hidden is a grant nobody can reach. Should a real District Manager ever
+  // arrive on the alias, restore both halves in one change.
   "Regional Manager",
   "National Sales Manager",
   "Product Manager",

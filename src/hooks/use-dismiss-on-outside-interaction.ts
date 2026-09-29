@@ -10,6 +10,11 @@ import { useEffect, type RefObject } from "react";
  * them — there is nothing telling them the user moved on — and silently
  * intercept clicks meant for whatever renders underneath, since they keep
  * occupying their absolutely-positioned box at a high z-index.
+ *
+ * A press inside a FLOATING LAYER — a list a control inside the menu portals to <body>, marked
+ * `data-floating-layer` (SearchableSelect's options) — counts as inside. It is part of the menu to
+ * the person using it, but it is not in the menu's DOM subtree, so without this choosing a module in
+ * the notifications bell's filter closed the whole bell at the moment of choosing.
  */
 export function useDismissOnOutsideInteraction(
   ref: RefObject<HTMLElement | null>,
@@ -20,7 +25,9 @@ export function useDismissOnOutsideInteraction(
     if (!open) return;
 
     function onPointerDown(event: MouseEvent) {
-      if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false);
+      const target = event.target as Node;
+      if (target instanceof Element && target.closest("[data-floating-layer]")) return;
+      if (ref.current && !ref.current.contains(target)) setOpen(false);
     }
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") setOpen(false);

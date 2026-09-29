@@ -31,11 +31,22 @@ import { cn } from "@/lib/utils";
 export function NavBadge({
   compact = false,
   dark = false,
+  showCount = false,
   src,
 }: {
   compact?: boolean;
   /** True on the dark admin rail. The portal never passes it — its rail is light. */
   dark?: boolean;
+  /**
+   * Compact mode only: render the NUMBER on the icon's corner instead of a bare dot.
+   *
+   * Opt-in, default off, so the admin icon rail keeps the dot it has always had. The portal's phone
+   * bar passes it (owner, 2026-09-29). That reverses his 2026-09-07 "dot, never a count" ruling for
+   * that one surface, and he confirmed it knowing so: the reason he gave then was that a count pill
+   * "would take its width out of the label", and this badge is absolutely positioned, so it spends
+   * no label width at all. It is NOT the in-flow pill below — that one stays banned on the bar.
+   */
+  showCount?: boolean;
   src: string;
 }): ReactNode {
   const [count, setCount] = useState<number | null>(null);
@@ -70,17 +81,43 @@ export function NavBadge({
     // colour, it is a smudge. The ring is the rail's own background punched around it, so it
     // has to follow the rail — it was hardcoded to the dark one, which was right only because
     // the light rail has never rendered a compact badge.
+    //
+    // ONE anchor literal for both variants. Both sit on the icon's corner, out of flow, so neither
+    // adds a pixel to any tab's layout floor — which is the property the phone bar's whole width
+    // model depends on, and the reason tests/employee-portal-bottom-nav-badges.test.ts pins this
+    // exact string.
+    const anchor = "absolute -right-0.5 -top-0.5";
+    if (!showCount) {
+      return (
+        <span
+          aria-label={label}
+          className={cn(
+            anchor,
+            "h-2.5 w-2.5 rounded-full ring-2",
+            dark ? "ring-slate-900" : "ring-white",
+            overdue ? "bg-red-600" : "bg-orange-500",
+            alarmClass,
+          )}
+          role="status"
+        />
+      );
+    }
+    // The number, for a surface that asked for it. `tabular-nums` because the badge pumps and
+    // digits of different widths would jitter; `99+` so three digits can never outgrow the icon.
     return (
       <span
         aria-label={label}
         className={cn(
-          "absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full ring-2",
+          anchor,
+          "flex h-[15px] min-w-[15px] items-center justify-center px-[3px] text-phx-3xs font-black leading-none tabular-nums text-white ring-2",
           dark ? "ring-slate-900" : "ring-white",
           overdue ? "bg-red-600" : "bg-orange-500",
           alarmClass,
         )}
         role="status"
-      />
+      >
+        {count > 99 ? "99+" : count}
+      </span>
     );
   }
   return (
@@ -113,37 +150,40 @@ export function ApprovalNavBadge({
   compact,
   dark = false,
   navBadge,
+  showCount = false,
 }: {
   compact: boolean;
   dark?: boolean;
   navBadge: NavigationSectionItem["navBadge"];
+  /** Compact mode only: the number on the icon corner instead of a dot. See NavBadge. */
+  showCount?: boolean;
 }): ReactNode {
   switch (navBadge) {
     case "approvals-hub-pending":
-      return <NavBadge compact={compact} dark={dark} src="/api/approvals-hub/pending-count" />;
+      return <NavBadge compact={compact} dark={dark} showCount={showCount} src="/api/approvals-hub/pending-count" />;
     case "vacation-approvals-pending":
-      return <NavBadge compact={compact} dark={dark} src="/api/approvals/vacation/pending-count" />;
+      return <NavBadge compact={compact} dark={dark} showCount={showCount} src="/api/approvals/vacation/pending-count" />;
     case "excuse-approvals-pending":
-      return <NavBadge compact={compact} dark={dark} src="/api/approvals/excuse/pending-count" />;
+      return <NavBadge compact={compact} dark={dark} showCount={showCount} src="/api/approvals/excuse/pending-count" />;
     case "plan-approvals-pending":
-      return <NavBadge compact={compact} dark={dark} src="/api/approvals/plan/pending-count" />;
+      return <NavBadge compact={compact} dark={dark} showCount={showCount} src="/api/approvals/plan/pending-count" />;
     // The ONE Direct Orders row. Sums the approval queue and Finance's unbooked queue because a
     // nav item carries one badge and the two audiences barely overlap — see the endpoint's note.
     case "direct-orders-needs-action":
-      return <NavBadge compact={compact} dark={dark} src="/api/direct-orders/needs-action-count" />;
+      return <NavBadge compact={compact} dark={dark} showCount={showCount} src="/api/direct-orders/needs-action-count" />;
     case "direct-orders-approvals-pending":
-      return <NavBadge compact={compact} dark={dark} src="/api/approvals/direct-orders/pending-count" />;
+      return <NavBadge compact={compact} dark={dark} showCount={showCount} src="/api/approvals/direct-orders/pending-count" />;
     // Approved orders with no sales month — Finance's queue, not an approval queue. Rides the same
     // batched poll (BATCH_KEY_BY_SRC) and the same overdue alarm as its siblings; the threshold is
     // APPROVALS_SLA_THRESHOLDS.directOrderMonth.
     case "direct-orders-unbooked":
-      return <NavBadge compact={compact} dark={dark} src="/api/direct-orders/unbooked-count" />;
+      return <NavBadge compact={compact} dark={dark} showCount={showCount} src="/api/direct-orders/unbooked-count" />;
     case "marketing-approvals-pending":
-      return <NavBadge compact={compact} dark={dark} src="/api/marketing-requests/pending-count" />;
+      return <NavBadge compact={compact} dark={dark} showCount={showCount} src="/api/marketing-requests/pending-count" />;
     // Market Awareness keeps its own inbox for the same reason marketing does — the owner asked for
     // a separate queue — so the hub's count can never cover it.
     case "market-awareness-approvals-pending":
-      return <NavBadge compact={compact} dark={dark} src="/api/market-awareness/pending-count" />;
+      return <NavBadge compact={compact} dark={dark} showCount={showCount} src="/api/market-awareness/pending-count" />;
     default:
       return null;
   }

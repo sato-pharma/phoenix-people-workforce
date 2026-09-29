@@ -28,6 +28,22 @@ export const NAV_PANEL_WIDTH = 288;
 /** Breathing room kept between the panel and each edge of the viewport. */
 export const NAV_PANEL_GUTTER = 8;
 
+/**
+ * The VERTICAL cap for a panel hanging from the fixed header (the notifications bell, the messages
+ * envelope), applied as an inline `max-height` with the panel scrolling itself.
+ *
+ * The header never scrolls away, so a panel taller than the space below it can never be scrolled
+ * into view — its lower part is simply unreachable. The messages panel stacks its two columns below
+ * `xl`, which put its Send button about 250px below the screen at 1024x768; the bell ran past a
+ * 568px-tall phone. 5rem clears the 56/64px header plus the panel's gap, and on the portal the phone
+ * bottom bar's own height is subtracted too (`--phx-portal-bottom-nav-reserve`, globals.css), which
+ * would otherwise sit on top of the last row. The admin shell leaves the variable unset, so it is 0.
+ *
+ * Inline rather than a Tailwind arbitrary class so the `var()` inside `calc()` reaches the browser
+ * exactly as written.
+ */
+export const HEADER_PANEL_MAX_HEIGHT = "calc(100dvh - 5rem - var(--phx-portal-bottom-nav-reserve, 0px))";
+
 export type PanelPlacement = {
   /**
    * Pixels to shift the panel from its anchor's left edge — negative pulls it back on screen.

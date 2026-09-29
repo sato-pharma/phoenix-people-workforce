@@ -297,6 +297,22 @@ const hideMyPerformanceTabRoles = new Set<PhoenixRole>([
 ]);
 
 /**
+ * Who gets Report It as the PHARMACOVIGILANCE section (the dashboard over every report) rather than
+ * as the plain "Report It" row under Leave & HR (submit one, read your own).
+ *
+ * Every portal role reaches the page either way — see showReportItTab — so this only decides which
+ * of the two rows a viewer is given, and the layout draws at most one of them.
+ */
+function showReportItDashboardRoles(role: PhoenixRole): boolean {
+  return (
+    role === "Product Manager" ||
+    role === "Group Product Manager" ||
+    role === "Marketing Manager" ||
+    role === "Training Manager"
+  );
+}
+
+/**
  * Who sees Market Awareness in the portal sidebar. The creators plus the roles that are INFORMED
  * when an activity is approved — being told about one is useless without a way to open it.
  *
@@ -483,6 +499,24 @@ export function resolveEmployeePortalNavVisibility(
   const normalizedDepartment = String(employeeDepartmentName ?? "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
   const isMedicalRep = resolvedRole === "Medical Rep";
   const isDistrictManager = resolvedRole === "District Manager" || resolvedRole === "Manager";
+  /**
+   * The Head-Office people-manager rung, folded into `isDistrictManager` above as a legacy alias.
+   *
+   * It is NOT a district seat, and the two live accounts on it are Head Office (QPPV, R&D Manager),
+   * so five rows it inherited through that alias opened to an empty page or an outright refusal:
+   * Team Performance ("only available for District Sales Managers"), Sales vs Target and Monthly
+   * Closing (no territory, no line — Head Office is stripped from every closing viewer), Early
+   * Birds ("no district in your scope") and Weekly / Monthly Plan (the rung is not in
+   * WEEKLY_MONTHLY_PLAN_ELIGIBLE_JOB_TITLES and holds no `weekly_plans:create`, so submitting is
+   * Forbidden). Hidden at the owner's instruction, 2026-09-29.
+   *
+   * Only those five. Everything else the rung reaches through the alias — Team Coaching Reports,
+   * Probation Tracker, the approvals — is unchanged, which is why the alias itself stays and the
+   * derived flags below read `managerTierScope` rather than the narrowed Team Performance flag.
+   */
+  const isHeadOfficeManagerRung = resolvedRole === "Manager";
+  /** The manager-tier reach the rows BELOW derive from — deliberately still includes the rung. */
+  const managerTierScope = isDistrictManager;
   const isNationalSalesManager = resolvedRole === "National Sales Manager";
   // Regional Manager sits between DSM and NSM: region-scoped (own line, narrowed to the regions in
   // their management subtree — see regionsWithinManagerHierarchy). Their Probation, Team Coaching
@@ -519,7 +553,7 @@ export function resolveEmployeePortalNavVisibility(
   const isExcuseExcludedPortalRole =
     resolvedRole === "District Manager" || resolvedRole === "Regional Manager";
   const hideMyPerformanceTab = hideMyPerformanceTabRoles.has(resolvedRole);
-  const showTeamPerformanceTab = isDistrictManager;
+  const showTeamPerformanceTab = isDistrictManager && !isHeadOfficeManagerRung;
   const showMedRepsPerformanceTab = isNationalSalesManager;
   // Reps List — the portal twin of /admin/reps-list, scoped to the viewer's own reach. The owner
   // asked for it on 2026-08-31: "every manager in the employee portal has a scoped reps list."
@@ -587,11 +621,20 @@ export function resolveEmployeePortalNavVisibility(
   // related to training manager and coaching anywhere system wide in employee portal"). This flag
   // stays false for every role — DM/RM/NSM keep their coaching DATA access server-side, only the
   // portal link is gone. The route itself is blocked by app/employee-portals/coaching/layout.tsx.
+  //
+  // This branch had widened the flag to `managerTierScope || showMedRepsPerformanceTab ||
+  // isRegionalManager` on the way past. His ruling the same day supersedes that outright — it is
+  // not a refinement to preserve, so the whole expression is gone rather than left behind a false.
   const showTeamCoachingTab = false;
   // Must stay in lockstep with WEEKLY_MONTHLY_PLAN_ELIGIBLE_JOB_TITLES (weekly-planning/plan-v1.ts):
   // a role listed here but not there sees the builder link and gets "Forbidden" on submit, and a
   // role eligible there but missing here can submit but has no way to reach the page. District
   // Manager was the second case until 2026-07-30 (eligible to submit, no link).
+  //
+  // "Manager" was the FIRST case — listed here, absent there, and holding no `weekly_plans:create`
+  // — for as long as this list has existed, which is exactly the failure the paragraph above
+  // describes. Removed 2026-09-29 at the owner's instruction, with the other four rows the
+  // Head-Office rung inherited through the District Manager alias.
   const showPlansTab = [
     "Product Manager",
     "Group Product Manager",
@@ -600,7 +643,6 @@ export function resolveEmployeePortalNavVisibility(
     "National Sales Manager",
     "CEO",
     "Super Admin",
-    "Manager",
     "Regional Manager",
     "District Manager",
   ].includes(resolvedRole);
@@ -660,8 +702,14 @@ export function resolveEmployeePortalNavVisibility(
     // keep the row via showTeamCoachingTab below, untouched. The route and the coaching module
     // itself are unaffected — only this flag, and only for the rep's own row, changed.
     showMyCoachingTab: false,
-    showReportItTab: isA3Account,
-    showReportItDashboardTab: isProductManager || isGroupProductManager || isMarketingManager || isTrainingManager,
+    // Report It (pharmacovigilance) — EVERY portal role, from 2026-09-29 (owner). Every one of them
+    // holds `report_it:read`/`create` and the page serves all of them the submission form and their
+    // own reports, but the row existed only for A-3 and the four roles on the dashboard flag below,
+    // so a Medical Rep, DM, RM or NSM who saw a side effect had no door to report it. The two flags
+    // stay separate — this one draws the row under Leave & HR, the other draws the
+    // Pharmacovigilance section — and the layout shows at most one of the two per viewer.
+    showReportItTab: !showReportItDashboardRoles(resolvedRole),
+    showReportItDashboardTab: showReportItDashboardRoles(resolvedRole),
     // District Manager added 2026-08-22 alongside isLineScopedOrganogramRole in
     // src/lib/reports/organogram.ts, which is the enforcing gate; this flag only surfaces the
     // link. Spelled `resolvedRole === "District Manager"` deliberately, NOT isDistrictManager:
@@ -698,19 +746,34 @@ export function resolveEmployeePortalNavVisibility(
       isTrainingManager ||
       isPortalHrOfficeStaff,
     // Talent Acquisition keeps the read-only Planning Calendar (HO-scoped) but not the
-    // Weekly/Monthly Plan submission page — owner-requested removal, 2026-07-25.
-    showPlanningCalendarTab: isA3Account || showPlansTab,
-    showPlansTab: isA3Account || (showPlansTab && !isPortalHrOfficeStaff),
+    // Weekly/Monthly Plan submission page — owner-requested removal, 2026-07-25. The Head-Office
+    // rung keeps it too: it is READ-ONLY and it holds `weekly_plans:read`, so unlike the builder
+    // below it opens and works. `isHeadOfficeManagerRung` is spelled out because that rung just
+    // left `showPlansTab`.
+    showPlanningCalendarTab: isA3Account || isHeadOfficeManagerRung || showPlansTab,
+    // The A-3 override (2026-06-10) went with the rung on 2026-09-29: it granted the BUILDER, and
+    // the builder refuses her — QPPV is not in WEEKLY_MONTHLY_PLAN_ELIGIBLE_JOB_TITLES and the
+    // Manager role holds no `weekly_plans:create`, so submitting was always Forbidden. She keeps
+    // the read-only Planning Calendar above, which is the half that ever worked.
+    showPlansTab: showPlansTab && !isPortalHrOfficeStaff,
     // Regional Manager included: canReadProbationEmployee already has an RM branch that walks the
     // full management subtree (probation/service.ts), so an RM sees every med rep under every DSM
     // in their region — the tab was the only thing missing.
+    //
+    // Training Manager added 2026-09-29 (owner). `canViewAllProbation` already includes him
+    // (probation/service.ts), the page lets him file manager feedback, and system-navigation.ts
+    // lists him — the rail is built from these flags alone, so he had the page and no door to it.
+    // The third time this exact shape has been fixed here; see the Organogram note above.
+    //
+    // `managerTierScope`, not showTeamPerformanceTab: the Head-Office rung keeps this row.
     showProbationTab:
-      showTeamPerformanceTab ||
+      managerTierScope ||
       showMedRepsPerformanceTab ||
       isRegionalManager ||
       isProductManager ||
       isGroupProductManager ||
       isMarketingManager ||
+      isTrainingManager ||
       isPortalHrOfficeStaff,
     showSupportTab: true,
     showRecruitmentHiringTab: isPortalHrOfficeStaff,
@@ -750,13 +813,18 @@ export function resolveEmployeePortalNavVisibility(
     // organogram, vacancies, weekly_sales) and strictly more actions on 3 others. A difference
     // that runs one way on every single resource is a deliberate narrowing, not an oversight, so
     // `vacancies` is withheld on purpose and granting it here would widen real access.
+    //
+    // Training Manager added 2026-09-29 (owner), same shape as Probation above: he holds
+    // `vacancies:read`, and getEmployeePortalVacancies → canAccessCompanyVacancies serves him the
+    // whole company, so the page worked and only the row was missing.
     showVacanciesTab:
-      (showTeamPerformanceTab ||
+      (managerTierScope ||
         showMedRepsPerformanceTab ||
         isRegionalManager ||
         isProductManager ||
         isGroupProductManager ||
-        isMarketingManager) &&
+        isMarketingManager ||
+        isTrainingManager) &&
       resolvedRole !== "Manager",
     // Mirrors the roles that actually hold `hiring_interviews: ["read","update"]` in
     // defaultPermissionMatrix (the page's own canAccess gate is the enforcing check), and the same
@@ -825,17 +893,24 @@ export function resolveEmployeePortalNavVisibility(
     // see PORTAL_CLOSING_ROLES for why this tab, and not the admin /sales/monthly-closing URL she
     // named, is her door. Medical Rep added 2026-09-16 (owner) — their own area(s) only, never their
     // region; the bound is enforced server-side in resolvePortalClosingScope, not by this flag.
+    //
+    // The Head-Office rung is excluded from 2026-09-29 (owner). PORTAL_CLOSING_ROLES still admits
+    // it as a "legacy District Manager alias", but no live account on it is a district seat, and
+    // the page strips Head Office from every viewer — so it always answered "couldn't resolve a
+    // product line". The page gate is unchanged; only the row is gone.
     showMonthlyClosingTab:
       isMedicalRep ||
-      isDistrictManager ||
+      (isDistrictManager && !isHeadOfficeManagerRung) ||
       isRegionalManager ||
       isNationalSalesManager ||
       isProductManager ||
       isGroupProductManager ||
       isMarketingManager,
+    // Same exclusion, same day: the rung gets TEAM sales scope but holds no district seat, so
+    // resolveVsTargetBound answers "No sales territory" and the page is empty for it.
     showSalesVsTargetTab:
       isMedicalRep ||
-      isDistrictManager ||
+      (isDistrictManager && !isHeadOfficeManagerRung) ||
       resolvedRole === "Regional Manager" ||
       isNationalSalesManager ||
       isProductManager ||
@@ -924,13 +999,15 @@ export function resolveEmployeePortalNavVisibility(
     // (system-navigation.ts) exactly: every portal-mode role in its audience, MINUS Medical Rep,
     // hidden from the portal sidebar by owner instruction (2026-09-24) — the page and its
     // catalog entry (Modules Control, command palette) are untouched, and every other role in
-    // the audience keeps the row. `isDistrictManager` deliberately, NOT the exact match used by
-    // the sales boards above — the Head-Office "Manager" rung reaches the page too, and
-    // resolveEarlyBirdsScope answers it with an honest "no district reports to you" rather than
-    // an empty grid. CEO / SFE Manager / Super Admin resolve to the ADMIN shell and get
-    // /admin/early-birds from the admin rail instead.
+    // the audience keeps the row. CEO / SFE Manager / Super Admin resolve to the ADMIN shell and
+    // get /admin/early-birds from the admin rail instead.
+    //
+    // The Head-Office "Manager" rung was admitted here on the argument that an honest "no district
+    // reports to you" beats an empty grid. The owner ruled otherwise on 2026-09-29: it is not in
+    // the catalog row this claims to mirror "exactly", it holds no `early_birds:read`, and a row
+    // that only ever says "nothing here" is a row worth removing.
     showEarlyBirdsTab:
-      isDistrictManager ||
+      (isDistrictManager && !isHeadOfficeManagerRung) ||
       resolvedRole === "Regional Manager" ||
       isNationalSalesManager ||
       isProductManager ||

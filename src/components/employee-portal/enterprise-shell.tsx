@@ -74,8 +74,12 @@ html, body { overflow-x: clip; }
 }
 @media (max-width: 767px) {
   [data-portal-desktop-table] { display: none !important; }
+  /* 8.5rem = the 61px bar + a 12px gap + the 48px action button floating above it + breathing room.
+     It MUST stay equal to the padding on main in employee-portal-layout.tsx: this rule covers up to
+     767px and that class covers every width, so the two disagreeing means the last row of a long
+     page hides under the button at one size and not the other. */
   .employee-portal-mobile-safe {
-    padding-bottom: calc(5.75rem + env(safe-area-inset-bottom));
+    padding-bottom: calc(8.5rem + env(safe-area-inset-bottom));
   }
   .employee-portal-page-transition {
     min-width: 0;

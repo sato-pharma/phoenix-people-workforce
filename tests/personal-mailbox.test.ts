@@ -437,9 +437,12 @@ export async function runPersonalMailboxTests() {
     triggerClasses.includes("inline-flex") && !triggerClasses.includes("hidden"),
     "the envelope must be drawn on a phone — `hidden` there hides the unread count it carries",
   );
+  // Widened 2026-09-28 from phones only to every width: the columns stack below `xl`, so a 1024x768
+  // laptop had the Send button ~250px under the screen too. The cap is HEADER_PANEL_MAX_HEIGHT,
+  // pinned with the rest of the header panels in tests/portal-nav-chrome-behaviour.test.ts.
   assert.ok(
-    menu.includes("max-sm:max-h-[calc(100dvh-5rem)] max-sm:overflow-y-auto"),
-    "on a phone the panel must stop at the screen and scroll, or its lower half can never be reached",
+    /maxHeight: HEADER_PANEL_MAX_HEIGHT/.test(menu) && menu.includes("overflow-y-auto rounded border shadow-lg"),
+    "the panel must stop at the screen and scroll at every width, or its lower half can never be reached",
   );
   assert.ok(
     !/className=\{cn\("whitespace-nowrap text-sm font-black"/.test(menu),

@@ -231,8 +231,15 @@ export const NAVIGATION_REACHABILITY_BACKLOG: readonly ReachabilityGap[] = [
   // source regex that cannot see the false flag, so it still counts them as real-nav hrefs and requires each
   // one classified. They are the reverse guard's delisted-by-ruling rows above; recorded here too so both
   // guards agree. Clear these only when coaching returns to the portal or the gated builder rows are deleted.
-  { route: "/employee-portals/coaching", roles: "all", kind: "absent-from-portal-catalog", reason: "Delisted from the portal 2026-09-29 (owner: hide coaching + training manager system-wide). Its catalog entry was removed; the flag-gated href literal remains in buildEmployeePortalSections, which the source-regex catalog-sync guard still reads. See the delisted-by-ruling row above.", recorded: "2026-09-29" },
-  { route: "/employee-portals/coaching-analytics", roles: "all", kind: "absent-from-portal-catalog", reason: "Delisted from the portal 2026-09-29 (owner: hide coaching + training manager system-wide). Its catalog entry was removed; the flag-gated href literal remains in buildEmployeePortalSections, which the source-regex catalog-sync guard still reads. See the delisted-by-ruling row above.", recorded: "2026-09-29" },
+  //
+  // THE TWO COACHING ROWS ARE GONE, and that is the "gated builder rows are deleted" case above
+  // arriving for real (2026-09-29). The sidebar rebuild onto the owner's own section headers removed
+  // the /employee-portals/coaching and /employee-portals/coaching-analytics href LITERALS from
+  // buildEmployeePortalSections outright, rather than leaving them behind a false flag — so the
+  // catalog-sync guard's source regex no longer finds them, they are no longer real-nav hrefs, and
+  // their rows here became stale allowlist entries that failed check (2). The training-manager rows
+  // below STAY: those literals are still in the builder, flag-gated off. Their delisted-by-ruling
+  // rows above are untouched — a different guard reads those and "no link anywhere" is still true.
   { route: "/employee-portals/training-manager", roles: "all", kind: "absent-from-portal-catalog", reason: "Delisted from the portal 2026-09-29 (owner: hide coaching + training manager system-wide). Its catalog entry was removed; the flag-gated href literal remains in buildEmployeePortalSections, which the source-regex catalog-sync guard still reads. See the delisted-by-ruling row above.", recorded: "2026-09-29" },
   { route: "/employee-portals/training-manager/create-coaching-report", roles: "all", kind: "absent-from-portal-catalog", reason: "Delisted from the portal 2026-09-29 (owner: hide coaching + training manager system-wide). Its catalog entry was removed; the flag-gated href literal remains in buildEmployeePortalSections, which the source-regex catalog-sync guard still reads. See the delisted-by-ruling row above.", recorded: "2026-09-29" },
   { route: "/employee-portals/training-manager/field-coaching", roles: "all", kind: "absent-from-portal-catalog", reason: "Delisted from the portal 2026-09-29 (owner: hide coaching + training manager system-wide). Its catalog entry was removed; the flag-gated href literal remains in buildEmployeePortalSections, which the source-regex catalog-sync guard still reads. See the delisted-by-ruling row above.", recorded: "2026-09-29" },
