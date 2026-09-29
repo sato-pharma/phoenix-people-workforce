@@ -628,9 +628,13 @@ export type MarketingValidationExistingPharmacyInput = {
   capturedLatitude?: number | null;
   capturedLongitude?: number | null;
   evidenceHasTimestamp?: boolean;
+  /** The shutter's own fix — see `MarketingValidationCustomerInput.evidencePhotoLatitude`. */
+  evidencePhotoAccuracyMeters?: number | null;
   evidencePhotoCapturedAt?: string | null;
   /** See `MarketingValidationCustomerInput.evidencePhotoDataUrl`. */
   evidencePhotoDataUrl?: string | null;
+  evidencePhotoLatitude?: number | null;
+  evidencePhotoLongitude?: number | null;
   evidencePhotoName?: string | null;
   existingPharmacyId: string;
   extractedAreaName?: string | null;
@@ -662,9 +666,13 @@ export type MarketingValidationPharmacyInput = {
   capturedLongitude?: number | null;
   displayName: string;
   evidenceHasTimestamp?: boolean;
+  /** The shutter's own fix — see `MarketingValidationCustomerInput.evidencePhotoLatitude`. */
+  evidencePhotoAccuracyMeters?: number | null;
   evidencePhotoCapturedAt?: string | null;
   /** See `MarketingValidationCustomerInput.evidencePhotoDataUrl`. */
   evidencePhotoDataUrl?: string | null;
+  evidencePhotoLatitude?: number | null;
+  evidencePhotoLongitude?: number | null;
   evidencePhotoName?: string | null;
   extractedAreaName?: string | null;
   extractedGovernorateName?: string | null;
