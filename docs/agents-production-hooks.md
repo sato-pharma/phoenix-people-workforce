@@ -914,16 +914,26 @@ organogram**, and nothing turns red.
 deployments contained `ec33c37f6`. That is luck, not a safeguard: the backwards step landed on the
 4th commit, and the danger line was the 3rd.
 
-### What to do
+### What to do — written up elsewhere, deliberately not repeated here
 
-- **After a column drop, check what a regression would land on, not only what is in flight.** The
-  question is not "are the queued builds safe" but "what is the oldest build Railway could
-  promote or that someone could redeploy".
-- **Never redeploy a build older than the drop.** The dashboard lists every past success one click
-  away. This is why a redeploy is the owner's click and is never offered as a next step.
-- **Recovery is not "wait for the next merge".** That is minutes of a blank org chart. Re-add the
-  column, let the right build arrive, then re-apply the drop:
-  `alter table public.employees add column if not exists team_name text;`
+**The rule belongs to #4790, which merged four minutes before this page was written and says it
+better:** `docs/agents-session-traps.md` and the **Migrations** cluster of
+`docs/agents-session-traps-clusters.md`. Dropping such a column is two deploys and never one; the
+failure is a `42703` on the whole read rather than a blank field; the field comes out of the
+TypeScript type too or a read quietly re-adds it and still typechecks; a `create table … as
+select` pre-image copies rows but not RLS; and re-adding the column **empty** restores the read
+fully, because the label was dead data.
+
+Only one thing here is not there: the measurement above — that out-of-order promotion is a thing
+Railway **observably does**, not a hypothetical in the list of ways an old build can land.
+
+**Why this page says so instead of quietly repeating it.** Both records were written the same
+evening by two sessions that could not see each other's work, and the duplicate went into
+`AGENTS.md`, which auto-loads in full on every request, while #4790's went into the clusters file,
+which is read on demand. That is the expensive direction. The `AGENTS.md` §2.3 hook has since been
+cut to the measurement and a pointer. If you are about to document a hazard, run
+`git worktree list` and `gh pr list --state all --search <keyword>` first: the branch that already
+held this rule was sitting in output this session had printed twice.
 
 ### Two reading errors this cost, both worth keeping
 
