@@ -1987,6 +1987,7 @@ import { runDevServerExitReasonTests } from "./dev-server-exit-reason.test.ts";
 import { runDevServerHeapCapTests } from "./dev-server-heap-cap.test.ts";
 import { runRawNextDevGuardTests } from "./raw-next-dev-guard.test.ts";
 import { runLocalTypecheckGuardTests } from "./local-typecheck-guard.test.ts";
+import { runLoginPageMobileFitTests } from "./login-page-mobile-fit.test.ts";
 import { runPnpmOverrideScopeTests } from "./pnpm-override-scope.test.ts";
 import { runDeployDriftSettledRefTests } from "./deploy-drift-settled-ref.test.ts";
 import { runVerifyShippedSelftestTests } from "./verify-shipped-selftest.test.ts";
@@ -7146,6 +7147,11 @@ await runTest(
 await runTest(
   "bash-guard C8 refuses a local typecheck in every spelling the watchdog log records it being killed in (node with a raised heap, typescript/bin/tsc, lib/tsc.js, a backslash path, a quoted path with spaces, pnpm/npm/yarn run typecheck, npx, pnpm exec, .bin/tsc, bare tsc) and hands back a stand-down in the dialect that asked, while pnpm run ci, a real emit, and commands, commit messages, heredocs and here-strings that only mention it stay allowed",
   runLocalTypecheckGuardTests,
+);
+
+await runTest(
+  "the login page fits a phone and puts the SIGN-IN FORM first — the sign-in panel stays `order-1 lg:order-2` and the branding aside `order-2 lg:order-1`, so a phone lands on the password field while a desktop still reads form-right (flipping them leaves the desktop screenshot identical and costs every phone a scroll past a 500px branding wall), with no min-w floor, no overflow-x scroller and no ellipsis; it is the mobile app's login too, rendered in a WebView",
+  runLoginPageMobileFitTests,
 );
 
 await runTest(
