@@ -53,6 +53,9 @@ export function StructuredFeedbackForm({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  // Set when the feedback saved but its development actions did not — shown on the done screen so a
+  // partial save is never reported as a plain success.
+  const [actionsWarning, setActionsWarning] = useState<string | null>(null);
 
   const setScore = (dim: string, v: string) => setScores((s) => ({ ...s, [dim]: v }));
 
@@ -101,6 +104,8 @@ export function StructuredFeedbackForm({
         }),
       });
       if (res.ok) {
+        const saved = await res.json().catch(() => ({}));
+        setActionsWarning(saved?.developmentActionsError ? String(saved.developmentActionsError) : null);
         setDone(true);
         router.refresh();
       } else {
@@ -119,6 +124,9 @@ export function StructuredFeedbackForm({
         <p className="mt-1 text-sm text-emerald-700">
           Your Double-Visit feedback for {employeeName} ({dvDate}) has been recorded and added to the case score.
         </p>
+        {actionsWarning && (
+          <p className="mt-3 border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">{actionsWarning}</p>
+        )}
         <a href={backHref} className="mt-3 inline-block rounded bg-emerald-700 px-4 py-2 text-sm font-medium text-white">
           Back to my feedback tasks
         </a>
