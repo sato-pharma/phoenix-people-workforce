@@ -264,6 +264,9 @@ export default async function Employee360DetailPage({
     <div>
       {backAndFilter}
       <Employee360View
+        // Passed explicitly because it is load-bearing: this route renders the view with NO shell,
+        // so the subject name IS the page heading and must stay an <h1>.
+        chrome="admin"
         subject={subject}
         summary={summary}
         comparison={comparison}

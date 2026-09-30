@@ -581,12 +581,14 @@ function zoneOf(zone: string | null) {
 }
 
 function IdentityHero({
+  chrome,
   subject,
   tenure,
   windowLabel,
   benchmarkLabel,
   roleLabel,
 }: {
+  chrome: "admin" | "portal";
   subject: Employee360Subject;
   tenure: string | null;
   windowLabel: string;
@@ -630,10 +632,32 @@ function IdentityHero({
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             {/* Literal bracket sizes, not the named text-phx-* scale — cn() runs over this
-                subtree and tailwind-merge silently drops custom NAMED font sizes. */}
-            <h1 className="min-w-0 break-words text-[1.05rem] font-black tracking-[-0.03em] text-slate-900 sm:text-[1.2rem]">
-              {subject.displayName}
-            </h1>
+                subtree and tailwind-merge silently drops custom NAMED font sizes.
+
+                THE LEVEL IS THE SHELL'S TO DECIDE, THE LOOK IS NOT. Owner, 2026-09-30: "change the
+                employee 360 h1 to an h2". This is the PERSON's name, never the page title, so on a
+                portal page — where `EmployeePortalPageShell` already renders `<h1>Employee 360</h1>`
+                — it is a section heading and a second <h1> is simply wrong for a screen reader, which
+                announces the employee's name as the name of the page.
+
+                🔴 IT COULD NOT BE SWAPPED OUTRIGHT. `app/(admin)/employee-360/[hrId]/page.tsx`
+                renders this view with NO shell, and its own three <h1>s are all in not-found and
+                error branches — so on the admin SUCCESS path this is the page's ONLY <h1>, and an
+                unconditional demotion would have left that page with no top-level heading at all.
+                Gated instead, on the same `chrome` prop `KpisBoardView`, `FieldActivityView` and
+                `TerritoryMapWorkspace` already use.
+
+                The className is identical on both branches, so nothing moves by a pixel — Tailwind's
+                preflight resets heading margins and sizes, and the sizes here are explicit. */}
+            {chrome === "admin" ? (
+              <h1 className="min-w-0 break-words text-[1.05rem] font-black tracking-[-0.03em] text-slate-900 sm:text-[1.2rem]">
+                {subject.displayName}
+              </h1>
+            ) : (
+              <h2 className="min-w-0 break-words text-[1.05rem] font-black tracking-[-0.03em] text-slate-900 sm:text-[1.2rem]">
+                {subject.displayName}
+              </h2>
+            )}
             <span className="rounded-full border border-slate-300 bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-600">
               {subject.hrId.toUpperCase()}
             </span>
@@ -668,6 +692,7 @@ function IdentityHero({
 }
 
 export function Employee360View({
+  chrome = "admin",
   subject,
   summary,
   comparison,
@@ -680,6 +705,14 @@ export function Employee360View({
   bare = false,
   suppressCoaching = false,
 }: {
+  /**
+   * Which shell this report is rendered in, and therefore whether the subject's name is the page's
+   * top-level heading or a section heading inside one. `admin` (the default) keeps the `<h1>`, because
+   * `app/(admin)/employee-360/[hrId]/page.tsx` renders this view bare and that heading is the page's
+   * only one. `portal` demotes it to `<h2>`, because `EmployeePortalPageShell` already renders the
+   * page's `<h1>`. Same vocabulary as `KpisBoardView`, `FieldActivityView` and `TerritoryMapWorkspace`.
+   */
+  chrome?: "admin" | "portal";
   subject: Employee360Subject;
   summary: Employee360Profile;
   comparison?: Employee360Comparison | null;
@@ -726,7 +759,7 @@ export function Employee360View({
   return (
     <div className={bare ? "space-y-6" : "mx-auto max-w-5xl space-y-6 p-4 sm:p-6"}>
       {/* Header / identity */}
-      <IdentityHero subject={subject} tenure={tenure} windowLabel={summary.window.label} benchmarkLabel={b.windowLabel} roleLabel={EMPLOYEE_360_ROLE_META[category].label} />
+      <IdentityHero chrome={chrome} subject={subject} tenure={tenure} windowLabel={summary.window.label} benchmarkLabel={b.windowLabel} roleLabel={EMPLOYEE_360_ROLE_META[category].label} />
 
       {/* Trust strip */}
       <div className="flex flex-wrap gap-2 text-xs">
