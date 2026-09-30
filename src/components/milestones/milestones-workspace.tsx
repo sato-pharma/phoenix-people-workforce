@@ -4,8 +4,10 @@ import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as
 
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
+  milestoneGroupCitation,
   resolveMilestoneGroupOccasion,
   MILESTONE_GROUP_MAX,
+  type MilestoneGroupOccasion,
   type MilestoneGroupRow,
 } from "@/lib/milestones/group";
 import {
@@ -17,6 +19,7 @@ import {
   parseMilestoneSpec,
   parsePlainDate,
   type MilestoneSpec,
+  type PlainDate,
 } from "@/lib/milestones/periods";
 import { employeeProfileImageForHrId } from "@/lib/employees/profile-images";
 import type { MilestoneCandidate, MilestoneDueEntry, MilestonePrintHistoryEntry } from "@/lib/milestones/service";
@@ -131,22 +134,36 @@ const MAX_RECORD_PHOTO_BYTES = 5 * 1024 * 1024;
  * route would have returned. A second copy of this rule in the client is how a button ends up enabled
  * for a set the server refuses, or greyed out for a set it would happily print.
  */
-function groupPictureCheck(rows: readonly MilestoneDueEntry[]): { ok: boolean; reason: string } {
-  if (rows.length === 0) return { ok: false, reason: "Tick the people who share the occasion." };
+type GroupCheck = {
+  ok: boolean;
+  reason: string;
+  /**
+   * The one occasion the ticked rows share, carried back so the sentence under the date is worked
+   * out from the SAME resolution the button was enabled by — never from a second reading of the
+   * rows, which could disagree with it.
+   */
+  occasion: MilestoneGroupOccasion | null;
+  dates: PlainDate[];
+};
+
+function groupPictureCheck(rows: readonly MilestoneDueEntry[]): GroupCheck {
+  const no = (reason: string): GroupCheck => ({ ok: false, reason, occasion: null, dates: [] });
+  if (rows.length === 0) return no("Tick the people who share the occasion.");
   const resolved: MilestoneGroupRow[] = [];
   for (const entry of rows) {
     const on = parsePlainDate(entry.on);
-    if (!on) return { ok: false, reason: `${entry.displayName} has no usable date on that row.` };
+    if (!on) return no(`${entry.displayName} has no usable date on that row.`);
     resolved.push({ periodSpec: entry.spec, on, displayName: entry.displayName });
   }
   try {
-    resolveMilestoneGroupOccasion(resolved);
-    return { ok: true, reason: "" };
-  } catch (cause) {
     return {
-      ok: false,
-      reason: cause instanceof Error ? cause.message : "Those rows cannot share one picture.",
+      ok: true,
+      reason: "",
+      occasion: resolveMilestoneGroupOccasion(resolved),
+      dates: resolved.map((row) => row.on),
     };
+  } catch (cause) {
+    return no(cause instanceof Error ? cause.message : "Those rows cannot share one picture.");
   }
 }
 
@@ -284,6 +301,40 @@ export function MilestonesWorkspace({
   const [dateEdit, setDateEdit] = useState<string | null>(null);
   const [nameEdit, setNameEdit] = useState<string | null>(null);
   const [citationEdit, setCitationEdit] = useState<string | null>(null);
+
+  // ── THE NAMES HE HAS CORRECTED, KEPT PER PERSON ──────────────────────────────────────────────
+  //
+  // 🔴 `nameEdit` ALONE CANNOT REACH A GROUP PICTURE, AND THAT IS WHY THIS EXISTS. It holds ONE
+  // correction — the selected person's — and `resetFields` clears it the moment he clicks the next
+  // name, which is exactly what he must do to correct five of them. So a group picture built from
+  // `nameEdit` would carry at most the last name he touched and print the other four off the record:
+  // HR-009's record reads "Yasmeena Khaled Ahmed Hussein Elsafory" where the card he approved says
+  // "Yasmeen Khaled Elsafory" (owner, 2026-09-30 — "carry the edited name … into the group picture").
+  //
+  // Keyed by HR id, so it survives moving between people; a correction he clears goes back to the
+  // record rather than printing an empty name. It lives in the page and dies with it — nothing here
+  // is written to the employee record, which is HR's act on HR's own screen.
+  const [nameOverrides, setNameOverrides] = useState<Record<string, string>>({});
+
+  /** Remember a correction against the person it was typed for, and forget an emptied one. */
+  const editName = useCallback((hrId: string, value: string) => {
+    setNameEdit(value);
+    if (!hrId) return;
+    setNameOverrides((current) => {
+      const next = { ...current };
+      if (value.trim()) next[hrId] = value.trim();
+      else delete next[hrId];
+      return next;
+    });
+  }, []);
+
+  // ── THE GROUP PICTURE'S OWN SENTENCE ─────────────────────────────────────────────────────────
+  //
+  // 🔴 SEPARATE FROM `citationEdit` ON PURPOSE. The single card's sentence names ONE person ("On the
+  // thirtieth of September, Yasmeen completes five years…") and would be a lie on a sheet carrying
+  // five faces. The group's sentence is about the OCCASION and names nobody, so the two can never be
+  // the same string and must never share a box.
+  const [groupCitationEdit, setGroupCitationEdit] = useState<string | null>(null);
 
   // ── WHERE THE PHOTOGRAPH SITS INSIDE ITS FRAME ──────────────────────────────────────────────
   // The same override shape, for the same reason. `focusEdit` is what he dragged; `focusDefault`
@@ -424,7 +475,10 @@ export function MilestonesWorkspace({
   // Derived during the render that needs them, never written into state. `?? ` is the whole of
   // "his edit wins": an untouched field shows the arithmetic, a touched one shows what he typed.
   const dateValue = dateEdit ?? (hireDate && spec ? formatPlainDateIso(milestoneDate(hireDate, spec)) : "");
-  const nameValue = nameEdit ?? selected?.displayName ?? "";
+  // A correction he has already made for THIS person wins over the record, so clicking back to a name
+  // he fixed shows the fix rather than silently reverting — and the single card then prints the same
+  // name the group picture does. Without this the two would disagree about one person on one screen.
+  const nameValue = nameEdit ?? nameOverrides[selectedHrId] ?? selected?.displayName ?? "";
 
   // ── And the sentence follows both ─────────────────────────────────────────────────────────
   // The citation names the person and the day, so correcting either has to reach it. HR-009's
@@ -794,13 +848,28 @@ export function MilestonesWorkspace({
     [entries, ticked],
   );
 
-  /** The ticked rows on the wire — the shape both the batch and the group picture take. */
+  /**
+   * The ticked rows on the wire — the shape both the batch and the group picture take, plus the name
+   * he corrected for that person if he corrected one. The batch takes the same field and ignores it
+   * when it is absent, so the two stay one shape.
+   */
   const groupItems = useMemo(
-    () => tickedItems.map((entry) => ({ hrId: entry.hrId, period: entry.spec, on: entry.on })),
-    [tickedItems],
+    () =>
+      tickedItems.map((entry) => ({
+        hrId: entry.hrId,
+        period: entry.spec,
+        on: entry.on,
+        displayName: nameOverrides[entry.hrId],
+      })),
+    [tickedItems, nameOverrides],
   );
 
   const toggleTick = useCallback((entry: MilestoneDueEntry) => {
+    // A different set of people is a different picture, so a sentence typed for the old set goes
+    // back to the worked-out one — it counts them ("five colleagues") and would otherwise be wrong
+    // the moment the set changes. Same rule as `resetFields`, and an event handler for the same
+    // reason: it is a consequence of the click, not of the render.
+    setGroupCitationEdit(null);
     setTicked((current) => {
       const next = new Set(current);
       const key = entryKey(entry);
@@ -885,6 +954,25 @@ export function MilestonesWorkspace({
   const groupCheck = groupPictureCheck(tickedItems);
 
   /**
+   * The sentence the group picture prints, arriving WORKED OUT and then editable — the same contract
+   * the single card's three fields have ("it shows it and I have the option then to edit it, but
+   * don't let me start from scratch").
+   *
+   * 🔴 BUILT WITH THE SERVER'S OWN FUNCTION, NOT A COPY OF ITS WORDING. `milestoneGroupCitation` is
+   * pure, so the box opens on the exact string the route would have produced; a second phrasing here
+   * would drift from the printed one and he would be correcting a sentence the sheet never carried.
+   */
+  const groupCitationValue =
+    groupCitationEdit ??
+    (groupCheck.occasion
+      ? milestoneGroupCitation({
+          occasion: groupCheck.occasion,
+          count: tickedItems.length,
+          dates: groupCheck.dates,
+        })
+      : "");
+
+  /**
    * The picture itself — the PNG to send, or the same artwork as a one-page PDF to print.
    *
    * No photograph and no framing travel: the group prints from each person's record, exactly as the
@@ -900,7 +988,7 @@ export function MilestonesWorkspace({
         const response = await fetch("/api/milestones/group", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ items: groupItems, variant, format }),
+          body: JSON.stringify({ items: groupItems, variant, format, citation: groupCitationValue.trim() || undefined }),
         });
         if (!response.ok) {
           const payload = await response.json().catch(() => null);
@@ -916,6 +1004,8 @@ export function MilestonesWorkspace({
         link.click();
         URL.revokeObjectURL(url);
         setTicked(new Set());
+        // The picture is made; the next one is a different set of people and a different sentence.
+        setGroupCitationEdit(null);
         await refreshList();
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : "The picture could not be produced.");
@@ -923,7 +1013,7 @@ export function MilestonesWorkspace({
         setBusy(null);
       }
     },
-    [groupCheck.ok, groupItems, refreshList, variant],
+    [groupCheck.ok, groupCitationValue, groupItems, refreshList, variant],
   );
 
   /** The same artwork on screen, in the preview pane, before anything is downloaded or sent. */
@@ -935,7 +1025,7 @@ export function MilestonesWorkspace({
       const response = await fetch("/api/milestones/group", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items: groupItems, variant, format: "html" }),
+        body: JSON.stringify({ items: groupItems, variant, format: "html", citation: groupCitationValue.trim() || undefined }),
       });
       if (!response.ok) {
         const payload = await response.json().catch(() => null);
@@ -953,7 +1043,7 @@ export function MilestonesWorkspace({
     } finally {
       setBusy(null);
     }
-  }, [groupCheck.ok, groupItems, variant]);
+  }, [groupCheck.ok, groupCitationValue, groupItems, variant]);
 
   /** The `?from&to` query string for a window; an empty side is left off and the server fills it
    *  with its default 90-day edge. Shared by the table fetch and the XLSX link, so one window
@@ -1189,6 +1279,43 @@ export function MilestonesWorkspace({
                 ) : (
                   <span className="text-[11px] leading-relaxed text-amber-800">{groupCheck.reason}</span>
                 )}
+
+                {/*
+                  The sentence, worked out and then editable — the same contract the single card's
+                  fields have. It is the GROUP's sentence and names nobody; the card's names one
+                  person and lives in its own box below, so neither can overwrite the other.
+
+                  Shown only once the rows agree on an occasion, because until then there is no
+                  sentence to show. `w-full` inside the wrapped row, so it never forces a sideways
+                  scroll at 375px.
+                */}
+                {groupCheck.ok ? (
+                  <label className="block w-full text-[12px] font-semibold text-slate-600">
+                    What the picture says
+                    <textarea
+                      className="mt-1 block w-full rounded-none border border-slate-300 px-3 py-2 text-[13px] font-normal leading-relaxed text-slate-900"
+                      onChange={(event) => setGroupCitationEdit(event.target.value)}
+                      rows={2}
+                      value={groupCitationValue}
+                    />
+                    <span className="mt-1 flex flex-wrap items-center gap-3">
+                      <span className="text-[11px] font-normal leading-relaxed text-slate-500">
+                        It names the occasion, never the people — their names are under their own
+                        faces. The names themselves come from each person&apos;s record, or from the
+                        correction you typed for them in the card below.
+                      </span>
+                      {groupCitationEdit !== null ? (
+                        <button
+                          className="rounded-none border border-slate-300 px-2 py-1 text-[11px] font-semibold text-slate-600"
+                          onClick={() => setGroupCitationEdit(null)}
+                          type="button"
+                        >
+                          Back to the worked-out sentence
+                        </button>
+                      ) : null}
+                    </span>
+                  </label>
+                ) : null}
               </div>
             ) : null}
 
@@ -1397,7 +1524,7 @@ export function MilestonesWorkspace({
               The name on the card
               <input
                 className="mt-1 block w-full rounded-none border border-slate-300 px-3 py-2 text-[13px] text-slate-900"
-                onChange={(event) => setNameEdit(event.target.value)}
+                onChange={(event) => editName(selectedHrId, event.target.value)}
                 value={nameValue}
               />
               <span className="mt-1 block text-[11px] font-normal leading-relaxed text-slate-500">
