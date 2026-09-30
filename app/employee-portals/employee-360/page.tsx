@@ -411,6 +411,8 @@ export default async function EmployeePortalEmployee360Page({
             with the browse list instead. */}
         <Employee360View
           bare
+          // The shell above renders the page <h1>; this makes the subject name an <h2>.
+          chrome="portal"
           category={roleCategory}
           comparison={comparison}
           pmMarketing={pmMarketing}
