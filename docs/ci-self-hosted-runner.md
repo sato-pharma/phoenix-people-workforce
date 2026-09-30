@@ -803,12 +803,79 @@ railway status --project d657a3c0-684c-4e83-88bc-ded47b32a00d --environment prod
 
 `--project` requires `--environment` for both output modes. It is a read; it changes no link.
 
+### 2026-09-30 — the Hetzner box is LIVE, and the switch points at it
+
+The owner bought **one** CPX32 and the pool moved off Railway the same night. State at the time of
+writing, read from the live APIs rather than from the order:
+
+| | |
+| --- | --- |
+| Host | `ubuntu-8gb-nbg1-1` — CPX32, 4 vCPU, 7,740 MB RAM, 150 GB, `x86_64`, Nuremberg (`nbg1`) |
+| OS | Ubuntu **26.04.1 LTS** (`resolute`) |
+| Runners | **two on the one box** — `phoenix-ci-ubuntu-8gb-nbg1-1` and `phoenix-ci-nbg1-b`, both labelled `self-hosted,X64,Linux,phoenix,hetzner` |
+| Services | one systemd unit per runner, `actions.runner.Gawish-1997-phoenix-people-workforce.<runner name>` — both enabled, active, surviving reboot |
+| Switch | `CI_SELF_HOSTED = on`, `CI_RUNNER_LABEL = hetzner` |
+| Toolchain | node 24.21.0, pnpm 12.8.1, git 2.53.0, Playwright system deps installed |
+
+🔴 **8 GB of swap was added deliberately, and it is not optional.** `ci.yml` runs typecheck with
+`--max-old-space-size=6144` against 7,740 MB of RAM. A runner takes one job at a time so nothing
+competes with it, but 6 GB of heap inside 7.7 GB leaves no margin for the compiler's own
+non-heap memory — and an OOM-killed typecheck prints nothing and exits non-zero, which reads
+exactly like a code failure. `/swapfile`, `fstab`-persisted.
+
+**Two things cost real time on the way in. Neither is a defect in this runbook; both are new.**
+
+🔴 **A Hetzner server created without ticking an SSH key CANNOT BE REACHED WITH ONE AFTERWARDS —
+not by adding the key to the project, and not by Rebuild.** The key is applied at creation only;
+`Rebuild` takes an image and re-applies the keys *from creation*, of which there were none, so it
+lands in the same hole. The project key read as present and correct the whole time — its
+fingerprint matched the laptop's exactly — which is precisely what makes this hard to see. The way
+out without deleting the server is **Rescue**: enable it, the box power-cycles into a network
+Debian, mount the real root at `/mnt`, append the public key to `/mnt/root/.ssh/authorized_keys`,
+reboot. 🔴 **Hetzner's console does NOT offer a key selector when enabling rescue — it issues a
+one-time root password and clears it from the panel once the box has booted**, so capture it when
+it appears. Confirm you are really in rescue from the wire, not the UI: port 22 answers
+`SSH-2.0-OpenSSH_9.2p1 Debian-2+deb12u7` there, and the installed system answers as Ubuntu.
+
+🔴 **NodeSource had no repository for `resolute` at all**, so `setup_24.x` left the box with no
+Node and `setup-self-hosted-runner.sh` could not proceed. The script now falls back to the official
+tarball and resolves the version from `nodejs.org` — see its Node section. **Expect this again on
+the next Ubuntu release**: NodeSource lags a new codename by months, and the failure is quiet.
+
 ## What to expect after the switch
 
 - **Cost**: metered Actions spend for this repo goes to ~$0. The VPS is the whole bill.
-- **Speed**: likely faster. `ci.yml` notes the Build step ranges 148–245s purely on which shared
-  2-vCPU runner drew the job; a dedicated box removes that variance. A persistent runner also keeps
-  the pnpm store and Playwright browsers warm between runs.
+- 🔴 **IT IS SLOWER THAN HOSTED — ABOUT 56% ON WALL CLOCK — AND THE OLD "likely faster" PREDICTION
+  HERE WAS WRONG.** Measured 2026-09-30 on PR #4840, the first real run on the Hetzner box:
+
+  | job | self-hosted | GitHub-hosted | verdict |
+  | --- | --- | --- | --- |
+  | `validate` | 157s · 161s | 141 · 160 · 163 · 164s — mean **157s** | **dead even** |
+  | `checks` | **327s · 339s** | 203 · 205 · 208 · 219s — mean **209s** | **~56% slower** |
+
+  Both run in parallel once the box has two runners, so wall clock is whatever `checks` costs:
+  **~327s self-hosted against ~209s hosted.** `checks` is typecheck plus lint — pure CPU, which is
+  exactly what a *shared*-vCPU plan gives away. `validate` is I/O- and install-heavy and does not
+  care. **Buy this box for the bill, not for the wait.** The thing that actually cut the wait was
+  #4837 (the unit suite moved beside the typecheck instead of behind it), and the remaining levers
+  are fewer/wider PRs, or dedicated vCPU — not this box as configured.
+
+  🔴 **THE COMPARISON BASIS IS THE WHOLE MEASUREMENT, AND IT IS EASY TO GET WRONG — TWO SESSIONS DID,
+  IN OPPOSITE DIRECTIONS, WITHIN AN HOUR.** #4837 moved the unit suite from `checks` into `validate`
+  on 2026-09-29T23:39Z, so **every run before that timestamp has a different job composition and is
+  not comparable**, and a `push` run's `validate` additionally carries the build and the login smoke.
+  An earlier draft of this bullet read "`validate` is roughly twice as fast" off pre-split or push
+  runs (270–365s); a session comparing per-job self-hosted times against a whole PR's *wall clock*
+  got "2× slower" the other way. **Filter to `event=pull_request` AND `created_at` after the last
+  change to the job split before quoting any baseline from this page.**
+- 🔴 **ONE RUNNER PROCESS TAKES ONE JOB, SO A SINGLE REGISTRATION SERIALISES THE TWO REQUIRED CHECKS
+  AND IS SLOWER THAN HOSTED.** The first run took **508s** that way (339s then 161s, back to back).
+  A **second** runner registered on the SAME box fixes it — `RUNNER_DIR=$HOME/actions-runner-2
+  RUNNER_NAME=phoenix-ci-nbg1-b` with the same labels, which the setup script supports as-is. **It
+  fits**: with both jobs running at once the box's lowest available RAM was **1,180 MB** and swap
+  use peaked at 67 MB, so the 6 GB typecheck heap needs no lowering. 🔴 **Expect a scheduling delay
+  of up to ~90s before GitHub hands work to a runner that has just registered** — a job sitting
+  `queued` beside an idle runner in that window is not a misconfiguration.
 - 🔴 **A persistent runner keeps state between jobs**, which GitHub-hosted runners never do. That is
   where the speed comes from and also the one new failure mode: a stale `node_modules`, `.next` or
   generated type file can make a run pass that should have failed. If a result ever looks
