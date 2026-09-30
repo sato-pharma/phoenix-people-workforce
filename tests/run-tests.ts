@@ -688,6 +688,7 @@ import { runUnitsAreUnitsNoDiscountFactorTests } from "./units-are-units-no-disc
 import { runImportPreviewTests } from "./import-preview.test.ts";
 import { runEmployeeImportTeamResurrectionGuardTests } from "./employee-import-team-resurrection-guard.test.ts";
 import { runEmployeeImportKeepsBlankCellsTests } from "./employee-import-keeps-blank-cells.test.ts";
+import { runMissingColumnPredicateTests } from "./missing-column-predicate.test.ts";
 import { runOrgTitleCaseAcronymTests } from "./org-title-case-acronyms.test.ts";
 import { runImportsLineCanonicalizationTests } from "./imports-line-canonicalization.test.ts";
 import { runImportTeamBlankWarningTests } from "./import-team-blank-warning.test.ts";
@@ -3578,6 +3579,13 @@ await runTest("units are units — no discount factor", runUnitsAreUnitsNoDiscou
 await runTest("import preview diff", runImportPreviewTests);
 await runTest("employee import never resurrects a deactivated team (insert-only org entities)", runEmployeeImportTeamResurrectionGuardTests);
 await runTest("employee import keeps blank cells (a bulk upsert must not NULL a column another row filled) and links managers outside the file", runEmployeeImportKeepsBlankCellsTests);
+await runTest(
+  "a missing payment_mode column is told apart from any error that merely NAMES it — a constraint "
+    + "breach, an invalid payment mode, a permission denial or a schema-cache miss about another "
+    + "column no longer makes the directory read drop the column, the employee write return having "
+    + "saved nothing, or the import re-upsert everyone's compensation without their payment mode",
+  runMissingColumnPredicateTests,
+);
 await runTest("org title casing keeps acronyms (HR/QPPV/CEO/SFE/R&D), lower-cases minor words mid-name, and round-trips to the same code", runOrgTitleCaseAcronymTests);
 await runTest("imports line canonicalization (Anti Inf → Anti infective; no duplicate lines rows)", runImportsLineCanonicalizationTests);
 await runTest("employee import warns when an Area carries no Team (warn, never block)", runImportTeamBlankWarningTests);
