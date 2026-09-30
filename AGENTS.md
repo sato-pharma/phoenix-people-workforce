@@ -522,6 +522,12 @@ never merges; `--settle` closes only a PR already byte-identical on `main`. 🔴
 ALREADY OPEN, DO NOT MERGE ITS MEMBERS SEPARATELY** — it happened four minutes after one was built
 and commented on, because **a comment on a PR is not enforcement**. Check `gh pr list` for an open
 `codex/rollup-*` before merging anything small. Pinned by `tests/rollup-prs.test.ts`.
+🔴 **`--apply` WAITS for the members' required checks and builds ONLY from the ones that finish GREEN** —
+up to 25 min (`--wait <minutes>` or `PHX_ROLLUP_WAIT_MINUTES`; `--no-wait` takes whatever is green now).
+**A quiet run is working, not hung.** A member that is red, unfinished at the deadline, pushed mid-wait,
+or carrying checks older than its own head commit is LEFT OUT, not refused — it rolls up next run. **An
+unknown flag is REFUSED**, because an ignored one runs an older worktree's behaviour while reporting
+success. Account: the script's own header.
 🔴 **THE WINDOW IS ABOUT THREE MINUTES, SO A ROLL-UP MUST BE MERGED BEFORE ITS MEMBERS, NOT MERELY
 BUILT BEFORE THEM** (measured 2026-09-30). One opened at 13:16 lost both members by 13:18:55 — the
 first 90 seconds after being commented on — which with the morning's #4814 makes **three members lost
