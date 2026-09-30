@@ -25,6 +25,12 @@
  */
 
 import { loadBrickCentroids, loadBrickNames, resolveBrickForPoint } from "@/lib/crm/brick-geo";
+// The iReports360 mirror, reached from inside this walled module exactly as brick-from-coordinates
+// is: the sharing question can only be answered against the WHOLE company's contact roster, which
+// Phoenix CRM's own tables do not hold.
+import type { SharedWith } from "@/lib/crm/location-confidence";
+import { loadObservedPointsFor, loadSharedCustomersFor } from "@/lib/crm/shared-customers";
+import { logError } from "@/lib/observability/log";
 import { resolveEvidenceLocation } from "@/lib/evidence/location-service";
 import { notFoundError, validationError } from "@/lib/http/api-errors";
 import { monthStartOf, nextRamadan } from "@/lib/phoenix-crm/calendar";
@@ -230,6 +236,27 @@ export type ListCustomer = {
   visitsThisMonth: number;
   target: number | null;
   tier: CoverageTier;
+  /**
+   * 🔴 ANOTHER REP CARRIES THIS CUSTOMER TOO (owner, 2026-09-30: "if a doctor is shared between this
+   * rep and another rep, it was highlighted"). Null for the overwhelming majority.
+   *
+   * An INFERENCE, not a record: iReports360 gives every rep their own row for one doctor, so the
+   * match is worked out from the name and the pin, or from a shared phone. The basis is printed
+   * beside the highlight so a reader who disagrees can overrule it, and nothing is ever merged — a
+   * two-line customer is a treasure, never a duplicate to tidy away.
+   */
+  sharedWith: SharedWith[] | null;
+  /**
+   * 🔴 WHERE THE REPS HAVE ACTUALLY STOOD in front of this doctor, averaged from iReports360's
+   * check-ins on him (owner, 2026-09-30: "you will get the location of the doctor from the
+   * check-ins ... and make an average"). Null when nobody has ever checked in.
+   *
+   * It beats the vendor's TYPED address, which on this data is a region — "Monofia III · Delta
+   * West" — that cannot be driven to. It never beats a place the rep captured and confirmed at the
+   * door: that is a deliberate act, this is an observation. `averageCheckinPoint` explains why the
+   * average is taken over the fixes that agree with one another rather than over all of them.
+   */
+  observed: { lat: number; lon: number; address: string | null; at: string | null; agreed: number; total: number } | null;
   pendingGradeRequestId: string | null;
   pendingGrade: PhoenixCrmGrade | null;
   pendingDropRequestId: string | null;
@@ -821,9 +848,52 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
       })),
       primaryPharmacyName,
       pharmacies,
+      sharedWith: null,
+      observed: null,
     };
   });
   listCustomers.sort((left, right) => left.listType.localeCompare(right.listType) || left.name.localeCompare(right.name));
+
+  // 🔴 WHO ELSE CARRIES THESE CUSTOMERS (owner, 2026-09-30: "if a doctor is shared between this rep
+  // and another rep, it was highlighted"). Answered against the iReports360 roster, because only a
+  // company-wide read can see the other rep's row — Phoenix CRM's own tables hold one territory.
+  //
+  // It NEVER takes the List down with it. A vacant territory has no rep to compare against, a test
+  // world has no iReports360 rows at all, and the mirror can be missing entirely on a fresh
+  // environment; every one of those is an ordinary answer of "nobody", not a failure to report. A
+  // highlight is a nicety; the list itself is the page.
+  const sharedKeys = listCustomers
+    .map((customer) => customer.referenceContactCrmId)
+    .filter((id): id is number => typeof id === "number");
+  // `occupantHrId`, not `repHrId` — OrgSeat has no such field, and reading one that does not exist
+  // made this whole block silently unreachable: no sharing, no check-in point, and no error to see.
+  // NOT gated on `isTest`. Both reads key on the REAL iReports360 contact behind a customer
+  // (`referenceContactCrmId`) and on the seat's real occupant, so they answer the same in a test
+  // world as in the real one — and gating them out made the whole feature invisible to the one
+  // account it would be tried on, since a TEST- login always reads as the test world.
+  if (seat.occupantHrId && sharedKeys.length > 0) {
+    try {
+      // 🔴 AND WHERE EACH DOCTOR ACTUALLY IS, averaged from the check-ins the reps have already
+      // taken on him (owner, 2026-09-30). Both questions are answered against the same mirror, so
+      // they are asked together rather than one page load apart.
+      const [sharedByContact, observedByContact] = await Promise.all([
+        loadSharedCustomersFor(sharedKeys, seat.occupantHrId),
+        loadObservedPointsFor(sharedKeys),
+      ]);
+      for (const customer of listCustomers) {
+        if (customer.referenceContactCrmId === null) continue;
+        const shared = sharedByContact.get(customer.referenceContactCrmId) ?? null;
+        customer.sharedWith = shared && shared.length > 0 ? shared : null;
+        const point = observedByContact.get(customer.referenceContactCrmId) ?? null;
+        customer.observed = point ? { address: point.address, at: point.at, agreed: point.agreed, lat: point.lat, lon: point.lon, total: point.total } : null;
+      }
+    } catch (error) {
+      logError("Phoenix CRM list: the shared-customer and check-in reads could not run", {
+        error,
+        labels: { event: "phoenix_crm_shared_customers_failed" },
+      });
+    }
+  }
 
   const referenceEntries: ListReferenceEntry[] = reference.map((row) => ({
     contactCrmId: Number(row.contact_crm_id),

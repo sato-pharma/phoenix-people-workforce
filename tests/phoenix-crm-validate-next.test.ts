@@ -79,6 +79,10 @@ function customer(overrides: Partial<ListCustomer> & { brick?: string | null } =
     waiting: [],
     primaryPharmacyName: null,
     pharmacies: [],
+    // Added 2026-09-30 with the List's Reps-List look: another rep's copy of this customer, and
+    // where the reps have actually stood. Both null here — this fixture is one rep's own row.
+    sharedWith: null,
+    observed: null,
     ...rest,
   };
 }

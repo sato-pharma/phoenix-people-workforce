@@ -32,7 +32,6 @@ import {
   listText,
   monthStanding,
   monthVisitsText,
-  PENDING_PILL,
   pendingVisitsText,
   referenceLastVisitText,
 } from "@/components/phoenix-crm/labels";
@@ -56,6 +55,7 @@ import {
   specialityOf,
   type CustomerGroup,
 } from "@/lib/phoenix-crm/customer-list-grouping";
+import { describeSharing } from "@/lib/crm/location-confidence";
 import { factInk, gradeInk, listRowFacts } from "@/lib/phoenix-crm/list-row-facts";
 import { listRowAction, requestKindLabel, type ListRowAction } from "@/lib/phoenix-crm/list-request-rules";
 import type { ListCustomer } from "@/lib/phoenix-crm/view-types";
@@ -199,12 +199,12 @@ function GroupHeading({
 /** The row's pills — the same standing chip an active customer carries on the board, or the pending mark. */
 function rowPills(customer: ListCustomer, variant: CustomerListVariant): ReactNode {
   if (variant === "pending") {
-    return (
-      <>
-        <CrmPill tone="orange">{PENDING_PILL}</CrmPill>
-        {waitingPills(customer)}
-      </>
-    );
+    // 🔴 NO "Not validated yet" PILL HERE (owner, 2026-09-30): "you don't have to show the column of
+    // not-validated-yet, because since it has a Validate button beside it, then for sure it is not
+    // validated. Be smart." The button IS the status — a pill repeating it is a second thing to read
+    // that says nothing the row did not already say. It stays on the screens that have NO button to
+    // say it: the visit form's customer card and the pending strip, where PENDING_PILL still lives.
+    return waitingPills(customer);
   }
   if (variant === "outside") {
     // Met and validated at the door, not on the list: he counts once the add is approved.
@@ -245,6 +245,54 @@ function detailText(customer: ListCustomer, variant: CustomerListVariant): strin
 /** The phone card's one meta line: the list and the grade, the two the table gives their own ink. */
 function cardMetaText(customer: ListCustomer): string {
   return `${listText(customer.listType)} · ${listRowFacts(customer).grade.text}`;
+}
+
+/**
+ * 🔴 THE FULL ADDRESS, AND IT IS CLICKABLE (owner, 2026-09-30: "you were writing the full address
+ * and the full address was clickable"). It opens Google Maps in a new tab — a pin on the captured
+ * place's own point, or a search on the words when nothing has been captured yet.
+ *
+ * A placeholder is never a link: there is nothing to drive to, and a link that searches the words
+ * "Set when you validate" would send him to the middle of nowhere.
+ */
+function AddressText({ href, text }: { href: string | null; text: string }) {
+  if (!href) {
+    return (
+      <p className="break-words" dir="auto">
+        {text}
+      </p>
+    );
+  }
+  return (
+    <a
+      className="break-words font-semibold text-orange-800 underline decoration-orange-300 underline-offset-2 hover:decoration-orange-600"
+      dir="auto"
+      href={href}
+      rel="noreferrer"
+      target="_blank"
+    >
+      {text}
+    </a>
+  );
+}
+
+/**
+ * The small line under a shared customer's name — who else carries them, and how that was judged.
+ *
+ * The owner asked for the reason to be stated, not implied ("add in a small line why is he
+ * highlighted, who is he shared with", and again on 2026-09-30 for this board). Naming the basis
+ * matters because this is an INFERENCE, not a record: iReports360 gives every rep their own row for
+ * one doctor, so the match is worked out from the name and the pin, or from a shared phone. A reader
+ * who can see why can overrule it.
+ */
+function SharedLine({ customer }: { customer: ListCustomer }) {
+  const shared = customer.sharedWith ?? null;
+  if (!shared || shared.length === 0) return null;
+  return (
+    <span className="mt-1 block break-words text-phx-2xs font-semibold text-violet-700" dir="auto">
+      {describeSharing(shared)}
+    </span>
+  );
 }
 
 /**
@@ -518,11 +566,19 @@ export function CustomerListBoard({
                           status={rowPills(customer, variant)}
                           title={<span dir="auto">{customer.name}</span>}
                         >
-                          {/* The same five facts the table prints, folded to a phone's one column —
-                              and through the SAME resolver, so a row cannot say one thing on a
-                              desktop and another in a pocket. */}
-                          <p className={`break-words text-xs font-semibold leading-5 ${factInk(listRowFacts(customer).address)}`} dir="auto">
-                            {variant === "dropped" ? detailText(customer, variant) : listRowFacts(customer).address.text}
+                          {/* The same facts the table prints, folded to a phone's one column — and
+                              through the SAME resolver, so a row cannot say one thing on a desktop
+                              and another in a pocket. The address is the clickable one here too;
+                              on a phone the Maps link hands off to the Maps app. */}
+                          <SharedLine customer={customer} />
+                          <p className={`text-xs font-semibold leading-5 ${factInk(listRowFacts(customer).address)}`}>
+                            <AddressText
+                              href={listRowFacts(customer).mapsHref}
+                              text={variant === "dropped" ? detailText(customer, variant) : listRowFacts(customer).address.text}
+                            />
+                          </p>
+                          <p className="break-words text-xs font-semibold leading-5 text-slate-500" dir="auto">
+                            {listRowFacts(customer).brick.text}
                           </p>
                           {variant === "active" || variant === "outside" ? (
                             <p className="break-words text-xs font-semibold leading-5 text-slate-500">{placesDaysText(customer)}</p>
@@ -580,14 +636,25 @@ export function CustomerListBoard({
                       <tbody>
                         {entry.rows.map((customer) => {
                           const facts = listRowFacts(customer);
+                          const shared = (customer.sharedWith?.length ?? 0) > 0;
                           return (
-                            <tr key={customer.customerId}>
+                            // 🔴 A CUSTOMER SHARED WITH ANOTHER REP IS HIGHLIGHTED — the old board's
+                            // violet, row level, on the owner's instruction of 2026-09-30 ("if a
+                            // doctor is shared between this rep and another rep it was highlighted").
+                            // Violet is reserved for exactly this across both boards; it can sit on
+                            // a row here with nothing to fight, because this board spends its brick
+                            // colour on the HEADING and never on a row.
+                            <tr className={shared ? "bg-violet-50" : undefined} key={customer.customerId}>
                               <td className={crmTdClassName}>
                                 <p className="font-black text-slate-950">
                                   <span dir="auto">{customer.name}</span>
                                 </p>
                                 {/* The grade keeps its own ink, as the old board painted it. */}
                                 <p className={`mt-0.5 text-xs font-bold ${gradeInk(customer.grade)}`}>{facts.grade.text}</p>
+                                {/* WHY it is highlighted, and who with — the owner asked for the
+                                    reason to be stated rather than implied, because the match is an
+                                    inference a reader must be able to overrule. */}
+                                <SharedLine customer={customer} />
                                 <div className="mt-1 flex flex-wrap gap-1">{rowPills(customer, variant)}</div>
                               </td>
                               <td className={`${crmTdClassName} ${factInk(facts.speciality)}`}>
@@ -602,19 +669,19 @@ export function CustomerListBoard({
                                 </span>
                               </td>
                               <td className={`${crmTdClassName} ${factInk(facts.brick)}`}>
+                                {/* 🔴 THE BRICK ONLY. Its AREA is NOT repeated here (owner,
+                                    2026-09-30: "you duplicated the wrong areas and regions"): the
+                                    group heading this row sits under already names brick AND area,
+                                    and the address carries the vendor's own region words, which are
+                                    a different vocabulary again — "Monofia III · Delta West" over a
+                                    heading reading "Menoufia 2". Three namings of one place, two of
+                                    them disagreeing, is what he was looking at. */}
                                 <p className="break-words" dir="auto">
                                   {facts.brick.text}
                                 </p>
-                                {facts.area.source === "placeholder" ? null : (
-                                  <p className="mt-0.5 break-words text-xs text-slate-400" dir="auto">
-                                    {facts.area.text}
-                                  </p>
-                                )}
                               </td>
                               <td className={`${crmTdClassName} ${factInk(facts.address)}`}>
-                                <p className="break-words" dir="auto">
-                                  {variant === "dropped" ? detailText(customer, variant) : facts.address.text}
-                                </p>
+                                <AddressText href={facts.mapsHref} text={variant === "dropped" ? detailText(customer, variant) : facts.address.text} />
                                 {variant === "active" || variant === "outside" ? (
                                   <p className="mt-0.5 break-words text-xs text-slate-500">{placesDaysText(customer)}</p>
                                 ) : null}
