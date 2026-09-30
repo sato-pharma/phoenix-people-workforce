@@ -257,10 +257,18 @@ function monthText(customer: ListCustomer, variant: CustomerListVariant): string
   return monthVisitsText(customer.visitsThisMonth, customer.target);
 }
 
+/**
+ * The address column's heading.
+ *
+ * It said "Address in iReports360" on a row waiting to be validated and "Places and days" on a
+ * validated one, because each read one source. It now reads BOTH, capture first (owner, 2026-09-30),
+ * so a single word is the only honest heading: the column holds the best address there is for that
+ * customer, and the cell itself shows in lighter italics when nothing has filled it yet.
+ */
 const DETAIL_HEADER: Record<CustomerListVariant, string> = {
-  pending: "Address in iReports360",
-  active: "Places and days",
-  outside: "Places and days",
+  pending: "Address",
+  active: "Address",
+  outside: "Address",
   dropped: "Why it is in the Archive",
 };
 
