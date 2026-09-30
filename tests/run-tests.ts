@@ -603,6 +603,7 @@ import { runTargetsTemplateRoundtripTests } from "./targets-template-roundtrip.t
 import { runEmployee360ExpenseRoleTests } from "./employee-360-expense-role.test.ts";
 import { runEmployee360SalesMaskingTests } from "./employee-360-sales-masking.test.ts";
 import { runEmployee360RoleCategoryTests } from "./employee-360-role-category.test.ts";
+import { runPmProductAssignmentTests } from "./pm-product-assignments.test.ts";
 import { runEmployee360WorkweekTests } from "./employee-360-workweek.test.ts";
 import { runEmployee360AccessTests } from "./employee-360-access.test.ts";
 import { runEmployee360PortalBrowseTests } from "./employee-360-portal-browse.test.ts";
@@ -3380,6 +3381,10 @@ await runTest("employee 360 visit classification (CRM Unknown-type labeling)", r
 await runTest("employee 360 double-visit count (canonical double_crm_id + type {0,-8}, no over-count)", runEmployee360DoubleVisitCountTests);
 await runTest("employee 360 sales confidential-product masking", runEmployee360SalesMaskingTests);
 await runTest("employee 360 role-category scoping (six tabs, others excluded)", runEmployee360RoleCategoryTests);
+await runTest(
+  "PM product assignments surface both write errors — a failed insert after the clear leaves the Product Manager with none, and must never report a save",
+  runPmProductAssignmentTests,
+);
 await runTest("employee 360 workweek + visit/checkin day-of-week separation", runEmployee360WorkweekTests);
 await runTest("employee 360 viewer scope (self/team/hierarchy/line/reps/company)", runEmployee360AccessTests);
 await runTest("employee 360 portal browse-all fallback + detail route", runEmployee360PortalBrowseTests);
