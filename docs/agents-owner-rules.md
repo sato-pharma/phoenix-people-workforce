@@ -3719,6 +3719,63 @@ fails if anything calls the loader or passes the weights.
 **One stale claim corrected the same day:** that test's comment said production held `UE-1 3 / UE-2 6`.
 The live rows are **2 / 6**, and always were.
 
+## An area is NOT per line — a rep sees only his own line's spend on his patch — owner, 2026-09-30
+
+**What he said**, on `/employee-portals/roi-tracker`: *"the gharbiya 2 rep line pedia is seeing the
+request of gharbiya 2 line cns — it doesn't mean that he is the same area that he see his line …
+this is a fatal mistake."*
+
+**The mechanism, and why the wording of the earlier rule hid it.** The ROI Tracker's territory route
+(owner, 2026-09-18) was written as "every request whose target customer sits in the rep's own
+`employees.area_id`", which reads as a complete bound and is not one. `public.areas` is keyed to the
+Source-of-Sales **area code** and the live rows carry **`line_id` NULL** — the old per-line rows
+(ids **76** `gharbia_1` and **77** `gharbia_2`, both `line_id = 3`) were deactivated on 2026-07-07
+and replaced by `D14` **Gharbia 1 (Tanta)** id **1103** and `D15` **Gharbia 2 (Mahalla)** id **1104**.
+So one area id is held at the same moment by every line's rep standing on that patch, and
+`marketing_customers.area_id` carries the same id whichever line's manager raised the campaign.
+
+**Measured on production 2026-09-30, before the fix.** Joining every active REP seat to every request
+with a `pay_date` on the same area id: **82 rep × request pairs admitted, 46 of them (56%) another
+line's campaign, reaching 28 of the 72 active reps.**
+
+His own case is the narrowest possible demonstration. `D15` is held by exactly one active rep,
+**B-158 Hassan Elsherbiny, Pedia**; its only request with a pay date is
+`MKT-REQ-20260831-393D40C7`, raised by **B-120 Mahmoud ElHassanin, the CNS District Sales Manager**,
+promoting a CNS product. His own Pedia DM (**B-154**) had raised nothing there — so the single row on
+his tracker was another line's money. `D14` is the same shape with three reps on three lines
+(`AI-0020` Anti Infective, `B-145` CNS, `B-170` Pedia): both the CNS and the Pedia campaign there were
+shown to all three, and the Anti Infective rep saw two campaigns while his own line had raised neither.
+
+**The rule.** The territory route is **area AND line**. `territoryRouteAdmitsRequest`
+(`src/lib/marketing-requests/roi-report-scope.ts`) is the single pure decision, deliberately lifted
+out of `getMarketingRoiReport`'s database closure — the area half on its own *looks* like a finished
+rule, which is exactly how this survived twelve days. A request's line is the **union** of the
+requester's seat line and its promoted products' lines; on production all 45 requests with a pay date
+carry both and the two **never disagree**. An unestablishable line is refused, and a rep with no line
+on his master record runs **no** territory route at all — never an area-only fallback, which is the
+bug itself. A two-line request is on both lines, so either line's rep on that patch still sees it.
+The requester (hierarchy) route is untouched, so nothing the chain already granted anyone is lost.
+
+**One stale comment corrected the same day.** `roi-report-service.ts` said the employee master
+"leaves `line_name` unset for ~all reps", which is why the route never consulted the requester's seat.
+Re-measured: `employees.line_id` is set for **all 72 active reps and all 19 District Managers**,
+agrees 1:1 with `au.v_org_tree.line_name`, and all four `public.lines` rows are active.
+
+**What this does NOT touch, and must not.** `canSeeMarketingCustomer` and `canReuseMarketingPharmacy`
+stay **line-agnostic** — that is his own 2026-08-19 ruling (a cross-line doctor is a "treasure"; a
+venue is captured once for the whole area). A shared doctor is not a shared campaign: only the
+**spend** is narrowed. The Coverage tab of the same page never ran the territory route, so the leak
+never reached it, and its scope keeps both halves empty and inert.
+
+**The visible consequence, stated so nobody later reads it as a new defect.** 82 pairs → **36**;
+41 reps holding a row → **22**; **19 reps' ROI tab now renders empty**, because their own line has
+spent nothing on their patch. That is the honest answer, so the empty sentence says so for a rep
+rather than claiming there are no requests at all when there are 45.
+
+Shipped in #4897. Pinned by `testTheTerritoryRouteIsAreaAndLine` in
+`tests/medical-rep-marketing-scope.test.ts`, which runs in the required `validate` job and is built on
+the production seats and area id so it reads as the incident.
+
 ## `AGENTS.md` §4 Standing owner rules — as it stood before the 2026-09-12 condensation
 
 On 2026-09-12 `AGENTS.md` was cut to roughly half its size at the owner's request ("Load less of AGENTS.md"): every hook was reduced to its rule plus the one detail needed to obey it. This is that section's hook text **verbatim** from `origin/main` 3eea44aef, kept so that no measurement, date, count or diagnosis a condensed hook dropped is lost. Search it for the hook's wording. The accounts earlier in this file remain the fuller record.
