@@ -583,6 +583,10 @@ export const accessRegistry = [
   // ── Business cards ─────────────────────────────────────────────────────────────────────────
   // POST only because the chosen people and their on-screen corrections travel in a body; it writes
   // nothing and returns a file, so the resource is read. The handler also requires an HR seat.
+  // The signed-in employee's OWN card, rendered as the print-ready PDF (front and back). Scoped to
+  // the caller — there is no hrId in the request — so employee_profile:read is the whole gate. Listed
+  // before the HR export below so the exact /mine path never falls to the employee_documents gate.
+  sessionApi({ methods: ["POST"], pattern: "/api/business-cards/mine", permission: { resource: "employee_profile", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   // Every file hands over names, work emails and mobiles in bulk, so it is an audited export.
   sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/business-cards", permission: { resource: "employee_documents", action: "read" }, csrfRequired: true }),
   // ── Job Offers ─────────────────────────────────────────────────────────────────────────────
