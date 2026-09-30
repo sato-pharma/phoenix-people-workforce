@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { computeNewlyArrivedIds } from "@/lib/error-monitor/new-issue-diff";
 import { useHydrated } from "@/hooks/use-hydrated";
 import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
-import type { ErrorEventRowWithStatus, GcpLogEntryWithStatus, ServiceHealthResult, UnknownAttemptsSummary, UserAttemptRowWithStatus } from "@/lib/error-monitor/system-issues";
+import type { ErrorEventRowWithStatus, ServiceHealthResult, UnknownAttemptsSummary, UserAttemptRowWithStatus } from "@/lib/error-monitor/system-issues";
 import type { IssueStatus } from "@/lib/error-monitor/derived-status";
 import type { ClusterSummary, ErrorExplanation } from "@/lib/error-monitor/ai-triage";
 import type { DeployTimeline, LoginSecuritySignals, ReproTrailEntry } from "@/lib/error-monitor/service";
@@ -667,28 +667,22 @@ function ServiceHealthCard({ state }: { state: ServiceHealthResult }) {
 }
 
 type AppErrorsState = { events: ErrorEventRowWithStatus[] };
-type GcpLogsState =
-  | { available: true; entries: GcpLogEntryWithStatus[] }
-  | { available: false; entries: []; error: string };
 type AttemptsState = { rows: UserAttemptRowWithStatus[]; truncated: boolean; windowFrom: string; unknownAttempts: UnknownAttemptsSummary };
 
 export function SystemIssuesDashboard({
   aiEnabled = false,
   initialAppErrors,
-  initialGcpLogs,
   initialAttempts,
   initialServiceHealth,
 }: {
   aiEnabled?: boolean;
   initialAppErrors: AppErrorsState;
-  initialGcpLogs: GcpLogsState;
   initialAttempts: AttemptsState;
   initialServiceHealth: ServiceHealthResult;
 }) {
   const [activeTab, setActiveTab] = useState<"issues" | "users">("issues");
 
   const [appErrors, setAppErrors] = useState<AppErrorsState>(initialAppErrors);
-  const [gcpLogs, setGcpLogs] = useState<GcpLogsState>(initialGcpLogs);
   const [serviceHealth, setServiceHealth] = useState<ServiceHealthResult>(initialServiceHealth);
   const [issuesLoading, setIssuesLoading] = useState(false);
   const [issuesStatusFilter, setIssuesStatusFilter] = useState<StatusFilter>("all");
@@ -756,10 +750,9 @@ export function SystemIssuesDashboard({
     try {
       const res = await fetch("/api/admin/system-issues");
       if (!res.ok) throw new Error("Failed to refresh issues");
-      const result = (await res.json()) as { appErrors: AppErrorsState; gcpLogs: GcpLogsState; serviceHealth: ServiceHealthResult };
+      const result = (await res.json()) as { appErrors: AppErrorsState; serviceHealth: ServiceHealthResult };
       if (!isMountedRef.current || seq !== issuesSeqRef.current) return;
       applyAppErrorsResult(result.appErrors.events);
-      setGcpLogs(result.gcpLogs);
       if (result.serviceHealth) setServiceHealth(result.serviceHealth);
     } catch (err) {
       console.error(err);
@@ -853,25 +846,8 @@ export function SystemIssuesDashboard({
       status: event.status,
       timestamp: event.createdAt,
     }));
-    const gcpRows: MergedIssueRow[] = gcpLogs.available
-      ? gcpLogs.entries.map((entry) => ({
-          displayMessage: entry.displayMessage,
-          employeeName: null,
-          hrId: null,
-          id: `gcp-${entry.id}`,
-          message: entry.message,
-          moduleKey: "cloud_run",
-          moduleLabel: entry.revision ? `Cloud Run (${entry.revision})` : "Cloud Run",
-          origin: "gcp",
-          route: null,
-          severity: entry.severity,
-          stack: null,
-          status: entry.status,
-          timestamp: entry.timestamp,
-        }))
-      : [];
-    return [...appRows, ...gcpRows].sort((a, b) => (a.timestamp < b.timestamp ? 1 : -1));
-  }, [appErrors.events, gcpLogs]);
+    return [...appRows].sort((a, b) => (a.timestamp < b.timestamp ? 1 : -1));
+  }, [appErrors.events]);
 
   const filteredIssues = useMemo(
     () => mergedIssues.filter((row) => matchesStatusFilter(row.status, issuesStatusFilter)),
@@ -1065,15 +1041,6 @@ export function SystemIssuesDashboard({
 
       {activeTab === "issues" ? (
         <div className="space-y-4">
-          {!gcpLogs.available && (
-            <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-800">
-              <CloudOff className="mt-0.5 h-4 w-4 shrink-0" />
-              <div className="text-xs font-semibold">
-                <p>GCP Cloud Logging is not connected — showing Supabase application errors only.</p>
-                <p className="mt-1 font-mono font-normal text-amber-700">{gcpLogs.error}</p>
-              </div>
-            </div>
-          )}
           <p className="text-xs text-phx-ink-soft">
             Status is automatic — never set by hand. An error shows <span className="font-bold text-amber-700">Active</span>{" "}
             while it still happens on the currently-deployed version, and flips to{" "}

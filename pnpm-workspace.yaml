@@ -23,17 +23,6 @@
 # so EVERY bare override over a direct dependency fails. Do not "fix" a red run by adding to it.
 overrides:
   "@babel/core": ^7.29.6
-  # GHSA-m9gg-hp2v-232j (HIGH, "in certain configurations getAuthContext can return unauthorized
-  # certificates as though they were authorized") and GHSA-f596-whhp-79r4 (LOW, the server transmits
-  # some method-handler error messages to the client in status messages). Both affect >= 1.14.0 and
-  # are fixed in 1.14.5; the graph resolved 1.14.4 transitively via
-  # @google-cloud/logging -> google-gax. Phoenix uses grpc-js only as a CLIENT (it reads Cloud
-  # Logging for the System Issues dashboard, src/lib/observability/gcp-logs.ts) and both advisories
-  # are gRPC server-side, so real exposure is low — but `validate`'s first step is
-  # `pnpm audit --audit-level=high --prod` (scripts/ci-dependency-audit.mjs), which fails on a HIGH
-  # in any production dependency regardless of reachability, and a red check suite on a `main`
-  # commit makes Railway mark the production deploy SKIPPED.
-  "@grpc/grpc-js": ^1.14.5
   "@opentelemetry/core": ^2.8.0
   "@opentelemetry/resources": ^2.8.0
   "@opentelemetry/sdk-trace-base": ^2.8.0
@@ -287,11 +276,9 @@ overrides:
 #   NOTE: this does NOT fix the standalone-trace gap that took the Hiring Documents page down
 #   the same day — the missing libvips .so is invisible to a JS tracer regardless of which
 #   section declares the package. That fix lives in the Dockerfile and must stay.
-# - protobufjs (via @google-cloud/logging): trivial postinstall (version aliasing).
 # - unrs-resolver (via eslint-config-next): napi-postinstall fallback for the
 #   prebuilt native binding.
 allowBuilds:
-  protobufjs: true
   sharp: true
   supabase: true
   # false, and verified rather than assumed: free OCR was measured end to end against the six real
