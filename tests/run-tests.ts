@@ -2125,6 +2125,7 @@ import { runTerritorySearchRegionLabelTests } from "./territory-search-region-la
 import { runTerritorySearchScopeTests } from "./territory-search-scope.test.ts";
 import { runMilestoneCardTests } from "./milestone-card.test.ts";
 import { runMilestoneEnhancementsTests, runMilestonePrintHistoryAndPagingTests } from "./milestone-enhancements.test.ts";
+import { runMilestoneGroupCardTests } from "./milestone-group-card.test.ts";
 import { runFitsTheScreenRatchetTests } from "./fits-the-screen-ratchet.test.ts";
 import { runSquareEdgePortalRatchetTests } from "./square-edge-portal-ratchet.test.ts";
 import { runPhoenixCrmDictationTests } from "./phoenix-crm-dictation.test.ts";
@@ -7827,6 +7828,10 @@ await runTest(
 await runTest(
   "milestone print history and paging: the batch ceiling is raised to 150 for one launch, a print-history row is shaped for the screen (Cairo-local timestamp, occasion label from the period spec, service and birthday alike, actor and subject names with id fallbacks, never an age) and the same rows serialize to a valid XLSX workbook",
   runMilestonePrintHistoryAndPagingTests,
+);
+await runTest(
+  "milestone GROUP picture (owner 2026-09-30, \"a photo that has them all\"): one landscape A4 sheet with every ticked face on it, refused unless the rows share ONE occasion — and different Sato birthdays on ONE day ARE one occasion, sealed with the day — the grid fits keylines, captions and margins at every count from 2 to 12 with no two faces overlapping, the Arabic mark's right edge stays 16pt inside the trim, the pass fits every name and the renderer COUNTS the reports, a face that cannot be built fails the whole picture, and no handed-in photograph can travel to it",
+  runMilestoneGroupCardTests,
 );
 await runTest(
   "fits-the-screen ratchet: the count of overflow-x-auto/scroll sites across app/ and src/components/ may fall and may never rise, so no new screen is given permission to scroll sideways (AGENTS.md §4: \"overflow-x-auto over a min-width IS the bug\")",
