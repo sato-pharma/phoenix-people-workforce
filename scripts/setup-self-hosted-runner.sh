@@ -65,10 +65,36 @@ sudo apt-get update -qq
 sudo apt-get install -y -qq curl git ca-certificates jq unzip build-essential
 
 step "Installing Node ${NODE_MAJOR} + corepack/pnpm"
+# 🔴 NODESOURCE DOES NOT COVER EVERY UBUNTU RELEASE, AND ITS FAILURE IS NOT LOUD. `setup_24.x`
+# writes an apt source for the host's codename; on a release it has never published for, the
+# following `apt-get install nodejs` either installs the DISTRO's Node (a different major) or fails
+# on a 404 that `set -e` turns into an abort halfway through provisioning, with the runner not yet
+# registered. Measured 2026-09-30 on a fresh Hetzner CPX32: Ubuntu 26.04 "resolute" had no
+# NodeSource repo at all, so the box came up with no Node and the script could not proceed.
+# The official tarball has no such gap — it is one static file per version, published for every
+# x86_64 Linux — so it is the fallback, and the version is resolved from nodejs.org rather than
+# pinned here so this never becomes a second thing to bump.
 if ! node --version 2>/dev/null | grep -q "^v${NODE_MAJOR}\."; then
-  curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | sudo -E bash -
-  sudo apt-get install -y -qq nodejs
+  curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | sudo -E bash - || true
+  sudo apt-get install -y -qq nodejs || true
 fi
+if ! node --version 2>/dev/null | grep -q "^v${NODE_MAJOR}\."; then
+  echo "NodeSource did not yield Node ${NODE_MAJOR} on $(. /etc/os-release && echo "$VERSION_CODENAME") — falling back to the official tarball"
+  NODE_VERSION="$(curl -fsSL https://nodejs.org/dist/index.json \
+    | jq -r "[.[] | select(.version | startswith(\"v${NODE_MAJOR}.\"))] | .[0].version")"
+  [ -n "$NODE_VERSION" ] && [ "$NODE_VERSION" != "null" ] || die "could not resolve a Node ${NODE_MAJOR} release from nodejs.org"
+  TMP_NODE="$(mktemp -d)"
+  curl -fsSL "https://nodejs.org/dist/${NODE_VERSION}/node-${NODE_VERSION}-linux-x64.tar.xz" \
+    | sudo tar -xJ -C "$TMP_NODE"
+  sudo rm -rf /usr/local/lib/nodejs
+  sudo mkdir -p /usr/local/lib/nodejs
+  sudo mv "${TMP_NODE}/node-${NODE_VERSION}-linux-x64" /usr/local/lib/nodejs/node
+  for bin in node npm npx corepack; do
+    sudo ln -sf "/usr/local/lib/nodejs/node/bin/${bin}" "/usr/local/bin/${bin}"
+  done
+  rm -rf "$TMP_NODE"
+fi
+node --version | grep -q "^v${NODE_MAJOR}\." || die "Node ${NODE_MAJOR} is still not on PATH after both install paths"
 sudo corepack enable
 echo "node $(node --version) | corepack $(corepack --version)"
 
