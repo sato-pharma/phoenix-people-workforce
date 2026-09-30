@@ -129,6 +129,9 @@ import {
 import { archivePushTarget, listArchiveRefs, strandedArchives } from "./repo-doctor-archive-refs.mjs";
 // NOT from check-required-checks.mjs: that file is a CLI and runs its whole report at import time.
 import { compareToProtection, declaredRequiredChecks, readProtectionContexts } from "./required-check-names.mjs";
+// Same reason for check-dependabot-alerts.mjs: the CLI reports at import time, so the read and the
+// judgement come from the module it shares with the test.
+import { alertsEnabled, judgeAlerts, readOpenAlerts } from "./dependabot-alerts.mjs";
 import { classifySupabaseLink } from "./repo-doctor-supabase-link.mjs";
 import { sessionHoldReason } from "./repo-doctor-session-hold.mjs";
 import { buildCacheIdleMinutes, livenessVerdict, readHolderProbe } from "./worktree-liveness.mjs";
@@ -1542,6 +1545,42 @@ let autoloadedIndexBytes = null;
           console.log("     Fix the DOCS to match protection, and every file that states the list in ONE PR:");
           console.log("     node scripts/check-required-checks.mjs   # the same reading, with the file list");
         }
+      }
+    }
+  }
+}
+
+// OPEN DEPENDABOT ALERTS THAT WILL FREEZE CI.
+//
+// `validate` runs `pnpm audit --audit-level=high --prod`, so a HIGH-or-worse advisory against a
+// package in the production tree fails EVERY open pull request the moment the audit feed learns it —
+// and by AGENTS.md §2.3 a red check suite on a `main` commit makes Railway mark that production
+// deploy SKIPPED for good. Measured 2026-09-30: the same dependency passed that step at 16:11 and
+// failed it at 16:29 with nothing in the repository having changed; three consecutive deploys were
+// withheld that evening. The alert is readable here hours before the audit feed picks it up, so the
+// difference between a deliberate bump and a frozen afternoon is only whether anyone looked.
+//
+// READ-ONLY, and it never touches the exit code — the same reasoning as every section above. Honours
+// `--no-auth`. A zero is NOT reported as clean unless alerts are provably switched on: an empty list
+// reads identically whether nothing is vulnerable or nobody is looking.
+{
+  console.log("");
+  console.log("DEPENDABOT ALERTS (open advisories, and which of them will fail validate's audit step)");
+
+  if (skipAuth) {
+    console.log("  -> skipped (--no-auth). This check reads the live alerts API.");
+  } else {
+    const read = readOpenAlerts();
+    if (read.skipped) {
+      // A reading it never obtained, not a clean bill. Saying which keeps the next reader off the
+      // wrong trail, exactly as the required-checks section above does.
+      console.log(`  -> COULD NOT READ the alerts (${read.skipped}). Do NOT read this as clean.`);
+    } else {
+      const verdict = judgeAlerts(read, alertsEnabled());
+      for (const line of verdict.errors) console.log(`  -> ${line}`);
+      for (const line of verdict.notes) console.log(`  ${line}`);
+      if (verdict.exitCode !== 0) {
+        console.log("     node scripts/check-dependabot-alerts.mjs   # the same reading on its own");
       }
     }
   }
