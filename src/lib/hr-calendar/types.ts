@@ -18,9 +18,9 @@ export type HrCalendarEvent = {
   eventType: HrCalendarEventType;
   tenureYears: number;
   /**
-   * The milestone period this row can be printed as — `1m`, `5y`, `b4` — or null when the row has
-   * no card (a plain new-hire arrival, or a birthday/anniversary with no usable date). A calendar
-   * chip is a link only when this is set.
+   * The milestone period this row can be printed as — `0d` for the arrival (the first day as a
+   * member of the family), `1m`, `5y`, `b4` — or null when the row has no card (a birthday or
+   * anniversary with no usable date). A calendar chip is a link only when this is set.
    */
   spec: string | null;
 };

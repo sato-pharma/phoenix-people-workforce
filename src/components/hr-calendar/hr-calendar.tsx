@@ -51,7 +51,8 @@ type Props = {
 
 /**
  * The milestones deep link for one event, or null when the row has no card. The workspace opens on
- * this person and this period; a `b<n>` period prints a birthday card, an `Ny`/`1m` a service one.
+ * this person and this period; a `b<n>` period prints a birthday card, an `Ny`/`1m` a service one,
+ * and `0d` the arrival itself — the first day as a member of the family.
  */
 function cardHref(event: HrCalendarEvent): string | null {
   if (!event.spec) return null;
