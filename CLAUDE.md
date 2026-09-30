@@ -146,9 +146,11 @@ directly instead, from the folder holding the change:
 run it in the primary while the edit sits in a worktree and it re-pins the UNCHANGED source — a
 silent no-op that prints success.
 
-**The other three locks are behavioral ONLY — no prompt backs them.** `permissions.ask` is empty, so
-no dialog fires on any of those paths. **Never read the absence of a prompt as approval:** ask the
-owner in plain words and wait for a plain answer. Do not reintroduce a passphrase here — a shared one
+**The other three locks raise a PROMPT since 2026-09-30** — `.claude/hooks/protected-file-guard.mjs`
+answers any edit of them (Write/Edit, or a shell write) with `ask`, so his click in the UI lets it
+through; under AUTORUN it proceeds and you must announce it (§6.1). **The prompt is not the approval:**
+ask him in plain words FIRST and wait for a plain answer; a refused prompt is his answer, never retry
+another way. Pinned by `tests/protected-file-guard.test.ts`. Do not reintroduce a passphrase — a shared one
 was removed 2026-07-31 because it sat in a committed file and authenticated nobody. Full history of
 the settings changes, and how to recover the pre-2026-08-14 file:
 [docs/agents-incident-history.md](docs/agents-incident-history.md).

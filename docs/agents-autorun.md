@@ -23,6 +23,11 @@ actually stops a run here is behavioural — §6's two protected actions, the pr
 "ask when the answer changes the outcome". None of those is a prompt, so none of them is affected by
 a permission mode.
 
+**Correction, 2026-09-30:** the three behavioral protected files now raise a prompt through a hook
+(`.claude/hooks/protected-file-guard.mjs`), not through `permissions.ask`. It stands aside for an
+ARMED AUTORUN session — reading autorun-guard's own state file — so a plan is never stalled by it,
+and the edit is announced instead of awaited, exactly as §6.1 rules.
+
 There was a second, harder problem with keying the rule to the permission mode: **a session cannot
 read it.** Nothing in the context reports `defaultMode`. A rule conditioned on it would have been
 honoured at random — which is worse than no rule, because it would look like it was working. Hence

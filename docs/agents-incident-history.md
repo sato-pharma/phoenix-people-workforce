@@ -337,6 +337,15 @@ Verbatim, unabridged. The cue — and every memory slug — stays in `AGENTS.md`
 
 ## The protected-file lock, and why no prompt backs it any more (relocated from `CLAUDE.md`, 2026-09-01)
 
+**Superseded 2026-09-30 — a prompt backs the three behavioral locks again,** by owner instruction
+("build the protected-file ask hook"). It is a PreToolUse HOOK, not a `permissions.ask` entry:
+`.claude/hooks/protected-file-guard.mjs` answers a Write/Edit of `scheme-2026.ts`, `payroll/policy.ts`
+or `identity-card.tsx` — or a shell command that writes one — with `permissionDecision: "ask"`, which
+the hooks docs say still prompts under `--permission-mode auto` (only `bypassPermissions` skips it).
+It never denies and never fires on a read. Under an armed AUTORUN it lets the edit proceed with an
+"announce it" instruction, as §6.1 rules. Pinned by `tests/protected-file-guard.test.ts`. What
+follows is the history up to that day.
+
 `CLAUDE.md` lists four permanently-locked files. Three of them are held by **behaviour alone**. This
 is the history behind that, moved out of `CLAUDE.md` because it auto-loads on every request and this
 account is only wanted once a session is already looking.
