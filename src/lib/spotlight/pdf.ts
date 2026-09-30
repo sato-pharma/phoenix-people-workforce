@@ -1161,22 +1161,13 @@ export function repSpotlightDocumentHtml(result: SpotlightResult): string {
   //     eats the first half of the company name. 168mm inside a 210mm page keeps the whole name visible.
   //   · PALE and BEHIND the content, so the figure stays the payload rather than fighting a second mark.
   // One <img> (the same base64 object as the foot), so it adds no per-page raster layer.
-  // Recoloured to a very light blue via a mask rather than the deep-blue PNG itself: the artwork is a
-  // single colour on transparency, so painting a light-blue box THROUGH its alpha gives a clean tint
-  // at any shade. One composited layer, which is the raster trap at the head of this file — harmless
-  // on this single-page sheet, where the multi-page cost that rule guards against cannot arise.
-  const watermarkMask = /src="([^"]+)"/.exec(arabicMark())?.[1] ?? "";
   const watermarkStyle = `<style>
-    .rep-wm { position: absolute; left: 50%; top: 33%; transform: translate(-50%, -50%);
-      width: 170mm; height: 95mm; opacity: 0.55; z-index: 0; pointer-events: none;
-      background: #A9D2EE;
-      -webkit-mask-image: url('${watermarkMask}'); mask-image: url('${watermarkMask}');
-      -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
-      -webkit-mask-position: center; mask-position: center;
-      -webkit-mask-size: contain; mask-size: contain; }
+    .rep-wm { position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%);
+      width: 168mm; opacity: 0.05; z-index: 0; pointer-events: none; }
+    .rep-wm img { display: block; width: 100%; height: auto; }
     .rep-wm-content { position: relative; z-index: 1; }
   </style>`;
-  const framed = `<div class="rep-wm"></div><div class="rep-wm-content">${body}</div>`;
+  const framed = `<div class="rep-wm">${arabicMark()}</div><div class="rep-wm-content">${body}</div>`;
 
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <title>${escapeHtml(result.headline)}</title><style>${CSS}</style>${watermarkStyle}</head>
