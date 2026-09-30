@@ -1,11 +1,11 @@
 ---
 name: crm-resigned-slot-reused-for-new-hire
-description: "SETTLED - NOT A FINDING, do not re-raise (owner, 2026-09-21: 'this is correct'). The CRM admin DELIBERATELY reuses a resigned rep's CRM account/slot for the replacement hired into the SAME area+line, so a resolved agent_hr_id pointing at a resigned employee may belong to someone else BY DESIGN. Verify only the HANDOVER by hiring dates - no working visit may cross the leaver's last working date - then report the reuse as normal, never a defect. Two live traps: the hard-floor CRM_RESIGNED_AGENT_CRM_IDS list OUTRANKS employment_status and can hide an ACTIVE rep from the no-activity deduction detector (audit it whenever a rep looks idle; removing an id needs the owner); and writing employees.crm_id does NOT stamp existing rows - a later deep sync does. The visit_type -5 / contact_crm_id 0 row is a COMPANY-WIDE public-holiday stamp, not a handover artefact."
+description: "SETTLED - NOT A FINDING, do not re-raise (owner, 2026-09-21: 'this is correct'). The CRM admin DELIBERATELY reuses a resigned rep's CRM account/slot for the replacement hired into the SAME area+line, so a resolved agent_hr_id pointing at a resigned employee may belong to someone else BY DESIGN. Verify only the HANDOVER by hiring dates - no working visit may cross the leaver's last working date - then report the reuse as normal, never a defect. Two live traps: the hard-floor CRM_RESIGNED_AGENT_CRM_IDS list OUTRANKS employment_status and can hide an ACTIVE rep from the no-activity deduction detector (audit it whenever a rep looks idle; removing an id needs the owner); and writing employees.crm_id does NOT stamp existing rows - a later deep sync does. The visit_type -5 / contact_crm_id 0 row is a COMPANY-WIDE public-holiday stamp, not a handover artefact. 🔴 A RENAME RE-STAMPS OLD VISITS WITH THE NEW OCCUPANT'S NAME, so agent_name / employees.crm_username is NOT identity - it answers who holds the seat NOW (168 March rows read as a rep whose first day is 2026-10-01). Resolve by DATE against the hire date; ireports360_visits has zero pre-hire rows, so a NULL agent_hr_id there is the sync refusing, not a gap. The leave importer was unguarded and gave PD-0009 an approved row 167 days pre-hire."
 metadata:
   node_type: memory
   type: feedback
   originSessionId: acf84ee7-aa00-4fe6-a7e9-f2d84d29236f
-  modified: 2026-09-25T22:55:45.845Z
+  modified: 2026-09-29T22:27:40.320Z
 ---
 
 **Reusing a resigned rep's CRM account for the replacement is CRM administration working as intended
@@ -26,7 +26,34 @@ time from `agent_crm_id`/`double_crm_id` against `employees.crm_id`. A stale res
 NEW hire's genuine visit to the OLD resigned employee — the visit row is real, only the identity is
 wrong. Cross-check the raw **`agent_name`** column (the CRM's own live display string, format
 `"First.Last ( Area / Line )"`) against the resolved employee: a mismatch means the slot was
-reassigned and the resolution is stale.
+reassigned — **but read the next section before deciding WHICH side is stale.**
+
+## 🔴 A rename RE-STAMPS OLD visits with the NEW occupant's name — so `agent_name` / `crm_username` is NOT identity
+
+Corrected 2026-09-30. The cross-check above assumes the NAME is current and the RESOLUTION is stale.
+It runs the other way too: when the vendor renames a seat for its incoming rep, a **re-sync of an old
+month re-fetches those visits and stamps them with the seat's CURRENT name**, so history starts wearing
+a person who had not joined yet. Measured on slot **1111** (the Qena Pedia seat): every month carries
+**160–235** rows for Hayam Mohamed Eladl `B-25` (resigned 2026-08-31) except **March, which carries 8**
+— and the missing **168** March rows sit under `Taha.Sheeba ( Qena 1 / P )`, `PD-0018`, whose **first
+day is 2026-10-01**. All 168 arrived in one sync burst at 19:50 Cairo on 2026-09-29, with their own
+`crm_visit_id`s and on 27 dates B-25's own record has nothing for. Same shape on slot **1395**: 154
+Jan–Apr rows labelled `Mohamed.Raafat`, who was hired 2026-08-01.
+
+**So never resolve an identity from `employees.crm_username` matching `agent_name`** — it answers "who
+holds this seat now", never "who did this work". The tell is always the DATE against the hire date, and
+`ireports360_visits` is clean on that (measured 2026-09-30: **0** rows anywhere dated before their
+mapped employee's hire date), so a NULL `agent_hr_id` on such rows is the sync refusing, not a gap to
+fill. Backfilling one would have put 322 visit rows into two reps' already-reported call-rate months.
+
+**The leave side was NOT guarded, and one bad row is in production:** `CRM_BACKFILL_2026-08-24` gave
+`PD-0009` (hired 2026-08-01) an approved leave row dated **2026-02-15** — 167 days pre-hire — from the
+seat's earlier holder. It is the only such row in `v2_vacation_requests` and it took no money (his one
+unpaid-vacation candidate is 2026-08-08; February clips to a month he had no payroll in). A pre-hire
+date breaks no constraint: the balance engine refuses to PAY such a day and nothing refused to CREATE
+it. Closed by `src/lib/vacation/backfill-guards.ts` + `tests/vacation-backfill-hire-guard.test.ts`
+(PR #4835) — Guard 0 on the importer refuses leave before the hire date, a future hire, and a missing
+hire date. **Removing the PD-0009 row is still the owner's call.**
 
 ## Two live traps
 
