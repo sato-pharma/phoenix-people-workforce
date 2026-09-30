@@ -23,6 +23,17 @@
 # so EVERY bare override over a direct dependency fails. Do not "fix" a red run by adding to it.
 overrides:
   "@babel/core": ^7.29.6
+  # GHSA-m9gg-hp2v-232j (HIGH, "in certain configurations getAuthContext can return unauthorized
+  # certificates as though they were authorized") and GHSA-f596-whhp-79r4 (LOW, the server transmits
+  # some method-handler error messages to the client in status messages). Both affect >= 1.14.0 and
+  # are fixed in 1.14.5; the graph resolved 1.14.4 transitively via
+  # @google-cloud/logging -> google-gax. Phoenix uses grpc-js only as a CLIENT (it reads Cloud
+  # Logging for the System Issues dashboard, src/lib/observability/gcp-logs.ts) and both advisories
+  # are gRPC server-side, so real exposure is low — but `validate`'s first step is
+  # `pnpm audit --audit-level=high --prod` (scripts/ci-dependency-audit.mjs), which fails on a HIGH
+  # in any production dependency regardless of reachability, and a red check suite on a `main`
+  # commit makes Railway mark the production deploy SKIPPED.
+  "@grpc/grpc-js": ^1.14.5
   "@opentelemetry/core": ^2.8.0
   "@opentelemetry/resources": ^2.8.0
   "@opentelemetry/sdk-trace-base": ^2.8.0
@@ -335,3 +346,39 @@ auditConfig:
 # pnpm-lock.yaml is unaffected.
 publicHoistPattern:
   - "@napi-rs/*"
+
+# pnpm 11 QUARANTINES a freshly-published version: an install refuses to adopt a package younger
+# than the minimum release age, which is the defence against a compromised publish being pulled into
+# the graph within minutes of going up. `next` 16.3.8 was published 2026-09-30T16:13:46Z and adopted
+# here the same evening at about two hours old, so pnpm wrote these ten entries itself — the `next`
+# package, `@next/env`, and the nine per-platform `@next/swc-*` binaries — recording that the
+# quarantine was waived for exactly these versions and nothing else. They are NOT optional: CI and
+# the production Dockerfile both install from the lockfile, and without this block that install has
+# to re-decide the quarantine.
+#
+# WHY IT IS WAIVED HERE. 16.3.8 is a security release — a HIGH server-side request forgery in Image
+# Optimization, plus six further advisories including cache poisoning of SSG/ISR pages that names
+# self-hosted deployments specifically, which is what this app is. Sitting out the quarantine keeps a
+# known HIGH in a production dependency, and `validate`'s FIRST step is
+# `pnpm audit --audit-level=high --prod` (scripts/ci-dependency-audit.mjs): the moment the advisory
+# feed ingests it, every pull request AND `main` goes red, and a red check suite on a `main` commit
+# makes Railway mark that production deploy SKIPPED (AGENTS.md §2.3). That is not hypothetical — it
+# is exactly what 16.3.3's next/og RCE did earlier the same day (#4956). The risk of adopting a
+# Vercel security patch early is smaller than the risk of holding a HIGH and freezing deploys.
+#
+# 🔴 THESE ENTRIES ARE VERSION-EXACT AND MUST NOT BE GENERALISED TO A BARE PACKAGE NAME. They stop
+# applying the instant any of these ten resolves to something else, and that expiry is the whole
+# reason the waiver is safe. pnpm appends to this block on any install that adopts a young version,
+# so entries appearing here that you did not intend are a young package entering the graph — read
+# them before committing rather than treating the block as generated noise.
+minimumReleaseAgeExclude:
+  - '@next/env@16.3.8'
+  - '@next/swc-darwin-arm64@16.3.8'
+  - '@next/swc-darwin-x64@16.3.8'
+  - '@next/swc-linux-arm64-gnu@16.3.8'
+  - '@next/swc-linux-arm64-musl@16.3.8'
+  - '@next/swc-linux-x64-gnu@16.3.8'
+  - '@next/swc-linux-x64-musl@16.3.8'
+  - '@next/swc-win32-arm64-msvc@16.3.8'
+  - '@next/swc-win32-x64-msvc@16.3.8'
+  - next@16.3.8
