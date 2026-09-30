@@ -1400,13 +1400,21 @@ export function MobileOutstationWizard({
 
       {showIntro ? (
         <section className="overflow-hidden rounded-lg border border-slate-200 bg-white p-5 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-6">
-          <p className="text-phx-2xs font-semibold uppercase tracking-wider text-orange-600">
-            Outstation Expense
-          </p>
-          <h1 className="mt-2 text-2xl font-bold text-slate-900 sm:text-3xl">
-            Smart expense entry
-          </h1>
-          <p className="mt-2 max-w-3xl text-sm leading-relaxed text-slate-500">
+          {/* 🔴 A SECOND PAGE TITLE USED TO STAND HERE — `Outstation Expense` over
+              `<h1>Smart expense entry</h1>` — AND IT MUST NOT COME BACK.
+              This intro renders in the PORTAL ONLY: `admin-shell-employee-pages.tsx` passes
+              `showIntro={false}` and gets its heading from `AdminPageHero` instead. So the portal is
+              the only place that heading ever appeared, and there `EmployeePortalPageShell` already
+              paints the navy command header with the `Expenses` badge and the title `Submit Expense`.
+              Two titles, worded DIFFERENTLY, which is why it read as a second page rather than as a
+              repeat and went unnoticed (owner, 2026-09-30, after the same defect on five other
+              surfaces: "fix the duplicated header on submit expense too").
+
+              The rest of the block STAYS. The sentence below and the four stats are not in the shell
+              header and are the only place a rep is told that From is locked to his residence and
+              whether his residence GPS is ready — suppressing the whole intro with `showIntro` would
+              have been the quick fix and would have taken real information with it. */}
+          <p className="max-w-3xl text-sm leading-relaxed text-slate-500">
             From is locked to your registered residence. Tap To so Phoenix Workforce captures
             your live destination, validates distance, detects fraud signals, and calculates
             the request automatically on the server.
