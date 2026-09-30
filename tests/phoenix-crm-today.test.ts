@@ -348,15 +348,18 @@ export function runPhoenixCrmTodayTests(): void {
     //    forward from the "+", then Back, which the router answers out of its own cache. Measured
     //    that day on the preview box: the row stayed white, the "+" stayed, and the header still
     //    read "AM 0 of 1" over a visit that was already in the database.
-    const saveRoute = source("app/api/phoenix-crm/visits/route.ts");
+    const form = source("src/components/phoenix-crm/visit-log-form.tsx");
+    assert.ok(form.includes("router.refresh();"), "a saved visit must empty the router cache, or Back shows him the day as it stood before he logged it");
     assert.ok(
-      saveRoute.includes('revalidatePath("/employee-portals");'),
-      "saving a visit must invalidate the rep's landing page, or Back shows him the day as it was before he logged it",
-    );
-    // The CALL, not the import on line 1 — which is what `indexOf("revalidatePath")` finds.
-    assert.ok(
-      saveRoute.indexOf('revalidatePath("/employee-portals")') > saveRoute.indexOf("await saveVisit("),
+      form.indexOf("router.refresh();") > form.indexOf('crmPost<SavedVisit>("/api/phoenix-crm/visits"'),
       "and only once the visit is actually saved",
+    );
+    // 🔴 The server-side cure was TRIED AND MEASURED NOT TO WORK: the landing page is force-dynamic,
+    //    so there is no server cache to invalidate. Re-adding it would look like the fix and be one
+    //    more thing to unpick the next time this row goes stale.
+    assert.ok(
+      !source("app/api/phoenix-crm/visits/route.ts").includes("revalidatePath("),
+      "the save route must not call revalidatePath — it does nothing for a force-dynamic page, and it is not what turns the row green",
     );
 
     // 🔴 EARLY BIRDS IS RETIRED FROM THE MEDICAL REP'S PAGE ONLY — his own scope, the same day:

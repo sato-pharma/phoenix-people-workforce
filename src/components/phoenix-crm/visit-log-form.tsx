@@ -29,6 +29,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { ArrowDown, Check, ChevronRight, CircleAlert, CircleCheck, History } from "lucide-react";
 
 import { crmPost, errorCodeOf, messageOf, newClientId } from "@/components/phoenix-crm/api";
@@ -275,6 +276,9 @@ export function VisitLogForm({
   test: boolean;
 }) {
   const readFix = useSilentFix();
+  // 🔴 ONLY to clear the router's cache when a visit saves — see the note at the save. Nothing on
+  // this form navigates; the rep leaves it with Back, which is exactly the navigation that broke.
+  const router = useRouter();
   const [visitType, setVisitType] = useState<LogVisitType>(initialVisitType);
   const [unplannedReason, setUnplannedReason] = useState(initialReason ?? "");
   // The reason box is open when there is no reason yet — including when the server says a visit he
@@ -518,6 +522,18 @@ export function VisitLogForm({
     }
     try {
       const saved = await crmPost<SavedVisit>("/api/phoenix-crm/visits", { ...next.payload, ...silentFixPayload(fix, savedAt) }, "visit");
+      // 🔴 HIS DAY ON THE LANDING PAGE GOES GREEN WHEN HE PRESSES BACK (owner, 2026-09-30: "if it is
+      // submitted from those visits in the overview landing page, it is automatically marked as
+      // done"). The server side was never wrong — `done` is read from the day's saved visits, and a
+      // fresh request always showed the tick. What was wrong is the one navigation a rep actually
+      // makes: he comes here from the panel's "+" and presses Back, and Next restores a back/forward
+      // navigation from the CLIENT router cache, which still held the page as it stood before he
+      // logged the visit — the row white, the "+" there, the header "AM 0 of 1".
+      //
+      // 🔴 `revalidatePath` ON THE SAVE ROUTE DOES NOT FIX THIS AND WAS REMOVED — measured on the
+      // preview box that day. The landing page is `force-dynamic`, so there is no server cache to
+      // invalidate; the stale copy is in the browser. `router.refresh()` is what empties it.
+      router.refresh();
       onSaved(saved, next.customerName);
     } catch (error) {
       const code = errorCodeOf(error);

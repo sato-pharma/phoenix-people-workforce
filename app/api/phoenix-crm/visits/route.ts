@@ -1,4 +1,3 @@
-import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
@@ -36,13 +35,10 @@ export async function POST(request: Request) {
     const viewer = await resolvePhoenixCrmViewer(access);
     const body = (await request.json()) as unknown;
     const visit = await saveVisit(viewer, body);
-    // 🔴 HIS DAY ON THE LANDING PAGE GOES GREEN THE MOMENT THIS SAVES (owner, 2026-09-30: "if it is
-    // submitted from those visits in the overview landing page, it is automatically marked as
-    // done"). It already did on a fresh request — but a rep reaches the form from the panel's "+"
-    // and comes straight BACK, and the router's own cache served him the page as it stood before he
-    // logged the visit: the row still white, the "+" still there, AM still "0 of 1". Measured on the
-    // preview box that day. Invalidating the path here is what makes Back show the tick.
-    revalidatePath("/employee-portals");
+    // 🔴 DO NOT ADD `revalidatePath("/employee-portals")` HERE. It was added on 2026-09-30 to make
+    // the rep's day go green when he presses Back from this form, and MEASURED not to: that page is
+    // `force-dynamic`, so there is no server cache to invalidate — the stale copy is the browser's
+    // own router cache, and only `router.refresh()` in visit-log-form.tsx empties it.
     return NextResponse.json({ visit, success: true });
   } catch (error) {
     return phoenixCrmFailure(error, "Could not save the visit.");
