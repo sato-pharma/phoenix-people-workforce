@@ -42,7 +42,42 @@ export type DomRewriterProbe = {
   htmlClassName: string;
   /** A translator that rewrote the page usually rewrites this too. */
   htmlLang: string;
+  /**
+   * Every attribute name on `<html>`, and on `<body>`. The app emits exactly `lang`, `class` and
+   * `style` on the first and `class` and `style` on the second (`app/layout.tsx` sets lang and both
+   * classNames; the display-scale script writes `documentElement.style`, and several portal
+   * components write `body.style.overflow` for a modal). So ANY other attribute on those two
+   * elements was put there by something that is not this app.
+   *
+   * This is the marker that names the mutator for error #412, where the translator probe above comes
+   * back clean and `readyState=complete` says the DOM was changed from outside React. Extensions
+   * stamp these constantly — Dark Reader writes `data-darkreader-*`, Grammarly
+   * `data-gr-ext-installed` and `data-new-gr-c-s-check-loaded`, ColorZilla `cz-shortcut-listen` —
+   * and Grammarly's in particular is one of the best-known causes of a React hydration mismatch.
+   */
+  htmlAttributeNames: readonly string[];
+  bodyAttributeNames: readonly string[];
 };
+
+/**
+ * What THIS app puts on `<html>` and `<body>`. Anything else is foreign.
+ *
+ * `style` is allow-listed on both deliberately and must stay: `app/layout.tsx`'s display-scale
+ * script sets a custom property on `documentElement.style`, and the portal's modals set
+ * `body.style.overflow`. Without it every error row from a page with an open modal would accuse an
+ * extension that was never there — and a probe that cries wolf is one the next session stops
+ * believing, which is the whole failure mode this file was written to avoid.
+ */
+const APP_HTML_ATTRIBUTES = new Set(["lang", "class", "style"]);
+const APP_BODY_ATTRIBUTES = new Set(["class", "style"]);
+
+/** Attribute-name prefixes and exact names whose owner is known, so the marker can NAME it. */
+const KNOWN_MUTATORS: ReadonlyArray<{ marker: string; test: (attr: string) => boolean }> = [
+  { marker: "dark-reader", test: (a) => a.startsWith("data-darkreader") },
+  { marker: "grammarly", test: (a) => a.startsWith("data-gr-") || a.startsWith("data-new-gr-") },
+  { marker: "colorzilla", test: (a) => a === "cz-shortcut-listen" },
+  { marker: "lastpass", test: (a) => a.startsWith("data-lastpass") },
+];
 
 /**
  * Markers for whatever rewrote the DOM, or an empty array when the page looks untouched.
@@ -60,5 +95,34 @@ export function describeDomRewriters(probe: DomRewriterProbe): string[] {
   const lang = probe.htmlLang.trim();
   if (lang && lang.toLowerCase() !== SERVER_RENDERED_LANG) markers.push(`lang=${lang}`);
 
+  // Whatever else is sitting on <html>/<body> that this app did not put there. A named mutator is
+  // reported by name; the rest are listed verbatim, because the NEXT unknown extension is the one
+  // worth reading and a bare count would say nothing about it.
+  const foreign = [
+    ...foreignAttributes(probe.htmlAttributeNames, APP_HTML_ATTRIBUTES),
+    ...foreignAttributes(probe.bodyAttributeNames, APP_BODY_ATTRIBUTES),
+  ];
+  if (foreign.length > 0) {
+    const named = new Set<string>();
+    const unnamed: string[] = [];
+    for (const attr of foreign) {
+      const hit = KNOWN_MUTATORS.find((m) => m.test(attr));
+      if (hit) named.add(hit.marker);
+      else unnamed.push(attr);
+    }
+    for (const marker of [...named].sort()) markers.push(marker);
+    // Sorted and de-duplicated so the same page always produces the same marker string — a row that
+    // reads differently on every load cannot be grouped in a census.
+    if (unnamed.length > 0) markers.push(`foreignAttrs=${[...new Set(unnamed)].sort().join("|")}`);
+  }
+
   return markers;
+}
+
+/** The attribute names on one element that the app itself never emits. Case-insensitive: HTML
+ * lower-cases attribute names, but a probe fed from a test fixture need not. */
+function foreignAttributes(names: readonly string[], allowed: ReadonlySet<string>): string[] {
+  return names
+    .map((name) => name.trim().toLowerCase())
+    .filter((name) => name.length > 0 && !allowed.has(name));
 }

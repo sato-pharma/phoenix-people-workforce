@@ -61,6 +61,22 @@ function ensureLifecycleListeners(): void {
  * monkey-patching, which is not worth the blast radius for this; `pagehide` covers only
  * real unloads and bfcache freezes.
  */
+/**
+ * The attribute names on one element, or `[]` when it is absent — `document.body` is null while the
+ * `<head>` is still streaming, and an error thrown then must still report.
+ *
+ * `getAttributeNames` is the only call here that touches an extension's own additions, and it is
+ * cheap: these two elements carry a handful of attributes, never a tree.
+ */
+function attributeNamesOf(element: Element | null): string[] {
+  if (!element || typeof element.getAttributeNames !== "function") return [];
+  try {
+    return element.getAttributeNames();
+  } catch {
+    return [];
+  }
+}
+
 function collectClientContext(): string | null {
   if (typeof window === "undefined" || typeof document === "undefined") return null;
   try {
@@ -88,8 +104,10 @@ function collectClientContext(): string | null {
     // exactly that reason, so this probe is now the only thing that answers the question. Absent
     // on a clean page, so it adds nothing to an ordinary row.
     const domRewriters = describeDomRewriters({
+      bodyAttributeNames: attributeNamesOf(document.body),
       fontElementCount: document.getElementsByTagName("font").length,
       hasMicrosoftTranslateAttribute: document.querySelector("[_msttexthash]") !== null,
+      htmlAttributeNames: attributeNamesOf(document.documentElement),
       htmlClassName: typeof document.documentElement.className === "string" ? document.documentElement.className : "",
       htmlLang: document.documentElement.lang || "",
     });
