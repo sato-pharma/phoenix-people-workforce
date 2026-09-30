@@ -189,6 +189,7 @@ import { runProbationReportTests } from "./probation-report.test.ts";
 import { runProbationDashboardTests } from "./probation-dashboard.test.ts";
 import { runProbationEmailsTests } from "./probation-emails.test.ts";
 import { runProbationMilestoneEmailsTests } from "./probation-milestone-emails.test.ts";
+import { runProbationReminderOutboxGuardTests } from "./probation-reminder-outbox-guard.test.ts";
 import { runVacationInformedHrTests } from "./vacation-informed-hr.test.ts";
 import { runProbationCairoTodayConsistencyTests } from "./probation-cairo-today-consistency.test.ts";
 import { runProbationNotificationControlsTests } from "./probation-notification-controls.test.ts";
@@ -2550,6 +2551,10 @@ await runTest("probation consolidated report (P7 milestones + progress + composi
 await runTest("probation CEO dashboard (P8 risk classification + exception flags + rollup)", runProbationDashboardTests);
 await runTest("probation emails (P9 template registration + confirmed recipients + dedup)", runProbationEmailsTests);
 await runTest("probation milestone emails (owner 2026-09-29: Day 30/60/75 to Yasmeena Elsafory alone, CC Omar Gawish, on its own notification type)", runProbationMilestoneEmailsTests);
+await runTest(
+  "probation reminder outbox guard — a missing COLUMN on notification_events throws instead of silently creating no reminder; only the table being absent is tolerated",
+  runProbationReminderOutboxGuardTests,
+);
 await runTest("vacation informed HR + on-a-vacation-today panel (owner 2026-09-29: HR-009 informed of every annual vacation without becoming an approver; her landing page names today's absences)", runVacationInformedHrTests);
 await runTest("probation Cairo-today consistency (dashboard/report/emails share one Cairo-aware clock, not silent UTC default)", runProbationCairoTodayConsistencyTests);
 await runTest("probation notification controls (MOD-3 daily cap + MOD-4 pre-send audit)", runProbationNotificationControlsTests);
