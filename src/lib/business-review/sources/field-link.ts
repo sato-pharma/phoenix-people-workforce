@@ -730,7 +730,9 @@ async function loadAwareness(
       // In the period, or still ahead of it: a review names what is already planned for the area.
       .gte("start_date", bounds.from);
     if (error) throw error;
-    rows.push(...((data ?? []) as Row[]));
+    // The column list is two joined literals, which the client's select parser cannot read — so the
+    // rows are named here, once, against the columns the select above asks for.
+    rows.push(...((data ?? []) as unknown as Row[]));
   }
   // A draft, a withdrawal or a refusal is nobody's activity.
   const live = rows.filter((row) => AWARENESS_COMMITTED.has(text(row.status)) || AWARENESS_PENDING.has(text(row.status)));
