@@ -2037,6 +2037,7 @@ import { runOutstationPaidStampAndImportedHistoryTests } from "./outstation-paid
 import { runOutstationExpenseDownloadReuploadKeepsHrDecisionTests } from "./outstation-expense-download-reupload-keeps-hr-decision.test.ts";
 import { runBusinessCardsTests } from "./business-cards.test.ts";
 import { runBusinessCardRequestsTests } from "./business-card-requests.test.ts";
+import { runBusinessCardPdfTests } from "./business-card-pdf.test.ts";
 import { runVacationBackfillHireGuardTests } from "./vacation-backfill-hire-guard.test.ts";
 import { runDevServerExitReasonTests } from "./dev-server-exit-reason.test.ts";
 import { runDevServerHeapCapTests } from "./dev-server-heap-cap.test.ts";
@@ -3687,6 +3688,7 @@ await runTest(
 );
 await runTest("support requests notifications", runSupportRequestsNotificationsTests);
 await runTest("business card requests: employee self-service card, edit name/number only (email never), request lands on the HR queue and notifies B-10 + HR-009 by in-app/email/telegram", runBusinessCardRequestsTests);
+await runTest("business card PDF: the employee sees the real front+back Sato card and downloads a high-quality printable PDF of their OWN card, scoped to the caller (no hrId), name/mobile only", runBusinessCardPdfTests);
 await runTest("organogram empty diagnostic", runOrganogramEmptyDiagnosticTests);
 await runTest("position vacancy status integrity", runPositionVacancyStatusIntegrityTests);
 await runTest("reconcile stale-replacement vacancy area + single-seat guard", runReconcileStaleVacancyAreaGuardTests);
