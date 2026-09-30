@@ -28,8 +28,28 @@ export type ShareCardKind = "milestone" | "spotlight";
 export type ShareCardPayload =
   // `np` (no photo) carries a rep's deliberate monogram choice onto the PUBLIC link — a photo-less
   // card he built must not reappear with his photo once it is shareable. Optional, defaults false.
-  | { v: 1; k: "milestone"; hr: string; spec: string; on: string; np?: boolean; exp: number }
+  // `f` is his framing of the RECORD photo — [x, y, zoom] — so LinkedIn and Facebook show the crop he
+  // dragged, not the centre default. Only ever carried for the record photo (a custom UPLOAD cannot
+  // fit in a URL, so an uploaded card falls back to the default crop). Optional.
+  | { v: 1; k: "milestone"; hr: string; spec: string; on: string; np?: boolean; f?: [number, number, number]; exp: number }
   | { v: 1; k: "spotlight"; hr: string; from: string; to: string; exp: number };
+
+/** A drag framing → the compact `[x, y, zoom]` the token carries (each rounded, clamped to its range). */
+function packFocus(focus: { x: number; y: number; zoom: number } | null | undefined): [number, number, number] | null {
+  if (!focus) return null;
+  const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
+  const round = (n: number) => Math.round(n * 1000) / 1000;
+  if (![focus.x, focus.y, focus.zoom].every((n) => typeof n === "number" && Number.isFinite(n))) return null;
+  return [round(clamp01(focus.x)), round(clamp01(focus.y)), round(Math.min(4, Math.max(1, focus.zoom)))];
+}
+
+/** Read a token's packed framing back into a focus, or null when absent/malformed (the default crop). */
+export function unpackShareFocus(payload: ShareCardPayload): { x: number; y: number; zoom: number } | null {
+  if (payload.k !== "milestone" || !payload.f) return null;
+  const [x, y, zoom] = payload.f;
+  if (![x, y, zoom].every((n) => typeof n === "number" && Number.isFinite(n))) return null;
+  return { x, y, zoom };
+}
 
 /** Thirty days. A LinkedIn/Facebook scrape happens once, at share time; this bounds a later click-through. */
 export const SHARE_CARD_TTL_SECONDS = 30 * 24 * 60 * 60;
@@ -52,16 +72,35 @@ function encode(payload: ShareCardPayload): string {
 /** Mint a token for the caller's OWN card. The hr id is canonicalised so verify can compare it plainly. */
 export function issueShareCardToken(
   input:
-    | { kind: "milestone"; hrId: string; spec: string; on: string; withoutPhoto?: boolean; nowSeconds?: number }
+    | {
+        kind: "milestone";
+        hrId: string;
+        spec: string;
+        on: string;
+        withoutPhoto?: boolean;
+        focus?: { x: number; y: number; zoom: number } | null;
+        nowSeconds?: number;
+      }
     | { kind: "spotlight"; hrId: string; from: string; to: string; nowSeconds?: number },
 ): string {
   const now = input.nowSeconds ?? Math.floor(Date.now() / 1000);
   const hr = canonicalHrIdKey(input.hrId) ?? "";
   if (!hr) throw new Error("A share-card link needs an HR id.");
   const exp = now + SHARE_CARD_TTL_SECONDS;
+  // The framing is only meaningful for the record photo — never carry it with a monogram (no photo).
+  const packedFocus = input.kind === "milestone" && !input.withoutPhoto ? packFocus(input.focus) : null;
   const payload: ShareCardPayload =
     input.kind === "milestone"
-      ? { v: 1, k: "milestone", hr, spec: input.spec, on: input.on, ...(input.withoutPhoto ? { np: true } : {}), exp }
+      ? {
+          v: 1,
+          k: "milestone",
+          hr,
+          spec: input.spec,
+          on: input.on,
+          ...(input.withoutPhoto ? { np: true } : {}),
+          ...(packedFocus ? { f: packedFocus } : {}),
+          exp,
+        }
       : { v: 1, k: "spotlight", hr, from: input.from, to: input.to, exp };
   const encoded = encode(payload);
   return `${encoded}.${sign(encoded)}`;

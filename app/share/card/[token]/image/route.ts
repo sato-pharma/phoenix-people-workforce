@@ -4,7 +4,7 @@ import { renderMilestoneCardImage } from "@/lib/milestones/render";
 import { buildMilestoneCardInput } from "@/lib/milestones/service";
 import { ChromiumUnavailableError } from "@/lib/pdf/chromium";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
-import { readShareCardToken } from "@/lib/share/share-card-token";
+import { readShareCardToken, unpackShareFocus } from "@/lib/share/share-card-token";
 import { renderRepSpotlightPng } from "@/lib/spotlight/pdf";
 import { loadRepSpotlight, parseRepSpotlightRange } from "@/lib/spotlight/rep-self";
 
@@ -46,7 +46,8 @@ export async function GET(request: Request, context: { params: Promise<{ token: 
         on: parsePlainDate(payload.on),
         // Honour a deliberate monogram choice carried in the token — never re-add the photo.
         withoutPhoto: payload.np === true,
-        photoFocus: null,
+        // The framing the rep dragged, so the shared card matches what he saw (record photo only).
+        photoFocus: unpackShareFocus(payload),
         photoUpload: null,
       });
       png = new Uint8Array((await renderMilestoneCardImage(built.input, "trim")).png).buffer;
