@@ -114,9 +114,22 @@ export async function GET(request: Request) {
             : ds.areas;
     }
 
+    // A rep's pack must read as HIS — his name and his territory, not "Medical Rep · own territory"
+    // (owner, 2026-09-30). His display name is not on the session (AccessContext carries no name), so
+    // it is taken from the review's own people rows and set onto the scope the label is built from.
+    const labelScope =
+      scope.kind === "rep"
+        ? {
+            ...scope,
+            viewerName:
+              dsByLine.get(scope.line)?.people.find((p) => p.hrId.toUpperCase() === scope.hrId)?.name ??
+              scope.viewerName,
+          }
+        : scope;
+
     // NOW the request is read, and only to REMOVE. Owner, 2026-09-26: "I want everyone to be able to
     // export as he is filtered or as his scope."
-    const filter = resolveReviewFilter(scope, territoriesInScope(scope, areasByLine), {
+    const filter = resolveReviewFilter(labelScope, territoriesInScope(scope, areasByLine), {
       // region and area are read with getAll — the owner exports several regions or areas at once
       // (2026-09-27). resolveReviewFilter still only ever narrows, so a list cannot widen a scope.
       area: params.getAll("area"),
