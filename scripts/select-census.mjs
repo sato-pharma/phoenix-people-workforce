@@ -335,7 +335,19 @@ function chainAfter(source, start) {
   return { text: source.slice(start, start + CHAIN_MAX), truncated: true };
 }
 
-export function censusOfFile(file, source, { table, schema = 'public', root }) {
+export function censusOfFile(file, rawSource, { table, schema = 'public', root }) {
+  // 🔴 BLANK THE COMMENTS HERE, NOT ONLY IN runCensus — this function is EXPORTED, and a caller
+  // driving it directly (an audit sweeping many tables in ONE pass over the tree, so each file is
+  // read once) has no way to know that the contract requires pre-blanked source. Without it an
+  // apostrophe inside a `//` line — "somebody's own design" — opens a phantom string literal,
+  // chainAfter runs past the end of the statement, and the NEXT query's filters land on THIS table.
+  // Measured 2026-09-30 on the recruitment audit: a clean `offer_templates` insert claimed
+  // `reference`, `title` and `created_at` (two false 42703s to chase), and `ats_candidates` came
+  // back FOUR REAL COLUMNS SHORT — the dangerous direction, because a column the census never names
+  // is a column the probe never checks, so the audit reads clean while the hole is still there.
+  // blankComments is idempotent (blanked source holds no `//` or `/*`), so runCensus handing in an
+  // already-blanked source costs one no-op pass and nothing else.
+  const source = blankComments(rawSource);
   const sites = [];
   const fromRe = new RegExp(`\\.from\\(\\s*(["'\`])${table.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\1\\s*\\)`, 'g');
   for (const m of source.matchAll(fromRe)) {

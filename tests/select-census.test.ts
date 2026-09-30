@@ -11,7 +11,7 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, wr
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-import { parseSelect, runCensus, sitesNaming } from "../scripts/select-census.mjs";
+import { blankComments, censusOfFile, parseSelect, runCensus, sitesNaming } from "../scripts/select-census.mjs";
 
 function write(root: string, rel: string, body: string) {
   const p = join(root, rel);
@@ -179,4 +179,44 @@ export function runSelectCensusTests() {
   // visible the day writes stopped being silently reported as clean.
   const unresolved = sitesOf(real).filter((s) => !s.resolved);
   assert.ok(unresolved.length <= 6, `too many unresolved employees selects (${unresolved.length}) — the resolver has regressed`);
+
+  // 4. censusOfFile BLANKS COMMENTS ITSELF — it is exported, and a caller driving it directly gets
+  // the same answer runCensus does. Found 2026-09-30 by the recruitment audit, which read each file
+  // ONCE and asked every table about it (4,441 files × 50 tables is 222k reads otherwise), so it
+  // called censusOfFile rather than runCensus and inherited raw source. One apostrophe inside a `//`
+  // line opens a phantom string literal, the chain capture runs past the end of the statement, and
+  // the NEXT query's filters land on this table — wrong in BOTH directions at once, which is what
+  // this fixture reproduces: without the blanking the insert's own two columns VANISH and two
+  // columns of a different table appear. The vanishing half is the dangerous one, because a column
+  // the census never names is a column the probe never checks, so the audit reads clean.
+  const commented = [
+    'export async function createTemplate(db, input, ref) {',
+    "  const { data } = await db",
+    '    .from("offer_templates")',
+    "    .insert({",
+    "      name: input.name,",
+    "      // Never on create. A new template is somebody's own design, not a built-in.",
+    "      is_default: false,",
+    "    })",
+    '    .select("*")',
+    "    .single();",
+    '  const other = await db.from("offers").select("id").eq("reference", ref).order("created_at");',
+    "  return [data, other];",
+    "}",
+  ].join("\n");
+  const fromRaw = (censusOfFile("x/y.ts", commented, { table: "offer_templates", root: "x" }) as CensusSite[])[0];
+  assert.deepEqual(
+    fromRaw.writeKeys,
+    ["name", "is_default"],
+    "censusOfFile lost the insert's own columns to an apostrophe in a comment — it must blank comments itself",
+  );
+  assert.deepEqual(
+    fromRaw.filters,
+    [],
+    `censusOfFile attributed another table's filters to this one (${fromRaw.filters.join(", ")}) — the chain ran past the statement`,
+  );
+  // And blanking twice changes nothing, so runCensus handing in pre-blanked source stays correct.
+  const fromBlanked = (censusOfFile("x/y.ts", blankComments(commented), { table: "offer_templates", root: "x" }) as CensusSite[])[0];
+  assert.deepEqual(fromBlanked.writeKeys, fromRaw.writeKeys, "blankComments must be idempotent");
+  assert.deepEqual(fromBlanked.filters, fromRaw.filters, "blankComments must be idempotent");
 }
