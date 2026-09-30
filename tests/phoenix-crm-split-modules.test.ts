@@ -9,6 +9,7 @@ import {
   PHOENIX_CRM_MODULE_KEYS,
   PHOENIX_CRM_MODULES,
   PHOENIX_CRM_PORTAL_BASE,
+  phoenixCrmModuleForSlug,
   phoenixCrmModulePath,
   type PhoenixCrmModuleKey,
 } from "../src/lib/phoenix-crm/modules.ts";
@@ -67,6 +68,32 @@ export function runPhoenixCrmSplitModulesTests(): void {
     assert.equal(phoenixCrmModulePath(PHOENIX_CRM_PORTAL_BASE, "list"), "/employee-portals/field-crm/list");
   }
 
+  // \u2500\u2500 1b. THE ADDRESS BAR IS UI, SO THE RETIRED WORDS MAY NOT REACH IT \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+  //
+  // \ud83d\udd34 Owner, 2026-09-23: "in employee-portals/field-crm make it ALL AM PM, not doctors and accounts."
+  // The Directory tab's KEY is the retired word, and routing on the key put it in the address AND in
+  // the browser tab, which read "Doctors \u00b7 Phoenix Workforce" \u2014 measured on the preview, because the
+  // app's shared title resolver names a page from its own segments. The slug is what fixes both.
+  {
+    for (const entry of PHOENIX_CRM_MODULES) {
+      assert.doesNotMatch(entry.slug, /\b(doctor|doctors|account|accounts)\b/i, `the ${entry.label} slug says no retired word`);
+      assert.match(entry.slug, /^[a-z][a-z-]{0,20}$/, `the ${entry.label} slug is a plain address segment`);
+      assert.equal(phoenixCrmModuleForSlug(entry.slug)?.key, entry.key, `${entry.slug} resolves back to its own module`);
+    }
+    assert.equal(new Set(PHOENIX_CRM_MODULES.map((entry) => entry.slug)).size, PHOENIX_CRM_MODULES.length, "no two modules share a slug");
+    assert.equal(phoenixCrmModulePath(PHOENIX_CRM_PORTAL_BASE, "doctors"), "/employee-portals/field-crm/directory", "Directory is reached by its own word");
+    assert.equal(phoenixCrmModuleForSlug("doctors"), null, "and the retired word is not an address at all");
+    assert.equal(phoenixCrmModuleForSlug("nonsense"), null);
+
+    // \ud83d\udd34 And no local generateMetadata: the app has ONE title resolver, used by the layout's
+    // metadata AND the client DocumentTitleSync, so a tab's name does not change as a page settles.
+    // A local one fought it and lost on client navigation \u2014 "Phoenix CRM \u00b7 List" on first paint, then
+    // "Doctors \u00b7 Phoenix Workforce" a moment later.
+    const route = source("app/employee-portals/field-crm/[module]/page.tsx");
+    assert.ok(!route.includes("generateMetadata"), "the route does not name its own tab");
+    assert.match(route, /const entry = phoenixCrmModuleForSlug\(slug\);/, "it resolves the module from the slug");
+  }
+
   // ── 2. Only the modules the viewer may open ─────────────────────────────────────────────────────
   {
     assert.deepEqual(allowedPhoenixCrmModules(ALL).map((entry) => entry.key), PHOENIX_CRM_MODULE_KEYS);
@@ -109,30 +136,47 @@ export function runPhoenixCrmSplitModulesTests(): void {
     const path = "app/employee-portals/field-crm/[module]/page.tsx";
     assert.ok(existsSync(path), "every module has its own route");
     const route = source(path);
-    assert.match(route, /if \(!isPhoenixCrmModuleKey\(module\)\) notFound\(\);/, "an unknown segment is a 404");
-    assert.match(route, /<PhoenixCrmApp initialOverview=\{load\.overview\} initialTab=\{module\} surface="portal" \/>/, "and it opens on that module");
+    assert.match(route, /if \(!entry\) notFound\(\);/, "an unknown segment is a 404");
+    assert.match(route, /initialTab=\{moduleKey\}/, "and it opens on that module");
     // 🔴 A module he may not open is a SENTENCE, not a dead page: a rep following a shared link must
     // read why, and `notFound()` there would tell him the module does not exist.
-    assert.match(route, /if \(!load\.overview\.tabs\[module\]\) \{/, "a module not his reads as a sentence");
+    assert.match(route, /if \(!load\.overview\.tabs\[moduleKey\]\) \{/, "a module not his reads as a sentence");
     assert.match(route, /is not yours to open/, "in words, never a 404");
   }
 
-  // ── 4b. One title shape for every module ────────────────────────────────────────────────────────
+  // ── 4c. SEPARATE THEM TOTALLY ───────────────────────────────────────────────────────────────────
   //
-  // Without it the shell's shared DocumentTitleSync guesses from the address and the titles disagree
-  // across the split — measured on the preview: "Phoenix CRM List" on one page, plain "Visits" on the
-  // next. Eight pages that happened to land together, rather than one module.
+  // 🔴 Owner, 2026-09-30, after seeing the first split: "I don't want, when I press on any one of the
+  // ones you split, that they redirect me to the same screen that has all of them beside each other.
+  // SEPARATE THEM TOTALLY, make them separate pages." The first split gave each module its own
+  // address but every page still drew the tab bar and still mounted the other seven beside it.
   {
     const route = source("app/employee-portals/field-crm/[module]/page.tsx");
-    assert.match(route, /export async function generateMetadata/, "every module page names itself");
-    assert.match(route, /title: label \? `Phoenix CRM · \$\{label\}` : "Phoenix CRM"/, "in one shape, with the module's own label");
+    assert.match(route, /<PhoenixCrmApp initialOverview=\{load\.overview\} initialTab=\{moduleKey\} single surface="portal" \/>/, "the module page is single");
+    assert.match(route, /All of Phoenix CRM/, "and carries the way back, because it has no bar of the others");
+
+    const shell = source("src/components/phoenix-crm/phoenix-crm-app.tsx");
+    const bar = shell.slice(shell.indexOf("function tabBar()"), shell.indexOf("function tabBar()") + 200);
+    assert.match(bar, /if \(single \|\| tabs\.length < 2\) return null;/, "no tab bar on a separated page");
+    assert.match(shell, /\{\(single \? \[activeTab\] : tabs\)\.map\(\(key\) => \{/, "and the others are not even in the DOM");
+
+    // Every hand-off that used to switch tabs in place now NAVIGATES, carrying its subject.
+    assert.match(shell, /if \(single\) \{\s*window\.location\.assign\(moduleHref\(next, carry\)\);/, "openTab navigates");
+    assert.match(shell, /openTab\("visits", \{ customer: visit\.customerId, name: visit\.customerName \}\);/, "Today sends the customer in the address");
+    assert.match(shell, /openTab\("list", \{ validate: String\(validate\.contactCrmId\), name: validate\.customerName \}\);/, "and Add visit sends the entry to Validate");
+    // Rebuilt on the FIRST paint, never in an effect — otherwise the tab opens on its own start
+    // screen and the rep has to find the customer again.
+    assert.match(shell, /const arrivedVisit: PendingVisit \| null =/, "the arriving customer is rebuilt from the address");
+    assert.match(shell, /pendingVisit=\{arrivedVisit \?\? pendingVisit\}/, "and reaches the tab");
+    assert.match(shell, /pendingValidate=\{arrivedValidate \?\? pendingValidate\}/);
+    assert.ok(!/useEffect\([^)]*arrivedVisit/.test(shell), "never through an effect");
   }
 
   // ── 5. The address follows the tab, and the two lists cannot drift ──────────────────────────────
   {
     const shell = source("src/components/phoenix-crm/phoenix-crm-app.tsx");
     const open = shell.slice(shell.indexOf("function openTab("), shell.indexOf("function workDroppedBy("));
-    assert.match(open, /url\.pathname = `\$\{PHOENIX_CRM_PORTAL_BASE\}\/\$\{next\}`;/, "the portal writes the module's own path");
+    assert.match(open, /url\.pathname = phoenixCrmModulePath\(PHOENIX_CRM_PORTAL_BASE, next\);/, "the portal writes the module's own path, BY SLUG");
     assert.match(open, /url\.searchParams\.delete\("add"\)/, "and drops ?add=, so a saved link never re-opens a form");
     assert.match(open, /url\.searchParams\.set\("tab", next\)/, "while the admin twin keeps ?tab=");
     // The switch stays IN PAGE — that is what lets the page ask before dropping work he started.

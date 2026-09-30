@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
 import { EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
@@ -7,7 +7,7 @@ import { CrmEmpty, CrmPanel } from "@/components/phoenix-crm/ui";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
-import { isPhoenixCrmModuleKey, PHOENIX_CRM_MODULES } from "@/lib/phoenix-crm/modules";
+import { phoenixCrmModuleForSlug } from "@/lib/phoenix-crm/modules";
 import {
   loadPhoenixCrmPage,
   PHOENIX_CRM_ADMIN_PATH,
@@ -18,14 +18,12 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// One shape for every module's tab title, so the split reads as one module and not eight pages that
-// happened to land together. Without it the shared DocumentTitleSync guesses from the address and the
-// titles disagree — "Phoenix CRM List" on one page, plain "Visits" on the next.
-export async function generateMetadata({ params }: { params: Promise<{ module: string }> }): Promise<Metadata> {
-  const { module } = await params;
-  const label = isPhoenixCrmModuleKey(module) ? (PHOENIX_CRM_MODULES.find((entry) => entry.key === module)?.label ?? null) : null;
-  return { title: label ? `Phoenix CRM · ${label}` : "Phoenix CRM" };
-}
+// 🔴 NO `generateMetadata` HERE, DELIBERATELY. The app already has ONE title resolver
+// (src/lib/navigation/module-title.ts) used by both the layout's metadata and the client
+// DocumentTitleSync, precisely so a tab's name does not change as a page settles. A local
+// generateMetadata FIGHTS it and loses on client navigation: it produced "Phoenix CRM · List" on
+// first paint and "Doctors · Phoenix Workforce" a moment later. The slug is what makes the shared
+// resolver say the right thing, because it names a page from its own segments.
 
 // ONE Phoenix CRM module, on its own page (owner, 2026-09-30: "a page that has the SPLIT modules").
 // The chooser at /employee-portals/field-crm lists them; this renders the one he picked, at its own
@@ -41,22 +39,24 @@ export default async function PhoenixCrmModulePage({
   params: Promise<{ module: string }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { module } = await params;
-  if (!isPhoenixCrmModuleKey(module)) notFound();
+  const { module: slug } = await params;
+  const entry = phoenixCrmModuleForSlug(slug);
+  if (!entry) notFound();
+  const moduleKey = entry.key;
 
   const access = await resolveAccessContextFromPage();
   if (access.source === "guest") redirect("/login");
   if (resolveNavigationMode(access) !== "employee-portal") {
-    redirect(`${PHOENIX_CRM_ADMIN_PATH}${phoenixCrmTabQuery(module)}`);
+    redirect(`${PHOENIX_CRM_ADMIN_PATH}${phoenixCrmTabQuery(moduleKey)}`);
   }
 
-  const label = PHOENIX_CRM_MODULES.find((entry) => entry.key === module)?.label ?? "Phoenix CRM";
+  const label = entry.label;
   const load = await loadPhoenixCrmPage(access);
   // `?add=visit` / `?add=week` still arrive here from the portal's "+", and the shell reads them.
   void (await searchParams);
 
   if (load.kind === "ready") {
-    if (!load.overview.tabs[module]) {
+    if (!load.overview.tabs[moduleKey]) {
       return (
         <EmployeePortalPageShell badge="CRM" description={`Phoenix CRM · ${label}`} title={label}>
           <CrmPanel>
@@ -67,14 +67,22 @@ export default async function PhoenixCrmModulePage({
     }
     return (
       <EmployeePortalPageShell badge="CRM" description={`Phoenix CRM · ${label}`} title={label}>
-        <PhoenixCrmApp initialOverview={load.overview} initialTab={module} surface="portal" />
+        <div className="grid min-w-0 gap-3">
+          {/* The way back, because a separated page carries no bar of the others. */}
+          <p className="min-w-0">
+            <Link className="text-xs font-black text-slate-600 underline underline-offset-2 hover:text-orange-700" href={PHOENIX_CRM_PORTAL_PATH}>
+              ← All of Phoenix CRM
+            </Link>
+          </p>
+          <PhoenixCrmApp initialOverview={load.overview} initialTab={moduleKey} single surface="portal" />
+        </div>
       </EmployeePortalPageShell>
     );
   }
 
   if (load.kind === "failed") {
     logPortalFailure(
-      { hrId: access.hrId, module: "phoenix-crm", role: access.role, route: `${PHOENIX_CRM_PORTAL_PATH}/${module}` },
+      { hrId: access.hrId, module: "phoenix-crm", role: access.role, route: `${PHOENIX_CRM_PORTAL_PATH}/${slug}` },
       load.error,
     );
   }

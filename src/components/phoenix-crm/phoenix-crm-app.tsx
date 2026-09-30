@@ -51,7 +51,7 @@ import {
   type CrmChoiceOption,
 } from "@/components/phoenix-crm/ui";
 import { VisitsTab, type PendingValidate, type PendingVisit } from "@/components/phoenix-crm/visits-tab";
-import { PHOENIX_CRM_PORTAL_BASE } from "@/lib/phoenix-crm/modules";
+import { PHOENIX_CRM_PORTAL_BASE, phoenixCrmModulePath } from "@/lib/phoenix-crm/modules";
 import type { PhoenixCrmOverview, PhoenixCrmTabs, TerritorySummary } from "@/lib/phoenix-crm/view-types";
 import { cn } from "@/lib/utils";
 
@@ -227,11 +227,25 @@ function openingSentences(overview: PhoenixCrmOverview): string[] {
 export function PhoenixCrmApp({
   initialOverview,
   initialTab,
+  single = false,
   surface,
 }: {
   initialOverview: PhoenixCrmOverview;
   /** The page's `?tab=` as typed; kept only when the viewer has that tab. */
   initialTab: string | null;
+  /**
+   * ONE module, on its own page, with nothing of the others on it.
+   *
+   * 🔴 OWNER, 2026-09-30, after seeing the first split: "I don't want, when I press on any one of the
+   * ones you split, that they redirect me to the same screen that has all of them beside each other.
+   * SEPARATE THEM TOTALLY, make them separate pages." So in this mode there is no tab bar, only the
+   * one module is in the DOM at all (the others are not rendered hidden beside it), and every
+   * hand-off that used to switch tabs in place NAVIGATES to the other module's own page, carrying
+   * what it needs in the address. The way back is the chooser, linked at the top.
+   *
+   * The admin twin keeps the one-screen shape, and so does `single={false}`.
+   */
+  single?: boolean;
   /** The employee portal draws a navigation bar along the bottom of a phone; the admin shell does not. */
   surface: "admin" | "portal";
 }) {
@@ -256,6 +270,11 @@ export function PhoenixCrmApp({
   const searchParams = useSearchParams();
   const addParam = addIntentOf(searchParams?.get("add") ?? null);
   const tabParam = searchParams?.get("tab") ?? null;
+  // A hand-off that crossed a page boundary (single mode): the customer Today sent here, or the
+  // iReports360 entry Add Visit sent to the List's Validate screen.
+  const customerParam = searchParams?.get("customer") ?? null;
+  const customerNameParam = searchParams?.get("name") ?? null;
+  const validateParam = searchParams?.get("validate") ?? null;
   const [seenAddress, setSeenAddress] = useState<{ add: AddIntent | null; tab: string | null }>({ add: null, tab: tabParam });
   const [addVisitNonce, setAddVisitNonce] = useState(0);
   const [planWeekNonce, setPlanWeekNonce] = useState(0);
@@ -346,6 +365,24 @@ export function PhoenixCrmApp({
     }
   }
   const activeTab: TabKey = tabs.includes(tab) ? tab : (tabs[0] ?? "visits");
+  // The hand-off that crossed the page boundary, rebuilt from the address. Derived while rendering,
+  // never in an effect: the tab below must see it on its FIRST paint or it opens on its own start
+  // screen and the rep has to find the customer again.
+  const arrivedVisit: PendingVisit | null =
+    single && activeTab === "visits" && customerParam
+      ? {
+          seatId: seats.visits ?? "",
+          test,
+          customerId: customerParam,
+          customerName: customerNameParam ?? "",
+          photo: null,
+          validatedAtMs: Date.now(),
+        }
+      : null;
+  const arrivedValidate: PendingValidate | null =
+    single && activeTab === "list" && validateParam && Number.isFinite(Number(validateParam))
+      ? { seatId: seats.list ?? "", test, contactCrmId: Number(validateParam), customerName: customerNameParam ?? "" }
+      : null;
   const seats: Record<SeatTab, string | null> = {
     today: seatOf(overview, "today", chosenSeat),
     list: seatOf(overview, "list", chosenSeat),
@@ -364,7 +401,20 @@ export function PhoenixCrmApp({
     if (top && top.getBoundingClientRect().top < 0) top.scrollIntoView({ block: "start" });
   }
 
-  function openTab(next: TabKey) {
+  /** The other module's own address, with whatever the hand-off has to carry. */
+  function moduleHref(next: TabKey, carry?: Record<string, string>): string {
+    const url = new URL(phoenixCrmModulePath(PHOENIX_CRM_PORTAL_BASE, next), window.location.origin);
+    for (const [key, value] of Object.entries(carry ?? {})) if (value) url.searchParams.set(key, value);
+    return `${url.pathname}${url.search}`;
+  }
+
+  function openTab(next: TabKey, carry?: Record<string, string>) {
+    // 🔴 SEPARATE PAGES, SO THIS IS A NAVIGATION (owner, 2026-09-30). Switching the panel in place is
+    // what he objected to: it left him on one module's address looking at another's.
+    if (single) {
+      window.location.assign(moduleHref(next, carry));
+      return;
+    }
     setTab(next);
     setAsking(null);
     setNotice(null);
@@ -377,7 +427,8 @@ export function PhoenixCrmApp({
       // it behind would re-open that form every time he came back to the address.
       const url = new URL(window.location.href);
       if (surface === "portal") {
-        url.pathname = `${PHOENIX_CRM_PORTAL_BASE}/${next}`;
+        // By SLUG, never the raw key: the Directory tab's key is a retired word and the address is UI.
+        url.pathname = phoenixCrmModulePath(PHOENIX_CRM_PORTAL_BASE, next);
         url.searchParams.delete("tab");
         url.searchParams.delete("add");
       } else {
@@ -450,6 +501,12 @@ export function PhoenixCrmApp({
 
   function startVisit(visit: PendingVisit) {
     if (pendingVisit && pendingVisit.photo !== visit.photo) releaseCapturedPhoto(pendingVisit.photo);
+    // Separate pages: the customer rides in the address, because the next module is a fresh page and
+    // nothing in memory survives the trip.
+    if (single) {
+      openTab("visits", { customer: visit.customerId, name: visit.customerName });
+      return;
+    }
     setPendingVisit(visit);
     openTab("visits");
     scrollToTop();
@@ -463,6 +520,10 @@ export function PhoenixCrmApp({
 
   /** The other direction: a visit was just saved on a pending customer and he chose to validate now. */
   function startValidate(validate: PendingValidate) {
+    if (single) {
+      openTab("list", { validate: String(validate.contactCrmId), name: validate.customerName });
+      return;
+    }
     setPendingValidate(validate);
     openTab("list");
     scrollToTop();
@@ -579,7 +640,8 @@ export function PhoenixCrmApp({
   }
 
   function tabBar() {
-    if (tabs.length < 2) return null;
+    // 🔴 Separate pages carry no bar of the others (owner, 2026-09-30).
+    if (single || tabs.length < 2) return null;
     return (
       <div aria-label="Phoenix CRM" className={cn("grid gap-1.5", TAB_COLUMNS[tabs.length])} role="tablist">
         {tabs.map((key, index) => {
@@ -789,7 +851,7 @@ export function PhoenixCrmApp({
           onPendingVisitDone={pendingVisitDone}
           onStartValidate={startValidate}
           onWorkChange={holdReporters.visits}
-          pendingVisit={pendingVisit}
+          pendingVisit={arrivedVisit ?? pendingVisit}
           seatId={seatId}
           test={test}
         />
@@ -802,7 +864,7 @@ export function PhoenixCrmApp({
           key={`${seatId}|${test}`}
           onPendingValidateDone={pendingValidateDone}
           onWorkChange={holdReporters.list}
-          pendingValidate={pendingValidate}
+          pendingValidate={arrivedValidate ?? pendingValidate}
           seatId={seatId}
           test={test}
         />
@@ -859,7 +921,7 @@ export function PhoenixCrmApp({
       {startGuideLink()}
       {seatTab ? territoryPicker(seatTab) : null}
       {questionNote()}
-      {tabs.map((key) => {
+      {(single ? [activeTab] : tabs).map((key) => {
         const active = key === activeTab;
         return (
           <div
