@@ -22,7 +22,7 @@
 import { useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 
-import { crmPost, crmUrl, useCrmAction, useCrmGet } from "@/components/phoenix-crm/api";
+import { crmUrl, useCrmAction, useCrmGet } from "@/components/phoenix-crm/api";
 import { cairoClock, dayLabel, dayLabelLong, plural, shiftIsoDay } from "@/components/phoenix-crm/format";
 import { listText, territoryLine } from "@/components/phoenix-crm/labels";
 import type { CapturedPhoto } from "@/components/phoenix-crm/live-photo-capture";
@@ -48,7 +48,7 @@ import {
   crmThClassName,
   type PillTone,
 } from "@/components/phoenix-crm/ui";
-import { customersFor, OutOfPlanReason, SendWeekFirst, VisitCustomerPicker } from "@/components/phoenix-crm/visit-customer-picker";
+import { customersFor, OutOfPlanReason, VisitCustomerPicker } from "@/components/phoenix-crm/visit-customer-picker";
 import { decidersText, VisitLogForm, type LogVisitType } from "@/components/phoenix-crm/visit-log-form";
 import { saveDayActivity, UnplannedChoice, VisitStart } from "@/components/phoenix-crm/visit-start";
 import { CrmVoiceNotePlayer } from "@/components/phoenix-crm/voice-playback";
@@ -507,8 +507,6 @@ type AddStep =
   | { name: "out_of_plan" }
   | { name: "out_of_list" }
   | { name: "reason"; customerId: string; reason: string; back: AddStep | null }
-  /** On his own plan for today, but the week has not been sent: one tap sends it, and it counts. */
-  | { name: "send_week"; customerId: string; back: AddStep | null }
   | { name: "form"; customerId: string; visitType: LogVisitType; reason: string | null; back: AddStep | null };
 
 /** Steps holding something he has started: a hand-off from Today never replaces them. */
@@ -518,17 +516,16 @@ function holdsWork(step: AddStep | null): boolean {
 
 /**
  * Where a customer opened straight from Today goes: on today's sent plan, the form as planned; waiting
- * outside the list, the form as out of list; ON HIS OWN UNSENT DRAFT, the one tap that sends it;
- * anyone else on the list, the reason first.
+ * outside the list, the form as out of list; anyone else on the list, the reason first.
  *
- * 🔴 THE THIRD BRANCH IS WHAT HE FOUND ON 2026-09-30: "when I press add visit on any one of them from
- * today, it redirects me to out of plan — how come?" `plannedToday` does not widen (see its own note);
- * the screen offers to send the week instead, and then the visit is planned for real.
+ * 🔴 IT CANNOT LAND A PLANNED CUSTOMER ON THE REASON SCREEN ANY MORE, and that is a consequence of the
+ * owner's own ruling of 2026-09-30 rather than a special case here: Today shows the APPROVED plan only,
+ * and every approved customer is inside the set the server counts as planned. The screen that offered
+ * to send an unapproved week from inside Add visit was built that day and removed the same day.
  */
 function routeFor(customer: VisitCustomerOption): AddStep {
   if (customer.outside) return { name: "form", customerId: customer.customerId, visitType: "out_of_list", reason: null, back: null };
   if (customer.plannedToday) return { name: "form", customerId: customer.customerId, visitType: "planned", reason: null, back: null };
-  if (customer.plannedTodayUnsent) return { name: "send_week", customerId: customer.customerId, back: null };
   return { name: "reason", customerId: customer.customerId, reason: "", back: null };
 }
 
@@ -556,10 +553,6 @@ function AddFlow({
 }) {
   const resource = useCrmGet<VisitFormView>(crmUrl("/api/phoenix-crm/visits/form", { seatId, test }), "form");
   const form = resource.data;
-  // Sending his own week from inside Add visit (owner, 2026-09-30). Held here, above the step switch,
-  // so backing out and returning does not lose the failure message.
-  const [sendingWeek, setSendingWeek] = useState(false);
-  const [sendProblem, setSendProblem] = useState<string | null>(null);
 
   if (step.name === "start") {
     return (
@@ -670,42 +663,6 @@ function AddFlow({
           test={test}
         />
       );
-    case "send_week": {
-      const sendStep = current;
-      const customer = find(sendStep.customerId);
-      if (!customer) return missing(null);
-      const plan = loaded.unsentPlan;
-      return (
-        <SendWeekFirst
-          canSend={plan !== null}
-          customer={customer}
-          key={sendStep.customerId}
-          onBack={() => (sendStep.back ? onStep(sendStep.back) : onClose())}
-          // He chose not to send. Never blocked — it goes on as an off-plan visit, reason and all.
-          onOutOfPlan={() => onStep({ name: "reason", customerId: customer.customerId, reason: "", back: sendStep })}
-          onSend={() => {
-            if (!plan) return;
-            setSendProblem(null);
-            setSendingWeek(true);
-            void crmPost<unknown>(
-              "/api/phoenix-crm/plans/submit",
-              { planId: plan.planId, action: "submit", expectedVersion: plan.version },
-              "plan",
-            )
-              .then(() => {
-                resource.reload();
-                onStep({ name: "form", customerId: customer.customerId, visitType: "planned", reason: null, back: null });
-              })
-              .catch((error: unknown) =>
-                setSendProblem(error instanceof Error ? error.message : "The week was not sent. Open Plan and send it there."),
-              )
-              .finally(() => setSendingWeek(false));
-          }}
-          problem={sendProblem}
-          sending={sendingWeek}
-        />
-      );
-    }
     case "reason": {
       const reasonStep = current;
       const customer = find(reasonStep.customerId);

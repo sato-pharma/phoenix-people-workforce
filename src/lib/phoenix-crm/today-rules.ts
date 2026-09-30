@@ -4,7 +4,7 @@ import { VISIT_DAY_CUTOFF_HOURS } from "@/lib/phoenix-crm/calendar";
 import { formatClockMinute, PHOENIX_CRM_WEEKDAY_NAMES } from "@/lib/phoenix-crm/timings";
 
 import type { PlannerReference } from "@/lib/phoenix-crm/suggestions";
-import type { PhoenixCrmGrade, PhoenixCrmListType } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmPlanStatus } from "@/lib/phoenix-crm/types";
 import type { UnplannedKind } from "@/lib/phoenix-crm/unplanned-rules";
 
 /**
@@ -248,24 +248,32 @@ export function compareTodayStops(left: PlannedStop, right: PlannedStop): number
  */
 export function todayEmptyReason(input: { hasPlan: boolean; isFieldDay: boolean; stops: number }): string | null {
   if (!input.isFieldDay) return "Today is not a field day.";
-  // 🔴 THE DAY HE PLANNED IS SHOWN WHATEVER THE PLAN'S STATUS (owner, 2026-09-30: "in today show me
-  // my today plan am/pm/ph, list all drs of today with timing and location"). Today read a SENT plan
-  // only, so a rep who edited his week after sending it opened the app onto "No plan has been sent
-  // for this week yet" with 1 AM and 15 PM sitting on the day — his own work, hidden from him. A
-  // draft is still HIS plan, and this screen is what he drives the day from.
   if (input.stops > 0) return null;
   if (!input.hasPlan) return "No plan has been sent for this week yet. Open Plan to send it.";
   return "Nobody is planned for today.";
 }
 
 /**
- * Said ABOVE a day he can see and work, never instead of it: the rows are his, and only the sending
- * is outstanding. Never a refusal and never a warning — Add visit keeps working, because what makes a
- * visit count as planned is decided by the server against the SENT plan, not by this screen.
+ * 🔴 TODAY SHOWS THE APPROVED PLAN AND NOTHING ELSE (owner, 2026-09-30, overruling the same day:
+ * "what appears in the today tab is the approved plan — the approved plan ONLY. If not approved, show
+ * that the plan is still pending approval").
+ *
+ * The day was briefly shown for a plan in any state, with a button to send it from here. He removed
+ * both: Today is the day he has been CLEARED to work, so a plan still waiting on someone is a
+ * sentence, never a list of stops, and the sending belongs on Plan where he does it.
+ *
+ * His ruling also closes the trap that prompted the earlier attempt — Add visit landing on the
+ * out-of-plan reason screen and asking him to justify his own plan — by construction rather than by a
+ * special case: every customer Today can show is on an APPROVED plan, which is inside the set the
+ * server counts as planned, so the route can only reach the form as a planned visit.
+ *
+ * `returned` is named as itself rather than folded into "pending": nobody is waiting on it, he is.
  */
-export function planUnsentNote(input: { hasPlan: boolean; sent: boolean; stops: number }): string | null {
-  if (!input.hasPlan || input.sent || input.stops === 0) return null;
-  return "This week is still a draft. Your day is below — send the week on Plan when it is ready.";
+export function planStatusNote(status: PhoenixCrmPlanStatus | null): string | null {
+  if (status === null || status === "approved") return null;
+  if (status === "submitted") return "Your plan for this week is still pending approval. Today shows your day once it is approved.";
+  if (status === "returned") return "Your plan for this week was sent back to you. Open Plan to change it and send it again.";
+  return "Your plan for this week has not been sent yet. Open Plan to send it for approval.";
 }
 
 // ── Next up ─────────────────────────────────────────────────────────────────────────────────────

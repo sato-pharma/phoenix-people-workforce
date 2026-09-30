@@ -70,7 +70,7 @@ import { photoSlotIssuedAt } from "@/lib/phoenix-crm/server/photos";
 import { readTimeAnchor } from "@/lib/phoenix-crm/server/time-anchor";
 import { lineProductsByFamily, type LineProductFamily } from "@/lib/phoenix-crm/server/products";
 import { describeTerritory, seatTierTitle, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
-import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmVisitKind } from "@/lib/phoenix-crm/types";
+import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmPlanStatus, PhoenixCrmVisitKind } from "@/lib/phoenix-crm/types";
 import {
   isUnplannedKind,
   isUnplannedVisitStatus,
@@ -400,16 +400,6 @@ export type VisitCustomerOption = {
    */
   lastNextStep: LastNextStep | null;
   plannedToday: boolean;
-  /**
-   * He IS on today's plan — but the week has not been sent, so this visit cannot count as planned.
-   *
-   * 🔴 KEPT APART FROM `plannedToday`, WHICH MUST NEVER WIDEN. What counts as a planned visit is a
-   * plan that reached review BEFORE the visit's server-issued `captured_at`; without that a rep could
-   * place a customer at the door and have it count. This field changes no number — it only lets the
-   * screen offer him the one tap that sends his own week, instead of routing him to the out-of-plan
-   * reason screen and asking him to justify his own plan (owner, 2026-09-30, on his own walk).
-   */
-  plannedTodayUnsent: boolean;
   visitedToday: boolean;
   visitsThisMonth: number;
   target: number | null;
@@ -461,11 +451,6 @@ export type VisitFormView = {
   todayVisits: VisitRow[];
   /** Why no visit can be saved here, in one sentence; null when nothing stops it. */
   blockedReason: string | null;
-  /**
-   * His own week for today, still in draft, so the screen can send it in one tap rather than route
-   * him to the out-of-plan reason screen (owner, 2026-09-30). Null once it is sent.
-   */
-  unsentPlan: { planId: string; version: number } | null;
 };
 
 /**
@@ -613,31 +598,25 @@ export async function plannedCustomersOn(
   seatId: string,
   isTest: boolean,
   date: string,
-): Promise<{ hasPlan: boolean; sent: boolean; planId: string | null; version: number | null; customerIds: string[] }> {
+): Promise<{ status: PhoenixCrmPlanStatus | null; customerIds: string[] }> {
   const supabase = getSupabaseAdmin();
   const { data: plan, error } = await supabase
     .from("phoenix_crm_plans")
-    .select("id, status, version")
+    .select("id, status")
     .eq("seat_id", seatId)
     .eq("is_test", isTest)
     .eq("week_start", fieldWeekStart(date))
     .maybeSingle();
   throwIfError(error);
-  if (!plan) return { hasPlan: false, sent: false, planId: null, version: null, customerIds: [] };
-  const status = String((plan as Row).status ?? "");
+  if (!plan) return { status: null, customerIds: [] };
+  const status = String((plan as Row).status ?? "") as PhoenixCrmPlanStatus;
   const items = await supabase
     .from("phoenix_crm_plan_items")
     .select("customer_id")
     .eq("plan_id", String((plan as Row).id))
     .eq("plan_date", date);
   throwIfError(items.error);
-  return {
-    hasPlan: true,
-    sent: status === "submitted" || status === "approved",
-    planId: String((plan as Row).id),
-    version: Number((plan as Row).version),
-    customerIds: ((items.data ?? []) as Row[]).map((row) => String(row.customer_id)),
-  };
+  return { status, customerIds: ((items.data ?? []) as Row[]).map((row) => String(row.customer_id)) };
 }
 
 export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unknown; test: unknown }): Promise<VisitFormView> {
@@ -647,15 +626,12 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
   const chain = managerChain(viewer.org, seat.seatId);
 
   await ensureReferenceCustomers(seat, isTest);
-  const [{ customers, placesByCustomer }, visitCounts, planned, draftPlan, visitRows, productFamilies, pharmacies] = await Promise.all([
+  const [{ customers, placesByCustomer }, visitCounts, planned, visitRows, productFamilies, pharmacies] = await Promise.all([
     // The list, and the customers waiting outside it: a second visit to someone met outside the list
     // is another out-of-list visit to the same customer, never a second customer.
     loadTerritoryCustomers(seat.seatId, isTest, { onListOnly: true, includeOutside: true }),
     loadMonthVisitCounts(seat.seatId, isTest, monthStartOf(today), today),
     plannedCustomerIds(seat.seatId, isTest, today),
-    // The same day read WITHOUT the status filter: his own draft. It decides no count — only whether
-    // the screen offers "send this week" instead of demanding a reason.
-    plannedCustomersOn(seat.seatId, isTest, today),
     loadVisitRows(seat.seatId, isTest, today),
     lineProductsByFamily(seat.lineName),
     loadSeatPharmacies(seat.seatId, isTest),
@@ -665,9 +641,6 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
   const lastVisits = await loadLastVisits(seat.seatId, isTest, today, products);
   const names = await loadPeopleNames([...territoryPeople(viewer.org, [seat]), ...chain.map((member) => member.hrId), ...visitPeople(visitRows)]);
   const visitedToday = new Set(visitRows.map((row) => String(row.customer_id)));
-  // On his own plan for today but the week is not sent yet. It gates NOTHING and counts NOTHING — it
-  // only lets the screen offer the one tap that sends the week (owner, 2026-09-30).
-  const draftToday = draftPlan.sent ? new Set<string>() : new Set(draftPlan.customerIds);
   const ramadan = isRamadanDay(today, viewer.config.ramadanOverrides);
   const settings = viewer.config.settings;
 
@@ -701,7 +674,6 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
         todayWindows: describeDayWindows(place.timings, today, ramadan),
       })),
       plannedToday: planned.has(customerId),
-      plannedTodayUnsent: !planned.has(customerId) && draftToday.has(customerId),
       visitedToday: visitedToday.has(customerId),
       visitsThisMonth: visitCounts.get(customerId) ?? 0,
       target: gradeTarget(settings, listType, grade),
@@ -738,10 +710,6 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
     customers: options,
     todayVisits: visitRows.map((row) => mapVisitRow(row, names, { blind })),
     blockedReason,
-    unsentPlan:
-      !draftPlan.sent && draftPlan.planId !== null && draftPlan.version !== null && draftPlan.customerIds.length > 0
-        ? { planId: draftPlan.planId, version: draftPlan.version }
-        : null,
   };
 }
 
