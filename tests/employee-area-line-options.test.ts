@@ -3,101 +3,112 @@ import fs from "node:fs";
 import path from "node:path";
 
 import {
-  areaBelongsToLine,
-  filterAreaOptionsForLine,
+  lineIdAfterAreaPick,
+  operatingAreaOptions,
 } from "../src/lib/employees/area-line-options.ts";
 
-// The Employee Master "Operating Area" picker filtered `lookups.areas` on
-// `String(a.lineId) === String(form.lineId)`, and 49 of production's 60 live `public.areas` rows
-// carry `line_id` NULL -- one area id per territory, shared by every line's field force. Picking a
-// business line therefore emptied the list down to the 11 legacy line-tagged rows, and the owner
-// could not hire a Pedia rep into Beni Suef (UE9, Upper Egypt 1) because the area was not offered
-// at all, even though the seat, the open vacancy and the au region mapping were all in place.
+// The Employee Master "Operating Area" picker narrowed `lookups.areas` by the chosen business line.
+// #4977 admitted the 49 live areas carrying `line_id` NULL, which unblocked the owner's Pedia hire
+// into Beni Suef. This is the other half: the 11 surviving line-tagged rows are shared across lines
+// too, in live production data, so the column can correctly hide NOTHING.
+//
+// Measured 2026-09-30: 16 active managers sit on a line-tagged area whose `line_id` names a
+// DIFFERENT line. The picker hid each of those rows from the very line whose manager is on it, and
+// the area's own `line_id` then overwrote the chosen line on select — so a Pedia district manager
+// picked "Upper Egypt 1" and the form silently became Anti Infective.
 
+// The real production rows, with `line_id` exactly as production carries it.
 const PRODUCTION_AREAS = [
-  // The live shape: an area id held by every line, no line of its own.
   { label: "Beni Suef", lineId: null, value: "1145" },
   { label: "Minia 1", lineId: null, value: "1123" },
   { label: "Sohag1", lineId: null, value: "1127" },
-  // The 11 surviving line-tagged rows, which ARE per-line and must stay per-line.
   { label: "Cairo", lineId: 2, value: "1" },
   { label: "Egypt", lineId: 2, value: "42" },
   { label: "Upper Egypt 1", lineId: 1, value: "1149" },
   { label: "Head office", lineId: 4, value: "80" },
 ];
 
-const PEDIA_LINE_ID = "2";
+const PEDIA = "2";
+const ANTI_INFECTIVE = "1";
 
 export async function runEmployeeAreaLineOptionsTests() {
-  const pediaOptions = filterAreaOptionsForLine(PRODUCTION_AREAS, PEDIA_LINE_ID);
-  const pediaLabels = pediaOptions.map((option) => option.label);
+  // The headline assertion: whatever line is chosen, every area is still offered.
+  for (const line of [PEDIA, ANTI_INFECTIVE, "3", "4", "", null, undefined]) {
+    assert.deepEqual(
+      operatingAreaOptions(PRODUCTION_AREAS).map((option) => option.label),
+      ["Beni Suef", "Minia 1", "Sohag1", "Cairo", "Egypt", "Upper Egypt 1", "Head office"],
+      `every operating area must stay on offer — line ${JSON.stringify(line)} may hide none of them`,
+    );
+  }
 
-  // The headline assertion: the area the owner could not find must be offered to Pedia.
+  // The two rows that each half of this fix was about.
+  const offered = operatingAreaOptions(PRODUCTION_AREAS).map((option) => option.label);
   assert.ok(
-    pediaLabels.includes("Beni Suef"),
-    "a line-agnostic area (line_id NULL) must be offered to Pedia -- Beni Suef is the row the owner could not pick",
-  );
-
-  assert.deepEqual(
-    pediaLabels,
-    ["Beni Suef", "Minia 1", "Sohag1", "Cairo", "Egypt"],
-    "every line-agnostic area plus Pedia's own line-tagged rows, in the order given",
-  );
-
-  assert.ok(
-    !pediaLabels.includes("Upper Egypt 1"),
-    "an area that names ANOTHER line stays hidden -- Anti Infective's Upper Egypt 1 is not Pedia's",
+    offered.includes("Beni Suef"),
+    "a line-agnostic area stays offered — the row the owner could not pick (#4977)",
   );
   assert.ok(
-    !pediaLabels.includes("Head office"),
-    "Head Office's own area stays on Head Office",
+    offered.includes("Upper Egypt 1"),
+    "a line-TAGGED district row stays offered too — PD-0014 (Pedia) sits on Anti Infective's Upper Egypt 1",
   );
 
-  // No line picked yet: the picker offers everything, exactly as before.
+  // It returns a copy, so a caller cannot reorder or empty the lookup itself.
+  const source = [{ lineId: null }, { lineId: 2 }];
+  const returned = operatingAreaOptions(source);
+  returned.length = 0;
+  assert.equal(source.length, 2, "the options list must be a copy, never the lookup array itself");
+
+  // An area's own line FILLS an empty line and never overwrites a chosen one.
   assert.equal(
-    filterAreaOptionsForLine(PRODUCTION_AREAS, "").length,
-    PRODUCTION_AREAS.length,
-    "with no line chosen the picker offers every area",
+    lineIdAfterAreaPick({ lineId: 1 }, PEDIA),
+    PEDIA,
+    "the headline assertion: picking Anti Infective's Upper Egypt 1 must NOT flip a Pedia hire to Anti Infective",
   );
   assert.equal(
-    filterAreaOptionsForLine(PRODUCTION_AREAS, null).length,
-    PRODUCTION_AREAS.length,
-    "a null line is 'not chosen yet', not 'matches nothing'",
+    lineIdAfterAreaPick({ lineId: 1 }, ""),
+    "1",
+    "with no line chosen yet, the area's own line fills it",
+  );
+  assert.equal(
+    lineIdAfterAreaPick({ lineId: null }, ""),
+    "",
+    "a line-agnostic area fills nothing, and must not write the string 'null'",
+  );
+  assert.equal(
+    lineIdAfterAreaPick({ lineId: undefined }, ""),
+    "",
+    "nor the string 'undefined' — that was the shape of the original bug",
+  );
+  assert.equal(
+    lineIdAfterAreaPick(undefined, PEDIA),
+    PEDIA,
+    "an unknown area leaves the chosen line alone",
+  );
+  assert.equal(
+    lineIdAfterAreaPick({ lineId: " 1 " }, ""),
+    "1",
+    "padding around the area's line is trimmed before it is stored",
   );
 
-  // The id may arrive as a number from a seat pre-fill and as a string from the select.
-  assert.equal(
-    areaBelongsToLine({ lineId: 2 }, "2"),
-    true,
-    "a numeric area line and a string form value are the same line",
-  );
-  assert.equal(
-    areaBelongsToLine({ lineId: " 2 " }, 2),
-    true,
-    "padding around either id does not split a line from itself",
-  );
-  assert.equal(
-    areaBelongsToLine({ lineId: 1 }, PEDIA_LINE_ID),
-    false,
-    "a different line is still excluded",
-  );
-  assert.equal(
-    areaBelongsToLine({}, PEDIA_LINE_ID),
-    true,
-    "an option with no lineId field at all is line-agnostic",
-  );
-
-  // The picker must not grow a second copy of this rule inline: the component reads the helper.
+  // The picker must read the helpers, and must not grow a line filter again.
   const componentSource = fs.readFileSync(
     path.join(process.cwd(), "src/components/employees/employee-management.tsx"),
     "utf8",
   );
   assert.ok(
-    componentSource.includes("filterAreaOptionsForLine(lookups.areas, form.lineId)"),
-    "the Operating Area picker must build its options through filterAreaOptionsForLine",
+    componentSource.includes("operatingAreaOptions(lookups.areas)"),
+    "the Operating Area picker must build its options through operatingAreaOptions",
+  );
+  assert.ok(
+    componentSource.includes("lineIdAfterAreaPick(selectedArea, prev.lineId)"),
+    "selecting an area must resolve the line through lineIdAfterAreaPick",
   );
   assert.ok(
     !/lookups\.areas\.filter\(/.test(componentSource),
-    "a hand-rolled lookups.areas.filter is what dropped every line-agnostic area -- it must not come back",
+    "a hand-rolled lookups.areas.filter is the bug — `areas.line_id` can correctly hide nothing",
+  );
+  assert.ok(
+    !/lineId\s*:\s*String\(\s*selectedArea\.lineId/.test(componentSource),
+    "the area's own lineId must never be written straight over the chosen line",
   );
 }
