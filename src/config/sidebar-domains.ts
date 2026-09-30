@@ -129,6 +129,13 @@ export const adminSidebarDomains: readonly SidebarDomain[] = [
       { heading: "Employee Records", sectionIds: ["hub-people-management", "finance-resignations"] },
       { heading: "HR Reports", sectionIds: ["hub-people-reports", "people-management"] },
       { heading: "Plans & Support", sectionIds: ["hub-people-plans"] },
+      // CV Lookup (owner, 2026-09-30) — one row, its own band. Deliberately NOT under "Employee
+      // Records": a candidate is not an employee. Deliberately not under Hiring either, whose
+      // headings announce a recruiting function the seat this was built for does not hold.
+      //
+      // "Candidate CVs", not "CV Lookup", and the difference is load-bearing: a heading that repeats
+      // one of its own visible rows is blanked, and the row is labelled "CV Lookup".
+      { heading: "Candidate CVs", sectionIds: ["hub-people-cv-lookup"] },
       { heading: "Probation Tools", sectionIds: ["hub-probation-tools", "ceo-probation"] },
       // Milestones is about the person rather than the sales line, which is why it sits here and
       // not beside Spotlight under Sales. It is its own heading because a keepsake is not a report.

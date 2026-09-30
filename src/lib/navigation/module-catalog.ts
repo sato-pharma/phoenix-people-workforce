@@ -40,11 +40,17 @@ export const MODULE_LABELS: Record<PermissionResource, string> = {
   admin: "Administration",
   admin_access: "Users & Access",
   spotlight: "Spotlight",
+  spotlight_self: "My Spotlight",
   attendance: "Attendance",
   business_card_requests: "Business Card Requests",
   candidates: "Candidates",
   coaching: "Coaching",
   communication: "Email & Telegram Communication",
+  // Its own label, never folded into "Candidates" above: the two are different authorities over the
+  // same people — Candidates is the pool, CV Lookup is a search box for a seat that may not have the
+  // pool (owner, 2026-09-30). Sharing a label would make the module lock picker offer one name for
+  // two grants, so locking "Candidates" would read as locking both.
+  cv_lookup: "CV Lookup",
   company_devices: "Device Custody",
   contracts: "Contracts",
   crm_contact_lists: "Doctor List Changes",

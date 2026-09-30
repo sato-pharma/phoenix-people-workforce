@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   buildMonthGrid,
@@ -55,4 +56,28 @@ export function runCompanyCalendarTests() {
   assert.equal(normalizeCalendarCategory("Meeting"), "meeting");
   assert.equal(normalizeCalendarCategory("nonsense"), "other");
   assert.equal(monthDayKey("1990-06-15"), "06-15");
+
+  // ── MY LEAVE READS `vacation_type`, AND `v2_vacation_requests` HAS NO `type` COLUMN ───────────
+  // The leave read named `type` from this feature's first commit (2026-06-11) until 2026-09-30.
+  // PostgREST fails the WHOLE read on a missing column — it does not null that one field — and
+  // `loadLeaveItems` catches and returns [], so every employee's approved leave was silently absent
+  // from their own calendar: 551 approved requests across 92 people, measured on production the day
+  // it was found (by the select-auditor, not by anyone noticing). A select is a string, so nothing
+  // else in the system would have caught it.
+  const leaveSource = readFileSync(new URL("../src/lib/calendar/service.ts", import.meta.url), "utf8");
+  const leaveSelect = /\.from\("v2_vacation_requests"\)[\s\S]{0,600}?\.select\("([^"]*)"\)/.exec(leaveSource)?.[1];
+  assert.ok(leaveSelect, "the calendar's v2_vacation_requests read must still be findable");
+  const leaveColumns = leaveSelect.split(",").map((c) => c.trim());
+  assert.ok(
+    leaveColumns.includes("vacation_type"),
+    `the leave read must ask for vacation_type — got "${leaveSelect}"`,
+  );
+  assert.ok(
+    !leaveColumns.includes("type"),
+    `v2_vacation_requests has no "type" column: asking for it 42703s the whole read, and the catch turns that into an empty calendar — got "${leaveSelect}"`,
+  );
+  assert.ok(
+    !/row\.type\b/.test(leaveSource),
+    "the mapper must read row.vacation_type — row.type is undefined and would silently drop the leave label",
+  );
 }

@@ -44,6 +44,10 @@ export type EmployeePortalNavVisibility = {
   /** KPIs — Summary, Call Rate, Coverage and Frequency. Every portal-mode role with a reach. */
   showKpisTab?: boolean;
   showMedicalRepExpensesTab?: boolean;
+  // Spotlight (self) — the rep's own recognition sheet (owner, 2026-09-30). MEDICAL REP ONLY, keyed
+  // on isMedicalRep like showMedicalRepExpensesTab; the page and the /api/spotlight/me routes gate on
+  // spotlight_self, so this flag only draws the door.
+  showSpotlightTab?: boolean;
   showDsmsPerformanceTab?: boolean;
   // Team Calendar — NSM-only live field-visit month grid for their whole line, scoped
   // server-side (see src/lib/employee-portal/team-calendar.ts). Reads the iReports360
@@ -719,6 +723,10 @@ export function resolveEmployeePortalNavVisibility(
     showRepsListTab,
     showKpisTab,
     showMedicalRepExpensesTab: isMedicalRep,
+    // Medical Rep and District Manager (owner, 2026-09-30). `isDistrictManager` folds in the
+    // Head-Office "Manager" rung as a legacy alias, which holds no sales seat — excluded here, or the
+    // door opens on a page that can only tell him he has no seat.
+    showSpotlightTab: isMedicalRep || (isDistrictManager && !isHeadOfficeManagerRung),
     showMyPerformanceTab: isA3Account ? false : baseShowMyPerformanceTab,
     // My Coaching Reports — hidden from the portal sidebar for Medical Rep by owner instruction
     // (2026-09-24), mirroring the Early Birds change; District Manager / NSM / Regional Manager

@@ -741,6 +741,28 @@ export function runPhoenixCrmPlanBoardTests(): void {
     assert.doesNotMatch(source, /items: draft\.saved\.items/, "and keeps no inline copy that a test would not reach");
     assert.match(source, /settled: holdSettled\(raw, week, flag !== null\)/, "every week says whether its hold has answered itself");
     assert.match(source, /states\.filter\(\(state\) => state\.settled\)/, "and the board drops the draft and the hold of each one that has");
+
+    // ── "Discard changes" is ONE press ────────────────────────────────────────────────────────────
+    // Owner, 2026-09-30. It used to set a `discarding` flag and wait for a second press, which is how
+    // the button came to look broken: the bar's wording changed to "Discard your unsaved ticks?" and
+    // the ticks stayed, so one press read as no press at all. The press now discards.
+    assert.match(source, /onClick=\{onDiscard\}/, "the Discard changes button calls onDiscard on the press itself");
+    assert.doesNotMatch(source, /setDiscarding/, "no confirm flag stands between the press and the discard");
+    assert.doesNotMatch(source, /Discard your unsaved ticks/, "and the second step's question is gone with it");
+    assert.doesNotMatch(source, /Keep them/, "as is the button that cancelled it");
+    // With no second step to warn in, the bar says what the press will do BEFORE it is pressed, and the
+    // button wears the danger variant the confirm's own button wore.
+    assert.match(source, /Discard changes puts each week back to what was last saved\./, "the warning moved ahead of the press");
+    assert.match(
+      source,
+      /\{fixesText \? <p[^>]*>\{fixesText\}<\/p> : null\}\s*\{dirty \?/,
+      "and it stands BESIDE the fixes sentence rather than replacing it — a week is routinely unsaved and out of date at once",
+    );
+    assert.match(
+      source,
+      /<CrmButton disabled=\{locked\} onClick=\{onDiscard\} variant="danger">/,
+      "the single press is marked destructive, the way the confirm's Discard was",
+    );
   }
 
   console.log("phoenix-crm plan board: OK");

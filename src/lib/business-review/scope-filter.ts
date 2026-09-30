@@ -296,6 +296,18 @@ function filterLabel(
 ): string {
   if (territories.length === 0) return "Nothing in scope";
 
+  // A rep's pack is always HIS — his own name and his own territory, so a file he exported from his
+  // account reads as his and he feels seen (owner, 2026-09-30), never the anonymous "Medical Rep ·
+  // own territory". Checked first, before any applied narrowing: his scope cannot widen, so the
+  // areas here are always his, and the label is his whatever filter rode in on the URL. His display
+  // name is set onto `viewerName` by the caller from the review's own people rows.
+  if (scope.kind === "rep") {
+    const areaNames = territories.filter((t) => t.areaCode != null).map((t) => t.area);
+    return areaNames.length > 0
+      ? `${scope.viewerName} · ${nameList(areaNames, "areas")}`
+      : `${scope.viewerName} · ${LINE_LABEL[scope.line]}`;
+  }
+
   const lineBit =
     applied.line != null
       ? LINE_LABEL[applied.line]
@@ -321,7 +333,6 @@ function filterLabel(
   if (applied.regions.length > 1) return `${lineBit} · ${nameList(applied.regions, "regions")}`;
   if (applied.line || scope.kind === "line") return `${lineBit} line`;
   if (scope.kind === "seats") return scope.label;
-  if (scope.kind === "rep") return scope.label;
   return "All company";
 }
 

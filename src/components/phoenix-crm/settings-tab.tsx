@@ -343,7 +343,6 @@ export function SettingsTab({
   /** Boxes left once show their problem from then on; every box does after a save is tried. */
   const [touched, setTouched] = useState<ReadonlySet<FieldKey>>(() => new Set<FieldKey>());
   const [showAllProblems, setShowAllProblems] = useState(false);
-  const [discarding, setDiscarding] = useState(false);
   const [numbersProblem, setNumbersProblem] = useState<string | null>(null);
   const [lineDays, setLineDays] = useState<Readonly<Record<string, string>>>({});
   const [closingLine, setClosingLine] = useState<string | null>(null);
@@ -402,7 +401,6 @@ export function SettingsTab({
   const editField = (key: FieldKey, value: string) => {
     if (locked) return;
     setDraft((current) => ({ ...(current ?? savedNumbers), [key]: value }));
-    setDiscarding(false);
     setNumbersProblem(null);
     clearNotice("numbers");
   };
@@ -414,7 +412,6 @@ export function SettingsTab({
   const fillStartingNumbers = () => {
     if (locked) return;
     setDraft(startingNumbers);
-    setDiscarding(false);
     setNumbersProblem(null);
     clearNotice("numbers");
   };
@@ -423,7 +420,6 @@ export function SettingsTab({
     setDraft(null);
     setTouched(new Set<FieldKey>());
     setShowAllProblems(false);
-    setDiscarding(false);
     setNumbersProblem(null);
   };
 
@@ -804,36 +800,34 @@ export function SettingsTab({
       <div className="sticky bottom-[var(--crm-sticky-bottom,0px)] z-20 border-t border-orange-300 bg-white px-4 py-3 shadow-[0_-10px_30px_rgba(15,23,42,0.12)] sm:px-5 lg:bottom-0">
         <div className="flex min-w-0 flex-wrap items-center gap-3">
           <div className="min-w-0 flex-1 basis-56">
-            <p className="break-words text-sm font-black text-slate-950">{discarding ? "Discard your changes to the numbers?" : "Unsaved numbers"}</p>
+            <p className="break-words text-sm font-black text-slate-950">Unsaved numbers</p>
             <p className="break-words text-xs font-semibold leading-5 text-slate-500">
-              {discarding
-                ? "Every box goes back to what was last saved."
-                : `${plural(changedFields.length, "change", "changes")}. Plans, visits and reports use the new numbers once saved.`}
+              {`${plural(changedFields.length, "change", "changes")}. Plans, visits and reports use the new numbers once saved.`}
             </p>
-            {numbersProblem && !discarding ? (
+            {/*
+             * What Discard changes will do, said BEFORE it is pressed — there is no second press left to
+             * say it in (the plan board's own bar reads the same way).
+             */}
+            <p className="break-words text-xs font-semibold leading-5 text-slate-500">Discard changes puts every box back to what was last saved.</p>
+            {numbersProblem ? (
               <p className="break-words text-xs font-bold leading-5 text-rose-700" role="alert">
                 {numbersProblem}
               </p>
             ) : null}
           </div>
           <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
-            {discarding ? (
-              <>
-                <CrmButton disabled={locked} onClick={discardNumbers} variant="danger">
-                  Discard
-                </CrmButton>
-                <CrmButton onClick={() => setDiscarding(false)}>Keep them</CrmButton>
-              </>
-            ) : (
-              <>
-                <CrmButton disabled={locked} onClick={() => setDiscarding(true)}>
-                  Discard changes
-                </CrmButton>
-                <CrmButton busy={busy === "numbers"} disabled={locked} onClick={() => void saveNumbers()} variant="primary">
-                  Save the numbers
-                </CrmButton>
-              </>
-            )}
+            {/*
+             * ONE press, on the owner's own instruction (2026-09-30), after the same change on the plan
+             * board: it used to ask "Discard your changes to the numbers?" and wait for a second press,
+             * which reads as a button that did nothing — the bar's wording changed and the boxes stayed.
+             * So the press discards, and it keeps the danger variant the confirm's own button wore.
+             */}
+            <CrmButton disabled={locked} onClick={discardNumbers} variant="danger">
+              Discard changes
+            </CrmButton>
+            <CrmButton busy={busy === "numbers"} disabled={locked} onClick={() => void saveNumbers()} variant="primary">
+              Save the numbers
+            </CrmButton>
           </div>
         </div>
       </div>

@@ -5,6 +5,8 @@ import { MyMilestones } from "@/components/employee-portal/my-milestones";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { canUseEmployeePortalMilestones } from "@/lib/employee-portal/navigation";
+import { uploadedEmployeePhotoUrl } from "@/lib/employees/employee-photo";
+import { employeeProfileImageForHrId } from "@/lib/employees/profile-images";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
 import { listEmployeeMilestones, type MyMilestoneEntry } from "@/lib/milestones/service";
 
@@ -33,8 +35,14 @@ export default async function EmployeePortalMilestonesPage() {
   }
 
   let entries: MyMilestoneEntry[] = [];
+  // His own photo, resolved exactly as the portal shows it: uploaded route, else the bundled static
+  // photo, else null (the card then prints his initials). The framing box shows whatever this is.
+  let photoUrl: string | null = null;
   try {
-    entries = access.hrId ? await listEmployeeMilestones(access.hrId) : [];
+    if (access.hrId) {
+      entries = await listEmployeeMilestones(access.hrId);
+      photoUrl = (await uploadedEmployeePhotoUrl(access.hrId)) ?? employeeProfileImageForHrId(access.hrId);
+    }
   } catch (error) {
     logPortalFailure(
       { route: "/employee-portals/milestones", module: "milestones", role: access.role, hrId: access.hrId },
@@ -47,9 +55,9 @@ export default async function EmployeePortalMilestonesPage() {
     <EmployeePortalPageShell
       badge="My Workspace"
       title="My Milestones"
-      description="Your service anniversaries and birthdays at Sato Pharma. Download any of them as a keepsake card to keep or print."
+      description="Your service anniversaries and birthdays at Sato Pharma. Frame the photo, then download the card as a PDF or a picture."
     >
-      <MyMilestones entries={entries} />
+      <MyMilestones entries={entries} photoUrl={photoUrl} />
     </EmployeePortalPageShell>
   );
 }
