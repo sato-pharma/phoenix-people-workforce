@@ -1352,6 +1352,7 @@ import { runGithubWorkflowValidityTests } from "./github-workflow-validity.test.
 import { runCiGateParityTests, runCiDocsOnlyClassifierTests } from "./ci-gate-parity.test.ts";
 import { runCiRunnerSwitchTests } from "./ci-runner-switch.test.ts";
 import { runRemoteCheckTests } from "./remote-check.test.ts";
+import { runSelectCensusTests } from "./select-census.test.ts";
 import { runCiTypecheckLockTests } from "./ci-typecheck-lock.test.ts";
 import { runCiPrSkipsBuildAndSmokeTests } from "./ci-pr-skips-build-and-smoke.test.ts";
 import { runStagingBranchSyncGuardTests } from "./staging-branch-sync-guard.test.ts";
@@ -4554,6 +4555,10 @@ await runTest(
 await runTest(
   "remote-check runs the heavy checks on the CI box and never locally: no local spawn but ssh/git, ci.yml's 6144MB heap, its own directory rather than the runner's _work, no GitHub credential on the box, a warning for uncommitted work, and the remote exit code",
   runRemoteCheckTests,
+);
+await runTest(
+  "the select census finds every PostgREST read and write of a table and the columns each names: an embedded relation does not swallow the columns after it, aliases/casts/JSON paths reduce to the real column, a constant select is resolved in the same file or one import away, a template with ${CONST} is resolved, .or()/.eq()/.order() filters and write keys are listed, a run-time select is UNRESOLVED rather than clean, another table or schema is not counted, and on the real tree it finds every .from(\"employees\") a raw count finds",
+  runSelectCensusTests,
 );
 await runTest(
   "staging-branch-sync's ordering guard refuses an out-of-order CI completion that would rewind what staging serves - the real `merge-base --is-ancestor` line is lifted from the live YAML and executed, so swapping its operands (which inverts the guard silently) fails here",
