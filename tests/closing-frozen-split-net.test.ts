@@ -5,7 +5,11 @@ import {
   synthesizeFrozenMovements,
   type FrozenNetRow,
 } from "../src/lib/sales/closing-store-split-net.ts";
-import { areaProductKey, netStoreSplitByAreaProduct } from "../src/lib/sales/store-sales-city-split.ts";
+import {
+  areaProductKey,
+  netStoreSplitByAreaProduct,
+  summariseStoreSplitByArea,
+} from "../src/lib/sales/store-sales-city-split.ts";
 
 // A PUBLISHED month is frozen (owner, 2026-09-27; 2026-09-30 "show the frozen published number").
 // The attribution engine already reads the frozen au.monthly_store_split_net, but the Closing tab
@@ -97,5 +101,41 @@ export function runClosingFrozenSplitNetTests() {
     assert.equal(giver?.outQty, 135, "a negative net collapses to an OUT leg");
     assert.equal(giver?.inQty, 0);
     assert.equal(giver?.line, "Anti Infective", "movements carry the exported line");
+  }
+
+  // 7. THE SUMMARY SHEET USES THE FROZEN MOVEMENTS OVERRIDE. When movementsOverride is passed,
+  //    summariseStoreSplitByArea folds THOSE (the frozen split) instead of recomputing from rows —
+  //    so the export's Store Split summary net ties to the frozen Matrix. `before` still comes from
+  //    the rows. Proven by passing a NON-store row (which alone recomputes to no split at all).
+  {
+    const rows = [
+      {
+        areaCode: "D13",
+        clientCode: "C1",
+        clientName: "Pharmacy X", // a pharmacy, never split — live recompute would yield nothing
+        includedInClosing: true,
+        isDirect: false,
+        qty: 100,
+        salesValue: 11115,
+        officialLine: "Anti Infective",
+        areaName: "Menoufia 2",
+      },
+    ] as unknown as Parameters<typeof summariseStoreSplitByArea>[0];
+
+    // Without an override, a pharmacy-only month splits nothing.
+    assert.equal(summariseStoreSplitByArea(rows, "2026-08").length, 0, "no store rows -> no live split");
+
+    // With the frozen movements override, the summary is produced from THEM.
+    const override = synthesizeFrozenMovements(
+      new Map([[areaProductKey("D13", "SA001"), { qty: 135, value: 15005.25 }]]),
+      "Anti Infective",
+    );
+    const summary = summariseStoreSplitByArea(rows, "2026-08", undefined, override);
+    assert.equal(summary.length, 1, "the override drives the summary even with no store rows");
+    const d13 = summary[0];
+    assert.equal(d13.netQty, 135, "net comes from the frozen override");
+    assert.ok(Math.abs(d13.netValue - 15005.25) < 1e-6, "net value comes from the frozen override");
+    assert.ok(Math.abs(d13.beforeValue - 11115) < 1e-6, "before still comes from the rows");
+    assert.ok(Math.abs(d13.afterValue - (11115 + 15005.25)) < 1e-6, "before + net = after reconciles");
   }
 }
