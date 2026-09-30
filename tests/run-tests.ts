@@ -1936,6 +1936,7 @@ import { runMarketAwarenessTests } from "./market-awareness.test.ts";
 import { runNotificationChannelWiringTests } from "./notification-channel-wiring.test.ts";
 import { runMonthlySalesRunReconcileTests } from "./monthly-sales-run-reconcile.test.ts";
 import { runWorktreeNodeModulesJunctionTests } from "./worktree-node-modules-junction.test.ts";
+import { runWorktreeProvisionAllTests } from "./worktree-provision-all.test.ts";
 import { runChannelsByRepPharmacyOverrideTests } from "./channels-by-rep-pharmacy-override.test.ts";
 import { runCustomerChannelSqlRuleTests } from "./customer-channel-sql-rule.test.ts";
 import { runSalesUploadAnalyzeMatchesCommitTests } from "./sales-upload-analyze-matches-commit.test.ts";
@@ -6786,6 +6787,10 @@ await runTest(
 await runTest(
   "worktree node_modules junction (links a fresh worktree, never clobbers an existing one, heals a dangling junction instead of misreading EEXIST, refuses a missing primary, dry-runs clean, never removes a link's target)",
   runWorktreeNodeModulesJunctionTests,
+);
+await runTest(
+  "worktree provision --all sweep (makes a fresh worktree runnable, never overwrites its env or touches its settings, skips husks and the current/primary, is idempotent, dry-runs clean)",
+  runWorktreeProvisionAllTests,
 );
 await runTest(
   "channels by rep honours the owner pharmacy overrides (578,248.77 EGP read as stores on one tab)",
