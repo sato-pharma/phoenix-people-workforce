@@ -5,7 +5,12 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { MIN_MEMBERS } from "../scripts/rollup-build-verdict.mjs";
-import { membersReadyToBuild, waitForRequiredChecks } from "../scripts/rollup-check-state.mjs";
+import {
+  membersReadyToBuild,
+  requiredCheckState,
+  requiredGateUsable,
+  waitForRequiredChecks,
+} from "../scripts/rollup-check-state.mjs";
 import { isRollupBranch, overlappingRollup, rollupMembers } from "../scripts/rollup-duplicate-guard.mjs";
 
 /**
@@ -1130,5 +1135,126 @@ export function runRollupPrsTests(): void {
       );
     }
     assert.equal(isRollupBranch(undefined), false, "a missing branch name must not throw");
+  }
+
+  // ── 15. ZERO CONFIRMED REQUIRED CONTEXTS IS NOT GREEN ────────────────────────────────────────
+  // The reading that built roll-up #4937. `requiredCheckState` answered with two empty lists, and
+  // `checksSettled` — the flag `--apply` builds on — is `red.length === 0 && pending.length === 0`.
+  // So "nothing objected" was read as "every required check passed", which are different facts
+  // whenever the required LIST is not usable: the clause that enumerates the required names and calls
+  // the unreported ones PENDING can only enumerate a list it has.
+  //
+  // Measured 2026-09-30: #4937 was opened at 14:49:58Z carrying #4936, whose `validate` ran
+  // 14:48:14 -> 14:51:14Z and `checks` 14:48:13 -> 14:51:48Z. Both required jobs were still running
+  // when the build committed to it, and two empty lists is the only reading that could have carried it.
+  //
+  // Two ways to reach an unusable list, and the second is the quieter one because it rides a
+  // SUCCESSFUL API call: `null` when protection could not be read at all, and an EMPTY Set when
+  // protection answered with an empty `contexts` array — the classic array is deprecated in favour of
+  // `checks`, and a rule moved to a ruleset leaves it empty. Judged against an empty Set every entry
+  // in the rollup fails the `required.has(name)` test, so a PR with both required checks IN_PROGRESS
+  // reads as finished green.
+  {
+    const gate = new Set(["validate", "checks"]);
+    const green = [
+      { name: "validate", status: "COMPLETED", conclusion: "SUCCESS" },
+      { name: "checks", status: "COMPLETED", conclusion: "SUCCESS" },
+    ];
+    const running = [
+      { name: "validate", status: "IN_PROGRESS", conclusion: "" },
+      { name: "checks", status: "IN_PROGRESS", conclusion: "" },
+    ];
+    const carried = (rollup: typeof green, required: Set<string> | null): boolean =>
+      membersReadyToBuild([{ number: 1, ...requiredCheckState(rollup, required) }]).carry.length > 0;
+
+    // THE CASE THIS SECTION EXISTS FOR, stated the way #4937 happened: one required context finished
+    // green, the other had not. A subset is not the gate, and `--no-wait` leaves it out rather than
+    // building over it.
+    const mixed = requiredCheckState(
+      [
+        { name: "validate", status: "COMPLETED", conclusion: "SUCCESS" },
+        { name: "checks", status: "IN_PROGRESS", conclusion: "" },
+      ],
+      gate,
+    );
+    assert.deepEqual(mixed.red, [], "an unfinished required check is not a failure");
+    // `conclusion: ""` is what the live API returns for a job that has not concluded — verified
+    // 2026-09-30, where an IN_PROGRESS `checks` reads `{conclusion: "", status: "IN_PROGRESS"}`. An
+    // empty string is not nullish, so a `??` chain stopped there and reported `not started` for a check
+    // that had been running for minutes. The verdict never moved; the wait's progress line did.
+    assert.deepEqual(
+      mixed.pending,
+      ["checks (in_progress)"],
+      "the unfinished required context is named with the state it is ACTUALLY in, and the one that "
+        + "passed is not reported as pending",
+    );
+    const mixedReadiness = membersReadyToBuild([{ number: 1, ...mixed }, { number: 2, red: [], pending: [] }]);
+    assert.deepEqual(
+      mixedReadiness.carry,
+      [2],
+      "a member with ONE required context green and the other still running must be LEFT OUT — every "
+        + "live required context has to be seen succeed, never a subset, which is what `--no-wait` "
+        + "builds on when it does not wait",
+    );
+    assert.deepEqual(mixedReadiness.dropped.map((d) => [d.number, d.kind]), [[1, "pending"]]);
+
+    // AND ZERO IS THE ULTIMATE SUBSET. Each of these read as finished-and-green before this fix, and
+    // each is a state a real run reaches: a PR opened seconds ago reports nothing; a PR whose only
+    // reported check is `mobile` reports nothing that gates; and an unusable list confirms nothing
+    // however green the rollup looks.
+    assert.equal(carried([], null), false, "a PR with NO check reported and an UNREADABLE gate is unproven, not green");
+    assert.equal(
+      carried([{ name: "mobile", status: "COMPLETED", conclusion: "SKIPPED" }] as typeof green, null),
+      false,
+      "a rollup holding only a NON-gating check confirms nothing — `mobile` and `secret-scan` still run "
+        + "and neither gates (protection read live 2026-09-29)",
+    );
+    assert.equal(
+      carried(green, null),
+      false,
+      "even a rollup that looks entirely green confirms nothing when the required list could not be "
+        + "read: with no list there is no way to know those two names are the ones that gate",
+    );
+    assert.equal(
+      carried(running, new Set()),
+      false,
+      "an EMPTY required list is the quiet half — it arrives on a SUCCESSFUL API call, and taken "
+        + "literally it makes a PR whose required checks are IN_PROGRESS read as green",
+    );
+    assert.equal(carried([], new Set()), false, "and the same list confirms nothing for a PR with no checks either");
+
+    // The report has to SAY which of the two it is, or a reader sees `checksSettled: false` on a
+    // perfectly green PR and calls the fix the bug.
+    assert.match(
+      requiredCheckState(green, null).pending.join(" "),
+      /required-check list is unusable/,
+      "an unusable gate is named as the reason, not reported as a check that has not finished",
+    );
+
+    // Nothing above may cost the normal case: with the gate READ, green is still green, a red
+    // NON-required check still disqualifies nothing, and an unfinished required check is still pending.
+    assert.equal(carried(green, gate), true, "both required contexts seen green is the one buildable state");
+    assert.equal(
+      carried([...green, { name: "mobile", status: "COMPLETED", conclusion: "FAILURE" }] as typeof green, gate),
+      true,
+      "a red check OUTSIDE the required list disqualifies nothing — #4886's rule read the other way",
+    );
+    assert.equal(carried(running, gate), false, "and both required contexts running is still unproven");
+    assert.equal(
+      carried([{ name: "validate", conclusion: "SUCCESS" }, { name: "checks", conclusion: "FAILURE" }] as typeof green, gate),
+      false,
+      "#4886's own case is untouched: a terminally failed required check is never built from",
+    );
+
+    // `--apply` refuses the run outright rather than reaching the per-member reading, because a build
+    // judged against an unusable gate cannot prove ANY member green. Reporting still proceeds: it says
+    // it is judging on every failed check.
+    assert.equal(requiredGateUsable(gate).usable, true, "the live two-context gate is usable");
+    const unread = requiredGateUsable(null);
+    assert.equal(unread.usable, false, "an unreadable gate is not something a build may be judged against");
+    assert.match(unread.usable ? "" : unread.why, /could not be read/);
+    const empty = requiredGateUsable(new Set());
+    assert.equal(empty.usable, false, "and neither is an empty one");
+    assert.match(empty.usable ? "" : empty.why, /EMPTY required list/);
   }
 }

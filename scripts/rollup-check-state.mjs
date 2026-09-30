@@ -53,9 +53,12 @@ export const TERMINAL_SUCCESS = new Set(['SUCCESS', 'NEUTRAL', 'SKIPPED']);
  * direction, miss the one name that actually gates. The caller reads
  * `branches/main/protection/required_status_checks` live and passes the Set in.
  *
- * `required === null` means the gate could NOT be read. Then every check counts, red or unfinished,
- * because the safe direction is a PR that merges on its own: a false SEPARATE costs one extra CI run
- * and is visible in the report, while a false roll-up is the incident this exists to prevent.
+ * `required === null` means the gate could NOT be read. Then every check counts, red or unfinished, AND
+ * nothing counts as CONFIRMED: a PR with no objection to raise reads as unproven rather than as green,
+ * because the safe direction is a PR that merges on its own — a false SEPARATE costs one extra CI run
+ * and is visible in the report, while a false roll-up is the incident this exists to prevent. That last
+ * half was missing until #4937 was built over a member whose checks were still running (see below), and
+ * `requiredGateUsable` is what stops `--apply` reaching this state at all.
  *
  * A required name that appears NOWHERE in the rollup is PENDING, not absent. A PR opened seconds ago
  * reports an empty array, and reading that as "nothing is red, build it" is the 2026-09-30 failure in
@@ -72,19 +75,93 @@ export function requiredCheckState(statusCheckRollup, required) {
   const red = [];
   const pending = [];
   const seen = new Set();
+  // Required contexts SEEN to finish in a non-blocking state. Counted rather than inferred, because
+  // "nothing objected" and "every required check passed" are two different facts and the gap between
+  // them is this function's one historical bug (see below).
+  const confirmed = new Set();
   for (const entry of statusCheckRollup ?? []) {
     const name = entry?.name ?? entry?.context ?? '';
-    const state = String(entry?.conclusion ?? entry?.state ?? entry?.status ?? '').toUpperCase();
+    // `||`, not `??`. A CheckRun that has not concluded carries `conclusion: ""` — verified against the
+    // live API on 2026-09-30, where an IN_PROGRESS job reads `{conclusion: "", status: "IN_PROGRESS"}`,
+    // not `conclusion: null`. An empty string is not nullish, so `??` stopped there and every unfinished
+    // required check was labelled `not started`, including one that had been running for three minutes.
+    // The verdict was right either way (neither `""` nor `IN_PROGRESS` is a terminal success), but the
+    // wait's own progress line is the only place a session sees what it is waiting for.
+    const state = String(entry?.conclusion || entry?.state || entry?.status || '').toUpperCase();
     if (required !== null && !required.has(name)) continue;
     seen.add(name);
     const label = name || 'an unnamed check';
     if (TERMINAL_FAILURE.has(state)) red.push(`${label} (${state.toLowerCase()})`);
     else if (!TERMINAL_SUCCESS.has(state)) pending.push(`${label} (${state ? state.toLowerCase() : 'not started'})`);
+    else if (required !== null) confirmed.add(name);
   }
   if (required !== null) {
     for (const name of required) if (!seen.has(name)) pending.push(`${name} (not reported yet)`);
   }
+  if (red.length === 0 && pending.length === 0 && confirmed.size === 0) {
+    // 🔴 "NOTHING OBJECTED" IS NOT "EVERY REQUIRED CHECK PASSED", AND ZERO CONFIRMED IS THE ULTIMATE
+    // SUBSET OF ALL OF THEM.
+    //
+    // The clause above enumerates the required names and calls the ones nobody reported PENDING, which
+    // is what makes a fresh PR unbuildable. It can only enumerate a list it HAS. With no usable list —
+    // `null` because protection could not be read, or an EMPTY Set because protection answered with an
+    // empty `contexts` array — nothing is enumerated and the only thing left judging the PR is the loop
+    // over the checks that EXIST. A PR seconds old has none; a PR whose only reported check is
+    // `mobile (skipped)` has none that gates. Both then answer two empty lists, which every caller
+    // reads as "finished, and nothing is red".
+    //
+    // Measured 2026-09-30 against the code as it then stood: roll-up #4937 was opened at 14:49:58Z
+    // carrying #4936, whose `validate` and `checks` did not finish until 14:51:14Z and 14:51:48Z and
+    // had only started at 14:48:13Z. Two empty lists is the one reading that could have carried it.
+    //
+    // The EMPTY-Set half is the quieter one, because it arrives on a SUCCESSFUL API call: the classic
+    // `required_status_checks.contexts` array is deprecated in favour of `checks`, and a rule moved to a
+    // ruleset leaves it empty — at which point every PR in the repository reads as finished green at
+    // once. `requiredGateUsable` below refuses a build on either, and this counts the gate itself so a
+    // single member can never be promoted even if a build is reached some other way.
+    pending.push(required === null || required.size === 0
+      ? 'no required check could be confirmed — the required-check list is unusable, so nothing here is '
+        + 'known to be a check that gates'
+      : 'no required check could be confirmed green');
+  }
   return { red, pending };
+}
+
+/**
+ * Whether the required list is something a BUILD may be judged against at all.
+ *
+ * Reporting can proceed on an unread gate — it judges on every failed check and says so — but a roll-up
+ * cannot: proving a member green means naming the contexts that gate `main` and seeing every one of them
+ * succeed. Without that list there is nothing to see every one of, so `--apply` refuses rather than
+ * building on an absence.
+ *
+ * An EMPTY list is refused for the same reason and is the quieter of the two. `main` is protected with
+ * required checks, so zero contexts means the SHAPE changed, not that nothing gates: the classic
+ * `required_status_checks.contexts` array is deprecated in favour of `checks`, and a rule moved to a
+ * ruleset leaves it empty. An empty Set makes `requiredCheckState` skip every entry and enumerate
+ * nothing, so every PR in the repository would read as finished green at once — a total fail-open
+ * wearing a successful API call.
+ *
+ * @param {Set<string> | null} required
+ * @returns {{ usable: true } | { usable: false, why: string }}
+ */
+export function requiredGateUsable(required) {
+  if (required === null) {
+    return {
+      usable: false,
+      why: 'the required-check list could not be read, so no member can be PROVEN green — and a member '
+        + 'that nothing objected to is not the same thing',
+    };
+  }
+  if (required.size === 0) {
+    return {
+      usable: false,
+      why: 'branch protection returned an EMPTY required list. `main` is protected with required checks, '
+        + 'so zero means the shape changed (the `contexts` array is deprecated in favour of `checks`, and '
+        + 'a ruleset leaves it empty) — judged against an empty list every PR reads as green at once',
+    };
+  }
+  return { usable: true };
 }
 
 /**
