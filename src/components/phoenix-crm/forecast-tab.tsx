@@ -307,6 +307,19 @@ function DayBoard({ view }: { view: ForecastBoardView }) {
         </CrmBlock>
       ) : (
         <>
+          <CrmCardsOnPhone>
+            {view.rows.map((row) => (
+              <CrmCard
+                accent={row.sent ? "border-l-emerald-500" : "border-l-amber-500"}
+                key={row.seatId}
+                meta={`${row.areaName ?? row.name} · ${row.regionName ?? "—"}`}
+                status={row.sent ? <CrmPill tone="good">Sent {cairoClock(row.sentAt)}</CrmPill> : <CrmPill tone="warn">Not sent</CrmPill>}
+                title={row.repName ?? "Vacant"}
+              >
+                {row.sent ? <CrmFacts facts={[{ label: "Against the day's share", value: ratioText(row.shareOfDay) }]} /> : null}
+              </CrmCard>
+            ))}
+          </CrmCardsOnPhone>
           <CrmTable columns={["30%", "22%", "18%", "13%", "17%"]}>
             <thead>
               <tr>
@@ -331,19 +344,6 @@ function DayBoard({ view }: { view: ForecastBoardView }) {
               ))}
             </tbody>
           </CrmTable>
-          <CrmCardsOnPhone>
-            {view.rows.map((row) => (
-              <CrmCard
-                accent={row.sent ? "border-l-emerald-500" : "border-l-amber-500"}
-                key={row.seatId}
-                meta={`${row.areaName ?? row.name} · ${row.regionName ?? "—"}`}
-                status={row.sent ? <CrmPill tone="good">Sent {cairoClock(row.sentAt)}</CrmPill> : <CrmPill tone="warn">Not sent</CrmPill>}
-                title={row.repName ?? "Vacant"}
-              >
-                {row.sent ? <CrmFacts facts={[{ label: "Against the day's share", value: ratioText(row.shareOfDay) }]} /> : null}
-              </CrmCard>
-            ))}
-          </CrmCardsOnPhone>
         </>
       )}
     </>
@@ -385,6 +385,26 @@ function MonthBoard({ view, onPeriod }: { view: ForecastAccuracyView; onPeriod: 
         </CrmBlock>
       ) : (
         <>
+          <CrmCardsOnPhone>
+            {view.rows.map((row) => (
+              <CrmCard
+                key={row.seatId}
+                meta={`${row.areaName ?? row.name} · ${row.daysSent} of ${view.workingDays} days sent`}
+                status={row.reading ? <CrmPill tone={READING_TONE[row.reading]}>{row.reading}</CrmPill> : null}
+                title={row.repName ?? "Vacant"}
+              >
+                {row.daysSent > 0 ? (
+                  <CrmFacts
+                    facts={[
+                      { label: "Forecast", value: egpText(row.projectedValue) },
+                      { label: "Closing", value: egpText(row.actualValue) },
+                      { label: "Delivered", value: ratioText(row.delivered) },
+                    ]}
+                  />
+                ) : null}
+              </CrmCard>
+            ))}
+          </CrmCardsOnPhone>
           <CrmTable columns={["24%", "18%", "10%", "15%", "15%", "18%"]}>
             <thead>
               <tr>
@@ -416,26 +436,6 @@ function MonthBoard({ view, onPeriod }: { view: ForecastAccuracyView; onPeriod: 
               ))}
             </tbody>
           </CrmTable>
-          <CrmCardsOnPhone>
-            {view.rows.map((row) => (
-              <CrmCard
-                key={row.seatId}
-                meta={`${row.areaName ?? row.name} · ${row.daysSent} of ${view.workingDays} days sent`}
-                status={row.reading ? <CrmPill tone={READING_TONE[row.reading]}>{row.reading}</CrmPill> : null}
-                title={row.repName ?? "Vacant"}
-              >
-                {row.daysSent > 0 ? (
-                  <CrmFacts
-                    facts={[
-                      { label: "Forecast", value: egpText(row.projectedValue) },
-                      { label: "Closing", value: egpText(row.actualValue) },
-                      { label: "Delivered", value: ratioText(row.delivered) },
-                    ]}
-                  />
-                ) : null}
-              </CrmCard>
-            ))}
-          </CrmCardsOnPhone>
         </>
       )}
     </>
