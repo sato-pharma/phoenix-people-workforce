@@ -44,9 +44,20 @@
 // is written down is that the one-document version looks tidier and is the obvious thing to try
 // again.
 //
-// `notes` and `status_note` are deliberately NOT searched. They are the recruiter's own commentary
-// about a person — "weak call", "asked for too much" — not the CV and not the application, and
-// this seat has no business searching what a colleague wrote about a candidate.
+// 🔒 `notes` AND `status_note` ARE NOT SEARCHED, AND THAT IS THE OWNER'S RULING, NOT A PREFERENCE
+// (2026-09-30: "leave notes out of the CV Lookup search", asked and answered after the screen
+// shipped). They are the recruiter's own commentary about a person — "weak call", "asked for too
+// much" — not the CV and not the application, and this seat has no business searching what a
+// colleague wrote about a candidate.
+//
+// 🔴 THE PRESSURE TO WIDEN IT WILL ARRIVE AS A HELPFUL BUG REPORT: "she searched for somebody and
+// could not find them, so let us search the notes too." That is the one change this exclusion
+// exists to refuse. A note is not a fact about the candidate, it is a judgement about them by a
+// person who is not the reader — searchable notes turn a lookup into a way to find out what
+// colleagues have said. If a real candidate cannot be found, the answer is a term that matches
+// their CV or their application, never a wider column list.
+//
+// Pinned by `tests/cv-lookup.test.ts`, which reads THIS array and goes red if either name returns.
 //
 // ── NO CAP, AND THE ONE CEILING THAT IS NOT MINE ────────────────────────────────────────────────
 //
@@ -87,9 +98,12 @@ const CV_HALF_LIMIT = 1000;
  * The candidate's own row, as the application half searches it.
  *
  * Every column here is something the PERSON told us or something the CV said about them. `notes`,
- * `status_note` and `applied_for_evidence` are absent on purpose (see the header), and so is every
- * salary column: a search by expected salary is a way to sort the pool by price, not a way to find
- * somebody.
+ * `status_note` and `applied_for_evidence` are absent on purpose — 🔒 the first two by the owner's
+ * ruling of 2026-09-30, see the header — and so is every salary column: a search by expected salary
+ * is a way to sort the pool by price, not a way to find somebody.
+ *
+ * ADDING A NAME HERE WIDENS WHAT THIS SEAT CAN READ. Every entry is a column whose contents she can
+ * pull a person out of, so a new one is an access decision rather than a convenience.
  */
 const APPLICATION_SEARCH_COLUMNS = [
   "full_name",

@@ -147,11 +147,17 @@ export async function runCvLookupTests() {
     /assertPermission\(access, "cv_lookup", "read"\)/,
     `${SERVICE} must assert the gate itself — searchCvLookup returns candidate identities.`,
   );
-  // `notes` is the recruiter's own commentary about a person, not the CV and not the application.
+  // 🔒 OWNER RULING, 2026-09-30: "leave notes out of the CV Lookup search" — asked and answered
+  // after the screen shipped, so this is a decision to honour, not a preference to weigh. The
+  // message says so, because whoever sees this go red will be halfway through the widening that the
+  // exclusion exists to refuse: "she could not find somebody, so search the notes too."
   assert.ok(
     !/^\s*"notes",/m.test(serviceSource) && !/^\s*"status_note",/m.test(serviceSource),
-    `${SERVICE} must not search notes or status_note — they are what a colleague wrote about the ` +
-      "candidate, which this seat has no business searching.",
+    `${SERVICE} must not search notes or status_note. OWNER RULING 2026-09-30 ("leave notes out of ` +
+      'the CV Lookup search"): they are a colleague\'s judgement about the candidate rather than a ' +
+      "fact about them, and searchable notes turn a lookup into a way to read what other people " +
+      "have said. If a real candidate cannot be found, the answer is a better search term — never a " +
+      "wider column list.",
   );
 
   // The navigation row must name the same resource the page asserts.

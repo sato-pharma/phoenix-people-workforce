@@ -54,6 +54,7 @@ import { readFileSync } from 'node:fs';
 
 import { readProtectionContexts } from './required-check-names.mjs';
 import { rollupBranchName } from './rollup-branch-name.mjs';
+import { ROLLUP_BRANCH_PREFIX, overlappingRollup, rollupMembers } from './rollup-duplicate-guard.mjs';
 import { rollupBuildVerdict, MIN_MEMBERS } from './rollup-build-verdict.mjs';
 import { membersReadyToBuild, requiredCheckState, waitForRequiredChecks } from './rollup-check-state.mjs';
 
@@ -452,6 +453,37 @@ if (settle) {
 }
 
 if (!apply || group.length < 2) process.exit(0);
+
+// --------------------------------------- refuse when an open roll-up already carries this work
+
+// scripts/rollup-duplicate-guard.mjs records the three collisions on 2026-09-30 that make this a
+// GATE and not a warning. It sits before the members-wait below on purpose: a duplicate is refused
+// in seconds, rather than after minutes spent waiting for checks on members another roll-up owns.
+const openRollupPrs = open.filter((pr) => String(pr.headRefName ?? '').startsWith(ROLLUP_BRANCH_PREFIX));
+if (openRollupPrs.length > 0) {
+  const rollups = openRollupPrs.map((pr) => {
+    const raw = gh(['pr', 'view', String(pr.number), '--repo', REPO, '--json', 'body'], { allowFail: true });
+    // An unknown must never read as "carries nothing". Same rule as the branch-name check, for the
+    // same reason: that is the single direction in which a second roll-up gets built over live work.
+    let body = null;
+    if (raw) {
+      try { body = JSON.parse(raw).body ?? ''; } catch { body = null; }
+    }
+    return { number: pr.number, headRefName: pr.headRefName, members: body === null ? [] : rollupMembers(body) };
+  });
+  const clash = overlappingRollup({ wanted: group.map((p) => p.number), rollups });
+  if (clash) {
+    console.error(`[rollup] REFUSED — #${clash.number} (${clash.headRefName}) is already open and `
+      + (clash.unreadable
+        ? 'its members could not be read, so it may already carry this work.'
+        : `carries ${clash.shared.map((n) => '#' + n).join(', ')}.`));
+    console.error('[rollup] Two roll-ups over the same pull requests turn one merge back into several '
+      + 'and add their own. The open one has already paid for its CI run, so this build would '
+      + 'duplicate it rather than replace it.');
+    console.error(`[rollup] Let #${clash.number} merge, or close it, then run --apply again.`);
+    process.exit(1);
+  }
+}
 
 // -------------------------------------------------- wait for the members' required checks to finish
 
