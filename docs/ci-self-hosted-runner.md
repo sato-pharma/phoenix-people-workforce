@@ -845,31 +845,39 @@ the next Ubuntu release**: NodeSource lags a new codename by months, and the fai
 ## What to expect after the switch
 
 - **Cost**: metered Actions spend for this repo goes to ~$0. The VPS is the whole bill.
-- 🔴 **IT IS SLOWER THAN HOSTED — ABOUT 56% ON WALL CLOCK — AND THE OLD "likely faster" PREDICTION
-  HERE WAS WRONG.** Measured 2026-09-30 on PR #4840, the first real run on the Hetzner box:
+- 🔴 **STEADY STATE IT IS FASTER THAN HOSTED — `checks` ~145s against ~209s. NEVER JUDGE THIS BOX ON
+  ITS FIRST RUNS.** The step that decides CI is the typecheck, and it is the step the box wins:
 
-  | job | self-hosted | GitHub-hosted | verdict |
-  | --- | --- | --- | --- |
-  | `validate` | 157s · 161s | 141 · 160 · 163 · 164s — mean **157s** | **dead even** |
-  | `checks` | **327s · 339s** | 203 · 205 · 208 · 219s — mean **209s** | **~56% slower** |
+  | step of `checks` | box, steady state | GitHub-hosted |
+  | --- | --- | --- |
+  | `pnpm install --frozen-lockfile` | **0.5s** (pnpm store persists between jobs) | 11–14s |
+  | `next typegen` | 1.7s | <5s |
+  | `lint` (ESLint cache restored) | ~5s | 5–6s |
+  | **`tsc --noEmit`** | **114s** | **153–162s** |
+  | **job total** | **~145s** | **203–219s, mean 209s** |
 
-  Both run in parallel once the box has two runners, so wall clock is whatever `checks` costs:
-  **~327s self-hosted against ~209s hosted.** `checks` is typecheck plus lint — pure CPU, which is
-  exactly what a *shared*-vCPU plan gives away. `validate` is I/O- and install-heavy and does not
-  care. **Buy this box for the bill, not for the wait.** The thing that actually cut the wait was
-  #4837 (the unit suite moved beside the typecheck instead of behind it), and the remaining levers
-  are fewer/wider PRs, or dedicated vCPU — not this box as configured.
+  `tsc` measured directly on the host, cold (`--incremental false`, no `tsbuildinfo`), peak RSS
+  **5.55 GB** — which is why the 6 GB heap stands and why the swap file is not optional.
 
-  🔴 **THE COMPARISON BASIS IS THE WHOLE MEASUREMENT, AND IT IS EASY TO GET WRONG — TWO SESSIONS DID,
-  IN OPPOSITE DIRECTIONS, WITHIN AN HOUR.** #4837 moved the unit suite from `checks` into `validate`
-  on 2026-09-29T23:39Z, so **every run before that timestamp has a different job composition and is
-  not comparable**, and a `push` run's `validate` additionally carries the build and the login smoke.
-  An earlier draft of this bullet read "`validate` is roughly twice as fast" off pre-split or push
-  runs (270–365s); a session comparing per-job self-hosted times against a whole PR's *wall clock*
-  got "2× slower" the other way. **Filter to `event=pull_request` AND `created_at` after the last
-  change to the job split before quoting any baseline from this page.**
-- 🔴 **ONE RUNNER PROCESS TAKES ONE JOB, SO A SINGLE REGISTRATION SERIALISES THE TWO REQUIRED CHECKS
-  AND IS SLOWER THAN HOSTED.** The first run took **508s** that way (339s then 161s, back to back).
+  🔴 **THE FIRST RUNS SAID THE OPPOSITE — 327s and 339s for `checks` — AND THAT WAS AN ARTEFACT OF A
+  BOX THAT HAD EXISTED FOR MINUTES, NOT A PROPERTY OF THE BOX.** A persistent runner's advantage IS
+  its warm state, so its first run is its worst: the pnpm store was empty (a cold install, not the
+  0.5s above) and, once a second runner was added, `checks` and `validate` ran concurrently against
+  7.7 GB while `tsc` alone wants 5.55 GB. **Discard every measurement taken before the store is warm,
+  and take timings with one job on the box at a time.**
+
+  🔴 **THE COMPARISON BASIS IS THE WHOLE MEASUREMENT, AND IT WAS GOT WRONG THREE TIMES IN ONE HOUR, IN
+  BOTH DIRECTIONS.** #4837 moved the unit suite from `checks` into `validate` on 2026-09-29T23:39Z, so
+  **every run before that timestamp has a different job composition and is not comparable**, and a
+  `push` run's `validate` additionally carries the build and the login smoke. One draft read
+  "`validate` is roughly twice as fast" off pre-split or push runs (270–365s); another compared
+  per-job self-hosted times against a whole PR's *wall clock* and got "2× slower"; a third — the
+  bullet above — compared warm hosted runs against the box's cold-store first boot. **Filter to
+  `event=pull_request`, to runs created after the last change to the job split, and to a warm box
+  before quoting any number from this page.**
+- 🔴 **ONE RUNNER PROCESS TAKES ONE JOB, SO A SINGLE REGISTRATION SERIALISES THE TWO REQUIRED CHECKS.**
+  The first run took **508s** that way (339s then 161s, back to back) — cold store, so read that as
+  the shape of the problem, not as its cost.
   A **second** runner registered on the SAME box fixes it — `RUNNER_DIR=$HOME/actions-runner-2
   RUNNER_NAME=phoenix-ci-nbg1-b` with the same labels, which the setup script supports as-is. **It
   fits**: with both jobs running at once the box's lowest available RAM was **1,180 MB** and swap
@@ -880,6 +888,42 @@ the next Ubuntu release**: NodeSource lags a new codename by months, and the fai
   where the speed comes from and also the one new failure mode: a stale `node_modules`, `.next` or
   generated type file can make a run pass that should have failed. If a result ever looks
   suspicious, clear `~/actions-runner/_work` and re-run before believing it.
+
+## The typecheck is 75% of `checks`, and the 7.7× fix is not safe yet — 2026-09-30
+
+`checks` is **209s hosted, and ~157s of it is `tsc`**. Lint is 5s behind a restored ESLint cache,
+`next typegen` under 2s, install 11–14s. So anything that does not touch the typecheck cannot move
+this job, and the wall clock of a PR is this job.
+
+Measured on the Hetzner host, same checkout, same `tsconfig.json`, both cold:
+
+| | time | peak RSS | diagnostics |
+| --- | --- | --- | --- |
+| `tsc` (TypeScript 5) | 114s | 5.55 GB | 0 |
+| `tsgo` (`@typescript/native-preview` 7.0.0-dev.20260707.2) | **14.9s** | 6.24 GB | **3** |
+
+🔴 **DO NOT MAKE `tsgo` THE TYPE GATE YET, HOWEVER TEMPTING 7.7× IS.** Its three diagnostics are all
+`TS2871 "This expression is always nullish"` on one idiom —
+`(lineId == null ? null : names.lines.get(lineId) ?? null) ?? area?.line ?? null` in
+`src/lib/customer-360/service.ts` (×2) and `src/lib/verified-captures/distributor-codes.ts`. **They
+are false positives**: `names.lines` is `Map<number, string>` and `lineId` narrows to `number`, so
+the flagged expression is not always nullish. A preview compiler that rejects correct code will
+reject more of it as the codebase grows, and each one is a red PR with a bogus reason on the check
+that guards types for live payroll. Re-run this benchmark when TypeScript 7 ships stable; the
+command is `./node_modules/.bin/tsgo --noEmit --pretty false` after
+`npm i --no-save @typescript/native-preview`.
+
+🔴 **A GLOBAL `tsgo` DOES NOT TYPECHECK THIS PROJECT — IT FAILS RESOLUTION AND LOOKS 15× FASTER.**
+Installed with `npm i -g`, it resolved neither `next/link` nor `react/jsx-runtime` nor
+`JSX.IntrinsicElements` and "finished" in 7.6s with thousands of `TS2307`/`TS7026`. That is the time
+to fail, not a measurement. Install it into the project so module resolution has the right root.
+
+🔴 **AND THE CACHE THAT WOULD MAKE `tsc` FAST IS ALREADY FORBIDDEN HERE.** `tsconfig.json` sets
+`incremental: true` **and** `assumeChangesOnlyAffectDirectDependencies: true`, and on 2026-07-30 a
+warm `tsc` in this repo returned **exit 0 with three live `TS2741` errors**. So restoring
+`tsconfig.tsbuildinfo` from `actions/cache` would buy most of that 157s by trading away the
+correctness of the one check that guards types. Do not propose it.
+`typecheck-incremental-false-green`
 
 ## Do not re-attempt these
 
