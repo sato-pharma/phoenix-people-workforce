@@ -26,7 +26,6 @@
 // The full PDF / Excel / PowerPoint export is the same PackPicker the rest of the module uses,
 // rendered by the page at level "rep" and passed in here.
 
-import { AlertTriangle } from "lucide-react";
 import { useMemo } from "react";
 
 import {
@@ -46,7 +45,6 @@ import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
 import { cn } from "@/lib/utils";
 
 import { ConcentrationPanels } from "./concentration.client";
-import { CoverageBanner } from "./coverage.client";
 import type { HiddenFields } from "./hidden-fields";
 import { ReviewPeriodFilter } from "./review-filter.client";
 
@@ -65,7 +63,6 @@ type Props = {
   coverage: ReviewCoverage;
   window: ReviewWindow;
   available: string[];
-  restatementNotice: string;
   mapGeneratedAt: string;
   visitsAvailable: boolean;
   lineLabel: string;
@@ -145,7 +142,6 @@ export function RepBusinessReview({
   coverage,
   window: reviewWindow,
   available,
-  restatementNotice,
   mapGeneratedAt,
   visitsAvailable,
   lineLabel,
@@ -218,12 +214,17 @@ export function RepBusinessReview({
         />
       </div>
 
-      <div className="flex items-start gap-2.5 rounded border border-amber-200 bg-amber-50 p-4">
-        <AlertTriangle aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-        <p className="text-xs font-semibold leading-5 text-amber-900">{restatementNotice}</p>
-      </div>
-
-      <CoverageBanner coverage={coverage} />
+      {/* The rep's page stays plain (golden rule #1). The manager's restatement disclaimer and the
+          full coverage banner — direct-orders held out, EGP and row counts, marketing-missing
+          caveats — are noise to him. The one thing worth a line is when his figures stop short of
+          the window he picked because later months' sales have not landed yet; the header already
+          names the span, so this only explains WHY, and only when it is narrower. */}
+      {coverage.figureWindow ? (
+        <p className="border border-slate-200 bg-slate-50 px-4 py-3 text-xs font-semibold leading-5 text-slate-500">
+          These figures cover {windowLabel} — later months are left out because their distributor
+          sales have not arrived yet.
+        </p>
+      ) : null}
 
       {picker}
 
