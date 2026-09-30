@@ -718,6 +718,7 @@ import { runBusinessReviewPortalScopeTests } from "./business-review-portal-scop
 import { runBusinessReviewWindowAndCoverageTests } from "./business-review-window-and-coverage.test.ts";
 import { runBusinessReviewMonthEndTests } from "./business-review-month-end.test.ts";
 import { runBusinessReviewFitsTheScreenTests } from "./business-review-fits-the-screen.test.ts";
+import { runBusinessReviewRepFrontendTests } from "./business-review-rep-frontend.test.ts";
 import { runBusinessReviewConcentrationTests } from "./business-review-concentration.test.ts";
 import { runBusinessReviewPackMetricsTests } from "./business-review-pack-metrics.test.ts";
 import { runBusinessReviewPreviousWindowTests } from "./business-review-previous-window.test.ts";
@@ -4781,6 +4782,10 @@ await runTest(
 await runTest(
   "business review fits the screen (the admin half carried 22 tables with a min-width floor up to 980px inside five scrolling wrappers, in a ~720px content box; every table is now table-fixed with a colgroup that totals exactly 100% however many months or products the window holds, a phone gets cards, and no bare <table> is left to collect the admin shell's own overflow-x rule)",
   runBusinessReviewFitsTheScreenTests,
+);
+await runTest(
+  "business review rep frontend (a medical rep gets his OWN from-scratch page, not the manager dashboard scoped down: it reuses the portal primitives and the shared ConcentrationPanels, carries no integrity signal at all per CRM golden rule #1, computes achievement as sum(graded)/sum(target), keeps customer counts per area because they are unions, fits the screen with no bare table or horizontal scroll, and hands him the full pack export at level 'rep' — intercepted before any of the manager narrowing runs)",
+  runBusinessReviewRepFrontendTests,
 );
 await runTest(
   "business review month end (a window's upper date bound is the month's real last day: \"2026-09-31\" is not a date, Postgres refuses it, and the swallowed failure showed September's five coaching reports as zero; no source may hardcode day 28-31 in a bound)",
