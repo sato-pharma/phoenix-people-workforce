@@ -28,6 +28,7 @@
 // above server-side rather than a client fetch reusing the scope granted for the previous one.
 import { EmployeePortalEmptyState, EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
 import { BusinessReviewPortal } from "@/components/business-review/portal-review.client";
+import { RepBusinessReview } from "@/components/business-review/rep-review.client";
 import {
   applyRepScope,
   applySeatScope,
@@ -151,6 +152,75 @@ export default async function PortalBusinessReviewPage({ searchParams }: PagePro
     window,
   };
 
+  // ---- MEDICAL REP: his own frontend, built from scratch (owner, 2026-09-30) ----
+  //
+  // A rep gets a purpose-built page (RepBusinessReview), NOT the manager dashboard scoped down. It
+  // is intercepted HERE, before any of the manager machinery below (line comparison, the DM league
+  // table, the vacant/gap tabs, the exclude-vacant toggle), because none of that concerns someone
+  // with no team and no districts. He sees his own areas, his own products, his own months, his own
+  // field activity and where his money came from — and exports the full pack of exactly that scope.
+  // Golden rule #1: his app is easy, and it is blind — no integrity signal reaches this page.
+  if (scope.kind === "rep") {
+    const repDs = getReviewDataset(review, scope.line);
+    const mine = applyRepScope(repDs, scope.hrId);
+    if (mine.areas.length === 0) {
+      return shell(
+        <EmployeePortalEmptyState
+          message={
+            coverage.empty
+              ? `No sales data exists for ${figureLabel} at all — not for your areas and not for anyone else's. Pick a different period.`
+              : `No sales in ${figureLabel} were attributed to you in the ${repDs.meta.line} line's canonical data. If you carried a territory in these months, this is an attribution gap rather than an empty area — please report it before drawing any conclusion.`
+          }
+          title={coverage.empty ? "No data in this period" : "Your territory could not be matched"}
+        />,
+        `${figureLabel} for your own areas, as ${access.role}.`,
+        figureLabel,
+      );
+    }
+    const metrics = requested == null ? defaultSelectionFor("rep") : narrowSelection(requested, "rep");
+    // Where his money came from — his bricks, his customers, his channel. A separate customer-grain
+    // read, loaded only for him and narrowed to his own areas; a failed read drops that one panel and
+    // leaves the rest of his page correct.
+    let repConcentration: ConcentrationFacts | null = null;
+    try {
+      const detail = await loadReviewConcentration({ coverage, viewer: access });
+      repConcentration = concentrationForAreas(
+        detail.byLine[REVIEW_LINE_CODES[scope.line]] ?? [],
+        mine.areas.map((a) => a.areaCode),
+      );
+    } catch {
+      repConcentration = null;
+    }
+    return shell(
+      <RepBusinessReview
+        areas={mine.areas.map(withAreaBand)}
+        available={available}
+        concentration={repConcentration}
+        coverage={coverage}
+        headline={`${repDs.meta.line} Line — ${figureLabel}`}
+        keyProducts={repDs.products.filter((p) => p.include).map((p) => p.product)}
+        lineLabel={repDs.meta.line}
+        mapGeneratedAt={resolvedAt}
+        months={repDs.meta.months}
+        picker={
+          <PackPicker
+            action="/employee-portals/business-review"
+            hidden={{ from: window.from, to: window.to }}
+            level="rep"
+            selected={metrics}
+          />
+        }
+        restatementNotice={REVIEW_SOURCE_NOTICE}
+        scopeLabel={scope.label}
+        visitsAvailable={repDs.visits.available}
+        window={window}
+        windowHidden={{}}
+      />,
+      `${figureLabel} for your own areas, as ${access.role}.`,
+      figureLabel,
+    );
+  }
+
   // ---- what this viewer is LOOKING at, inside what he may see ----
   //
   // Owner, 2026-09-26, on the portal page: "the pages are very long and impossible for anyone to be
@@ -165,12 +235,10 @@ export default async function PortalBusinessReviewPage({ searchParams }: PagePro
   const areasByLine: Partial<Record<ReviewLine, AreaSummary[]>> = {};
   for (const line of scopeLines) {
     const lineDs = getReviewDataset(review, line);
+    // The rep is intercepted at the top of this function, so only company/line/seat scopes reach
+    // here: a seat scope narrows to its DM seats, everything else is the whole line's areas.
     areasByLine[line] =
-      scope.kind === "rep"
-        ? applyRepScope(lineDs, scope.hrId).areas
-        : scope.kind === "seats"
-          ? applySeatScope(lineDs, scope.dmSeatIds).areas
-          : lineDs.areas;
+      scope.kind === "seats" ? applySeatScope(lineDs, scope.dmSeatIds).areas : lineDs.areas;
   }
   const scopedTerritories = territoriesInScope(scope, areasByLine);
   const filter = resolveReviewFilter(scope, scopedTerritories, {
@@ -225,14 +293,12 @@ export default async function PortalBusinessReviewPage({ searchParams }: PagePro
       }
       for (const p of lineDs.people) {
         const keep =
-          scope.kind === "rep"
-            ? p.hrId.toUpperCase() === scope.hrId
-            : filter.applied.areaCodes.length > 0
-              // AREAS were chosen, so a colleague in the same district but another area is not in
+          filter.applied.areaCodes.length > 0
+            ? // AREAS were chosen, so a colleague in the same district but another area is not in
               // this view. Keying on the seat would widen the people back out to the whole district
               // while every sales figure on the page showed the chosen areas.
-              ? p.areaCode != null && surviving.has(p.areaCode)
-              : p.dmSeatId != null && keptSeats.has(p.dmSeatId);
+              p.areaCode != null && surviving.has(p.areaCode)
+            : p.dmSeatId != null && keptSeats.has(p.dmSeatId);
         if (keep) fPeople.push(p);
       }
     }
@@ -284,16 +350,12 @@ export default async function PortalBusinessReviewPage({ searchParams }: PagePro
         }
         scopeFilter={scopeFilterFor(metrics)}
         scopeLabel={filter.label}
-        // A rep's spend stays zero: marketing and outstation are DISTRICT budgets, and printing one
-        // under a rep's name reads as his. Otherwise it is the districts actually shown.
-        spend={
-          scope.kind === "rep"
-            ? { marketing: 0, outstation: 0 }
-            : {
-                marketing: fDms.reduce((sum, d) => sum + d.marketingCost, 0),
-                outstation: fDms.reduce((sum, d) => sum + d.outstationCost, 0),
-              }
-        }
+        // Marketing and outstation are the districts actually shown. The rep, whose district spend
+        // would read as his, is intercepted long before this narrowed manager view.
+        spend={{
+          marketing: fDms.reduce((sum, d) => sum + d.marketingCost, 0),
+          outstation: fDms.reduce((sum, d) => sum + d.outstationCost, 0),
+        }}
         thresholds={onlyDs ? onlyDs.meta.thresholds : getReviewCompanyThresholds(review)}
         visitsAvailable={onlyDs ? onlyDs.visits.available : visitsOk}
         windowHidden={appliedParams}
@@ -390,62 +452,8 @@ export default async function PortalBusinessReviewPage({ searchParams }: PagePro
     );
   }
 
-  // ---- rep scope: his own areas, and no district row at all ----
-  //
-  // A rep sees the territory he stands in. He is NOT given his district's total — that is his
-  // manager's figure, and showing it here is the upward read the scope rule forbids. So `dms` is
-  // deliberately empty and the spend tiles are zero: marketing and outstation are district budgets,
-  // not a rep's, and printing a district's spend under a rep's name would read as his.
-  if (scope.kind === "rep") {
-    const mine = applyRepScope(ds, scope.hrId);
-    if (mine.areas.length === 0) {
-      return shell(
-        <EmployeePortalEmptyState
-          message={
-            coverage.empty
-              ? `No sales data exists for ${figureLabel} at all — not for your areas and not for anyone else's. Pick a different period.`
-              : `No sales in ${figureLabel} were attributed to you in the ${ds.meta.line} line's canonical data. If you carried a territory in these months, this is an attribution gap rather than an empty area — please report it before drawing any conclusion.`
-          }
-          title={coverage.empty ? "No data in this period" : "Your territory could not be matched"}
-        />,
-        `${figureLabel} for your own areas, as ${access.role}.`,
-        figureLabel,
-      );
-    }
-    // What this review shows, and what an export carries — the same list, so the file a manager
-    // hands round cannot disagree with the screen he built it from. Absent `m` means this level's
-    // defaults; `m` present but empty means exactly that, so the page can be stripped to a headline.
-    const metrics = requested == null ? defaultSelectionFor("rep") : narrowSelection(requested, "rep");
-    return shell(
-      <BusinessReviewPortal
-        {...shared}
-        metrics={metrics}
-        scopeFilter={scopeFilterFor(metrics)}
-        windowHidden={appliedParams}
-        picker={
-          <PackPicker
-            action="/employee-portals/business-review"
-            hidden={carry}
-            level="rep"
-            selected={metrics}
-          />
-        }
-        areas={mine.areas.map(withAreaBand)}
-        dms={[]}
-        spend={{ marketing: 0, outstation: 0 }}
-        headline={headline}
-        keyProducts={keyProducts}
-        lineRows={[]}
-        months={ds.meta.months}
-        productTables={[]}
-        scopeLabel={scope.label}
-        thresholds={ds.meta.thresholds}
-        visitsAvailable={ds.visits.available}
-      />,
-      `${figureLabel} for your own areas, as ${access.role}.`,
-      figureLabel,
-    );
-  }
+  // The rep is handled at the top of this function by RepBusinessReview — his own from-scratch page,
+  // intercepted before all the manager machinery above. Nothing rep-shaped reaches this far.
 
   // ---- the customer-grain read, for a district and only for a district ----
   //
