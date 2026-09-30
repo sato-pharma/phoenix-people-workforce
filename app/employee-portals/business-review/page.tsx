@@ -5,7 +5,9 @@
 //   NSM / GPM / Product Manager                          → their whole line
 //   Regional Manager                                     → the DM seats under their RSM node
 //   District Manager (incl. ACTING)                      → their own district's areas
-//   Medical Representative                               → no access (owner ruling)
+//   Medical Representative                               → his own areas only, no district row
+//                                                          (owner opened it 2026-09-26, sidebar
+//                                                           link added 2026-09-30)
 //
 // An ACTING district manager is a District Manager here, in full — owner rule, AGENTS.md §4.
 //

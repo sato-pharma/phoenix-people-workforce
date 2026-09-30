@@ -961,10 +961,13 @@ export function resolveEmployeePortalNavVisibility(
       resolvedRole === "District Manager" ||
       resolvedRole === "Regional Manager" ||
       isNationalSalesManager,
-    // Same role set as Source of Sales / Weekly Sales — every field-management role, no Medical
-    // Rep (owner ruling: this module is managers-only). CEO/SFE/Super Admin reach it through the
-    // admin shell instead.
+    // Every field-management role, AND the Medical Rep — the owner opened this module to a rep on
+    // 2026-09-26 (own list only, downward-only) and asked for the sidebar link on 2026-09-30. The
+    // page and both export routes resolve each viewer's scope from the seat map (portal-scope.ts)
+    // and a rep narrows to his own areas, so this flag only surfaces the link. CEO/SFE/Super Admin
+    // reach it through the admin shell instead.
     showBusinessReviewTab:
+      isMedicalRep ||
       resolvedRole === "District Manager" ||
       resolvedRole === "Regional Manager" ||
       isNationalSalesManager ||
