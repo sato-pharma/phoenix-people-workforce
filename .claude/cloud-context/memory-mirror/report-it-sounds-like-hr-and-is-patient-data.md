@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 10c9e0cd-506e-4881-977d-63fca5e0190c
-  modified: 2026-08-28T06:06:54.671Z
+  modified: 2026-09-30T23:22:02.286Z
 ---
 
 **The module named "Report It" is pharmacovigilance** — adverse drug reactions. Its rows carry
@@ -18,7 +18,7 @@ any job description mentioning *employee concerns*, *grievances* or *reporting p
 like it maps here. It does not. The HR route for those is `support_requests`.
 
 **`report_it:export` is not "download a spreadsheet" — it is the read-EVERY-report gate.**
-`canViewAllReports` (`src/lib/report-it/service.ts:8`) returns true on that one action, and
+`canViewAllReports` (in `src/lib/report-it/service.ts`) returns true on that one action, and
 `listReports`/`getReport` then drop the `submitted_by_hr_id` filter. Without it a caller sees only
 their own submissions. It is held by **Super Admin, CEO, Finance Manager** and nothing else.
 

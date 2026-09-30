@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 5344b79a-0aa0-46cd-ae76-929339b93a87
-  modified: 2026-08-31T12:10:00.000Z
+  modified: 2026-10-01T00:00:00.000Z
 ---
 
 **OWNER RULE 2026-08-27: "Collect Lacto Advanced family."** The Pedia Lacto family means
@@ -53,7 +53,7 @@ harmless: **no application code and no database function reads that table** (swe
   Basic and "Lacto LF" into one bucket. Harmless today (no Lacto Basic row exists in
   `sales_records`, and `v_employee_portal_sales` strips Basic by product name), but it is a second
   definition that no longer agrees with the master.
-- `PRODUCT_FAMILY` (`src/lib/business-review/canonical.ts:169`) hardcodes `LA001/LA002 -> "Lacto"`,
+- `PRODUCT_FAMILY` (`src/lib/business-review/canonical.ts`) hardcodes `LA001/LA002 -> "Lacto"`,
   deliberately keyed on code and independent of the master. The CEO business review therefore still
   prints "Lacto"; `dashboard.client.tsx:462` also shortens "Lacto Advanced" to "Lacto" on purpose.
 

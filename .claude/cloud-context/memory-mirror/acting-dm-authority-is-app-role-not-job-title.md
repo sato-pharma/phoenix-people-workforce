@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 76790e1c-f7b7-4d3e-a6a2-edce4aff525f
-  modified: 2026-09-21T00:06:44.617Z
+  modified: 2026-10-01T00:00:00.000Z
 ---
 
 **A person's TITLE comes from THREE places. Fixing `job_title` alone changes almost nothing —
@@ -13,7 +13,7 @@ that mistake was made here on 2026-08-22 and reported as done before the other t
 
 | Shown where | Source | Skeleton? |
 | --- | --- | --- |
-| Organogram **chart** | `au.seats.seat_tier` → `TITLE_BY_TIER` (`organogram-au-source.ts:41`) | **YES — off limits** |
+| Organogram **chart** | `au.seats.seat_tier` → `TITLE_BY_TIER` (`organogram-au-source.ts`) | **YES — off limits** |
 | Organogram **directory path**, people cards | `positions.title` via `employees.position_id`, **preferred over `job_title`** (`organogram-view-model.ts:492`, `positionTitle ?? jobTitle`) | no — HR field |
 | HR record, payroll, exports | `employees.job_title` | no — HR field |
 

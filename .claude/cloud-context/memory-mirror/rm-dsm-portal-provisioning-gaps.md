@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 0c89c9a5-f1c8-425b-89b2-be9cac82f4a2
-  modified: 2026-07-29T23:59:21.604Z
+  modified: 2026-10-01T00:00:00.000Z
 ---
 
 Deep-dive (2026-07-30, read-only, no code changed) into what RM (`Regional Manager`)
@@ -15,14 +15,14 @@ dashboards should show.
 **Routing:** both land `/employee-portals` → `PortalCommandCenter` (portal-command-center.tsx
 ~1162) switches on role → `DsmCommandCenter` vs `RmCommandCenter`
 (src/components/employee-portal/dashboards/). Live sidebar is driven by
-`resolveEmployeePortalNavVisibility` flags (src/lib/employee-portal/navigation.ts:213)
+`resolveEmployeePortalNavVisibility` flags (src/lib/employee-portal/navigation.ts)
 via `buildEmployeePortalSections`, **NOT** `system-navigation.ts`'s
 `employeePortalNavigationSections` (declared but never rendered to RM/DSM — a real
 drift hazard; the two configs disagree, e.g. DSM gets Direct-Orders-Approvals in the
 declared config but not the live one).
 
 **Headline gap — RM landing is emptier than the DSMs beneath it.**
-`getRoleSpecificExtras` (src/lib/employee-portal/home-snapshot.ts:137-271) has branches
+`getRoleSpecificExtras` (src/lib/employee-portal/home-snapshot.ts) has branches
 for PM/GPM, Marketing Manager, District Manager, NSM — **no `Regional Manager` branch**,
 so RM falls through to `emptyRoleExtras`. RM landing = personal stats (leave, payslip,
 my pending requests, plans-awaiting-approval) + hardcoded "Upcoming: nothing scheduled"
@@ -39,7 +39,7 @@ DSM-only = Team Performance, Team Coaching, Vacancies, Probation Tracker (all ga
 
 **Plans paradox (confirmed current):** `WEEKLY_MONTHLY_PLAN_ELIGIBLE_JOB_TITLES`
 (src/lib/weekly-planning/plan-v1.ts:135) includes "District Manager", **excludes
-"Regional Manager"**. But navigation.ts:274 `showPlansTab` shows RM the builder link and
+"Regional Manager"**. But navigation.ts `showPlansTab` shows RM the builder link and
 omits DSM. Net: RM sees the Plans link → submit = "Forbidden: not eligible"; DSM can
 submit but has no live builder link. Backwards. See [[dsm-plan-eligibility-fix-and-rm-gap]].
 Open owner decision needed: should RM SUBMIT its own weekly/monthly plan, or only APPROVE?

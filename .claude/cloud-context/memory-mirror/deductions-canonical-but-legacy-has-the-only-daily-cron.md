@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 75a0c0fe-3f17-469a-aca9-812ef437e71b
-  modified: 2026-08-13T10:34:30.175Z
+  modified: 2026-10-01T00:00:00.000Z
 ---
 
 Owner ruled 2026-08-13: **`src/lib/deductions/` (`deductions_*`) is the deductions source of truth**
@@ -22,7 +22,7 @@ attempted 2026-08-13 and are wrong:
   days and CRM publishes with no approval step), and canonical writes are Super-Admin-gated.
   Canonical is **end-of-month, operator-driven by design** — there is no daily gap to fill.
 - **THE REAL FREEZE BLOCKER:** legacy `deduction_*` is NOT a retired shadow. It is the live backing
-  store for `upsertAndDecideEmployeeDayDeduction` (`attendance/employee-day-report.ts:584`, via
+  store for `upsertAndDecideEmployeeDayDeduction` (`attendance/employee-day-report.ts`, via
   `POST /api/attendance/employee-day-report/decisions`) — the attendance day-report per-day
   deduction decision feature, legacy-only. **Freezing legacy writes breaks this live feature.**
 - The legacy daily `runFieldWorkforceComplianceDeductionsAutoSync` (`notifications/daily/route.ts`
