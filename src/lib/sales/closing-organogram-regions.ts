@@ -604,11 +604,24 @@ export async function loadDirectSubmitters(
  * so the closing must not invent a second rule. Empty map ⇒ the caller falls back to weighting by
  * each territory's own sales.
  *
- * NOT WIRED IN YET, deliberately: au.direct_region_allocation has no public wrapper view, and
- * PostgREST only reaches the `public` schema. Creating `au_v_direct_region_allocation` alongside the
- * other au_v_* wrappers is a migration and needs the owner's approval; until then calling this would
- * be one guaranteed-failing round-trip per closing load. The allocator already accepts the weights,
- * so wiring it is a one-line change once the view exists.
+ * 🔴 NEVER WIRED, AND THE OWNER HAS RULED THAT IT NEVER WILL BE (2026-09-30, asked directly and
+ * answered): *"this is previously, when we used the Excel import direct order. Now direct orders are
+ * all from the system, from the direct order request, so we'll never meet this situation again. The
+ * last time was July. Starting from August you will not see this split again. So September, don't
+ * split it, never."*
+ *
+ * He is right, and it is measurable: a split only ever happens for a Direct row with a BLANK area
+ * (the allocator passes an area-carrying row straight through), and blank-area Direct rows ended
+ * with July. Measured on production that day, Anti Infective via `phx_monthly_closing_direct`:
+ * **2026-07 8 of 8 rows blank · 2026-08 0 of 9 · 2026-09 0 of 14** — every row since August carries
+ * its own area and brick, written by `direct_order_request`. July is published AND locked, so the
+ * one month this could ever have changed can never be restated (AGENTS.md §4).
+ *
+ * So: do NOT create the `au_v_direct_region_allocation` wrapper view, do NOT pass `allocationWeights`
+ * at the call site, and do NOT re-raise this as a finding — a select-audit WILL flag the missing view
+ * again, because the read below names a relation that does not exist in `public`. That is expected.
+ * This function is unreachable by design and is kept only so the reasoning is not rediscovered from
+ * scratch. `tests/closing-organogram-regions.test.ts` pins that nothing calls it.
  */
 export async function loadDirectRegionAllocation(
   lineCode: string | null | undefined,
