@@ -579,6 +579,9 @@ export function CustomerListBoard({
       customer: customer.name,
       grade: customer.grade ?? "",
       speciality: customer.speciality ?? "",
+      // His phone as the rep typed it (owner, 2026-09-30, "Excel is enough"). Empty until he gives
+      // one, like the grade and specialty above — never a dash, which this sheet uses nowhere.
+      phone: customer.phone ?? "",
       list: customer.listType,
       detail: detailText(customer, variant),
       visits: customer.visitsThisMonth,
@@ -641,6 +644,10 @@ export function CustomerListBoard({
             { key: "customer", label: "Customer" },
             { key: "grade", label: "Grade" },
             { key: "speciality", label: "Specialty" },
+            // Beside the specialty, where the daily plan sheet puts it too. `text` because a phone is
+            // an identifier, not a quantity: without it one retype turns 01012345678 into the number
+            // 1012345678, which is how 124 employee mobile numbers lost their leading zero.
+            { key: "phone", label: "Phone", text: true, width: 15 },
             { key: "list", label: "List" },
             { key: "detail", label: DETAIL_HEADER[variant] },
             { key: "visits", label: "Visits this month", numeric: true },

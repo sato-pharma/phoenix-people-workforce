@@ -221,4 +221,98 @@ export function runScheduledAlarmsNeverWithholdTests() {
       "2026-09-30 a failure reached nobody at all — red in a tab no one was watching. Failing " +
       "loudly requires something that is actually loud.",
   );
+
+  // 10. NO WORKFLOW MAY CARRY A LINE AT COLUMN 0 THAT IS NOT A TOP-LEVEL YAML KEY.
+  //
+  //     This clause is not about withholding a deploy — it is about the alarm existing at all, which
+  //     every clause above silently assumes. A continuation line starting at column 0 inside a
+  //     `run: |` block TERMINATES the block scalar, and GitHub then refuses to load the whole
+  //     workflow: it never runs, nothing turns red, and the schedule just stops. An alarm that stops
+  //     silently is worse than one that never existed, because the quiet reads as "no findings".
+  //
+  //     🔴 Caught on 2026-10-01 while wiring check:required-checks into this alarm. A multi-line
+  //     Telegram message was written as a literal shell string, putting TEN lines at column 0 — and
+  //     every regex clause above still passed, because they match raw text and never ask whether the
+  //     file is loadable. There is no YAML parser in this repo's dependency tree, so this cheap
+  //     structural rule stands in for one. The fix is the style the file already used everywhere
+  //     else: build multi-line strings with `printf` and `\n`.
+  for (const file of [...ALARMS, EXCLUDED]) {
+    const source = workflow(file);
+    const offenders = source
+      .split(/\r?\n/)
+      .map((line, index) => ({ line, lineNo: index + 1 }))
+      .filter(({ line }) => /^[^\s#]/.test(line) && !/^[A-Za-z][A-Za-z0-9_-]*:/.test(line));
+
+    assert.equal(
+      offenders.length,
+      0,
+      `🔴 ${file} has line(s) at column 0 that are not top-level YAML keys, so the \`run: |\` block ` +
+        "scalar they sit inside ends early and GitHub will REFUSE THE WHOLE FILE — the workflow " +
+        "stops running, silently, with nothing red to show it. Build multi-line strings with " +
+        "`printf 'a\\n\\nb'` rather than a literal multi-line shell string.\n" +
+        offenders.map(({ line, lineNo }) => `  ${lineNo}: ${line.slice(0, 90)}`).join("\n"),
+    );
+  }
+
+  // 11. EVERY `permissions:` KEY MUST BE A SCOPE GITHUB ACTUALLY ACCEPTS.
+  //
+  //     Same consequence as clause 10 and a different cause: an unknown scope makes GitHub refuse to
+  //     parse the workflow — `HTTP 422 … Unexpected value '<scope>'` — so the file never runs and the
+  //     schedule stops with nothing red anywhere.
+  //
+  //     🔴 Caught on 2026-10-01 in the same change as clause 10, and only because the workflow was
+  //     dispatched on its own branch before merging. `administration: read` looks obviously right —
+  //     it is the permission the REST API documents for branch-protection reads — but it is not a
+  //     scope a workflow may request, so the file was unparseable. Clause 10 passed on it, because
+  //     the YAML was structurally fine; it was the VALUE that GitHub rejected.
+  const VALID_SCOPES = new Set([
+    "actions", "attestations", "checks", "contents", "deployments", "discussions", "id-token",
+    "issues", "models", "packages", "pages", "pull-requests", "repository-projects",
+    "security-events", "statuses",
+  ]);
+
+  //     🔴 A LINE WALK, NOT A REGEX, AND THAT IS THE SECOND LESSON OF THIS CLAUSE. The first
+  //     attempt matched the block with `/^(\s*)permissions:\s*$\n(…)/m` — and `\s` MATCHES A
+  //     NEWLINE, so `\s*$` swallowed the line break, the body group captured the empty string, and
+  //     the assertion inspected nothing while reporting success. It was caught only by planting an
+  //     invalid scope and watching nothing happen. That is the dead-assertion defect this file's own
+  //     header warns about, reproduced by the person who wrote the warning.
+  for (const file of [...ALARMS, EXCLUDED]) {
+    const lines = workflow(file).split(/\r?\n/);
+    const indentOf = (line: string): number => line.length - line.trimStart().length;
+
+    for (let i = 0; i < lines.length; i += 1) {
+      const header = /^([ \t]*)permissions:[ \t]*$/.exec(lines[i]);
+      if (!header) continue;
+      const baseIndent = header[1].length;
+
+      for (let j = i + 1; j < lines.length; j += 1) {
+        const line = lines[j];
+        const bare = line.trim();
+        if (bare === "" || bare.startsWith("#")) continue;
+        // The block ends at the first real line that is not indented past `permissions:`.
+        if (indentOf(line) <= baseIndent) break;
+
+        // A TRAILING COMMENT IS LEGAL AND REAL — deploy-drift-check.yml carries
+        // `actions: read # read this workflow own past runs, to count the failure streak`. The first
+        // version of this pattern demanded end-of-line after the value and failed a workflow that
+        // was correct, which is the same mistake clause 8 records: an over-strict assertion is a
+        // false positive, and a false positive in a test is a test people delete.
+        const entry = /^[ \t]+([a-z-]+):[ \t]*(read|write|none)[ \t]*(#.*)?$/.exec(line);
+        assert.ok(
+          entry !== null,
+          `🔴 ${file}:${j + 1} sits inside a \`permissions:\` block but is not a \`<scope>: ` +
+            `read|write|none\` line, so GitHub may refuse the workflow: ${bare.slice(0, 80)}`,
+        );
+        assert.ok(
+          VALID_SCOPES.has(entry[1]),
+          `🔴 ${file}:${j + 1} requests the permission scope \`${entry[1]}\`, which GitHub does not ` +
+            "accept. It answers `HTTP 422 — Unexpected value` and REFUSES TO PARSE THE WORKFLOW, so " +
+            "the file never runs and its schedule stops silently. Note `administration` is NOT " +
+            "requestable even though the REST API documents it for branch-protection reads — that " +
+            `read needs a PAT. Valid scopes: ${[...VALID_SCOPES].join(", ")}.`,
+        );
+      }
+    }
+  }
 }
