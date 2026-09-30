@@ -277,9 +277,10 @@ export function runPhoenixCrmTodayTests(): void {
     assert.ok(panel.includes("{showBrickHeadings ? <BrickHeading brick={brick} /> : null}"), "and the header is conditional on it");
     // With one brick its name is dropped from the where-line too, not printed on every row.
     assert.ok(
-      source("src/lib/phoenix-crm/server/rep-landing.ts").includes("stopWhereLine(stop, brickOnTheLine ? null : stop.brick)"),
-      "the brick is on the row OR in a heading, never both",
+      source("src/lib/phoenix-crm/server/rep-landing.ts").includes("where: stopWhereLine(stop, null),"),
+      "🔴 the brick is NEVER on the row — it is a heading, or the header's own word on a single-brick day",
     );
+    assert.ok(panel.includes("{plan.soleBrick ? `${plan.dateLabel} · ${plan.soleBrick}` : plan.dateLabel}"), "and a one-brick day still says where he is");
 
     // 2. Green when visited, nothing when not — carried by a tick as well as the colour, so it
     //    survives a grey screenshot and a colour-blind reader.

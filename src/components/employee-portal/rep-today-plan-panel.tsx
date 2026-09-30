@@ -136,8 +136,8 @@ export function RepTodayPlanPanel({ plan }: { plan: RepTodayPlan | null }) {
     <section className="min-w-0 border border-slate-200 bg-white">
       <header className="flex items-center gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2">
         <h2 className="text-phx-xs font-bold uppercase tracking-[0.09em] text-slate-600">Your day</h2>
-        <span className="shrink-0 text-phx-2xs font-semibold uppercase tracking-[0.08em] text-slate-400">
-          {plan.dateLabel}
+        <span className="min-w-0 break-words text-phx-2xs font-semibold uppercase tracking-[0.08em] text-slate-400" dir="auto">
+          {plan.soleBrick ? `${plan.dateLabel} · ${plan.soleBrick}` : plan.dateLabel}
         </span>
         <span className="ml-auto flex shrink-0 flex-wrap justify-end gap-1">
           <CountChip done={plan.amDone} label="AM" planned={plan.amPlanned} />

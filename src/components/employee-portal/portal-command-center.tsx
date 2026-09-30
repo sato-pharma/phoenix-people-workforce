@@ -1130,112 +1130,6 @@ function MedicalRepCommandCenter({ repTodayPlan, snapshot }: { repTodayPlan: Rep
       <PortalIdentityBand shell={shell} planAdherence={snapshot.planAdherence} myInterviews={snapshot.myInterviews} />
       <PortalContextBar context="Field Performance" role="Medical Representative" />
 
-      {/* Four measurements, no ornament. Coverage and frequency stand apart on purpose: they
-          disagree by design — production has run 68% coverage against 39% frequency in one month —
-          and any blend of them hides exactly the gap they exist to expose.
-          Four across only when THIS row is at least 48rem wide (a container query on the wrapper):
-          `lg:` fired at a 1024px window whose content was ~636px once the sidebar opened, leaving
-          each tile ~127px — "SEP 2026" broke in two and "10.2 of 10" wrapped. */}
-      <div className="@container">
-        <div className="grid grid-cols-2 gap-2 @3xl:grid-cols-4">
-          <RepTile
-            hint={achValue ? `${egp(achValue.salesValue)} of ${egp(achValue.targetValue)}` : "Awaiting closing"}
-            label="Achievement"
-            meta={achMonth}
-            rail={achPct !== null ? repTone(achPct).rail : undefined}
-          >
-            {achPct !== null ? (
-              <RepPercent
-                note={
-                  achDelta !== null ? (
-                    <span
-                      className={`text-phx-xs font-bold tabular-nums ${achDelta >= 0 ? "text-emerald-700" : "text-rose-600"}`}
-                    >
-                      {achDelta >= 0 ? `+${achDelta}` : achDelta} pts
-                    </span>
-                  ) : null
-                }
-                pct={achPct}
-              />
-            ) : (
-              <p className="text-phx-md font-semibold text-slate-400">No closing published yet</p>
-            )}
-          </RepTile>
-
-          <RepTile
-            hint={
-              kpis?.hasMeasurablePlan
-                ? `${kpis.visitedDoctors} of ${kpis.plannedDoctors} doctors seen`
-                : "No doctors planned"
-            }
-            label="Coverage"
-            meta={shortPeriod(kpis?.monthLabel)}
-            rail={kpis?.hasMeasurablePlan ? repTone(kpis.coveragePct).rail : undefined}
-          >
-            {kpis?.hasMeasurablePlan ? (
-              <RepPercent pct={kpis.coveragePct} />
-            ) : (
-              <p className="text-phx-md font-semibold text-slate-400">No plan to score</p>
-            )}
-          </RepTile>
-
-          {/* AM and PM, apart, each against its own target and its own bar. Never averaged, and never
-              printed with a slash between them — he read "1.63 / 6.57" as one number over another.
-              Pharmacy joined 2026-09-05, separate again — see PHARMACY_CALL_RATE_TARGET for why it
-              carries no bar and no "of N". */}
-          <RepTile
-            hint={
-              kpis?.noGpsFeed
-                ? "Calls logged, but no GPS check-in reached the CRM to prove them"
-                : kpis?.hasCallRate
-                  ? `${kpis.kpiRules === "phoenix" ? "Visits" : "Verified calls"} per day · ${kpis.workingDays} working days`
-                  : "No calls logged"
-            }
-            label="Call rate"
-            meta={shortPeriod(kpis?.monthLabel)}
-            rail="bg-sky-500"
-          >
-            {/* Ruling A1 (owner, 2026-09-21): the proved rates are blank, not zero, when no GPS
-                check-in reached the CRM at all — so the tile says that rather than drawing three 0.00s. */}
-            {kpis?.noGpsFeed ? (
-              <p className="text-phx-md font-semibold text-slate-400">No GPS feed</p>
-            ) : kpis?.hasCallRate ? (
-              <div className="space-y-2.5">
-                <RepCallHalf code="AM" label="Morning" rate={kpis.amRate ?? 0} target={kpis.amTarget} />
-                <RepCallHalf code="PM" label="Afternoon" rate={kpis.pmRate ?? 0} target={kpis.pmTarget} />
-                <RepCallHalf code="PH" label="Pharmacy" rate={kpis.pharmacyRate ?? 0} target={kpis.pharmacyTarget} />
-              </div>
-            ) : (
-              <p className="text-phx-md font-semibold text-slate-400">Nothing logged yet</p>
-            )}
-          </RepTile>
-
-          <RepTile
-            hint={
-              kpis?.hasMeasurablePlan
-                ? `${kpis.onPlanDoctors} of ${kpis.plannedDoctors} at planned frequency`
-                : "No doctors planned"
-            }
-            label="Frequency"
-            meta={shortPeriod(kpis?.monthLabel)}
-            rail={kpis?.hasMeasurablePlan ? repTone(kpis.frequencyPct).rail : undefined}
-          >
-            {kpis?.hasMeasurablePlan ? (
-              <>
-                <RepPercent pct={kpis.frequencyPct} />
-                <RepFrequencyBreakdown
-                  above={kpis.overDoctors}
-                  below={kpis.underDoctors}
-                  exact={kpis.onPlanDoctors}
-                />
-              </>
-            ) : (
-              <p className="text-phx-md font-semibold text-slate-400">No plan to score</p>
-            )}
-          </RepTile>
-        </div>
-      </div>
-
       {/* Same reason: two columns only when the row itself has the width for them — and only when
           there is a second column to hold. With no approved day the right-hand column renders
           nothing, and a 1fr track holding nothing is the empty square the owner banned, so the split
@@ -1243,6 +1137,118 @@ function MedicalRepCommandCenter({ repTodayPlan, snapshot }: { repTodayPlan: Rep
       <div className="@container">
         <div className={`grid gap-2 ${repTodayPlan ? "@3xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]" : ""}`}>
           <div className="min-w-0 space-y-2">
+            {/* Four measurements, no ornament. Coverage and frequency stand apart on purpose: they
+                disagree by design — production has run 68% coverage against 39% frequency in one month —
+                and any blend of them hides exactly the gap they exist to expose.
+                🔴 THEY MOVED INTO THE LEFT COLUMN ON 2026-09-30, at the owner's own instruction, and
+                that is WHY they are here rather than across the top: "take two of the key cores of the
+                KPIs and put them under each other, so the left side is more tall — and Your day is
+                pushed up, because it is very long now and the page is asymmetric." His day runs the
+                whole right-hand column from the top; these four fold to 2x2 beside it.
+                The fold is the container query below, not a breakpoint — four across only when THIS
+                row is at least 48rem, which it is only when there is no day to put beside it. `lg:`
+                fired at a 1024px window whose content was ~636px once the sidebar opened, leaving each
+                tile ~127px — "SEP 2026" broke in two and "10.2 of 10" wrapped. */}
+            <div className="@container">
+              <div className="grid grid-cols-2 gap-2 @3xl:grid-cols-4">
+                <RepTile
+                  hint={achValue ? `${egp(achValue.salesValue)} of ${egp(achValue.targetValue)}` : "Awaiting closing"}
+                  label="Achievement"
+                  meta={achMonth}
+                  rail={achPct !== null ? repTone(achPct).rail : undefined}
+                >
+                  {achPct !== null ? (
+                    <RepPercent
+                      note={
+                        achDelta !== null ? (
+                          <span
+                            className={`text-phx-xs font-bold tabular-nums ${achDelta >= 0 ? "text-emerald-700" : "text-rose-600"}`}
+                          >
+                            {achDelta >= 0 ? `+${achDelta}` : achDelta} pts
+                          </span>
+                        ) : null
+                      }
+                      pct={achPct}
+                    />
+                  ) : (
+                    <p className="text-phx-md font-semibold text-slate-400">No closing published yet</p>
+                  )}
+                </RepTile>
+
+                <RepTile
+                  hint={
+                    kpis?.hasMeasurablePlan
+                      ? `${kpis.visitedDoctors} of ${kpis.plannedDoctors} doctors seen`
+                      : "No doctors planned"
+                  }
+                  label="Coverage"
+                  meta={shortPeriod(kpis?.monthLabel)}
+                  rail={kpis?.hasMeasurablePlan ? repTone(kpis.coveragePct).rail : undefined}
+                >
+                  {kpis?.hasMeasurablePlan ? (
+                    <RepPercent pct={kpis.coveragePct} />
+                  ) : (
+                    <p className="text-phx-md font-semibold text-slate-400">No plan to score</p>
+                  )}
+                </RepTile>
+
+                {/* AM and PM, apart, each against its own target and its own bar. Never averaged, and never
+                    printed with a slash between them — he read "1.63 / 6.57" as one number over another.
+                    Pharmacy joined 2026-09-05, separate again — see PHARMACY_CALL_RATE_TARGET for why it
+                    carries no bar and no "of N". */}
+                <RepTile
+                  hint={
+                    kpis?.noGpsFeed
+                      ? "Calls logged, but no GPS check-in reached the CRM to prove them"
+                      : kpis?.hasCallRate
+                        ? `${kpis.kpiRules === "phoenix" ? "Visits" : "Verified calls"} per day · ${kpis.workingDays} working days`
+                        : "No calls logged"
+                  }
+                  label="Call rate"
+                  meta={shortPeriod(kpis?.monthLabel)}
+                  rail="bg-sky-500"
+                >
+                  {/* Ruling A1 (owner, 2026-09-21): the proved rates are blank, not zero, when no GPS
+                      check-in reached the CRM at all — so the tile says that rather than drawing three 0.00s. */}
+                  {kpis?.noGpsFeed ? (
+                    <p className="text-phx-md font-semibold text-slate-400">No GPS feed</p>
+                  ) : kpis?.hasCallRate ? (
+                    <div className="space-y-2.5">
+                      <RepCallHalf code="AM" label="Morning" rate={kpis.amRate ?? 0} target={kpis.amTarget} />
+                      <RepCallHalf code="PM" label="Afternoon" rate={kpis.pmRate ?? 0} target={kpis.pmTarget} />
+                      <RepCallHalf code="PH" label="Pharmacy" rate={kpis.pharmacyRate ?? 0} target={kpis.pharmacyTarget} />
+                    </div>
+                  ) : (
+                    <p className="text-phx-md font-semibold text-slate-400">Nothing logged yet</p>
+                  )}
+                </RepTile>
+
+                <RepTile
+                  hint={
+                    kpis?.hasMeasurablePlan
+                      ? `${kpis.onPlanDoctors} of ${kpis.plannedDoctors} at planned frequency`
+                      : "No doctors planned"
+                  }
+                  label="Frequency"
+                  meta={shortPeriod(kpis?.monthLabel)}
+                  rail={kpis?.hasMeasurablePlan ? repTone(kpis.frequencyPct).rail : undefined}
+                >
+                  {kpis?.hasMeasurablePlan ? (
+                    <>
+                      <RepPercent pct={kpis.frequencyPct} />
+                      <RepFrequencyBreakdown
+                        above={kpis.overDoctors}
+                        below={kpis.underDoctors}
+                        exact={kpis.onPlanDoctors}
+                      />
+                    </>
+                  ) : (
+                    <p className="text-phx-md font-semibold text-slate-400">No plan to score</p>
+                  )}
+                </RepTile>
+              </div>
+            </div>
+
             {closed.length > 0 && (
               <RepPanel
                 right={

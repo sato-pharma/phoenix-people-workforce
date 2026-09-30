@@ -55,6 +55,12 @@ export type RepTodayPlan = {
    * looking at the day that just ended, and a panel headed only "Your day" would read as tomorrow's.
    */
   dateLabel: string;
+  /**
+   * The one brick he is in today, when the whole day is in one. It goes in the HEADER, because his
+   * own condition — bricks head the list only when there is more than one — leaves the single-brick
+   * day with nowhere to say where he is.
+   */
+  soleBrick: string | null;
   territory: string;
   bricks: RepTodayBrick[];
   /** 🔴 AM and PM APART, never a total — the call-rate golden rule reaches every count. */
@@ -95,9 +101,6 @@ export async function loadRepTodayPlan(access: AccessContext): Promise<RepTodayP
     if (view.stops.length === 0) return null;
 
     const groups = todayByBrick(view.stops);
-    // The brick heads the group only when there is more than one (his condition), so it is dropped
-    // from the where-line in that case rather than printed twice on every row.
-    const brickOnTheLine = groups.length > 1;
     const bricks: RepTodayBrick[] = groups.map((group) => ({
       key: group.key,
       label: group.label,
@@ -105,7 +108,13 @@ export async function loadRepTodayPlan(access: AccessContext): Promise<RepTodayP
         customerId: stop.customerId,
         name: stop.name,
         listType: stop.listType,
-        where: stopWhereLine(stop, brickOnTheLine ? null : stop.brick),
+        // 🔴 NEITHER THE BRICK NOR THE AREA GOES ON A ROW (owner, 2026-09-30, looking at it: "you
+        // don't have to write Menoufia, because she already knows this is her area — and the Bagour
+        // is duplicated"). Both are constant for the whole panel: the area is HIS OWN territory, and
+        // the brick is either a heading or the header's word on a single-brick day. On the row they
+        // printed "باجور · Menoufia 2" sixteen times down a narrow column. What is left is what he
+        // asked for that morning and nothing else — the place, and the hours.
+        where: stopWhereLine({ ...stop, reference: stop.reference ? { ...stop.reference, area: null } : stop.reference }, null),
         done: stop.done,
       })),
     }));
@@ -113,6 +122,7 @@ export async function loadRepTodayPlan(access: AccessContext): Promise<RepTodayP
     return {
       date: view.date,
       dateLabel: cairoDayLabel(view.date),
+      soleBrick: groups.length === 1 ? groups[0].label : null,
       territory: view.territory.name,
       bricks,
       amDone: view.counts.doneAm,
