@@ -159,6 +159,11 @@ const ROUTE_GATES: RouteGate[] = [
   get("today"),
   get("day-activities"),
   post("day-activities", "create"),
+  // The CNS daily forecast (owner, 2026-10-01). The form and its send are the territory's own rep's
+  // (narrowed again in the service); the board is a read, narrowed there to readers of team reports.
+  get("forecast"),
+  post("forecast", "create"),
+  get("forecast/board"),
   get("reports"),
   // The whole reports pack as one workbook (C1). Same "read" gate as the screen it exports: which
   // SHEETS the file holds is the access control, and a section the viewer may not read is never
@@ -482,6 +487,8 @@ const LATER_MIGRATIONS = [
   // rename_customer replaced with their live bodies plus the phone — so it appends after the list
   // admission that last replaced validate_customer.
   "supabase/migrations/20260930235705_phoenix_crm_customer_phone.sql",
+  // The CNS daily forecast (owner, 2026-10-01): one table and its save function, CNS only by CHECK.
+  "supabase/migrations/20261001015949_phoenix_crm_daily_forecasts.sql",
 ];
 
 /** A migration without its comments (the rollback lives in comments and drops everything). */

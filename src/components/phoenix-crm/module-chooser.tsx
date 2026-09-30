@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CalendarDays, CalendarRange, ClipboardList, FileBarChart, ListChecks, Search, Settings, Users } from "lucide-react";
+import { CalendarDays, CalendarRange, ClipboardList, FileBarChart, ListChecks, Search, Settings, Target, Users } from "lucide-react";
 
 import { allowedPhoenixCrmModules, phoenixCrmModulePath, type PhoenixCrmModuleKey } from "@/lib/phoenix-crm/modules";
 // Through `view-types`, never `server/overview`: a component may not import server code (the
@@ -28,6 +28,8 @@ const MODULE_ICONS: Record<PhoenixCrmModuleKey, typeof ClipboardList> = {
   visits: ClipboardList,
   list: ListChecks,
   plan: CalendarDays,
+  // The CNS daily forecast: today's boxes against the target.
+  forecast: Target,
   team: Users,
   // A RANGE, not the Plan tab's single calendar: the two cards sit near each other and the
   // month grid is the one that spans days.

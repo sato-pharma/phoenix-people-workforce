@@ -21,7 +21,7 @@ const loadOrgSeats = unstable_cache(
   async (): Promise<OrgSeat[]> => {
     const { data, error } = await getSupabaseAdmin()
       .from("au_v_org_tree")
-      .select("seat_id, parent_seat_id, seat_tier, path, occupant_hr_id, line_code, line_name, area_name, region_name, seat_label");
+      .select("seat_id, parent_seat_id, seat_tier, path, occupant_hr_id, line_code, line_name, area_code, area_name, region_name, seat_label");
     if (error) throw new Error(error.message);
     const rows = (data ?? []) as Array<Record<string, unknown>>;
     // An unbounded PostgREST read stops at 1,000 rows with no error; never resolve half a tree.
@@ -42,6 +42,7 @@ const loadOrgSeats = unstable_cache(
           occupantHrId: text(row.occupant_hr_id),
           lineCode: text(row.line_code),
           lineName: text(row.line_name),
+          areaCode: text(row.area_code),
           areaName: text(row.area_name),
           regionName: text(row.region_name),
           seatLabel: text(row.seat_label),
@@ -49,7 +50,9 @@ const loadOrgSeats = unstable_cache(
       ];
     });
   },
-  ["phoenix-crm-org-seats"],
+  // v2: the rows gained `area_code` (the daily forecast, 2026-10-01). A new key, so a cached copy of the
+  // old shape — without it — is never served to a reader that needs it.
+  ["phoenix-crm-org-seats-v2"],
   { revalidate: 300, tags: ["sos-reference"] },
 );
 

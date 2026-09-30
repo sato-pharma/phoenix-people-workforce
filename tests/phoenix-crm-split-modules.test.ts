@@ -38,6 +38,7 @@ const ALL: Record<PhoenixCrmModuleKey, boolean> = {
   visits: true,
   list: true,
   plan: true,
+  forecast: true,
   team: true,
   calendar: true,
   "doctors": true,
@@ -50,8 +51,8 @@ export function runPhoenixCrmSplitModulesTests(): void {
   {
     assert.deepEqual(
       PHOENIX_CRM_MODULE_KEYS,
-      ["visits", "list", "plan", "team", "calendar", "doctors", "reports", "settings"],
-      "the work he does first, then the reading, and Settings last — `today` was RETIRED and `calendar` added on his word (owner, 2026-09-30)",
+      ["visits", "list", "plan", "forecast", "team", "calendar", "doctors", "reports", "settings"],
+      "the work he does first, then the reading, and Settings last — `today` was RETIRED and `calendar` added on his word (owner, 2026-09-30), and the CNS daily `forecast` beside the Plan (owner, 2026-10-01)",
     );
     assert.equal(PHOENIX_CRM_MODULES.length, PHOENIX_CRM_MODULE_KEYS.length);
     for (const entry of PHOENIX_CRM_MODULES) {
@@ -101,7 +102,8 @@ export function runPhoenixCrmSplitModulesTests(): void {
     //    a month of his team laid out for comparison is exactly what Golden rule #1 keeps off a
     //    rep's screens — so a rep who has no Team tab has no Calendar tab either.
     const rep = { ...ALL, team: false, calendar: false, settings: false, "doctors": false };
-    assert.deepEqual(allowedPhoenixCrmModules(rep).map((entry) => entry.key), ["visits", "list", "plan", "reports"]);
+    // A CNS rep keeps the Forecast: it is HIS form (his own targets), not a manager's view of his team.
+    assert.deepEqual(allowedPhoenixCrmModules(rep).map((entry) => entry.key), ["visits", "list", "plan", "forecast", "reports"]);
 
     // And the two flags are decided by the SAME expression in `overview.ts`, so they cannot drift:
     // a second copy of the predicate is a second answer to a settled question.

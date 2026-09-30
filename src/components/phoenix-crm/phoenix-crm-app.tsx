@@ -31,6 +31,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSPrope
 import { crmGet, crmUrl, messageOf } from "@/components/phoenix-crm/api";
 import { CalendarTab } from "@/components/phoenix-crm/calendar-tab";
 import { DoctorsTab } from "@/components/phoenix-crm/doctors-tab";
+import { ForecastTab } from "@/components/phoenix-crm/forecast-tab";
 import { countText, plural } from "@/components/phoenix-crm/format";
 import { ListTab } from "@/components/phoenix-crm/list-tab";
 import { releaseCapturedPhoto } from "@/components/phoenix-crm/live-photo-capture";
@@ -51,18 +52,20 @@ import {
   type CrmChoiceOption,
 } from "@/components/phoenix-crm/ui";
 import { VisitsTab, type PendingValidate, type PendingVisit } from "@/components/phoenix-crm/visits-tab";
+import { isForecastLine } from "@/lib/phoenix-crm/daily-forecast";
 import { PHOENIX_CRM_PORTAL_BASE, phoenixCrmModulePath } from "@/lib/phoenix-crm/modules";
 import type { PhoenixCrmOverview, PhoenixCrmTabs, TerritorySummary } from "@/lib/phoenix-crm/view-types";
 import { cn } from "@/lib/utils";
 
 type TabKey = keyof PhoenixCrmTabs;
 
-const TAB_ORDER: readonly TabKey[] = ["visits", "list", "plan", "team", "calendar", "doctors", "reports", "settings"];
+const TAB_ORDER: readonly TabKey[] = ["visits", "list", "plan", "forecast", "team", "calendar", "doctors", "reports", "settings"];
 
 const TAB_LABELS: Record<TabKey, string> = {
   visits: "Visits",
   list: "List",
   plan: "Plan",
+  forecast: "Forecast",
   team: "Team",
   calendar: "Calendar",
   doctors: "Directory",
@@ -92,6 +95,9 @@ const TAB_COLUMNS: Record<number, string> = {
   // "Settings" wrap onto a second line, and the fits-the-screen rule says merge or wrap, never shrink
   // the type. A rep's own set is six, which already had its own row above.
   8: "grid-cols-2 sm:grid-cols-4 lg:grid-cols-8",
+  // Nine since the CNS daily forecast (2026-10-01) — the Super Admin's full set. Two a row on a phone
+  // for the same reason as eight; five a row from `sm` keeps "Directory" and "Settings" on one line.
+  9: "grid-cols-2 sm:grid-cols-5 lg:grid-cols-9",
 };
 
 /** The tabs that show one territory, chosen with the picker above them. */
@@ -102,7 +108,8 @@ const SEAT_TABS: readonly SeatTab[] = ["visits", "list", "plan"];
 /** The tabs that can hold work the page keeps while another tab is open. Reports and Doctors hold none. */
 /** Today holds none either: it is a read, and every action on it opens another tab. */
 /** Nor does the Calendar: it is a month laid out to be read, and nothing on it is entered. */
-type HoldingTab = Exclude<TabKey, "reports" | "doctors" | "calendar">;
+/** Nor the Forecast: every box is pre-filled from the target, so leaving it loses nothing he typed out. */
+type HoldingTab = Exclude<TabKey, "reports" | "doctors" | "calendar" | "forecast">;
 
 /** Each tab's work, as the question before letting it go names it. */
 const HELD_WORK: Record<HoldingTab, string> = {
@@ -151,7 +158,7 @@ function isSeatTab(key: TabKey): key is SeatTab {
 }
 
 function isHoldingTab(key: TabKey): key is HoldingTab {
-  return key !== "reports" && key !== "doctors" && key !== "calendar";
+  return key !== "reports" && key !== "doctors" && key !== "calendar" && key !== "forecast";
 }
 
 function allowedTabs(tabs: PhoenixCrmTabs): TabKey[] {
@@ -793,6 +800,17 @@ export function PhoenixCrmApp({
     }
     if (key === "reports") return <ReportsTab cairoToday={cairoToday} key={`reports|${test}`} test={test} />;
     if (key === "calendar") return <CalendarTab cairoToday={cairoToday} key={`calendar|${test}`} test={test} />;
+    if (key === "forecast") {
+      // The FORM is for the territory's own rep — the Super Admin reaches it in test mode only, on any
+      // CNS territory — and the BOARD for whoever has the Team tab: the same readers, by the same rule.
+      const cns = overview.territories.filter((territory) => isForecastLine(territory.lineCode));
+      const formTerritories = viewer.isSuperAdmin
+        ? test
+          ? cns
+          : []
+        : cns.filter((territory) => overview.ownSeatIds.includes(territory.seatId));
+      return <ForecastTab formTerritories={formTerritories} key={`forecast|${test}`} showBoard={overview.tabs.team} test={test} />;
+    }
     if (key === "settings") return <SettingsTab onChanged={settingsChanged} onDirtyChange={holdReporters.settings} />;
 
     const seatId = seats[key];

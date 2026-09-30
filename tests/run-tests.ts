@@ -1626,6 +1626,7 @@ import { runPhoenixCrmAdoptionTests } from "./phoenix-crm-adoption.test.ts";
 import { runPhoenixCrmReportComparisonTests } from "./phoenix-crm-report-comparison.test.ts";
 import { runPhoenixCrmReportsExportTests } from "./phoenix-crm-reports-export.test.ts";
 import { runPhoenixCrmDailyPlanReportTests } from "./phoenix-crm-daily-plan-report.test.ts";
+import { runPhoenixCrmDailyForecastTests } from "./phoenix-crm-daily-forecast.test.ts";
 import { runPhoenixCrmCustomerPhoneTests } from "./phoenix-crm-customer-phone.test.ts";
 import { runPhoenixCrmBrickCoverageReportTests } from "./phoenix-crm-brick-coverage-report.test.ts";
 import { runPhoenixCrmMobileManagerTests } from "./phoenix-crm-mobile-manager.test.ts";
@@ -5619,6 +5620,11 @@ await runTest(
 await runTest(
   "Phoenix CRM's daily plan report (owner, 2026-09-30: \"build the daily plan report\" — iReports360's Daily Plan rebuilt from Phoenix CRM's own plans, one territory day by day): it reaches FORWARD to the last day a rep can plan where every other section stops at today, and every quick pick is readable on every day of 2026-2027; a day that has passed reads as its plan stood when the day ENDED — the last status before the next Cairo midnight, the same test plan against actual applies — so a plan reopened afterwards never turns a sent Monday into a draft; the visit day ends at 02:00, so yesterday is \"not yet\" until then; Friday is left out; AM and PM are two lists with no total; a test visit never marks a real plan's customer seen and a test plan is listed after the real one; the territory comes from the viewer's own scope; and it never reads a distance, a flag or an accuracy, because the rep reads his own plan there",
   runPhoenixCrmDailyPlanReportTests,
+);
+
+await runTest(
+  "Phoenix CRM's daily forecast is CNS only and pre-filled from the target (owner, 2026-10-01: \"build the daily forecast module in Phoenix ONLY FOR CNS LINE\" — it replaces the Daily forecast the CNS reps typed into the line's WhatsApp group): the line is refused by the tab, both services AND the table's CHECK, so a forgotten rule still cannot write a Pedia forecast; each product is pre-filled with the month's target units ÷ the call rate's working days, a product with no target is NO pre-fill rather than a zero, and the offered figure and the day are the server's, never the body's; units are never added across products — last month is units against units of the same product, and the month's accuracy is each product's average day carried across the working days, valued, then summed; accuracy is scored only for a PUBLISHED closing, through the closing engine; the rep's form carries no verdict and shows no total (Golden Rule #1), the board is refused in the service to anyone who does not read team reports, and it lists who has NOT sent first; a re-send replaces the boxes and keeps the first send's time",
+  runPhoenixCrmDailyForecastTests,
 );
 
 await runTest(

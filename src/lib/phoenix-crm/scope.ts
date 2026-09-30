@@ -28,6 +28,12 @@ export type OrgSeat = {
   occupantHrId: string | null;
   lineCode: string | null;
   lineName: string | null;
+  /**
+   * The area's code — the key `au.monthly_targets` and the closing are stored under (the daily
+   * forecast reads a territory's targets by it). OPTIONAL so every seat a test builds by hand keeps
+   * compiling; the organogram read in server/org.ts always fills it.
+   */
+  areaCode?: string | null;
   areaName: string | null;
   regionName: string | null;
   seatLabel: string | null;
