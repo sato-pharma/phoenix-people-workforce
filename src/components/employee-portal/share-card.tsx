@@ -31,8 +31,12 @@ type Props = {
   getFile: () => Promise<ShareFile | null>;
   /** The caption text the composer / share sheet is seeded with. */
   caption: string;
-  /** A public page URL for the composers that scrape one (Facebook); omitted for a private card. */
-  pageUrl?: string;
+  /**
+   * Mints the PUBLIC share link on demand (the tokenised OG page). LinkedIn and Facebook scrape it to
+   * show the actual card in the post preview on any device — so when this is present they use it in
+   * preference to the native sheet. Returns null if a link cannot be minted (then they fall back).
+   */
+  getPageUrl?: () => Promise<string | null>;
   disabled?: boolean;
   /** A short heading above the row, e.g. "Share your card". */
   heading?: string;
@@ -89,7 +93,7 @@ function saveBlob(blob: Blob, filename: string) {
   URL.revokeObjectURL(url);
 }
 
-export function ShareCardBar({ getFile, caption, pageUrl, disabled, heading = "Share" }: Props) {
+export function ShareCardBar({ getFile, caption, getPageUrl, disabled, heading = "Share" }: Props) {
   const [busy, setBusy] = useState<ShareTargetId | null>(null);
   const [hint, setHint] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -100,6 +104,18 @@ export function ShareCardBar({ getFile, caption, pageUrl, disabled, heading = "S
       setHint(null);
       setError(null);
       try {
+        // LinkedIn and Facebook read the card from the PUBLIC link's og:image, so it shows in the
+        // post preview on any device. Prefer that over the native sheet whenever a link can be minted.
+        if ((target === "linkedin" || target === "facebook") && getPageUrl) {
+          const url = await getPageUrl();
+          if (url) {
+            const composer = shareComposerUrl(target, caption, url);
+            if (composer) window.open(composer, "_blank", "noopener,noreferrer");
+            return;
+          }
+          // Could not mint a link — fall through to the picture-attach path below.
+        }
+
         const produced = await getFile();
         if (!produced) {
           setError("The picture could not be prepared. Please try again.");
@@ -123,8 +139,17 @@ export function ShareCardBar({ getFile, caption, pageUrl, disabled, heading = "S
         }
 
         // Desktop fallback: save the picture, open the platform's own composer, tell them to attach it.
+        // A link, if one can be minted, lets the composer show the card as a preview.
+        let url: string | null = null;
+        if (getPageUrl) {
+          try {
+            url = await getPageUrl();
+          } catch {
+            url = null;
+          }
+        }
         saveBlob(produced.blob, produced.filename);
-        const composer = shareComposerUrl(target, caption, pageUrl);
+        const composer = shareComposerUrl(target, caption, url ?? undefined);
         if (composer) window.open(composer, "_blank", "noopener,noreferrer");
         setHint(shareFallbackHint(target));
       } catch {
@@ -133,7 +158,7 @@ export function ShareCardBar({ getFile, caption, pageUrl, disabled, heading = "S
         setBusy(null);
       }
     },
-    [caption, getFile, pageUrl],
+    [caption, getFile, getPageUrl],
   );
 
   return (

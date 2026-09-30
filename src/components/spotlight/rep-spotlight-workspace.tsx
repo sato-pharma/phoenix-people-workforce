@@ -500,6 +500,21 @@ export function RepSpotlightWorkspace({ months, defaultFrom, defaultTo, threshol
                           blob: sheet.blob,
                           filename: `sato-spotlight-${from}${to === from ? "" : `_${to}`}.png`,
                         })}
+                        getPageUrl={async () => {
+                          // Mint the public, expiring link so LinkedIn and Facebook show the sheet.
+                          try {
+                            const response = await fetch("/api/spotlight/me/sheet", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ from, to, format: "share-link" }),
+                            });
+                            if (!response.ok) return null;
+                            const data = (await response.json().catch(() => null)) as { shareUrl?: unknown } | null;
+                            return typeof data?.shareUrl === "string" ? data.shareUrl : null;
+                          } catch {
+                            return null;
+                          }
+                        }}
                         caption={spotlightShareCaption(preview.rangeLabel)}
                         disabled={busy !== null}
                         heading="Share your spotlight"

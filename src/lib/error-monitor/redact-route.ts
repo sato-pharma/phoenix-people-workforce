@@ -33,6 +33,7 @@ export const CREDENTIAL_ROUTE_PREFIXES: readonly string[] = [
   "/api/share/marketing-requests",
   "/api/share/territory",
   "/password-setup",
+  "/share/card",
   "/share/direct-orders",
   "/share/interview-calendar",
   "/share/territory",
