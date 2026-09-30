@@ -84,13 +84,24 @@ export function runOfferPrefillNoticeNetTests() {
     "only a real positive number is reported as a salary",
   );
 
-  // ── 5 · The three sentences stay separable ──────────────────────────────────────────────────
+  // ── 5 · The four sentences stay separable ───────────────────────────────────────────────────
   //
-  // Joined from parts rather than written as three near-identical template literals, which is what
+  // Joined from parts rather than written as four near-identical template literals, which is what
   // let the seat wording drift out of step with the rest before this.
+  //
+  // THREE became FOUR on 2026-09-30, when the offer door started carrying the CV of the candidate
+  // the letter was written for. `cvSentence` is the only conditional one — it is "" when no
+  // candidate points at the letter (nine of production's 27) or when their record is bare, because a
+  // sentence about a CV nobody read is worse than silence: it would tell somebody the personal boxes
+  // are filled when those are the ones still to type. `.filter(Boolean)` is what makes it vanish.
   assert.match(
     source,
-    /setNotice\(\[opening, seatSentence, salarySentence\]\.filter\(Boolean\)\.join\(" "\)\)/,
-    "one notice assembled from three named sentences, so none can silently disappear",
+    /setNotice\(\[opening, seatSentence, salarySentence, cvSentence\]\.filter\(Boolean\)\.join\(" "\)\)/,
+    "one notice assembled from four named sentences, so none can silently disappear",
+  );
+  assert.match(
+    source,
+    /carried\.length > 0 \? `From their CV: \$\{carried\.join\(", "\)\}/,
+    "the CV sentence NAMES what was carried — a bare 'filled from the CV' cannot be checked against the boxes",
   );
 }

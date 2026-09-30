@@ -1,4 +1,5 @@
 import { isSingleEmailAddress } from "@/lib/recruitment/contact-review";
+import { buildCvHireFacts, type CvHireFacts } from "@/lib/recruitment/cv-hire-facts";
 import type { Candidate, Requisition } from "@/lib/recruitment/types";
 
 /**
@@ -16,24 +17,28 @@ import type { Candidate, Requisition } from "@/lib/recruitment/types";
  * NOTHING here derives a salary. basicSalary/baseSalary/netSalary are left empty on purpose —
  * every salary derivation in this system lives in src/lib/payroll/policy.ts and stays there. The
  * offer's agreed figure is carried as grossSalary, exactly as it was recorded, and nothing else.
+ *
+ * ── The PERSON moved out of this file ────────────────────────────────────────────────────────────
+ * Who they are — national id, birth date and place, gender, mobile, address, city and the four
+ * education boxes — is now `cv-hire-facts.ts`, because the OFFER door needs the identical mapping
+ * and a second copy of it is a second thing to keep in step. This file keeps what only an
+ * application knows: the offer's terms and the requisition's seat.
+ *
+ * `composeEducation` lived here and is GONE. It joined degree, faculty and university into one
+ * string — right when `education` was the form's only education box, wrong the moment #4828 gave
+ * each of the three a box of its own on 2026-09-30. See `collegeNameFromCv`.
  */
 
-export type HireDraft = {
+export type HireDraft = CvHireFacts & {
   areaId: string;
-  birthDate: string;
   departmentId: string;
-  education: string;
   fullName: string;
-  gender: string;
   grossSalary: string;
   hireDate: string;
   jobTitle: string;
   lineId: string;
   managerHrId: string;
-  mobileNumber: string;
-  nationalId: string;
   positionId: string;
-  residenceAddress: string;
   teamId: string;
   workEmail: string;
 };
@@ -46,24 +51,6 @@ function id(value: number | null | undefined): string {
   return typeof value === "number" && Number.isFinite(value) ? String(value) : "";
 }
 
-/**
- * A CV writes gender any number of ways. Only the two the employee record actually stores are
- * carried over; anything else is left for a human, because a wrong guess here is silent.
- */
-function normalizeGender(value: string | null | undefined): string {
-  const raw = text(value).toLowerCase();
-  if (raw === "male" || raw === "m" || raw === "ذكر") return "male";
-  if (raw === "female" || raw === "f" || raw === "أنثى") return "female";
-  return "";
-}
-
-/** "BSc Pharmacy — Faculty of Pharmacy — Cairo University", from whichever parts the CV gave. */
-export function composeEducation(candidate: Pick<Candidate, "degree" | "faculty" | "university">): string {
-  return [text(candidate.degree), text(candidate.faculty), text(candidate.university)]
-    .filter((part) => part.length > 0)
-    .join(" — ");
-}
-
 export function buildHireDraft(input: {
   candidate: Pick<
     Candidate,
@@ -74,8 +61,11 @@ export function buildHireDraft(input: {
     | "faculty"
     | "fullName"
     | "gender"
+    | "governorate"
+    | "graduationYear"
     | "nationalId"
     | "phone"
+    | "placeOfBirth"
     | "university"
     | "whatsapp"
   >;
@@ -88,16 +78,18 @@ export function buildHireDraft(input: {
   const { candidate, offer, requisition } = input;
 
   return {
+    // Who they are — one mapping, shared with the offer door.
+    ...buildCvHireFacts(candidate),
+
     fullName: text(candidate.fullName),
     // A CV that listed two addresses is not a work email. Same single-value rule the contact
     // review uses, and for the same reason: work_email is UNIQUE.
+    //
+    // THIS DOOR ALONE fills it, as it has since #2283: a recruiter arriving from the application
+    // has just read the CV and is looking at that address as the form opens. `cv-hire-facts.ts`
+    // does not carry it, so the offer door — where nobody has the CV in front of them — leaves the
+    // company address to the mailbox task that opens it.
     workEmail: isSingleEmailAddress(candidate.email) ? text(candidate.email) : "",
-    mobileNumber: text(candidate.phone) || text(candidate.whatsapp),
-    nationalId: text(candidate.nationalId),
-    birthDate: text(candidate.dateOfBirth),
-    gender: normalizeGender(candidate.gender),
-    residenceAddress: text(candidate.address),
-    education: composeEducation(candidate),
 
     // The offer is the authority on the terms; the requisition's title is the fallback for an
     // application hired without one (the direct-hire path from offer_initiated).

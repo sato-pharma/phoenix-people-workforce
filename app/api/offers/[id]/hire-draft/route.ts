@@ -1,17 +1,20 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { assertPermission } from "@/lib/auth/permissions";
+import { assertPermission, canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContext } from "@/lib/auth/server";
 import { buildOfferHireDraft } from "@/lib/offers/hire-draft";
 import { findOpenOfferVacancy, formatOfferVacancyLabel } from "@/lib/offers/vacancies";
 import { getOffer } from "@/lib/offers/service";
 import { offerJsonError } from "@/lib/offers/http";
+import { candidateForOfferLetter } from "@/lib/recruitment/candidate-offer-link";
+import { buildCvHireFacts, describeCvHireFacts, withCvHireFacts } from "@/lib/recruitment/cv-hire-facts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * What HR's "Add Employee" form can already know from an ACCEPTED offer letter.
+ * What HR's "Add Employee" form can already know from an ACCEPTED offer letter — and, since
+ * 2026-09-30, from the CV of the candidate that letter was written for.
  *
  * Read by the employees page when somebody arrives there from the Offers screen
  * (`/employees?fromOffer=<id>`), so a candidate is not retyped into a form standing next to their
@@ -61,9 +64,38 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
     const vacancy = await findOpenOfferVacancy(offer.vacancyId);
     const seatTaken = offer.vacancyId !== null && vacancy === null;
 
+    /**
+     * ── And the CV, when the ATS holds one for this letter ──
+     *
+     * The letter knows the terms and the seat; it has never known a national id, a date of birth,
+     * an address or a university. The CV knows all four, and until now the offer door left every
+     * one of them blank even though the candidate record points straight at this letter. The
+     * pointer read backwards closes it — `candidateForOfferLetter`, on the recruitment side,
+     * because `src/lib/offers/` must not learn that a candidate exists.
+     *
+     * GATED SEPARATELY on `recruitment:read`, and that is deliberate rather than belt-and-braces.
+     * This route is gated on `offers:read` because it carries the agreed package, which is already
+     * on the Offers screen the caller is looking at. A CV is a different kind of secret — somebody
+     * else's national id and home address — so it is released on the grant that governs candidate
+     * records, not on the one that governs letters. Anybody actually completing a hire holds both;
+     * a seat holding `offers:read` alone sees exactly what it saw before this change.
+     *
+     * A MISSING CANDIDATE IS NOT AN ERROR. Nine of production's 27 letters belong to people who
+     * never entered the ATS (the owner's ruling: leave them without records), so `null` is the
+     * ordinary case and the draft is simply the letter's own ten fields.
+     */
+    const mayReadCandidates = await canAccess(access, "recruitment", "read");
+    const candidate = mayReadCandidates ? await candidateForOfferLetter(offer.id) : null;
+    const cvFacts = buildCvHireFacts(candidate);
+
     return NextResponse.json({
       candidateName: offer.candidateName,
-      draft: buildOfferHireDraft({ offer, vacancy }),
+      // The CV goes UNDER the letter: anything the offer states wins, always.
+      draft: withCvHireFacts(buildOfferHireDraft({ offer, vacancy }), cvFacts),
+      // What came off the CV, in the words the notice on the form prints. Empty when there is no
+      // candidate behind the letter, or when their record is bare — the screen then says nothing
+      // about a CV rather than claiming one was read.
+      carriedFromCv: describeCvHireFacts(cvFacts),
       reference: offer.reference,
       seat: vacancy ? { id: vacancy.vacancyId, label: formatOfferVacancyLabel(vacancy) } : null,
       seatTaken,

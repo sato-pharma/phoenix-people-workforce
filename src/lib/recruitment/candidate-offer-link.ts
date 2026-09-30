@@ -127,3 +127,42 @@ export async function linkedOfferFor(candidate: Pick<Candidate, "offerId">): Pro
     throw error;
   }
 }
+
+/**
+ * The candidate whose record points at this offer letter — the pointer read BACKWARDS.
+ *
+ * This is what lets HR hire from an accepted letter and still get the CV. `buildOfferHireDraft`
+ * carries the letter's ten fields and not one of them is personal, because the offers module does
+ * not know a candidate exists and must not learn; the reverse lookup lives HERE, on the recruitment
+ * side, which is the same direction every other function in this file runs in.
+ *
+ * Measured on production 2026-09-30: 12 accepted letters, SEVEN of them with a candidate behind
+ * them, and those seven hold between them 7 mobiles, 4 universities, 4 faculties, 4 graduation
+ * years, 4 governorates, 3 addresses, 2 degrees and 1 date of birth — every one of which was being
+ * retyped off a screen one table away.
+ *
+ * 🔴 AMBIGUITY RETURNS NULL RATHER THAN GUESSING. The pointer is one column on the CANDIDATE, so
+ * nothing in the schema stops two people pointing at one letter (production: 0 do). If two ever do,
+ * picking either one puts SOMEBODY ELSE's national id and date of birth on a permanent employee
+ * record — so this carries nothing and the form stays blank, which is a form somebody fills in
+ * rather than a record nobody re-reads. Same discipline as never matching a letter by name or email.
+ *
+ * A LETTER WITH NO CANDIDATE IS NOT A GAP — the owner's ruling at the top of this file. Nine of
+ * production's 27 letters belong to people who never entered the ATS, and null is the truth about
+ * them: the form opens with the letter's own ten fields, exactly as it did before.
+ */
+export async function candidateForOfferLetter(offerId: string): Promise<Candidate | null> {
+  const id = textOrNull(offerId);
+  if (!id) return null;
+
+  const supabase = recruitmentDb();
+  // Two rows asked for where one is expected: `maybeSingle` would throw on the ambiguous case and
+  // turn a prefill into a 500 on the Offers screen. Reading two and refusing is the same answer
+  // without the error.
+  const { data, error } = await supabase.from("ats_candidates").select("*").eq("offer_id", id).limit(2);
+  if (error) throw new Error(error.message);
+
+  const rows = (data ?? []) as CandidateDbRow[];
+  if (rows.length !== 1) return null;
+  return mapCandidate(rows[0]);
+}

@@ -1509,17 +1509,22 @@ export function EmployeeManagement({
    * working day — and with the open seat the offer was written against already chosen.
    *
    * ── Why this is a second effect and not a branch of the one above ──
-   * They read different endpoints, under different grants, and fail differently. An application
-   * carries a CV: a national id, a date of birth, an address, an education line. An offer carries
-   * none of that and never will, because it may have been issued to somebody who never entered the
-   * ATS at all. Folding them together would mean one sentence for two failures and one shape for
-   * two sources.
+   * They read different endpoints, under different grants, and fail differently. Folding them
+   * together would mean one sentence for two failures and one shape for two sources.
    *
-   * Everything the offer cannot know — the salary breakdown, the bank account, the insurance
-   * numbers, the contract type, the national id — is still typed here, and the record is still
-   * written by this form. `seatTaken` is the one thing worth saying out loud: the seat named on the
-   * letter was filled by somebody else while it was out, so the picker below is blank on purpose
-   * rather than by accident.
+   * ── The CV now arrives through this door too, when there is one ──
+   * A letter itself knows no national id, date of birth, address or university, and never will.
+   * But the candidate record POINTS AT the letter, so the route reads that pointer backwards and
+   * lays the CV underneath — the letter's own facts always win. It is `null` for the nine of
+   * production's 27 letters issued to people who never entered the ATS, and this form then opens
+   * exactly as it did before. `carriedFromCv` names what actually came across, so the notice can
+   * say it instead of implying a full form.
+   *
+   * Everything neither the letter nor the CV can know — the salary breakdown, the bank account, the
+   * insurance numbers, the contract type — is still typed here, and the record is still written by
+   * this form. `seatTaken` is the one thing worth saying out loud: the seat named on the letter was
+   * filled by somebody else while it was out, so the picker below is blank on purpose rather than by
+   * accident.
    */
   React.useEffect(() => {
     if (!hireOfferId) return;
@@ -1536,6 +1541,7 @@ export function EmployeeManagement({
         });
         const payload = (await response.json().catch(() => ({}))) as {
           candidateName?: string;
+          carriedFromCv?: string[];
           draft?: Partial<EmployeeFormState>;
           message?: string;
           reference?: string;
@@ -1583,7 +1589,13 @@ export function EmployeeManagement({
           Number.isFinite(netFilled) && netFilled > 0
             ? `Net salary ${netFilled.toLocaleString("en-US")} — base, basic, allowances, insurance and gross are derived from it.`
             : "The offer carried no salary, so every salary box is blank — type the net salary yourself.";
-        setNotice([opening, seatSentence, salarySentence].filter(Boolean).join(" "));
+        // What the CV added, named. Silent when there was no candidate behind the letter or their
+        // record was bare: a sentence about a CV nobody read would be the worst of both, telling
+        // somebody the personal boxes are filled when they are the ones still to type.
+        const carried = payload.carriedFromCv ?? [];
+        const cvSentence =
+          carried.length > 0 ? `From their CV: ${carried.join(", ")} — check each one before saving.` : "";
+        setNotice([opening, seatSentence, salarySentence, cvSentence].filter(Boolean).join(" "));
         void generateEmployeeId(payload.draft.lineId ?? "", true);
       } catch {
         if (!cancelled) {
@@ -1692,6 +1704,12 @@ export function EmployeeManagement({
    * filled, and a requisition opened months ago against a neighbouring area must not silently
    * move this hire. The candidate brings who they are and what they were offered; the seat
    * keeps where they sit.
+   *
+   * WHICH MEANS THE EDUCATION AND BIRTH BOXES TRAVEL. They are identity — a university and a
+   * graduation year belong to the person, not to the chair — and this list is spelled out field by
+   * field rather than spread, so each new one has to be added here on purpose. Every field named
+   * below is `CvHireFacts` plus the four the offer states; if that set grows again,
+   * `cv-hire-facts.ts` is the one place it is defined and this is the one place it is let through.
    */
   async function pickSeatCandidate(applicationId: string) {
     if (!applicationId) {
@@ -1722,6 +1740,7 @@ export function EmployeeManagement({
       setForm((current) => ({
         ...current,
         birthDate: draft.birthDate || current.birthDate,
+        birthPlace: draft.birthPlace || current.birthPlace,
         education: draft.education || current.education,
         fullName: draft.fullName || current.fullName,
         gender: draft.gender || current.gender,
@@ -1729,7 +1748,11 @@ export function EmployeeManagement({
         hireDate: draft.hireDate || current.hireDate,
         mobileNumber: draft.mobileNumber || current.mobileNumber,
         nationalId: draft.nationalId || current.nationalId,
+        qualification: draft.qualification || current.qualification,
         residenceAddress: draft.residenceAddress || current.residenceAddress,
+        residenceCity: draft.residenceCity || current.residenceCity,
+        seniorYear: draft.seniorYear || current.seniorYear,
+        universityName: draft.universityName || current.universityName,
         workEmail: draft.workEmail || current.workEmail,
       }));
       setPickedApplicationId(applicationId);
