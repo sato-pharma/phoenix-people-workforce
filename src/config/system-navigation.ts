@@ -1524,6 +1524,11 @@ const employeePortalNavigationSectionSeeds = [
       { href: "/employee-portals", icon: LayoutDashboard, label: "Overview", excludedRoles: ["Training Manager"], permissions: [{ resource: "employee_profile" }], exact: true },
       { href: "/employee-portals/employee-360", icon: IdCard, label: "Employee 360", permissions: [{ resource: "employee_profile" }] },
       { href: "/employee-portals/private-calendar", icon: CalendarDays, label: "Private Calendar", permissions: [{ resource: "employee_profile" }] },
+      // My Milestones — the rep's own service-anniversary and Sato-Pharma birthday keepsake cards,
+      // self-scoped and downloadable by him (owner, 2026-09-30). Medical-Rep only; catalogued so
+      // Cmd/Ctrl+K finds it and the tab carries its own title. The page gates by role predicate, and
+      // employee_profile:read (which the rep holds) is the permission the name-only guard reads here.
+      { href: "/employee-portals/milestones", icon: Award, label: "My Milestones", permissions: [{ resource: "employee_profile" }], roles: ["Medical Rep"] },
       { href: "/employee-portals/plans", icon: CalendarDays, label: "Weekly / Monthly Plans", permissions: [{ resource: "weekly_plans" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Manager"] },
       // Training Manager added 2026-08-25. He has held `organogram: ["read"]` and passed
       // canAccessCompanyOrganogram the whole time — the page itself even names him in its

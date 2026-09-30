@@ -28,6 +28,7 @@ import {
   Activity,
   CircleDollarSign,
   ReceiptText,
+  Award,
   Trophy,
   X,
   Users,
@@ -345,6 +346,7 @@ function buildEmployeePortalSections({
   showActionsTab = false,
   showDirectOrdersTab = false,
   showAreaDirectOrdersTab = false,
+  showMilestonesTab = false,
   showVacationApprovalsTab = false,
   showExcuseApprovalsTab = false,
   showPlanApprovalsTab = false,
@@ -390,6 +392,9 @@ function buildEmployeePortalSections({
         // Private Calendar — self-scoped; every portal role since 2026-08-01, kept behind its flag so
         // Modules Control can still curate it per role or person.
         ...(showPrivateCalendarTab ? [{ href: "/employee-portals/private-calendar", label: "Private Calendar", icon: CalendarDays }] : []),
+        // My Milestones — the rep's own service-anniversary and Sato-Pharma birthday keepsake cards,
+        // self-scoped and downloadable by him (owner, 2026-09-30). Medical-Rep only.
+        ...(showMilestonesTab ? [{ href: "/employee-portals/milestones", label: "My Milestones", icon: Award }] : []),
         ...(showPlansTab ? [{ href: "/employee-portals/plans", label: "Weekly / Monthly Plan", icon: CalendarDays }] : []),
         ...(showPlanningCalendarTab ? [{ href: "/employee-portals/plans/calendar", label: "Planning Calendar", icon: CalendarClock }] : []),
       ],

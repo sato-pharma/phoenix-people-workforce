@@ -1236,6 +1236,7 @@ import { runDirectOrderRotationConfirmationTests } from "./direct-orders-rotatio
 import { runShareLinkRotationAllowFilesTests } from "./share-link-rotation-allow-files.test.ts";
 import { runDirectOrderRepCountersTests } from "./direct-orders-rep-counters.test.ts";
 import { runDirectOrdersRepAreaViewTests } from "./direct-orders-rep-area-view.test.ts";
+import { runRepMilestonesPortalTests } from "./rep-milestones-portal.test.ts";
 import { runDirectOrderCountersRefusedTests } from "./direct-orders-counters-refused.test.ts";
 import { runDirectOrderFinanceMonthBadgeTests } from "./direct-orders-finance-month-badge.test.ts";
 import { runDirectOrderCollectionTests } from "./direct-orders-collection.test.ts";
@@ -4446,6 +4447,7 @@ await runTest("direct orders rotation confirmation (evidence of use, never the r
 await runTest("share link rotation keeps the file grant (allow_files carried from the old link, never widened; CV lifecycle has no such column)", runShareLinkRotationAllowFilesTests);
 await runTest("direct orders per-rep counters (scope borrowed not re-implemented, read-only, money-first sort, empty speaks)", runDirectOrderRepCountersTests);
 await runTest("a Medical Rep's view-only 'Direct Orders in my area' tab (rep-only gate, only approved+Finance-booked orders from July, reversed/duplicate excluded, area-scoped by the pharmacy's area_code, read-only, product/units/value, and reachable behind its own flag)", runDirectOrdersRepAreaViewTests);
+await runTest("a Medical Rep's 'My Milestones' page (rep-only audience, self-scoped export that never reads an hrId off the wire, no shared-print-ledger write, gates by role not the milestones permission, reachable behind its own flag)", runRepMilestonesPortalTests);
 await runTest("direct orders counters survive cleanup (a refusal on a REJECTED pharmacy counts, an ordinary rejection never does, the page does not go blank)", runDirectOrderCountersRefusedTests);
 await runTest("direct orders finance-month badge (approved never shows alone, one shared pill not four, the gate gets the row not a constant)", runDirectOrderFinanceMonthBadgeTests);
 await runTest("direct orders collection (identity gate not role gate, remainder derived, approved-only, and recording cash never moves the sales month)", runDirectOrderCollectionTests);

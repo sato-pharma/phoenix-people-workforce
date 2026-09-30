@@ -313,6 +313,94 @@ export async function listMilestonesDue(options: MilestoneDueOptions = {}): Prom
   );
 }
 
+/**
+ * One of a single person's OWN milestone occasions, shaped for the self-service portal page.
+ *
+ * A rep never sees the whole company's due list (that is the Super-Admin workspace); this is the
+ * one thing a rep is entitled to — his own service anniversaries and Sato-Pharma birthdays, each of
+ * which he may download as his own keepsake card. `spec` + `on` are exactly what the self-scoped
+ * `/api/milestones/my-card` route rebuilds the card from.
+ */
+export type MyMilestoneEntry = {
+  kind: "service" | "birthday";
+  /** The period, in the short form the card route takes back: `1m`, `1y`, or `b4` for a birthday. */
+  spec: string;
+  /** "First year", "Fourth birthday" — the occasion, sentence-cased. */
+  label: string;
+  /** The milestone date, ISO. */
+  on: string;
+  /** The milestone date in full — "12 August 2026". */
+  onLong: string;
+  /** The recorded hire date, ISO, so the card's arithmetic ("Joined … · this milestone") is visible. */
+  hireDate: string;
+  /** Negative when it has already passed; 0 today. */
+  daysAway: number;
+};
+
+/**
+ * One person's own milestones — every service anniversary from hire onwards plus every Sato-Pharma
+ * birthday, out to a little over a year ahead so the NEXT one is always in view. Soonest-still-to-come
+ * first, then the rest of the future, then the past most-recent-first: a rep opens this to print the
+ * keepsake for the milestone he is at or approaching, and the one he wants is at the top.
+ *
+ * Returns [] when the person is not an active directory employee or has no hire date on record —
+ * exactly the cases the admin sweep skips — so the page shows its own empty state rather than a row
+ * it cannot date.
+ */
+export async function listEmployeeMilestones(hrId: string): Promise<MyMilestoneEntry[]> {
+  const key = hrId.trim().toLowerCase();
+  if (!key) return [];
+  const { employees } = await getEmployeeDirectory();
+  const employee = employees.find((row) => row.hrId.trim().toLowerCase() === key);
+  if (!employee || !isActiveDirectoryEmployee(employee)) return [];
+  const hire = parsePlainDate(employee.hireDate);
+  if (!hire) return [];
+
+  const today = todayInCairo();
+  const hireIso = formatPlainDateIso(hire);
+  // A window that starts at hire (his whole keepsake history) and reaches ~13 months ahead, so the
+  // upcoming anniversary or birthday is always listed alongside the ones already reached.
+  const to = addDaysPlain(today, 400);
+  const entries: MyMilestoneEntry[] = [];
+
+  for (const hit of milestonesBetween(hire, hire, to)) {
+    const on = formatPlainDateIso(hit.on);
+    entries.push({
+      kind: "service",
+      spec: formatMilestoneSpec(hit.spec),
+      label: sentenceCase(milestoneStripLabel(hit.spec)),
+      on,
+      onLong: formatPlainDateLong(hit.on),
+      hireDate: hireIso,
+      daysAway: daysBetween(today, hit.on),
+    });
+  }
+
+  const birthday = monthDayOf(employee.birthDate);
+  if (birthday) {
+    for (const hit of satoBirthdaysBetween(hire, birthday, hire, to)) {
+      const on = formatPlainDateIso(hit.on);
+      entries.push({
+        kind: "birthday",
+        spec: birthdaySpec(hit.ordinal),
+        label: sentenceCase(birthdayStripLabel(hit.ordinal)),
+        on,
+        onLong: formatPlainDateLong(hit.on),
+        hireDate: hireIso,
+        daysAway: daysBetween(today, hit.on),
+      });
+    }
+  }
+
+  // Upcoming (today onwards) soonest first, then the past most-recent first — the one he wants on top.
+  return entries.sort((a, b) => {
+    const aFuture = a.daysAway >= 0;
+    const bFuture = b.daysAway >= 0;
+    if (aFuture !== bFuture) return aFuture ? -1 : 1;
+    return aFuture ? a.daysAway - b.daysAway : b.daysAway - a.daysAway;
+  });
+}
+
 export type BuildMilestoneCardOptions = {
   hrId: string;
   /** `1m`, `6 months`, `1y`, `100 days` — whatever the owner typed. */
