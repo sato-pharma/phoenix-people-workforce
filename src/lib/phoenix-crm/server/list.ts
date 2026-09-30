@@ -29,7 +29,7 @@ import { loadBrickCentroids, loadBrickNames, resolveBrickForPoint } from "@/lib/
 // is: the sharing question can only be answered against the WHOLE company's contact roster, which
 // Phoenix CRM's own tables do not hold.
 import type { SharedWith } from "@/lib/crm/location-confidence";
-import { loadObservedPointsFor, loadPlanDatesFor, loadSharedCustomersFor } from "@/lib/crm/shared-customers";
+import { loadObservedPointsFor, loadPlanDatesFor, loadSharedCustomersFor, loadVisitHistoryFor, type VisitHistory } from "@/lib/crm/shared-customers";
 import { logError } from "@/lib/observability/log";
 import { resolveEvidenceLocation } from "@/lib/evidence/location-service";
 import { notFoundError, validationError } from "@/lib/http/api-errors";
@@ -264,6 +264,12 @@ export type ListCustomer = {
    * frequency, and never a count of whether the rep went.
    */
   planPattern: PlanWeekday[] | null;
+  /**
+   * 🔴 WHAT THE REP ALREADY DID WITH HIM, in iReports360 (owner, 2026-09-30). A carried-over row
+   * has NO Phoenix visits by definition — its Phoenix history starts at validation — so reporting
+   * the Phoenix count there could only ever say "never", under a line naming last week's visit.
+   */
+  referenceHistory: VisitHistory | null;
   pendingGradeRequestId: string | null;
   pendingGrade: PhoenixCrmGrade | null;
   pendingDropRequestId: string | null;
@@ -873,6 +879,7 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
       sharedWith: null,
       observed: null,
       planPattern: null,
+      referenceHistory: null,
     };
   });
   listCustomers.sort((left, right) => left.listType.localeCompare(right.listType) || left.name.localeCompare(right.name));
@@ -904,10 +911,11 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
       // Tuesday in the first and the fourth week"). Four months of plan dates: long enough that a
       // week-4-only doctor has had chances to appear, short enough that a pattern abandoned in the
       // spring is not read back to him as current.
-      const [sharedByContact, observedByContact, planDatesByContact] = await Promise.all([
+      const [sharedByContact, observedByContact, planDatesByContact, historyByContact] = await Promise.all([
         loadSharedCustomersFor(sharedKeys, seat.occupantHrId),
         loadObservedPointsFor(sharedKeys),
         loadPlanDatesFor(sharedKeys, monthsBack(viewer.cairoToday, PLAN_PATTERN_MONTHS)),
+        loadVisitHistoryFor(sharedKeys),
       ]);
       for (const customer of listCustomers) {
         if (customer.referenceContactCrmId === null) continue;
@@ -917,6 +925,7 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
         customer.observed = point ? { address: point.address, at: point.at, agreed: point.agreed, lat: point.lat, lon: point.lon, total: point.total } : null;
         const pattern = planWeekdays(planDatesByContact.get(customer.referenceContactCrmId) ?? []);
         customer.planPattern = pattern.length > 0 ? pattern : null;
+        customer.referenceHistory = historyByContact.get(customer.referenceContactCrmId) ?? null;
       }
     } catch (error) {
       logError("Phoenix CRM list: the shared-customer and check-in reads could not run", {

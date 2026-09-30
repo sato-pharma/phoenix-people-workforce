@@ -27,7 +27,7 @@ import { SlidersHorizontal } from "lucide-react";
 
 import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
 import { TableSearchInput } from "@/components/ui/sortable-table";
-import { cairoStamp } from "@/components/phoenix-crm/format";
+import { cairoStamp, dayLabelWithYear } from "@/components/phoenix-crm/format";
 import {
   listText,
   monthStanding,
@@ -401,13 +401,38 @@ function SharedLine({ customer }: { customer: ListCustomer }) {
 }
 
 /**
- * The month line beside a row. Pending and outside never say "not visited" — their visits are saved and
- * count once the customer is validated and on the list. The Archive says since when.
+ * The history line beside a row.
+ *
+ * 🔴 A CARRIED-OVER ROW NEVER SAYS "no visits saved here yet" (owner, 2026-09-30: "that phrase is
+ * totally wrong — of course this rep visited this doctor on iReports360 before. Either you grab the
+ * visit history or remove the line"). It reported the PHOENIX count, which is zero for every
+ * carried-over customer by definition — their Phoenix history starts at validation — and it printed
+ * directly under "Last visit in iReports360: Tue 29 Sept", so one row said he was there last week
+ * and that he has never been.
+ *
+ * It now states what the mirror actually holds: "14 visits in iReports360 · last Tue 29 Sept". Until
+ * validation that IS the whole history of this doctor, so it replaces the vendor's date line too
+ * rather than sitting beside it saying the same thing twice. Once he is validated and on the list,
+ * the Phoenix month takes over — which is the point at which the Phoenix count starts meaning
+ * something. `pendingVisitsText` stays for the screens with no iReports360 history to show.
  */
 function monthText(customer: ListCustomer, variant: CustomerListVariant): string {
-  if (variant === "pending" || variant === "outside") return pendingVisitsText(customer.visitsThisMonth);
+  if (variant === "pending" || variant === "outside") {
+    const history = customer.referenceHistory ?? null;
+    if (history && history.visits > 0) {
+      const last = history.lastVisitedOn ? ` · last ${dayLabelWithYear(history.lastVisitedOn)}` : "";
+      return `${history.visits} ${history.visits === 1 ? "visit" : "visits"} in iReports360${last}`;
+    }
+    // No history in the mirror either — then "nothing saved here yet" is true, and says so.
+    return pendingVisitsText(customer.visitsThisMonth);
+  }
   if (variant === "dropped") return `In the Archive since ${cairoStamp(customer.statusChangedAt)}`;
   return monthVisitsText(customer.visitsThisMonth, customer.target);
+}
+
+/** True once the history line already names the last iReports360 visit, so nothing repeats it. */
+function historyNamesLastVisit(customer: ListCustomer): boolean {
+  return (customer.referenceHistory?.visits ?? 0) > 0 && customer.referenceHistory?.lastVisitedOn != null;
 }
 
 /**
@@ -699,7 +724,7 @@ export function CustomerListBoard({
                           {variant === "active" || variant === "outside" ? (
                             <p className="break-words text-xs font-semibold leading-5 text-slate-500">{placesDaysText(customer)}</p>
                           ) : null}
-                          {variant === "pending" ? (
+                          {variant === "pending" && !historyNamesLastVisit(customer) ? (
                             <p className="break-words text-xs font-semibold leading-5 text-slate-500">
                               Last visit in iReports360: {referenceLastVisitText(customer.reference)}
                             </p>
@@ -813,7 +838,7 @@ export function CustomerListBoard({
                                 {variant === "active" || variant === "outside" ? (
                                   <p className="mt-0.5 break-words text-xs text-slate-500">{placesDaysText(customer)}</p>
                                 ) : null}
-                                {variant === "pending" ? (
+                                {variant === "pending" && !historyNamesLastVisit(customer) ? (
                                   <p className="mt-0.5 text-xs text-slate-500">
                                     Last visit in iReports360: {referenceLastVisitText(customer.reference)}
                                   </p>

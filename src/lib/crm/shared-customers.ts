@@ -1,6 +1,7 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { logError } from "@/lib/observability/log";
 import { CRM_PLAN_ENTRIES_UNIFIED_VIEW } from "@/lib/crm/tables";
+import { readContactVisitHistory, type CrmContactVisitHistory } from "@/lib/crm/reads";
 import { averageCheckinPoint, type ObservedPoint } from "@/lib/crm/checkin-location";
 
 /** Contact ids per `in(...)` filter, and rows per page — the figures the rest of this module uses. */
@@ -69,6 +70,19 @@ export async function loadPlanDatesFor(contactCrmIds: readonly number[], fromIso
     }
   }
   return byContact;
+}
+
+/**
+ * What the rep has already done with a doctor, straight from the read door.
+ *
+ * 🔴 The QUERY lives in reads.ts, not here (owner's rule that work is not built twice, and the
+ * single-source guard's rule that the visits mirror is read through one door). This is the thin
+ * re-export Phoenix CRM's List calls, so the List never reaches the visits mirror itself.
+ */
+export type VisitHistory = CrmContactVisitHistory;
+
+export async function loadVisitHistoryFor(contactCrmIds: readonly number[]): Promise<Map<number, VisitHistory>> {
+  return readContactVisitHistory(contactCrmIds);
 }
 
 export async function loadObservedPointsFor(contactCrmIds: readonly number[]): Promise<Map<number, ObservedPoint>> {

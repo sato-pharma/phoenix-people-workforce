@@ -1878,3 +1878,63 @@ export async function getAgentCrmIdentityRows(
   }
   return rows;
 }
+
+/** How many visits iReports360 holds on a contact, and the last one's date. */
+export type CrmContactVisitHistory = { visits: number; lastVisitedOn: string | null };
+
+/**
+ * 🔴 WHAT A REP HAS ALREADY DONE WITH A DOCTOR, per contact (owner, 2026-09-30, reading Phoenix CRM's
+ * List): "the phrase 'no visits saved here yet' is totally wrong — of course this rep visited this
+ * doctor on iReports360 before. Either you grab the visit history or remove the line."
+ *
+ * A carried-over customer has NO Phoenix visits by definition — his Phoenix history starts at
+ * validation — so the List was reporting a count that could only ever read "never", directly under a
+ * line naming last week's visit. This is the number that makes that row true.
+ *
+ * IT LIVES HERE BECAUSE THIS IS THE DOOR. `crm-single-source.test.ts` keeps every visits-mirror read
+ * inside `reads.ts` or a short list of visits machinery, and its caller (`shared-customers.ts`) is
+ * neither — putting the query there and allow-listing the file would have widened the strict list to
+ * make a red test green, which is the shape the guard exists to catch.
+ *
+ * 🔴 NOT the check-ins. A GPS check-in is a PARTIAL feed — some real visits carry none — so counting
+ * those would understate a rep's work, and the standing rule is never to score a rep on them.
+ */
+export async function readContactVisitHistory(contactCrmIds: readonly number[]): Promise<Map<number, CrmContactVisitHistory>> {
+  const byContact = new Map<number, CrmContactVisitHistory>();
+  const ids = [...new Set(contactCrmIds)].filter((id) => Number.isFinite(id));
+  if (ids.length === 0) return byContact;
+  const supabase = getSupabaseAdmin();
+  const CHUNK = 50;
+  const PAGE = 1000;
+  for (let from = 0; from < ids.length; from += CHUNK) {
+    const chunk = ids.slice(from, from + CHUNK);
+    for (let page = 0; ; page += 1) {
+      const { data, error } = await supabase
+        .from(CRM_VISITS_UNIFIED_VIEW)
+        .select("contact_crm_id, visit_date")
+        .in("contact_crm_id", chunk)
+        .order("visit_date", { ascending: false })
+        .range(page * PAGE, page * PAGE + PAGE - 1);
+      if (error) {
+        // A missing mirror costs this one line. It must never fall back to the Phoenix count, which
+        // is the wrong number for exactly the rows that ask for this.
+        if (isCrmSchemaMissingError(error)) return byContact;
+        throw new Error(error.message);
+      }
+      const rows = (data ?? []) as Array<{ contact_crm_id: number | null; visit_date: string | null }>;
+      for (const row of rows) {
+        if (row.contact_crm_id == null) continue;
+        const found = byContact.get(row.contact_crm_id);
+        // Ordered newest first, so the first date seen for a contact is the latest one.
+        if (found) {
+          found.visits += 1;
+          found.lastVisitedOn ??= row.visit_date;
+        } else {
+          byContact.set(row.contact_crm_id, { lastVisitedOn: row.visit_date, visits: 1 });
+        }
+      }
+      if (rows.length < PAGE) break;
+    }
+  }
+  return byContact;
+}
