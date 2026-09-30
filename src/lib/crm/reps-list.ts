@@ -422,9 +422,9 @@ async function loadBrickMeta(
  * address is CLICKABLE to a real pin, and an address with no pin behind it promises a map it
  * cannot open — the CRM address is already on the row for the text-only case.
  */
-type ContactCheckins = { points: CheckinPoint[]; seenAt: ContactSeenAt };
+export type ContactCheckins = { points: CheckinPoint[]; seenAt: ContactSeenAt };
 
-async function loadCheckins(contactIds: readonly number[]): Promise<Map<number, ContactCheckins>> {
+export async function loadCheckins(contactIds: readonly number[]): Promise<Map<number, ContactCheckins>> {
   const byContact = new Map<number, ContactCheckins>();
   const supabase = getSupabaseAdmin();
   const ids = [...new Set(contactIds)];

@@ -29,7 +29,7 @@ import { loadBrickCentroids, loadBrickNames, resolveBrickForPoint } from "@/lib/
 // is: the sharing question can only be answered against the WHOLE company's contact roster, which
 // Phoenix CRM's own tables do not hold.
 import type { SharedWith } from "@/lib/crm/location-confidence";
-import { loadSharedCustomersFor } from "@/lib/crm/shared-customers";
+import { loadObservedPointsFor, loadSharedCustomersFor } from "@/lib/crm/shared-customers";
 import { logError } from "@/lib/observability/log";
 import { resolveEvidenceLocation } from "@/lib/evidence/location-service";
 import { notFoundError, validationError } from "@/lib/http/api-errors";
@@ -246,6 +246,17 @@ export type ListCustomer = {
    * two-line customer is a treasure, never a duplicate to tidy away.
    */
   sharedWith: SharedWith[] | null;
+  /**
+   * 🔴 WHERE THE REPS HAVE ACTUALLY STOOD in front of this doctor, averaged from iReports360's
+   * check-ins on him (owner, 2026-09-30: "you will get the location of the doctor from the
+   * check-ins ... and make an average"). Null when nobody has ever checked in.
+   *
+   * It beats the vendor's TYPED address, which on this data is a region — "Monofia III · Delta
+   * West" — that cannot be driven to. It never beats a place the rep captured and confirmed at the
+   * door: that is a deliberate act, this is an observation. `averageCheckinPoint` explains why the
+   * average is taken over the fixes that agree with one another rather than over all of them.
+   */
+  observed: { lat: number; lon: number; address: string | null; at: string | null; agreed: number; total: number } | null;
   pendingGradeRequestId: string | null;
   pendingGrade: PhoenixCrmGrade | null;
   pendingDropRequestId: string | null;
@@ -838,6 +849,7 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
       primaryPharmacyName,
       pharmacies,
       sharedWith: null,
+      observed: null,
     };
   });
   listCustomers.sort((left, right) => left.listType.localeCompare(right.listType) || left.name.localeCompare(right.name));
@@ -855,13 +867,22 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
     .filter((id): id is number => typeof id === "number");
   if (seat.repHrId && sharedKeys.length > 0 && !isTest) {
     try {
-      const sharedByContact = await loadSharedCustomersFor(sharedKeys, seat.repHrId);
+      // 🔴 AND WHERE EACH DOCTOR ACTUALLY IS, averaged from the check-ins the reps have already
+      // taken on him (owner, 2026-09-30). Both questions are answered against the same mirror, so
+      // they are asked together rather than one page load apart.
+      const [sharedByContact, observedByContact] = await Promise.all([
+        loadSharedCustomersFor(sharedKeys, seat.repHrId),
+        loadObservedPointsFor(sharedKeys),
+      ]);
       for (const customer of listCustomers) {
-        const shared = customer.referenceContactCrmId === null ? null : (sharedByContact.get(customer.referenceContactCrmId) ?? null);
+        if (customer.referenceContactCrmId === null) continue;
+        const shared = sharedByContact.get(customer.referenceContactCrmId) ?? null;
         customer.sharedWith = shared && shared.length > 0 ? shared : null;
+        const point = observedByContact.get(customer.referenceContactCrmId) ?? null;
+        customer.observed = point ? { address: point.address, at: point.at, agreed: point.agreed, lat: point.lat, lon: point.lon, total: point.total } : null;
       }
     } catch (error) {
-      logError("Phoenix CRM list: the shared-customer check could not run", {
+      logError("Phoenix CRM list: the shared-customer and check-in reads could not run", {
         error,
         labels: { event: "phoenix_crm_shared_customers_failed" },
       });

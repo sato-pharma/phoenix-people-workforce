@@ -1,7 +1,29 @@
+import { averageCheckinPoint, type ObservedPoint } from "@/lib/crm/checkin-location";
 import { getDoctorListRepSummaries } from "@/lib/crm/contact-lists";
 import { findSharedCustomers, type SharedWith } from "@/lib/crm/location-confidence";
 import { repDoctorListRepKey } from "@/lib/crm/rep-doctor-lists";
-import { loadContactRoster, loadPinsFor } from "@/lib/crm/reps-list";
+import { loadCheckins, loadContactRoster, loadPinsFor } from "@/lib/crm/reps-list";
+
+/**
+ * 🔴 WHERE A DOCTOR ACTUALLY IS, from the check-ins already in the mirror (owner, 2026-09-30: "you
+ * will get the location of the doctor from the check-ins taken for this doctor and put it in the
+ * location here", and "make an average"). The READ is `loadCheckins`, reused exactly as the old
+ * board uses it — he asked in the same breath that this not be built twice. The averaging rule is
+ * `averageCheckinPoint`, and the reasoning for it lives there.
+ *
+ * Returns nothing rather than throwing: a customer with no check-ins, a missing mirror or an
+ * unreadable view all mean "nobody has stood there", which is an answer, not a failure.
+ */
+export async function loadObservedPointsFor(contactCrmIds: readonly number[]): Promise<Map<number, ObservedPoint>> {
+  if (contactCrmIds.length === 0) return new Map();
+  const checkins = await loadCheckins(contactCrmIds);
+  const observed = new Map<number, ObservedPoint>();
+  for (const [contactCrmId, found] of checkins) {
+    const point = averageCheckinPoint(found.points);
+    if (point) observed.set(contactCrmId, { ...point, address: found.seenAt.address });
+  }
+  return observed;
+}
 
 /**
  * Which of a rep's customers ANOTHER rep also carries — the old Reps List's violet highlight, made

@@ -64,6 +64,15 @@ export type ListRowFactsInput = {
     brickName: string | null;
     areaName: string | null;
   } | null;
+  /**
+   * 🔴 WHERE THE REPS HAVE ACTUALLY STOOD, averaged from iReports360's check-ins on this doctor
+   * (owner, 2026-09-30). Null when nobody has ever checked in on him.
+   *
+   * It sits BETWEEN the two: a place the rep captured and confirmed still wins, because that is a
+   * deliberate act at the door — but an observed fix beats the vendor's typed record, which on this
+   * data is a region like "Monofia III · Delta West" and cannot be driven to.
+   */
+  observed?: { lat: number; lon: number; address: string | null } | null;
 };
 
 export type ListRowFacts = {
@@ -153,15 +162,26 @@ export function listRowFacts(customer: ListRowFactsInput): ListRowFacts {
     ? firstText([customer.reference.address, customer.reference.zone, customer.reference.city].filter(Boolean).join(" · "))
     : null;
 
-  const address = resolve(validated, placeAddress, referenceAddress);
-  // The point wins for the link even when the words came from the vendor: a captured place is an
-  // exact fix, and a pin beats a text search every time. Failing that, search on what the row shows,
-  // qualified by its locality so an Egyptian street name cannot resolve into the wrong governorate.
+  // 🔴 THE CHECK-INS SIT BETWEEN THE CAPTURE AND THE VENDOR. A rep who has stood in front of this
+  // doctor knows better than a typed record, so his fix's resolved address beats the vendor's words.
+  const observed = customer.observed ?? null;
+  const address = place
+    ? resolve(validated, placeAddress, observed?.address ?? referenceAddress)
+    : observed?.address
+      ? { source: "reference" as const, text: observed.address }
+      : resolve(validated, null, referenceAddress);
+
+  // A POINT ALWAYS BEATS WORDS for the link — a pin lands on the doctor, a text search lands on a
+  // guess. The captured place first, then the averaged check-in, and only then a search on what the
+  // row shows, qualified by its locality so an Egyptian street name cannot resolve into the wrong
+  // governorate.
   const mapsHref = place
     ? pinHref(place.lat, place.lon)
-    : address.source === "placeholder"
-      ? null
-      : searchHref(address.text, customer.reference?.city ?? customer.reference?.zone ?? null);
+    : observed
+      ? pinHref(observed.lat, observed.lon)
+      : address.source === "placeholder"
+        ? null
+        : searchHref(address.text, customer.reference?.city ?? customer.reference?.zone ?? null);
 
   return {
     address,

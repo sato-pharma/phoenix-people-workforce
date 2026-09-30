@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { stripComments } from "./support/comment-strip.ts";
+import { averageCheckinPoint } from "../src/lib/crm/checkin-location.ts";
 
 import {
   factInk,
@@ -173,6 +174,64 @@ export function runPhoenixCrmListRowFactsTests() {
       validatedAt: "2026-09-30T08:00:00Z",
     });
     assert.equal(full.address.text, "6 El-Nour, Sheraton Al Matar, El Nozha, Cairo", "the long drivable address, not the landmark");
+  }
+
+  // ── 🔴 THE DOCTOR'S PLACE COMES FROM THE CHECK-INS (owner, 2026-09-30) ──────────────────────────
+  //
+  // "You will get the location of the doctor from the check-ins taken for this doctor and put it in
+  // the location here" — "make an average." His List was showing an unvalidated customer at the
+  // vendor's typed record, "أشمون · Monofia III · Delta West", which is a REGION: it cannot be
+  // driven to, and its Maps link was a text search on those words.
+  {
+    const observed = { address: "6 El-Nour, Sheraton Al Matar, El Nozha, Cairo", lat: 30.1021, lon: 31.3694 };
+
+    // It beats the vendor's typed record, in the words AND in the link.
+    const seen = listRowFacts({ ...bare, observed, reference: reference({ address: "أشمون", city: "Monofia III" }) });
+    assert.equal(seen.address.text, "6 El-Nour, Sheraton Al Matar, El Nozha, Cairo", "where a rep stood beats what the vendor typed");
+    assert.match(seen.mapsHref ?? "", /query=30\.1021%2C31\.3694/, "and it opens a PIN, not a search on a region's name");
+
+    // 🔴 IT NEVER BEATS A PLACE THE REP CAPTURED. That is a deliberate act at the door; this is an
+    //    observation, and one of the observations may be from a car on the ring road.
+    const captured = listRowFacts({
+      ...bare,
+      observed,
+      places: [place({ address: "12 Gomhoreya St" })],
+      validatedAt: "2026-09-30T08:00:00Z",
+    });
+    assert.equal(captured.address.text, "12 Gomhoreya St");
+    assert.match(captured.mapsHref ?? "", /query=30\.5667%2C30\.9833/, "the captured point still pins it");
+
+    // A check-in with no resolved address still supplies the PIN — a point beats words either way.
+    const pointOnly = listRowFacts({ ...bare, observed: { ...observed, address: null }, reference: reference({ address: "أشمون" }) });
+    assert.equal(pointOnly.address.text, "أشمون", "the words fall back to the vendor");
+    assert.match(pointOnly.mapsHref ?? "", /query=30\.1021%2C31\.3694/, "while the link still lands on the doctor");
+
+    // ── The average itself ────────────────────────────────────────────────────────────────────────
+    const at = (day: string) => `2026-09-${day}T08:00:00Z`;
+    const fix = (lat: number, lon: number, day = "01") => ({ at: at(day), lat, lon, repKey: "1" });
+
+    // Fixes that agree are averaged. Three within a block of each other give their midpoint.
+    const tight = averageCheckinPoint([fix(30.1, 31.3), fix(30.1002, 31.3002), fix(30.1004, 31.3004)]);
+    assert.equal(tight?.agreed, 3);
+    assert.equal(tight?.total, 3);
+    assert.ok(Math.abs((tight?.lat ?? 0) - 30.1002) < 1e-6, "the mean of the three");
+
+    // 🔴 AN OUTLIER IS DROPPED, NOT AVERAGED IN. One fix from a car on the ring road would drag a
+    //    plain mean a kilometre into open ground, and a rep drives to what this says. CHANGE THIS
+    //    LINE if the owner ever wants the arithmetic mean of every fix regardless.
+    const withOutlier = averageCheckinPoint([fix(30.1, 31.3), fix(30.1002, 31.3002), fix(30.1004, 31.3004), fix(30.4, 31.9)]);
+    assert.equal(withOutlier?.agreed, 3, "three agreed");
+    assert.equal(withOutlier?.total, 4, "out of four considered — the row can say so");
+    assert.ok(Math.abs((withOutlier?.lat ?? 0) - 30.1002) < 1e-6, "and the far one changed nothing");
+
+    // When every fix disagrees with every other there is no group to average: the NEWEST is the best
+    // single answer, and `agreed: 1` says the average is made of one thing.
+    const scattered = averageCheckinPoint([fix(30.1, 31.3, "01"), fix(30.4, 31.9, "20"), fix(29.9, 30.9, "10")]);
+    assert.equal(scattered?.agreed, 1);
+    assert.equal(scattered?.lat, 30.4, "the newest check-in");
+
+    assert.equal(averageCheckinPoint([]), null, "nobody has ever checked in: no point, and the row says so");
+    assert.equal(averageCheckinPoint([{ at: null, lat: Number.NaN, lon: 31.3, repKey: null }]), null, "an unusable fix is not a place");
   }
 
   // ── The ink ─────────────────────────────────────────────────────────────────────────────────────
