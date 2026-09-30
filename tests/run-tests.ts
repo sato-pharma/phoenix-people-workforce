@@ -2146,6 +2146,7 @@ import { runPayrollAwaitingPublishTests } from "./payroll-awaiting-publish.test.
 import { runSeniorDistrictManagerTitleTests } from "./senior-district-manager-title.test.ts";
 import { runHiringDocumentsExportWorkbookTests } from "./hiring-documents-export-workbook.test.ts";
 import { runSeniorMedicalRepresentativeTitleTests } from "./senior-medical-representative-title.test.ts";
+import { runPhoenixCrmDiscardOnePressTests } from "./phoenix-crm-discard-one-press.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -7924,6 +7925,8 @@ await runTest(
   "the Senior Medical Representative title behaves exactly like Medical Representative everywhere (job function, pay, attendance, compliance, CRM mirror, HR pay view, catalogue, import) while granting nothing new",
   runSeniorMedicalRepresentativeTitleTests,
 );
+
+await runTest("phoenix crm: no save bar takes two presses to discard", runPhoenixCrmDiscardOnePressTests);
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
