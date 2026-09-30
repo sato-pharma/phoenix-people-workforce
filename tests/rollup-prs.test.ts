@@ -69,6 +69,29 @@ function runRollup(prs: FakePr[], extraArgs: string[] = []): { code: number; out
   }
 }
 
+/**
+ * The same run WITHOUT `--json`, because the human report is where the settle affordance appears — the
+ * JSON shape deliberately carries no prose, so a `--json` run cannot see the line that tells a session
+ * a PR only needs closing.
+ */
+function runRollupHuman(prs: FakePr[], extraArgs: string[] = []): { code: number; out: string } {
+  const dir = mkdtempSync(path.join(tmpdir(), "phx-rollup-"));
+  const fixture = path.join(dir, "prs.json");
+  writeFileSync(fixture, JSON.stringify(prs), "utf8");
+  try {
+    const out = execFileSync(process.execPath, ["scripts/rollup-prs.mjs", ...extraArgs], {
+      encoding: "utf8",
+      env: { ...process.env, PHX_ROLLUP_FIXTURE: fixture, PHX_MERGE_MIN_FILES: "4" },
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: 60000,
+    });
+    return { code: 0, out };
+  } catch (err) {
+    const e = err as { status?: number; stdout?: string; stderr?: string };
+    return { code: e.status ?? 1, out: `${e.stdout ?? ""}${e.stderr ?? ""}` };
+  }
+}
+
 function verdicts(prs: FakePr[], extraArgs: string[] = []): Map<number, { kind: string; why: string }> {
   const { code, out } = runRollup(prs, extraArgs);
   assert.equal(code, 0, `rollup-prs.mjs exited ${code}:
@@ -241,5 +264,45 @@ export function runRollupPrsTests(): void {
       /--close-superseded/,
       "closing must stay behind an explicit flag, and only for a bot PR",
     );
+  }
+
+  // ── 9. A carried PR is CLOSED, not left open for someone to merge again ─────────────────────
+  // Roll-up #4871 merged on 2026-09-30 and GitHub closed only the one member whose head the roll-up
+  // branch carried verbatim. #4861 and #4870 stayed OPEN with their content already on `main` — the
+  // state that costs a full CI run on the PR and another on `main` when someone merges one of them, to
+  // ship nothing. The `carried` verdict already existed and already read "close it, do not merge it";
+  // nothing ever acted on it, and `--close-superseded` reaches only a BOT PR subsumed by a wider one.
+  {
+    const v = verdicts([pr(1, ["docs/a.md"], { carried: true }), pr(2, ["src/b.ts"])]);
+    assert.equal(v.get(1)?.kind, "carried", "a PR whose every file is byte-identical on main is carried");
+    assert.equal(v.get(2)?.kind, "rollable", "and a live one beside it is untouched by the settle pass");
+
+    // The default run writes nothing and still names the PR and the command, or the affordance is
+    // invisible and closing by hand stays the habit. `--json` suppresses it, so this asks for the
+    // human report the way a session actually runs the script.
+    const human = runRollupHuman([pr(1, ["docs/a.md"], { carried: true })]);
+    assert.equal(human.code, 0);
+    assert.match(human.out, /--settle to close #1/, "the report must name the command and the PR it would close");
+
+    // And `--settle` is refused against a snapshot, for the same reason `--apply` is: closing is a write
+    // against the live repository, and a fixture cannot authorise one.
+    const settled = runRollup([pr(1, ["docs/a.md"], { carried: true })], ["--settle"]);
+    assert.notEqual(settled.code, 0, "--settle against a fixture must be refused");
+    assert.match(settled.out, /--settle is refused with PHX_ROLLUP_FIXTURE/);
+  }
+
+  // ── 10. The close path selects on the blob comparison, and closes rather than merges ────────
+  {
+    const source = readFileSync("scripts/rollup-prs.mjs", "utf8");
+    assert.match(
+      source,
+      /const carriedPrs = open\.filter\(\(p\) => p\.verdict\.kind === 'carried'\)/,
+      "the settle pass must select on the carried verdict — every file byte-identical on main — and nothing looser",
+    );
+    assert.match(source, /'pr', 'close', String\(pr\.number\)/, "and it closes through gh pr close");
+    // The roll-up body must stop asking a human to close the originals, or the tool still leaves the
+    // work behind that this change exists to pick up.
+    assert.doesNotMatch(source, /Close the originals once this merges\./, "the hand-off note is retired");
+    assert.match(source, /--settle\\` closes them/, "and the roll-up body names the command that does it");
   }
 }
