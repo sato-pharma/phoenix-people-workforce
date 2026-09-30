@@ -1,24 +1,142 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Check, ChevronLeft, Download, FileText, ShieldCheck } from "lucide-react";
+
+import { SearchableSelect } from "@/components/ui/searchable-select";
 
 /**
- * Spotlight — the medical rep's own picker.
+ * Spotlight — one person's own sheet.
  *
- * ONE PERSON, HIMSELF. There is no subject, no filter, no ranking: the rep chooses a period — a
- * single month, a quarter, a semester, or any run of months in between (owner, 2026-09-30) — and asks
- * how he did. The server answers with his achievement against the PUBLISHED monthly closing, and the
- * picture and the PDF unlock only at 90% and above.
+ * ─────────────────────────────────────────────────────────────────────────────────────────────────
+ * 🔒 THIS PAGE WEARS REPORT IT'S DESIGN, DELIBERATELY. Owner, 2026-09-30: "mimic the style of the
+ * report it tab … the same /employee-portals/report-it as design." Every device here is lifted from
+ * `src/components/report-it/report-it-form.tsx` and must stay in step with it: the dark slate hero
+ * with the orange bloom, the step progress bar, the 244px vertical stepper rail on desktop with its
+ * ShieldCheck footnote, the compact mobile stepper, the step heading with its ghost numeral, and the
+ * field / label / button primitives below. The ENTRIES are ours — a period and a sheet, not a patient
+ * and a medicine — but nothing about the LOOK is invented here.
  *
- * 🔒 NO HORIZONTAL SCROLL, square corners, mobile and desktop. Reps read this on a tablet, so the
- * controls stack to one column on a phone and the buttons wrap.
+ * If Report It's look changes, this changes with it rather than drifting into a second house style.
+ *
+ * 🔒 Square corners throughout, no horizontal scroll at any width, and no truncation — the owner's
+ * standing UI rules. The sheet image scales with `w-full` so an A4 portrait fits a phone.
  */
 
-const FIELD =
-  "w-full rounded-none border border-slate-300 bg-white px-3 py-2 text-[13px] text-slate-900"
-  + " focus:border-sky-700 focus:outline-none";
-const LABEL = "block text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500";
-const CARD = "rounded-none border border-slate-200 bg-white p-4";
+// ─── Primitives, copied from the Report It form so the two cannot drift ───────────────────────────
+
+const fieldClass =
+  "h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 transition placeholder:text-slate-400 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20 disabled:cursor-not-allowed disabled:opacity-50";
+const selectClass = `${fieldClass} cursor-pointer`;
+
+const btnGhost =
+  "inline-flex items-center gap-1.5 border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-100 disabled:pointer-events-none disabled:opacity-40";
+const btnDark =
+  "inline-flex items-center gap-1.5 border border-slate-900 bg-slate-900 px-5 py-2 text-sm font-bold text-white transition hover:bg-slate-800 disabled:pointer-events-none disabled:opacity-50";
+const btnOrange =
+  "inline-flex items-center gap-1.5 border border-orange-600 bg-orange-600 px-5 py-2 text-sm font-bold text-white transition hover:bg-orange-700 disabled:pointer-events-none disabled:opacity-50";
+
+function FieldLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <label className="mb-1.5 block text-phx-xs font-black uppercase tracking-wide text-slate-500">
+      {children}
+    </label>
+  );
+}
+
+// ─── The two steps ────────────────────────────────────────────────────────────────────────────────
+
+const STEPS = ["Period", "Your sheet"];
+const STEP_TITLES = ["Choose your period", "Your spotlight"];
+const STEP_DESCRIPTIONS = ["The months to measure", "Picture and PDF"];
+
+function VerticalStepper({ step, onJump }: { step: number; onJump: (n: number) => void }) {
+  return (
+    <ol className="relative">
+      {STEPS.map((label, i) => {
+        const num = i + 1;
+        const active = num === step;
+        const done = num < step;
+        const clickable = num < step;
+        const last = i === STEPS.length - 1;
+        return (
+          <li className="relative" key={label}>
+            {!last && (
+              <span
+                aria-hidden
+                className={["absolute left-[15px] top-8 h-[calc(100%-1rem)] w-px", done ? "bg-orange-400" : "bg-slate-200"].join(" ")}
+              />
+            )}
+            <button
+              className={[
+                "group relative flex w-full items-start gap-3 px-3 py-3 text-left transition",
+                active ? "bg-orange-50" : "bg-transparent",
+                clickable ? "cursor-pointer hover:bg-slate-50" : "cursor-default",
+              ].join(" ")}
+              disabled={!clickable}
+              onClick={() => clickable && onJump(num)}
+              type="button"
+            >
+              {active && <span aria-hidden className="absolute inset-y-0 left-0 w-[3px] bg-orange-500" />}
+              <span
+                className={[
+                  "z-10 flex h-8 w-8 shrink-0 items-center justify-center text-xs font-black",
+                  active
+                    ? "bg-orange-600 text-white"
+                    : done
+                      ? "bg-orange-100 text-orange-700"
+                      : "border border-slate-300 bg-white text-slate-400",
+                ].join(" ")}
+              >
+                {done ? <Check className="h-4 w-4" /> : num}
+              </span>
+              <span className="min-w-0">
+                <span
+                  className={[
+                    "block text-phx-xs font-black uppercase tracking-wide",
+                    active ? "text-slate-900" : done ? "text-slate-700" : "text-slate-400",
+                  ].join(" ")}
+                >
+                  {label}
+                </span>
+                <span className="mt-0.5 block text-xs text-slate-400">{STEP_DESCRIPTIONS[i]}</span>
+              </span>
+            </button>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+function MobileStepper({ step }: { step: number }) {
+  return (
+    <div className="flex items-center lg:hidden">
+      {STEPS.map((label, i) => {
+        const num = i + 1;
+        const active = num === step;
+        const done = num < step;
+        return (
+          <div className={["flex items-center", i < STEPS.length - 1 ? "flex-1" : ""].join(" ")} key={label}>
+            <span
+              className={[
+                "flex h-7 w-7 shrink-0 items-center justify-center text-phx-xs font-black",
+                active ? "bg-orange-600 text-white" : done ? "bg-orange-100 text-orange-700" : "border border-slate-300 bg-white text-slate-400",
+              ].join(" ")}
+            >
+              {done ? <Check className="h-3.5 w-3.5" /> : num}
+            </span>
+            {i < STEPS.length - 1 && (
+              <span className={["mx-1.5 h-px flex-1", done ? "bg-orange-400" : "bg-slate-200"].join(" ")} />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Data ─────────────────────────────────────────────────────────────────────────────────────────
 
 type Preview = {
   from: string;
@@ -34,7 +152,7 @@ type Preview = {
 };
 
 type Props = {
-  /** Every month the rep may pick, ascending `YYYY-MM`. */
+  /** Every month the viewer may pick, ascending `YYYY-MM`. */
   months: string[];
   defaultFrom: string;
   defaultTo: string;
@@ -47,7 +165,7 @@ function monthLabel(period: string): string {
     .toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });
 }
 
-/** Presets over the months the rep actually has, newest-anchored. Each returns [from, to]. */
+/** Presets over the months actually available, newest-anchored. Each returns [from, to]. */
 function presetsFor(months: string[]): { label: string; range: [string, string] }[] {
   if (months.length === 0) return [];
   const last = months[months.length - 1]!;
@@ -65,6 +183,7 @@ function presetsFor(months: string[]): { label: string; range: [string, string] 
 }
 
 export function RepSpotlightWorkspace({ months, defaultFrom, defaultTo, threshold }: Props) {
+  const [step, setStep] = useState(1);
   const [from, setFrom] = useState(defaultFrom);
   const [to, setTo] = useState(defaultTo);
   const [preview, setPreview] = useState<Preview | null>(null);
@@ -73,13 +192,11 @@ export function RepSpotlightWorkspace({ months, defaultFrom, defaultTo, threshol
   /**
    * The rendered sheet, shown ON SCREEN as soon as the period is chosen (owner, 2026-09-30): he sees
    * the picture first and only then decides to keep it. The blob is HELD so "Download picture" saves
-   * exactly the image he is looking at rather than rendering a second one — the same bytes, and one
-   * fewer Chromium run.
+   * exactly the image he is looking at rather than rendering a second one.
    */
   const [sheet, setSheet] = useState<{ url: string; blob: Blob } | null>(null);
 
-  // An object URL is a document-lifetime handle; replacing or leaving the page without revoking it
-  // leaks the whole PNG. One helper so neither path can forget.
+  // An object URL is a document-lifetime handle; replacing or leaving without revoking leaks the PNG.
   const replaceSheet = useCallback((next: { url: string; blob: Blob } | null) => {
     setSheet((current) => {
       if (current) URL.revokeObjectURL(current.url);
@@ -89,8 +206,8 @@ export function RepSpotlightWorkspace({ months, defaultFrom, defaultTo, threshol
   useEffect(() => () => { if (sheet) URL.revokeObjectURL(sheet.url); }, [sheet]);
 
   const presets = useMemo(() => presetsFor(months), [months]);
-  // A backwards range is the one thing the picker can catch before the server does.
   const rangeValid = from <= to;
+  const pct = Math.round((step / STEPS.length) * 100);
 
   const show = useCallback(async () => {
     if (!rangeValid) {
@@ -111,8 +228,7 @@ export function RepSpotlightWorkspace({ months, defaultFrom, defaultTo, threshol
       const next = payload as Preview;
       setPreview(next);
 
-      // Earned it? Then draw the sheet on screen straight away — he sees the picture before he
-      // decides to keep it. Below the floor there is deliberately nothing to show.
+      // Earned it? Draw the sheet straight away — he sees the picture before he decides to keep it.
       if (next.eligible) {
         const rendered = await fetch("/api/spotlight/me/sheet", {
           method: "POST",
@@ -126,6 +242,7 @@ export function RepSpotlightWorkspace({ months, defaultFrom, defaultTo, threshol
         const blob = await rendered.blob();
         replaceSheet({ url: URL.createObjectURL(blob), blob });
       }
+      setStep(2);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Spotlight failed to load.");
     } finally {
@@ -172,141 +289,221 @@ export function RepSpotlightWorkspace({ months, defaultFrom, defaultTo, threshol
     }
   }, [from, to, sheet, save]);
 
-  const beat = preview?.achievement !== null && preview !== null && preview.achievement! >= 100;
+  const beat = preview !== null && preview.achievement !== null && preview.achievement >= 100;
 
   return (
-    <div className="mx-auto w-full max-w-3xl">
-      <p className="mb-4 max-w-2xl text-[13px] leading-relaxed text-slate-600">
-        Choose a period — a single month, a quarter, a semester, or any run of months — and see how you
-        did against your published targets. At {threshold}% or more your spotlight is drawn here on the
-        screen, and you can then save it as a picture or a PDF.
-      </p>
-
-      {error ? (
-        <p className="mb-4 rounded-none border border-red-300 bg-red-50 px-4 py-3 text-[13px] text-red-800">
-          {error}
-        </p>
-      ) : null}
-
-      <section className={CARD}>
-        <h2 className="mb-3 text-[13px] font-bold text-slate-900">Period</h2>
-        {presets.length > 0 ? (
-          <div className="mb-3 flex flex-wrap gap-2">
-            {presets.map((preset) => {
-              const active = from === preset.range[0] && to === preset.range[1];
-              return (
-                <button
-                  className={`rounded-none border px-3 py-1.5 text-[12px] font-semibold ${
-                    active ? "border-sky-800 bg-sky-800 text-white" : "border-slate-300 text-slate-700"
-                  }`}
-                  key={preset.label}
-                  onClick={() => { setFrom(preset.range[0]); setTo(preset.range[1]); }}
-                  type="button"
-                >
-                  {preset.label}
-                </button>
-              );
-            })}
-          </div>
-        ) : null}
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div>
-            <label className={LABEL} htmlFor="rs-from">From</label>
-            <select className={FIELD} id="rs-from" onChange={(event) => setFrom(event.target.value)} value={from}>
-              {months.map((period) => (
-                <option key={period} value={period}>{monthLabel(period)}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className={LABEL} htmlFor="rs-to">To</label>
-            <select className={FIELD} id="rs-to" onChange={(event) => setTo(event.target.value)} value={to}>
-              {months.map((period) => (
-                <option key={period} value={period}>{monthLabel(period)}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-        {!rangeValid ? (
-          <p className="mt-2 text-[12px] text-red-700">The first month cannot come after the last.</p>
-        ) : null}
-
-        <div className="mt-4">
-          <button
-            className="rounded-none bg-sky-800 px-5 py-2.5 text-[13px] font-semibold text-white disabled:opacity-50"
-            disabled={busy !== null || !rangeValid}
-            onClick={show}
-            type="button"
-          >
-            {busy === "preview" ? "Drawing your spotlight…" : "Show my spotlight"}
-          </button>
-        </div>
-      </section>
-
-      {preview ? (
-        <section className={`${CARD} mt-4`}>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-            {preview.rangeLabel}
-          </p>
-          <p className="mt-1 flex items-baseline gap-2">
-            <span
-              className={`text-[34px] font-bold leading-none ${
-                preview.achievement === null ? "text-slate-400" : beat ? "text-emerald-700" : "text-slate-900"
-              }`}
-            >
-              {preview.achievement === null ? "—" : `${preview.achievement.toFixed(1)}%`}
-            </span>
-            <span className="text-[12px] text-slate-500">of your published target</span>
-          </p>
-
-          {preview.pendingPeriods.length > 0 ? (
-            <p className="mt-3 rounded-none border border-amber-300 bg-amber-50 px-3 py-2 text-[12px] text-amber-800">
-              {preview.pendingPeriods.map(monthLabel).join(", ")}
-              {preview.pendingPeriods.length === 1 ? " is not published yet and was left out." : " are not published yet and were left out."}
+    <div className="border border-slate-200 bg-white shadow-sm">
+      {/* ── Hero ─────────────────────────────────────────────────────────────── */}
+      <div className="relative overflow-hidden bg-slate-900 px-5 py-6 sm:px-8 sm:py-7">
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -right-10 -top-10 h-44 w-44 rounded-full bg-orange-500/10 blur-2xl"
+        />
+        <div className="relative flex items-start gap-4">
+          <div className="min-w-0 flex-1">
+            <p className="text-phx-xs font-black uppercase tracking-[0.25em] text-orange-400">Recognition</p>
+            <h1 className="mt-1 text-2xl font-black leading-none text-white">Spotlight</h1>
+            <p className="mt-2 max-w-xl text-sm text-slate-300">
+              Choose any period — a month, a quarter, a semester, or any run of months — and see how you
+              did against your published targets. At{" "}
+              <span className="font-bold text-orange-300">{threshold}%</span> or more your sheet is drawn
+              here, ready to save as a picture or a PDF.
             </p>
-          ) : null}
+          </div>
+          <span className="hidden items-center gap-1.5 self-start border border-white/15 bg-white/5 px-2.5 py-1 text-phx-2xs font-black uppercase tracking-wide text-slate-200 sm:inline-flex">
+            <ShieldCheck className="h-3.5 w-3.5 text-orange-400" />
+            Published figures
+          </span>
+        </div>
 
-          {preview.eligible ? (
-            <div className="mt-4">
-              {/* THE SHEET ITSELF, ON SCREEN (owner, 2026-09-30) — he sees the picture as soon as he
-                  picks the period, and only then decides to keep it. `w-full` with `h-auto` so an A4
-                  portrait scales down on a phone without ever scrolling sideways. */}
-              {sheet ? (
-                <figure className="mb-4">
-                  <img
-                    alt={`Your spotlight for ${preview.rangeLabel}`}
-                    className="block w-full rounded-none border border-slate-200"
-                    src={sheet.url}
-                  />
-                </figure>
-              ) : null}
-              <p className="mb-2 text-[13px] text-emerald-800">
-                Your spotlight is ready. Download it as a picture to share, or as a PDF to print.
+        <div className="relative mt-6">
+          <div className="flex items-center justify-between text-phx-2xs font-black uppercase tracking-wide text-slate-400">
+            <span>Step {step} of {STEPS.length}</span>
+            <span className="text-orange-400">{pct}%</span>
+          </div>
+          <div className="mt-1.5 h-1.5 w-full bg-white/10">
+            <div className="h-full bg-orange-500 transition-all duration-300" style={{ width: `${pct}%` }} />
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-[244px_minmax(0,1fr)]">
+        {/* ── Left rail ──────────────────────────────────────────────────────── */}
+        <aside className="hidden border-r border-slate-200 bg-slate-50/60 lg:flex lg:flex-col">
+          <nav className="p-3">
+            <VerticalStepper onJump={(n) => { setError(null); setStep(n); }} step={step} />
+          </nav>
+          <div className="mt-auto border-t border-slate-200 p-4">
+            <div className="flex items-start gap-2.5">
+              <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-orange-500" />
+              <p className="text-xs leading-relaxed text-slate-500">
+                Measured against your published monthly closing — only months that are closed and
+                published are counted.
               </p>
-              <div className="flex flex-wrap gap-3">
-                <button
-                  className="rounded-none bg-sky-800 px-5 py-2.5 text-[13px] font-semibold text-white disabled:opacity-50"
-                  disabled={busy !== null}
-                  onClick={() => download("png")}
-                  type="button"
-                >
-                  {busy === "png" ? "Building the picture…" : "Download picture"}
-                </button>
-                <button
-                  className="rounded-none border border-sky-800 px-5 py-2.5 text-[13px] font-semibold text-sky-800 disabled:opacity-50"
-                  disabled={busy !== null}
-                  onClick={() => download("pdf")}
-                  type="button"
-                >
-                  {busy === "pdf" ? "Building the PDF…" : "Download PDF"}
-                </button>
-              </div>
             </div>
-          ) : (
-            <p className="mt-3 text-[13px] leading-relaxed text-slate-600">{preview.reason}</p>
+          </div>
+        </aside>
+
+        {/* ── Step content ───────────────────────────────────────────────────── */}
+        <div className="p-4 sm:p-6">
+          <div className="mb-5 lg:hidden">
+            <MobileStepper step={step} />
+          </div>
+
+          <div className="mb-5 flex items-center justify-between border-b border-slate-200 pb-4">
+            <div>
+              <p className="text-phx-2xs font-black uppercase tracking-[0.25em] text-orange-600">
+                Step {step} of {STEPS.length}
+              </p>
+              <h2 className="mt-0.5 text-lg font-black text-slate-900">{STEP_TITLES[step - 1]}</h2>
+            </div>
+            <span aria-hidden className="select-none text-4xl font-black tabular-nums text-slate-200">
+              {String(step).padStart(2, "0")}
+            </span>
+          </div>
+
+          {step === 1 && (
+            <div className="space-y-5">
+              {presets.length > 0 && (
+                <div>
+                  <FieldLabel>Quick pick</FieldLabel>
+                  <div className="flex flex-wrap gap-2">
+                    {presets.map((preset) => {
+                      const active = from === preset.range[0] && to === preset.range[1];
+                      return (
+                        <button
+                          className={[
+                            "border px-3 py-2 text-sm font-semibold transition",
+                            active
+                              ? "border-orange-500 bg-orange-50 text-slate-900"
+                              : "border-slate-200 bg-white text-slate-600 hover:border-slate-400",
+                          ].join(" ")}
+                          key={preset.label}
+                          onClick={() => { setFrom(preset.range[0]); setTo(preset.range[1]); }}
+                          type="button"
+                        >
+                          {preset.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <FieldLabel>From</FieldLabel>
+                  <SearchableSelect className={selectClass} onChange={(e) => setFrom(e.target.value)} value={from}>
+                    {months.map((period) => (
+                      <option key={period} value={period}>{monthLabel(period)}</option>
+                    ))}
+                  </SearchableSelect>
+                </div>
+                <div>
+                  <FieldLabel>To</FieldLabel>
+                  <SearchableSelect className={selectClass} onChange={(e) => setTo(e.target.value)} value={to}>
+                    {months.map((period) => (
+                      <option key={period} value={period}>{monthLabel(period)}</option>
+                    ))}
+                  </SearchableSelect>
+                </div>
+              </div>
+
+              {!rangeValid && (
+                <p className="border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-bold text-rose-800">
+                  The first month cannot come after the last.
+                </p>
+              )}
+            </div>
           )}
-        </section>
-      ) : null}
+
+          {step === 2 && preview && (
+            <div className="space-y-5">
+              <div className="border border-slate-200">
+                <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-2.5">
+                  <span className="flex items-center gap-2 text-phx-xs font-black uppercase tracking-wide text-slate-700">
+                    <span aria-hidden className="h-3.5 w-1 bg-orange-500" />
+                    {preview.rangeLabel}
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 p-4">
+                  <span
+                    className={[
+                      "text-4xl font-black tabular-nums leading-none",
+                      preview.achievement === null ? "text-slate-300" : beat ? "text-emerald-600" : "text-slate-900",
+                    ].join(" ")}
+                  >
+                    {preview.achievement === null ? "—" : `${preview.achievement.toFixed(1)}%`}
+                  </span>
+                  <span className="text-phx-xs font-black uppercase tracking-wide text-slate-500">
+                    of your published target
+                  </span>
+                </div>
+              </div>
+
+              {preview.pendingPeriods.length > 0 && (
+                <p className="border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800">
+                  {preview.pendingPeriods.map(monthLabel).join(", ")}
+                  {preview.pendingPeriods.length === 1
+                    ? " is not published yet and was left out."
+                    : " are not published yet and were left out."}
+                </p>
+              )}
+
+              {preview.eligible ? (
+                <>
+                  {sheet && (
+                    <figure className="border border-slate-200 bg-slate-50 p-3">
+                      <img
+                        alt={`Your spotlight for ${preview.rangeLabel}`}
+                        className="block w-full border border-slate-200 bg-white"
+                        src={sheet.url}
+                      />
+                    </figure>
+                  )}
+                  <div className="flex flex-wrap gap-2">
+                    <button className={btnOrange} disabled={busy !== null} onClick={() => download("png")} type="button">
+                      <Download className="h-4 w-4" />
+                      {busy === "png" ? "Saving…" : "Download picture"}
+                    </button>
+                    <button className={btnGhost} disabled={busy !== null} onClick={() => download("pdf")} type="button">
+                      <FileText className="h-4 w-4" />
+                      {busy === "pdf" ? "Building the PDF…" : "Download PDF"}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <p className="border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-relaxed text-slate-600">
+                  {preview.reason}
+                </p>
+              )}
+            </div>
+          )}
+
+          {error && (
+            <p className="mt-5 border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-bold text-rose-800">
+              {error}
+            </p>
+          )}
+
+          <div className="mt-6 flex items-center justify-between border-t border-slate-200 pt-5">
+            <button
+              className={btnGhost}
+              disabled={step === 1 || busy !== null}
+              onClick={() => { setError(null); setStep(1); }}
+              type="button"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Back
+            </button>
+            {step === 1 && (
+              <button className={btnDark} disabled={busy !== null || !rangeValid} onClick={show} type="button">
+                {busy === "preview" ? "Drawing your spotlight…" : "Show my spotlight"}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
