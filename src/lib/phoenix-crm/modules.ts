@@ -31,7 +31,7 @@ export const PHOENIX_CRM_PORTAL_BASE = "/employee-portals/field-crm";
  * build. `server/page.ts` carries a compile-time check that this union and `keyof PhoenixCrmTabs`
  * still agree, so adding a tab without giving it a card cannot compile.
  */
-export type PhoenixCrmModuleKey = "visits" | "list" | "plan" | "team" | "calendar" | "doctors" | "reports" | "settings";
+export type PhoenixCrmModuleKey = "visits" | "list" | "plan" | "forecast" | "team" | "calendar" | "doctors" | "reports" | "settings";
 
 export type PhoenixCrmModule = {
   key: PhoenixCrmModuleKey;
@@ -59,6 +59,11 @@ export const PHOENIX_CRM_MODULES: readonly PhoenixCrmModule[] = [
   { key: "visits", slug: "visits", label: "Visits", blurb: "Add a visit, and read back the ones you entered today." },
   { key: "list", slug: "list", label: "List", blurb: "Your customers: validate them at the clinic, keep their days and hours, ask to add or drop." },
   { key: "plan", slug: "plan", label: "Plan", blurb: "Build the month and its weeks, and send them for approval." },
+  // 🔴 CNS ONLY (owner, 2026-10-01: "build the daily forecast module in Phoenix ONLY FOR CNS LINE"). It
+  // replaces the "Daily forecast" the CNS reps typed into the line's WhatsApp group: the boxes come
+  // pre-filled from the month's target, he changes what he disagrees with, and sends. A manager of CNS
+  // territories reads the same module as a board. Offered to no one outside the CNS line.
+  { key: "forecast", slug: "forecast", label: "Forecast", blurb: "Today's boxes by product, filled in from your target: change what you disagree with, then send." },
   { key: "team", slug: "team", label: "Team", blurb: "Your people's days and plans, and the decisions waiting on you." },
   // 🔴 ITS OWN TAB, NOT A SECTION OF REPORTS (owner, 2026-09-30: "build the team calendar into a
   // separate tab inside the button of the Phoenix CRM"). It sits beside Team because it answers

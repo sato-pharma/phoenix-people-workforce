@@ -80,6 +80,8 @@ const REFUSALS: Record<string, Refusal> = {
   not_archived: { status: 409, message: "This customer is not in the Archive. Reload the page." },
   not_on_list: { status: 409, message: "This customer is not on your list yet. Ask to add him to your list first." },
   move_reason_required: { status: 400, message: "Write why the place is moved (at least 10 characters)." },
+  // The daily forecast (owner, 2026-10-01): CNS only, and the database refuses any other line itself.
+  not_forecast_line: { status: 403, message: "The daily forecast is for the CNS line only." },
 };
 
 function messageOf(error: unknown): string {

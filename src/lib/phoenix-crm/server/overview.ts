@@ -13,6 +13,7 @@
  */
 
 import { plannableWeeks } from "@/lib/phoenix-crm/calendar";
+import { isForecastLine } from "@/lib/phoenix-crm/daily-forecast";
 import { managerChain, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import { canReviewTerritory, lineOpeningText, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { chunk, throwIfError } from "@/lib/phoenix-crm/server/db";
@@ -34,6 +35,7 @@ export type PhoenixCrmTabs = {
   visits: boolean;
   list: boolean;
   plan: boolean;
+  forecast: boolean;
   team: boolean;
   calendar: boolean;
   doctors: boolean;
@@ -178,6 +180,10 @@ export async function loadPhoenixCrmOverview(viewer: PhoenixCrmViewer): Promise<
     visits: hasScope,
     list: hasScope,
     plan: viewer.isSuperAdmin || ownSeatIds.length > 0,
+    // The daily forecast is CNS ONLY (owner, 2026-10-01). A CNS rep has his own territory in scope, a
+    // CNS manager (and the CEO and the SFE Manager, who read the company) has CNS territories beneath
+    // him; anyone whose scope holds no CNS territory is never offered it.
+    forecast: viewer.isSuperAdmin || scope.some((seat) => isForecastLine(seat.lineCode)),
     team: viewer.isSuperAdmin || (scope.length > 0 && (viewer.managerSeats.length > 0 || viewer.basis === "all")),
     // The team calendar rides the TEAM tab's own predicate rather than a second copy of it: both
     // show a manager his people, and a rule written twice is a rule that will disagree with itself.
