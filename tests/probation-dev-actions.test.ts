@@ -15,10 +15,14 @@ export function runProbationDevActionsTests() {
   // New rows start open.
   assert.match(repo, /status: "open"/, "new actions start open");
 
-  // Create seam: feedback submit opens the actions (best-effort, non-blocking).
+  // Create seam: feedback submit opens the actions — still NON-BLOCKING, no longer SILENT.
+  // 🔴 This assertion used to pin `.catch(() => undefined)`, i.e. it pinned the defect: a failure
+  // dropped every action the evaluator typed while the submit reported a plain success. Non-blocking
+  // is still correct (the scorecard row and the DV-Day transition are already written, so throwing
+  // would report a failure that did not happen), so what is pinned now is that the error is READ.
   const wf = src("src/lib/probation/intelligence/feedback-workflow.ts");
-  assert.match(wf, /createDevelopmentActions\(\{[\s\S]*?\}\)\.catch\(\(\) => undefined\)/,
-    "feedback submit opens development actions, non-blocking");
+  assert.doesNotMatch(wf, /createDevelopmentActions\(\{[\s\S]*?\}\)\.catch\(\(\) => undefined\)/,
+    "the blanket swallow on createDevelopmentActions is gone — it dropped every action silently");
   assert.match(wf, /developmentActions\?: DevelopmentActionInput\[\]/, "SubmitFeedbackInput carries development actions");
 
   // Read seam: consolidated report bulk-loads and exposes them.

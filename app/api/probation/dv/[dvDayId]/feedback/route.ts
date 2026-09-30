@@ -34,7 +34,7 @@ export async function POST(
     const { dvDayId } = await params;
     const body = await request.json();
 
-    const feedback = await submitDvFeedback(access, dvDayId, {
+    const { feedback, developmentActionsError } = await submitDvFeedback(access, dvDayId, {
       scores: (body.scores && typeof body.scores === "object" ? body.scores : {}) as Record<string, unknown>,
       recommendation: body.recommendation ? String(body.recommendation) : null,
       strengths: body.strengths ? String(body.strengths) : null,
@@ -54,7 +54,9 @@ export async function POST(
         : undefined,
     });
 
-    return NextResponse.json({ feedback }, { status: 201 });
+    // 201 either way — the feedback IS saved. `developmentActionsError` is how a partial save reaches
+    // the evaluator; it is null on the normal path.
+    return NextResponse.json({ feedback, developmentActionsError }, { status: 201 });
   } catch (error) {
     const { status, message } = mapError(error);
     return NextResponse.json({ error: message }, { status });

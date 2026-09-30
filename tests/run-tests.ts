@@ -198,6 +198,7 @@ import { runProbationDecisionTests } from "./probation-decision.test.ts";
 import { runProbationCompletionReportTests } from "./probation-completion-report.test.ts";
 import { runProbationEnhancementsPrereqTests } from "./probation-enhancements-prereq.test.ts";
 import { runProbationDevActionsTests } from "./probation-dev-actions.test.ts";
+import { runProbationDevActionsNotSilentlyDroppedTests } from "./probation-dev-actions-not-silently-dropped.test.ts";
 import { runProbationConfigEditorTests } from "./probation-config-editor.test.ts";
 import { runProbationCrmUnmappedTests } from "./probation-crm-unmapped.test.ts";
 import { runProbationFeedbackInboxTests } from "./probation-feedback-inbox.test.ts";
@@ -2566,6 +2567,13 @@ await runTest("probation decision (P10 authority + idempotent side effects + no-
 await runTest("probation completion report (P11 acceptance-criteria matrix + migrations)", runProbationCompletionReportTests);
 await runTest("probation enhancements prereq (PF-1 registry gates + PF-2 config select)", runProbationEnhancementsPrereqTests);
 await runTest("probation development actions (E1 wire the stub)", runProbationDevActionsTests);
+await runTest(
+  "probation development actions are never silently dropped — a failed insert no longer sits behind a "
+    + "bare .catch(() => undefined) that lost every action the evaluator typed while the submit reported "
+    + "success; it is caught (not rethrown, because the feedback and the DV-Day transition are already "
+    + "written), logged, recorded in the audit row, returned by the route and shown on the done screen",
+  runProbationDevActionsNotSilentlyDroppedTests,
+);
 await runTest("probation config editor (E5 validation + save wiring)", runProbationConfigEditorTests);
 await runTest("probation CRM-unmapped badge (E6 classifier + dashboard wiring)", runProbationCrmUnmappedTests);
 await runTest("probation manager feedback inbox (E2 portal wiring)", runProbationFeedbackInboxTests);

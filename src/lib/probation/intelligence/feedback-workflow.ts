@@ -77,6 +77,21 @@ export type SubmitFeedbackInput = ScorecardInput & {
   developmentActions?: DevelopmentActionInput[];
 };
 
+export type SubmitFeedbackResult = {
+  feedback: ProbationFeedback;
+  /**
+   * 🔴 SET WHEN THE FEEDBACK WAS SAVED BUT ITS DEVELOPMENT ACTIONS WERE NOT — and it must reach the
+   * evaluator, because he typed them and would otherwise never learn they are missing.
+   *
+   * The submit still succeeds on purpose: by this point the scorecard row is inserted, version 1 is
+   * written and the DV-Day has already moved to `feedback_completed`, so throwing would report a
+   * failure that did not happen and invite a duplicate submission of feedback that is already on the
+   * case. What is NOT acceptable is silence — this used to be a bare `.catch(() => undefined)`, which
+   * dropped every action while the submit reported success.
+   */
+  developmentActionsError: string | null;
+};
+
 // ── Row mapping ───────────────────────────────────────────────────────────────
 
 type FeedbackRow = {
@@ -196,7 +211,7 @@ export async function submitDvFeedback(
   access: AccessContext,
   dvDayId: string,
   input: SubmitFeedbackInput,
-): Promise<ProbationFeedback> {
+): Promise<SubmitFeedbackResult> {
   const dvDay = await loadDvDay(dvDayId);
   if (!dvDay) throw new Error("Not found: DV-Day does not exist.");
 
@@ -268,26 +283,49 @@ export async function submitDvFeedback(
   // DV-Day advances to feedback_completed.
   await supabase.from("probation_dv_days").update({ dv_status: "feedback_completed", updated_at: now }).eq("id", dvDayId);
 
-  // Optional development actions opened from this feedback (E1). Best-effort; never fails the submit.
-  if (input.developmentActions && input.developmentActions.length > 0) {
-    await createDevelopmentActions({
-      caseId: dvDay.case_id,
-      dvDayId,
-      employeeHrId: dvDay.employee_hr_id,
-      actions: input.developmentActions,
-      createdBy: actorHrId,
-    }).catch(() => undefined);
+  // Optional development actions opened from this feedback (E1). This still never FAILS the submit —
+  // the scorecard is already written and the DV-Day has already advanced above — but it is no longer
+  // SILENT: the failure is logged, carried into the audit row, and handed back so the evaluator is
+  // told his actions were not created instead of being shown a plain success.
+  const requestedActions = input.developmentActions?.length ?? 0;
+  let developmentActionsError: string | null = null;
+  if (requestedActions > 0) {
+    try {
+      await createDevelopmentActions({
+        caseId: dvDay.case_id,
+        dvDayId,
+        employeeHrId: dvDay.employee_hr_id,
+        actions: input.developmentActions!,
+        createdBy: actorHrId,
+      });
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      developmentActionsError =
+        `Your feedback was saved, but the ${requestedActions} development action`
+        + `${requestedActions === 1 ? " was" : "s were"} not created — open `
+        + `${requestedActions === 1 ? "it" : "them"} again from the case page. ${detail}`;
+      console.error(
+        `[probation] development actions were not created for DV-Day ${dvDayId} (feedback ${feedback.id})`,
+        error,
+      );
+    }
   }
 
   await writeAuditLog({
     actorLoginId: access.loginId ?? actorHrId,
     entityType: "probation_feedback",
     entityId: feedback.id,
-    newValues: { dvDayId, recommendation: check.recommendation, override: auth.isOverride },
-    summary: `Probation DV feedback submitted for ${dvDay.employee_hr_id}${auth.isOverride ? " (admin override)" : ""}`,
+    newValues: {
+      dvDayId,
+      recommendation: check.recommendation,
+      override: auth.isOverride,
+      ...(developmentActionsError ? { developmentActionsFailed: requestedActions, developmentActionsError } : {}),
+    },
+    summary: `Probation DV feedback submitted for ${dvDay.employee_hr_id}${auth.isOverride ? " (admin override)" : ""}`
+      + (developmentActionsError ? ` — ${requestedActions} development action(s) were NOT created` : ""),
   });
 
-  return feedback;
+  return { feedback, developmentActionsError };
 }
 
 // ── Edit feedback with versioning (P4-T08) ───────────────────────────────────
