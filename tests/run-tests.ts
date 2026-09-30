@@ -1650,6 +1650,7 @@ import { runPhoenixCrmValidateNextTests } from "./phoenix-crm-validate-next.test
 import { runPhoenixCrmPlanSuggestTests } from "./phoenix-crm-plan-suggest.test.ts";
 import { runPhoenixCrmListAdmissionTests } from "./phoenix-crm-list-admission.test.ts";
 import { runPhoenixCrmListRowFactsTests } from "./phoenix-crm-list-row-facts.test.ts";
+import { runPhoenixCrmPlanPatternTests } from "./phoenix-crm-plan-pattern.test.ts";
 import { runPhoenixCrmPlaceMoveTests } from "./phoenix-crm-place-move.test.ts";
 import { runPhoenixCrmPlanBoardTests } from "./phoenix-crm-plan-board.test.ts";
 import { runPhoenixCrmOneTapVisitTests } from "./phoenix-crm-one-tap-visit.test.ts";
@@ -5704,6 +5705,11 @@ await runTest(
 await runTest(
   "Phoenix CRM's List is the old Reps List, and validating OVERRIDES iReports360 (owner, 2026-09-30): the captured place's address, brick and area beat the vendor's on every row, the vendor is the fallback and never the loser, a captured place with no street of its own still falls through the rep's own name for it before reverting to the vendor, every empty field prints a placeholder that names the act that fills it — and says only that nothing is recorded once he has validated — the mirror is never written to, no check on the rep reaches a cell, and the board draws the old board's Customer, Specialty, List and Brick columns without its Confidence one",
   runPhoenixCrmListRowFactsTests,
+);
+
+await runTest(
+  "Phoenix CRM's List says when a doctor is USUALLY planned and gathers the ones who stand together (owner, 2026-09-30): the pattern is read off the iReports360 reference plans in Phoenix's own Saturday-start field weeks rather than a second week model, a weekday counts as a pattern only when it happened more than once unless it is all that is known about him, four weeks reads as every week, nothing recorded says so instead of inventing a pattern, the column never counts whether the rep went, and the clustering is the old board's own findNeighbours and clusterRows with its five reserved hues rather than a second copy",
+  runPhoenixCrmPlanPatternTests,
 );
 
 await runTest(

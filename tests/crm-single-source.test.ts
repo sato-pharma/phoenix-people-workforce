@@ -77,7 +77,11 @@ export const CRM_OTHER_MIRROR_ALLOW_LIST: readonly string[] = [
   "src/lib/crm/contacts-sync.ts",
   "src/lib/crm/master.ts",
   // Consumer reads of plan entries / check-ins not yet behind a door (known debt, not visits):
+  // Reads the reference weekly PLANS to answer "when is this doctor usually planned" on Phoenix
+  // CRM's List (owner, 2026-09-30). The weekday/week pattern exists nowhere but the plan mirror,
+  // and src/lib/crm IS the door for it; its visits read goes through reads.ts, not from here.
   "src/lib/crm/plan-board.ts",
+  "src/lib/crm/shared-customers.ts",
   "src/lib/crm/plan-verification-service.ts",
   "src/lib/crm/rep-doctor-lists.ts",
   "src/lib/crm/reps-list.ts",
