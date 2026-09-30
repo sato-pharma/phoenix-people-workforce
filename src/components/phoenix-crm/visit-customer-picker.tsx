@@ -298,7 +298,7 @@ export function SendWeekFirst({
 }) {
   return (
     <div className="grid min-w-0 gap-3">
-      <CrmBackBar onBack={onBack} />
+      <CrmBackBar backLabel="Today" onBack={onBack} title="Add visit" />
       <CrmBlock title={`${customer.name} is on your plan for today`}>
         <div className="grid min-w-0 gap-3">
           <p className="break-words text-sm font-semibold leading-6 text-slate-700">
