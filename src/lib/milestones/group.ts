@@ -29,6 +29,7 @@ import {
   formatPlainDateIso,
   formatPlainDateLong,
   formatPlainDateWords,
+  isFirstDaySpec,
   milestoneEyebrow,
   milestoneStripLabel,
   milestoneTileNumeral,
@@ -275,6 +276,11 @@ export function milestoneGroupCitation(input: {
 
   if (occasion.kind === "service") {
     const spec = occasion.spec;
+    // A joining group — several people starting together, which is how a whole intake arrives. It
+    // says "join", never "complete": nothing has been served yet on the first day.
+    if (isFirstDaySpec(spec)) {
+      return `${when}, ${people} join Sato Pharma — their first day as members of the family, and the start of everything that follows.`;
+    }
     const served =
       spec.unit === "day"
         ? `${spec.count} days`

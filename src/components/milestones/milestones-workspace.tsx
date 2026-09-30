@@ -62,6 +62,9 @@ import type { MilestoneCandidate, MilestoneDueEntry, MilestonePrintHistoryEntry 
  */
 
 const PRESETS: { value: string; label: string }[] = [
+  // `0d` is the hire date itself — the first day as a member of the family. It leads the list
+  // because it is the first thing that happens to anybody here; `1d` would be their second morning.
+  { value: "0d", label: "First day" },
   { value: "1m", label: "First month" },
   { value: "3m", label: "Three months" },
   { value: "6m", label: "Six months" },
