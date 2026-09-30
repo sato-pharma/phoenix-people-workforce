@@ -33,6 +33,9 @@ export const CREDENTIAL_ROUTE_PREFIXES: readonly string[] = [
   "/api/share/marketing-requests",
   "/api/share/territory",
   "/password-setup",
+  // Covers both `/share/card/<token>` and `/share/card/<token>/image`: the matcher stops at the next
+  // `/`, so the image address redacts its token and keeps the `/image` tail readable.
+  "/share/card",
   "/share/direct-orders",
   "/share/interview-calendar",
   "/share/territory",
