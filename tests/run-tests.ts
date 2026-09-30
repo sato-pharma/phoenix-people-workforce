@@ -189,6 +189,7 @@ import { runProbationReportTests } from "./probation-report.test.ts";
 import { runProbationDashboardTests } from "./probation-dashboard.test.ts";
 import { runProbationEmailsTests } from "./probation-emails.test.ts";
 import { runProbationMilestoneEmailsTests } from "./probation-milestone-emails.test.ts";
+import { runProbationReminderOutboxGuardTests } from "./probation-reminder-outbox-guard.test.ts";
 import { runVacationInformedHrTests } from "./vacation-informed-hr.test.ts";
 import { runProbationCairoTodayConsistencyTests } from "./probation-cairo-today-consistency.test.ts";
 import { runProbationNotificationControlsTests } from "./probation-notification-controls.test.ts";
@@ -998,6 +999,7 @@ import { runCustomerPharmacyMappingActionsTests } from "./customer-pharmacy-mapp
 import { runCvDatabaseTests } from "./cv-database.test.ts";
 import { runCvLookupTests } from "./cv-lookup.test.ts";
 import { runTransactionWorkflowAuditTests } from "./transaction-workflow-audit.test.ts";
+import { runAuditEntityTypesTests } from "./audit-entity-types.test.ts";
 import { runPhase13BrowserSmokeRegressionTests } from "./phase13-browser-smoke-regression.test.ts";
 import { runPhase14ControlledMutationSmokeTests } from "./phase14-controlled-mutation-smoke.test.ts";
 import { runPhase15DisposableFixtureSmokeTests } from "./phase15-disposable-fixture-smoke.test.ts";
@@ -2551,6 +2553,10 @@ await runTest("probation consolidated report (P7 milestones + progress + composi
 await runTest("probation CEO dashboard (P8 risk classification + exception flags + rollup)", runProbationDashboardTests);
 await runTest("probation emails (P9 template registration + confirmed recipients + dedup)", runProbationEmailsTests);
 await runTest("probation milestone emails (owner 2026-09-29: Day 30/60/75 to Yasmeena Elsafory alone, CC Omar Gawish, on its own notification type)", runProbationMilestoneEmailsTests);
+await runTest(
+  "probation reminder outbox guard — a missing COLUMN on notification_events throws instead of silently creating no reminder; only the table being absent is tolerated",
+  runProbationReminderOutboxGuardTests,
+);
 await runTest("vacation informed HR + on-a-vacation-today panel (owner 2026-09-29: HR-009 informed of every annual vacation without becoming an approver; her landing page names today's absences)", runVacationInformedHrTests);
 await runTest("probation Cairo-today consistency (dashboard/report/emails share one Cairo-aware clock, not silent UTC default)", runProbationCairoTodayConsistencyTests);
 await runTest("probation notification controls (MOD-3 daily cap + MOD-4 pre-send audit)", runProbationNotificationControlsTests);
@@ -4095,6 +4101,7 @@ await runTest("customer pharmacy mapping actions (approve/reject)", runCustomerP
 await runTest("cv database", runCvDatabaseTests);
 await runTest("cv lookup", runCvLookupTests);
 await runTest("transaction workflow audit", runTransactionWorkflowAuditTests);
+await runTest("audit entity types", runAuditEntityTypesTests);
 await runTest("phase 13 browser smoke regressions", runPhase13BrowserSmokeRegressionTests);
 await runTest("phase 14 controlled mutation smoke", runPhase14ControlledMutationSmokeTests);
 await runTest("phase 15 disposable fixture smoke", runPhase15DisposableFixtureSmokeTests);
@@ -7469,7 +7476,7 @@ await runTest(
 );
 
 await runTest(
-  "rollup-prs.mjs groups the open PRs into the fewest SAFE merges and writes nothing by default: two disjoint small PRs roll up, sharing one file keeps them apart (tests/run-tests.ts merges cleanly into a four-argument call), a migration or protected file or frozen path is never folded in, a SUPERSEDED bot PR does not disqualify the PR that supersedes it (which regressed on its first run), a lone small PR proposes nothing, a wide PR rides along but never forms a roll-up on its own, a PR whose REQUIRED checks are QUEUED or IN_PROGRESS stays rollable but reads as NOT settled so --apply waits for it before the branch is created and builds only from the members that finished green (measured 2026-09-30: #4896 was built over #4894 while its checks were queued, #4894 then went red, and the roll-up held the green #4895 hostage), and `gh pr merge` appears nowhere in the script because merging stays the owner's word",
+  "rollup-prs.mjs groups the open PRs into the fewest SAFE merges and writes nothing by default: two disjoint small PRs roll up, sharing one file keeps them apart (tests/run-tests.ts merges cleanly into a four-argument call), a migration or protected file or frozen path is never folded in, a SUPERSEDED bot PR does not disqualify the PR that supersedes it (which regressed on its first run), a lone small PR proposes nothing, a wide PR rides along but never forms a roll-up on its own, a PR whose REQUIRED checks are QUEUED or IN_PROGRESS stays rollable but reads as NOT settled so --apply waits for it before the branch is created and builds only from the members that finished green (measured 2026-09-30: #4896 was built over #4894 while its checks were queued, #4894 then went red, and the roll-up held the green #4895 hostage), a member with ONE required context green and the other still running is LEFT OUT because every live required context has to be seen succeed and never a subset, ZERO confirmed contexts is the ultimate subset so an unreadable gate or an EMPTY contexts array reads as unproven rather than green (measured 2026-09-30: roll-up #4937 was opened at 14:49:58Z over #4936 whose required jobs ran until 14:51:48Z), --apply refuses an unusable gate before the duplicate guard, the wait and the branch, an unconcluded CheckRun's `conclusion: \"\"` is reported with the state it is actually in rather than as `not started`, and `gh pr merge` appears nowhere in the script because merging stays the owner's word",
   runRollupPrsTests,
 );
 

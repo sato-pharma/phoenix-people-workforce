@@ -283,7 +283,15 @@ export function runPhoenixCrmListRowFactsTests() {
     //    here because it cannot be shown on demand: sharing is rare by construction — 214 real pairs
     //    company-wide — and the rep whose List this was measured on has none, which is the honest
     //    answer and not a silent failure (the loader logs one, and the preview logged zero).
-    assert.ok(board.includes('<tr className={shared ? "bg-violet-50" : undefined}'), "a shared row is violet, as the old board had it");
+    // 🔴 SHARED KEEPS THE VIOLET, AND IT STILL WINS. A second row mark arrived on 2026-09-30 —
+    //    amber for the few with the most visits waiting to count — and two marks can land on one
+    //    row. Shared is the older rule and the one a rep cannot work out for himself, so it takes
+    //    the row colour; ready-to-count takes the rail on the first cell and its own pill, and is
+    //    never painted over it.
+    assert.ok(
+      board.includes('<tr className={shared ? "bg-violet-50" : ready ? "bg-amber-50" : undefined}'),
+      "a shared row is violet, as the old board had it, and it still outranks the amber mark",
+    );
     assert.ok(board.includes("const shared = (customer.sharedWith?.length ?? 0) > 0;"), "and it is the same field the old board reads");
     assert.ok(board.includes("{describeSharing(shared)}"), "the small line names WHO and on what basis — the match is an inference a reader may overrule");
     assert.equal((board.match(/<SharedLine customer=\{customer\} \/>/g) ?? []).length, 2, "on the table row AND the phone card");
@@ -291,10 +299,24 @@ export function runPhoenixCrmListRowFactsTests() {
     // 🔴 NO "Not validated yet" PILL ON A ROW THAT CARRIES A VALIDATE BUTTON (owner, same session:
     //    "since it has a Validate button beside it, then for sure it is not validated. Be smart").
     assert.ok(!board.includes("PENDING_PILL"), "the button IS the status; a pill repeating it says nothing new");
-    // The widths are a table-fixed grid totalling 100%, so the row fits rather than scrolling.
-    const widths = /columns=\{\[([^\]]+)\]\}/.exec(board)?.[1] ?? "";
-    const total = [...widths.matchAll(/(\d+)%/g)].reduce((sum, match) => sum + Number(match[1]), 0);
-    assert.equal(total, 100, `the column widths total ${total}%, not 100% — a row that overflows its grid scrolls sideways`);
+    // 🔴 SEVEN EQUAL COLUMNS, STILL TOTALLING 100% (owner, 2026-09-30: "the table must be symmetric
+    //    — the columns at the same size"). They were hand-tuned per column, 22/13/7/13/21/14/10, so
+    //    no two cells matched. The widths now live in a named constant, so read THAT rather than the
+    //    `columns={...}` literal — which is why this no longer greps the JSX.
+    //
+    //    The total still has to be 100 on a `table-fixed` grid or the row overflows and scrolls
+    //    sideways, which the fits-the-screen golden rule forbids outright. Sevenths do not divide
+    //    cleanly, so the check allows the rounding the shares need (measured live: 131px x 7, spread
+    //    0) while still catching a set that does not add up.
+    const declared = /const EQUAL_COLUMNS = \[([^\]]+)\]/.exec(board)?.[1] ?? "";
+    const shares = [...declared.matchAll(/([\d.]+)%/g)].map((match) => Number(match[1]));
+    assert.equal(shares.length, 7, "the board draws seven columns");
+    const total = shares.reduce((sum, share) => sum + share, 0);
+    assert.ok(Math.abs(total - 100) < 0.1, `the column widths total ${total}%, not 100% — a row that overflows its grid scrolls sideways`);
+    assert.ok(
+      Math.max(...shares) - Math.min(...shares) < 0.05,
+      "and every column is the same size — a hand-tuned set is what he called awful",
+    );
   }
 
   console.log("phoenix-crm list row facts: OK");

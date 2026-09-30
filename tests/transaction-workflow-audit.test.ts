@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { AUDIT_ENTITY_TYPES } from "../src/lib/admin/audit-entity-types.ts";
+
 function source(path: string) {
   return readFileSync(path, "utf8");
 }
@@ -21,10 +23,17 @@ export function runTransactionWorkflowAuditTests() {
   assert.match(auditSource, /"payroll_batch"/);
   assert.match(auditSource, /"vacation_request"/);
 
-  const auditViewerSource = source("src/components/admin/audit-log-viewer.tsx");
-  assert.match(auditViewerSource, /sales_import_batch/);
-  assert.match(auditViewerSource, /payroll_batch/);
-  assert.match(auditViewerSource, /vacation_request/);
+  // These three must be SELECTABLE on /admin/logs, which since 2026-09-30 means present in the
+  // catalogue rather than typed into the viewer: the picker is `["all", ...AUDIT_ENTITY_TYPES]`
+  // and the names no longer appear in that file at all. Asserting the catalogue is the same
+  // guarantee against the screen the owner actually uses — tests/audit-entity-types.test.ts holds
+  // the wiring itself.
+  for (const entityType of ["sales_import_batch", "payroll_batch", "vacation_request"] as const) {
+    assert.ok(
+      AUDIT_ENTITY_TYPES.includes(entityType),
+      `the audit log picker must offer "${entityType}".`,
+    );
+  }
 
   const salesService = source("src/lib/sales/service.ts");
   const salesApproveReject = functionBlock(salesService, "updateSalesBatchStatus");

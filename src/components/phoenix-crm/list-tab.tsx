@@ -21,11 +21,15 @@
  *     Requests · Archive · Timetable — each customer in the section the server put him in
  *     (`ListCustomer.section`, from `listSectionOf`).
  *
- * Owner, 2026-09-30 — "the best-appearing and easiest CRM, yet controlled":
- *   - the figure the rep acts on, what is still to validate, leads the block above the list; the rest
- *     is context a size down, and AM and PM are always said apart;
- *   - "Validate next" puts the three customers most worth his next stop above the list, ranked by the
- *     pure `rankValidateNext` (src/lib/phoenix-crm/validate-next.ts), each with its one Validate button.
+ * Owner, 2026-09-30 — "the best-appearing and easiest CRM, yet controlled", and then, of what that
+ * first produced: "I want the page of the list to contain the list only."
+ *
+ * 🔴 SO THE PAGE OPENS ON THE CHOOSER AND THE LIST, WITH NOTHING IN FRONT OF THEM. A readiness
+ * figures block and a three-card "Validate next" strip used to stand there — about half the first
+ * screen between a rep and his own customers, and the figures repeated three of the chooser's own
+ * parts besides. Both are deleted. The ranking they used is not: `validate-next.ts` still decides
+ * which customer is most worth the next stop, and that belongs on the To validate ROWS, never in a
+ * band above them. Do not put a summary, a strip or a banner back here.
  */
 
 import type { ReactNode } from "react";
@@ -36,8 +40,8 @@ import { RepsListTiles } from "@/components/crm/reps-list-board";
 import { RepsListContacts } from "@/components/crm/reps-list-tables";
 import { useCrmGet } from "@/components/phoenix-crm/api";
 import { CustomerListBoard, CustomerRowAction, type CustomerListVariant } from "@/components/phoenix-crm/customer-list-board";
-import { cairoStamp, countText, dayLabel, dayLabelWithYear, plural } from "@/components/phoenix-crm/format";
-import { listText, placeName, territoryLine } from "@/components/phoenix-crm/labels";
+import { countText, dayLabel, dayLabelWithYear } from "@/components/phoenix-crm/format";
+import { placeName, territoryLine } from "@/components/phoenix-crm/labels";
 import { CustomerScreen } from "@/components/phoenix-crm/list-customer";
 import {
   AddPlaceScreen,
@@ -85,7 +89,6 @@ import {
   windowsForWeekday,
 } from "@/lib/phoenix-crm/timings";
 import type { PhoenixCrmListType, PhoenixCrmSeason, PhoenixCrmTiming } from "@/lib/phoenix-crm/types";
-import { isValidateNextCandidate, validateNextTop } from "@/lib/phoenix-crm/validate-next";
 import type { ListCustomer, ListPlace, TerritoryListView } from "@/lib/phoenix-crm/view-types";
 import { cn } from "@/lib/utils";
 
@@ -535,13 +538,12 @@ function ListHome({
       ) : null}
       {error ? <CrmLoadError message={error} onRetry={onRetry} /> : null}
 
-      {/* Where he chooses what to do next — To validate, and The list he opens on — the three worth his
-          next stop sit above the chooser, which would otherwise push them below a phone's first
-          screen. The rep's alone: he is the one who validates. */}
-      {current === "to_validate" || current === "board" ? (
-        <ValidateNextStrip canValidate={view.canEdit} customers={view.customers} onRowAction={onRowAction} />
-      ) : null}
-
+      {/* 🔴 THE LIST PAGE HOLDS THE LIST, AND NOTHING ELSE (owner, 2026-09-30: "I want the page of
+          the list to contain the list only"). A figures block and a three-card "Validate next" strip
+          used to stand between the rep and his own list — together about half the first screen — and
+          the figures repeated three of the chooser's own parts besides. Both are gone. Do not put a
+          summary, a strip or a banner back above the chooser: what ranks a customer for validating
+          belongs INSIDE To validate, on its rows. */}
       <CrmBlock className="border-t border-slate-100" title="Which part of the list">
         <CrmChoice columns={7} label="Which part of the list" onChange={setSection} options={sectionOptions} value={current} />
       </CrmBlock>
@@ -585,14 +587,6 @@ function ListHome({
       ) : null}
 
       {current === "board" ? <BoardSection onRowAction={onRowAction} seatId={seatId} test={test} view={view} /> : null}
-
-      {/* 🔴 THE FIGURES SIT UNDER THE CHOOSER, NOT OVER IT (owner, 2026-09-30: "I don't recommend to
-          put it above them"). They used to open the screen, above the chooser — but three of the four
-          say what three of the chooser's own parts already say, in his own words: "the list is the
-          full list, To validate is who are not validated, Your list is which are validated." A
-          summary stacked on top of the thing it summarises is one screen of duplication before a rep
-          reaches anything he can act on. Here they belong to the part they measure. */}
-      {current === "to_validate" ? <ReadinessBlock pending={pending} view={view} /> : null}
 
       {current === "to_validate" ? (
         <CustomerSection
@@ -792,227 +786,7 @@ function BoardSection({
   );
 }
 
-function ReadinessBlock({ pending, view }: { pending: ReadonlyArray<ListCustomer>; view: TerritoryListView }) {
-  const { readiness } = view;
-  const toGo = pending.length;
 
-  if (view.reference.length === 0 && pending.length === 0) {
-    return (
-      <CrmBlock>
-        <CrmNote title="No iReports360 list for this territory" tone="info">
-          {view.canEdit
-            ? "Add the territory's customers with Add new customer: a signboard photo at the clinic, the location and the days and hours. Your district manager, then SFE, add each one to your list."
-            : "The rep adds the territory's customers with Add new customer, each validated at the clinic; the district manager, then SFE, add each one to the list."}
-        </CrmNote>
-      </CrmBlock>
-    );
-  }
-
-  const reference = countByType(view.reference);
-  const validated = countByType(view.reference.filter((entry) => entry.state === "validated"));
-  // How much of the reference list is validated, for the bar under the lead figure. Capped, so a list
-  // re-read mid-change can never draw a bar past its own end.
-  const donePercent = readiness.total > 0 ? Math.min(100, Math.round((readiness.validated / readiness.total) * 100)) : 0;
-  const allDone = toGo === 0;
-
-  return (
-    <CrmBlock title="The list">
-      {/* 🔴 FOUR EQUAL TILES, THEN THE PROGRESS ON ITS OWN LINE (owner, 2026-09-30, of the row as it
-          stood: "this part is awful"). It was a 5fr lead box beside three 7fr ones, and the lead
-          carried the bar, the percentage AND a three-line sentence — so it stood about three times
-          the height of its neighbours, and because a grid row is as tall as its tallest cell the
-          other three each ended in roughly 120px of white nothing. Worse, the rhythm inside them
-          disagreed: the lead put its AM · PM beside the figure, the other three put it underneath,
-          which is two families pretending to be one.
-
-          So the four figures are now one row of identical tiles — same label, same figure size, same
-          meta line, in that order — and everything that belongs to the LIST rather than to one tile
-          moved out from under "To validate" into the strip below, which is where a bar measuring the
-          whole list belonged in the first place. Nothing is lost and the void is gone.
-
-          What still marks the figure he acts on is the ORANGE RAIL, not extra size: a bigger number
-          in one cell would sit on a different baseline from the other three, which is the same
-          not-lining-up he has objected to before. AM and PM are said apart in every tile
-          (`pairText`), never added into one. */}
-      <div className="grid min-w-0 grid-cols-2 gap-2 lg:grid-cols-4">
-        <ListFigure
-          label="To validate"
-          note={allDone ? "Every customer is validated" : pairText(countByType(pending))}
-          tone={allDone ? "good" : "act"}
-          value={countText(toGo)}
-        />
-        <ListFigure label="Reference list" note={pairText(reference)} value={countText(readiness.total)} />
-        <ListFigure
-          label="Validated"
-          note={pairText(validated)}
-          tone={readiness.validated > 0 ? "good" : undefined}
-          value={countText(readiness.validated)}
-        />
-        <ListFigure
-          label="Drops waiting"
-          note={`${plural(readiness.dropped, "customer", "customers")} in the Archive`}
-          value={countText(readiness.dropPending)}
-        />
-      </div>
-
-      <div className="mt-2 min-w-0 border border-slate-200/80 bg-white px-4 py-3">
-        {readiness.total > 0 ? (
-          <>
-            <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-              <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">Validated so far</p>
-              <p className="text-phx-2xs font-black uppercase tracking-[0.12em] tabular-nums text-slate-500">{`${donePercent}% of the list`}</p>
-            </div>
-            <div
-              aria-label="Validated so far"
-              aria-valuemax={readiness.total}
-              aria-valuemin={0}
-              aria-valuenow={readiness.validated}
-              className="mt-1.5 h-1.5 w-full bg-slate-100"
-              role="progressbar"
-            >
-              <div className="h-full bg-emerald-500 transition-[width]" style={{ width: `${donePercent}%` }} />
-            </div>
-          </>
-        ) : null}
-        <p className={cn("break-words text-xs font-semibold leading-5 text-slate-600", readiness.total > 0 && "mt-2")}>
-          {allDone
-            ? `${readiness.readyAt ? `Ready since ${cairoStamp(readiness.readyAt)}. ` : ""}Customers who appear on the iReports360 list later show under To validate, and can be planned and visited straight away.`
-            : view.canEdit
-              ? "Plan and visit them as normal. Validate each one at the clinic — signboard photo, location, days and hours — and the visits already saved start counting."
-              : "The rep plans and visits them as normal. Each one starts counting once the rep validates it at the clinic."}
-        </p>
-      </div>
-
-      {view.referenceSource && !view.referenceSource.isCurrent ? (
-        <p className="mt-2 break-words text-xs font-semibold leading-5 text-slate-500">
-          This reference list is the one {view.referenceSource.name ?? "the previous rep"} worked in iReports360. The list stays with the territory.
-        </p>
-      ) : null}
-    </CrmBlock>
-  );
-}
-
-/**
- * A context figure beside the lead one.
- *
- * 🔴 ONE FAMILY, NOT A LEAD BOX AND THREE LEFTOVERS (owner, 2026-09-30: "the part of the To validate
- * and the Reference list is awful — the polish of the page is awful, all in all"). They were three
- * different shapes at once: the lead figure 4xl over a progress bar, these three a smaller box with
- * a grey stub, and the label tracking, the figure size and the meta type all differed between them,
- * so the row read as one thing plus three offcuts rather than as a set.
- *
- * 🔴 AND ALL FOUR ARE NOW THE SAME TILE, INCLUDING "To validate" (owner again, same day: "this part
- * is awful"). The first pass kept the lead as a separate, much taller box, which is what left the
- * other three sitting in ~120px of white nothing; the block above explains the move. What is left
- * here is the one shape they all wear: the same small-caps label at the same tracking, the figure on
- * its own line in tabular numerals so all four line up, the meta beneath it, and a rail that MEANS
- * something rather than a decorative stub. Square edges, as everything here is.
- *
- * `tone` is the ONLY thing that varies, and never the type scale: `act` is the figure he does
- * something about, `good` is a figure worth being pleased by, and no tone at all is plain context.
- * Sizing one tile up instead would put its number on a different baseline from its neighbours'.
- */
-function ListFigure({ label, note, tone, value }: { label: string; note: string; tone?: "act" | "good"; value: string }) {
-  return (
-    <div
-      className={cn(
-        "flex min-w-0 flex-col border border-l-[3px] border-slate-200/80 bg-white px-3 py-3 transition hover:border-slate-300",
-        tone === "good" ? "border-l-emerald-500" : tone === "act" ? "border-l-orange-500" : "border-l-slate-300",
-      )}
-    >
-      <p className="break-words text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">{label}</p>
-      <p
-        className={cn(
-          "mt-1.5 break-words text-2xl font-black leading-none tracking-tight tabular-nums",
-          tone === "good" ? "text-emerald-700" : "text-slate-950",
-        )}
-      >
-        {value}
-      </p>
-      <p className="mt-1.5 break-words text-phx-2xs font-semibold leading-4 text-slate-500">{note}</p>
-    </div>
-  );
-}
-
-/**
- * VALIDATE NEXT — the three customers most worth the rep's next stop.
- *
- * Owner, 2026-09-30 ("the best-appearing and easiest CRM, yet controlled"). A carried-over list can
- * hold dozens still to validate, and the board below groups them by brick and name, which says nothing
- * about which one is worth going to first. `validateNextTop` (src/lib/phoenix-crm/validate-next.ts)
- * answers it from the list the screen already holds: visits already saved first — they start counting
- * the moment he validates — then grade A, then the brick where one trip validates the most. Each card
- * says which of those put it there, in plain words about his own work, never a distance, a reading or
- * a check (Golden rule #1).
- *
- * ONE BUTTON PER CARD, and it is the row's own `CustomerRowAction`, so the strip can never offer what
- * the list itself would not — no "Add visit", no second action. The ranking only ever returns
- * customers the Validate screen opens on, so that button reads Validate.
- */
-function ValidateNextStrip({
-  canValidate,
-  customers,
-  onRowAction,
-}: {
-  /** The viewer is the territory's rep. Nobody else validates, so nobody else is shown the strip. */
-  canValidate: boolean;
-  customers: ReadonlyArray<ListCustomer>;
-  onRowAction: (customer: ListCustomer, action: ListRowAction) => void;
-}) {
-  const picks = canValidate ? validateNextTop(customers) : [];
-  if (picks.length === 0) return null;
-  // Out of the customers the ranking could offer — not every one To validate: one he already asked to
-  // drop is not waiting on him, and "Top 1 of 3" over two of those would read as two he forgot.
-  const offered = customers.filter(isValidateNextCandidate).length;
-  const heading = picks.length < offered ? `Top ${picks.length} of ${countText(offered)}` : `${plural(picks.length, "customer", "customers")} to go`;
-
-  return (
-    <CrmBlock
-      actions={<span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">{heading}</span>}
-      className="border-t border-slate-100"
-      title="Validate next"
-    >
-      <p className="-mt-1 mb-3 break-words text-xs font-semibold leading-5 text-slate-500">
-        Visits already saved first, then grade A, then the brick where one trip validates the most.
-      </p>
-      <ol aria-label="Validate next" className="grid min-w-0 gap-2 md:grid-cols-3">
-        {picks.map((pick, index) => (
-          <li className="flex min-w-0 flex-col border border-l-[3px] border-slate-200 border-l-orange-500 bg-white px-3.5 py-3" key={pick.customer.customerId}>
-            <div className="flex min-w-0 items-start gap-2.5">
-              <span
-                aria-hidden
-                className="flex h-6 w-6 shrink-0 items-center justify-center border border-orange-200 bg-orange-50 text-xs font-black text-orange-700"
-              >
-                {index + 1}
-              </span>
-              <div className="min-w-0 flex-1">
-                <h4 className="break-words text-sm font-black text-slate-950" dir="auto">
-                  {pick.customer.name}
-                </h4>
-                <p className="mt-0.5 break-words text-xs font-semibold leading-5 text-slate-500">
-                  {listText(pick.customer.listType)} · {pick.customer.grade ? `Grade ${pick.customer.grade}` : "No grade"}
-                  {pick.brickName ? (
-                    <>
-                      {" · Brick "}
-                      <bdi>{pick.brickName}</bdi>
-                    </>
-                  ) : null}
-                </p>
-              </div>
-            </div>
-            <p className="mt-2.5 break-words text-xs font-black leading-5 text-orange-800">{pick.reasons[0]}</p>
-            {pick.reasons.length > 1 ? (
-              <p className="break-words text-xs font-semibold leading-5 text-slate-500">{pick.reasons.slice(1).join(" · ")}</p>
-            ) : null}
-            <div className="mt-auto grid pt-3 [&>button]:w-full">
-              <CustomerRowAction canValidate={canValidate} customer={pick.customer} onAction={onRowAction} />
-            </div>
-          </li>
-        ))}
-      </ol>
-    </CrmBlock>
-  );
-}
 
 /**
  * One customer part of the list — To validate, Your list, Outside the list or the Archive — drawn the

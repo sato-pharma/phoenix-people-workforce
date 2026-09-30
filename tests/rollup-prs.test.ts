@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { MIN_MEMBERS } from "../scripts/rollup-build-verdict.mjs";
+import { registryAddedLinesLanded } from "../scripts/rollup-carried.mjs";
 import {
   membersReadyToBuild,
   requiredCheckState,
@@ -53,8 +54,12 @@ type FakePr = {
   redRequired?: boolean;
   /** States that the required checks have not FINISHED. Absent means finished, for the same reason. */
   checksPending?: boolean;
-  /** The real `gh pr list --json statusCheckRollup` shape, so the actual required-vs-not filter runs. */
-  statusCheckRollup?: Array<{
+  /**
+   * The real `gh pr list --json statusCheckRollup` shape, so the actual required-vs-not filter runs.
+   * Explicit `null` is the LIVE shape for a commit with no check contexts yet, and is deliberately NOT
+   * the same as omitting the field: omitted means "this fixture states its own verdict".
+   */
+  statusCheckRollup?: null | Array<{
     name?: string;
     context?: string;
     status?: string;
@@ -756,6 +761,111 @@ export function runRollupPrsTests(): void {
     );
   }
 
+  // ── 4e-septies. A LIVE read with no rollup at all is PENDING, never green ────────────────────
+  // The hole the fixture default was hiding. GitHub returns `statusCheckRollup: null` for a commit with
+  // no check contexts yet — exactly a PR opened seconds ago, the case a roll-up is most often built
+  // against. Left as null it fell through to the branch where a FIXTURE states its own verdict, and a
+  // fixture that says nothing defaults to finished-and-green: measured 2026-09-30, a null rollup read
+  // `settled=true` and the member was carried, so #4906's wait was silently skipped for the freshest
+  // PRs and `--no-wait` would have built from one outright.
+  //
+  // Present-and-null is therefore NOT the same as absent, and that distinction is the only way to reach
+  // the live behaviour offline: absent means "the fixture states its verdict" (4e-bis pins that it still
+  // reads green), present-and-null takes the same normalisation the live read takes.
+  {
+    const live = verdictAndChecks(
+      [
+        pr(1, ["docs/a.md"], { statusCheckRollup: null }),
+        pr(2, ["src/b.ts"], {
+          statusCheckRollup: [
+            { name: "validate", conclusion: "SUCCESS" },
+            { name: "checks", conclusion: "SUCCESS" },
+          ],
+        }),
+      ],
+      REQUIRED,
+    );
+    assert.equal(
+      live.get(1)?.checksSettled,
+      false,
+      "a live PR whose rollup is null has reported NOTHING — reading that as finished-and-green is what "
+        + "let a roll-up build over the freshest possible member",
+    );
+    assert.deepEqual(live.get(1)?.pendingChecks, ["validate (not reported yet)", "checks (not reported yet)"]);
+    assert.equal(live.get(1)?.verdict.kind, "rollable", "it is still a candidate — the wait handles it, not a refusal");
+    assert.equal(live.get(2)?.checksSettled, true, "and a genuinely green member beside it is still buildable");
+  }
+
+  // ── 4e-octies. An unknown flag is REFUSED, never ignored ─────────────────────────────────────
+  // A session runs this from its own worktree, whose copy can be days older than `main`, and every flag
+  // arrived in a different merge. An ignored unknown flag means `--no-wait` on a checkout that predates
+  // the wait runs the OLD behaviour and reports success — the operator reads the flag they typed as the
+  // behaviour they got. That is the most plausible account of roll-up #4937, reported as built by
+  // `--apply --no-wait` over a member whose checks were still running, a shape the current code does
+  // NOT reproduce (4e-bis measures it as `settled=false`).
+  {
+    const refused = runRollup([pr(1, ["docs/a.md"]), pr(2, ["src/b.ts"])], ["--no-such-flag"]);
+    assert.notEqual(refused.code, 0, "an unrecognised flag must fail loudly rather than run the old behaviour silently");
+    assert.match(refused.out, /unknown argument\(s\): --no-such-flag/);
+    assert.match(refused.out, /REFUSED rather than ignored/);
+
+    // Every real flag still parses, including the two that take a value — a refusal that also refused
+    // `--wait 5` would be worse than the bug.
+    for (const argv of [["--wait", "5"], ["--no-wait"], ["--max-files", "3"]]) {
+      const ok = runRollup([pr(1, ["docs/a.md"]), pr(2, ["src/b.ts"])], argv);
+      assert.doesNotMatch(ok.out, /unknown argument/, `${argv.join(" ")} must still be accepted`);
+    }
+  }
+
+  // ── 4e-nonies. --settle: the suite registry is judged by its ADDED LINES, not byte-identity ──
+  // `tests/run-tests.ts` is appended to by every PR that adds a test, so the moment ANY other PR
+  // registers a suite, a carried PR's copy differs for reasons that say nothing about its own work.
+  // Measured 2026-09-30: after roll-up #4937 merged, `--settle` closed #4930 and left #4936 open with
+  // all of its work on `main` — two of three files byte-identical and its registry lines present.
+  //
+  // NARROWED, not loosened. "Most files match" is what must never happen here: a PR closed on a guess is
+  // work thrown away, while one left open costs a single avoidable CI run.
+  {
+    const mainSource = [
+      'import { runAlphaTests } from "./alpha.test.ts";',
+      'import { runBetaTests } from "./beta.test.ts";',
+      'await runTest("alpha does its thing", runAlphaTests);',
+      'await runTest("beta does its thing", runBetaTests);',
+    ].join("\n");
+
+    const landed = registryAddedLinesLanded(
+      ['import { runBetaTests } from "./beta.test.ts";', "", 'await runTest("beta does its thing", runBetaTests);', ");"],
+      mainSource,
+    );
+    assert.equal(landed.landed, true, "every meaningful added line is on main, so the PR's own registration landed");
+    assert.deepEqual(landed.missing, [], "and blank or punctuation-only lines are not held against it");
+
+    const notLanded = registryAddedLinesLanded(
+      ['import { runGammaTests } from "./gamma.test.ts";', 'await runTest("gamma", runGammaTests);'],
+      mainSource,
+    );
+    assert.equal(notLanded.landed, false, "a registration NOT on main means the PR is not carried — failing closed, unchanged");
+    assert.equal(notLanded.missing.length, 2, "and it names exactly which lines are missing");
+
+    // Punctuation alone can never be evidence: it appears hundreds of times in the registry, so finding
+    // it proves nothing and requiring it would turn a reformat into a false negative.
+    assert.equal(registryAddedLinesLanded([");", "}", "", ","], "nothing like it").landed, true);
+
+    const source = readFileSync("scripts/rollup-prs.mjs", "utf8");
+    assert.match(
+      source,
+      /if \(p === SHARED_REGISTRY_PATH\) return registryLandedOnMain\(pr\)/,
+      "the exception must be keyed on that ONE path — a pattern would quietly extend it to the next "
+        + "shared file somebody adds, which is how a narrow rule becomes a loose one",
+    );
+    assert.match(
+      source,
+      /'merge-base', 'origin\/main'/,
+      "and the delta must be taken against the MERGE BASE: a two-dot diff to main would read other "
+        + "people's registrations as lines this PR had removed",
+    );
+  }
+
   // ── 4f. The required list is READ, never written down here ──────────────────────────────────
   {
     const source = readFileSync("scripts/rollup-prs.mjs", "utf8");
@@ -1256,5 +1366,32 @@ export function runRollupPrsTests(): void {
     const empty = requiredGateUsable(new Set());
     assert.equal(empty.usable, false, "and neither is an empty one");
     assert.match(empty.usable ? "" : empty.why, /EMPTY required list/);
+
+    // AND THE SCRIPT HAS TO ACTUALLY GATE ON IT. The decision is only worth what the call site does
+    // with it, which is this file's one repeated lesson: #4906's wait was right and the merge loop
+    // iterated the pre-wait group, and #4922's duplicate check was right and sat after the wait. So the
+    // refusal is pinned by ORDER — before the duplicate guard, before the members' wait, and before the
+    // branch is created, because each of those spends something (a `gh` read per open roll-up, up to 25
+    // minutes, a local branch) that an unusable gate makes pointless.
+    const source = readFileSync("scripts/rollup-prs.mjs", "utf8");
+    const applyAt = source.indexOf("if (!apply || group.length < 2) process.exit(0);");
+    const gateAt = source.indexOf("const gate = requiredGateUsable(requiredContexts);");
+    const dupAt = source.indexOf("const openRollupPrs = open.filter(");
+    const waitAt = source.indexOf("waiting up to");
+    const branchAt = source.indexOf("'switch', '--quiet', '--create'");
+    assert.ok(gateAt > 0, "--apply must refuse a gate it could not read, not discover it member by member");
+    assert.ok(applyAt > 0 && applyAt < gateAt, "the refusal is on the --apply path only: reporting still runs");
+    assert.ok(
+      gateAt < dupAt && gateAt < waitAt && gateAt < branchAt,
+      "and it comes before the duplicate guard, the members' wait and the branch — each of those spends "
+        + "a gh read, up to 25 minutes, or a local branch that an unusable gate makes pointless",
+    );
+    assert.match(
+      source,
+      /else if \(live\.contexts\.length === 0\)/,
+      "an EMPTY contexts array must be kept as an unreadable gate rather than becoming an empty Set — "
+        + "the `contexts` array is deprecated in favour of `checks` and a ruleset leaves it empty, and "
+        + "judged against an empty Set every PR in the repository reads as finished green at once",
+    );
   }
 }

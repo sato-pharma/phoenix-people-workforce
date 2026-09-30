@@ -489,7 +489,13 @@ export function CrmCard({
           <h3 className="break-words text-sm font-black text-slate-950">{title}</h3>
           {meta ? <div className="mt-1 break-words text-xs font-semibold leading-5 text-slate-500">{meta}</div> : null}
         </div>
-        {status ? <div className="flex max-w-full flex-wrap gap-1">{status}</div> : null}
+        {/* 🔴 THE PILLS TAKE THEIR OWN LINE ON A PHONE (owner, 2026-09-30, of a card whose name read
+            one character per line). The title is `flex-1 min-w-0`, so it may shrink to nothing,
+            while a pill sets its own intrinsic width — one long label therefore squeezed an Arabic
+            name into a two-character gutter and broke "Grade A" across lines mid-word. `basis-full`
+            below `sm` drops the pills under the name instead, where they have the full width; from
+            `sm` they sit beside it as before. */}
+        {status ? <div className="flex w-full max-w-full flex-wrap gap-1 sm:w-auto sm:justify-end">{status}</div> : null}
       </div>
       {children ? <div className="mt-3 min-w-0">{children}</div> : null}
       {actions ? <div className="mt-3 flex flex-wrap gap-2">{actions}</div> : null}

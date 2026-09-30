@@ -4,40 +4,29 @@ import { ChevronLeft, ChevronRight, Download, Loader2, Search, X } from "lucide-
 import { useState } from "react";
 
 import type { AuditLogFilter, AuditLogPage } from "@/lib/admin/audit";
+import { AUDIT_ENTITY_TYPES } from "@/lib/admin/audit-entity-types";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 
 
-// What the entity-type picker offers. It is a SHORTLIST, not the catalogue: `AuditEntityType` in
-// `src/lib/admin/audit.ts` names 128 types and production wrote 88 distinct ones in the last 30
-// days, so most of what the log holds can only be reached by paging "all".
+// Every audit entity type there is, and the reason it is not a list typed out here.
 //
-// 🔴 A NAME MISSING HERE MAKES ITS TRAIL UNREADABLE IN PRACTICE, NOT JUST UNFILTERABLE. Production
-// writes ~2,456 audit rows a day (measured 2026-09-30), so a row an hour old is already a hundred
-// rows deep in "all" and one from yesterday is thousands. The API behind this select takes ANY
-// entity type — nothing was broken — but a trail nobody can select is a trail nobody reads.
+// 🔴 THIS WAS A HAND-KEPT SHORTLIST OF TEN AND IT WAS WRONG IN BOTH DIRECTIONS. Production
+// wrote 88 distinct entity types in 30 days, so ~78 kinds of trail could be reached only by
+// paging "all" — ~2,456 rows a day (measured 2026-09-30), which puts an hour-old row a hundred
+// deep and yesterday's in the thousands. Three of the ten it DID offer had not been written in
+// 30 days. The API behind this select always took any entity type; nothing underneath was
+// broken. A trail nobody can select is simply a trail nobody reads.
 //
-// So a feature whose LOG IS PART OF WHAT WAS ASKED FOR belongs here, which is why the two CV
-// Lookup types are. The owner's spec on 2026-09-30 had two halves — a seat that may search the CV
-// database, and "every search logged, Super Admin only" — and the second half is this screen:
-// `/admin/logs` is gated on `admin:read`, which the hard boundary in permissions.ts gives to the
-// Super Admin and to nobody else. `cv_lookup_search` is the term that was typed and how many
-// people it reached; `cv_lookup_open` is one named candidate's CV and application leaving the
-// building. Pinned by tests/cv-lookup.test.ts.
-const ENTITY_TYPES = [
-  "all",
-  "auth_session",
-  "user",
-  "permission_override",
-  "salary_flag",
-  "sales_import_batch",
-  "payroll_batch",
-  "vacation_request",
-  "vacation_weekly_off_policy",
-  "cv_lookup_search",
-  "cv_lookup_open",
-];
+// The list now comes from the catalogue itself, where a `Record<AuditEntityType, true>` makes
+// the compiler refuse a missing or invented name — so a new audited feature reaches this screen
+// by existing, never by somebody remembering. `AUDIT_ENTITY_TYPES` is already sorted.
+//
+// Owner-authorised 2026-09-30 ("derive the audit log picker from the catalogue"), after the CV
+// Lookup pair had to be added by hand — which is what exposed the shape of the problem. Pinned
+// by tests/audit-entity-types.test.ts and tests/cv-lookup.test.ts.
+const ENTITY_TYPES = ["all", ...AUDIT_ENTITY_TYPES];
 
 function formatDate(iso: string) {
   try {
@@ -175,6 +164,16 @@ export function AuditLogViewer({
           </div>
           <SearchableSelect
             className="h-10 rounded-xl border border-phx-line bg-phx-paper px-3 text-xs font-semibold text-phx-ink focus:outline-none focus:ring-2 focus:ring-phx-accent/30"
+            /*
+             * 🔴 THE CAP HAS TO RISE WITH THE LIST, OR THIS "IMPROVEMENT" HIDES MORE THAN IT SHOWS.
+             * SearchableSelect shows `maxResults` rows and defaults to 100. The catalogue is 128
+             * plus "all", so the default would silently drop the last 29 alphabetically whenever
+             * the list is opened without typing — `user`, `vacation_request`,
+             * `vacation_weekly_off_policy` and `weekly_plan` among them, three of which the old
+             * hand-kept shortlist DID offer. Measured 2026-09-30. The panel is `max-h-64` with
+             * `overflow-y-auto`, so the whole list simply scrolls.
+             */
+            maxResults={ENTITY_TYPES.length}
             onChange={(e) => setDraftFilters((f) => ({ ...f, entityType: e.target.value === "all" ? null : e.target.value }))}
             value={draftFilters.entityType ?? "all"}
           >

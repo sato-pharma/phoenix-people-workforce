@@ -56,7 +56,13 @@ import { readProtectionContexts } from './required-check-names.mjs';
 import { rollupBranchName } from './rollup-branch-name.mjs';
 import { isRollupBranch, overlappingRollup, rollupMembers } from './rollup-duplicate-guard.mjs';
 import { rollupBuildVerdict, MIN_MEMBERS } from './rollup-build-verdict.mjs';
-import { membersReadyToBuild, requiredCheckState, waitForRequiredChecks } from './rollup-check-state.mjs';
+import { registryAddedLinesLanded, SHARED_REGISTRY_PATH } from './rollup-carried.mjs';
+import {
+  membersReadyToBuild,
+  requiredCheckState,
+  requiredGateUsable,
+  waitForRequiredChecks,
+} from './rollup-check-state.mjs';
 
 const REPO = 'Gawish-1997/phoenix-people-workforce';
 
@@ -94,6 +100,39 @@ const NEVER_ROLL_UP = [
  */
 
 const args = process.argv.slice(2);
+
+/**
+ * 🔴 AN UNKNOWN FLAG IS REFUSED, BECAUSE A SILENTLY IGNORED ONE IS INDISTINGUISHABLE FROM AN OLD SCRIPT.
+ *
+ * Every flag here arrived in a different merge, and a session runs this from its own worktree — whose
+ * copy of the script can be days older than `main`. Ignoring an unrecognised flag means `--no-wait` on a
+ * checkout that predates the wait runs the OLD behaviour, reports success, and builds over members whose
+ * checks never finished: the operator reads the flag they typed as the behaviour they got.
+ *
+ * That is very probably what happened on 2026-09-30, when roll-up #4937 was reported as built by
+ * `--apply --no-wait` over a member whose required checks were still running. The current code does not
+ * reproduce it — measured, with `validate` success and `checks` in_progress the member reads
+ * `settled=false` and is dropped — while a pre-wait copy of this script accepts `--no-wait` as a no-op
+ * and behaves exactly as observed. A refusal makes that failure loud instead of invisible, whatever
+ * version is on disk.
+ */
+const KNOWN_FLAGS = new Set([
+  '--json', '--apply', '--close-superseded', '--settle', '--max-files', '--wait', '--no-wait',
+]);
+{
+  const unknown = args.filter((a, i) => {
+    if (!a.startsWith('--')) return args[i - 1] !== '--max-files' && args[i - 1] !== '--wait';
+    return !KNOWN_FLAGS.has(a);
+  });
+  if (unknown.length > 0) {
+    console.error(`[rollup] unknown argument(s): ${unknown.join(', ')}`);
+    console.error('[rollup] Known: ' + [...KNOWN_FLAGS].join(', ')
+      + '. A flag this copy of the script does not know is REFUSED rather than ignored — an ignored one '
+      + 'reads as the behaviour you asked for while the old behaviour runs.');
+    process.exit(2);
+  }
+}
+
 const asJson = args.includes('--json');
 const apply = args.includes('--apply');
 const closeSuperseded = args.includes('--close-superseded');
@@ -186,7 +225,14 @@ if (fixturePath) {
     author: { login: p.author ?? 'Gawish-1997' },
     paths: p.paths,
     carriedFixture: p.carried === true,
-    statusCheckRollup: p.statusCheckRollup ?? null,
+    // Present-and-null is NOT the same as absent, and the difference is the only way to test the live
+    // read offline. ABSENT means "this fixture states its own verdict" (and says nothing, so: green) —
+    // that is what keeps every older fixture's verdict. PRESENT-AND-NULL is what GitHub actually
+    // returns for a commit with no check contexts yet, so it takes the same normalisation the live read
+    // takes and comes out PENDING. Without this distinction the fixture default would mask the live
+    // hole permanently: the one branch a test can reach would be the one branch that is allowed to
+    // answer "green" with no evidence.
+    statusCheckRollup: 'statusCheckRollup' in p ? (p.statusCheckRollup ?? []) : null,
     redRequired: p.redRequired === true,
     pendingFixture: p.checksPending === true,
   }));
@@ -200,6 +246,18 @@ if (fixturePath) {
   for (const pr of open) {
     pr.paths = JSON.parse(gh(['pr', 'view', String(pr.number), '--repo', REPO, '--json', 'files']) || '{"files":[]}')
       .files.map((f) => f.path);
+    // 🔴 LIVE, A MISSING ROLLUP MEANS NOTHING HAS REPORTED — NEVER THAT NOTHING IS RED. GitHub returns
+    // `statusCheckRollup: null` for a commit that has no check contexts yet, which is precisely a PR
+    // opened seconds ago: the case a roll-up is most often built against. Left as null it falls through
+    // to the branch where a FIXTURE states its own verdict, and a fixture that says nothing defaults to
+    // finished-and-green — so the whole point of #4906's wait was silently skipped for the freshest
+    // PRs, and `--no-wait` would build from one outright. Measured 2026-09-30 with a null rollup:
+    // `settled=true`, and the member was carried into the group.
+    //
+    // Normalising to `[]` here sends it through the real filter instead, where every required name is
+    // unreported and therefore PENDING. The fixture default is deliberately untouched: it keeps every
+    // existing fixture's verdict, and it is now the only thing that branch serves.
+    pr.statusCheckRollup = pr.statusCheckRollup ?? [];
   }
 }
 
@@ -222,7 +280,16 @@ if (fixturePath) {
 } else {
   const live = readProtectionContexts();
   if (live.skipped) protectionNote = `${live.skipped} — judging on EVERY failed check, not just the required ones`;
-  else requiredContexts = new Set(live.contexts);
+  // An EMPTY contexts array is not an answer, it is a changed SHAPE, and it arrives on a successful
+  // call. The classic `required_status_checks.contexts` array is deprecated in favour of `checks`, and a
+  // rule moved to a ruleset leaves it empty; `main` is protected with required checks, so zero never
+  // means "nothing gates". Kept as `null` it travels the same path as an unreadable gate. Taken
+  // literally it becomes an empty Set, every entry in a rollup then fails `required.has(name)`, and
+  // every PR in the repository reads as finished green at once.
+  else if (live.contexts.length === 0) {
+    protectionNote = 'branch protection returned an EMPTY contexts array — read as an unreadable gate, '
+      + 'never as "nothing gates"';
+  } else requiredContexts = new Set(live.contexts);
 }
 
 for (const pr of open) {
@@ -308,10 +375,48 @@ function alreadyCarried(pr) {
   // a landed PR out of a roll-up — while the two `git rev-parse` calls below are exercised live.
   if (fixturePath) return pr.carriedFixture === true;
   return pr.paths.every((p) => {
+    // 🔴 ONE PATH CAN NEVER STAY BYTE-IDENTICAL, AND IT IS NOT EVIDENCE WHEN IT DIFFERS. The suite
+    // registry is appended to by every PR that adds a test, so the moment ANY other PR registers a
+    // suite, a carried PR's copy differs for reasons that have nothing to do with its own work.
+    // Measured 2026-09-30: after roll-up #4937 merged, `--settle` closed #4930 and left #4936 open
+    // although all of #4936's work was on `main` — two of three files byte-identical and its registry
+    // lines present. The bytes were right; the question was wrong for that file.
+    //
+    // NARROWED, never loosened: every line the PR ADDED to the registry must be on `main`. A missing
+    // registry line still means NOT carried, and every other path still has to match byte for byte.
+    if (p === SHARED_REGISTRY_PATH) return registryLandedOnMain(pr);
     const mine = git(['rev-parse', `${pr.headRefOid}:${p}`], { allowFail: true });
     const main = git(['rev-parse', `origin/main:${p}`], { allowFail: true });
     return Boolean(mine) && Boolean(main) && mine === main;
   });
+}
+
+/**
+ * Whether this PR's own additions to the suite registry are present on `main`.
+ *
+ * The delta is taken against the MERGE BASE, not against `main` — a two-dot diff to `main` would show
+ * other people's registrations as though this PR had removed them. Anything unreadable answers FALSE,
+ * which keeps the failing-closed direction: a PR we cannot prove landed is left open.
+ */
+function registryLandedOnMain(pr) {
+  const base = git(['merge-base', 'origin/main', pr.headRefOid], { allowFail: true });
+  if (!base) return false;
+  const diff = git(['diff', '--unified=0', base, pr.headRefOid, '--', SHARED_REGISTRY_PATH], { allowFail: true });
+  if (diff === null) return false;
+  const added = diff
+    .split('\n')
+    .filter((line) => line.startsWith('+') && !line.startsWith('+++'))
+    .map((line) => line.slice(1));
+  // No additions at all: nothing of this PR's is waiting in the registry, so it cannot be the reason to
+  // hold the PR open. Fall back to byte-identity for it like any other file.
+  if (added.length === 0) {
+    const mine = git(['rev-parse', `${pr.headRefOid}:${SHARED_REGISTRY_PATH}`], { allowFail: true });
+    const main = git(['rev-parse', `origin/main:${SHARED_REGISTRY_PATH}`], { allowFail: true });
+    return Boolean(mine) && Boolean(main) && mine === main;
+  }
+  const mainSource = git(['show', `origin/main:${SHARED_REGISTRY_PATH}`], { allowFail: true });
+  if (mainSource === null) return false;
+  return registryAddedLinesLanded(added, mainSource).landed;
 }
 
 /** Any other open PR sharing at least one path. Sharing one file means they cannot be grouped. */
@@ -470,6 +575,31 @@ if (settle) {
 }
 
 if (!apply || group.length < 2) process.exit(0);
+
+// ------------------------------------------- refuse when the gate itself could not be read
+
+// 🔴 A BUILD CANNOT BE JUDGED AGAINST A GATE NOBODY READ.
+//
+// Reporting survives an unread gate — it judges on every failed check and prints that it is doing so.
+// A BUILD cannot: proving a member green means naming the contexts that gate `main` and seeing every
+// one of them succeed, so with no list there is nothing to see every one of. Without this refusal the
+// run went on, and `requiredCheckState` then had only the checks that EXISTED to object with — a PR
+// opened seconds ago has none, and a PR whose only reported check is `mobile (skipped)` has none that
+// gates — so it answered two empty lists and the build read that as finished-and-green.
+//
+// It sits here, before the duplicate guard and the members' wait, because it costs one comparison and
+// makes every guard below it mean something. `requiredCheckState` also refuses to call an unusable gate
+// green, so the two hold from both ends: this stops the run, and that stops a single member being
+// promoted if a build is ever reached another way.
+const gate = requiredGateUsable(requiredContexts);
+if (!gate.usable) {
+  console.error(`[rollup] REFUSED — ${gate.why}.`);
+  if (protectionNote) console.error(`[rollup] ${protectionNote}`);
+  console.error('[rollup] Nothing was built, nothing was pushed, nothing was closed. Re-run once branch '
+    + 'protection answers — `node scripts/check-required-checks.mjs` is the one thing that reads the live '
+    + 'gate and says what it found.');
+  process.exit(1);
+}
 
 // --------------------------------------- refuse when an open roll-up already carries this work
 
