@@ -256,4 +256,53 @@ export async function runClosingSummaryFitsTests(): Promise<void> {
     "every disclosure control reports its state, so the rows are reachable by keyboard and screen " +
       "reader rather than by mouse alone",
   );
+
+  // ── 10. THE GRAND TOTAL IS A PERCENT, in the same unit as the family rows above it ─────────
+  // A matrix cell's own `achievement` is a RATIO — `closingAchievement` in
+  // monthly-closing-matrix-cells.ts returns `salesValue / targetValue` — while every family cell
+  // here is a PERCENT, because `achievementOf` multiplies by 100. The Grand total row rendered the
+  // cell's ratio through the same formatter, so on production 2026-10-01 Pedia's September closing
+  // printed "0.1%" where the matrix's own National Grand Total row read 9.2%, with Lacto Advanced
+  // showing a correct 10.4% two rows above it. Anti Infective misread the same way (6.9% as 0.1%).
+  // That is the summary disagreeing with the matrix beside it — the one failure this file exists
+  // to prevent — and it is invisible whenever value is 0, which is why CNS looked fine.
+  const ratioMatrix = matrixFixture();
+  // Pedia, September 2026: the exact row that misread.
+  const pediaValue = 483_516.15;
+  const pediaTarget = 5_277_055.73;
+  ratioMatrix.grandTotal.rowTotal = cell(pediaValue, pediaTarget, pediaValue / pediaTarget);
+  const ratioSummary = buildClosingFamilySummary(ratioMatrix);
+
+  assert.ok(
+    Math.abs((ratioSummary.grandTotal.achievementPct ?? 0) - 9.1626) < 0.01,
+    "the Grand total must carry a PERCENT (483,516.15 / 5,277,055.73 = 9.16%), the same unit the " +
+      `family rows use. Got ${ratioSummary.grandTotal.achievementPct} — a value near 0.09 means ` +
+      "the cell's RATIO is being carried, which the screen prints as 0.1%",
+  );
+  assert.ok(
+    Math.abs((ratioSummary.grandTotal.total.achievement ?? 0) - 0.0916) < 0.001,
+    "and the matrix's own cell keeps ITS unit untouched — the summary re-derives, it never rewrites " +
+      "the cell it carries through",
+  );
+  assert.match(
+    stripComments(
+      readFileSync(
+        fileURLToPath(new URL("../src/lib/sales/closing-family-summary.ts", import.meta.url)),
+        "utf8",
+      ),
+    ),
+    /achievementPct: achievementOf\(row\.rowTotal\.salesValue, row\.rowTotal\.targetValue\)/,
+    "the percent must come from achievementOf on the row total's OWN two numbers, so it can never " +
+      "disagree with the cell beside it — only the unit differs",
+  );
+  assert.match(
+    COMPONENT,
+    /achievement\(summary\.grandTotal\.achievementPct\)/,
+    "and the Grand total row must render that percent",
+  );
+  assert.doesNotMatch(
+    COMPONENT,
+    /achievement\(summary\.grandTotal\.total\.achievement\)/,
+    "never the cell's ratio — that is the defect, and it renders as a plausible-looking 0.1%",
+  );
 }
