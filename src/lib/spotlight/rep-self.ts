@@ -133,11 +133,26 @@ function spanLabel(periods: PeriodKey[]): string {
   return `${monthLabel(first)} – ${monthLabel(last)}`;
 }
 
-/** Find the rep's own REP seat by occupant HR id. Null when the person holds no rep chair. */
-function findRepSeat(org: SpotlightOrgIndex, hrId: string) {
+/**
+ * The seats a person may hold a self spotlight for, and which subject each one is measured as.
+ *
+ * A REP is measured as himself. A DISTRICT MANAGER is measured as his DISTRICT — that is what a DM's
+ * achievement IS, here and in the Monthly Closing (`rollupAchievementByDm` grades the same way), so
+ * the sheet totals the reps under his seat rather than inventing a personal territory for him.
+ * `ACTING_DM` rides the DM subject for the same reason: the owner's rule is that an acting district
+ * manager sees exactly what a district manager sees.
+ */
+const SELF_SEAT_SUBJECT: Readonly<Record<string, "rep" | "dm">> = {
+  REP: "rep",
+  DM: "dm",
+  ACTING_DM: "dm",
+};
+
+/** Find the caller's own seat by occupant HR id. Null when the person holds no spotlightable chair. */
+function findSelfSeat(org: SpotlightOrgIndex, hrId: string) {
   const key = hrKey(hrId);
   for (const seat of org.seats.values()) {
-    if (seat.tier === "REP" && hrKey(seat.occupantHrId) === key) return seat;
+    if (SELF_SEAT_SUBJECT[seat.tier] && hrKey(seat.occupantHrId) === key) return seat;
   }
   return null;
 }
@@ -187,10 +202,13 @@ export async function loadRepSpotlight(
   const threshold = REP_SPOTLIGHT_MIN_ACHIEVEMENT;
 
   const org = await (options.loadOrg ?? loadSpotlightOrg)();
-  const seat = findRepSeat(org, hrId);
+  const seat = findSelfSeat(org, hrId);
   if (!seat) {
-    throw new RepSpotlightError("This spotlight is for medical representatives — no rep seat is on file for you.");
+    throw new RepSpotlightError(
+      "This spotlight is for medical representatives and district managers — no sales seat is on file for you.",
+    );
   }
+  const subject = SELF_SEAT_SUBJECT[seat.tier]!;
   const lineCode = (seat.lineCode ?? "").toLowerCase();
 
   // Published months for the rep's line. The publication ledger begins at 2026-07, and
@@ -233,11 +251,11 @@ export async function loadRepSpotlight(
   const filters = { hrIds: [hrId] };
   for (const period of publishedPeriods) {
     const rows = await loadPeriod(period);
-    bucketRows(rows, "rep", org, filters, buckets);
+    bucketRows(rows, subject, org, filters, buckets);
   }
 
   const rows = rowsFromBuckets(buckets, {
-    kind: "rep",
+    kind: subject,
     org,
     filters,
     lineNames: org.lineNames,
@@ -257,7 +275,7 @@ export async function loadRepSpotlight(
   }
 
   const achievement = row.achievement;
-  const result = buildResult(row, publishedPeriods);
+  const result = buildResult(row, publishedPeriods, subject);
 
   if (achievement === null) {
     return {
@@ -288,7 +306,11 @@ export async function loadRepSpotlight(
  * the periods are the published months actually measured, the totals are the row's own, and there is
  * no company ranking — a rep's own sheet does not compare him to anyone.
  */
-function buildResult(row: SpotlightRow, publishedPeriods: PeriodKey[]): SpotlightResult {
+function buildResult(
+  row: SpotlightRow,
+  publishedPeriods: PeriodKey[],
+  subject: "rep" | "dm",
+): SpotlightResult {
   const cairo = currentCairoDateParts();
   const generatedAtCairo = new Date(Date.UTC(cairo.year, cairo.month - 1, cairo.day))
     .toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric", timeZone: "UTC" });
@@ -297,7 +319,7 @@ function buildResult(row: SpotlightRow, publishedPeriods: PeriodKey[]): Spotligh
     // A placeholder window — the rep path never gates on it, and the renderer reads `periods` and
     // `windowLabel` below, never `selection.window`.
     window: { kind: "month", key: publishedPeriods[0]! },
-    subject: "rep",
+    subject,
     filters: { hrIds: [row.hrId ?? ""] },
     rankBy: "achievement",
     direction: "top",

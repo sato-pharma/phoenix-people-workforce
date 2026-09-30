@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 /**
  * Spotlight — the medical rep's own picker.
@@ -70,6 +70,23 @@ export function RepSpotlightWorkspace({ months, defaultFrom, defaultTo, threshol
   const [preview, setPreview] = useState<Preview | null>(null);
   const [busy, setBusy] = useState<"preview" | "png" | "pdf" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * The rendered sheet, shown ON SCREEN as soon as the period is chosen (owner, 2026-09-30): he sees
+   * the picture first and only then decides to keep it. The blob is HELD so "Download picture" saves
+   * exactly the image he is looking at rather than rendering a second one — the same bytes, and one
+   * fewer Chromium run.
+   */
+  const [sheet, setSheet] = useState<{ url: string; blob: Blob } | null>(null);
+
+  // An object URL is a document-lifetime handle; replacing or leaving the page without revoking it
+  // leaks the whole PNG. One helper so neither path can forget.
+  const replaceSheet = useCallback((next: { url: string; blob: Blob } | null) => {
+    setSheet((current) => {
+      if (current) URL.revokeObjectURL(current.url);
+      return next;
+    });
+  }, []);
+  useEffect(() => () => { if (sheet) URL.revokeObjectURL(sheet.url); }, [sheet]);
 
   const presets = useMemo(() => presetsFor(months), [months]);
   // A backwards range is the one thing the picker can catch before the server does.
@@ -82,6 +99,7 @@ export function RepSpotlightWorkspace({ months, defaultFrom, defaultTo, threshol
     }
     setBusy("preview");
     setError(null);
+    replaceSheet(null);
     try {
       const response = await fetch("/api/spotlight/me/preview", {
         method: "POST",
@@ -90,16 +108,48 @@ export function RepSpotlightWorkspace({ months, defaultFrom, defaultTo, threshol
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload?.error ?? "Spotlight failed to load.");
-      setPreview(payload as Preview);
+      const next = payload as Preview;
+      setPreview(next);
+
+      // Earned it? Then draw the sheet on screen straight away — he sees the picture before he
+      // decides to keep it. Below the floor there is deliberately nothing to show.
+      if (next.eligible) {
+        const rendered = await fetch("/api/spotlight/me/sheet", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ from, to, format: "png" }),
+        });
+        if (!rendered.ok) {
+          const failed = await rendered.json().catch(() => null);
+          throw new Error(failed?.error ?? "Your spotlight could not be drawn.");
+        }
+        const blob = await rendered.blob();
+        replaceSheet({ url: URL.createObjectURL(blob), blob });
+      }
     } catch (caught) {
-      setPreview(null);
       setError(caught instanceof Error ? caught.message : "Spotlight failed to load.");
     } finally {
       setBusy(null);
     }
-  }, [from, to, rangeValid]);
+  }, [from, to, rangeValid, replaceSheet]);
+
+  const save = useCallback((blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  }, []);
 
   const download = useCallback(async (format: "png" | "pdf") => {
+    // The picture is already in hand — save the very bytes on screen rather than rendering again.
+    if (format === "png" && sheet) {
+      save(sheet.blob, `sato-spotlight-${from}${to === from ? "" : `_${to}`}.png`);
+      return;
+    }
     setBusy(format);
     setError(null);
     try {
@@ -114,21 +164,13 @@ export function RepSpotlightWorkspace({ months, defaultFrom, defaultTo, threshol
       }
       const disposition = response.headers.get("Content-Disposition") ?? "";
       const named = /filename="([^"]+)"/.exec(disposition)?.[1];
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = named ?? `sato-spotlight.${format}`;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      URL.revokeObjectURL(url);
+      save(await response.blob(), named ?? `sato-spotlight.${format}`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Spotlight sheet failed to render.");
     } finally {
       setBusy(null);
     }
-  }, [from, to]);
+  }, [from, to, sheet, save]);
 
   const beat = preview?.achievement !== null && preview !== null && preview.achievement! >= 100;
 
@@ -136,8 +178,8 @@ export function RepSpotlightWorkspace({ months, defaultFrom, defaultTo, threshol
     <div className="mx-auto w-full max-w-3xl">
       <p className="mb-4 max-w-2xl text-[13px] leading-relaxed text-slate-600">
         Choose a period — a single month, a quarter, a semester, or any run of months — and see how you
-        did against your published targets. When you reach {threshold}% or more, you can download your
-        spotlight as a picture or a PDF.
+        did against your published targets. At {threshold}% or more your spotlight is drawn here on the
+        screen, and you can then save it as a picture or a PDF.
       </p>
 
       {error ? (
@@ -196,7 +238,7 @@ export function RepSpotlightWorkspace({ months, defaultFrom, defaultTo, threshol
             onClick={show}
             type="button"
           >
-            {busy === "preview" ? "Checking…" : "Show my achievement"}
+            {busy === "preview" ? "Drawing your spotlight…" : "Show my spotlight"}
           </button>
         </div>
       </section>
@@ -226,6 +268,18 @@ export function RepSpotlightWorkspace({ months, defaultFrom, defaultTo, threshol
 
           {preview.eligible ? (
             <div className="mt-4">
+              {/* THE SHEET ITSELF, ON SCREEN (owner, 2026-09-30) — he sees the picture as soon as he
+                  picks the period, and only then decides to keep it. `w-full` with `h-auto` so an A4
+                  portrait scales down on a phone without ever scrolling sideways. */}
+              {sheet ? (
+                <figure className="mb-4">
+                  <img
+                    alt={`Your spotlight for ${preview.rangeLabel}`}
+                    className="block w-full rounded-none border border-slate-200"
+                    src={sheet.url}
+                  />
+                </figure>
+              ) : null}
               <p className="mb-2 text-[13px] text-emerald-800">
                 Your spotlight is ready. Download it as a picture to share, or as a PDF to print.
               </p>

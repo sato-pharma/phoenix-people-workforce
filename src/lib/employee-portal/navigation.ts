@@ -723,7 +723,10 @@ export function resolveEmployeePortalNavVisibility(
     showRepsListTab,
     showKpisTab,
     showMedicalRepExpensesTab: isMedicalRep,
-    showSpotlightTab: isMedicalRep,
+    // Medical Rep and District Manager (owner, 2026-09-30). `isDistrictManager` folds in the
+    // Head-Office "Manager" rung as a legacy alias, which holds no sales seat — excluded here, or the
+    // door opens on a page that can only tell him he has no seat.
+    showSpotlightTab: isMedicalRep || (isDistrictManager && !isHeadOfficeManagerRung),
     showMyPerformanceTab: isA3Account ? false : baseShowMyPerformanceTab,
     // My Coaching Reports — hidden from the portal sidebar for Medical Rep by owner instruction
     // (2026-09-24), mirroring the Early Birds change; District Manager / NSM / Regional Manager
