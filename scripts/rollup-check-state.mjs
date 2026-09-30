@@ -44,6 +44,31 @@ export const TERMINAL_FAILURE = new Set(['FAILURE', 'TIMED_OUT', 'CANCELLED', 'E
 export const TERMINAL_SUCCESS = new Set(['SUCCESS', 'NEUTRAL', 'SKIPPED']);
 
 /**
+ * Whether the required-check list can be judged against at all.
+ *
+ * Two unusable shapes, and BOTH answer green today if nothing else is wrong. `null` is an unreadable
+ * gate; an EMPTY Set is worse, because it arrives on a successful read — the classic
+ * `required_status_checks.contexts` array is deprecated, and a rule moved to a ruleset leaves it empty.
+ * `--apply` refuses the whole run on either, rather than discovering it one member at a time.
+ *
+ * @param {Set<string> | null} required
+ * @returns {{ usable: boolean, why: string }}
+ */
+export function requiredGateUsable(required) {
+  if (required === null) {
+    return { usable: false, why: 'branch protection could not be read, so no check can be confirmed as the gate' };
+  }
+  if (required.size === 0) {
+    return {
+      usable: false,
+      why: 'branch protection named NO required checks — the classic contexts array is empty, which is what '
+        + 'a rule moved to a ruleset looks like, so every PR would read green at once',
+    };
+  }
+  return { usable: true, why: `${required.size} required check(s): ${[...required].join(', ')}` };
+}
+
+/**
  * The REQUIRED checks of one PR, split into the ones that have terminally FAILED and the ones that
  * have not finished — each named with its state, so a report never has to say "something is red".
  *
@@ -61,28 +86,92 @@ export const TERMINAL_SUCCESS = new Set(['SUCCESS', 'NEUTRAL', 'SKIPPED']);
  * reports an empty array, and reading that as "nothing is red, build it" is the 2026-09-30 failure in
  * its purest form — the build would commit to a PR before a single check had even been queued.
  *
+ * 🔴 AND A CHECK THAT RAN BEFORE THE HEAD COMMIT EXISTED IS NOT THIS COMMIT'S CHECK. `statusCheckRollup`
+ * is the rollup of the PR's latest commit, but right after a push it can still carry the PREVIOUS
+ * commit's runs — green ones — so a member reads finished-and-green while its real checks have not
+ * started. That is the one account left standing for roll-up #4937, after a peer session ruled out both
+ * of the causes we each proposed: its script was byte-identical to `main` including the stale-sha guard,
+ * and #4936's checks had already started, so neither an old copy nor a null rollup explains it. The
+ * stale-SHA guard cannot see this one either, because the head never moved — only the checks were old.
+ *
+ * So when `headCommittedAt` is given, any required check whose `startedAt` predates it is PENDING: its
+ * verdict belongs to a commit the build would not merge. An entry with no `startedAt` is also pending —
+ * unjudgeable is not the same as fine. Both directions only ever wait longer, never build sooner.
+ *
  * Handles both shapes `statusCheckRollup` returns: a CheckRun (`name`, `status` + `conclusion`) and a
  * StatusContext (`context` + `state`).
  *
  * @param {ReadonlyArray<Record<string, unknown>> | null | undefined} statusCheckRollup
  * @param {Set<string> | null} required
+ * @param {string | null} [headCommittedAt] ISO date of the PR's head commit. Omitted, the staleness
+ *   test is skipped, which is what every existing caller and fixture gets.
  * @returns {{ red: string[], pending: string[] }}
  */
-export function requiredCheckState(statusCheckRollup, required) {
+export function requiredCheckState(statusCheckRollup, required, headCommittedAt = null) {
   const red = [];
   const pending = [];
   const seen = new Set();
+  // Required names seen to FINISH non-blocking. Only a gate that named them can confirm anything, so
+  // this stays 0 for an unreadable or empty gate — see the clause at the end.
+  let confirmed = 0;
+  const headAt = headCommittedAt ? Date.parse(headCommittedAt) : NaN;
   for (const entry of statusCheckRollup ?? []) {
     const name = entry?.name ?? entry?.context ?? '';
-    const state = String(entry?.conclusion ?? entry?.state ?? entry?.status ?? '').toUpperCase();
+    // `conclusion` comes back as an EMPTY STRING for a running check, not as null, and `??` does not
+    // skip an empty string — so reading it first printed a running check as "not started". Take the
+    // first NON-EMPTY of the three instead, or the report misdescribes the very state it is waiting on.
+    const state = String(
+      [entry?.conclusion, entry?.state, entry?.status].find((v) => v !== null && v !== undefined && v !== '') ?? '',
+    ).toUpperCase();
     if (required !== null && !required.has(name)) continue;
     seen.add(name);
     const label = name || 'an unnamed check';
+    // 🔴 THE STALENESS TEST ONLY APPLIES WHERE THE SHAPE CAN ANSWER IT. A StatusContext — the legacy
+    // commit-status shape — reports `state` and `context` and has no `startedAt` at all, so holding it to
+    // a start time would make it pend FOR EVER: it can never gain one, the wait always times out, and
+    // that member could never be built from again. Pointed out by a peer session reviewing this change,
+    // and measured: two green StatusContexts came back as two "no start time" pending entries.
+    //
+    // A CheckRun always carries `startedAt` here, so a CheckRun missing one stays pending — that is a
+    // genuine anomaly, not a shape we simply cannot time. This repo's required checks are Actions jobs,
+    // i.e. CheckRuns, so nothing real loses the protection.
+    const isStatusContext = entry?.context !== undefined && entry?.name === undefined;
+    if (Number.isFinite(headAt) && !isStatusContext) {
+      const startedAt = entry?.startedAt ? Date.parse(String(entry.startedAt)) : NaN;
+      if (!Number.isFinite(startedAt)) {
+        pending.push(`${label} (no start time, so it cannot be tied to this commit)`);
+        continue;
+      }
+      if (startedAt < headAt) {
+        pending.push(`${label} (ran before this commit existed — it is the previous commit's result)`);
+        continue;
+      }
+    }
     if (TERMINAL_FAILURE.has(state)) red.push(`${label} (${state.toLowerCase()})`);
     else if (!TERMINAL_SUCCESS.has(state)) pending.push(`${label} (${state ? state.toLowerCase() : 'not started'})`);
+    else if (required !== null && required.has(name)) confirmed += 1;
   }
   if (required !== null) {
     for (const name of required) if (!seen.has(name)) pending.push(`${name} (not reported yet)`);
+  }
+  // 🔴 NOTHING RED AND NOTHING PENDING IS NOT THE SAME AS GREEN. Both empty can also mean this function
+  // had no usable gate to judge against, and then it was answering "all clear" about a question it never
+  // asked. Found by a peer session, reproduced here against this module:
+  //
+  //   required = EMPTY Set, both required checks IN_PROGRESS -> {red: [], pending: []}  (built from)
+  //   required = EMPTY Set, no checks at all                 -> {red: [], pending: []}  (built from)
+  //   required = null,      no checks at all                 -> {red: [], pending: []}  (built from)
+  //   required = null,      only a non-gating check green    -> {red: [], pending: []}  (built from)
+  //
+  // The empty Set is the dangerous one, because it arrives on a 200: `readProtectionContexts()` treats
+  // `contexts: []` as a successful read, and the classic `required_status_checks.contexts` array is
+  // deprecated — a rule moved to a ruleset empties it. At that moment EVERY open PR reads green at once.
+  //
+  // So a green answer now requires something CONFIRMED: a named required check seen to finish
+  // non-blocking. A name is only counted when the gate actually named it, which is why `required === null`
+  // can never confirm anything — we will not certify a gate we could not read.
+  if (red.length === 0 && pending.length === 0 && confirmed === 0) {
+    pending.push(`nothing could be confirmed green — ${requiredGateUsable(required).why}`);
   }
   return { red, pending };
 }

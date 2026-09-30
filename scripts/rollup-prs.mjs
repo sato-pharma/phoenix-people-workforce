@@ -57,7 +57,7 @@ import { rollupBranchName } from './rollup-branch-name.mjs';
 import { isRollupBranch, overlappingRollup, rollupMembers } from './rollup-duplicate-guard.mjs';
 import { rollupBuildVerdict, MIN_MEMBERS } from './rollup-build-verdict.mjs';
 import { registryAddedLinesLanded, SHARED_REGISTRY_PATH } from './rollup-carried.mjs';
-import { membersReadyToBuild, requiredCheckState, waitForRequiredChecks } from './rollup-check-state.mjs';
+import { membersReadyToBuild, requiredCheckState, requiredGateUsable, waitForRequiredChecks } from './rollup-check-state.mjs';
 
 const REPO = 'Gawish-1997/phoenix-people-workforce';
 
@@ -239,8 +239,14 @@ if (fixturePath) {
     ]) || '[]',
   );
   for (const pr of open) {
-    pr.paths = JSON.parse(gh(['pr', 'view', String(pr.number), '--repo', REPO, '--json', 'files']) || '{"files":[]}')
-      .files.map((f) => f.path);
+    const detail = JSON.parse(
+      gh(['pr', 'view', String(pr.number), '--repo', REPO, '--json', 'files,commits']) || '{"files":[],"commits":[]}',
+    );
+    pr.paths = detail.files.map((f) => f.path);
+    // The head commit's own date, so a check that RAN BEFORE IT can be told from one that ran for it.
+    // `statusCheckRollup` can still carry the previous commit's green runs for a while after a push, and
+    // the stale-SHA guard cannot see that: the head has not moved, only the checks are old.
+    pr.headCommittedAt = detail.commits?.[detail.commits.length - 1]?.committedDate ?? null;
     // 🔴 LIVE, A MISSING ROLLUP MEANS NOTHING HAS REPORTED — NEVER THAT NOTHING IS RED. GitHub returns
     // `statusCheckRollup: null` for a commit that has no check contexts yet, which is precisely a PR
     // opened seconds ago: the case a roll-up is most often built against. Left as null it falls through
@@ -275,6 +281,11 @@ if (fixturePath) {
 } else {
   const live = readProtectionContexts();
   if (live.skipped) protectionNote = `${live.skipped} — judging on EVERY failed check, not just the required ones`;
+  // An EMPTY contexts array is a SUCCESSFUL read that names nothing, which is what a rule moved to a
+  // ruleset looks like (the classic array is deprecated). Kept as an empty Set it would make every entry
+  // fail `required.has(name)` and every PR read green at once, on a 200. It is an unreadable gate in
+  // every sense that matters here, so it is recorded as one and says which of the two it was.
+  else if (live.contexts.length === 0) protectionNote = 'branch protection returned an EMPTY required-check list — a rule may have moved to a ruleset, and the classic contexts array is deprecated';
   else requiredContexts = new Set(live.contexts);
 }
 
@@ -282,7 +293,7 @@ for (const pr of open) {
   // A fixture may state the verdict outright (`redRequired` / `checksPending`) or hand over the real
   // rollup shape; when it hands over the shape, the real split runs and its answer wins.
   if (pr.statusCheckRollup) {
-    const state = requiredCheckState(pr.statusCheckRollup, requiredContexts);
+    const state = requiredCheckState(pr.statusCheckRollup, requiredContexts, pr.headCommittedAt ?? null);
     pr.redChecks = state.red;
     pr.pendingChecks = state.pending;
   } else {
@@ -562,6 +573,20 @@ if (settle) {
 
 if (!apply || group.length < 2) process.exit(0);
 
+// 🔴 A GATE THAT NAMES NOTHING CANNOT CLEAR ANYTHING, so the run stops here rather than discovering it
+// one member at a time. The member-level clause in `requiredCheckState` already refuses to call anything
+// green without a CONFIRMED required check, so nothing unsafe could be built either way — this exists so
+// the reason is stated once, at the top, instead of appearing as N identical "not confirmed" lines.
+{
+  const gate = requiredGateUsable(requiredContexts);
+  if (!gate.usable) {
+    console.error(`[rollup] refusing to build: ${gate.why}.`);
+    console.error('[rollup] Nothing is closed, merged or pushed. Fix the gate reading first — every member '
+      + 'would otherwise be judged against a list that names nothing.');
+    process.exit(1);
+  }
+}
+
 // --------------------------------------- refuse when an open roll-up already carries this work
 
 // scripts/rollup-duplicate-guard.mjs records the three collisions on 2026-09-30 that make this a
@@ -621,7 +646,7 @@ if (openRollupPrs.length > 0) {
 // which is no longer open — goes STALE and is never built from.
 const memberState = new Map(group.map((p) => [
   p.number,
-  { number: p.number, red: p.redChecks, pending: p.pendingChecks, stale: null, sha: p.headRefOid },
+  { number: p.number, red: p.redChecks, pending: p.pendingChecks, stale: null, sha: p.headRefOid, headCommittedAt: p.headCommittedAt ?? null },
 ]));
 
 /** Members with nothing red, nothing stale, and something still running — what a wait can resolve. */
@@ -652,7 +677,7 @@ function rereadCheckState(number) {
     if (expected && fresh.headRefOid && fresh.headRefOid !== expected) {
       return { stale: `#${number} was pushed while we waited (${String(expected).slice(0, 9)} -> ${String(fresh.headRefOid).slice(0, 9)})` };
     }
-    return requiredCheckState(fresh.statusCheckRollup, requiredContexts);
+    return requiredCheckState(fresh.statusCheckRollup, requiredContexts, memberState.get(number)?.headCommittedAt ?? null);
   } catch {
     return null;
   }
@@ -690,6 +715,15 @@ if (readiness.carry.length < MIN_MEMBERS) {
     + `${MIN_MEMBERS} merges. Nothing was built, nothing was pushed, nothing was closed — re-run when the `
     + 'checks have settled.');
   process.exit(0);
+}
+
+// 🔴 SAY THE READING THE BUILD IS ACTING ON, for every member, every time. Asked for by the peer session
+// that investigated #4937: when this goes wrong the branch is usually deleted by the time anyone looks,
+// so the run's own output has to be the evidence. It is two lines and it turns forensics into reading.
+for (const member of memberState.values()) {
+  console.log(`[rollup] #${member.number} at build time: settled=${member.red.length === 0 && member.stale === null && member.pending.length === 0}`
+    + ` sha=${String(member.sha).slice(0, 9)} red=[${member.red.join(', ')}] pending=[${member.pending.join(', ')}]`
+    + `${member.stale ? ` stale=${member.stale}` : ''}`);
 }
 
 const buildGroup = group.filter((p) => readiness.carry.includes(p.number));

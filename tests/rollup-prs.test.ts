@@ -6,7 +6,7 @@ import path from "node:path";
 
 import { MIN_MEMBERS } from "../scripts/rollup-build-verdict.mjs";
 import { registryAddedLinesLanded } from "../scripts/rollup-carried.mjs";
-import { membersReadyToBuild, waitForRequiredChecks } from "../scripts/rollup-check-state.mjs";
+import { membersReadyToBuild, requiredCheckState, requiredGateUsable, waitForRequiredChecks } from "../scripts/rollup-check-state.mjs";
 import { isRollupBranch, overlappingRollup, rollupMembers } from "../scripts/rollup-duplicate-guard.mjs";
 
 /**
@@ -858,6 +858,174 @@ export function runRollupPrsTests(): void {
       /'merge-base', 'origin\/main'/,
       "and the delta must be taken against the MERGE BASE: a two-dot diff to main would read other "
         + "people's registrations as lines this PR had removed",
+    );
+  }
+
+  // ── 4e-decies. A check that ran BEFORE the head commit is the previous commit's result ───────
+  // The one account left standing for roll-up #4937. A peer session ruled out both causes we proposed:
+  // its copy of the script was byte-identical to `main` INCLUDING the stale-sha guard, and #4936's checks
+  // had already started, so neither an older worktree nor a null rollup explains it. `statusCheckRollup`
+  // is the rollup of the PR's latest commit, but right after a push it can still carry the PREVIOUS
+  // commit's runs — green ones — so the member reads finished-and-green while its real checks have not
+  // begun. The stale-SHA guard cannot see this: the head never moved, only the checks were old.
+  {
+    const HEAD_AT = "2026-09-30T14:45:38Z";
+    const before = "2026-09-30T14:30:00Z"; // a run from the previous push
+    const after = "2026-09-30T14:48:13Z"; // a run for this commit
+
+    const stale = requiredCheckState(
+      [
+        { name: "validate", conclusion: "SUCCESS", startedAt: before },
+        { name: "checks", conclusion: "SUCCESS", startedAt: before },
+      ],
+      new Set(["validate", "checks"]),
+      HEAD_AT,
+    );
+    assert.deepEqual(stale.red, [], "green is green — this is not a failure");
+    assert.equal(
+      stale.pending.length,
+      2,
+      "but two SUCCESSES that ran before the head commit existed are the PREVIOUS commit's result, so "
+        + "the member is not proven and must not be built from",
+    );
+    assert.match(stale.pending[0] ?? "", /ran before this commit existed/);
+
+    const fresh = requiredCheckState(
+      [
+        { name: "validate", conclusion: "SUCCESS", startedAt: after },
+        { name: "checks", conclusion: "SUCCESS", startedAt: after },
+      ],
+      new Set(["validate", "checks"]),
+      HEAD_AT,
+    );
+    assert.deepEqual(fresh, { red: [], pending: [] }, "runs that started after the commit are its own, and it is green");
+
+    // Unjudgeable is not the same as fine: no start time means it cannot be tied to this commit.
+    const noTime = requiredCheckState(
+      [{ name: "validate", conclusion: "SUCCESS" }, { name: "checks", conclusion: "SUCCESS", startedAt: after }],
+      new Set(["validate", "checks"]),
+      HEAD_AT,
+    );
+    assert.equal(noTime.pending.length, 1, "a check with no startedAt is pending, not green");
+    assert.match(noTime.pending[0] ?? "", /no start time/);
+
+    // A StatusContext has no `startedAt` at all — it reports `state` and `context`. Holding it to a start
+    // time would make it pend FOR EVER: it can never gain one, so the wait always times out and that
+    // member could never be built from. Raised by a peer session reviewing this change; measured before
+    // fixing, two green StatusContexts came back as two "no start time" pending entries.
+    assert.deepEqual(
+      requiredCheckState(
+        [{ context: "validate", state: "SUCCESS" }, { context: "checks", state: "SUCCESS" }],
+        new Set(["validate", "checks"]),
+        HEAD_AT,
+      ),
+      { red: [], pending: [] },
+      "a green StatusContext is green — the staleness test only applies to a shape that can answer it",
+    );
+    // ...and an unfinished one is still pending, so the exemption did not buy a fail-open.
+    assert.equal(
+      requiredCheckState([{ context: "validate", state: "PENDING" }], new Set(["validate"]), HEAD_AT).pending.length,
+      1,
+      "a PENDING StatusContext is still pending — exempting the TIMING test must not exempt the state test",
+    );
+
+    // Omitting the head date skips the test entirely, which is what every older caller and fixture gets.
+    assert.deepEqual(
+      requiredCheckState(
+        [{ name: "validate", conclusion: "SUCCESS", startedAt: before }, { name: "checks", conclusion: "SUCCESS", startedAt: before }],
+        new Set(["validate", "checks"]),
+      ),
+      { red: [], pending: [] },
+      "with no head date the staleness test is skipped — that is why no existing fixture changes verdict",
+    );
+  }
+
+  // ── 4e-undecies. A running check is labelled in_progress, not "not started" ───────────────────
+  // `conclusion` comes back as an EMPTY STRING for a running check, not null, and `??` does not skip an
+  // empty string — so the report printed a check that was actively running as "not started". Cosmetic,
+  // but it misdescribed the exact state the tool was waiting on, and it muddied the #4937 investigation
+  // for both sessions looking at it.
+  {
+    const running = requiredCheckState(
+      [{ name: "checks", status: "IN_PROGRESS", conclusion: "" }],
+      new Set(["checks"]),
+    );
+    assert.deepEqual(running.pending, ["checks (in_progress)"], "the label must name the state gh actually reported");
+  }
+
+  // ── 4e-duodecies. The build says what reading it acted on, for every member ───────────────────
+  {
+    const source = readFileSync("scripts/rollup-prs.mjs", "utf8");
+    assert.match(
+      source,
+      /at build time: settled=/,
+      "every member's settled/red/pending reading must be printed at build time. Asked for by the peer "
+        + "session that investigated #4937: when this goes wrong the branch is usually deleted before "
+        + "anyone looks, so the run's own output has to be the evidence.",
+    );
+  }
+
+  // ── 4e-terdecies. Nothing red and nothing pending is NOT green when the gate named nothing ───
+  // Found by a peer session and reproduced here against this module before changing anything. Four ways
+  // in, all of which read `{red: [], pending: []}` and were therefore BUILT FROM:
+  //
+  //   required = EMPTY Set, both required checks IN_PROGRESS
+  //   required = EMPTY Set, no checks at all
+  //   required = null,      no checks at all
+  //   required = null,      only a non-gating check green
+  //
+  // The empty Set is the dangerous one because it arrives on a 200: `readProtectionContexts()` treats
+  // `contexts: []` as a successful read, and that classic array is deprecated — a rule moved to a ruleset
+  // empties it, at which point every open PR reads green at once.
+  {
+    const running = [
+      { name: "validate", status: "IN_PROGRESS", conclusion: "" },
+      { name: "checks", status: "IN_PROGRESS", conclusion: "" },
+    ];
+    for (const [label, rollup, gate] of [
+      ["empty gate + running", running, new Set<string>()],
+      ["empty gate + no checks", [], new Set<string>()],
+      ["unreadable gate + no checks", [], null],
+      ["unreadable gate + only a non-gating check green", [{ name: "mobile", conclusion: "SUCCESS" }], null],
+    ] as Array<[string, Array<Record<string, unknown>>, Set<string> | null]>) {
+      const state = requiredCheckState(rollup, gate);
+      assert.deepEqual(state.red, [], `${label}: nothing is red`);
+      assert.equal(
+        state.pending.length > 0,
+        true,
+        `${label}: with no CONFIRMED required check this must not read green — both lists empty was being `
+          + "taken as all-clear about a question the gate never let us ask",
+      );
+      assert.match(state.pending.join(" "), /nothing could be confirmed green/);
+    }
+
+    // A healthy gate with both required checks green is still green — the fix must not make everything pend.
+    assert.deepEqual(
+      requiredCheckState(
+        [{ name: "validate", conclusion: "SUCCESS" }, { name: "checks", conclusion: "SUCCESS" }],
+        new Set(["validate", "checks"]),
+      ),
+      { red: [], pending: [] },
+      "a real gate, both required checks passed: that IS green and must stay buildable",
+    );
+
+    assert.equal(requiredGateUsable(new Set()).usable, false, "an empty gate is unusable");
+    assert.equal(requiredGateUsable(null).usable, false, "an unreadable gate is unusable");
+    assert.equal(requiredGateUsable(new Set(["validate", "checks"])).usable, true, "a named gate is usable");
+    assert.match(requiredGateUsable(new Set()).why, /ruleset/, "and it says what an empty list usually means");
+
+    const source = readFileSync("scripts/rollup-prs.mjs", "utf8");
+    assert.match(
+      source,
+      /refusing to build: \$\{gate\.why\}/,
+      "--apply must refuse the whole run on an unusable gate, so the reason is stated once at the top "
+        + "rather than as N identical per-member lines",
+    );
+    assert.match(
+      source,
+      /live\.contexts\.length === 0/,
+      "and an EMPTY contexts array must be recorded as an unreadable gate rather than kept as an empty "
+        + "Set, which is the shape that makes every PR read green on a 200",
     );
   }
 
