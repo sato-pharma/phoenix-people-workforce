@@ -466,4 +466,49 @@ export async function runMilestoneGroupCardTests() {
     workspace.includes("previewSheet"),
     "and the preview pane is told which sheet it is showing — a landscape picture scaled to the portrait width is cropped with no scrollbar",
   );
+
+  // ── 7 ── THE CORRECTED NAME AND THE GROUP'S OWN SENTENCE REACH THE PICTURE ──────────────────────
+  //
+  // 🔴 A CORRECTION MUST BE KEPT PER PERSON, OR IT CANNOT REACH A GROUP AT ALL. The single card's
+  // `nameEdit` holds ONE correction and is cleared the moment the selected person changes — which is
+  // exactly what correcting five names requires — so a group built from it would carry the last name
+  // touched and print the other four off the record.
+  assert.ok(
+    workspace.includes("nameOverrides"),
+    "corrections are kept per person, not in the single card's one-at-a-time field",
+  );
+  assert.ok(
+    /nameEdit \?\? nameOverrides\[selectedHrId\] \?\? selected\?\.displayName/.test(workspace),
+    "and clicking back to a corrected name shows the correction, so the card and the picture cannot print two different names for one person on one screen",
+  );
+  assert.ok(
+    /displayName: nameOverrides\[entry\.hrId\]/.test(workspace),
+    "every ticked person carries the name he typed for THAT person",
+  );
+
+  // The sentence: the group's own, built by the server's own function, and never the card's.
+  assert.ok(
+    workspace.includes("milestoneGroupCitation"),
+    "the box opens on the exact sentence the route would have produced — never a second phrasing that drifts from the printed one",
+  );
+  assert.ok(
+    workspace.includes("groupCitationEdit") && workspace.includes("citationEdit"),
+    "the group's sentence is its OWN state: the card's names one person and would be a lie on a sheet of five faces",
+  );
+  const groupCalls = workspace.match(/JSON\.stringify\(\{ items: groupItems[^\n]*/g) ?? [];
+  assert.equal(groupCalls.length, 2, "two group requests: the download and the preview");
+  for (const call of groupCalls) {
+    assert.ok(
+      call.includes("citation: groupCitationValue"),
+      `every group request carries the sentence, the preview included — ${call.trim()}`,
+    );
+  }
+
+  // A different set of people is a different sentence — it COUNTS them ("five colleagues"), so one
+  // typed for the old set is wrong the moment a tick changes.
+  const toggle = workspace.slice(workspace.indexOf("const toggleTick"));
+  assert.ok(
+    toggle.slice(0, toggle.indexOf("setTicked")).includes("setGroupCitationEdit(null)"),
+    "ticking a row puts the sentence back to the worked-out one",
+  );
 }
