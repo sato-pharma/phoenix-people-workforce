@@ -426,6 +426,67 @@ is what actually decides a firing. Deleting it would strand those citations.
 
 Do not run `gcloud` to verify anything.
 
+## Config as Code is deprecated — and the CLI's own migration command is DESTRUCTIVE here
+
+Railway now warns on every CLI call that `railway.json` / `railway.toml` is superseded by
+Infrastructure as Code in `.railway/railway.ts`, and that **existing files keep working until
+2026-12-01**. Two `railway.toml` files are in scope: the repo root (the app's `/api/readyz`
+healthcheck) and `infra/headwind-phoenix-actions/` (the MDM image's builder).
+
+🔴 **DO NOT RUN `railway config migrate --apply`. Measured 2026-10-01, its dry-run output would
+delete most of the project.** It translates only the two `railway.toml` files and emits a
+**whole-project** definition — and `.railway/README.md` states plainly that *"ordinary whole-project
+applies can delete omitted resources"*. What it emits against what actually exists:
+
+| | `migrate` emits | Live project (`railway config pull`) |
+| --- | --- | --- |
+| Project name | the **current directory's name** | `Phoenix-HR-Workforce` |
+| Services | 2, named after directories | **4** — `phoenix-people-workforce`, `phoenix-headwind`, `phoenix-cron`, `headwind-db-eu` |
+| Volume | none | **`headwind-db-eu-volume`, 50 GB**, mounted at `/var/lib/postgresql/data` |
+| Custom domains | none | `phoenix-hr.satopharma.com`, `mdm-console.satopharma.com`, `mdm.satopharma.com` |
+| Restart policy | **dropped from both** | `ON_FAILURE` / 10 on the app, `NEVER` on cron |
+
+So applying it would drop three services — including a live Postgres and its 50 GB volume — and all
+three custom domains, and it silently loses the restart policy it was migrating. Run in a worktree it
+even names the project after `_wt-<task>`.
+
+**`railway config pull` is the truthful import** — it reads the live project, lists every service, and
+renders variables as `preserve()` so no secret value is written to source. Start there, never from
+`migrate`.
+
+🔴 **AND `pull` ALONE IS NOT ENOUGH: the app's healthcheck and restart policy are NOT service
+settings.** They live in `railway.toml` and are applied at deploy time, so they do not appear in a
+pulled file at all. A cutover that lands the pulled file and clears the Config File settings — which
+is exactly what `migrate --apply` does — leaves production with **no readiness gate and no restart
+policy**. Any authored file must add them to `phoenix-people-workforce` explicitly.
+
+The safe sequence, for whoever does this before the deadline:
+
+1. `railway config pull` into `.railway/railway.ts`, from a directory linked to `Phoenix-HR-Workforce`.
+2. Add the app's `deploy` block by hand: `healthcheckPath: "/api/readyz"`, `healthcheckTimeout: 300`,
+   `restartPolicyType: "ON_FAILURE"`, `restartPolicyMaxRetries: 10`.
+3. `npm install railway` at the repo root — the authoring file imports `railway/iac`, so this adds a
+   real dependency.
+4. `railway config plan --out railway-plan.json`, and **read it**. A destructive apply in an agent
+   session requires `--confirm-destructive`, which is Railway's own admission that this can delete.
+5. Apply the reviewed plan only, and prefer CI: `railwayapp/config` with
+   `apply --plan railway-plan.json`. **An apply is a production infrastructure change that does not
+   pass through the deploy gate**, so it needs the owner's word in the same way a migration does.
+6. Only then delete the two `railway.toml` files, and update `tests/railway-deploy-config.test.ts`,
+   which currently pins the root one.
+
+Two things `pull` confirmed that are worth knowing on their own:
+
+- **`phoenix-people-workforce`'s source carries `checkSuites: true`.** That is the Wait-for-CI deploy
+  gate of "The deploy gate" above, visible in configuration rather than inferred from behaviour.
+- 🔴 **`phoenix-cron` is NOT a dormant leftover.** Its start command fires nine production routes on a
+  time-of-day schedule — `notifications/process`, `cron/inbound-intake`,
+  `cron/recruitment-email-intake`, the three iReports360 syncs, `notifications/daily`,
+  `cron/background-jobs` — with `restartPolicyType: NEVER`, i.e. a one-shot container. An audit on
+  2026-09-30 listed it as a leftover to delete; that was wrong, and deleting it would remove a
+  production cron path. cron-job.org is the scheduler of record (§ Cron Jobs), so establish which of
+  the two is actually firing each route before touching either.
+
 ## Branch Model
 
 | Branch | Purpose | Deployment |
