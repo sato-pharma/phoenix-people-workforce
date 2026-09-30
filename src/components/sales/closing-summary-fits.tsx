@@ -7,6 +7,7 @@ import {
   buildClosingFamilySummary,
   pivotClosingSummaryByFamily,
 } from "@/lib/sales/closing-family-summary";
+import { formatPercent } from "@/lib/sales/format";
 import type { MonthlyClosingMatrix } from "@/lib/sales/monthly-distributor-import";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -39,17 +40,27 @@ import type { MonthlyClosingMatrix } from "@/lib/sales/monthly-distributor-impor
 // ─────────────────────────────────────────────────────────────────────────────
 
 const EGP = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
-const PCT = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1, minimumFractionDigits: 1 });
 
 function money(value: number | null | undefined): string {
   if (value === null || value === undefined || !Number.isFinite(value)) return "—";
   return EGP.format(value);
 }
 
-/** Achievement reads as a dash when there is no target — never 0%, which would look like failure. */
+/**
+ * Achievement reads as a dash when there is no target — never 0%, which would look like failure.
+ *
+ * THE SCALING IS NOT THIS FILE'S TO DO. `formatPercent` is the repo's one percent formatter and it
+ * NAMES its unit, which is the whole reason it exists: `{ input: "ratio" }` multiplies by 100,
+ * `{ input: "percent" }` does not. This component used to keep a private `Intl.NumberFormat` and
+ * append a bare "%" to whatever it was handed — no unit anywhere — and that is what let the
+ * matrix's RATIO print as "0.1%" on the Grand total row while the PERCENT family rows above it
+ * read correctly (#4989). Everything this view renders is already a percent, so it says so, once,
+ * here. The matrix table beside it calls the same formatter with `{ input: "ratio" }`, so the two
+ * now round and print identically as well as agreeing on the number.
+ */
 function achievement(value: number | null | undefined): string {
   if (value === null || value === undefined || !Number.isFinite(value)) return "—";
-  return `${PCT.format(value)}%`;
+  return formatPercent(value, { digits: 1, input: "percent" });
 }
 
 /** One key space for both levels, so a family and a region inside it can never collide. */
