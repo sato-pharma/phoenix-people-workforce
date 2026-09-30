@@ -540,7 +540,7 @@ export function toRosterEntry(record: RosterAssignmentRecord): RosterEntry | nul
  * cache entry limit to be a hazard, and exceeding that limit throws only in dev and kills the dev
  * server outright. A few narrow columns fetched fresh cost far less than that failure mode.
  */
-async function loadContactRoster(): Promise<RosterEntry[]> {
+export async function loadContactRoster(): Promise<RosterEntry[]> {
   const supabase = getSupabaseAdmin();
   const { count, error: countError } = await supabase
     .from(CRM_CONTACT_ASSIGNMENTS_TABLE)
@@ -586,7 +586,7 @@ async function loadContactRoster(): Promise<RosterEntry[]> {
  * Only ever asked for the handful of contacts that already matched on name or phone, so this stays
  * a single small request rather than a second pass over all 111,914 check-ins.
  */
-async function loadPinsFor(contactIds: readonly number[]): Promise<Map<number, { lat: number; lon: number }>> {
+export async function loadPinsFor(contactIds: readonly number[]): Promise<Map<number, { lat: number; lon: number }>> {
   const pins = new Map<number, { lat: number; lon: number }>();
   const ids = [...new Set(contactIds)];
   if (ids.length === 0) return pins;
