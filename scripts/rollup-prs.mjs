@@ -57,7 +57,7 @@ import { rollupBranchName } from './rollup-branch-name.mjs';
 import { isRollupBranch, overlappingRollup, rollupMembers } from './rollup-duplicate-guard.mjs';
 import { rollupBuildVerdict, MIN_MEMBERS } from './rollup-build-verdict.mjs';
 import { registryAddedLinesLanded, SHARED_REGISTRY_PATH } from './rollup-carried.mjs';
-import { membersReadyToBuild, requiredCheckState, waitForRequiredChecks } from './rollup-check-state.mjs';
+import { membersReadyToBuild, requiredCheckState, requiredGateUsable, waitForRequiredChecks } from './rollup-check-state.mjs';
 
 const REPO = 'Gawish-1997/phoenix-people-workforce';
 
@@ -281,6 +281,11 @@ if (fixturePath) {
 } else {
   const live = readProtectionContexts();
   if (live.skipped) protectionNote = `${live.skipped} — judging on EVERY failed check, not just the required ones`;
+  // An EMPTY contexts array is a SUCCESSFUL read that names nothing, which is what a rule moved to a
+  // ruleset looks like (the classic array is deprecated). Kept as an empty Set it would make every entry
+  // fail `required.has(name)` and every PR read green at once, on a 200. It is an unreadable gate in
+  // every sense that matters here, so it is recorded as one and says which of the two it was.
+  else if (live.contexts.length === 0) protectionNote = 'branch protection returned an EMPTY required-check list — a rule may have moved to a ruleset, and the classic contexts array is deprecated';
   else requiredContexts = new Set(live.contexts);
 }
 
@@ -567,6 +572,20 @@ if (settle) {
 }
 
 if (!apply || group.length < 2) process.exit(0);
+
+// 🔴 A GATE THAT NAMES NOTHING CANNOT CLEAR ANYTHING, so the run stops here rather than discovering it
+// one member at a time. The member-level clause in `requiredCheckState` already refuses to call anything
+// green without a CONFIRMED required check, so nothing unsafe could be built either way — this exists so
+// the reason is stated once, at the top, instead of appearing as N identical "not confirmed" lines.
+{
+  const gate = requiredGateUsable(requiredContexts);
+  if (!gate.usable) {
+    console.error(`[rollup] refusing to build: ${gate.why}.`);
+    console.error('[rollup] Nothing is closed, merged or pushed. Fix the gate reading first — every member '
+      + 'would otherwise be judged against a list that names nothing.');
+    process.exit(1);
+  }
+}
 
 // --------------------------------------- refuse when an open roll-up already carries this work
 

@@ -6,7 +6,7 @@ import path from "node:path";
 
 import { MIN_MEMBERS } from "../scripts/rollup-build-verdict.mjs";
 import { registryAddedLinesLanded } from "../scripts/rollup-carried.mjs";
-import { membersReadyToBuild, requiredCheckState, waitForRequiredChecks } from "../scripts/rollup-check-state.mjs";
+import { membersReadyToBuild, requiredCheckState, requiredGateUsable, waitForRequiredChecks } from "../scripts/rollup-check-state.mjs";
 import { isRollupBranch, overlappingRollup, rollupMembers } from "../scripts/rollup-duplicate-guard.mjs";
 
 /**
@@ -942,6 +942,70 @@ export function runRollupPrsTests(): void {
       "every member's settled/red/pending reading must be printed at build time. Asked for by the peer "
         + "session that investigated #4937: when this goes wrong the branch is usually deleted before "
         + "anyone looks, so the run's own output has to be the evidence.",
+    );
+  }
+
+  // ── 4e-terdecies. Nothing red and nothing pending is NOT green when the gate named nothing ───
+  // Found by a peer session and reproduced here against this module before changing anything. Four ways
+  // in, all of which read `{red: [], pending: []}` and were therefore BUILT FROM:
+  //
+  //   required = EMPTY Set, both required checks IN_PROGRESS
+  //   required = EMPTY Set, no checks at all
+  //   required = null,      no checks at all
+  //   required = null,      only a non-gating check green
+  //
+  // The empty Set is the dangerous one because it arrives on a 200: `readProtectionContexts()` treats
+  // `contexts: []` as a successful read, and that classic array is deprecated — a rule moved to a ruleset
+  // empties it, at which point every open PR reads green at once.
+  {
+    const running = [
+      { name: "validate", status: "IN_PROGRESS", conclusion: "" },
+      { name: "checks", status: "IN_PROGRESS", conclusion: "" },
+    ];
+    for (const [label, rollup, gate] of [
+      ["empty gate + running", running, new Set<string>()],
+      ["empty gate + no checks", [], new Set<string>()],
+      ["unreadable gate + no checks", [], null],
+      ["unreadable gate + only a non-gating check green", [{ name: "mobile", conclusion: "SUCCESS" }], null],
+    ] as Array<[string, Array<Record<string, unknown>>, Set<string> | null]>) {
+      const state = requiredCheckState(rollup, gate);
+      assert.deepEqual(state.red, [], `${label}: nothing is red`);
+      assert.equal(
+        state.pending.length > 0,
+        true,
+        `${label}: with no CONFIRMED required check this must not read green — both lists empty was being `
+          + "taken as all-clear about a question the gate never let us ask",
+      );
+      assert.match(state.pending.join(" "), /nothing could be confirmed green/);
+    }
+
+    // A healthy gate with both required checks green is still green — the fix must not make everything pend.
+    assert.deepEqual(
+      requiredCheckState(
+        [{ name: "validate", conclusion: "SUCCESS" }, { name: "checks", conclusion: "SUCCESS" }],
+        new Set(["validate", "checks"]),
+      ),
+      { red: [], pending: [] },
+      "a real gate, both required checks passed: that IS green and must stay buildable",
+    );
+
+    assert.equal(requiredGateUsable(new Set()).usable, false, "an empty gate is unusable");
+    assert.equal(requiredGateUsable(null).usable, false, "an unreadable gate is unusable");
+    assert.equal(requiredGateUsable(new Set(["validate", "checks"])).usable, true, "a named gate is usable");
+    assert.match(requiredGateUsable(new Set()).why, /ruleset/, "and it says what an empty list usually means");
+
+    const source = readFileSync("scripts/rollup-prs.mjs", "utf8");
+    assert.match(
+      source,
+      /refusing to build: \$\{gate\.why\}/,
+      "--apply must refuse the whole run on an unusable gate, so the reason is stated once at the top "
+        + "rather than as N identical per-member lines",
+    );
+    assert.match(
+      source,
+      /live\.contexts\.length === 0/,
+      "and an EMPTY contexts array must be recorded as an unreadable gate rather than kept as an empty "
+        + "Set, which is the shape that makes every PR read green on a 200",
     );
   }
 

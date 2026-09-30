@@ -44,6 +44,31 @@ export const TERMINAL_FAILURE = new Set(['FAILURE', 'TIMED_OUT', 'CANCELLED', 'E
 export const TERMINAL_SUCCESS = new Set(['SUCCESS', 'NEUTRAL', 'SKIPPED']);
 
 /**
+ * Whether the required-check list can be judged against at all.
+ *
+ * Two unusable shapes, and BOTH answer green today if nothing else is wrong. `null` is an unreadable
+ * gate; an EMPTY Set is worse, because it arrives on a successful read — the classic
+ * `required_status_checks.contexts` array is deprecated, and a rule moved to a ruleset leaves it empty.
+ * `--apply` refuses the whole run on either, rather than discovering it one member at a time.
+ *
+ * @param {Set<string> | null} required
+ * @returns {{ usable: boolean, why: string }}
+ */
+export function requiredGateUsable(required) {
+  if (required === null) {
+    return { usable: false, why: 'branch protection could not be read, so no check can be confirmed as the gate' };
+  }
+  if (required.size === 0) {
+    return {
+      usable: false,
+      why: 'branch protection named NO required checks — the classic contexts array is empty, which is what '
+        + 'a rule moved to a ruleset looks like, so every PR would read green at once',
+    };
+  }
+  return { usable: true, why: `${required.size} required check(s): ${[...required].join(', ')}` };
+}
+
+/**
  * The REQUIRED checks of one PR, split into the ones that have terminally FAILED and the ones that
  * have not finished — each named with its state, so a report never has to say "something is red".
  *
@@ -86,6 +111,9 @@ export function requiredCheckState(statusCheckRollup, required, headCommittedAt 
   const red = [];
   const pending = [];
   const seen = new Set();
+  // Required names seen to FINISH non-blocking. Only a gate that named them can confirm anything, so
+  // this stays 0 for an unreadable or empty gate — see the clause at the end.
+  let confirmed = 0;
   const headAt = headCommittedAt ? Date.parse(headCommittedAt) : NaN;
   for (const entry of statusCheckRollup ?? []) {
     const name = entry?.name ?? entry?.context ?? '';
@@ -111,9 +139,29 @@ export function requiredCheckState(statusCheckRollup, required, headCommittedAt 
     }
     if (TERMINAL_FAILURE.has(state)) red.push(`${label} (${state.toLowerCase()})`);
     else if (!TERMINAL_SUCCESS.has(state)) pending.push(`${label} (${state ? state.toLowerCase() : 'not started'})`);
+    else if (required !== null && required.has(name)) confirmed += 1;
   }
   if (required !== null) {
     for (const name of required) if (!seen.has(name)) pending.push(`${name} (not reported yet)`);
+  }
+  // 🔴 NOTHING RED AND NOTHING PENDING IS NOT THE SAME AS GREEN. Both empty can also mean this function
+  // had no usable gate to judge against, and then it was answering "all clear" about a question it never
+  // asked. Found by a peer session, reproduced here against this module:
+  //
+  //   required = EMPTY Set, both required checks IN_PROGRESS -> {red: [], pending: []}  (built from)
+  //   required = EMPTY Set, no checks at all                 -> {red: [], pending: []}  (built from)
+  //   required = null,      no checks at all                 -> {red: [], pending: []}  (built from)
+  //   required = null,      only a non-gating check green    -> {red: [], pending: []}  (built from)
+  //
+  // The empty Set is the dangerous one, because it arrives on a 200: `readProtectionContexts()` treats
+  // `contexts: []` as a successful read, and the classic `required_status_checks.contexts` array is
+  // deprecated — a rule moved to a ruleset empties it. At that moment EVERY open PR reads green at once.
+  //
+  // So a green answer now requires something CONFIRMED: a named required check seen to finish
+  // non-blocking. A name is only counted when the gate actually named it, which is why `required === null`
+  // can never confirm anything — we will not certify a gate we could not read.
+  if (red.length === 0 && pending.length === 0 && confirmed === 0) {
+    pending.push(`nothing could be confirmed green — ${requiredGateUsable(required).why}`);
   }
   return { red, pending };
 }
