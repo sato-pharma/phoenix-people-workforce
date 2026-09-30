@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 4a28bccd-8c4c-4ae1-9469-ae8313a0317a
-  modified: 2026-08-22T22:26:58.573Z
+  modified: 2026-10-01T00:00:00.000Z
 ---
 
 On 2026-06-14 the `validate` CI job on PRs failed in 1-2s with **zero steps run** and the annotation: *"The job was not started because recent account payments have failed or your spending limit needs to be increased."* This is GitHub's **billing gate firing before any code executes** — it is NOT a code error. Signature: job duration ~1s, no steps, annotation path `.github`.
@@ -18,7 +18,7 @@ On 2026-06-14 the `validate` CI job on PRs failed in 1-2s with **zero steps run*
 
 🔴 **Every clause of that is now false, and following it would ship broken code to production.** Verified live 2026-08-23 against `gh api repos/Gawish-1997/phoenix-people-workforce/branches/main/protection`:
 
-- **`main` IS branch-protected.** `enforce_admins: true`, four **required** status checks — `validate`, `lint`, `typecheck`, `secret-scan`. A red check now genuinely blocks the merge, for the owner too. (`strict` is `false`, so behind-`main` alone does not block — that part is deliberate, see AGENTS.md §2.)
+- **`main` IS branch-protected.** `enforce_admins: true`, two **required** status checks — `validate`, `checks`. *(Corrected 2026-10-01 — the gate is TWO, `validate` and `checks`; read the protection API, never this line.)* A red check now genuinely blocks the merge, for the owner too. (`strict` is `false`, so behind-`main` alone does not block — that part is deliberate, see AGENTS.md §2.)
 - **The local gate it defers to no longer exists.** `check:harden` was retired 2026-08-18 at the owner's instruction and is gone from `package.json`. There is no local run that can stand in for CI, and AGENTS.md §7 forbids inventing one. See [[local-validation-gates-are-gone-ci-is-the-gate]].
 - **"Safe to `gh pr merge --squash`" was never this file's call to make.** Merging to `main` is a PROTECTED ACTION needing the owner's separate explicit approval (AGENTS.md §6), and since 2026-08-01 a merge to `main` **ships to production immediately** — no cron wait, no staged rollout. When this was written the merge was harmless-ish; today it is a live deploy.
 

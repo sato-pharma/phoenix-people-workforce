@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: feedback
   originSessionId: 9bdd6297-a7c0-4136-9263-d285c7524d07
-  modified: 2026-08-18T06:52:02.267Z
+  modified: 2026-10-01T00:00:00.000Z
 ---
 
 **Two separate local gates were removed on 2026-08-18, in that order. Neither is
@@ -19,8 +19,8 @@ coming back.**
    `check:routes`, `check:migrations`, `lint` and `typecheck` on **every push**.
 
 **Why:** CI is the gate and always was. `.github/workflows/ci.yml` re-lists
-every step itself, and the four required checks — `validate`, `lint`,
-`typecheck`, `secret-scan` — run on the PR head commit and block a red merge.
+every step itself, and the two required checks — `validate` and `checks`
+— run on the PR head commit and block a red merge. *(Corrected 2026-10-01 — the gate is TWO, `validate` and `checks`; read the protection API, never this line.)*
 The local runs only duplicated that, slowly, on a 16 GB laptop usually carrying
 several sessions.
 

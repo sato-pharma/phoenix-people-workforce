@@ -1,11 +1,11 @@
 ---
 name: dev-auth-is-header-only-browser-pane-cannot-use-it
-description: "THE FILENAME IS A MISNOMER. GET /api/dev-auth?role=<Role>&hrId=<HR>&next=<path> DOES role-switch the Browser pane — navigate to it, it sets an httpOnly phoenix_dev_preview cookie (checked before the header path) and redirects, no proxy, and hrId signs you in as THAT person (the only way to verify a manager's own-team scope). Only the SEPARATE x-phoenix-* request-header path is header-only, and that is what role SWEEPS use. Dev auth can NEVER reach a deployed env and fails as a misleading role-403."
+description: "THE FILENAME IS A MISNOMER. GET /api/dev-auth?role=<Role>&hrId=<HR>&next=<path> DOES role-switch the Browser pane — navigate to it, it sets an httpOnly phoenix_dev_preview cookie (checked before the header path) and redirects, no proxy, and hrId signs you in as THAT person (the only way to verify a manager's own-team scope). Only the SEPARATE x-phoenix-* request-header path is header-only, and that is what role SWEEPS use. Dev auth can NEVER reach a deployed env and fails as a misleading role-403. ?testLogin=TEST-AYA opens a TEST ACCOUNT. A REAL signed-in session in the pane OUTRANKS the preview cookie silently: open http://127.0.0.1:3000 instead (cookies are per host), never sign him out."
 metadata: 
   node_type: memory
   type: reference
   originSessionId: d7876385-32d4-4aa5-880a-8afbb11a769b
-  modified: 2026-09-26T06:58:05.875Z
+  modified: 2026-09-30T21:43:57.811Z
 ---
 
 **The filename asserts the opposite of what this file concludes — left unrenamed deliberately** (renaming
@@ -29,6 +29,19 @@ the cheapest structural check of all is curl:
 curl -s -c jar.txt "http://localhost:3000/api/dev-auth?role=Super%20Admin"   # fresh jar
 curl -s -b jar.txt -L "http://localhost:3000/admin" -o admin.html            # HTTP 200, whole shell
 ```
+
+**`?testLogin=TEST-AYA` (or `TEST-DF`, `TEST-MS`) opens a TEST ACCOUNT** (since 2026-09-30): the person it
+mirrors, in the test world, with every test-account guard on — Phoenix CRM saves land as `is_test` entries,
+every other save is refused. Use it, not `hrId=`, for anything that WRITES in Phoenix CRM.
+
+🔴 **A REAL signed-in session in the pane OUTRANKS the preview cookie, SILENTLY** (measured 2026-10-01 on the
+preview box). `resolveAccessContext` reads `phoenix_session` FIRST, then a bearer, then `phoenix_dev_preview`,
+so with the owner really signed in at `localhost:3000` every `/api/dev-auth` call "works" (30x, cookie set) and
+you land on HIS view — a rep link bounced to `/admin/field-crm` and looked like a broken test login. **Never
+sign him out to fix it.** Cookies are per HOST, not per port: open the SAME server as
+`http://127.0.0.1:3000/api/dev-auth?testLogin=…`, which carries no real session. The redirect then bounces
+back to `localhost` (Next builds `request.url` with that host), so navigate to the `127.0.0.1` page yourself
+afterwards — the test cookie is already stored there, and his `localhost` sign-in is untouched.
 
 🔴 **Never log in through the browser to role-switch** — the real login flow revokes the owner's session
 ([[force-logout-everywhere-needs-three-writes]]). And each cookie switch replaces the WHOLE session, so
@@ -87,6 +100,10 @@ inline: `PHOENIX_ENABLE_DEV_AUTH_HEADERS=true pnpm exec next dev …`. Recovery 
   hidden: `getComputedStyle` and `el.textContent`. `tabs_select` does NOT fix it — the pane must be on
   screen. Tells: `visibilityState`, an rAF that never fires, no `__reactFiber$` key on an interactive
   element, `document.body.children` showing `DIV#S:0[hidden]`.
+- **What reliably unsticks a hidden pane: a CLIENT navigation, not a load** —
+  `window.next.router.push('<path>?v=<n>')` from `javascript_tool` rendered every page it was asked for on
+  2026-10-01 while a full `navigate` to the same URL sat on "Loading employee portal page" for 30+ seconds with
+  the server log showing it answered in 584 ms. Bump `?v=` each time, or the router treats it as the same page.
 - 🔴 **`<main>` reading "Loading workspace" is a KNOWN FALSE signal** — `document.body.textContent` is the
   honest check (it held 168,315 chars of real admin content while `<main>` still said "Loading";
   [[a-broken-rsc-page-still-returns-http-200]]).

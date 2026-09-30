@@ -5,15 +5,17 @@ metadata:
   node_type: memory
   type: reference
   originSessionId: a7d9767b-6023-40ee-aed7-29f5ee72470b
-  modified: 2026-08-22T22:16:52.578Z
+  modified: 2026-10-01T00:00:00.000Z
 ---
 
 `react-hooks/set-state-in-effect` is configured as an **error**, so a `setState` called directly in
 a `useEffect` body fails `pnpm run lint` and therefore **the required `lint` check on the PR**.
 Cost me two full gate runs on 2026-08-04/05 (combo box, then the validation suggestions hook) — each
 one a ~6-minute round trip for the same one-line mistake. *(Those runs were the local `check:harden`
-gate, retired 2026-08-18; the round trip is now CI's, and `lint` is one of the four required checks
-that block the merge — so the mistake still costs the same wait.)*
+gate, retired 2026-08-18; the round trip is now CI's, and lint runs inside the required `checks`
+job — so the mistake still costs the same wait. Corrected 2026-10-01: this said `lint` was one of
+four required checks; the gate is TWO, `validate` and `checks`, and `lint` has not been a check
+name since #4527.)*
 
 **The shape that passes** — every `setState` lives inside the scheduled callback, and the
 "clear/reset" path becomes a 0 ms timeout rather than a bare call:

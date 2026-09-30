@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: feedback
   originSessionId: 6b107643-cd53-42d6-b2e1-91c2164d32d9
-  modified: 2026-08-22T22:17:29.543Z
+  modified: 2026-10-01T00:00:00.000Z
 ---
 
 Hit twice in one session (2026-08-02, biometric-login work). Both times the notification said
@@ -45,8 +45,8 @@ the verdict live before acting on it. For interim status mid-run, a plain `gh pr
 thing that answers — reading the output file is a wasted call.
 
 **Why it matters here:** [[railway-merge-is-the-production-deploy]] — a merge ships instantly at
-full traffic. Branch protection's **4** required checks — `validate`, `lint`, `typecheck`,
-`secret-scan` — do gate the merge itself, so a red PR cannot land. *(Corrected 2026-08-23: this said
+full traffic. Branch protection's **2** required checks — `validate` and `checks` — do gate the
+merge itself, so a red PR cannot land. *(Corrected 2026-10-01 — the gate is TWO, `validate` and `checks`; read the protection API, never this line.)* *(Corrected 2026-08-23: this said
 **5**, adding `sast-scan`. Verified live against `gh api …/branches/main/protection` — there are four
 and `sast-scan` is not one of them. `enforce_admins` is `true`, `strict` is `false`.)* A falsely-green
 watcher still leads you to merge on a stale run, which is the failure this file exists to prevent.

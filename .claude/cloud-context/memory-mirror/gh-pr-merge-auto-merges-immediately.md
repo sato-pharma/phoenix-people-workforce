@@ -1,11 +1,11 @@
 ---
 name: gh-pr-merge-auto-merges-immediately
-description: "`gh pr merge --auto` is banned here; and when a merge IS refused, gh names `--admin` in its own error text — that flag bypasses all four required checks on the branch that ships straight to production"
+description: "`gh pr merge --auto` is banned here; and when a merge IS refused, gh names `--admin` in its own error text — that flag bypasses every required check on the branch that ships straight to production (the gate is TWO as of 2026-10-01, validate and checks — read the protection API, never a count from a doc)"
 metadata:
   node_type: memory
   type: reference
   originSessionId: 754fd1a7-c721-44c9-a3f6-4ec9eeebba77
-  modified: 2026-08-22T15:45:00.000Z
+  modified: 2026-10-01T00:00:00.000Z
 ---
 
 Two separate traps on `gh pr merge` in `Gawish-1997/phoenix-people-workforce`.
@@ -28,7 +28,7 @@ To have the pull request merged after all the requirements have been met, add th
 To use administrator privileges to immediately merge the pull request, add the `--admin` flag.
 ```
 
-Both suggestions are wrong here. `--auto` is trap 1. **`--admin` bypasses all four required checks
+Both suggestions are wrong here. `--auto` is trap 1. **`--admin` bypasses every required check
 on the branch that deploys straight to production** — it is the single most destructive flag
 available in this repo, and gh recommends it by name at exactly the moment a tired session wants
 the merge to just work. The refusal is the gate doing its job.
@@ -44,8 +44,8 @@ the signature. The fix is to wait, never to bypass — see
 Both were true when written and are not any more. Do not act on the old versions:
 
 - ~~"`main` has no branch protection and no rulesets"~~ — **`main` IS protected**, `enforce_admins:
-  true`, with four required checks (`validate`, `lint`, `typecheck`, `secret-scan`). Proven by the
-  refusal above: a merge was actually blocked.
+  true`, with two required checks (`validate`, `checks`). Proven by the
+  refusal above: a merge was actually blocked. *(Corrected 2026-10-01 — the gate is TWO, `validate` and `checks`; read the protection API, never this line.)*
 - ~~"production is protected independently — the deploy gate refuses any commit whose ci.yml
   conclusion is not success"~~ — **there is no such gate.** A merge to `main` is the production
   deploy, at full traffic, within minutes. Measured 2026-08-22: #2291 merged as `f1b26f09` and
