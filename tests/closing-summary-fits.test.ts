@@ -305,4 +305,36 @@ export async function runClosingSummaryFitsTests(): Promise<void> {
     /achievement\(summary\.grandTotal\.total\.achievement\)/,
     "never the cell's ratio — that is the defect, and it renders as a plausible-looking 0.1%",
   );
+
+  // ── 11. ONE PERCENT FORMATTER, AND IT NAMES ITS UNIT ───────────────────────────────────────
+  // Section 10 fixed the value that was passed in. This closes the class: the defect was possible
+  // only because this file kept a PRIVATE formatter that appended a bare "%" to whatever it was
+  // handed, with no unit anywhere, while every other closing surface goes through
+  // `formatPercent(value, { input })` — the one formatter in the repo that states which unit it is
+  // being given. A second unit-less formatter is how two units meet silently, so there must not be
+  // one here.
+  assert.match(
+    COMPONENT,
+    /import \{ formatPercent \} from "@\/lib\/sales\/format"/,
+    "the summary must use the shared percent formatter, the same one closing-matrix-table.tsx uses",
+  );
+
+  const percentCalls = COMPONENT.match(/formatPercent\([^;]*?\)/g) ?? [];
+  assert.ok(percentCalls.length > 0, "and must actually call it");
+  for (const call of percentCalls) {
+    assert.match(
+      call,
+      /input: "(ratio|percent)"/,
+      `every formatPercent call must NAME its unit rather than lean on the default. Got: ${call}. ` +
+        "The default is 'ratio', so an already-percent value passed bare is multiplied by 100 — " +
+        "the same defect as #4989 in the opposite direction, printing 9.2% as 920%",
+    );
+  }
+
+  assert.doesNotMatch(
+    COMPONENT,
+    /minimumFractionDigits/,
+    "and no private percent formatter may come back — that constant existed only to serve the " +
+      "bare-% append this section exists to keep out",
+  );
 }
