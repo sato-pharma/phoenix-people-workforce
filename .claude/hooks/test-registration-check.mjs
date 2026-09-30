@@ -7,11 +7,14 @@
 // hook looks at the test file a session just wrote or edited and, if run-tests.ts would not run it,
 // tells the session so while it is still in the turn that can fix it.
 //
-// WHAT "REGISTERED" MEANS HERE — measured 2026-09-30 over all 1,967 test files, every one of which
-// passes it: run-tests.ts has `import { … } from "./<file>.test.ts"`, and every name in that import
-// is used again below it (the `await runTest(…, runX)` call). Exported helpers the runner does not
-// import are NOT required to be called — 13 files export such helpers (runMarketingSlaDaily and the
-// like, stubs for the code under test), and demanding them would be a false alarm on every edit.
+// WHAT "REGISTERED" MEANS HERE is EXACTLY what tests/test-wiring-complete.test.ts enforces in CI —
+// that guard already turns the required check red; this hook only moves the same verdict to the
+// moment the file is written, while the session can still fix it. The file must export a
+// `run<Name>Tests` function, run-tests.ts must mention `./<file>.test.ts`, and each such export must
+// appear in run-tests.ts OUTSIDE its import lines. Exported helpers not named `run…Tests` (13 files
+// have stubs like runMarketingSlaDaily) are ignored, as the guard ignores them. The two regexes
+// below are copied from that guard verbatim, and tests/test-registration-check.test.ts fails if
+// they ever drift apart — never "improve" one side alone.
 //
 // It WARNS, it never blocks: the tool already ran, and a session normally writes the test first and
 // registers it one edit later — the first warning of that pair is the nudge, not a fault. Fails open.
@@ -22,49 +25,34 @@ import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 
 const TEST_FILE = /(?:^|[\\/])tests[\\/]([^\\/]+\.test\.ts)$/;
 
-function escapeRe(s) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
+// Verbatim from tests/test-wiring-complete.test.ts — see the header. Pinned equal by the test.
+const EXPORTED_RUN_TESTS = /export\s+(?:async\s+)?function\s+(run\w*Tests)/g;
+const IMPORT_LINES = /^import\s[\s\S]*?;$/gm;
 
-/** The run* functions a test file exports — what run-tests.ts could call. */
+/** The `run…Tests` functions a test file exports — what run-tests.ts must call. */
 export function exportedRunFunctions(testSource) {
-  const names = new Set();
-  for (const m of String(testSource).matchAll(/export\s+(?:async\s+)?function\s+(run\w*)/g)) names.add(m[1]);
-  for (const m of String(testSource).matchAll(/export\s+const\s+(run\w*)\s*=/g)) names.add(m[1]);
-  return [...names];
+  return [...String(testSource).matchAll(EXPORTED_RUN_TESTS)].map((m) => m[1]);
 }
 
 /**
  * What stops run-tests.ts running this file, as plain sentences — an empty list means it runs.
- * `fileName` is the bare file name, e.g. `foo.test.ts`.
+ * `fileName` is the bare file name, e.g. `foo.test.ts`. Same three verdicts as the CI guard.
  */
 export function registrationGaps(fileName, testSource, runnerSource) {
   const runner = String(runnerSource);
   const exported = exportedRunFunctions(testSource);
-  const importRe = new RegExp(`import\\s*\\{([^}]*)\\}\\s*from\\s*["']\\./${escapeRe(fileName)}["'];?`, 'g');
-  const imports = [...runner.matchAll(importRe)];
-
-  if (imports.length === 0) {
-    if (exported.length === 0) {
-      return [
-        `tests/${fileName} exports no run function and tests/run-tests.ts does not import it, so it never runs. ` +
-          'Export a `runXxxTests` function from it, then register that in run-tests.ts.',
-      ];
-    }
+  if (exported.length === 0) {
+    return [
+      `tests/${fileName} exports no \`run<Name>Tests\` function, so tests/run-tests.ts has nothing to call.`,
+    ];
+  }
+  if (!runner.includes(`./${fileName}`)) {
     return [`tests/run-tests.ts does not import tests/${fileName}, so it never runs.`];
   }
-
-  const withoutImports = imports.reduce((text, m) => text.split(m[0]).join(''), runner);
-  const gaps = [];
-  for (const m of imports) {
-    for (const spec of m[1].split(',').map((s) => s.trim()).filter(Boolean)) {
-      const local = spec.split(/\s+as\s+/).pop().trim();
-      if (!new RegExp(`\\b${escapeRe(local)}\\b`).test(withoutImports)) {
-        gaps.push(`tests/run-tests.ts imports \`${local}\` from tests/${fileName} but never calls it, so it never runs.`);
-      }
-    }
-  }
-  return gaps;
+  const runnerBody = runner.replace(IMPORT_LINES, '');
+  return exported
+    .filter((symbol) => !runnerBody.includes(symbol))
+    .map((symbol) => `tests/run-tests.ts imports tests/${fileName} but never calls \`${symbol}\`, so it never runs.`);
 }
 
 function main() {
