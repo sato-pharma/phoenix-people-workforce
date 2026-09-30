@@ -42,6 +42,7 @@ import { readFileSync } from 'node:fs';
 
 import { readProtectionContexts } from './required-check-names.mjs';
 import { rollupBranchName } from './rollup-branch-name.mjs';
+import { rollupBuildVerdict } from './rollup-build-verdict.mjs';
 
 const REPO = 'Gawish-1997/phoenix-people-workforce';
 
@@ -457,29 +458,60 @@ const branch = rollupBranchName({
   },
 });
 
+// Where we were, so an abandoned build puts the tree back. Leaving a session switched onto a
+// half-built branch is half of the 2026-09-30 failure: `new-session.mjs --remove` then judges the
+// worktree by whatever branch it finds checked out, not the one the session was working on.
+const startedOn = git(['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: root, allowFail: true });
+
 git(['fetch', '--quiet', 'origin', 'main'], { cwd: root });
 git(['switch', '--quiet', '--create', branch, 'origin/main'], { cwd: root });
 
+/** Stop without pushing, back where we started, taking the half-built branch with us. */
+function abandon(lines) {
+  git(['merge', '--abort'], { cwd: root, allowFail: true });
+  if (startedOn && startedOn !== 'HEAD') git(['switch', '--quiet', startedOn], { cwd: root, allowFail: true });
+  git(['branch', '-D', branch], { cwd: root, allowFail: true });
+  for (const line of lines) console.error(`[rollup] ${line}`);
+  console.error(`[rollup] nothing pushed. Back on ${startedOn ?? 'the previous branch'}, and ${branch} removed.`);
+  process.exit(1);
+}
+
 const carried = [];
+const skipped = [];
 for (const pr of group) {
-  git(['fetch', '--quiet', 'origin', pr.headRefName], { cwd: root });
+  // A member can MERGE while this runs, and `delete_branch_on_merge` then deletes its branch, so this
+  // fetch fails for a branch that existed seconds ago. That is not the question: the commit is usually
+  // still here from the classification pass, and if we HAVE the object the merge is as correct as it
+  // ever was. So the fetch is allowed to fail and the OBJECT is what decides.
+  git(['fetch', '--quiet', 'origin', pr.headRefName], { cwd: root, allowFail: true });
+  if (git(['cat-file', '-e', `${pr.headRefOid}^{commit}`], { cwd: root, allowFail: true }) === null) {
+    skipped.push(pr.number);
+    console.log(`[rollup] #${pr.number} skipped — its branch and its commit are both gone, which is what merging mid-build looks like.`);
+    continue;
+  }
   const merged = git(['merge', '--no-edit', '-m', `rollup: #${pr.number} — ${pr.title}`, pr.headRefOid], { cwd: root, allowFail: true });
   if (merged === null) {
     // Disjoint file sets should make this impossible; if it happens, the measurement was wrong and
     // the safe move is to stop with the tree clean rather than resolve a conflict nobody asked for.
-    git(['merge', '--abort'], { cwd: root, allowFail: true });
-    console.error(`[rollup] #${pr.number} would not merge cleanly despite disjoint files — stopping, nothing pushed.`);
-    console.error('[rollup] Merge that one on its own and re-run.');
-    process.exit(1);
+    abandon([
+      `#${pr.number} would not merge cleanly despite disjoint files.`,
+      'Merge that one on its own and re-run.',
+    ]);
   }
   carried.push(pr);
 }
+
+const verdict = rollupBuildVerdict({ carried: carried.length, skipped });
+if (verdict.kind === 'abandon') abandon([verdict.why]);
 
 git(['push', '--quiet', '--set-upstream', 'origin', branch], { cwd: root });
 
 const body = [
   'Rolls up several open pull requests into ONE merge, so the CI bill is paid once instead of '
-    + `${carried.length} times (about ${saving} billable minutes).`,
+    // Recomputed from what SURVIVED, not from the group we set out with: a member that merged
+    // mid-build is no longer a merge this replaces, and quoting the original figure would
+    // overstate the saving in the one place the owner reads it.
+    + `${carried.length} times (about ${(carried.length - 1) * BILLABLE_MINUTES_PER_MERGE} billable minutes).`,
   '',
   'Each is carried by merging its own head commit, so authorship and history are preserved:',
   '',
