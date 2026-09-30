@@ -160,12 +160,21 @@ export function isLinkableCandidate(candidate: IdentityCandidate): boolean {
   // catch a warehouse whose NAME reads like a shop, so a pharmacy with two codes would otherwise
   // slip through on whichever of them happened to be first. Any code that says warehouse is enough.
   //
-  // A shop with no code at all still reaches the guard with `clientCode` null. That is the
-  // documented, still-correct answer: only the account-level overrides are skipped, and those
-  // belong to the desk that owns the code.
+  // 🔴 EACH HALF GOES IN ITS OWN PARAMETER — `(name, clientCode, distributorCode)`. #4978 passed
+  //    `(name, null, pair.code)`, putting the CUSTOMER code where the DISTRIBUTOR belongs and
+  //    leaving `clientCode` empty, and that silently disabled both account-level rulings: an owner
+  //    pharmacy-override could never protect a real shop, and `isStoreOverride`, which needs the
+  //    two halves TOGETHER, could never fire. Measured over all 496 named shops on production
+  //    2026-10-01: the corrected order changes exactly one verdict — one marketing venue at
+  //    `386724@IS` is now hard-blocked by the owner's own store ruling — and it refuses NOTHING
+  //    that was being offered, which is the direction that would have mattered.
+  //
+  // A shop with no code at all still reaches the guard with both empty. That is the documented,
+  // still-correct answer: only the account-level overrides are skipped, and those belong to the
+  // desk that owns the code.
   const codes = distributorPairsOf(candidate);
   if (codes.length === 0) return !isCertainWholesalerVenue(candidate.name, null, null);
-  return !codes.some((pair) => isCertainWholesalerVenue(candidate.name, null, pair.code));
+  return !codes.some((pair) => isCertainWholesalerVenue(candidate.name, pair.code, pair.distributorId));
 }
 
 type PairVerdict = { band: EvidenceBand; reason: string } | null;

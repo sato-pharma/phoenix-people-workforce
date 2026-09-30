@@ -144,19 +144,71 @@ async function ireports360Candidates(): Promise<IdentityCandidate[]> {
   }
 }
 
+/**
+ * Every marketing pharmacy's distributor codes, keyed by pharmacy.
+ *
+ * 🔴 THE MASTER-RESOLVED PAIR ONLY — `mapped_distributor_code` and `mapped_customer_code`, never
+ * the raw `distributor_pharmacy_code` the desk typed and never `distributor_id`. Two reasons, both
+ * measured on production 2026-10-01:
+ *
+ *   · The raw code is a DIFFERENT STRING from the resolved one on 33 of the 479 rows — the master
+ *     normalises what a person typed — so keying on it would file those 33 shops under a code no
+ *     other system uses, and they would match nothing.
+ *   · `distributor_id` is a bigint into `marketing_distributors`, the desk's own numbering. The
+ *     direct-order child table speaks `distributor_code` TEXT (`IS-S`, `EP-PHS`). Comparing a
+ *     bigint id with a text code across the two is exactly the cross-vocabulary mistake the
+ *     distributor rule exists to prevent, and it would quietly match nothing at all.
+ *
+ * So an UNRESOLVED code is simply not offered as evidence. That is the conservative reading and
+ * the owner's standing rule behind it: a false positive is worse than a missed catch. It also
+ * matters here because the resolver runs ONCE, at capture, and nothing re-runs it (AGENTS.md §4.1)
+ * — a code entered before the master learned that pharmacy stays unresolved for good, and an
+ * `unresolved` row can carry a signed human verdict in `validation_notes` rather than a gap. This
+ * module reads; it never re-resolves, and it must never be the thing that acts on one of those.
+ *
+ * Coverage that survives that rule, on production: 435 usable rows over 350 of the 388 marketing
+ * pharmacies, at up to FIVE codes each — which is why the pair is a list.
+ */
+async function marketingCodesByPharmacy(): Promise<Map<string, DistributorCodePair[]>> {
+  const rows = await pageActive<{
+    pharmacy_id: string | null;
+    mapped_distributor_code: string | null;
+    mapped_customer_code: string | null;
+  }>(
+    "marketing_pharmacy_distributor_codes",
+    "id, pharmacy_id, mapped_distributor_code, mapped_customer_code",
+  );
+
+  const out = new Map<string, DistributorCodePair[]>();
+  for (const row of rows) {
+    const pharmacyId = text(row.pharmacy_id);
+    const distributorId = text(row.mapped_distributor_code);
+    const code = text(row.mapped_customer_code);
+    if (!pharmacyId || !distributorId || !code) continue;
+    const pairs = out.get(pharmacyId) ?? [];
+    pairs.push({ code, distributorId });
+    out.set(pharmacyId, pairs);
+  }
+  return out;
+}
+
 /** The marketing venue register — pharmacies, with the GPS the desk captured. */
 async function marketingCandidates(): Promise<IdentityCandidate[]> {
-  const rows = await pageActive<{
-    id: string;
-    display_name: string | null;
-    region_name: string | null;
-    captured_latitude: number | null;
-    captured_longitude: number | null;
-  }>("marketing_pharmacies", "id, display_name, region_name, captured_latitude, captured_longitude");
+  const [rows, codes] = await Promise.all([
+    pageActive<{
+      id: string;
+      display_name: string | null;
+      region_name: string | null;
+      captured_latitude: number | null;
+      captured_longitude: number | null;
+    }>("marketing_pharmacies", "id, display_name, region_name, captured_latitude, captured_longitude"),
+    marketingCodesByPharmacy(),
+  ]);
 
   return rows
     .filter((row) => text(row.display_name).length > 0)
     .map((row) => ({
+      distributorPairs: codes.get(String(row.id)) ?? [],
       kind: "pharmacy" as const,
       lat: num(row.captured_latitude),
       lon: num(row.captured_longitude),

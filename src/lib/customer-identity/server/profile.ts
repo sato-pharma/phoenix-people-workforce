@@ -96,13 +96,43 @@ async function readSource(source: IdentitySource, ids: readonly string[]): Promi
   }
 
   if (source === "marketing") {
-    const { data, error } = await admin
-      .from("marketing_pharmacies")
-      .select("id, display_name, region_name, captured_latitude, captured_longitude")
-      .in("id", [...ids]);
+    // The codes live in their own table here too, and only the MASTER-RESOLVED pair is read —
+    // `mapped_*`, never the raw code the desk typed and never the desk's bigint distributor id.
+    // The reasoning and the two measurements behind it are on `marketingCodesByPharmacy` in
+    // ./reads.ts; this is that same rule for one pharmacy at a time, so the 360 view shows exactly
+    // the codes the engine could match on and never one it could not have used.
+    const [{ data, error }, { data: codeRows, error: codeError }] = await Promise.all([
+      admin
+        .from("marketing_pharmacies")
+        .select("id, display_name, region_name, captured_latitude, captured_longitude")
+        .in("id", [...ids]),
+      admin
+        .from("marketing_pharmacy_distributor_codes")
+        .select("pharmacy_id, mapped_distributor_code, mapped_customer_code, active")
+        .in("pharmacy_id", [...ids]),
+    ]);
     if (error) throw new Error(`customer-identity: reading marketing_pharmacies failed — ${error.message}`);
+    if (codeError) {
+      throw new Error(`customer-identity: reading marketing_pharmacy_distributor_codes failed — ${codeError.message}`);
+    }
+
+    const codes = new Map<string, DistributorCodePair[]>();
+    for (const row of (codeRows ?? []) as Row[]) {
+      // A withdrawn code is not evidence. The sweep in reads.ts gets this from `pageActive`; here
+      // the filter has to be written out, because this read is keyed by pharmacy and not by active.
+      if (row.active !== true) continue;
+      const pharmacyId = text(row.pharmacy_id);
+      const distributorId = text(row.mapped_distributor_code);
+      const code = text(row.mapped_customer_code);
+      if (!pharmacyId || !distributorId || !code) continue;
+      const pairs = codes.get(pharmacyId) ?? [];
+      pairs.push({ code, distributorId });
+      codes.set(pharmacyId, pairs);
+    }
+
     for (const row of (data ?? []) as Row[]) {
       out.set(String(row.id), {
+        distributorPairs: codes.get(String(row.id)) ?? [],
         kind: "pharmacy",
         lat: num(row.captured_latitude),
         lon: num(row.captured_longitude),
