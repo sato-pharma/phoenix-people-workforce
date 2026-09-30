@@ -84,6 +84,11 @@ function customer(overrides: Partial<ListCustomer> & { brick?: string | null } =
     sharedWith: null,
     observed: null,
     planPattern: null,
+    // Set before the spread for the same reason as every field above it: `rest` comes from a
+    // Partial, so a field reaching the object only through it is typed `T | undefined` and `tsc`
+    // rejects it against `referenceHistory: VisitHistory | null`. The suite cannot catch this —
+    // `--experimental-strip-types` erases types rather than checking them.
+    referenceHistory: null,
     ...rest,
   };
 }

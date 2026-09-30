@@ -86,6 +86,12 @@ function customer(overrides: Partial<ListCustomer> = {}): ListCustomer {
     sharedWith: null,
     observed: null,
     planPattern: null,
+    // Every field of ListCustomer must be set BEFORE the spread, including the ones a test never
+    // overrides. `overrides` is a Partial, so a field present only through it is typed
+    // `T | undefined` — which `tsc` rejects against `referenceHistory: VisitHistory | null` while
+    // the suite runs perfectly green, because `--experimental-strip-types` erases types instead of
+    // checking them. That is why this reads as a defect nothing local can see.
+    referenceHistory: null,
     ...overrides,
   };
 }
