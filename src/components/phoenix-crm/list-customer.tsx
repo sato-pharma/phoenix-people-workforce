@@ -23,6 +23,7 @@
 import { useState } from "react";
 
 import { crmPost, errorCodeOf, messageOf } from "@/components/phoenix-crm/api";
+import { CustomerPhoneLink } from "@/components/phoenix-crm/customer-phone";
 import { cairoStamp, plural } from "@/components/phoenix-crm/format";
 import {
   customerMetaText,
@@ -107,6 +108,10 @@ export function CustomerScreen({
   const requestChanged = (message: string) => onNotice({ tone: "info", title: message });
   const proposedAdd = waiting.find((request) => request.kind === "add")?.proposedGrade ?? null;
 
+  // His phone as the rep typed it at validation or corrected since (owner, 2026-09-30). A customer not
+  // validated yet has none: the old list's phones are never shown ("only what the rep types").
+  const phoneFact = { label: "Phone", value: customer.phone ? <CustomerPhoneLink phone={customer.phone} /> : "Not given" };
+
   // What each part of the list knows about the customer. A customer who is not validated yet has no
   // place, no validation and no month standing: what he does have is what iReports360 says.
   const facts = pending
@@ -122,6 +127,7 @@ export function CustomerScreen({
           { label: "Validated at the door", value: cairoStamp(customer.statusChangedAt) },
           { label: "Clinics", value: `${customer.places.length} of ${view.rules.placesMax}` },
           { label: "Proposed grade", value: proposedAdd ? `Grade ${proposedAdd}` : "Not asked to add yet" },
+          phoneFact,
         ]
       : archived
         ? [
@@ -129,6 +135,7 @@ export function CustomerScreen({
             { label: "Why", value: customer.droppedReason ?? "Reason not recorded" },
             { label: "Clinics kept", value: String(customer.places.length) },
             { label: "On the list from", value: customer.origin === "reference" ? "The iReports360 list" : "Added in Phoenix" },
+            phoneFact,
           ]
         : [
             { label: "This month", value: monthVisitsText(customer.visitsThisMonth, customer.target) },
@@ -139,6 +146,7 @@ export function CustomerScreen({
             // The district manager's read of the customer's potential: shown, and it changes nothing else.
             ...(customer.potentialGrade ? [{ label: "Potential", value: `${customer.potentialGrade} · shown only` }] : []),
             { label: "On the list from", value: customer.origin === "reference" ? "The iReports360 list" : "Added in Phoenix" },
+            phoneFact,
           ];
 
   return (

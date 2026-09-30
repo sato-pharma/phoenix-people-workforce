@@ -21,6 +21,7 @@
 import { Fragment, useState, type ReactNode } from "react";
 
 import type { CrmResource } from "@/components/phoenix-crm/api";
+import { CustomerPhoneLink } from "@/components/phoenix-crm/customer-phone";
 import { countText, dayLabel, dayLabelLong, dayLabelWithYear, plural } from "@/components/phoenix-crm/format";
 import {
   CrmBlock,
@@ -217,6 +218,8 @@ function CustomerCard({ customer }: { customer: DailyPlanCustomer }) {
             ),
           },
           { label: "Hours that day", value: customer.hoursText },
+          // The rep's own typed phone (owner, 2026-09-30); a customer without one simply has no row.
+          ...(customer.phone ? [{ label: "Phone", value: <CustomerPhoneLink phone={customer.phone} /> }] : []),
         ]}
       />
       {facts.length > 0 || customer.offPlan ? (
@@ -238,6 +241,11 @@ function CustomerRow({ customer }: { customer: DailyPlanCustomer }) {
           {customer.name}
         </p>
         <p className="mt-0.5 text-xs text-slate-500">{customerMeta(customer)}</p>
+        {customer.phone ? (
+          <p className="mt-0.5 text-xs">
+            <CustomerPhoneLink phone={customer.phone} />
+          </p>
+        ) : null}
         {facts.length > 0 ? <p className="mt-0.5 text-xs text-amber-800">{facts.join(" · ")}</p> : null}
       </td>
       <td className={crmTdClassName}>

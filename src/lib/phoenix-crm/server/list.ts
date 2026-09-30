@@ -41,6 +41,7 @@ import {
   DEVICE_CLOCK_TOLERANCE_MINUTES,
   deviceClockSkewMinutes,
   dropReasonLabel,
+  parseCustomerPhone,
   parseDropDraft,
   parseGrade,
   parseNewCustomer,
@@ -277,6 +278,12 @@ export type ListCustomer = {
   waiting: Array<{ requestId: string; kind: PhoenixCrmRequestKind; stage: PhoenixCrmRequestStage | null; stageLabel: string | null }>;
   /** The pharmacy pinned as this doctor's primary, or null. */
   primaryPharmacyName: string | null;
+  /**
+   * His phone as the REP typed it — at validation, or corrected since in "Change the details" (owner,
+   * 2026-09-30). Optional, so null for most. Never iReports360's: the owner chose "only what the rep
+   * types", so the old list's phones are neither copied in nor shown.
+   */
+  phone: string | null;
   /** The pharmacies feedback was taken from for this doctor, primary first, then most recent. */
   pharmacies: CustomerPharmacy[];
 };
@@ -410,7 +417,7 @@ const PLACE_COLUMNS =
   "id, customer_id, label, address, brick_id, brick_name, brick_distance_km, area_code, area_name, region_code, region_name, zone, lat, lon, accuracy_meters, timings, photo_path, captured_at, device_skew_minutes, " +
   "pin_lat, pin_lon, pin_accuracy_meters, photo_lat, photo_lon, photo_accuracy_meters, point_source, moved_at, move_reason";
 const CUSTOMER_COLUMNS =
-  "id, list_type, name, speciality, grade, potential_grade, origin, reference_contact_crm_id, status, validated_at, validated_by_hr_id, dropped_reason, dropped_note, status_changed_at, primary_pharmacy_name";
+  "id, list_type, name, speciality, grade, potential_grade, origin, reference_contact_crm_id, status, validated_at, validated_by_hr_id, dropped_reason, dropped_note, status_changed_at, primary_pharmacy_name, phone";
 
 /**
  * Every customer carried over from the territory's iReports360 list has a row here, pending until the
@@ -875,6 +882,7 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
         stageLabel: request.stageLabel,
       })),
       primaryPharmacyName,
+      phone: text(row.phone),
       pharmacies,
       sharedWith: null,
       observed: null,
@@ -1121,12 +1129,17 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
   const lineCode = lineCodeOf(seat);
   const place = parsePlaceDraft(body.place);
   if (!place.ok) throw validationError(place.error);
+  // Optional, and written in the same save as the validation (owner, 2026-09-30) — never a second
+  // step that could fail after the first one landed.
+  const phone = parseCustomerPhone(body.phone);
+  if (!phone.ok) throw validationError(phone.error);
 
   const payload: Row = {
     seat_id: seat.seatId,
     line_code: lineCode,
     actor_hr_id: viewer.hrId,
     is_test: isTest,
+    phone: phone.value,
     // Where a two-step request starts is read from the organogram, never from the phone: a territory
     // with no manager seat above it begins at SFE, as an off-plan visit's approval does.
     first_stage: firstRequestStage(territoryReviewer(viewer.org, seat.seatId) !== null),
@@ -1248,22 +1261,28 @@ async function notifyRequestRaised(
 }
 
 /**
- * The customer's name and speciality, changed later.
+ * The customer's name, speciality and phone, changed later.
  *
  * Owner, 2026-09-22: validating is the three captures and nothing else — "later can change his name,
  * can change his grade". The grade keeps its proposal flow (the district manager decides it, because it
  * sets the rep's own target); the name and speciality are the rep's own to correct. The territory's rep
  * only, and never on a customer that has left the list.
+ *
+ * Owner, 2026-09-30: the phone is corrected here too ("Yes, in Change the details"). It moves only when
+ * the body carries the key — sent empty it clears the phone — so a caller one release behind, which
+ * never sends it, leaves the phone exactly as it was.
  */
 export async function renameCustomer(
   viewer: PhoenixCrmViewer,
   raw: unknown,
-): Promise<{ customerId: string; customerName: string; speciality: string | null }> {
+): Promise<{ customerId: string; customerName: string; speciality: string | null; phone: string | null }> {
   const body = record(raw);
   const { seat, isTest } = territoryForRepWrite(viewer, body.seatId, readTestFlag(body.test));
   if (!isUuid(body.customerId)) throw validationError("Choose the customer to change.");
   const name = cleanText(body.name, CUSTOMER_NAME_MAX);
   if (!name || name.length < 3) throw validationError("Write the customer's full name.");
+  const phone = Object.prototype.hasOwnProperty.call(body, "phone") ? parseCustomerPhone(body.phone) : null;
+  if (phone && !phone.ok) throw validationError(phone.error);
   const result = await callPhoenixCrm<Row>("phoenix_crm_rename_customer", {
     p: {
       seat_id: seat.seatId,
@@ -1273,9 +1292,15 @@ export async function renameCustomer(
       name,
       speciality: cleanText(body.speciality, 80),
       allow_same_name: body.allowSameName === true,
+      ...(phone?.ok ? { phone: phone.value } : {}),
     },
   });
-  return { customerId: String(result.customer_id), customerName: String(result.customer_name), speciality: text(result.speciality) };
+  return {
+    customerId: String(result.customer_id),
+    customerName: String(result.customer_name),
+    speciality: text(result.speciality),
+    phone: text(result.phone),
+  };
 }
 
 /**

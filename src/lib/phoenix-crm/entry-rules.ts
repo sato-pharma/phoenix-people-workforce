@@ -266,6 +266,40 @@ export function parseNewCustomer(raw: unknown): EntryRuleResult<NewCustomerDraft
   return { ok: true, value: { ...base.value, proposedGrade } };
 }
 
+// ── The customer's phone (owner, 2026-09-30) ────────────────────────────────────────────────────
+
+/** A phone once cleaned: an optional "+", then 7 to 15 digits. The database checks the same shape. */
+export const CUSTOMER_PHONE_PATTERN = /^\+?[0-9]{7,15}$/;
+/** What the box accepts while he types — room for the spaces and dashes people write a number with. */
+export const CUSTOMER_PHONE_INPUT_MAX = 24;
+export const CUSTOMER_PHONE_ERROR = "Write the phone as digits — 7 to 15 of them — or leave it empty.";
+
+const ARABIC_INDIC_DIGITS = "٠١٢٣٤٥٦٧٨٩";
+const PERSIAN_DIGITS = "۰۱۲۳۴۵۶۷۸۹";
+
+/**
+ * The customer's phone as the rep typed it (owner, 2026-09-30: "Add a phone to validation" — optional,
+ * corrected later in "Change the details", and ONLY what the rep types: the old list's phones are never
+ * used). An Arabic keyboard types ٠١٠… — the same digits. Spaces, dashes, dots and brackets are how a
+ * number is written, not part of it, and the invisible direction marks an Arabic screen adds on a copy
+ * are dropped with them; "00" before a country code is the "+" it stands for. Empty is no phone at all,
+ * never a refusal: it is optional.
+ */
+export function parseCustomerPhone(value: unknown): EntryRuleResult<string | null> {
+  if (value === undefined || value === null) return { ok: true, value: null };
+  if (typeof value !== "string") return { ok: false, error: CUSTOMER_PHONE_ERROR };
+  let digits = "";
+  for (const char of value) {
+    const arabic = ARABIC_INDIC_DIGITS.indexOf(char);
+    const persian = PERSIAN_DIGITS.indexOf(char);
+    digits += arabic >= 0 ? String(arabic) : persian >= 0 ? String(persian) : char;
+  }
+  let phone = digits.replace(/[\s\-.()‎‏؜]/g, "");
+  if (phone === "") return { ok: true, value: null };
+  if (phone.startsWith("00")) phone = `+${phone.slice(2)}`;
+  return CUSTOMER_PHONE_PATTERN.test(phone) ? { ok: true, value: phone } : { ok: false, error: CUSTOMER_PHONE_ERROR };
+}
+
 export type DropDraft = { reason: DropReason; note: string | null };
 
 export function parseDropDraft(raw: unknown): EntryRuleResult<DropDraft> {

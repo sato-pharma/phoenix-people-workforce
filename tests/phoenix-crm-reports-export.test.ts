@@ -194,6 +194,7 @@ function dailyPlanView(patch: Partial<NonNullable<ReportsPackInput["dailyPlan"]>
     speciality: "Paediatrics",
     pending: false,
     stale: false,
+    phone: "01012345678" as string | null,
     placeLabel: "Al Shifa Clinic",
     brick: "Shebin 3",
     area: "Menoufia 2",
@@ -223,7 +224,7 @@ function dailyPlanView(patch: Partial<NonNullable<ReportsPackInput["dailyPlan"]>
     includeTest: false,
     territory: { seatId: "SEAT-1", name: "Menoufia 2 · Anti Infective", lineName: "Anti Infective", repName: "Aya Ibrahim" },
     days: [
-      { ...day, date: "2026-09-28", am: [{ ...customer, customerId: "C-2", name: "El Shifa Hospital", status: "not_visited" as const, visitedMinute: null }], pm: [customer] },
+      { ...day, date: "2026-09-28", am: [{ ...customer, customerId: "C-2", name: "El Shifa Hospital", phone: null, status: "not_visited" as const, visitedMinute: null }], pm: [customer] },
       { ...day, date: "2026-09-29", state: "none" as const, startsText: null, am: [], pm: [] },
     ],
     ...patch,
@@ -316,6 +317,11 @@ export async function runPhoenixCrmReportsExportTests(): Promise<void> {
     assert.ok(visited.includes("Monday") && visited.includes("Start AM 11:00 AM · Start PM 5:00 PM"), "carrying his day's weekday and start times");
     const missed = rows.find((cells) => cells.includes("El Shifa Hospital"));
     assert.ok(missed && missed.includes("AM") && missed.includes("Not visited"));
+    // The old report's phone column (owner, 2026-09-30): the rep's typed phone, "—" until he gives one.
+    const phoneAt = headers.indexOf("Phone");
+    assert.ok(phoneAt > headers.indexOf("Customer"), "the sheet has a Phone column, after the customer");
+    assert.equal(visited[phoneAt], "01012345678", "carrying the phone the rep gave him");
+    assert.equal(missed[phoneAt], "—", "and a dash for one who has none yet, never a blank that reads as a lost cell");
     assert.ok(rows.some((cells) => cells.includes("2026-09-29") && cells.includes("No plan for this week")), "a day with nobody on it keeps a row, so the gap shows");
     assert.equal(
       rows.some((cells) => cells.some((cell) => /^(All|Total)\b/i.test(cell))),

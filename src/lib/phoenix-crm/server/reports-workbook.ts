@@ -235,7 +235,7 @@ function writeDailyPlan(workbook: ExcelJS.Workbook, view: DailyPlanReportView): 
       ...day.pm.map((customer): [string, DailyPlanCustomer] => ["PM", customer]),
     ];
     if (customers.length === 0) {
-      rows.push([...dayCells, "—", day.state === "none" ? "No plan for this week" : "Nothing planned", "", "", "", "", "", "", "", ""]);
+      rows.push([...dayCells, "—", day.state === "none" ? "No plan for this week" : "Nothing planned", "", "", "", "", "", "", "", "", ""]);
       continue;
     }
     for (const [listType, customer] of customers) {
@@ -245,6 +245,8 @@ function writeDailyPlan(workbook: ExcelJS.Workbook, view: DailyPlanReportView): 
         customer.name,
         customer.grade ?? "—",
         customer.speciality ?? "—",
+        // The rep's own typed phone (owner, 2026-09-30); "—" until he gives one.
+        customer.phone ?? "—",
         customer.brick ?? "—",
         customer.area ?? "—",
         [customer.placeLabel, customer.address].filter((part): part is string => Boolean(part)).join(" · ") || "—",
@@ -265,6 +267,7 @@ function writeDailyPlan(workbook: ExcelJS.Workbook, view: DailyPlanReportView): 
       { ...NAME, label: "Customer", width: 28 },
       column("Grade", { width: 7 }),
       column("Speciality", { width: 18 }),
+      column("Phone", { width: 15 }),
       column("Brick", { width: 16 }),
       column("Area", { width: 16 }),
       column("Address", { width: 32 }),

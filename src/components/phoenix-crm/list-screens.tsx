@@ -31,6 +31,7 @@ import type { ReactNode } from "react";
 import { useState } from "react";
 
 import { crmGet, crmPost, crmUrl, errorCodeOf, messageOf } from "@/components/phoenix-crm/api";
+import { CustomerPhoneField } from "@/components/phoenix-crm/customer-phone";
 import { cairoStamp, dayLabelWithYear, plural } from "@/components/phoenix-crm/format";
 import {
   customerMetaText,
@@ -68,7 +69,7 @@ import {
   crmTextareaClassName,
   type NoteTone,
 } from "@/components/phoenix-crm/ui";
-import { CUSTOMER_NAME_MAX, DROP_REASON_MAX, DROP_REASONS, type DropReason } from "@/lib/phoenix-crm/entry-rules";
+import { CUSTOMER_NAME_MAX, DROP_REASON_MAX, DROP_REASONS, parseCustomerPhone, type DropReason } from "@/lib/phoenix-crm/entry-rules";
 import { listMovesFor, type ListMove } from "@/lib/phoenix-crm/list-request-rules";
 import { receivingDaysLabel } from "@/lib/phoenix-crm/timings";
 import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmRequestKind } from "@/lib/phoenix-crm/types";
@@ -400,6 +401,8 @@ export function ValidateScreen({
   const [listType, setListType] = useState<PhoenixCrmListType | null>(null);
   const [name, setName] = useState("");
   const [speciality, setSpeciality] = useState("");
+  // Optional, and saved with the validation itself (owner, 2026-09-30).
+  const [phone, setPhone] = useState("");
   const [grade, setGrade] = useState<PhoenixCrmGrade | null>(null);
   const [sameName, setSameName] = useState<ListCustomer[] | null>(null);
   const [saving, setSaving] = useState(false);
@@ -435,18 +438,22 @@ export function ValidateScreen({
       if (cleanName.length < 3) return "Write the customer's full name.";
       if (!grade) return "Propose a grade (A, B or C).";
     }
+    const phoneCheck = parseCustomerPhone(phone);
+    if (!phoneCheck.ok) return phoneCheck.error;
     return placeDraftProblem(draft, { needsPhoto: true });
   }
 
   function payloadFor(photo: CapturedPhoto, allowSameName: boolean): Record<string, unknown> {
     const place = placePayload(photo, draft);
-    if (subject.mode === "reference") return { seatId, test, mode: "reference", referenceContactCrmId: subject.contactCrmId, place };
+    const phoneValue = phone.trim() || null;
+    if (subject.mode === "reference") return { seatId, test, mode: "reference", referenceContactCrmId: subject.contactCrmId, phone: phoneValue, place };
     return {
       seatId,
       test,
       mode: "new",
       customer: { listType, name: cleanName, speciality: normalizedName(speciality) || null, proposedGrade: grade },
       allowSameName,
+      phone: phoneValue,
       place,
     };
   }
@@ -541,6 +548,18 @@ export function ValidateScreen({
             the location and the days and hours become this customer&apos;s real record, and its visits start counting. You validate a customer
             once.
           </p>
+          {/* Owner, 2026-09-30: the phone is asked for here, optional, and saved with the validation. */}
+          <CustomerPhoneField
+            className="mt-3 sm:max-w-sm"
+            disabled={saving}
+            hint="Optional. You can add or change it later from the customer's page."
+            id="phoenix-crm-validate-phone"
+            onChange={(next) => {
+              setPhone(next);
+              setProblem(null);
+            }}
+            value={phone}
+          />
         </CrmBlock>
       ) : null}
 
@@ -595,6 +614,15 @@ export function ValidateScreen({
                 ))}
               </datalist>
             </CrmField>
+            <CustomerPhoneField
+              disabled={saving}
+              id="phoenix-crm-new-phone"
+              onChange={(next) => {
+                setPhone(next);
+                setProblem(null);
+              }}
+              value={phone}
+            />
             <CrmField
               className="sm:col-span-2"
               hint="Your district manager confirms it or changes it, then SFE approves adding the customer to your list."
@@ -1107,12 +1135,14 @@ export function GradeScreen({
 }
 
 /**
- * The customer's name and speciality, corrected later.
+ * The customer's name, speciality and phone, corrected later.
  *
  * Owner, 2026-09-22: "later can change his name, can change his grade". Validating is the captures and
  * nothing else, so the name arrives from iReports360 as it was typed there — often a title, a short
  * form or a misspelling. The grade is not here: it keeps its proposal flow, because it sets the number
  * of visits this customer is owed, and therefore the rep's own target.
+ *
+ * Owner, 2026-09-30: the phone is corrected here too — numbers change. Emptying the box clears it.
  */
 export function EditDetailsScreen({
   customerId,
@@ -1131,6 +1161,7 @@ export function EditDetailsScreen({
   const customer = view.customers.find((entry) => entry.customerId === customerId) ?? null;
   const [name, setName] = useState(customer?.name ?? "");
   const [speciality, setSpeciality] = useState(customer?.speciality ?? "");
+  const [phone, setPhone] = useState(customer?.phone ?? "");
   const [sameName, setSameName] = useState(false);
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -1142,7 +1173,13 @@ export function EditDetailsScreen({
 
   const cleanName = normalizedName(name);
   const cleanSpeciality = normalizedName(speciality);
-  const unchanged = cleanName === customer.name && cleanSpeciality === (customer.speciality ?? "");
+  // Compared the way it is saved, so "010 1234 5678" against a saved 01012345678 is no change at all.
+  const phoneCheck = parseCustomerPhone(phone);
+  const unchanged =
+    cleanName === customer.name &&
+    cleanSpeciality === (customer.speciality ?? "") &&
+    phoneCheck.ok &&
+    phoneCheck.value === (customer.phone ?? null);
 
   async function save(allowSameName: boolean) {
     if (saving || !customer) return;
@@ -1150,8 +1187,12 @@ export function EditDetailsScreen({
       setProblem("Write the customer's full name.");
       return;
     }
+    if (!phoneCheck.ok) {
+      setProblem(phoneCheck.error);
+      return;
+    }
     if (unchanged) {
-      setProblem("Change the name or the speciality first.");
+      setProblem("Change the name, the speciality or the phone first.");
       return;
     }
     setSaving(true);
@@ -1160,7 +1201,16 @@ export function EditDetailsScreen({
     try {
       await crmPost<unknown>(
         "/api/phoenix-crm/list/rename",
-        { seatId, test, customerId: customer.customerId, name: cleanName, speciality: cleanSpeciality || null, allowSameName },
+        {
+          seatId,
+          test,
+          customerId: customer.customerId,
+          name: cleanName,
+          speciality: cleanSpeciality || null,
+          // Always sent from here, so emptying the box clears the phone.
+          phone: phoneCheck.value,
+          allowSameName,
+        },
         "result",
       );
       onDone({ tone: "good", title: `Details changed: ${cleanName}` });
@@ -1185,7 +1235,7 @@ export function EditDetailsScreen({
           <Detail label="On the list from">{customer.origin === "reference" ? "The iReports360 list" : "Added in Phoenix"}</Detail>
         </CustomerHeading>
       </CrmBlock>
-      <CrmBlock className="border-t border-slate-100" title="Name and speciality">
+      <CrmBlock className="border-t border-slate-100" title="Name, speciality and phone">
         <div className="grid min-w-0 gap-3 sm:grid-cols-2">
           <CrmField className="sm:col-span-2" hint="As written on the sign." htmlFor="phoenix-crm-details-name" label="Full name">
             <input
@@ -1222,6 +1272,16 @@ export function EditDetailsScreen({
               ))}
             </datalist>
           </CrmField>
+          <CustomerPhoneField
+            disabled={saving}
+            hint="Optional. Empty the box to remove it."
+            id="phoenix-crm-details-phone"
+            onChange={(next) => {
+              setPhone(next);
+              setProblem(null);
+            }}
+            value={phone}
+          />
         </div>
         <p className="mt-3 text-sm font-medium leading-6 text-slate-600">
           The grade is not changed here. Propose it from the customer&apos;s page. {deciderText(view)}
