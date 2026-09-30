@@ -134,6 +134,12 @@ export async function loadClosingStoreSplit(
   const trimmedPeriod = String(period ?? "").trim();
   if (!isStoreCitySplitActive(trimmedPeriod)) return emptySplit();
   if (!trimmedLine || !isSplitEligibleLine(trimmedLine)) return emptySplit();
+  // 🔴 A PUBLISHED month is FROZEN — the tab AND the export read the frozen net, not a live recompute
+  // that drifted after publish. See loadFrozenStoreSplitIfPublished. Unpublished months fall through
+  // to the live cache below, unchanged. Gated HERE (the one loader both surfaces read) rather than in
+  // each caller, so the Closing tab, its reconciliation and the downloaded workbook cannot disagree.
+  const frozen = await loadFrozenStoreSplitIfPublished(trimmedLine, trimmedPeriod);
+  if (frozen) return frozen;
   const cached = await loadClosingStoreSplitCached(trimmedLine, trimmedPeriod);
   return {
     exemptStoreValueByBrick: new Map(cached.exempt),
@@ -164,10 +170,10 @@ export async function loadClosingStoreSplit(
  * empty map would wrongly zero the split on the tab. An UNPUBLISHED month also returns null and
  * recomputes live, exactly as before.
  */
-async function loadFrozenStoreSplitNetIfPublished(
+async function loadFrozenStoreSplitIfPublished(
   line: string | null | undefined,
   period: string | null | undefined,
-): Promise<Map<string, NetCell> | null> {
+): Promise<ClosingStoreSplit | null> {
   const trimmedLine = String(line ?? "").trim();
   const trimmedPeriod = String(period ?? "").trim();
   if (!trimmedLine || !trimmedPeriod) return null;
@@ -202,7 +208,20 @@ async function loadFrozenStoreSplitNetIfPublished(
   // result means none matched (a line_code space that drifted from resolveTargetLineCode, an empty
   // table) — returning it would make the caller drop the split entirely and show the raw, un-split
   // closing. Fall through to the live recompute instead, which is at worst the pre-fix behaviour.
-  return net.size > 0 ? net : null;
+  if (net.size === 0) return null;
+
+  // Movements SYNTHESIZED to reproduce the frozen net exactly. The export's Channel Breakdown folds
+  // `netByArea` from these movements (store-split-channel-breakdown.ts) while the Matrix uses `net`,
+  // so the two sheets must describe the SAME movement or one workbook prints two numbers for an area.
+  // The frozen table stores only the net (no in/out legs), so collapse each cell to a single leg:
+  // netStoreSplitByAreaProduct(these) === net by construction (see synthesizeFrozenMovements). The
+  // per-brick exempt map is not frozen and is not needed by the frozen path — the Matrix and the
+  // area/rep grids read `net`/`movements`, and the brick grid reads its own live figures either way.
+  return {
+    net,
+    movements: synthesizeFrozenMovements(net, trimmedLine),
+    exemptStoreValueByBrick: new Map(),
+  };
 }
 
 /** One row of au.monthly_store_split_net, as the wrapper RPC returns it. */
@@ -244,18 +263,49 @@ export function buildFrozenNetFromRows(
 }
 
 /**
+ * Movements that reproduce a frozen net exactly, so the export's Channel Breakdown (which folds
+ * netByArea from movements) and the Matrix (which reads net) describe the SAME movement.
+ *
+ * The frozen table (au.monthly_store_split_net) stores only the net per area×product — no in/out legs
+ * — so each cell collapses to a single leg: a positive net is all "in", a negative net all "out".
+ * INVARIANT (pinned in closing-frozen-split-net.test.ts): netStoreSplitByAreaProduct(result) === net.
+ * `city` is left blank — the breakdown folds by AREA, not city, and the Matrix write-back reads net,
+ * not movements — and `line` is the exported line. PURE.
+ */
+export function synthesizeFrozenMovements(
+  net: ReadonlyMap<string, NetCell>,
+  line: string,
+): StoreSplitAreaMovement[] {
+  const movements: StoreSplitAreaMovement[] = [];
+  for (const [key, cell] of net) {
+    const sep = key.indexOf("|");
+    const areaCode = sep >= 0 ? key.slice(0, sep) : key;
+    const productCode = sep >= 0 ? key.slice(sep + 1) : "";
+    movements.push({
+      areaCode,
+      city: "",
+      line,
+      productCode,
+      inQty: Math.max(cell.qty, 0),
+      inValue: Math.max(cell.value, 0),
+      outQty: Math.max(-cell.qty, 0),
+      outValue: Math.max(-cell.value, 0),
+    });
+  }
+  return movements;
+}
+
+/**
  * Net store-split movement per area x product. The Closing Matrix write-back's input, and all the
  * on-screen path needs.
  *
- * For a PUBLISHED month this returns the FROZEN net (loadFrozenStoreSplitNetIfPublished) so the
- * Closing tab equals the announced number and the attribution surfaces, never a live recompute that
- * drifted after publish. Unpublished months recompute live.
+ * For a PUBLISHED month loadClosingStoreSplit returns the FROZEN split, so this returns the frozen
+ * net — the Closing tab equals the announced number and the attribution surfaces, never a live
+ * recompute that drifted after publish. Unpublished months recompute live.
  */
 export async function loadClosingStoreSplitNet(
   line: string | null | undefined,
   period: string | null | undefined,
 ): Promise<Map<string, NetCell>> {
-  const frozen = await loadFrozenStoreSplitNetIfPublished(line, period);
-  if (frozen) return frozen;
   return (await loadClosingStoreSplit(line, period)).net;
 }

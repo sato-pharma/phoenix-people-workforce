@@ -2,9 +2,10 @@ import assert from "node:assert/strict";
 
 import {
   buildFrozenNetFromRows,
+  synthesizeFrozenMovements,
   type FrozenNetRow,
 } from "../src/lib/sales/closing-store-split-net.ts";
-import { areaProductKey } from "../src/lib/sales/store-sales-city-split.ts";
+import { areaProductKey, netStoreSplitByAreaProduct } from "../src/lib/sales/store-sales-city-split.ts";
 
 // A PUBLISHED month is frozen (owner, 2026-09-27; 2026-09-30 "show the frozen published number").
 // The attribution engine already reads the frozen au.monthly_store_split_net, but the Closing tab
@@ -73,5 +74,28 @@ export function runClosingFrozenSplitNetTests() {
     ];
     const net = buildFrozenNetFromRows(rows, "anti_infective", "2026-08", () => null);
     assert.equal(net.get(key("D13", "ZZ999"))?.value, 0, "no price -> value 0, never NaN");
+  }
+
+  // 6. SYNTHESIZED MOVEMENTS REPRODUCE THE NET EXACTLY. The export's Channel Breakdown folds
+  //    netByArea from movements while the Matrix reads net — they must describe the SAME movement, so
+  //    netStoreSplitByAreaProduct(synthesized) must round-trip back to the frozen net.
+  {
+    const net = new Map([
+      [key("D13", "SA001"), { qty: 135, value: 15005.25 }], // a receiver
+      [key("D12", "SA001"), { qty: -135, value: -15005.25 }], // a giver (net negative)
+    ]);
+    const movements = synthesizeFrozenMovements(net, "Anti Infective");
+    const refolded = netStoreSplitByAreaProduct(movements);
+    for (const [k, cell] of net) {
+      assert.ok(Math.abs((refolded.get(k)?.qty ?? 0) - cell.qty) < 1e-9, `qty round-trips for ${k}`);
+      assert.ok(Math.abs((refolded.get(k)?.value ?? 0) - cell.value) < 1e-6, `value round-trips for ${k}`);
+    }
+    const receiver = movements.find((m) => m.areaCode === "D13");
+    assert.equal(receiver?.inQty, 135, "a positive net collapses to an IN leg");
+    assert.equal(receiver?.outQty, 0);
+    const giver = movements.find((m) => m.areaCode === "D12");
+    assert.equal(giver?.outQty, 135, "a negative net collapses to an OUT leg");
+    assert.equal(giver?.inQty, 0);
+    assert.equal(giver?.line, "Anti Infective", "movements carry the exported line");
   }
 }
