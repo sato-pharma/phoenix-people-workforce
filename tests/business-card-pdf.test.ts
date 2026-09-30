@@ -29,7 +29,14 @@ export function runBusinessCardPdfTests() {
 
   // ── The page SHOWS the card (front and back) and offers a printable-PDF download ────────────────
   assert.match(component, /\/api\/business-cards\/mine/, "the component renders via the own-card PDF endpoint");
-  assert.match(component, /<iframe/, "the real card is embedded and shown, not a hand-drawn HTML stand-in");
+  // The card is drawn onto <canvas> via pdf.js, NEVER an <iframe>/<embed> PDF — those obey the
+  // browser's "download PDFs instead of opening them" setting and force a download instead of showing
+  // the card (and mobile browsers cannot render a PDF iframe inline at all).
+  assert.doesNotMatch(component, /<iframe/, "the card must not be shown through a PDF <iframe> the browser can force-download");
+  assert.match(component, /\/pdfjs\/pdf\.min\.mjs/, "pdf.js is loaded from the same-origin static assets");
+  assert.match(component, /getDocument\(\{ data: bytes/, "the fetched PDF bytes are decoded by pdf.js");
+  assert.match(component, /document\.createElement\("canvas"\)/, "each page is drawn onto a canvas");
+  assert.match(component, /page\.render\(\{ canvas, viewport \}\)/, "the page is rendered onto the canvas");
   assert.match(component, /front and back/i, "the preview is labelled front and back");
   assert.match(component, /Download printable PDF/, "there is a high-quality printable-PDF download");
   assert.match(
