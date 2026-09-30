@@ -365,6 +365,12 @@ export function PhoenixCrmApp({
     }
   }
   const activeTab: TabKey = tabs.includes(tab) ? tab : (tabs[0] ?? "visits");
+  const seats: Record<SeatTab, string | null> = {
+    today: seatOf(overview, "today", chosenSeat),
+    list: seatOf(overview, "list", chosenSeat),
+    plan: seatOf(overview, "plan", chosenSeat),
+    visits: seatOf(overview, "visits", chosenSeat),
+  };
   // The hand-off that crossed the page boundary, rebuilt from the address. Derived while rendering,
   // never in an effect: the tab below must see it on its FIRST paint or it opens on its own start
   // screen and the rep has to find the customer again.
@@ -376,19 +382,15 @@ export function PhoenixCrmApp({
           customerId: customerParam,
           customerName: customerNameParam ?? "",
           photo: null,
-          validatedAtMs: Date.now(),
+          // No photo on this path, and this only times out a REUSED validation photo — so there is
+          // nothing to age, and calling Date.now() while rendering would break the purity rule.
+          validatedAtMs: 0,
         }
       : null;
   const arrivedValidate: PendingValidate | null =
     single && activeTab === "list" && validateParam && Number.isFinite(Number(validateParam))
       ? { seatId: seats.list ?? "", test, contactCrmId: Number(validateParam), customerName: customerNameParam ?? "" }
       : null;
-  const seats: Record<SeatTab, string | null> = {
-    today: seatOf(overview, "today", chosenSeat),
-    list: seatOf(overview, "list", chosenSeat),
-    plan: seatOf(overview, "plan", chosenSeat),
-    visits: seatOf(overview, "visits", chosenSeat),
-  };
   // The Super Admin's counts are test entries: they show in test mode only.
   const waitingCount = overview.waitingForYou.isTest === test ? overview.waitingForYou.plans + overview.waitingForYou.requests : 0;
   const tabId = (key: TabKey) => `${idPrefix}-tab-${key}`;
