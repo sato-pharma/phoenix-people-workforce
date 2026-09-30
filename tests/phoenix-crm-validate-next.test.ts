@@ -11,6 +11,7 @@ import {
 } from "../src/lib/phoenix-crm/validate-next.ts";
 import type { ListCustomer, ListCustomerReference } from "../src/lib/phoenix-crm/server/list.ts";
 import { stripComments } from "./support/comment-strip.ts";
+import { listCustomer } from "./support/phoenix-crm-list-customer.ts";
 
 /**
  * Phoenix CRM — "Validate next", the List tab's answer to "which customer is worth my next stop?"
@@ -52,46 +53,18 @@ function customer(overrides: Partial<ListCustomer> & { brick?: string | null } =
   const reference: ListCustomerReference =
     brick === undefined || brick === null ? BLANK_REFERENCE : { ...BLANK_REFERENCE, brickId: `BR-${brick}`, brickName: brick, areaName: "Area" };
   nextContact += 1;
-  return {
+  // The full field list lives in ONE place now (tests/support/phoenix-crm-list-customer.ts). Only the
+  // fields this file actually cares about are stated here; the rest come from the shared base, so
+  // widening `ListCustomer` breaks that annotated literal by name rather than this call site.
+  return listCustomer({
     customerId: `id-${name}`,
-    listType: "PM",
     name,
-    speciality: null,
-    grade: null,
-    origin: "reference",
     referenceContactCrmId: nextContact,
     status: "pending",
     section: "to_validate",
-    potentialGrade: null,
-    validatedAt: null,
-    validatedByName: null,
     reference,
-    droppedReason: null,
-    droppedNote: null,
-    statusChangedAt: "2026-09-01T00:00:00Z",
-    places: [],
-    visitsThisMonth: 0,
-    target: null,
-    tier: 0,
-    pendingGradeRequestId: null,
-    pendingGrade: null,
-    // 🔴 EVERY field of ListCustomer must be listed here, even the ones this fixture does not
-    // care about: the trailing `...overrides` is a Partial, so its type carries `| undefined`, and a
-    // field supplied ONLY by the spread makes the whole object stop being assignable. Three rounds of
-    // red CI in one afternoon (sharedWith + observed, then planPattern, then referenceHistory) were
-    // each this and nothing else. Widening ListCustomer? Add the field here in the same change.
-    pendingDropRequestId: null,
-    waiting: [],
-    primaryPharmacyName: null,
-    pharmacies: [],
-    // Added 2026-09-30 with the List's Reps-List look: another rep's copy of this customer, and
-    // where the reps have actually stood. Both null here — this fixture is one rep's own row.
-    sharedWith: null,
-    observed: null,
-    planPattern: null,
-    referenceHistory: null,
     ...rest,
-  };
+  });
 }
 
 const names = (picks: ReadonlyArray<{ customer: ListCustomer }>) => picks.map((pick) => pick.customer.name);
