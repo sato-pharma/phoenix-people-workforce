@@ -156,6 +156,8 @@ status, give it its own line.
 - **A keyword scan over source text matches a COMMENT exactly as it matches a call — read the imports before reporting what a generator reads.** — `regen-readslivedata-flag-matches-a-comment-not-a-call` **(inline — load-bearing)**
 - **Auto mode refuses an `Edit` to `settings.json` as `[Self-Modification]`; his instruction clears it, his own grant does not.** — `automode-allow-cannot-authorize-editing-the-permission-config` **(inline — load-bearing)**
 - **"Never close the dev" is SCOPED, not repealed — one YOUR session started is yours to stop; `TaskStop` frees no memory, and a compile's first RAM reading lies.** — `i-may-stop-a-dev-server-i-started-myself` **(inline — load-bearing)**
+- **Reading a property the type does not have is `undefined`, not an error — so `if (obj.wrongName && …)` is a dead branch that logs nothing and looks exactly like "there is no data".** — `a-field-that-does-not-exist-is-a-silently-dead-branch` **(inline — load-bearing)**
+- **A query that finds disagreements by filtering `a is distinct from b` cannot see the rows that AGREE, so a partial split reads as a simple fixable one — re-read the whole set for the entity before proposing a repair.** — `a-mismatch-query-hides-the-row-that-matches` **(inline — load-bearing)**
 
 ## 2.2 The memory index
 
@@ -225,6 +227,7 @@ status, give it its own line.
 - **THE CALL RATE'S LEAVER AND WINDOW RULINGS ARE DECIDED, not defects** (owner chose B2/C1/D2): a leaver or new hire is divided by the WHOLE month's working days, a resigned rep DROPS OUT the moment HR marks him, and every call rate scores through YESTERDAY — the rate only. — `reps-list-rulings-b2-c1-d2-leavers-keep-whole-month` **(inline — load-bearing)**
 - **THE 06:55 CRM DAILY DIGEST IS LIVE AGAIN — never delete its schedule** (refused 2026-09-27, restored 2026-09-28: "i want it in app or telegram only"). A declaration and its cron job move in one sitting, and a restored one also carries `watchingSince`. — `the-0655-crm-digest-is-refused-never-schedule-it` **(inline — load-bearing)**
 - ⏸️ **MANAGED GOOGLE PLAY REACHES NO REP TABLET — the upload is dropped** (owner 2026-09-28; dormant under `the-mobile-app-is-frozen-until-he-lifts-it`). The enterprise has zero enrolled devices; the tablets are on Headwind, which installs an APK it hosts. The fleet artifact is `eas.json`'s `mdm` profile, never the store `.aab`. — `managed-play-cannot-reach-the-rep-tablets` **(inline — load-bearing)**
+- **THE NDA STAYS HAND-STAMPED — never give the confidentiality undertaking a digital stamp or signature** (owner 2026-09-29); its 12mm cells have no room for a 34mm seal at any height, on a paper that prints two copies. — `the-nda-stays-hand-stamped-it-has-no-room-for-a-seal` **(inline — load-bearing)**
 
 ## 4.1 Marketing customer, venue and licence validation
 
@@ -237,6 +240,8 @@ status, give it its own line.
 - **The badge read a FROZEN note, never the live evidence** — `marketing-badge-read-a-frozen-note-not-the-live-evidence`
 - **A duplicate merge STRANDS the desk validation on the retired row.** — `a-duplicate-merge-strands-the-desk-validation-on-the-retired-row`
 - **The screen that SHOWS a badge is not the screen a rep can OPEN.** — `the-screen-that-shows-a-badge-is-not-the-screen-a-rep-can-open`
+- **A CROSS-GOVERNORATE DISTRIBUTOR CODE IS A TYPO, NOT A REP GAMING YOU — measure the distance first** (he asked it directly, 2026-09-29). Across all 127 validated links carrying GPS on both sides: median 23 m, max 1,069 m, nothing over 2 km, and both real incidents were 18 m and 59 m from the doctor. — `a-wrong-distributor-code-is-a-typo-not-a-rep-gaming-you` **(inline — load-bearing)**
+- **`phx_resolve_marketing_pharmacy_codes` RUNS ONCE, AT CAPTURE, and nothing re-runs it** — a code entered before the sales master learned its pharmacy reads `unresolved` for good, so any "untraceable codes" count is inflated; never re-resolve in bulk, and read `validation_notes` first because `unresolved` can be a signed human verdict. — `the-marketing-code-resolver-never-re-runs` **(inline — load-bearing)**
 
 ## 6. Approval rules and git hygiene
 
