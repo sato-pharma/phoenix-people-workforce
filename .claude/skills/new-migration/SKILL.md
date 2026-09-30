@@ -138,9 +138,11 @@ through PostgREST, not 42P01.
 ## Phase 8 — commit, push, open the pull request
 
 Automatic, no approval needed: branch first, stage only the migration and the files that belong to
-it, conventional message (`feat(db): …` / `fix(db): …`). The required checks are `validate`, `checks`,
-`mobile` and `secret-scan` — read them live from branch protection rather than from this line, which
-has been wrong twice. **Merging needs the owner's separate approval** — never `gh pr merge --auto`.
+it, conventional message (`feat(db): …` / `fix(db): …`). The required checks are `validate` and
+`checks` — read them live from branch protection rather than from this line, which has been wrong
+three times. `secret-scan` is not among them and does not run on a pull request at all (off
+`pull_request` since 2026-09-29), so do not wait for it.
+**Merging needs the owner's separate approval** — never `gh pr merge --auto`.
 
 Remember that CI is grading the file, not the database. A green pull request on a migration that
 was never applied is green about nothing.
