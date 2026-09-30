@@ -41,6 +41,8 @@ const place = (over: Partial<ListRowFactsInput["places"][number]> = {}) => ({
   areaName: null,
   brickName: null,
   label: null,
+  lat: 30.5667,
+  lon: 30.9833,
   zone: null,
   ...over,
 });
@@ -102,7 +104,8 @@ export function runPhoenixCrmListRowFactsTests() {
   // ── The placeholder: never a blank cell, and it names what fills it ──────────────────────────────
   {
     const empty = listRowFacts(bare);
-    for (const [field, fact] of Object.entries(empty)) {
+    for (const field of ["address", "brick", "area", "speciality", "grade"] as const) {
+      const fact = empty[field];
       assert.notEqual(fact.text.trim(), "", `${field}: a List row never prints an empty cell`);
       assert.doesNotMatch(fact.text, /missing|blocked|cannot|must|unknown|n\/a|—/i, `${field}: "${fact.text}" — a placeholder is an invitation, never a complaint`);
     }
@@ -131,6 +134,45 @@ export function runPhoenixCrmListRowFactsTests() {
     const outside = listRowFacts({ ...bare, places: [place({ brickName: "باجور" })] });
     assert.equal(outside.brick.text, "باجور", "his capture still wins");
     assert.equal(outside.address.text, FILLED_BY_VALIDATING, "and the stamp, not the place, chooses the placeholder");
+  }
+
+  // ── 🔴 THE FULL ADDRESS IS CLICKABLE (owner, 2026-09-30) ────────────────────────────────────────
+  //
+  // "You were writing the FULL address and the full address was CLICKABLE." A captured place has an
+  // exact point, so it opens a PIN; an address with only words behind it opens a SEARCH, qualified by
+  // its locality because a bare Egyptian street name resolves almost anywhere and a rep who drives to
+  // the wrong governorate has been actively misled.
+  {
+    const pinned = listRowFacts({ ...bare, places: [place({ address: "12 Gomhoreya St" })], validatedAt: "2026-09-30T08:00:00Z" });
+    assert.match(pinned.mapsHref ?? "", /query=30\.5667%2C30\.9833/, "a captured place opens a pin on its own point");
+
+    const searched = listRowFacts({ ...bare, reference: reference({ address: "9 Nile St", city: "Giza" }) });
+    assert.match(searched.mapsHref ?? "", /^https:\/\/www\.google\.com\/maps\/search\/\?api=1&query=/);
+    assert.match(searched.mapsHref ?? "", /Giza/, "the locality qualifies the search, or the street resolves anywhere");
+
+    // 🔴 A PLACEHOLDER IS NEVER A LINK — there is nothing to drive to, and a search on the words
+    //    "Set when you validate" would send him to the middle of nowhere.
+    assert.equal(listRowFacts(bare).mapsHref, null);
+    assert.equal(listRowFacts({ ...bare, validatedAt: "2026-09-30T08:00:00Z" }).mapsHref, null);
+
+    // The POINT wins for the link even when the WORDS came from the vendor: an exact fix beats a
+    // text search every time.
+    const mixed = listRowFacts({
+      ...bare,
+      places: [place({ brickName: "باجور" })],
+      reference: reference({ address: "9 Nile St" }),
+      validatedAt: "2026-09-30T08:00:00Z",
+    });
+    assert.equal(mixed.address.text, "9 Nile St");
+    assert.match(mixed.mapsHref ?? "", /query=30\.5667%2C30\.9833/, "the captured point still pins it");
+
+    // The FULL address, not a fragment: the resolved street comes FIRST, ahead of a landmark label.
+    const full = listRowFacts({
+      ...bare,
+      places: [place({ address: "6 El-Nour, Sheraton Al Matar, El Nozha, Cairo", label: "behind the mosque" })],
+      validatedAt: "2026-09-30T08:00:00Z",
+    });
+    assert.equal(full.address.text, "6 El-Nour, Sheraton Al Matar, El Nozha, Cairo", "the long drivable address, not the landmark");
   }
 
   // ── The ink ─────────────────────────────────────────────────────────────────────────────────────

@@ -25,6 +25,12 @@
  */
 
 import { loadBrickCentroids, loadBrickNames, resolveBrickForPoint } from "@/lib/crm/brick-geo";
+// The iReports360 mirror, reached from inside this walled module exactly as brick-from-coordinates
+// is: the sharing question can only be answered against the WHOLE company's contact roster, which
+// Phoenix CRM's own tables do not hold.
+import type { SharedWith } from "@/lib/crm/location-confidence";
+import { loadSharedCustomersFor } from "@/lib/crm/shared-customers";
+import { logError } from "@/lib/observability/log";
 import { resolveEvidenceLocation } from "@/lib/evidence/location-service";
 import { notFoundError, validationError } from "@/lib/http/api-errors";
 import { monthStartOf, nextRamadan } from "@/lib/phoenix-crm/calendar";
@@ -230,6 +236,16 @@ export type ListCustomer = {
   visitsThisMonth: number;
   target: number | null;
   tier: CoverageTier;
+  /**
+   * 🔴 ANOTHER REP CARRIES THIS CUSTOMER TOO (owner, 2026-09-30: "if a doctor is shared between this
+   * rep and another rep, it was highlighted"). Null for the overwhelming majority.
+   *
+   * An INFERENCE, not a record: iReports360 gives every rep their own row for one doctor, so the
+   * match is worked out from the name and the pin, or from a shared phone. The basis is printed
+   * beside the highlight so a reader who disagrees can overrule it, and nothing is ever merged — a
+   * two-line customer is a treasure, never a duplicate to tidy away.
+   */
+  sharedWith: SharedWith[] | null;
   pendingGradeRequestId: string | null;
   pendingGrade: PhoenixCrmGrade | null;
   pendingDropRequestId: string | null;
@@ -821,9 +837,36 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
       })),
       primaryPharmacyName,
       pharmacies,
+      sharedWith: null,
     };
   });
   listCustomers.sort((left, right) => left.listType.localeCompare(right.listType) || left.name.localeCompare(right.name));
+
+  // 🔴 WHO ELSE CARRIES THESE CUSTOMERS (owner, 2026-09-30: "if a doctor is shared between this rep
+  // and another rep, it was highlighted"). Answered against the iReports360 roster, because only a
+  // company-wide read can see the other rep's row — Phoenix CRM's own tables hold one territory.
+  //
+  // It NEVER takes the List down with it. A vacant territory has no rep to compare against, a test
+  // world has no iReports360 rows at all, and the mirror can be missing entirely on a fresh
+  // environment; every one of those is an ordinary answer of "nobody", not a failure to report. A
+  // highlight is a nicety; the list itself is the page.
+  const sharedKeys = listCustomers
+    .map((customer) => customer.referenceContactCrmId)
+    .filter((id): id is number => typeof id === "number");
+  if (seat.repHrId && sharedKeys.length > 0 && !isTest) {
+    try {
+      const sharedByContact = await loadSharedCustomersFor(sharedKeys, seat.repHrId);
+      for (const customer of listCustomers) {
+        const shared = customer.referenceContactCrmId === null ? null : (sharedByContact.get(customer.referenceContactCrmId) ?? null);
+        customer.sharedWith = shared && shared.length > 0 ? shared : null;
+      }
+    } catch (error) {
+      logError("Phoenix CRM list: the shared-customer check could not run", {
+        error,
+        labels: { event: "phoenix_crm_shared_customers_failed" },
+      });
+    }
+  }
 
   const referenceEntries: ListReferenceEntry[] = reference.map((row) => ({
     contactCrmId: Number(row.contact_crm_id),

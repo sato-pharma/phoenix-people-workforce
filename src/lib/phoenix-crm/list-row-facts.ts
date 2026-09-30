@@ -53,6 +53,9 @@ export type ListRowFactsInput = {
     brickName: string | null;
     areaName: string | null;
     zone: string | null;
+    /** The place's own point. Used ONLY to open a map on it — never to judge the rep. */
+    lat: number;
+    lon: number;
   }>;
   reference: {
     address: string | null;
@@ -69,7 +72,34 @@ export type ListRowFacts = {
   area: ListRowFact;
   speciality: ListRowFact;
   grade: ListRowFact;
+  /**
+   * 🔴 THE ADDRESS IS CLICKABLE, as the old Reps List had it (owner, 2026-09-30: "you were writing
+   * the FULL address and the full address was CLICKABLE"). Null only when there is no address and no
+   * point — a placeholder is never a link.
+   */
+  mapsHref: string | null;
 };
+
+/**
+ * The Google Maps URL for an exact fix — `?api=1&query=lat,lon` drops a pin at the coordinate, which
+ * is the documented cross-platform form: on a phone it hands off to the Maps app, on a desktop it
+ * opens the web map. No key, no embed, no third-party script on the page. Lifted verbatim from the
+ * old board so one address behaves the same in both.
+ */
+function pinHref(lat: number, lon: number): string {
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${lat},${lon}`)}`;
+}
+
+/**
+ * The Maps URL for an address with no fix behind it — a SEARCH, not a pin.
+ *
+ * The locality is appended because a bare Egyptian street name resolves almost anywhere: "برج
+ * الصيرفي" alone is a coin toss between governorates, and a rep who drives to the wrong one has been
+ * actively misled. The old board's reasoning, and it applies to every customer not validated yet.
+ */
+function searchHref(address: string, locality: string | null): string {
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([address, locality].filter(Boolean).join(", "))}`;
+}
 
 /**
  * What an empty field says.
@@ -112,17 +142,30 @@ export function listRowFacts(customer: ListRowFactsInput): ListRowFacts {
   const validated = customer.validatedAt !== null;
   const place = customer.places[0] ?? null;
 
-  // The address the rep can drive to. From the place it is what he called it, then the resolved
-  // street, then the part of town — the same order `placeName` uses, so one place reads the same on
-  // every screen. From the vendor it is `referenceAddressText`'s order, written out rather than
-  // imported because this module stays free of the component layer.
-  const placeAddress = firstText(place?.label, place?.address, place?.zone);
+  // 🔴 THE FULL ADDRESS, NOT A FRAGMENT OF IT (owner, 2026-09-30: "you were writing the full
+  // address"). From the place that is the resolved street FIRST — the long one a rep can actually
+  // drive to — and only then what he called it or its part of town, because a label like "the clinic
+  // behind the mosque" is a landmark, not an address. From the vendor it is the whole record joined,
+  // the order `referenceAddressText` uses, written out rather than imported so this module stays
+  // free of the component layer.
+  const placeAddress = firstText(place?.address, place?.label, place?.zone);
   const referenceAddress = customer.reference
     ? firstText([customer.reference.address, customer.reference.zone, customer.reference.city].filter(Boolean).join(" · "))
     : null;
 
+  const address = resolve(validated, placeAddress, referenceAddress);
+  // The point wins for the link even when the words came from the vendor: a captured place is an
+  // exact fix, and a pin beats a text search every time. Failing that, search on what the row shows,
+  // qualified by its locality so an Egyptian street name cannot resolve into the wrong governorate.
+  const mapsHref = place
+    ? pinHref(place.lat, place.lon)
+    : address.source === "placeholder"
+      ? null
+      : searchHref(address.text, customer.reference?.city ?? customer.reference?.zone ?? null);
+
   return {
-    address: resolve(validated, placeAddress, referenceAddress),
+    address,
+    mapsHref,
     brick: resolve(validated, place?.brickName ?? null, customer.reference?.brickName ?? null),
     area: resolve(validated, place?.areaName ?? null, customer.reference?.areaName ?? null),
     // Speciality and grade are the CRM's own columns — iReports360 seeded them and the rep can
