@@ -52,10 +52,14 @@ export async function POST(request: Request) {
     const fields: BusinessCardFields = { ...own, mobile: clean(body.cardMobile), name };
 
     const pdf = await renderBusinessCardsPdf([fields], { title: `${name} — business card` });
-    return new Response(Buffer.from(pdf), {
+    const pdfBytes = Buffer.from(pdf);
+    // A fixed Content-Length keeps the ~2.7 MB card a single, known-length body rather than a
+    // chunked stream, so the browser (and any proxy) reads to a definite end instead of guessing.
+    return new Response(pdfBytes, {
       headers: {
         "Cache-Control": "no-store, max-age=0",
         "Content-Disposition": `inline; filename="${cardFileName(name, "card")}"`,
+        "Content-Length": String(pdfBytes.byteLength),
         "Content-Type": "application/pdf",
       },
     });

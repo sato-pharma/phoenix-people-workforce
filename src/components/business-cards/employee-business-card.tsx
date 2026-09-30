@@ -77,12 +77,20 @@ export function EmployeeBusinessCard({
 
   const trimmedName = name.trim();
 
+  // Only one preview render is ever in flight. The print-ready card is ~2.7 MB, and a superseded
+  // request — a re-mount, a rapid edit, or the page reloaded while the heavy body is still
+  // arriving — tears the connection down, which the browser reports as "NetworkError when
+  // attempting to fetch resource" and the server logs as "the destination stream closed early".
+  // Aborting the old request before the next one starts keeps that from ever reaching the employee.
+  const previewAbortRef = useRef<AbortController | null>(null);
+
   // Render the caller's own card server-side and hand back the print-ready PDF bytes.
-  const fetchOwnCardPdf = useCallback(async (): Promise<Blob> => {
+  const fetchOwnCardPdf = useCallback(async (signal?: AbortSignal): Promise<Blob> => {
     const response = await fetch("/api/business-cards/mine", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ cardName: name.trim(), cardMobile: mobile.trim() }),
+      signal,
     });
     if (!response.ok) {
       const payload = (await response.json().catch(() => null)) as { message?: string } | null;
@@ -92,18 +100,38 @@ export function EmployeeBusinessCard({
   }, [mobile, name]);
 
   const refreshPreview = useCallback(async () => {
+    // Supersede any preview still arriving, then own the in-flight slot.
+    previewAbortRef.current?.abort();
+    const controller = new AbortController();
+    previewAbortRef.current = controller;
     setGenerating(true);
     setPreviewError(null);
     try {
-      const blob = await fetchOwnCardPdf();
+      let blob: Blob;
+      try {
+        blob = await fetchOwnCardPdf(controller.signal);
+      } catch (first) {
+        // A single network-level drop of the ~2.7 MB body (fetch rejects with a TypeError) gets one
+        // silent retry; an abort or a real HTTP error is passed straight through.
+        if (controller.signal.aborted || !(first instanceof TypeError)) throw first;
+        blob = await fetchOwnCardPdf(controller.signal);
+      }
+      if (controller.signal.aborted) return;
       const url = URL.createObjectURL(blob);
       if (urlRef.current) URL.revokeObjectURL(urlRef.current);
       urlRef.current = url;
       setPdfUrl(url);
     } catch (caught) {
+      // A superseded preview is not a failure — a newer one is already on its way, so it must never
+      // replace the card on screen with a network-error message.
+      if (caught instanceof Error && caught.name === "AbortError") return;
       setPreviewError(caught instanceof Error ? caught.message : "Your card could not be generated.");
     } finally {
-      setGenerating(false);
+      // Only the newest request clears the spinner; an aborted older one leaves that to its successor.
+      if (previewAbortRef.current === controller) {
+        previewAbortRef.current = null;
+        setGenerating(false);
+      }
     }
   }, [fetchOwnCardPdf]);
 
@@ -115,6 +143,7 @@ export function EmployeeBusinessCard({
   }, [refreshPreview]);
 
   useEffect(() => () => {
+    previewAbortRef.current?.abort();
     if (urlRef.current) URL.revokeObjectURL(urlRef.current);
   }, []);
 
@@ -123,6 +152,8 @@ export function EmployeeBusinessCard({
       setPreviewError("Please keep a name on the card before downloading.");
       return;
     }
+    // Don't contend with an in-flight preview for the server or the connection.
+    previewAbortRef.current?.abort();
     setDownloading(true);
     setPreviewError(null);
     try {

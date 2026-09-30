@@ -50,4 +50,16 @@ export function runBusinessCardPdfTests() {
     mineIdx > -1 && hrExportIdx > -1 && mineIdx < hrExportIdx,
     "/api/business-cards/mine must be registered before the HR /api/business-cards export",
   );
+
+  // ── The ~2.7 MB preview is single-flight and abort-safe ─────────────────────────────────────────
+  // A superseded preview (re-mount, rapid edit, or a reload mid-transfer) must be aborted rather
+  // than left to tear its own connection down — which the browser reports as "NetworkError when
+  // attempting to fetch resource" and the server logs as "the destination stream closed early".
+  assert.match(component, /new AbortController\(\)/, "the preview render is abortable");
+  assert.match(component, /previewAbortRef\.current\?\.abort\(\)/, "a new preview aborts the one still in flight");
+  assert.match(component, /signal\?: AbortSignal/, "the fetch takes an abort signal");
+  assert.match(component, /"AbortError"/, "an aborted (superseded) preview is never shown as an error");
+  // A fixed Content-Length makes the large card a single, known-length body rather than a chunked
+  // stream a browser or proxy can cut short.
+  assert.match(route, /"Content-Length": String\(pdfBytes\.byteLength\)/, "the PDF is returned with an explicit Content-Length");
 }
