@@ -2179,6 +2179,7 @@ import { runRailwayDeployConfigTests } from "./railway-deploy-config.test.ts";
 import { runScheduledAlarmsNeverWithholdTests } from "./scheduled-alarms-never-withhold.test.ts";
 import { runStaleDomainGateTests } from "./stale-domain-gate.test.ts";
 import { runRailwaySecretPolicyTests } from "./railway-secret-policy.test.ts";
+import { runDockerfileParseGateTests } from "./dockerfile-parse-gate.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -8107,6 +8108,11 @@ await runTest(
 await runTest(
   "production secrets: the three variables that silently misdirect email or fake the revision must be ABSENT",
   runRailwaySecretPolicyTests,
+);
+
+await runTest(
+  "the Dockerfile gate catches a typo, an unknown --from stage, the legacy ENV form and an orphaned $VAR — and stays silent on RUN shell variables",
+  runDockerfileParseGateTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
