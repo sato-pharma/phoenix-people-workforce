@@ -205,6 +205,11 @@ export type EmployeePortalNavVisibility = {
   // their own territory (owner, 2026-09-24). Distinct from showDirectOrdersTab, which is the
   // requester WORKSPACE the rep does not have.
   showAreaDirectOrdersTab?: boolean;
+  // My Milestones — the rep's own service-anniversary and Sato-Pharma birthday keepsake cards, which
+  // he may download for himself (owner, 2026-09-30). Medical-Rep only, self-scoped end to end: the
+  // page lists only his occasions and the /api/milestones/my-card route builds only his card. This is
+  // NOT the Super-Admin Milestones workspace (/milestones), which prints anyone's card company-wide.
+  showMilestonesTab?: boolean;
   showVacationApprovalsTab?: boolean;
   // Excuse has its own flag (distinct from vacation) so a module can be hidden for one role
   // without touching the other — e.g. National Sales Manager sees Vacation but not Excuse.
@@ -472,6 +477,22 @@ export function canUseEmployeePortalAreaDirectOrders(
 }
 
 /**
+ * My Milestones (/employee-portals/milestones) — the rep's own keepsake cards, self-scoped.
+ *
+ * Medical-Rep only, by owner instruction (2026-09-30): every other seat either has the Super-Admin
+ * Milestones workspace or does not congratulate itself. This is the audience the sidebar offers AND
+ * the audience /api/milestones/my-card admits — one predicate so the door and the route agree. The
+ * route is self-scoped regardless (it only ever builds the caller's own card), so this narrows WHO
+ * may reach it, never WHOSE card it makes.
+ */
+export function canUseEmployeePortalMilestones(
+  roleLabel: string | null | undefined,
+  accessRole?: string | null | undefined,
+) {
+  return resolvePortalRole(roleLabel, accessRole) === "Medical Rep";
+}
+
+/**
  * Broader than ROI Tracking's own role set: the Marketing Coverage Report is
  * deliberately open to the whole marketing/sales hierarchy INCLUDING Finance
  * Manager and Financial Advisor (scoped to their own subtree server-side — see
@@ -661,6 +682,8 @@ export function resolveEmployeePortalNavVisibility(
   // The Medical Rep's read-only "Direct Orders in my area" window (owner, 2026-09-24). Bounded to
   // the rep's own area server-side; not tied to the requester workspace above.
   const showAreaDirectOrdersTab = canUseEmployeePortalAreaDirectOrders(resolvedRole);
+  // My Milestones — the rep's own keepsake cards, self-scoped (owner, 2026-09-30).
+  const showMilestonesTab = canUseEmployeePortalMilestones(resolvedRole);
 
   return {
     showDashboardTab: !isTrainingManager,
@@ -1039,6 +1062,7 @@ export function resolveEmployeePortalNavVisibility(
     showDeductionsTab,
     showDirectOrdersTab,
     showAreaDirectOrdersTab,
+    showMilestonesTab,
     // Vacation Approvals — confirmed portal-shell approver roles.
     showVacationApprovalsTab:
       resolvedRole === "District Manager" ||

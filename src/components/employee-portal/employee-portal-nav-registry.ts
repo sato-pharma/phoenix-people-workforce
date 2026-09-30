@@ -1,4 +1,5 @@
 import {
+  Award,
   BookUser,
   BriefcaseBusiness,
   Building2,
@@ -107,6 +108,9 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   { label: "Payslips", fullLabel: "Payslips", href: "/employee-portals/payslips", icon: FileText, permission: { resource: "payslips", action: "read" } },
   { label: "Deductions", fullLabel: "Deductions", href: "/employee-portals/deductions", icon: ReceiptText, permission: { resource: "employee_profile", action: "read" } },
   { label: "360", fullLabel: "Employee 360", href: "/employee-portals/employee-360", icon: IdCard, permission: { resource: "employee_profile", action: "read" } },
+  // My Milestones — the rep's own keepsake cards, self-scoped (owner, 2026-09-30). No `permission`:
+  // the page gates by role predicate (canUseEmployeePortalMilestones), not a matrix permission.
+  { label: "Milestones", fullLabel: "My Milestones", href: "/employee-portals/milestones", icon: Award, flags: ["showMilestonesTab"] },
   { label: "Analytics", fullLabel: "Attendance Analytics", href: "/employee-portals/fingerprint-analytics", icon: Fingerprint, flags: ["showFingerprintReportTab"], permission: { resource: "attendance", action: "read" } },
   // Sales Intelligence (Product / Group Product Managers)
   // Sales vs Target leads the sales group: it is the field force's daily dashboard and the only
