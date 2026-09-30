@@ -525,8 +525,8 @@ never decides which to merge, which to close, or what counts as small. **Before 
 anything, run `node scripts/rollup-prs.mjs`**: it groups every open PR whose file set is DISJOINT
 from the others into one branch, reports which are SUPERSEDED (a dependabot bump another PR already
 subsumes) and which must stay SEPARATE (a migration, a protected file, a frozen path), and `--apply`
-builds the branch and opens ONE PR. It never merges and never closes anything — the roll-up exists so
-his one approval replaces several. 🔴 **AND IF A ROLL-UP IS ALREADY OPEN, DO NOT MERGE ITS MEMBERS
+builds the branch and opens ONE PR. It never merges; `--settle` closes only a PR already
+byte-identical on `main` — one approval replaces several. 🔴 **AND IF A ROLL-UP IS ALREADY OPEN, DO NOT MERGE ITS MEMBERS
 SEPARATELY.** #4814 was merged out from under #4821 four minutes after the roll-up was built and
 commented on it, paying ~28 billable minutes for nothing: **a comment on a PR is not enforcement**,
 which is why this rule is here rather than only in C10's refusal text. Check `gh pr list` for an open

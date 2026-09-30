@@ -60,6 +60,7 @@ const args = process.argv.slice(2);
 const asJson = args.includes('--json');
 const apply = args.includes('--apply');
 const closeSuperseded = args.includes('--close-superseded');
+const settle = args.includes('--settle');
 const maxFilesArg = (() => {
   const i = args.indexOf('--max-files');
   return i >= 0 ? Number(args[i + 1]) : NaN;
@@ -258,6 +259,50 @@ if (apply && fixturePath) {
   process.exit(1);
 }
 
+// ---------------------------------------------------------------------------- settle
+
+// WHAT `carried` IS FOR. A roll-up merges and its members are left OPEN — GitHub closes only the one
+// whose head the roll-up branch happened to carry verbatim. The rest read as live work whose content is
+// already on `main`, and merging one of those pays a full CI run on the PR and another on `main` to ship
+// nothing. It happened on 2026-09-30: roll-up #4871 merged, #4861 and #4870 stayed open, and both had to
+// be closed by hand after diffing each against `main` scoped to its own files.
+//
+// The verdict already existed and already said "close it, do not merge it" — nothing ever acted on it,
+// and `--close-superseded` reaches only BOT PRs subsumed by a wider one. This closes a `carried` PR, and
+// only a `carried` one, because `alreadyCarried()` is a blob comparison over EVERY file it touches: not
+// ancestry, which answers "no" for a squash-merged branch, and not a majority.
+//
+// It runs before the roll-up logic and needs no `--apply`, because the moment a roll-up merges there is
+// usually nothing left to roll up — the members are exactly what is left.
+const SETTLE_COMMENT = [
+  'Superseded: every file this PR touches is already byte-identical on `main`, so there is nothing left',
+  'here to merge — its content landed inside a roll-up. A squash merge is why GitHub did not close this',
+  'automatically: the commits never become ancestors of `main`.',
+  '',
+  'Closing so it cannot be merged a second time — that pays a full CI run on the PR and another on',
+  '`main` to change nothing (AGENTS.md §6). Nothing is lost: reopen it if any file here is ever shown to',
+  'differ from `main`.',
+].join('\n');
+
+const carriedPrs = open.filter((p) => p.verdict.kind === 'carried');
+if (settle && fixturePath) {
+  console.error('[rollup] --settle is refused with PHX_ROLLUP_FIXTURE: a snapshot cannot authorise closing a live PR.');
+  process.exit(1);
+}
+if (settle) {
+  if (carriedPrs.length === 0) {
+    console.log('[rollup] --settle: nothing is carried; no PR to close.');
+  } else {
+    for (const pr of carriedPrs) {
+      gh(['pr', 'close', String(pr.number), '--repo', REPO, '--comment', SETTLE_COMMENT], { allowFail: true });
+      console.log(`[rollup] closed #${pr.number} — every file already byte-identical on main`);
+    }
+  }
+} else if (carriedPrs.length > 0 && !asJson) {
+  console.log(`[rollup] ${carriedPrs.length} PR(s) are already on main and only need closing: re-run with `
+    + `--settle to close ${carriedPrs.map((p) => `#${p.number}`).join(', ')}.`);
+}
+
 if (!apply || group.length < 2) process.exit(0);
 
 // ---------------------------------------------------------------------------- build it
@@ -300,7 +345,7 @@ const body = [
   'Nothing carrying a migration, a protected file or a frozen path is in here; those keep their own '
     + 'visible approval.',
   '',
-  `Built by \`node scripts/rollup-prs.mjs --apply\`. Close the originals once this merges.`,
+  `Built by \`node scripts/rollup-prs.mjs --apply\`. Once this merges the originals are CARRIED, not live: \`node scripts/rollup-prs.mjs --settle\` closes them, after proving every file byte-identical on \`main\`.`,
 ].join('\n');
 
 gh(['pr', 'create', '--repo', REPO, '--base', 'main', '--head', branch,
