@@ -239,8 +239,14 @@ if (fixturePath) {
     ]) || '[]',
   );
   for (const pr of open) {
-    pr.paths = JSON.parse(gh(['pr', 'view', String(pr.number), '--repo', REPO, '--json', 'files']) || '{"files":[]}')
-      .files.map((f) => f.path);
+    const detail = JSON.parse(
+      gh(['pr', 'view', String(pr.number), '--repo', REPO, '--json', 'files,commits']) || '{"files":[],"commits":[]}',
+    );
+    pr.paths = detail.files.map((f) => f.path);
+    // The head commit's own date, so a check that RAN BEFORE IT can be told from one that ran for it.
+    // `statusCheckRollup` can still carry the previous commit's green runs for a while after a push, and
+    // the stale-SHA guard cannot see that: the head has not moved, only the checks are old.
+    pr.headCommittedAt = detail.commits?.[detail.commits.length - 1]?.committedDate ?? null;
     // 🔴 LIVE, A MISSING ROLLUP MEANS NOTHING HAS REPORTED — NEVER THAT NOTHING IS RED. GitHub returns
     // `statusCheckRollup: null` for a commit that has no check contexts yet, which is precisely a PR
     // opened seconds ago: the case a roll-up is most often built against. Left as null it falls through
@@ -282,7 +288,7 @@ for (const pr of open) {
   // A fixture may state the verdict outright (`redRequired` / `checksPending`) or hand over the real
   // rollup shape; when it hands over the shape, the real split runs and its answer wins.
   if (pr.statusCheckRollup) {
-    const state = requiredCheckState(pr.statusCheckRollup, requiredContexts);
+    const state = requiredCheckState(pr.statusCheckRollup, requiredContexts, pr.headCommittedAt ?? null);
     pr.redChecks = state.red;
     pr.pendingChecks = state.pending;
   } else {
@@ -621,7 +627,7 @@ if (openRollupPrs.length > 0) {
 // which is no longer open — goes STALE and is never built from.
 const memberState = new Map(group.map((p) => [
   p.number,
-  { number: p.number, red: p.redChecks, pending: p.pendingChecks, stale: null, sha: p.headRefOid },
+  { number: p.number, red: p.redChecks, pending: p.pendingChecks, stale: null, sha: p.headRefOid, headCommittedAt: p.headCommittedAt ?? null },
 ]));
 
 /** Members with nothing red, nothing stale, and something still running — what a wait can resolve. */
@@ -652,7 +658,7 @@ function rereadCheckState(number) {
     if (expected && fresh.headRefOid && fresh.headRefOid !== expected) {
       return { stale: `#${number} was pushed while we waited (${String(expected).slice(0, 9)} -> ${String(fresh.headRefOid).slice(0, 9)})` };
     }
-    return requiredCheckState(fresh.statusCheckRollup, requiredContexts);
+    return requiredCheckState(fresh.statusCheckRollup, requiredContexts, memberState.get(number)?.headCommittedAt ?? null);
   } catch {
     return null;
   }
@@ -690,6 +696,15 @@ if (readiness.carry.length < MIN_MEMBERS) {
     + `${MIN_MEMBERS} merges. Nothing was built, nothing was pushed, nothing was closed — re-run when the `
     + 'checks have settled.');
   process.exit(0);
+}
+
+// 🔴 SAY THE READING THE BUILD IS ACTING ON, for every member, every time. Asked for by the peer session
+// that investigated #4937: when this goes wrong the branch is usually deleted by the time anyone looks,
+// so the run's own output has to be the evidence. It is two lines and it turns forensics into reading.
+for (const member of memberState.values()) {
+  console.log(`[rollup] #${member.number} at build time: settled=${member.red.length === 0 && member.stale === null && member.pending.length === 0}`
+    + ` sha=${String(member.sha).slice(0, 9)} red=[${member.red.join(', ')}] pending=[${member.pending.join(', ')}]`
+    + `${member.stale ? ` stale=${member.stale}` : ''}`);
 }
 
 const buildGroup = group.filter((p) => readiness.carry.includes(p.number));

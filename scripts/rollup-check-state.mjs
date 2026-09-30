@@ -61,23 +61,54 @@ export const TERMINAL_SUCCESS = new Set(['SUCCESS', 'NEUTRAL', 'SKIPPED']);
  * reports an empty array, and reading that as "nothing is red, build it" is the 2026-09-30 failure in
  * its purest form — the build would commit to a PR before a single check had even been queued.
  *
+ * 🔴 AND A CHECK THAT RAN BEFORE THE HEAD COMMIT EXISTED IS NOT THIS COMMIT'S CHECK. `statusCheckRollup`
+ * is the rollup of the PR's latest commit, but right after a push it can still carry the PREVIOUS
+ * commit's runs — green ones — so a member reads finished-and-green while its real checks have not
+ * started. That is the one account left standing for roll-up #4937, after a peer session ruled out both
+ * of the causes we each proposed: its script was byte-identical to `main` including the stale-sha guard,
+ * and #4936's checks had already started, so neither an old copy nor a null rollup explains it. The
+ * stale-SHA guard cannot see this one either, because the head never moved — only the checks were old.
+ *
+ * So when `headCommittedAt` is given, any required check whose `startedAt` predates it is PENDING: its
+ * verdict belongs to a commit the build would not merge. An entry with no `startedAt` is also pending —
+ * unjudgeable is not the same as fine. Both directions only ever wait longer, never build sooner.
+ *
  * Handles both shapes `statusCheckRollup` returns: a CheckRun (`name`, `status` + `conclusion`) and a
  * StatusContext (`context` + `state`).
  *
  * @param {ReadonlyArray<Record<string, unknown>> | null | undefined} statusCheckRollup
  * @param {Set<string> | null} required
+ * @param {string | null} [headCommittedAt] ISO date of the PR's head commit. Omitted, the staleness
+ *   test is skipped, which is what every existing caller and fixture gets.
  * @returns {{ red: string[], pending: string[] }}
  */
-export function requiredCheckState(statusCheckRollup, required) {
+export function requiredCheckState(statusCheckRollup, required, headCommittedAt = null) {
   const red = [];
   const pending = [];
   const seen = new Set();
+  const headAt = headCommittedAt ? Date.parse(headCommittedAt) : NaN;
   for (const entry of statusCheckRollup ?? []) {
     const name = entry?.name ?? entry?.context ?? '';
-    const state = String(entry?.conclusion ?? entry?.state ?? entry?.status ?? '').toUpperCase();
+    // `conclusion` comes back as an EMPTY STRING for a running check, not as null, and `??` does not
+    // skip an empty string — so reading it first printed a running check as "not started". Take the
+    // first NON-EMPTY of the three instead, or the report misdescribes the very state it is waiting on.
+    const state = String(
+      [entry?.conclusion, entry?.state, entry?.status].find((v) => v !== null && v !== undefined && v !== '') ?? '',
+    ).toUpperCase();
     if (required !== null && !required.has(name)) continue;
     seen.add(name);
     const label = name || 'an unnamed check';
+    if (Number.isFinite(headAt)) {
+      const startedAt = entry?.startedAt ? Date.parse(String(entry.startedAt)) : NaN;
+      if (!Number.isFinite(startedAt)) {
+        pending.push(`${label} (no start time, so it cannot be tied to this commit)`);
+        continue;
+      }
+      if (startedAt < headAt) {
+        pending.push(`${label} (ran before this commit existed — it is the previous commit's result)`);
+        continue;
+      }
+    }
     if (TERMINAL_FAILURE.has(state)) red.push(`${label} (${state.toLowerCase()})`);
     else if (!TERMINAL_SUCCESS.has(state)) pending.push(`${label} (${state ? state.toLowerCase() : 'not started'})`);
   }

@@ -6,7 +6,7 @@ import path from "node:path";
 
 import { MIN_MEMBERS } from "../scripts/rollup-build-verdict.mjs";
 import { registryAddedLinesLanded } from "../scripts/rollup-carried.mjs";
-import { membersReadyToBuild, waitForRequiredChecks } from "../scripts/rollup-check-state.mjs";
+import { membersReadyToBuild, requiredCheckState, waitForRequiredChecks } from "../scripts/rollup-check-state.mjs";
 import { isRollupBranch, overlappingRollup, rollupMembers } from "../scripts/rollup-duplicate-guard.mjs";
 
 /**
@@ -858,6 +858,90 @@ export function runRollupPrsTests(): void {
       /'merge-base', 'origin\/main'/,
       "and the delta must be taken against the MERGE BASE: a two-dot diff to main would read other "
         + "people's registrations as lines this PR had removed",
+    );
+  }
+
+  // ── 4e-decies. A check that ran BEFORE the head commit is the previous commit's result ───────
+  // The one account left standing for roll-up #4937. A peer session ruled out both causes we proposed:
+  // its copy of the script was byte-identical to `main` INCLUDING the stale-sha guard, and #4936's checks
+  // had already started, so neither an older worktree nor a null rollup explains it. `statusCheckRollup`
+  // is the rollup of the PR's latest commit, but right after a push it can still carry the PREVIOUS
+  // commit's runs — green ones — so the member reads finished-and-green while its real checks have not
+  // begun. The stale-SHA guard cannot see this: the head never moved, only the checks were old.
+  {
+    const HEAD_AT = "2026-09-30T14:45:38Z";
+    const before = "2026-09-30T14:30:00Z"; // a run from the previous push
+    const after = "2026-09-30T14:48:13Z"; // a run for this commit
+
+    const stale = requiredCheckState(
+      [
+        { name: "validate", conclusion: "SUCCESS", startedAt: before },
+        { name: "checks", conclusion: "SUCCESS", startedAt: before },
+      ],
+      new Set(["validate", "checks"]),
+      HEAD_AT,
+    );
+    assert.deepEqual(stale.red, [], "green is green — this is not a failure");
+    assert.equal(
+      stale.pending.length,
+      2,
+      "but two SUCCESSES that ran before the head commit existed are the PREVIOUS commit's result, so "
+        + "the member is not proven and must not be built from",
+    );
+    assert.match(stale.pending[0] ?? "", /ran before this commit existed/);
+
+    const fresh = requiredCheckState(
+      [
+        { name: "validate", conclusion: "SUCCESS", startedAt: after },
+        { name: "checks", conclusion: "SUCCESS", startedAt: after },
+      ],
+      new Set(["validate", "checks"]),
+      HEAD_AT,
+    );
+    assert.deepEqual(fresh, { red: [], pending: [] }, "runs that started after the commit are its own, and it is green");
+
+    // Unjudgeable is not the same as fine: no start time means it cannot be tied to this commit.
+    const noTime = requiredCheckState(
+      [{ name: "validate", conclusion: "SUCCESS" }, { name: "checks", conclusion: "SUCCESS", startedAt: after }],
+      new Set(["validate", "checks"]),
+      HEAD_AT,
+    );
+    assert.equal(noTime.pending.length, 1, "a check with no startedAt is pending, not green");
+    assert.match(noTime.pending[0] ?? "", /no start time/);
+
+    // Omitting the head date skips the test entirely, which is what every older caller and fixture gets.
+    assert.deepEqual(
+      requiredCheckState(
+        [{ name: "validate", conclusion: "SUCCESS", startedAt: before }, { name: "checks", conclusion: "SUCCESS", startedAt: before }],
+        new Set(["validate", "checks"]),
+      ),
+      { red: [], pending: [] },
+      "with no head date the staleness test is skipped — that is why no existing fixture changes verdict",
+    );
+  }
+
+  // ── 4e-undecies. A running check is labelled in_progress, not "not started" ───────────────────
+  // `conclusion` comes back as an EMPTY STRING for a running check, not null, and `??` does not skip an
+  // empty string — so the report printed a check that was actively running as "not started". Cosmetic,
+  // but it misdescribed the exact state the tool was waiting on, and it muddied the #4937 investigation
+  // for both sessions looking at it.
+  {
+    const running = requiredCheckState(
+      [{ name: "checks", status: "IN_PROGRESS", conclusion: "" }],
+      new Set(["checks"]),
+    );
+    assert.deepEqual(running.pending, ["checks (in_progress)"], "the label must name the state gh actually reported");
+  }
+
+  // ── 4e-duodecies. The build says what reading it acted on, for every member ───────────────────
+  {
+    const source = readFileSync("scripts/rollup-prs.mjs", "utf8");
+    assert.match(
+      source,
+      /at build time: settled=/,
+      "every member's settled/red/pending reading must be printed at build time. Asked for by the peer "
+        + "session that investigated #4937: when this goes wrong the branch is usually deleted before "
+        + "anyone looks, so the run's own output has to be the evidence.",
     );
   }
 
