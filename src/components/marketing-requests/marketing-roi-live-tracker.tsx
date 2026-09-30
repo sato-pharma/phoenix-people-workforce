@@ -850,7 +850,18 @@ function toExportRow(row: RoiTrackerRow, dataFrontier: string | null): ExportRow
  * ROI Tracker tabs), which already carries the page title — a second hero there read "ROI Tracker"
  * twice in two different looks, so the portal gets no hero and Refresh moves into the toolbar.
  */
-export function MarketingRoiLiveTracker({ surface = "admin" }: { surface?: "admin" | "portal" } = {}) {
+export function MarketingRoiLiveTracker({
+  surface = "admin",
+  territoryScoped = false,
+}: {
+  surface?: "admin" | "portal";
+  /**
+   * True for the one seat that reads this page through the TERRITORY route — the Medical Rep, who
+   * sees only campaigns on his own area AND his own line (roi-report-scope.ts). It changes exactly
+   * ONE sentence, the empty state; every number on the page stays the server's.
+   */
+  territoryScoped?: boolean;
+} = {}) {
   const [report, setReport] = useState<RoiTrackerReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -1015,10 +1026,18 @@ export function MarketingRoiLiveTracker({ surface = "admin" }: { surface?: "admi
         One line, deliberately — the owner removed the earlier explanatory block. But a page that
         renders nothing at all reads as broken rather than empty (it was reported as exactly that),
         so the surface still has to say why it is blank.
+
+        A Medical Rep gets a DIFFERENT sentence, and it is not cosmetic: his page is scoped to his
+        own area AND his own line since 2026-09-30, so blank means "nobody has spent on my line here",
+        NOT "the company has raised nothing". Measured on production that day, 19 of the 41 reps
+        holding a row land on this state — telling them there are no requests when there are 45 would
+        be a plain untruth, on the very screen whose over-reporting the owner had just called fatal.
       */}
       {!loading && !error && allRows.length === 0 ? (
         <p className="text-sm text-slate-500">
-          No Phoenix-submitted requests yet — imported history is in Archived Marketing Requests.
+          {territoryScoped
+            ? "No campaign on your line has been raised for your area yet — this page shows your own line's spend on your own patch."
+            : "No Phoenix-submitted requests yet — imported history is in Archived Marketing Requests."}
         </p>
       ) : null}
 
