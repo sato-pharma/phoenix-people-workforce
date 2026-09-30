@@ -248,4 +248,22 @@ export function runDependabotAlertsTests() {
     /skipped \(--no-auth\)\. This check reads the live alerts API\./,
     "the section must honour --no-auth like every other live-reading section there",
   );
+
+  // And the ship skill must name it as a PRE-MERGE read. This is the one place the timing matters: a
+  // PR's green says the dependency audit passed WHEN IT RAN, and `main` runs it again after the merge,
+  // where a red suite makes Railway mark the production deploy SKIPPED for good. So the read belongs
+  // before the merge, not only in a report someone runs on a quiet afternoon.
+  const ship = readFileSync(".claude/skills/ship/SKILL.md", "utf8");
+  assert.match(
+    ship,
+    /node scripts\/check-dependabot-alerts\.mjs/,
+    "the ship skill must run this check before merging - that is the moment its answer changes what a "
+      + "session does",
+  );
+  assert.match(
+    ship,
+    /skipped[^\n]*is NOT a pass/i,
+    "the ship skill must say a skip is not a pass, or the one degraded reading reads as clear at the "
+      + "moment it matters most",
+  );
 }

@@ -83,6 +83,30 @@ is the only thing that compares them to the gate — it runs when someone runs i
 - **Do not run a local full validation before the merge** — those PR checks are the gate and they
   are the same steps (AGENTS.md §7).
 
+### 2b · Read the open Dependabot alerts — the PR's green is about the code, not about the day
+
+```bash
+node scripts/check-dependabot-alerts.mjs
+```
+
+🔴 **A GREEN PR PROVES THE DEPENDENCY AUDIT PASSED WHEN IT RAN, AND NOTHING ABOUT WHEN YOU MERGE.**
+`validate` includes `pnpm audit --audit-level=high --prod`, which reads an advisory feed that moves
+on its own. Measured 2026-09-30: the same dependency passed that step at **16:11** and failed it at
+**16:29** with nothing in the repository having changed. `main` runs the step AGAIN after the merge —
+and a red suite there makes Railway mark the production deploy `SKIPPED` for good (§2.3), which a
+re-run does not resurrect. An open HIGH alert is that failure with the clock already running.
+
+- Nothing open → merge.
+- **An open HIGH or CRITICAL → bump it first, in its own PR, and merge that one before this one.**
+  The output names the version to bump to; a transitive one needs `pnpm update --depth Infinity
+  <pkg>`, because `pnpm up` touches only direct dependencies and answers "Already up to date" for
+  everything else.
+- **`skipped — …` is NOT a pass.** It means nothing was read — no `gh`, not authenticated, no
+  network, or a token without `security_events`. Report it as unread, never as clear.
+- The alert appears here hours before the audit feed learns it, which is the whole window this buys.
+  It is a read: it never merges anything, and **auto-merging these bumps was offered on 2026-09-30
+  and declined** — every merge stays the owner's own word.
+
 ## 3 · Docs-only? Then the green checks proved nothing
 
 ```bash
