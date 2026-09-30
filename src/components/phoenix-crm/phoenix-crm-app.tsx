@@ -495,19 +495,6 @@ export function PhoenixCrmApp({
     else setAsking({ move, work });
   }
 
-  function startVisit(visit: PendingVisit) {
-    if (pendingVisit && pendingVisit.photo !== visit.photo) releaseCapturedPhoto(pendingVisit.photo);
-    // Separate pages: the customer rides in the address, because the next module is a fresh page and
-    // nothing in memory survives the trip.
-    if (single) {
-      openTab("visits", { customer: visit.customerId, name: visit.customerName });
-      return;
-    }
-    setPendingVisit(visit);
-    openTab("visits");
-    scrollToTop();
-  }
-
   /** Add Visit used the hand-off or put it aside; the validation photo is let go either way. */
   function pendingVisitDone() {
     releaseCapturedPhoto(pendingVisit?.photo);

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CalendarDays, ClipboardList, FileBarChart, ListChecks, Search, Settings, Sun, Users } from "lucide-react";
+import { CalendarDays, ClipboardList, FileBarChart, ListChecks, Search, Settings, Users } from "lucide-react";
 
 import { allowedPhoenixCrmModules, phoenixCrmModulePath, type PhoenixCrmModuleKey } from "@/lib/phoenix-crm/modules";
 // Through `view-types`, never `server/overview`: a component may not import server code (the
@@ -24,8 +24,7 @@ import type { PhoenixCrmOverview } from "@/lib/phoenix-crm/view-types";
 // The keys are QUOTED deliberately: `doctors` is the tab key whose visible label is "Directory", and
 // the module's word guard allows it only in that form — a bare `doctors:` identifier reads, to a
 // regex sweep, exactly like a screen string saying "doctors" (owner, 2026-09-23: all AM and PM).
-const MODULE_ICONS: Record<PhoenixCrmModuleKey, typeof Sun> = {
-  today: Sun,
+const MODULE_ICONS: Record<PhoenixCrmModuleKey, typeof ClipboardList> = {
   visits: ClipboardList,
   list: ListChecks,
   plan: CalendarDays,
