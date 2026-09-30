@@ -2,12 +2,15 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import {
+  hasVisitsWaitingToCount,
   isValidateNextCandidate,
   rankValidateNext,
   VALIDATE_NEXT_COUNT,
   VALIDATE_NEXT_PLAIN_REASON,
   validateNextReasons,
+  VALIDATE_FIRST_PER_BRICK,
   validateNextTop,
+  visitsWaitingFirst,
 } from "../src/lib/phoenix-crm/validate-next.ts";
 import type { ListCustomer, ListCustomerReference } from "../src/lib/phoenix-crm/server/list.ts";
 import { stripComments } from "./support/comment-strip.ts";
@@ -222,88 +225,37 @@ function checkReasons(): void {
   }
 }
 
-/** The body of one top-level function in a source, comments blanked. */
-function functionBody(source: string, name: string): string {
-  const start = source.indexOf(`function ${name}(`);
-  assert.ok(start >= 0, `${name} is still in the file`);
-  const end = source.indexOf("\n}\n", start);
-  assert.ok(end > start, `${name} ends`);
-  return source.slice(start, end);
-}
-
 function checkScreens(): void {
   const tab = stripComments(readFileSync("src/components/phoenix-crm/list-tab.tsx", "utf8").replace(/\r\n/g, "\n"));
-  const strip = functionBody(tab, "ValidateNextStrip");
-
-  // ── The strip reads the ranking, and nothing else decides the order ───────────────────────────
-  assert.match(strip, /validateNextTop\(customers\)/, "the strip shows the pure ranking's top three");
-  assert.doesNotMatch(strip, /\.sort\(/, "and never re-sorts them by a rule of its own");
-
-  // ── One button per card, the row's own ────────────────────────────────────────────────────────
-  assert.equal((strip.match(/<CustomerRowAction\b/g) ?? []).length, 1, "each card carries exactly one button: the row's own CustomerRowAction");
-  assert.doesNotMatch(strip, /<CrmButton\b|<button\b/, "and no other button beside it");
-  assert.match(strip, /<CustomerRowAction canValidate=\{canValidate\} customer=\{pick\.customer\} onAction=\{onRowAction\} \/>/, "wired to the list's own row action");
-  assert.doesNotMatch(strip, /\bAdd (?:a |today(?:'|&apos;)s )?visit\b/i, "no Add visit — a visit starts from Visits, Today or the portal's \"+\"");
-  assert.doesNotMatch(strip, /onStartVisit|onVisitCustomer/, "and nothing that starts one");
-
-  // ── Only the rep, only where he chooses what to do next ───────────────────────────────────────
-  assert.match(strip, /const picks = canValidate \? validateNextTop\(customers\) : \[\];/, "the strip draws nothing for anyone who does not validate");
-  assert.match(
-    tab,
-    /\{current === "to_validate" \|\| current === "board" \? \(\s*<ValidateNextStrip canValidate=\{view\.canEdit\}/,
-    "it sits on To validate and The list, for the territory's rep",
-  );
-
-  // ── The house look, and Golden rule #1 ────────────────────────────────────────────────────────
-  assert.doesNotMatch(strip, /\brounded-(?!none\b)/, "square corners only");
-  assert.doesNotMatch(strip, /\b(?:truncate|line-clamp-\d|overflow-x-auto|overflow-auto)\b/, "no ellipsis, no sideways scroll");
-  const stripText = [...(strip.match(/(["'`])(?:\\.|(?!\1)[\s\S])*\1/g) ?? []), ...[...strip.matchAll(/>([^<>{}]+)</g)].map((match) => match[1] ?? "")];
-  assert.ok(stripText.some((text) => text.includes("Validate next")), "the sweep reads the strip's own words");
-  for (const text of stripText) {
-    assert.doesNotMatch(text, JUDGING_WORDS, `the strip says "${text.trim()}" — no distance, reading or check reaches the rep`);
-    assert.doesNotMatch(text, /\b(doctor|account)s?\b/i, `the strip says "${text.trim()}"`);
-  }
-  assert.doesNotMatch(strip, /brickDistanceKm|accuracyMeters|\.lat\b|\.lon\b/, "no measurement is even read into it");
-  assert.match(strip, /<h4 className="[^"]*" dir="auto">\s*\{pick\.customer\.name\}/, "an Arabic name reads right to left");
-  assert.match(strip, /<bdi>\{pick\.brickName\}<\/bdi>/, "and an Arabic brick name is isolated inside the English line");
-  assert.match(strip, /listText\(pick\.customer\.listType\)/, "AM or PM, in the module's one wording");
-
-  // ── The four figures: ONE tile family, and the progress outside them ──────────────────────────
-  // 🔴 The owner called this row awful on 2026-09-30 while it was a tall lead box beside three short
-  //    ones: the lead carried the bar, the percentage and a three-line sentence, so it stood about
-  //    three times their height and — a grid row being as tall as its tallest cell — left each of the
-  //    other three ending in ~120px of white nothing, with its AM · PM beside the figure where theirs
-  //    sat underneath. Four identical tiles now, and everything that measures the WHOLE list moved
-  //    out below them. Re-introducing a bespoke lead box is what this pins against.
-  const readiness = functionBody(tab, "ReadinessBlock");
-  const lead = readiness.indexOf('label="To validate"');
-  assert.ok(lead > 0, "the block leads with To validate");
-  for (const figure of ['label="Reference list"', 'label="Validated"', 'label="Drops waiting"']) {
-    const at = readiness.indexOf(figure);
-    assert.ok(at > lead, `${figure} is context beside the lead figure, after it`);
-  }
-  assert.equal(
-    (readiness.match(/<ListFigure\b/g) ?? []).length,
-    4,
-    "all four figures are the SAME tile — To validate is not a bespoke box beside the other three",
-  );
+  // ── 🔴 THE LIST PAGE HOLDS THE LIST, AND NOTHING ELSE ─────────────────────────────────────────
+  // Owner, 2026-09-30: "I want the page of the list to contain the list only." Two blocks used to
+  // stand between a rep and his own list — a four-figure readiness summary and a three-card
+  // "Validate next" strip — together about half the first screen, and the figures repeated three of
+  // the chooser's own parts besides ("the list is the full list, To validate is who are not
+  // validated, Your list is which are validated"). He asked for them gone twice; moving them lower
+  // was not what he asked for. Both components are deleted, not merely unrendered, so neither can be
+  // brought back by restoring one line.
+  //
+  // The ranking itself is NOT deleted: `validate-next.ts` is still pinned above, and what it decides
+  // belongs on the To validate rows rather than in a strip over them.
+  assert.ok(!tab.includes("function ValidateNextStrip("), "the Validate next strip is gone from the List page");
+  assert.ok(!tab.includes("function ReadinessBlock("), "and so is the readiness figures block");
+  assert.ok(!tab.includes("function ListFigure("), "and the tile it drew with");
+  assert.ok(!tab.includes("<ValidateNextStrip") && !tab.includes("<ReadinessBlock"), "neither is rendered anywhere");
   assert.ok(
-    readiness.includes('<div className="grid min-w-0 grid-cols-2 gap-2 lg:grid-cols-4">'),
-    "and they sit in one equal four-up grid, two-up on a narrow screen — never a 5fr lead track beside a 7fr one",
+    !tab.includes('from "@/lib/phoenix-crm/validate-next"'),
+    "the List page no longer reads the ranking itself — nothing above the chooser ranks anything",
   );
+  // Nothing may sit between the screen's own head and the chooser again.
+  const chooser = tab.indexOf('<CrmChoice columns={7} label="Which part of the list"');
+  assert.ok(chooser > 0, "the chooser is still what opens the list");
+  const head = tab.indexOf("{error ? <CrmLoadError");
+  assert.ok(head > 0 && head < chooser, "the load error is the only thing before it");
+  const between = tab.slice(head, chooser);
   assert.ok(
-    !readiness.includes("md:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]"),
-    "the split that made the lead three times its neighbours' height must not come back",
+    !between.includes("<CrmBlock title=") && !between.includes("<ListFigure"),
+    "no summary, strip or banner stands between the rep and the chooser",
   );
-  // The bar measures the whole list, so it belongs to the block, not to one tile.
-  assert.ok(
-    readiness.indexOf('role="progressbar"') > readiness.indexOf('label="Drops waiting"'),
-    "the progress bar sits BELOW the four tiles, not inside the first one",
-  );
-  assert.match(readiness, /tone=\{allDone \? "good" : "act"\}/, "the figure he acts on is marked by its rail, never by a larger number");
-  assert.match(readiness, /pairText\(countByType\(pending\)\)/, "the lead's AM and PM are said apart");
-  assert.doesNotMatch(tab, /\.AM \+ [^;]*\.PM|\.PM \+ [^;]*\.AM/, "AM and PM are never added into one figure");
-  assert.doesNotMatch(readiness, /\brounded-(?!none\b)/, "square corners");
 
   // ── The board's filter row on a phone: the search stays, the selects fold ─────────────────────
   const board = stripComments(readFileSync("src/components/phoenix-crm/customer-list-board.tsx", "utf8").replace(/\r\n/g, "\n"));
@@ -328,9 +280,54 @@ function checkScreens(): void {
   }
 }
 
+
+/**
+ * 🔴 ONLY THE FEW WITH THE MOST VISITS WAITING ARE MARKED (owner, 2026-09-30: "mark only the ones
+ * with the most visits waiting, not all 88").
+ *
+ * Behaviour, not source text. The first build marked every customer with ANY saved visit, which on
+ * the territory it was measured against was 88 of 88 — the whole list amber, the mark saying nothing.
+ * These cases pin the narrowing AND the guard that stops it coming back.
+ */
+function checkVisitsWaitingFirst(): void {
+  const ready = (id: string, visits: number): ListCustomer =>
+    listCustomer({ customerId: id, name: id, referenceHistory: { visits, lastVisitedOn: "2026-09-29" } });
+  const plain = (id: string): ListCustomer => listCustomer({ customerId: id, name: id });
+  const ids = (rows: readonly ListCustomer[]): string[] => rows.map((customer) => customer.customerId);
+
+  assert.equal(hasVisitsWaitingToCount(ready("a", 1)), true, "one saved visit counts as waiting");
+  assert.equal(hasVisitsWaitingToCount(ready("a", 0)), false, "a history that counted nothing does not");
+  assert.equal(hasVisitsWaitingToCount(plain("a")), false, "and neither does no history at all");
+
+  // The brick's best three lead, most first, and ONLY those three are marked.
+  const brick = [plain("p1"), ready("r3", 3), ready("r20", 20), plain("p2"), ready("r9", 9), ready("r1", 1), plain("p3")];
+  const out = visitsWaitingFirst(brick);
+  assert.deepEqual(ids(out.rows), ["r20", "r9", "r3", "p1", "p2", "r1", "p3"], "the best three lead, most first");
+  assert.deepEqual([...out.marked].sort(), ["r20", "r3", "r9"], "and exactly those three are marked");
+  assert.equal(out.marked.size, VALIDATE_FIRST_PER_BRICK, "never more than a brick's share");
+  assert.equal(out.marked.has("r1"), false, "a fourth customer with visits waiting is NOT marked — that is the whole point");
+  // Everyone unmarked keeps the order the neighbourhood pass gave them, r1 included.
+  assert.deepEqual(ids(out.rows).slice(3), ["p1", "p2", "r1", "p3"], "the rest keep their neighbourhood order");
+
+  // 🔴 THE GUARD: no "most" means no mark. This is the 88-of-88 failure, and it must stay closed.
+  const allSame = [ready("a", 4), ready("b", 4), ready("c", 4), ready("d", 4)];
+  const flat = visitsWaitingFirst(allSame);
+  assert.equal(flat.marked.size, 0, "when every candidate carries the SAME count there is no most, so the brick marks none");
+  assert.deepEqual(ids(flat.rows), ["a", "b", "c", "d"], "and nothing is re-ordered either");
+
+  const none = visitsWaitingFirst([plain("p1"), plain("p2")]);
+  assert.equal(none.marked.size, 0, "nothing waiting, nothing marked");
+  assert.deepEqual(ids(none.rows), ["p1", "p2"], "and nothing moves");
+  assert.deepEqual(ids(visitsWaitingFirst([]).rows), [], "an empty brick is left alone");
+
+  // Stable across reads: running it on its own output changes nothing.
+  assert.deepEqual(ids(visitsWaitingFirst(out.rows).rows), ids(out.rows), "a re-read never churns the list");
+}
+
 export function runPhoenixCrmValidateNextTests(): void {
   checkRanking();
   checkReasons();
   checkScreens();
+  checkVisitsWaitingFirst();
   console.log("phoenix-crm validate next: OK");
 }
