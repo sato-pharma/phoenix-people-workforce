@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: d511a1ba-4406-4c25-89f7-9c603b7590f3
-  modified: 2026-07-29T07:50:43.447Z
+  modified: 2026-10-01T00:00:00.000Z
 ---
 
 **Status: PR #1435 confirmed MERGED 2026-07-28T18:45:07Z** (re-verified 2026-07-29 via `gh pr view`). This session also independently confirmed cold-Turbopack-compile behavior (20-56s, "looks hung, isn't") while testing an unrelated change on 2026-07-29.
@@ -37,11 +37,18 @@ worth knowing before assuming a stuck loading screen means something crashed.
 
 Also confirmed while doing this: a report of "admin/dev-preview 404" did NOT reproduce as a code
 bug. `app/(admin)/admin/dev-preview/page.tsx` calls `notFound()` whenever
-`process.env.NODE_ENV === "production"`, and `Dockerfile:81` sets `ENV NODE_ENV production`
-unconditionally — so the page 404s **by design** on both staging and production (its own nav
-description literally says "Local development only — not available in this environment"). Loading
-it locally as Super Admin returned a clean 200. If this 404 is reported again, first ask which
-environment it was seen on before treating it as a bug.
+`process.env.NODE_ENV === "production"`, and the Dockerfile's **runner stage** (`FROM base AS
+runner`) sets `ENV NODE_ENV=production` unconditionally — so the page 404s **by design** on both
+staging and production (its own nav description literally says "Local development only — not
+available in this environment"). Loading it locally as Super Admin returned a clean 200. If this
+404 is reported again, first ask which environment it was seen on before treating it as a bug.
+
+**Cite that Dockerfile fact by STAGE and DIRECTIVE, never by line number.** This memory used to
+say `Dockerfile:81` and the legacy space form `ENV NODE_ENV production`, and by 2026-10-01 both
+had moved: the directive sits at line 83, and the five legacy `ENV key value` lines were converted
+to `key=value` in the Railway audit because the space form warns on every production build. The
+stage name and the directive survive that churn; a line number does not. Re-verified 2026-10-01
+against `origin/main` and a feature branch.
 
 **Cookie-precedence gotcha hit while testing this:** `resolveAccessContext`/
 `resolveAccessContextFromPage` (`src/lib/auth/server.ts`) check the real app session cookie

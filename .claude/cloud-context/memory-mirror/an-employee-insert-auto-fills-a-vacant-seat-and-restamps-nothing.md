@@ -1,11 +1,11 @@
 ---
 name: an-employee-insert-auto-fills-a-vacant-seat-and-restamps-nothing
-description: "Inserting a row in public.employees fires a trigger that seats the person, rewrites au.line_area_map, and thereby invalidates the achievement fingerprint on EVERY period - silently."
+description: "Inserting a row in public.employees fires a trigger that seats the person, rewrites au.line_area_map, and thereby invalidates the achievement fingerprint on EVERY period - silently. The re-stamp is AUTOMATIC since 2026-09-11 (the 15-minute mapping-guard sweep, published months skipped by design); never hand-write config_fp into the meta table."
 metadata: 
   node_type: memory
   type: project
   originSessionId: 52493c41-8681-4061-aa67-4d730444cc29
-  modified: 2026-08-28T16:24:35.921Z
+  modified: 2026-09-30T20:45:41.525Z
 ---
 
 **A plain `insert into public.employees` is not a plain insert.** Measured on staging 2026-08-28
@@ -27,14 +27,26 @@ rows** (`sum(hashtextextended(m.*::text,0))`), so that flip changes the fingerpr
 invalidates the stamp on every period at once**: 8 of 8 went `fp_ok=false` from three inserts. There
 is no error and no warning - the numbers just stop coming from the rollup.
 
-**So: after ANY hire, re-stamp.** Then verify through the function, not by reading back the meta row:
+🔴 **CORRECTED 2026-09-30: THE RE-STAMP IS NOW AUTOMATIC, AND THE HAND-WRITTEN `INSERT` THIS FILE
+USED TO RECOMMEND IS A LIE DETECTOR BREAKER — NEVER RUN IT.** Writing `config_fp` straight into
+`au.monthly_attribution_rollup_meta` marks a period FRESH without refreshing the rollup behind it,
+so every screen then serves stale numbers *confidently* instead of recomputing — strictly worse than
+the drift it was meant to cure, and on a PUBLISHED month it fakes agreement with a closing that was
+never recomputed. The real entry points are
+`au.f_refresh_monthly_attribution(period)` and `au.f_refresh_stale_attribution_periods(p_limit)`.
 
-```sql
-insert into au.monthly_attribution_rollup_meta (period, config_fp, refreshed_at)
-select p, au.f_attribution_config_fingerprint(), now()
-from (select distinct period as p from au.monthly_attribution_rollup) s
-on conflict (period) do update set config_fp = excluded.config_fp, refreshed_at = now();
-```
+**And normally you run neither.** Since 2026-09-11 the ten-minute mapping-guard clock sweeps it:
+`phoenix-mapping-guard-notify` (`5,20,35,50 * * * *`, so four times an hour) calls
+`f_refresh_stale_attribution_periods(6)` via `src/lib/sales/attribution-freshness.ts`, refreshing up
+to 6 drifted periods per run and draining a backlog over the next few runs. So after a hire the
+fingerprint self-heals inside ~15 minutes with no action at all. Measured on production 2026-09-30
+23:45 Cairo: 7 of 9 periods fresh, refreshed 17:50–18:05 Cairo that day.
+
+🔴 **The sweep DELIBERATELY SKIPS a published period** (`monthly_closing_publications` with
+`unpublished_at is null`), because `f_refresh_monthly_attribution` would refuse it anyway — so
+**2026-07 and 2026-08 reading `config_fp` stale is the DESIGNED state, not a defect to repair**, and
+it lines up with the owner's rule that a published and announced month is never corrected. A session
+that "fixes" those two has either faked a stamp or tried to restate a published closing.
 
 Three smaller traps found alongside it:
 

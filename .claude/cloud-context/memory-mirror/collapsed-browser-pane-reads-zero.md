@@ -1,11 +1,11 @@
 ---
 name: collapsed-browser-pane-reads-zero
-description: "A collapsed Browser pane makes every layout reading 0 - the page renders but stays on 'Loading workspace', because Next streams content as <div hidden> and the reveal is rAF-gated. Remove the hidden ATTRIBUTE to measure; setting style.display loses to it. It also freezes CSS animations: the portal page-enter animation holds the page at 0.994 scale, so finish every animation before reading a rect."
+description: "A collapsed/hidden Browser pane leaves a full reload stuck on the loading screen (the streamed reveal is rAF-gated) and every layout reading 0. Best fix: window.next.router.push(same path, new query) renders the REAL page with no rAF gate; fallback: remove the hidden ATTRIBUTE. It also freezes CSS animations (finish them before reading a rect), and a ref click at an emulated size bigger than the pane can miss - drive React checkboxes with element.click()."
 metadata: 
   node_type: memory
   type: project
   originSessionId: ad7f6844-5aef-4d22-9a7e-51c9934c566e
-  modified: 2026-09-17T09:01:57.388Z
+  modified: 2026-09-30T19:31:17.708Z
 ---
 
 With the Browser pane collapsed in the desktop app, `document.visibilityState` reads **`hidden`**,
@@ -49,6 +49,20 @@ toward the centre, which hides a pixel or two of overflow, and placement arithme
 zoom off a rect inherits the error. The tell is `rect.width / offsetWidth` missing the known zoom.
 Run `for (const a of document.getAnimations()) a.finish()` before every measurement (and again after
 opening or closing anything), wrapped in try/catch, since an infinite animation throws.
+
+**Better than lifting `hidden`: navigate CLIENT-SIDE** (found 2026-09-30, Phoenix CRM plan board on
+the preview box). A full reload in a hidden pane sticks on the route's `loading.tsx` ("Loading
+employee portal page") although the server logged the page `200 in 1051ms` — the streamed reveal is
+the rAF-gated part. `window.next.router.push("/same/path?v=2")` (the app router is exposed on
+`window.next` in dev) renders the REAL page through a transition, with no rAF gate: the board came
+up fully interactive, so ticks, saves and 375 px measurements were real rather than a lifted copy.
+Change the query string or the router treats it as the page already shown. Two more habits:
+- **Emulated sizes larger than the pane scale the page INSIDE the screenshot frame**, so a `ref`
+  click can land on blank space; `form_input` then sets a checkbox's DOM `checked` without React
+  ever hearing it. Drive React checkboxes with `element.click()` (reset `checked` first if a tool
+  already flipped it), and use real typing for text.
+- The mobile preset swaps the user agent, which is why it needs the reload that sticks — do the
+  reload, then `router.push` once to get past it.
 
 See [[never-horizontal-scroll-always-mobile-and-desktop-friendly]] and
 [[monthly-closing-matrix-cannot-fit]].

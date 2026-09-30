@@ -128,6 +128,11 @@ and do not hand back manual steps or theory.
   commit charge over 85%) — it hard-freezes or bluescreens with no dump and loses every unsaved
   session. Do not start a dev server, build, typecheck or test run while saturated; push the branch and
   let CI answer, or move the work to a cloud session.
+- **A SUDDEN freeze or throttle: read the charger state BEFORE blaming RAM** (2026-09-30). System log,
+  Kernel-Power **105** carries `AcOnline`; on battery the firmware power-caps the CPU. On 2026-09-30 a
+  battery spell plus a burst of sessions froze the box at 774 MB free, while 255 MB on AC that day did
+  not. The charger cut out ON ITS OWN 3–9×/day (69 drops 16–30 Sep, 8 of them 1–64 s blips): a
+  charging-path fault, charger vs the laptop's power socket not yet isolated.
 - **Until the 32 GB upgrade lands, run this box LEAN by default (owner rule, 2026-09-24): route every
   independent or heavy task to a CLOUD session (Tier A), not a local one, and NEVER run a local full
   validation — push the branch and let CI answer.** Local sessions are only for work that genuinely needs
