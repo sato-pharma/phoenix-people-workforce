@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: d460a4ef-6b05-4d9d-8830-b68409d4aed4
-  modified: 2026-08-22T22:18:54.502Z
+  modified: 2026-10-01T00:00:00.000Z
 ---
 
 On **2026-08-05** the owner approved disabling **"Require branches to be up to date before
@@ -14,10 +14,13 @@ merging"** on `main` (`required_status_checks.strict` → `false`). The required
 conversation resolution still required, `required_approving_review_count: 0`.
 
 *Count corrected 2026-08-23:* this said **5** required checks and listed `sast-scan` as the fifth.
-Verified live against `gh api …/branches/main/protection`, there are **4** — `validate`, `lint`,
-`typecheck`, `secret-scan`. Semgrep's `sast-scan` was deliberately never restored and no longer runs
-at all (`.github/workflows/sonarqube.yml:53`). `strict: false` is confirmed still in force, which is
-the fact this file exists for. See [[github-personal-account-no-ghas-oss-scanning]].
+Verified live against `gh api …/branches/main/protection`, there were **4** on that date —
+`validate`, `lint`, `typecheck`, `secret-scan`. **Corrected again 2026-10-01: there are TWO,
+`validate` and `checks`** — #4527 folded `lint`/`typecheck`/`test` into `checks`, and `mobile` and
+`secret-scan` were dropped from protection on 2026-09-29 (both still run, neither gates). Semgrep's
+`sast-scan` was deliberately never restored and no longer runs at all; the `sonarqube.yml` this line
+used to cite was deleted entirely in `9b12f4dd5` (#3484, 2026-09-08). `strict: false` is confirmed
+still in force, which is the fact this file exists for. See [[github-personal-account-no-ghas-oss-scanning]].
 
 **Why:** it was the dominant GitHub Actions cost driver. July billed 5,933 Linux minutes ($17.26
 net); Aug 1–5 alone billed 11,391 minutes ($50.00 net) — ~12x the daily burn, tracking to $400+/mo.

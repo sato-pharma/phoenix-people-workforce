@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 429aa81f-8bf3-4816-993f-e6aaaadc1e75
-  modified: 2026-08-22T22:19:55.294Z
+  modified: 2026-10-01T00:00:00.000Z
 ---
 
 🔴 **SUPERSEDED THE NEXT DAY — 2026-08-05. Read this before acting on anything below.**
@@ -22,7 +22,10 @@ What that changes:
 - **The prescribed fix is now the thing to avoid.** `gh pr update-branch` costs ~16 Actions minutes,
   moves the head SHA and discards the prior green CI. AGENTS.md §2: run it **only** when the change
   genuinely depends on something newly on `main`, never as merge ceremony.
-- **The count is now 4, not 5** — `validate`, `lint`, `typecheck`, `secret-scan`. Semgrep's
+- **The count is now 2, not 4** — `validate` and `checks`. *(Corrected 2026-10-01 — the gate is TWO, `validate` and `checks`; read the protection API, never this line.)*
+  `lint`, `typecheck` and `test` stopped existing as check names when #4527 folded them into
+  `checks`; `mobile` and `secret-scan` were dropped from protection on 2026-09-29 and still run
+  without gating. Semgrep's
   `sast-scan` was deliberately never restored and no longer runs at all, so the "`sast-scan` pending"
   observation below can no longer happen either.
 

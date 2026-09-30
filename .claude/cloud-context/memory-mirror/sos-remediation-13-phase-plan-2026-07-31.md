@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: b7278c43-5066-40ba-99af-397dc2319bb9
-  modified: 2026-09-26T02:42:13.494Z
+  modified: 2026-10-01T00:00:00.000Z
 ---
 
 Deep SoS audit 2026-07-31 (11 parallel auditors + read-only prod SQL): 71 findings (10 critical, 26 high,
@@ -59,8 +59,8 @@ verified by reading the live bodies. Decisions of record: `docs/source-of-sales-
   only by a routine pre-flight). Finish another session's partial work with **guarded UPDATEs**
   (`where … and <col> = <exact old value>`) so a concurrent edit shows 0 rows rather than being clobbered.
 - **`main` had ZERO required status checks at the time** (a merge was not CI-gated) — verify `gh pr checks`
-  on the exact head SHA yourself. ⚠️ Point-in-time: branch protection now has 6 required checks (per
-  AGENTS.md), so re-read the protection API rather than trusting this line.
+  on the exact head SHA yourself. ⚠️ Point-in-time: branch protection has **2** required checks as of 2026-10-01
+  (`validate`, `checks`), so re-read the protection API rather than trusting this line or AGENTS.md.
 
 ## The seed-baseline occupancy trap (the attribution root cause)
 

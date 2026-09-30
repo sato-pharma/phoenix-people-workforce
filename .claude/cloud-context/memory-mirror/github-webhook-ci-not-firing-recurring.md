@@ -4,7 +4,7 @@ description: "Zero check-runs on a commit has TWO causes: a rare dropped event (
 metadata: 
   node_type: memory
   type: project
-  modified: 2026-08-22T22:19:23.455Z
+  modified: 2026-10-01T00:00:00.000Z
   originSessionId: 38d7683c-a0c4-407a-875b-0a9dd5b70200
 ---
 
@@ -18,8 +18,8 @@ PR #1185 and PR #1186's merges back-to-back within ~10 minutes of each other.
 🔴 **Two corrections, 2026-08-23 — read before using the Fix/Gotcha sections below.**
 
 1. **This paragraph used to say "main has no branch protection … so this doesn't block anything."
-   `main` IS protected now** — `enforce_admins: true` and four required checks (`validate`, `lint`,
-   `typecheck`, `secret-scan`), verified live against the branch-protection API. Those gate the
+   `main` IS protected now** — `enforce_admins: true` and two required checks (`validate`,
+   `checks`), verified live against the branch-protection API on 2026-10-01. *(Corrected 2026-10-01 — the gate is TWO, `validate` and `checks`; read the protection API, never this line.)* Those gate the
    **merge** on the PR, so a dropped *post-merge* push run still does not block a merge — but it
    matters far more than it used to, because a merge to `main` now **deploys to production
    immediately** ([[railway-merge-is-the-production-deploy]]). A silent zero-run merge is now a

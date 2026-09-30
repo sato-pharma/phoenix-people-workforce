@@ -4,7 +4,7 @@ description: "A docs-only PR going green in FOUR SECONDS is CORRECT, not a broke
 metadata:
   node_type: memory
   type: project
-  modified: 2026-08-26T17:25:00.000Z
+  modified: 2026-10-01T00:00:00.000Z
 ---
 
 🔴 **REWRITTEN 2026-08-26 — everything this file used to say is obsolete. The gap is FIXED, and the
@@ -38,8 +38,8 @@ it ran properly. `mergeStateStatus` reached `CLEAN` with no intervention.
 1. **`ci-docs-fallback.yml` NO LONGER EXISTS.** The separate fallback workflow (PR #680, issue
    #679) was folded into `ci.yml`'s `changes` gate. Do not look for it, do not recreate it, and do
    not "add the missing `lint-typecheck` job" to it.
-2. **The required contexts were renamed.** There is no `lint-typecheck` context. The four required
-   checks are `validate`, `lint`, `typecheck`, `secret-scan` (see `AGENTS.md` §2).
+2. **The required contexts were renamed.** There is no `lint-typecheck` context. The two required
+   checks are `validate` and `checks`. *(Corrected 2026-10-01 — the gate is TWO, `validate` and `checks`; read the protection API, never this line.)*
 3. **`gh pr merge --admin` is NOT the way to land a docs PR.** `enforce_admins` is now **`true`**,
    so an admin override does not work at all — and even when it did, a merge to `main` ships to
    production immediately and needs the owner's explicit approval regardless. The old note here

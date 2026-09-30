@@ -16,7 +16,8 @@ typescript: { ignoreBuildErrors: true },
 ```
 
 Its own comment says: *do NOT remove this without also confirming typecheck still gates
-merges/deploys some other way.* It does gate merges — `typecheck` is one of the 4 required checks —
+merges/deploys some other way.* It does gate merges — `typecheck` is a STEP inside the required
+`checks` job *(Corrected 2026-10-01 — the gate is TWO, `validate` and `checks`; read the protection API, never this line.)* —
 but that check runs on the **PR head**, and "require branches to be up to date" is **OFF**
 (`strict: false`, deliberately, because it was the dominant Actions cost). So:
 

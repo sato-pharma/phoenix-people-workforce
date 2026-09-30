@@ -1,10 +1,10 @@
 ---
 name: github-personal-account-no-ghas-oss-scanning
-description: "Phoenix-HR is a personal GitHub User account (GitHub Pro), not an Organization -- GitHub Advanced Security (code scanning + secret scanning alerts) is not purchasable, so the repo uses OSS tooling (gitleaks; Semgrep was dropped) instead. secret-scan IS a required branch-protection check, and there are SIX required checks as of 2026-09-18 -- validate, lint, typecheck, test, mobile, secret-scan -- not the four this file recorded in August."
+description: "Phoenix-HR is a personal GitHub User account (GitHub Pro), not an Organization -- GitHub Advanced Security (code scanning + secret scanning alerts) is not purchasable, so the repo uses OSS tooling (gitleaks; Semgrep was dropped) instead. secret-scan still RUNS but stopped being required on 2026-09-29: the gate is TWO as of 2026-10-01, validate and checks -- the count in this file has rotted four times, so read the protection API and never quote it."
 metadata:
   type: project
   originSessionId: 719a274c-ca69-4ea1-8208-da5b96a3cf57
-  modified: 2026-09-18T01:20:00.000Z
+  modified: 2026-10-01T00:00:00.000Z
 ---
 
 Confirmed 2026-07-25 via API: `gh api users/Phoenix-HR` returns `type: "User"`, `plan.name: "pro"` -- not an Organization (`gh api orgs/Phoenix-HR` 404s). `repos/{owner}/{repo}` returns `security_and_analysis: null`, and `code-scanning/default-setup` 403s with a generic "enable in repository settings" message that looks like a toggle but isn't one.
@@ -25,6 +25,8 @@ Both jobs were **originally non-blocking** (gitleaks `--exit-code 0`, semgrep wi
 
 **CORRECTION (read live from the API on 2026-09-18): there are SIX required checks now, not four.** `test` and `mobile` were added that day. `test` had been split out of `validate` on 2026-09-17 (#3950) and the new name was never added to branch protection, so for one day a PR with a red unit suite showed four green required checks and merged; `mobile` (#3974) runs `npm ci` and a typecheck inside `mobile/`. The live list, each context carrying `app_id: 15368` (GitHub Actions): `validate`, `lint`, `typecheck`, `test`, `mobile`, `secret-scan`. It was changed with a `PATCH` to the `required_status_checks` sub-resource in the `checks` array form — the deprecated `contexts` form sets `app_id: null` and would let any app satisfy a check by name. Every repo doc that stated a count was corrected in the same change.
 
-**The count is the part of this file that rots — it has now gone stale three times.** The account of *why* `secret-scan` is required, and why GHAS is not purchasable here, has not moved since 2026-08-08. Before ever stating how many checks gate a merge, read `branches/main/protection/required_status_checks` live; do not quote this paragraph, or AGENTS.md, as the source.
+**CORRECTION (read live from the API on 2026-10-01): there are TWO required checks now, not six — `validate` and `checks`.** #4527 folded `lint`, `typecheck` and `test` into the single `checks` job, so none of those three exists as a check name any more; and on 2026-09-29 `mobile` and `secret-scan` were dropped from protection. **Both still RUN and still report — neither BLOCKS a merge**, so "all required checks green" no longer says anything about the Expo typecheck or a gitleaks finding: read them on the commit and judge them yourself. `secret-scan` being required was the fact this file was written for, and that half is what changed.
+
+**The count is the part of this file that rots — it has now gone stale four times.** The account of *why* `secret-scan` is required, and why GHAS is not purchasable here, has not moved since 2026-08-08. Before ever stating how many checks gate a merge, read `branches/main/protection/required_status_checks` live; do not quote this paragraph, or AGENTS.md, as the source.
 
 **How to apply:** if asked to "enable GitHub code/secret scanning" again, don't retry the API toggle -- it's not available on this plan. Point to this workflow instead. If gitleaks starts flagging new `key:`-shaped identifiers as false positives, extend the existing allowlist regex in `.gitleaks.toml` rather than re-litigating from scratch. Before ever claiming "no secret scanning runs on this repo", re-deleting this workflow as "already gone", or stating how many/which checks gate a merge, re-check `origin/main`'s actual current file AND live branch-protection `required_status_checks.contexts` -- this exact memory has already been stale twice (the gap between #1889/#1894, and the required-check-count claim above).

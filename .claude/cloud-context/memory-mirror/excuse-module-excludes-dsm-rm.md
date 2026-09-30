@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 6e0de13b-b588-44f7-8112-52d963323230
-  modified: 2026-08-22T22:23:44.621Z
+  modified: 2026-10-01T00:00:00.000Z
 ---
 
 Owner instruction 2026-07-30: "remove excuse request or excuse approval from all dsm and rm."
@@ -21,8 +21,9 @@ window**: a merge to `main` ships to production **immediately**, at full traffic
 rollout. `deploy-cloud-run.yml` is trigger-disabled. Confirm what is actually serving with
 `GET /api/healthz` and read `revision` — not a workflow list. See
 [[railway-merge-is-the-production-deploy]] and [[railway-is-prod-cloud-run-workflow-is-dead]].
-The CI-conclusion gate idea below is also gone; today four **required** checks (`validate`, `lint`,
-`typecheck`, `secret-scan`) block the merge itself. Kept verbatim as the 2026-07-31 record:
+The CI-conclusion gate idea below is also gone; today two **required** checks (`validate`,
+`checks`) block the merge itself. *(Corrected 2026-10-01 — the gate is TWO, `validate` and
+`checks`; read the protection API, never this line.)* Kept verbatim as the 2026-07-31 record:
 
 **~~Deploy-pipeline facts worth remembering~~ (I had this backwards at first):**
 - `deploy-cloud-run.yml` (PROD) runs on a **2-hourly cron** (`0 */2 * * *`) or `workflow_dispatch`.
