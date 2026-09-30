@@ -13,7 +13,7 @@ import {
   unplannedVisitStageOf,
   unplannedVisitStatusLabel,
 } from "../src/lib/phoenix-crm/unplanned-rules.ts";
-import { stripComments } from "./support/comment-strip.ts";
+import { stripComments, stripCommentsCompact } from "./support/comment-strip.ts";
 
 /**
  * Phoenix CRM — the unplanned (off-plan) visit.
@@ -199,7 +199,15 @@ export async function runPhoenixCrmUnplannedVisitTests(): Promise<void> {
     // No render test exists in this module, and no source pin caught it, which is why this is here.
     const problems: string[] = [];
     for (const file of readdirSync(new URL("../src/components/phoenix-crm/", import.meta.url)).filter((name) => name.endsWith(".tsx"))) {
-      const text = stripComments(readFileSync(new URL(`../src/components/phoenix-crm/${file}`, import.meta.url), "utf8"));
+      // 🔴 COMPACT, NOT `stripComments` — this loop slices a fixed-SIZE window, and `stripComments`
+      // BLANKS a comment to spaces rather than deleting it, to keep line numbers honest. So a long
+      // comment written between the phone half and the desktop half fills the whole window with
+      // whitespace and the guard fires on a file that is correct. It did, on customer-list-board.tsx
+      // (2026-09-30): the table sat 1,288 characters past the close tag, about 1,100 of them spaces,
+      // and `validate` went red on a board whose two halves were four lines apart. comment-strip.ts
+      // documents this exact trap and sends a fixed-window test here. Nothing below reads a line
+      // number — the message names a FILE — so the compact strip costs this loop nothing.
+      const text = stripCommentsCompact(readFileSync(new URL(`../src/components/phoenix-crm/${file}`, import.meta.url), "utf8"));
       for (const match of text.matchAll(/<CrmCardsOnPhone[\s>]/g)) {
         const after = text.slice(match.index ?? 0);
         const close = after.indexOf("</CrmCardsOnPhone>");

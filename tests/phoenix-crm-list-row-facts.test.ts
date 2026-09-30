@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { stripComments } from "./support/comment-strip.ts";
+import { averageCheckinPoint } from "../src/lib/crm/checkin-location.ts";
 
 import {
   factInk,
@@ -41,6 +42,8 @@ const place = (over: Partial<ListRowFactsInput["places"][number]> = {}) => ({
   areaName: null,
   brickName: null,
   label: null,
+  lat: 30.5667,
+  lon: 30.9833,
   zone: null,
   ...over,
 });
@@ -102,7 +105,8 @@ export function runPhoenixCrmListRowFactsTests() {
   // ── The placeholder: never a blank cell, and it names what fills it ──────────────────────────────
   {
     const empty = listRowFacts(bare);
-    for (const [field, fact] of Object.entries(empty)) {
+    for (const field of ["address", "brick", "area", "speciality", "grade"] as const) {
+      const fact = empty[field];
       assert.notEqual(fact.text.trim(), "", `${field}: a List row never prints an empty cell`);
       assert.doesNotMatch(fact.text, /missing|blocked|cannot|must|unknown|n\/a|—/i, `${field}: "${fact.text}" — a placeholder is an invitation, never a complaint`);
     }
@@ -131,6 +135,103 @@ export function runPhoenixCrmListRowFactsTests() {
     const outside = listRowFacts({ ...bare, places: [place({ brickName: "باجور" })] });
     assert.equal(outside.brick.text, "باجور", "his capture still wins");
     assert.equal(outside.address.text, FILLED_BY_VALIDATING, "and the stamp, not the place, chooses the placeholder");
+  }
+
+  // ── 🔴 THE FULL ADDRESS IS CLICKABLE (owner, 2026-09-30) ────────────────────────────────────────
+  //
+  // "You were writing the FULL address and the full address was CLICKABLE." A captured place has an
+  // exact point, so it opens a PIN; an address with only words behind it opens a SEARCH, qualified by
+  // its locality because a bare Egyptian street name resolves almost anywhere and a rep who drives to
+  // the wrong governorate has been actively misled.
+  {
+    const pinned = listRowFacts({ ...bare, places: [place({ address: "12 Gomhoreya St" })], validatedAt: "2026-09-30T08:00:00Z" });
+    assert.match(pinned.mapsHref ?? "", /query=30\.5667%2C30\.9833/, "a captured place opens a pin on its own point");
+
+    const searched = listRowFacts({ ...bare, reference: reference({ address: "9 Nile St", city: "Giza" }) });
+    assert.match(searched.mapsHref ?? "", /^https:\/\/www\.google\.com\/maps\/search\/\?api=1&query=/);
+    assert.match(searched.mapsHref ?? "", /Giza/, "the locality qualifies the search, or the street resolves anywhere");
+
+    // 🔴 A PLACEHOLDER IS NEVER A LINK — there is nothing to drive to, and a search on the words
+    //    "Set when you validate" would send him to the middle of nowhere.
+    assert.equal(listRowFacts(bare).mapsHref, null);
+    assert.equal(listRowFacts({ ...bare, validatedAt: "2026-09-30T08:00:00Z" }).mapsHref, null);
+
+    // The POINT wins for the link even when the WORDS came from the vendor: an exact fix beats a
+    // text search every time.
+    const mixed = listRowFacts({
+      ...bare,
+      places: [place({ brickName: "باجور" })],
+      reference: reference({ address: "9 Nile St" }),
+      validatedAt: "2026-09-30T08:00:00Z",
+    });
+    assert.equal(mixed.address.text, "9 Nile St");
+    assert.match(mixed.mapsHref ?? "", /query=30\.5667%2C30\.9833/, "the captured point still pins it");
+
+    // The FULL address, not a fragment: the resolved street comes FIRST, ahead of a landmark label.
+    const full = listRowFacts({
+      ...bare,
+      places: [place({ address: "6 El-Nour, Sheraton Al Matar, El Nozha, Cairo", label: "behind the mosque" })],
+      validatedAt: "2026-09-30T08:00:00Z",
+    });
+    assert.equal(full.address.text, "6 El-Nour, Sheraton Al Matar, El Nozha, Cairo", "the long drivable address, not the landmark");
+  }
+
+  // ── 🔴 THE DOCTOR'S PLACE COMES FROM THE CHECK-INS (owner, 2026-09-30) ──────────────────────────
+  //
+  // "You will get the location of the doctor from the check-ins taken for this doctor and put it in
+  // the location here" — "make an average." His List was showing an unvalidated customer at the
+  // vendor's typed record, "أشمون · Monofia III · Delta West", which is a REGION: it cannot be
+  // driven to, and its Maps link was a text search on those words.
+  {
+    const observed = { address: "6 El-Nour, Sheraton Al Matar, El Nozha, Cairo", lat: 30.1021, lon: 31.3694 };
+
+    // It beats the vendor's typed record, in the words AND in the link.
+    const seen = listRowFacts({ ...bare, observed, reference: reference({ address: "أشمون", city: "Monofia III" }) });
+    assert.equal(seen.address.text, "6 El-Nour, Sheraton Al Matar, El Nozha, Cairo", "where a rep stood beats what the vendor typed");
+    assert.match(seen.mapsHref ?? "", /query=30\.1021%2C31\.3694/, "and it opens a PIN, not a search on a region's name");
+
+    // 🔴 IT NEVER BEATS A PLACE THE REP CAPTURED. That is a deliberate act at the door; this is an
+    //    observation, and one of the observations may be from a car on the ring road.
+    const captured = listRowFacts({
+      ...bare,
+      observed,
+      places: [place({ address: "12 Gomhoreya St" })],
+      validatedAt: "2026-09-30T08:00:00Z",
+    });
+    assert.equal(captured.address.text, "12 Gomhoreya St");
+    assert.match(captured.mapsHref ?? "", /query=30\.5667%2C30\.9833/, "the captured point still pins it");
+
+    // A check-in with no resolved address still supplies the PIN — a point beats words either way.
+    const pointOnly = listRowFacts({ ...bare, observed: { ...observed, address: null }, reference: reference({ address: "أشمون" }) });
+    assert.equal(pointOnly.address.text, "أشمون", "the words fall back to the vendor");
+    assert.match(pointOnly.mapsHref ?? "", /query=30\.1021%2C31\.3694/, "while the link still lands on the doctor");
+
+    // ── The average itself ────────────────────────────────────────────────────────────────────────
+    const at = (day: string) => `2026-09-${day}T08:00:00Z`;
+    const fix = (lat: number, lon: number, day = "01") => ({ at: at(day), lat, lon, repKey: "1" });
+
+    // Fixes that agree are averaged. Three within a block of each other give their midpoint.
+    const tight = averageCheckinPoint([fix(30.1, 31.3), fix(30.1002, 31.3002), fix(30.1004, 31.3004)]);
+    assert.equal(tight?.agreed, 3);
+    assert.equal(tight?.total, 3);
+    assert.ok(Math.abs((tight?.lat ?? 0) - 30.1002) < 1e-6, "the mean of the three");
+
+    // 🔴 AN OUTLIER IS DROPPED, NOT AVERAGED IN. One fix from a car on the ring road would drag a
+    //    plain mean a kilometre into open ground, and a rep drives to what this says. CHANGE THIS
+    //    LINE if the owner ever wants the arithmetic mean of every fix regardless.
+    const withOutlier = averageCheckinPoint([fix(30.1, 31.3), fix(30.1002, 31.3002), fix(30.1004, 31.3004), fix(30.4, 31.9)]);
+    assert.equal(withOutlier?.agreed, 3, "three agreed");
+    assert.equal(withOutlier?.total, 4, "out of four considered — the row can say so");
+    assert.ok(Math.abs((withOutlier?.lat ?? 0) - 30.1002) < 1e-6, "and the far one changed nothing");
+
+    // When every fix disagrees with every other there is no group to average: the NEWEST is the best
+    // single answer, and `agreed: 1` says the average is made of one thing.
+    const scattered = averageCheckinPoint([fix(30.1, 31.3, "01"), fix(30.4, 31.9, "20"), fix(29.9, 30.9, "10")]);
+    assert.equal(scattered?.agreed, 1);
+    assert.equal(scattered?.lat, 30.4, "the newest check-in");
+
+    assert.equal(averageCheckinPoint([]), null, "nobody has ever checked in: no point, and the row says so");
+    assert.equal(averageCheckinPoint([{ at: null, lat: Number.NaN, lon: 31.3, repKey: null }]), null, "an unusable fix is not a place");
   }
 
   // ── The ink ─────────────────────────────────────────────────────────────────────────────────────
@@ -167,6 +268,29 @@ export function runPhoenixCrmListRowFactsTests() {
     }
     // 🔴 The old board's sixth column scored a rep's check-in against the brick. It stays off.
     assert.doesNotMatch(board, /Confidence|brickDistanceKm/, "Confidence is a check on the rep and never reaches his List");
+
+    // 🔴 THE AREA IS NOT SAID TWICE. The group heading already names brick AND area, and the address
+    //    carries the vendor's own region words — a third naming, in a third vocabulary, is what the
+    //    owner was looking at ("you duplicated the wrong areas and regions").
+    assert.ok(!board.includes("{facts.area.text}"), "the Brick column prints the brick alone");
+
+    // 🔴 THE FULL ADDRESS IS CLICKABLE, and only when there is something to drive to.
+    assert.ok(board.includes("<AddressText href={facts.mapsHref}"), "the table's address is the clickable one");
+    assert.ok(board.includes('rel="noreferrer"') && board.includes('target="_blank"'), "and it opens away from his day");
+    assert.ok(board.includes("if (!href) {"), "a placeholder is never a link");
+
+    // 🔴 A SHARED CUSTOMER IS HIGHLIGHTED, and the row says who and why (owner, 2026-09-30). Pinned
+    //    here because it cannot be shown on demand: sharing is rare by construction — 214 real pairs
+    //    company-wide — and the rep whose List this was measured on has none, which is the honest
+    //    answer and not a silent failure (the loader logs one, and the preview logged zero).
+    assert.ok(board.includes('<tr className={shared ? "bg-violet-50" : undefined}'), "a shared row is violet, as the old board had it");
+    assert.ok(board.includes("const shared = (customer.sharedWith?.length ?? 0) > 0;"), "and it is the same field the old board reads");
+    assert.ok(board.includes("{describeSharing(shared)}"), "the small line names WHO and on what basis — the match is an inference a reader may overrule");
+    assert.equal((board.match(/<SharedLine customer=\{customer\} \/>/g) ?? []).length, 2, "on the table row AND the phone card");
+
+    // 🔴 NO "Not validated yet" PILL ON A ROW THAT CARRIES A VALIDATE BUTTON (owner, same session:
+    //    "since it has a Validate button beside it, then for sure it is not validated. Be smart").
+    assert.ok(!board.includes("PENDING_PILL"), "the button IS the status; a pill repeating it says nothing new");
     // The widths are a table-fixed grid totalling 100%, so the row fits rather than scrolling.
     const widths = /columns=\{\[([^\]]+)\]\}/.exec(board)?.[1] ?? "";
     const total = [...widths.matchAll(/(\d+)%/g)].reduce((sum, match) => sum + Number(match[1]), 0);
