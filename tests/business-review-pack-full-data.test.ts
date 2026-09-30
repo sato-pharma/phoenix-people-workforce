@@ -159,6 +159,14 @@ const DRAWN_AS: Partial<Record<ReviewMetricId, ReviewMetricId>> = {
 };
 /** Drawn only from the Monthly Closing's customer-grain rows, which this fixture does not load. */
 const NEEDS_DETAIL = new Set<ReviewMetricId>(["brick-spread", "customer-concentration", "channel-split"]);
+/**
+ * Drawn only from the linked field facts (the reps' lists, visits, rides, orders, requests), which
+ * this fixture does not load either — tests/business-review-field-link.test.ts draws every one of
+ * them from its own fixture, at every level that offers it.
+ */
+const NEEDS_FIELD_LINK = new Set<ReviewMetricId>(
+  REVIEW_METRICS.filter((m) => m.needsFieldLink && m.id !== "review-summary").map((m) => m.id),
+);
 
 export function runBusinessReviewPackFullDataTests() {
   // ------------------------------------------------------------------ 1. every offered metric is drawn
@@ -167,7 +175,7 @@ export function runBusinessReviewPackFullDataTests() {
     const pack = buildSalesReviewPack(everything("company", all));
     const drawn = new Set(pack.sections.map((s) => s.metric));
     const missing = all
-      .filter((id) => !NEEDS_DETAIL.has(id))
+      .filter((id) => !NEEDS_DETAIL.has(id) && !NEEDS_FIELD_LINK.has(id))
       .filter((id) => !drawn.has(DRAWN_AS[id] ?? id));
     assert.deepEqual(
       missing,
@@ -186,23 +194,32 @@ export function runBusinessReviewPackFullDataTests() {
       people: [person("A Rep", "Medical Rep")],
       subject: { level: "rep", line: "pedia", title: "A Rep", windowLabel: "Jul – Aug 2026" },
     };
-    const titles = buildSalesReviewPack(rep).sections.map((s) => s.title);
+    // Checked by METRIC, not by title: since 2026-10-01 a rep's pack reads in his own voice ("Your
+    // area's sales", "Your visits" — owner: "built on maturity level … simple and easy for him to
+    // understand"), and the pin is that the KPIs are there, whatever they are called.
+    const sections = buildSalesReviewPack(rep).sections;
+    const metrics = sections.map((s) => s.metric);
     for (const expected of [
-      "Areas",
-      "Per product",
-      "Month by month",
-      "Against the previous window",
-      "Visits",
-      "Coverage and frequency",
-      "Double visits — received, by area",
-      "Rep by rep",
-      "Unique customers per month",
-      "Cost",
-      "Marketing against the trend",
-    ]) {
-      assert.ok(titles.includes(expected), `a medical rep's pack must carry "${expected}" — it had: ${titles.join(" · ")}`);
+      "review-summary",
+      "achievement",
+      "per-product",
+      "month-by-month",
+      "vs-previous-window",
+      "visits-split",
+      "coverage-frequency",
+      "double-visits",
+      "rep-rows",
+      "customers-per-month",
+      "marketing-committed",
+      "marketing-vs-trend",
+    ] as const) {
+      assert.ok(
+        metrics.includes(expected),
+        `a medical rep's pack must carry "${expected}" — it had: ${sections.map((s) => s.title).join(" · ")}`,
+      );
     }
-    assert.ok(titles.length >= 11, `a rep's pack came out with only ${titles.length} sections`);
+    assert.ok(sections.length >= 12, `a rep's pack came out with only ${sections.length} sections`);
+    assert.equal(sections[0].metric, "review-summary", "and it opens on his period in plain sentences");
   }
 
   // ------------------------------------------------------------------ 3. one rule for achievement

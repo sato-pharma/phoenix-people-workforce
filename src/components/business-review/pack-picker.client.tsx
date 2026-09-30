@@ -113,7 +113,7 @@ export function PackPicker({ action, hidden, level, selected }: Props) {
                       <span className="min-w-0">
                         <span className="block break-words text-sm font-semibold">
                           {metric.label}
-                          {metric.needsClosingDetail && (
+                          {(metric.needsClosingDetail || metric.needsFieldLink) && (
                             <span className="ml-1.5 border border-border px-1 py-0.5 text-phx-2xs font-bold uppercase tracking-wide text-muted-foreground">
                               extra read
                             </span>
@@ -129,12 +129,14 @@ export function PackPicker({ action, hidden, level, selected }: Props) {
           ))}
         </div>
 
-        {/* The three marked "extra read" go to the Monthly Closing's customer-grain rows — a round
-            trip per line per month. Saying so is the difference between a slow page and an
+        {/* The ones marked "extra read" go to the Monthly Closing's customer-grain rows — a round trip
+            per line per month — or read the reps' CRM lists, visits, ride days, direct orders and
+            requests for this scope. Saying so is the difference between a slow page and an
             unexplained one. */}
         <p className="mt-3 break-words text-phx-xs text-muted-foreground">
           The metrics marked <span className="font-semibold">extra read</span> ask the Monthly Closing for its
-          customer-by-customer rows, which takes longer to load. Leave them unticked when you do not need them.
+          customer-by-customer rows, or read the reps&apos; CRM lists and visits, which takes longer to load. Leave
+          them unticked when you do not need them.
         </p>
 
         <div className="mt-3 flex flex-wrap gap-2">

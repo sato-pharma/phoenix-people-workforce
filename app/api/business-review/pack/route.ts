@@ -18,12 +18,14 @@ import { NextResponse } from "next/server";
 import { writeAuditLog } from "@/lib/admin/audit";
 import { resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { resolveAccessContext } from "@/lib/auth/server";
-import { concentrationForAreas } from "@/lib/business-review/concentration";
+import { concentrationForAreas, type ReviewSalesDetail } from "@/lib/business-review/concentration";
 import { figureWindowLabel, figureWindowPeriods, hasFigures } from "@/lib/business-review/coverage";
+import type { FieldLinkFacts } from "@/lib/business-review/field-link";
 import {
   defaultSelectionFor,
   narrowSelection,
   needsClosingDetail,
+  needsFieldLink,
   type PackLevel,
 } from "@/lib/business-review/pack/metrics";
 import { buildSalesReviewPack, type PackArea, type PackDm } from "@/lib/business-review/pack/model";
@@ -38,9 +40,10 @@ import {
   REVIEW_LINE_ORDER,
   territoriesInScope,
 } from "@/lib/business-review/scope-filter";
+import { loadFieldLinkFacts } from "@/lib/business-review/sources/field-link";
 import type { ReviewPersonRow } from "@/lib/business-review/sources/roles";
 import type { AreaSummary } from "@/lib/business-review/types";
-import type { ReviewLine } from "@/lib/business-review/canonical";
+import { OFFICIAL_LINE, type ReviewLine } from "@/lib/business-review/canonical";
 import {
   getReviewDataset,
   loadBusinessReview,
@@ -195,7 +198,43 @@ export async function GET(request: Request) {
       }
     }
 
+    // The work beside the money (owner, 2026-10-01). Everything the linked read is told comes from
+    // what SURVIVED the scope and the filter above — the reps standing in these areas, these district
+    // seats, these areas and lines — never from the request. A medical rep's read names him alone and
+    // reads only his own marketing requests.
+    const wantsLink = needsFieldLink(selection);
+    const has = (id: (typeof selection)[number]) => selection.includes(id);
+    const linkRead: Promise<FieldLinkFacts | null> = wantsLink
+      ? loadFieldLinkFacts({
+          areaCodes: [...new Set(areas.map((area) => area.areaCode).filter((code): code is string => !!code))],
+          include: {
+            awareness: has("awareness") || has("cost-to-serve") || has("review-summary"),
+            directOrders: has("direct-orders") || has("review-summary"),
+            marketing: has("requests-return") || has("review-summary"),
+          },
+          lineNames: filter.lines.map((line) => OFFICIAL_LINE[line]),
+          managerSeatIds:
+            scope.kind === "rep"
+              ? [...new Set(areas.map((area) => area.dmSeatId).filter((seat): seat is string => !!seat))]
+              : filter.dmSeatIds,
+          months: figureWindowPeriods(coverage),
+          ownRequestsOf: scope.kind === "rep" ? scope.hrId : null,
+          repHrIds:
+            scope.kind === "rep"
+              ? [scope.hrId]
+              : [
+                  ...areas.flatMap((area) => area.repHrIds ?? []),
+                  ...people.filter((person) => person.role === "Medical Rep").map((person) => person.hrId),
+                ],
+        }).catch((error: unknown) => {
+          // The rest of the pack is still correct; the linked sections are dropped, never zeroed.
+          logError("business-review.pack field link failed", { error });
+          return null;
+        })
+      : Promise.resolve(null);
+
     let concentration = null;
+    let brickSales: ReviewSalesDetail[] | null = null;
     if (needsClosingDetail(selection)) {
       try {
         const detail = await loadReviewConcentration({ coverage, viewer: access });
@@ -203,19 +242,29 @@ export async function GET(request: Request) {
         // out inside the loader, on the raw rows — never here.
         const rows = filter.lines.flatMap((line) => detail.byLine[REVIEW_LINE_CODES[line]] ?? []);
         concentration = concentrationForAreas(rows, [...new Set(areas.map((area) => area.areaCode))]);
+        // The brick table's own cut: each line's rows at THAT line's areas only. An area code is shared
+        // by every line's reps, so a code alone would pull another line's sales into this brick.
+        brickSales = filter.lines.flatMap((line) =>
+          (detail.byLine[REVIEW_LINE_CODES[line]] ?? []).filter((row) =>
+            keptAreas.has(`${line}:${row.areaCode.toUpperCase()}`) || keptAreas.has(`${line}:${row.areaCode}`),
+          ),
+        );
       } catch (error) {
         // The rest of the pack is still correct, so it ships without these sections rather than
         // failing the whole export. The model drops a section with nothing in it.
         logError("business-review.pack concentration failed", { error });
       }
     }
+    const fieldLink = await linkRead;
 
     const windowLabel = figureWindowLabel(coverage);
     const pack = buildSalesReviewPack({
       areas,
       concentration,
+      brickSales,
       coverageNote: coverage.notUploaded?.note ?? `Every figure covers ${windowLabel}.`,
       dms,
+      fieldLink,
       // The FIGURE window's months, never the requested one's — see figureWindowPeriods.
       months: figureWindowPeriods(coverage),
       people,
