@@ -997,6 +997,7 @@ import { runCustomerPharmacyMappingActionsTests } from "./customer-pharmacy-mapp
 import { runCvDatabaseTests } from "./cv-database.test.ts";
 import { runCvLookupTests } from "./cv-lookup.test.ts";
 import { runTransactionWorkflowAuditTests } from "./transaction-workflow-audit.test.ts";
+import { runAuditEntityTypesTests } from "./audit-entity-types.test.ts";
 import { runPhase13BrowserSmokeRegressionTests } from "./phase13-browser-smoke-regression.test.ts";
 import { runPhase14ControlledMutationSmokeTests } from "./phase14-controlled-mutation-smoke.test.ts";
 import { runPhase15DisposableFixtureSmokeTests } from "./phase15-disposable-fixture-smoke.test.ts";
@@ -4090,6 +4091,7 @@ await runTest("customer pharmacy mapping actions (approve/reject)", runCustomerP
 await runTest("cv database", runCvDatabaseTests);
 await runTest("cv lookup", runCvLookupTests);
 await runTest("transaction workflow audit", runTransactionWorkflowAuditTests);
+await runTest("audit entity types", runAuditEntityTypesTests);
 await runTest("phase 13 browser smoke regressions", runPhase13BrowserSmokeRegressionTests);
 await runTest("phase 14 controlled mutation smoke", runPhase14ControlledMutationSmokeTests);
 await runTest("phase 15 disposable fixture smoke", runPhase15DisposableFixtureSmokeTests);
