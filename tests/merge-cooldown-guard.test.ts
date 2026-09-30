@@ -43,14 +43,43 @@ type Decision = { decision: "allow" | "deny"; reason: string };
  * for anything else — so a hook that started shelling out to gh for something new would be caught
  * here rather than in production.
  */
-function ghShim(dir: string, changedFiles: number | "fail"): string {
+function ghShim(dir: string, changedFiles: number | "fail", mergeState?: string): string {
   const binDir = mkdtempSync(join(dir, "bin-"));
+  // A shim given no `mergeState` answers the SIZE question only and exits non-zero for the state
+  // one — which is the pre-2026-10-01 world, and is why every refusal below still refuses: an
+  // unreadable state must leave the size refusal exactly as it was, never fail open.
+  // The state answer is the RAW JSON gh returns for `--json state,mergeStateStatus`, because the
+  // hook asks without `--jq`: on Windows `shell: true` concatenates arguments unescaped, so a jq
+  // expression carrying quotes and spaces reached gh as stray positional arguments and the call
+  // exited 1 every time — a failure indistinguishable from "cannot read", which would have refused
+  // every green PR while the tests passed. Caught 2026-10-01 by replicating the call by hand.
+  const [prState = "", statusName = ""] = (mergeState ?? "").split("/");
+  const stateJson = `{"state":"${prState}","mergeStateStatus":"${statusName}"}`;
   const body =
     changedFiles === "fail"
       ? { sh: "exit 1\n", cmd: "@echo off\r\nexit /b 1\r\n" }
       : {
-          sh: `#!/bin/sh\ncase "$*" in\n  *"pr view"*changedFiles*) echo ${changedFiles} ;;\n  *) exit 1 ;;\nesac\n`,
-          cmd: `@echo off\r\necho ${changedFiles}\r\n`,
+          // Single-quoted in sh and bare in cmd: both pass the braces and double quotes through
+          // untouched, and neither needs an escape that could drift between the two.
+          // 🔴 The state branch REFUSES a `--jq`, the way real gh refuses the stray positional
+          // arguments one becomes: `shell: true` on Windows concatenates arguments unescaped, so
+          // `--jq '.state + "/" + .mergeStateStatus'` exits 1 every time. A stub that tolerated the
+          // flag let that ship, because a failed state read looks exactly like "cannot tell". The
+          // SIZE call's own `--jq .changedFiles` has no spaces and is matched first, so it still works.
+          sh:
+            `#!/bin/sh\ncase "$*" in\n  *"pr view"*changedFiles*) echo ${changedFiles} ;;\n` +
+            `  *"pr view"*mergeStateStatus*--jq*) exit 1 ;;\n` +
+            (mergeState ? `  *"pr view"*mergeStateStatus*) echo '${stateJson}' ;;\n` : "") +
+            `  *) exit 1 ;;\nesac\n`,
+          // cmd.exe has no case/esac: branch on whether the arguments mention mergeStateStatus.
+          // 🔴 Written with `if errorlevel`, never `findstr … && (exit /b 1) || (echo …)`: in that
+          // one-liner cmd runs the `||` branch after `exit /b 1` too, so the shim ANSWERED the state
+          // query with the file count instead of failing — and the fail-closed assertion below then
+          // passed against a guard that had been broken open (caught 2026-10-01 by breaking it).
+          cmd:
+            `@echo off\r\necho %* | findstr /C:"mergeStateStatus" >nul\r\nif errorlevel 1 (echo ${changedFiles}\r\n  exit /b 0\r\n)\r\n` +
+            `echo %* | findstr /C:"--jq" >nul\r\nif not errorlevel 1 exit /b 1\r\n` +
+            (mergeState ? `echo ${stateJson}\r\n` : `exit /b 1\r\n`),
         };
   const sh = join(binDir, "gh");
   writeFileSync(sh, changedFiles === "fail" ? "#!/bin/sh\nexit 1\n" : body.sh, "utf8");
@@ -241,6 +270,115 @@ export function runMergeCooldownGuardTests(): void {
         runGuard(dir, "gh pr merge 4790 --squash", { ghDir: gh }).decision,
         "deny",
         "3 files is still below the default threshold of 4",
+      );
+    }
+
+    // ---- an already-open, already-GREEN PR goes straight through -----------
+    //
+    // Owner, 2026-10-01: "make the merge guard stop blocking an already-green PR". Before this, the
+    // only way past the size refusal was PHX_MERGE_OK=1, which the auto-mode classifier refuses as a
+    // [Safety Bypass Flag] — so the two guards deadlocked and a small PR could not be merged by a
+    // session at all (measured on #4988, which the owner had to press Squash and merge on himself).
+    // Once the PR is green its run is already PAID, so the refusal saves nothing.
+
+    {
+      const gh = ghShim(dir, 2, "OPEN/CLEAN");
+      const green = runGuard(dir, "gh pr merge 4790 --squash", { ghDir: gh });
+      assert.equal(
+        green.decision,
+        "allow",
+        "a 2-file PR that is OPEN and CLEAN must merge with NO stand-down — its PR run is paid, and " +
+          "the stand-down is the very thing the classifier refuses",
+      );
+      assert.equal(green.reason, "", "and it passes silently: an allow that lectures is a deny nobody reads");
+    }
+
+    {
+      // BLOCKED is the state of a PR whose required checks have not passed. That is exactly when
+      // "fold it into a wider branch" is still possible, because the branch has not shipped.
+      const gh = ghShim(dir, 2, "OPEN/BLOCKED");
+      const blocked = runGuard(dir, "gh pr merge 4790 --squash", { ghDir: gh });
+      assert.equal(blocked.decision, "deny", "a small PR whose checks have not passed is still refused");
+      assert.match(
+        blocked.reason,
+        /NOT GREEN YET/i,
+        "and the refusal says which of the two reasons it is, or the reader retries the stand-down the " +
+          "classifier will refuse",
+      );
+      assert.doesNotMatch(
+        blocked.reason,
+        /ALREADY OPEN AND GREEN, MERGE IT WITH THE STAND-DOWN/i,
+        "the old advice is gone: it sent the reader to a flag that is refused, which is the deadlock",
+      );
+    }
+
+    {
+      // UNSTABLE means mergeable, required checks green, but a NON-required check red — `mobile` and
+      // `secret-scan` stopped gating here on 2026-09-29. Deliberately NOT waved through: something is
+      // red and deserves a look, and the stand-down still covers it.
+      const gh = ghShim(dir, 2, "OPEN/UNSTABLE");
+      assert.equal(
+        runGuard(dir, "gh pr merge 4790 --squash", { ghDir: gh }).decision,
+        "deny",
+        "UNSTABLE is not green: a red non-required check is a thing to read, not to merge past silently",
+      );
+    }
+
+    {
+      // GitHub computes mergeability lazily and answers UNKNOWN until it has — the normal reading for
+      // a minute or two after `main` moves, which is exactly when a session merges. #4991 read
+      // OPEN/UNKNOWN on 2026-10-01 while genuinely waiting on nothing but that bookkeeping. The hook
+      // asks a second time, so this shim answers UNKNOWN once and CLEAN after.
+      const binDir = mkdtempSync(join(dir, "bin-flip-"));
+      const counter = join(binDir, "asked");
+      const clean = '{"state":"OPEN","mergeStateStatus":"CLEAN"}';
+      const unknown = '{"state":"OPEN","mergeStateStatus":"UNKNOWN"}';
+      writeFileSync(
+        join(binDir, "gh"),
+        `#!/bin/sh\ncase "$*" in\n  *"pr view"*changedFiles*) echo 2 ;;\n  *"pr view"*mergeStateStatus*)\n` +
+          `    if [ -f '${counter}' ]; then echo '${clean}'; else : > '${counter}'; echo '${unknown}'; fi ;;\n` +
+          `  *) exit 1 ;;\nesac\n`,
+        "utf8",
+      );
+      try {
+        chmodSync(join(binDir, "gh"), 0o755);
+      } catch {
+        /* Windows has no execute bit */
+      }
+      writeFileSync(
+        join(binDir, "gh.cmd"),
+        `@echo off\r\necho %* | findstr /C:"mergeStateStatus" >nul\r\n` +
+          `if errorlevel 1 (echo 2) else (\r\n` +
+          `  if exist "${counter}" (echo ${clean}) else (\r\n` +
+          `    type nul > "${counter}"\r\n    echo ${unknown}\r\n  )\r\n)\r\n`,
+        "utf8",
+      );
+      assert.equal(
+        runGuard(dir, "gh pr merge 4790 --squash", { ghDir: binDir }).decision,
+        "allow",
+        "an UNKNOWN merge state is asked again: GitHub had not computed mergeability yet, which is not a " +
+          "reason to refuse a green PR",
+      );
+    }
+
+    {
+      const gh = ghShim(dir, 2, "MERGED/CLEAN");
+      assert.equal(
+        runGuard(dir, "gh pr merge 4790 --squash", { ghDir: gh }).decision,
+        "deny",
+        "CLEAN alone is not the test — the PR must be OPEN, or a closed PR's stale state waves a merge through",
+      );
+    }
+
+    {
+      // The size question answered, the state question NOT — one gh hiccup must not retire the clause.
+      // This is the shim every refusal above uses, which is why they all still refuse.
+      const gh = ghShim(dir, 2);
+      assert.equal(
+        runGuard(dir, "gh pr merge 4790 --squash", { ghDir: gh }).decision,
+        "deny",
+        "an unreadable merge state keeps the refusal: failing open here would switch the clause off " +
+          "silently, and a guard cannot report its own silence",
       );
     }
 

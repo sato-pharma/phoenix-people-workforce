@@ -7544,7 +7544,7 @@ await runTest(
 );
 
 await runTest(
-  "bash-guard C10 refuses merging a PR too small to be worth its own two CI runs (measured 2026-09-29: 110 merges in a day, 41% of the week touching <=3 files) and refuses SIZE ONLY — two merges back to back are both allowed, because the owner cut the cooldown the same evening — while a 4-file PR, a large PR, both stand-down spellings, a merge with no PR number, an unreachable gh, gh pr view/list/checks, a git merge, a commit message and a heredoc that only quote the command all stay allowed",
+  "bash-guard C10 refuses merging a PR too small to be worth its own two CI runs (measured 2026-09-29: 110 merges in a day, 41% of the week touching <=3 files) and refuses SIZE ONLY — two merges back to back are both allowed, because the owner cut the cooldown the same evening — while an ALREADY-OPEN, ALREADY-GREEN small PR now merges SILENTLY with no stand-down (owner, 2026-10-01: its PR run is paid, and the stand-down is the very flag the auto-mode classifier refuses as a bypass, which deadlocked #4988 until he pressed Squash and merge himself), OPEN/BLOCKED and OPEN/UNSTABLE and MERGED/CLEAN are all still refused, an UNREADABLE merge state keeps the refusal rather than failing open, and a 4-file PR, a large PR, both stand-down spellings, a merge with no PR number, an unreachable gh, gh pr view/list/checks, a git merge, a commit message and a heredoc that only quote the command all stay allowed",
   runMergeCooldownGuardTests,
 );
 
