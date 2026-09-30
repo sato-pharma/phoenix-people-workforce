@@ -128,7 +128,8 @@ export async function loadClosingDetailFacts(input: {
   // Brick NAMES, never the code. `phx_closing_customers` returns a brick_id only, so without this a
   // brick prints as "B215-2" rather than "كوم حماده" — and the owner's standing rule is names, never
   // codes, everywhere in the system. The master is one small indexed read (701 rows, all named on
-  // production), and a failed load falls back to the id rather than taking the whole pack down.
+  // production), and a failed load reads "Brick not named" rather than taking the whole pack down —
+  // never the id, which the owner ruled out in plain words on 2026-10-01.
   const brickNames = new Map<string, string>();
   try {
     const { data } = await db.from("source_of_sales_bricks").select("brick_id, brick_name");
@@ -138,7 +139,7 @@ export async function loadClosingDetailFacts(input: {
       if (id && name) brickNames.set(id, name);
     }
   } catch {
-    // The section still ships, keyed by id, rather than failing the export over a lookup.
+    // The section still ships, keyed by id and labelled in words, rather than failing the export.
   }
 
   const jobs: { line: ClosingDetailLine; period: string }[] = [];
@@ -155,6 +156,35 @@ export async function loadClosingDetailFacts(input: {
       return { line, period, rows: data };
     }),
   );
+
+  // Customer NAMES, never the code (owner, 2026-10-01: "NEVER SHOW CODES ALWAYS SHOW NAMES"). The
+  // direct-order book's rows reach the RPC with an EMPTY client name and the pharmacy's Phoenix code
+  // ("DOP-000021") as the client code — measured on production for Pedia August 2026, every one of
+  // them — so the biggest-customers table printed the code. The name is the direct-order pharmacy
+  // register's own. A code still unnamed after that reads in words, never as itself.
+  const unnamedCodes = [
+    ...new Set(
+      loaded.flatMap(({ rows }) =>
+        rows.filter((row) => !text(row.client_name) && text(row.client_code)).map((row) => text(row.client_code)),
+      ),
+    ),
+  ];
+  const directPharmacyNames = new Map<string, string>();
+  for (let i = 0; i < unnamedCodes.length; i += 200) {
+    try {
+      const { data } = await db
+        .from("direct_order_pharmacies")
+        .select("phoenix_pharmacy_code, pharmacy_name")
+        .in("phoenix_pharmacy_code", unnamedCodes.slice(i, i + 200));
+      for (const row of (data ?? []) as { phoenix_pharmacy_code?: unknown; pharmacy_name?: unknown }[]) {
+        const code = text(row.phoenix_pharmacy_code);
+        const name = text(row.pharmacy_name);
+        if (code && name) directPharmacyNames.set(code, name);
+      }
+    } catch {
+      // The customer is then labelled "Customer not named" — still never its code.
+    }
+  }
 
   const all: ReviewSalesDetail[] = [];
   const periodsWithData = new Set<string>();
@@ -190,11 +220,12 @@ export async function loadClosingDetailFacts(input: {
       // A brick with no id cannot be ranked against the named ones, and dropping the row would lose
       // real money — so it becomes one explicit bucket rather than many anonymous ones.
       brickId: row.brickId || "(no brick)",
-      // The master's NAME when known, the id only as a last resort, never as the label of choice.
-      brickName: brickNames.get(row.brickId) || row.brickId || "No brick recorded",
+      // The master's NAME when known — and never the id, not even as a last resort (owner,
+      // 2026-10-01: "NEVER SHOW CODES ALWAYS SHOW NAMES"). An unnamed brick says so in words.
+      brickName: brickNames.get(row.brickId) || (row.brickId ? "Brick not named" : "No brick recorded"),
       channel: channelOfClosingRow(row),
       clientCode: row.clientCode,
-      clientName: row.clientName || row.clientCode,
+      clientName: row.clientName || directPharmacyNames.get(row.clientCode) || "Customer not named",
       period,
       value: Number.isFinite(row.value) ? row.value : 0,
     }));

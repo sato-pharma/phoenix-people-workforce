@@ -32,7 +32,7 @@ export type PackLevel = "company" | "line" | "district" | "rep";
 
 export const PACK_LEVELS: readonly PackLevel[] = ["company", "line", "district", "rep"];
 
-export type MetricGroupId = "sales" | "origin" | "activity" | "cost" | "people";
+export type MetricGroupId = "summary" | "sales" | "origin" | "activity" | "link" | "cost" | "people";
 
 export type MetricGroup = {
   id: MetricGroupId;
@@ -42,14 +42,17 @@ export type MetricGroup = {
 };
 
 export const METRIC_GROUPS: readonly MetricGroup[] = [
+  { id: "summary", label: "In one page", question: "What does the period say, in plain words?" },
   { id: "sales", label: "Sales", question: "Did it hit the number?" },
   { id: "origin", label: "Where the money came from", question: "Which bricks, which customers, which channel?" },
   { id: "activity", label: "Field activity", question: "What did the team actually do?" },
+  { id: "link", label: "Work against results", question: "Did the work go where the money is?" },
   { id: "cost", label: "Cost", question: "What did it cost, and was it worth it?" },
   { id: "people", label: "People", question: "Who did it?" },
 ];
 
 export type ReviewMetricId =
+  | "review-summary"
   | "achievement"
   | "achievement-ex-vacant"
   | "sales-vs-target"
@@ -71,7 +74,16 @@ export type ReviewMetricId =
   | "spend-per-point"
   | "marketing-vs-trend"
   | "rep-rows"
-  | "role-activity";
+  | "role-activity"
+  | "brick-work"
+  | "area-work"
+  | "class-a-missed"
+  | "dv-focus"
+  | "direct-orders"
+  | "requests-return"
+  | "awareness"
+  | "cost-to-serve"
+  | "team-scorecard";
 
 export type ReviewMetric = {
   id: ReviewMetricId;
@@ -88,6 +100,12 @@ export type ReviewMetric = {
    */
   needsClosingDetail?: boolean;
   /**
+   * True when it needs the linked field facts — the reps' CRM lists, their visits and ride days, and
+   * the direct orders, marketing requests and awareness activities of the pack's own areas. Read at
+   * export time for the viewer's scope only (sources/field-link.ts), and skipped when none is ticked.
+   */
+  needsFieldLink?: boolean;
+  /**
    * The levels where this metric is TICKED in a fresh pack — not a single boolean, because a
    * company pack and a rep pack want different presentations out of the same catalogue. Empty
    * means opt-in everywhere.
@@ -101,12 +119,31 @@ export type ReviewMetric = {
 
 const ALL: readonly PackLevel[] = PACK_LEVELS;
 const MANAGER: readonly PackLevel[] = ["company", "line", "district"];
+/** A territory small enough to be read brick by brick and doctor by doctor. */
+const CLOSE_UP: readonly PackLevel[] = ["district", "rep"];
 
 /**
  * The catalogue. Order is presentation order — a pack renders its metrics in this sequence
  * whatever order they were ticked, so two people exporting the same metrics get the same deck.
  */
 export const REVIEW_METRICS: readonly ReviewMetric[] = [
+  // ── In one page ─────────────────────────────────────────────────────────────
+  //
+  // Owner, 2026-10-01: "built on maturity level … a medical rep's BR must show all data but simple
+  // and easy for him to understand." The pack opens on one page of plain sentences drawn from the
+  // very sections that follow — his sales, his bricks, his class A doctors, who rode with him, what
+  // his area's direct orders and requests brought, what it cost — so he reads his period before he
+  // reads a table.
+  {
+    defaultAt: ALL,
+    group: "summary",
+    hint: "The whole period in plain sentences, drawn from the sections that follow.",
+    id: "review-summary",
+    label: "The period in one page",
+    levels: ALL,
+    needsFieldLink: true,
+  },
+
   // ── Sales ───────────────────────────────────────────────────────────────────
   {
     defaultAt: ALL,
@@ -244,6 +281,58 @@ export const REVIEW_METRICS: readonly ReviewMetric[] = [
     levels: ALL,
   },
 
+  // ── Work against results (owner, 2026-10-01) ────────────────────────────────
+  //
+  // "Every brick contains how many class A doctors and I visit how many, versus this area or brick
+  // sales … if a DM over-focused some MRs in double visits and forgot others." The CRM list, the
+  // visits, the rides and the Monthly Closing's own brick sales, laid side by side.
+  {
+    defaultAt: CLOSE_UP,
+    group: "link",
+    hint: "Each brick's sales beside its class A doctors, how many were visited, and the visits it got.",
+    id: "brick-work",
+    label: "Bricks: doctors, visits and sales",
+    levels: CLOSE_UP,
+    needsClosingDetail: true,
+    needsFieldLink: true,
+  },
+  {
+    defaultAt: MANAGER,
+    group: "link",
+    hint: "Each area's achievement beside its class A doctors reached, field days and ride days.",
+    id: "area-work",
+    label: "Areas: doctors, visits and achievement",
+    levels: MANAGER,
+    needsFieldLink: true,
+  },
+  {
+    defaultAt: CLOSE_UP,
+    group: "link",
+    hint: "Every class A doctor on the list with no visit in the period, by name, per brick.",
+    id: "class-a-missed",
+    label: "Class A doctors not visited",
+    levels: CLOSE_UP,
+    needsFieldLink: true,
+  },
+  {
+    defaultAt: MANAGER,
+    group: "link",
+    hint: "Ride days per rep against his fair share: never ridden, rarely ridden, or most of the rides.",
+    id: "dv-focus",
+    label: "Double visits: who gets the manager's days",
+    levels: MANAGER,
+    needsFieldLink: true,
+  },
+  {
+    defaultAt: ALL,
+    group: "link",
+    hint: "Direct orders for the area's pharmacies, in the month Finance booked them.",
+    id: "direct-orders",
+    label: "Direct orders",
+    levels: ALL,
+    needsFieldLink: true,
+  },
+
   // ── Cost ────────────────────────────────────────────────────────────────────
   {
     defaultAt: ALL,
@@ -277,6 +366,33 @@ export const REVIEW_METRICS: readonly ReviewMetric[] = [
     label: "Marketing against the trend",
     levels: ALL,
   },
+  {
+    defaultAt: ALL,
+    group: "cost",
+    hint: "Each marketing request beside the sales it has brought back so far, against the ten times its cost it must.",
+    id: "requests-return",
+    label: "Marketing requests and what they brought",
+    levels: ALL,
+    needsFieldLink: true,
+  },
+  {
+    defaultAt: ALL,
+    group: "cost",
+    hint: "Market awareness activities in the area: held, approved or still waiting.",
+    id: "awareness",
+    label: "Awareness activities",
+    levels: ALL,
+    needsFieldLink: true,
+  },
+  {
+    defaultAt: ALL,
+    group: "cost",
+    hint: "Outstation claimed per field day and per visit, and spend per 1,000 EGP of sales.",
+    id: "cost-to-serve",
+    label: "What the field work cost",
+    levels: ALL,
+    needsFieldLink: true,
+  },
 
   // ── People ──────────────────────────────────────────────────────────────────
   {
@@ -294,6 +410,15 @@ export const REVIEW_METRICS: readonly ReviewMetric[] = [
     id: "role-activity",
     label: "By role",
     levels: MANAGER,
+  },
+  {
+    defaultAt: MANAGER,
+    group: "people",
+    hint: "One row per rep: area achievement, class A doctors reached, field days, ride days and cost.",
+    id: "team-scorecard",
+    label: "The team at a glance",
+    levels: MANAGER,
+    needsFieldLink: true,
   },
 ];
 
@@ -335,6 +460,11 @@ export function narrowSelection(
 /** True when any chosen metric needs the closing's customer-grain rows. */
 export function needsClosingDetail(selection: readonly ReviewMetricId[]): boolean {
   return selection.some((id) => BY_ID.get(id)?.needsClosingDetail === true);
+}
+
+/** True when any chosen metric needs the linked field facts (lists, visits, rides, orders). */
+export function needsFieldLink(selection: readonly ReviewMetricId[]): boolean {
+  return selection.some((id) => BY_ID.get(id)?.needsFieldLink === true);
 }
 
 /** What the pack is about, for its cover: "Pedia line", "Cairo district", "All company". */
