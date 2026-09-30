@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 
 import { EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
@@ -16,6 +17,15 @@ import {
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+// One shape for every module's tab title, so the split reads as one module and not eight pages that
+// happened to land together. Without it the shared DocumentTitleSync guesses from the address and the
+// titles disagree — "Phoenix CRM List" on one page, plain "Visits" on the next.
+export async function generateMetadata({ params }: { params: Promise<{ module: string }> }): Promise<Metadata> {
+  const { module } = await params;
+  const label = isPhoenixCrmModuleKey(module) ? (PHOENIX_CRM_MODULES.find((entry) => entry.key === module)?.label ?? null) : null;
+  return { title: label ? `Phoenix CRM · ${label}` : "Phoenix CRM" };
+}
 
 // ONE Phoenix CRM module, on its own page (owner, 2026-09-30: "a page that has the SPLIT modules").
 // The chooser at /employee-portals/field-crm lists them; this renders the one he picked, at its own

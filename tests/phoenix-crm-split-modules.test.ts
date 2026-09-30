@@ -89,6 +89,11 @@ export function runPhoenixCrmSplitModulesTests(): void {
     assert.ok(!page.includes("<PhoenixCrmApp"), "🔴 and never the one-screen app — that is exactly what he removed");
 
     // `?tab=` is forwarded with `?add=`, never dropped: the portal's "+" actions still work.
+    // 🔴 THIS FORWARD WORKS, AND I REPORTED IT BROKEN ONCE. Reading `location` straight after driving
+    // the browser to `?tab=list` shows the URL BEFORE the server's redirect has resolved, so it looked
+    // like the chooser had swallowed it — and the server log said otherwise all along
+    // ("GET /employee-portals/field-crm/list 200" on the very next line). Verify a redirect by the
+    // address it SETTLES on, never the one read on the first tick.
     assert.match(page, /if \(isPhoenixCrmModuleKey\(tab\)\) \{/, "a named module is forwarded");
     assert.match(page, /redirect\(`\$\{phoenixCrmModulePath\(PHOENIX_CRM_PORTAL_PATH, tab\)\}\$\{add \? `\?add=\$\{add\}` : ""\}`\)/, "carrying ?add= with it");
 
@@ -110,6 +115,17 @@ export function runPhoenixCrmSplitModulesTests(): void {
     // read why, and `notFound()` there would tell him the module does not exist.
     assert.match(route, /if \(!load\.overview\.tabs\[module\]\) \{/, "a module not his reads as a sentence");
     assert.match(route, /is not yours to open/, "in words, never a 404");
+  }
+
+  // ── 4b. One title shape for every module ────────────────────────────────────────────────────────
+  //
+  // Without it the shell's shared DocumentTitleSync guesses from the address and the titles disagree
+  // across the split — measured on the preview: "Phoenix CRM List" on one page, plain "Visits" on the
+  // next. Eight pages that happened to land together, rather than one module.
+  {
+    const route = source("app/employee-portals/field-crm/[module]/page.tsx");
+    assert.match(route, /export async function generateMetadata/, "every module page names itself");
+    assert.match(route, /title: label \? `Phoenix CRM · \$\{label\}` : "Phoenix CRM"/, "in one shape, with the module's own label");
   }
 
   // ── 5. The address follows the tab, and the two lists cannot drift ──────────────────────────────
