@@ -565,9 +565,11 @@ const branch = rollupBranchName({
   },
 });
 
-// Where we were, so an abandoned build puts the tree back. Leaving a session switched onto a
-// half-built branch is half of the 2026-09-30 failure: `new-session.mjs --remove` then judges the
-// worktree by whatever branch it finds checked out, not the one the session was working on.
+// Where we were, so the tree goes back — whether the build is ABANDONED or PUSHED. Leaving a session
+// switched onto the roll-up branch is half of the 2026-09-30 failure: `new-session.mjs --remove` then
+// judges the worktree by whatever branch it finds checked out, not the one the session was working
+// on. Only `abandon()` restored it at first, so the runs that WORKED were the ones that stranded a
+// folder; the success path now restores it too, right after the push.
 const startedOn = git(['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: root, allowFail: true });
 
 git(['fetch', '--quiet', 'origin', 'main'], { cwd: root });
@@ -614,6 +616,31 @@ const verdict = rollupBuildVerdict({ carried: carried.length, skipped });
 if (verdict.kind === 'abandon') abandon([verdict.why]);
 
 git(['push', '--quiet', '--set-upstream', 'origin', branch], { cwd: root });
+
+// 🔴 BACK WHERE WE STARTED, ON THE SUCCESS PATH TOO. `abandon()` restored `startedOn` and the happy
+// path did not, so every run that WORKED left its folder parked on the roll-up branch — the same
+// "half of the 2026-09-30 failure" the note above `startedOn` describes, only reached by succeeding
+// instead of by failing. It stranded the SHARED PRIMARY CHECKOUT on `codex/rollup-20260930-1000`
+// that day: clean, silent, and read by every session that used the primary afterwards, where a bare
+// `git` command resolves against whatever is checked out. Three more local `codex/rollup-*` branches
+// were left behind the same way.
+//
+// It belongs HERE, immediately after the push, rather than at the end of the file: from this line on
+// nothing needs the branch checked out — `gh pr create` names it with `--head`, and `gh pr close`
+// names its PRs by number — while `gh()` exits the process on a GitHub failure, which would jump
+// straight past any restore written below it.
+//
+// Nothing is deleted, unlike `abandon()`: the branch is pushed and carries an open PR, so the local
+// copy is an ordinary branch to leave alone. A restore that cannot happen (the original branch was
+// deleted while we built) must not fail a roll-up that is already pushed and open — it says so
+// instead, because the whole defect was a folder moving with nothing announcing it.
+if (startedOn && startedOn !== 'HEAD') {
+  const restored = git(['switch', '--quiet', startedOn], { cwd: root, allowFail: true });
+  if (restored === null) {
+    console.warn(`[rollup] could not switch ${root} back to ${startedOn} — it is left on ${branch}. `
+      + `Switch it yourself before running anything else there.`);
+  }
+}
 
 const body = [
   'Rolls up several open pull requests into ONE merge, so the CI bill is paid once instead of '

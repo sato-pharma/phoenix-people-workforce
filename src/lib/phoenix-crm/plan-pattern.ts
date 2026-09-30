@@ -79,6 +79,31 @@ function fieldOrder(weekday: number): number {
  * has room for. Null when the mirror holds no plan for this doctor at all: the row then says what it
  * always says for a thing nobody has recorded, rather than inventing a pattern.
  */
+/** One line of the broken-down column: the days that share a set of weeks, and those weeks. */
+export type PlanPatternGroup = { days: string[]; weeks: number[]; weeksLabel: string };
+
+/**
+ * 🔴 THE COLUMN IS BROKEN DOWN, NOT A SENTENCE (owner, 2026-09-30: "usually planned — break it down,
+ * don't put it as if it is one sentence"). "Sat, Sun & Tue every week · Mon weeks 1, 2 and 4" is a
+ * paragraph in a narrow column: a reader has to parse it to find the one day he wanted. As rows —
+ * the days as chips, their weeks beside them — he reads it at a glance.
+ *
+ * Days that share a set of weeks stay on ONE line: that is the grouping, not a flattening.
+ */
+export function planPatternGroups(weekdays: readonly PlanWeekday[], short = true): PlanPatternGroup[] {
+  const names = short ? DAY_SHORT : DAY_NAMES;
+  const byWeeks = new Map<string, PlanPatternGroup>();
+  for (const entry of weekdays) {
+    const key = entry.weeks.join(",");
+    const day = names[entry.weekday] ?? "?";
+    const found = byWeeks.get(key);
+    if (found) found.days.push(day);
+    else byWeeks.set(key, { days: [day], weeks: entry.weeks, weeksLabel: describeWeeks(entry.weeks) });
+  }
+  // The fullest line first — "every week" above "weeks 1 and 4" — so the shape reads top-down.
+  return [...byWeeks.values()].sort((left, right) => right.weeks.length - left.weeks.length || right.days.length - left.days.length);
+}
+
 export function describePlanPattern(weekdays: readonly PlanWeekday[], short = true): string | null {
   if (weekdays.length === 0) return null;
   const names = short ? DAY_SHORT : DAY_NAMES;

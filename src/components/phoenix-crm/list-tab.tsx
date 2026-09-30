@@ -545,7 +545,7 @@ function ListHome({
       ) : null}
 
       <CrmBlock className="border-t border-slate-100" title="Which part of the list">
-        <CrmChoice columns={4} label="Which part of the list" onChange={setSection} options={sectionOptions} value={current} />
+        <CrmChoice columns={7} label="Which part of the list" onChange={setSection} options={sectionOptions} value={current} />
       </CrmBlock>
 
       {/* Only the Timetable reads this pair. The board and the customer parts (To validate, Your list,
@@ -867,15 +867,32 @@ function ReadinessBlock({ pending, view }: { pending: ReadonlyArray<ListCustomer
 }
 
 /**
- * A context figure beside the lead one — `CrmStat`'s look (square, a 3px left bar, the label above),
- * a size down, so three sit side by side on a 375px phone without the lead figure losing its place.
+ * A context figure beside the lead one.
+ *
+ * 🔴 ONE FAMILY, NOT A LEAD BOX AND THREE LEFTOVERS (owner, 2026-09-30: "the part of the To validate
+ * and the Reference list is awful — the polish of the page is awful, all in all"). They were three
+ * different shapes at once: the lead figure 4xl over a progress bar, these three a smaller box with
+ * a grey stub, and the label tracking, the figure size and the meta type all differed between them,
+ * so the row read as one thing plus three offcuts rather than as a set.
+ *
+ * The structure is now the lead tile's, one step down: the same small-caps label at the same
+ * tracking, the figure on its own line in tabular numerals so the four line up, the meta beneath it,
+ * and a rail that MEANS something — emerald when there is something good to say, slate when the
+ * figure is only context — rather than a decorative stub. Square edges, as everything here is.
  */
 function ListFigure({ good = false, label, note, value }: { good?: boolean; label: string; note: string; value: string }) {
   return (
-    <div className={cn("min-w-0 border border-l-[3px] border-slate-200/80 bg-white px-2.5 py-2.5 sm:px-3", good ? "border-l-emerald-500" : "border-l-slate-300")}>
-      <p className="break-words text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">{label}</p>
-      <p className={cn("mt-1.5 break-words text-xl font-black leading-tight", good ? "text-emerald-700" : "text-slate-950")}>{value}</p>
-      <p className="mt-0.5 break-words text-phx-2xs font-semibold leading-4 text-slate-500 sm:text-xs sm:leading-5">{note}</p>
+    <div
+      className={cn(
+        "flex min-w-0 flex-col border border-l-[3px] border-slate-200/80 bg-white px-3 py-3 transition hover:border-slate-300",
+        good ? "border-l-emerald-500" : "border-l-slate-300",
+      )}
+    >
+      <p className="break-words text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-500">{label}</p>
+      <p className={cn("mt-1.5 break-words text-2xl font-black leading-none tracking-tight tabular-nums", good ? "text-emerald-700" : "text-slate-950")}>
+        {value}
+      </p>
+      <p className="mt-1.5 break-words text-phx-2xs font-semibold leading-4 text-slate-500">{note}</p>
     </div>
   );
 }
