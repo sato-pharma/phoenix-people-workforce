@@ -36,7 +36,7 @@
     "**/*.mts"
   ],
   "exclude": [
-    "node_modules",
+    ".railway", "node_modules",
     ".next",
     "phoenix-architecture",
     "phoenix-system-export",
