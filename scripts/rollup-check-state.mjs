@@ -126,7 +126,17 @@ export function requiredCheckState(statusCheckRollup, required, headCommittedAt 
     if (required !== null && !required.has(name)) continue;
     seen.add(name);
     const label = name || 'an unnamed check';
-    if (Number.isFinite(headAt)) {
+    // 🔴 THE STALENESS TEST ONLY APPLIES WHERE THE SHAPE CAN ANSWER IT. A StatusContext — the legacy
+    // commit-status shape — reports `state` and `context` and has no `startedAt` at all, so holding it to
+    // a start time would make it pend FOR EVER: it can never gain one, the wait always times out, and
+    // that member could never be built from again. Pointed out by a peer session reviewing this change,
+    // and measured: two green StatusContexts came back as two "no start time" pending entries.
+    //
+    // A CheckRun always carries `startedAt` here, so a CheckRun missing one stays pending — that is a
+    // genuine anomaly, not a shape we simply cannot time. This repo's required checks are Actions jobs,
+    // i.e. CheckRuns, so nothing real loses the protection.
+    const isStatusContext = entry?.context !== undefined && entry?.name === undefined;
+    if (Number.isFinite(headAt) && !isStatusContext) {
       const startedAt = entry?.startedAt ? Date.parse(String(entry.startedAt)) : NaN;
       if (!Number.isFinite(startedAt)) {
         pending.push(`${label} (no start time, so it cannot be tied to this commit)`);

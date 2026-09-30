@@ -909,6 +909,26 @@ export function runRollupPrsTests(): void {
     assert.equal(noTime.pending.length, 1, "a check with no startedAt is pending, not green");
     assert.match(noTime.pending[0] ?? "", /no start time/);
 
+    // A StatusContext has no `startedAt` at all — it reports `state` and `context`. Holding it to a start
+    // time would make it pend FOR EVER: it can never gain one, so the wait always times out and that
+    // member could never be built from. Raised by a peer session reviewing this change; measured before
+    // fixing, two green StatusContexts came back as two "no start time" pending entries.
+    assert.deepEqual(
+      requiredCheckState(
+        [{ context: "validate", state: "SUCCESS" }, { context: "checks", state: "SUCCESS" }],
+        new Set(["validate", "checks"]),
+        HEAD_AT,
+      ),
+      { red: [], pending: [] },
+      "a green StatusContext is green — the staleness test only applies to a shape that can answer it",
+    );
+    // ...and an unfinished one is still pending, so the exemption did not buy a fail-open.
+    assert.equal(
+      requiredCheckState([{ context: "validate", state: "PENDING" }], new Set(["validate"]), HEAD_AT).pending.length,
+      1,
+      "a PENDING StatusContext is still pending — exempting the TIMING test must not exempt the state test",
+    );
+
     // Omitting the head date skips the test entirely, which is what every older caller and fixture gets.
     assert.deepEqual(
       requiredCheckState(
